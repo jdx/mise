@@ -117,6 +117,13 @@ fn git_remote(name: &str) -> String {
     url.to_string()
 }
 
+/// Return the host and path from a Git scp-style remote, but not a URL.
+fn scp_style_remote_parts(remote: &str) -> Option<(&str, &str)> {
+    let (host, path) = remote.split_once(':')?;
+    (!host.is_empty() && !host.contains(['/', '[']) && !path.starts_with("//"))
+        .then_some((host, path))
+}
+
 /// A credential-safe representation of a remote for npm Git diagnostics.
 ///
 /// `git_remote` rewrites npm's `ssh://[user@]host:owner/repo` form to Git's
@@ -125,11 +132,7 @@ fn git_remote(name: &str) -> String {
 /// remove an optional SSH user and digest a query string without changing Git's
 /// input.
 fn display_git_remote(remote: &str) -> String {
-    if let Some((host, path)) = remote.split_once(':')
-        && !remote.contains("://")
-        && !host.is_empty()
-        && !host.contains(['/', '['])
-    {
+    if let Some((host, path)) = scp_style_remote_parts(remote) {
         let redacted = redact_credentials(&format!("ssh://{host}/{path}"));
         return redacted
             .strip_prefix("ssh://")
@@ -141,7 +144,14 @@ fn display_git_remote(remote: &str) -> String {
 
 /// Keep a command error's copy of the operational remote out of diagnostics.
 fn redact_git_stderr(stderr: &str, remote: &str, display_remote: &str) -> String {
-    redact_credentials(&stderr.replace(remote, display_remote))
+    let mut redacted = stderr.replace(remote, display_remote);
+    if let (Some((_, path)), Some((_, display_path))) = (
+        scp_style_remote_parts(remote),
+        scp_style_remote_parts(display_remote),
+    ) {
+        redacted = redacted.replace(path, display_path);
+    }
+    redact_credentials(&redacted)
 }
 
 fn git_ls_remote_args(remote: &str) -> [&str; 3] {
@@ -2754,6 +2764,10 @@ mod tests {
                 "git+ssh://host.example:owner/repo.git?token=query-secret",
                 "host.example:owner/repo.git?token=query-secret",
             ),
+            (
+                "git+ssh://git@host.example:owner/repo.git?token=query-secret&redirect=https://example.com",
+                "git@host.example:owner/repo.git?token=query-secret&redirect=https://example.com",
+            ),
         ] {
             let remote = git_remote(source);
             assert_eq!(remote, expected_remote);
@@ -2763,7 +2777,13 @@ mod tests {
             );
 
             let display_remote = display_git_remote(&remote);
-            for secret in ["git@", "token=query-secret", "query-secret"] {
+            for secret in [
+                "git@",
+                "token=query-secret",
+                "query-secret",
+                "redirect=https://example.com",
+                "https://example.com",
+            ] {
                 assert!(
                     !display_remote.contains(secret),
                     "diagnostic leaked {secret:?}: {display_remote}"
@@ -2774,10 +2794,34 @@ mod tests {
             let stderr = format!("fatal: could not access {remote}");
             let redacted_stderr = redact_git_stderr(&stderr, &remote, &display_remote);
             assert!(redacted_stderr.contains(&display_remote));
-            for secret in ["git@", "token=query-secret", "query-secret"] {
+            for secret in [
+                "git@",
+                "token=query-secret",
+                "query-secret",
+                "redirect=https://example.com",
+                "https://example.com",
+            ] {
                 assert!(
                     !redacted_stderr.contains(secret),
                     "diagnostic leaked {secret:?}: {redacted_stderr}"
+                );
+            }
+
+            let (_, path) = scp_style_remote_parts(&remote).unwrap();
+            let trace =
+                format!("trace: run_command: ssh host.example 'git-upload-pack \\'{path}\\''");
+            let redacted_trace = redact_git_stderr(&trace, &remote, &display_remote);
+            assert!(redacted_trace.contains("owner/repo.git?"));
+            for secret in [
+                "git@",
+                "token=query-secret",
+                "query-secret",
+                "redirect=https://example.com",
+                "https://example.com",
+            ] {
+                assert!(
+                    !redacted_trace.contains(secret),
+                    "diagnostic leaked {secret:?}: {redacted_trace}"
                 );
             }
         }
