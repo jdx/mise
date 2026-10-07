@@ -973,6 +973,14 @@ fn rust_state_lock_identities(rustup_home: &Path, cargo_home: &Path) -> Vec<Path
     identities
 }
 
+/// Serializes rustup state changes for the homes `config` resolves to. Callers that spawn
+/// `cargo` (which may run rustup itself) must hold this so they don't race the rust plugin.
+pub(crate) async fn lock_rust_state_for_config(
+    config: &Arc<Config>,
+) -> Result<Vec<fslock::LockFile>> {
+    lock_rust_state(&RustHomes::resolve(config).await?).await
+}
+
 async fn lock_rust_state(homes: &RustHomes) -> Result<Vec<fslock::LockFile>> {
     let identities = rust_state_lock_identities(&homes.rustup, &homes.cargo);
     tokio::task::spawn_blocking(move || {
