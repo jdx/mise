@@ -584,7 +584,12 @@ async fn apply_steps(
     // without --yes fails with nothing changed instead of part way through
     if !exec.yes && !crate::config::Settings::get().yes {
         let mut uncovered = vec![];
-        for step in steps.iter().filter(|step| step.action.mutates()) {
+        // an empty-directory removal only calls remove_dir and leaves other
+        // files in place, so it is not a replacement
+        for step in steps
+            .iter()
+            .filter(|step| matches!(step.action, Action::Write { .. } | Action::Delete))
+        {
             let replaces_dir = step.path.is_dir()
                 && !step.path.is_symlink()
                 && !matches!(&step.action, Action::Write { mode, .. } if mode == "040000");
