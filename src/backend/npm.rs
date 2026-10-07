@@ -119,16 +119,18 @@ fn git_remote(name: &str) -> String {
 
 /// A credential-safe representation of a remote for npm Git diagnostics.
 ///
-/// `git_remote` rewrites npm's `ssh://git@host:owner/repo` form to Git's
-/// scp-style `git@host:owner/repo` form. Convert just that display form back
+/// `git_remote` rewrites npm's `ssh://[user@]host:owner/repo` form to Git's
+/// scp-style `[user@]host:owner/repo` form. Convert just that display form back
 /// into a regular SSH URL while redacting it, so the shared URL sanitizer can
-/// remove the SSH user and digest a query string without changing Git's input.
+/// remove an optional SSH user and digest a query string without changing Git's
+/// input.
 fn display_git_remote(remote: &str) -> String {
-    if let Some((user_host, path)) = remote.split_once(':')
-        && user_host.contains('@')
-        && !user_host.contains(['/', '['])
+    if let Some((host, path)) = remote.split_once(':')
+        && !remote.contains("://")
+        && !host.is_empty()
+        && !host.contains(['/', '['])
     {
-        let redacted = redact_credentials(&format!("ssh://{user_host}/{path}"));
+        let redacted = redact_credentials(&format!("ssh://{host}/{path}"));
         return redacted
             .strip_prefix("ssh://")
             .unwrap_or(&redacted)
@@ -2743,32 +2745,58 @@ mod tests {
 
     #[test]
     fn scp_style_git_diagnostics_redact_query_tokens_without_changing_args() {
-        let source = "git+ssh://git@host.example:owner/repo.git?token=query-secret";
-        let remote = git_remote(source);
-        assert_eq!(remote, "git@host.example:owner/repo.git?token=query-secret");
-        assert_eq!(
-            git_ls_remote_args(&remote),
-            ["ls-remote", remote.as_str(), "HEAD"]
+        for (source, expected_remote) in [
+            (
+                "git+ssh://git@host.example:owner/repo.git?token=query-secret",
+                "git@host.example:owner/repo.git?token=query-secret",
+            ),
+            (
+                "git+ssh://host.example:owner/repo.git?token=query-secret",
+                "host.example:owner/repo.git?token=query-secret",
+            ),
+        ] {
+            let remote = git_remote(source);
+            assert_eq!(remote, expected_remote);
+            assert_eq!(
+                git_ls_remote_args(&remote),
+                ["ls-remote", remote.as_str(), "HEAD"]
+            );
+
+            let display_remote = display_git_remote(&remote);
+            for secret in ["git@", "token=query-secret", "query-secret"] {
+                assert!(
+                    !display_remote.contains(secret),
+                    "diagnostic leaked {secret:?}: {display_remote}"
+                );
+            }
+            assert!(display_remote.starts_with("host.example:owner/repo.git?"));
+
+            let stderr = format!("fatal: could not access {remote}");
+            let redacted_stderr = redact_git_stderr(&stderr, &remote, &display_remote);
+            assert!(redacted_stderr.contains(&display_remote));
+            for secret in ["git@", "token=query-secret", "query-secret"] {
+                assert!(
+                    !redacted_stderr.contains(secret),
+                    "diagnostic leaked {secret:?}: {redacted_stderr}"
+                );
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn git_head_failure_redacts_scp_style_command_credentials() {
+        let remote = git_remote(
+            "git+ssh://git@127.0.0.1:mise-git-head-does-not-exist?access_token=query-token",
         );
+        let error = git_head(&remote).await.unwrap_err().to_string();
 
-        let display_remote = display_git_remote(&remote);
-        for secret in ["git@", "token=query-secret", "query-secret"] {
+        for secret in ["git@", "access_token=query-token", "query-token"] {
             assert!(
-                !display_remote.contains(secret),
-                "diagnostic leaked {secret:?}: {display_remote}"
+                !error.contains(secret),
+                "diagnostic leaked {secret:?}: {error}"
             );
         }
-        assert!(display_remote.starts_with("host.example:owner/repo.git?"));
-
-        let stderr = format!("fatal: could not access {remote}");
-        let redacted_stderr = redact_git_stderr(&stderr, &remote, &display_remote);
-        assert!(redacted_stderr.contains(&display_remote));
-        for secret in ["git@", "token=query-secret", "query-secret"] {
-            assert!(
-                !redacted_stderr.contains(secret),
-                "diagnostic leaked {secret:?}: {redacted_stderr}"
-            );
-        }
+        assert!(error.contains("git ls-remote 127.0.0.1:mise-git-head-does-not-exist?"));
     }
 
     #[test]
