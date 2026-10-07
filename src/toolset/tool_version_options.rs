@@ -279,6 +279,7 @@ impl ResolvedToolOptions {
         for key in options.opts.keys() {
             self.sources.insert(key.clone(), source);
         }
+        self.drop_superseded_registry_defaults(options, source);
         if options.os.is_some() {
             self.sources.insert("os".to_string(), source);
         }
@@ -299,6 +300,33 @@ impl ResolvedToolOptions {
         }
         if options.auto_update.is_some() {
             self.sources.insert("auto_update".to_string(), source);
+        }
+    }
+}
+
+/// Registry defaults that name a signer policy a user's own signer option
+/// replaces rather than combines with: packslip rejects `workflow` next to
+/// any of these keys, so a registry `workflow` must not outlive them.
+const REGISTRY_DEFAULTS_SUPERSEDED_BY_USER_SIGNER: (&str, &[&str]) = (
+    "workflow",
+    &["pubkey", "identity", "identity_prefix", "issuer"],
+);
+
+impl ResolvedToolOptions {
+    fn drop_superseded_registry_defaults(
+        &mut self,
+        options: &ToolVersionOptions,
+        source: ToolOptionSource,
+    ) {
+        let (default, superseders) = REGISTRY_DEFAULTS_SUPERSEDED_BY_USER_SIGNER;
+        if source != ToolOptionSource::Registry
+            && self.sources.get(default) == Some(&ToolOptionSource::Registry)
+            && superseders
+                .iter()
+                .any(|key| options.opts.contains_key(*key))
+        {
+            self.options.opts.shift_remove(default);
+            self.sources.shift_remove(default);
         }
     }
 }
@@ -859,6 +887,48 @@ mod tests {
 
     fn s(v: &str) -> toml::Value {
         toml::Value::String(v.to_string())
+    }
+
+    fn opts(pairs: &[(&str, &str)]) -> ToolVersionOptions {
+        ToolVersionOptions {
+            opts: pairs.iter().map(|(k, v)| (k.to_string(), s(v))).collect(),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn user_signer_option_drops_registry_workflow() {
+        for key in ["pubkey", "identity", "identity_prefix", "issuer"] {
+            let mut resolved = ResolvedToolOptions::default();
+            resolved.apply_overrides(
+                &opts(&[("workflow", "release.yaml")]),
+                ToolOptionSource::Registry,
+            );
+            resolved.apply_overrides(&opts(&[(key, "x")]), ToolOptionSource::Config);
+            assert!(!resolved.effective().contains_key("workflow"), "{key}");
+            assert!(resolved.effective().contains_key(key), "{key}");
+        }
+    }
+
+    #[test]
+    fn registry_workflow_survives_unrelated_user_options() {
+        let mut resolved = ResolvedToolOptions::default();
+        resolved.apply_overrides(
+            &opts(&[("workflow", "release.yaml")]),
+            ToolOptionSource::Registry,
+        );
+        resolved.apply_overrides(&opts(&[("variant", "musl")]), ToolOptionSource::Config);
+        assert!(resolved.effective().contains_key("workflow"));
+    }
+
+    #[test]
+    fn user_workflow_next_to_user_signer_is_kept_for_packslip_to_reject() {
+        let mut resolved = ResolvedToolOptions::default();
+        resolved.apply_overrides(
+            &opts(&[("workflow", "release.yaml"), ("issuer", "x")]),
+            ToolOptionSource::Config,
+        );
+        assert!(resolved.effective().contains_key("workflow"));
     }
 
     #[test]
