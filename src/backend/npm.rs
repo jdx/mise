@@ -81,11 +81,60 @@ fn git_requirement(name: &str, version: &str) -> String {
     }
 }
 
+/// The remote to query for a git source's refs, without any `#ref` fragment.
+fn git_remote(name: &str) -> String {
+    let url = name.split('#').next().unwrap_or(name);
+    for (shorthand, host) in [
+        ("github:", "github.com"),
+        ("gitlab:", "gitlab.com"),
+        ("bitbucket:", "bitbucket.org"),
+    ] {
+        if let Some(repo) = url.strip_prefix(shorthand) {
+            let repo = repo.trim_end_matches('/');
+            let repo = repo.strip_suffix(".git").unwrap_or(repo);
+            return format!("https://{host}/{repo}.git");
+        }
+    }
+    url.strip_prefix("git+").unwrap_or(url).to_string()
+}
+
+/// Resolve a git remote's default-branch HEAD to a concrete commit.
+async fn git_head(remote: &str) -> eyre::Result<String> {
+    timeout::run_with_timeout_async(
+        async || {
+            let output = crate::cmd::cmd_read_async_inherited_env(
+                "git",
+                &["ls-remote", remote, "HEAD"],
+                std::iter::empty::<(&str, &std::ffi::OsStr)>(),
+            )
+            .await?;
+            output
+                .lines()
+                .find_map(|line| {
+                    let (sha, git_ref) = line.split_once('\t')?;
+                    (git_ref == "HEAD").then(|| sha.to_string())
+                })
+                .ok_or_else(|| eyre::eyre!("no HEAD found for {remote}"))
+        },
+        Settings::get().fetch_remote_versions_timeout(),
+    )
+    .await
+}
+
 /// An alias to install a git source under: the repository name.
 fn git_alias(name: &str) -> String {
     let url = name.split('#').next().unwrap_or(name).trim_end_matches('/');
     let url = url.strip_suffix(".git").unwrap_or(url);
     url.rsplit(['/', ':']).next().unwrap_or(url).to_string()
+}
+
+/// Reject a git spec whose repository name cannot be a dependency name.
+fn validate_git_alias(name: &str) -> Result<()> {
+    let alias = git_alias(name);
+    if alias.is_empty() || alias == "." || alias == ".." {
+        eyre::bail!("cannot determine a package name from git source: npm:{name}");
+    }
+    Ok(())
 }
 
 #[derive(Debug)]
@@ -607,9 +656,10 @@ impl Backend for NPMBackend {
 
     async fn _list_remote_versions(&self, config: &Arc<Config>) -> eyre::Result<Vec<VersionInfo>> {
         if is_git_spec(&self.tool_name()) {
-            // A git source has no registry history; the version is a ref.
+            // A git source has no registry history; the only version is the
+            // commit its default branch currently points at.
             return Ok(vec![VersionInfo {
-                version: "latest".to_string(),
+                version: git_head(&git_remote(&self.tool_name())).await?,
                 ..Default::default()
             }]);
         }
@@ -626,9 +676,33 @@ impl Backend for NPMBackend {
         .await
     }
 
+    fn is_rolling_channel(&self, version: &str) -> bool {
+        version == "latest" && is_git_spec(&self.tool_name())
+    }
+
+    fn latest_installed_channel_version(&self, _channel: &str) -> Option<String> {
+        // Installed commits do not record whether they came from a rolling HEAD.
+        None
+    }
+
+    async fn resolve_channel_version(
+        &self,
+        _config: &Arc<Config>,
+        version: &str,
+    ) -> Result<Option<String>> {
+        if !self.is_rolling_channel(version) {
+            return Ok(None);
+        }
+        git_head(&git_remote(&self.tool_name())).await.map(Some)
+    }
+
+    fn requires_concrete_channel_version(&self, version: &str) -> bool {
+        self.is_rolling_channel(version)
+    }
+
     async fn latest_stable_version(&self, config: &Arc<Config>) -> eyre::Result<Option<String>> {
         if is_git_spec(&self.tool_name()) {
-            return Ok(Some("latest".to_string()));
+            return git_head(&git_remote(&self.tool_name())).await.map(Some);
         }
         if Settings::get().npm.shell_out {
             self.ensure_npm_for_version_check(config).await;
@@ -962,6 +1036,7 @@ impl NPMBackend {
         options: &NpmOptions<'_>,
     ) -> Result<String> {
         if is_git_spec(&self.tool_name()) {
+            validate_git_alias(&self.tool_name())?;
             if options.checksum().is_some() {
                 eyre::bail!(
                     "the checksum option is not supported for git sources: npm:{}",
@@ -2478,6 +2553,11 @@ mod tests {
         assert_eq!(git_alias("git+https://github.com/o/r"), "r");
         assert_eq!(git_alias("git+ssh://git@github.com/o/r.git#main"), "r");
         assert_eq!(git_alias("github:o/r"), "r");
+        assert!(validate_git_alias("github:o/r").is_ok());
+        assert!(validate_git_alias("github:o/.git").is_err());
+        assert!(validate_git_alias("github:o/.").is_err());
+        assert_eq!(git_remote("github:o/r#main"), "https://github.com/o/r.git");
+        assert_eq!(git_remote("git+ssh://git@h/o/r.git"), "ssh://git@h/o/r.git");
         assert_eq!(git_alias("git+https://github.com/o/r.git/"), "r");
         assert_eq!(git_requirement("github:o/r#main", "v1"), "github:o/r#v1");
         assert_eq!(
