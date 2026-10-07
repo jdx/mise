@@ -139,14 +139,18 @@ async fn update_due_tools() -> Result<()> {
         for request in versions
             .requests
             .iter()
-            .filter(|request| tool_update::enabled(request))
+            .filter(|request| request.is_os_supported() && tool_update::enabled(request))
         {
             let tv = match request.resolve(&config, &ResolveOptions::default()).await {
                 Ok(tv) => tv,
                 Err(err) => {
                     warn!("tool-update: could not resolve {ba}: {err:#}");
-                    // So `mise doctor` says why this tool isn't updating.
-                    tool_update::record_result(&ba.full_without_opts(), &Err(err));
+                    // When its check is due, so `mise doctor` says why this
+                    // tool isn't updating.
+                    if let Some(tool_id) = tool_update::claim_due_request(request, Updater::Service)
+                    {
+                        tool_update::record_result(&tool_id, &Err(err));
+                    }
                     continue;
                 }
             };
@@ -190,17 +194,15 @@ fn update_command(args: &[&str]) -> Command {
         .env("MISE_ENV", env::mise_env().join(","))
         .current_dir(dirs::HOME.ancestors().last().unwrap_or(*dirs::HOME))
         .stdin(Stdio::null());
+    // `--no-hooks` on the launch or watcher applies to its updates too.
+    if Settings::no_hooks() || Settings::get().no_hooks.unwrap_or(false) {
+        command.env("MISE_NO_HOOKS", "1");
+    }
     command
 }
 
 fn run_update(tool: &str) -> std::io::Result<ExitStatus> {
-    let mut command = update_command(&[tool]);
-    command.stdout(std::io::stderr());
-    // `--no-hooks` on the launch applies to its update too.
-    if Settings::no_hooks() || Settings::get().no_hooks.unwrap_or(false) {
-        command.env("MISE_NO_HOOKS", "1");
-    }
-    command.status()
+    update_command(&[tool]).stdout(std::io::stderr()).status()
 }
 
 /// If the tool that provides `bin` opted into `auto_update` in global config

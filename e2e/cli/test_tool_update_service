@@ -16,6 +16,11 @@ for _ in {1..300}; do
   sleep 0.1
 done
 assert_contains "mise ls --installed dummy" "1.1.0"
+# Let the pass finish: it holds update.lock, with its PID in it, until done.
+for _ in {1..300}; do
+  grep -q '[0-9]' "$MISE_STATE_DIR/tool-update/update.lock" 2>/dev/null || break
+  sleep 0.1
+done
 
 # While it runs, a launch with a due check runs what is installed.
 mise uninstall dummy@1.1.0

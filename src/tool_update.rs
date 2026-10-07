@@ -91,21 +91,30 @@ pub enum Updater {
 /// as made right away, so concurrent claims start one update and a failed or
 /// offline update is not retried until the next interval.
 pub fn claim_due(tv: &ToolVersion, updater: Updater) -> Option<String> {
+    if tv.request_pinned_this_version() {
+        return None;
+    }
+    claim_due_request(&tv.request, updater)
+}
+
+/// [`claim_due`] for a request that couldn't be resolved, so a lookup failure
+/// is reported once per interval like an update's, not on every pass.
+pub fn claim_due_request(request: &ToolRequest, updater: Updater) -> Option<String> {
     if updater == Updater::Launch && std::env::var_os(UPDATING_ENV).is_some() {
         return None;
     }
-    let value = global_auto_update(&tv.request)?;
+    let value = global_auto_update(request)?;
     let settings = Settings::get();
     // Only what describes this machine right now. Settings about a project's
     // lockfile or remote lookups don't apply: the update runs on global config
     // alone, and checks the global `locked` setting itself.
-    if tv.request_pinned_this_version() || settings.offline() || settings.ci || ci_info::is_ci() {
+    if settings.offline() || settings.ci || ci_info::is_ci() {
         return None;
     }
     if updater == Updater::Launch && service_running() {
         return None;
     }
-    let tool_id = tv.ba().full_without_opts();
+    let tool_id = request.ba().full_without_opts();
     let interval = match parse_auto_update(&value) {
         Ok(interval) => interval?,
         Err(err) => {
@@ -159,12 +168,12 @@ pub fn lock_service() -> Result<fslock::LockFile> {
         .lock()
 }
 
-/// One service lock per set of active environments (`MISE_ENV`): a watcher
-/// checks only the global files of its own environments, so a launch with
-/// other environments must not leave its updates to it.
+/// One service lock per global config directory and set of active
+/// environments (`MISE_ENV`): a watcher checks only those global files, so a
+/// launch using others must not leave its updates to it.
 fn service_lock_path() -> PathBuf {
-    let envs = crate::env::mise_env().join(",");
-    state_dir().join(format!("service-{}.lock", hash::hash_to_str(&envs)))
+    let scope = (dirs::CONFIG.to_path_buf(), crate::env::mise_env().join(","));
+    state_dir().join(format!("service-{}.lock", hash::hash_to_str(&scope)))
 }
 
 /// Take the lock every update holds, waiting for one already running. Updates
