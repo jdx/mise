@@ -164,10 +164,8 @@ impl ToolsetBuilder {
     }
 
     fn load_runtime_env(&self, ts: &mut Toolset, env: EnvMap) -> eyre::Result<()> {
-        if self.scope != ConfigScope::All {
-            // Scoped toolsets hold only their config files' tools: a
-            // MISE_*_VERSION in the environment must not replace the global
-            // request the background updater (`mise __tool-update`) upgrades.
+        if self.scope == ConfigScope::LocalOnly {
+            // LocalOnly excludes env-based tool versions (MISE_*_VERSION).
             return Ok(());
         }
         let postinstall = postinstall_tool_request(&env)?.map(|(mut request, source)| {
