@@ -717,14 +717,14 @@
           }
         },
         "auto_update": {
-          "default": false,
-          "description": "Automatically update mise before running eligible commands.",
-          "type": "boolean"
+          "description": "[deprecated] Use `self_update.auto` instead.",
+          "type": "boolean",
+          "deprecated": true
         },
         "auto_update_check_duration": {
-          "default": "7d",
-          "description": "How often to check for a new mise release when auto-update is enabled.",
-          "type": "string"
+          "description": "[deprecated] Use `self_update.check_duration` instead.",
+          "type": "string",
+          "deprecated": true
         },
         "cache_prune_age": {
           "default": "30d",
@@ -1967,6 +1967,16 @@
             "api_url": {
               "default": "https://api.github.com",
               "description": "GitHub API base URL used by `mise self-update`.",
+              "type": "string"
+            },
+            "auto": {
+              "default": false,
+              "description": "Automatically update mise before running eligible commands.",
+              "type": "boolean"
+            },
+            "check_duration": {
+              "default": "7d",
+              "description": "How often to check for a new mise release when `self_update.auto` is enabled.",
               "type": "string"
             },
             "minimum_release_age": {

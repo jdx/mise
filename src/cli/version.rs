@@ -216,7 +216,7 @@ pub(crate) fn show_auto_update_hint() {
     };
     if select_version_hint(
         SelfUpdate::is_available(),
-        settings.auto_update,
+        settings.self_update.auto,
         false,
         cfg!(windows),
     ) == Some(VersionHint::AutoUpdate)
@@ -224,7 +224,7 @@ pub(crate) fn show_auto_update_hint() {
         hint!(
             "auto_update",
             "keep mise updated automatically with",
-            "mise settings auto_update=true"
+            "mise settings self_update.auto=true"
         );
     }
 }
@@ -235,7 +235,7 @@ pub(crate) fn show_version_hint() {
     };
     match select_version_hint(
         SelfUpdate::is_available(),
-        settings.auto_update,
+        settings.self_update.auto,
         is_homebrew_install(),
         cfg!(windows),
     ) {
