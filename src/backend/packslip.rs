@@ -641,7 +641,10 @@ fn workflow_policy(project: &str, opts: &PackslipOptions<'_>, workflow: &str) ->
     let mut policy = Policy::for_project(project)
         .filter(|policy| policy.issuer.as_deref() == Some(GITHUB_ISSUER))
         .ok_or_else(|| eyre!("packslip:{project}: `workflow` needs a github.com project"))?;
-    let repo = policy.identity_prefix.take().unwrap_or_default();
+    let repo = policy
+        .identity_prefix
+        .take()
+        .ok_or_else(|| eyre!("packslip:{project}: no repository to pin `workflow` under"))?;
     policy.identity_prefix = Some(format!("{repo}.github/workflows/{workflow}@refs/tags/"));
     Ok(policy)
 }
