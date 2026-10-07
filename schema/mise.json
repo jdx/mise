@@ -6388,7 +6388,7 @@
               },
               "merge": {
                 "type": "boolean",
-                "description": "edit entry: set the keys of source on a JSON, TOML, or YAML target and leave the target's other keys to the application that also writes it; the format comes from the target's extension"
+                "description": "edit entry: set the keys of source (default: the target's path under dotfiles.root) on a JSON, TOML, or YAML target and leave the target's other keys to the application that also writes it; the format comes from the target's extension"
               },
               "variants": {
                 "type": "array",
@@ -6440,7 +6440,6 @@
                   }
                 },
                 "then": {
-                  "required": ["source"],
                   "properties": {
                     "mode": false,
                     "content": false,

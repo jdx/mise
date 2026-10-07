@@ -534,15 +534,24 @@ fn merge_op(
     if entry.position.is_some() || entry.comment.is_some() {
         bail!("\"{path_raw}\".{id}: position and comment do not apply to merge, ignoring entry");
     }
-    let Some(source) = &entry.source else {
-        bail!("\"{path_raw}\".{id}: merge needs a source file, ignoring entry");
+    // like a symlink entry, an omitted source is the target's path under
+    // dotfiles.root
+    let source = match &entry.source {
+        Some(source) => source.clone(),
+        // normalized first, so `~/../x` is not taken for a target under $HOME
+        None => crate::system::files::implied_source(&crate::system::files::resolve_target_arg(
+            path_raw,
+        ))
+        .map_err(|err| eyre::eyre!("\"{path_raw}\".{id}: {err}, ignoring entry"))?
+        .to_string_lossy()
+        .into_owned(),
     };
     let Some(format) = Format::from_path(path) else {
         bail!(
             "\"{path_raw}\".{id}: merge needs a .json, .toml, .yaml, or .yml target, ignoring entry"
         );
     };
-    let source = file::replace_path(source);
+    let source = file::replace_path(&source);
     let source = if source.is_relative() {
         base.join(source)
     } else {
@@ -726,6 +735,22 @@ pub fn check(config: &Config, req: &EditRequest) -> Result<FileState> {
 }
 
 const SYMLINK_REASON: &str = "target is a symlink; edit the real file instead";
+const MERGE_SYMLINK_REASON: &str = "target is a symlink; replace it with a copy of the real file before merging (the merge source may be trimmed to the owned keys only afterwards)";
+
+/// a merge target that is a link to the merge's own source, as when the entry
+/// used to be a `symlink`: the file behind it holds the application's state
+fn links_to_merge_source(req: &EditRequest) -> bool {
+    if !matches!(req.op, EditOp::Merge { .. }) {
+        return false;
+    }
+    let Some(source) = req.op.source_file() else {
+        return false;
+    };
+    matches!(
+        (req.path.canonicalize(), source.canonicalize()),
+        (Ok(target), Ok(source)) if target == source
+    )
+}
 
 /// outcome of inspecting one edit: an ordinary state, or a condition mise
 /// refuses to apply automatically (corrupted markers, symlink target)
@@ -743,7 +768,19 @@ fn precheck(req: &EditRequest) -> Result<Option<EditCheck>> {
     // edits write through symlinks into whatever they point at (often a
     // dotfile source) — surface that instead of silently doing it
     if req.path.is_symlink() {
-        return Ok(Some(EditCheck::Blocked(SYMLINK_REASON.into())));
+        if links_to_merge_source(req) {
+            return Ok(Some(EditCheck::State(FileState::Differs(
+                "symlink to the merge source; apply replaces it with a copy".into(),
+            ))));
+        }
+        return Ok(Some(EditCheck::Blocked(
+            if matches!(req.op, EditOp::Merge { .. }) {
+                MERGE_SYMLINK_REASON
+            } else {
+                SYMLINK_REASON
+            }
+            .into(),
+        )));
     }
     if !req.path.exists() {
         return Ok(Some(EditCheck::State(FileState::Missing)));
@@ -1560,6 +1597,46 @@ fn apply_one(req: &EditRequest, desired: Option<&str>, written: &mut Vec<PathBuf
     if let Some(parent) = req.path.parent() {
         file::create_dir_all(parent)?;
     }
+    // switching from `symlink`: keep what the link points at as a regular file
+    // before merging, so trimming the source afterwards loses nothing
+    if matches!(req.op, EditOp::Merge { .. }) && req.path.is_symlink() && links_to_merge_source(req)
+    {
+        // prepare the whole copy beside the link in an exclusively created
+        // temp file (std::fs::copy gives it the source's mode), then rename it
+        // over the link, so a failure leaves the link in place
+        let dir = req.path.parent().unwrap_or(Path::new("."));
+        let tmp = tempfile::NamedTempFile::new_in(dir)
+            .wrap_err_with(|| format!("failed to replace symlink: {}", req.path.display_user()))?;
+        std::fs::copy(&req.path, tmp.path())
+            .wrap_err_with(|| format!("failed to replace symlink: {}", req.path.display_user()))?;
+        // a read-only source (a Nix store file, `chmod -w`) must not leave a
+        // copy the merge cannot write
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mut perms = std::fs::metadata(tmp.path())?.permissions();
+            perms.set_mode(perms.mode() | 0o200);
+            std::fs::set_permissions(tmp.path(), perms)?;
+        }
+        #[cfg(windows)]
+        {
+            use std::os::windows::{ffi::OsStrExt, fs::MetadataExt};
+            use windows_sys::Win32::Storage::FileSystem::{
+                FILE_ATTRIBUTE_READONLY, SetFileAttributesW,
+            };
+            let path = std::fs::canonicalize(tmp.path())?;
+            let wide: Vec<u16> = path.as_os_str().encode_wide().chain(Some(0)).collect();
+            let attributes = std::fs::metadata(tmp.path())?.file_attributes();
+            if unsafe { SetFileAttributesW(wide.as_ptr(), attributes & !FILE_ATTRIBUTE_READONLY) }
+                == 0
+            {
+                return Err(std::io::Error::last_os_error().into());
+            }
+        }
+        tmp.persist(&req.path)
+            .map_err(|err| err.error)
+            .wrap_err_with(|| format!("failed to replace symlink: {}", req.path.display_user()))?;
+    }
     let existed = req.path.exists();
     let text = if existed {
         file::read_to_string(&req.path)?
@@ -1738,6 +1815,26 @@ mod tests {
         assert!(req.op.is_template());
     }
 
+    /// an absolute path outside $HOME on every platform
+    const OUTSIDE_HOME: &str = if cfg!(windows) {
+        "C:/outside"
+    } else {
+        "/outside"
+    };
+
+    #[test]
+    fn an_omitted_merge_source_needs_a_target_under_home() {
+        let err = resolve(&format!("{OUTSIDE_HOME}/config.toml"), "merge = true")
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("source is required"), "{err}");
+        // `..` cannot walk a target out of $HOME and still pass for one inside it
+        let err = resolve("~/../outside/config.toml", "merge = true")
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("source is required"), "{err}");
+    }
+
     #[test]
     fn invalid_merge_entries_are_refused() {
         for (path, entry, reason) in [
@@ -1751,7 +1848,6 @@ mod tests {
                 "source = \"s\"\nmerge = false",
                 "must be true",
             ),
-            ("~/a/config.toml", "merge = true", "needs a source"),
             (
                 "~/a/config.toml",
                 "block = \"x\"\nmerge = true",
@@ -1802,7 +1898,6 @@ mod tests {
                 "source = \"s\"\nmerge = true",
                 ".json, .toml",
             ),
-            ("~/a/settings.json/shared", "merge = true", "needs a source"),
             (
                 "~/a/settings.json/shared",
                 "source = \"s\"\nmerge = false",
@@ -1812,6 +1907,13 @@ mod tests {
             let err = check(key, entry).unwrap_err().to_string();
             assert!(err.contains(reason), "{entry}: {err}");
         }
+        let err = check(
+            &format!("{OUTSIDE_HOME}/settings.json/shared"),
+            "merge = true",
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(err.contains("source is required"), "{err}");
     }
 
     #[test]

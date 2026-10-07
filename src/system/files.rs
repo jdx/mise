@@ -7836,11 +7836,22 @@ source = "oldrc""#,
         for entry in [
             r#"{ source = "s.json", merge = true, exclude = [] }"#,
             r#"{ source = "s.json", merge = true, mode = "copy" }"#,
-            r#"{ merge = true }"#,
         ] {
             let body = format!("[dotfiles]\n\"~/a/settings.json/shared\" = {entry}\n");
             assert!(incoming(&body).is_err(), "{entry}");
         }
+        // an omitted source is inferred, which only works under $HOME
+        assert!(
+            incoming(&format!(
+                "[dotfiles]\n\"{}/settings.json/shared\" = {{ merge = true }}\n",
+                if cfg!(windows) {
+                    "C:/outside"
+                } else {
+                    "/outside"
+                }
+            ))
+            .is_err()
+        );
         assert!(
             incoming("[dotfiles]\n\"~/a/notes.txt/shared\" = { source = \"s\", merge = true }\n")
                 .is_err()
