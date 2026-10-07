@@ -602,6 +602,8 @@ pub(crate) async fn apply_locked_with_scope(
     let mut touched = vec![];
     // set when a fresh adoption saved the files it replaces (see below)
     let mut protected_head: Option<String> = None;
+    // the repository's head, once a fresh adoption made it this machine's
+    let mut adopted_head: Option<String> = None;
     let result = (|| -> Result<()> {
         scope.validate_starting_head(planned_head.as_deref())?;
         if let (Some(tree), Some(local)) = (&inventory_tree, &planned_head) {
@@ -693,6 +695,7 @@ pub(crate) async fn apply_locked_with_scope(
                 .ok_or_else(|| eyre::eyre!("setup branch disappeared during adoption"))?;
             audit_incoming_history(repo, remote)?;
             repo.update_history_head(remote, None)?;
+            adopted_head = Some(remote.to_owned());
             // every path this pull writes, the ones it creates included,
             // and manual-save ones as they are now: undo puts back exactly
             // what was here
@@ -839,13 +842,15 @@ pub(crate) async fn apply_locked_with_scope(
             && touched.is_empty()
             && recovery_errors.is_empty()
         {
-            // Only a head this operation recorded: its own protective
-            // checkpoint, or its failure checkpoint written straight on top
-            // of that (or as a root, when there was none). The operation
-            // lock is released by now, and a save that landed since is the
-            // user's to keep. The deletion is a compare-and-swap on `head`.
+            // Only a head this operation recorded: the repository's head it
+            // adopted or its own protective checkpoint on that, or its
+            // failure checkpoint written straight on top of either (or as a
+            // root, when there was none). The operation lock is released by
+            // now, and a save that landed since is the user's to keep. The
+            // deletion is a compare-and-swap on `head`.
+            let base = protected_head.as_ref().or(adopted_head.as_ref());
             let recorded_by_this_operation = |head: &String| -> Result<bool> {
-                if Some(head) == protected_head.as_ref() {
+                if Some(head) == base {
                     return Ok(true);
                 }
                 let Some(id) = &operation_id else {
@@ -857,7 +862,7 @@ pub(crate) async fn apply_locked_with_scope(
                     .and_then(|checkpoint| checkpoint.operation)
                     .is_some_and(|operation| &operation.id == id);
                 Ok(recorded
-                    && repo.parents_of(head)? == protected_head.iter().cloned().collect::<Vec<_>>())
+                    && repo.parents_of(head)? == base.into_iter().cloned().collect::<Vec<_>>())
             };
             if let Some(head) =
                 repo.ref_oid(crate::system::history::shadow::HistoryRepo::HISTORY_REF)?
