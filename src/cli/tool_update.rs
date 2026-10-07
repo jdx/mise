@@ -38,6 +38,11 @@ pub(crate) struct ToolUpdate {
     /// Update every opted-in tool that is due, once (one `--watch` pass)
     #[usage(long, hide = true, conflicts = "tool")]
     due: bool,
+
+    /// The tool id the launch claimed the check under; the result is recorded
+    /// there, so `mise doctor` finds it under the same id
+    #[usage(long, hide = true)]
+    id: Option<String>,
 }
 
 impl ToolUpdate {
@@ -51,16 +56,16 @@ impl ToolUpdate {
         let Some(tool) = self.tool else {
             bail!("pass a tool or --watch");
         };
-        update_tool(tool, false).await
+        let tool_id = self.id.unwrap_or_else(|| tool.ba.full_without_opts());
+        update_tool(tool, tool_id, false).await
     }
 }
 
-async fn update_tool(tool: ToolArg, in_pass: bool) -> Result<()> {
+async fn update_tool(tool: ToolArg, tool_id: String, in_pass: bool) -> Result<()> {
     if Settings::get().locked {
         debug!("tool-update: skipped, `locked` is set");
         return Ok(());
     }
-    let tool_id = tool.ba.full_without_opts();
     let result = async {
         let _lock = tool_update::lock_for_update()?;
         // Another update may have changed the global lockfile while this waited.
@@ -188,7 +193,7 @@ async fn update_due_tools() -> Result<()> {
                     continue;
                 }
             };
-            if let Err(err) = update_tool(tool, true).await {
+            if let Err(err) = update_tool(tool, tool_id.clone(), true).await {
                 warn!("tool-update: could not update {tool_id}: {err:#}");
             }
         }
@@ -224,8 +229,12 @@ fn update_command(args: &[&str]) -> Command {
     command
 }
 
-fn run_update(tool: &str) -> std::io::Result<ExitStatus> {
-    update_command(&[tool]).stdout(std::io::stderr()).status()
+/// The config's spelling selects the request to upgrade; `tool_id`, the id
+/// the check was claimed under, is where the result is recorded.
+fn run_update(tool: &str, tool_id: &str) -> std::io::Result<ExitStatus> {
+    update_command(&[tool, "--id", tool_id])
+        .stdout(std::io::stderr())
+        .status()
 }
 
 /// If the tool that provides `bin` opted into `auto_update` in global config
@@ -243,7 +252,7 @@ pub(crate) async fn update_before_launch(config: &Arc<Config>, ts: &Toolset, bin
         return false;
     };
     // Its progress goes to stderr; stdout stays the launched tool's alone.
-    match run_update(&tv.ba().short) {
+    match run_update(&tv.ba().short, &tool_id) {
         Ok(status) if status.success() => true,
         Ok(status) => {
             warn!("could not update {tool_id} ({status}), running the installed version");

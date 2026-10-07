@@ -451,6 +451,9 @@ once an hour and update the ones that are due. Declare the service with:
 """#
     flag --watch help="Run until stopped, updating due tools once an hour" conflicts=TOOL
     flag --due help="Update every opted-in tool that is due, once (one `--watch` pass)" hide=#true conflicts=TOOL
+    flag --id help="The tool id the launch claimed the check under; the result is recorded there, so `mise doctor` finds it under the same id" hide=#true {
+        arg <ID>
+    }
     flag "-h --help" help="Print help" action=help builtin=#true
     arg "[TOOL]" required=#false
 }
