@@ -1611,6 +1611,9 @@ Manage dotfiles from `[dotfiles]`
 \fBOptions:\fR
 .PP
 .TP
+\fB\-\-local\fR
+Work on this machine's local\-only history (`mode = "track\-local"`), which is never shared
+.TP
 \fB\-h, \-\-help\fR
 Print help
 .SH "MISE BOOTSTRAP DOTFILES ADD"
@@ -2401,6 +2404,9 @@ Declare a variant for this platform (macos, linux, linux/arm64, …)
 .TP
 \fB\-\-profile\fR \fI<PROFILE>\fR
 Declare a variant for this mise environment
+.TP
+\fB\-\-local\fR
+Keep this file's history on this machine only; it is never shared
 .TP
 \fB\-\-machine\fR
 Keep a separate stream on every machine, never applied on another
@@ -4302,6 +4308,9 @@ Manage dotfiles from `[dotfiles]`
 \fBOptions:\fR
 .PP
 .TP
+\fB\-\-local\fR
+Work on this machine's local\-only history (`mode = "track\-local"`), which is never shared
+.TP
 \fB\-h, \-\-help\fR
 Print help
 .SH "MISE DOTFILES ADD"
@@ -5092,6 +5101,9 @@ Declare a variant for this platform (macos, linux, linux/arm64, …)
 .TP
 \fB\-\-profile\fR \fI<PROFILE>\fR
 Declare a variant for this mise environment
+.TP
+\fB\-\-local\fR
+Keep this file's history on this machine only; it is never shared
 .TP
 \fB\-\-machine\fR
 Keep a separate stream on every machine, never applied on another

@@ -83,7 +83,7 @@ mise bootstrap user apply --dry-run
 
 - [`mise bootstrap accounts <SUBCOMMAND>`](/cli/bootstrap/accounts.html)
 - [`mise bootstrap compose <SUBCOMMAND>`](/cli/bootstrap/compose.html)
-- [`mise bootstrap dotfiles <SUBCOMMAND>`](/cli/bootstrap/dotfiles.html)
+- [`mise bootstrap dotfiles [--local] <SUBCOMMAND>`](/cli/bootstrap/dotfiles.html)
 - [`mise bootstrap files <SUBCOMMAND>`](/cli/bootstrap/files.html)
 - [`mise bootstrap firewall <SUBCOMMAND>`](/cli/bootstrap/firewall.html)
 - [`mise bootstrap linux <SUBCOMMAND>`](/cli/bootstrap/linux.html)

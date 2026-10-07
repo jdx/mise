@@ -43,6 +43,10 @@ pub(crate) struct DotfilesTrack {
     #[usage(long, value_name = "PROFILE")]
     profile: Option<String>,
 
+    /// Keep this file's history on this machine only; it is never shared
+    #[usage(long)]
+    local: bool,
+
     /// Keep a separate stream on every machine, never applied on another
     #[usage(long)]
     machine: bool,
@@ -85,6 +89,13 @@ impl DotfilesTrack {
         let config = Config::get().await?;
         if self.encrypt && self.allow_plaintext {
             bail!("dotfiles: --encrypt and --allow-plaintext cannot be used together");
+        }
+        if self.local
+            && (self.encrypt || self.machine || self.os.is_some() || self.profile.is_some())
+        {
+            bail!(
+                "dotfiles: --local history never leaves this machine and takes no --encrypt, --machine, --os, or --profile"
+            );
         }
         if self.machine && (self.os.is_some() || self.profile.is_some()) {
             bail!("dotfiles: --machine cannot be combined with --os or --profile");
@@ -506,7 +517,7 @@ impl DotfilesTrack {
                     edit.write(path)?;
                 }
             }
-            activate_and_baseline(&declared, only_retracks).await
+            activate_and_baseline(&declared, only_retracks, self.local).await
         }
         .await;
         if let Err(error) = result {
@@ -583,7 +594,14 @@ impl DotfilesTrack {
         allow_plaintext: bool,
     ) -> InlineTable {
         let mut table = InlineTable::new();
-        table.insert("mode", string("track"));
+        table.insert(
+            "mode",
+            string(if self.local {
+                crate::system::files::TRACK_LOCAL
+            } else {
+                "track"
+            }),
+        );
         let policy = self.policy(existing, allow_plaintext);
         // a policy is written when this command sets it or this file wrote
         // it before; one inherited from another layer stays unwritten so
@@ -803,7 +821,11 @@ fn commit_declaration(
 /// Checks that every declared entry is active and saves their baseline.
 /// When every entry was already tracked, the baseline is recorded only if
 /// something changed since the newest checkpoint.
-async fn activate_and_baseline(declared: &[(String, PathBuf)], only_retracks: bool) -> Result<()> {
+async fn activate_and_baseline(
+    declared: &[(String, PathBuf)],
+    only_retracks: bool,
+    local: bool,
+) -> Result<()> {
     let config = Config::reset().await?;
     // The capture resolves this set again through `enrollment::resolve`,
     // so the declaration is what this function needs: it is checking
@@ -811,9 +833,13 @@ async fn activate_and_baseline(declared: &[(String, PathBuf)], only_retracks: bo
     let tracked = TrackedSet::from_config(&config)?;
     for (key, target) in declared {
         let path = normalize_target(target);
-        let active = tracked
-            .entry_for(&path)
-            .is_some_and(|entry| entry.path == path);
+        let active = if local {
+            tracked.local.contains(&path)
+        } else {
+            tracked
+                .entry_for(&path)
+                .is_some_and(|entry| entry.path == path)
+        };
         if !active {
             let reason = tracked
                 .invalid
@@ -823,6 +849,26 @@ async fn activate_and_baseline(declared: &[(String, PathBuf)], only_retracks: bo
                 .unwrap_or_else(|| "the declaration was not loaded".into());
             bail!("dotfiles: {key} could not be tracked: {reason}");
         }
+    }
+    if local {
+        // the baseline belongs to this machine's own history
+        let names = declared
+            .iter()
+            .map(|(key, _)| key.as_str())
+            .collect::<Vec<_>>()
+            .join(", ");
+        let mut args: Vec<std::ffi::OsString> = vec![
+            "dot".into(),
+            "save".into(),
+            "--description".into(),
+            format!("tracked {names}").into(),
+        ];
+        args.extend(
+            declared
+                .iter()
+                .map(|(_, path)| path.clone().into_os_string()),
+        );
+        return crate::system::history::local::run(args);
     }
     baseline(&tracked, declared, only_retracks).await?;
     for (key, target) in declared {
@@ -1341,6 +1387,7 @@ mod declaration_tests {
             os: None,
             profile: None,
             machine: false,
+            local: false,
             no_autosave: false,
             encrypt: false,
             allow_plaintext: false,

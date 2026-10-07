@@ -27,6 +27,12 @@ pub(crate) struct HistoryShow {
 
 impl HistoryShow {
     pub(crate) async fn run(self) -> Result<()> {
+        // a local-only path's checkpoints are in this machine's own history
+        if let Some(path) = &self.path
+            && crate::cli::dotfiles::route_local(&[std::path::PathBuf::from(path)]).await?
+        {
+            return Ok(());
+        }
         let (store, _tracked, entries) = super::open().await?;
         let path = self.path.as_deref().map(display_arg);
         let entry = super::resolve(

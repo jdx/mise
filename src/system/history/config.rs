@@ -173,6 +173,10 @@ fn nonempty_command(command: String) -> Option<String> {
 
 /// The effective `[history.origin]`: the last layer that declares one.
 pub fn origin() -> Result<Option<(PathBuf, OriginTomlConfig)>> {
+    // local-only history is never shared
+    if super::local::active() {
+        return Ok(None);
+    }
     let mut found = None;
     for (path, layer) in layers()? {
         if let Some(origin) = layer.origin {

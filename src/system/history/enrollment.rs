@@ -142,6 +142,8 @@ pub(crate) fn resolve(
     resolved.invalid = tracked.invalid.clone();
     resolved.declarations = Some(current.clone());
     resolved.disabled = tracked.disabled.clone();
+    resolved.local = tracked.local.clone();
+    resolved.keep_local_out();
     Ok(resolved)
 }
 

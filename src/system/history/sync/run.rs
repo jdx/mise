@@ -238,6 +238,9 @@ impl SyncRequest {
 
 /// The connected origin, or why there is none.
 pub fn origin() -> Result<OriginTomlConfig> {
+    if crate::system::history::local::active() {
+        bail!("local-only history is never shared with a setup repository");
+    }
     if let Some((_, origin)) = crate::system::history::config::origin()? {
         return Ok(origin);
     }
@@ -1100,6 +1103,10 @@ pub(super) fn incoming_tracking(
     let mut incoming = manifest.tracking()?;
     incoming.required_sources = tracked.required_sources.clone();
     incoming.invalid = tracked.invalid.clone();
+    // a path kept local here is never written from the repository, even
+    // when another machine shares it
+    incoming.local = tracked.local.clone();
+    incoming.keep_local_out();
     Ok(incoming)
 }
 

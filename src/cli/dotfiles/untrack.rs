@@ -58,6 +58,23 @@ impl DotfilesUntrack {
                 }
             }
         }
+        // a local-only path's history is this machine's own: untracking it
+        // records nothing in the shared history, whose enrollment of the
+        // same path (another machine may share it) is not this one's to drop
+        let local_targets: Vec<PathBuf> = self
+            .targets
+            .iter()
+            .map(|target| {
+                crate::system::files::resolve_target_arg(target)
+                    .components()
+                    .collect::<PathBuf>()
+            })
+            .filter(|target| {
+                managed.iter().any(|req| {
+                    &req.target == target && req.mode == FileMode::Track && req.policy.local
+                })
+            })
+            .collect();
         let mut touched: Vec<PathBuf> = vec![];
         for target_raw in &self.targets {
             let target = crate::system::files::resolve_target_arg(target_raw)
@@ -80,9 +97,14 @@ impl DotfilesUntrack {
                         // inherited: switch it off on this machine
                         let mut doc = super::track::read_document(&local)?;
                         let mut table = toml_edit::InlineTable::new();
+                        let mode = if req.policy.local {
+                            crate::system::files::TRACK_LOCAL
+                        } else {
+                            "track"
+                        };
                         table.insert(
                             "mode",
-                            Value::String(toml_edit::Formatted::new("track".into())),
+                            Value::String(toml_edit::Formatted::new(mode.into())),
                         );
                         table.insert("enabled", Value::Boolean(toml_edit::Formatted::new(false)));
                         doc["dotfiles"][&key] = Item::Value(Value::InlineTable(table));
@@ -239,8 +261,18 @@ impl DotfilesUntrack {
         draft.untrack = self
             .targets
             .iter()
-            .map(|path| normalize_target(&crate::system::files::resolve_target_arg(path)))
+            .map(|path| {
+                crate::system::files::resolve_target_arg(path)
+                    .components()
+                    .collect::<PathBuf>()
+            })
+            .filter(|target| !local_targets.contains(target))
+            .map(|target| normalize_target(&target))
             .collect();
+        if draft.untrack.is_empty() {
+            info!("dotfiles: live files were left in place; their local-only history remains");
+            return Ok(());
+        }
         tokio::task::spawn_blocking(move || -> Result<()> {
             let _operation = crate::system::history::scope::take_operation_lock(&store, &tracked)?;
             if let crate::system::history::checkpoint::Outcome::Unavailable(reason) =

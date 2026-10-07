@@ -52,6 +52,9 @@ impl DotfilesCapture {
                 warn!("history: no protective checkpoint is available for this command");
             }
         }
+        // local-only history gets a labeled checkpoint on each side
+        let local_label = self.label.clone().unwrap_or_else(|| "capture".into());
+        save_local(&local_label).await;
         let result = Command::new(program)
             .args(args)
             .status()
@@ -71,12 +74,34 @@ impl DotfilesCapture {
                 }),
             );
         }
+        save_local(&local_label).await;
         let status = result?;
         if status.success() {
             Ok(())
         } else {
             Err(crate::request_exit(exit_code(status)))
         }
+    }
+}
+
+/// Saves this machine's local-only history, if it tracks anything, with
+/// `label`. Never in the way of the command: a failure only warns.
+async fn save_local(label: &str) {
+    if crate::system::history::local::active() {
+        return;
+    }
+    let declared = match crate::config::Config::get().await {
+        Ok(config) => crate::system::history::tracked::TrackedSet::from_config(&config)
+            .is_ok_and(|set| !set.local.is_empty()),
+        Err(_) => false,
+    };
+    if !declared {
+        return;
+    }
+    if let Err(err) =
+        crate::system::history::local::run(["dot", "save", "--best-effort", "--label", label])
+    {
+        warn!("history: {err:#}");
     }
 }
 

@@ -259,6 +259,10 @@ pub struct TrackedSet {
     /// Declarations that could not be honoured, so they are never mistaken
     /// for protection.
     pub invalid: Vec<PathReason>,
+    /// Outside the local scope, the paths `mode = "track-local"` keeps in
+    /// this machine's own history: never this history's to capture, apply,
+    /// or publish (see [`Self::keep_local_out`]).
+    pub local: Vec<PathBuf>,
 }
 
 /// What a walk of the tracked set found.
@@ -293,6 +297,9 @@ pub struct Walk {
     pub warnings: Vec<String>,
     /// Notices that claim selected contents were saved.
     pub capture_warnings: Vec<String>,
+    /// The set's local-only paths, whose saved versions a capture carries
+    /// over unchanged.
+    pub local: Vec<PathBuf>,
 }
 
 impl TrackedSet {
@@ -319,6 +326,7 @@ impl TrackedSet {
             .into_iter()
             .filter(|request| crate::system::files::declaration_is_global(config, request));
         set.add_requests(requests);
+        set.keep_local_out();
         for invalid in crate::system::files::invalid_declarations() {
             if !crate::system::files::tracking_config_is_global(config, &invalid.config) {
                 continue;
@@ -345,6 +353,15 @@ impl TrackedSet {
         let set = self;
         let environments = select::active_environments();
         for request in requests {
+            // a local-only entry belongs to this machine's own history, and
+            // a shared one to the history a setup repository shares: each
+            // scope enrolls only its own (see `super::local`)
+            if request.mode == FileMode::Track && request.policy.local != super::local::active() {
+                if request.enabled && request.policy.local {
+                    set.local.push(normalize_target(&request.target));
+                }
+                continue;
+            }
             if !request.enabled && request.mode == FileMode::Track {
                 set.disabled.push(normalize_target(&request.target));
             }
@@ -471,6 +488,41 @@ impl TrackedSet {
                     set.push(entry);
                 }
                 _ => unreachable!("only explicit tracking requests are enrolled"),
+            }
+        }
+    }
+
+    /// **Nothing local-only is ever this history's.** A path some entry
+    /// keeps in local-only history is dropped where this set would enroll
+    /// it itself (another machine may share that path), and excluded from
+    /// any directory entry that would save it, so no capture, pull, or
+    /// publication reaches it. The exclusion is the entry's own and never
+    /// enters the manifest, so the name of a local path is not published
+    /// either.
+    pub(crate) fn keep_local_out(&mut self) {
+        if self.local.is_empty() {
+            return;
+        }
+        let local = self.local.clone();
+        self.entries.retain(|entry| !local.contains(&entry.path));
+        for entry in &mut self.entries {
+            for path in &local {
+                let Ok(relative) = path.strip_prefix(&entry.path) else {
+                    continue;
+                };
+                if relative.as_os_str().is_empty() {
+                    continue;
+                }
+                // a leading `/` anchors the pattern to the entry, and a
+                // pattern matching a directory skips everything under it
+                let pattern = format!(
+                    "/{}",
+                    glob::Pattern::escape(&relative.to_string_lossy().replace('\\', "/"))
+                );
+                let exclude = entry.exclude.get_or_insert_with(Vec::new);
+                if !exclude.contains(&pattern) {
+                    exclude.push(pattern);
+                }
             }
         }
     }
@@ -724,6 +776,7 @@ impl TrackedSet {
         let home = normalize(&dirs::HOME);
         let mut walk = Walk {
             manifest: set.manifest.clone(),
+            local: set.local.clone(),
             ..Default::default()
         };
         walk.manifest.exclude = set.exclude.clone();
@@ -2493,6 +2546,43 @@ mod tests {
     /// Tracked root for the matcher tests: ancestors stop here.
     const ROOT: &str = "/nonexistent-mise-test";
     use super::*;
+
+    #[test]
+    fn local_only_paths_are_never_this_histories() {
+        let policy = FilePolicy::for_mode(FileMode::Track);
+        let mut set = TrackedSet {
+            entries: vec![
+                TrackedEntry::new("/home/u/.config/app".into(), "track", policy),
+                TrackedEntry::new("/home/u/.mine".into(), "track", policy),
+                TrackedEntry::new("/home/u/.other".into(), "track", policy),
+            ],
+            local: vec![
+                "/home/u/.mine".into(),
+                "/home/u/.config/app/sta[te].json".into(),
+            ],
+            ..Default::default()
+        };
+        set.keep_local_out();
+        let paths: Vec<_> = set.entries.iter().map(|entry| entry.path.clone()).collect();
+        assert_eq!(
+            paths,
+            vec![
+                PathBuf::from("/home/u/.config/app"),
+                "/home/u/.other".into()
+            ]
+        );
+        let app = &set.entries[0];
+        assert_eq!(
+            app.exclude.as_deref(),
+            Some(&["/sta[[]te[]].json".to_string()][..])
+        );
+        assert!(app.is_excluded(Path::new("/home/u/.config/app/sta[te].json")));
+        assert!(!app.is_excluded(Path::new("/home/u/.config/app/state.json")));
+        assert!(set.entries[1].exclude.is_none());
+        // applying it again adds nothing
+        set.keep_local_out();
+        assert_eq!(set.entries[0].exclude.as_ref().map(Vec::len), Some(1));
+    }
 
     #[cfg(unix)]
     #[test]

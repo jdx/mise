@@ -44,6 +44,9 @@ pub(crate) struct DotfilesWatch {
 
 impl DotfilesWatch {
     pub(crate) async fn run(self) -> Result<()> {
+        // local-only history is watched by the same command in the local
+        // scope, for as long as this one runs
+        let _local = LocalWatcher::start(self.once, self.json).await?;
         let code = runtime::run(WatchOptions {
             once: self.once,
             json: self.json,
@@ -53,6 +56,51 @@ impl DotfilesWatch {
             return Err(crate::request_exit(code));
         }
         Ok(())
+    }
+}
+
+/// The watcher of this machine's local-only history, stopped with this one.
+struct LocalWatcher(Option<std::process::Child>);
+
+impl LocalWatcher {
+    async fn start(once: bool, json: bool) -> Result<Self> {
+        if crate::system::history::local::active() {
+            return Ok(Self(None));
+        }
+        let config = crate::config::Config::get().await?;
+        if crate::system::history::tracked::TrackedSet::from_config(&config)?
+            .local
+            .is_empty()
+        {
+            return Ok(Self(None));
+        }
+        let mut args = vec!["dot", "watch"];
+        if once {
+            args.push("--once");
+        }
+        if json {
+            args.push("--json");
+        }
+        let mut command = crate::system::history::local::command(args)?;
+        if once {
+            // one pass each; the local one first, so its output is not
+            // interleaved with this one's
+            let status = command.status()?;
+            if !status.success() {
+                warn!("history: the local-only history watcher failed: {status}");
+            }
+            return Ok(Self(None));
+        }
+        Ok(Self(Some(command.spawn()?)))
+    }
+}
+
+impl Drop for LocalWatcher {
+    fn drop(&mut self) {
+        if let Some(child) = &mut self.0 {
+            let _ = child.kill();
+            let _ = child.wait();
+        }
     }
 }
 

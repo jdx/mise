@@ -6291,7 +6291,7 @@
               },
               "mode": {
                 "type": "string",
-                "description": "how to apply a whole-file source to the target; omitted uses dotfiles.default_mode. \"absent\" removes a file or symlink at the target and takes no source",
+                "description": "how to apply a whole-file source to the target; omitted uses dotfiles.default_mode. \"absent\" removes a file or symlink at the target and takes no source. \"track\" saves the file's history where it is, and \"track-local\" saves it in this machine's local-only history, which is never shared",
                 "anyOf": [
                   {
                     "enum": [
@@ -6299,7 +6299,9 @@
                       "symlink-each",
                       "copy",
                       "template",
-                      "absent"
+                      "absent",
+                      "track",
+                      "track-local"
                     ]
                   },
                   {
@@ -6694,7 +6696,7 @@
                     "required": ["include", "mode"],
                     "properties": {
                       "mode": {
-                        "const": "track"
+                        "enum": ["track", "track-local"]
                       }
                     }
                   },
@@ -6711,7 +6713,7 @@
                     "required": ["allow_plaintext", "mode"],
                     "properties": {
                       "mode": {
-                        "const": "track"
+                        "enum": ["track", "track-local"]
                       }
                     }
                   },

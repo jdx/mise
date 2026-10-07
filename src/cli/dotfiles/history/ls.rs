@@ -35,6 +35,12 @@ pub(crate) struct HistoryLs {
 
 impl HistoryLs {
     pub(crate) async fn run(self) -> Result<()> {
+        // a local-only path's checkpoints are in this machine's own history
+        if let Some(path) = &self.path
+            && crate::cli::dotfiles::route_local(&[std::path::PathBuf::from(path)]).await?
+        {
+            return Ok(());
+        }
         let (store, _tracked, mut entries) = super::open().await?;
         if self.pending {
             // an operation still running, or one that crashed: its record

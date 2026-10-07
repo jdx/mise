@@ -359,8 +359,41 @@ impl HistoryRepo {
         manifest.recipients.dedup();
         let mut result = self.capture_tracked_files(walk, &manifest.recipients, interactive)?;
         result.tree = manifest.preserve_other_files(self, &result.tree)?;
+        result.tree = self.carry_local(walk, &result.tree)?;
         result.tree = manifest.write(self, &result.tree)?;
         Ok(result)
+    }
+
+    /// **A local-only path keeps whatever this history already held for
+    /// it.** It is never captured here, so without this a commit would read
+    /// its absence as a deletion, and publishing it would remove a file
+    /// another machine shares at that path.
+    fn carry_local(&self, walk: &super::tracked::Walk, tree: &str) -> Result<String> {
+        if walk.local.is_empty() {
+            return Ok(tree.to_string());
+        }
+        let Some(head) = self.ref_oid(Self::HISTORY_REF)? else {
+            return Ok(tree.to_string());
+        };
+        let roots = super::sync::layout::Roots::current();
+        let mut overlays = vec![];
+        for path in &walk.local {
+            // the stream of the entry that would otherwise own it
+            let variant = walk
+                .entries
+                .iter()
+                .filter(|entry| path.starts_with(&entry.path))
+                .max_by_key(|entry| entry.path.components().count())
+                .and_then(|entry| entry.variant.as_deref());
+            let Some(branch) = roots.branch_path(path, variant) else {
+                continue;
+            };
+            overlays.push(Overlay {
+                object: self.object_at(&head, &branch)?,
+                path: branch,
+            });
+        }
+        self.compose(tree, &overlays)
     }
 
     fn capture_tracked_files(

@@ -28,6 +28,7 @@ as a monitor layout that should never be applied on another machine.
 ## Flags
 - **`--os <OS>`** — Declare a variant for this platform (macos, linux, linux/arm64, …)
 - **`--profile <PROFILE>`** — Declare a variant for this mise environment
+- **`--local`** — Keep this file's history on this machine only; it is never shared
 - **`--machine`** — Keep a separate stream on every machine, never applied on another
 - **`--no-autosave`** — Save only on `mise dot save <path>`, never automatically
 - **`--encrypt`** — Encrypt contents before saving them to history (requires `[history.encryption].recipients`)
@@ -52,5 +53,5 @@ mise dot track ~/.config/app/state.json --no-autosave
 ## Related documentation
 
 - [Dotfile ownership and modes](/dotfiles.html).
-- [`mise bootstrap dotfiles <SUBCOMMAND>`](/cli/bootstrap/dotfiles.html).
+- [`mise bootstrap dotfiles [--local] <SUBCOMMAND>`](/cli/bootstrap/dotfiles.html).
 - [Global flags and argument syntax](/cli/#global-flags).

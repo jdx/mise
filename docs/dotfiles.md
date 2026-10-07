@@ -1288,6 +1288,51 @@ and cannot be combined with `encrypt`. Upgrade every machine sharing the
 setup before using it: older versions of mise refuse the setup rather
 than apply one machine's version on the others.
 
+### Local-only history {#local-only}
+
+Some files are worth keeping a history of but should never leave this
+machine: application state, a work-only configuration, a credential you
+want to roll back. Track them with `mode = "track-local"`:
+
+```toml
+[dotfiles]
+"~/.config/app/state.json" = { mode = "track-local" }
+```
+
+Or run `mise dot track --local ~/.config/app/state.json`.
+
+Their versions are saved in this machine's own history, under
+`$MISE_STATE_DIR/history-local`, which no origin ever reaches: neither their
+contents nor their declarations enter the shared history, its enrollment
+metadata, or a push. They are saved, browsed, and restored like any tracked
+file:
+
+```sh
+mise dot save                          # saves both histories
+mise dot history --path ~/.config/app/state.json
+mise dot rollback ~/.config/app/state.json
+mise dot --local history               # list the local-only checkpoints
+mise dot --local undo                  # undo the latest local-only rollback
+```
+
+Commands that name a path go to the history that keeps it; one command
+cannot name paths of both. `mise dot --local` selects the local-only history
+for commands without a path. `mise dot capture` saves a labeled checkpoint
+there before and after the command, and the history watcher watches both.
+
+A local-only path may lie inside a tracked directory, such as
+`~/.config/app/state.json` inside a shared `~/.config/app`: the shared
+history then leaves that file out. Versions already saved in the shared
+history before the path became local stay there, as with
+[untracking](#stop-tracking-a-file). If another machine shares the same
+path, this machine neither applies its versions nor publishes its own.
+
+`track-local` takes no `encrypt` or `variants`, since its history never
+leaves the machine. Credential-named files are still left out unless the
+entry sets `allow_plaintext = true`. Older versions of mise skip a
+`track-local` entry as an unknown mode, so it never falls back to shared
+tracking.
+
 ### Tracking files that mise also manages {#ownership}
 
 You can save the history of a file that mise copies, links, templates, or

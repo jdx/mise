@@ -80,6 +80,17 @@ impl FileManifest {
     }
 }
 
+/// The mode of a track entry saved only in this machine's own history.
+pub const TRACK_LOCAL: &str = "track-local";
+
+/// Whether a raw `[dotfiles]` value declares tracking, shared or local.
+fn is_track_value(value: &toml::Value) -> bool {
+    matches!(
+        value.get("mode").and_then(toml::Value::as_str),
+        Some("track" | TRACK_LOCAL)
+    )
+}
+
 impl FileMode {
     pub fn parse(s: &str) -> Option<Self> {
         match s {
@@ -163,6 +174,10 @@ pub struct FilePolicy {
     pub encrypt: bool,
     #[serde(default)]
     pub allow_plaintext: bool,
+    /// `mode = "track-local"`: saved in this machine's own history, which
+    /// is never shared, instead of the history a setup repository shares.
+    #[serde(default)]
+    pub local: bool,
     /// Which fields the declaration wrote, so a later layer repeating it
     /// overrides only what it says and inherits the rest.
     pub explicit: ExplicitFields,
@@ -189,6 +204,7 @@ impl FilePolicy {
             autosave: true,
             encrypt: false,
             allow_plaintext: false,
+            local: false,
             explicit: ExplicitFields::default(),
         }
     }
@@ -459,6 +475,11 @@ impl FileRequest {
         if explicit.variants {
             self.variants = later.variants;
         }
+        // **Local stays local.** A layer that declares the path shared again
+        // must say so by removing the local declaration, never by repeating
+        // the entry: a file someone kept out of shared history is not
+        // published because another layer mentions it.
+        self.policy.local |= later.policy.local;
         if explicit.exclude {
             self.exclude = later.exclude;
         }
@@ -1049,6 +1070,7 @@ pub(crate) fn validate_incoming_files(config_files: &ConfigMap) -> Result<()> {
                     );
                 }
                 let mode = match mode.as_deref() {
+                    Some(TRACK_LOCAL) => FileMode::Track,
                     Some(value) => FileMode::parse(value).ok_or_else(|| {
                         eyre::eyre!("unknown dotfile mode {value:?} for {target}")
                     })?,
@@ -1237,7 +1259,7 @@ fn files_from_config_files_with_tracking_roots(
         };
         if let Some(dotfiles) = cf.dotfiles_config() {
             for (key, value) in dotfiles.0 {
-                if value.get("mode").and_then(toml::Value::as_str) == Some("track") {
+                if is_track_value(&value) {
                     continue;
                 }
                 let mut requests = IndexMap::new();
@@ -1272,7 +1294,7 @@ fn files_from_config_files_with_tracking_roots(
             continue;
         };
         for (target_raw, value) in dotfiles.0 {
-            if value.get("mode").and_then(toml::Value::as_str) != Some("track")
+            if !is_track_value(&value)
                 && destination_declarations
                     .get(&resolve_target_arg(&target_raw))
                     .is_some_and(|(winner, has_override)| *has_override && *winner != path)
@@ -1280,7 +1302,7 @@ fn files_from_config_files_with_tracking_roots(
                 continue;
             }
             if tracking_roots.is_some_and(|roots| !track_layer_allowed(&origin, roots))
-                && value.get("mode").and_then(toml::Value::as_str) == Some("track")
+                && is_track_value(&value)
             {
                 record_ignored(
                     &target_raw,
@@ -1511,6 +1533,23 @@ fn merge_file_entry(
             group,
         ),
     };
+    // `mode = "track-local"` is `track` saved in this machine's own history.
+    // It is a mode rather than a flag so that a mise that predates it skips
+    // the entry as an unknown mode instead of tracking the file as shared.
+    let local = mode.as_deref() == Some(TRACK_LOCAL);
+    let mode = if local {
+        Some("track".to_string())
+    } else {
+        mode
+    };
+    if local && (encrypt.is_some() || variants.is_some()) {
+        record_invalid(
+            &target_raw,
+            &origin.config,
+            "mode = \"track-local\" never leaves this machine and takes no encrypt or variants",
+        );
+        return;
+    }
     // `{ permissions = "0600" }` alone manages only an existing target's
     // permissions; it never implies a source under dotfiles.root
     let permissions_only =
@@ -1571,6 +1610,7 @@ fn merge_file_entry(
             autosave: autosave.unwrap_or(defaults.autosave),
             encrypt: encrypt.unwrap_or(false),
             allow_plaintext: allow_plaintext.unwrap_or(false),
+            local,
             explicit,
         }
     };
@@ -8324,6 +8364,60 @@ source = "oldrc""#,
         assert!(merge("content = \"x\"\nremove_empty = true").is_empty());
         assert!(merge("permissions = \"0600\"\nremove_empty = true").is_empty());
         assert!(merge("mode = \"absent\"\nremove_empty = true").is_empty());
+        Ok(())
+    }
+
+    #[test]
+    fn track_local_is_tracking_kept_on_this_machine() -> Result<()> {
+        use crate::config::config_file::mise_toml::MiseToml;
+        use std::sync::Arc;
+
+        let origin = ResourceOrigin {
+            config: PathBuf::from("/mise.toml"),
+            config_root: PathBuf::from("/"),
+            environment: vec![],
+            source: None,
+        };
+        let merge = |entry: &str| {
+            let entry: FileTomlEntry = toml::from_str(entry).unwrap();
+            let mut merged = IndexMap::new();
+            merge_file_entry(
+                "~/.track-local-test".into(),
+                entry,
+                Path::new("/"),
+                &origin,
+                &mut merged,
+            );
+            merged.into_values().collect::<Vec<_>>()
+        };
+        let local = merge("mode = \"track-local\"");
+        assert_eq!(local[0].mode, FileMode::Track);
+        assert!(local[0].policy.local);
+        assert!(!merge("mode = \"track\"")[0].policy.local);
+        assert!(
+            merge("mode = \"track-local\"\nallow_plaintext = true")[0]
+                .policy
+                .local
+        );
+        // it never leaves this machine, so it takes nothing about sharing
+        assert!(merge("mode = \"track-local\"\nencrypt = true").is_empty());
+        assert!(merge("mode = \"track-local\"\nvariants = [{ machine = true }]").is_empty());
+
+        // a later layer repeating the entry keeps it local
+        let mut earlier = local[0].clone();
+        earlier.override_from(merge("mode = \"track\"\nautosave = false").remove(0));
+        assert!(earlier.policy.local);
+        assert!(!earlier.policy.autosave);
+
+        // and incoming configuration accepts it
+        let path = dirs::HOME.join(".config/mise/config.toml");
+        let body = "[dotfiles]\n\"~/.track-local-test\" = { mode = \"track-local\" }\n";
+        let mut configs = ConfigMap::new();
+        configs.insert(
+            path.clone(),
+            Arc::new(MiseToml::for_history_preflight(body, &path)?),
+        );
+        validate_incoming_files(&configs)?;
         Ok(())
     }
 

@@ -714,6 +714,7 @@ reconciles declared project state; `status` inspects the existing projects.
         }
     }
     cmd dotfiles subcommand_required=#true help="Manage dotfiles from `[dotfiles]`" effect=read {
+        flag --local help="Work on this machine's local-only history (`mode = \"track-local\"`), which is never shared"
         flag "-h --help" help="Print help" action=help builtin=#true
         cmd add help="Add or update dotfiles in `[dotfiles]`" effect=write {
             long_help #"""
@@ -1221,6 +1222,7 @@ as a monitor layout that should never be applied on another machine.
             flag --profile help="Declare a variant for this mise environment" {
                 arg <PROFILE>
             }
+            flag --local help="Keep this file's history on this machine only; it is never shared"
             flag --machine help="Keep a separate stream on every machine, never applied on another"
             flag --no-autosave help="Save only on `mise dot save <path>`, never automatically"
             flag --encrypt help="Encrypt contents before saving them to history (requires `[history.encryption].recipients`)"
@@ -2526,6 +2528,7 @@ for direnv to consume.
 }
 cmd dotfiles subcommand_required=#true help="Manage dotfiles from `[dotfiles]`" effect=read {
     alias dot
+    flag --local help="Work on this machine's local-only history (`mode = \"track-local\"`), which is never shared"
     flag "-h --help" help="Print help" action=help builtin=#true
     cmd add help="Add or update dotfiles in `[dotfiles]`" effect=write {
         long_help #"""
@@ -3033,6 +3036,7 @@ as a monitor layout that should never be applied on another machine.
         flag --profile help="Declare a variant for this mise environment" {
             arg <PROFILE>
         }
+        flag --local help="Keep this file's history on this machine only; it is never shared"
         flag --machine help="Keep a separate stream on every machine, never applied on another"
         flag --no-autosave help="Save only on `mise dot save <path>`, never automatically"
         flag --encrypt help="Encrypt contents before saving them to history (requires `[history.encryption].recipients`)"

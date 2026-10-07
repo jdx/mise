@@ -862,7 +862,8 @@ mise dot untrack ~/.zshrc
 
 The local file stays in place. Future checkpoints leave it out, but
 previously committed versions remain in Git and can still be shared.
-There is no per-file local-only history setting.
+To keep a file's history without ever sharing it, track it with
+[`mode = "track-local"`](/dotfiles.html#local-only) instead.
 
 ## Encrypted shared files
 

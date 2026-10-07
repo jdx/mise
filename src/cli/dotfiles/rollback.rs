@@ -41,6 +41,9 @@ pub(crate) struct DotfilesRollback {
 
 impl DotfilesRollback {
     pub(crate) async fn run(self) -> Result<()> {
+        if super::route_local(&self.paths).await? {
+            return Ok(());
+        }
         replay::rollback(RollbackRequest {
             paths: self.paths,
             to: self.to,
