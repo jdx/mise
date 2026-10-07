@@ -1797,6 +1797,21 @@ mod tests {
         assert!(req.op.is_template());
     }
 
+    /// an absolute path outside $HOME on every platform
+    const OUTSIDE_HOME: &str = if cfg!(windows) {
+        "C:/outside"
+    } else {
+        "/outside"
+    };
+
+    #[test]
+    fn an_omitted_merge_source_needs_a_target_under_home() {
+        let err = resolve(&format!("{OUTSIDE_HOME}/config.toml"), "merge = true")
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("source is required"), "{err}");
+    }
+
     #[test]
     fn invalid_merge_entries_are_refused() {
         for (path, entry, reason) in [
@@ -1810,7 +1825,6 @@ mod tests {
                 "source = \"s\"\nmerge = false",
                 "must be true",
             ),
-            ("/outside/config.toml", "merge = true", "source is required"),
             (
                 "~/a/config.toml",
                 "block = \"x\"\nmerge = true",
@@ -1862,11 +1876,6 @@ mod tests {
                 ".json, .toml",
             ),
             (
-                "/outside/settings.json/shared",
-                "merge = true",
-                "source is required",
-            ),
-            (
                 "~/a/settings.json/shared",
                 "source = \"s\"\nmerge = false",
                 "must be true",
@@ -1875,6 +1884,13 @@ mod tests {
             let err = check(key, entry).unwrap_err().to_string();
             assert!(err.contains(reason), "{entry}: {err}");
         }
+        let err = check(
+            &format!("{OUTSIDE_HOME}/settings.json/shared"),
+            "merge = true",
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(err.contains("source is required"), "{err}");
     }
 
     #[test]

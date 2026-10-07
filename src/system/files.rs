@@ -7842,7 +7842,15 @@ source = "oldrc""#,
         }
         // an omitted source is inferred, which only works under $HOME
         assert!(
-            incoming("[dotfiles]\n\"/outside/settings.json/shared\" = { merge = true }\n").is_err()
+            incoming(&format!(
+                "[dotfiles]\n\"{}/settings.json/shared\" = {{ merge = true }}\n",
+                if cfg!(windows) {
+                    "C:/outside"
+                } else {
+                    "/outside"
+                }
+            ))
+            .is_err()
         );
         assert!(
             incoming("[dotfiles]\n\"~/a/notes.txt/shared\" = { source = \"s\", merge = true }\n")
