@@ -3934,6 +3934,13 @@ pub fn load_command_wrappers<'a>(
 /// Expands a `[plugins]` value to a URL, keeping any `#ref` outside the
 /// expansion so `owner/repo#v1` doesn't become `…/repo#v1.git`.
 fn plugin_entry_to_url(entry: &str) -> String {
+    // A `git::` source names its repository, subdirectory and ref itself. Read
+    // as a shorthand it would become `https://github.com/:ssh://….git`, which
+    // the drift check compares against the installed origin and `--force`
+    // installs from.
+    if RemoteSource::parse_git(entry).is_some() {
+        return entry.to_string();
+    }
     match entry.split_once('#') {
         Some((source, git_ref)) => format!("{}#{git_ref}", registry::full_to_url(source)),
         None => registry::full_to_url(entry),
@@ -7096,6 +7103,13 @@ mod tests {
             plugin_entry_to_url("https://example.com/repo.git#main"),
             "https://example.com/repo.git#main"
         );
+        for entry in [
+            "git::ssh://git@example.com:7999/org/repo.git//plugin?ref=v1.2.0",
+            "git::https://example.com/org/repo.git//plugin?ref=v1.2.0",
+            "git::https://example.com/org/repo.git//plugin",
+        ] {
+            assert_eq!(plugin_entry_to_url(entry), entry);
+        }
     }
 
     #[test]

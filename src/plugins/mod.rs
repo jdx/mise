@@ -526,6 +526,11 @@ pub(crate) fn install_git_plugin_source(
             ));
         }
         pr.set_message(format!("link {}", file::display_path(plugin_path)));
+        // The clone went to plugin-repos/, so nothing has created plugins/ yet
+        // on a data dir that never held a plugin.
+        if let Some(parent) = plugin_path.parent() {
+            file::create_dir_all(parent)?;
+        }
         file::make_symlink(&subdir_path, plugin_path)?;
         Ok(Git::new(plugin_path))
     } else {
@@ -872,6 +877,39 @@ mod tests {
 
         assert!(validate_local_plugin_source(&plugins_dir, &plugin_path).is_err());
         assert!(validate_local_plugin_source(&new_source, &plugin_path).is_ok());
+    }
+
+    #[test]
+    fn test_install_git_plugin_source_subdir_creates_the_plugins_dir() {
+        let temp = tempfile::tempdir().unwrap();
+        let repo = temp.path().join("repo");
+        fs::create_dir_all(repo.join("plugin")).unwrap();
+        fs::write(repo.join("plugin/metadata.lua"), "PLUGIN = {}\n").unwrap();
+        let git = |args: &[&str]| {
+            let status = std::process::Command::new("git")
+                .arg("-C")
+                .arg(&repo)
+                .args(["-c", "user.email=t@t", "-c", "user.name=t"])
+                .args(args)
+                .status()
+                .unwrap();
+            assert!(status.success(), "git {args:?}");
+        };
+        git(&["-c", "init.defaultBranch=main", "init", "-q"]);
+        git(&["add", "."]);
+        git(&["commit", "-q", "-m", "v1"]);
+
+        // A data dir that never held a plugin: plugins/ does not exist yet.
+        let name = "test-subdir-plugins-dir";
+        let plugin_path = temp.path().join("plugins").join(name);
+        let _ = file::remove_all(git_plugin_repo_path(name));
+        let pr = crate::ui::progress_report::QuietReport::new();
+        let url = format!("file://{}", repo.display());
+        let result = install_git_plugin_source(name, &plugin_path, &url, None, Some("plugin"), &pr);
+        let linked = plugin_path.join("metadata.lua").is_file();
+        let _ = file::remove_all(git_plugin_repo_path(name));
+        result.unwrap();
+        assert!(linked, "plugins/{name} links to the plugin subdirectory");
     }
 
     #[test]
