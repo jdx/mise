@@ -62,9 +62,20 @@ fn git_requirement(name: &str, version: &str) -> String {
         _ => version,
     };
     if version == "latest" {
+        // npm resolves a bare `gitlab:`/`bitbucket:` shorthand to `master`, so
+        // spell out the URL to get the remote's default branch.
+        for (shorthand, host) in [("gitlab:", "gitlab.com"), ("bitbucket:", "bitbucket.org")] {
+            if let Some(repo) = name.strip_prefix(shorthand)
+                && !repo.contains('#')
+            {
+                let repo = repo.strip_suffix(".git").unwrap_or(repo);
+                return format!("git+https://{host}/{repo}.git");
+            }
+        }
         name.to_string()
     } else {
-        format!("{name}#{version}")
+        let base = name.split('#').next().unwrap_or(name);
+        format!("{base}#{version}")
     }
 }
 
@@ -949,6 +960,12 @@ impl NPMBackend {
         options: &NpmOptions<'_>,
     ) -> Result<String> {
         if is_git_spec(&self.tool_name()) {
+            if options.checksum().is_some() {
+                eyre::bail!(
+                    "the checksum option is not supported for git sources: npm:{}",
+                    self.tool_name()
+                );
+            }
             return Ok(git_requirement(&self.tool_name(), &tv.version));
         }
         let Some(checksum) = options.checksum() else {
@@ -2460,6 +2477,12 @@ mod tests {
         assert_eq!(git_alias("git+ssh://git@github.com/o/r.git#main"), "r");
         assert_eq!(git_alias("github:o/r"), "r");
         assert_eq!(git_alias("git+https://github.com/o/r.git/"), "r");
+        assert_eq!(git_requirement("github:o/r#main", "v1"), "github:o/r#v1");
+        assert_eq!(
+            git_requirement("gitlab:o/r", "latest"),
+            "git+https://gitlab.com/o/r.git"
+        );
+        assert_eq!(git_requirement("gitlab:o/r", "v1"), "gitlab:o/r#v1");
         assert_eq!(
             git_requirement("github:o/r", "branch:feature/foo"),
             "github:o/r#feature/foo"
