@@ -606,7 +606,14 @@ fn same_inode(a: &Path, b: &Path) -> bool {
 /// re-enters mise, and runs `npm view` again for every `latest` npm tool (#14068). Skip
 /// any candidate that is this mise binary. When that was the only npm, fail instead of
 /// spawning it; when there is no npm at all, keep the bare name and today's error.
+#[cfg(unix)]
 fn npm_view_program(env: &BTreeMap<String, String>) -> eyre::Result<OsString> {
+    npm_view_program_in(env, &std::env::current_dir()?)
+}
+
+/// `npm_view_program` with an explicit directory for relative and empty PATH entries.
+#[cfg(unix)]
+fn npm_view_program_in(env: &BTreeMap<String, String>, cwd: &Path) -> eyre::Result<OsString> {
     let Some(path) = env.get(&*crate::env::PATH_KEY) else {
         return Ok(OsString::from("npm"));
     };
@@ -618,9 +625,9 @@ fn npm_view_program(env: &BTreeMap<String, String>) -> eyre::Result<OsString> {
         // An empty PATH entry means the current directory. Returning a relative candidate
         // would make the child search PATH again and find the shim skipped here.
         let dir = if dir.as_os_str().is_empty() {
-            std::env::current_dir()?
+            cwd.to_path_buf()
         } else if dir.is_relative() {
-            std::env::current_dir()?.join(dir)
+            cwd.join(dir)
         } else {
             dir
         };
@@ -1542,11 +1549,10 @@ impl NPMBackend {
     ) -> eyre::Result<String> {
         let prefix = Self::npm_meta_prefix()?;
         let env = self.dependency_env(config).await?;
-        let npm = if cfg!(windows) {
-            self.spawn_program(config, None, "npm").await
-        } else {
-            npm_view_program(&env)?
-        };
+        #[cfg(windows)]
+        let npm = self.spawn_program(config, None, "npm").await;
+        #[cfg(not(windows))]
+        let npm = npm_view_program(&env)?;
         CmdLineRunner::new(npm)
             .arg("view")
             .arg(package)
@@ -2806,13 +2812,15 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn npm_view_program_returns_an_absolute_path_for_an_empty_entry() {
+    fn npm_view_program_resolves_an_empty_entry_to_an_absolute_path() {
         let shims = tempfile::tempdir().unwrap();
+        let cwd = tempfile::tempdir().unwrap();
         fake_mise_shim(shims.path());
+        let npm = real_npm(cwd.path());
         let env = npm_view_env(&[shims.path(), Path::new("")]);
-        // The current directory has no npm, so only the shim is found.
-        let err = npm_view_program(&env).unwrap_err().to_string();
-        assert!(err.contains("only npm on PATH is a mise shim"), "{err}");
+        let program = npm_view_program_in(&env, cwd.path()).unwrap();
+        assert_eq!(program, npm.into_os_string());
+        assert!(Path::new(&program).is_absolute());
     }
 
     #[cfg(unix)]

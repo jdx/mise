@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# e2e:non-root
 # Regression test for https://github.com/jdx/mise/issues/14068.
 #
 # `dependency_env` strips mise's own shims dirs (`dirs::SHIMS`, #8475, and the
