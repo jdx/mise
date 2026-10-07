@@ -566,10 +566,13 @@ fn merge_op(
     // dotfiles.root
     let source = match &entry.source {
         Some(source) => source.clone(),
-        None => crate::system::files::implied_source(path)
-            .map_err(|err| eyre::eyre!("\"{path_raw}\".{id}: {err}, ignoring entry"))?
-            .to_string_lossy()
-            .into_owned(),
+        // normalized first, so `~/../x` is not taken for a target under $HOME
+        None => crate::system::files::implied_source(&crate::system::files::resolve_target_arg(
+            path_raw,
+        ))
+        .map_err(|err| eyre::eyre!("\"{path_raw}\".{id}: {err}, ignoring entry"))?
+        .to_string_lossy()
+        .into_owned(),
     };
     let Some(format) = Format::from_path(path) else {
         bail!(
@@ -1685,6 +1688,12 @@ fn apply_one(req: &EditRequest, desired: Option<&str>, written: &mut Vec<PathBuf
             perms.set_mode(perms.mode() | 0o200);
             std::fs::set_permissions(tmp.path(), perms)?;
         }
+        #[cfg(not(unix))]
+        {
+            let mut perms = std::fs::metadata(tmp.path())?.permissions();
+            perms.set_readonly(false);
+            std::fs::set_permissions(tmp.path(), perms)?;
+        }
         tmp.persist(&req.path)
             .map_err(|err| err.error)
             .wrap_err_with(|| format!("failed to replace symlink: {}", req.path.display_user()))?;
@@ -1894,6 +1903,11 @@ mod tests {
     #[test]
     fn an_omitted_merge_source_needs_a_target_under_home() {
         let err = resolve(&format!("{OUTSIDE_HOME}/config.toml"), "merge = true")
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("source is required"), "{err}");
+        // `..` cannot walk a target out of $HOME and still pass for one inside it
+        let err = resolve("~/../outside/config.toml", "merge = true")
             .unwrap_err()
             .to_string();
         assert!(err.contains("source is required"), "{err}");
