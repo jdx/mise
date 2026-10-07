@@ -63,6 +63,7 @@ fn git_requirement(name: &str, version: &str) -> String {
             if let Some(repo) = name.strip_prefix(shorthand)
                 && !repo.contains('#')
             {
+                let repo = repo.trim_end_matches('/');
                 let repo = repo.strip_suffix(".git").unwrap_or(repo);
                 return format!("git+https://{host}/{repo}.git");
             }
@@ -2484,6 +2485,10 @@ mod tests {
             "git+https://gitlab.com/o/r.git"
         );
         assert_eq!(git_requirement("gitlab:o/r", "v1"), "gitlab:o/r#v1");
+        assert_eq!(
+            git_requirement("gitlab:o/r.git/", "latest"),
+            "git+https://gitlab.com/o/r.git"
+        );
         assert_eq!(
             git_requirement("github:o/r", "tag:latest"),
             "github:o/r#latest"
