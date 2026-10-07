@@ -183,7 +183,12 @@ mod status_read_tests {
 #[derive(Debug, Default)]
 pub struct SyncOutcome {
     pub published: Option<String>,
+    /// Incoming changes waiting for `mise dot pull`, counting the
+    /// repository's own changes as one.
     pub pending: usize,
+    /// Of those, the repository changed in a way that writes no file here:
+    /// another machine's own versions, or enrollment.
+    pub pending_repository: bool,
     pub conflicts: usize,
     pub fetched_upstream: Option<String>,
 }
@@ -440,6 +445,7 @@ pub(crate) fn sync_locked(
         record_pending(&mut status, &plans, &Roots::current(), &shared.objects());
         outcome.pending =
             status.pending_applications.len() + usize::from(status.pending_repository);
+        outcome.pending_repository = status.pending_repository;
         outcome.conflicts = status.conflicts.len();
         status.last_error = None;
         status.failing_since = None;
