@@ -33,10 +33,12 @@ use std::{
 use tokio::sync::OnceCell;
 
 pub use install_options::InstallOptions;
+pub use running::RunningProcess;
 pub use tool_deps::ensure_compatible_install_requests;
 pub use tool_request::ToolRequest;
 pub use tool_request_set::{
-    ToolRequestSet, ToolRequestSetBuilder, tool_env_var_name, tool_env_vars, tool_from_env_var_name,
+    ToolRequestSet, ToolRequestSetBuilder, apply_config_options_to_runtime_arg, tool_env_var_name,
+    tool_env_vars, tool_from_env_var_name,
 };
 pub use tool_source::ToolSource;
 pub use tool_version::resolve_sub_base;
@@ -54,6 +56,7 @@ mod helpers;
 mod install_options;
 pub mod install_state;
 pub mod outdated_info;
+mod running;
 mod tool_deps;
 pub(crate) mod tool_request;
 mod tool_request_set;
@@ -301,8 +304,17 @@ impl Toolset {
         let mut versions = vec![];
         for b in self.list_backends_for_installed_version_listing() {
             for v in b.list_installed_versions() {
+                // A configured version stands for the listed one only when it is that
+                // very installation: with the identity layout the same version name can
+                // be an installation the configuration no longer asks for (another
+                // backend or options).
+                let same_installation = |tv: &ToolVersion| {
+                    crate::install_layout::resolver::physical_dir(b.ba(), &v)
+                        .is_none_or(|dir| tv.install_path() == dir)
+                };
                 if let Some((p, tv)) =
                     current_versions.get(&(b.ba().installs_path().to_path_buf(), v.clone()))
+                    && same_installation(tv)
                 {
                     versions.push((p.clone(), tv.clone()));
                 } else {
@@ -320,10 +332,37 @@ impl Toolset {
                             // must match `tv.request.version()` to stay consistent
                             // with the old `.resolve()` path.
                             let version = req.version();
-                            versions.push((b.clone(), ToolVersion::new(req, version)));
+                            let mut tv = ToolVersion::new(req, version);
+                            // The name came from a version link or a receipt, so the
+                            // installation it stands for is known exactly; it cannot
+                            // be recomputed from the request, which carries no options.
+                            tv.install_path =
+                                crate::install_layout::resolver::physical_dir(b.ba(), &v);
+                            versions.push((b.clone(), tv));
                         }
                         Err(e) => warn!("Error listing {}@{}: {:#}", b.id(), v, e),
                     }
+                }
+            }
+            // Variants of one version (different install options) share a version
+            // name and at most one of them has the version link, so they are listed
+            // from their receipts. Everything that removes or retains installs works
+            // from this inventory.
+            for (name, dir) in crate::install_layout::resolver::installs_of(b.ba()) {
+                let covered = versions
+                    .iter()
+                    .any(|(vb, tv)| vb.ba() == b.ba() && tv.install_path() == dir);
+                if covered {
+                    continue;
+                }
+                match ToolRequest::new(b.ba().clone(), &name, ToolSource::Unknown) {
+                    Ok(req) => {
+                        let version = req.version();
+                        let mut tv = ToolVersion::new(req, version);
+                        tv.install_path = Some(dir);
+                        versions.push((b.clone(), tv));
+                    }
+                    Err(e) => warn!("Error listing {}@{}: {:#}", b.id(), name, e),
                 }
             }
         }
@@ -394,7 +433,14 @@ impl Toolset {
             .list_current_versions()
             .into_iter()
             .chain(self.list_installed_versions(config).await?)
-            .unique_by(|(ba, tv)| (ba.clone(), tv.tv_pathname().to_string()))
+            // Variants of one version are separate installations.
+            .unique_by(|(ba, tv)| {
+                (
+                    ba.clone(),
+                    tv.tv_pathname().to_string(),
+                    crate::install_layout::resolver::dir_name_of(&tv.install_path()),
+                )
+            })
             .collect();
         Ok(versions)
     }
@@ -860,6 +906,19 @@ impl From<ToolRequestSet> for Toolset {
 /// leaves nothing to point at (discussion #9045).
 pub type NeededVersions = HashMap<(String, String), BTreeSet<PathBuf>>;
 
+/// The key a tool version is retained or pruned by.
+///
+/// A legacy install is `(short, version)`. An identity-layout installation is
+/// keyed by its directory alone, with an empty tool name, so that a request
+/// spelled `age` and one spelled `aqua:FiloSottile/age` protect the same
+/// installation, and two variants of one version are two keys.
+pub fn needed_key(tv: &ToolVersion) -> (String, String) {
+    match crate::install_layout::resolver::dir_name_of(&tv.install_path()) {
+        Some(dir) => (String::new(), dir),
+        None => (tv.ba().short.to_string(), tv.tv_pathname()),
+    }
+}
+
 /// Get all tool versions that are needed by tracked config files.
 /// This is used by both `mise prune` and `mise upgrade` to avoid
 /// uninstalling versions that other projects still need.
@@ -910,6 +969,32 @@ pub async fn get_versions_needed_by_tracked_configs_excluding_locks(
                                 .entry((short.clone(), version.clone()))
                                 .or_default()
                                 .insert(lockfile_path.clone());
+                            // Identity-layout installations the entry names: those of its
+                            // backend and version, narrowed to the pinned artifact when the
+                            // entry carries a checksum for this platform.
+                            let backend_name = tool
+                                .backend
+                                .clone()
+                                .unwrap_or_else(|| BackendArg::from(short).full_without_opts());
+                            let backend_name =
+                                backend::canonical_backend_full(&backend_name).into_owned();
+                            let pinned = tool
+                                .platforms
+                                .get(&crate::platform::Platform::current().to_key())
+                                .and_then(|p| p.checksum.clone());
+                            for (dir, checksum) in
+                                crate::install_layout::resolver::installs_matching(
+                                    &backend_name,
+                                    &tool.version,
+                                )
+                            {
+                                if pinned.is_none() || checksum == pinned {
+                                    needed
+                                        .entry((String::new(), dir))
+                                        .or_default()
+                                        .insert(lockfile_path.clone());
+                                }
+                            }
                             if let Some(backend) = &tool.backend {
                                 needed
                                     .entry((backend.clone(), version))
@@ -990,17 +1075,29 @@ pub async fn prunable_tools(
     config: &Arc<Config>,
     tools: Vec<&BackendArg>,
 ) -> Result<Vec<(Arc<dyn Backend>, ToolVersion)>> {
-    Ok(prunable_tools_with_sources(config, tools).await?.0)
+    Ok(prunable_tools_with_sources(config, tools).await?.to_delete)
 }
 
-/// Like [`prunable_tools`], but also returns what the tracked configs and stubs
-/// still need. Pruning removes what none of them named, so the versions that
-/// were kept — and the files that kept them — are the only evidence available
-/// for explaining a removal.
+/// The outcome of deciding which installed versions are unused.
+pub struct PrunableTools {
+    /// Versions that nothing tracked or running needs.
+    pub to_delete: Vec<(Arc<dyn Backend>, ToolVersion)>,
+    /// What the tracked configs and stubs still need, and the files that need it.
+    pub needed: NeededVersions,
+    /// Versions no tracked config or stub needs, kept because processes are
+    /// still running from them.
+    pub running: Vec<(ToolVersion, Vec<RunningProcess>)>,
+}
+
+/// Like [`prunable_tools`], but also returns why the other versions are kept:
+/// what the tracked configs and stubs still need, and which versions running
+/// processes hold. Pruning removes what none of them named, so the versions
+/// that were kept — and what kept them — are the only evidence available for
+/// explaining a removal.
 pub async fn prunable_tools_with_sources(
     config: &Arc<Config>,
     tools: Vec<&BackendArg>,
-) -> Result<(Vec<(Arc<dyn Backend>, ToolVersion)>, NeededVersions)> {
+) -> Result<PrunableTools> {
     let ts = ToolsetBuilder::new().build(config).await?;
     let mut to_delete = ts
         .list_installed_versions(config)
@@ -1012,12 +1109,15 @@ pub async fn prunable_tools_with_sources(
             crate::env::install_path_category(&tv.install_path())
                 == crate::env::InstallPathCategory::Local
         })
-        .map(|(p, tv)| ((tv.ba().short.to_string(), tv.tv_pathname()), (p, tv)))
+        .map(|(p, tv)| (needed_key(&tv), (p, tv)))
         .collect::<BTreeMap<(String, String), (Arc<dyn Backend>, ToolVersion)>>();
 
     if !tools.is_empty() {
         to_delete.retain(|_, (_, tv)| tools.contains(&tv.ba()));
     }
+
+    // Tools the user excluded from pruning are never candidates.
+    to_delete.retain(|_, (_, tv)| !is_excluded_from_pruning(tv.ba()));
 
     // Remove versions that are still needed by tracked configs
     let mut needed = get_versions_needed_by_tracked_configs(config, true, true).await?;
@@ -1031,7 +1131,24 @@ pub async fn prunable_tools_with_sources(
         to_delete.remove(key);
     }
 
-    Ok((to_delete.into_values().collect(), needed))
+    // A process started before its version stopped being needed may still be
+    // running from it. Removing the version would delete files from under it.
+    let candidates = to_delete.values().map(|(_, tv)| tv).collect::<Vec<_>>();
+    let mut processes = running::processes_running_from(&candidates);
+    let mut running = vec![];
+    to_delete.retain(|_, (_, tv)| match processes.remove(&tv.install_path()) {
+        Some(procs) => {
+            running.push((tv.clone(), procs));
+            false
+        }
+        None => true,
+    });
+
+    Ok(PrunableTools {
+        to_delete: to_delete.into_values().collect(),
+        needed,
+        running,
+    })
 }
 
 async fn is_version_satisfied(
@@ -1049,6 +1166,19 @@ async fn is_version_satisfied(
     }
 }
 
+/// Whether `ba` is one of the tools named in `prune.exclude`.
+pub fn is_excluded_from_pruning(ba: &BackendArg) -> bool {
+    is_named_in(&Settings::get().prune.exclude, ba)
+}
+
+/// A short name and its full backend name are the same tool.
+fn is_named_in(names: &std::collections::BTreeSet<String>, ba: &BackendArg) -> bool {
+    names.iter().any(|name| {
+        let named = BackendArg::from(name.as_str());
+        named == *ba || named.full_without_opts() == ba.full_without_opts()
+    })
+}
+
 fn collect_needed_versions(
     ts: &Toolset,
     offline: bool,
@@ -1057,7 +1187,7 @@ fn collect_needed_versions(
 ) {
     for (_, tv) in ts.list_current_versions() {
         needed
-            .entry((tv.ba().short.to_string(), tv.tv_pathname()))
+            .entry(needed_key(&tv))
             .or_default()
             .insert(source.to_path_buf());
         // Offline can't resolve `sub-N:latest` to a concrete version
@@ -1076,6 +1206,15 @@ fn collect_needed_versions(
                     .or_default()
                     .insert(source.to_path_buf());
             }
+            // Every identity-layout installation of the tool, every variant.
+            for (_, dir) in crate::install_layout::resolver::installs_of(tv.ba()) {
+                if let Some(dir) = crate::install_layout::resolver::dir_name_of(&dir) {
+                    needed
+                        .entry((String::new(), dir))
+                        .or_default()
+                        .insert(source.to_path_buf());
+                }
+            }
         }
     }
 }
@@ -1086,6 +1225,36 @@ mod tests {
     use crate::args::BackendArg;
     use crate::backend::arg_to_backend;
     use crate::toolset::{ToolRequest, ToolSource, ToolVersion};
+
+    #[test]
+    fn test_prune_exclude_matches_short_and_full_names() {
+        let names = ["node", "aqua:BurntSushi/ripgrep"]
+            .into_iter()
+            .map(String::from)
+            .collect();
+        assert!(is_named_in(&names, &BackendArg::from("node")));
+        assert!(is_named_in(&names, &BackendArg::from("core:node")));
+        assert!(is_named_in(
+            &names,
+            &BackendArg::from("aqua:BurntSushi/ripgrep")
+        ));
+        assert!(is_named_in(&names, &BackendArg::from("ripgrep")));
+        assert!(!is_named_in(&names, &BackendArg::from("python")));
+        assert!(!is_named_in(&names, &BackendArg::from("aqua:junegunn/fzf")));
+        // A different short name and stored inline options reach the comparison of
+        // full backend names, which must ignore the options.
+        let aliased = BackendArg::new(
+            "ripgrep".into(),
+            Some("aqua:BurntSushi/ripgrep[bin=rg]".into()),
+        );
+        assert!(is_named_in(&names, &aliased));
+        // Inline options do not make it another tool.
+        assert!(is_named_in(
+            &names,
+            &BackendArg::from("aqua:BurntSushi/ripgrep[bin=rg]")
+        ));
+        assert!(is_named_in(&names, &BackendArg::from("ripgrep[bin=rg]")));
+    }
 
     #[tokio::test]
     async fn test_sort_by_overrides() {

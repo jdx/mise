@@ -296,7 +296,10 @@ impl Vfox {
         let filename = file.file_name().unwrap().to_string_lossy().to_string();
         let parent = install_dir.parent().unwrap();
         file::mkdirp(parent)?;
-        let tmp = TempDir::with_prefix_in(&filename, parent)?;
+        // Next to the install directory so the final move stays a rename. Hidden, because
+        // the install directory's parent can be the installs root itself (identity layout),
+        // where every visible entry is read as a tool.
+        let tmp = TempDir::with_prefix_in(extraction_dir_prefix(&filename), parent)?;
         file::remove_dir_all(install_dir)?;
         let move_to_install = || {
             let subdirs = file::ls(tmp.path())?;
@@ -329,5 +332,58 @@ impl Vfox {
             file::make_executable(install_dir.join(&filename))?;
         }
         Ok(())
+    }
+}
+
+/// The name prefix of the directory an archive is extracted into before it is moved to
+/// the install directory. A leading dot keeps it out of directory listings of the installs
+/// tree while it exists.
+fn extraction_dir_prefix(archive_name: &str) -> String {
+    format!(".{archive_name}.")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn extraction_directories_are_hidden() {
+        for name in ["node-20.tar.gz", "tool.zip", "bin"] {
+            let prefix = extraction_dir_prefix(name);
+            assert!(prefix.starts_with('.'), "{prefix}");
+            assert!(prefix.contains(name), "{prefix}");
+        }
+    }
+
+    #[test]
+    fn extraction_leaves_only_the_install_directory_beside_it() {
+        let temp = tempfile::tempdir().unwrap();
+        let archive = temp.path().join("tool-1.0.tar.gz");
+        {
+            let source = temp.path().join("tool-1.0");
+            std::fs::create_dir_all(source.join("bin")).unwrap();
+            std::fs::write(source.join("bin/tool"), "#!/bin/sh\n").unwrap();
+            let status = std::process::Command::new("tar")
+                .arg("-czf")
+                .arg(&archive)
+                .arg("-C")
+                .arg(temp.path())
+                .arg("tool-1.0")
+                .status();
+            if !status.is_ok_and(|status| status.success()) {
+                return; // no tar to build the fixture with
+            }
+        }
+        let installs = temp.path().join("installs");
+        let install_dir = installs.join("tool-abcd1234");
+        let vfox = Vfox::test();
+        vfox.extract(&archive, &install_dir).unwrap();
+
+        assert!(install_dir.join("bin/tool").is_file());
+        let entries: Vec<_> = std::fs::read_dir(&installs)
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name().to_string_lossy().to_string())
+            .collect();
+        assert_eq!(entries, vec!["tool-abcd1234".to_string()]);
     }
 }

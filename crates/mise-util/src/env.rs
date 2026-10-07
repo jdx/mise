@@ -172,6 +172,67 @@ pub static MISE_SYSTEM_CONFIG_DIR: Lazy<PathBuf> = Lazy::new(|| {
 pub static MISE_INSTALLS_DIR: Lazy<PathBuf> =
     Lazy::new(|| var_path("MISE_INSTALLS_DIR").unwrap_or_else(|| MISE_DATA_DIR.join("installs")));
 
+/// Where the identity install layout keeps its installation directories. The
+/// installs directory itself, except on Windows with the default installs
+/// directory: there it is `<data>\i`, seven characters shorter than `installs`,
+/// because the real installation path is what counts against `MAX_PATH`. Version
+/// links and the catalog stay in the installs directory either way.
+pub static MISE_INSTALL_STORE_DIR: Lazy<PathBuf> = Lazy::new(|| {
+    let installs = &*MISE_INSTALLS_DIR;
+    match var_path("MISE_INSTALL_STORE_DIR") {
+        // Inside the installs directory the store would sit in a tool's
+        // directory, where listing and prune take it for a version of that tool;
+        // such a setting is ignored. The installs directory spelled another way
+        // is the installs directory.
+        Some(store) if is_within(&store, installs) => installs.clone(),
+        Some(store) => store,
+        None if cfg!(windows) && var_path("MISE_INSTALLS_DIR").is_none() => MISE_DATA_DIR.join("i"),
+        None => installs.clone(),
+    }
+});
+
+/// Whether `path` is `dir` or inside it, however either is spelled: relative,
+/// through `..`, through a symlink, or (on Windows) in another case.
+fn is_within(path: &Path, dir: &Path) -> bool {
+    let comparable = |p: &Path| {
+        let p = resolved_path(p);
+        if cfg!(windows) {
+            PathBuf::from(p.to_string_lossy().replace('/', "\\").to_lowercase())
+        } else {
+            p
+        }
+    };
+    comparable(path).starts_with(comparable(dir))
+}
+
+/// `path` made absolute, with its longest existing ancestor resolved to the real
+/// directory it names; what does not exist yet is kept as written.
+fn resolved_path(path: &Path) -> PathBuf {
+    let lexical = || {
+        use path_absolutize::Absolutize;
+        path.absolutize()
+            .map_or_else(|_| path.to_path_buf(), |p| p.into_owned())
+    };
+    let Ok(absolute) = std::path::absolute(path) else {
+        return lexical();
+    };
+    let mut existing = absolute.as_path();
+    let mut missing = vec![];
+    loop {
+        if let Ok(real) = dunce::canonicalize(existing) {
+            return missing.iter().rev().fold(real, |p, name| p.join(name));
+        }
+        // A missing `..` cannot be resolved against the real directory.
+        match (existing.parent(), existing.file_name()) {
+            (Some(parent), Some(name)) => {
+                missing.push(name.to_os_string());
+                existing = parent;
+            }
+            _ => return lexical(),
+        }
+    }
+}
+
 pub static MISE_DOWNLOADS_DIR: Lazy<PathBuf> =
     Lazy::new(|| var_path("MISE_DOWNLOADS_DIR").unwrap_or_else(|| MISE_DATA_DIR.join("downloads")));
 
@@ -979,10 +1040,35 @@ fn parse_secret_keys(marker: &str, eq: fn(&str, &str) -> bool) -> BTreeSet<Strin
 /// A forged marker can only add redaction, turn caches off, or hide those keys
 /// from templates and nested tasks; it never grants anything.
 pub static INHERITED_SECRET_KEYS: Lazy<BTreeSet<String>> = Lazy::new(|| {
-    var(SECRET_KEYS_MARKER)
-        .map(|v| parse_secret_keys(&v, env_key_eq))
-        .unwrap_or_default()
+    inherited_secret_keys(
+        var(SECRET_KEYS_MARKER).ok().as_deref(),
+        vars_safe().map(|(k, _)| k),
+        env_key_eq,
+    )
 });
+
+/// `mise x -- fish` hands fish its variables through temporary copies that fish only reads after
+/// config.fish has run. The copies that hold a granted secret are named
+/// `__MISE_FISH_SECRET_<n>`; a mise started from config.fish would otherwise see them as
+/// ordinary, unmarked variables, so they are always treated as secrets. Copies of plain values
+/// (`__MISE_FISH_ENV_<n>`) are not.
+pub const FISH_SECRET_PREFIX: &str = "__MISE_FISH_SECRET_";
+const FISH_TEMP_PREFIX: &str = FISH_SECRET_PREFIX;
+
+fn is_fish_temp_name(name: &str, eq: fn(&str, &str) -> bool) -> bool {
+    name.get(..FISH_TEMP_PREFIX.len())
+        .is_some_and(|head| eq(head, FISH_TEMP_PREFIX))
+}
+
+fn inherited_secret_keys(
+    marker: Option<&str>,
+    names: impl Iterator<Item = String>,
+    eq: fn(&str, &str) -> bool,
+) -> BTreeSet<String> {
+    let mut keys = marker.map(|v| parse_secret_keys(v, eq)).unwrap_or_default();
+    keys.extend(names.filter(|k| is_fish_temp_name(k, eq)));
+    keys
+}
 
 /// The live process environment minus inherited secrets and their marker, for
 /// expanding `${VAR}` references in config-derived files: expanding against
@@ -1413,6 +1499,48 @@ mod launcher_args_tests {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn fish_secret_copies_are_always_inherited_secrets_but_plain_copies_are_not() {
+        let names = [
+            "PATH",
+            "__MISE_FISH_SECRET_0",
+            "__MISE_FISH_SECRET_12",
+            "__MISE_FISH_ENV_1",
+            "__MISE_DIFF",
+        ]
+        .iter()
+        .map(|s| s.to_string());
+        let keys = inherited_secret_keys(Some("DEPLOY_KEY,__MISE_FISH_SECRET_9"), names, |a, b| {
+            a == b
+        });
+        // the marker parser still ignores mise's own names; the live secret copies are added
+        assert_eq!(
+            keys,
+            BTreeSet::from(
+                [
+                    "DEPLOY_KEY",
+                    "__MISE_FISH_SECRET_0",
+                    "__MISE_FISH_SECRET_12"
+                ]
+                .map(String::from)
+            )
+        );
+        // so a child mise strips them, and a plain copy passes through
+        let mut env = EnvMap::from([
+            ("__MISE_FISH_SECRET_0".into(), "s3cr3t".into()),
+            ("__MISE_FISH_ENV_1".into(), "1".into()),
+            ("KEEP".into(), "1".into()),
+        ]);
+        let mut remove = BTreeSet::new();
+        strip_secrets_for_child(&mut env, &mut remove, &keys, |a, b| a == b);
+        assert_eq!(
+            env.keys().collect::<Vec<_>>(),
+            ["KEEP", "__MISE_FISH_ENV_1"]
+        );
+        assert!(remove.contains("__MISE_FISH_SECRET_0"));
+        assert!(!remove.contains("__MISE_FISH_ENV_1"));
+    }
+
     use super::*;
 
     fn keys(names: &[&str]) -> BTreeSet<String> {
@@ -1500,6 +1628,36 @@ mod tests {
         strip_secrets_for_child(&mut env, &mut env_remove, &keys(&["FOO"]), env_key_eq);
         assert!(env_remove.contains("Foo"));
         assert_eq!(env.keys().collect::<Vec<_>>(), vec!["KEEP"]);
+    }
+
+    #[test]
+    fn test_is_within_sees_through_spellings() {
+        let tmp = tempfile::tempdir().unwrap();
+        let data = dunce::canonicalize(tmp.path()).unwrap();
+        let installs = data.join("installs");
+        std::fs::create_dir_all(&installs).unwrap();
+        // inside, written plainly or through `..`
+        assert!(is_within(&installs.join("store"), &installs));
+        assert!(is_within(
+            &installs.join("x").join("..").join("store"),
+            &installs
+        ));
+        assert!(is_within(&installs, &installs));
+        // a sibling written through the installs directory is not inside it
+        assert!(!is_within(&installs.join("..").join("store"), &installs));
+        assert!(!is_within(&data.join("installs-store"), &installs));
+        if cfg!(windows) {
+            let upper = PathBuf::from(installs.to_string_lossy().to_uppercase());
+            assert!(is_within(&upper.join("store"), &installs));
+        }
+        #[cfg(unix)]
+        {
+            // through a symlink to the installs directory
+            let link = data.join("link");
+            std::os::unix::fs::symlink(&installs, &link).unwrap();
+            assert!(is_within(&link.join("store"), &installs));
+            assert!(!is_within(&link.join("..").join("store"), &installs));
+        }
     }
 
     #[cfg(unix)]

@@ -80,6 +80,27 @@ pub(crate) fn lexical_refs(s: &str) -> Vec<Option<String>> {
     out
 }
 
+/// The text after a `{# comment #}` or a `{% raw %}...{% endraw %}` block that `tag` starts, or
+/// `None` when `tag` starts neither, or the comment or block is not closed (a Tera parse error
+/// anyway, so a caller scans it as ordinary text).
+pub(super) fn skip_inert(tag: &str) -> Option<&str> {
+    if tag.starts_with("{#") {
+        let end = tag.find("#}")?;
+        return Some(&tag[end + 2..]);
+    }
+    if tag.starts_with("{%") && is_tag(tag, "raw") {
+        let mut rest = skip_past(tag, "%}");
+        while let Some(i) = rest.find("{%") {
+            let inner = &rest[i..];
+            if is_tag(inner, "endraw") {
+                return Some(skip_past(inner, "%}"));
+            }
+            rest = &inner[2..];
+        }
+    }
+    None
+}
+
 fn next_open(s: &str) -> Option<usize> {
     ["{{", "{%", "{#"]
         .iter()

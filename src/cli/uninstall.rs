@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::sync::Arc;
 
 use console::style;
@@ -66,9 +67,52 @@ impl Uninstall {
         };
         let tool_versions = tool_versions
             .into_iter()
-            .unique_by(|(_, tv)| (tv.request.ba().short.clone(), tv.version.clone()))
+            // Variants of one version (different install options) are different
+            // installations, told apart by where they live.
+            .unique_by(|(_, tv)| {
+                (
+                    tv.request.ba().short.clone(),
+                    tv.version.clone(),
+                    tv.install_path(),
+                )
+            })
+            .collect::<Vec<_>>();
+        // The version as the user wrote it is resolved with no install options, so
+        // under the identity layout it names a directory nothing was installed
+        // into when the installed copies carry options. Where a copy of the version
+        // exists, only existing copies are candidates.
+        let present: HashSet<(String, String)> = tool_versions
+            .iter()
+            .filter(|(_, tv)| file::entry_exists(tv.install_path()))
+            .map(|(_, tv)| (tv.ba().short.clone(), tv.version.clone()))
+            .collect();
+        let tool_versions = tool_versions
+            .into_iter()
+            .filter(|(_, tv)| {
+                file::entry_exists(tv.install_path())
+                    || !present.contains(&(tv.ba().short.clone(), tv.version.clone()))
+            })
             .collect::<Vec<_>>();
         if !self.all && tool_versions.len() > self.installed_tool.len() {
+            let variants = tool_versions
+                .iter()
+                .filter_map(|(_, tv)| {
+                    crate::install_layout::resolver::dir_name_of(&tv.install_path())
+                })
+                .collect_vec();
+            if variants.len() == tool_versions.len()
+                && tool_versions
+                    .iter()
+                    .map(|(_, tv)| (tv.ba().short.clone(), tv.version.clone()))
+                    .all_equal()
+            {
+                bail!(
+                    "{} installations match, installed with different options: {}\n\
+                     use --all to uninstall all of them",
+                    variants.len(),
+                    variants.join(", ")
+                );
+            }
             bail!("multiple tools specified, use --all to uninstall all versions");
         }
         let removed_install_paths = tool_versions
@@ -90,6 +134,14 @@ impl Uninstall {
                 warn!("{} is not installed", tv.style());
                 continue;
             }
+            // `--all` lists what is installed, but a configured request (`27`) can stand
+            // for an installation under another name (`temurin-27.0.0+35`) and so name
+            // a directory that does not exist. Only stale cache under that name would be
+            // reported, as if a second installation were being removed.
+            if self.all && !file::entry_exists(tv.install_path()) {
+                debug!("{} has no installation to remove", tv.style());
+                continue;
+            }
             to_remove.push((plugin, tv));
         }
         let has_work = !to_remove.is_empty();
@@ -102,11 +154,11 @@ impl Uninstall {
                 &mpr,
                 to_remove
                     .iter()
-                    .map(|(_, tv)| (format!("{}@{}", tv.ba().short, tv.version), tv.style())),
+                    .map(|(_, tv)| (crate::cli::prune::removal_key(tv), tv.style())),
             )
         };
         for (plugin, tv) in to_remove {
-            let key = format!("{}@{}", tv.ba().short, tv.version);
+            let key = crate::cli::prune::removal_key(&tv);
             let tool = progress
                 .as_ref()
                 .and_then(|progress| progress.start_tool(&key));
@@ -127,6 +179,8 @@ impl Uninstall {
             if self.is_dry_run() {
                 pr.finish_with_message("uninstalled (dry-run)".into());
             } else {
+                // Removed on purpose: the requests it was selected for choose again.
+                crate::install_layout::resolver::forget_selections_of(&tv.install_path());
                 if let Err(err) = crate::tool_purgatory::forget_path(&tv.install_path()) {
                     warn!("failed to clear tool purgatory entry: {err:#}");
                 }
@@ -199,12 +253,30 @@ impl Uninstall {
                 ));
             }
 
+            // Installations of a matching version that differ in install options
+            // share its name, so they are listed from their receipts.
+            for (name, dir) in crate::install_layout::resolver::installs_of(backend.ba()) {
+                if matches.iter().any(|m| **m == name) {
+                    let tvr = ToolRequest::new(backend.ba().clone(), &name, ToolSource::Unknown)?;
+                    let version = tvr.version();
+                    let mut tv = ToolVersion::new(tvr, version);
+                    tv.install_path = Some(dir);
+                    tvs.push((backend.clone(), tv));
+                }
+            }
             tvs.extend(
                 matches
                     .into_iter()
                     .map(|v| {
                         let tvr = ToolRequest::new(backend.ba().clone(), v, ToolSource::Unknown)?;
-                        let tv = ToolVersion::new(tvr, v.into());
+                        // `request.version()`, not the raw name: a ref install is named
+                        // `ref-main` on disk and `ref:main` everywhere else.
+                        let version = tvr.version();
+                        let mut tv = ToolVersion::new(tvr, version);
+                        // The name came from a version link or a receipt, so it names an
+                        // exact installation, whatever options it was installed with.
+                        tv.install_path =
+                            crate::install_layout::resolver::physical_dir(backend.ba(), v);
                         Ok((backend.clone(), tv))
                     })
                     .collect::<Result<Vec<_>>>()?,

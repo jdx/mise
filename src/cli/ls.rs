@@ -4,7 +4,7 @@ use eyre::{Result, ensure};
 use indexmap::IndexMap;
 use itertools::Itertools;
 use serde::Serialize;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -282,7 +282,18 @@ impl Ls {
         scheduled_removals: &BTreeMap<PathBuf, u64>,
     ) -> Result<()> {
         let mut rows = vec![];
+        // Installations of one version that differ in install options show which
+        // directory each one is.
+        let mut copies: HashMap<(String, String), usize> = HashMap::new();
+        for (_, p, tv, _) in &runtimes {
+            *copies
+                .entry((p.ba().short.clone(), tv.version.clone()))
+                .or_default() += 1;
+        }
         for (ls, p, tv, source) in runtimes {
+            let variant = (copies[&(p.ba().short.clone(), tv.version.clone())] > 1)
+                .then(|| crate::install_layout::resolver::dir_name_of(&tv.install_path()))
+                .flatten();
             let sources = sources_map
                 .and_then(|map| map.get(&source_key(&tv)).cloned())
                 .unwrap_or_default();
@@ -306,6 +317,7 @@ impl Ls {
                 },
                 sources,
                 remove_after: scheduled_removals.get(&tv.install_path()).copied(),
+                variant,
             });
         }
         if !self.grouped {
@@ -586,6 +598,8 @@ struct Row {
     requested: Option<String>,
     sources: Vec<SourceEntry>,
     remove_after: Option<u64>,
+    /// The installation directory, when several installations share the version.
+    variant: Option<String>,
 }
 
 impl Row {
@@ -593,9 +607,15 @@ impl Row {
         Cell::new(&self.tool).fg(Color::Blue)
     }
     fn display_version(&self) -> Cell {
-        let annotate = |version: String| match self.remove_after {
-            Some(remove_after) => format!("{version} {}", pruning_label(remove_after)),
-            None => version,
+        let annotate = |version: String| {
+            let version = match &self.variant {
+                Some(dir) => format!("{version} [{dir}]"),
+                None => version,
+            };
+            match self.remove_after {
+                Some(remove_after) => format!("{version} {}", pruning_label(remove_after)),
+                None => version,
+            }
         };
         match &self.version {
             VersionStatus::Active(version, outdated) => {

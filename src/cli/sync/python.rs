@@ -116,9 +116,13 @@ impl SyncPython {
                 continue;
             }
             let src = installed_python_versions_path.join(&v);
-            if file::is_symlink_or_junction(&src) {
-                continue;
-            }
+            // A version link into the identity layout stands for the installation
+            // it names; any other link is someone else's.
+            let src = match crate::install_layout::resolver::link_target(&src) {
+                Some(install) => install,
+                None if file::is_symlink_or_junction(&src) => continue,
+                None => src,
+            };
             // ~/.local/share/uv/python/cpython-3.10.16-macos-aarch64-none
             // ~/.local/share/uv/python/cpython-3.13.0-linux-x86_64-gnu
             let os = OS;

@@ -867,6 +867,23 @@ impl Backend for NodePlugin {
         Ok(opts)
     }
 
+    /// The lockfile options say which node is downloaded or built. Two settings also change
+    /// the files mise adds to that node after it is unpacked: the `bin/npm` wrapper
+    /// (`node.npm_shim`, on by default, and not installed on Windows) and the corepack shims
+    /// (`node.corepack`, off by default). Only a non-default value is an input, so the
+    /// identity of an install made with the defaults does not carry them.
+    fn install_identity_options(&self, tv: &ToolVersion) -> BTreeMap<String, String> {
+        let mut options = crate::backend::static_helpers::request_identity_options(self, tv);
+        let node = &Settings::get().node;
+        if !cfg!(windows) && !node.npm_shim {
+            options.insert("node.npm_shim".to_string(), "false".to_string());
+        }
+        if node.corepack {
+            options.insert("node.corepack".to_string(), "true".to_string());
+        }
+        options
+    }
+
     async fn resolve_lock_info(
         &self,
         tv: &ToolVersion,
@@ -1398,6 +1415,53 @@ mod tests {
         let message = node_flavor_not_found_message(&opts).unwrap();
         assert!(message.contains("node.flavor=\"glibc-217\""));
         assert!(message.contains(UNOFFICIAL_NODE_MIRROR_URL));
+    }
+
+    fn node_identity_options(
+        configure_settings: impl FnOnce(&mut SettingsPartial),
+    ) -> BTreeMap<String, String> {
+        let _guard = crate::test::SettingsGuard::lock();
+        let _env_guard = NodeEnvResetGuard::clear();
+        let mut settings = SettingsPartial::empty();
+        configure_settings(&mut settings);
+        Settings::reset(Some(settings));
+        crate::backend::static_helpers::test_identity_options(&NodePlugin::new(), "22.0.0", &[])
+    }
+
+    #[test]
+    fn test_node_identity_options_include_only_non_default_post_install_settings() {
+        assert_eq!(node_identity_options(|_| {}), BTreeMap::new());
+        assert_eq!(
+            node_identity_options(|settings| {
+                settings.node.npm_shim = Some(true);
+                settings.node.corepack = Some(false);
+            }),
+            BTreeMap::new()
+        );
+
+        let corepack = node_identity_options(|settings| settings.node.corepack = Some(true));
+        assert_eq!(
+            corepack,
+            BTreeMap::from([("node.corepack".to_string(), "true".to_string())])
+        );
+
+        let no_shim = node_identity_options(|settings| settings.node.npm_shim = Some(false));
+        if cfg!(windows) {
+            // No npm wrapper is ever installed there.
+            assert_eq!(no_shim, BTreeMap::new());
+        } else {
+            assert_eq!(
+                no_shim,
+                BTreeMap::from([("node.npm_shim".to_string(), "false".to_string())])
+            );
+        }
+
+        // What node itself is built or downloaded from stays in.
+        let flavor = node_identity_options(|settings| settings.node.flavor = Some("musl".into()));
+        assert_eq!(
+            flavor,
+            BTreeMap::from([("flavor".to_string(), "musl".to_string())])
+        );
     }
 
     #[test]

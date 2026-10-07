@@ -175,6 +175,26 @@ impl Backend for VfoxBackend {
     /// A plugin can report that an installed version no longer matches the
     /// request, e.g. because a tool option selects add-on components that are
     /// not installed yet. mise then repairs it through `repair_install`.
+    /// A plugin with a `MiseInstallSatisfied` hook decides for itself whether an
+    /// install still matches the request's options (and repairs it in place when
+    /// not), so those options do not split installs; the hook never sees an install
+    /// that a new identity would hide from it. Plugins without the hook have no
+    /// such mechanism and their options do distinguish installs.
+    fn install_identity_options(
+        &self,
+        tv: &ToolVersion,
+    ) -> std::collections::BTreeMap<String, String> {
+        if !self.is_backend_plugin() && self.plugin_has_hook("mise_install_satisfied") {
+            return self
+                .resolve_lockfile_options(
+                    &tv.request,
+                    &crate::backend::platform_target::PlatformTarget::from_current(),
+                )
+                .unwrap_or_default();
+        }
+        crate::backend::static_helpers::request_identity_options(self, tv)
+    }
+
     async fn is_install_satisfied(
         &self,
         config: &Arc<Config>,

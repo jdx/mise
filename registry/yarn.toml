@@ -1,5 +1,5 @@
 backends = [
-  "vfox:mise-plugins/vfox-yarn",
+  "vfox:jdx/vfox-yarn",
   "asdf:mise-plugins/mise-yarn",
   "aqua:yarnpkg/berry",
   "npm:@yarnpkg/cli-dist",

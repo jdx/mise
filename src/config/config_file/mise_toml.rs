@@ -21,7 +21,8 @@ use versions::Versioning;
 use crate::args::BackendArg;
 use crate::backend::unalias_backend;
 use crate::config::config_file::{
-    ConfigFile, TaskConfig, ToolConfig, config_trust_root, is_ignored, trust, trust_check,
+    ConfigFile, TaskConfig, ToolConfig, config_trust_root, is_config_ignored_via_setting,
+    is_persisted_ignored, trust, trust_check,
 };
 use crate::config::config_file::{config_root, toml::deserialize_arr};
 use crate::config::env_directive::{
@@ -805,7 +806,10 @@ impl MiseToml {
         }
         // configs the user chose to ignore should stay unloaded rather than
         // becoming loadable because their content happens to be safe
-        if is_ignored(&config_trust_root(path)) || is_ignored(path) {
+        if is_config_ignored_via_setting(path)
+            || is_persisted_ignored(&config_trust_root(path))
+            || is_persisted_ignored(path)
+        {
             return false;
         }
         is_safe_config_body(body)

@@ -1351,6 +1351,11 @@
           "type": "string",
           "deprecated": true
         },
+        "install_layout": {
+          "description": "[experimental] Name installations by what they are (`identity`) instead of `installs/<tool>/<version>` (`legacy`).",
+          "type": "string",
+          "enum": ["legacy", "identity"]
+        },
         "java": {
           "type": "object",
           "unevaluatedProperties": false,
@@ -1414,6 +1419,11 @@
         },
         "lockfile": {
           "description": "Create and read lockfiles for tool versions.",
+          "type": "boolean"
+        },
+        "lockfile_auto_prune": {
+          "default": true,
+          "description": "Remove lockfile tools that are absent from the active configuration.",
           "type": "boolean"
         },
         "lockfile_mode": {
@@ -1708,6 +1718,20 @@
           "default": true,
           "description": "Fail when provenance API checks cannot be completed.",
           "type": "boolean"
+        },
+        "prune": {
+          "type": "object",
+          "unevaluatedProperties": false,
+          "properties": {
+            "exclude": {
+              "default": [],
+              "description": "Tools that `mise prune` never removes, such as `node` or `aqua:BurntSushi/ripgrep`.",
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
         },
         "pypi": {
           "type": "object",
@@ -2486,6 +2510,24 @@
           "default": "exe",
           "description": "Shim file mode for Windows. Options: `exe`, `file`, `hardlink`, `symlink`.",
           "type": "string"
+        },
+        "write_targets": {
+          "type": "object",
+          "unevaluatedProperties": false,
+          "properties": {
+            "dotfiles": {
+              "description": "Global config file to create new [dotfiles] entries in. Existing entries stay in the config file that already declares them.",
+              "type": "string"
+            },
+            "packages": {
+              "description": "Global config file to create new [bootstrap.packages] entries in. Existing entries stay in the config file that already declares them.",
+              "type": "string"
+            },
+            "tools": {
+              "description": "Global config file to create new [tools] entries in. Existing entries stay in the config file that already declares them.",
+              "type": "string"
+            }
+          }
         },
         "yes": {
           "description": "This will automatically answer yes or no to prompts. This is useful for scripting.",
@@ -3534,6 +3576,30 @@
         "checksum_expr": {
           "description": "expr-lang expression extracting algo:hash from the checksum_url manifest",
           "type": "string"
+        },
+        "headers": {
+          "description": "request headers sent with the download, version_list_url and checksum_url requests; values are tera templated (e.g. Bearer {{ env.TOKEN }})",
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "headers_forward": {
+          "description": "hosts each header in headers may follow a redirect to; exact hosts or *.suffix, and a header with no entry is never forwarded",
+          "type": "object",
+          "additionalProperties": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            ]
+          }
         },
         "size": {
           "description": "expected artifact size in bytes",
@@ -6284,6 +6350,10 @@
                 "type": "string",
                 "description": "comment prefix for edit marker lines; inferred from the file extension when omitted"
               },
+              "merge": {
+                "type": "boolean",
+                "description": "edit entry: set the keys of source on a JSON, TOML, or YAML target and leave the target's other keys to the application that also writes it; the format comes from the target's extension"
+              },
               "variants": {
                 "type": "array",
                 "description": "OS/profile variants: history streams for track mode, or optional destinations for deployment modes",
@@ -6320,6 +6390,40 @@
               }
             },
             "allOf": [
+              {
+                "if": {
+                  "required": ["merge"],
+                  "properties": {
+                    "merge": {
+                      "const": true
+                    }
+                  }
+                },
+                "then": {
+                  "required": ["source"],
+                  "properties": {
+                    "mode": false,
+                    "content": false,
+                    "permissions": false,
+                    "exclude": false,
+                    "include": false,
+                    "manifest": false,
+                    "autosave": false,
+                    "encrypt": false,
+                    "allow_plaintext": false,
+                    "variants": false,
+                    "enabled": false,
+                    "remove_empty": false,
+                    "relative": false,
+                    "dot_prefix": false,
+                    "group": false,
+                    "block": false,
+                    "line": false,
+                    "position": false,
+                    "comment": false
+                  }
+                }
+              },
               {
                 "anyOf": [
                   {

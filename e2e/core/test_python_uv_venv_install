@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+
+export MISE_EXPERIMENTAL=1
+export MISE_PYTHON_GITHUB_ATTESTATIONS=0
+
+cat >mise.toml <<EOF
+[tools]
+python = "3.12.3"
+uv = "0.5.4"
+"pipx:cowsay" = "6.1"
+
+[settings]
+python.uv_venv_auto = "create|source"
+EOF
+touch uv.lock
+
+# Installing cowsay with uv evaluates the environment once python is installed, which creates
+# the venv while the install toolset is still unresolved.
+mise i
+
+assert_directory_exists "$PWD/.venv"
+assert_contains "readlink .venv/bin/python" "$MISE_DATA_DIR/installs/python/3.12.3/"
+
+# Installing only the package gives the installer a toolset without python at all.
+mise uninstall pipx:cowsay
+rm -rf .venv
+mise i pipx:cowsay
+
+assert_directory_exists "$PWD/.venv"
+assert_contains "readlink .venv/bin/python" "$MISE_DATA_DIR/installs/python/3.12.3/"

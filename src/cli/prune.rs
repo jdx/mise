@@ -7,7 +7,9 @@ use crate::config::tracking::Tracker;
 use crate::config::{Config, Settings};
 use crate::file::display_path;
 use crate::runtime_symlinks;
-use crate::toolset::{NeededVersions, ToolVersion, prunable_tools, prunable_tools_with_sources};
+use crate::toolset::{
+    NeededVersions, PrunableTools, RunningProcess, ToolVersion, prunable_tools_with_sources,
+};
 use crate::ui::install_progress::removal_progress;
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::ui::prompt::{self, Confirmation};
@@ -26,6 +28,9 @@ use super::trust::Trust;
 ///
 /// Tool stubs that have been executed are tracked in ~/.local/state/mise/tracked-stubs.
 /// Versions still referenced by a tracked stub are not deleted.
+///
+/// Versions that a running process was started from are not deleted either,
+/// so a long-running program keeps its files after its version stops being needed.
 ///
 /// You can list prunable tools with `mise ls --prunable`
 #[derive(Debug, usage_rs::Args)]
@@ -83,7 +88,12 @@ impl Prune {
                 .as_ref()
                 .map(|it| it.iter().map(|ta| ta.ba.as_ref()).collect());
             let tools = backends.unwrap_or_default();
-            let (to_delete, needed) = prunable_tools_with_sources(&config, tools).await?;
+            let PrunableTools {
+                to_delete,
+                needed,
+                running,
+            } = prunable_tools_with_sources(&config, tools).await?;
+            explain_running(&running);
             let has_work = !to_delete.is_empty();
             let explain = self.is_dry_run().then_some(&needed);
             delete(
@@ -130,7 +140,10 @@ pub(super) async fn prune(
     tools: Vec<&BackendArg>,
     dry_run: bool,
 ) -> Result<()> {
-    let to_delete = prunable_tools(config, tools).await?;
+    let PrunableTools {
+        to_delete, running, ..
+    } = prunable_tools_with_sources(config, tools).await?;
+    explain_running(&running);
     delete(
         config,
         dry_run,
@@ -226,8 +239,31 @@ async fn delete(
 
 /// The session key for a version being removed: the same `short@version`
 /// shape the install scheduler uses.
-fn removal_key(tv: &ToolVersion) -> String {
-    format!("{}@{}", tv.ba().short, tv.version)
+pub(crate) fn removal_key(tv: &ToolVersion) -> String {
+    match crate::install_layout::resolver::dir_name_of(&tv.install_path()) {
+        // Variants of one version are separate rows.
+        Some(dir) => format!("{}@{}#{dir}", tv.ba().short, tv.version),
+        None => format!("{}@{}", tv.ba().short, tv.version),
+    }
+}
+
+/// Say which versions are kept because processes are still running from them.
+/// Nothing tracked needs these, so without this a version left behind after a
+/// prune would look like a mistake.
+fn explain_running(running: &[(ToolVersion, Vec<RunningProcess>)]) {
+    const SHOWN: usize = 3;
+    for (tv, processes) in running {
+        let mut held_by = processes
+            .iter()
+            .take(SHOWN)
+            .map(ToString::to_string)
+            .collect::<Vec<_>>()
+            .join(", ");
+        if processes.len() > SHOWN {
+            held_by.push_str(&format!(" and {} more", processes.len() - SHOWN));
+        }
+        info!("{} is kept: still running as {held_by}", tv.style());
+    }
 }
 
 /// Say why `tv` is up for removal.
@@ -241,10 +277,21 @@ fn removal_key(tv: &ToolVersion) -> String {
 fn explain_removal(tv: &ToolVersion, needed: &NeededVersions) {
     let short = &tv.ba().short;
     // `needed` is a HashMap; collect into a BTreeMap so the order is stable.
-    let kept: BTreeMap<&String, &BTreeSet<PathBuf>> = needed
+    let layout_dir = crate::install_layout::resolver::dir_name_of(&tv.install_path());
+    let kept: BTreeMap<String, &BTreeSet<PathBuf>> = needed
         .iter()
-        .filter(|((s, _), _)| s == short)
-        .map(|((_, version), sources)| (version, sources))
+        .filter_map(|((s, name), sources)| {
+            if s.is_empty() {
+                // An identity-layout key: the same tool when its receipt says so.
+                if layout_dir.as_deref() == Some(name) {
+                    return None;
+                }
+                crate::install_layout::resolver::sibling_version(tv, name)
+                    .map(|version| (version, sources))
+            } else {
+                (s == short).then(|| (name.clone(), sources))
+            }
+        })
         .collect();
     // Match the short form the progress line below uses, not the fully
     // qualified `backend:name@version` that `Display` renders.

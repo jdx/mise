@@ -634,6 +634,12 @@ impl Install {
                         tr.is_install_satisfied(&install_config),
                     )
                     .await;
+                    // An installation that already satisfies the request is still recorded
+                    // by the install layout (its version link, a lockfile pin); a preview
+                    // never writes.
+                    if satisfied && !opts.dry_run {
+                        tr.note_layout_use(&install_config).await;
+                    }
                     if satisfied && tr.options().postinstall().is_none_or(|(_, always)| !always) {
                         if let Some(reporter) = reporter {
                             reporter.finish_with_icon(

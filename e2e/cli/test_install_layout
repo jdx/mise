@@ -1,0 +1,155 @@
+#!/usr/bin/env bash
+# The identity install layout (jdx/mise#13678, behind install_layout = "identity"): every
+# installation lives in installs/<label>-<hash>/ with a receipt, the familiar
+# installs/<short>/<version> paths are compatibility links to it, and runtime
+# aliases (latest, 1, 1.1) keep their ./<version> form on top of those links.
+export MISE_EXPERIMENTAL=1
+export MISE_INSTALL_LAYOUT=identity
+
+installs="$MISE_DATA_DIR/installs"
+
+assert "mise install dummy@1.1.0 dummy@2.0.0"
+
+dir_1="$(mise where dummy@1.1.0)"
+dir_2="$(mise where dummy@2.0.0)"
+name_1="$(basename "$dir_1")"
+name_2="$(basename "$dir_2")"
+
+echo "=== the installation directory: <label>-<8 base32 chars> ==="
+assert_matches "mise where dummy@1.1.0" "^$installs/dummy-[a-z2-7]{8}\$"
+assert_matches "mise where dummy@2.0.0" "^$installs/dummy-[a-z2-7]{8}\$"
+[[ $name_1 != "$name_2" ]] || fail "two versions share the directory $name_1"
+assert "test -d '$dir_1' && test ! -L '$dir_1'"
+assert "test -x '$dir_1/bin/dummy'"
+assert_contains "$dir_1/bin/dummy" "This is Dummy 1.1.0!"
+assert_contains "$dir_2/bin/dummy" "This is Dummy 2.0.0!"
+
+echo "=== the receipt: written last, describes the installation ==="
+receipt="$dir_1/.mise-install.toml"
+assert "test -f '$receipt'"
+assert_contains "cat '$receipt'" 'algorithm = "blake3"'
+assert_contains "cat '$receipt'" "dir = \"$name_1\""
+assert_contains "cat '$receipt'" 'backend = "asdf:dummy"'
+assert_contains "cat '$receipt'" 'version = "1.1.0"'
+assert_not_contains "cat '$dir_2/.mise-install.toml'" 'version = "1.1.0"'
+digest="$(sed -n 's/^digest = "\(.*\)"$/\1/p' "$receipt")"
+[[ $digest =~ ^[a-z2-7]{52}$ ]] || fail "the receipt digest is not 52 base32 chars: '$digest'"
+# the directory name is the label plus the first 8 chars of the identity digest
+[[ $name_1 == "dummy-${digest:0:8}" ]] || fail "$name_1 is not dummy-${digest:0:8}"
+
+echo "=== compatibility links: installs/<short>/<version> -> ../<dir> ==="
+assert "test -L '$installs/dummy/1.1.0'"
+assert "readlink '$installs/dummy/1.1.0'" "../$name_1"
+assert "readlink '$installs/dummy/2.0.0'" "../$name_2"
+assert "test -d '$installs/dummy/1.1.0/bin'"
+assert_contains "$installs/dummy/1.1.0/bin/dummy" "This is Dummy 1.1.0!"
+
+echo "=== runtime aliases keep the ./<version> form ==="
+assert "readlink '$installs/dummy/1'" "./1.1.0"
+assert "readlink '$installs/dummy/1.1'" "./1.1.0"
+assert "readlink '$installs/dummy/2'" "./2.0.0"
+assert "readlink '$installs/dummy/2.0'" "./2.0.0"
+assert "readlink '$installs/dummy/latest'" "./2.0.0"
+# the alias chain resolves all the way to the installation
+assert "test \"\$(realpath '$installs/dummy/latest')\" = \"\$(realpath '$dir_2')\""
+assert "test \"\$(realpath '$installs/dummy/1')\" = \"\$(realpath '$dir_1')\""
+
+echo "=== the catalog lives in installs/.mise ==="
+assert "test -d '$installs/.mise'"
+assert "test -f '$installs/.mise/alloc.lock'"
+assert "ls '$installs'/.mise/identities/*/$digest.toml"
+assert_contains "cat '$installs'/.mise/identities/*/$digest.toml" "dir = \"$name_1\""
+assert "test -f '$installs/.mise/names/$name_1'"
+assert "test -f '$installs/.mise/names/$name_2'"
+assert_contains "cat '$installs/.mise/names/$name_1'" "$digest"
+assert "test \"\$(ls '$installs/.mise/selections' | wc -l)\" -eq 2"
+assert_contains "cat '$installs'/.mise/selections/*.toml" "$digest"
+# the per-tool sidecar is still written for legacy discovery
+assert "test -f '$installs/dummy/.mise.backend.toml'"
+
+echo "=== neither the catalog nor an installation directory is a tool ==="
+assert_not_contains "mise ls" "dummy-"
+assert_not_contains "mise ls" ".mise"
+assert_contains "mise ls" "dummy  1.1.0"
+assert_contains "mise ls" "dummy  2.0.0"
+assert_not_contains "mise ls --json" "\"$installs/dummy/"
+
+echo "=== mise where and mise ls --json report the installation ==="
+assert "mise where dummy@1" "$dir_1"
+assert "mise where dummy@1.1" "$dir_1"
+assert "mise where dummy" "$dir_2"
+assert "mise ls --json dummy | jq -r '.[] | select(.version == \"1.1.0\") | .install_path'" "$dir_1"
+assert "mise ls --json dummy | jq -r '.[] | select(.version == \"2.0.0\") | .install_path'" "$dir_2"
+
+echo "=== an unlocked prefix request puts the alias link on PATH ==="
+cat >mise.toml <<'EOF'
+[tools]
+dummy = "1"
+EOF
+assert "mise which dummy" "$installs/dummy/1/bin/dummy"
+assert_contains "mise env" "$installs/dummy/1/bin"
+assert_not_contains "mise env" "$name_1"
+assert_contains "mise x -- dummy" "This is Dummy 1.1.0!"
+
+echo "=== an unlocked exact request puts the version link on PATH ==="
+cat >mise.toml <<'EOF'
+[tools]
+dummy = "2.0.0"
+EOF
+assert "mise which dummy" "$installs/dummy/2.0.0/bin/dummy"
+assert_contains "mise env" "$installs/dummy/2.0.0/bin"
+assert_not_contains "mise env" "$name_2"
+assert_contains "mise x -- dummy" "This is Dummy 2.0.0!"
+
+echo "=== re-running install changes nothing ==="
+assert_contains "mise install dummy@1.1.0 2>&1" "already installed"
+assert "mise where dummy@1.1.0" "$dir_1"
+assert "readlink '$installs/dummy/1.1.0'" "../$name_1"
+assert "test \"\$(ls -d '$installs'/dummy-* | wc -l)\" -eq 2"
+
+echo "=== a lockfile-pinned tool puts the installation directory on PATH ==="
+# A pinned artifact checksum makes the request resolved: it gets the
+# installation for exactly that pin, and its PATH entry does not go through the
+# version link, which can point at only one variant.
+export MISE_LOCKFILE=1
+detect_platform
+mkdir locked
+cat >locked/mise.toml <<'EOF'
+[tools]
+dummy = "1.1.0"
+EOF
+cat >locked/mise.lock <<EOF
+[[tools.dummy]]
+version = "1.1.0"
+backend = "asdf:dummy"
+"platforms.$MISE_PLATFORM" = { checksum = "sha256:aaaa" }
+EOF
+cd locked || exit 1
+assert "mise install"
+locked_dir="$(mise where dummy)"
+locked_name="$(basename "$locked_dir")"
+[[ $locked_dir != "$dir_1" ]] || fail "the pinned install reused the unpinned $name_1"
+assert_matches "mise where dummy" "^$installs/dummy-[a-z2-7]{8}\$"
+assert "mise which dummy" "$locked_dir/bin/dummy"
+assert_contains "mise env" "$locked_dir/bin"
+assert_not_contains "mise env" "$installs/dummy/1.1.0/bin"
+assert_contains "cat '$locked_dir/.mise-install.toml'" 'mode = "resolved"'
+assert_contains "cat '$locked_dir/.mise-install.toml'" 'sha256:aaaa'
+assert_contains "mise x -- dummy" "This is Dummy 1.1.0!"
+
+echo "=== a locked install leaves the unlocked selection alone ==="
+cd .. || exit 1
+assert "test -f '$dir_1/.mise-install.toml'"
+assert "mise where dummy@1.1.0" "$dir_1"
+assert "readlink '$installs/dummy/1.1.0'" "../$locked_name"
+
+echo "=== the link follows the latest install, PATH does not trust it blindly ==="
+# The version link points at the most recent install. An unlocked request whose
+# selection is the other variant must not put that link on PATH.
+mkdir unlocked
+echo 'tools.dummy = "1.1.0"' >unlocked/mise.toml
+cd unlocked || exit 1
+assert "mise which dummy" "$dir_1/bin/dummy"
+assert_contains "mise env" "$dir_1/bin"
+assert_not_contains "mise env" "$installs/dummy/1.1.0/bin"
+assert_contains "mise x -- dummy" "This is Dummy 1.1.0!"

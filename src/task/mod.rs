@@ -1818,6 +1818,15 @@ impl Task {
     }
 
     fn late_matcher(&self, overlay: bool) -> impl FnMut(&EnvDirective) -> Option<usize> + use<'_> {
+        self.late_matcher_with(overlay, mise_util::env::env_key_eq)
+    }
+
+    /// `eq` compares env names, so a test can run the case-insensitive (Windows) rule anywhere.
+    fn late_matcher_with(
+        &self,
+        overlay: bool,
+        eq: fn(&str, &str) -> bool,
+    ) -> impl FnMut(&EnvDirective) -> Option<usize> + use<'_> {
         let mut remaining: Vec<(usize, &str, &str)> = self
             .late_secret_env
             .iter()
@@ -1831,20 +1840,9 @@ impl Task {
             };
             let at = remaining
                 .iter()
-                .position(|(_, k, v)| *k == key.as_str() && *v == value.as_str())?;
+                .position(|(_, k, v)| eq(k, key) && *v == value.as_str())?;
             Some(remaining.remove(at).0)
         }
-    }
-
-    /// Plain `KEY=value` pairs of the task's env, without the values rendered at spawn.
-    pub(crate) fn plain_env_vals(&self) -> Vec<(String, String)> {
-        self.render_env_directives()
-            .into_iter()
-            .filter_map(|(d, _)| match d {
-                EnvDirective::Val(k, v, _) | EnvDirective::Default(k, v, _) => Some((k, v)),
-                _ => None,
-            })
-            .collect()
     }
 
     /// Every text in the task's env that could read another env var through a template:
@@ -3371,7 +3369,7 @@ impl Task {
         EnvMap,
         Vec<(String, String)>,
         BTreeSet<String>,
-        BTreeSet<String>,
+        crate::task::task_context_builder::TaskEnvKeys,
     )> {
         let mut tera_ctx = ts.tera_ctx(config).await?.clone();
         let (mut env, mut env_remove, mut mise_keys) =
@@ -3423,6 +3421,7 @@ impl Task {
             &redaction_exclusions,
         );
 
+        let rendered_defaults = env_results.rendered_defaults.clone();
         let task_env = env_results.env.into_iter().map(|(k, (v, _))| (k, v));
         for (key, _) in task_env.clone() {
             env_remove.remove(&key);
@@ -3448,7 +3447,15 @@ impl Task {
             env.insert(env::PATH_KEY.to_string(), path_env.to_string());
         }
 
-        Ok((env, task_env.collect(), env_remove, mise_keys))
+        Ok((
+            env,
+            task_env.collect(),
+            env_remove,
+            crate::task::task_context_builder::TaskEnvKeys {
+                mise: mise_keys,
+                rendered_defaults,
+            },
+        ))
     }
 }
 
@@ -6390,6 +6397,30 @@ echo "hello world"
         let plain = Task::default().with_dependency_env(&[val("PGURL", text)]);
         assert!(plain.late_secret_env.is_empty());
         assert_eq!(plain.render_env_directives().len(), 1);
+    }
+
+    #[test]
+    fn late_values_match_env_names_by_the_platform_rule() {
+        let task = late_task("env.PGURL = 'p://{{ secrets.DB_PASSWORD }}@h'");
+        let text = "p://{{ secrets.DB_PASSWORD }}@h";
+        // the case-insensitive rule (Windows) matches a differently cased name
+        let mut insensitive = task.late_matcher_with(false, |a, b| a.eq_ignore_ascii_case(b));
+        assert_eq!(insensitive(&val("pgurl", text)), Some(0));
+        // the exact rule (Unix) does not
+        let mut exact = task.late_matcher_with(false, |a, b| a == b);
+        assert_eq!(exact(&val("pgurl", text)), None);
+        assert_eq!(exact(&val("PGURL", text)), Some(0));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn late_matcher_is_case_insensitive_on_windows() {
+        let task = late_task("env.PGURL = 'p://{{ secrets.DB_PASSWORD }}@h'");
+        let mut matcher = task.late_matcher(false);
+        assert_eq!(
+            matcher(&val("pgurl", "p://{{ secrets.DB_PASSWORD }}@h")),
+            Some(0)
+        );
     }
 
     #[test]

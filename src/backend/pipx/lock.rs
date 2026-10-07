@@ -97,8 +97,22 @@ impl PIPXBackend {
             "{}:{}:{}",
             python.ba().full(),
             python.version,
-            python.install_path().display()
+            Self::python_installation_identity(&python)
         ))
+    }
+
+    /// Which installation of Python an environment was built with. An installation of the
+    /// identity layout is named by what it answers (its identity digest): the directory it
+    /// sits in is only a hash of that, and its absolute path moves with the data directory.
+    /// A legacy installation is identified by its path, as it always was.
+    fn python_installation_identity(python: &ToolVersion) -> String {
+        let install_path = python.install_path();
+        if crate::install_layout::resolver::dir_name_of(&install_path).is_some()
+            && let Some(identity) = crate::install_layout::resolver::identity_of(python)
+        {
+            return identity.digest().to_base32();
+        }
+        install_path.display().to_string()
     }
 
     pub(crate) async fn restore_uv_python(&self, config: &Arc<Config>, tv: &mut ToolVersion) {
@@ -111,22 +125,35 @@ impl PIPXBackend {
 
     fn restore_system_uv_python(tv: &mut ToolVersion) {
         // Installed environments remain usable without rediscovering a system Python.
+        let prefix = format!("{}~uv~", tv.version);
         let roots = std::iter::once(tv.ba().installs_path().to_path_buf()).chain(
             crate::env::shared_install_dirs()
                 .into_iter()
                 .map(|root| root.join(tv.ba().tool_dir_name())),
         );
+        let mut paths: Vec<PathBuf> = vec![];
         for entry in roots
             .filter_map(|root| std::fs::read_dir(root).ok())
             .flatten()
             .flatten()
         {
+            if !entry.file_name().to_string_lossy().starts_with(&prefix) {
+                continue;
+            }
+            // Under the identity layout the entry is a version link, and the environment
+            // is in the installation that link names.
             let path = entry.path();
-            if !entry
-                .file_name()
-                .to_string_lossy()
-                .starts_with(&format!("{}~uv~", tv.version))
-            {
+            paths.push(crate::install_layout::resolver::link_target(&path).unwrap_or(path));
+        }
+        // An installation whose version link is missing is still an installation.
+        paths.extend(
+            crate::install_layout::resolver::installs_of(tv.ba())
+                .into_iter()
+                .filter(|(name, _)| name.starts_with(&prefix))
+                .map(|(_, dir)| dir),
+        );
+        for (i, path) in paths.iter().enumerate() {
+            if paths[..i].iter().any(|seen| same_directory(seen, path)) {
                 continue;
             }
             let Ok(contents) = crate::file::read_to_string(path.join(".mise-uv/python.json"))
@@ -138,7 +165,12 @@ impl PIPXBackend {
             };
             let mut candidate = tv.clone();
             candidate.uv_python = Some(python);
-            if candidate.install_path() == path {
+            if same_directory(&candidate.install_path(), path) {
+                trace!(
+                    "restored the interpreter of {} from {}",
+                    tv.style(),
+                    path.display()
+                );
                 tv.uv_python = candidate.uv_python;
                 return;
             }
@@ -617,10 +649,27 @@ fn uv_index_url(registry: &str) -> Result<String> {
     {
         url.set_path("/simple/");
     } else {
-        let path = url.path().trim_end_matches('/').trim_end_matches("/simple");
+        let path = url.path().trim_end_matches('/');
+        // A JSON API at `<root>/pypi/{}/json` serves its simple index at `<root>/simple/`.
+        let path = if registry.ends_with("/json") {
+            path.strip_suffix("/pypi").unwrap_or(path)
+        } else {
+            path
+        };
+        let path = path.trim_end_matches("/simple");
         url.set_path(&format!("{path}/simple/"));
     }
     Ok(url.into())
+}
+
+/// Whether two paths name one directory: the same path, or the same place once links
+/// (a version link, a symlinked home) are followed.
+fn same_directory(a: &std::path::Path, b: &std::path::Path) -> bool {
+    a == b
+        || matches!(
+            (a.canonicalize(), b.canonicalize()),
+            (Ok(a), Ok(b)) if a == b
+        )
 }
 
 fn validate_portable_urls(value: &toml::Value) -> Result<()> {
@@ -836,12 +885,20 @@ requires-dist = [{{ name = "demo", specifier = "==1.0.0" }}]
                 "https://test.pypi.org/simple/",
             ),
             (
-                "https://notpypi.org/pypi/{}/json",
-                "https://notpypi.org/pypi/simple/",
+                "https://notpypi.org/mirror/pypi/{}/json",
+                "https://notpypi.org/mirror/simple/",
             ),
             (
                 "https://packages.example.com/pypi/{}/json",
-                "https://packages.example.com/pypi/simple/",
+                "https://packages.example.com/simple/",
+            ),
+            (
+                "https://artifactory.example.com/artifactory/api/pypi/pypi-remote/pypi/{}/json",
+                "https://artifactory.example.com/artifactory/api/pypi/pypi-remote/simple/",
+            ),
+            (
+                "https://packages.example.com/api/{}/json",
+                "https://packages.example.com/api/simple/",
             ),
             (
                 "https://packages.example.com/pypi/simple/{}/",

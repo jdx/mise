@@ -916,6 +916,9 @@ fn tera_get_env(env: EnvMap) -> impl Fn(Kwargs, &State) -> TeraResult<Value> {
 
 static TERA1: Lazy<tera1::Tera> = Lazy::new(|| {
     let mut tera = tera1::Tera::default();
+    // Replace Tera v1's built-in get_env(), which reads the live process
+    // environment and would leak inherited secrets, with the filtered lookup.
+    tera.register_function("get_env", tera1_get_env(env::PRISTINE_ENV.clone()));
     tera.register_function("arch", tera1_host_fn(host_arch_name));
     tera.register_function("os", tera1_host_fn(|| env::consts::OS));
     tera.register_function("os_family", move |_: &HashMap<String, JsonValue>| {
@@ -1484,6 +1487,21 @@ fn reemit_template_fn_v1(
             format!("{{{{ {name}({}) }}}}", parts.join(", "))
         };
         Ok(json!(rendered))
+    }
+}
+
+fn tera1_get_env(env: EnvMap) -> impl Fn(&HashMap<String, JsonValue>) -> tera1::Result<JsonValue> {
+    move |args: &HashMap<String, JsonValue>| -> tera1::Result<JsonValue> {
+        let name = json_str_arg(args, "name")?;
+        if let Some(value) = env.get(name) {
+            return Ok(json!(value));
+        }
+        match args.get("default") {
+            Some(default) => Ok(default.clone()),
+            None => Err(tera1_err(format!(
+                "Environment variable `{name}` not found"
+            ))),
+        }
     }
 }
 
