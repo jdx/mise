@@ -3,16 +3,15 @@ use super::*;
 #[test]
 fn select_tuf_config_default_uses_production_url() {
     // No override → canonical Sigstore public-good TUF URL (default behavior).
-    assert_eq!(select_tuf_config(None).url, DEFAULT_TUF_URL);
+    assert_eq!(DEFAULT_TUF_URL, SigstoreInstance::PublicGood.tuf_url());
+    assert!(format!("{:?}", select_tuf_config(None)).contains(DEFAULT_TUF_URL));
 }
 
 #[test]
 fn select_tuf_config_override_uses_mirror_url() {
-    // Override → the mirror URL, while still pinning PRODUCTION_TUF_ROOT
-    // (the latter is enforced by TufConfig::custom, covered by the
-    // sigstore-trust-root crate's own tests).
+    // Override → the mirror URL, while still pinning the production root.
     let mirror = "https://tuf-mirror.example.com/".to_string();
-    assert_eq!(select_tuf_config(Some(mirror.clone())).url, mirror);
+    assert!(format!("{:?}", select_tuf_config(Some(mirror.clone()))).contains(&mirror));
 }
 
 #[test]
@@ -68,6 +67,7 @@ fn github_release_attestation_names_its_repository() {
 
 #[tokio::test]
 async fn fixture_bundles_verify_against_their_artifact() {
+    let _tuf_root = TUF_ROOT_LOCK.lock().await;
     // mise-v2026.9.12-linux-x64.tar.gz, which both fixtures attest.
     let digest =
         Sha256Hash::from_hex("b4058dece685259910d3aba5782445996eea79dbdb3cf952a6eb81aadf0373ff")

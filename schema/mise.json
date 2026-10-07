@@ -717,14 +717,14 @@
           }
         },
         "auto_update": {
-          "default": false,
-          "description": "Automatically update mise before running eligible commands.",
-          "type": "boolean"
+          "description": "[deprecated] Use `self_update.auto` instead.",
+          "type": "boolean",
+          "deprecated": true
         },
         "auto_update_check_duration": {
-          "default": "7d",
-          "description": "How often to check for a new mise release when auto-update is enabled.",
-          "type": "string"
+          "description": "[deprecated] Use `self_update.check_duration` instead.",
+          "type": "string",
+          "deprecated": true
         },
         "cache_prune_age": {
           "default": "30d",
@@ -1421,6 +1421,11 @@
           "description": "Create and read lockfiles for tool versions.",
           "type": "boolean"
         },
+        "lockfile_auto_prune": {
+          "default": true,
+          "description": "Remove lockfile tools that are absent from the active configuration.",
+          "type": "boolean"
+        },
         "lockfile_mode": {
           "description": "Choose incremental merging or complete lockfile generation.",
           "type": "string",
@@ -1714,6 +1719,20 @@
           "description": "Fail when provenance API checks cannot be completed.",
           "type": "boolean"
         },
+        "prune": {
+          "type": "object",
+          "unevaluatedProperties": false,
+          "properties": {
+            "exclude": {
+              "default": [],
+              "description": "Tools that `mise prune` never removes, such as `node` or `aqua:BurntSushi/ripgrep`.",
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        },
         "pypi": {
           "type": "object",
           "unevaluatedProperties": false,
@@ -1948,6 +1967,16 @@
             "api_url": {
               "default": "https://api.github.com",
               "description": "GitHub API base URL used by `mise self-update`.",
+              "type": "string"
+            },
+            "auto": {
+              "default": false,
+              "description": "Automatically update mise before running eligible commands.",
+              "type": "boolean"
+            },
+            "check_duration": {
+              "default": "7d",
+              "description": "How often to check for a new mise release when `self_update.auto` is enabled.",
               "type": "string"
             },
             "minimum_release_age": {
@@ -2395,6 +2424,17 @@
           "description": "Enable terminal progress indicators (OSC 9;4) for compatible terminals.",
           "type": "boolean"
         },
+        "tool_update": {
+          "type": "object",
+          "unevaluatedProperties": false,
+          "properties": {
+            "check_duration": {
+              "default": "24h",
+              "description": "How often to check for updates to a global tool with `auto_update = true`.",
+              "type": "string"
+            }
+          }
+        },
         "trace": {
           "description": "Sets log level to trace",
           "type": "boolean"
@@ -2491,6 +2531,24 @@
           "default": "exe",
           "description": "Shim file mode for Windows. Options: `exe`, `file`, `hardlink`, `symlink`.",
           "type": "string"
+        },
+        "write_targets": {
+          "type": "object",
+          "unevaluatedProperties": false,
+          "properties": {
+            "dotfiles": {
+              "description": "Global config file to create new [dotfiles] entries in. Existing entries stay in the config file that already declares them.",
+              "type": "string"
+            },
+            "packages": {
+              "description": "Global config file to create new [bootstrap.packages] entries in. Existing entries stay in the config file that already declares them.",
+              "type": "string"
+            },
+            "tools": {
+              "description": "Global config file to create new [tools] entries in. Existing entries stay in the config file that already declares them.",
+              "type": "string"
+            }
+          }
         },
         "yes": {
           "description": "This will automatically answer yes or no to prompts. This is useful for scripting.",
@@ -2971,6 +3029,17 @@
             },
             {
               "properties": {
+                "auto_update": {
+                  "description": "update this tool before it runs when its check is due; true, or a check interval such as \"12h\". Only honored in global config",
+                  "oneOf": [
+                    {
+                      "type": "boolean"
+                    },
+                    {
+                      "type": "string"
+                    }
+                  ]
+                },
                 "install_env": {
                   "type": "object",
                   "additionalProperties": {
@@ -3539,6 +3608,30 @@
         "checksum_expr": {
           "description": "expr-lang expression extracting algo:hash from the checksum_url manifest",
           "type": "string"
+        },
+        "headers": {
+          "description": "request headers sent with the download, version_list_url and checksum_url requests; values are tera templated (e.g. Bearer {{ env.TOKEN }})",
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "headers_forward": {
+          "description": "hosts each header in headers may follow a redirect to; exact hosts or *.suffix, and a header with no entry is never forwarded",
+          "type": "object",
+          "additionalProperties": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            ]
+          }
         },
         "size": {
           "description": "expected artifact size in bytes",
@@ -4452,6 +4545,10 @@
         },
         "identity_prefix": {
           "description": "keyless signer certificate identity prefix",
+          "type": "string"
+        },
+        "workflow": {
+          "description": "repository workflow file that signs releases on a tag; github.com projects only, not valid with pubkey, identity, identity_prefix, or issuer",
           "type": "string"
         },
         "list_identity_prefix": {
@@ -5587,6 +5684,22 @@
             "type": "string"
           },
           "type": "array"
+        },
+        "secrets": {
+          "description": "[experimental] Secret keys this task receives when it starts, e.g. [\"DEPLOY_KEY\"]. Dependencies do not inherit them. See `mise secrets ls`.",
+          "oneOf": [
+            {
+              "type": "string",
+              "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+              }
+            }
+          ]
         }
       },
       "type": "object"
@@ -5603,7 +5716,8 @@
             "interactive": false,
             "quiet": false,
             "raw": false,
-            "raw_args": false
+            "raw_args": false,
+            "secrets": false
           }
         }
       ],
@@ -5959,6 +6073,23 @@
         }
       ]
     },
+    "secrets": {
+      "description": "[experimental] Sources for mise secrets: values resolved only when mise starts a task or `mise x` command that was granted them. Project config only.",
+      "type": "object",
+      "properties": {
+        "fnox": {
+          "description": "Use fnox (fnox.toml discovered from this config's directory). https://mise.jdx.dev/environments/secrets/fnox.html",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "profile": {
+              "type": "string",
+              "description": "fnox profile (fnox -P); defaults to FNOX_PROFILE, then \"default\""
+            }
+          }
+        }
+      }
+    },
     "redactions": {
       "description": "env or vars keys to redact from logs",
       "type": "array",
@@ -6255,6 +6386,10 @@
                 "type": "string",
                 "description": "comment prefix for edit marker lines; inferred from the file extension when omitted"
               },
+              "merge": {
+                "type": "boolean",
+                "description": "edit entry: set the keys of source on a JSON, TOML, or YAML target and leave the target's other keys to the application that also writes it; the format comes from the target's extension"
+              },
               "variants": {
                 "type": "array",
                 "description": "OS/profile variants: history streams for track mode, or optional destinations for deployment modes",
@@ -6282,6 +6417,10 @@
                     "default": {
                       "type": "boolean"
                     },
+                    "machine": {
+                      "type": "boolean",
+                      "description": "track mode only: a separate stream on every machine, never applied on another machine; must be the only variant and cannot be combined with encrypt"
+                    },
                     "target": {
                       "type": "string",
                       "description": "deployment destination override; requires either an explicit source or a safe relative entry key when every variant has a target, and is not supported in track mode"
@@ -6291,6 +6430,40 @@
               }
             },
             "allOf": [
+              {
+                "if": {
+                  "required": ["merge"],
+                  "properties": {
+                    "merge": {
+                      "const": true
+                    }
+                  }
+                },
+                "then": {
+                  "required": ["source"],
+                  "properties": {
+                    "mode": false,
+                    "content": false,
+                    "permissions": false,
+                    "exclude": false,
+                    "include": false,
+                    "manifest": false,
+                    "autosave": false,
+                    "encrypt": false,
+                    "allow_plaintext": false,
+                    "variants": false,
+                    "enabled": false,
+                    "remove_empty": false,
+                    "relative": false,
+                    "dot_prefix": false,
+                    "group": false,
+                    "block": false,
+                    "line": false,
+                    "position": false,
+                    "comment": false
+                  }
+                }
+              },
               {
                 "anyOf": [
                   {
@@ -6683,6 +6856,10 @@
               "replace": {
                 "type": "boolean"
               },
+              "os": {
+                "$ref": "#/$defs/os_filter",
+                "description": "OS or OS/arch selectors; entries on other platforms are skipped"
+              },
               "notify": {
                 "type": "array",
                 "items": {
@@ -6784,6 +6961,10 @@
               },
               "replace": {
                 "type": "boolean"
+              },
+              "os": {
+                "$ref": "#/$defs/os_filter",
+                "description": "OS or OS/arch selectors; entries on other platforms are skipped"
               },
               "notify": {
                 "type": "array",
@@ -6975,7 +7156,7 @@
               },
               "builtin": {
                 "type": "string",
-                "enum": ["history-watch"],
+                "enum": ["history-watch", "tool-update"],
                 "description": "A mise-provided user service"
               },
               "command": {
@@ -8241,6 +8422,11 @@
         "git_email": {
           "type": "string",
           "description": "email used for history commit authors and committers; {hostname} expands to this machine's hostname"
+        },
+        "machine": {
+          "type": "string",
+          "description": "this machine's name in per-machine streams (variants = [{ machine = true }]) instead of the name generated with the history store",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,62}$"
         },
         "reload": {
           "type": "object",

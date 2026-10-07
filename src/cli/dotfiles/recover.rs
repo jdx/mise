@@ -78,6 +78,7 @@ impl DotfilesRecover {
         }
         if self.keep_current
             && !self.yes
+            && !crate::config::Settings::get().yes
             && !crate::ui::prompt::confirm(
                 "Keep these live files and discard this operation's temporary recovery copies?",
             )?

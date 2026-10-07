@@ -649,7 +649,14 @@ fn uv_index_url(registry: &str) -> Result<String> {
     {
         url.set_path("/simple/");
     } else {
-        let path = url.path().trim_end_matches('/').trim_end_matches("/simple");
+        let path = url.path().trim_end_matches('/');
+        // A JSON API at `<root>/pypi/{}/json` serves its simple index at `<root>/simple/`.
+        let path = if registry.ends_with("/json") {
+            path.strip_suffix("/pypi").unwrap_or(path)
+        } else {
+            path
+        };
+        let path = path.trim_end_matches("/simple");
         url.set_path(&format!("{path}/simple/"));
     }
     Ok(url.into())
@@ -878,12 +885,20 @@ requires-dist = [{{ name = "demo", specifier = "==1.0.0" }}]
                 "https://test.pypi.org/simple/",
             ),
             (
-                "https://notpypi.org/pypi/{}/json",
-                "https://notpypi.org/pypi/simple/",
+                "https://notpypi.org/mirror/pypi/{}/json",
+                "https://notpypi.org/mirror/simple/",
             ),
             (
                 "https://packages.example.com/pypi/{}/json",
-                "https://packages.example.com/pypi/simple/",
+                "https://packages.example.com/simple/",
+            ),
+            (
+                "https://artifactory.example.com/artifactory/api/pypi/pypi-remote/pypi/{}/json",
+                "https://artifactory.example.com/artifactory/api/pypi/pypi-remote/simple/",
+            ),
+            (
+                "https://packages.example.com/api/{}/json",
+                "https://packages.example.com/api/simple/",
             ),
             (
                 "https://packages.example.com/pypi/simple/{}/",

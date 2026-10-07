@@ -38,7 +38,7 @@ pub(crate) struct PluginsInstall {
     new_plugin: Option<String>,
 
     /// The git url of the plugin
-    /// e.g.: https://github.com/mise-plugins/vfox-cmake.git
+    /// e.g.: https://github.com/jdx/vfox-cmake.git
     #[usage(help = "The git url of the plugin", value_hint = usage_rs::ValueHint::Url, verbatim_doc_comment
     )]
     git_url: Option<String>,

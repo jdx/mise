@@ -134,6 +134,14 @@ impl Uninstall {
                 warn!("{} is not installed", tv.style());
                 continue;
             }
+            // `--all` lists what is installed, but a configured request (`27`) can stand
+            // for an installation under another name (`temurin-27.0.0+35`) and so name
+            // a directory that does not exist. Only stale cache under that name would be
+            // reported, as if a second installation were being removed.
+            if self.all && !file::entry_exists(tv.install_path()) {
+                debug!("{} has no installation to remove", tv.style());
+                continue;
+            }
             to_remove.push((plugin, tv));
         }
         let has_work = !to_remove.is_empty();

@@ -364,6 +364,10 @@ other semantic defaults the same way when overriding a registry tool to use pipx
 Additional arguments for version-only installs using `uv tool install`. These
 are unsupported with dependency graphs; `pipx_args` applies only to pipx.
 
+When mise manages Python, version-only installs pass `--python <mise python>` to
+`uv tool install`, so the tool's venv does not depend on a Python uv downloaded
+itself. Pass your own `--python` here to choose a different interpreter.
+
 ```toml
 [tools]
 "pypi:ansible-core" = { version = "latest", uvx_args = "--resolution lowest" }

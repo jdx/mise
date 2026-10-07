@@ -1,0 +1,92 @@
+#!/usr/bin/env bash
+# `auto_update` and `auto_update_check_duration` moved to `self_update.auto` and
+# `self_update.check_duration`. The old keys and their environment variables keep working when the
+# new ones are not set, and warn once the deprecation's warn_at version is reached. Before that,
+# the warning is held back because older mise rejects a settings file containing the new keys.
+
+warn_at="2027.4.0"
+current="$(sed -n 's/^version = "\(.*\)"$/\1/p' "$ROOT/Cargo.toml" | head -n 1)"
+if [[ "$(printf '%s\n%s\n' "$warn_at" "$current" | sort -V | head -n 1)" == "$warn_at" ]]; then
+  warns=1
+else
+  warns=0
+fi
+
+assert_deprecation() {
+  local cmd="$1" key="$2"
+  if [[ $warns == 1 ]]; then
+    assert_contains "$cmd 2>&1" "deprecated [setting.$key]"
+  else
+    assert_not_contains "$cmd 2>&1" "deprecated"
+  fi
+}
+
+# defaults
+assert "mise settings get self_update.auto" "false"
+assert "mise settings get self_update.check_duration" "7d"
+
+# deprecated keys in the global config map onto the new ones
+cat <<'TOML' >"$MISE_CONFIG_DIR/config.toml"
+[settings]
+auto_update = true
+auto_update_check_duration = "3d"
+TOML
+assert "mise settings get self_update.auto 2>/dev/null" "true"
+assert "mise settings get self_update.check_duration 2>/dev/null" "3d"
+assert_deprecation "mise settings get self_update.auto" "auto_update"
+assert_deprecation "mise settings get self_update.check_duration" "auto_update_check_duration"
+
+# the new keys win over the deprecated ones in the same file
+cat <<'TOML' >"$MISE_CONFIG_DIR/config.toml"
+[settings]
+auto_update = true
+auto_update_check_duration = "3d"
+self_update.auto = false
+self_update.check_duration = "2d"
+TOML
+assert "mise settings get self_update.auto 2>/dev/null" "false"
+assert "mise settings get self_update.check_duration 2>/dev/null" "2d"
+
+# the new keys on their own do not warn
+cat <<'TOML' >"$MISE_CONFIG_DIR/config.toml"
+[settings]
+self_update.auto = true
+self_update.check_duration = "1d"
+TOML
+assert "mise settings get self_update.auto" "true"
+assert "mise settings get self_update.check_duration" "1d"
+assert_not_contains "mise settings get self_update.auto 2>&1" "deprecated"
+rm "$MISE_CONFIG_DIR/config.toml"
+
+# the deprecated environment variables still work
+assert "MISE_AUTO_UPDATE=1 mise settings get self_update.auto 2>/dev/null" "true"
+assert "MISE_AUTO_UPDATE_CHECK_DURATION=5d mise settings get self_update.check_duration 2>/dev/null" "5d"
+assert_deprecation "MISE_AUTO_UPDATE=1 mise settings get self_update.auto" "auto_update"
+
+# the new environment variables work and win over the deprecated ones
+assert "MISE_SELF_UPDATE_AUTO=1 mise settings get self_update.auto" "true"
+assert "MISE_SELF_UPDATE_CHECK_DURATION=6d mise settings get self_update.check_duration" "6d"
+assert "MISE_AUTO_UPDATE=1 MISE_SELF_UPDATE_AUTO=0 mise settings get self_update.auto 2>/dev/null" "false"
+
+# the environment still beats the global config across the old and new spellings
+cat <<'TOML' >"$MISE_CONFIG_DIR/config.toml"
+[settings]
+self_update.auto = true
+self_update.check_duration = "2d"
+TOML
+assert "MISE_AUTO_UPDATE=0 mise settings get self_update.auto 2>/dev/null" "false"
+assert "MISE_AUTO_UPDATE_CHECK_DURATION=5d mise settings get self_update.check_duration 2>/dev/null" "5d"
+cat <<'TOML' >"$MISE_CONFIG_DIR/config.toml"
+[settings]
+auto_update = true
+auto_update_check_duration = "3d"
+TOML
+assert "MISE_SELF_UPDATE_AUTO=0 mise settings get self_update.auto 2>/dev/null" "false"
+assert "MISE_SELF_UPDATE_CHECK_DURATION=6d mise settings get self_update.check_duration 2>/dev/null" "6d"
+rm "$MISE_CONFIG_DIR/config.toml"
+
+# `mise settings` writes the new key
+mise settings self_update.auto=true
+assert_contains "cat $MISE_CONFIG_DIR/config.toml" "[settings.self_update]"
+assert_not_contains "cat $MISE_CONFIG_DIR/config.toml" "auto_update"
+assert "mise settings get self_update.auto" "true"

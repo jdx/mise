@@ -273,7 +273,7 @@ fn latest_package_version() -> String {
     "latest".to_string()
 }
 
-fn deserialize_package_os<'de, D>(deserializer: D) -> Result<Vec<String>, D::Error>
+pub(crate) fn deserialize_package_os<'de, D>(deserializer: D) -> Result<Vec<String>, D::Error>
 where
     D: serde::Deserializer<'de>,
 {
@@ -290,7 +290,7 @@ where
     };
     if values.is_empty() || values.iter().any(|value| value.is_empty()) {
         return Err(serde::de::Error::custom(
-            "package os must contain at least one non-empty selector",
+            "os must contain at least one non-empty selector",
         ));
     }
     Ok(values)

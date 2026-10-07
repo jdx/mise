@@ -825,9 +825,9 @@ alias la='ls -la'
 "~/.gitconfig/identity" = { source = "snippets/git-identity.tmpl", template = "tera" }
 ```
 
-For edit entries, `source` is paired with `template = "tera"` to make the
-entry unambiguously an edit. A table with only `source` is a whole-file
-entry using `dotfiles.default_mode`.
+For edit entries, `source` is paired with `template = "tera"` or
+[`merge = true`](#merge) to make the entry unambiguously an edit. A table with
+only `source` is a whole-file entry using `dotfiles.default_mode`.
 
 A `block` is delimited by marker comments in the target file, named by the
 entry's id:
@@ -853,6 +853,60 @@ mise appends it; set `position = "prepend"` to insert it at the beginning.
 Running apply again leaves an existing match wherever it is. Other bytes,
 including line endings, stay unchanged. The value must be a single line;
 use a block for multi-line content.
+
+### Setting some keys of a config file {#merge}
+
+Some applications write their own state into the same file that holds the
+settings you care about: Codex rewrites `~/.codex/config.toml`, Claude Code
+rewrites `~/.claude/settings.json`, and other tools re-serialize a YAML file
+on every change. A `symlink` or `copy` entry fights them for the whole file,
+and a `block` can't survive an application that rewrites the file.
+
+A `merge` entry owns only the keys in its source. Everything else in the file
+stays the application's:
+
+```toml
+[dotfiles]
+"~/.codex/config.toml/shared" = { source = "codex/shared.toml", merge = true }
+"~/.claude/settings.json/shared" = { source = "claude/shared.json", merge = true }
+"~/.omp/agent/config.yml/shared" = { source = "omp/shared.yml", merge = true }
+```
+
+The source holds the keys you want in the same format as the target, which
+mise infers from the target's `.json`, `.toml`, `.yaml`, or `.yml` extension.
+With `codex/shared.toml` containing:
+
+```toml
+model = "gpt-5"
+
+[tui]
+theme = "light"
+```
+
+applying sets `model` and `tui.theme` and leaves the rest of
+`~/.codex/config.toml` as it is, including `[plugins.*]` tables and comments
+the application wrote. A missing target is created from the source.
+
+- A table or object that exists on both sides merges recursively. Any other
+  value, including an array, is replaced by the source's value.
+- Keys that only the target has are never changed, and keys you remove from
+  the source are not removed from the target.
+- `mise dot status` and `mise dot diff` look only at the keys in the source,
+  so keys the application adds never show up as drift.
+- TOML and YAML are edited in place, so comments, key order, and the
+  formatting of untouched keys stay. JSON has no comments; mise keeps key
+  order and the file's indentation, and rewrites the file only when an owned
+  key differs. A target that is not valid JSON, TOML, or YAML (including JSON
+  with comments) is reported and never overwritten.
+- Two merge entries for one file that set the same key to different values are
+  refused instead of fighting over it. An entry with `template = "tera"` is
+  rendered only when it is applied, so a conflict with one is found when both
+  are applied in the same run, not when one is applied alone through a target
+  filter. mise does not compare a merge with a
+  `block` or `line` edit of the same file, so don't have both own one key.
+- `template = "tera"` renders the source first, like other edit entries.
+- `mise dot unapply` leaves merged keys in place, because the application may
+  have changed them since.
 
 ## How configuration is applied {#semantics}
 
@@ -1195,6 +1249,44 @@ skips the path until you fix it.
 When nothing matches, mise uses the variant marked `default = true`.
 Without a default, it skips saving and applying the path on that machine.
 Checkpoints preserve the versions saved by other machines.
+
+#### One version per machine {#machine-variants}
+
+Some files describe the machine itself, such as a monitor layout or a
+trackpad setting. Give every machine its own version with a `machine`
+variant:
+
+```toml
+[dotfiles]
+"~/.config/hypr/monitors.lua" = { mode = "track", variants = [{ machine = true }] }
+```
+
+Or run `mise dot track ~/.config/hypr/monitors.lua --machine`.
+
+Each machine saves, rolls back, and restores its own version. Sync
+shares the other tracked files as usual, but never applies one machine's
+version on another. Each version is still pushed to the origin with the
+rest of the history, so it is kept off the machine and can be restored on
+it later.
+
+The stream is named after the machine, for example
+`machine-omarchy-3f2a9c1b`: its hostname and a random suffix, chosen the
+first time and kept in `$MISE_STATE_DIR/history/machine`. Renaming the
+host does not change it, and two machines with the same hostname still
+get separate versions. To choose the name yourself, set it in the
+machine's global configuration, for example in
+`~/.config/mise/config.local.toml`:
+
+```toml
+[history]
+machine = "desk"
+```
+
+After reinstalling a machine, set its earlier name to continue that
+machine's history. A `machine` variant must be the entry's only variant,
+and cannot be combined with `encrypt`. Upgrade every machine sharing the
+setup before using it: older versions of mise refuse the setup rather
+than apply one machine's version on the others.
 
 ### Tracking files that mise also manages {#ownership}
 

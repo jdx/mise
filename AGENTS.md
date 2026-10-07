@@ -223,6 +223,8 @@ Use mise version format for dates (e.g., `deprecated_at!("2026.10.0", "2027.10.0
 
 If a compatibility window is required, removal remains 12 months after `warn_at`, not 12 months after the initial documentation notice.
 
+For temporary code with no user-facing deprecation, such as a migration or a fallback that reads what an older mise wrote, use `remove_by!("2027.1.0", "id")` from `src/output.rs`. It is a compile-time assertion, so the build fails once the version reaches `remove_at`; remove every `remove_by!` with that id and the code it guards.
+
 ## Important Implementation Notes
 
 ### Backend System

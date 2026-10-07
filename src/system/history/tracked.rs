@@ -397,6 +397,13 @@ impl TrackedSet {
                 });
                 continue;
             }
+            if request.policy.encrypt && request.variants.iter().any(|variant| variant.machine) {
+                set.invalid.push(PathReason {
+                    path: display_path(&target),
+                    reason: "encryption is not supported with a machine variant".into(),
+                });
+                continue;
+            }
             set.manifest.enrollment.retain(|entry| entry.path != path);
             set.manifest.enrollment.push(super::manifest::Enrollment {
                 path,
@@ -435,13 +442,22 @@ impl TrackedSet {
                     });
                     match select::select(&request.variants, &environments) {
                         Selection::Single => {}
-                        Selection::Variant(variant) => {
-                            entry.variant = Some(variant.name());
-                        }
+                        Selection::Variant(variant) => match variant.name() {
+                            Ok(name) => entry.variant = Some(name),
+                            Err(error) => {
+                                set.invalid.push(PathReason {
+                                    path: display_path(&request.target),
+                                    reason: format!("{error:#}"),
+                                });
+                                continue;
+                            }
+                        },
                         Selection::NoMatch => continue,
                         Selection::Ambiguous(variants) => {
-                            let names: Vec<String> =
-                                variants.iter().map(|variant| variant.name()).collect();
+                            let names: Vec<String> = variants
+                                .iter()
+                                .map(|variant| variant.selector_name())
+                                .collect();
                             set.invalid.push(PathReason {
                                 path: display_path(&request.target),
                                 reason: format!(

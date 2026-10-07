@@ -5,12 +5,16 @@ use std::{
 
 use console::{Term, style};
 use eyre::{Result, bail, eyre};
+use indexmap::IndexSet;
 use itertools::Itertools;
 use jiff::Timestamp;
 
 use crate::args::{BackendArg, ToolArg};
 use crate::config::config_file::ConfigFile;
-use crate::config::{Config, ConfigPathOptions, Settings, config_file, resolve_target_config_path};
+use crate::config::{
+    Config, ConfigPathOptions, GlobalWriteSection, Settings, config_file,
+    resolve_target_config_path,
+};
 use crate::file::display_path;
 use crate::install_before::resolve_cli_minimum_release_age;
 use crate::toolset::{
@@ -274,7 +278,7 @@ impl Use {
             .with_scope(scope)
             .build(&config)
             .await?;
-        let mut cf = self.get_config_file().await?;
+        let mut cf = self.get_config_file(&config).await?;
         if self.tools.iter().any(|target| target.postinstall.is_some())
             && !matches!(cf.source(), ToolSource::MiseToml(_))
         {
@@ -303,6 +307,7 @@ impl Use {
             refresh_remote_versions: false,
             inactive: false,
             warn_not_in_lockfile: true,
+            defer_missing_lazy_tools: false,
         };
         let versions: Vec<_> = self
             .tools
@@ -423,10 +428,11 @@ impl Use {
         Ok(())
     }
 
-    async fn get_config_file(&self) -> Result<Arc<dyn ConfigFile>> {
+    async fn get_config_file(&self, config: &Config) -> Result<Arc<dyn ConfigFile>> {
         let cwd = env::current_dir()?;
         let has_options = self.tools.iter().any(UseTool::has_options);
         let explicit_file = self.path.as_ref().is_some_and(|path| !path.is_dir());
+        let (existing_global_paths, has_new_global_entries) = self.global_write_paths(config)?;
         let opts = ConfigPathOptions {
             global: self.global,
             path: self.path.clone(),
@@ -434,6 +440,9 @@ impl Use {
             cwd: Some(cwd),
             prefer_toml: false,
             prevent_home_local: true, // When in HOME, use global config
+            global_write_section: Some(GlobalWriteSection::Tools),
+            existing_global_paths,
+            has_new_global_entries,
         };
         let mut path = resolve_target_config_path(opts)?;
         if has_options && !explicit_file && path.extension().is_none_or(|ext| ext != "toml") {
@@ -444,6 +453,38 @@ impl Use {
         }
 
         config_file::parse_or_init(&path).await
+    }
+
+    fn global_write_paths(&self, config: &Config) -> Result<(IndexSet<PathBuf>, bool)> {
+        if !(self.global || env::in_home_dir()) || self.path.is_some() || self.env.is_some() {
+            return Ok((Default::default(), false));
+        }
+        let additions = self
+            .tools
+            .iter()
+            .map(|tool| tool.tool.ba.as_ref().clone())
+            .collect::<IndexSet<_>>();
+        let requested = additions
+            .iter()
+            .cloned()
+            .chain(self.remove.iter().cloned())
+            .collect::<IndexSet<_>>();
+        let mut paths = IndexSet::new();
+        let mut existing = IndexSet::new();
+        for (path, cf) in &config.config_files {
+            if !config::is_global_config(path) || config::is_system_config(path) {
+                continue;
+            }
+            let tools = cf.to_tool_request_set()?;
+            for ba in &requested {
+                if tools.tools.contains_key(ba) {
+                    paths.insert(path.clone());
+                    existing.insert(ba.clone());
+                }
+            }
+        }
+        let has_new_additions = additions.iter().any(|ba| !existing.contains(ba));
+        Ok((paths, has_new_additions))
     }
 
     async fn warn_if_hidden(&self, config: &Arc<Config>, global: &Path) {

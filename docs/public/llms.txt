@@ -105,6 +105,7 @@
 - [Environment Variables](https://mise.jdx.dev/environments/): Define project environment variables in [env]. mise supplies them to commands run with mise exec, tasks, and activated interactive shells.
 - [Shell Aliases](https://mise.jdx.dev/shell-aliases.html): Define project shortcuts for an interactive Bash, Zsh, or Fish shell with mise activate. mise sets the aliases as you enter a directory and removes them when they are no longer configured.
 - [Secrets](https://mise.jdx.dev/environments/secrets/): Choose how to supply secret values to the project. mise passes resolved values to commands as environment variables; the secret provider or encryption key controls who can resolve them.
+- [fnox (mise secrets)](https://mise.jdx.dev/environments/secrets/fnox.html): fnox can be the secrets source for a project. A task receives exactly the secrets it lists in secrets = [...], as environment variables, and only while it runs.
 - [sops](https://mise.jdx.dev/environments/secrets/sops.html): mise reads encrypted secret files and makes values available as environment variables via env._.file.
 - [age](https://mise.jdx.dev/environments/secrets/age.html): Encrypt individual environment variable values directly in mise.toml using age encryption. Encryption and decryption are built into mise.
 - [Hooks](https://mise.jdx.dev/hooks.html): mise can automatically execute scripts during a mise activate session. Except for the preinstall and postinstall hooks, these require the mise activate shell hook to be installed in your shell.
@@ -122,7 +123,7 @@
 - [Task Arguments](https://mise.jdx.dev/tasks/task-arguments.html): Define arguments when a task needs named inputs, validation, help, or completions. Without a usage specification, mise forwards extra command-line arguments to the underlying command; see argument…
 - [Task Configuration](https://mise.jdx.dev/tasks/task-configuration.html): Use this reference to configure task commands, dependencies, inputs, and execution settings. For a starting example, see TOML tasks or file tasks. To share settings across tasks, use task templates.
 - [Task Caching](https://mise.jdx.dev/tasks/caching.html): Use ordinary sources and outputs checks to skip work that is already up to date. Enable experimental artifact caching when you also need to reuse successful results after switching inputs or deleting…
-- [Remote Cache Protocol](https://mise.jdx.dev/tasks/remote-cache-protocol.html): [!WARNING] Remote build caching is experimental. This document defines protocol version 1 for mise task artifact caching.
+- [Remote Cache Protocol](https://mise.jdx.dev/tasks/remote-cache-protocol.html): Remote build caching is experimental. This document defines protocol version 1 for mise task artifact caching.
 - [Task Templates](https://mise.jdx.dev/tasks/templates.html): Define a task template when several tasks share commands, tools, environment variables, or dependencies. Each task selects a template with extends and supplies the settings that differ.
 - [Monorepo Tasks](https://mise.jdx.dev/tasks/monorepo.html): mise supports monorepo-style task organization with target path syntax. This lets you manage tasks across multiple projects in a single repository, where each project can have its own mise.toml with…
 - [OpenTelemetry](https://mise.jdx.dev/tasks/opentelemetry.html): mise can export traces (and, separately, task stdout/stderr logs) for mise run to any OpenTelemetry-compatible backend such as Jaeger, Grafana Tempo, or SigNoz.
@@ -203,6 +204,7 @@
 - [mise bootstrap dotfiles history ls](https://mise.jdx.dev/cli/bootstrap/dotfiles/history/ls.html): List checkpoints, newest first
 - [mise bootstrap dotfiles history show](https://mise.jdx.dev/cli/bootstrap/dotfiles/history/show.html): Show one checkpoint: what triggered it, what changed, and its journal
 - [mise bootstrap dotfiles include](https://mise.jdx.dev/cli/bootstrap/dotfiles/include.html): Stop excluding paths matching a glob
+- [mise bootstrap dotfiles notify](https://mise.jdx.dev/cli/bootstrap/dotfiles/notify.html): Send a test desktop notification
 - [mise bootstrap dotfiles origin](https://mise.jdx.dev/cli/bootstrap/dotfiles/origin.html): Connect or disconnect the setup repository
 - [mise bootstrap dotfiles origin set](https://mise.jdx.dev/cli/bootstrap/dotfiles/origin/set.html): Connect a setup repository
 - [mise bootstrap dotfiles paths](https://mise.jdx.dev/cli/bootstrap/dotfiles/paths.html): Show what history tracks and under which policies
@@ -318,6 +320,7 @@
 - [mise dotfiles history ls](https://mise.jdx.dev/cli/dotfiles/history/ls.html): List checkpoints, newest first
 - [mise dotfiles history show](https://mise.jdx.dev/cli/dotfiles/history/show.html): Show one checkpoint: what triggered it, what changed, and its journal
 - [mise dotfiles include](https://mise.jdx.dev/cli/dotfiles/include.html): Stop excluding paths matching a glob
+- [mise dotfiles notify](https://mise.jdx.dev/cli/dotfiles/notify.html): Send a test desktop notification
 - [mise dotfiles origin](https://mise.jdx.dev/cli/dotfiles/origin.html): Connect or disconnect the setup repository
 - [mise dotfiles origin set](https://mise.jdx.dev/cli/dotfiles/origin/set.html): Connect a setup repository
 - [mise dotfiles paths](https://mise.jdx.dev/cli/dotfiles/paths.html): Show what history tracks and under which policies
@@ -380,6 +383,8 @@
 - [mise reshim](https://mise.jdx.dev/cli/reshim.html): Create shims for executables provided by installed tools
 - [mise run](https://mise.jdx.dev/cli/run.html): Run tasks and their dependencies
 - [mise search](https://mise.jdx.dev/cli/search.html): Search for available tools
+- [mise secrets](https://mise.jdx.dev/cli/secrets.html): [experimental] List the secret names this project's secrets source provides, without their values
+- [mise secrets ls](https://mise.jdx.dev/cli/secrets/ls.html): List the secret names this project's secrets source provides, without their values
 - [mise self-update](https://mise.jdx.dev/cli/self-update.html): Update mise itself
 - [mise set](https://mise.jdx.dev/cli/set.html): Set environment variables in mise.toml
 - [mise settings](https://mise.jdx.dev/cli/settings.html): Manage settings

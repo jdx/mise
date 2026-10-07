@@ -14,6 +14,7 @@ expression: "replace_path(&format!(\"{:#?}\", cf.to_tool_request_set().unwrap().
                     install_env: {},
                     lazy: None,
                     lazy_bins: [],
+                    auto_update: None,
                 },
                 opts: RawBackendOptions {
                     values: {},
@@ -36,6 +37,7 @@ expression: "replace_path(&format!(\"{:#?}\", cf.to_tool_request_set().unwrap().
                     install_env: {},
                     lazy: None,
                     lazy_bins: [],
+                    auto_update: None,
                 },
                 opts: RawBackendOptions {
                     values: {},

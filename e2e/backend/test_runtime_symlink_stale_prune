@@ -28,10 +28,10 @@ mise install stalelink@1.1.0
 assert "readlink $INSTALLS/1.1" "./1.1.0"
 
 # an install interrupted partway through. The marker is keyed by the install
-# directory's name: 1.1.0 on the legacy layout, <label>-<hash> on the identity one.
+# directory's name on either layout, and lives in the state directory.
 install_1_1="$(mise where stalelink@1.1.0)"
-mkdir -p "$MISE_CACHE_DIR/stalelink/$(basename "$install_1_1")"
-touch "$MISE_CACHE_DIR/stalelink/$(basename "$install_1_1")/incomplete"
+mkdir -p "$MISE_STATE_DIR/incomplete-installs/stalelink/$(basename "$install_1_1")"
+touch "$MISE_STATE_DIR/incomplete-installs/stalelink/$(basename "$install_1_1")/incomplete"
 
 mise install stalelink@1.0.0
 

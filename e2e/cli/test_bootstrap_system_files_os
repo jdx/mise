@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+
+if [[ "$(uname -s)" != "Linux" ]]; then
+  echo "skipping: managed system files require Linux"
+  exit 0
+fi
+
+mkdir user-managed-system
+cat <<EOT >mise.toml
+[bootstrap.files."$PWD/user-managed-system/linux.conf"]
+os = "linux"
+content = "linux"
+
+[bootstrap.files."$PWD/user-managed-system/other.conf"]
+os = ["macos", "windows/arm64"]
+content = "other"
+
+[bootstrap.files."$PWD/user-managed-system/any.conf"]
+content = "any"
+
+[bootstrap.directories."$PWD/user-managed-system/linux-dir"]
+os = "linux"
+
+[bootstrap.directories."$PWD/user-managed-system/other-dir"]
+os = "macos"
+EOT
+
+assert_succeed "MISE_SYSTEM_PACKAGES_SUDO=0 mise bootstrap files apply --yes"
+assert "cat '$PWD/user-managed-system/linux.conf'" "linux"
+assert "cat '$PWD/user-managed-system/any.conf'" "any"
+assert_fail "test -e '$PWD/user-managed-system/other.conf'"
+assert_directory_exists "$PWD/user-managed-system/linux-dir"
+assert_fail "test -e '$PWD/user-managed-system/other-dir'"
+
+# An entry for another OS is skipped before its path is validated.
+cat <<EOT >mise.toml
+[bootstrap.files."C:/Users/example/other.conf"]
+os = "windows"
+content = "windows"
+
+[bootstrap.directories."C:/Users/example/dir"]
+os = "windows"
+EOT
+assert_succeed "MISE_SYSTEM_PACKAGES_SUDO=0 mise bootstrap files apply --yes"

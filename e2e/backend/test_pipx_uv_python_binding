@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+require_cmd python3
+
+# A uv tool install must build its venv on mise's Python, not on a Python uv
+# downloaded itself, so a cached mise data dir restores a working tool.
+export MISE_PYTHON_COMPILE=0
+export MISE_PYTHON_GITHUB_ATTESTATIONS=0
+export MISE_PIPX_UVX=1
+# Make uv reach for a managed download unless it is told which Python to use.
+export UV_PYTHON_PREFERENCE=only-managed
+export UV_PYTHON_INSTALL_DIR="$HOME/uv-pythons"
+
+cat >.mise.toml <<EOF
+[tools]
+python = "3.12"
+uv = "0.8.5"
+"pipx:cowsay" = "6.1"
+EOF
+
+mise install
+
+VENV_PYTHON=$(find "$MISE_DATA_DIR/installs/pipx-cowsay/6.1" -path '*/bin/python' | head -n 1)
+assert_contains "readlink -f '$VENV_PYTHON'" "/installs/python/"
+assert_fail "test -e '$UV_PYTHON_INSTALL_DIR'"
+
+# An explicit interpreter in uvx_args must win over mise's.
+SYSTEM_PYTHON=$(command -v python3)
+for flag in "--python $SYSTEM_PYTHON" "--python=$SYSTEM_PYTHON" "-p $SYSTEM_PYTHON"; do
+  cat >.mise.toml <<TOML
+[tools]
+python = "3.12"
+uv = "0.8.5"
+"pipx:cowsay" = { version = "6.1", uvx_args = "$flag" }
+TOML
+  mise install --force pipx:cowsay
+  VENV_PYTHON=$(find "$MISE_DATA_DIR/installs/pipx-cowsay/6.1" -path '*/bin/python' | head -n 1)
+  assert_not_contains "readlink -f '$VENV_PYTHON'" "/installs/python/"
+done

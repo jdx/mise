@@ -224,8 +224,6 @@ jobs:
           shared-key: lint
           save-if: ${{ inputs.trusted && github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/release' || startsWith(github.ref, 'refs/tags/v')) }}
       - parallel:
-          - name: Install mold
-            run: sudo apt-get update && sudo apt-get install -y mold
           - uses: taiki-e/install-action@51cd0b8c0499559d9a4d75c0f5c67bec3a894ec8 # v2
             with:
               tool: cargo-deny,cargo-msrv,cargo-machete
@@ -234,6 +232,14 @@ jobs:
               name: mise-ubuntu-latest
               path: target/debug
       - run: echo "$PWD/target/debug" >> "$GITHUB_PATH" && chmod +x target/debug/mise
+      # mold comes from its GitHub release through the mise just downloaded;
+      # the Ubuntu mirrors behind apt-get fail often enough to fail lint. Run
+      # outside the checkout so the repo's tools are not installed here.
+      - name: Install mold
+        working-directory: ${{ runner.temp }}
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: mise x mold@2 -- sh -c 'dirname "$(command -v mold)"' >> "$GITHUB_PATH"
       - uses: ./.github/actions/mise-tools
       - run: mise x -- aube install
       # build-ubuntu produced this commit's binary, downloaded above.

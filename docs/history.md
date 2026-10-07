@@ -257,6 +257,11 @@ mise dot origin set git@gitea.example.com:you/setup.git --sync sync
 The URL must not contain credentials, a query string, or a fragment.
 Authenticate with an SSH agent, or with a Git credential helper for HTTPS.
 
+Files that describe one machine, such as a monitor layout, should not be
+applied on the others. Track them with a
+[`machine` variant](/dotfiles.html#machine-variants) so each machine keeps
+its own version.
+
 Review the connection preview before confirming. With `--sync sync`, the
 watcher pushes saved changes and periodically fetches and applies changes
 from other machines. To bring another machine into this workflow, follow
@@ -379,12 +384,19 @@ point to `mise dot status` for resolution steps. A pause
 produces one notification; further retries during the same pause stay quiet.
 A new pause after recovery can notify again.
 
-On Linux, install `notify-send`. On macOS, allow notifications for mise
-when prompted, or enable them in System Settings → Notifications → mise.
-Unofficial macOS builds, including Homebrew, warn when connecting because
-notifications are unavailable. Use `status` or `doctor` on Windows and
-headless systems. Missing or failing notifications leave history and sync
-running. Set `settings.history.notify = false` to disable notifications.
+Notifications cover sharing conflicts only. They are not a general alert
+channel: a problem such as a watcher that cannot save checkpoints is reported
+only by `mise doctor` and `mise dot status`.
+
+On Linux, install `notify-send`. On macOS, the first notification asks for
+permission, so mise does not appear in System Settings → Notifications until a
+conflict first occurs. Run `mise dot notify` to send a test notification and
+answer the prompt now; it also reports why a notification cannot be shown.
+Unofficial macOS builds, including Homebrew, never show notifications and warn
+when connecting. `mise doctor` reports whether notifications can be delivered.
+Use `status` or `doctor` on Windows and headless systems. Missing or failing
+notifications leave history and sync running. Set
+`settings.history.notify = false` to disable notifications.
 
 ### Repository authentication
 
@@ -1374,8 +1386,22 @@ History needs a `git` binary (on macOS, the Xcode Command Line Tools). Without
 one, `mise dot save` fails and bootstrap commands still run, recording
 their journals without content; `mise dot status` says so.
 
-`settings.history.enabled` defaults to `true`. Disabling it stops automatic
-capture; it does not delete committed history.
+`settings.history.enabled` defaults to `true`, but history only records once you opt in
+by tracking files (`mise dot track`, a `[dotfiles]` declaration in your global or system
+configuration, or an adopted setup repository). Config that arrives any other way (a
+`git clone`, a dotfile manager, Nix) activates it the same way, so nothing needs to be
+written to enable it. Setting it to `false` stops automatic capture and explicit saves;
+it does not disable browsing history or changing checkpoint descriptions, and it does not
+delete committed history.
+
+A bootstrap with nothing tracked and no existing history does not create history state or
+take the history lock until it first rewrites a dotfile or edit, and then it does not wait
+for, or fail on, another mise process using the same `$MISE_STATE_DIR` (parallel CI jobs, for
+example): it warns and runs without its private write-recovery journal. Runs that record
+history do wait, up to 30 seconds. A run that declares tracking only while it runs waits at the
+end and, if the lock stays busy (or an earlier write already ran without the journal), warns
+that its outcome was not recorded. Give each CI job its own `MISE_STATE_DIR`, or set
+`MISE_HISTORY_ENABLED=false`, if they should never interact.
 
 Keep your repository and decryption identities recoverable independently.
 Repository authentication and an age identity serve different purposes:

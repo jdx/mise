@@ -20,8 +20,8 @@ use http::Extensions;
 use itertools::Itertools;
 use rattler::install::{InstallDriver, InstallOptions, PythonInfo, link_package};
 use rattler_conda_types::{
-    Channel, ChannelConfig, GenericVirtualPackage, MatchSpec, ParseStrictness,
-    Platform as CondaPlatform, RepoDataRecord, prefix::Prefix, prefix_record::PathsEntry,
+    Channel, ChannelConfig, GenericVirtualPackage, MatchSpec, ParseStrictness, RepoDataRecord,
+    Subdir as CondaPlatform, prefix::Prefix, prefix_record::PathsEntry,
 };
 use rattler_repodata_gateway::{Gateway, RepoData};
 use rattler_solve::{

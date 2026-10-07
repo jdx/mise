@@ -176,6 +176,7 @@ async fn test_reqwest_dns_error_is_not_transient_and_opens_circuit() {
             .connect_timeout(timeout)
             .build()
             .unwrap()),
+        manual_redirects: Default::default(),
         timeout,
         kind: ClientKind::Fetch,
     };
@@ -448,4 +449,124 @@ async fn test_retries_disabled_fails_immediately() {
     let err = client.get_async(url).await.unwrap_err();
     assert!(format!("{err:?}").contains("502"));
     assert_eq!(count.load(std::sync::atomic::Ordering::SeqCst), 1);
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn test_429_with_long_retry_after_is_not_retried() {
+    // A limiter that says "come back in a minute" will not be moved by our
+    // ~15s backoff, and every retry is another request it counts against us.
+    let _guard = set_test_http_retries(3);
+    let (port, count) =
+        spawn_canned_server(vec![too_many_requests_response(60), ok_response()]).await;
+    let url: Url = format!("http://127.0.0.1:{port}/").parse().unwrap();
+    let client = Client::new(Duration::from_secs(2), ClientKind::Http).unwrap();
+
+    let err = client.get_async(url).await.unwrap_err();
+    // Callers key their fallback on the 429 surviving the wrapper.
+    assert_eq!(error_code(&err), Some(429));
+    assert!(format!("{err:?}").contains("retry-after: 60s"));
+    assert_eq!(count.load(std::sync::atomic::Ordering::SeqCst), 1);
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn test_429_with_short_retry_after_is_retried() {
+    let _guard = set_test_http_retries(1);
+    let (port, count) =
+        spawn_canned_server(vec![too_many_requests_response(0), ok_response()]).await;
+    let url: Url = format!("http://127.0.0.1:{port}/").parse().unwrap();
+    let client = Client::new(Duration::from_secs(2), ClientKind::Http).unwrap();
+
+    let resp = client.get_async(url).await.unwrap();
+    assert!(resp.status().is_success());
+    assert_eq!(count.load(std::sync::atomic::Ordering::SeqCst), 2);
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn test_retry_delay_honors_a_longer_retry_after() {
+    // Asserted on the chosen delay rather than by sleeping through it.
+    let _guard = set_test_http_retries(0);
+    let (port, _) = spawn_canned_server(vec![too_many_requests_response(20)]).await;
+    let url: Url = format!("http://127.0.0.1:{port}/").parse().unwrap();
+    let client = Client::new(Duration::from_secs(2), ClientKind::Http).unwrap();
+
+    let err = client.get_async(url).await.unwrap_err();
+    assert_eq!(
+        retry_delay(Duration::from_secs(1), &err),
+        Duration::from_secs(20)
+    );
+    assert_eq!(
+        retry_delay(Duration::from_secs(30), &err),
+        Duration::from_secs(30)
+    );
+    assert_eq!(
+        retry_delay(Duration::from_secs(1), &eyre!("no header")),
+        Duration::from_secs(1)
+    );
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn test_429_retry_after_digits_are_not_a_404() {
+    let _guard = set_test_http_retries(0);
+    let (port, _) = spawn_canned_server(vec![too_many_requests_response(404)]).await;
+    let url: Url = format!("http://127.0.0.1:{port}/").parse().unwrap();
+    let client = Client::new(Duration::from_secs(2), ClientKind::Http).unwrap();
+
+    let err = client.get_async(url).await.unwrap_err();
+    assert_eq!(error_code(&err), Some(429));
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn test_long_retry_after_survives_added_context() {
+    let _guard = set_test_http_retries(3);
+    let (port, count) =
+        spawn_canned_server(vec![too_many_requests_response(60), ok_response()]).await;
+    let url: Url = format!("http://127.0.0.1:{port}/").parse().unwrap();
+    let client = Client::new(Duration::from_secs(2), ClientKind::Http).unwrap();
+
+    let err = client
+        .get_async(url)
+        .await
+        .unwrap_err()
+        .wrap_err("while listing versions");
+    assert!(!is_transient(&err));
+    assert_eq!(error_code(&err), Some(429));
+    assert_eq!(count.load(std::sync::atomic::Ordering::SeqCst), 1);
+}
+
+#[test]
+fn test_retry_after_ignores_non_429_and_http_dates() {
+    let response = |status: u16, value: &str| {
+        Response::from(
+            http::Response::builder()
+                .status(status)
+                .header("retry-after", value)
+                .body("")
+                .unwrap(),
+        )
+    };
+    assert_eq!(
+        retry_after(&response(429, "45")),
+        Some(Duration::from_secs(45))
+    );
+    assert_eq!(retry_after(&response(503, "45")), None);
+    assert_eq!(
+        retry_after(&response(429, "Wed, 21 Oct 2026 07:28:00 GMT")),
+        None
+    );
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn test_json_deserialization_failure_is_not_transient() {
+    // reqwest reports body-read failures (an HTTP/2 stream reset mid-download)
+    // and deserialization failures as `Decode`. Only the former is retryable.
+    let (port, _) = spawn_canned_server(vec![ok_response()]).await;
+    let client = reqwest::Client::new();
+    let resp = client
+        .get(format!("http://127.0.0.1:{port}/"))
+        .send()
+        .await
+        .unwrap();
+    let err = resp.json::<serde_json::Value>().await.unwrap_err();
+    assert!(err.is_decode());
+    assert!(!is_transient(&Report::new(err)));
 }

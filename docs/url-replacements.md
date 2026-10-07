@@ -44,6 +44,28 @@ matches `api.github.com` and `github.com.example.org`.
 Including the scheme and trailing `/`, such as `https://github.com/`, avoids matching those
 hostnames. For a rule that must match only at the start of a URL, use an anchored regex.
 
+### Routing GitHub through a Package Proxy
+
+A plain prefix key keeps the rest of the URL, so a proxy that mirrors GitHub under a path
+prefix needs no regex or capture groups:
+
+```toml
+[settings.url_replacements]
+"https://github.com/" = "http://pkgproxy.internal:8080/generic/github/"
+"https://api.github.com/" = "http://pkgproxy.internal:8080/generic/github-api/"
+```
+
+The first rule sends `https://github.com/owner/repo/releases/download/v1.0.0/file.tar.gz`
+to `http://pkgproxy.internal:8080/generic/github/owner/repo/releases/download/v1.0.0/file.tar.gz`.
+The second sends GitHub API requests, such as release lookups, to the proxy's API path.
+`https://github.com/` does not match `https://api.github.com/`, so the two rules do not
+overlap.
+
+Reroute the API only if the proxy serves it: doing so stops mise from using
+[mise-versions](/configuration/settings.html#use_versions_host) for GitHub release and
+attestation metadata. If the proxy only mirrors release downloads, keep just the first
+rule. Use a regex rule only when the proxy's path layout cannot be expressed as a prefix.
+
 ## Advanced Regex Replacement
 
 Prefix a key with `regex:` to use the Rust regex engine. Capture groups in replacement

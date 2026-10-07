@@ -67,13 +67,13 @@ See [security](/security.html) for mise's configuration trust model.
 Resources return JSON text. They describe the project selected when the server starts.
 Restart the server after editing configuration if the client continues to show cached results.
 
-| URI                                  | Contents                                                                                        |
-| ------------------------------------ | ----------------------------------------------------------------------------------------------- |
-| `mise://tools`                       | Active tool versions, requested versions, installation paths/status, and configuration sources. |
-| `mise://tools?include_inactive=true` | Active tools plus other installed versions.                                                     |
-| `mise://tasks`                       | Task definitions, commands, descriptions, dependencies, source files, and execution options.    |
-| `mise://env`                         | Resolved mise environment variable names and values.                                            |
-| `mise://config`                      | Active configuration file paths and the project root.                                           |
+| URI                                  | Contents                                                                                                                           |
+| ------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `mise://tools`                       | Active tool versions, requested versions, installation paths/status, and configuration sources.                                    |
+| `mise://tools?include_inactive=true` | Active tools plus other installed versions.                                                                                        |
+| `mise://tasks`                       | Task definitions (including monorepo subproject tasks), commands, descriptions, dependencies, source files, and execution options. |
+| `mise://env`                         | Resolved mise environment variable names and values.                                                                               |
+| `mise://config`                      | Active configuration file paths and the project root.                                                                              |
 
 `mise://config` does not return a full settings dump. In `mise://tasks`, the `env` field is
 currently an empty object; it does not expose task-specific environment values. Use the

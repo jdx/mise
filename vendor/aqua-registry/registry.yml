@@ -13701,7 +13701,7 @@ packages:
         overrides:
           - goos: windows
             format: zip
-      - version_constraint: "true"
+      - version_constraint: semver("<1.54.0")
         asset: syft_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
         format: tar.gz
         windows_arm_emulation: true
@@ -13719,6 +13719,28 @@ packages:
               - https://token.actions.githubusercontent.com
               - --signature
               - https://github.com/anchore/syft/releases/download/{{.Version}}/syft_{{trimV .Version}}_checksums.txt.sig
+              - --certificate-github-workflow-repository
+              - anchore/syft
+        overrides:
+          - goos: windows
+            format: zip
+      - version_constraint: "true"
+        asset: syft_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        checksum:
+          type: github_release
+          asset: syft_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+          cosign:
+            bundle:
+              type: github_release
+              asset: syft_{{trimV .Version}}_checksums.txt.sigstore.json
+            opts:
+              - --certificate-identity
+              - https://github.com/anchore/syft/.github/workflows/release.yaml@refs/heads/main
+              - --certificate-oidc-issuer
+              - https://token.actions.githubusercontent.com
               - --certificate-github-workflow-repository
               - anchore/syft
         overrides:
@@ -37577,6 +37599,65 @@ packages:
           - goos: windows
             format: zip
   - type: github_release
+    repo_owner: editorconfig
+    repo_name: editorconfig-core-go
+    description: EditorConfig Core written in Go
+    files:
+      - name: editorconfig
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 2.3.2")
+        no_asset: true
+      - version_constraint: semver("<= 2.3.9")
+        asset: editorconfig-core-go_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
+        supported_envs:
+          - darwin
+          - windows
+          - linux/amd64
+      - version_constraint: Version == "v2.3.10"
+        asset: editorconfig-core-go_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
+      - version_constraint: semver("<= 2.4.2")
+        asset: editorconfig-core-go_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
+      - version_constraint: "true"
+        asset: editorconfig-core-go_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
+  - type: github_release
     repo_owner: edoardottt
     repo_name: depsdev
     description: CLI client (and Golang module) for deps.dev API. Free access to dependencies, licenses, advisories, and other critical health and security signals for open source package versions
@@ -37783,6 +37864,20 @@ packages:
         overrides:
           - goos: windows
             format: zip
+      - version_constraint: semver("<= 0.230.0")
+        asset: eksctl_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          darwin: Darwin
+          linux: Linux
+          windows: Windows
+        checksum:
+          type: github_release
+          asset: eksctl_checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
       - version_constraint: "true"
         asset: eksctl_{{.OS}}_{{.Arch}}.{{.Format}}
         format: tar.gz
@@ -37794,6 +37889,15 @@ packages:
           type: github_release
           asset: eksctl_checksums.txt
           algorithm: sha256
+          cosign:
+            bundle:
+              type: github_release
+              asset: eksctl_checksums.txt.sigstore.json
+            opts:
+              - --certificate-identity
+              - https://github.com/eksctl-io/eksctl/.github/workflows/publish-release.yaml@refs/tags/{{trimV .Version}}
+              - --certificate-oidc-issuer
+              - https://token.actions.githubusercontent.com
         overrides:
           - goos: windows
             format: zip
@@ -54040,6 +54144,28 @@ packages:
           - linux
           - darwin/arm64
           - windows
+  - type: github_release
+    repo_owner: jdx
+    repo_name: jactionlint
+    description: Static checker for GitHub Actions workflow files
+    files:
+      - name: jactionlint
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "v1.8.0"
+        no_asset: true
+      - version_constraint: "true"
+        asset: jactionlint_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: jactionlint_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
+        github_artifact_attestations:
+          signer_workflow: jdx/jactionlint/.github/workflows/release.yaml
   - type: github_release
     repo_owner: jdx
     repo_name: mise
@@ -82152,11 +82278,21 @@ packages:
       - darwin
       - linux
       - amd64
-    version_constraint: semver(">= 0.3.9")
+    version_constraint: "false"
     version_overrides:
       - version_constraint: semver("< 0.3.9")
         rosetta2: true
+      - version_constraint: semver("< 0.11.6")
       - version_constraint: "true"
+        cosign:
+          bundle:
+            type: github_release
+            asset: regsync-{{.OS}}-{{.Arch}}.sigstore.json
+          opts:
+            - --certificate-identity
+            - https://github.com/regclient/regclient/.github/workflows/go.yml@refs/tags/{{.Version}}
+            - --certificate-oidc-issuer
+            - https://token.actions.githubusercontent.com
   - type: github_release
     repo_owner: release-plz
     repo_name: release-plz
@@ -99618,6 +99754,46 @@ packages:
         asset: gyazo_{{.Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
         files:
           - name: gyazo
+  - type: github_release
+    repo_owner: tontinton
+    repo_name: maki
+    description: An efficient AI coding agent extendable by neovim-like Lua plugins
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "v0.1.0"
+        asset: maki-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-gnu
+          windows: pc-windows-msvc
+        checksum:
+          type: github_release
+          asset: sha256sums.txt
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
+      - version_constraint: "true"
+        asset: maki-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-msvc
+        checksum:
+          type: github_release
+          asset: sha256sums.txt
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
   - type: github_release
     repo_owner: topgrade-rs
     repo_name: topgrade

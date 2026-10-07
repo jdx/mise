@@ -199,6 +199,32 @@ macro_rules! deprecated_at {
     }};
 }
 
+/// Fails the build once mise's own version reaches `remove_at`, for code that
+/// only has to live for a while, such as a migration or a fallback that reads
+/// what an older mise wrote. Unlike [`deprecated_at!`], it needs no code path
+/// to run: the release that bumps the version cannot build until the code
+/// carrying it is removed.
+///
+/// # Example
+/// ```ignore
+/// remove_by!("2027.1.0", "legacy-cache-markers");
+/// ```
+#[macro_export]
+macro_rules! remove_by {
+    ($remove_at:literal, $id:literal) => {
+        const _: () = assert!(
+            $crate::version::version_lt(env!("CARGO_PKG_VERSION"), $remove_at),
+            concat!(
+                "[",
+                $id,
+                "] should have been removed by mise ",
+                $remove_at,
+                ". Remove it, and every other remove_by! with this id."
+            )
+        );
+    };
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use std::sync::Mutex;

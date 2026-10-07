@@ -92,13 +92,24 @@ impl Toolset {
         &self,
         config: &Arc<Config>,
     ) -> Result<(EnvMap, BTreeSet<String>)> {
+        let (env, env_remove, _) = self.full_env_with_removals_and_keys(config).await?;
+        Ok((env, env_remove))
+    }
+
+    /// Like `full_env_with_removals`, also returning every key mise itself sets, whatever
+    /// its value (the keys of the mise-only env, before it is merged over the process env).
+    pub(crate) async fn full_env_with_removals_and_keys(
+        &self,
+        config: &Arc<Config>,
+    ) -> Result<(EnvMap, BTreeSet<String>, BTreeSet<String>)> {
         let (mise_env, env_remove) = self.env_with_path_and_removals(config).await?;
+        let mise_keys = mise_env.keys().cloned().collect();
         let mut env = env::PRISTINE_ENV.clone().into_iter().collect::<EnvMap>();
         for key in &env_remove {
             env.remove(key);
         }
         env.extend(mise_env);
-        Ok((env, env_remove))
+        Ok((env, env_remove, mise_keys))
     }
 
     /// Like full_env but skips `tools=true` env directives (load_post_env).

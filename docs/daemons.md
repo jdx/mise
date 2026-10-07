@@ -101,7 +101,11 @@ preset templates. A `run` command can also use `{{ env.NAME }}` and
 `quote`. Pitchfork renders the variables it defines (`{{ port }}`, `{{ url }}`, ...)
 and passes the command through to `mise x`, which renders the rest when the daemon
 starts. Values from `[env]` are never written to the generated pitchfork file.
-This needs a pitchfork release newer than 2.29.0 and applies to `run` only.
+This needs pitchfork 2.30.0 or later and applies to `run` only.
+
+On Windows, pitchfork runs the command with `cmd /C`, so write it for cmd, where
+`quote` quotes a value for cmd instead of a POSIX shell. The example below is written
+for a POSIX shell; on Windows, leave out its `exec`, which cmd does not have.
 :::
 
 ```toml
@@ -145,7 +149,8 @@ task asking for everything never reaches into a referenced project.
 Daemon startup is part of dependency handling: `--skip-deps` and the
 `task.skip_depends` setting skip it. `--dry-run` validates daemon names and the
 experimental setting, and reports what would start without starting anything.
-Safe mode blocks task daemon startup.
+Safe mode blocks task daemon startup. A task that lists
+[`secrets`](/tasks/task-configuration.html#secrets) does not run as a task daemon in this version.
 
 See the [`daemons` task option](/tasks/task-configuration.html#daemons) for all
 accepted values. Use `mise tasks info <task>` to inspect a task's daemon requirements.

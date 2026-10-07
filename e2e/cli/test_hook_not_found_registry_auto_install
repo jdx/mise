@@ -7,8 +7,9 @@ assert_fail "mise current tiny"
 export MISE_NOT_FOUND_AUTO_INSTALL_REGISTRY=1
 # Ambiguous bin metadata must not pick a tool arbitrarily.
 assert_fail "mise hook-not-found tsh"
-assert_fail "mise current teleport-community"
-assert_fail "mise current teleport-ent"
+# Nothing may have been installed or recorded in the global config.
+assert_fail "test -e $MISE_CONFIG_DIR/config.toml"
+assert_not_contains "mise ls --installed" "teleport"
 
 export MISE_AUTO_INSTALL_DISABLE_TOOLS=tiny
 assert_fail "mise hook-not-found rtx-tiny"

@@ -2,7 +2,7 @@ use super::*;
 
 /// Override the Sigstore public-good TUF URL (e.g. a mirror derived from mise's
 /// `settings.url_replacements`). Passing a mirror URL still bootstraps from the
-/// embedded production root ([`PRODUCTION_TUF_ROOT`]), so a mirror cannot forge
+/// embedded production root ([`SigstoreInstance::tuf_root`]), so a mirror cannot forge
 /// the chain of trust — TUF verifies all fetched metadata against that pinned
 /// root. Passing `None` restores the default behavior.
 pub fn set_tuf_url(url: Option<String>) {
@@ -19,9 +19,12 @@ pub(crate) fn select_tuf_config(override_url: Option<String>) -> TufConfig {
     match override_url {
         // SECURITY: pin the embedded production root even when fetching from a
         // mirror. A custom URL has no embedded-root fallback, and the mirror
-        // serves identical TUF content; bootstrapping with PRODUCTION_TUF_ROOT
+        // serves identical TUF content; bootstrapping with the production root
         // means every metadata file is verified against the canonical root.
-        Some(url) => TufConfig::custom(url).with_root(PRODUCTION_TUF_ROOT),
+        Some(url) => TufConfig::custom(
+            url,
+            TufBootstrap::trusted(SigstoreInstance::PublicGood.tuf_root()),
+        ),
         // Equivalent to `TrustedRoot::production()` (which is itself
         // `from_tuf(TufConfig::production())`) — the default path is unchanged.
         None => TufConfig::production(),
@@ -33,7 +36,9 @@ pub(crate) async fn production_trusted_root() -> Result<TrustedRoot> {
         .read()
         .unwrap_or_else(|e| e.into_inner())
         .clone();
-    Ok(TrustedRoot::from_tuf(select_tuf_config(override_url)).await?)
+    TrustedRoot::from_tuf(select_tuf_config(override_url))
+        .await
+        .map_err(|e| AttestationError::TrustRoot(e.to_string()))
 }
 
 pub(crate) fn github_embedded_trusted_root() -> Result<TrustedRoot> {
@@ -41,7 +46,9 @@ pub(crate) fn github_embedded_trusted_root() -> Result<TrustedRoot> {
 }
 
 pub(crate) async fn github_tuf_trusted_root() -> Result<TrustedRoot> {
-    Ok(TrustedRoot::from_tuf(TufConfig::github()).await?)
+    TrustedRoot::from_tuf(TufConfig::github())
+        .await
+        .map_err(|e| AttestationError::TrustRoot(e.to_string()))
 }
 
 /// Per-process cache so we only fetch the Sigstore TUF root or parse the

@@ -916,6 +916,9 @@ fn tera_get_env(env: EnvMap) -> impl Fn(Kwargs, &State) -> TeraResult<Value> {
 
 static TERA1: Lazy<tera1::Tera> = Lazy::new(|| {
     let mut tera = tera1::Tera::default();
+    // Replace Tera v1's built-in get_env(), which reads the live process
+    // environment and would leak inherited secrets, with the filtered lookup.
+    tera.register_function("get_env", tera1_get_env(env::PRISTINE_ENV.clone()));
     tera.register_function("arch", tera1_host_fn(host_arch_name));
     tera.register_function("os", tera1_host_fn(|| env::consts::OS));
     tera.register_function("os_family", move |_: &HashMap<String, JsonValue>| {
@@ -1354,6 +1357,36 @@ pub fn get_tera_without_exec(dir: Option<&Path>) -> TeraEngine {
     }
 }
 
+/// Returns the normal mise renderer for a command cmd.exe will read, whose
+/// `quote` filter quotes for cmd rather than a POSIX shell.
+pub fn get_tera_for_cmd(dir: Option<&Path>) -> TeraEngine {
+    if use_tera_v1() {
+        quote_for_cmd(TeraEngine::V1(Box::new(get_tera_v1(dir))))
+    } else {
+        quote_for_cmd(TeraEngine::V2(Box::new(get_tera_v2(dir))))
+    }
+}
+
+fn quote_for_cmd(mut engine: TeraEngine) -> TeraEngine {
+    match &mut engine {
+        TeraEngine::V1(tera) => tera.register_filter(
+            "quote",
+            move |value: &JsonValue, _: &HashMap<String, JsonValue>| {
+                Ok(json!(crate::path::escape_arg_for_cmd_line(json_path(
+                    value
+                )?)))
+            },
+        ),
+        TeraEngine::V2(tera) => tera.register_filter(
+            "quote",
+            move |s: &str, _: Kwargs, _: &State| -> TeraResult<Value> {
+                Ok(Value::from(crate::path::escape_arg_for_cmd_line(s)))
+            },
+        ),
+    }
+    engine
+}
+
 /// Returns the normal mise renderer with command execution disabled.
 pub fn get_tera_for_dry_run(dir: Option<&Path>) -> TeraEngine {
     if use_tera_v1() {
@@ -1484,6 +1517,21 @@ fn reemit_template_fn_v1(
             format!("{{{{ {name}({}) }}}}", parts.join(", "))
         };
         Ok(json!(rendered))
+    }
+}
+
+fn tera1_get_env(env: EnvMap) -> impl Fn(&HashMap<String, JsonValue>) -> tera1::Result<JsonValue> {
+    move |args: &HashMap<String, JsonValue>| -> tera1::Result<JsonValue> {
+        let name = json_str_arg(args, "name")?;
+        if let Some(value) = env.get(name) {
+            return Ok(json!(value));
+        }
+        match args.get("default") {
+            Some(default) => Ok(default.clone()),
+            None => Err(tera1_err(format!(
+                "Environment variable `{name}` not found"
+            ))),
+        }
     }
 }
 

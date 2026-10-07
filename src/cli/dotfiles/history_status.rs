@@ -51,6 +51,8 @@ pub(crate) struct SyncReport {
     /// Paths sync neither applies nor removes, with why.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub skipped: Vec<(String, String)>,
+    /// Whether sync-conflict notifications can reach the user.
+    pub notifications: String,
 }
 
 pub(crate) fn sync_report(
@@ -104,6 +106,7 @@ pub(crate) fn sync_report(
                     .map(|path| (crate::file::display_path(path), skipped.reason.clone()))
             })
             .collect(),
+        notifications: crate::system::history::notify::summary(),
     }))
 }
 
@@ -238,6 +241,7 @@ pub(crate) fn print(report: &HistoryReport) -> Result<()> {
                 when(&sync.last_fetch),
                 when(&sync.last_apply)
             );
+            miseprintln!("  notifications: {}", sync.notifications);
             if !sync.pending_applications.is_empty() {
                 miseprintln!(
                     "  {} incoming change(s) pending: `mise dot pull` ({})",

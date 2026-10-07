@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+# A config file that changes after mise loaded it (here a var template edits it while
+# the config loads) means the requests come from text the file no longer has, so no
+# snapshot is recorded and prune keeps every installation of the tool.
+export MISE_EXPERIMENTAL=1
+export MISE_INSTALL_LAYOUT=identity
+
+mkdir -p project elsewhere
+cat >project/mise.toml <<'EOT'
+[vars]
+v = "1.0.0"
+touch = "{{ exec(command='echo \"# edited\" >> ' ~ config_root ~ '/mise.toml') }}"
+
+[tools]
+dummy = "{{vars.v}}"
+EOT
+assert "mise -C project install"
+assert "mise install dummy@3.0.0"
+assert_fail "ls $MISE_DATA_DIR/installs/.mise/snapshots"
+
+assert "mise -C elsewhere ls --prunable --json >prunable.json"
+assert "jq -e 'has(\"dummy\") | not' prunable.json"
+
+# The same project without the edit records normally.
+mkdir -p stable
+cat >stable/mise.toml <<'EOT'
+[vars]
+v = "1.0.0"
+
+[tools]
+dummy = "{{vars.v}}"
+EOT
+assert "mise -C stable install"
+assert "ls $MISE_DATA_DIR/installs/.mise/snapshots"

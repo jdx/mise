@@ -1,5 +1,8 @@
 --- List all available versions
 
+local http = require("http")
+local json = require("json")
+
 local function fetch_github_tags(repo_url)
     -- Use git ls-remote to get tags
     local cmd = 'git ls-remote --refs --tags "' .. repo_url .. '"'
@@ -63,8 +66,71 @@ local function version_compare(a, b)
     return false
 end
 
+-- Descending semver order where a prerelease sorts below its release
+-- (6.0.0-rc.22 < 6.0.0). version_compare cannot do this.
+local function semver_compare(a, b)
+    local function parse(v)
+        local core, pre = v:match("^([^-+]+)-?([^+]*)")
+        local nums = {}
+        for n in core:gmatch("%d+") do
+            table.insert(nums, tonumber(n))
+        end
+        local ids = {}
+        for id in pre:gmatch("[^%.]+") do
+            table.insert(ids, id)
+        end
+        return nums, ids
+    end
+
+    local a_nums, a_pre = parse(a)
+    local b_nums, b_pre = parse(b)
+    for i = 1, math.max(#a_nums, #b_nums) do
+        local x, y = a_nums[i] or 0, b_nums[i] or 0
+        if x ~= y then
+            return x > y
+        end
+    end
+    if #a_pre == 0 or #b_pre == 0 then
+        return #a_pre == 0 and #b_pre > 0
+    end
+    for i = 1, math.max(#a_pre, #b_pre) do
+        local x, y = a_pre[i], b_pre[i]
+        if x == nil or y == nil then
+            return x ~= nil -- more identifiers is higher (rc < rc.1)
+        end
+        if x ~= y then
+            local xn, yn = tonumber(x), tonumber(y)
+            if xn and yn then
+                return xn > yn
+            elseif xn or yn then
+                return yn ~= nil -- numeric identifiers are lower than alphanumeric
+            end
+            return x > y
+        end
+    end
+    return false
+end
+
 function PLUGIN:Available(ctx)
     local versions = {}
+
+    -- Get Yarn ZPM versions (v6+). Only versions published to npm are
+    -- installable (some git tags never were), so list the npm package. Every
+    -- platform package carries the same versions, so any one will do.
+    local resp, err = http.try_get({ url = "https://registry.npmjs.org/@yarnpkg/yarn-x86_64-unknown-linux-musl" })
+    if err == nil and resp.status_code == 200 then
+        local zpm_versions = {}
+        for version in pairs(json.decode(resp.body).versions or {}) do
+            local major = tonumber(version:match("^(%d+)%.%d+%.%d+"))
+            if major and major >= 6 then
+                table.insert(zpm_versions, version)
+            end
+        end
+        table.sort(zpm_versions, semver_compare)
+        for _, version in ipairs(zpm_versions) do
+            table.insert(versions, { version = version })
+        end
+    end
 
     -- Get Yarn Berry versions (v2.x+)
     local berry_tags = fetch_github_tags("https://github.com/yarnpkg/berry.git")

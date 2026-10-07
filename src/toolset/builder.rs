@@ -34,6 +34,7 @@ pub struct ToolsetBuilder {
     resolution_progress: bool,
     config_files: Option<ConfigMap>,
     warn_overridden_lockfiles: bool,
+    skip_runtime_env: bool,
 }
 
 impl ToolsetBuilder {
@@ -56,6 +57,13 @@ impl ToolsetBuilder {
         self
     }
 
+    /// Leave out tool versions selected by the environment (`MISE_*_VERSION`),
+    /// keeping only what the config files request.
+    pub fn without_runtime_env(mut self) -> Self {
+        self.skip_runtime_env = true;
+        self
+    }
+
     pub fn with_resolution_progress(mut self, enabled: bool) -> Self {
         self.resolution_progress = enabled;
         self
@@ -63,6 +71,14 @@ impl ToolsetBuilder {
 
     pub fn with_resolve_options(mut self, resolve_options: ResolveOptions) -> Self {
         self.resolve_options = resolve_options;
+        self
+    }
+
+    /// For commands that run a tool rather than manage versions (shims, `mise x`,
+    /// `mise env`): under `prefer_offline`, skip remote version lookups for lazy tools
+    /// that are not installed. Installing one resolves it with the install options.
+    pub fn with_deferred_lazy_resolution(mut self) -> Self {
+        self.resolve_options.defer_missing_lazy_tools = true;
         self
     }
 
@@ -164,7 +180,7 @@ impl ToolsetBuilder {
     }
 
     fn load_runtime_env(&self, ts: &mut Toolset, env: EnvMap) -> eyre::Result<()> {
-        if self.scope == ConfigScope::LocalOnly {
+        if self.scope == ConfigScope::LocalOnly || self.skip_runtime_env {
             // LocalOnly excludes env-based tool versions (MISE_*_VERSION).
             return Ok(());
         }

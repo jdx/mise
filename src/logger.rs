@@ -1,4 +1,4 @@
-use crate::config::{Config, Settings, SettingsExt};
+use crate::config::{Settings, SettingsExt};
 use clx::progress;
 use eyre::Result;
 use std::collections::HashSet;
@@ -75,12 +75,9 @@ impl log::Log for Logger {
 
         // Redact once for all outputs (Aho-Corasick makes this efficient)
         let args = record.args().to_string();
-        // maybe_get instead of is_loaded + get_: another thread may unload the
-        // config (Config::reset) between the two calls, and get_ panics on None
-        let args = match Config::maybe_get() {
-            Some(config) => config.redact(&args),
-            None => args,
-        };
+        // Not Config::redact: the global redactor is seeded with inherited
+        // secrets, so records logged before Config loads are redacted too.
+        let args = mise_util::redactions::redact_global(&args);
 
         if will_log_file && let Some(log_file) = &self.log_file {
             let mut log_file = log_file.lock().unwrap();

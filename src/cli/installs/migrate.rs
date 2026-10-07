@@ -24,6 +24,14 @@ use crate::toolset::{InstallOptions, ToolRequest, ToolVersion, install_state};
 /// fails. Versions whose recorded backend is not the one their tool resolves to
 /// now are left alone, as are tools that keep the legacy layout (`http:`,
 /// `rust`, `dotnet`).
+///
+/// A version that cannot be reinstalled (its release was withdrawn or is signed
+/// by someone else now, or the network is unavailable) is not an error: its
+/// directory is moved as it is into the identity layout, behind the same version
+/// link. Only a version that cannot be moved either keeps its old directory,
+/// reported as kept in the legacy layout. The command ends with a count of what
+/// was migrated, relocated, kept and failed, and fails only when a migration
+/// itself broke.
 #[derive(Debug, usage_rs::Args)]
 #[usage(
     example(
@@ -82,7 +90,7 @@ impl InstallsMigrate {
             {
                 continue;
             }
-            match resolver::migration_target(&tv) {
+            match resolver::migration_target(&logical(&tv)) {
                 Ok(target) => plan.push((tv, target)),
                 Err(why) if named == Some(true) => warn!("not migrating {}: {why}", tv.style()),
                 Err(why) => debug!("not migrating {}: {why}", tv.style()),
@@ -103,13 +111,34 @@ impl InstallsMigrate {
             }
             return Ok(());
         }
+        let mut migrated = 0;
+        let mut relocated = 0;
+        let mut kept = 0;
         let mut failed = vec![];
         for (tv, _) in plan {
-            if let Err(err) = migrate(&tv).await {
-                error!("could not migrate {}: {err:#}", tv.style());
-                failed.push(tv.style());
+            match migrate(&tv).await {
+                Ok(Outcome::Migrated) => migrated += 1,
+                Ok(Outcome::Relocated(why)) => {
+                    relocated += 1;
+                    miseprintln!(
+                        "  {} could not be reinstalled ({why}); moved as it is",
+                        tv.style()
+                    );
+                }
+                Ok(Outcome::Kept(why)) => {
+                    kept += 1;
+                    miseprintln!("skipped {} (kept legacy layout): {why}", tv.style());
+                }
+                Err(err) => {
+                    error!("could not migrate {}: {err:#}", tv.style());
+                    failed.push(tv.style());
+                }
             }
         }
+        miseprintln!(
+            "{migrated} migrated, {relocated} relocated, {kept} kept legacy, {} failed",
+            failed.len()
+        );
         if !failed.is_empty() {
             eyre::bail!(
                 "{} could not be migrated and kept the legacy layout",
@@ -153,6 +182,39 @@ impl InstallsMigrate {
     }
 }
 
+/// How one version's migration ended, when nothing broke.
+enum Outcome {
+    Migrated,
+    /// It could not be reinstalled, so the existing directory was moved into
+    /// the identity layout; the reason is why it was not reinstalled.
+    Relocated(String),
+    /// It could not be reinstalled, so the old directory is as it was.
+    Kept(String),
+}
+
+/// A reinstall that could not happen: the backend failed to install the
+/// version. Nothing was changed, so the legacy directory is kept as it is.
+#[derive(Debug)]
+struct CannotReinstall(String);
+
+impl std::fmt::Display for CannotReinstall {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl std::error::Error for CannotReinstall {}
+
+/// `tv` with the version it stands for. A directory found by scanning can carry
+/// a private suffix (`2026.9.3~aube~<digest>`, `~uv~`) that is not part of any
+/// version a backend can install; its identity, reinstall and journal use the
+/// version without it, while the old path and version link keep the name on disk.
+fn logical(tv: &ToolVersion) -> ToolVersion {
+    let mut logical = tv.clone();
+    logical.strip_install_path_identity();
+    logical
+}
+
 /// Where a legacy directory waits while it is migrated: beside the version link
 /// that replaces it, under a dot name that scans skip.
 fn aside_path(legacy: &Path) -> PathBuf {
@@ -183,6 +245,11 @@ struct Journal {
     /// The installation directories of that backend and version the migration's
     /// install was about to write into.
     made: Vec<PathBuf>,
+    /// The old directory is being moved into the identity layout rather than
+    /// reinstalled: it is then in the one installation directory in `made`, not
+    /// aside, and undoing it moves it back.
+    #[serde(default)]
+    relocating: bool,
     finished: bool,
 }
 
@@ -201,8 +268,8 @@ impl Journal {
         Self::dir().join(format!("{tool}@{version}.toml"))
     }
 
-    fn start(tv: &ToolVersion) -> Result<Self> {
-        let (backend, version) = resolver::identity_scope(tv)
+    fn start(tv: &ToolVersion, logical: &ToolVersion, relocating: bool) -> Result<Self> {
+        let (backend, version) = resolver::identity_scope(logical)
             .ok_or_else(|| eyre::eyre!("the backend of {} cannot be loaded", tv.style()))?;
         let journal = Self {
             tool: tv.ba().short.clone(),
@@ -210,6 +277,7 @@ impl Journal {
             backend,
             version,
             made: vec![],
+            relocating,
             finished: false,
         };
         journal.write()?;
@@ -282,6 +350,30 @@ impl Journal {
     fn undo(&self, wait: bool) -> Result<()> {
         let complete = self.withdraw(wait);
         let aside = aside_path(&self.legacy);
+        // A relocated directory has no copy aside: it goes back from where it
+        // was moved to (its receipt and links are withdrawn above).
+        if self.relocating
+            && !aside.exists()
+            && let [dir] = self.made.as_slice()
+            && std::fs::symlink_metadata(dir).is_ok()
+        {
+            if resolver::is_complete(dir) {
+                // Still published, and the only copy: it cannot go back, so
+                // this is a failure, and the journal stays for the next run.
+                eyre::bail!(
+                    "{} is still published and could not be withdrawn; run \
+                     `mise installs migrate` again to put {} back",
+                    display_path(dir),
+                    display_path(&self.legacy)
+                );
+            } else {
+                // The version link would be in the way of putting it back.
+                if file::is_symlink_or_junction(&self.legacy) {
+                    file::remove_dir_link(&self.legacy)?;
+                }
+                file::rename(dir, &aside)?;
+            }
+        }
         if aside.exists() {
             restore(&self.legacy, &aside)?;
         }
@@ -493,8 +585,30 @@ impl Drop for Undo {
 /// Reinstall one legacy installation into the identity layout. The old
 /// directory is moved aside first, so the install cannot find and reuse it,
 /// and is put back if the new installation does not complete.
-async fn migrate(tv: &ToolVersion) -> Result<()> {
+async fn migrate(tv: &ToolVersion) -> Result<Outcome> {
+    match attempt(tv, false).await? {
+        Outcome::Kept(why) => match attempt(tv, true).await {
+            Ok(Outcome::Migrated) => Ok(Outcome::Relocated(why)),
+            Ok(Outcome::Kept(not_moved)) => Ok(Outcome::Kept(format!(
+                "{why}; not moved either: {not_moved}"
+            ))),
+            Ok(relocated) => Ok(relocated),
+            Err(err) => Err(err),
+        },
+        outcome => Ok(outcome),
+    }
+}
+
+/// One try at migrating `tv`: reinstalling it, or with `relocate` moving the
+/// existing directory into the identity layout.
+async fn attempt(tv: &ToolVersion, relocate: bool) -> Result<Outcome> {
     let legacy = tv.install_path();
+    // Before the directory moves: an older suffix (`-aube-<digest>`) is checked
+    // against the lockfile inside it.
+    let logical_tv = logical(tv);
+    // The installer links the version without its suffix, which is not this
+    // version's name: that link goes, unless something else already had the name.
+    let extra_link = extra_link(tv, &logical_tv).filter(|p| std::fs::symlink_metadata(p).is_err());
     let aside = aside_path(&legacy);
     if aside.exists() || Journal::path_for(&legacy).exists() {
         eyre::bail!(
@@ -516,7 +630,11 @@ async fn migrate(tv: &ToolVersion) -> Result<()> {
             display_path(&legacy)
         );
     }
-    let journal: Shared = std::sync::Arc::new(std::sync::Mutex::new(Journal::start(tv)?));
+    let journal: Shared = std::sync::Arc::new(std::sync::Mutex::new(Journal::start(
+        tv,
+        &logical_tv,
+        relocate,
+    )?));
     if let Err(err) = file::rename(&legacy, &aside) {
         snapshot(&journal).remove();
         return Err(err);
@@ -543,7 +661,17 @@ async fn migrate(tv: &ToolVersion) -> Result<()> {
     // goes: where the version link could not be made (Windows without junction
     // support), the migration is undone, so the version resolves to the old
     // directory again.
-    let installed = reinstall(tv).await.and_then(|dir| {
+    let step = if relocate {
+        relocate_into_layout(&logical_tv, &aside)
+    } else {
+        reinstall(&logical_tv).await
+    };
+    if let Some(extra) = &extra_link {
+        let mut ours = snapshot(&journal).made;
+        ours.extend(step.as_ref().ok().cloned());
+        drop_extra_link(extra, &ours);
+    }
+    let installed = step.and_then(|dir| {
         // An installation that already existed (another spelling made it, or it
         // is in a shared root) was reused without a version link here.
         resolver::ensure_version_link(tv, &dir)
@@ -585,8 +713,12 @@ async fn migrate(tv: &ToolVersion) -> Result<()> {
                     display_path(&aside)
                 ),
             }
-            miseprintln!("migrated {} to {}", tv.style(), display_path(&dir));
-            Ok(())
+            if relocate {
+                miseprintln!("relocated {} to {}", tv.style(), display_path(&dir));
+            } else {
+                miseprintln!("migrated {} to {}", tv.style(), display_path(&dir));
+            }
+            Ok(Outcome::Migrated)
         }
         Err(err) => {
             let undone = journal.undo(true);
@@ -598,21 +730,85 @@ async fn migrate(tv: &ToolVersion) -> Result<()> {
                 let ts = config.get_toolset().await?;
                 crate::runtime_symlinks::rebuild_for_toolset(&config, ts).await
             };
-            if let Err(rebuild_err) = rebuilt.await {
-                warn!(
-                    "could not rebuild the runtime links of {}: {rebuild_err:#}",
-                    tv.style()
-                );
-            }
-            match undone {
-                Ok(()) => Err(err),
-                // The next run finishes undoing it, from the journal.
-                Err(undo_err) => Err(err.wrap_err(format!(
-                    "the old directory could not be put back yet: {undo_err:#}"
-                ))),
-            }
+            settle(err, undone, rebuilt.await)
         }
     }
+}
+
+/// How a migration that did not install ends, once its old directory was put
+/// back (`undone`) and the tool's runtime links rebuilt (`rebuilt`). A reinstall
+/// that could not happen leaves nothing broken, so long as both worked; a path
+/// that may not resolve is a failure.
+fn settle(err: eyre::Report, undone: Result<()>, rebuilt: Result<()>) -> Result<Outcome> {
+    // The next run finishes undoing it, from the journal.
+    if let Err(undo_err) = undone {
+        return Err(err.wrap_err(format!(
+            "the old directory could not be put back yet: {undo_err:#}"
+        )));
+    }
+    if let Err(rebuild_err) = rebuilt {
+        return Err(err.wrap_err(format!(
+            "the old directory is back, but its runtime links (such as `latest`) could not be \
+             rebuilt: {rebuild_err:#}"
+        )));
+    }
+    match err.downcast_ref::<CannotReinstall>() {
+        Some(cannot) => Ok(Outcome::Kept(cannot.0.clone())),
+        None => Err(err),
+    }
+}
+
+/// The version link the installer makes for the logical version of an install
+/// whose directory carries a private suffix, when that is not the old path.
+fn extra_link(tv: &ToolVersion, logical: &ToolVersion) -> Option<PathBuf> {
+    let extra = tv.ba().installs_path().join(logical.tv_pathname());
+    (extra != tv.install_path()).then_some(extra)
+}
+
+/// Remove `extra` if this migration's install made it: a link whose full target
+/// is one of `ours`, the installation directories the migration wrote into or
+/// made. A link to anything else (a `mise link`, another install, a directory of
+/// the same name in another root) is not ours. The target is compared as a path,
+/// so it need not exist (a failed install's directory may be gone).
+fn drop_extra_link(extra: &Path, ours: &[PathBuf]) {
+    if !file::is_symlink_or_junction(extra) {
+        return;
+    }
+    let Ok(target) = std::fs::read_link(extra) else {
+        return;
+    };
+    let target = match (target.is_relative(), extra.parent()) {
+        (true, Some(parent)) => parent.join(target),
+        _ => target,
+    };
+    let same = |dir: &PathBuf| {
+        use path_absolutize::Absolutize;
+        let clean = |p: &Path| p.absolutize().map(|p| p.into_owned()).ok();
+        if let (Ok(a), Ok(b)) = (target.canonicalize(), dir.canonicalize()) {
+            return a == b;
+        }
+        matches!((clean(&target), clean(dir)), (Some(a), Some(b)) if a == b)
+    };
+    if ours.iter().any(same)
+        && let Err(err) = file::remove_dir_link(extra)
+    {
+        debug!("could not remove {}: {err:#}", display_path(extra));
+    }
+}
+
+/// Move the old directory (already aside) into the identity layout as the
+/// installation the version's identity names, with the receipt a normal install
+/// writes. Only what the old directory can say is in the identity: the backend
+/// and version, the platform, and the options the request carries. A digest
+/// that comes from a lockfile (an artifact checksum, an embedded aube or uv
+/// dependency graph) is not reconstructed.
+///
+/// Nothing is rewritten inside it: paths it recorded for itself keep resolving
+/// through the version link that replaces the old directory. A failure leaves it
+/// where it can be put back, so it is reported like a failed reinstall.
+fn relocate_into_layout(tv: &ToolVersion, aside: &Path) -> Result<PathBuf> {
+    let cannot = |err: eyre::Report| eyre::Report::new(CannotReinstall(format!("{err:#}")));
+    resolver::relocate(tv, aside).map_err(cannot)
 }
 
 /// Install exactly the legacy installation's version (not what its request,
@@ -641,7 +837,13 @@ async fn reinstall(tv: &ToolVersion) -> Result<PathBuf> {
     opts.ignore_tool_config_locked = true;
     let installed = ts
         .install_all_versions(&mut config, vec![request.clone()], &opts)
-        .await?;
+        .await
+        .map_err(|err| {
+            let why = format!("{err:#}");
+            eyre::Report::new(CannotReinstall(
+                why.split_whitespace().collect::<Vec<_>>().join(" "),
+            ))
+        })?;
     // The install may have given the request the options the configuration sets
     // for the tool; what it installed is the version it reports back.
     let installed = installed
@@ -670,4 +872,130 @@ fn restore(legacy: &Path, aside: &Path) -> Result<()> {
             display_path(aside)
         )
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use super::*;
+    use crate::args::BackendArg;
+    use crate::toolset::ToolSource;
+
+    #[test]
+    fn logical_drops_the_private_suffix_of_an_embedded_aube_install() {
+        let dir = "2026.9.3~aube~f375ab1a2e9919a1";
+        let npm = Arc::new(BackendArg::from("npm:openclaw"));
+        let request = ToolRequest::new(npm, "2026.9.3", ToolSource::Argument).unwrap();
+        let tv = ToolVersion::new(request, dir.into());
+        let logical = logical(&tv);
+        // what is reinstalled is the npm version, but the old path is the one on disk
+        assert_eq!(logical.version, "2026.9.3");
+        assert_eq!(logical.install_path(), tv.install_path());
+        assert!(logical.install_path().ends_with(dir));
+        // the version link that replaces the directory keeps its name
+        assert_eq!(tv.tv_pathname(), dir);
+
+        let github = Arc::new(BackendArg::from("github:owner/tool"));
+        let request = ToolRequest::new(github, "latest", ToolSource::Argument).unwrap();
+        let tv = ToolVersion::new(request, dir.into());
+        assert_eq!(super::logical(&tv).version, dir);
+    }
+
+    #[test]
+    fn an_aube_directory_has_an_extra_unsuffixed_link_to_drop() {
+        let dir = "2026.9.3~aube~f375ab1a2e9919a1";
+        let npm = Arc::new(BackendArg::from("npm:openclaw"));
+        let request = ToolRequest::new(npm.clone(), "2026.9.3", ToolSource::Argument).unwrap();
+        let tv = ToolVersion::new(request, dir.into());
+        let extra = extra_link(&tv, &logical(&tv)).unwrap();
+        assert!(extra.ends_with("2026.9.3"));
+        // a plain version has no other name
+        let request = ToolRequest::new(npm, "2026.9.3", ToolSource::Argument).unwrap();
+        let plain = ToolVersion::new(request, "2026.9.3".into());
+        assert!(extra_link(&plain, &logical(&plain)).is_none());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn drop_extra_link_removes_only_a_link_to_what_the_migration_made() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path().join("installs");
+        let elsewhere = tmp.path().join("shared");
+        let tools = root.join("tool");
+        std::fs::create_dir_all(&tools).unwrap();
+        let ours = root.join("tool-aaaaaaaa");
+        let same_name = elsewhere.join("tool-aaaaaaaa");
+        let other = root.join("tool-bbbbbbbb");
+        for dir in [&ours, &same_name, &other] {
+            std::fs::create_dir_all(dir).unwrap();
+        }
+        let link = tools.join("1.0.0");
+        let ours_list = std::slice::from_ref(&ours);
+        // another install, and a same-named directory in another root
+        for target in [&other, &same_name] {
+            std::os::unix::fs::symlink(target, &link).unwrap();
+            drop_extra_link(&link, ours_list);
+            assert!(link.is_symlink());
+            std::fs::remove_file(&link).unwrap();
+        }
+        drop_extra_link(&link, ours_list);
+        // a relative link to ours, as the installer writes it
+        std::os::unix::fs::symlink("../tool-aaaaaaaa", &link).unwrap();
+        drop_extra_link(&link, ours_list);
+        assert!(!link.is_symlink());
+        // dangling, its directory gone again
+        std::os::unix::fs::symlink(&ours, &link).unwrap();
+        std::fs::remove_dir(&ours).unwrap();
+        drop_extra_link(&link, ours_list);
+        assert!(!link.is_symlink() && other.is_dir() && same_name.is_dir());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn undoing_a_relocation_that_is_still_published_fails_and_keeps_the_journal() {
+        use std::os::unix::fs::PermissionsExt;
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path().join("tool-abcdefgh");
+        std::fs::create_dir(&dir).unwrap();
+        std::fs::write(dir.join(".mise-install.toml"), "").unwrap();
+        // the receipt cannot be removed
+        std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o555)).unwrap();
+        if std::fs::remove_file(dir.join(".mise-install.toml")).is_ok() {
+            return; // permissions are not enforced (root)
+        }
+        let journal = Journal {
+            tool: "tool".into(),
+            legacy: tmp.path().join("tool").join("1.0.0"),
+            backend: "b".into(),
+            version: "1.0.0".into(),
+            made: vec![dir.clone()],
+            relocating: true,
+            finished: false,
+        };
+        let result = journal.undo(false);
+        std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o755)).unwrap();
+        assert!(dir.exists());
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn settle_keeps_only_when_everything_was_put_back() {
+        let cannot = || eyre::Report::new(CannotReinstall("gone".into()));
+        assert!(matches!(
+            settle(cannot(), Ok(()), Ok(())),
+            Ok(Outcome::Kept(why)) if why == "gone"
+        ));
+        // the links that were removed while the install failed are still missing
+        let err = settle(cannot(), Ok(()), Err(eyre::eyre!("boom")))
+            .err()
+            .unwrap();
+        assert!(format!("{err:#}").contains("runtime links"));
+        let err = settle(cannot(), Err(eyre::eyre!("boom")), Ok(()))
+            .err()
+            .unwrap();
+        assert!(format!("{err:#}").contains("could not be put back"));
+        // any other failure stays one
+        assert!(settle(eyre::eyre!("link"), Ok(()), Ok(())).is_err());
+    }
 }

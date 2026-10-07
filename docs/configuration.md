@@ -210,6 +210,8 @@ sharing the same config root; it is not merged into invocation-wide settings
 locked = true
 ```
 
+**Secrets sources** (`[secrets.*]`): The nearest project file wins per field; ignored in global config
+
 **Environment Variables** (`[env]`): Additive with overrides
 
 ```toml
@@ -268,6 +270,39 @@ Other commands select files differently:
 - [`mise config get`](/cli/config/get) and [`mise config set`](/cli/config/set) default to the **highest-precedence loaded TOML file**, which can be `mise.local.toml`. Use `--file` to choose an existing project file explicitly.
 - [`mise unuse`](/cli/unuse) defaults to the first loaded config that declares any requested tool. A version-qualified argument matches the literal configured request: `node@20` matches `node = "20"`, not `node = "20.0.0"`. Use `--path` to choose the file.
 
+### Global section write targets
+
+Global configuration can keep tools, bootstrap packages, and dotfiles in separate
+files while still using their normal add commands. Configure an optional destination
+for each section:
+
+```toml [~/.config/mise/config.toml]
+[settings.write_targets]
+tools = "~/.config/mise/conf.d/10-tools.toml"
+packages = "~/.config/mise/conf.d/20-packages.toml"
+dotfiles = "~/.config/mise/conf.d/30-dotfiles.toml"
+```
+
+With these settings, new declarations from `mise use --global`,
+`mise bootstrap packages use --global`, `mise bootstrap packages import --global`,
+and global `mise dot add` go into their respective files. Targets must be absolute
+paths (or begin with `~/`) and name a
+file that mise loads from the global config root: `config.toml`, `mise.toml`, or
+a supported `conf.d` fragment such as `conf.d/10-tools.toml`. A path like
+`~/.config/mise/tools.toml` is not loaded automatically and is rejected.
+
+Existing declarations are not migrated: updating an existing global tool or package
+keeps it in the global file that already declares it, and `mise dot add` continues to
+capture an existing dotfile into its configured source. If one command asks to update
+entries found in more than one global file, mise stops and asks you to use `--path`
+rather than guessing which file should receive the combined update.
+
+`--path` always chooses its explicit target. These defaults do not affect local or
+environment-specific writes, so `mise use --env staging` and
+`mise bootstrap packages use --env staging` continue to write the selected project
+environment file. When a section target is unset, global writes keep using the normal
+global config target.
+
 ### `[tools]` - Dev tools
 
 See [Tools](/dev-tools/). In addition to specifying versions, each tool entry can include options such as:
@@ -276,6 +311,7 @@ See [Tools](/dev-tools/). In addition to specifying versions, each tool entry ca
 - `depends`: Install order relative to other tools in this config only; vfox plugin hook dependencies belong in plugin `metadata.lua` (see [Tool Dependencies](/dev-tools/#tool-dependencies))
 - `install_env`: Environment vars used during download, install, and tool-level `postinstall`
 - `postinstall`: Command to run after installation completes for that specific tool
+- `auto_update`: Update a global tool before it runs (`true`, or a check interval such as `"6h"`); see [Automatic tool updates](#automatic-tool-updates)
 
 Examples:
 
@@ -283,6 +319,51 @@ Examples:
 [tools]
 node = { version = "22", postinstall = "corepack enable" }
 ```
+
+### Automatic tool updates
+
+A tool in your global config (for example `~/.config/mise/config.toml`) can keep itself up to
+date. Set `auto_update` on its entry:
+
+```toml
+[tools]
+claude = { version = "latest", auto_update = true }
+node = { version = "22", auto_update = "6h" }
+```
+
+When a shim or `mise x` is about to run the tool and mise hasn't checked for an update within the
+interval, it runs `mise upgrade` for that tool first, showing the usual install progress, then
+runs the new version. Updates stay within the configured version: `node = "22"` gets the newest
+22.x, never 23. If the update fails or you're offline, mise warns and runs the version you have.
+
+`auto_update = true` checks every 24 hours, or every
+[`tool_update.check_duration`](/configuration/settings.html#tool_update.check_duration). A
+duration such as `"6h"` sets that tool's own interval. Intervals under one hour are raised to one
+hour.
+
+- Only global config can turn this on. A project config can't, and when a project sets its own
+  version of the tool, runs in that project don't update it.
+- Only the tool being run is checked: `mise x -- npm test` doesn't update `claude`. Tasks,
+  `mise hook-env`, and shell activation never update tools.
+- Exact versions such as `node = "22.11.0"` are never updated. If a global lockfile
+  (`mise lock --global`) pins the tool, the update moves the lock entry to the new version. A
+  project's config and lockfile are never changed.
+- No updates run offline, in CI, or with `locked = true`.
+- The previous version is pruned on the same schedule as `mise upgrade` (see
+  [`upgrade.auto_prune`](/configuration/settings.html#upgrade.auto_prune)).
+- If the last update of a tool failed, `mise doctor` shows the error.
+
+To update in the background instead, so launches never wait and tools run directly from PATH
+(with shell activation) stay current too, declare the `tool-update` service in your global config
+and run `mise bootstrap services apply`:
+
+```toml
+[bootstrap.services.mise-tool-update]
+builtin = "tool-update"
+```
+
+The service checks once an hour and updates each tool when its interval is due. While it runs,
+launches don't update tools themselves. See [services](/bootstrap/services.html#user-services).
 
 ### `include` - Share config from a remote file {#include}
 
@@ -326,6 +407,13 @@ root's tools to resolve and install from their lockfiles. See [mise.lock](/dev-t
 ### `[env]` - Arbitrary Environment Variables
 
 See [environments](/environments/).
+
+### `[secrets.*]` - Secrets sources {#secrets}
+
+<Badge type="warning" text="experimental" />
+
+Sources for mise secrets: values resolved only when mise starts a task or `mise x` command that was granted them.
+Project config only, such as `[secrets.fnox]`. See [mise secrets with fnox](/environments/secrets/fnox.html).
 
 ### `[vars]` - Configuration Variables
 
@@ -477,6 +565,8 @@ applies to every directory.
 
 Only a few common settings are shown here. See [Settings](/configuration/settings) for the full
 list and descriptions.
+
+`[secrets.*]` is ignored in global config; see [`[secrets.*]`](#secrets).
 
 ```toml [~/.config/mise/config.toml]
 [tools]

@@ -309,6 +309,38 @@ pub fn quote_arg_for_cmd_body(arg: &str) -> String {
     s
 }
 
+/// One argument for a cmd.exe command line, as [`quote_arg_for_cmd_body`] quotes
+/// it. cmd expands `%VAR%` even inside quotes, so each `%` is left outside them,
+/// escaped. Real quotes also let the value be the program cmd starts. A value
+/// with a `"` is escaped with `^` throughout instead: cmd ignores `\"`, so the
+/// escaped quote would end its quoting and expose what follows.
+pub fn escape_arg_for_cmd_line(arg: &str) -> String {
+    let quoted = quote_arg_for_cmd_body(arg);
+    if !arg.contains('"') {
+        if !quoted.starts_with('"') {
+            return quoted.replace('%', "^%");
+        }
+        // Backslashes before a quote added here are doubled, as the closing
+        // quote needs, so the child does not read `\"` as a literal quote.
+        let segments: Vec<String> = arg
+            .split('%')
+            .map(|segment| {
+                let trailing = segment.len() - segment.trim_end_matches('\\').len();
+                format!("{segment}{}", "\\".repeat(trailing))
+            })
+            .collect();
+        return format!("\"{}\"", segments.join("\"^%\""));
+    }
+    let mut escaped = String::with_capacity(quoted.len() * 2);
+    for c in quoted.chars() {
+        if matches!(c, '(' | ')' | '%' | '!' | '^' | '"' | '<' | '>' | '&' | '|') {
+            escaped.push('^');
+        }
+        escaped.push(c);
+    }
+    escaped
+}
+
 /// Windows: if `program` is `cmd[.exe]` invoked with a `/c`|`/k` flag, build a
 /// configured-but-unspawned [`std::process::Command`] that hands `body` to cmd
 /// *verbatim* — raw args, a single outer quote pair, `/s` ensured (see

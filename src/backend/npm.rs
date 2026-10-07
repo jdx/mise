@@ -14,6 +14,7 @@ use crate::config::settings::NpmPackageManager;
 use crate::config::{Config, Settings, SettingsExt};
 use crate::duration::{elapsed_seconds_ceil, process_now};
 use crate::install_context::InstallContext;
+use crate::install_layout::resolver::redact_credentials;
 use crate::semver::{semver_is_at_least, semver_is_older_than};
 use crate::timeout;
 use crate::toolset::{ToolRequest, ToolVersion, ToolVersionOptions, Toolset};
@@ -45,6 +46,194 @@ const NPM_IGNORE_SCRIPTS_ARG: &str = "--ignore-scripts=true";
 const NPM_PACKAGE_MANAGER_IDENTITY_KEY: &str = "npm.package_manager";
 const PNPM_MIN_RELEASE_AGE_VERSION: &str = "10.16.0";
 const PNPM_GLOBAL_DIR_ENV_VERSION: &str = "12.0.0";
+
+/// Whether the tool name is a git source (`git+https://…`, `github:o/r`, …)
+/// rather than a registry package.
+fn is_git_spec(name: &str) -> bool {
+    ["git+", "git://", "github:", "gitlab:", "bitbucket:"]
+        .iter()
+        .any(|prefix| name.starts_with(prefix))
+}
+
+/// The npm install specifier for a git source; `latest` means the default branch.
+fn git_requirement(name: &str, version: &str) -> String {
+    if version == "latest" {
+        // npm resolves a bare `gitlab:`/`bitbucket:` shorthand to `master`, so
+        // spell out the URL to get the remote's default branch.
+        for (shorthand, host) in [("gitlab:", "gitlab.com"), ("bitbucket:", "bitbucket.org")] {
+            if let Some(repo) = name.strip_prefix(shorthand)
+                && !repo.contains('#')
+            {
+                let repo = repo.trim_end_matches('/');
+                let repo = repo.strip_suffix(".git").unwrap_or(repo);
+                return format!("git+https://{host}/{repo}.git");
+            }
+        }
+        name.to_string()
+    } else {
+        // mise keeps `ref:`/`branch:`/`tag:`/`rev:` request prefixes, which an
+        // explicit `tag:latest` must not be confused with the bare `latest`.
+        let version = match version.split_once(':') {
+            Some(("ref" | "branch" | "tag" | "rev", git_ref)) => git_ref,
+            _ => version,
+        };
+        let base = name.split('#').next().unwrap_or(name).trim_end_matches('/');
+        format!("{base}#{version}")
+    }
+}
+
+/// Whether a git source follows its remote's default branch, as opposed to one
+/// that already pins a `#ref` in its URL.
+fn git_tracks_head(name: &str) -> bool {
+    is_git_spec(name) && !name.contains('#')
+}
+
+/// The remote to query for a git source's refs, without any `#ref` fragment.
+fn git_remote(name: &str) -> String {
+    let url = name.split('#').next().unwrap_or(name);
+    for (shorthand, host) in [
+        ("github:", "github.com"),
+        ("gitlab:", "gitlab.com"),
+        ("bitbucket:", "bitbucket.org"),
+    ] {
+        if let Some(repo) = url.strip_prefix(shorthand) {
+            let repo = repo.trim_end_matches('/');
+            let repo = repo.strip_suffix(".git").unwrap_or(repo);
+            return format!("https://{host}/{repo}.git");
+        }
+    }
+    let url = url.strip_prefix("git+").unwrap_or(url);
+    // npm accepts `ssh://git@host:owner/repo`, but git reads that colon as a
+    // port separator; the scp-like form `git@host:owner/repo` is what it wants.
+    if let Some((host, path)) = url.strip_prefix("ssh://").and_then(|r| r.split_once(':'))
+        && !host.contains(['/', '['])
+        && !path
+            .split('/')
+            .next()
+            .is_some_and(|p| !p.is_empty() && p.chars().all(|c| c.is_ascii_digit()))
+    {
+        return format!("{host}:{path}");
+    }
+    url.to_string()
+}
+
+/// Return the host and path from a Git scp-style remote, but not a URL.
+fn scp_style_remote_parts(remote: &str) -> Option<(&str, &str)> {
+    let (host, path) = remote.split_once(':')?;
+    (!host.is_empty() && !host.contains(['/', '[']) && !path.starts_with("//"))
+        .then_some((host, path))
+}
+
+/// A credential-safe representation of a remote for npm Git diagnostics.
+///
+/// `git_remote` rewrites npm's `ssh://[user@]host:owner/repo` form to Git's
+/// scp-style `[user@]host:owner/repo` form. Convert just that display form back
+/// into a regular SSH URL while redacting it, so the shared URL sanitizer can
+/// remove an optional SSH user and digest a query string without changing Git's
+/// input.
+fn display_git_remote(remote: &str) -> String {
+    if let Some((host, path)) = scp_style_remote_parts(remote) {
+        let redacted = redact_credentials(&format!("ssh://{host}/{path}"));
+        return redacted
+            .strip_prefix("ssh://")
+            .unwrap_or(&redacted)
+            .replacen('/', ":", 1);
+    }
+    redact_credentials(remote)
+}
+
+/// Keep a command error's copy of the operational remote out of diagnostics.
+fn redact_git_stderr(stderr: &str, remote: &str, display_remote: &str) -> String {
+    let mut redacted = stderr.replace(remote, display_remote);
+    if let (Some((_, path)), Some((_, display_path))) = (
+        scp_style_remote_parts(remote),
+        scp_style_remote_parts(display_remote),
+    ) {
+        redacted = redacted.replace(path, display_path);
+    }
+    redact_credentials(&redacted)
+}
+
+fn git_ls_remote_args(remote: &str) -> [&str; 3] {
+    ["ls-remote", remote, "HEAD"]
+}
+
+/// Resolve a git remote's default-branch HEAD to a concrete commit.
+async fn git_head(remote: &str) -> eyre::Result<String> {
+    let display_remote = display_git_remote(remote);
+    timeout::run_with_timeout_async(
+        async || {
+            // Keep the actual remote intact for Git, but never let userinfo or
+            // query tokens reach the command trace or command-derived errors.
+            debug!("$ git ls-remote {display_remote} HEAD");
+            let output = tokio::process::Command::new("git")
+                .args(git_ls_remote_args(remote))
+                .stdin(std::process::Stdio::null())
+                .stdout(std::process::Stdio::piped())
+                .stderr(std::process::Stdio::piped())
+                .kill_on_drop(true)
+                .output()
+                .await
+                .map_err(|err| {
+                    eyre::eyre!(
+                        "failed to execute command: git ls-remote {display_remote} HEAD: {err}"
+                    )
+                })?;
+            if !output.status.success() {
+                let stderr = redact_git_stderr(
+                    String::from_utf8_lossy(&output.stderr).as_ref(),
+                    remote,
+                    &display_remote,
+                );
+                eyre::bail!(
+                    "git ls-remote {display_remote} HEAD failed: exit code {}\n{}",
+                    output.status.code().unwrap_or(-1),
+                    stderr.trim()
+                );
+            }
+            String::from_utf8(output.stdout)
+                .map_err(|err| eyre::eyre!("git produced invalid UTF-8 output: {err}"))?
+                .lines()
+                .find_map(|line| {
+                    let (sha, git_ref) = line.split_once('\t')?;
+                    (git_ref == "HEAD").then(|| sha.to_string())
+                })
+                .ok_or_else(|| eyre::eyre!("no HEAD found for {display_remote}"))
+        },
+        Settings::get().fetch_remote_versions_timeout(),
+    )
+    .await
+}
+
+/// An alias to install a git source under: the repository name.
+fn git_alias(name: &str) -> String {
+    let url = name.split('#').next().unwrap_or(name).trim_end_matches('/');
+    let url = url.strip_suffix(".git").unwrap_or(url);
+    url.rsplit(['/', ':']).next().unwrap_or(url).to_string()
+}
+
+/// Reject a git spec whose repository name cannot be a dependency name.
+fn validate_git_alias(name: &str) -> Result<()> {
+    let alias = git_alias(name);
+    if alias.is_empty() || alias == "." || alias == ".." {
+        eyre::bail!(
+            "cannot determine a package name from git source: npm:{}",
+            redact_credentials(name)
+        );
+    }
+    Ok(())
+}
+
+fn git_package_install_spec(name: &str, version: &str, has_checksum: bool) -> Result<String> {
+    validate_git_alias(name)?;
+    if has_checksum {
+        eyre::bail!(
+            "the checksum option is not supported for git sources: npm:{}",
+            redact_credentials(name)
+        );
+    }
+    Ok(git_requirement(name, version))
+}
 
 #[derive(Debug)]
 pub(crate) struct NPMBackend {
@@ -390,6 +579,77 @@ fn aube_install_tree_health(install_path: &Path) -> AubeTreeHealth {
     health
 }
 
+/// Whether `path` is the running mise binary: a symlink to it, or a hard link that shares
+/// its file identity (which `file::same_file` does not see, as it compares paths).
+#[cfg(unix)]
+fn is_mise_binary(path: &Path) -> bool {
+    if crate::file::same_file(path, &crate::env::MISE_BIN) {
+        return true;
+    }
+    same_inode(path, &crate::env::MISE_BIN)
+}
+
+#[cfg(unix)]
+fn same_inode(a: &Path, b: &Path) -> bool {
+    use std::os::unix::fs::MetadataExt;
+    match (a.metadata(), b.metadata()) {
+        (Ok(a), Ok(b)) => a.dev() == b.dev() && a.ino() == b.ino(),
+        _ => false,
+    }
+}
+
+/// The `npm` that `npm view` should run, resolved from the child PATH on unix.
+///
+/// `dependency_env` already drops this mise's own shims dir, but it recognizes shims by
+/// location only. A mise shim from another data dir — an outer mise's shims while HOME or
+/// MISE_DATA_DIR point elsewhere, as in test runners and CI — still resolves as `npm`,
+/// re-enters mise, and runs `npm view` again for every `latest` npm tool (#14068). Skip
+/// any candidate that is this mise binary. When that was the only npm, fail instead of
+/// spawning it; when there is no npm at all, keep the bare name and today's error.
+#[cfg(unix)]
+fn npm_view_program(env: &BTreeMap<String, String>) -> eyre::Result<OsString> {
+    npm_view_program_in(env, &std::env::current_dir()?)
+}
+
+/// `npm_view_program` with an explicit directory for relative and empty PATH entries.
+#[cfg(unix)]
+fn npm_view_program_in(env: &BTreeMap<String, String>, cwd: &Path) -> eyre::Result<OsString> {
+    let Some(path) = env.get(&*crate::env::PATH_KEY) else {
+        return Ok(OsString::from("npm"));
+    };
+    let mut skipped_mise_shim = None;
+    for dir in std::env::split_paths(path) {
+        if crate::file::is_mise_dispatch_dir(&dir) {
+            continue;
+        }
+        // An empty PATH entry means the current directory. Returning a relative candidate
+        // would make the child search PATH again and find the shim skipped here.
+        let dir = if dir.as_os_str().is_empty() {
+            cwd.to_path_buf()
+        } else if dir.is_relative() {
+            cwd.join(dir)
+        } else {
+            dir
+        };
+        let candidate = dir.join("npm");
+        if !candidate.is_file() || !crate::file::is_spawnable(&candidate) {
+            continue;
+        }
+        if is_mise_binary(&candidate) {
+            skipped_mise_shim.get_or_insert(candidate);
+            continue;
+        }
+        return Ok(candidate.into_os_string());
+    }
+    match skipped_mise_shim {
+        Some(shim) => Err(eyre::eyre!(
+            "npm.shell_out needs npm, but the only npm on PATH is a mise shim ({}); running it would re-enter mise. Install node first (`mise install node`) or disable npm.shell_out.",
+            shim.display()
+        )),
+        None => Ok(OsString::from("npm")),
+    }
+}
+
 #[cfg(test)]
 fn aube_install_tree_is_healthy(install_path: &Path) -> bool {
     aube_install_tree_health(install_path) != AubeTreeHealth::Broken
@@ -564,6 +824,31 @@ impl Backend for NPMBackend {
     }
 
     async fn _list_remote_versions(&self, config: &Arc<Config>) -> eyre::Result<Vec<VersionInfo>> {
+        let name = self.tool_name();
+        if is_git_spec(&name) {
+            // A git source has no registry history; the only version is the
+            // commit its default branch currently points at. A pinned ref
+            // never needs it, so a failed lookup must not block that install.
+            if !git_tracks_head(&name) {
+                return Ok(vec![VersionInfo {
+                    version: "latest".to_string(),
+                    ..Default::default()
+                }]);
+            }
+            return Ok(match git_head(&git_remote(&name)).await {
+                Ok(version) => vec![VersionInfo {
+                    version,
+                    ..Default::default()
+                }],
+                Err(err) => {
+                    debug!(
+                        "could not resolve the default branch of {}: {err:#}",
+                        redact_credentials(&name)
+                    );
+                    vec![]
+                }
+            });
+        }
         if Settings::get().npm.shell_out {
             return self.list_remote_versions_npm_view(config).await;
         }
@@ -577,7 +862,38 @@ impl Backend for NPMBackend {
         .await
     }
 
+    fn is_rolling_channel(&self, version: &str) -> bool {
+        version == "latest" && git_tracks_head(&self.tool_name())
+    }
+
+    fn latest_installed_channel_version(&self, _channel: &str) -> Option<String> {
+        // Installed commits do not record whether they came from a rolling HEAD.
+        None
+    }
+
+    async fn resolve_channel_version(
+        &self,
+        _config: &Arc<Config>,
+        version: &str,
+    ) -> Result<Option<String>> {
+        if !self.is_rolling_channel(version) {
+            return Ok(None);
+        }
+        git_head(&git_remote(&self.tool_name())).await.map(Some)
+    }
+
+    fn requires_concrete_channel_version(&self, version: &str) -> bool {
+        self.is_rolling_channel(version)
+    }
+
     async fn latest_stable_version(&self, config: &Arc<Config>) -> eyre::Result<Option<String>> {
+        let name = self.tool_name();
+        if is_git_spec(&name) {
+            if !git_tracks_head(&name) {
+                return Ok(Some("latest".to_string()));
+            }
+            return git_head(&git_remote(&name)).await.map(Some);
+        }
         if Settings::get().npm.shell_out {
             self.ensure_npm_for_version_check(config).await;
         }
@@ -638,7 +954,7 @@ impl Backend for NPMBackend {
         if tv.aube_lock.is_some() && package_manager != NpmPackageManager::Aube {
             eyre::bail!(
                 "npm:{} is locked with an embedded-aube dependency graph, but npm.package_manager is set to {}; use the embedded aube package manager or refresh the lockfile",
-                self.tool_name(),
+                self.display_tool_name(),
                 package_manager
             );
         }
@@ -650,7 +966,7 @@ impl Backend for NPMBackend {
         {
             eyre::bail!(
                 "npm:{} has no embedded-aube dependency graph in the revision 2 lockfile; run `mise lock` to repair it or disable locked mode",
-                self.tool_name()
+                self.display_tool_name()
             );
         }
         if package_manager == NpmPackageManager::Aube
@@ -813,7 +1129,7 @@ impl Backend for NPMBackend {
                 if allow_builds_requested && !supports_allow_scripts {
                     warn!(
                         "allow_builds for npm:{} requires npm >= {} for per-package script approvals. mise will keep {} for this install. {}",
-                        self.tool_name(),
+                        self.display_tool_name(),
                         NPM_ALLOW_SCRIPTS_VERSION,
                         NPM_IGNORE_SCRIPTS_ARG,
                         Self::npm_lifecycle_script_remediation()
@@ -883,6 +1199,16 @@ impl Backend for NPMBackend {
 }
 
 impl NPMBackend {
+    /// A credential-safe identifier for diagnostics. Keep `tool_name()` for
+    /// install and Git operations, which need the original source URL.
+    fn display_tool_name(&self) -> String {
+        redact_credentials(&self.tool_name())
+    }
+
+    fn display_backend_name(&self) -> String {
+        redact_credentials(&self.ba().full())
+    }
+
     /// Return whether automatic project-lockfile maintenance should create an
     /// aube graph for this request. Settings are invocation-wide, but automatic
     /// lockfile updates deliberately exclude tools owned by global configs.
@@ -909,8 +1235,12 @@ impl NPMBackend {
         tv: &ToolVersion,
         options: &NpmOptions<'_>,
     ) -> Result<String> {
+        let tool_name = self.tool_name();
+        if is_git_spec(&tool_name) {
+            return git_package_install_spec(&tool_name, &tv.version, options.checksum().is_some());
+        }
         let Some(checksum) = options.checksum() else {
-            return Ok(format!("{}@{}", self.tool_name(), tv.version));
+            return Ok(format!("{tool_name}@{}", tv.version));
         };
         let (algorithm, digest) = checksum
             .split_once(':')
@@ -925,6 +1255,27 @@ impl NPMBackend {
             .set_message(format!("verify {}@{}", self.tool_name(), tv.version));
         crate::hash::ensure_checksum(&archive, digest, Some(ctx.pr.as_ref()), algorithm)?;
         Ok(archive.to_string_lossy().into_owned())
+    }
+
+    /// The dependency name the package is installed under: the registry name,
+    /// or for a git source an alias taken from the repository name.
+    fn package_key(&self) -> String {
+        let name = self.tool_name();
+        if is_git_spec(&name) {
+            git_alias(&name)
+        } else {
+            name
+        }
+    }
+
+    /// The root dependency specifier: the version, or a git URL with the ref.
+    fn package_requirement(&self, tv: &ToolVersion) -> String {
+        let name = self.tool_name();
+        if is_git_spec(&name) {
+            git_requirement(&name, &tv.version)
+        } else {
+            tv.version.clone()
+        }
     }
 
     pub(crate) fn from_arg(ba: BackendArg) -> Self {
@@ -1062,7 +1413,7 @@ impl NPMBackend {
         else {
             warn!(
                 "minimum_release_age is set for npm:{} but could not determine {} version required to verify {} support. Release-age filtering for transitive dependencies may not work as expected. See https://mise.jdx.dev/dev-tools/backends/npm.html",
-                self.tool_name(),
+                self.display_tool_name(),
                 tool,
                 flag
             );
@@ -1072,7 +1423,7 @@ impl NPMBackend {
         if semver_is_older_than(&version, required_version).unwrap_or(false) {
             warn!(
                 "minimum_release_age is set for npm:{} but {}@{} is older than the documented minimum {}@{} required for {}. Older versions may fail while processing the forwarded argument. See https://mise.jdx.dev/dev-tools/backends/npm.html",
-                self.tool_name(),
+                self.display_tool_name(),
                 tool,
                 version,
                 tool,
@@ -1198,19 +1549,22 @@ impl NPMBackend {
     ) -> eyre::Result<String> {
         let prefix = Self::npm_meta_prefix()?;
         let env = self.dependency_env(config).await?;
-        self.npm_command(config, None, |cmd| {
-            cmd.arg("view")
-                .arg(package)
-                .args(fields)
-                .arg(format!("--json={json}"))
-                .arg("--prefix")
-                .arg(prefix)
-                .env_clear()
-                .envs(env)
-        })
-        .await
-        .read()
-        .await
+        #[cfg(windows)]
+        let npm = self.spawn_program(config, None, "npm").await;
+        #[cfg(not(windows))]
+        let npm = npm_view_program(&env)?;
+        CmdLineRunner::new(npm)
+            .arg("view")
+            .arg(package)
+            .args(fields)
+            .arg(format!("--json={json}"))
+            .arg("--prefix")
+            .arg(prefix)
+            .env_clear()
+            .envs(env)
+            .env("NPM_CONFIG_UPDATE_NOTIFIER", "false")
+            .read()
+            .await
     }
 
     /// Fetch deprecation metadata in one combined query, or skip the lookup for
@@ -1369,7 +1723,7 @@ impl NPMBackend {
             &allow_builds,
             tv.resolved_from_lockfile(),
         )?;
-        self.write_aube_root_dependency(&install_path, &self.tool_name(), &tv.version)?;
+        self.write_aube_root_dependency(&install_path, tv)?;
 
         if let Some(lock) = &tv.aube_lock {
             crate::file::write(install_path.join("aube-lock.yaml"), lock.load()?.to_yaml()?)?;
@@ -1406,7 +1760,7 @@ impl NPMBackend {
         if let Some(args) = options.aube_args() {
             warn!(
                 "aube_args ({args:?}) are ignored for npm:{}: mise installs through the embedded aube package manager and no longer shells out to the aube CLI",
-                self.tool_name()
+                self.display_tool_name()
             );
         }
 
@@ -1482,7 +1836,7 @@ impl NPMBackend {
         warn!(
             "install_env ({}) is ignored for {}: mise installs through the embedded aube package manager, which runs in-process rather than as a subprocess. Install-scoped aube settings have npm backend tool options (`allow_builds`, `allow_exotic_deps`, `allow_low_downloads`, `trust_policy_excludes`); anything else has to be set in mise's own environment.",
             keys.join(", "),
-            tv.ba().full(),
+            redact_credentials(&tv.ba().full()),
         );
     }
 
@@ -1545,7 +1899,10 @@ impl NPMBackend {
     /// remedies, since mise owns the synthetic config aube's help tells the
     /// user to edit.
     fn format_aube_install_error(&self, err: miette::Report) -> eyre::Report {
-        eyre::eyre!(build_aube_install_error_message(&err, &self.ba().full()))
+        eyre::eyre!(redact_credentials(&build_aube_install_error_message(
+            &err,
+            &self.ba().full()
+        )))
     }
 
     /// A configured `node`, when available, is handed to the embedded aube
@@ -1625,16 +1982,12 @@ impl NPMBackend {
         Ok(())
     }
 
-    fn write_aube_root_dependency(
-        &self,
-        install_path: &Path,
-        package: &str,
-        version: &str,
-    ) -> Result<()> {
+    fn write_aube_root_dependency(&self, install_path: &Path, tv: &ToolVersion) -> Result<()> {
         let path = install_path.join("package.json");
         let mut manifest: serde_json::Value =
             serde_json::from_str(&crate::file::read_to_string(&path)?)?;
-        manifest["dependencies"] = serde_json::json!({ package: version });
+        manifest["dependencies"] =
+            serde_json::json!({ self.package_key(): self.package_requirement(tv) });
         crate::file::write(
             path,
             format!("{}\n", serde_json::to_string_pretty(&manifest)?),
@@ -1652,13 +2005,13 @@ impl NPMBackend {
             .get("importers")
             .and_then(|v| v.get("."))
             .and_then(|v| v.get("dependencies"))
-            .and_then(|v| v.get(self.tool_name()))
+            .and_then(|v| v.get(self.package_key()))
             .and_then(|v| v.get("specifier"))
             .and_then(toml::Value::as_str);
-        if requirement != Some(tv.version.as_str()) {
+        if requirement != Some(self.package_requirement(tv).as_str()) {
             eyre::bail!(
                 "npm:{} dependency graph does not match root version {}; run `mise lock`",
-                self.tool_name(),
+                self.display_tool_name(),
                 tv.version
             );
         }
@@ -1675,7 +2028,7 @@ impl NPMBackend {
         let options = NpmOptions::new(&request_options);
         let allow_builds = options.allow_builds()?;
         self.write_aube_embed_project(temp.path(), tv.before_date, &options, &allow_builds, false)?;
-        self.write_aube_root_dependency(temp.path(), &self.tool_name(), &tv.version)?;
+        self.write_aube_root_dependency(temp.path(), tv)?;
         let mut install_options = aube::embed::InstallOptions::new(temp.path());
         install_options.lockfile_only = true;
         install_options.ignore_scripts = true;
@@ -1764,7 +2117,7 @@ impl NPMBackend {
             // A matching mise.lock pin is itself approval for this check.
             config.insert(
                 "allowedUnpopularPackages".to_string(),
-                toml::Value::Array(vec![toml::Value::String(self.tool_name())]),
+                toml::Value::Array(vec![toml::Value::String(self.package_key())]),
             );
         }
         match allow_exotic_deps {
@@ -1819,7 +2172,7 @@ impl NPMBackend {
     }
 
     fn warn_if_npm_package_lifecycle_scripts_skipped(&self, tv: &ToolVersion) {
-        let tool_name = self.tool_name();
+        let tool_name = self.package_key();
         let Some((package_json_path, hooks)) =
             Self::installed_package_lifecycle_scripts(&tv.install_path(), &tool_name)
         else {
@@ -1827,7 +2180,7 @@ impl NPMBackend {
         };
         warn!(
             "{}@{} declares npm lifecycle script(s) ({}) in {}, but mise skipped them with {}. Review the package before opting in. {}",
-            self.ba().full(),
+            self.display_backend_name(),
             tv.version,
             hooks.join(", "),
             package_json_path.display(),
@@ -2385,6 +2738,346 @@ pub(crate) fn test_backend(
 mod tests {
     use super::*;
     use crate::args::{BackendArg, BackendResolution};
+    use crate::toolset::{ToolRequest, ToolSource, ToolVersion};
+
+    #[cfg(unix)]
+    fn npm_view_env(dirs: &[&Path]) -> BTreeMap<String, String> {
+        let path = std::env::join_paths(dirs).unwrap();
+        BTreeMap::from([(
+            crate::env::PATH_KEY.to_string(),
+            path.to_string_lossy().into_owned(),
+        )])
+    }
+
+    #[cfg(unix)]
+    fn fake_mise_shim(dir: &Path) {
+        std::os::unix::fs::symlink(&*crate::env::MISE_BIN, dir.join("npm")).unwrap();
+    }
+
+    #[cfg(unix)]
+    fn real_npm(dir: &Path) -> PathBuf {
+        use std::os::unix::fs::PermissionsExt;
+        let npm = dir.join("npm");
+        std::fs::write(&npm, "#!/bin/sh\n").unwrap();
+        std::fs::set_permissions(&npm, std::fs::Permissions::from_mode(0o755)).unwrap();
+        npm
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn npm_view_program_skips_foreign_mise_shim() {
+        let shims = tempfile::tempdir().unwrap();
+        let node_bin = tempfile::tempdir().unwrap();
+        fake_mise_shim(shims.path());
+        let npm = real_npm(node_bin.path());
+        let env = npm_view_env(&[shims.path(), node_bin.path()]);
+        assert_eq!(npm_view_program(&env).unwrap(), npm.into_os_string());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn npm_view_program_refuses_when_only_a_mise_shim_provides_npm() {
+        let shims = tempfile::tempdir().unwrap();
+        fake_mise_shim(shims.path());
+        let env = npm_view_env(&[shims.path()]);
+        let err = npm_view_program(&env).unwrap_err().to_string();
+        assert!(err.contains("only npm on PATH is a mise shim"), "{err}");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn same_inode_recognizes_a_hard_link() {
+        let dir = tempfile::tempdir().unwrap();
+        let original = dir.path().join("mise");
+        std::fs::write(&original, "x").unwrap();
+        let link = dir.path().join("npm");
+        std::fs::hard_link(&original, &link).unwrap();
+        let other = dir.path().join("other");
+        std::fs::write(&other, "x").unwrap();
+        assert!(!crate::file::same_file(&link, &original));
+        assert!(same_inode(&link, &original));
+        assert!(!same_inode(&other, &original));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn npm_view_program_skips_a_directory_named_npm() {
+        let first = tempfile::tempdir().unwrap();
+        let node_bin = tempfile::tempdir().unwrap();
+        std::fs::create_dir(first.path().join("npm")).unwrap();
+        let npm = real_npm(node_bin.path());
+        let env = npm_view_env(&[first.path(), node_bin.path()]);
+        assert_eq!(npm_view_program(&env).unwrap(), npm.into_os_string());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn npm_view_program_resolves_an_empty_entry_to_an_absolute_path() {
+        let shims = tempfile::tempdir().unwrap();
+        let cwd = tempfile::tempdir().unwrap();
+        fake_mise_shim(shims.path());
+        let npm = real_npm(cwd.path());
+        let env = npm_view_env(&[shims.path(), Path::new("")]);
+        let program = npm_view_program_in(&env, cwd.path()).unwrap();
+        assert_eq!(program, npm.into_os_string());
+        assert!(Path::new(&program).is_absolute());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn npm_view_program_keeps_bare_name_when_npm_is_missing() {
+        let empty = tempfile::tempdir().unwrap();
+        let env = npm_view_env(&[empty.path()]);
+        assert_eq!(npm_view_program(&env).unwrap(), OsString::from("npm"));
+    }
+
+    const GIT_SOURCE_WITH_CREDENTIALS: &str = "git+https://user%40example.test:password%2Fvalue@git.example.test/org/repo.git?access_token=query-token#main";
+
+    fn assert_diagnostic_redacts_credentials(diagnostic: &str) {
+        for secret in [
+            "user%40example.test",
+            "password%2Fvalue",
+            "access_token=query-token",
+            "query-token",
+        ] {
+            assert!(
+                !diagnostic.contains(secret),
+                "diagnostic leaked {secret:?}: {diagnostic}"
+            );
+        }
+        assert!(diagnostic.contains("git+https://git.example.test/org/repo.git?"));
+    }
+
+    #[test]
+    fn git_specs_are_detected_and_aliased() {
+        for name in [
+            "git+https://github.com/o/r",
+            "git+ssh://git@github.com/o/r.git",
+            "github:o/r",
+        ] {
+            assert!(is_git_spec(name), "{name}");
+        }
+        assert!(!is_git_spec("prettier"));
+        assert!(!is_git_spec("@biomejs/biome"));
+        assert_eq!(git_alias("git+https://github.com/o/r"), "r");
+        assert_eq!(git_alias("git+ssh://git@github.com/o/r.git#main"), "r");
+        assert_eq!(git_alias("github:o/r"), "r");
+        assert!(validate_git_alias("github:o/r").is_ok());
+        assert_eq!(
+            git_remote("git+ssh://git@github.com:npm/cli.git"),
+            "git@github.com:npm/cli.git"
+        );
+        assert_eq!(
+            git_remote("git+ssh://git@github.com:22/npm/cli.git"),
+            "ssh://git@github.com:22/npm/cli.git"
+        );
+        assert_eq!(
+            git_remote("git+ssh://git@[::1]:2222/o/r.git"),
+            "ssh://git@[::1]:2222/o/r.git"
+        );
+        assert!(git_tracks_head("github:o/r"));
+        assert!(!git_tracks_head("github:o/r#v1"));
+        assert!(validate_git_alias("github:o/.git").is_err());
+        assert!(validate_git_alias("github:o/.").is_err());
+        assert_eq!(git_remote("github:o/r#main"), "https://github.com/o/r.git");
+        assert_eq!(git_remote("git+ssh://git@h/o/r.git"), "ssh://git@h/o/r.git");
+        assert_eq!(git_alias("git+https://github.com/o/r.git/"), "r");
+        assert_eq!(git_requirement("github:o/r#main", "v1"), "github:o/r#v1");
+        assert_eq!(
+            git_requirement("gitlab:o/r", "latest"),
+            "git+https://gitlab.com/o/r.git"
+        );
+        assert_eq!(git_requirement("gitlab:o/r", "v1"), "gitlab:o/r#v1");
+        assert_eq!(
+            git_requirement("gitlab:o/r.git/", "v1"),
+            "gitlab:o/r.git#v1"
+        );
+        assert_eq!(
+            git_requirement("gitlab:o/r.git/", "latest"),
+            "git+https://gitlab.com/o/r.git"
+        );
+        assert_eq!(
+            git_requirement("github:o/r", "tag:latest"),
+            "github:o/r#latest"
+        );
+        assert_eq!(
+            git_requirement("github:o/r", "branch:feature/foo"),
+            "github:o/r#feature/foo"
+        );
+        assert_eq!(
+            git_requirement("git+https://github.com/o/r", "latest"),
+            "git+https://github.com/o/r"
+        );
+        assert_eq!(
+            git_requirement("git+https://github.com/o/r", "v1.2.0"),
+            "git+https://github.com/o/r#v1.2.0"
+        );
+        assert_eq!(
+            git_requirement("git+ssh://git@github.com:org/repo.git", "v1"),
+            "git+ssh://git@github.com:org/repo.git#v1"
+        );
+    }
+
+    #[test]
+    fn scp_style_git_diagnostics_redact_query_tokens_without_changing_args() {
+        for (source, expected_remote) in [
+            (
+                "git+ssh://git@host.example:owner/repo.git?token=query-secret",
+                "git@host.example:owner/repo.git?token=query-secret",
+            ),
+            (
+                "git+ssh://host.example:owner/repo.git?token=query-secret",
+                "host.example:owner/repo.git?token=query-secret",
+            ),
+            (
+                "git+ssh://git@host.example:owner/repo.git?token=query-secret&redirect=https://example.com",
+                "git@host.example:owner/repo.git?token=query-secret&redirect=https://example.com",
+            ),
+        ] {
+            let remote = git_remote(source);
+            assert_eq!(remote, expected_remote);
+            assert_eq!(
+                git_ls_remote_args(&remote),
+                ["ls-remote", remote.as_str(), "HEAD"]
+            );
+
+            let display_remote = display_git_remote(&remote);
+            for secret in [
+                "git@",
+                "token=query-secret",
+                "query-secret",
+                "redirect=https://example.com",
+                "https://example.com",
+            ] {
+                assert!(
+                    !display_remote.contains(secret),
+                    "diagnostic leaked {secret:?}: {display_remote}"
+                );
+            }
+            assert!(display_remote.starts_with("host.example:owner/repo.git?"));
+
+            let stderr = format!("fatal: could not access {remote}");
+            let redacted_stderr = redact_git_stderr(&stderr, &remote, &display_remote);
+            assert!(redacted_stderr.contains(&display_remote));
+            for secret in [
+                "git@",
+                "token=query-secret",
+                "query-secret",
+                "redirect=https://example.com",
+                "https://example.com",
+            ] {
+                assert!(
+                    !redacted_stderr.contains(secret),
+                    "diagnostic leaked {secret:?}: {redacted_stderr}"
+                );
+            }
+
+            let (_, path) = scp_style_remote_parts(&remote).unwrap();
+            let trace =
+                format!("trace: run_command: ssh host.example 'git-upload-pack \\'{path}\\''");
+            let redacted_trace = redact_git_stderr(&trace, &remote, &display_remote);
+            assert!(redacted_trace.contains("owner/repo.git?"));
+            for secret in [
+                "git@",
+                "token=query-secret",
+                "query-secret",
+                "redirect=https://example.com",
+                "https://example.com",
+            ] {
+                assert!(
+                    !redacted_trace.contains(secret),
+                    "diagnostic leaked {secret:?}: {redacted_trace}"
+                );
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn git_head_failure_redacts_scp_style_command_credentials() {
+        let remote = git_remote(
+            "git+ssh://git@127.0.0.1:mise-git-head-does-not-exist?access_token=query-token",
+        );
+        let error = git_head(&remote).await.unwrap_err().to_string();
+
+        for secret in ["git@", "access_token=query-token", "query-token"] {
+            assert!(
+                !error.contains(secret),
+                "diagnostic leaked {secret:?}: {error}"
+            );
+        }
+        assert!(error.contains("git ls-remote 127.0.0.1:mise-git-head-does-not-exist?"));
+    }
+
+    #[test]
+    fn git_source_diagnostics_redact_credentials_without_changing_requirements() {
+        let error = git_package_install_spec(GIT_SOURCE_WITH_CREDENTIALS, "v1", true)
+            .unwrap_err()
+            .to_string();
+        assert_diagnostic_redacts_credentials(&error);
+
+        let backend = create_npm_git_backend(GIT_SOURCE_WITH_CREDENTIALS);
+        assert_diagnostic_redacts_credentials(&backend.display_tool_name());
+        assert_diagnostic_redacts_credentials(&backend.display_backend_name());
+
+        assert_eq!(
+            git_package_install_spec(GIT_SOURCE_WITH_CREDENTIALS, "tag:v1", false).unwrap(),
+            "git+https://user%40example.test:password%2Fvalue@git.example.test/org/repo.git?access_token=query-token#v1"
+        );
+    }
+
+    #[tokio::test]
+    async fn git_head_failure_redacts_command_credentials() {
+        let remote = "https://user%40example.test:password%2Fvalue@127.0.0.1:1/mise-git-head-does-not-exist?access_token=query-token";
+        let error = git_head(remote).await.unwrap_err().to_string();
+
+        for secret in [
+            "user%40example.test",
+            "password%2Fvalue",
+            "access_token=query-token",
+            "query-token",
+        ] {
+            assert!(
+                !error.contains(secret),
+                "diagnostic leaked {secret:?}: {error}"
+            );
+        }
+        assert!(error.contains("git ls-remote https://127.0.0.1:1/mise-git-head-does-not-exist?"));
+    }
+
+    #[test]
+    fn git_source_lock_diagnostic_redacts_credentials() {
+        let backend = create_npm_git_backend(GIT_SOURCE_WITH_CREDENTIALS);
+        let request =
+            ToolRequest::new(backend.ba().clone(), "deadbeef", ToolSource::Argument).unwrap();
+        let tv = ToolVersion::new(request, "deadbeef".to_string());
+        let error = backend
+            .validate_aube_lock(&tv, &crate::lockfile::AubeLock::default())
+            .unwrap_err()
+            .to_string();
+
+        assert_diagnostic_redacts_credentials(&error);
+    }
+
+    #[test]
+    fn aube_diagnostic_redacts_credentials_once() {
+        use miette::Diagnostic;
+        use thiserror::Error;
+
+        #[derive(Debug, Error, Diagnostic)]
+        #[error("refusing to add a low-download package")]
+        #[diagnostic(code(ERR_AUBE_LOW_DOWNLOAD_PACKAGE))]
+        struct LowDownloads;
+
+        let backend = create_npm_git_backend(GIT_SOURCE_WITH_CREDENTIALS);
+        let error = backend
+            .format_aube_install_error(miette::Report::new(LowDownloads))
+            .to_string();
+
+        assert_diagnostic_redacts_credentials(&error);
+        assert!(error.contains(&redact_credentials(&format!(
+            "npm:{GIT_SOURCE_WITH_CREDENTIALS}"
+        ))));
+    }
 
     #[derive(Debug, Default)]
     struct RecordingReport(std::sync::Mutex<Vec<String>>);
@@ -2394,15 +3087,25 @@ mod tests {
             self.0.lock().unwrap().push(message);
         }
     }
-    #[cfg(unix)]
-    use crate::toolset::ToolVersion;
-    use crate::toolset::{ToolRequest, ToolSource, ToolVersionOptions};
+    use crate::toolset::ToolVersionOptions;
     use pretty_assertions::assert_eq;
 
     fn create_npm_backend(tool: &str) -> NPMBackend {
         let ba = BackendArg::new_raw(
             "npm".to_string(),
             Some(tool.to_string()),
+            tool.to_string(),
+            None,
+            BackendResolution::new(true),
+        );
+        NPMBackend::from_arg(ba)
+    }
+
+    fn create_npm_git_backend(tool: &str) -> NPMBackend {
+        let full = format!("npm:{tool}");
+        let ba = BackendArg::new_raw(
+            full.clone(),
+            Some(full),
             tool.to_string(),
             None,
             BackendResolution::new(true),

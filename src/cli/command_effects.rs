@@ -43,6 +43,9 @@ pub(super) const EFFECTS: &[(&str, SpecCommandEffect)] = &[
     // archive into it through sudo and it replaces files under the system
     // installs directory.
     ("__publish-system-install", Destructive),
+    // Run by a shim or `mise x` for a global `auto_update` tool: the same
+    // upgrade `mise upgrade <tool>` performs.
+    ("__tool-update", Write),
     ("activate", Read),
     ("backends", Read),
     ("backends ls", Read),
@@ -97,6 +100,7 @@ pub(super) const EFFECTS: &[(&str, SpecCommandEffect)] = &[
     ("bootstrap dotfiles history ls", Read),
     ("bootstrap dotfiles history show", Read),
     ("bootstrap dotfiles include", Write),
+    ("bootstrap dotfiles notify", Write),
     ("bootstrap dotfiles origin", Destructive),
     ("bootstrap dotfiles origin set", Write),
     ("bootstrap dotfiles paths", Read),
@@ -203,6 +207,7 @@ pub(super) const EFFECTS: &[(&str, SpecCommandEffect)] = &[
     ("dotfiles history ls", Read),
     ("dotfiles history show", Read),
     ("dotfiles include", Write),
+    ("dotfiles notify", Write),
     ("dotfiles origin", Destructive),
     ("dotfiles origin set", Write),
     ("dotfiles paths", Read),
@@ -275,6 +280,8 @@ pub(super) const EFFECTS: &[(&str, SpecCommandEffect)] = &[
     ("registry", Read),
     ("reshim", Write),
     ("search", Read),
+    ("secrets", Read),
+    ("secrets ls", Read),
     ("self-update", Write),
     ("set", Write),
     // Bare `mise settings` lists, but `mise settings foo bar` and
