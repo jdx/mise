@@ -158,44 +158,54 @@ async fn update_due_tools() -> Result<()> {
         .with_scope(ConfigScope::GlobalOnly)
         .without_runtime_env()
         .build_unresolved(&config)?;
+    // One check per tool: the upgrade covers every opted-in version of it,
+    // and they all share the tool's check marker.
     for (ba, versions) in global.versions.iter() {
-        for request in versions
+        let requests = versions
             .requests
             .iter()
             .filter(|request| request.is_os_supported() && tool_update::enabled(request))
-        {
-            // Resolving can mean a remote lookup; only do it when due.
-            if !tool_update::is_due(request, Updater::Service) {
-                continue;
-            }
-            let tv = match request.resolve(&config, &ResolveOptions::default()).await {
-                Ok(tv) => tv,
+            .collect::<Vec<_>>();
+        let Some(first) = requests.first() else {
+            continue;
+        };
+        // Resolving can mean a remote lookup; only do it when due.
+        if !tool_update::is_due(first, Updater::Service) {
+            continue;
+        }
+        let mut floating = false;
+        let mut lookup_error = None;
+        for request in &requests {
+            match request.resolve(&config, &ResolveOptions::default()).await {
+                Ok(tv) => floating |= tool_update::updatable(&tv),
                 Err(err) => {
                     warn!("tool-update: could not resolve {ba}: {err:#}");
-                    // When its check is due, so `mise doctor` says why this
-                    // tool isn't updating.
-                    if let Some(tool_id) = tool_update::claim_due_request(request, Updater::Service)
-                    {
-                        tool_update::record_result(&tool_id, &Err(err));
-                    }
-                    continue;
+                    lookup_error.get_or_insert(err);
                 }
-            };
-            let Some(tool_id) = tool_update::claim_due(&tv, Updater::Service) else {
-                continue;
-            };
-            info!("tool-update: updating {tool_id}");
-            let tool: ToolArg = match tv.ba().short.parse() {
-                Ok(tool) => tool,
-                Err(err) => {
-                    warn!("tool-update: could not update {tool_id}: {err:#}");
-                    tool_update::record_result(&tool_id, &Err(err));
-                    continue;
-                }
-            };
-            if let Err(err) = update_tool(tool, tool_id.clone(), true).await {
-                warn!("tool-update: could not update {tool_id}: {err:#}");
             }
+        }
+        let Some(tool_id) = tool_update::claim_due_request(first, Updater::Service) else {
+            continue;
+        };
+        if !floating {
+            // Only exact pins (now marked checked until the interval is up),
+            // or versions that couldn't be looked up: say why in `mise doctor`.
+            if let Some(err) = lookup_error {
+                tool_update::record_result(&tool_id, &Err(err));
+            }
+            continue;
+        }
+        info!("tool-update: updating {tool_id}");
+        let tool: ToolArg = match ba.short.parse() {
+            Ok(tool) => tool,
+            Err(err) => {
+                warn!("tool-update: could not update {tool_id}: {err:#}");
+                tool_update::record_result(&tool_id, &Err(err));
+                continue;
+            }
+        };
+        if let Err(err) = update_tool(tool, tool_id.clone(), true).await {
+            warn!("tool-update: could not update {tool_id}: {err:#}");
         }
     }
     Ok(())

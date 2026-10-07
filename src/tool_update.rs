@@ -91,15 +91,15 @@ pub enum Updater {
 /// as made right away, so concurrent claims start one update and a failed or
 /// offline update is not retried until the next interval.
 pub fn claim_due(tv: &ToolVersion, updater: Updater) -> Option<String> {
-    if tv.request_pinned_this_version() {
-        // Nothing to update. The service marks it checked anyway, so its
-        // passes don't resolve it again until the interval is up.
-        if updater == Updater::Service {
-            claim_due_request(&tv.request, updater);
-        }
+    if !updatable(tv) {
         return None;
     }
     claim_due_request(&tv.request, updater)
+}
+
+/// Whether `tv` can move to a newer version: exact pins can't.
+pub fn updatable(tv: &ToolVersion) -> bool {
+    !tv.request_pinned_this_version()
 }
 
 /// [`claim_due`] for a request that couldn't be resolved, so a lookup failure
