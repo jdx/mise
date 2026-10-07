@@ -447,3 +447,12 @@ assert_contains 'mise dot diff ~/competing-target.toml' '+model = "first"'
 assert_not_contains 'mise dot diff ~/competing-target.toml' '+model = "second"'
 assert_succeed 'mise dot apply ~/competing-target.toml --yes'
 assert_contains 'cat ~/competing-target.toml' 'model = "first"'
+
+# Earlier defaults retain live keys for subsequent defaults' status and diff.
+echo 'effort = "high"' >~/competing-first.toml
+echo 'model = "mine"' >~/competing-target.toml
+assert_not_contains 'mise dot diff ~/competing-target.toml' '+model = "second"'
+assert_contains 'mise dot status ~/competing-target.toml/second' 'applied'
+assert_succeed 'mise dot apply ~/competing-target.toml --yes'
+assert_contains 'cat ~/competing-target.toml' 'model = "mine"'
+assert_contains 'cat ~/competing-target.toml' 'effort = "high"'

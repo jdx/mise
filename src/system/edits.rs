@@ -826,9 +826,7 @@ fn projected_text(
         }
         if let Some(desired) = desired_content(config, other)? {
             if *missing_only {
-                if let Some(merged) = structured_merge::missing(*format, &text, &desired)? {
-                    text = merged;
-                }
+                text = structured_merge::fill_missing(*format, &text, &desired)?;
             } else {
                 text = structured_merge::merge(*format, &text, &desired)?;
             }
