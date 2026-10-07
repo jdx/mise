@@ -46,6 +46,115 @@ const NPM_PACKAGE_MANAGER_IDENTITY_KEY: &str = "npm.package_manager";
 const PNPM_MIN_RELEASE_AGE_VERSION: &str = "10.16.0";
 const PNPM_GLOBAL_DIR_ENV_VERSION: &str = "12.0.0";
 
+/// Whether the tool name is a git source (`git+https://…`, `github:o/r`, …)
+/// rather than a registry package.
+fn is_git_spec(name: &str) -> bool {
+    ["git+", "git://", "github:", "gitlab:", "bitbucket:"]
+        .iter()
+        .any(|prefix| name.starts_with(prefix))
+}
+
+/// The npm install specifier for a git source; `latest` means the default branch.
+fn git_requirement(name: &str, version: &str) -> String {
+    if version == "latest" {
+        // npm resolves a bare `gitlab:`/`bitbucket:` shorthand to `master`, so
+        // spell out the URL to get the remote's default branch.
+        for (shorthand, host) in [("gitlab:", "gitlab.com"), ("bitbucket:", "bitbucket.org")] {
+            if let Some(repo) = name.strip_prefix(shorthand)
+                && !repo.contains('#')
+            {
+                let repo = repo.trim_end_matches('/');
+                let repo = repo.strip_suffix(".git").unwrap_or(repo);
+                return format!("git+https://{host}/{repo}.git");
+            }
+        }
+        name.to_string()
+    } else {
+        // mise keeps `ref:`/`branch:`/`tag:`/`rev:` request prefixes, which an
+        // explicit `tag:latest` must not be confused with the bare `latest`.
+        let version = match version.split_once(':') {
+            Some(("ref" | "branch" | "tag" | "rev", git_ref)) => git_ref,
+            _ => version,
+        };
+        let base = name.split('#').next().unwrap_or(name).trim_end_matches('/');
+        format!("{base}#{version}")
+    }
+}
+
+/// Whether a git source follows its remote's default branch, as opposed to one
+/// that already pins a `#ref` in its URL.
+fn git_tracks_head(name: &str) -> bool {
+    is_git_spec(name) && !name.contains('#')
+}
+
+/// The remote to query for a git source's refs, without any `#ref` fragment.
+fn git_remote(name: &str) -> String {
+    let url = name.split('#').next().unwrap_or(name);
+    for (shorthand, host) in [
+        ("github:", "github.com"),
+        ("gitlab:", "gitlab.com"),
+        ("bitbucket:", "bitbucket.org"),
+    ] {
+        if let Some(repo) = url.strip_prefix(shorthand) {
+            let repo = repo.trim_end_matches('/');
+            let repo = repo.strip_suffix(".git").unwrap_or(repo);
+            return format!("https://{host}/{repo}.git");
+        }
+    }
+    let url = url.strip_prefix("git+").unwrap_or(url);
+    // npm accepts `ssh://git@host:owner/repo`, but git reads that colon as a
+    // port separator; the scp-like form `git@host:owner/repo` is what it wants.
+    if let Some((host, path)) = url.strip_prefix("ssh://").and_then(|r| r.split_once(':'))
+        && !host.contains(['/', '['])
+        && !path
+            .split('/')
+            .next()
+            .is_some_and(|p| !p.is_empty() && p.chars().all(|c| c.is_ascii_digit()))
+    {
+        return format!("{host}:{path}");
+    }
+    url.to_string()
+}
+
+/// Resolve a git remote's default-branch HEAD to a concrete commit.
+async fn git_head(remote: &str) -> eyre::Result<String> {
+    timeout::run_with_timeout_async(
+        async || {
+            let output = crate::cmd::cmd_read_async_inherited_env(
+                "git",
+                &["ls-remote", remote, "HEAD"],
+                std::iter::empty::<(&str, &std::ffi::OsStr)>(),
+            )
+            .await?;
+            output
+                .lines()
+                .find_map(|line| {
+                    let (sha, git_ref) = line.split_once('\t')?;
+                    (git_ref == "HEAD").then(|| sha.to_string())
+                })
+                .ok_or_else(|| eyre::eyre!("no HEAD found for {remote}"))
+        },
+        Settings::get().fetch_remote_versions_timeout(),
+    )
+    .await
+}
+
+/// An alias to install a git source under: the repository name.
+fn git_alias(name: &str) -> String {
+    let url = name.split('#').next().unwrap_or(name).trim_end_matches('/');
+    let url = url.strip_suffix(".git").unwrap_or(url);
+    url.rsplit(['/', ':']).next().unwrap_or(url).to_string()
+}
+
+/// Reject a git spec whose repository name cannot be a dependency name.
+fn validate_git_alias(name: &str) -> Result<()> {
+    let alias = git_alias(name);
+    if alias.is_empty() || alias == "." || alias == ".." {
+        eyre::bail!("cannot determine a package name from git source: npm:{name}");
+    }
+    Ok(())
+}
+
 #[derive(Debug)]
 pub(crate) struct NPMBackend {
     ba: Arc<BackendArg>,
@@ -564,6 +673,28 @@ impl Backend for NPMBackend {
     }
 
     async fn _list_remote_versions(&self, config: &Arc<Config>) -> eyre::Result<Vec<VersionInfo>> {
+        let name = self.tool_name();
+        if is_git_spec(&name) {
+            // A git source has no registry history; the only version is the
+            // commit its default branch currently points at. A pinned ref
+            // never needs it, so a failed lookup must not block that install.
+            if !git_tracks_head(&name) {
+                return Ok(vec![VersionInfo {
+                    version: "latest".to_string(),
+                    ..Default::default()
+                }]);
+            }
+            return Ok(match git_head(&git_remote(&name)).await {
+                Ok(version) => vec![VersionInfo {
+                    version,
+                    ..Default::default()
+                }],
+                Err(err) => {
+                    debug!("could not resolve the default branch of {name}: {err:#}");
+                    vec![]
+                }
+            });
+        }
         if Settings::get().npm.shell_out {
             return self.list_remote_versions_npm_view(config).await;
         }
@@ -577,7 +708,38 @@ impl Backend for NPMBackend {
         .await
     }
 
+    fn is_rolling_channel(&self, version: &str) -> bool {
+        version == "latest" && git_tracks_head(&self.tool_name())
+    }
+
+    fn latest_installed_channel_version(&self, _channel: &str) -> Option<String> {
+        // Installed commits do not record whether they came from a rolling HEAD.
+        None
+    }
+
+    async fn resolve_channel_version(
+        &self,
+        _config: &Arc<Config>,
+        version: &str,
+    ) -> Result<Option<String>> {
+        if !self.is_rolling_channel(version) {
+            return Ok(None);
+        }
+        git_head(&git_remote(&self.tool_name())).await.map(Some)
+    }
+
+    fn requires_concrete_channel_version(&self, version: &str) -> bool {
+        self.is_rolling_channel(version)
+    }
+
     async fn latest_stable_version(&self, config: &Arc<Config>) -> eyre::Result<Option<String>> {
+        let name = self.tool_name();
+        if is_git_spec(&name) {
+            if !git_tracks_head(&name) {
+                return Ok(Some("latest".to_string()));
+            }
+            return git_head(&git_remote(&name)).await.map(Some);
+        }
         if Settings::get().npm.shell_out {
             self.ensure_npm_for_version_check(config).await;
         }
@@ -909,6 +1071,16 @@ impl NPMBackend {
         tv: &ToolVersion,
         options: &NpmOptions<'_>,
     ) -> Result<String> {
+        if is_git_spec(&self.tool_name()) {
+            validate_git_alias(&self.tool_name())?;
+            if options.checksum().is_some() {
+                eyre::bail!(
+                    "the checksum option is not supported for git sources: npm:{}",
+                    self.tool_name()
+                );
+            }
+            return Ok(git_requirement(&self.tool_name(), &tv.version));
+        }
         let Some(checksum) = options.checksum() else {
             return Ok(format!("{}@{}", self.tool_name(), tv.version));
         };
@@ -925,6 +1097,27 @@ impl NPMBackend {
             .set_message(format!("verify {}@{}", self.tool_name(), tv.version));
         crate::hash::ensure_checksum(&archive, digest, Some(ctx.pr.as_ref()), algorithm)?;
         Ok(archive.to_string_lossy().into_owned())
+    }
+
+    /// The dependency name the package is installed under: the registry name,
+    /// or for a git source an alias taken from the repository name.
+    fn package_key(&self) -> String {
+        let name = self.tool_name();
+        if is_git_spec(&name) {
+            git_alias(&name)
+        } else {
+            name
+        }
+    }
+
+    /// The root dependency specifier: the version, or a git URL with the ref.
+    fn package_requirement(&self, tv: &ToolVersion) -> String {
+        let name = self.tool_name();
+        if is_git_spec(&name) {
+            git_requirement(&name, &tv.version)
+        } else {
+            tv.version.clone()
+        }
     }
 
     pub(crate) fn from_arg(ba: BackendArg) -> Self {
@@ -1369,7 +1562,7 @@ impl NPMBackend {
             &allow_builds,
             tv.resolved_from_lockfile(),
         )?;
-        self.write_aube_root_dependency(&install_path, &self.tool_name(), &tv.version)?;
+        self.write_aube_root_dependency(&install_path, tv)?;
 
         if let Some(lock) = &tv.aube_lock {
             crate::file::write(install_path.join("aube-lock.yaml"), lock.load()?.to_yaml()?)?;
@@ -1625,16 +1818,12 @@ impl NPMBackend {
         Ok(())
     }
 
-    fn write_aube_root_dependency(
-        &self,
-        install_path: &Path,
-        package: &str,
-        version: &str,
-    ) -> Result<()> {
+    fn write_aube_root_dependency(&self, install_path: &Path, tv: &ToolVersion) -> Result<()> {
         let path = install_path.join("package.json");
         let mut manifest: serde_json::Value =
             serde_json::from_str(&crate::file::read_to_string(&path)?)?;
-        manifest["dependencies"] = serde_json::json!({ package: version });
+        manifest["dependencies"] =
+            serde_json::json!({ self.package_key(): self.package_requirement(tv) });
         crate::file::write(
             path,
             format!("{}\n", serde_json::to_string_pretty(&manifest)?),
@@ -1652,10 +1841,10 @@ impl NPMBackend {
             .get("importers")
             .and_then(|v| v.get("."))
             .and_then(|v| v.get("dependencies"))
-            .and_then(|v| v.get(self.tool_name()))
+            .and_then(|v| v.get(self.package_key()))
             .and_then(|v| v.get("specifier"))
             .and_then(toml::Value::as_str);
-        if requirement != Some(tv.version.as_str()) {
+        if requirement != Some(self.package_requirement(tv).as_str()) {
             eyre::bail!(
                 "npm:{} dependency graph does not match root version {}; run `mise lock`",
                 self.tool_name(),
@@ -1675,7 +1864,7 @@ impl NPMBackend {
         let options = NpmOptions::new(&request_options);
         let allow_builds = options.allow_builds()?;
         self.write_aube_embed_project(temp.path(), tv.before_date, &options, &allow_builds, false)?;
-        self.write_aube_root_dependency(temp.path(), &self.tool_name(), &tv.version)?;
+        self.write_aube_root_dependency(temp.path(), tv)?;
         let mut install_options = aube::embed::InstallOptions::new(temp.path());
         install_options.lockfile_only = true;
         install_options.ignore_scripts = true;
@@ -1764,7 +1953,7 @@ impl NPMBackend {
             // A matching mise.lock pin is itself approval for this check.
             config.insert(
                 "allowedUnpopularPackages".to_string(),
-                toml::Value::Array(vec![toml::Value::String(self.tool_name())]),
+                toml::Value::Array(vec![toml::Value::String(self.package_key())]),
             );
         }
         match allow_exotic_deps {
@@ -1819,7 +2008,7 @@ impl NPMBackend {
     }
 
     fn warn_if_npm_package_lifecycle_scripts_skipped(&self, tv: &ToolVersion) {
-        let tool_name = self.tool_name();
+        let tool_name = self.package_key();
         let Some((package_json_path, hooks)) =
             Self::installed_package_lifecycle_scripts(&tv.install_path(), &tool_name)
         else {
@@ -2385,6 +2574,72 @@ pub(crate) fn test_backend(
 mod tests {
     use super::*;
     use crate::args::{BackendArg, BackendResolution};
+
+    #[test]
+    fn git_specs_are_detected_and_aliased() {
+        for name in [
+            "git+https://github.com/o/r",
+            "git+ssh://git@github.com/o/r.git",
+            "github:o/r",
+        ] {
+            assert!(is_git_spec(name), "{name}");
+        }
+        assert!(!is_git_spec("prettier"));
+        assert!(!is_git_spec("@biomejs/biome"));
+        assert_eq!(git_alias("git+https://github.com/o/r"), "r");
+        assert_eq!(git_alias("git+ssh://git@github.com/o/r.git#main"), "r");
+        assert_eq!(git_alias("github:o/r"), "r");
+        assert!(validate_git_alias("github:o/r").is_ok());
+        assert_eq!(
+            git_remote("git+ssh://git@github.com:npm/cli.git"),
+            "git@github.com:npm/cli.git"
+        );
+        assert_eq!(
+            git_remote("git+ssh://git@github.com:22/npm/cli.git"),
+            "ssh://git@github.com:22/npm/cli.git"
+        );
+        assert_eq!(
+            git_remote("git+ssh://git@[::1]:2222/o/r.git"),
+            "ssh://git@[::1]:2222/o/r.git"
+        );
+        assert!(git_tracks_head("github:o/r"));
+        assert!(!git_tracks_head("github:o/r#v1"));
+        assert!(validate_git_alias("github:o/.git").is_err());
+        assert!(validate_git_alias("github:o/.").is_err());
+        assert_eq!(git_remote("github:o/r#main"), "https://github.com/o/r.git");
+        assert_eq!(git_remote("git+ssh://git@h/o/r.git"), "ssh://git@h/o/r.git");
+        assert_eq!(git_alias("git+https://github.com/o/r.git/"), "r");
+        assert_eq!(git_requirement("github:o/r#main", "v1"), "github:o/r#v1");
+        assert_eq!(
+            git_requirement("gitlab:o/r", "latest"),
+            "git+https://gitlab.com/o/r.git"
+        );
+        assert_eq!(git_requirement("gitlab:o/r", "v1"), "gitlab:o/r#v1");
+        assert_eq!(
+            git_requirement("gitlab:o/r.git/", "v1"),
+            "gitlab:o/r.git#v1"
+        );
+        assert_eq!(
+            git_requirement("gitlab:o/r.git/", "latest"),
+            "git+https://gitlab.com/o/r.git"
+        );
+        assert_eq!(
+            git_requirement("github:o/r", "tag:latest"),
+            "github:o/r#latest"
+        );
+        assert_eq!(
+            git_requirement("github:o/r", "branch:feature/foo"),
+            "github:o/r#feature/foo"
+        );
+        assert_eq!(
+            git_requirement("git+https://github.com/o/r", "latest"),
+            "git+https://github.com/o/r"
+        );
+        assert_eq!(
+            git_requirement("git+https://github.com/o/r", "v1.2.0"),
+            "git+https://github.com/o/r#v1.2.0"
+        );
+    }
 
     #[derive(Debug, Default)]
     struct RecordingReport(std::sync::Mutex<Vec<String>>);
