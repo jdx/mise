@@ -578,12 +578,6 @@ pub(crate) async fn apply_locked_with_scope(
         }
         bail!("nothing can be applied until the held paths are decided");
     }
-    if !req.automatic
-        && !super::origin::confirmed(req.yes, "history: apply these incoming changes?")?
-    {
-        info!("history: skipped");
-        return Ok(ApplyOutcome::default());
-    }
 
     // the transaction
     let reload = crate::system::history::config::reload_commands()?;

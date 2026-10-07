@@ -475,19 +475,6 @@ impl DotfilesTrack {
             return Ok(());
         }
         let only_retracks = retracked.len() == declared.len();
-        if !only_retracks && !self.yes && !Settings::get().yes && console::user_attended_stderr() {
-            let list = declared
-                .iter()
-                .zip(&previews)
-                .filter(|((key, _), _)| !retracked.contains(key))
-                .map(|((key, _), summary)| format!("{key} ({summary})"))
-                .collect::<Vec<_>>()
-                .join(", ");
-            if !crate::ui::prompt::confirm(format!("dotfiles: track {list}?"))?.is_yes() {
-                info!("dotfiles: skipped");
-                return Ok(());
-            }
-        }
         let result = async {
             for (path, edit) in &mut edits {
                 if edit.changed {

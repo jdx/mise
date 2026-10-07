@@ -456,13 +456,6 @@ async fn execute(
         info!("history: nothing to do");
         return Ok(());
     }
-    if !exec.yes
-        && !crate::config::Settings::get().yes
-        && !prompt::confirm_recoverable("history: apply this plan?")?
-    {
-        info!("history: skipped");
-        return Ok(());
-    }
     // resolved from the trusted layers now, so nothing this operation writes
     // can change which commands run afterwards
     let reload = super::config::reload_commands()?;

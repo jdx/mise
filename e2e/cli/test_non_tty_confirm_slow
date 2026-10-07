@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Without a terminal a confirmation must neither skip silently nor hang:
-# recoverable operations (journaled, with a protective checkpoint) proceed,
-# irreversible ones fail with an error that names --yes. e2e runs with stderr
+# Recoverable operations (journaled, with a protective checkpoint) never
+# prompt, with or without a terminal. Irreversible ones fail with an error
+# that names --yes when nobody can answer. e2e runs with stderr
 # and stdin detached from any tty.
 require_cmd git
 export MISE_HISTORY_NOTIFY=false
@@ -28,7 +28,7 @@ export second
 export -f b
 assert_succeed "b bootstrap --adopt file://$origin --yes </dev/null"
 
-# pull applies without --yes (and without a terminal)
+# pull applies without --yes, even with MISE_YES=0
 echo incoming >~/.native
 assert_succeed 'mise bootstrap dotfiles sync'
 assert_succeed 'b bootstrap dotfiles sync --fetch-only'
@@ -45,6 +45,9 @@ assert_succeed 'mise bootstrap dotfiles rollback ~/.config/hypr/bindings.lua </d
 assert 'cat ~/.config/hypr/bindings.lua' kitty
 assert_succeed 'mise bootstrap dotfiles undo </dev/null'
 assert 'cat ~/.config/hypr/bindings.lua' alacritty
+
+# replacing local history cannot be undone: refuse loudly too
+assert_fail "b bootstrap --adopt file://$origin --replace-history </dev/null" '--yes'
 
 # irreversible: refuse loudly and name --yes, never skip silently
 mkdir -p "$HOME/implode-me"

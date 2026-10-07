@@ -193,9 +193,6 @@ async fn set_inner(
         );
     }
     let mut status = run::read_status(state_dir)?;
-    if !confirmed(opts.yes, "Connect this setup repository?")? {
-        bail!("not connected");
-    }
     *accepted = true;
 
     // the mode is recorded only when it differs from what the settings
@@ -308,16 +305,6 @@ pub fn report(outcome: &run::SyncOutcome) {
             outcome.conflicts
         );
     }
-}
-
-/// `--yes`, `MISE_YES`, or an interactive confirmation. These operations are
-/// journaled and undoable, so with nobody to ask (no terminal) the printed
-/// plan proceeds instead of silently doing nothing.
-pub(crate) fn confirmed(yes: bool, question: &str) -> Result<bool> {
-    if yes || crate::config::Settings::get().yes {
-        return Ok(true);
-    }
-    prompt::confirm_recoverable(question)
 }
 
 /// Like [`confirmed`], for an operation that cannot be undone: with nobody to
