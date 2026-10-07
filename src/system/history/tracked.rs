@@ -442,13 +442,22 @@ impl TrackedSet {
                     });
                     match select::select(&request.variants, &environments) {
                         Selection::Single => {}
-                        Selection::Variant(variant) => {
-                            entry.variant = Some(variant.name());
-                        }
+                        Selection::Variant(variant) => match variant.name() {
+                            Ok(name) => entry.variant = Some(name),
+                            Err(error) => {
+                                set.invalid.push(PathReason {
+                                    path: display_path(&request.target),
+                                    reason: format!("{error:#}"),
+                                });
+                                continue;
+                            }
+                        },
                         Selection::NoMatch => continue,
                         Selection::Ambiguous(variants) => {
-                            let names: Vec<String> =
-                                variants.iter().map(|variant| variant.name()).collect();
+                            let names: Vec<String> = variants
+                                .iter()
+                                .map(|variant| variant.selector_name())
+                                .collect();
                             set.invalid.push(PathReason {
                                 path: display_path(&request.target),
                                 reason: format!(

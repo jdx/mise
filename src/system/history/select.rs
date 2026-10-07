@@ -30,12 +30,24 @@ pub(crate) const MACHINE_STREAM_PREFIX: &str = "machine-";
 
 impl Variant {
     /// The stream name recorded in checkpoints and used in the setup branch:
-    /// `macos`, `linux-arm64`, `macos+work`, `work`, `default`, or
-    /// `machine-<name>` for this machine's own stream.
-    pub(crate) fn name(&self) -> String {
+    /// [`Self::selector_name`], or `machine-<name>` for this machine's own
+    /// stream. Naming this machine fails when its name cannot be read or
+    /// kept, and the history operation stops: another name could be a
+    /// stream some other machine also writes.
+    pub(crate) fn name(&self) -> eyre::Result<String> {
         if self.machine {
-            return format!("{MACHINE_STREAM_PREFIX}{}", super::store::machine_name());
+            return Ok(format!(
+                "{MACHINE_STREAM_PREFIX}{}",
+                super::store::machine_name()?
+            ));
         }
+        Ok(self.selector_name())
+    }
+
+    /// The stream name of an `os`/`profile`/`default` variant: `macos`,
+    /// `linux-arm64`, `macos+work`, `work`, or `default`. A machine variant
+    /// names a different stream on every machine; see [`Self::name`].
+    pub(crate) fn selector_name(&self) -> String {
         let mut parts = vec![];
         for os in &self.os {
             parts.push(os.replace('/', "-"));
@@ -67,7 +79,7 @@ impl Variant {
                 .strip_prefix(MACHINE_STREAM_PREFIX)
                 .is_some_and(super::store::is_valid_machine_name)
         } else {
-            self.name() == stream
+            self.selector_name() == stream
         }
     }
 
@@ -356,15 +368,15 @@ mod tests {
     #[test]
     fn stream_names() {
         assert_ne!(
-            v(&["macos", "linux"], None, false).name(),
-            v(&["macos", "windows"], None, false).name()
+            v(&["macos", "linux"], None, false).selector_name(),
+            v(&["macos", "windows"], None, false).selector_name()
         );
-        assert_eq!(v(&["macos"], None, false).name(), "macos");
+        assert_eq!(v(&["macos"], None, false).selector_name(), "macos");
         assert_eq!(
-            v(&["linux/arm64"], Some("work"), false).name(),
+            v(&["linux/arm64"], Some("work"), false).selector_name(),
             "linux-arm64+work"
         );
-        assert_eq!(v(&[], Some("work"), false).name(), "work");
-        assert_eq!(v(&[], None, true).name(), "default");
+        assert_eq!(v(&[], Some("work"), false).selector_name(), "work");
+        assert_eq!(v(&[], None, true).selector_name(), "default");
     }
 }

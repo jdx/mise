@@ -232,19 +232,12 @@ fn machine_name_path_in(state_dir: &Path) -> PathBuf {
 /// with the store. A hostname alone is not enough: installers often leave
 /// every machine with the same default one, and renaming a host must not
 /// move its streams.
-pub(crate) fn machine_name() -> String {
-    let configured = super::config::machine_name().unwrap_or_else(|err| {
-        warn_once!("history: {err:#}");
-        None
-    });
-    configured.unwrap_or_else(|| {
-        machine_name_in(&crate::dirs::STATE).unwrap_or_else(|err| {
-            // history cannot save anything without its store either; name
-            // the stream after the host rather than fail every reader
-            warn_once!("history: cannot keep a machine name: {err:#}");
-            generated_name_prefix()
-        })
-    })
+pub(crate) fn machine_name() -> Result<String> {
+    match super::config::machine_name()? {
+        Some(name) => Ok(name),
+        None => machine_name_in(&crate::dirs::STATE)
+            .wrap_err("cannot name this machine's own history streams"),
+    }
 }
 
 /// The name kept in the store under `state_dir`, generated on first use.
@@ -259,13 +252,15 @@ pub(crate) fn machine_name_in(state_dir: &Path) -> Result<String> {
         generated_name_prefix(),
         crate::rand::random_string(8).to_ascii_lowercase()
     );
-    // write it beside the final path, then link it into place: the link
-    // fails when another process got there first, and nobody ever reads a
-    // half-written name
-    let staging = path.with_extension(format!("{}.tmp", std::process::id()));
-    file::write(&staging, format!("{name}\n"))?;
-    let linked = std::fs::hard_link(&staging, &path);
-    let _ = std::fs::remove_file(&staging);
+    // write it to a file of its own beside the final path, then link it
+    // into place: the link fails when another process or thread got there
+    // first, and nobody ever reads a half-written name
+    let mut staging = tempfile::Builder::new()
+        .prefix("machine.")
+        .tempfile_in(store_dir_in(state_dir))?;
+    std::io::Write::write_all(&mut staging, format!("{name}\n").as_bytes())?;
+    let linked = std::fs::hard_link(staging.path(), &path);
+    drop(staging);
     match linked {
         Ok(()) => Ok(name),
         Err(err) if err.kind() == std::io::ErrorKind::AlreadyExists => {
@@ -329,6 +324,31 @@ mod machine_name_tests {
         // another store is another machine, even under the same hostname
         let other = tempfile::tempdir().unwrap();
         assert_ne!(machine_name_in(other.path()).unwrap(), first);
+    }
+
+    #[test]
+    fn concurrent_first_uses_agree_on_one_name() {
+        let temp = tempfile::tempdir().unwrap();
+        let barrier = std::sync::Barrier::new(16);
+        let names: Vec<String> = std::thread::scope(|scope| {
+            let handles: Vec<_> = (0..16)
+                .map(|_| {
+                    scope.spawn(|| {
+                        barrier.wait();
+                        machine_name_in(temp.path()).unwrap()
+                    })
+                })
+                .collect();
+            handles.into_iter().map(|h| h.join().unwrap()).collect()
+        });
+        assert!(names.iter().all(|name| name == &names[0]), "{names:?}");
+        assert_eq!(machine_name_in(temp.path()).unwrap(), names[0]);
+        let leftovers: Vec<_> = std::fs::read_dir(store_dir_in(temp.path()))
+            .unwrap()
+            .filter_map(|entry| entry.ok())
+            .filter(|entry| entry.file_name().to_string_lossy().starts_with("machine."))
+            .collect();
+        assert!(leftovers.is_empty(), "staging files left behind");
     }
 
     #[test]

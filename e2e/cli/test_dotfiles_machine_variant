@@ -51,6 +51,10 @@ assert_succeed "b dot save"
 assert_succeed "b dot sync"
 assert "git --git-dir=$origin show main:home@$first_stream/.monitors" "laptop"
 assert "git --git-dir=$origin show main:home@$second_stream/.monitors" "desktop"
+# the first machine's checkpoints hold no version from this one, which is
+# not a saved deletion: rollback has nothing earlier to restore
+assert_contains "b dot rollback $second/.monitors --dry-run 2>&1" "no saved version that differs"
+assert "cat $second/.monitors" "desktop"
 
 # a shared change arrives; the machine file stays this machine's own
 echo changed-on-laptop >~/.shared

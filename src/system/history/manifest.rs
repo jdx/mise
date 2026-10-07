@@ -98,31 +98,35 @@ impl Manifest {
     /// its selected variant: an enrollment with no matching variant here is
     /// left out. Like [`Self::tracking`], but a pure view for a manifest
     /// that is not being enrolled (a saved one, read to decide baselines).
-    pub(crate) fn selected_entries(&self) -> Vec<super::tracked::TrackedEntry> {
+    pub(crate) fn selected_entries(&self) -> Result<Vec<super::tracked::TrackedEntry>> {
         let roots = super::sync::layout::Roots::current();
         let environments = super::select::active_environments();
-        self.enrollment
-            .iter()
-            .filter_map(|enrollment| {
-                let variant = match super::select::select(&enrollment.variants, &environments) {
-                    super::select::Selection::Single => None,
-                    super::select::Selection::Variant(variant) => Some(variant.name()),
-                    super::select::Selection::NoMatch | super::select::Selection::Ambiguous(_) => {
-                        return None;
-                    }
-                };
-                let local = roots.locate(&enrollment.path).path()?.to_path_buf();
-                let mut policy = crate::system::files::FilePolicy::for_mode(
-                    crate::system::files::FileMode::Track,
-                );
-                policy.autosave = enrollment.autosave;
-                policy.encrypt = enrollment.encrypt;
-                policy.allow_plaintext = enrollment.allow_plaintext.unwrap_or(false);
-                let mut entry = super::tracked::TrackedEntry::new(local, "track", policy);
-                entry.variant = variant;
-                Some(entry)
-            })
-            .collect()
+        let mut entries = vec![];
+        for enrollment in &self.enrollment {
+            let variant = match super::select::select(&enrollment.variants, &environments) {
+                super::select::Selection::Single => None,
+                super::select::Selection::Variant(variant) => Some(variant.name()?),
+                super::select::Selection::NoMatch | super::select::Selection::Ambiguous(_) => {
+                    continue;
+                }
+            };
+            let Some(local) = roots
+                .locate(&enrollment.path)
+                .path()
+                .map(std::path::Path::to_path_buf)
+            else {
+                continue;
+            };
+            let mut policy =
+                crate::system::files::FilePolicy::for_mode(crate::system::files::FileMode::Track);
+            policy.autosave = enrollment.autosave;
+            policy.encrypt = enrollment.encrypt;
+            policy.allow_plaintext = enrollment.allow_plaintext.unwrap_or(false);
+            let mut entry = super::tracked::TrackedEntry::new(local, "track", policy);
+            entry.variant = variant;
+            entries.push(entry);
+        }
+        Ok(entries)
     }
 
     /// Whether a permission path is the enrolled path of its stream or below
@@ -356,7 +360,7 @@ impl Manifest {
         for enrollment in &self.enrollment {
             let variant = match super::select::select(&enrollment.variants, &environments) {
                 super::select::Selection::Single => None,
-                super::select::Selection::Variant(variant) => Some(variant.name()),
+                super::select::Selection::Variant(variant) => Some(variant.name()?),
                 super::select::Selection::NoMatch => continue,
                 super::select::Selection::Ambiguous(_) => {
                     bail!("ambiguous variants for {}", enrollment.path)
@@ -393,7 +397,8 @@ impl Manifest {
             } else {
                 let (root, relative) = entry.path.split_once('/').unwrap_or((&entry.path, ""));
                 for variant in &entry.variants {
-                    let stem = format!("{root}@{}", variant.name());
+                    // validation refuses encryption with a machine variant
+                    let stem = format!("{root}@{}", variant.selector_name());
                     paths.insert(if relative.is_empty() {
                         stem
                     } else {
@@ -443,7 +448,7 @@ impl Manifest {
                 Some(entry) => {
                     let selected = match super::select::select(&entry.variants, &environments) {
                         super::select::Selection::Single => None,
-                        super::select::Selection::Variant(variant) => Some(variant.name()),
+                        super::select::Selection::Variant(variant) => Some(variant.name()?),
                         super::select::Selection::NoMatch => Some(String::new()),
                         super::select::Selection::Ambiguous(_) => {
                             bail!("ambiguous variants for {}", entry.path)
@@ -510,7 +515,7 @@ impl Manifest {
             // a machine variant stands alone and names a valid stream on
             // every machine
             for variant in entry.variants.iter().filter(|variant| !variant.machine) {
-                let name = variant.name();
+                let name = variant.selector_name();
                 if name.contains('@')
                     || !super::sync::layout::is_safe_branch_path(&name)
                     || !variants.insert(name)
@@ -1205,8 +1210,8 @@ mod tests {
             os: vec!["other-test-platform".into()],
             ..Default::default()
         };
-        let active_path = format!("home@{}/.zshrc", active.name());
-        let inactive_path = format!("home@{}/.zshrc", inactive.name());
+        let active_path = format!("home@{}/.zshrc", active.selector_name());
+        let inactive_path = format!("home@{}/.zshrc", inactive.selector_name());
         let mut manifest = Manifest {
             enrollment: vec![Enrollment {
                 path: "home/.zshrc".into(),
@@ -1292,7 +1297,7 @@ mod tests {
             machine: true,
             ..Default::default()
         };
-        let own_path = format!("home@{}/.config/hypr/monitors.lua", machine.name());
+        let own_path = format!("home@{}/.config/hypr/monitors.lua", machine.name().unwrap());
         let other_path = "home@machine-another-host-0a1b2c3d/.config/hypr/monitors.lua";
         assert_ne!(own_path, other_path);
         let manifest = Manifest {

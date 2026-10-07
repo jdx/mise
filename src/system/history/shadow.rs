@@ -901,10 +901,42 @@ impl HistoryRepo {
             // nothing is written to the tree for it — so it has to be
             // carried forward like the other two
             coverage.nested.append(&mut record.tree.coverage.nested);
+            let files = Self::gix_tree_entries(&repo, &tree)?;
+            // **Another machine's checkpoint did not save this machine's
+            // version of a per-machine file.** Its tree has no stream for
+            // this machine, which must not read as a saved absence: a
+            // rollback to it would delete the file here. A checkpoint this
+            // machine captured itself keeps its own coverage instead.
+            for entry in &coverage.entries {
+                let Some(variant) = entry
+                    .variant
+                    .as_deref()
+                    .filter(|variant| variant.starts_with(super::select::MACHINE_STREAM_PREFIX))
+                else {
+                    continue;
+                };
+                let local = super::tracked::normalize_target(Path::new(&entry.path));
+                let Some(stream) = layout.branch_path(&local, Some(variant)) else {
+                    continue;
+                };
+                let held = files.iter().any(|file| {
+                    file.path == stream
+                        || file
+                            .path
+                            .strip_prefix(&stream)
+                            .is_some_and(|rest| rest.starts_with('/'))
+                });
+                if !held {
+                    coverage.omitted.push(super::store::PathReason {
+                        path: entry.path.clone(),
+                        reason: "this checkpoint holds no version from this machine".into(),
+                    });
+                }
+            }
             record.tree.coverage = coverage;
             let mut roots: BTreeMap<String, RootRecord> = BTreeMap::new();
             let layout = super::sync::layout::Roots::current();
-            for file in Self::gix_tree_entries(&repo, &tree)? {
+            for file in files {
                 let located = layout.locate(&file.path);
                 let Some(path) = located.path() else {
                     continue;
