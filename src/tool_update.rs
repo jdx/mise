@@ -97,6 +97,11 @@ pub fn claim_due(tv: &ToolVersion, updater: Updater) -> Option<String> {
     claim_due_request(&tv.request, updater)
 }
 
+/// The check interval `request`'s `auto_update` asks for, if it enables it.
+pub fn interval(request: &ToolRequest) -> Option<Duration> {
+    global_auto_update(request).and_then(|value| parse_auto_update(&value).ok().flatten())
+}
+
 /// Whether `tv` can move to a newer version: exact pins can't.
 pub fn updatable(tv: &ToolVersion) -> bool {
     !tv.request_pinned_this_version()

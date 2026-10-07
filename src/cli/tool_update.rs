@@ -166,7 +166,12 @@ async fn update_due_tools() -> Result<()> {
             .iter()
             .filter(|request| request.is_os_supported() && tool_update::enabled(request))
             .collect::<Vec<_>>();
-        let Some(first) = requests.first() else {
+        // The tool is checked as often as its most frequent version asks.
+        let Some(first) = requests
+            .iter()
+            .copied()
+            .min_by_key(|request| tool_update::interval(request))
+        else {
             continue;
         };
         // Resolving can mean a remote lookup; only do it when due.
