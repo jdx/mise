@@ -203,6 +203,12 @@ impl ToolVersion {
             let tv = Self::new(request.clone(), request.version());
             return Ok(tv.with_before_date(opts.before_date));
         }
+        if Self::defers_missing_lazy(&request, &opts)
+            && backend.list_installed_versions().is_empty()
+        {
+            let version = request.version();
+            return Ok(Self::new(request, version).with_before_date(opts.before_date));
+        }
         if matches!(
             request,
             ToolRequest::Prefix { .. } | ToolRequest::Ref { .. }
@@ -227,6 +233,17 @@ impl ToolVersion {
         let tv = tv.with_before_date(opts.before_date);
         trace!("resolved: {tv}");
         Ok(tv)
+    }
+
+    /// Whether a command that runs tools may leave this lazy request unresolved
+    /// rather than wait on remote version lists for a tool nobody has run yet.
+    /// Installing the tool resolves the request then.
+    fn defers_missing_lazy(request: &ToolRequest, opts: &ResolveOptions) -> bool {
+        opts.defer_missing_lazy_tools
+            && !opts.latest_versions
+            && request.options().lazy == Some(true)
+            && Settings::get().prefer_offline()
+            && !matches!(request.source(), ToolSource::Argument)
     }
 
     fn with_before_date(mut self, before_date: Option<Timestamp>) -> Self {
@@ -748,12 +765,10 @@ impl ToolVersion {
             && !opts.before_date_from_default
             && !is_offline
             && !prefer_offline;
-        // A shim or prompt hook for one tool must not wait on remote version lists
-        // for lazy tools nobody has run yet.
-        let defer_missing_lazy = opts.defer_missing_lazy_tools
-            && prefer_offline
-            && !opts.latest_versions
-            && request.options().lazy == Some(true);
+        // resolve_ defers a lazy tool with nothing installed. One whose installed
+        // versions don't match this request is deferred below, after the installed
+        // shortcuts.
+        let defer_missing_lazy = Self::defers_missing_lazy(&request, opts);
         // Rolling release channels (e.g. zig's "master") are moving pointers that
         // mise must resolve before the plugin-installed shortcut can preserve their
         // symbolic name as an install identity.

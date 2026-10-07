@@ -22,6 +22,8 @@ github.gh_cli_tokens = false
 [tools]
 dummy = "1.0.0"
 gh = { version = "latest", lazy = true }
+crush = { version = "prefix:0", lazy = true }
+hunk = { version = "sub-1:latest", lazy = true }
 EOF
 mise install dummy@1.0.0
 mise reshim
