@@ -103,8 +103,9 @@ assert_fail "mise dot save 2>&1" "local-only"
 assert_succeed "mise dot --local status"
 assert_succeed "mise bootstrap packages status"
 # The walker still excludes the malformed private path from shared capture.
-assert_succeed "mise dot capture -- sh -c 'echo invalid-private >~/.config/app/cache.json'"
+assert_succeed "mise dot capture -- sh -c 'echo invalid-private >~/.config/app/cache.json; echo shared-$RANDOM >>~/.config/app/settings.toml'"
 assert_not_contains "git --git-dir=$shared_repo show main:home/.config/app/cache.json" "invalid-private"
+assert_not_contains "git --git-dir=$shared_repo log -1 --format=%B main" "cache.json"
 echo unrelated-shared >~/.config/app/settings.toml
 assert_succeed "mise dot save ~/.config/app/settings.toml"
 assert "git --git-dir=$shared_repo show main:home/.config/app/settings.toml" "unrelated-shared"
@@ -114,6 +115,7 @@ assert "git --git-dir=$shared_repo show main:home/.config/app/settings.toml" "un
 for invalid_field in 'source = "ignored"' 'permissions = "bad"' 'group = "unknown"' 'include = ["["]' 'autosave = "bad"'; do
   sed "s/mode = \"track-local\"/mode = \"track-local\", $invalid_field/" ~/valid-local-config.toml >~/.config/mise/config.toml
   assert_fail "mise dot save ~/.config/app/cache.json 2>&1" "local-only"
-  assert_succeed "mise dot capture -- sh -c 'echo invalid-private >~/.config/app/cache.json'"
+  assert_succeed "mise dot capture -- sh -c 'echo invalid-private >~/.config/app/cache.json; echo shared-$RANDOM >>~/.config/app/settings.toml'"
   assert_not_contains "git --git-dir=$shared_repo show main:home/.config/app/cache.json" "invalid-private"
+  assert_not_contains "git --git-dir=$shared_repo log -1 --format=%B main" "cache.json"
 done

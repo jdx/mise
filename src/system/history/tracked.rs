@@ -336,8 +336,13 @@ impl TrackedSet {
             if invalid.local {
                 let path = normalize_target(Path::new(&invalid.target));
                 set.invalid_local.push(path.clone());
-                if !super::local::active() && !set.local.contains(&path) {
-                    set.local.push(path);
+                if !super::local::active() {
+                    if !set.local.contains(&path) {
+                        set.local.push(path);
+                    }
+                    // Shared commit metadata must not name a private path,
+                    // even when its declaration is malformed.
+                    continue;
                 }
             }
             set.invalid.push(PathReason {
