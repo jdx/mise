@@ -81,6 +81,8 @@ jq = { version = "1.7.1", lazy = true, lazy_bins = ["jq.exe"] }
                 [Environment]::SetEnvironmentVariable($saved.Name, $saved.Value, 'Process')
             }
         }
+        . "$PSScriptRoot\fixture-executables.ps1"
+        Wait-MiseFixtureExecutables -Directory $TestDrive
     }
 
     It 'reshim succeeds with the symlinked mise as the only mise on PATH' {
