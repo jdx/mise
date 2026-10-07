@@ -27,4 +27,8 @@ cp "$MISE_DATA_DIR/installs/dummy/1.0.0/bin/dummy" "$MISE_DATA_DIR/installs/dumm
 assert_succeed "test -L $shim_dir/mise"
 assert_succeed "test -f $shim_dir/mise"
 assert_succeed "test $shim_dir/mise -ef $mise_bin"
-assert_not_contains "PATH=$shim_dir:$PATH $mise_bin doctor 2>&1 || true" "mise shims are missing"
+assert_not_contains "PATH=$shim_dir:$PATH $mise_bin doctor 2>&1 || true" "Missing shims: mise"
+
+# Positive control: a genuinely missing dispatcher must produce the warning.
+rm "$shim_dir/mise"
+assert_contains "PATH=$shim_dir:$PATH $mise_bin doctor 2>&1 || true" "Missing shims: mise"
