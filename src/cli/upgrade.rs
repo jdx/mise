@@ -331,6 +331,7 @@ impl Upgrade {
             refresh_remote_versions: false,
             inactive: self.inactive,
             warn_not_in_lockfile: true,
+            defer_missing_lazy_tools: false,
         };
         // Filter tools to check before doing expensive version lookups
         let filter_tools = if !self.interactive && !self.tool.is_empty() {
@@ -703,6 +704,7 @@ impl Upgrade {
                 refresh_remote_versions: false,
                 inactive: self.inactive,
                 warn_not_in_lockfile: true,
+                defer_missing_lazy_tools: false,
             },
             locked: false,
             ..Default::default()

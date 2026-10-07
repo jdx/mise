@@ -29,5 +29,5 @@ operation's temporary recovery copies; it does not erase Git history.
 ## Related documentation
 
 - [Dotfile ownership and modes](/dotfiles.html).
-- [`mise bootstrap dotfiles <SUBCOMMAND>`](/cli/bootstrap/dotfiles.html).
+- [`mise bootstrap dotfiles [--local] <SUBCOMMAND>`](/cli/bootstrap/dotfiles.html).
 - [Global flags and argument syntax](/cli/#global-flags).

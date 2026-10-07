@@ -257,6 +257,11 @@ mise dot origin set git@gitea.example.com:you/setup.git --sync sync
 The URL must not contain credentials, a query string, or a fragment.
 Authenticate with an SSH agent, or with a Git credential helper for HTTPS.
 
+Files that describe one machine, such as a monitor layout, should not be
+applied on the others. Track them with a
+[`machine` variant](/dotfiles.html#machine-variants) so each machine keeps
+its own version.
+
 Review the connection preview before confirming. With `--sync sync`, the
 watcher pushes saved changes and periodically fetches and applies changes
 from other machines. To bring another machine into this workflow, follow
@@ -496,7 +501,9 @@ mise bootstrap --adopt <url> --replace-history --yes
 
 Back up any local history you want to retain before running this command.
 It replaces checkpoint history; existing files that differ still require a
-decision before setup can finish. This recovery path requires a mise setup
+decision before setup can finish. Add `--take-remote-all` to take the
+repository's version of each; the replaced versions are saved first, so
+`mise dot undo` restores them. This recovery path requires a mise setup
 repository and does not apply to an ordinary Git repository without mise
 enrollment metadata. See [removing plaintext from history](#remove-plaintext-from-history)
 if you are replacing history to remove a secret.
@@ -857,7 +864,8 @@ mise dot untrack ~/.zshrc
 
 The local file stays in place. Future checkpoints leave it out, but
 previously committed versions remain in Git and can still be shared.
-There is no per-file local-only history setting.
+To keep a file's history without ever sharing it, track it with
+[`mode = "track-local"`](/dotfiles.html#local-only) instead.
 
 ## Encrypted shared files
 

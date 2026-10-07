@@ -79,8 +79,19 @@ pub(crate) struct EditTomlTable {
     /// `merge = true` sets the keys in `source` on a structured target file
     /// (JSON, TOML, or YAML) and leaves every other key to the application
     /// that also writes it
+    ///
+    /// `merge = "missing"` sets only the keys of `source` the target has no
+    /// value for, so a value the application changed stays
     #[serde(default)]
-    pub merge: Option<bool>,
+    pub merge: Option<MergeSetting>,
+}
+
+/// the value of an entry's `merge` key
+#[derive(Debug, Clone, Eq, PartialEq, Deserialize)]
+#[serde(untagged)]
+pub enum MergeSetting {
+    Bool(bool),
+    Mode(String),
 }
 
 /// where a block's content comes from
@@ -108,6 +119,8 @@ pub enum EditOp {
         source: BlockSource,
         template: bool,
         format: Format,
+        /// only set keys the target has no value for
+        missing_only: bool,
     },
 }
 
@@ -125,6 +138,17 @@ impl EditOp {
             } => Some(path),
             _ => None,
         }
+    }
+
+    /// a merge that only fills in keys the target lacks
+    fn fills_missing_only(&self) -> bool {
+        matches!(
+            self,
+            Self::Merge {
+                missing_only: true,
+                ..
+            }
+        )
     }
 
     /// whether rendering the edit's content runs the template engine
@@ -415,7 +439,7 @@ fn resolve_entry(
         },
         EditTomlEntry::Table(table) => table,
     };
-    if let Some(merge) = entry.merge {
+    if let Some(merge) = &entry.merge {
         let op = merge_op(path_raw, &id, &path, &entry, merge, base, &mut origin)?;
         return Ok(EditRequest {
             path_raw: path_raw.to_string(),
@@ -521,28 +545,41 @@ fn merge_op(
     id: &str,
     path: &Path,
     entry: &EditTomlTable,
-    merge: bool,
+    merge: &MergeSetting,
     base: &Path,
     origin: &mut ResourceOrigin,
 ) -> Result<EditOp> {
-    if !merge {
-        bail!("\"{path_raw}\".{id}: merge must be true when present, ignoring entry");
-    }
+    let missing_only = match merge {
+        MergeSetting::Bool(true) => false,
+        MergeSetting::Mode(mode) if mode == "missing" => true,
+        _ => bail!(
+            "\"{path_raw}\".{id}: merge must be true or \"missing\" when present, ignoring entry"
+        ),
+    };
     if entry.block.is_some() || entry.line.is_some() {
         bail!("\"{path_raw}\".{id}: merge cannot be combined with block or line, ignoring entry");
     }
     if entry.position.is_some() || entry.comment.is_some() {
         bail!("\"{path_raw}\".{id}: position and comment do not apply to merge, ignoring entry");
     }
-    let Some(source) = &entry.source else {
-        bail!("\"{path_raw}\".{id}: merge needs a source file, ignoring entry");
+    // like a symlink entry, an omitted source is the target's path under
+    // dotfiles.root
+    let source = match &entry.source {
+        Some(source) => source.clone(),
+        // normalized first, so `~/../x` is not taken for a target under $HOME
+        None => crate::system::files::implied_source(&crate::system::files::resolve_target_arg(
+            path_raw,
+        ))
+        .map_err(|err| eyre::eyre!("\"{path_raw}\".{id}: {err}, ignoring entry"))?
+        .to_string_lossy()
+        .into_owned(),
     };
     let Some(format) = Format::from_path(path) else {
         bail!(
             "\"{path_raw}\".{id}: merge needs a .json, .toml, .yaml, or .yml target, ignoring entry"
         );
     };
-    let source = file::replace_path(source);
+    let source = file::replace_path(&source);
     let source = if source.is_relative() {
         base.join(source)
     } else {
@@ -562,6 +599,7 @@ fn merge_op(
         source: BlockSource::File(source),
         template,
         format,
+        missing_only,
     })
 }
 
@@ -710,6 +748,20 @@ fn desired_content(config: &Config, req: &EditRequest) -> Result<Option<String>>
 /// target, missing file, absent or corrupted markers) has been ruled out,
 /// and `--dry-run` skips template rendering entirely (see [`apply`]).
 pub fn check(config: &Config, req: &EditRequest) -> Result<FileState> {
+    let selected = if req.op.fills_missing_only() {
+        edits_from_config(config)?
+    } else {
+        vec![]
+    };
+    check_selected(config, req, &selected)
+}
+
+/// Inspect an edit after the earlier merges selected for this run.
+pub fn check_selected(
+    config: &Config,
+    req: &EditRequest,
+    selected: &[EditRequest],
+) -> Result<FileState> {
     if let Some(p) = req.op.source_file()
         && !p.exists()
     {
@@ -720,12 +772,86 @@ pub fn check(config: &Config, req: &EditRequest) -> Result<FileState> {
         Some(EditCheck::Blocked(reason)) => Ok(FileState::Differs(reason)),
         None => {
             let desired = desired_content(config, req)?;
+            if let EditOp::Merge {
+                format,
+                missing_only: true,
+                ..
+            } = &req.op
+            {
+                // judged the way apply runs it: after the file's other merges
+                let text =
+                    projected_text(config, req, &file::read_to_string(&req.path)?, selected)?;
+                let desired = desired.expect("resolved merge content");
+                return Ok(
+                    if structured_merge::missing(*format, &text, &desired)?.is_none() {
+                        FileState::Applied
+                    } else {
+                        FileState::Differs("keys are missing".into())
+                    },
+                );
+            }
             block_state(req, desired.as_deref())
         }
     }
 }
 
+/// `text` as apply leaves it for a fill-only entry: enforced merges first,
+/// then earlier defaults for the same file. Other entries see `text` unchanged.
+fn projected_text(
+    config: &Config,
+    req: &EditRequest,
+    text: &str,
+    selected: &[EditRequest],
+) -> Result<String> {
+    if !req.op.fills_missing_only() {
+        return Ok(text.to_string());
+    }
+    let mut text = text.to_string();
+    let mut ordered = selected.iter().collect::<Vec<_>>();
+    ordered.sort_by_key(|other| other.op.fills_missing_only());
+    for other in ordered {
+        let EditOp::Merge {
+            format,
+            missing_only,
+            ..
+        } = &other.op
+        else {
+            continue;
+        };
+        if other.path == req.path && other.id == req.id {
+            break;
+        }
+        if !same_target(&other.path, &req.path) {
+            continue;
+        }
+        if let Some(desired) = desired_content(config, other)? {
+            if *missing_only {
+                text = structured_merge::fill_missing(*format, &text, &desired)?;
+            } else {
+                text = structured_merge::merge(*format, &text, &desired)?;
+            }
+        }
+    }
+    Ok(text)
+}
+
 const SYMLINK_REASON: &str = "target is a symlink; edit the real file instead";
+const MERGE_SYMLINK_REASON: &str = "target is a symlink; replace it with a copy of the real file before merging (the merge source may be trimmed to the owned keys only afterwards)";
+
+/// a merge target that is a link to the merge's own source, as when the entry
+/// used to be a `symlink`: the file behind it holds the application's state
+fn links_to_merge_source(req: &EditRequest) -> bool {
+    if !matches!(req.op, EditOp::Merge { .. }) {
+        return false;
+    }
+    let Some(source) = req.op.source_file() else {
+        return false;
+    };
+    matches!(
+        (req.path.canonicalize(), source.canonicalize()),
+        (Ok(target), Ok(source)) if target == source
+    )
+}
 
 /// outcome of inspecting one edit: an ordinary state, or a condition mise
 /// refuses to apply automatically (corrupted markers, symlink target)
@@ -743,7 +869,19 @@ fn precheck(req: &EditRequest) -> Result<Option<EditCheck>> {
     // edits write through symlinks into whatever they point at (often a
     // dotfile source) — surface that instead of silently doing it
     if req.path.is_symlink() {
-        return Ok(Some(EditCheck::Blocked(SYMLINK_REASON.into())));
+        if links_to_merge_source(req) {
+            return Ok(Some(EditCheck::State(FileState::Differs(
+                "symlink to the merge source; apply replaces it with a copy".into(),
+            ))));
+        }
+        return Ok(Some(EditCheck::Blocked(
+            if matches!(req.op, EditOp::Merge { .. }) {
+                MERGE_SYMLINK_REASON
+            } else {
+                SYMLINK_REASON
+            }
+            .into(),
+        )));
     }
     if !req.path.exists() {
         return Ok(Some(EditCheck::State(FileState::Missing)));
@@ -780,6 +918,20 @@ fn block_state(req: &EditRequest, desired: Option<&str>) -> Result<FileState> {
     let text = file::read_to_string(&req.path)?;
     let comment = match &req.op {
         EditOp::Block { comment, .. } => comment,
+        EditOp::Merge {
+            format,
+            missing_only: true,
+            ..
+        } => {
+            let desired = desired.expect("resolved merge content");
+            return Ok(
+                if structured_merge::missing(*format, &text, desired)?.is_none() {
+                    FileState::Applied
+                } else {
+                    FileState::Differs("keys are missing".into())
+                },
+            );
+        }
         EditOp::Merge { format, .. } => {
             let desired = desired.expect("resolved merge content");
             return Ok(if structured_merge::contains(*format, &text, desired)? {
@@ -884,6 +1036,10 @@ fn merge_conflict(
     (second, second_format, second_content): &(&EditRequest, Format, String),
 ) -> Option<String> {
     if !same_target(&first.path, &second.path) || format != second_format {
+        return None;
+    }
+    // a fill-only entry gives way to any value another entry sets
+    if first.op.fills_missing_only() || second.op.fills_missing_only() {
         return None;
     }
     // unparseable sources were already reported by desired_content
@@ -1007,6 +1163,9 @@ pub fn apply(
     written: &mut Vec<PathBuf>,
 ) -> Result<bool> {
     let mut todo: Vec<(&EditRequest, Option<String>)> = vec![];
+    // fill-only entries that look applied against the file as it is now; another
+    // merge applied in this run may still make their defaults needed
+    let mut deferred: Vec<(&EditRequest, Option<String>)> = vec![];
     let mut problems = vec![];
     // other merge entries in the config, so applying one entry through a target
     // filter still sees a sibling that sets the same key differently
@@ -1081,7 +1240,12 @@ pub fn apply(
         match pre {
             // markers exist: compare content to see if anything would change
             None => match block_state(req, desired.as_deref()) {
-                Ok(FileState::Applied) => continue,
+                Ok(FileState::Applied) => {
+                    if req.op.fills_missing_only() {
+                        deferred.push((req, desired));
+                    }
+                    continue;
+                }
                 Ok(_) => todo.push((req, desired)),
                 Err(err) => {
                     problems.push(format!(
@@ -1096,6 +1260,19 @@ pub fn apply(
             Some(_) => todo.push((req, desired)),
         }
     }
+    // an enforced merge can replace a value with a table, or recreate a key, so
+    // a fill-only entry on the same file is reconsidered after it
+    for (req, desired) in deferred {
+        if todo.iter().any(|(other, _)| {
+            matches!(other.op, EditOp::Merge { .. })
+                && !other.op.fills_missing_only()
+                && same_target(&other.path, &req.path)
+        }) {
+            todo.push((req, desired));
+        }
+    }
+    // defaults go in after the values other entries set
+    todo.sort_by_key(|(req, _)| req.op.fills_missing_only());
     let unapplied = unapplied_siblings(config, requests, &siblings, &merged);
     problems.extend(merge_conflicts(&merged, &unapplied));
     problems.extend(format_conflicts(requests, &siblings));
@@ -1199,7 +1376,7 @@ pub fn print_diffs(config: &Config, requests: &[EditRequest]) -> Result<()> {
                 continue;
             }
         };
-        if pre.is_none() {
+        if pre.is_none() && !req.op.fills_missing_only() {
             match block_state(req, desired.as_deref()) {
                 Ok(FileState::Applied) => continue,
                 Ok(_) => {}
@@ -1227,6 +1404,18 @@ pub fn print_diffs(config: &Config, requests: &[EditRequest]) -> Result<()> {
             }
         } else {
             String::new()
+        };
+        // a fill-only entry is shown against the file after its other merges
+        let current = match projected_text(config, req, &current, requests) {
+            Ok(current) => current,
+            Err(err) => {
+                problems.push(format!(
+                    "  \"{}\" ({}): {err}",
+                    req.path_raw,
+                    req.describe_op()
+                ));
+                continue;
+            }
         };
         let output = match apply_to_string(req, desired.as_deref(), &current) {
             Ok(output) => output,
@@ -1560,6 +1749,48 @@ fn apply_one(req: &EditRequest, desired: Option<&str>, written: &mut Vec<PathBuf
     if let Some(parent) = req.path.parent() {
         file::create_dir_all(parent)?;
     }
+    // switching from `symlink`: keep what the link points at as a regular file
+    // before merging, so trimming the source afterwards loses nothing
+    let replaced_link = matches!(req.op, EditOp::Merge { .. })
+        && req.path.is_symlink()
+        && links_to_merge_source(req);
+    if replaced_link {
+        // prepare the whole copy beside the link in an exclusively created
+        // temp file (std::fs::copy gives it the source's mode), then rename it
+        // over the link, so a failure leaves the link in place
+        let dir = req.path.parent().unwrap_or(Path::new("."));
+        let tmp = tempfile::NamedTempFile::new_in(dir)
+            .wrap_err_with(|| format!("failed to replace symlink: {}", req.path.display_user()))?;
+        std::fs::copy(&req.path, tmp.path())
+            .wrap_err_with(|| format!("failed to replace symlink: {}", req.path.display_user()))?;
+        // a read-only source (a Nix store file, `chmod -w`) must not leave a
+        // copy the merge cannot write
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mut perms = std::fs::metadata(tmp.path())?.permissions();
+            perms.set_mode(perms.mode() | 0o200);
+            std::fs::set_permissions(tmp.path(), perms)?;
+        }
+        #[cfg(windows)]
+        {
+            use std::os::windows::{ffi::OsStrExt, fs::MetadataExt};
+            use windows_sys::Win32::Storage::FileSystem::{
+                FILE_ATTRIBUTE_READONLY, SetFileAttributesW,
+            };
+            let path = std::fs::canonicalize(tmp.path())?;
+            let wide: Vec<u16> = path.as_os_str().encode_wide().chain(Some(0)).collect();
+            let attributes = std::fs::metadata(tmp.path())?.file_attributes();
+            if unsafe { SetFileAttributesW(wide.as_ptr(), attributes & !FILE_ATTRIBUTE_READONLY) }
+                == 0
+            {
+                return Err(std::io::Error::last_os_error().into());
+            }
+        }
+        tmp.persist(&req.path)
+            .map_err(|err| err.error)
+            .wrap_err_with(|| format!("failed to replace symlink: {}", req.path.display_user()))?;
+    }
     let existed = req.path.exists();
     let text = if existed {
         file::read_to_string(&req.path)?
@@ -1567,6 +1798,14 @@ fn apply_one(req: &EditRequest, desired: Option<&str>, written: &mut Vec<PathBuf
         String::new()
     };
     let out = apply_to_string(req, desired, &text)?;
+    // a fill-only entry reconsidered after another merge may have nothing left to add
+    if existed && req.op.fills_missing_only() && out == text {
+        // a replaced link still changed the path, which reload commands key on
+        if replaced_link {
+            written.push(req.path.clone());
+        }
+        return Ok(());
+    }
     let failed = || format!("failed write: {}", req.path.display_user());
     if existed {
         let mut target = std::fs::OpenOptions::new()
@@ -1584,10 +1823,18 @@ fn apply_one(req: &EditRequest, desired: Option<&str>, written: &mut Vec<PathBuf
 
 fn apply_to_string(req: &EditRequest, desired: Option<&str>, text: &str) -> Result<String> {
     match &req.op {
-        EditOp::Merge { format, .. } => {
+        EditOp::Merge {
+            format,
+            missing_only,
+            ..
+        } => {
             let desired = desired.expect("resolved merge content");
-            structured_merge::merge(*format, text, desired)
-                .wrap_err_with(|| format!("merge into \"{}\" failed", req.path.display_user()))
+            let merged = if *missing_only {
+                structured_merge::fill_missing(*format, text, desired)
+            } else {
+                structured_merge::merge(*format, text, desired)
+            };
+            merged.wrap_err_with(|| format!("merge into \"{}\" failed", req.path.display_user()))
         }
         EditOp::Block { comment, .. } => {
             let mut lines: Vec<String> = text.lines().map(|l| l.to_string()).collect();
@@ -1721,6 +1968,7 @@ mod tests {
                     source: BlockSource::File(PathBuf::from("/cfg/shared.txt")),
                     template: false,
                     format,
+                    missing_only: false,
                 }
             );
             assert_eq!(req.describe_op(), "merge:shared");
@@ -1738,6 +1986,36 @@ mod tests {
         assert!(req.op.is_template());
     }
 
+    /// an absolute path outside $HOME on every platform
+    const OUTSIDE_HOME: &str = if cfg!(windows) {
+        "C:/outside"
+    } else {
+        "/outside"
+    };
+
+    #[test]
+    fn an_omitted_merge_source_needs_a_target_under_home() {
+        let err = resolve(&format!("{OUTSIDE_HOME}/config.toml"), "merge = true")
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("source is required"), "{err}");
+        // `..` cannot walk a target out of $HOME and still pass for one inside it
+        let err = resolve("~/../outside/config.toml", "merge = true")
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("source is required"), "{err}");
+    }
+
+    #[test]
+    fn merge_missing_fills_only_absent_keys() {
+        let req = resolve("~/a/config.toml", "source = \"s\"\nmerge = \"missing\"").unwrap();
+        assert!(req.op.fills_missing_only());
+        let err = resolve("~/a/config.toml", "source = \"s\"\nmerge = \"other\"")
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("true or \"missing\""), "{err}");
+    }
+
     #[test]
     fn invalid_merge_entries_are_refused() {
         for (path, entry, reason) in [
@@ -1751,7 +2029,6 @@ mod tests {
                 "source = \"s\"\nmerge = false",
                 "must be true",
             ),
-            ("~/a/config.toml", "merge = true", "needs a source"),
             (
                 "~/a/config.toml",
                 "block = \"x\"\nmerge = true",
@@ -1802,7 +2079,6 @@ mod tests {
                 "source = \"s\"\nmerge = true",
                 ".json, .toml",
             ),
-            ("~/a/settings.json/shared", "merge = true", "needs a source"),
             (
                 "~/a/settings.json/shared",
                 "source = \"s\"\nmerge = false",
@@ -1812,6 +2088,13 @@ mod tests {
             let err = check(key, entry).unwrap_err().to_string();
             assert!(err.contains(reason), "{entry}: {err}");
         }
+        let err = check(
+            &format!("{OUTSIDE_HOME}/settings.json/shared"),
+            "merge = true",
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(err.contains("source is required"), "{err}");
     }
 
     #[test]

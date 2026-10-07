@@ -1458,6 +1458,9 @@ Adopt global configuration or shared dotfile history from a Git repository, then
 \fB\-\-replace\-history\fR
 Replace local dotfile history while adopting a setup repository
 .TP
+\fB\-\-take\-remote\-all\fR
+While adopting a setup repository, take its version of every existing file that differs; the replaced versions are saved first, so `mise dot undo` restores them
+.TP
 \fB\-\-from\-dir\fR \fI<DIR>\fR
 Directory used for the repository cloned by \-\-from
 .TP
@@ -1610,6 +1613,9 @@ Manage dotfiles from `[dotfiles]`
 .PP
 \fBOptions:\fR
 .PP
+.TP
+\fB\-\-local\fR
+Work on this machine's local\-only history (`mode = "track\-local"`), which is never shared
 .TP
 \fB\-h, \-\-help\fR
 Print help
@@ -2388,6 +2394,8 @@ saved automatically; without it, `mise dot save` saves them.
 `\-\-os` and `\-\-profile` declare a variant: a separate shared stream for
 machines matching that platform or mise environment, so a Mac and a
 Linux box can share the same live path with different contents.
+`\-\-machine` gives every machine its own stream instead, for files such
+as a monitor layout that should never be applied on another machine.
 .PP
 \fBUsage:\fR mise bootstrap dotfiles track [OPTIONS] <PATH> ...
 .PP
@@ -2399,6 +2407,12 @@ Declare a variant for this platform (macos, linux, linux/arm64, …)
 .TP
 \fB\-\-profile\fR \fI<PROFILE>\fR
 Declare a variant for this mise environment
+.TP
+\fB\-\-local\fR
+Keep this file's history on this machine only; it is never shared
+.TP
+\fB\-\-machine\fR
+Keep a separate stream on every machine, never applied on another
 .TP
 \fB\-\-no\-autosave\fR
 Save only on `mise dot save <path>`, never automatically
@@ -4297,6 +4311,9 @@ Manage dotfiles from `[dotfiles]`
 \fBOptions:\fR
 .PP
 .TP
+\fB\-\-local\fR
+Work on this machine's local\-only history (`mode = "track\-local"`), which is never shared
+.TP
 \fB\-h, \-\-help\fR
 Print help
 .SH "MISE DOTFILES ADD"
@@ -5074,6 +5091,8 @@ saved automatically; without it, `mise dot save` saves them.
 `\-\-os` and `\-\-profile` declare a variant: a separate shared stream for
 machines matching that platform or mise environment, so a Mac and a
 Linux box can share the same live path with different contents.
+`\-\-machine` gives every machine its own stream instead, for files such
+as a monitor layout that should never be applied on another machine.
 .PP
 \fBUsage:\fR mise dotfiles track [OPTIONS] <PATH> ...
 .PP
@@ -5085,6 +5104,12 @@ Declare a variant for this platform (macos, linux, linux/arm64, …)
 .TP
 \fB\-\-profile\fR \fI<PROFILE>\fR
 Declare a variant for this mise environment
+.TP
+\fB\-\-local\fR
+Keep this file's history on this machine only; it is never shared
+.TP
+\fB\-\-machine\fR
+Keep a separate stream on every machine, never applied on another
 .TP
 \fB\-\-no\-autosave\fR
 Save only on `mise dot save <path>`, never automatically
@@ -6271,6 +6296,14 @@ directory is moved aside while its replacement installs, and put back if that
 fails. Versions whose recorded backend is not the one their tool resolves to
 now are left alone, as are tools that keep the legacy layout (`http:`,
 `rust`, `dotnet`).
+
+A version that cannot be reinstalled (its release was withdrawn or is signed
+by someone else now, or the network is unavailable) is not an error: its
+directory is moved as it is into the identity layout, behind the same version
+link. Only a version that cannot be moved either keeps its old directory,
+reported as kept in the legacy layout. The command ends with a count of what
+was migrated, relocated, kept and failed, and fails only when a migration
+itself broke.
 .PP
 \fBUsage:\fR mise installs migrate [OPTIONS] [<TOOL@VERSION>] ...
 .PP

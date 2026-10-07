@@ -153,7 +153,7 @@ pub(super) fn plan(repo: &HistoryRepo, tracked: &TrackedSet, tree: &str) -> Resu
             directories.insert(path);
         }
     }
-    let saved_entries = saved.selected_entries();
+    let saved_entries = saved.selected_entries()?;
     for path in directories {
         let before = observe(&path)?;
         let desired = mode_from(

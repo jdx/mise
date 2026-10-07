@@ -17,12 +17,37 @@ pub struct Variant {
     /// The explicit fallback stream for machines matching no other variant.
     #[serde(default)]
     pub default: bool,
+    /// A separate stream on every machine, named after this machine (see
+    /// [`super::store::machine_name`]). Written only when set, so a setup
+    /// without it stays readable by older clients, which refuse it rather
+    /// than share the file across machines.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub machine: bool,
 }
+
+/// The prefix of every per-machine stream name.
+pub(crate) const MACHINE_STREAM_PREFIX: &str = "machine-";
 
 impl Variant {
     /// The stream name recorded in checkpoints and used in the setup branch:
-    /// `macos`, `linux-arm64`, `macos+work`, `work`, or `default`.
-    pub(crate) fn name(&self) -> String {
+    /// [`Self::selector_name`], or `machine-<name>` for this machine's own
+    /// stream. Naming this machine fails when its name cannot be read or
+    /// kept, and the history operation stops: another name could be a
+    /// stream some other machine also writes.
+    pub(crate) fn name(&self) -> eyre::Result<String> {
+        if self.machine {
+            return Ok(format!(
+                "{MACHINE_STREAM_PREFIX}{}",
+                super::store::machine_name()?
+            ));
+        }
+        Ok(self.selector_name())
+    }
+
+    /// The stream name of an `os`/`profile`/`default` variant: `macos`,
+    /// `linux-arm64`, `macos+work`, `work`, or `default`. A machine variant
+    /// names a different stream on every machine; see [`Self::name`].
+    pub(crate) fn selector_name(&self) -> String {
         let mut parts = vec![];
         for os in &self.os {
             parts.push(os.replace('/', "-"));
@@ -39,6 +64,22 @@ impl Variant {
             "default".to_string()
         } else {
             name
+        }
+    }
+
+    /// Whether `stream` belongs to this variant on some machine: its own
+    /// name, or for a per-machine variant, the stream of any machine. A
+    /// per-machine variant names a different stream on every machine, so
+    /// code that reasons about every machine's streams (carrying the ones
+    /// inactive here, owning their permissions) must ask this instead of
+    /// comparing with [`Self::name`].
+    pub(crate) fn declares_stream(&self, stream: &str) -> bool {
+        if self.machine {
+            stream
+                .strip_prefix(MACHINE_STREAM_PREFIX)
+                .is_some_and(super::store::is_valid_machine_name)
+        } else {
+            self.selector_name() == stream
         }
     }
 
@@ -90,8 +131,18 @@ pub(crate) enum Selection {
     Ambiguous(Vec<Variant>),
 }
 
-/// Reject fallbacks whose selectors would be ignored during selection.
+/// Reject fallbacks whose selectors would be ignored during selection, and
+/// a per-machine variant beside anything else: it already selects every
+/// machine, so another selector could never win.
 pub(crate) fn validate(variants: &[Variant]) -> eyre::Result<()> {
+    if variants.iter().any(|variant| variant.machine)
+        && !matches!(
+            variants,
+            [only] if only.os.is_empty() && only.profile.is_none() && !only.default
+        )
+    {
+        eyre::bail!("a machine variant must be the only variant, without os, profile, or default");
+    }
     let mut default_seen = false;
     for variant in variants {
         if variant.default {
@@ -186,7 +237,62 @@ mod tests {
             os: os.iter().map(|s| s.to_string()).collect(),
             profile: profile.map(str::to_string),
             default,
+            machine: false,
         }
+    }
+
+    fn machine() -> Variant {
+        Variant {
+            machine: true,
+            ..Variant::default()
+        }
+    }
+
+    #[test]
+    fn a_machine_variant_stands_alone() {
+        assert!(validate(&[machine()]).is_ok());
+        assert_eq!(select(&[machine()], &[]), Selection::Variant(machine()));
+        for invalid in [
+            vec![machine(), v(&["linux"], None, false)],
+            vec![machine(), v(&[], None, true)],
+            vec![Variant {
+                os: vec!["linux".into()],
+                ..machine()
+            }],
+            vec![Variant {
+                profile: Some("work".into()),
+                ..machine()
+            }],
+            vec![Variant {
+                default: true,
+                ..machine()
+            }],
+        ] {
+            assert!(validate(&invalid).is_err(), "{invalid:?}");
+        }
+    }
+
+    #[test]
+    fn a_machine_variant_declares_every_machines_stream() {
+        let machine = machine();
+        assert!(machine.declares_stream("machine-omarchy-3f2a9c1b"));
+        assert!(machine.declares_stream("machine-desk"));
+        assert!(!machine.declares_stream("machine-"));
+        assert!(!machine.declares_stream("linux"));
+        assert!(!machine.declares_stream("default"));
+        let linux = v(&["linux"], None, false);
+        assert!(linux.declares_stream("linux"));
+        assert!(!linux.declares_stream("machine-desk"));
+    }
+
+    #[test]
+    fn a_machine_variant_is_written_only_when_set() {
+        let json = serde_json::to_string(&v(&["linux"], None, false)).unwrap();
+        assert!(!json.contains("machine"), "{json}");
+        let json = serde_json::to_string(&machine()).unwrap();
+        assert!(json.contains(r#""machine":true"#), "{json}");
+        let read: Variant = serde_json::from_str(&json).unwrap();
+        assert_eq!(read, machine());
     }
 
     #[test]
@@ -262,15 +368,15 @@ mod tests {
     #[test]
     fn stream_names() {
         assert_ne!(
-            v(&["macos", "linux"], None, false).name(),
-            v(&["macos", "windows"], None, false).name()
+            v(&["macos", "linux"], None, false).selector_name(),
+            v(&["macos", "windows"], None, false).selector_name()
         );
-        assert_eq!(v(&["macos"], None, false).name(), "macos");
+        assert_eq!(v(&["macos"], None, false).selector_name(), "macos");
         assert_eq!(
-            v(&["linux/arm64"], Some("work"), false).name(),
+            v(&["linux/arm64"], Some("work"), false).selector_name(),
             "linux-arm64+work"
         );
-        assert_eq!(v(&[], Some("work"), false).name(), "work");
-        assert_eq!(v(&[], None, true).name(), "default");
+        assert_eq!(v(&[], Some("work"), false).selector_name(), "work");
+        assert_eq!(v(&[], None, true).selector_name(), "default");
     }
 }

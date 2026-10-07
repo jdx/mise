@@ -30,7 +30,7 @@ impl DotfilesUndo {
         replay::undo(UndoRequest {
             reference: self.reference,
             dry_run: self.dry_run,
-            yes: self.yes,
+            yes: self.yes || crate::config::Settings::get().yes,
         })
         .await
     }

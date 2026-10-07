@@ -696,13 +696,22 @@ fn symlink_target_names_mise(path: &Path) -> Result<bool> {
 }
 
 fn is_mise_shim(path: &Path, mise_bin: &Path) -> Result<bool> {
-    if path
-        .file_name()
-        .and_then(|name| name.to_str())
-        .is_some_and(is_mise_dispatcher_name)
+    let dedicated = path.parent().is_some_and(is_dedicated_shims_dir);
+    is_mise_shim_in(path, mise_bin, dedicated)
+}
+
+fn is_mise_shim_in(path: &Path, mise_bin: &Path, dedicated: bool) -> Result<bool> {
+    if !dedicated
+        && path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .is_some_and(is_mise_dispatcher_name)
     {
-        // A package manager may install mise itself as a symlink in the shared
-        // directory. It is the dispatcher, not one of its shims.
+        // A package manager may install mise itself as a symlink in a shared
+        // directory. It is the dispatcher, not one of its shims. In mise's own
+        // dedicated shims dir nothing else can live there, so a `mise` entry
+        // is a shim (a tool may legitimately provide a `mise` binary) and must
+        // be recognized or doctor reports it as missing forever.
         return Ok(false);
     }
     if path.is_symlink() {
@@ -2542,7 +2551,8 @@ mod tests {
     #[test]
     fn mise_shim_detection_distinguishes_symlink_targets() {
         let dir = tempfile::tempdir().unwrap();
-        let mise_bin = dir.path().join("mise");
+        let mise_bin = dir.path().join("bin/mise");
+        fs::create_dir_all(mise_bin.parent().unwrap()).unwrap();
         let other_bin = dir.path().join("other");
         fs::write(&mise_bin, "mise").unwrap();
         fs::write(&other_bin, "other").unwrap();
@@ -2572,9 +2582,16 @@ mod tests {
         // The real mise dispatcher may itself be installed as a symlink in a
         // shared bin directory; its own name keeps it out of shim pruning.
         let dispatcher = dir.path().join("mise");
-        fs::remove_file(&dispatcher).unwrap();
         std::os::unix::fs::symlink(&other_bin, &dispatcher).unwrap();
         assert!(!is_mise_shim(&dispatcher, &mise_bin).unwrap());
+        assert!(!is_mise_shim_in(&dispatcher, &mise_bin, false).unwrap());
+
+        // In mise's dedicated shims dir a `mise` entry is a real shim (a tool
+        // can provide a `mise` binary) and must not be reported missing.
+        fs::remove_file(&dispatcher).unwrap();
+        std::os::unix::fs::symlink(&mise_bin, &dispatcher).unwrap();
+        assert!(is_mise_shim_in(&dispatcher, &mise_bin, true).unwrap());
+        assert!(is_current_owned_mise_shim(&dispatcher, &mise_bin).unwrap());
     }
 
     #[cfg(unix)]

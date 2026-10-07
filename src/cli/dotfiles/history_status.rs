@@ -12,6 +12,9 @@ pub(crate) struct HistoryReport {
     pub enabled: bool,
     pub tracked_entries: usize,
     pub tracked_files: u64,
+    /// Entries kept in this machine's local-only history instead.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub local_entries: usize,
     /// Files under a tracked entry that every save leaves out, with why.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub omitted: Vec<crate::system::history::store::PathReason>,
@@ -126,6 +129,7 @@ pub(crate) async fn report() -> Result<HistoryReport> {
             enabled: false,
             tracked_entries: 0,
             tracked_files: 0,
+            local_entries: 0,
             omitted: vec![],
             nested: vec![],
             checkpoints: 0,
@@ -155,6 +159,7 @@ pub(crate) async fn report() -> Result<HistoryReport> {
         enabled,
         tracked_entries: tracked.entries.len(),
         tracked_files,
+        local_entries: tracked.local.len(),
         omitted: walk.omitted,
         nested: walk.nested,
         checkpoints: entries.len(),
@@ -181,6 +186,12 @@ pub(crate) fn print(report: &HistoryReport) -> Result<()> {
         report.tracked_files,
         report.checkpoints
     );
+    if report.local_entries > 0 {
+        miseprintln!(
+            "  local-only: {} entries kept on this machine (`mise dot --local status`)",
+            report.local_entries
+        );
+    }
     match &report.latest {
         Some(latest) => miseprintln!(
             "  latest checkpoint {} ({}, {}): {}",
@@ -351,4 +362,8 @@ pub(crate) fn print(report: &HistoryReport) -> Result<()> {
         }
     }
     Ok(())
+}
+
+fn is_zero(count: &usize) -> bool {
+    *count == 0
 }

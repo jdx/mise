@@ -221,6 +221,12 @@ mise dot status
 mise dot pull --take-remote-all
 ```
 
+To make that choice up front, adopt with `--take-remote-all`:
+
+```sh
+mise bootstrap --adopt you/setup --take-remote-all
+```
+
 `--take-remote-all` replaces each conflicting file with the shared version; the
 versions being replaced are saved first, so `mise dot undo` reverses the whole
 pull. Once the last path is decided, the same `pull` writes the remaining
@@ -254,9 +260,18 @@ Moving the conflicting files aside before `mise bootstrap --adopt` avoids the
 decisions entirely: a path that does not exist is simply written.
 :::
 
-`--replace-history` is a different thing and does not help here: it discards
-unrelated local _history_ while adopting, and existing files that differ still
-stop the operation. `--force-dotfiles` is unrelated too — it applies to
+If this machine already saved history of its own, for example because it
+tracked the same files before you shared them, adoption stops because the two
+histories are unrelated. `--replace-history` discards this machine's history
+and adopts the repository's. Existing files that differ still need a decision,
+so combine it with `--take-remote-all`:
+
+```sh
+mise bootstrap --adopt you/setup --replace-history --take-remote-all
+```
+
+The versions being replaced are saved first, on top of the adopted history, so
+`mise dot undo` restores them. `--force-dotfiles` is unrelated: it applies to
 `[dotfiles]` link and copy targets, not to shared history.
 
 Enable automatic sharing on this machine and check its state:

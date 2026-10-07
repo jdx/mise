@@ -30,7 +30,7 @@ pub(crate) struct DotfilesRecover {
 
 impl DotfilesRecover {
     pub(crate) async fn run(self) -> Result<()> {
-        if !store::store_dir_in(&crate::dirs::STATE).exists() {
+        if !store::store_dir_in(&crate::system::history::local::root()).exists() {
             info!("dotfiles: no interrupted operations");
             return Ok(());
         }
@@ -78,6 +78,7 @@ impl DotfilesRecover {
         }
         if self.keep_current
             && !self.yes
+            && !crate::config::Settings::get().yes
             && !crate::ui::prompt::confirm(
                 "Keep these live files and discard this operation's temporary recovery copies?",
             )?

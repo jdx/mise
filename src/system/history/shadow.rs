@@ -340,11 +340,35 @@ impl HistoryRepo {
         self.git.git_dir()
     }
 
+    /// The tracked set as a tree to commit: a local-only path keeps what
+    /// this history already held for it ([`Self::carry_local`]).
     pub(crate) fn capture_tracked(
         &self,
         walk: &super::tracked::Walk,
         recipient_strings: &[String],
         interactive: bool,
+    ) -> Result<CaptureResult> {
+        self.capture_walk(walk, recipient_strings, interactive, true)
+    }
+
+    /// The tracked set as it is on disk, to compare against. A local-only
+    /// path is absent here like any other excluded file, so a rollback or
+    /// diff of a directory around it never sees, nor restores, it.
+    pub(crate) fn capture_live(
+        &self,
+        walk: &super::tracked::Walk,
+        recipient_strings: &[String],
+        interactive: bool,
+    ) -> Result<CaptureResult> {
+        self.capture_walk(walk, recipient_strings, interactive, false)
+    }
+
+    fn capture_walk(
+        &self,
+        walk: &super::tracked::Walk,
+        recipient_strings: &[String],
+        interactive: bool,
+        carry_local: bool,
     ) -> Result<CaptureResult> {
         let mut manifest = walk.manifest.clone();
         manifest.recipients = recipient_strings.to_vec();
@@ -359,8 +383,41 @@ impl HistoryRepo {
         manifest.recipients.dedup();
         let mut result = self.capture_tracked_files(walk, &manifest.recipients, interactive)?;
         result.tree = manifest.preserve_other_files(self, &result.tree)?;
+        if carry_local {
+            result.tree = self.carry_local(walk, &result.tree)?;
+        }
         result.tree = manifest.write(self, &result.tree)?;
         Ok(result)
+    }
+
+    /// **A local-only path keeps whatever this history already held for
+    /// it.** It is never captured here, so without this a commit would read
+    /// its absence as a deletion, and publishing it would remove a file
+    /// another machine shares at that path.
+    fn carry_local(&self, walk: &super::tracked::Walk, tree: &str) -> Result<String> {
+        if walk.local.is_empty() {
+            return Ok(tree.to_string());
+        }
+        let Some(head) = self.ref_oid(Self::HISTORY_REF)? else {
+            return Ok(tree.to_string());
+        };
+        let roots = super::sync::layout::Roots::current();
+        let mut overlays = vec![];
+        // The owning declaration may have been dropped by keep_local_out.
+        // Preserve every previously saved stream, including selected variants.
+        for entry in self.ls_tree(&head)? {
+            if roots
+                .locate(&entry.path)
+                .path()
+                .is_some_and(|path| walk.local.iter().any(|local| path.starts_with(local)))
+            {
+                overlays.push(Overlay {
+                    object: Some((entry.mode, entry.oid)),
+                    path: entry.path,
+                });
+            }
+        }
+        self.compose(tree, &overlays)
     }
 
     fn capture_tracked_files(
@@ -901,10 +958,51 @@ impl HistoryRepo {
             // nothing is written to the tree for it — so it has to be
             // carried forward like the other two
             coverage.nested.append(&mut record.tree.coverage.nested);
+            let files = Self::gix_tree_entries(&repo, &tree)?;
+            // **Another machine's checkpoint did not save this machine's
+            // version of a per-machine file.** Its tree has no stream for
+            // this machine, which must not read as a saved absence: a
+            // rollback to it would delete the file here. Only this machine
+            // writes its stream, so a stream its parent held and this
+            // commit does not is this machine's own saved deletion, which
+            // stays an absence.
+            let parent_trees = commit_object
+                .parent_ids()
+                .map(|id| repo.find_commit(id.detach())?.tree().map_err(Into::into))
+                .collect::<Result<Vec<_>>>()?;
+            for entry in &coverage.entries {
+                let Some(variant) = entry
+                    .variant
+                    .as_deref()
+                    .filter(|variant| variant.starts_with(super::select::MACHINE_STREAM_PREFIX))
+                else {
+                    continue;
+                };
+                let local = super::tracked::normalize_target(Path::new(&entry.path));
+                let Some(stream) = layout.branch_path(&local, Some(variant)) else {
+                    continue;
+                };
+                let held = files.iter().any(|file| {
+                    file.path == stream
+                        || file
+                            .path
+                            .strip_prefix(&stream)
+                            .is_some_and(|rest| rest.starts_with('/'))
+                });
+                let deleted_here = parent_trees.iter().try_fold(false, |found, parent| {
+                    Ok::<_, eyre::Report>(found || parent.lookup_entry_by_path(&stream)?.is_some())
+                })?;
+                if !held && !deleted_here {
+                    coverage.omitted.push(super::store::PathReason {
+                        path: entry.path.clone(),
+                        reason: "this checkpoint holds no version from this machine".into(),
+                    });
+                }
+            }
             record.tree.coverage = coverage;
             let mut roots: BTreeMap<String, RootRecord> = BTreeMap::new();
             let layout = super::sync::layout::Roots::current();
-            for file in Self::gix_tree_entries(&repo, &tree)? {
+            for file in files {
                 let located = layout.locate(&file.path);
                 let Some(path) = located.path() else {
                     continue;
@@ -1342,6 +1440,15 @@ impl HistoryRepo {
         Ok(changes)
     }
 
+    /// The parents of a commit.
+    pub(crate) fn parents_of(&self, commit: &str) -> Result<Vec<String>> {
+        Ok(self
+            .output_str(PlumbingCall::new(["rev-parse", &format!("{commit}^@")]))?
+            .lines()
+            .map(str::to_owned)
+            .collect())
+    }
+
     /// The tree of a commit.
     pub(crate) fn output_tree_of(&self, commit: &str) -> Result<String> {
         self.output_str(PlumbingCall::new([
@@ -1418,7 +1525,13 @@ impl HistoryRepo {
             .run(PlumbingCall::new(["read-tree", base]).index_file(index))?;
         for overlay in overlays {
             let listed = self.git.output(
-                PlumbingCall::new(["ls-files", "-z", "--", &overlay.path]).index_file(index),
+                PlumbingCall::new([
+                    "ls-files",
+                    "-z",
+                    "--",
+                    &format!(":(literal){}", overlay.path),
+                ])
+                .index_file(index),
             )?;
             let mut removals: Vec<u8> = vec![];
             for entry in listed.split(|byte| *byte == 0) {

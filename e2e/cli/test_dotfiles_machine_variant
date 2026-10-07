@@ -1,0 +1,106 @@
+#!/usr/bin/env bash
+# shellcheck disable=SC2016
+# A machine variant keeps a separate stream on every machine: sync shares the
+# other files, and never applies one machine's copy on another, even when
+# both machines have the same hostname.
+require_cmd git
+export MISE_HISTORY_NOTIFY=false
+origin="$PWD/machine-origin.git"
+git init -q --bare -b main "$origin"
+echo laptop >~/.monitors
+echo base >~/.shared
+assert_succeed "mise dot track ~/.monitors --machine --yes"
+assert_contains "cat ~/.config/mise/config.toml" '"~/.monitors" = { mode = "track", variants = [{ machine = true }] }'
+assert_succeed "mise dot track ~/.shared --yes"
+assert_fail "mise dot track ~/.shared --machine --os linux --yes" "--machine cannot be combined"
+first_stream=$(mise dot paths --json | jq -r '.entries[] | select(.path == "~/.monitors") | .variant')
+assert_contains "echo $first_stream" "machine-"
+assert_succeed "mise dot origin set file://$origin --sync manual --yes"
+assert_succeed "mise dot sync"
+assert "git --git-dir=$origin show main:home@$first_stream/.monitors" "laptop"
+
+second="$(dirname "$HOME")/second"
+mkdir -p "$second/.config/mise" "$second/.local/state/mise/history"
+git clone -q --bare "$origin" "$second/.local/state/mise/history/repo.git"
+echo desktop >"$second/.monitors"
+echo base >"$second/.shared"
+cat >"$second/.config/mise/config.toml" <<'TOML'
+[dotfiles]
+"~/.monitors" = { mode = "track", variants = [{ machine = true }] }
+"~/.shared" = { mode = "track" }
+TOML
+b() {
+  (
+    cd "$second" || exit
+    env HOME="$second" XDG_CONFIG_HOME="$second/.config" MISE_CONFIG_DIR="$second/.config/mise" \
+      MISE_STATE_DIR="$second/.local/state/mise" MISE_DATA_DIR="$second/.local/share/mise" \
+      MISE_CACHE_DIR="$second/.cache/mise" MISE_TRUSTED_CONFIG_PATHS="$second" mise "$@"
+  )
+}
+export second
+export -f b
+assert_succeed "b dot origin set file://$origin --sync manual --yes"
+second_stream=$(b dot paths --json | jq -r '.entries[] | select(.path == "~/.monitors") | .variant')
+assert_contains "echo $second_stream" "machine-"
+if [[ $first_stream == "$second_stream" ]]; then
+  fail "both machines selected the stream $first_stream"
+fi
+
+# the second machine publishes its own copy beside the first one's
+assert_succeed "b dot save"
+assert_succeed "b dot sync"
+assert "git --git-dir=$origin show main:home@$first_stream/.monitors" "laptop"
+assert "git --git-dir=$origin show main:home@$second_stream/.monitors" "desktop"
+# the first machine's checkpoints hold no version from this one, which is
+# not a saved deletion: rollback has nothing earlier to restore
+assert_contains "b dot rollback $second/.monitors --dry-run 2>&1" "no saved version that differs"
+assert "cat $second/.monitors" "desktop"
+# while this machine's own saved deletion stays one, even once its record
+# is rebuilt from Git
+rm "$second/.monitors"
+assert_succeed "b dot save"
+echo recreated >"$second/.monitors"
+rm -rf "$second/.local/state/mise/history/index"
+assert_succeed "b dot rollback $second/.monitors --yes"
+assert_fail "test -e $second/.monitors"
+echo desktop >"$second/.monitors"
+assert_succeed "b dot save"
+
+# a shared change arrives; the machine file stays this machine's own
+echo changed-on-laptop >~/.shared
+echo laptop-rearranged >~/.monitors
+assert_succeed "mise dot save"
+# the second machine's own copy arrived; pulling it changes no file here
+assert_succeed "mise dot sync"
+assert_succeed "mise dot pull --yes"
+assert "cat ~/.monitors" "laptop-rearranged"
+assert_succeed "mise dot sync"
+assert "git --git-dir=$origin show main:home@$second_stream/.monitors" "desktop"
+assert "git --git-dir=$origin show main:home@$first_stream/.monitors" "laptop-rearranged"
+assert_succeed "b dot sync"
+assert_succeed "b dot pull --yes"
+assert "cat $second/.shared" "changed-on-laptop"
+assert "cat $second/.monitors" "desktop"
+
+# and the other direction
+echo desktop-rearranged >"$second/.monitors"
+assert_succeed "b dot save"
+assert_succeed "b dot sync"
+assert_succeed "mise dot sync"
+assert_succeed "mise dot pull --yes"
+assert "cat ~/.monitors" "laptop-rearranged"
+assert "git --git-dir=$origin show main:home@$second_stream/.monitors" "desktop-rearranged"
+assert "git --git-dir=$origin show main:home@$first_stream/.monitors" "laptop-rearranged"
+
+# [history] machine names the stream instead, e.g. to keep a reinstalled
+# machine's stream
+cat >>"$second/.config/mise/config.toml" <<'TOML'
+
+[history]
+machine = "desk"
+TOML
+assert "b dot paths --json | jq -r '.entries[] | select(.path == \"~/.monitors\") | .variant'" "machine-desk"
+assert_succeed "b dot save"
+assert_succeed "b dot sync"
+assert "git --git-dir=$origin show main:home@machine-desk/.monitors" "desktop-rearranged"
+assert "git --git-dir=$origin show main:home@$first_stream/.monitors" "laptop-rearranged"

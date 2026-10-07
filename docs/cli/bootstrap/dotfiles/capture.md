@@ -28,5 +28,5 @@ are not reversible. Concurrent editor changes are part of the same interval.
 ## Related documentation
 
 - [Dotfile ownership and modes](/dotfiles.html).
-- [`mise bootstrap dotfiles <SUBCOMMAND>`](/cli/bootstrap/dotfiles.html).
+- [`mise bootstrap dotfiles [--local] <SUBCOMMAND>`](/cli/bootstrap/dotfiles.html).
 - [Global flags and argument syntax](/cli/#global-flags).
