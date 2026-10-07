@@ -1606,6 +1606,15 @@ fn apply_one(req: &EditRequest, desired: Option<&str>, written: &mut Vec<PathBuf
             .wrap_err_with(|| format!("failed to replace symlink: {}", req.path.display_user()))?;
         std::fs::copy(&req.path, tmp.path())
             .wrap_err_with(|| format!("failed to replace symlink: {}", req.path.display_user()))?;
+        // a read-only source (a Nix store file, `chmod -w`) must not leave a
+        // copy the merge cannot write
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mut perms = std::fs::metadata(tmp.path())?.permissions();
+            perms.set_mode(perms.mode() | 0o200);
+            std::fs::set_permissions(tmp.path(), perms)?;
+        }
         tmp.persist(&req.path)
             .map_err(|err| err.error)
             .wrap_err_with(|| format!("failed to replace symlink: {}", req.path.display_user()))?;

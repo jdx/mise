@@ -338,3 +338,16 @@ cat <<'EOF2' >mise.toml
 "~/other-link.toml/shared" = { source = "shared/codex.toml", merge = true }
 EOF2
 assert_fail_contains "mise dotfiles apply --yes" "replace it with a copy of the real file"
+
+# a read-only merge source still becomes a writable copy
+mkdir -p ~/.dotfiles/.ro ~/.ro
+printf 'notify = ["a"]\n' >~/.dotfiles/.ro/config.toml
+chmod 444 ~/.dotfiles/.ro/config.toml
+ln -s ~/.dotfiles/.ro/config.toml ~/.ro/config.toml
+cat <<'EOF2' >mise.toml
+[dotfiles]
+"~/.ro/config.toml/shared" = { merge = true }
+EOF2
+assert_succeed "mise dotfiles apply --yes"
+assert_fail "test -L ~/.ro/config.toml"
+assert_contains "cat ~/.ro/config.toml" 'notify = ["a"]'
