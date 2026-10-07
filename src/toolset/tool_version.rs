@@ -540,6 +540,7 @@ impl ToolVersion {
             refresh_remote_versions: base_opts.refresh_remote_versions,
             inactive: base_opts.inactive,
             warn_not_in_lockfile: base_opts.warn_not_in_lockfile,
+            defer_missing_lazy_tools: false,
         };
         let tv = self.request.resolve(config, &opts).await?;
         Ok(tv.version)
@@ -747,6 +748,12 @@ impl ToolVersion {
             && !opts.before_date_from_default
             && !is_offline
             && !prefer_offline;
+        // A shim or prompt hook for one tool must not wait on remote version lists
+        // for lazy tools nobody has run yet.
+        let defer_missing_lazy = opts.defer_missing_lazy_tools
+            && prefer_offline
+            && !opts.latest_versions
+            && request.options().lazy == Some(true);
         // Rolling release channels (e.g. zig's "master") are moving pointers that
         // mise must resolve before the plugin-installed shortcut can preserve their
         // symbolic name as an install identity.
@@ -804,6 +811,9 @@ impl ToolVersion {
                 && !should_filter_installed_versions
                 && let Some(v) = backend.latest_installed_version(None)?
             {
+                return build(v);
+            }
+            if defer_missing_lazy {
                 return build(v);
             }
             if !is_offline
@@ -876,6 +886,9 @@ impl ToolVersion {
                 .and_then(|matches| matches.last())
         {
             return build(v.clone());
+        }
+        if defer_missing_lazy {
+            return build(v);
         }
         if matches!(
             request.source(),
@@ -1212,6 +1225,10 @@ pub struct ResolveOptions {
     pub inactive: bool,
     /// If false, missing lockfile entries log at debug instead of warn.
     pub warn_not_in_lockfile: bool,
+    /// Under `prefer_offline`, leave a lazy tool that has no installed match at its
+    /// requested version instead of listing remote versions. Installing it through its
+    /// shim resolves the request then.
+    pub defer_missing_lazy_tools: bool,
 }
 
 impl Default for ResolveOptions {
@@ -1230,6 +1247,7 @@ impl Default for ResolveOptions {
             refresh_remote_versions: false,
             inactive: false,
             warn_not_in_lockfile: true,
+            defer_missing_lazy_tools: false,
         }
     }
 }
