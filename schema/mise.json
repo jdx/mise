@@ -6848,6 +6848,10 @@
               "replace": {
                 "type": "boolean"
               },
+              "os": {
+                "$ref": "#/$defs/os_filter",
+                "description": "OS or OS/arch selectors; entries on other platforms are skipped"
+              },
               "notify": {
                 "type": "array",
                 "items": {
@@ -6949,6 +6953,10 @@
               },
               "replace": {
                 "type": "boolean"
+              },
+              "os": {
+                "$ref": "#/$defs/os_filter",
+                "description": "OS or OS/arch selectors; entries on other platforms are skipped"
               },
               "notify": {
                 "type": "array",

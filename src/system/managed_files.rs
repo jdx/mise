@@ -32,6 +32,8 @@ pub struct ManagedFileTomlConfig {
     pub replace: bool,
     #[serde(default)]
     pub notify: Vec<String>,
+    #[serde(default, deserialize_with = "crate::system::deserialize_package_os")]
+    pub os: Vec<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
@@ -49,6 +51,8 @@ pub struct ManagedDirectoryTomlConfig {
     pub replace: bool,
     #[serde(default)]
     pub notify: Vec<String>,
+    #[serde(default, deserialize_with = "crate::system::deserialize_package_os")]
+    pub os: Vec<String>,
 }
 
 pub use mise_bootstrap::ManagedFilePhase;
@@ -438,6 +442,9 @@ fn merged_files_from_config_files(
                         target.display()
                     );
                 }
+                if !os_matches(&file.os) {
+                    continue;
+                }
                 let mut file_origin = origin.clone();
                 file_origin.source = file
                     .source
@@ -450,6 +457,14 @@ fn merged_files_from_config_files(
         }
     }
     Ok(merged)
+}
+
+/// Whether an entry's `os` selectors match this machine; no selectors match everywhere.
+fn os_matches(selectors: &[String]) -> bool {
+    selectors.is_empty()
+        || selectors
+            .iter()
+            .any(|entry| crate::platform::os_selector_matches(entry))
 }
 
 fn directories_from_config(config: &Config) -> Result<Vec<ManagedDirectoryRequest>> {
@@ -498,6 +513,9 @@ fn directories_from_config_files(
                         "managed directory paths '{previous}' and '{path}' normalize to the same target '{}'",
                         target.display()
                     );
+                }
+                if !os_matches(&directory.os) {
+                    continue;
                 }
                 merged
                     .entry(target)
