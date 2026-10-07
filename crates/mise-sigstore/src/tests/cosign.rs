@@ -270,6 +270,7 @@ fn trivial_identity_patterns_do_not_pin_the_signer() {
 
 #[tokio::test]
 async fn keyless_bundle_verification_enforces_signer_identity() {
+    let _tuf_root = TUF_ROOT_LOCK.lock().await;
     // mise-v2026.9.12-linux-x64.tar.gz, attested by the fixture bundle.
     let digest =
         Sha256Hash::from_hex("b4058dece685259910d3aba5782445996eea79dbdb3cf952a6eb81aadf0373ff")

@@ -7,6 +7,21 @@ pub(crate) async fn verify_attestation_bundles(
     signer_workflow: Option<&str>,
     trust_roots: &mut TrustRoots,
 ) -> Result<bool> {
+    verify_attestation_bundles_for_artifact(
+        Artifact::from(artifact),
+        attestations,
+        signer_workflow,
+        trust_roots,
+    )
+    .await
+}
+
+pub(crate) async fn verify_attestation_bundles_for_artifact(
+    artifact: Artifact<'_>,
+    attestations: &[Attestation],
+    signer_workflow: Option<&str>,
+    trust_roots: &mut TrustRoots,
+) -> Result<bool> {
     let mut errors = Vec::new();
     let mut trust_root_failures = 0;
     for attestation in attestations {
@@ -23,7 +38,7 @@ pub(crate) async fn verify_attestation_bundles(
             }
         };
         match verify_bundle_with_trust_roots(
-            Artifact::from(artifact),
+            artifact.clone(),
             &bundle,
             signer_workflow,
             trust_roots,

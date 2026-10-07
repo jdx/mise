@@ -97,7 +97,7 @@ async fn github_attestation_sources_succeeds_when_one_method_fails() {
         &[
             invalid_attestation(),
             fixture_attestation(include_str!(
-                "../../tests/fixtures/github_build_provenance_jdx_mise.json"
+                "../../tests/fixtures/github_release_attestation_jdx_mise.json"
             )),
         ],
         None,
@@ -162,20 +162,61 @@ fn attestation_diagnostic_logs_do_not_leak_secrets() {
     assert!(message.contains("attestation signature verification failed"));
 }
 
+/// A bundle with no signing certificate cannot be GitHub-internal, so it needs
+/// the Sigstore public-good trust root.
+fn public_good_attestation() -> Attestation {
+    let mut bundle: serde_json::Value = serde_json::from_str(include_str!(
+        "../../tests/fixtures/github_build_provenance_jdx_mise.json"
+    ))
+    .unwrap();
+    let material = bundle["verificationMaterial"].as_object_mut().unwrap();
+    material.remove("certificate");
+    material.insert("publicKey".to_string(), serde_json::json!({"hint": "key"}));
+    serde_json::from_value(serde_json::json!({ "bundle": bundle })).unwrap()
+}
+
+// One test, because the TUF URL override is process-global.
 #[tokio::test]
-async fn tuf_load_failure_is_a_trust_root_error_not_a_signature_failure() {
+async fn unreachable_tuf_repository_is_a_trust_root_error_not_a_signature_failure() {
+    let _tuf_root = TUF_ROOT_LOCK.lock().await;
     // Port 1 refuses connections, standing in for a sandbox that blocks the
     // Sigstore TUF repository.
     crate::set_tuf_url(Some("http://127.0.0.1:1".to_string()));
-    let result = crate::trust::production_trusted_root().await;
-    crate::set_tuf_url(None);
 
-    let error = result.expect_err("unreachable TUF repository must fail");
+    let error = crate::trust::production_trusted_root()
+        .await
+        .expect_err("unreachable TUF repository must fail");
     assert!(matches!(error, AttestationError::TrustRoot(_)), "{error}");
     assert_eq!(
         error.diagnostic_summary(),
         "could not load the TUF trust root needed to verify the signature"
     );
+
+    // A skipped public-good bundle followed by a valid GitHub one still passes,
+    // and the aggregator warns exactly once with the skipped count.
+    let capture = capture_logs();
+    let digest = fixture_digest();
+    let verified = crate::bundle::verify_attestation_bundles_for_artifact(
+        Artifact::from(&digest),
+        &[
+            public_good_attestation(),
+            fixture_attestation(include_str!(
+                "../../tests/fixtures/github_release_attestation_jdx_mise.json"
+            )),
+        ],
+        None,
+        &mut TrustRoots::default(),
+    )
+    .await;
+    crate::set_tuf_url(None);
+
+    assert!(verified.unwrap());
+    let warnings: Vec<_> = captured_messages(&capture)
+        .into_iter()
+        .filter(|message| message.contains("were not checked because a TUF trust root"))
+        .collect();
+    assert_eq!(warnings.len(), 1, "{warnings:?}");
+    assert!(warnings[0].starts_with("1 GitHub attestation(s) were not checked"));
 }
 
 #[test]
