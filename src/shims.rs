@@ -2551,7 +2551,8 @@ mod tests {
     #[test]
     fn mise_shim_detection_distinguishes_symlink_targets() {
         let dir = tempfile::tempdir().unwrap();
-        let mise_bin = dir.path().join("mise");
+        let mise_bin = dir.path().join("bin/mise");
+        fs::create_dir_all(mise_bin.parent().unwrap()).unwrap();
         let other_bin = dir.path().join("other");
         fs::write(&mise_bin, "mise").unwrap();
         fs::write(&other_bin, "other").unwrap();
@@ -2581,7 +2582,6 @@ mod tests {
         // The real mise dispatcher may itself be installed as a symlink in a
         // shared bin directory; its own name keeps it out of shim pruning.
         let dispatcher = dir.path().join("mise");
-        fs::remove_file(&dispatcher).unwrap();
         std::os::unix::fs::symlink(&other_bin, &dispatcher).unwrap();
         assert!(!is_mise_shim(&dispatcher, &mise_bin).unwrap());
         assert!(!is_mise_shim_in(&dispatcher, &mise_bin, false).unwrap());
