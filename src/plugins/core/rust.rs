@@ -983,19 +983,31 @@ pub(crate) async fn lock_rust_state_for_config(
         .iter()
         .map(|(k, v)| (k.clone(), v.clone()))
         .collect();
+    let (mut cargo_removed, mut rustup_removed) = (false, false);
     for (key, value) in install_env {
         match value.clone().into_string() {
-            Some(value) => config_env.insert(key.clone(), value),
-            None => config_env.shift_remove(key),
-        };
+            Some(value) => {
+                config_env.insert(key.clone(), value);
+            }
+            None => {
+                config_env.shift_remove(key);
+                // the child unsets the variable, so it uses the default home
+                cargo_removed |= key == "CARGO_HOME";
+                rustup_removed |= key == "RUSTUP_HOME";
+            }
+        }
     }
     let settings = Settings::get();
     let homes = RustHomes::from_sources(
         &config_env,
-        settings.rust.cargo_home.clone(),
-        env::var_path("CARGO_HOME"),
-        settings.rust.rustup_home.clone(),
-        env::var_path("RUSTUP_HOME"),
+        settings.rust.cargo_home.clone().filter(|_| !cargo_removed),
+        env::var_path("CARGO_HOME").filter(|_| !cargo_removed),
+        settings
+            .rust
+            .rustup_home
+            .clone()
+            .filter(|_| !rustup_removed),
+        env::var_path("RUSTUP_HOME").filter(|_| !rustup_removed),
     );
     lock_rust_state(&homes).await
 }
