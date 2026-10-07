@@ -310,16 +310,23 @@ pub fn report(outcome: &run::SyncOutcome) {
     }
 }
 
-/// `--yes`, `MISE_YES`, or an interactive confirmation; unattended without
-/// either is a refusal.
+/// `--yes`, `MISE_YES`, or an interactive confirmation. These operations are
+/// journaled and undoable, so with nobody to ask (no terminal) the printed
+/// plan proceeds instead of silently doing nothing.
 pub(crate) fn confirmed(yes: bool, question: &str) -> Result<bool> {
     if yes || crate::config::Settings::get().yes {
         return Ok(true);
     }
-    if !console::user_attended_stderr() {
-        return Ok(false);
+    prompt::confirm_recoverable(question)
+}
+
+/// Like [`confirmed`], for an operation that cannot be undone: with nobody to
+/// ask it fails and names `--yes`.
+pub(crate) fn confirmed_destructive(yes: bool, question: &str, command: &str) -> Result<bool> {
+    if yes || crate::config::Settings::get().yes {
+        return Ok(true);
     }
-    Ok(prompt::confirm(question)?.is_yes())
+    prompt::confirm_destructive(question, command)
 }
 
 /// Where the connection is declared: `config.local.toml` next to the

@@ -182,6 +182,36 @@ fn default_answer(default_yes: bool) -> Confirmation {
     }
 }
 
+/// Confirmation for an operation that can be undone (journaled, with a
+/// protective checkpoint). When nobody can be asked -- no terminal on stderr,
+/// as in `ssh host 'mise ...'` or CI -- the plan has already been printed and
+/// proceeding is safe, so requiring `--yes` there would only make the command
+/// silently do nothing. A prompt that was shown but never answered (stdin
+/// closed) is an error rather than a skip, so it is never mistaken for a
+/// decision.
+pub fn confirm_recoverable<S: Into<String>>(message: S) -> eyre::Result<bool> {
+    match confirm(message)? {
+        Confirmation::Yes | Confirmation::Unavailable => Ok(true),
+        Confirmation::No => Ok(false),
+        Confirmation::Unanswered => {
+            eyre::bail!("stdin ended before the confirmation was answered; pass --yes to proceed")
+        }
+    }
+}
+
+/// Confirmation for an operation that cannot be undone. Nobody to ask, or no
+/// answer, is an error that names `--yes`: never a silent skip, never a hang.
+/// Callers handle `--yes`/`MISE_YES` before asking.
+pub fn confirm_destructive<S: Into<String>>(message: S, command: &str) -> eyre::Result<bool> {
+    match confirm_with_default(message, false)? {
+        Confirmation::Yes => Ok(true),
+        Confirmation::No => Ok(false),
+        Confirmation::Unanswered | Confirmation::Unavailable => eyre::bail!(
+            "{command} requires confirmation but there was nobody to ask; pass --yes to proceed non-interactively"
+        ),
+    }
+}
+
 pub fn confirm_with_all<S: Into<String>>(message: S) -> eyre::Result<Confirmation> {
     let _lock = MUTEX.lock().unwrap(); // Prevent multiple prompts at once
     ctrlc::show_cursor_after_ctrl_c();
@@ -309,5 +339,16 @@ mod tests {
             assert!(parse_confirm_answer(Some(line), true).is_err());
             assert!(parse_confirm_answer(Some(line), false).is_err());
         }
+    }
+
+    #[test]
+    fn unattended_recoverable_confirmation_proceeds_and_destructive_errors() {
+        // test harnesses capture stderr, so nobody can be asked
+        if console::user_attended_stderr() {
+            return;
+        }
+        assert!(confirm_recoverable("proceed?").unwrap());
+        let err = confirm_destructive("delete?", "mise thing").unwrap_err();
+        assert!(err.to_string().contains("--yes"), "{err}");
     }
 }

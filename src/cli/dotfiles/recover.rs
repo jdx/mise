@@ -78,10 +78,11 @@ impl DotfilesRecover {
         }
         if self.keep_current
             && !self.yes
-            && !crate::ui::prompt::confirm(
+            && !crate::config::Settings::get().yes
+            && !crate::ui::prompt::confirm_destructive(
                 "Keep these live files and discard this operation's temporary recovery copies?",
+                "mise dot recover --keep-current",
             )?
-            .is_yes()
         {
             info!("dotfiles: recovery copies preserved");
             return Ok(());

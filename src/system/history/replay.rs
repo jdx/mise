@@ -456,7 +456,10 @@ async fn execute(
         info!("history: nothing to do");
         return Ok(());
     }
-    if !exec.yes && !prompt::confirm("history: apply this plan?")?.is_yes() {
+    if !exec.yes
+        && !crate::config::Settings::get().yes
+        && !prompt::confirm_recoverable("history: apply this plan?")?
+    {
         info!("history: skipped");
         return Ok(());
     }
@@ -525,8 +528,15 @@ async fn apply_steps(
             {
                 bail!("the refreshed plan has conflicts; nothing was changed");
             }
-            if !exec.yes && !prompt::confirm("history: apply the refreshed plan?")?.is_yes() {
-                bail!("declined; nothing was changed");
+            if !exec.yes && !crate::config::Settings::get().yes {
+                // The plan the caller saw is not the plan that would run, so
+                // unlike the first confirmation this one is never implied.
+                if !prompt::confirm_destructive(
+                    "history: apply the refreshed plan?",
+                    "applying a plan that changed since it was shown",
+                )? {
+                    bail!("declined; nothing was changed");
+                }
             }
         }
         // completeness: every path about to be written or deleted that exists
