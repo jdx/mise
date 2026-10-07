@@ -56,11 +56,6 @@ fn is_git_spec(name: &str) -> bool {
 
 /// The npm install specifier for a git source; `latest` means the default branch.
 fn git_requirement(name: &str, version: &str) -> String {
-    // mise keeps `ref:`/`branch:`/`tag:`/`rev:` request prefixes; git refs can't contain `:`.
-    let version = match version.split_once(':') {
-        Some(("ref" | "branch" | "tag" | "rev", git_ref)) => git_ref,
-        _ => version,
-    };
     if version == "latest" {
         // npm resolves a bare `gitlab:`/`bitbucket:` shorthand to `master`, so
         // spell out the URL to get the remote's default branch.
@@ -74,6 +69,12 @@ fn git_requirement(name: &str, version: &str) -> String {
         }
         name.to_string()
     } else {
+        // mise keeps `ref:`/`branch:`/`tag:`/`rev:` request prefixes, which an
+        // explicit `tag:latest` must not be confused with the bare `latest`.
+        let version = match version.split_once(':') {
+            Some(("ref" | "branch" | "tag" | "rev", git_ref)) => git_ref,
+            _ => version,
+        };
         let base = name.split('#').next().unwrap_or(name);
         format!("{base}#{version}")
     }
@@ -2483,6 +2484,10 @@ mod tests {
             "git+https://gitlab.com/o/r.git"
         );
         assert_eq!(git_requirement("gitlab:o/r", "v1"), "gitlab:o/r#v1");
+        assert_eq!(
+            git_requirement("github:o/r", "tag:latest"),
+            "github:o/r#latest"
+        );
         assert_eq!(
             git_requirement("github:o/r", "branch:feature/foo"),
             "github:o/r#feature/foo"
