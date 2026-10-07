@@ -45,10 +45,12 @@ pub(crate) async fn update_before_launch(config: &Arc<Config>, ts: &Toolset, bin
     let Some(tool_id) = tool_update::claim_due(&tv) else {
         return false;
     };
-    // A separate process from $HOME, with the environment mise's activation
-    // started from, loads only global config: the project's config, lockfile,
-    // and `[env]` (PATH included) can't steer or be rewritten by the upgrade.
-    // Its progress goes to stderr, and stdout stays the launched tool's alone.
+    // A separate process with the environment mise's activation started from,
+    // run from the filesystem root so no project config (not even one in $HOME)
+    // is above it, loads only global config: a project's config, lockfile, and
+    // `[env]` (PATH included) can't steer or be rewritten by the upgrade. The
+    // launch's environments (`-E`) carry over, since they choose which global
+    // files apply. Its progress goes to stderr; stdout stays the launched tool's.
     let status = Command::new(&*env::MISE_BIN)
         .args(["__tool-update", &tv.ba().short])
         .env_clear()
@@ -58,7 +60,8 @@ pub(crate) async fn update_before_launch(config: &Arc<Config>, ts: &Toolset, bin
                 .filter(|(key, _)| !key.starts_with("__MISE_")),
         )
         .env(tool_update::UPDATING_ENV, "1")
-        .current_dir(*dirs::HOME)
+        .env("MISE_ENV", env::mise_env().join(","))
+        .current_dir(dirs::HOME.ancestors().last().unwrap_or(*dirs::HOME))
         .stdin(Stdio::null())
         .stdout(std::io::stderr())
         .status();

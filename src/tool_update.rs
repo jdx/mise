@@ -11,7 +11,7 @@ use std::time::Duration;
 
 use eyre::{Result, bail};
 
-use crate::config::{Config, Settings, SettingsExt, is_global_config};
+use crate::config::{Settings, SettingsExt, is_global_config};
 use crate::toolset::{ToolOptionSource, ToolRequest, ToolSource, ToolVersion, Toolset};
 use crate::{dirs, duration, file, hash, lock_file};
 
@@ -187,22 +187,20 @@ pub fn record_result(tool_id: &str, result: &Result<()>) {
 }
 
 /// Failures recorded by updates that have not succeeded since, for tools whose
-/// entry in a global config file still enables `auto_update`: one that no longer
-/// does will never update again to clear its failure. Read from the files
-/// themselves, so a shell's `MISE_<TOOL>_VERSION` doesn't hide a failure.
-pub fn failures(config: &Config) -> Vec<Failure> {
+/// global config still enables `auto_update`. `global` is the global-only
+/// toolset without environment overrides: a tool that no longer opts in will
+/// never update again to clear its failure, and a shell's `MISE_<TOOL>_VERSION`
+/// must not hide one.
+pub fn failures(global: &Toolset) -> Vec<Failure> {
     let enabled = |request: &ToolRequest| {
         global_auto_update(request)
             .and_then(|value| parse_auto_update(&value).ok().flatten())
             .is_some()
     };
-    let opted_in = config
-        .config_files
+    let opted_in = global
+        .versions
         .iter()
-        .filter(|(path, _)| is_global_config(path))
-        .filter_map(|(_, cf)| cf.to_tool_request_set().ok())
-        .flat_map(|requests| requests.tools)
-        .filter(|(_, requests)| requests.iter().any(enabled))
+        .filter(|(_, versions)| versions.requests.iter().any(enabled))
         .map(|(ba, _)| ba.full_without_opts())
         .collect::<std::collections::HashSet<_>>();
     recorded_failures()
