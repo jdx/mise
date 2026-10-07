@@ -1087,7 +1087,7 @@ fn walk_entry(
 }
 
 /// Size of a capturable file, or why it is omitted.
-fn classify_file(meta: &std::fs::Metadata) -> std::result::Result<u64, String> {
+pub(crate) fn classify_file(meta: &std::fs::Metadata) -> std::result::Result<u64, String> {
     let file_type = meta.file_type();
     if file_type.is_symlink() {
         return Ok(0);

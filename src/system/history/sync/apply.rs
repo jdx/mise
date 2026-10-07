@@ -670,6 +670,19 @@ pub(crate) async fn apply_locked_with_scope(
             .filter(|step| step.before.is_some() && step.before != step.pending.object)
             .collect();
         if fresh_adoption && !replaced.is_empty() {
+            // Refuse a file history cannot save before anything changes,
+            // so a retry plans from the same state.
+            for step in &replaced {
+                if let Err(reason) = std::fs::symlink_metadata(&step.path)
+                    .map_err(|err| err.to_string())
+                    .and_then(|meta| crate::system::history::tracked::classify_file(&meta))
+                {
+                    bail!(
+                        "could not save this machine's version of {} before replacing it ({reason}); nothing was written. Move it aside and pull again",
+                        display_path(&step.path)
+                    );
+                }
+            }
             let heads = super::graph::Heads::read(repo)?;
             if heads.local != application_head || heads.remote != status.upstream_commit {
                 bail!("setup history changed during adoption; retry pull");
@@ -813,6 +826,25 @@ pub(crate) async fn apply_locked_with_scope(
             scope.finish(status.application_failure.clone(), summary);
         } else {
             scope.finish_incomplete(status.application_failure.clone(), summary);
+        }
+        // **A fresh adoption that wrote nothing leaves nothing behind.** Its
+        // failure would otherwise be recorded on top of the repository's
+        // history, which this machine then holds as its own: a retry would
+        // plan from that, with the repository's version of a file it never
+        // wrote standing in for this machine's.
+        if fresh_adoption
+            && application_head.is_none()
+            && touched.is_empty()
+            && recovery_errors.is_empty()
+        {
+            if let Some(head) =
+                repo.ref_oid(crate::system::history::shadow::HistoryRepo::HISTORY_REF)?
+            {
+                repo.delete_history_head(&head)?;
+                store.rebuild_index()?;
+            }
+            status.application_failure = None;
+            run::write_status(state_dir, &status)?;
         }
         return result.map(|()| ApplyOutcome::default());
     }
