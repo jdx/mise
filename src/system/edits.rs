@@ -1861,7 +1861,11 @@ mod tests {
                 "source = \"s\"\nmerge = true",
                 ".json, .toml",
             ),
-            ("~/a/settings.json/shared", "merge = true", "needs a source"),
+            (
+                "/outside/settings.json/shared",
+                "merge = true",
+                "source is required",
+            ),
             (
                 "~/a/settings.json/shared",
                 "source = \"s\"\nmerge = false",
