@@ -67,4 +67,9 @@ assert_succeed "mise dot save"
 assert_succeed "mise dot sync"
 assert_contains "b dot sync 2>&1" "incoming change(s) pending"
 assert_succeed "b dot pull --yes"
-assert "stat -c %a $second/.dir" "700"
+if [[ "$(uname)" == Darwin ]]; then
+  mode_of='stat -f %Lp'
+else
+  mode_of='stat -c %a'
+fi
+assert "$mode_of $second/.dir" "700"

@@ -298,8 +298,10 @@ pub fn report(outcome: &run::SyncOutcome) {
     }
     // a directory whose permissions change is a change here, though no
     // file is written
-    let here =
-        outcome.pending - usize::from(outcome.pending_repository) + outcome.pending_directories;
+    let here = outcome
+        .pending
+        .saturating_sub(usize::from(outcome.pending_repository))
+        + outcome.pending_directories;
     if here > 0 {
         info!("history: {here} incoming change(s) pending; `mise dot pull` applies them");
     } else if outcome.pending_repository {
