@@ -579,6 +579,35 @@ async fn apply_steps(
         );
         scope.recapture_before(&missing)?;
     }
+    // files no checkpoint holds go with a replaced directory and cannot be
+    // undone: decide before the first mutation, so an unattended replay
+    // without --yes fails with nothing changed instead of part way through
+    if !exec.yes && !crate::config::Settings::get().yes {
+        let mut uncovered = vec![];
+        for step in steps.iter().filter(|step| step.action.mutates()) {
+            let replaces_dir = step.path.is_dir()
+                && !step.path.is_symlink()
+                && !matches!(&step.action, Action::Write { mode, .. } if mode == "040000");
+            if replaces_dir {
+                uncovered.extend(directory_contents(&step.path, steps, tracked)?.uncovered);
+            }
+        }
+        if !uncovered.is_empty()
+            && !prompt::confirm_destructive(
+                format!(
+                    "history: remove files history does not cover and cannot undo ({})?",
+                    uncovered
+                        .iter()
+                        .map(display_path)
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                ),
+                &format!("mise {}", exec.command),
+            )?
+        {
+            bail!("declined; nothing was changed");
+        }
+    }
     let mut touched = vec![];
     // deletions deepest first, then writes shallowest first: a directory is
     // emptied before the file that replaces it is written, and a directory
@@ -680,20 +709,6 @@ async fn apply_steps(
                         .collect::<Vec<_>>()
                         .join(", ")
                 );
-                // no checkpoint holds them, so this is not recoverable: ask
-                // (or require --yes) instead of proceeding unattended
-                if !exec.yes
-                    && !crate::config::Settings::get().yes
-                    && !prompt::confirm_destructive(
-                        format!(
-                            "history: remove {} and the files in it that history does not cover?",
-                            display_path(&step.path)
-                        ),
-                        &format!("mise {}", exec.command),
-                    )?
-                {
-                    bail!("declined; nothing more was changed");
-                }
             }
             empty_dirs = inside.empty_dirs;
         }
