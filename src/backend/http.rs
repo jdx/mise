@@ -22,6 +22,7 @@ use crate::runtime_symlinks::is_runtime_symlink;
 use crate::toolset::ToolRequest;
 use crate::toolset::ToolVersion;
 use crate::toolset::ToolVersionOptions;
+use crate::toolset::install_state;
 use crate::ui::progress_report::SingleReport;
 use crate::{dirs, env, file, hash};
 use async_trait::async_trait;
@@ -1474,7 +1475,7 @@ impl Backend for HttpBackend {
             _ => {
                 let install_path = Self::lookup_install_path(tv);
                 install_path.exists()
-                    && (!self.incomplete_file_path(tv).exists()
+                    && (!install_state::is_incomplete(tv.ba(), &tv.state_key())
                         || super::is_active_postinstall_install(tv, &install_path))
                     && (!check_symlink || !is_runtime_symlink(&install_path))
             }

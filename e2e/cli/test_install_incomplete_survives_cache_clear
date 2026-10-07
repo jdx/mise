@@ -1,0 +1,66 @@
+#!/usr/bin/env bash
+
+# A version whose install never finished stays incomplete after the cache is
+# cleared, so it is neither listed nor selected over the complete one.
+plugin="$MISE_DATA_DIR/plugins/halfdone"
+mkdir -p "$plugin/bin"
+cat >"$plugin/bin/list-all" <<'SH'
+#!/usr/bin/env bash
+echo 1.0.0 1.1.0 1.2.0
+SH
+# 1.1.0 writes a working binary, then fails: an install that died partway.
+cat >"$plugin/bin/install" <<'SH'
+#!/usr/bin/env bash
+mkdir -p "$ASDF_INSTALL_PATH/bin"
+printf '#!/usr/bin/env bash\necho "halfdone %s"\n' "$ASDF_INSTALL_VERSION" >"$ASDF_INSTALL_PATH/bin/halfdone"
+chmod +x "$ASDF_INSTALL_PATH/bin/halfdone"
+[ "$ASDF_INSTALL_VERSION" != "1.1.0" ]
+SH
+chmod +x "$plugin/bin/list-all" "$plugin/bin/install"
+
+cat >mise.toml <<'TOML'
+[tools]
+halfdone = "1"
+TOML
+
+mise install halfdone@1.0.0
+assert "mise x -- halfdone" "halfdone 1.0.0"
+
+# Keep the half-done install directory, as `always_keep_install` does.
+assert_fail "MISE_ALWAYS_KEEP_INSTALL=1 mise install halfdone@1.1.0"
+assert_directory_exists "$MISE_DATA_DIR/installs/halfdone/1.1.0"
+assert_not_contains "mise ls --installed halfdone" "1.1.0"
+assert "mise x -- halfdone" "halfdone 1.0.0"
+
+mise cache clear
+assert_directory_exists "$MISE_STATE_DIR/incomplete-installs/halfdone/1.1.0"
+assert_not_contains "mise ls --installed halfdone" "1.1.0"
+assert "mise x -- halfdone" "halfdone 1.0.0"
+
+# Uninstalling the half-done version clears its marker with it.
+mise uninstall halfdone@1.1.0
+assert_directory_not_exists "$MISE_DATA_DIR/installs/halfdone/1.1.0"
+assert_directory_not_exists "$MISE_STATE_DIR/incomplete-installs/halfdone/1.1.0"
+
+# A failed tool-level postinstall hook leaves the version incomplete the same way.
+cat >mise.toml <<'TOML'
+[tools]
+halfdone = { version = "1", postinstall = "exit 1" }
+TOML
+assert_fail "mise install halfdone@1.2.0"
+assert_directory_exists "$MISE_DATA_DIR/installs/halfdone/1.2.0"
+assert_not_contains "mise ls --installed halfdone" "1.2.0"
+mise cache clear
+assert_not_contains "mise ls --installed halfdone" "1.2.0"
+assert "mise x -- halfdone" "halfdone 1.0.0"
+
+# A marker an older mise left in the cache moves to the state dir before
+# anything can clear it.
+rm -rf "$MISE_STATE_DIR/incomplete-installs"
+mkdir -p "$MISE_CACHE_DIR/halfdone/1.2.0"
+touch "$MISE_CACHE_DIR/halfdone/1.2.0/incomplete"
+assert_not_contains "mise ls --installed halfdone" "1.2.0"
+assert_directory_exists "$MISE_STATE_DIR/incomplete-installs/halfdone/1.2.0"
+assert_succeed "test -f '$MISE_STATE_DIR/incomplete-installs/.migrated'"
+mise cache clear
+assert_not_contains "mise ls --installed halfdone" "1.2.0"
