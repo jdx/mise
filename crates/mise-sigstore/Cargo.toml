@@ -36,7 +36,12 @@ rustls-webpki = { version = "0.103", default-features = false, features = [
 rustls-pki-types = "1"
 
 [dev-dependencies]
-tokio = { version = "1", features = ["macros", "rt-multi-thread", "net", "sync"] }
+tokio = { version = "1", features = [
+  "macros",
+  "rt-multi-thread",
+  "net",
+  "sync",
+] }
 
 [features]
 default = ["rustls"]
