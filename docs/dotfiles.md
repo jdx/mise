@@ -1250,6 +1250,44 @@ When nothing matches, mise uses the variant marked `default = true`.
 Without a default, it skips saving and applying the path on that machine.
 Checkpoints preserve the versions saved by other machines.
 
+#### One version per machine {#machine-variants}
+
+Some files describe the machine itself, such as a monitor layout or a
+trackpad setting. Give every machine its own version with a `machine`
+variant:
+
+```toml
+[dotfiles]
+"~/.config/hypr/monitors.lua" = { mode = "track", variants = [{ machine = true }] }
+```
+
+Or run `mise dot track ~/.config/hypr/monitors.lua --machine`.
+
+Each machine saves, rolls back, and restores its own version. Sync
+shares the other tracked files as usual, but never applies one machine's
+version on another. Each version is still pushed to the origin with the
+rest of the history, so it is kept off the machine and can be restored on
+it later.
+
+The stream is named after the machine, for example
+`machine-omarchy-3f2a9c1b`: its hostname and a random suffix, chosen the
+first time and kept in `$MISE_STATE_DIR/history/machine`. Renaming the
+host does not change it, and two machines with the same hostname still
+get separate versions. To choose the name yourself, set it in the
+machine's global configuration, for example in
+`~/.config/mise/config.local.toml`:
+
+```toml
+[history]
+machine = "desk"
+```
+
+After reinstalling a machine, set its earlier name to continue that
+machine's history. A `machine` variant must be the entry's only variant,
+and cannot be combined with `encrypt`. Upgrade every machine sharing the
+setup before using it: older versions of mise refuse the setup rather
+than apply one machine's version on the others.
+
 ### Tracking files that mise also manages {#ownership}
 
 You can save the history of a file that mise copies, links, templates, or

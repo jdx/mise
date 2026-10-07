@@ -26,6 +26,8 @@ use crate::system::history::tracked::{
 /// `--os` and `--profile` declare a variant: a separate shared stream for
 /// machines matching that platform or mise environment, so a Mac and a
 /// Linux box can share the same live path with different contents.
+/// `--machine` gives every machine its own stream instead, for files such
+/// as a monitor layout that should never be applied on another machine.
 #[derive(Debug, usage_rs::Args)]
 #[usage(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub(crate) struct DotfilesTrack {
@@ -40,6 +42,10 @@ pub(crate) struct DotfilesTrack {
     /// Declare a variant for this mise environment
     #[usage(long, value_name = "PROFILE")]
     profile: Option<String>,
+
+    /// Keep a separate stream on every machine, never applied on another
+    #[usage(long)]
+    machine: bool,
 
     /// Save only on `mise dot save <path>`, never automatically
     #[usage(long)]
@@ -79,6 +85,12 @@ impl DotfilesTrack {
         let config = Config::get().await?;
         if self.encrypt && self.allow_plaintext {
             bail!("dotfiles: --encrypt and --allow-plaintext cannot be used together");
+        }
+        if self.machine && (self.os.is_some() || self.profile.is_some()) {
+            bail!("dotfiles: --machine cannot be combined with --os or --profile");
+        }
+        if self.machine && self.encrypt {
+            bail!("dotfiles: --machine cannot be combined with --encrypt");
         }
         if self.encrypt && !Settings::get().history.enabled {
             bail!("dotfiles: cannot enroll encrypted paths while history is disabled");
@@ -626,20 +638,26 @@ impl DotfilesTrack {
         }
         let mut variants: Vec<Variant> =
             existing.map(|req| req.variants.clone()).unwrap_or_default();
-        if self.os.is_some() || self.profile.is_some() {
+        if self.machine {
+            // every machine gets its own stream, so no other variant can
+            // be selected beside it
+            variants = vec![Variant {
+                machine: true,
+                ..Variant::default()
+            }];
+        } else if self.os.is_some() || self.profile.is_some() {
             // Adding a specialization must not remove the stream that
             // already serves machines without that specialization.
             if existing.is_some() && variants.is_empty() {
                 variants.push(Variant {
-                    os: vec![],
-                    profile: None,
                     default: true,
+                    ..Variant::default()
                 });
             }
             let variant = Variant {
                 os: self.os.iter().cloned().collect(),
                 profile: self.profile.clone(),
-                default: false,
+                ..Variant::default()
             };
             if !variants.iter().any(|existing| {
                 existing.os == variant.os
@@ -671,6 +689,9 @@ impl DotfilesTrack {
                 }
                 if variant.default {
                     item.insert("default", Value::Boolean(toml_edit::Formatted::new(true)));
+                }
+                if variant.machine {
+                    item.insert("machine", Value::Boolean(toml_edit::Formatted::new(true)));
                 }
                 array.push(Value::InlineTable(item));
             }
@@ -947,6 +968,7 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
     $ <bold>mise dot track ~/.zshrc ~/.config/hypr</bold>
     $ <bold>mise dot track --dry-run ~/.codex</bold>
     $ <bold>mise dot track ~/.zshrc --os macos</bold>
+    $ <bold>mise dot track ~/.config/hypr/monitors.lua --machine</bold>
     $ <bold>mise dot track ~/.config/app/credentials --encrypt</bold>
     $ <bold>mise dot track ~/.config/app/state.json --no-autosave</bold>
 "#
@@ -1318,6 +1340,7 @@ mod declaration_tests {
             targets: vec![],
             os: None,
             profile: None,
+            machine: false,
             no_autosave: false,
             encrypt: false,
             allow_plaintext: false,
