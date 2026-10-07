@@ -619,6 +619,11 @@ mise registry | awk '
 	}
 ' | sed 's|vfox:||' | sort -u | while read -r repo_path; do
 	plugin="$(basename "$repo_path")"
+	# vfox-tiny is a fake plugin the e2e suite uses as a non-embedded fixture;
+	# embedding it changes how `tiny` resolves and breaks those tests.
+	if [[ $plugin == vfox-tiny ]]; then
+		continue
+	fi
 	echo "Cloning $plugin from https://github.com/$repo_path"
 	TEMP_DIR="$(mktemp -d)"
 	git clone --depth 1 "https://github.com/$repo_path.git" "$TEMP_DIR" 2>&1 | grep -v "^Cloning" || true
