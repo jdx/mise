@@ -2713,6 +2713,17 @@ fn is_hard_connection_failure(err: &reqwest::Error) -> bool {
     is_dns_error(err) || (err.is_connect() && !err.is_timeout())
 }
 
+fn is_serde_error(err: &(dyn std::error::Error + 'static)) -> bool {
+    let mut cur = err.source();
+    while let Some(e) = cur {
+        if e.is::<serde_json::Error>() {
+            return true;
+        }
+        cur = e.source();
+    }
+    false
+}
+
 /// Classifies an error as transient (should retry) vs permanent.
 /// Walks the error chain so wrapped errors (e.g. our timeout hint) still match.
 pub fn is_transient(err: &Report) -> bool {
@@ -2744,6 +2755,13 @@ pub fn is_transient(err: &Report) -> bool {
         };
         // Network-layer failures: connect refused, timeout, mid-stream body drop.
         if reqwest_err.is_timeout() || reqwest_err.is_connect() || reqwest_err.is_body() {
+            return true;
+        }
+        // reqwest stamps a failed body read as `Decode`. An HTTP/2 stream reset
+        // mid-download arrives as a `Decode` wrapping an `h2::Error` with no
+        // nested `Body` error. Deserialization failures (serde) are
+        // deterministic, so only transport-level decode failures retry.
+        if reqwest_err.is_decode() && !is_serde_error(reqwest_err) {
             return true;
         }
         // Send failures that never produced a response: the connection was

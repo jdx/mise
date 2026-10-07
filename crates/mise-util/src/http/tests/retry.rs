@@ -554,3 +554,19 @@ fn test_retry_after_ignores_non_429_and_http_dates() {
         None
     );
 }
+
+#[tokio::test(flavor = "current_thread")]
+async fn test_json_deserialization_failure_is_not_transient() {
+    // reqwest reports body-read failures (an HTTP/2 stream reset mid-download)
+    // and deserialization failures as `Decode`. Only the former is retryable.
+    let (port, _) = spawn_canned_server(vec![ok_response()]).await;
+    let client = reqwest::Client::new();
+    let resp = client
+        .get(format!("http://127.0.0.1:{port}/"))
+        .send()
+        .await
+        .unwrap();
+    let err = resp.json::<serde_json::Value>().await.unwrap_err();
+    assert!(err.is_decode());
+    assert!(!is_transient(&Report::new(err)));
+}
