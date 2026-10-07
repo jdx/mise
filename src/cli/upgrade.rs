@@ -191,6 +191,18 @@ impl Upgrade {
         ))
     }
 
+    /// Toolsets in this upgrade's scope. An `auto_update` upgrade works on the
+    /// global config's requests, so a `MISE_*_VERSION` in the environment
+    /// doesn't replace the request it was started to upgrade.
+    fn toolset_builder(&self) -> ToolsetBuilder {
+        let builder = ToolsetBuilder::new().with_scope(self.scope());
+        if self.for_auto_update {
+            builder.without_runtime_env()
+        } else {
+            builder
+        }
+    }
+
     fn scope(&self) -> ConfigScope {
         if self.for_auto_update {
             ConfigScope::GlobalOnly
@@ -297,10 +309,10 @@ impl Upgrade {
         if !self.is_dry_run() && !self.for_auto_update && !Settings::get().generate_lockfiles() {
             crate::lockfile::migrate_monorepo_lockfiles(&config, false)?;
         }
-        let ts = ToolsetBuilder::new()
+        let ts = self
+            .toolset_builder()
             .with_resolution_progress(self.show_resolution_progress())
             .with_args(&self.tool)
-            .with_scope(self.scope())
             .build(&config)
             .await?;
         // Compute before_date once to ensure consistency when using relative durations
@@ -465,8 +477,8 @@ impl Upgrade {
                     // Re-resolve without the old lockfile pin so a config-only
                     // selector change updates the lockfile to the installed
                     // version instead of preserving the stale entry.
-                    let ts = ToolsetBuilder::new()
-                        .with_scope(self.scope())
+                    let ts = self
+                        .toolset_builder()
                         .with_resolve_options(opts.clone())
                         .build(&config)
                         .await?;
@@ -531,9 +543,9 @@ impl Upgrade {
     ) -> Result<()> {
         let mpr = MultiProgressReport::get();
         let prune_mode = self.prune_mode()?;
-        let mut ts = ToolsetBuilder::new()
+        let mut ts = self
+            .toolset_builder()
             .with_args(&self.tool)
-            .with_scope(self.scope())
             .build(config)
             .await?;
 

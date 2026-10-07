@@ -1,10 +1,11 @@
 //! Opt-in updates for tools configured in global config.
 //!
 //! A tool whose global `[tools]` entry sets `auto_update` is upgraded within
-//! its configured version when a shim or `mise x` is about to launch it and
-//! its check interval has elapsed. The upgrade runs in `mise __tool-update`;
-//! this module decides which tool is eligible and when, and keeps the state
-//! that rate-limits checks and reports failures to `mise doctor`.
+//! its configured version when its check interval has elapsed: by the
+//! `tool-update` service when it is running, otherwise when a shim or `mise x`
+//! is about to launch it. The upgrade runs in `mise __tool-update`; this module
+//! decides which tool is eligible and when, and keeps the state that
+//! rate-limits checks and reports failures to `mise doctor`.
 
 use std::path::PathBuf;
 use std::time::Duration;
@@ -17,9 +18,9 @@ use crate::{dirs, duration, file, hash, lock_file};
 
 const STATE_DIR: &str = "tool-update";
 
-/// Set in `mise __tool-update`'s environment. A hook of that upgrade that runs
-/// another opted-in tool must not start a nested update: it would wait for the
-/// update lock its own updater holds.
+/// Set in `mise __tool-update`'s environment. A hook of that upgrade that
+/// launches another opted-in tool must not start a nested update: it would
+/// wait for the update lock its own updater holds.
 pub const UPDATING_ENV: &str = "__MISE_TOOL_UPDATE";
 
 /// Shorter intervals are raised to this, so a misconfigured interval cannot
@@ -75,35 +76,41 @@ pub fn any_opted_in(toolset: &Toolset) -> bool {
         .any(|(_, tv)| global_auto_update(&tv.request).is_some())
 }
 
+/// Who is asking to update a tool.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Updater {
+    /// A shim or `mise x` about to launch the tool; it leaves updates to the
+    /// service while one runs.
+    Launch,
+    /// The `tool-update` service.
+    Service,
+}
+
 /// Claim the update check for `tv` if it opted in, is not an exact version,
 /// and its interval has elapsed, returning its tool id. The check is recorded
-/// as made right away, so concurrent launches start one update and a failed or
+/// as made right away, so concurrent claims start one update and a failed or
 /// offline update is not retried until the next interval.
-pub fn claim_due(tv: &ToolVersion) -> Option<String> {
-    if std::env::var_os(UPDATING_ENV).is_some() {
+pub fn claim_due(tv: &ToolVersion, updater: Updater) -> Option<String> {
+    if !updatable(tv) {
         return None;
     }
-    let value = global_auto_update(&tv.request)?;
-    let settings = Settings::get();
-    // Only what describes this machine right now. Settings about a project's
-    // lockfile or remote lookups don't apply: the update runs on global config
-    // alone, and checks the global `locked` setting itself.
-    if tv.request_pinned_this_version()
-        || settings.offline()
-        || settings.ci
-        || ci_info::is_ci()
-        || locked_by_command()
-    {
-        return None;
-    }
-    let tool_id = tv.ba().full_without_opts();
-    let interval = match parse_auto_update(&value) {
-        Ok(interval) => interval?,
-        Err(err) => {
-            debug!("tool-update: {tool_id}: {err:#}");
-            return None;
-        }
-    };
+    claim_due_request(&tv.request, updater)
+}
+
+/// The check interval `request`'s `auto_update` asks for, if it enables it.
+pub fn interval(request: &ToolRequest) -> Option<Duration> {
+    global_auto_update(request).and_then(|value| parse_auto_update(&value).ok().flatten())
+}
+
+/// Whether `tv` can move to a newer version: exact pins can't.
+pub fn updatable(tv: &ToolVersion) -> bool {
+    !tv.request_pinned_this_version()
+}
+
+/// [`claim_due`] for a request that couldn't be resolved, so a lookup failure
+/// is reported once per interval like an update's, not on every pass.
+pub fn claim_due_request(request: &ToolRequest, updater: Updater) -> Option<String> {
+    let (tool_id, interval) = eligible(request, updater)?;
     match claim(&tool_id, interval) {
         Ok(true) => Some(tool_id),
         Ok(false) => None,
@@ -112,6 +119,46 @@ pub fn claim_due(tv: &ToolVersion) -> Option<String> {
             None
         }
     }
+}
+
+/// Whether [`claim_due_request`] would claim `request` now, without claiming
+/// it: lets the service skip version lookups that can't lead to an update.
+pub fn is_due(request: &ToolRequest, updater: Updater) -> bool {
+    eligible(request, updater)
+        .is_some_and(|(tool_id, interval)| !checked_within(&tool_id, interval))
+}
+
+/// The tool id and check interval of a request that may be updated now, apart
+/// from whether its interval has elapsed.
+fn eligible(request: &ToolRequest, updater: Updater) -> Option<(String, Duration)> {
+    if updater == Updater::Launch && std::env::var_os(UPDATING_ENV).is_some() {
+        return None;
+    }
+    let value = global_auto_update(request)?;
+    let settings = Settings::get();
+    // Only what describes this machine right now. Settings about a project's
+    // lockfile or remote lookups don't apply: the update runs on global config
+    // alone, and checks the global `locked` setting itself.
+    if settings.offline() || settings.ci || ci_info::is_ci() || locked_by_command() {
+        return None;
+    }
+    if updater == Updater::Launch && service_running() {
+        return None;
+    }
+    let tool_id = request.ba().full_without_opts();
+    match parse_auto_update(&value) {
+        Ok(interval) => Some((tool_id, interval?)),
+        Err(err) => {
+            debug!("tool-update: {tool_id}: {err:#}");
+            None
+        }
+    }
+}
+
+/// Whether `tool_id` was checked within `interval` (at least an hour).
+fn checked_within(tool_id: &str, interval: Duration) -> bool {
+    file::modified_duration(&StatePaths::new(tool_id).marker)
+        .is_ok_and(|age| age < interval.max(MIN_CHECK_DURATION))
 }
 
 /// Whether the launching command itself asked for `--locked` (or
@@ -133,9 +180,7 @@ fn claim(tool_id: &str, interval: Duration) -> Result<bool> {
     let Some(_claim) = lock_file::LockFile::at(&paths.claim).try_lock()? else {
         return Ok(false);
     };
-    if file::modified_duration(&paths.marker)
-        .is_ok_and(|age| age < interval.max(MIN_CHECK_DURATION))
-    {
+    if checked_within(tool_id, interval) {
         return Ok(false);
     }
     file::write_atomic(&paths.marker, "")?;
@@ -144,6 +189,32 @@ fn claim(tool_id: &str, interval: Duration) -> Result<bool> {
         warn!("auto_update interval for {tool_id} is below the 1h minimum, using 1h instead");
     }
     Ok(true)
+}
+
+/// Whether the `tool-update` service is running: it holds this lock for as
+/// long as it runs.
+fn service_running() -> bool {
+    matches!(
+        lock_file::LockFile::at(&service_lock_path()).try_lock(),
+        Ok(None)
+    )
+}
+
+/// Take the service lock, waiting while another service holds it. Waiting,
+/// not giving up, so a launch briefly checking the lock can't make a starting
+/// service think another one is running.
+pub fn lock_service() -> Result<fslock::LockFile> {
+    lock_file::LockFile::at(&service_lock_path())
+        .with_pid()
+        .lock()
+}
+
+/// One service lock per global config directory and set of active
+/// environments (`MISE_ENV`): a watcher checks only those global files, so a
+/// launch using others must not leave its updates to it.
+fn service_lock_path() -> PathBuf {
+    let scope = (dirs::CONFIG.to_path_buf(), crate::env::mise_env().join(","));
+    state_dir().join(format!("service-{}.lock", hash::hash_to_str(&scope)))
 }
 
 /// Take the lock every update holds, waiting for one already running. Updates
@@ -174,6 +245,85 @@ impl StatePaths {
             claim: dir.join(format!("{key}.claim")),
             failure: dir.join(format!("{key}.failed.json")),
         }
+    }
+}
+
+/// One run of the `tool-update` service's update pass (`mise __tool-update
+/// --due`), started in its own process group (a job object on Windows) so a
+/// timeout or shutdown stops everything it started, hooks and downloads too.
+pub struct Tick {
+    child: std::process::Child,
+    #[cfg(windows)]
+    job: crate::windows_job::Job,
+    done: bool,
+}
+
+impl Tick {
+    pub fn start(mut command: std::process::Command) -> Result<Self> {
+        #[cfg(unix)]
+        {
+            use std::os::unix::process::CommandExt;
+            // Nested mise (installers, hooks) skip their own process group
+            // when this is set, so killing the pass's group reaches them.
+            command.env("MISE_TASK_PGID_MANAGED", "1").process_group(0);
+            Ok(Self {
+                child: command.spawn()?,
+                done: false,
+            })
+        }
+        #[cfg(windows)]
+        {
+            let (child, job) = crate::windows_job::spawn(&mut command, 0)?;
+            Ok(Self {
+                child,
+                job,
+                done: false,
+            })
+        }
+    }
+
+    /// Wait for the pass, stopping it once it runs longer than `timeout`.
+    pub async fn wait(&mut self, timeout: Duration) -> Result<()> {
+        let deadline = std::time::Instant::now() + timeout;
+        loop {
+            if let Some(status) = self.child.try_wait()? {
+                self.done = true;
+                if !status.success() {
+                    bail!("updating due tools failed ({status})");
+                }
+                return Ok(());
+            }
+            if std::time::Instant::now() >= deadline {
+                self.kill();
+                bail!("updating due tools took longer than {timeout:?}; stopped it");
+            }
+            tokio::time::sleep(Duration::from_secs(1)).await;
+        }
+    }
+
+    /// Stop the pass and everything it started.
+    pub fn kill(&mut self) {
+        if self.done {
+            return;
+        }
+        self.done = true;
+        #[cfg(unix)]
+        let _ = nix::sys::signal::killpg(
+            nix::unistd::Pid::from_raw(self.child.id() as i32),
+            nix::sys::signal::Signal::SIGKILL,
+        );
+        #[cfg(windows)]
+        self.job.kill();
+        let _ = self.child.kill();
+        let _ = self.child.wait();
+    }
+}
+
+/// A pass the watcher stops waiting for (its future dropped, say) must not
+/// keep running on its own.
+impl Drop for Tick {
+    fn drop(&mut self) {
+        self.kill();
     }
 }
 

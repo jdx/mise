@@ -7140,7 +7140,7 @@
               },
               "builtin": {
                 "type": "string",
-                "enum": ["history-watch"],
+                "enum": ["history-watch", "tool-update"],
                 "description": "A mise-provided user service"
               },
               "command": {
