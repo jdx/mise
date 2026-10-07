@@ -68,6 +68,23 @@ assert "MISE_SELF_UPDATE_AUTO=1 mise settings get self_update.auto" "true"
 assert "MISE_SELF_UPDATE_CHECK_DURATION=6d mise settings get self_update.check_duration" "6d"
 assert "MISE_AUTO_UPDATE=1 MISE_SELF_UPDATE_AUTO=0 mise settings get self_update.auto 2>/dev/null" "false"
 
+# the environment still beats the global config across the old and new spellings
+cat <<'TOML' >"$MISE_CONFIG_DIR/config.toml"
+[settings]
+self_update.auto = true
+self_update.check_duration = "2d"
+TOML
+assert "MISE_AUTO_UPDATE=0 mise settings get self_update.auto 2>/dev/null" "false"
+assert "MISE_AUTO_UPDATE_CHECK_DURATION=5d mise settings get self_update.check_duration 2>/dev/null" "5d"
+cat <<'TOML' >"$MISE_CONFIG_DIR/config.toml"
+[settings]
+auto_update = true
+auto_update_check_duration = "3d"
+TOML
+assert "MISE_SELF_UPDATE_AUTO=0 mise settings get self_update.auto 2>/dev/null" "false"
+assert "MISE_SELF_UPDATE_CHECK_DURATION=6d mise settings get self_update.check_duration 2>/dev/null" "6d"
+rm "$MISE_CONFIG_DIR/config.toml"
+
 # `mise settings` writes the new key
 mise settings self_update.auto=true
 assert_contains "cat $MISE_CONFIG_DIR/config.toml" "[settings.self_update]"
