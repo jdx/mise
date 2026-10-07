@@ -163,7 +163,7 @@ fn attestation_diagnostic_logs_do_not_leak_secrets() {
 }
 
 #[tokio::test]
-async fn tuf_fetch_failure_is_a_trust_root_error_not_a_signature_failure() {
+async fn tuf_load_failure_is_a_trust_root_error_not_a_signature_failure() {
     // Port 1 refuses connections, standing in for a sandbox that blocks the
     // Sigstore TUF repository.
     crate::set_tuf_url(Some("http://127.0.0.1:1".to_string()));
@@ -174,7 +174,7 @@ async fn tuf_fetch_failure_is_a_trust_root_error_not_a_signature_failure() {
     assert!(matches!(error, AttestationError::TrustRoot(_)), "{error}");
     assert_eq!(
         error.diagnostic_summary(),
-        "could not fetch the TUF trust root, so the signature was not checked"
+        "could not load the TUF trust root needed to verify the signature"
     );
 }
 
@@ -188,6 +188,7 @@ fn skipped_trust_root_attestations_warn_once() {
     let messages = captured_messages(&capture);
     assert_eq!(messages.len(), 1);
     assert!(messages[0].starts_with("2 GitHub attestation(s) were not checked"));
+    assert!(messages[0].contains("a configured mirror served invalid metadata"));
     assert!(messages[0].contains("tuf-repo-cdn.sigstore.dev"));
     assert!(messages[0].contains("tuf-repo.github.com"));
 }

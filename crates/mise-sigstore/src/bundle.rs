@@ -155,7 +155,7 @@ where
                     "GitHub attestation verification failed with embedded trusted root: \
                      {embedded_err}; GitHub TUF trusted root retry also failed: {tuf_err}"
                 );
-                // Keep the category: a trust root that could not be fetched is
+                // Keep the category: a trust root that could not be loaded is
                 // not a signature failure, and callers count it to warn.
                 Err(match tuf_err {
                     AttestationError::TrustRoot(_) => AttestationError::TrustRoot(message),

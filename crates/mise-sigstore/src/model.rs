@@ -22,9 +22,10 @@ pub enum AttestationError {
     Json(#[from] serde_json::Error),
     #[error("Sigstore error: {0}")]
     Sigstore(String),
-    /// A Sigstore or GitHub TUF trust root could not be fetched or loaded, so
-    /// the bundle was never checked. Distinct from a bundle that failed to
-    /// verify.
+    /// A Sigstore or GitHub TUF trust root could not be loaded, so the bundle
+    /// could not be checked against it. Usually the TUF repository was
+    /// unreachable, but invalid or expired TUF metadata (from a mirror, say)
+    /// lands here too. Distinct from a bundle that failed to verify.
     #[error("Trust root error: {0}")]
     TrustRoot(String),
 }
@@ -67,7 +68,7 @@ impl AttestationError {
             Self::Io(_) => "artifact I/O failed",
             Self::Http(_) => "network request failed",
             Self::TrustRoot(_) => {
-                "could not fetch the TUF trust root, so the signature was not checked"
+                "could not load the TUF trust root needed to verify the signature"
             }
             Self::Json(_) => "invalid attestation JSON",
         }

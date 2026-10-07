@@ -171,12 +171,12 @@ pub(crate) async fn verify_github_attestation_sources_for_artifact(
 }
 
 /// Verification passes when any one attestation verifies, so attestations that
-/// were skipped because their trust root could not be fetched would otherwise
+/// were skipped because their trust root could not be loaded would otherwise
 /// go unnoticed. Warn once rather than per attestation.
 pub(crate) fn warn_if_trust_root_unreachable(skipped: usize) {
     if skipped > 0 {
         log::warn!(
-            "{skipped} GitHub attestation(s) were not checked because a TUF trust root could not be fetched; verification passed on the remaining attestations. Check network access to the Sigstore and GitHub TUF repositories (tuf-repo-cdn.sigstore.dev and tuf-repo.github.com by default)"
+            "{skipped} GitHub attestation(s) were not checked because a TUF trust root could not be loaded; verification passed on the remaining attestations. This usually means the Sigstore or GitHub TUF repository (tuf-repo-cdn.sigstore.dev and tuf-repo.github.com by default) is unreachable, or a configured mirror served invalid metadata; run with -v for details"
         );
     }
 }
