@@ -582,6 +582,7 @@ async fn apply_steps(
     // files no checkpoint holds go with a replaced directory and cannot be
     // undone: decide before the first mutation, so an unattended replay
     // without --yes fails with nothing changed instead of part way through
+    let mut approved: Option<Vec<PathBuf>> = None;
     if !exec.yes && !crate::config::Settings::get().yes {
         let mut uncovered = vec![];
         // an empty-directory removal only calls remove_dir and leaves other
@@ -612,6 +613,7 @@ async fn apply_steps(
         {
             bail!("declined; nothing was changed");
         }
+        approved = Some(uncovered);
     }
     let mut touched = vec![];
     // deletions deepest first, then writes shallowest first: a directory is
@@ -697,6 +699,18 @@ async fn apply_steps(
             if let Some(stray) = inside.appeared.first() {
                 bail!(
                     "{} appeared after {} was protected; nothing more was changed",
+                    display_path(stray),
+                    display_path(&step.path)
+                );
+            }
+            if let Some(approved) = &approved
+                && let Some(stray) = inside
+                    .uncovered
+                    .iter()
+                    .find(|path| !approved.contains(path))
+            {
+                bail!(
+                    "{} appeared in {} after the removal was confirmed; nothing more was changed",
                     display_path(stray),
                     display_path(&step.path)
                 );
