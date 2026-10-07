@@ -1598,19 +1598,17 @@ fn apply_one(req: &EditRequest, desired: Option<&str>, written: &mut Vec<PathBuf
     // before merging, so trimming the source afterwards loses nothing
     if matches!(req.op, EditOp::Merge { .. }) && req.path.is_symlink() && links_to_merge_source(req)
     {
-        // prepare the whole copy (std::fs::copy keeps the source's mode)
-        // beside the link, then rename it over the link, so a failure leaves
-        // the link in place
-        let tmp = req
-            .path
-            .with_extension(format!("mise-tmp-{}", std::process::id()));
-        let result = std::fs::copy(&req.path, &tmp)
-            .and_then(|_| std::fs::rename(&tmp, &req.path))
-            .wrap_err_with(|| format!("failed to replace symlink: {}", req.path.display_user()));
-        if result.is_err() {
-            let _ = std::fs::remove_file(&tmp);
-        }
-        result?;
+        // prepare the whole copy beside the link in an exclusively created
+        // temp file (std::fs::copy gives it the source's mode), then rename it
+        // over the link, so a failure leaves the link in place
+        let dir = req.path.parent().unwrap_or(Path::new("."));
+        let tmp = tempfile::NamedTempFile::new_in(dir)
+            .wrap_err_with(|| format!("failed to replace symlink: {}", req.path.display_user()))?;
+        std::fs::copy(&req.path, tmp.path())
+            .wrap_err_with(|| format!("failed to replace symlink: {}", req.path.display_user()))?;
+        tmp.persist(&req.path)
+            .map_err(|err| err.error)
+            .wrap_err_with(|| format!("failed to replace symlink: {}", req.path.display_user()))?;
     }
     let existed = req.path.exists();
     let text = if existed {
@@ -1803,7 +1801,7 @@ mod tests {
                 "source = \"s\"\nmerge = false",
                 "must be true",
             ),
-            ("~/a/config.toml", "merge = true", "needs a source"),
+            ("/outside/config.toml", "merge = true", "source is required"),
             (
                 "~/a/config.toml",
                 "block = \"x\"\nmerge = true",
