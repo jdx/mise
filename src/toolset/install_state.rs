@@ -1141,6 +1141,10 @@ pub(crate) fn migrate_legacy_incomplete_markers() -> Result<bool> {
                 all_moved = false;
                 continue;
             };
+            // The install that held the lock may have finished and cleared it.
+            if !legacy.is_file() {
+                continue;
+            }
             let marker = incomplete_marker(&tool_dir_name, &v);
             if let Some(parent) = marker.parent() {
                 file::create_dir_all(parent)?;
