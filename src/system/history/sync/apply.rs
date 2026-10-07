@@ -664,10 +664,10 @@ pub(crate) async fn apply_locked_with_scope(
         // a file that exists here would leave the replaced contents nowhere.
         // Adopt the repository's history first and save those files on top
         // of it, so `mise dot undo` restores them.
-        let replaced: Vec<PathBuf> = ready
+        let replaced: Vec<&Step> = ready
             .iter()
+            .copied()
             .filter(|step| step.before.is_some() && step.before != step.pending.object)
-            .map(|step| step.path.clone())
             .collect();
         if fresh_adoption && !replaced.is_empty() {
             let heads = super::graph::Heads::read(repo)?;
@@ -680,9 +680,30 @@ pub(crate) async fn apply_locked_with_scope(
                 .ok_or_else(|| eyre::eyre!("setup branch disappeared during adoption"))?;
             audit_incoming_history(repo, remote)?;
             repo.update_history_head(remote, None)?;
-            scope.recapture_before(&replaced)?;
+            // every path this pull writes, the ones it creates included,
+            // and manual-save ones as they are now: undo puts back exactly
+            // what was here
+            let written: Vec<PathBuf> = ready.iter().map(|step| step.path.clone()).collect();
+            scope.recapture_before(&written)?;
             protected_head =
                 repo.ref_oid(crate::system::history::shadow::HistoryRepo::HISTORY_REF)?;
+            // **A file is replaced only once that checkpoint holds it as it
+            // is now.** History does not save every file (one larger than it
+            // captures, for one), and a checkpoint that kept another version
+            // in its place would leave `undo` nothing to restore.
+            let Some((_, protective)) = scope.before() else {
+                bail!(
+                    "could not save this machine's files before replacing them; nothing was written"
+                );
+            };
+            for step in &replaced {
+                if repo.restored_object_at(&protective, &step.pending.branch_path)? != step.before {
+                    bail!(
+                        "could not save this machine's version of {} before replacing it (history does not save it, for example because it is too large); nothing was written. Move it aside and pull again",
+                        display_path(&step.path)
+                    );
+                }
+            }
         }
         for directory in &mut directories {
             directory.apply()?;

@@ -9,7 +9,10 @@ origin="$PWD/adopt-origin.git"
 git init -q --bare -b main "$origin"
 echo shared-bindings >~/.bindings
 echo shared-input >~/.input
-assert_succeed "mise dot track ~/.bindings ~/.input --yes"
+echo shared-manual >~/.manual
+echo shared-big >~/.big
+assert_succeed "mise dot track ~/.bindings ~/.input ~/.big --yes"
+assert_succeed "mise dot track ~/.manual --no-autosave --yes"
 assert_succeed "mise dot origin set file://$origin --sync manual --yes"
 
 # a machine with its own home, configuration, and history store
@@ -31,6 +34,8 @@ new_machine() {
 [dotfiles]
 "~/.bindings" = { mode = "track" }
 "~/.input" = { mode = "track" }
+"~/.manual" = { mode = "track", autosave = false }
+"~/.big" = { mode = "track" }
 TOML
   echo default-bindings >"$home/.bindings"
   echo "$home"
@@ -54,9 +59,18 @@ d="$(new_machine d)"
 assert_succeed "machine $d bootstrap --adopt file://$origin --take-remote-all --yes --only dotfiles"
 assert "cat $d/.bindings" "shared-bindings"
 assert "cat $d/.input" "shared-input"
+assert "cat $d/.manual" "shared-manual"
 assert_succeed "machine $d dot undo --yes"
 assert "cat $d/.bindings" "default-bindings"
 assert_fail "test -e $d/.input"
+# a manual-save file the adoption created goes too
+assert_fail "test -e $d/.manual"
+
+# a file history cannot save is never replaced
+g="$(new_machine g)"
+head -c 17000000 /dev/zero >"$g/.big"
+assert_fail "machine $g bootstrap --adopt file://$origin --take-remote-all --yes --only dotfiles 2>&1" "could not save this machine's version of"
+assert "stat -c %s $g/.big" "17000000"
 
 # A machine with history of its own: replacing it needs a decision for the
 # differing file, and keeps that history until one is made.

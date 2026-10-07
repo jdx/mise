@@ -391,6 +391,12 @@ pub async fn run(store: &Store, onboarding: &Onboarding) -> Result<Outcome> {
             // replaces on top of the adopted history before writing them.
             let applied =
                 apply::apply_locked_with_scope(store, &tracked, &decided, Some(operation)).await?;
+            if applied.held > 0 && onboarding.take_remote_all {
+                bail!(
+                    "cannot replace local history while {} path(s) are held for a reason `--take-remote-all` cannot decide, such as staged Git changes; `mise dot status` lists them and why. Fix those paths and retry",
+                    applied.held
+                );
+            }
             if applied.held > 0 {
                 bail!(
                     "cannot replace local history while {} path(s) need a decision; retry with `--take-remote-all` to take the repository's version of each (the replaced versions are saved first, so `mise dot undo` restores them), or move the conflicting files aside",
