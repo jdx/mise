@@ -4,7 +4,7 @@ use eyre::Result;
 use itertools::Itertools;
 
 use crate::args::{BackendArg, ToolArg};
-use crate::config::{Config, ConfigMap, Settings, SettingsExt};
+use crate::config::{Config, ConfigMap};
 use crate::env_diff::EnvMap;
 use crate::errors::Error;
 use crate::toolset::tool_request::LockfileScope;
@@ -74,6 +74,14 @@ impl ToolsetBuilder {
         self
     }
 
+    /// For commands that run a tool rather than manage versions (shims, `mise x`,
+    /// `mise env`): under `prefer_offline`, skip remote version lookups for lazy tools
+    /// that are not installed. Installing one resolves it with the install options.
+    pub fn with_deferred_lazy_resolution(mut self) -> Self {
+        self.resolve_options.defer_missing_lazy_tools = true;
+        self
+    }
+
     pub fn with_overridden_lockfile_warnings(mut self) -> Self {
         self.warn_overridden_lockfiles = true;
         self
@@ -111,12 +119,8 @@ impl ToolsetBuilder {
             self.load_runtime_args(&mut toolset)?;
         });
         measure!("toolset_builder::build::resolve", {
-            let mut resolve_options = self.resolve_options.clone();
-            // Installing a lazy tool resolves it with the install options, so the
-            // offline-preferring commands can skip it until then.
-            resolve_options.defer_missing_lazy_tools |= Settings::get().prefer_offline();
             let result = toolset
-                .resolve_with_progress(config, &resolve_options, self.resolution_progress)
+                .resolve_with_progress(config, &self.resolve_options, self.resolution_progress)
                 .await;
             if let Err(err) = result {
                 if Error::is_argument_err(&err) || Error::is_required_channel_resolution_err(&err) {
