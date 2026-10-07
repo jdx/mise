@@ -148,7 +148,13 @@ async fn update_due_tools() -> Result<()> {
                 continue;
             };
             info!("tool-update: updating {tool_id}");
-            let tool: ToolArg = tv.ba().short.parse()?;
+            let tool: ToolArg = match tv.ba().short.parse() {
+                Ok(tool) => tool,
+                Err(err) => {
+                    warn!("tool-update: could not update {tool_id}: {err:#}");
+                    continue;
+                }
+            };
             if let Err(err) = update_tool(tool).await {
                 warn!("tool-update: could not update {tool_id}: {err:#}");
             }

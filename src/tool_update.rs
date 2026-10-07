@@ -162,8 +162,12 @@ pub fn lock_service() -> Result<fslock::LockFile> {
         .lock()
 }
 
+/// One service lock per set of active environments (`MISE_ENV`): a watcher
+/// checks only the global files of its own environments, so a launch with
+/// other environments must not leave its updates to it.
 fn service_lock_path() -> PathBuf {
-    state_dir().join("service.lock")
+    let envs = crate::env::mise_env().join(",");
+    state_dir().join(format!("service-{}.lock", hash::hash_to_str(&envs)))
 }
 
 /// Take the lock every update holds, waiting for one already running. Updates
@@ -204,6 +208,7 @@ pub struct Tick {
     child: std::process::Child,
     #[cfg(windows)]
     job: crate::windows_job::Job,
+    done: bool,
 }
 
 impl Tick {
@@ -214,12 +219,17 @@ impl Tick {
             command.process_group(0);
             Ok(Self {
                 child: command.spawn()?,
+                done: false,
             })
         }
         #[cfg(windows)]
         {
             let (child, job) = crate::windows_job::spawn(&mut command, 0)?;
-            Ok(Self { child, job })
+            Ok(Self {
+                child,
+                job,
+                done: false,
+            })
         }
     }
 
@@ -228,6 +238,7 @@ impl Tick {
         let deadline = std::time::Instant::now() + timeout;
         loop {
             if let Some(status) = self.child.try_wait()? {
+                self.done = true;
                 if !status.success() {
                     bail!("updating due tools failed ({status})");
                 }
@@ -243,15 +254,27 @@ impl Tick {
 
     /// Stop the pass and everything it started.
     pub fn kill(&mut self) {
-        #[cfg(unix)]
-        // SAFETY: plain syscall on the group this child leads.
-        unsafe {
-            nix::libc::killpg(self.child.id() as i32, nix::libc::SIGKILL);
+        if self.done {
+            return;
         }
+        self.done = true;
+        #[cfg(unix)]
+        let _ = nix::sys::signal::killpg(
+            nix::unistd::Pid::from_raw(self.child.id() as i32),
+            nix::sys::signal::Signal::SIGKILL,
+        );
         #[cfg(windows)]
         self.job.kill();
         let _ = self.child.kill();
         let _ = self.child.wait();
+    }
+}
+
+/// A pass the watcher stops waiting for (its future dropped, say) must not
+/// keep running on its own.
+impl Drop for Tick {
+    fn drop(&mut self) {
+        self.kill();
     }
 }
 

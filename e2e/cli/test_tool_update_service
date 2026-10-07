@@ -23,6 +23,11 @@ find "$MISE_STATE_DIR/tool-update" -type f ! -name '*.*' -delete
 assert "mise x -- dummy" "This is Dummy 1.0.0!"
 assert_fail "find '$MISE_STATE_DIR/tool-update' -type f ! -name '*.*' | grep -q ."
 
+# It only covers its own environments: a launch with others updates itself.
+assert "MISE_ENV=work mise x -- dummy" "This is Dummy 1.1.0!"
+mise uninstall dummy@1.1.0
+find "$MISE_STATE_DIR/tool-update" -type f ! -name '*.*' -delete
+
 # Asked to stop, it exits cleanly and releases its lock.
 kill -TERM "$service"
 status=0
