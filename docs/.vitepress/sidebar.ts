@@ -63,7 +63,7 @@ export const sidebar: SidebarItem[] = [
       { text: "OCI Images (experimental)", link: "/dev-tools/mise-oci" },
       { text: "Deps", link: "/dev-tools/deps" },
       {
-        text: "Install Layout (experimental)",
+        text: "Install Layout",
         link: "/dev-tools/install-layout",
       },
       {

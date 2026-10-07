@@ -4001,11 +4001,11 @@ v20.0.0
 """# help="install node@20.0.0 into ./mynode"
     complete path type=dir
 }
-cmd installs help="[experimental] Inspect and choose installations of the identity install layout" effect=read {
+cmd installs help="Inspect and choose installations of the identity install layout" effect=read {
     long_help #"""
-[experimental] Inspect and choose installations of the identity install layout
+Inspect and choose installations of the identity install layout
 
-With `install_layout = "identity"`, each installation lives in its own
+Under the identity install layout (the default), each installation lives in its own
 `<label>-<hash>` directory, and several installations of one version can
 exist side by side (different options, platforms, pinned artifacts, or a
 refreshed copy). These commands list them, choose which one requests

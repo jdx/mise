@@ -1,14 +1,12 @@
 use eyre::{Result, bail};
 
-use crate::config::Settings;
-
 mod ls;
 mod migrate;
 mod select;
 
-/// [experimental] Inspect and choose installations of the identity install layout
+/// Inspect and choose installations of the identity install layout
 ///
-/// With `install_layout = "identity"`, each installation lives in its own
+/// Under the identity install layout (the default), each installation lives in its own
 /// `<label>-<hash>` directory, and several installations of one version can
 /// exist side by side (different options, platforms, pinned artifacts, or a
 /// refreshed copy). These commands list them, choose which one requests
@@ -30,10 +28,13 @@ enum Commands {
 
 impl Installs {
     pub(crate) async fn run(self) -> Result<()> {
-        Settings::get().ensure_experimental("mise installs")?;
         if !crate::install_layout::resolver::enabled() {
+            // A setting that cannot be loaded says why itself.
+            let settings = crate::config::Settings::try_get()?;
             bail!(
-                "the identity install layout is off; turn it on with `install_layout = \"identity\"`"
+                "the identity install layout is off (install_layout = {:?}); remove that setting \
+                 to use it",
+                settings.install_layout.as_deref().unwrap_or_default()
             );
         }
         match self

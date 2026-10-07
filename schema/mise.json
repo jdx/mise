@@ -1352,7 +1352,7 @@
           "deprecated": true
         },
         "install_layout": {
-          "description": "[experimental] Name installations by what they are (`identity`) instead of `installs/<tool>/<version>` (`legacy`).",
+          "description": "Name installations by what they are (`identity`, the default) instead of `installs/<tool>/<version>` (`legacy`, deprecated).",
           "type": "string",
           "enum": ["legacy", "identity"]
         },

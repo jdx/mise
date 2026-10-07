@@ -91,7 +91,7 @@ The `postinstall` hook receives a `MISE_INSTALLED_TOOLS` environment variable co
 [hooks]
 postinstall = '''
 echo "Installed: $MISE_INSTALLED_TOOLS"
-# Example output: [{"name":"node","version":"20.10.0","requested_version":"20","backend":"core:node","install_path":"/home/user/.local/share/mise/installs/node/20.10.0"}]
+# Example output: [{"name":"node","version":"20.10.0","requested_version":"20","backend":"core:node","install_path":"/home/user/.local/share/mise/installs/node-k3q7x2ma"}]
 '''
 ```
 
@@ -112,10 +112,10 @@ Each entry has five fields:
 - `install_path`: the exact directory of the completed installation. This names the
   concrete version directory, not a floating link such as `latest` or `20`. Like other
   environment variables, paths that are not valid Unicode use the platform's lossy
-  Unicode representation. With the experimental
-  [install layout](/dev-tools/install-layout.html), this is the installation's own
-  directory, such as `~/.local/share/mise/installs/node-<hash>`, rather than a
-  path under `installs/node/`.
+  Unicode representation. With the identity
+  [install layout](/dev-tools/install-layout.html), the default, this is the
+  installation's own directory, such as `~/.local/share/mise/installs/node-<hash>`,
+  rather than a path under `installs/node/`.
 
 `requested_version` lets a hook branch on how the tool was selected without re-reading
 config files, which a `postinstall` hook cannot reliably do for the install that just

@@ -5,7 +5,7 @@
 //! (without writing anything), allocates one when installing, and keeps the
 //! compatibility links, receipt and unlocked selection in step.
 //!
-//! The layout is gated behind `experimental`. With it off nothing here is
+//! The layout is the default; with `install_layout = "legacy"` nothing here is
 //! consulted and every path is the legacy `installs/<short>/<version>`.
 //! Legacy installations stay where they are and keep working: a version that
 //! exists in the legacy location and has no identity-layout counterpart is used
@@ -25,20 +25,25 @@ use crate::file;
 use crate::toolset::{ToolRequest, ToolVersion};
 use crate::{dirs, env};
 
-/// Whether the identity layout is on: `install_layout = "identity"`, or
-/// `experimental = true` with `install_layout` unset. `install_layout = "legacy"`
-/// turns it off, experimental or not. It needs `experimental` either way.
+/// Whether the identity layout is on. It is the default; `install_layout =
+/// "legacy"` turns it off, and is deprecated.
 pub fn enabled() -> bool {
     let Ok(settings) = crate::config::Settings::try_get() else {
         return false;
     };
     match settings.install_layout.as_deref() {
-        Some("legacy") => false,
-        Some("identity") if !settings.experimental => {
-            warn_once!(
-                "[experimental] install_layout = \"identity\" requires experimental = true; \
-                 installing into the legacy layout"
-            );
+        Some("legacy") => {
+            static WARNED: std::sync::Once = std::sync::Once::new();
+            WARNED.call_once(|| {
+                deprecated_at!(
+                    "2026.10.0",
+                    "2027.10.0",
+                    "install_layout_legacy",
+                    "install_layout = \"legacy\" keeps installing into installs/<tool>/<version>. \
+                     Remove it to use the default identity layout, and run `mise installs migrate` \
+                     to move existing installations."
+                );
+            });
             false
         }
         Some("identity") => true,
@@ -49,17 +54,16 @@ pub fn enabled() -> bool {
                 "install_layout = \"{other}\" is neither \"identity\" nor \"legacy\"; \
                  using the default"
             );
-            default_enabled(&settings)
+            default_enabled()
         }
-        None => default_enabled(&settings),
+        None => default_enabled(),
     }
 }
 
-/// The layout with `install_layout` unset: on with experimental features. Unit
-/// tests run with `experimental` forced on for everything; they get this layout
-/// only when they ask for it.
-fn default_enabled(settings: &crate::config::Settings) -> bool {
-    settings.experimental && !mise_util::testing::in_tests()
+/// The layout with `install_layout` unset: on. Unit tests are written against
+/// fixed paths; they get this layout only when they ask for it.
+fn default_enabled() -> bool {
+    !mise_util::testing::in_tests()
 }
 
 /// Backends whose installs are not a plain directory mise owns, so a receipt and

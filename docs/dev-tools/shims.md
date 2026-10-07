@@ -39,7 +39,7 @@ PATH="$HOME/.local/share/mise/installs/python/3.14.7/bin:/usr/local/bin:/usr/bin
 
 In this example, the python `bin` directory was added at the beginning of `PATH`, making it available in the current shell session.
 When a fuzzy version like `python = "3.14"` or `node = "26"` is active, this path may use the requested-version symlink, such as `~/.local/share/mise/installs/python/3.14/bin`, instead of the fully resolved patch version.
-With the experimental [install layout](/dev-tools/install-layout.html), those paths are links to the installation's own directory, such as `installs/python-<hash>`. A tool restored from a lockfile entry puts that directory on `PATH` directly.
+With the identity [install layout](/dev-tools/install-layout.html), the default, those paths are links to the installation's own directory, such as `installs/python-<hash>`. A tool restored from a lockfile entry puts that directory on `PATH` directly.
 
 Use shims when a program needs a stable path to a tool, such as an IDE configured
 with a Python executable. For scripts, `mise exec -- <command>` loads both tools
