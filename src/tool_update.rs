@@ -12,7 +12,7 @@ use std::time::Duration;
 
 use eyre::{Result, bail};
 
-use crate::config::{Config, Settings, SettingsExt, is_global_config};
+use crate::config::{Settings, SettingsExt, is_global_config};
 use crate::toolset::{ToolOptionSource, ToolRequest, ToolSource, ToolVersion, Toolset};
 use crate::{dirs, duration, file, hash, lock_file};
 
@@ -58,6 +58,12 @@ fn global_auto_update(request: &ToolRequest) -> Option<String> {
         return None;
     }
     request.options().get("auto_update").map(str::to_string)
+}
+
+/// Whether `request` (from a global config file) sets `auto_update`; the
+/// service resolves only these.
+pub fn opted_in(request: &ToolRequest) -> bool {
+    global_auto_update(request).is_some()
 }
 
 /// Whether any tool in `toolset` opted in. This is in memory only, so a
@@ -190,6 +196,64 @@ impl StatePaths {
     }
 }
 
+/// One run of the `tool-update` service's update pass (`mise __tool-update
+/// --due`), started in its own process group (a job object on Windows) so a
+/// timeout or shutdown stops everything it started, hooks and downloads too.
+pub struct Tick {
+    child: std::process::Child,
+    #[cfg(windows)]
+    job: crate::windows_job::Job,
+}
+
+impl Tick {
+    pub fn start(mut command: std::process::Command) -> Result<Self> {
+        #[cfg(unix)]
+        {
+            use std::os::unix::process::CommandExt;
+            command.process_group(0);
+            Ok(Self {
+                child: command.spawn()?,
+            })
+        }
+        #[cfg(windows)]
+        {
+            let (child, job) = crate::windows_job::spawn(&mut command, 0)?;
+            Ok(Self { child, job })
+        }
+    }
+
+    /// Wait for the pass, stopping it once it runs longer than `timeout`.
+    pub async fn wait(&mut self, timeout: Duration) -> Result<()> {
+        let deadline = std::time::Instant::now() + timeout;
+        loop {
+            if let Some(status) = self.child.try_wait()? {
+                if !status.success() {
+                    bail!("updating due tools failed ({status})");
+                }
+                return Ok(());
+            }
+            if std::time::Instant::now() >= deadline {
+                self.kill();
+                bail!("updating due tools took longer than {timeout:?}; stopped it");
+            }
+            tokio::time::sleep(Duration::from_secs(1)).await;
+        }
+    }
+
+    /// Stop the pass and everything it started.
+    pub fn kill(&mut self) {
+        #[cfg(unix)]
+        // SAFETY: plain syscall on the group this child leads.
+        unsafe {
+            nix::libc::killpg(self.child.id() as i32, nix::libc::SIGKILL);
+        }
+        #[cfg(windows)]
+        self.job.kill();
+        let _ = self.child.kill();
+        let _ = self.child.wait();
+    }
+}
+
 fn state_dir() -> PathBuf {
     dirs::STATE.join(STATE_DIR)
 }
@@ -223,22 +287,20 @@ pub fn record_result(tool_id: &str, result: &Result<()>) {
 }
 
 /// Failures recorded by updates that have not succeeded since, for tools whose
-/// entry in a global config file still enables `auto_update`: one that no longer
-/// does will never update again to clear its failure. Read from the files
-/// themselves, so a shell's `MISE_<TOOL>_VERSION` doesn't hide a failure.
-pub fn failures(config: &Config) -> Vec<Failure> {
+/// global config still enables `auto_update`. `global` is the global-only
+/// toolset without environment overrides: a tool that no longer opts in will
+/// never update again to clear its failure, and a shell's `MISE_<TOOL>_VERSION`
+/// must not hide one.
+pub fn failures(global: &Toolset) -> Vec<Failure> {
     let enabled = |request: &ToolRequest| {
         global_auto_update(request)
             .and_then(|value| parse_auto_update(&value).ok().flatten())
             .is_some()
     };
-    let opted_in = config
-        .config_files
+    let opted_in = global
+        .versions
         .iter()
-        .filter(|(path, _)| is_global_config(path))
-        .filter_map(|(_, cf)| cf.to_tool_request_set().ok())
-        .flat_map(|requests| requests.tools)
-        .filter(|(_, requests)| requests.iter().any(enabled))
+        .filter(|(_, versions)| versions.requests.iter().any(enabled))
         .map(|(ba, _)| ba.full_without_opts())
         .collect::<std::collections::HashSet<_>>();
     recorded_failures()

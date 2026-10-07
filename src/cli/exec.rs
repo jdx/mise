@@ -210,8 +210,11 @@ impl Exec {
         if self.c.is_some() {
             return None;
         }
-        let program = self.command.as_ref()?.first()?;
-        (!program.contains(['/', '\\'])).then_some(program.as_str())
+        let command = self.command.as_ref()?;
+        let program = command.first()?;
+        // A native Windows shim runs `mise x -- usage complete-word` for tab completion.
+        (!program.contains(['/', '\\']) && !super::shim::is_offline_completion(program, command))
+            .then_some(program.as_str())
     }
 
     /// Execute with a toolset that the shim path has already resolved while

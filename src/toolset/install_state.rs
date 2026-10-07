@@ -1112,11 +1112,45 @@ pub fn lock_tool_version(ba: &BackendArg, v: &str) -> Result<fslock::LockFile> {
     lock_tool_version_with_notice(ba, v, &|_| {})
 }
 
-/// Whether an install of this logical tool version holds its lock right now.
-pub fn tool_version_locked(ba: &BackendArg, v: &str) -> bool {
-    LockFile::new(&incomplete_file_path(ba, v))
-        .try_lock()
-        .is_ok_and(|lock| lock.is_none())
+/// Proof that a process belongs to the tool-level postinstall hook an install
+/// is running right now. The install writes a fresh token beside the
+/// incomplete marker and passes it to the hook; the file is removed when the
+/// hook ends, and a retried install writes a new one. A process the hook left
+/// running keeps its environment but no longer matches.
+pub(crate) struct PostinstallToken {
+    path: PathBuf,
+    pub(crate) token: String,
+}
+
+impl PostinstallToken {
+    pub(crate) fn start(ba: &BackendArg, v: &str) -> Result<Self> {
+        let path = postinstall_token_path(ba, v);
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos();
+        let token = format!("{}-{nanos}", std::process::id());
+        if let Some(dir) = path.parent() {
+            file::create_dir_all(dir)?;
+        }
+        file::write_atomic(&path, &token)?;
+        Ok(Self { path, token })
+    }
+
+    /// Whether `token` is the one the running hook of this version was given.
+    pub(crate) fn matches(ba: &BackendArg, v: &str, token: &str) -> bool {
+        file::read_to_string(postinstall_token_path(ba, v)).is_ok_and(|current| current == token)
+    }
+}
+
+impl Drop for PostinstallToken {
+    fn drop(&mut self) {
+        let _ = file::remove_file(&self.path);
+    }
+}
+
+fn postinstall_token_path(ba: &BackendArg, v: &str) -> PathBuf {
+    ba.cache_path().join(v).join("postinstall-token")
 }
 
 /// [`lock_tool_version`] that also tells the caller when it is actually
@@ -1231,9 +1265,9 @@ pub(crate) fn reset_tools() {
 #[cfg(test)]
 mod tests {
     use super::{
-        InstallStateTool, incomplete_marker, lock_tool_version, merge_plugin_tools,
-        normalize_version_for_sort, read_tool_manifest_from, scan_versions, tool_version_lock,
-        tool_version_locked,
+        InstallStateTool, PostinstallToken, incomplete_marker, lock_tool_version,
+        merge_plugin_tools, normalize_version_for_sort, read_tool_manifest_from, scan_versions,
+        tool_version_lock,
     };
     use crate::args::BackendArg;
     use crate::plugins::PluginType;
@@ -1355,13 +1389,18 @@ mod tests {
     }
 
     #[test]
-    fn tool_version_locked_reports_a_held_lock() {
-        let ba = BackendArg::from(format!("locked_test_{}", std::process::id()).as_str());
-        assert!(!tool_version_locked(&ba, "1.0.0"));
-        let lock = lock_tool_version(&ba, "1.0.0").unwrap();
-        assert!(tool_version_locked(&ba, "1.0.0"));
-        drop(lock);
-        assert!(!tool_version_locked(&ba, "1.0.0"));
+    fn postinstall_token_matches_only_the_running_hook() {
+        let ba = BackendArg::from(format!("token_test_{}", std::process::id()).as_str());
+        let first = PostinstallToken::start(&ba, "1.0.0").unwrap();
+        let first_token = first.token.clone();
+        assert!(PostinstallToken::matches(&ba, "1.0.0", &first_token));
+        drop(first);
+        assert!(!PostinstallToken::matches(&ba, "1.0.0", &first_token));
+        // A retried install's hook gets a new token; the old one stays invalid.
+        std::thread::sleep(std::time::Duration::from_millis(1));
+        let retry = PostinstallToken::start(&ba, "1.0.0").unwrap();
+        assert!(!PostinstallToken::matches(&ba, "1.0.0", &first_token));
+        assert!(PostinstallToken::matches(&ba, "1.0.0", &retry.token));
     }
 
     #[test]

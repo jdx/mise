@@ -203,7 +203,7 @@ fn same_command_name(a: &str, b: &str) -> bool {
 /// should use the installed CLI or fail locally, never resolve a floating tool
 /// version, auto-install, or update over the network while the user is pressing
 /// tab. `shim_name` has the Windows executable suffix stripped.
-fn is_offline_completion(shim_name: &str, args: &[String]) -> bool {
+pub(crate) fn is_offline_completion(shim_name: &str, args: &[String]) -> bool {
     let is_usage = if cfg!(windows) {
         shim_name.eq_ignore_ascii_case("usage")
     } else {

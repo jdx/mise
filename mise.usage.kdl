@@ -450,7 +450,7 @@ once an hour and update the ones that are due. Declare the service with:
     builtin = "tool-update"
 """#
     flag --watch help="Run until stopped, updating due tools once an hour" conflicts=TOOL
-    flag --due help="Update every opted-in tool that is due, once (one `--watch` tick)" hide=#true conflicts=TOOL
+    flag --due help="Update every opted-in tool that is due, once (one `--watch` pass)" hide=#true conflicts=TOOL
     flag "-h --help" help="Print help" action=help builtin=#true
     arg "[TOOL]" required=#false
 }

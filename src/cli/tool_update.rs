@@ -6,12 +6,12 @@ use eyre::{Result, bail};
 
 use crate::args::ToolArg;
 use crate::config::Config;
-use crate::tool_update::{self, Updater};
-use crate::toolset::{ConfigScope, Toolset, ToolsetBuilder};
+use crate::tool_update::{self, Tick, Updater};
+use crate::toolset::{ConfigScope, ResolveOptions, Toolset, ToolsetBuilder};
 use crate::{dirs, env};
 
-/// A service tick that takes longer than this (a hook waiting on input, a
-/// hung download) is stopped, so the next tick can update the other tools.
+/// A service pass that takes longer than this (a hook waiting on input, a
+/// hung download) is stopped, so the next pass can update the other tools.
 const TICK_TIMEOUT: Duration = Duration::from_secs(30 * 60);
 
 /// Update globally configured tools for `auto_update`.
@@ -35,7 +35,7 @@ pub(crate) struct ToolUpdate {
     #[usage(long, conflicts = "tool")]
     watch: bool,
 
-    /// Update every opted-in tool that is due, once (one `--watch` tick)
+    /// Update every opted-in tool that is due, once (one `--watch` pass)
     #[usage(long, hide = true, conflicts = "tool")]
     due: bool,
 }
@@ -66,69 +66,103 @@ async fn update_tool(tool: ToolArg) -> Result<()> {
 }
 
 /// The `tool-update` service loop. Launches leave updates to it while it holds
-/// the service lock. Each tick runs in a child started like a launch's update,
+/// the service lock. Each pass runs in a child started like a launch's update,
 /// so the service's working directory and environment never reach it.
 async fn watch() -> Result<()> {
     let _service = tool_update::lock_service()?;
     info!("tool-update: checking opted-in tools every hour");
+    let mut stop = std::pin::pin!(stop_signal());
     loop {
-        if let Err(err) = run_tick().await {
-            warn!("tool-update: {err:#}");
+        // A pass that can't even start (the mise executable moved, say) won't
+        // start next hour either: exit, so the lock is released and launches
+        // update again, and let the service manager decide about restarting.
+        let mut tick = Tick::start(update_command(&["--due"]))?;
+        let finished = tokio::select! {
+            result = tick.wait(TICK_TIMEOUT) => Some(result),
+            _ = &mut stop => None,
+        };
+        match finished {
+            Some(Ok(())) => {}
+            Some(Err(err)) => warn!("tool-update: {err:#}"),
+            None => {
+                tick.kill();
+                return Ok(());
+            }
         }
-        tokio::time::sleep(tool_update::MIN_CHECK_DURATION).await;
+        tokio::select! {
+            _ = tokio::time::sleep(tool_update::MIN_CHECK_DURATION) => {}
+            _ = &mut stop => return Ok(()),
+        }
     }
 }
 
-async fn run_tick() -> Result<()> {
-    let mut command = tokio::process::Command::from(update_command(&["--due"]));
-    command.stdout(Stdio::inherit()).kill_on_drop(true);
+/// Resolves when the service manager asks the service to stop.
+async fn stop_signal() {
     #[cfg(unix)]
-    command.process_group(0);
-    let mut child = command.spawn()?;
-    match tokio::time::timeout(TICK_TIMEOUT, child.wait()).await {
-        Ok(status) => {
-            let status = status?;
-            if !status.success() {
-                bail!("updating due tools failed ({status})");
+    {
+        use tokio::signal::unix::{SignalKind, signal};
+        match signal(SignalKind::terminate()) {
+            Ok(mut terminate) => {
+                tokio::select! {
+                    _ = terminate.recv() => {}
+                    _ = tokio::signal::ctrl_c() => {}
+                }
             }
-            Ok(())
-        }
-        Err(_) => {
-            // Stop the hooks and downloads it started, not just the child.
-            #[cfg(unix)]
-            if let Some(pid) = child.id() {
-                unsafe { nix::libc::killpg(pid as i32, nix::libc::SIGKILL) };
+            Err(_) => {
+                let _ = tokio::signal::ctrl_c().await;
             }
-            child.kill().await?;
-            bail!("updating due tools took longer than {TICK_TIMEOUT:?}; stopped it")
         }
+    }
+    #[cfg(not(unix))]
+    {
+        // Stopping the service ends this process, and with it the job that
+        // holds the pass's process tree.
+        let _ = tokio::signal::ctrl_c().await;
     }
 }
 
-/// One service tick: update each opted-in global tool whose check is due.
+/// One service pass: update each opted-in global tool whose check is due.
+/// Each opted-in request resolves on its own, so a tool whose versions can't
+/// be looked up doesn't stop the others; requests overridden by the
+/// environment (`MISE_*_VERSION`) still count.
 async fn update_due_tools() -> Result<()> {
     let config = Config::get().await?;
-    let ts = ToolsetBuilder::new()
+    let global = ToolsetBuilder::new()
         .with_scope(ConfigScope::GlobalOnly)
-        .build(&config)
-        .await?;
-    for (_, tv) in ts.list_current_versions() {
-        let Some(tool_id) = tool_update::claim_due(&tv, Updater::Service) else {
-            continue;
-        };
-        info!("tool-update: updating {tool_id}");
-        let tool: ToolArg = tv.ba().short.parse()?;
-        if let Err(err) = update_tool(tool).await {
-            warn!("tool-update: could not update {tool_id}: {err:#}");
+        .without_runtime_env()
+        .build_unresolved(&config)?;
+    for (ba, versions) in global.versions.iter() {
+        for request in versions
+            .requests
+            .iter()
+            .filter(|request| tool_update::opted_in(request))
+        {
+            let tv = match request.resolve(&config, &ResolveOptions::default()).await {
+                Ok(tv) => tv,
+                Err(err) => {
+                    warn!("tool-update: could not resolve {ba}: {err:#}");
+                    continue;
+                }
+            };
+            let Some(tool_id) = tool_update::claim_due(&tv, Updater::Service) else {
+                continue;
+            };
+            info!("tool-update: updating {tool_id}");
+            let tool: ToolArg = tv.ba().short.parse()?;
+            if let Err(err) = update_tool(tool).await {
+                warn!("tool-update: could not update {tool_id}: {err:#}");
+            }
         }
     }
     Ok(())
 }
 
-/// `mise __tool-update <args>` from $HOME, with the environment mise's
-/// activation started from: it loads only global config, so the project's
-/// config, lockfile, and `[env]` (PATH included) can't steer or be rewritten
-/// by the upgrade. Launches inside its hooks skip their own updates.
+/// `mise __tool-update <args>` with the environment mise's activation started
+/// from, run from the filesystem root so no project config (not even one in
+/// $HOME) is above it: it loads only global config, so a project's config,
+/// lockfile, and `[env]` (PATH included) can't steer or be rewritten by the
+/// upgrade. The current environments (`-E`) carry over, since they choose
+/// which global files apply. Launches inside its hooks skip their own updates.
 fn update_command(args: &[&str]) -> Command {
     let mut command = Command::new(&*env::MISE_BIN);
     command
@@ -141,7 +175,8 @@ fn update_command(args: &[&str]) -> Command {
                 .filter(|(key, _)| !key.starts_with("__MISE_")),
         )
         .env(tool_update::UPDATING_ENV, "1")
-        .current_dir(*dirs::HOME)
+        .env("MISE_ENV", env::mise_env().join(","))
+        .current_dir(dirs::HOME.ancestors().last().unwrap_or(*dirs::HOME))
         .stdin(Stdio::null());
     command
 }
@@ -164,7 +199,7 @@ pub(crate) async fn update_before_launch(config: &Arc<Config>, ts: &Toolset, bin
     let Some(tool_id) = tool_update::claim_due(&tv, Updater::Launch) else {
         return false;
     };
-    // Its progress goes to stderr, and stdout stays the launched tool's alone.
+    // Its progress goes to stderr; stdout stays the launched tool's alone.
     match run_update(&tv.ba().short) {
         Ok(status) if status.success() => true,
         Ok(status) => {

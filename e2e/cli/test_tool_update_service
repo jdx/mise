@@ -23,7 +23,17 @@ find "$MISE_STATE_DIR/tool-update" -type f ! -name '*.*' -delete
 assert "mise x -- dummy" "This is Dummy 1.0.0!"
 assert_fail "find '$MISE_STATE_DIR/tool-update' -type f ! -name '*.*' | grep -q ."
 
+# Asked to stop, it exits cleanly and releases its lock.
+kill -TERM "$service"
+status=0
+wait "$service" || status=$?
+assert "echo $status" "0"
+
 # Without it, the launch updates in the foreground again.
-kill "$service"
-wait "$service" || true
 assert "mise x -- dummy" "This is Dummy 1.1.0!"
+
+# A pass still updates a tool the environment overrides.
+mise uninstall dummy@1.1.0
+find "$MISE_STATE_DIR/tool-update" -type f ! -name '*.*' -delete
+assert_succeed "MISE_DUMMY_VERSION=1.0.0 mise __tool-update --due"
+assert_contains "mise ls --installed dummy" "1.1.0"
