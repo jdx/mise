@@ -42,6 +42,30 @@ impl From<sigstore_verify::trust_root::Error> for AttestationError {
     }
 }
 
+impl AttestationError {
+    /// Return a safe, bounded summary for diagnostic logs.
+    ///
+    /// Verification errors can be built from configured mirror responses, so
+    /// logging their free-form contents risks leaking credentials or query
+    /// tokens. Preserve only a useful category; keep the original error intact
+    /// for callers that need to return it.
+    pub fn diagnostic_summary(&self) -> &'static str {
+        match self {
+            Self::Api(_) => "GitHub attestation API request failed",
+            Self::Verification(_) | Self::Sigstore(_) => {
+                "attestation signature verification failed"
+            }
+            Self::WorkflowMismatch(_) => "signer workflow mismatch",
+            Self::SubjectMismatch(_) => "artifact subject mismatch",
+            Self::UnsupportedFormat(_) => "unsupported attestation format",
+            Self::NoAttestations => "no attestations found",
+            Self::Io(_) => "artifact I/O failed",
+            Self::Http(_) => "network request failed",
+            Self::Json(_) => "invalid attestation JSON",
+        }
+    }
+}
+
 pub type Result<T> = std::result::Result<T, AttestationError>;
 
 #[derive(Debug, Clone)]
