@@ -120,6 +120,7 @@ fn intoto_envelope_requires_exact_signer_identity_and_issuer() {
 
 #[tokio::test]
 async fn bundle_requires_exact_signer_identity_and_issuer() {
+    let _tuf_root = TUF_ROOT_LOCK.lock().await;
     let bundle = Bundle::from_json(include_str!(
         "../../tests/fixtures/github_build_provenance_jdx_mise.json"
     ))

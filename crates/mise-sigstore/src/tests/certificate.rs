@@ -67,6 +67,7 @@ fn github_release_attestation_names_its_repository() {
 
 #[tokio::test]
 async fn fixture_bundles_verify_against_their_artifact() {
+    let _tuf_root = TUF_ROOT_LOCK.lock().await;
     // mise-v2026.9.12-linux-x64.tar.gz, which both fixtures attest.
     let digest =
         Sha256Hash::from_hex("b4058dece685259910d3aba5782445996eea79dbdb3cf952a6eb81aadf0373ff")
