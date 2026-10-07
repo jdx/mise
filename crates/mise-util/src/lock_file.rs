@@ -157,8 +157,9 @@ fn openable(path: &Path) -> std::borrow::Cow<'_, Path> {
         Some(Component::Prefix(prefix)) => match prefix.kind() {
             Prefix::Disk(_) => (r"\\?\", 0),
             Prefix::UNC(..) => (r"\\?\UNC\", 2),
-            // already verbatim, or a device path
-            _ => return Cow::Borrowed(path),
+            // Already verbatim, or a device path. Keep the absolute form:
+            // a relative path may have inherited a verbatim working directory.
+            _ => return Cow::Owned(absolute),
         },
         _ => return Cow::Borrowed(path),
     };
