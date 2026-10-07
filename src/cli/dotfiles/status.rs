@@ -227,7 +227,7 @@ impl DotfilesStatus {
         let mut edit_rows: Vec<Vec<String>> = vec![];
         let mut json_edits = vec![];
         for req in &edits {
-            let state = match system::edits::check(&config, req) {
+            let state = match system::edits::check_selected(&config, req, &edits) {
                 Ok(state) => state,
                 Err(err) => FileState::Differs(format!("{err}")),
             };

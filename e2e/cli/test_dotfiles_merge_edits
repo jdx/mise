@@ -415,3 +415,17 @@ assert_contains "mise dotfiles status" "keys are missing"
 assert_contains "mise dotfiles diff" '+size = 3'
 assert_succeed "mise dotfiles apply --yes"
 assert_succeed "mise dotfiles status --missing"
+
+# a filtered preview runs only selected enforced merges, just like apply
+printf 'model = "enforced"\n' >shared/selected-enforced.toml
+printf 'model = "default"\n' >shared/selected-defaults.toml
+cat <<'EOF2' >mise.toml
+[dotfiles]
+"~/selected.toml/enforced" = { source = "shared/selected-enforced.toml", merge = true }
+"~/selected.toml/defaults" = { source = "shared/selected-defaults.toml", merge = "missing" }
+EOF2
+echo 'theme = "mine"' >~/selected.toml
+assert_contains "mise dotfiles status ~/selected.toml/defaults" "keys are missing"
+assert_contains "mise dotfiles diff ~/selected.toml/defaults" '+model = "default"'
+assert_succeed "mise dotfiles apply ~/selected.toml/defaults --yes"
+assert_contains "cat ~/selected.toml" 'model = "default"'

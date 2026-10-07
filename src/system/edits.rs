@@ -748,6 +748,20 @@ fn desired_content(config: &Config, req: &EditRequest) -> Result<Option<String>>
 /// target, missing file, absent or corrupted markers) has been ruled out,
 /// and `--dry-run` skips template rendering entirely (see [`apply`]).
 pub fn check(config: &Config, req: &EditRequest) -> Result<FileState> {
+    let selected = if req.op.fills_missing_only() {
+        edits_from_config(config)?
+    } else {
+        vec![]
+    };
+    check_selected(config, req, &selected)
+}
+
+/// Inspect an edit after only the enforced merges selected for this run.
+pub fn check_selected(
+    config: &Config,
+    req: &EditRequest,
+    selected: &[EditRequest],
+) -> Result<FileState> {
     if let Some(p) = req.op.source_file()
         && !p.exists()
     {
@@ -765,7 +779,8 @@ pub fn check(config: &Config, req: &EditRequest) -> Result<FileState> {
             } = &req.op
             {
                 // judged the way apply runs it: after the file's other merges
-                let text = projected_text(config, req, &file::read_to_string(&req.path)?)?;
+                let text =
+                    projected_text(config, req, &file::read_to_string(&req.path)?, selected)?;
                 let desired = desired.expect("resolved merge content");
                 return Ok(
                     if structured_merge::missing(*format, &text, &desired)?.is_none() {
@@ -783,12 +798,17 @@ pub fn check(config: &Config, req: &EditRequest) -> Result<FileState> {
 /// `text` as apply leaves it for a fill-only entry: with every other merge
 /// entry for the same file already applied, since defaults go in last. Any
 /// other entry sees `text` unchanged.
-fn projected_text(config: &Config, req: &EditRequest, text: &str) -> Result<String> {
+fn projected_text(
+    config: &Config,
+    req: &EditRequest,
+    text: &str,
+    selected: &[EditRequest],
+) -> Result<String> {
     if !req.op.fills_missing_only() {
         return Ok(text.to_string());
     }
     let mut text = text.to_string();
-    for other in edits_from_config(config).unwrap_or_default() {
+    for other in selected {
         let EditOp::Merge {
             format,
             missing_only: false,
@@ -800,7 +820,7 @@ fn projected_text(config: &Config, req: &EditRequest, text: &str) -> Result<Stri
         if (other.path == req.path && other.id == req.id) || !same_target(&other.path, &req.path) {
             continue;
         }
-        if let Some(desired) = desired_content(config, &other)? {
+        if let Some(desired) = desired_content(config, other)? {
             text = structured_merge::merge(*format, &text, &desired)?;
         }
     }
@@ -1378,7 +1398,7 @@ pub fn print_diffs(config: &Config, requests: &[EditRequest]) -> Result<()> {
             String::new()
         };
         // a fill-only entry is shown against the file after its other merges
-        let current = match projected_text(config, req, &current) {
+        let current = match projected_text(config, req, &current, requests) {
             Ok(current) => current,
             Err(err) => {
                 problems.push(format!(
