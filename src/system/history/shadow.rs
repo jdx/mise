@@ -905,8 +905,14 @@ impl HistoryRepo {
             // **Another machine's checkpoint did not save this machine's
             // version of a per-machine file.** Its tree has no stream for
             // this machine, which must not read as a saved absence: a
-            // rollback to it would delete the file here. A checkpoint this
-            // machine captured itself keeps its own coverage instead.
+            // rollback to it would delete the file here. Only this machine
+            // writes its stream, so a stream its parent held and this
+            // commit does not is this machine's own saved deletion, which
+            // stays an absence.
+            let parent_trees = commit_object
+                .parent_ids()
+                .map(|id| repo.find_commit(id.detach())?.tree().map_err(Into::into))
+                .collect::<Result<Vec<_>>>()?;
             for entry in &coverage.entries {
                 let Some(variant) = entry
                     .variant
@@ -926,7 +932,10 @@ impl HistoryRepo {
                             .strip_prefix(&stream)
                             .is_some_and(|rest| rest.starts_with('/'))
                 });
-                if !held {
+                let deleted_here = parent_trees.iter().try_fold(false, |found, parent| {
+                    Ok::<_, eyre::Report>(found || parent.lookup_entry_by_path(&stream)?.is_some())
+                })?;
+                if !held && !deleted_here {
                     coverage.omitted.push(super::store::PathReason {
                         path: entry.path.clone(),
                         reason: "this checkpoint holds no version from this machine".into(),

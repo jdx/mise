@@ -55,6 +55,16 @@ assert "git --git-dir=$origin show main:home@$second_stream/.monitors" "desktop"
 # not a saved deletion: rollback has nothing earlier to restore
 assert_contains "b dot rollback $second/.monitors --dry-run 2>&1" "no saved version that differs"
 assert "cat $second/.monitors" "desktop"
+# while this machine's own saved deletion stays one, even once its record
+# is rebuilt from Git
+rm "$second/.monitors"
+assert_succeed "b dot save"
+echo recreated >"$second/.monitors"
+rm -rf "$second/.local/state/mise/history/index"
+assert_succeed "b dot rollback $second/.monitors --yes"
+assert_fail "test -e $second/.monitors"
+echo desktop >"$second/.monitors"
+assert_succeed "b dot save"
 
 # a shared change arrives; the machine file stays this machine's own
 echo changed-on-laptop >~/.shared
