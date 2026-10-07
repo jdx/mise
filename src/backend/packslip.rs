@@ -1849,6 +1849,7 @@ impl Backend for PackslipBackend {
             "identity_prefix",
             "list_identity_prefix",
             "issuer",
+            "workflow",
             "allow_unlogged",
             "trust",
         ]
