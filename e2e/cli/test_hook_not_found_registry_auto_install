@@ -9,6 +9,7 @@ export MISE_NOT_FOUND_AUTO_INSTALL_REGISTRY=1
 assert_fail "mise hook-not-found tsh"
 # Nothing may have been installed or recorded in the global config.
 assert_fail "test -e $MISE_CONFIG_DIR/config.toml"
+assert_not_contains "mise ls --installed" "teleport"
 
 export MISE_AUTO_INSTALL_DISABLE_TOOLS=tiny
 assert_fail "mise hook-not-found rtx-tiny"
