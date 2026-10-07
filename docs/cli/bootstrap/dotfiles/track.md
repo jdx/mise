@@ -32,7 +32,7 @@ as a monitor layout that should never be applied on another machine.
 - **`--no-autosave`** — Save only on `mise dot save <path>`, never automatically
 - **`--encrypt`** — Encrypt contents before saving them to history (requires `[history.encryption].recipients`)
 - **`--allow-plaintext`** — Save an explicitly tracked credential-named file in plaintext
-- **`-y --yes`** — Accept without prompting
+- **`-y --yes`** — Accepted for compatibility; track no longer prompts
 - **`-n --dry-run`** — Show what each path expands to (files, size, what is left out) without tracking it
 - **`-h --help`** — Print help
 

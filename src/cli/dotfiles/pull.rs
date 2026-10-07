@@ -35,7 +35,7 @@ pub(crate) struct DotfilesPull {
     #[usage(long, short = 'n')]
     dry_run: bool,
 
-    /// Pull without prompting
+    /// Accepted for compatibility; pull no longer prompts
     #[usage(long, short = 'y')]
     yes: bool,
 

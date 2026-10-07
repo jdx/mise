@@ -315,7 +315,7 @@ pub fn report(outcome: &run::SyncOutcome) {
     }
 }
 
-/// Like [`confirmed`], for an operation that cannot be undone: with nobody to
+/// Confirmation for an operation that cannot be undone: with nobody to
 /// ask it fails and names `--yes`.
 pub(crate) fn confirmed_destructive(yes: bool, question: &str, command: &str) -> Result<bool> {
     if yes || crate::config::Settings::get().yes {
