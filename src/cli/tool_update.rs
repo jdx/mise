@@ -56,6 +56,10 @@ impl ToolUpdate {
 }
 
 async fn update_tool(tool: ToolArg) -> Result<()> {
+    if Settings::get().locked {
+        debug!("tool-update: skipped, `locked` is set");
+        return Ok(());
+    }
     let tool_id = tool.ba.full_without_opts();
     let _lock = tool_update::lock_for_update()?;
     // Another update may have changed the global lockfile while this waited.

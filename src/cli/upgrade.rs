@@ -428,6 +428,16 @@ impl Upgrade {
             // only the requests that enable it.
             outdated.retain(|o| crate::tool_update::enabled(&o.tool_version.request));
             if outdated.is_empty() {
+                // Nothing outdated can also mean a lookup failed and was only
+                // warned about. Check again so a failure isn't taken as "up to
+                // date" (which would clear the failure `mise doctor` reports).
+                for (_, tv) in ts.list_current_versions() {
+                    if crate::tool_update::enabled(&tv.request) {
+                        self.latest_for_upgrade(&config, &tv, &opts)
+                            .await
+                            .wrap_err_with(|| format!("checking {} for updates", tv.ba()))?;
+                    }
+                }
                 return Ok(());
             }
         }
