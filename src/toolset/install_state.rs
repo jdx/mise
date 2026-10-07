@@ -1168,11 +1168,16 @@ pub(crate) fn lock_tool_version_with_notice(
     v: &str,
     on_wait: &dyn Fn(Option<u32>),
 ) -> Result<fslock::LockFile> {
-    tool_version_lock(ba, v)
+    let lock = tool_version_lock(ba, v)
         .with_callback(|lock| {
             debug!("waiting for tool-version lock on {}", display_path(lock));
         })
-        .lock_with_notice(on_wait)
+        .lock_with_notice(on_wait)?;
+    // A postinstall token is valid only while its own install holds this lock.
+    // One still here belonged to an installer that was killed; drop it before
+    // anything else happens under the lock.
+    let _ = file::remove_file(postinstall_token_path(ba, v));
+    Ok(lock)
 }
 
 pub fn clear_incomplete_marker(ba: &BackendArg, v: &str) -> Result<()> {
@@ -1410,6 +1415,11 @@ mod tests {
         // An installer killed mid-hook leaves its token but not its lock.
         drop(install);
         assert!(!PostinstallToken::matches(&ba, "1.0.0", &retry.token));
+        // The next install to take the lock discards the leftover token.
+        let leftover = retry.token.clone();
+        std::mem::forget(retry);
+        let _next = lock_tool_version(&ba, "1.0.0").unwrap();
+        assert!(!PostinstallToken::matches(&ba, "1.0.0", &leftover));
     }
 
     #[test]
