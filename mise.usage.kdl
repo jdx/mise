@@ -439,7 +439,7 @@ cmd __tool-update hide=#true help="Upgrade one globally configured tool for `aut
     long_help #"""
 Upgrade one globally configured tool for `auto_update`.
 
-Run by a shim or `mise x` before it launches a tool whose global `[tools]` entry sets `auto_update` and whose check is due. The per-tool lock keeps a second update of the same tool from running alongside it.
+Run by a shim or `mise x` before it launches a tool whose global `[tools]` entry sets `auto_update` and whose check is due. Updates run one at a time.
 """#
     flag "-h --help" help="Print help" action=help builtin=#true
     arg <TOOL>

@@ -115,11 +115,13 @@ fn claim(tool_id: &str, interval: Duration) -> Result<bool> {
     Ok(true)
 }
 
-/// Lock `tool_id` for an update, or `None` when another process is updating it.
-pub fn lock_for_update(tool_id: &str) -> Result<Option<fslock::LockFile>> {
-    lock_file::LockFile::at(&StatePaths::new(tool_id).lock)
+/// Take the lock every update holds, waiting for one already running. Updates
+/// of different tools rewrite the same global lockfile, so they run one at a
+/// time, each from config read after the previous one finished.
+pub fn lock_for_update() -> Result<fslock::LockFile> {
+    lock_file::LockFile::at(&state_dir().join("update.lock"))
         .with_pid()
-        .try_lock()
+        .lock()
 }
 
 /// Files under `$MISE_STATE_DIR/tool-update` for one tool.
@@ -128,8 +130,6 @@ struct StatePaths {
     marker: PathBuf,
     /// Held while a launch checks and touches the marker.
     claim: PathBuf,
-    /// Held while `mise __tool-update` installs an update.
-    lock: PathBuf,
     /// The last update's error, removed when an update succeeds.
     failure: PathBuf,
 }
@@ -141,7 +141,6 @@ impl StatePaths {
         Self {
             marker: dir.join(&key),
             claim: dir.join(format!("{key}.claim")),
-            lock: dir.join(format!("{key}.lock")),
             failure: dir.join(format!("{key}.failed.json")),
         }
     }
@@ -213,6 +212,6 @@ mod tests {
         let claude = StatePaths::new("claude");
         assert_eq!(claude.marker, StatePaths::new("claude").marker);
         assert_ne!(claude.marker, StatePaths::new("codex").marker);
-        assert_ne!(claude.claim, claude.lock);
+        assert_ne!(claude.marker, claude.claim);
     }
 }

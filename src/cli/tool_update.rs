@@ -11,8 +11,7 @@ use crate::{dirs, env, tool_update};
 /// Upgrade one globally configured tool for `auto_update`.
 ///
 /// Run by a shim or `mise x` before it launches a tool whose global `[tools]`
-/// entry sets `auto_update` and whose check is due. The per-tool lock keeps a
-/// second update of the same tool from running alongside it.
+/// entry sets `auto_update` and whose check is due. Updates run one at a time.
 #[derive(Debug, usage_rs::Args)]
 #[usage(hide = true)]
 pub(crate) struct ToolUpdate {
@@ -23,10 +22,9 @@ pub(crate) struct ToolUpdate {
 impl ToolUpdate {
     pub(crate) async fn run(self) -> Result<()> {
         let tool_id = self.tool.ba.full_without_opts();
-        let Some(_lock) = tool_update::lock_for_update(&tool_id)? else {
-            debug!("tool-update: another update of {tool_id} is running");
-            return Ok(());
-        };
+        let _lock = tool_update::lock_for_update()?;
+        // Another update may have changed the global lockfile while this waited.
+        Config::reset().await?;
         let result = super::upgrade::upgrade_global_tool(self.tool).await;
         tool_update::record_result(&tool_id, &result);
         result
@@ -47,11 +45,18 @@ pub(crate) async fn update_before_launch(config: &Arc<Config>, ts: &Toolset, bin
     let Some(tool_id) = tool_update::claim_due(&tv) else {
         return false;
     };
-    // A separate process from $HOME loads only global config, so the upgrade
-    // can't read or rewrite the project's config or lockfile. Its progress goes
-    // to stderr, and stdout stays the launched tool's alone.
+    // A separate process from $HOME, with the environment mise's activation
+    // started from, loads only global config: the project's config, lockfile,
+    // and `[env]` (PATH included) can't steer or be rewritten by the upgrade.
+    // Its progress goes to stderr, and stdout stays the launched tool's alone.
     let status = Command::new(&*env::MISE_BIN)
         .args(["__tool-update", &tv.ba().short])
+        .env_clear()
+        .envs(
+            env::PRISTINE_ENV
+                .iter()
+                .filter(|(key, _)| !key.starts_with("__MISE_")),
+        )
         .current_dir(*dirs::HOME)
         .stdin(Stdio::null())
         .stdout(std::io::stderr())

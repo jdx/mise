@@ -294,20 +294,6 @@ parse_env = "list_by_comma"
 rust_type = "Vec<String>"
 type = "ListString"
 
-[tool_update.check_duration]
-default = "24h"
-description = "How often to check for updates to a global tool with `auto_update = true`."
-docs = """
-The default interval between update checks for a tool whose global `[tools]` entry sets
-`auto_update = true`. A tool can set its own interval instead, such as `auto_update = "6h"`.
-Intervals under `1h` are raised to `1h`.
-
-See [Automatic tool updates](/configuration.html#automatic-tool-updates).
-"""
-env = "MISE_TOOL_UPDATE_CHECK_DURATION"
-global_only = true
-type = "Duration"
-
 [auto_update]
 default = false
 description = "Automatically update mise before running eligible commands."
@@ -3998,6 +3984,20 @@ Set to false to disable this feature if you prefer not to see these indicators.
 """
 env = "MISE_TERMINAL_PROGRESS"
 type = "Bool"
+
+[tool_update.check_duration]
+default = "24h"
+description = "How often to check for updates to a global tool with `auto_update = true`."
+docs = """
+The default interval between update checks for a tool whose global `[tools]` entry sets
+`auto_update = true`. A tool can set its own interval instead, such as `auto_update = "6h"`.
+Intervals under `1h` are raised to `1h`.
+
+See [Automatic tool updates](/configuration.html#automatic-tool-updates).
+"""
+env = "MISE_TOOL_UPDATE_CHECK_DURATION"
+global_only = true
+type = "Duration"
 
 [trace]
 description = "Sets log level to trace"
