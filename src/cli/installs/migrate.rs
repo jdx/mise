@@ -348,7 +348,7 @@ impl Journal {
     /// Put the old directory back and withdraw what the migration made. The
     /// journal stays until both are done, so the next run finishes the job.
     fn undo(&self, wait: bool) -> Result<()> {
-        let mut complete = self.withdraw(wait);
+        let complete = self.withdraw(wait);
         let aside = aside_path(&self.legacy);
         // A relocated directory has no copy aside: it goes back from where it
         // was moved to (its receipt and links are withdrawn above).
@@ -358,7 +358,14 @@ impl Journal {
             && std::fs::symlink_metadata(dir).is_ok()
         {
             if resolver::is_complete(dir) {
-                complete = false;
+                // Still published, and the only copy: it cannot go back, so
+                // this is a failure, and the journal stays for the next run.
+                eyre::bail!(
+                    "{} is still published and could not be withdrawn; run \
+                     `mise installs migrate` again to put {} back",
+                    display_path(dir),
+                    display_path(&self.legacy)
+                );
             } else {
                 // The version link would be in the way of putting it back.
                 if file::is_symlink_or_junction(&self.legacy) {
@@ -907,6 +914,34 @@ mod tests {
         std::os::unix::fs::symlink(&b, &link).unwrap();
         drop_extra_link(&link, None);
         assert!(!link.is_symlink() && b.is_dir());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn undoing_a_relocation_that_is_still_published_fails_and_keeps_the_journal() {
+        use std::os::unix::fs::PermissionsExt;
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path().join("tool-abcdefgh");
+        std::fs::create_dir(&dir).unwrap();
+        std::fs::write(dir.join(".mise-install.toml"), "").unwrap();
+        // the receipt cannot be removed
+        std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o555)).unwrap();
+        if std::fs::remove_file(dir.join(".mise-install.toml")).is_ok() {
+            return; // permissions are not enforced (root)
+        }
+        let journal = Journal {
+            tool: "tool".into(),
+            legacy: tmp.path().join("tool").join("1.0.0"),
+            backend: "b".into(),
+            version: "1.0.0".into(),
+            made: vec![dir.clone()],
+            relocating: true,
+            finished: false,
+        };
+        let result = journal.undo(false);
+        std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o755)).unwrap();
+        assert!(dir.exists());
+        assert!(result.is_err());
     }
 
     #[test]
