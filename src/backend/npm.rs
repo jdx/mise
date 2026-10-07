@@ -105,7 +105,7 @@ fn git_remote(name: &str) -> String {
     // npm accepts `ssh://git@host:owner/repo`, but git reads that colon as a
     // port separator; the scp-like form `git@host:owner/repo` is what it wants.
     if let Some((host, path)) = url.strip_prefix("ssh://").and_then(|r| r.split_once(':'))
-        && !host.contains('/')
+        && !host.contains(['/', '['])
         && !path
             .split('/')
             .next()
@@ -2597,6 +2597,10 @@ mod tests {
         assert_eq!(
             git_remote("git+ssh://git@github.com:22/npm/cli.git"),
             "ssh://git@github.com:22/npm/cli.git"
+        );
+        assert_eq!(
+            git_remote("git+ssh://git@[::1]:2222/o/r.git"),
+            "ssh://git@[::1]:2222/o/r.git"
         );
         assert!(git_tracks_head("github:o/r"));
         assert!(!git_tracks_head("github:o/r#v1"));
