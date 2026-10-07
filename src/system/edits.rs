@@ -1664,8 +1664,10 @@ fn apply_one(req: &EditRequest, desired: Option<&str>, written: &mut Vec<PathBuf
     }
     // switching from `symlink`: keep what the link points at as a regular file
     // before merging, so trimming the source afterwards loses nothing
-    if matches!(req.op, EditOp::Merge { .. }) && req.path.is_symlink() && links_to_merge_source(req)
-    {
+    let replaced_link = matches!(req.op, EditOp::Merge { .. })
+        && req.path.is_symlink()
+        && links_to_merge_source(req);
+    if replaced_link {
         // prepare the whole copy beside the link in an exclusively created
         // temp file (std::fs::copy gives it the source's mode), then rename it
         // over the link, so a failure leaves the link in place
@@ -1696,6 +1698,10 @@ fn apply_one(req: &EditRequest, desired: Option<&str>, written: &mut Vec<PathBuf
     let out = apply_to_string(req, desired, &text)?;
     // a fill-only entry reconsidered after another merge may have nothing left to add
     if existed && req.op.fills_missing_only() && out == text {
+        // a replaced link still changed the path, which reload commands key on
+        if replaced_link {
+            written.push(req.path.clone());
+        }
         return Ok(());
     }
     let failed = || format!("failed write: {}", req.path.display_user());
