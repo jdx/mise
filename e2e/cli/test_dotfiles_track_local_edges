@@ -22,8 +22,42 @@ assert_succeed "mise dot rollback ~/.config/app --to $before_local --yes"
 assert_fail "test -e ~/.config/app/cache.json"
 echo app-v3 >~/.config/app/cache.json
 
+# local content in older shared trees does not select an unchanged checkpoint
+echo shared-v2 >~/.config/app/settings.toml
+assert_succeed "mise dot save"
+echo app-v4 >~/.config/app/cache.json
+assert_succeed "mise dot save"
+assert_succeed "mise dot rollback ~/.config/app --yes"
+assert "cat ~/.config/app/settings.toml" "shared-v1"
+assert "cat ~/.config/app/cache.json" "app-v4"
+
+# previously shared variants survive when their parent becomes local
+mkdir ~/.variant-dir
+echo shared-variant >~/.variant-dir/state.json
+assert_succeed "mise dot track --machine ~/.variant-dir/state.json --yes"
+shared_repo="$HOME/.local/state/mise/history/repo.git"
+variant_path=$(git --git-dir="$shared_repo" ls-tree -r --name-only main | grep '/.variant-dir/state.json$')
+assert_succeed "mise dot track --local ~/.variant-dir --yes"
+echo private-variant >~/.variant-dir/state.json
+assert_succeed "mise dot save"
+assert "git --git-dir=$shared_repo show main:$variant_path" "shared-variant"
+
 # a command run by a local-only capture is outside the local scope
 assert_not_contains "mise dot --local capture -- env 2>&1" "__MISE_HISTORY_LOCAL"
+assert_not_contains "mise dot --local capture -- env 2>&1" "__MISE_HISTORY_OPERATION"
+assert_contains "mise dot --local capture -- printf '%s' --local" "--local"
+
+echo enrolled >~/.local-capture-enrollment
+assert_succeed "mise dot --local capture -- mise dot track --local ~/.local-capture-enrollment --yes"
+assert_contains "mise dot --local history --json" "capture"
+echo shared-capture >~/.shared-capture-enrollment
+assert_succeed "mise dot capture -- mise dot track --local ~/.shared-capture-enrollment --yes"
+assert_contains "mise dot --local history --json" "shared-capture-enrollment"
+
+# automatic routing preserves a literal target named --local
+echo literal >~/--local
+assert_succeed "mise dot track --local ~/--local --yes"
+assert_succeed "cd ~ && mise dot save -- --local"
 
 # the local scope keeps the state directory's trust decisions
 mkdir -p ~/project
@@ -34,6 +68,22 @@ assert_succeed "cd ~/project && MISE_TRUSTED_CONFIG_PATHS= MISE_YES=0 mise dot -
 
 # a declaration local-only history cannot take is refused, not dropped
 echo variant >~/.vrc
-assert_succeed "mise dot track --os linux ~/.vrc --yes"
+assert_succeed "mise dot track --machine ~/.vrc --yes"
 assert_fail "mise dot track --local ~/.vrc --yes 2>&1" "variants, which local-only history does not take"
 assert_succeed "mise dot untrack ~/.vrc"
+
+# replacing an old file's current directory cannot remove a local child,
+# even with --force and --yes
+echo old-file >~/.former-file
+assert_succeed "mise dot track ~/.former-file --yes"
+file_checkpoint=$(mise dot history --json | jq -r '.[0].id')
+rm ~/.former-file
+mkdir ~/.former-file
+echo private >~/.former-file/private
+assert_succeed "mise dot track --local ~/.former-file/private --yes"
+assert_fail "mise dot rollback ~/.former-file --to $file_checkpoint --force --yes 2>&1" "local-only"
+assert "cat ~/.former-file/private" "private"
+
+# malformed local declarations cannot fall back into a shared parent's walk
+sed -i.bak 's/mode = "track-local"/mode = "track-local", encrypt = false/' ~/.config/mise/config.toml
+assert_fail "mise dot save 2>&1" "local-only"

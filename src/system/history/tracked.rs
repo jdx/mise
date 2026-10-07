@@ -332,6 +332,13 @@ impl TrackedSet {
             if !crate::system::files::tracking_config_is_global(config, &invalid.config) {
                 continue;
             }
+            if invalid.local {
+                eyre::bail!(
+                    "invalid local-only declaration {}: {}; shared history cannot capture until it is corrected",
+                    invalid.target,
+                    invalid.reason
+                );
+            }
             set.invalid.push(PathReason {
                 path: invalid.target,
                 reason: format!("{} ({})", invalid.reason, display_path(&invalid.config)),
@@ -520,7 +527,13 @@ impl TrackedSet {
                 // pattern matching a directory skips everything under it
                 let pattern = format!(
                     "/{}",
-                    glob::Pattern::escape(&relative.to_string_lossy().replace('\\', "/"))
+                    glob::Pattern::escape(
+                        &relative
+                            .components()
+                            .map(|part| part.as_os_str().to_string_lossy())
+                            .collect::<Vec<_>>()
+                            .join("/")
+                    )
                 );
                 let exclude = entry.exclude.get_or_insert_with(Vec::new);
                 if !exclude.contains(&pattern) {
@@ -2588,6 +2601,23 @@ mod tests {
         // applying it again adds nothing
         set.keep_local_out();
         assert_eq!(set.entries[0].exclude.as_ref().map(Vec::len), Some(1));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn local_only_backslash_name_is_excluded_literally() {
+        let mut set = TrackedSet {
+            entries: vec![TrackedEntry::new(
+                "/home/u/.config".into(),
+                "track",
+                FilePolicy::for_mode(FileMode::Track),
+            )],
+            local: vec![PathBuf::from(r"/home/u/.config/private\file")],
+            ..Default::default()
+        };
+        set.keep_local_out();
+        assert!(set.entries[0].is_excluded(Path::new(r"/home/u/.config/private\file")));
+        assert!(!set.entries[0].is_excluded(Path::new("/home/u/.config/private/file")));
     }
 
     #[cfg(unix)]

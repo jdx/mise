@@ -112,7 +112,7 @@ impl Dotfiles {
             self.check_local()?;
         }
         if self.local && !local_scope {
-            return run_local_argv();
+            return run_local_argv(true);
         }
         // Anything a background save had to say is said here, to the
         // person who is now present, before the command they asked for
@@ -209,7 +209,7 @@ pub(crate) async fn route_local(paths: &[std::path::PathBuf]) -> Result<bool> {
     };
     match paths.iter().filter(|path| is_local(path)).count() {
         0 => Ok(false),
-        count if count == paths.len() => run_local_argv().map(|()| true),
+        count if count == paths.len() => run_local_argv(false).map(|()| true),
         _ => eyre::bail!(
             "these paths are in two histories; name local-only paths in a separate `mise dot --local` command"
         ),
@@ -217,9 +217,9 @@ pub(crate) async fn route_local(paths: &[std::path::PathBuf]) -> Result<bool> {
 }
 
 /// Runs this command line again in the local scope, without `--local`.
-fn run_local_argv() -> Result<()> {
+fn run_local_argv(remove_local: bool) -> Result<()> {
     let mut args: Vec<std::ffi::OsString> = std::env::args_os().skip(1).collect();
-    if let Some(index) = args.iter().position(|arg| arg == "--local") {
+    if remove_local && let Some(index) = args.iter().position(|arg| arg == "--local") {
         args.remove(index);
     }
     let status = crate::system::history::local::command(&args)?.status()?;

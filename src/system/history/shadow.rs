@@ -403,21 +403,19 @@ impl HistoryRepo {
         };
         let roots = super::sync::layout::Roots::current();
         let mut overlays = vec![];
-        for path in &walk.local {
-            // the stream of the entry that would otherwise own it
-            let variant = walk
-                .entries
-                .iter()
-                .filter(|entry| path.starts_with(&entry.path))
-                .max_by_key(|entry| entry.path.components().count())
-                .and_then(|entry| entry.variant.as_deref());
-            let Some(branch) = roots.branch_path(path, variant) else {
-                continue;
-            };
-            overlays.push(Overlay {
-                object: self.object_at(&head, &branch)?,
-                path: branch,
-            });
+        // The owning declaration may have been dropped by keep_local_out.
+        // Preserve every previously saved stream, including selected variants.
+        for entry in self.ls_tree(&head)? {
+            if roots
+                .locate(&entry.path)
+                .path()
+                .is_some_and(|path| walk.local.iter().any(|local| path.starts_with(local)))
+            {
+                overlays.push(Overlay {
+                    object: Some((entry.mode, entry.oid)),
+                    path: entry.path,
+                });
+            }
         }
         self.compose(tree, &overlays)
     }

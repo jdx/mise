@@ -408,12 +408,11 @@ fn group_entry(defaults: &EntryDefaults, key: &str, value: toml::Value) -> Resul
         .and_then(toml::Value::as_str)
         .map(str::to_string);
     let has_source = table.contains_key("source");
-    let needs_source = !has_source
-        && !table.contains_key("content")
-        && mode.as_deref() != Some("absent")
-        && !matches!(mode.as_deref(), Some("track" | "track-local"))
+    let needs_source = !(has_source
+        || table.contains_key("content")
+        || matches!(mode.as_deref(), Some("absent" | "track" | "track-local"))
         // `{ permissions = "0600" }` alone manages an existing file's mode
-        && !(mode.is_none() && table.contains_key("permissions"));
+        || mode.is_none() && table.contains_key("permissions"));
     let source = if let Some(source) = table.get("source").and_then(toml::Value::as_str) {
         let source = file::replace_path(source);
         Some(if source.is_relative() {

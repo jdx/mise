@@ -20,6 +20,10 @@ use eyre::{Result, WrapErr, ensure};
 /// Set in the local scope.
 pub const ENV: &str = "__MISE_HISTORY_LOCAL";
 
+/// A local operation enclosing an external command, without putting that
+/// command's ordinary mise operations in the local history.
+pub const OPERATION_ENV: &str = "__MISE_LOCAL_CAPTURE_PARENT";
+
 /// Whether this process works on the local-only history.
 pub fn active() -> bool {
     std::env::var_os(ENV).is_some()
@@ -52,6 +56,9 @@ where
         .args(args)
         .env(ENV, "1")
         .env_remove(super::scope::ENV_VAR);
+    if let Some(operation) = std::env::var_os(OPERATION_ENV) {
+        command.env(super::scope::ENV_VAR, operation);
+    }
     Ok(command)
 }
 
@@ -82,4 +89,10 @@ where
 /// A command the local scope runs on the user's behalf is outside it.
 pub fn restore_env(command: &mut Command) {
     command.env_remove(ENV);
+    if active() {
+        if let Some(operation) = std::env::var_os(super::scope::ENV_VAR) {
+            command.env(OPERATION_ENV, operation);
+        }
+        command.env_remove(super::scope::ENV_VAR);
+    }
 }

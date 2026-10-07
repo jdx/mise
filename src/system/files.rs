@@ -220,6 +220,9 @@ pub struct InvalidDeclaration {
     pub reason: String,
     /// Why the declaration is not in force.
     pub cause: Ignored,
+    /// An unreadable local declaration must never expose its path to shared capture.
+    #[serde(skip)]
+    pub local: bool,
 }
 
 /// **Two reasons to ignore a declaration, and only one of them is a
@@ -243,10 +246,16 @@ static INVALID_DECLARATIONS: std::sync::Mutex<Vec<InvalidDeclaration>> =
     std::sync::Mutex::new(Vec::new());
 
 fn record_invalid(target: &str, config: &Path, reason: impl Into<String>) {
-    record_ignored(target, config, reason, Ignored::Unreadable);
+    record_ignored(target, config, reason, Ignored::Unreadable, false);
 }
 
-fn record_ignored(target: &str, config: &Path, reason: impl Into<String>, cause: Ignored) {
+fn record_ignored(
+    target: &str,
+    config: &Path,
+    reason: impl Into<String>,
+    cause: Ignored,
+    local: bool,
+) {
     let reason = reason.into();
     warn!("[dotfiles].\"{target}\": {reason}, ignoring entry");
     let mut invalid = INVALID_DECLARATIONS
@@ -261,6 +270,7 @@ fn record_ignored(target: &str, config: &Path, reason: impl Into<String>, cause:
             config: config.to_path_buf(),
             reason,
             cause,
+            local,
         });
     }
 }
@@ -1051,6 +1061,10 @@ pub(crate) fn validate_incoming_files(config_files: &ConfigMap) -> Result<()> {
                 if group.is_some() {
                     bail!("dotfile {target}: {GROUP_KEY_IN_DOTFILES}");
                 }
+                if mode.as_deref() == Some(TRACK_LOCAL) && (encrypt.is_some() || variants.is_some())
+                {
+                    bail!("dotfile {target}: mode = \"track-local\" takes no encrypt or variants");
+                }
                 let permissions_only = permissions.is_some()
                     && source.is_none()
                     && content.is_none()
@@ -1309,6 +1323,7 @@ fn files_from_config_files_with_tracking_roots(
                     &origin.config,
                     "tracking is enrolled from the global configuration only (ignored: project config)",
                     Ignored::ByPolicy,
+                    false,
                 );
                 continue;
             }
@@ -1543,10 +1558,12 @@ fn merge_file_entry(
         mode
     };
     if local && (encrypt.is_some() || variants.is_some()) {
-        record_invalid(
+        record_ignored(
             &target_raw,
             &origin.config,
             "mode = \"track-local\" never leaves this machine and takes no encrypt or variants",
+            Ignored::Unreadable,
+            true,
         );
         return;
     }
@@ -8401,6 +8418,7 @@ source = "oldrc""#,
         );
         // it never leaves this machine, so it takes nothing about sharing
         assert!(merge("mode = \"track-local\"\nencrypt = true").is_empty());
+        assert!(merge("mode = \"track-local\"\nencrypt = false").is_empty());
         assert!(merge("mode = \"track-local\"\nvariants = [{ machine = true }]").is_empty());
 
         // a later layer repeating the entry keeps it local
@@ -8418,6 +8436,20 @@ source = "oldrc""#,
             Arc::new(MiseToml::for_history_preflight(body, &path)?),
         );
         validate_incoming_files(&configs)?;
+        for extra in [
+            "encrypt = false",
+            "encrypt = true",
+            "variants = [{ machine = true }]",
+        ] {
+            let body = format!(
+                "[dotfiles]\n\"~/.track-local-test\" = {{ mode = \"track-local\", {extra} }}\n"
+            );
+            configs.insert(
+                path.clone(),
+                Arc::new(MiseToml::for_history_preflight(&body, &path)?),
+            );
+            assert!(validate_incoming_files(&configs).is_err(), "{extra}");
+        }
         Ok(())
     }
 

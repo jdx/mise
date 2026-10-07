@@ -119,6 +119,7 @@ impl DotfilesSave {
         if self.best_effort {
             args.push("--best-effort".into());
         }
+        args.push("--".into());
         args.extend(paths.iter().map(|path| path.clone().into_os_string()));
         args
     }

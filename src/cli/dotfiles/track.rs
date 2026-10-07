@@ -880,6 +880,16 @@ async fn activate_and_baseline(
         }
     }
     if local {
+        if !crate::config::Settings::get().history.enabled {
+            warn!("dotfiles: history is disabled (history.enabled = false); no baseline saved");
+            return Ok(());
+        }
+        if inside_local_capture()? {
+            info!(
+                "dotfiles: enrolled; the enclosing capture will save the baseline when the command finishes"
+            );
+            return Ok(());
+        }
         // the baseline belongs to this machine's own history
         let names = declared
             .iter()
@@ -994,6 +1004,24 @@ fn inside_capture() -> Result<bool> {
                     && parent == std::ffi::OsStr::new(&marker.uuid)
             }),
     )
+}
+
+fn inside_local_capture() -> Result<bool> {
+    let parent = std::env::var_os(crate::system::history::local::OPERATION_ENV).or_else(|| {
+        crate::system::history::local::active()
+            .then(|| std::env::var_os(crate::system::history::scope::ENV_VAR))
+            .flatten()
+    });
+    let Some(parent) = parent else {
+        return Ok(false);
+    };
+    Ok(crate::system::history::store::read_marker_in(
+        &crate::system::history::local::local_root(),
+    )?
+    .is_some_and(|marker| {
+        marker.kind == crate::system::history::store::OperationKind::Capture
+            && parent == std::ffi::OsStr::new(&marker.uuid)
+    }))
 }
 
 /// The `[dotfiles]` key of a path: `~/…` with forward slashes on every

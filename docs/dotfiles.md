@@ -1303,9 +1303,10 @@ Or run `mise dot track --local ~/.config/app/state.json`.
 
 Their versions are saved in this machine's own history, under
 `$MISE_STATE_DIR/history-local`, which no origin ever reaches: neither their
-contents nor their declarations enter the shared history, its enrollment
-metadata, or a push. They are saved, browsed, and restored like any tracked
-file:
+contents nor their enrollment metadata enter shared history or a push.
+A declaration written in a separately shared configuration file is still
+shared as part of that file's text. Local files are saved, browsed, and
+restored like any tracked file:
 
 ```sh
 mise dot save                          # saves both histories
