@@ -133,12 +133,17 @@ impl FnoxSource {
     }
 
     fn resolve_argv(&self, keys: &KeySelection, interactive: bool) -> Vec<String> {
-        let list = keys
-            .keys()
-            .iter()
-            .map(|k| k.as_str())
-            .collect::<Vec<_>>()
-            .join(",");
+        let list = match keys {
+            // no `--keys`: fnox resolves everything in scope, dynamic leases included
+            KeySelection::AllInScope => {
+                return self.argv(&["env", "--json", "--for", "exec"], interactive);
+            }
+            KeySelection::Keys(keys) => keys
+                .iter()
+                .map(|k| k.as_str())
+                .collect::<Vec<_>>()
+                .join(","),
+        };
         self.argv(
             &["env", "--json", "--for", "exec", "--keys", &list],
             interactive,
@@ -321,7 +326,7 @@ impl FnoxSource {
             status.success(),
             &status.to_string(),
             &buf,
-            keys.keys(),
+            keys,
             catalog,
             &self.id.root,
         ) {
@@ -345,7 +350,7 @@ fn interpret_resolve(
     success: bool,
     status: &str,
     buf: &[u8],
-    requested: &std::collections::BTreeSet<SecretName>,
+    selection: &KeySelection,
     catalog: &Catalog,
     root: &Path,
 ) -> std::result::Result<Resolved, ResolveFailure> {
@@ -403,9 +408,12 @@ fn interpret_resolve(
     }
     let doc: wire::EnvDocument =
         serde_json::from_slice(buf).map_err(|e| other(unparsable(buf, &e)))?;
+    let requested = selection.keys();
+    let all = matches!(selection, KeySelection::AllInScope);
     let mut out = Resolved::default();
     let accept = |into_files: bool, key: String, value: String, out: &mut Resolved| {
-        let Some(name) = SecretName::new(&key).filter(|n| requested.contains(n)) else {
+        // an all-in-scope document is filtered against the catalog afterwards
+        let Some(name) = SecretName::new(&key).filter(|n| all || requested.contains(n)) else {
             out.unrequested.insert(key);
             return;
         };
@@ -444,8 +452,12 @@ fn interpret_resolve(
         .missing
         .iter()
         .filter_map(|k| SecretName::new(k))
-        .filter(|n| requested.contains(n))
+        .filter(|n| all || requested.contains(n))
         .collect();
+    out.leases = doc.leases.into_iter().collect();
+    if all {
+        out = out.filter_for_all(catalog);
+    }
     Ok(out)
 }
 
@@ -843,16 +855,16 @@ mod tests {
     }
 
     fn resolved(doc: &str, requested: &[&str]) -> Resolved {
-        let requested = requested
-            .iter()
-            .map(|k| SecretName::new(k).unwrap())
-            .collect();
+        resolved_for(doc, &sel(requested), &catalog_with_signing())
+    }
+
+    fn resolved_for(doc: &str, selection: &KeySelection, catalog: &Catalog) -> Resolved {
         match interpret_resolve(
             true,
             "exit status: 0",
             doc.as_bytes(),
-            &requested,
-            &catalog_with_signing(),
+            selection,
+            catalog,
             Path::new("/p"),
         ) {
             Ok(r) => r,
@@ -893,6 +905,67 @@ mod tests {
     }
 
     #[test]
+    fn all_in_scope_asks_for_no_keys() {
+        let s = source(Some("prod"));
+        assert_eq!(
+            s.resolve_argv(&KeySelection::AllInScope, false),
+            [
+                "-P",
+                "prod",
+                "--non-interactive",
+                "--no-daemon",
+                "env",
+                "--json",
+                "--for",
+                "exec"
+            ]
+        );
+        assert!(
+            !source(None)
+                .resolve_argv(&KeySelection::AllInScope, true)
+                .contains(&"--keys".to_string())
+        );
+    }
+
+    #[test]
+    fn all_in_scope_documents_are_filtered_against_the_catalog() {
+        let doc = r#"{"schema":1,"set":{"DATABASE_URL":"v1","SIGNING_KEY":"v2","EXTRA_KEY":"v3","AWS_ACCESS_KEY_ID":"v4"},"files":{"OTHER_FILE":"v5"},"remove":[],"missing":["GONE"],"leases":["aws"]}"#;
+        let r = resolved_for(doc, &KeySelection::AllInScope, &catalog_with_signing());
+        let set: Vec<_> = r.set.keys().map(|k| k.as_str()).collect();
+        assert_eq!(set, ["AWS_ACCESS_KEY_ID", "DATABASE_URL"]);
+        assert!(r.files.is_empty());
+        assert_eq!(
+            r.unrequested,
+            BTreeSet::from(["EXTRA_KEY".to_string(), "OTHER_FILE".to_string()])
+        );
+        assert_eq!(
+            r.not_injectable
+                .iter()
+                .map(|k| k.as_str())
+                .collect::<Vec<_>>(),
+            ["SIGNING_KEY"]
+        );
+        assert_eq!(
+            r.missing.iter().map(|k| k.as_str()).collect::<Vec<_>>(),
+            ["GONE"]
+        );
+        // a key the catalog does not list is allowed only when a dynamic lease ran
+        let mut catalog = catalog_with_signing();
+        catalog.dynamic_leases = vec!["build_token".into()];
+        let doc =
+            r#"{"schema":1,"set":{"EXTRA_KEY":"v3","SIGNING_KEY":"v2"},"leases":["build_token"]}"#;
+        let r = resolved_for(doc, &KeySelection::AllInScope, &catalog);
+        let set: Vec<_> = r.set.keys().map(|k| k.as_str()).collect();
+        assert_eq!(set, ["EXTRA_KEY"]);
+        let doc = r#"{"schema":1,"set":{"EXTRA_KEY":"v3"},"leases":["other"]}"#;
+        assert!(
+            resolved_for(doc, &KeySelection::AllInScope, &catalog)
+                .set
+                .is_empty()
+        );
+    }
+
+    #[test]
     fn remove_list_keeps_valid_names_only() {
         let r = resolved(
             r#"{"schema":1,"set":{},"files":{},"remove":["","A=B","bad\u0000name","OK_NAME","FNOX_AGE_KEY"],"missing":[]}"#,
@@ -906,7 +979,7 @@ mod tests {
 
     #[test]
     fn resolve_errors_are_stripped_of_control_characters() {
-        let requested = BTreeSet::new();
+        let requested = sel(&[]);
         let catalog = catalog_with_signing();
         let err = |doc: &str| match interpret_resolve(
             false,
@@ -942,7 +1015,7 @@ mod tests {
 
     #[test]
     fn resolve_error_documents() {
-        let requested = BTreeSet::new();
+        let requested = sel(&[]);
         let catalog = catalog_with_signing();
         let err = |doc: &str| match interpret_resolve(
             false,

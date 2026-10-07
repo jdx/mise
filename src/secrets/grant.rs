@@ -1,15 +1,15 @@
 //! What a task asks for: its `secrets = [...]` list, and the checks that need no source.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::path::PathBuf;
 use std::sync::Arc;
 
 use serde::de::{self, Deserializer, SeqAccess, Visitor};
 
 use super::SecretName;
-use crate::task::Task;
+use crate::task::{Task, TaskKey, TaskRunPhase, task_key};
 
-pub(crate) const G4_TRUE: &str = "secrets = true is not supported; tasks receive only the secrets they list, e.g. secrets = [\"DEPLOY_KEY\"]";
+pub(crate) const G4_TRUE: &str = "secrets = true is not supported; tasks receive only the secrets they list, e.g. secrets = [\"DEPLOY_KEY\"]; grant for one run with mise run --secrets-all <task> or --secrets KEY";
 pub(crate) const G4_FALSE: &str =
     "secrets = false is not needed: tasks receive no secrets unless they list them";
 pub(crate) const G5_TEXT: &str = "per-task source options (secrets = { fnox = ... }) are not supported yet; list key names: secrets = [\"DEPLOY_KEY\"]";
@@ -108,35 +108,93 @@ impl SecretsDenied {
 
 pub(crate) const DENIED_MARKER: &str = "__MISE_SECRETS_DENIED";
 
+/// `__MISE_SECRETS_DENIED` first (an unknown value fails closed), then the pitchfork daemon
+/// marker.
+pub(crate) fn denied_from_env() -> Option<SecretsDenied> {
+    std::env::var(DENIED_MARKER)
+        .ok()
+        .and_then(|v| SecretsDenied::from_marker(&v))
+        .or_else(|| {
+            mise_util::env::var_is_true(crate::daemons::DAEMON_TASK_MARKER)
+                .then_some(SecretsDenied::PitchforkDaemon)
+        })
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum GrantOrigin {
+    /// `secrets = [...]` on the task itself
     TaskList { file: PathBuf },
+    /// `--secrets KEY` on the command line
+    CliFlag,
+    /// `--secrets-all` on the command line
+    CliAll,
+}
+
+impl GrantOrigin {
+    /// A grant the task's own config wrote, which is the only kind the G8/G9 rules police.
+    fn is_self(&self) -> bool {
+        matches!(self, Self::TaskList { .. })
+    }
+
+    fn describe(&self) -> String {
+        match self {
+            Self::TaskList { file } => format!(
+                "secrets = [...] in {}",
+                file.file_name()
+                    .map(|n| n.to_string_lossy().to_string())
+                    .unwrap_or_default()
+            ),
+            Self::CliFlag => "--secrets".to_string(),
+            Self::CliAll => "--secrets-all".to_string(),
+        }
+    }
 }
 
 #[derive(Clone, Debug, Default)]
 pub(crate) struct SecretGrant {
     pub(crate) keys: BTreeMap<SecretName, Vec<GrantOrigin>>,
+    /// Every key the source can inject (`--secrets-all`). The keys are only known once the
+    /// source is described, so they are not listed in `keys`.
+    pub(crate) all: Option<GrantOrigin>,
 }
 
 impl SecretGrant {
     pub(crate) fn is_empty(&self) -> bool {
-        self.keys.is_empty()
+        self.keys.is_empty() && self.all.is_none()
     }
 
-    pub(crate) fn granted_by(&self) -> String {
-        let mut files: Vec<String> = self
+    /// Whether the task's own config grants anything. A command-line grant is the person
+    /// running mise asking, so it never trips the rules about where a task may be defined.
+    pub(crate) fn has_self_grant(&self) -> bool {
+        self.keys.values().flatten().any(GrantOrigin::is_self)
+    }
+
+    /// `other`'s origins are added to ours; its `all` wins.
+    pub(crate) fn merged(mut self, other: SecretGrant) -> SecretGrant {
+        for (key, origins) in other.keys {
+            let mine = self.keys.entry(key).or_default();
+            for origin in origins {
+                if !mine.contains(&origin) {
+                    mine.push(origin);
+                }
+            }
+        }
+        self.all = other.all.or(self.all);
+        self
+    }
+
+    /// Where `key` came from, for G1 and G2.
+    pub(crate) fn granted_by(&self, key: &SecretName) -> String {
+        let mut by: Vec<String> = self
             .keys
-            .values()
+            .get(key)
+            .into_iter()
             .flatten()
-            .map(|GrantOrigin::TaskList { file }| {
-                file.file_name()
-                    .map(|n| n.to_string_lossy().to_string())
-                    .unwrap_or_default()
-            })
+            .map(GrantOrigin::describe)
             .collect();
-        files.sort();
-        files.dedup();
-        files.join(", ")
+        by.sort();
+        by.dedup();
+        by.join(", ")
     }
 }
 
@@ -244,6 +302,49 @@ pub(crate) fn aggregate_error(problems: &[Problem]) -> eyre::Report {
     eyre::eyre!("{out}")
 }
 
+/// Why a name cannot be granted: G3, G6 or G12.
+pub(crate) enum NameError {
+    Invalid,
+    Wildcard,
+    Reserved,
+}
+
+impl NameError {
+    fn kind(&self) -> ProblemKind {
+        match self {
+            Self::Invalid => ProblemKind::InvalidName,
+            Self::Wildcard => ProblemKind::Wildcard,
+            Self::Reserved => ProblemKind::Reserved,
+        }
+    }
+
+    /// The text after "<who>: ", shared by `secrets = [...]` and the command-line flags.
+    fn text(&self, raw: &str, list: &str) -> String {
+        match self {
+            Self::Invalid => format!(
+                "\"{raw}\" in {list} is not a valid environment variable name ([A-Za-z_][A-Za-z0-9_]*)"
+            ),
+            Self::Wildcard => format!(
+                "\"{raw}\" in {list}: wildcards are not supported; list each key (see mise secrets ls)"
+            ),
+            Self::Reserved => {
+                format!("secret name {raw} is reserved by mise and cannot be granted")
+            }
+        }
+    }
+}
+
+pub(crate) fn validate_name(raw: &str) -> std::result::Result<SecretName, NameError> {
+    if raw.contains('*') {
+        return Err(NameError::Wildcard);
+    }
+    let name = SecretName::new(raw).ok_or(NameError::Invalid)?;
+    if mise_util::env::is_reserved_secret_name(name.as_str()) {
+        return Err(NameError::Reserved);
+    }
+    Ok(name)
+}
+
 /// G3, G6 and the grant of the valid names. Invalid names are reported, not granted.
 pub(crate) fn grant_for_task(task: &Task) -> (SecretGrant, Vec<Problem>) {
     let mut grant = SecretGrant::default();
@@ -253,42 +354,18 @@ pub(crate) fn grant_for_task(task: &Task) -> (SecretGrant, Vec<Problem>) {
     };
     let file = task.config_source.clone();
     for raw in list.names() {
-        if raw.contains('*') {
-            problems.push(Problem::new(
-                &task.name,
-                Some(raw),
-                ProblemKind::Wildcard,
-                format!(
-                    "task {}: \"{raw}\" in secrets: wildcards are not supported; list each key (see mise secrets ls)",
-                    task.name
-                ),
-            ));
-            continue;
-        }
-        let Some(name) = SecretName::new(raw) else {
-            problems.push(Problem::new(
-                &task.name,
-                Some(raw),
-                ProblemKind::InvalidName,
-                format!(
-                    "task {}: \"{raw}\" in secrets is not a valid environment variable name ([A-Za-z_][A-Za-z0-9_]*)",
-                    task.name
-                ),
-            ));
-            continue;
+        let name = match validate_name(raw) {
+            Ok(name) => name,
+            Err(e) => {
+                problems.push(Problem::new(
+                    &task.name,
+                    Some(raw),
+                    e.kind(),
+                    format!("task {}: {}", task.name, e.text(raw, "secrets")),
+                ));
+                continue;
+            }
         };
-        if mise_util::env::is_reserved_secret_name(name.as_str()) {
-            problems.push(Problem::new(
-                &task.name,
-                Some(raw),
-                ProblemKind::Reserved,
-                format!(
-                    "task {}: secret name {raw} is reserved by mise and cannot be granted",
-                    task.name
-                ),
-            ));
-            continue;
-        }
         let origins = grant.keys.entry(name).or_default();
         let origin = GrantOrigin::TaskList { file: file.clone() };
         if !origins.contains(&origin) {
@@ -296,6 +373,130 @@ pub(crate) fn grant_for_task(task: &Task) -> (SecretGrant, Vec<Problem>) {
         }
     }
     (grant, problems)
+}
+
+/// What `mise run --secrets` and `--secrets-all` grant, and to which tasks: only the ones
+/// named on the command line, never their dependencies or subtasks.
+pub struct CliSecretGrant {
+    keys: BTreeSet<SecretName>,
+    all: bool,
+    named: HashSet<TaskKey>,
+}
+
+impl CliSecretGrant {
+    /// `named` is every task the command line selected (explicit names, globs, `default`,
+    /// `--all`), before dependencies are resolved. Fails on a name that cannot be granted.
+    pub fn new(keys: &[String], all: bool, named: &[Task]) -> eyre::Result<Self> {
+        let mut names = BTreeSet::new();
+        let mut errors = vec![];
+        for raw in keys {
+            match validate_name(raw) {
+                Ok(name) => {
+                    names.insert(name);
+                }
+                Err(e) => errors.push(format!("--secrets: {}", e.text(raw, "--secrets"))),
+            }
+        }
+        if !errors.is_empty() {
+            eyre::bail!("{}", errors.join("\n"));
+        }
+        Ok(Self {
+            keys: names,
+            all,
+            named: named
+                .iter()
+                .map(|t| task_key(&t.clone().with_run_phase(TaskRunPhase::Normal)))
+                .collect(),
+        })
+    }
+
+    /// `injected` tasks come from a run entry of another task, so they never receive a
+    /// command-line grant even when they look identical to a named one.
+    pub(crate) fn for_task(&self, task: &Task, injected: bool) -> Option<SecretGrant> {
+        if injected || !self.named.contains(&task_key(task)) {
+            return None;
+        }
+        if orchestrates_only(task) {
+            // nothing to inject into: it only starts other tasks, which are not named
+            warn_once!(
+                "--secrets: task {} starts no process of its own, so it receives nothing; name the tasks that run commands",
+                task.name
+            );
+            return None;
+        }
+        Some(SecretGrant {
+            keys: self
+                .keys
+                .iter()
+                .map(|k| (k.clone(), vec![GrantOrigin::CliFlag]))
+                .collect(),
+            all: self.all.then_some(GrantOrigin::CliAll),
+        })
+    }
+}
+
+/// The task's own grant plus whatever the command line gave it. The one grant every
+/// decision about the task (cache, dry run, preflight, spawn) must use.
+pub(crate) fn effective_grant(
+    task: &Task,
+    cli: Option<&CliSecretGrant>,
+    injected: bool,
+) -> (SecretGrant, Vec<Problem>) {
+    let (own, problems) = grant_for_task(task);
+    match cli.and_then(|c| c.for_task(task, injected)) {
+        Some(from_cli) => (own.merged(from_cli), problems),
+        None => (own, problems),
+    }
+}
+
+/// `--secrets` and `--secrets-all` for `mise x`.
+pub(crate) fn exec_grant(keys: &[String]) -> eyre::Result<SecretGrant> {
+    let mut grant = SecretGrant::default();
+    let mut errors = vec![];
+    for raw in keys {
+        match validate_name(raw) {
+            Ok(name) => {
+                grant.keys.insert(name, vec![GrantOrigin::CliFlag]);
+            }
+            Err(e) => errors.push(format!("mise x --secrets: {}", e.text(raw, "--secrets"))),
+        }
+    }
+    if !errors.is_empty() {
+        eyre::bail!("{}", errors.join("\n"));
+    }
+    Ok(grant)
+}
+
+/// Who a grant is for, in the words of G1, G2, G11 and G13.
+#[derive(Clone, Copy)]
+pub(crate) enum Subject<'a> {
+    Task(&'a str),
+    Exec,
+}
+
+impl Subject<'_> {
+    /// "task deploy" or "mise x"
+    pub(crate) fn text(self) -> String {
+        match self {
+            Self::Task(name) => format!("task {name}"),
+            Self::Exec => "mise x".to_string(),
+        }
+    }
+
+    /// The name `Problem::task` carries.
+    pub(crate) fn label(self) -> String {
+        match self {
+            Self::Task(name) => name.to_string(),
+            Self::Exec => "mise x".to_string(),
+        }
+    }
+
+    fn this(self) -> &'static str {
+        match self {
+            Self::Task(_) => "this task",
+            Self::Exec => "this command",
+        }
+    }
 }
 
 /// Everything that needs neither a source nor a process: G8, G9, G10 and G16 for the grant.
@@ -309,14 +510,17 @@ pub(crate) fn static_problems(
     if grant.is_empty() {
         return problems;
     }
-    if let Some(source) = task.secrets_remote_source() {
+    // Only a task's own `secrets = [...]` is held to where the task is defined. A person who
+    // names the task and its secrets on the command line is the one granting.
+    let own = grant.has_self_grant();
+    if own && let Some(source) = task.secrets_remote_source() {
         problems.push(Problem::new(
             &task.name,
             None,
             ProblemKind::Remote,
             format!(
-                "task {} comes from a remote source ({source}) and cannot list secrets",
-                task.name
+                "task {} comes from a remote source ({source}) and cannot list secrets; grant for one run with mise run --secrets-all {} or --secrets KEY",
+                task.name, task.name
             ),
         ));
     }
@@ -324,15 +528,16 @@ pub(crate) fn static_problems(
         .config_root
         .as_deref()
         .is_some_and(|r| super::config::is_project_secrets_root(r, &crate::dirs::HOME));
-    if task.secrets_remote_source().is_none() && (task.global || !project_root) {
+    if own && task.secrets_remote_source().is_none() && (task.global || !project_root) {
         problems.push(Problem::new(
             &task.name,
             None,
             ProblemKind::NotProject,
             format!(
-                "task {} is defined in {}, which is not project config (global or system config, or a file in or above your home directory), so it cannot list secrets",
+                "task {} is defined in {}, which is not project config (global or system config, or a file in or above your home directory), so it cannot list secrets; grant for one run with mise run --secrets-all {} or --secrets KEY",
                 task.name,
-                crate::file::display_path(&task.config_source)
+                crate::file::display_path(&task.config_source),
+                task.name
             ),
         ));
     }
@@ -343,8 +548,13 @@ pub(crate) fn static_problems(
                 None,
                 ProblemKind::Denied,
                 format!(
-                    "task {} lists secrets, but it was started by {}",
+                    "task {} {}, but it was started by {}",
                     task.name,
+                    if own {
+                        "lists secrets"
+                    } else {
+                        "was granted secrets on the command line"
+                    },
                     denied.launcher()
                 ),
             )
@@ -363,7 +573,8 @@ pub(crate) fn static_problems(
             );
         }
     }
-    if orchestrates_only(task) {
+    // a command-line grant to such a task is dropped with a warning instead (`for_task`)
+    if own && orchestrates_only(task) {
         problems.push(Problem::new(
             &task.name,
             None,
@@ -375,14 +586,7 @@ pub(crate) fn static_problems(
         ));
     }
     let granted: BTreeSet<&str> = grant.keys.keys().map(|k| k.as_str()).collect();
-    let mut refs = BTreeSet::new();
-    for script in task.run_script_strings() {
-        refs.extend(tera_env_refs(&script));
-    }
-    for (_, value) in view.texts(task) {
-        refs.extend(tera_env_refs(&value));
-    }
-    for key in refs {
+    for key in view.template_refs(task) {
         if granted.contains(key.as_str()) {
             problems.push(
                 Problem::new(
@@ -407,11 +611,13 @@ pub(crate) fn static_problems(
 
 /// G1 and G2 for a grant, against what the source describes.
 pub(crate) fn key_problems(
-    task: &Task,
+    subject: Subject<'_>,
     grant: &SecretGrant,
     catalog: &super::Catalog,
     source_label: &str,
 ) -> Vec<Problem> {
+    let who = subject.text();
+    let name = subject.label();
     let mut problems = vec![];
     for key in grant.keys.keys() {
         match catalog.entries.get(key) {
@@ -423,16 +629,13 @@ pub(crate) fn key_problems(
                 }
                 problems.push(
                     Problem::new(
-                        &task.name,
+                        &name,
                         Some(key.as_str()),
                         ProblemKind::Unknown,
-                        format!("task {}: unknown secret {key}", task.name),
+                        format!("{who}: unknown secret {key}"),
                     )
                     .detail(hint)
-                    .detail(format!(
-                        "Granted by: secrets = [...] in {}",
-                        grant.granted_by()
-                    ))
+                    .detail(format!("Granted by: {}", grant.granted_by(key)))
                     .detail("See the available keys with `mise secrets ls`.")
                     .suggestion(suggestion),
                 );
@@ -440,14 +643,15 @@ pub(crate) fn key_problems(
             Some(entry) if !entry.injectable => {
                 problems.push(
                     Problem::new(
-                        &task.name,
+                        &name,
                         Some(key.as_str()),
                         ProblemKind::NotInjectable,
-                        format!("task {}: {key} cannot be injected", task.name),
+                        format!("{who}: {key} cannot be injected"),
                     )
                     .detail(format!(
                         "fnox config sets env = false for {key}, so fnox never hands it to processes. Read it with `fnox get {key}` in your script, or set env = \"exec\" for it in fnox.toml if processes should receive it."
-                    )),
+                    ))
+                    .detail(format!("Granted by: {}", grant.granted_by(key))),
                 );
             }
             Some(_) => {}
@@ -516,28 +720,39 @@ pub(crate) fn orchestrates_only(task: &Task) -> bool {
         && !task.run().iter().any(|e| matches!(e, RunEntry::Script(_)))
 }
 
-/// G13: the task's sandbox would drop the granted key.
-pub(crate) fn sandbox_problem(label: &str, key: &str) -> Problem {
+/// G13: the sandbox would drop the granted key.
+pub(crate) fn sandbox_problem(subject: Subject<'_>, key: &str) -> Problem {
+    let who = subject.text();
+    let hint = match subject {
+        Subject::Task(_) => {
+            format!("add allow_env = [\"{key}\"] to the task or pass --allow-env {key}")
+        }
+        Subject::Exec => format!("pass --allow-env {key}"),
+    };
     Problem::new(
-        label,
+        &subject.label(),
         Some(key),
         ProblemKind::Sandbox,
-        format!(
-            "task {label} is granted {key}, but its sandbox denies env vars; add allow_env = [\"{key}\"] to the task or pass --allow-env {key}"
-        ),
+        format!("{who} is granted {key}, but its sandbox denies env vars; {hint}"),
     )
 }
 
-/// G11: mise itself sets the granted key for this task.
-pub(crate) fn collision_problem(label: &str, key: &str) -> Problem {
+/// G11: mise itself sets the granted key for this task or command.
+pub(crate) fn collision_problem(subject: Subject<'_>, key: &str) -> Problem {
+    let who = subject.text();
+    let this = subject.this();
+    let (sets, starts) = match subject {
+        Subject::Task(_) => ("([env], the task's env, a tool, or a setting)", "the task"),
+        Subject::Exec => ("([env], a tool, or a setting)", "the command"),
+    };
     Problem::new(
-        label,
+        &subject.label(),
         Some(key),
         ProblemKind::Collision,
-        format!("task {label}: {key} is both a secret and a mise env var"),
+        format!("{who}: {key} is both a secret and a mise env var"),
     )
     .detail(format!(
-        "mise sets {key} for this task ([env], the task's env, a tool, or a setting). Tools the task starts through mise shims recompute it and would replace the secret."
+        "mise sets {key} for {this} {sets}. Tools {starts} starts through mise shims recompute it and would replace the secret."
     ))
     .detail(format!(
         "Keep one: move the default into fnox.toml ({key} = {{ ..., default = \"...\" }}) or rename the mise variable."
@@ -725,6 +940,19 @@ impl EnvView {
 
     fn texts(&self, task: &Task) -> Vec<(String, String)> {
         self.walk(task).1
+    }
+
+    /// Env names the task's `run` scripts and `env` values read through a template. Those
+    /// render before secrets exist, so a granted key among them would render without its value.
+    pub(crate) fn template_refs(&self, task: &Task) -> BTreeSet<String> {
+        let mut refs = BTreeSet::new();
+        for script in task.run_script_strings() {
+            refs.extend(tera_env_refs(&script));
+        }
+        for (_, value) in self.texts(task) {
+            refs.extend(tera_env_refs(&value));
+        }
+        refs
     }
 }
 
@@ -1170,5 +1398,159 @@ mod tests {
         ] {
             assert_eq!(SecretsDenied::from_marker(d.marker()), Some(d));
         }
+    }
+
+    fn named(name: &str, args: &[&str]) -> Task {
+        Task {
+            name: name.into(),
+            args: args.iter().map(|a| a.to_string()).collect(),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn cli_grant_reaches_only_the_tasks_named_on_the_command_line() {
+        let build = named("build", &[]);
+        let deploy = named("deploy", &[]);
+        // `mise run --secrets A deploy`, where deploy depends on build
+        let cli = CliSecretGrant::new(&["A".into()], false, std::slice::from_ref(&deploy)).unwrap();
+        let grant = cli.for_task(&deploy, false).unwrap();
+        assert_eq!(
+            grant.keys.keys().map(|k| k.as_str()).collect::<Vec<_>>(),
+            ["A"]
+        );
+        assert_eq!(
+            grant.keys[&SecretName::new("A").unwrap()],
+            [GrantOrigin::CliFlag]
+        );
+        assert!(cli.for_task(&build, false).is_none());
+        // `mise run --secrets A build ::: deploy`
+        let cli =
+            CliSecretGrant::new(&["A".into()], false, &[build.clone(), deploy.clone()]).unwrap();
+        assert!(cli.for_task(&build, false).is_some());
+        assert!(cli.for_task(&deploy, false).is_some());
+        // a post-phase occurrence, another invocation, and a task a run entry started
+        assert!(
+            cli.for_task(&deploy.clone().with_run_phase(TaskRunPhase::Post), false)
+                .is_none()
+        );
+        assert!(cli.for_task(&named("deploy", &["--prod"]), false).is_none());
+        assert!(cli.for_task(&deploy, true).is_none());
+        // a task that only starts other tasks has nothing to receive the grant
+        let orchestrator = Task {
+            run: vec![crate::task::RunEntry::SingleTask {
+                task: "build".into(),
+                args: vec![],
+                env: Default::default(),
+            }],
+            ..named("parent", &[])
+        };
+        let cli =
+            CliSecretGrant::new(&["A".into()], false, std::slice::from_ref(&orchestrator)).unwrap();
+        assert!(cli.for_task(&orchestrator, false).is_none());
+        // every task a glob, `default` or `--all` selected is named
+        let cli =
+            CliSecretGrant::new(&[], true, &[named("lint", &[]), named("test", &[])]).unwrap();
+        let all = cli.for_task(&named("test", &[]), false).unwrap();
+        assert!(all.keys.is_empty());
+        assert_eq!(all.all, Some(GrantOrigin::CliAll));
+    }
+
+    #[test]
+    fn cli_grant_rejects_names_that_cannot_be_granted() {
+        let tasks = [named("deploy", &[])];
+        let err = CliSecretGrant::new(
+            &["ok".into(), "a b".into(), "AWS_*".into(), "PATH".into()],
+            false,
+            &tasks,
+        )
+        .err()
+        .unwrap()
+        .to_string();
+        assert!(
+            err.contains("--secrets: \"a b\" in --secrets is not a valid"),
+            "{err}"
+        );
+        assert!(
+            err.contains("\"AWS_*\" in --secrets: wildcards are not supported"),
+            "{err}"
+        );
+        assert!(
+            err.contains("secret name PATH is reserved by mise"),
+            "{err}"
+        );
+    }
+
+    #[test]
+    fn command_line_grants_are_not_held_to_where_the_task_is_defined() {
+        // a global task: its own list is G9, the command line is the person asking
+        let task = Task {
+            global: true,
+            ..named("deploy", &[])
+        };
+        let a = SecretName::new("A").unwrap();
+        let own = SecretGrant {
+            keys: BTreeMap::from([(
+                a.clone(),
+                vec![GrantOrigin::TaskList {
+                    file: PathBuf::from("/h/.config/mise/config.toml"),
+                }],
+            )]),
+            all: None,
+        };
+        assert!(
+            static_problems(&task, &own, None, &EnvView::default())
+                .iter()
+                .any(|p| p.kind == ProblemKind::NotProject)
+        );
+        let cli = SecretGrant {
+            keys: BTreeMap::from([(a.clone(), vec![GrantOrigin::CliFlag])]),
+            all: None,
+        };
+        assert!(static_problems(&task, &cli, None, &EnvView::default()).is_empty());
+        let all = SecretGrant {
+            keys: BTreeMap::new(),
+            all: Some(GrantOrigin::CliAll),
+        };
+        assert!(!all.is_empty());
+        assert!(static_problems(&task, &all, None, &EnvView::default()).is_empty());
+        // both: the task's own list still counts
+        let both = own.merged(cli);
+        assert!(
+            static_problems(&task, &both, None, &EnvView::default())
+                .iter()
+                .any(|p| p.kind == ProblemKind::NotProject)
+        );
+        assert_eq!(
+            both.granted_by(&a),
+            "--secrets, secrets = [...] in config.toml"
+        );
+        // a launcher that was not a person is refused either way
+        assert!(
+            static_problems(&task, &all, Some(SecretsDenied::Hook), &EnvView::default())
+                .iter()
+                .any(|p| p.kind == ProblemKind::Denied)
+        );
+    }
+
+    #[test]
+    fn template_refs_cover_run_and_env_literals() {
+        use crate::config::env_directive::EnvDirective;
+        let mut task = Task {
+            name: "pay".into(),
+            run: vec![crate::task::RunEntry::Script(
+                "echo {{ env.STRIPE_KEY }} {{ get_env(name='B') }}".into(),
+            )],
+            ..Default::default()
+        };
+        task.env.0.push(EnvDirective::Val(
+            "X".into(),
+            "{{ env[\"C\"] }}".into(),
+            Default::default(),
+        ));
+        assert_eq!(
+            EnvView::default().template_refs(&task),
+            BTreeSet::from(["STRIPE_KEY", "B", "C"].map(String::from))
+        );
     }
 }

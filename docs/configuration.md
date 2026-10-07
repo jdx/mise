@@ -366,7 +366,7 @@ See [environments](/environments/).
 
 <Badge type="warning" text="experimental" />
 
-Sources for mise secrets: values resolved only when mise starts a task that was granted them.
+Sources for mise secrets: values resolved only when mise starts a task or `mise x` command that was granted them.
 Project config only, such as `[secrets.fnox]`. See [mise secrets with fnox](/environments/secrets/fnox.html).
 
 ### `[vars]` - Configuration Variables

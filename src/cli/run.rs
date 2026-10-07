@@ -74,6 +74,10 @@ use tokio::sync::Mutex;
         help = r###"Run "test" with stdin/stdout/stderr all connected to the current terminal. This forces `--jobs=1` to prevent interleaving of output."###
     ),
     example(
+        r###"mise run --secrets DEPLOY_KEY deploy"###,
+        help = r###"Give the "deploy" task the DEPLOY_KEY secret from the project's secrets source. Its dependencies do not receive it."###
+    ),
+    example(
         r###"mise run lint ::: test ::: check"###,
         help = r###"Run the "lint", "test", and "check" tasks in parallel."###
     ),
@@ -178,6 +182,16 @@ pub(crate) struct Run {
     /// Configure with `raw` config or `MISE_RAW` env var
     #[usage(long, short, verbatim_doc_comment)]
     pub raw: bool,
+
+    /// Give the tasks named on the command line these secrets (comma-separated)
+    /// Their dependencies and subtasks do not receive them. Put this flag before the task name.
+    #[usage(long, value_name = "SECRET", delimiter = ',', conflicts = ["affected"], verbatim_doc_comment)]
+    pub secrets: Vec<String>,
+
+    /// Give the tasks named on the command line every secret the project can inject
+    /// (fnox env = true or "exec"; never env = false). Dependencies and subtasks do not receive them.
+    #[usage(long, conflicts = ["secrets", "affected"], verbatim_doc_comment)]
+    pub secrets_all: bool,
 
     /// Shell to use to run toml tasks
     ///
@@ -335,6 +349,27 @@ pub(crate) struct Run {
     /// Set by launchers that start tasks without a person asking for them.
     #[usage(skip)]
     pub secrets_denied: Option<crate::secrets::SecretsDenied>,
+
+    /// What `--secrets` and `--secrets-all` grant, once the named tasks are known.
+    #[usage(skip)]
+    pub cli_secrets: Option<crate::secrets::CliSecretGrant>,
+}
+
+/// C3: `mise run deploy --secrets X` hands `--secrets` to the task, which is almost never
+/// what was meant. Only the task's own arguments are checked, never what follows `--`.
+fn warn_secrets_flag_in_task_args(tasks: &[Task]) {
+    for task in tasks {
+        let given = task
+            .args
+            .iter()
+            .any(|a| a == "--secrets" || a == "--secrets-all" || a.starts_with("--secrets="));
+        if given && !task.usage.contains("secrets") {
+            warn!(
+                "--secrets after the task name is passed to {} as an argument. Put mise flags first: mise run --secrets DEPLOY_KEY {}",
+                task.name, task.name
+            );
+        }
+    }
 }
 
 fn affected_task_args(args: &[String]) -> Vec<String> {
@@ -696,6 +731,7 @@ impl Run {
         if self.affected_json {
             return Ok(());
         }
+        warn_secrets_flag_in_task_args(&task_list);
 
         // Args after -- go directly to tasks (no prefix). They are also
         // recorded on `trailing_args` so the task renderer can detect
@@ -755,6 +791,14 @@ impl Run {
         // 2. Include monorepo subdirectory tools in the toolset before installing
         // 3. Validate and install tools for the complete dependency set before execution
         let execution_tasks = task_list.clone();
+        if !self.secrets.is_empty() || self.secrets_all {
+            // Fails before tools are installed or anything starts.
+            self.cli_secrets = Some(crate::secrets::CliSecretGrant::new(
+                &self.secrets,
+                self.secrets_all,
+                &execution_tasks,
+            )?);
+        }
         let resolved_tasks = otel::TaskRunTelemetry::phase(
             telemetry.as_ref(),
             "resolve tasks",
@@ -1026,7 +1070,7 @@ impl Run {
                     on_task_dropped: |task: &Task| this.retire_keep_order_slot(task),
                     continue_on_error: this.continue_on_error,
                 },
-                |task, deps_for_remove, allow_during_interruption, install_tools| {
+                |task, deps_for_remove, allow_during_interruption, injected| {
                     let this = this.clone();
                     let spawn_context = spawn_context.clone();
                     async move {
@@ -1035,7 +1079,7 @@ impl Run {
                             task,
                             deps_for_remove,
                             allow_during_interruption,
-                            install_tools,
+                            injected,
                             spawn_context,
                         )
                         .await
@@ -1079,7 +1123,7 @@ impl Run {
         task: Task,
         deps_for_remove: Arc<Mutex<Deps>>,
         inherited_allow_during_interruption: bool,
-        install_tools: bool,
+        injected: bool,
         ctx: crate::task::task_scheduler::SpawnContext,
     ) -> Result<()> {
         if Self::should_abort_while_stopping(
@@ -1098,7 +1142,7 @@ impl Run {
             return Ok(());
         }
         let needs_task_permit = task_needs_permit(&task);
-        let needs_install = install_tools && !this.skip_tools;
+        let needs_install = injected && !this.skip_tools;
         let mut permit_opt = if needs_task_permit || needs_install {
             let wait_start = std::time::Instant::now();
             let p = Some(ctx.semaphore.clone().acquire_owned().await?);
@@ -1211,6 +1255,7 @@ impl Run {
                 permit: &mut permit,
                 allow_during_interruption,
                 otel_span_cx,
+                injected,
             }))
             .catch_unwind()
             .await
@@ -1508,6 +1553,7 @@ impl Run {
             task_cache_explain_json: self.task_cache_explain_json,
             secrets_file_dir: self.tmpdir.join("secrets"),
             secrets_denied: self.secrets_denied,
+            cli_secrets: self.cli_secrets.take(),
             sandbox: crate::sandbox::SandboxConfig::from_settings_and_cli(
                 &Settings::get().sandbox,
                 self.deny_all,

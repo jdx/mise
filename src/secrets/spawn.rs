@@ -115,7 +115,7 @@ fn open_private(path: &Path) -> std::io::Result<std::fs::File> {
 }
 
 /// Debug lists key names only.
-pub(crate) struct SpawnSecrets {
+pub struct SpawnSecrets {
     pub(super) env: BTreeMap<String, SecretValue>,
     /// path-valued entries for `as_file` keys
     pub(super) file_env: BTreeMap<String, String>,
@@ -136,7 +136,7 @@ impl std::fmt::Debug for SpawnSecrets {
 impl SpawnSecrets {
     /// remove, then set; every set key is also deleted from `env_remove` (M2 put inherited
     /// keys there).
-    pub(crate) fn apply(&self, env: &mut EnvMap, env_remove: &mut BTreeSet<String>) {
+    pub fn apply(&self, env: &mut EnvMap, env_remove: &mut BTreeSet<String>) {
         for key in &self.remove {
             env.retain(|k, _| !env_key_eq(k, key));
             env_remove.insert(key.clone());
@@ -156,6 +156,39 @@ impl SpawnSecrets {
     /// Sorted names this spawn sets, comma-joined.
     pub(crate) fn marker_value(&self) -> String {
         self.names.iter().cloned().collect::<Vec<_>>().join(",")
+    }
+
+    /// `mise x` writes the values into its own environment before `exec`, and the standard
+    /// library panics, naming the value, on one that contains NUL. Rejects that first, naming
+    /// keys only.
+    pub(crate) fn ensure_settable(&self, who: &str) -> Result<()> {
+        for (key, value) in &self.env {
+            if value.expose().contains('\0') {
+                eyre::bail!(
+                    "{who}: {key} contains a NUL byte, which an environment variable cannot hold"
+                );
+            }
+        }
+        Ok(())
+    }
+
+    /// The marker for a process that keeps its inherited environment (`mise x`): this
+    /// spawn's names plus the keys that were already marked, sorted and comma-joined.
+    pub fn marker_value_with_inherited(&self) -> String {
+        self.names
+            .iter()
+            .chain(mise_util::env::INHERITED_SECRET_KEYS.iter())
+            .cloned()
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect::<Vec<_>>()
+            .join(",")
+    }
+
+    /// The env keys this spawn sets, for scrubbing mise's own environment after a failed
+    /// exec.
+    pub fn scrub_keys(&self) -> Vec<String> {
+        self.names.iter().cloned().collect()
     }
 
     pub(crate) fn file_paths(&self) -> impl Iterator<Item = &Path> {
@@ -223,6 +256,30 @@ mod tests {
         assert!(rm.contains("GONE") && !rm.contains("A"));
         assert_eq!(s.marker_value(), "A,B");
         assert!(s.has_values());
+    }
+
+    #[test]
+    fn nul_values_are_rejected_without_echoing_them() {
+        let bad = SpawnSecrets::for_test(&[("DEPLOY_KEY", "ab\0-s3cr3t-0001")]);
+        let err = bad.ensure_settable("mise x").unwrap_err().to_string();
+        assert!(
+            err.contains("mise x: DEPLOY_KEY contains a NUL byte"),
+            "{err}"
+        );
+        assert!(!err.contains("s3cr3t") && !err.contains("-0001"), "{err}");
+        assert!(
+            SpawnSecrets::for_test(&[("DEPLOY_KEY", "fine-s3cr3t")])
+                .ensure_settable("mise x")
+                .is_ok()
+        );
+    }
+
+    #[test]
+    fn marker_with_inherited_and_scrub_keys() {
+        let s = spawn(&[]);
+        assert_eq!(s.scrub_keys(), ["A", "B"]);
+        // nothing was inherited in the test process
+        assert_eq!(s.marker_value_with_inherited(), "A,B");
     }
 
     #[test]

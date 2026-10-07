@@ -54,6 +54,8 @@ impl En {
             allow_write: vec![],
             allow_net: vec![],
             allow_env: vec![],
+            secrets: vec![],
+            secrets_all: false,
         }
         .run()
         .await

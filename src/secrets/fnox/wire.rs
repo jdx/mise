@@ -83,4 +83,7 @@ pub(super) struct EnvDocument {
     pub(super) remove: Vec<String>,
     #[serde(default)]
     pub(super) missing: Vec<String>,
+    /// The leases that ran
+    #[serde(default)]
+    pub(super) leases: Vec<String>,
 }

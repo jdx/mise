@@ -6038,7 +6038,7 @@
       ]
     },
     "secrets": {
-      "description": "[experimental] Sources for mise secrets: values resolved only when mise starts a task that was granted them. Project config only.",
+      "description": "[experimental] Sources for mise secrets: values resolved only when mise starts a task or `mise x` command that was granted them. Project config only.",
       "type": "object",
       "properties": {
         "fnox": {

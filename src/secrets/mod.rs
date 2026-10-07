@@ -10,7 +10,9 @@ use std::sync::Arc;
 
 use crate::config::settings::SettingsExt;
 use crate::config::{Config, Settings};
+use crate::env_diff::EnvMap;
 use crate::file::display_path;
+use crate::sandbox::SandboxConfig;
 
 mod broker;
 mod config;
@@ -21,15 +23,15 @@ mod source;
 mod spawn;
 
 pub use broker::is_resolve_failure;
-pub(crate) use broker::{Grantee, SecretBroker, SpawnRequest, TerminalAccess};
+pub(crate) use broker::{Grantee, Pending, SecretBroker, SpawnRequest, TerminalAccess};
+pub use grant::{CliSecretGrant, G7_TEXT, Problem, ProblemKind, SecretsDenied, TaskSecrets};
 pub(crate) use grant::{
-    DENIED_MARKER, EnvView, SecretGrant, aggregate_error, collision_problem, grant_for_task,
-    sandbox_problem, static_problems,
+    DENIED_MARKER, EnvView, SecretGrant, Subject, aggregate_error, collision_problem,
+    denied_from_env, effective_grant, grant_for_task, sandbox_problem, static_problems,
 };
-pub use grant::{G7_TEXT, Problem, ProblemKind, SecretsDenied, TaskSecrets};
 pub use name::SecretName;
 pub use source::{Catalog, CatalogEntry, InjectMode, KeyKind};
-pub(crate) use spawn::SpawnSecrets;
+pub use spawn::SpawnSecrets;
 
 use source::SecretSource;
 
@@ -120,6 +122,74 @@ pub(crate) async fn open_source(
     ))
 }
 
+/// What `mise x` asks for.
+pub struct ExecSecretsRequest<'a> {
+    /// `--secrets`
+    pub keys: &'a [String],
+    /// `--secrets-all`
+    pub all: bool,
+    /// the env mise computed for the command, before secrets
+    pub base_env: &'a EnvMap,
+    pub sandbox: &'a SandboxConfig,
+}
+
+struct ExecTerminal;
+
+#[async_trait::async_trait]
+impl TerminalAccess for ExecTerminal {
+    /// Nothing else runs concurrently, so there is no lock to take.
+    async fn acquire(
+        &self,
+        pending: &Pending,
+    ) -> Option<tokio::sync::RwLockWriteGuard<'static, ()>> {
+        eprintln!("secrets: asking fnox for {}", pending.describe());
+        None
+    }
+}
+
+/// The values `mise x --secrets` and `--secrets-all` hand to the command. `Ok(None)` when
+/// nothing is left to grant. Experimental, and refused in safe mode. `mise x` hands the
+/// process over with `exec`, so these values are in mise's own environment until then.
+pub async fn prepare_exec_secrets(
+    config: &Arc<Config>,
+    req: ExecSecretsRequest<'_>,
+) -> eyre::Result<Option<SpawnSecrets>> {
+    if req.keys.is_empty() && !req.all {
+        return Ok(None);
+    }
+    Settings::get().ensure_experimental("mise secrets")?;
+    Settings::ensure_not_safe("mise secrets")?;
+    let broker = SecretBroker::default();
+    let ctx = crate::task::task_context_builder::TaskContextBuilder::new();
+    let no_env_keys = Default::default();
+    // `base_env` is what mise computed for the command, so mise sets every key in it, even one
+    // whose value equals the shell's.
+    let mise_env_keys: std::collections::BTreeSet<String> = req.base_env.keys().cloned().collect();
+    broker
+        .prepare_exec(
+            config,
+            req.keys,
+            req.all,
+            SpawnRequest {
+                grantee: Grantee::Exec,
+                grant: &SecretGrant::default(),
+                base_env: req.base_env,
+                task_env_keys: &no_env_keys,
+                mise_set_inherited: &no_env_keys,
+                mise_env_keys: &mise_env_keys,
+                // mise x has no task env, so no default was rendered
+                rendered_defaults: &no_env_keys,
+                sandbox: req.sandbox,
+                file_dir: None,
+                terminal: &ExecTerminal,
+                ctx_builder: &ctx,
+                denied: denied_from_env(),
+                interactive: is_interactive(),
+            },
+        )
+        .await
+}
+
 /// Used by `mise secrets ls`. Gated (safe mode, trust). Spawns
 /// `fnox ... env --json --describe` once.
 pub async fn inventory(config: &Arc<Config>) -> eyre::Result<Inventory> {
@@ -184,7 +254,12 @@ async fn inventory_tasks(
         if !same {
             continue;
         }
-        problems.extend(grant::key_problems(task, &grant, catalog, label));
+        problems.extend(grant::key_problems(
+            Subject::Task(&task.name),
+            &grant,
+            catalog,
+            label,
+        ));
         tasks.push(InventoryTask {
             task: task.name.clone(),
             keys: grant.keys.keys().map(|k| k.to_string()).collect(),
@@ -233,13 +308,13 @@ fn task_level_problems(
     let mut problems = vec![];
     for key in grant.keys.keys() {
         if !sandbox.keeps_env_key(key.as_str()) {
-            problems.push(sandbox_problem(&task.name, key.as_str()));
+            problems.push(sandbox_problem(Subject::Task(&task.name), key.as_str()));
         }
         if declared
             .iter()
             .any(|d| mise_util::env::env_key_eq(d, key.as_str()))
         {
-            problems.push(collision_problem(&task.name, key.as_str()));
+            problems.push(collision_problem(Subject::Task(&task.name), key.as_str()));
         }
     }
     problems
@@ -323,9 +398,12 @@ pub async fn check_task_secrets(
             check.fnox_missing = true;
         }
         Ok((catalog, label)) => {
-            check
-                .problems
-                .extend(grant::key_problems(task, &grant, &catalog, &label));
+            check.problems.extend(grant::key_problems(
+                Subject::Task(&task.name),
+                &grant,
+                &catalog,
+                &label,
+            ));
         }
         Err(err) => check.problems.push(Problem::new(
             &task.name,

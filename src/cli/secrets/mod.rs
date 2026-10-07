@@ -42,6 +42,7 @@ impl Secrets {
         let cmd = self.command.unwrap_or(Commands::Ls(ls::SecretsLs {
             json: false,
             no_header: false,
+            complete: false,
         }));
 
         cmd.run(self.json, self.no_header).await
