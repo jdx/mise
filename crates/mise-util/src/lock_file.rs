@@ -130,32 +130,45 @@ impl LockFile {
 #[cfg(windows)]
 fn openable(path: &Path) -> std::borrow::Cow<'_, Path> {
     use std::borrow::Cow;
-    use std::os::windows::ffi::OsStrExt;
+    use std::os::windows::ffi::{OsStrExt, OsStringExt};
     use std::path::{Component, Prefix};
 
     // The directory limit (`MAX_PATH` less room for an 8.3 name), which is
     // also below the file limit.
-    if path.as_os_str().encode_wide().count() < crate::file::MAX_PATH - 12 {
+    if path.is_absolute() && path.as_os_str().encode_wide().count() < crate::file::MAX_PATH - 12 {
         return Cow::Borrowed(path);
     }
     // A verbatim path is taken literally, so it has to be absolute and
     // normalized first: no `/`, `.` or `..`.
-    let Ok(absolute) = std::path::absolute(path) else {
-        return Cow::Borrowed(path);
+    let absolute = match std::path::absolute(path) {
+        Ok(absolute) => absolute,
+        Err(error) => {
+            debug!(
+                "cannot normalize long lock path {}: {error}",
+                display_path(path)
+            );
+            return Cow::Borrowed(path);
+        }
     };
-    let Some(text) = absolute.to_str() else {
+    if absolute.as_os_str().encode_wide().count() < crate::file::MAX_PATH - 12 {
         return Cow::Borrowed(path);
-    };
-    let verbatim = match absolute.components().next() {
+    }
+    let (prefix, skip) = match absolute.components().next() {
         Some(Component::Prefix(prefix)) => match prefix.kind() {
-            Prefix::Disk(_) => format!(r"\\?\{text}"),
-            Prefix::UNC(..) => format!(r"\\?\UNC\{}", &text[2..]),
+            Prefix::Disk(_) => (r"\\?\", 0),
+            Prefix::UNC(..) => (r"\\?\UNC\", 2),
             // already verbatim, or a device path
             _ => return Cow::Borrowed(path),
         },
         _ => return Cow::Borrowed(path),
     };
-    Cow::Owned(PathBuf::from(verbatim))
+    // Windows paths are UTF-16 and may contain unpaired surrogates. Add
+    // the prefix without a UTF-8 conversion, preserving the path exactly.
+    let wide = prefix
+        .encode_utf16()
+        .chain(absolute.as_os_str().encode_wide().skip(skip))
+        .collect::<Vec<_>>();
+    Cow::Owned(PathBuf::from(std::ffi::OsString::from_wide(&wide)))
 }
 
 #[cfg(not(windows))]
@@ -186,7 +199,7 @@ mod tests {
         let temp = tempfile::tempdir().unwrap();
         let path = temp.path().join("state/watch.lock");
         let held = LockFile::at(&path).try_lock().unwrap().unwrap();
-        let mut direct = fslock::LockFile::open(&path).unwrap();
+        let mut direct = fslock::LockFile::open(&*openable(&path)).unwrap();
         assert!(!direct.try_lock().unwrap());
         assert!(LockFile::at(&path).try_lock().unwrap().is_none());
 
@@ -212,6 +225,55 @@ mod tests {
         let held = LockFile::at(&path).try_lock().unwrap();
         assert!(held.is_some());
         assert!(LockFile::at(&path).try_lock().unwrap().is_none());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn a_non_unicode_lock_file_past_max_path_coordinates_with_direct_file_lock() {
+        use std::os::windows::ffi::OsStringExt;
+
+        let temp = tempfile::tempdir().unwrap();
+        let mut dir = temp.path().join(std::ffi::OsString::from_wide(&[0xd800]));
+        while dir.as_os_str().len() < 300 {
+            dir = dir.join("d".repeat(40));
+        }
+        let path = dir.join("alloc.lock");
+        assert!(path.to_str().is_none());
+        let held = LockFile::at(&path).try_lock().unwrap().unwrap();
+        let mut direct = fslock::LockFile::open(&*openable(&path)).unwrap();
+        assert!(!direct.try_lock().unwrap());
+        drop(held);
+        assert!(direct.try_lock().unwrap());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn a_short_relative_lock_path_with_a_long_absolute_path_coordinates() {
+        use std::os::windows::ffi::OsStrExt;
+
+        // Do not change the working directory: other tests run concurrently.
+        let cwd = std::env::current_dir().unwrap();
+        let temp = tempfile::tempdir_in(&cwd).unwrap();
+        let root = temp.path().strip_prefix(&cwd).unwrap();
+        let tail_len = crate::file::MAX_PATH
+            - 15
+            - root.as_os_str().encode_wide().count()
+            - "alloc.lock".len();
+        let path = root.join("d".repeat(tail_len)).join("alloc.lock");
+        assert!(path.as_os_str().encode_wide().count() < crate::file::MAX_PATH - 12);
+        assert!(
+            std::path::absolute(&path)
+                .unwrap()
+                .as_os_str()
+                .encode_wide()
+                .count()
+                >= crate::file::MAX_PATH - 12
+        );
+        let held = LockFile::at(&path).try_lock().unwrap().unwrap();
+        let mut direct = fslock::LockFile::open(&*openable(&path)).unwrap();
+        assert!(!direct.try_lock().unwrap());
+        drop(held);
+        assert!(direct.try_lock().unwrap());
     }
 
     #[cfg(windows)]
