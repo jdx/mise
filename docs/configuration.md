@@ -342,8 +342,7 @@ hour.
 - Only global config can turn this on. A project config can't, and when a project sets its own
   version of the tool, runs in that project don't update it.
 - Only the tool being run is checked: `mise x -- npm test` doesn't update `claude`. Tasks,
-  `mise hook-env`, and shell activation never update tools; with activation, run the tool through
-  its shim or `mise x` to get updates.
+  `mise hook-env`, and shell activation never update tools.
 - Exact versions such as `node = "22.11.0"` are never updated. If a global lockfile
   (`mise lock --global`) pins the tool, the update moves the lock entry to the new version. A
   project's config and lockfile are never changed.
@@ -351,6 +350,18 @@ hour.
 - The previous version is pruned on the same schedule as `mise upgrade` (see
   [`upgrade.auto_prune`](/configuration/settings.html#upgrade.auto_prune)).
 - If the last update of a tool failed, `mise doctor` shows the error.
+
+To update in the background instead, so launches never wait and tools run directly from PATH
+(with shell activation) stay current too, declare the `tool-update` service in your global config
+and run `mise bootstrap services apply`:
+
+```toml
+[bootstrap.services.mise-tool-update]
+builtin = "tool-update"
+```
+
+The service checks once an hour and updates each tool when its interval is due. While it runs,
+launches don't update tools themselves. See [services](/bootstrap/services.html#user-services).
 
 ### `include` - Share config from a remote file {#include}
 

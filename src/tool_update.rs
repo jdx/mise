@@ -1,10 +1,11 @@
 //! Opt-in updates for tools configured in global config.
 //!
 //! A tool whose global `[tools]` entry sets `auto_update` is upgraded within
-//! its configured version when a shim or `mise x` is about to launch it and
-//! its check interval has elapsed. The upgrade runs in `mise __tool-update`;
-//! this module decides which tool is eligible and when, and keeps the state
-//! that rate-limits checks and reports failures to `mise doctor`.
+//! its configured version when its check interval has elapsed: by the
+//! `tool-update` service when it is running, otherwise when a shim or `mise x`
+//! is about to launch it. The upgrade runs in `mise __tool-update`; this module
+//! decides which tool is eligible and when, and keeps the state that
+//! rate-limits checks and reports failures to `mise doctor`.
 
 use std::path::PathBuf;
 use std::time::Duration;
@@ -63,11 +64,21 @@ pub fn any_opted_in(toolset: &Toolset) -> bool {
         .any(|(_, tv)| global_auto_update(tv).is_some())
 }
 
+/// Who is asking to update a tool.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Updater {
+    /// A shim or `mise x` about to launch the tool; it leaves updates to the
+    /// service while one runs.
+    Launch,
+    /// The `tool-update` service.
+    Service,
+}
+
 /// Claim the update check for `tv` if it opted in, is not an exact version,
 /// and its interval has elapsed, returning its tool id. The check is recorded
-/// as made right away, so concurrent launches start one update and a failed or
+/// as made right away, so concurrent claims start one update and a failed or
 /// offline update is not retried until the next interval.
-pub fn claim_due(tv: &ToolVersion) -> Option<String> {
+pub fn claim_due(tv: &ToolVersion, updater: Updater) -> Option<String> {
     let value = global_auto_update(tv)?;
     let settings = Settings::get();
     if tv.request_pinned_this_version()
@@ -77,6 +88,9 @@ pub fn claim_due(tv: &ToolVersion) -> Option<String> {
         || settings.ci
         || ci_info::is_ci()
     {
+        return None;
+    }
+    if updater == Updater::Launch && service_running() {
         return None;
     }
     let tool_id = tv.ba().full_without_opts();
@@ -113,6 +127,28 @@ fn claim(tool_id: &str, interval: Duration) -> Result<bool> {
         warn!("auto_update interval for {tool_id} is below the 1h minimum, using 1h instead");
     }
     Ok(true)
+}
+
+/// Whether the `tool-update` service is running: it holds this lock for as
+/// long as it runs.
+fn service_running() -> bool {
+    matches!(
+        lock_file::LockFile::at(&service_lock_path()).try_lock(),
+        Ok(None)
+    )
+}
+
+/// Take the service lock, waiting while another service holds it. Waiting,
+/// not giving up, so a launch briefly checking the lock can't make a starting
+/// service think another one is running.
+pub fn lock_service() -> Result<fslock::LockFile> {
+    lock_file::LockFile::at(&service_lock_path())
+        .with_pid()
+        .lock()
+}
+
+fn service_lock_path() -> PathBuf {
+    state_dir().join("service.lock")
 }
 
 /// Lock `tool_id` for an update, or `None` when another process is updating it.

@@ -435,14 +435,24 @@ mise tool-alias unset node project
 """#
     }
 }
-cmd __tool-update hide=#true help="Upgrade one globally configured tool for `auto_update`." effect=write {
+cmd __tool-update hide=#true help="Update globally configured tools for `auto_update`." effect=write {
     long_help #"""
-Upgrade one globally configured tool for `auto_update`.
+Update globally configured tools for `auto_update`.
 
-Run by a shim or `mise x` before it launches a tool whose global `[tools]` entry sets `auto_update` and whose check is due. The per-tool lock keeps a second update of the same tool from running alongside it.
+With a tool, upgrade it within its global config request. A shim or
+`mise x` runs this before launching a tool whose check is due; the
+per-tool lock keeps a second update of the same tool from running
+alongside it.
+
+With `--watch`, run as the `tool-update` service: check every opted-in tool
+once an hour and update the ones that are due. Declare the service with:
+
+    [bootstrap.services.mise-tool-update]
+    builtin = "tool-update"
 """#
+    flag --watch help="Run until stopped, updating due tools once an hour" conflicts=TOOL
     flag "-h --help" help="Print help" action=help builtin=#true
-    arg <TOOL>
+    arg "[TOOL]" required=#false
 }
 cmd asdf hide=#true help="[internal] simulates asdf for plugins that call \"asdf\" internally" {
     flag "-h --help" help="Print help" action=help builtin=#true

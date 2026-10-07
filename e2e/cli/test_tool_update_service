@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+
+# The tool-update service (`[bootstrap.services.<name>] builtin = "tool-update"`
+# runs `mise __tool-update --watch`) updates opted-in global tools, and
+# launches leave updates to it while it runs.
+
+printf '[tools]\ndummy = { version = "1", auto_update = true }\n' >"$MISE_CONFIG_DIR/config.toml"
+mise uninstall dummy --all
+mise install dummy@1.0.0
+
+mise __tool-update --watch >service.log 2>&1 &
+service=$!
+for _ in {1..300}; do
+  mise ls --installed dummy | grep -q 1.1.0 && break
+  sleep 0.1
+done
+assert_contains "mise ls --installed dummy" "1.1.0"
+
+# While it runs, a launch with a due check runs what is installed.
+mise uninstall dummy@1.1.0
+find "$MISE_STATE_DIR/tool-update" -type f ! -name '*.*' -delete
+assert "mise x -- dummy" "This is Dummy 1.0.0!"
+assert_fail "find '$MISE_STATE_DIR/tool-update' -type f ! -name '*.*' | grep -q ."
+
+# Without it, the launch updates in the foreground again.
+kill "$service"
+wait "$service" || true
+assert "mise x -- dummy" "This is Dummy 1.1.0!"
