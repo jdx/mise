@@ -387,3 +387,24 @@ assert_contains "cat ~/.fill/config.toml" 'model = "other"'
 assert_contains "cat ~/.fill/config.toml" 'effort = "high"'
 assert_contains "cat ~/.fill/config.toml" 'size = 9'
 assert_succeed "mise dotfiles status --missing"
+
+# defaults are reconsidered after an enforced merge on the same file: a scalar
+# the enforced entry replaces with a table does not hide the defaults inside it
+cat <<'EOF2' >shared/order-enforced.toml
+[tui]
+theme = "light"
+EOF2
+cat <<'EOF2' >shared/order-defaults.toml
+[tui]
+size = 3
+EOF2
+cat <<'EOF2' >mise.toml
+[dotfiles]
+"~/order.toml/a" = { source = "shared/order-defaults.toml", merge = "missing" }
+"~/order.toml/b" = { source = "shared/order-enforced.toml", merge = true }
+EOF2
+echo 'tui = false' >~/order.toml
+assert_succeed "mise dotfiles apply --yes"
+assert_contains "cat ~/order.toml" 'size = 3'
+assert_contains "cat ~/order.toml" 'theme = "light"'
+assert_succeed "mise dotfiles status --missing"

@@ -1088,6 +1088,9 @@ pub fn apply(
     written: &mut Vec<PathBuf>,
 ) -> Result<bool> {
     let mut todo: Vec<(&EditRequest, Option<String>)> = vec![];
+    // fill-only entries that look applied against the file as it is now; another
+    // merge applied in this run may still make their defaults needed
+    let mut deferred: Vec<(&EditRequest, Option<String>)> = vec![];
     let mut problems = vec![];
     // other merge entries in the config, so applying one entry through a target
     // filter still sees a sibling that sets the same key differently
@@ -1162,7 +1165,12 @@ pub fn apply(
         match pre {
             // markers exist: compare content to see if anything would change
             None => match block_state(req, desired.as_deref()) {
-                Ok(FileState::Applied) => continue,
+                Ok(FileState::Applied) => {
+                    if req.op.fills_missing_only() {
+                        deferred.push((req, desired));
+                    }
+                    continue;
+                }
                 Ok(_) => todo.push((req, desired)),
                 Err(err) => {
                     problems.push(format!(
@@ -1177,6 +1185,19 @@ pub fn apply(
             Some(_) => todo.push((req, desired)),
         }
     }
+    // an enforced merge can replace a value with a table, or recreate a key, so
+    // a fill-only entry on the same file is reconsidered after it
+    for (req, desired) in deferred {
+        if todo.iter().any(|(other, _)| {
+            matches!(other.op, EditOp::Merge { .. })
+                && !other.op.fills_missing_only()
+                && same_target(&other.path, &req.path)
+        }) {
+            todo.push((req, desired));
+        }
+    }
+    // defaults go in after the values other entries set
+    todo.sort_by_key(|(req, _)| req.op.fills_missing_only());
     let unapplied = unapplied_siblings(config, requests, &siblings, &merged);
     problems.extend(merge_conflicts(&merged, &unapplied));
     problems.extend(format_conflicts(requests, &siblings));
@@ -1673,6 +1694,10 @@ fn apply_one(req: &EditRequest, desired: Option<&str>, written: &mut Vec<PathBuf
         String::new()
     };
     let out = apply_to_string(req, desired, &text)?;
+    // a fill-only entry reconsidered after another merge may have nothing left to add
+    if existed && req.op.fills_missing_only() && out == text {
+        return Ok(());
+    }
     let failed = || format!("failed write: {}", req.path.display_user());
     if existed {
         let mut target = std::fs::OpenOptions::new()
