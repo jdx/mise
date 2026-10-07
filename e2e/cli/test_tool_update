@@ -169,6 +169,20 @@ EOF
 assert_contains "timeout 30 mise x -- dummy" "This is Dummy 1.1.0!"
 global_config 'dummy = { version = "1", auto_update = true }'
 
+# `--no-hooks` on the launch applies to its update.
+fresh_state no-hooks
+reset_dummy
+cat >"$MISE_CONFIG_DIR/config.toml" <<'EOF'
+[tools]
+dummy = { version = "1", auto_update = true }
+
+[hooks]
+postinstall = "touch $HOME/global-hook-ran"
+EOF
+assert "mise --no-hooks x -- dummy" "This is Dummy 1.1.0!"
+assert_fail "test -e $HOME/global-hook-ran"
+global_config 'dummy = { version = "1", auto_update = true }'
+
 # A global lockfile follows the update; a project lockfile is never touched.
 fresh_state lockfile
 reset_dummy

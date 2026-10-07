@@ -4,7 +4,7 @@ use std::sync::Arc;
 use eyre::Result;
 
 use crate::args::ToolArg;
-use crate::config::Config;
+use crate::config::{Config, Settings, SettingsExt};
 use crate::toolset::Toolset;
 use crate::{dirs, env, tool_update};
 
@@ -51,7 +51,8 @@ pub(crate) async fn update_before_launch(config: &Arc<Config>, ts: &Toolset, bin
     // `[env]` (PATH included) can't steer or be rewritten by the upgrade. The
     // launch's environments (`-E`) carry over, since they choose which global
     // files apply. Its progress goes to stderr; stdout stays the launched tool's.
-    let status = Command::new(&*env::MISE_BIN)
+    let mut command = Command::new(&*env::MISE_BIN);
+    command
         .args(["__tool-update", &tv.ba().short])
         .env_clear()
         .envs(
@@ -63,8 +64,12 @@ pub(crate) async fn update_before_launch(config: &Arc<Config>, ts: &Toolset, bin
         .env("MISE_ENV", env::mise_env().join(","))
         .current_dir(dirs::HOME.ancestors().last().unwrap_or(*dirs::HOME))
         .stdin(Stdio::null())
-        .stdout(std::io::stderr())
-        .status();
+        .stdout(std::io::stderr());
+    // `--no-hooks` on the launch applies to its update too.
+    if Settings::no_hooks() || Settings::get().no_hooks.unwrap_or(false) {
+        command.env("MISE_NO_HOOKS", "1");
+    }
+    let status = command.status();
     match status {
         Ok(status) if status.success() => true,
         Ok(status) => {
