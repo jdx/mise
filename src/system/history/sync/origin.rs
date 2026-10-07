@@ -24,7 +24,6 @@ pub struct SetOptions {
     /// The branch asked for; `None` takes the repository's own default branch.
     pub branch: Option<String>,
     pub mode: SyncMode,
-    pub yes: bool,
 }
 
 /// Only for a repository that lists no branches at all.

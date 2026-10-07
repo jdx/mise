@@ -30,7 +30,6 @@ pub struct ApplyRequest {
     /// Only these local paths (empty: everything pending).
     pub paths: Vec<PathBuf>,
     pub dry_run: bool,
-    pub yes: bool,
     /// Resolve these conflicts with the upstream version.
     pub take_remote: Vec<PathBuf>,
     /// Resolve these conflicts by publishing the local version next.
@@ -52,7 +51,6 @@ impl ApplyRequest {
         Self {
             paths: vec![],
             dry_run: false,
-            yes: true,
             take_remote: vec![],
             keep_local: vec![],
             take_remote_all: false,
