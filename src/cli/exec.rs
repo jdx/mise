@@ -302,7 +302,13 @@ impl Exec {
         let pitchfork_context = std::env::var(PITCHFORK_TEMPLATE_CONTEXT_ENV).ok();
         if let Some(context) = &pitchfork_context {
             let ctx = pitchfork_tera_ctx(&config, &ts, context).await?;
-            let mut tera = crate::tera::get_tera(crate::dirs::CWD.as_deref());
+            // On Windows pitchfork runs the command with `cmd /C`, which does not
+            // read `quote`'s POSIX quoting.
+            let mut tera = if crate::path::is_cmd_shell_program(std::path::Path::new(&program)) {
+                crate::tera::get_tera_for_cmd(crate::dirs::CWD.as_deref())
+            } else {
+                crate::tera::get_tera(crate::dirs::CWD.as_deref())
+            };
             for arg in std::iter::once(&mut program).chain(args.iter_mut()) {
                 if arg.contains("{{") || arg.contains("{%") || arg.contains("{#") {
                     *arg = crate::tera::render_str(&mut tera, arg, &ctx)

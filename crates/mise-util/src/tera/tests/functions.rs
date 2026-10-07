@@ -156,6 +156,36 @@ async fn test_quote() {
     assert_eq!(render_v1(template), expected);
 }
 #[tokio::test]
+async fn test_quote_for_cmd() {
+    for engine in [
+        TeraEngine::V1(Box::new(get_tera_v1(None))),
+        TeraEngine::V2(Box::new(get_tera_v2(None))),
+    ] {
+        let mut tera = quote_for_cmd(engine);
+        let mut quote = |value: &str| {
+            let mut ctx = BASE_CONTEXT.clone();
+            ctx.insert("cwd", "/");
+            ctx.insert("value", value);
+            render_str(&mut tera, "{{ value | quote }}", &ctx).unwrap()
+        };
+        // cmd.exe reads neither `'` nor `\"` as a quote, and expands `%VAR%` inside quotes.
+        assert_eq!(quote("my title"), r#""my title""#);
+        assert_eq!(
+            quote(r"C:\Program Files\node.exe"),
+            r#""C:\Program Files\node.exe""#
+        );
+        assert_eq!(quote("it's"), "it's");
+        assert_eq!(quote("50%"), "50^%");
+        assert_eq!(quote("50% & more"), r#""50"^%" & more""#);
+        // A backslash before a quote added around `%` is doubled for the child.
+        assert_eq!(
+            quote(r"C:\data\%cache folder"),
+            r#""C:\data\\"^%"cache folder""#
+        );
+        assert_eq!(quote(r#"a" & b"#), r#"^"a\^" ^& b^""#);
+    }
+}
+#[tokio::test]
 async fn test_as_str() {
     assert_eq!(render("{{ true | as_str }}"), "true");
     assert_eq!(render("{{ \"hello\" | as_str }}"), "hello");
