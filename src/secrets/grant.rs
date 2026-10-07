@@ -1393,17 +1393,17 @@ fn scan_get_env_name(chars: &[char], mut i: usize, out: &mut BTreeSet<String>) {
         let boundary = i == 0 || !is_ident(chars[i - 1]);
         if boundary && chars[i..].starts_with(&['n', 'a', 'm', 'e']) {
             let mut j = i + 4;
-            while chars.get(j) == Some(&' ') {
+            while chars.get(j).is_some_and(|c| c.is_whitespace()) {
                 j += 1;
             }
             if chars.get(j) == Some(&'=') {
                 j += 1;
-                while chars.get(j) == Some(&' ') {
+                while chars.get(j).is_some_and(|c| c.is_whitespace()) {
                     j += 1;
                 }
                 if chars.get(j).is_some_and(|c| is_quote(*c)) {
                     let (name, mut next) = read_literal(chars, j);
-                    while chars.get(next) == Some(&' ') {
+                    while chars.get(next).is_some_and(|c| c.is_whitespace()) {
                         next += 1;
                     }
                     // `'A' ~ 'B'` and the like are computed, not the literal `A`
@@ -1885,6 +1885,15 @@ mod tests {
                 "{dynamic}: {found:?}"
             );
         }
+        // whitespace of any kind around the name is still a literal name
+        for literal in [
+            "{{ get_env(name='HOME'\n) }}",
+            "{{ get_env(\tname\t=\t'HOME'\t) }}",
+            "{{ get_env(\n  name = 'HOME',\n  default = 'x'\n) }}",
+        ] {
+            assert!(check(literal).is_empty(), "{literal:?}");
+        }
+        assert_eq!(check("{{ get_env(name =\n'PGURL'\n) }}").len(), 1);
         // a literal name is an ordinary read, and unrelated literals are fine
         assert!(check("{{ get_env(name='HOME') }}").is_empty());
         assert_eq!(check("{{ get_env(name='PGURL') }}").len(), 1);
