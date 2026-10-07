@@ -259,6 +259,7 @@ The settings `packslip.exec`, `packslip.stampers`, and `skills.*` belong under
 | [`variant`](#variant)                                                       | No variant                      | Select a publisher-declared alternative build.               |
 | [`pubkey`](#pubkey)                                                         | Unset                           | Pin a minisign-format public key or public-key file.         |
 | [`identity`, `identity_prefix`, `issuer`](#identity-identity-prefix-issuer) | Derived from a recognized forge | Set the expected keyless signer and OIDC issuer.             |
+| [`workflow`](#workflow)                                                     | Any workflow of the repository  | Pin the repository workflow that signs releases on a tag.    |
 | [`list_identity_prefix`](#list-identity-prefix)                             | Release signer policy           | Pin a different workflow for the vendor release list.        |
 | [`prerelease`](#prerelease)                                                 | `false`                         | Include prerelease versions.                                 |
 | [`trust`](#trust)                                                           | Apply configured stampers       | Use `"vendor"` to exempt this tool from stamp requirements.  |
@@ -302,6 +303,28 @@ For example, a domain project signed by a GitHub workflow could use:
 Replace the example identity with the publisher's verified identity. Recognizing
 the signing issuer does not add release discovery: the domain still needs a
 [signed release list](/dev-tools/packslip-verification.html#project-discovery).
+
+### `workflow`
+
+A `github.com` project is by default accepted when any workflow of its
+repository signed the release. Name the workflow file to accept only that
+workflow, run on a tag:
+
+```toml
+[tools]
+"packslip:github.com/example/tool" = { version = "latest", workflow = "release.yaml" }
+```
+
+This expands to the identity prefix
+`https://github.com/example/tool/.github/workflows/release.yaml@refs/tags/` with
+GitHub's OIDC issuer, so a workflow run on a branch cannot sign a release. It
+cannot be combined with `pubkey`, `identity`, `identity_prefix`, or `issuer`;
+use those to pin another ref or forge. Like those options, it pins the
+signer by name, so a renamed repository needs the new name here.
+
+The same prefix also applies to the project's signed release list. If the
+vendor signs that list from another workflow or ref, pin it with
+[`list_identity_prefix`](#list-identity-prefix).
 
 ### `list_identity_prefix` {#list-identity-prefix}
 
