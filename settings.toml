@@ -295,26 +295,33 @@ rust_type = "Vec<String>"
 type = "ListString"
 
 [auto_update]
-default = false
-description = "Automatically update mise before running eligible commands."
+default_docs = "false"
+deprecated = "Use self_update.auto instead."
+deprecated_remove_at = "2028.4.0"
+deprecated_warn_at = "2027.4.0"
+description = "[deprecated] Use `self_update.auto` instead."
 docs = """
-When enabled, mise periodically checks for a newer release before running commands that permit
-network access. If an update is available, mise installs it without updating plugins, then re-runs
-the original command with the new binary.
-
-Automatic updates are skipped in CI, offline and prefer-offline modes, non-interactive sessions,
-shell integration commands, and installations whose packager disabled self-update. This setting is
-global-only so a project's configuration cannot opt users into replacing their mise binary.
+Renamed to [`self_update.auto`](#self_update.auto). mise still reads this setting and
+`MISE_AUTO_UPDATE` when `self_update.auto` is not set.
 """
 env = "MISE_AUTO_UPDATE"
 global_only = true
+optional = true
 type = "Bool"
 
 [auto_update_check_duration]
-default = "7d"
-description = "How often to check for a new mise release when auto-update is enabled."
+default_docs = "7d"
+deprecated = "Use self_update.check_duration instead."
+deprecated_remove_at = "2028.4.0"
+deprecated_warn_at = "2027.4.0"
+description = "[deprecated] Use `self_update.check_duration` instead."
+docs = """
+Renamed to [`self_update.check_duration`](#self_update.check_duration). mise still reads this
+setting and `MISE_AUTO_UPDATE_CHECK_DURATION` when `self_update.check_duration` is not set.
+"""
 env = "MISE_AUTO_UPDATE_CHECK_DURATION"
 global_only = true
+optional = true
 type = "Duration"
 
 [cache_prune_age]
@@ -570,7 +577,7 @@ description = "Suppress warnings when a newer mise version is available."
 docs = """
 Disables mise update notices in `mise version`, `mise --version`, and `mise doctor`.
 Other warnings are unaffected. This does not disable `mise self-update` or automatic updates
-enabled with [`auto_update`](#auto_update).
+enabled with [`self_update.auto`](#self_update.auto).
 """
 env = "MISE_DISABLE_UPDATE_WARNING"
 type = "Bool"
@@ -3043,6 +3050,40 @@ This setting is global-only so a project configuration cannot redirect updates o
 env = "MISE_SELF_UPDATE_API_URL"
 global_only = true
 type = "Url"
+
+[self_update.auto]
+default = false
+description = "Automatically update mise before running eligible commands."
+docs = """
+When enabled, mise periodically checks for a newer release before running commands that permit
+network access. If an update is available, mise installs it without updating plugins, then re-runs
+the original command with the new binary.
+
+Automatic updates are skipped in CI, offline and prefer-offline modes, non-interactive sessions,
+shell integration commands, and installations whose packager disabled self-update. This setting is
+global-only so a project's configuration cannot opt users into replacing their mise binary.
+
+```toml
+[settings]
+self_update.auto = true
+```
+
+This replaces the deprecated `auto_update` setting, which mise still reads when this one is not set.
+"""
+env = "MISE_SELF_UPDATE_AUTO"
+global_only = true
+type = "Bool"
+
+[self_update.check_duration]
+default = "7d"
+description = "How often to check for a new mise release when `self_update.auto` is enabled."
+docs = """
+How often automatic updates check for a new mise release. This replaces the deprecated
+`auto_update_check_duration` setting, which mise still reads when this one is not set.
+"""
+env = "MISE_SELF_UPDATE_CHECK_DURATION"
+global_only = true
+type = "Duration"
 
 [self_update.minimum_release_age]
 description = "Minimum release age for mise itself; inherits minimum_release_age (24h by default)."

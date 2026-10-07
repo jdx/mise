@@ -61,7 +61,7 @@ pub(crate) async fn maybe_auto_update(
         return Ok(());
     };
     if !auto_update_eligible(AutoUpdateContext {
-        enabled: settings.auto_update,
+        enabled: settings.self_update.auto,
         offline: settings.offline(),
         prefer_offline: settings.prefer_offline(),
         ci: settings.ci || ci_info::is_ci(),
@@ -86,7 +86,7 @@ pub(crate) async fn maybe_auto_update(
         }
     };
     let last_check_path = crate::dirs::CACHE.join("auto-update-last-check");
-    let check_duration = match settings.auto_update_check_duration() {
+    let check_duration = match settings.self_update_check_duration() {
         Ok(duration) => duration,
         Err(err) => {
             debug!("automatic mise update has an invalid check duration: {err:#}");

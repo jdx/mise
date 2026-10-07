@@ -45,7 +45,7 @@ def main():
                 "MISE_DATA_DIR": str(root / "data"),
                 "MISE_CACHE_DIR": str(root / "cache"),
                 "MISE_STATE_DIR": str(root / "state"),
-                "MISE_SELF_UPDATE_AVAILABLE": "true", "MISE_AUTO_UPDATE": "false",
+                "MISE_SELF_UPDATE_AVAILABLE": "true", "MISE_SELF_UPDATE_AUTO": "false",
                 "MISE_LOG_LEVEL": "info", "MISE_CI": "true",
                 # Exact versions must bypass even an impossible age policy.
                 "MISE_SELF_UPDATE_MINIMUM_RELEASE_AGE": "100y",
