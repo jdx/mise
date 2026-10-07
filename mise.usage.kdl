@@ -1225,7 +1225,7 @@ as a monitor layout that should never be applied on another machine.
             flag --no-autosave help="Save only on `mise dot save <path>`, never automatically"
             flag --encrypt help="Encrypt contents before saving them to history (requires `[history.encryption].recipients`)"
             flag --allow-plaintext help="Save an explicitly tracked credential-named file in plaintext"
-            flag "-y --yes" help="Accepted for compatibility; track no longer prompts"
+            flag "-y --yes" help="Accepted for compatibility; track no longer asks to confirm the paths"
             flag "-n --dry-run" help="Show what each path expands to (files, size, what is left out) without tracking it"
             flag "-h --help" help="Print help" action=help builtin=#true
             arg <PATH>… help="Paths to track (absolute or starting with ~/)" var=#true
@@ -3037,7 +3037,7 @@ as a monitor layout that should never be applied on another machine.
         flag --no-autosave help="Save only on `mise dot save <path>`, never automatically"
         flag --encrypt help="Encrypt contents before saving them to history (requires `[history.encryption].recipients`)"
         flag --allow-plaintext help="Save an explicitly tracked credential-named file in plaintext"
-        flag "-y --yes" help="Accepted for compatibility; track no longer prompts"
+        flag "-y --yes" help="Accepted for compatibility; track no longer asks to confirm the paths"
         flag "-n --dry-run" help="Show what each path expands to (files, size, what is left out) without tracking it"
         flag "-h --help" help="Print help" action=help builtin=#true
         arg <PATH>… help="Paths to track (absolute or starting with ~/)" var=#true

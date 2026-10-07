@@ -59,7 +59,7 @@ pub(crate) struct DotfilesTrack {
     #[usage(long)]
     allow_plaintext: bool,
 
-    /// Accepted for compatibility; track no longer prompts
+    /// Accepted for compatibility; track no longer asks to confirm the paths
     #[usage(long, short)]
     yes: bool,
 
