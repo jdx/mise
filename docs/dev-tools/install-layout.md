@@ -343,8 +343,23 @@ mise installs migrate node python@3.12.1
 ```
 
 The old directory is moved aside while its replacement installs, and put back
-if the install fails. Each migration is recorded in `installs/.mise/migrations/`
-before anything moves, so if a run is interrupted, the next
+if the install fails.
+
+A version that cannot be reinstalled is not an error. It happens when its
+release was withdrawn or is signed by a different identity than mise accepted
+before, when the network is unavailable, or when its installer fails. Its old
+directory is put back untouched, still works, and is reported as kept:
+
+```text
+skipped aube@2.2.4 (kept legacy layout): github.com/aubepkg/aube has no release 2.2.4 ...
+170 migrated, 12 kept legacy, 0 failed
+```
+
+A later `mise installs migrate` tries the kept versions again. The command exits
+non-zero only when a migration itself broke, for example when the old directory
+could not be put back.
+
+Each migration is recorded in `installs/.mise/migrations/` before anything moves, so if a run is interrupted, the next
 `mise installs migrate` either removes the old directory (the replacement had
 finished) or puts it back and withdraws the unfinished replacement. Run it while
 nothing is using the tools being moved.

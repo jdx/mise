@@ -25,6 +25,13 @@ fails. Versions whose recorded backend is not the one their tool resolves to
 now are left alone, as are tools that keep the legacy layout (`http:`,
 `rust`, `dotnet`).
 
+A version that cannot be reinstalled (its release was withdrawn or is signed
+by someone else now, or the network is unavailable) is not an error: its old
+directory stays exactly as it was, and the run reports it as kept in the
+legacy layout. It still works, and a later run tries it again. The command
+ends with a count of what moved, what was kept and what failed, and fails
+only when a migration itself broke.
+
 ## Arguments
 - **`[TOOL@VERSION]…`** — Only migrate these tools, or these versions of them
 
