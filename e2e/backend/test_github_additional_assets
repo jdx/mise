@@ -34,7 +34,8 @@ assert_contains "cat mise.lock" 'checksum = "sha256:230cf587de59730a1d7f9c49004f
 
 # Locked mode must reject an incomplete supplemental artifact list.
 cp mise.lock mise.lock.complete
-mise uninstall github:jdx/mise-test-fixtures
+# --all: the install without the supplemental pattern can still be present as its own installation.
+mise uninstall --all github:jdx/mise-test-fixtures
 awk '
   /^\[\[tools\."github:jdx\/mise-test-fixtures"\."platforms\..*"\.additional_artifacts\]\]$/ {
     skip_artifact = 1
@@ -64,5 +65,7 @@ assert_contains "$install_path/fd-8.7.0/bin/fd" "alternative to 'find'"
 sed '/additional_asset_patterns/d' mise.toml >mise.toml.primary-only
 mv mise.toml.primary-only mise.toml
 mise install
+# Different install options may select a different installation directory.
+install_path=$(mise where github:jdx/mise-test-fixtures)
 assert_fail "$install_path/fd-8.7.0/bin/fd"
 mise install --locked

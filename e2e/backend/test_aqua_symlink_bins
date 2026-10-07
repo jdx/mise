@@ -43,7 +43,9 @@ assert "mise install"
 
 just_root="$(mise where aqua:casey/just@1.46.0)"
 assert_directory_exists "$just_root/.mise-bins"
-assert "mise which just" "$just_root/.mise-bins/just"
+# `mise which` answers through the version link, which names the installation above.
+assert "mise which just" "$MISE_DATA_DIR/installs/aqua-casey-just/1.46.0/.mise-bins/just"
+assert "realpath '$MISE_DATA_DIR/installs/aqua-casey-just/1.46.0'" "$(realpath "$just_root")"
 assert_contains "mise x -- just --version" "just 1.46.0"
 
 cat <<EOF >mise.toml
@@ -63,5 +65,6 @@ EOF
 assert "mise install"
 
 shfmt_root="$(mise where aqua:mvdan/sh@3.12.0)"
-assert "mise which shfmt" "$shfmt_root/.mise-bins/shfmt"
+assert "mise which shfmt" "$MISE_DATA_DIR/installs/aqua-mvdan-sh/3.12.0/.mise-bins/shfmt"
+assert "realpath '$MISE_DATA_DIR/installs/aqua-mvdan-sh/3.12.0'" "$(realpath "$shfmt_root")"
 assert "mise x -- shfmt --version" "v3.12.0"

@@ -18,8 +18,9 @@ mise install tiny@2.1.0
 assert_contains "cat $MANIFEST" "tiny"
 assert_contains "mise ls tiny" "2.1.0"
 
-# Remove the tool dir (rm -rf workflow) — mise should handle it cleanly
-rm -rf "$MISE_DATA_DIR/installs/tiny"
+# Remove the tool dir (rm -rf workflow) — mise should handle it cleanly.
+# The installations can live outside installs/tiny (identity layout), so remove those too.
+rm -rf "$(mise where tiny@3.1.0)" "$(mise where tiny@2.1.0)" "$MISE_DATA_DIR/installs/tiny"
 # The manifest still references tiny, but the dir is gone — mise should not error
 assert_succeed "mise ls"
 # tiny should no longer appear as installed

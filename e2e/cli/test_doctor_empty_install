@@ -3,6 +3,8 @@
 # `is_version_installed` decides on path existence alone, so mise reports the
 # tool as installed and doctor used to say nothing about it.
 # https://github.com/jdx/mise/discussions/9324
+# Legacy layout: an identity installation without its receipt is already missing.
+export MISE_INSTALL_LAYOUT=legacy
 
 mise use dummy@1.0.0
 

@@ -2,8 +2,6 @@
 
 export MISE_LOCKFILE=1
 
-mise install dummy@1.0.0 dummy@1.1.0
-
 cat >mise.toml <<'TOML'
 [tools]
 dummy = { version = "latest", foo = "one", "vars.foo" = "two" }
@@ -36,6 +34,11 @@ backend = "aqua:jdx/hk"
 specifiers = ["latest"]
 options = { "vars.foo" = "stale" }
 TOML
+
+# Install the bound version with the configured options, which are part of what
+# makes an installation.
+cat base.lock valid.entry >mise.lock
+mise install
 
 # A broken candidate cannot discard a match already found or prevent a later match.
 for order in 'valid.entry stale.entry' 'stale.entry valid.entry'; do

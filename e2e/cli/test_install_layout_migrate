@@ -6,7 +6,7 @@ export MISE_EXPERIMENTAL=1
 installs="$MISE_DATA_DIR/installs"
 
 echo "=== legacy installations, made with the layout off ==="
-assert "mise install dummy@1.0.0 dummy@1.1.0 tiny@3.1.0"
+assert "MISE_INSTALL_LAYOUT=legacy mise install dummy@1.0.0 dummy@1.1.0 tiny@3.1.0"
 for v in 1.0.0 1.1.0; do
   assert "test -d '$installs/dummy/$v' && test ! -L '$installs/dummy/$v'"
 done

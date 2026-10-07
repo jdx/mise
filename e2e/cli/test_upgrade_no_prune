@@ -12,6 +12,7 @@ EOF
 
 mise uninstall dummy --all
 mise install dummy@1.0.0
+initial_install=$(mise where dummy@1.0.0)
 
 # --dry-run announces deferred pruning, and --no-prune withdraws it while still
 # reporting the install.
@@ -170,6 +171,15 @@ assert "ls $MISE_DATA_DIR/installs/dummy/1.0.0"
 
 timeout 15 mise config ls >/dev/null
 assert "awk 'END { print (NR < 10) }' '$MISE_STATE_DIR/deferred-prune-invocations'" "1"
+if [[ $(dirname "$initial_install") == "$MISE_DATA_DIR/installs" ]]; then
+  # The identity layout keeps templated tools until a project command observes
+  # the new config. Inspection must not render a fresh snapshot for pruning.
+  assert "ls $MISE_DATA_DIR/installs/dummy/1.0.0"
+  mise current >/dev/null
+  jq '.entries[].remove_after = 0' "$MISE_STATE_DIR/tool-purgatory.json" >purgatory.json
+  mv purgatory.json "$MISE_STATE_DIR/tool-purgatory.json"
+  timeout 15 mise config ls >/dev/null
+fi
 assert_fail "ls $MISE_DATA_DIR/installs/dummy/1.0.0"
 assert_fail "test -f '$MISE_STATE_DIR/tool-purgatory.json'"
 

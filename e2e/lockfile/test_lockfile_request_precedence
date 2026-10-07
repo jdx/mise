@@ -1,5 +1,11 @@
 #!/usr/bin/env bash
 
+# The file a version's dummy bin really is: `mise which` may name it through the
+# version link or through the installation directory.
+dummy_bin() {
+  realpath "$MISE_DATA_DIR/installs/dummy/$1/bin/dummy"
+}
+
 mise install dummy@1.0.0 dummy@1.1.0 dummy@2.0.0
 cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'
 [settings]
@@ -28,7 +34,7 @@ backend = "asdf:dummy"
 specifiers = ["latest"]
 TOML
 
-assert_contains "cd project && mise which dummy --tool dummy@latest" "/dummy/1.1.0/bin/dummy"
+assert "cd project && mise which dummy --tool dummy@latest | xargs realpath" "$(dummy_bin 1.1.0)"
 assert "cd project && mise x dummy -- dummy --version" "This is Dummy 1.1.0! --version"
 assert "cd project && mise x dummy@2 -- dummy --version" "This is Dummy 2.0.0! --version"
 assert "mise x dummy -- dummy --version" "This is Dummy 2.0.0! --version"
@@ -109,12 +115,12 @@ assert "cd missing-pin && mise x dummy -- dummy --version" "This is Dummy 2.0.0!
 # Merely having a project config does not override an inherited tool
 mkdir inherited
 printf '[env]\nEXAMPLE = "true"\n' >inherited/mise.toml
-assert_contains "cd inherited && mise which dummy --tool dummy@latest 2>warning" "/dummy/1.0.0/bin/dummy"
+assert "cd inherited && mise which dummy --tool dummy@latest 2>warning | xargs realpath" "$(dummy_bin 1.0.0)"
 assert_not_contains "cat inherited/warning" "Ignoring lockfile pin"
 
 # A matching effective pin suppresses warnings even when lower pins differ
 cp project/mise.lock missing-pin/mise.lock
-assert_contains "cd missing-pin && MISE_LOCKED=1 mise which dummy --tool dummy@latest 2>warning" "/dummy/1.1.0/bin/dummy"
+assert "cd missing-pin && MISE_LOCKED=1 mise which dummy --tool dummy@latest 2>warning | xargs realpath" "$(dummy_bin 1.1.0)"
 assert_not_contains "cat missing-pin/warning" "Ignoring lockfile pin"
 
 # No warning for a stale pin in a source that does not define this tool

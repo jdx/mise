@@ -73,5 +73,6 @@ assert_contains "mise x aqua:example/slsa-tool -- slsa-tool" "slsa-tool 1.0.0"
 assert "diff mise.lock mise.lock.expected"
 
 echo "=== locked_verify_provenance requires the signer ==="
-rm -rf "$MISE_DATA_DIR/installs/aqua-example-slsa-tool"
+# remove the installation itself (on the identity layout installs/<tool> only holds links)
+rm -rf "$(mise where aqua:example/slsa-tool@1.0.0)"
 assert_fail_contains "MISE_LOCKED_VERIFY_PROVENANCE=1 mise install --locked 2>&1" "slsa_signer_identity"

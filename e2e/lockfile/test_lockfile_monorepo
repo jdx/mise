@@ -150,7 +150,7 @@ version = "1.0.0"
 backend = "asdf:tiny"
 EOF
 
-rm -rf "$MISE_DATA_DIR/installs/tiny"
+mise uninstall --all tiny
 output=$(cd monorepo-dry-run/packages/a && mise install --dry-run 2>&1)
 assert_contains "echo '$output'" "tiny@1.0.0"
 assert "test -f monorepo-dry-run/packages/a/mise.lock"
@@ -181,7 +181,7 @@ EOF
 touch monorepo-install-colocated/packages/a/mise.lock
 touch monorepo-install-colocated/packages/b/mise.lock
 
-rm -rf "$MISE_DATA_DIR/installs/tiny"
+mise uninstall --all tiny
 assert "cd monorepo-install-colocated && mise install --monorepo"
 assert_contains "cat monorepo-install-colocated/packages/a/mise.lock" 'version = "1.0.0"'
 assert_contains "cat monorepo-install-colocated/packages/b/mise.lock" 'version = "2.1.0"'
@@ -202,7 +202,7 @@ tiny = "1.0.0"
 EOF
 touch monorepo-bad-roots/mise.lock
 
-rm -rf "$MISE_DATA_DIR/installs/tiny"
+mise uninstall --all tiny
 if [[ ${MISE_LOCKFILE_MODE:-merge} == generate ]]; then
   # Complete generation cannot prune safely without resolving membership.
   cp monorepo-bad-roots/mise.lock monorepo-bad-roots/mise.lock.before

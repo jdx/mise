@@ -104,8 +104,8 @@ EOF
 
 mise install
 
-one_prefix="$MISE_DATA_DIR/installs/conda-fixture-one/1.0.0"
-two_prefix="$MISE_DATA_DIR/installs/conda-fixture-two/1.0.0"
+one_prefix="$(mise where conda:fixture-one)"
+two_prefix="$(mise where conda:fixture-two)"
 assert "mise exec -- fixture-one" "one|$one_prefix|activated|dependency-output"
 assert "mise exec -- fixture-two" "two|$two_prefix|activated|dependency-output"
 assert_fail "mise exec -- sh -c 'command -v dependency-command'"
@@ -120,7 +120,7 @@ assert "mise exec -- fixture-one" "one|$one_prefix|activated|dependency-output"
 # A package with nothing to activate gets plain symlinks instead of launchers, so the
 # command starts without an extra shell and without the prefix's bin directory ahead of
 # the user's PATH — which it would otherwise pass on to everything it spawns.
-solo_prefix="$MISE_DATA_DIR/installs/conda-fixture-solo/1.0.0"
+solo_prefix="$(mise where conda:fixture-solo)"
 assert_succeed "test -L '$solo_prefix/.mise-bins/fixture-solo'"
 assert_succeed "mise exec -- fixture-solo -c 'echo \$PATH' | tr : '\n' | grep -qx '$solo_prefix/.mise-bins'"
 assert_fail "mise exec -- fixture-solo -c 'echo \$PATH' | tr : '\n' | grep -qx '$solo_prefix/bin'"
