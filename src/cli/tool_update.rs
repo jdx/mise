@@ -146,6 +146,10 @@ async fn update_due_tools() -> Result<()> {
             .iter()
             .filter(|request| request.is_os_supported() && tool_update::enabled(request))
         {
+            // Resolving can mean a remote lookup; only do it when due.
+            if !tool_update::is_due(request, Updater::Service) {
+                continue;
+            }
             let tv = match request.resolve(&config, &ResolveOptions::default()).await {
                 Ok(tv) => tv,
                 Err(err) => {

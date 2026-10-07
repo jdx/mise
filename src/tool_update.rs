@@ -100,6 +100,27 @@ pub fn claim_due(tv: &ToolVersion, updater: Updater) -> Option<String> {
 /// [`claim_due`] for a request that couldn't be resolved, so a lookup failure
 /// is reported once per interval like an update's, not on every pass.
 pub fn claim_due_request(request: &ToolRequest, updater: Updater) -> Option<String> {
+    let (tool_id, interval) = eligible(request, updater)?;
+    match claim(&tool_id, interval) {
+        Ok(true) => Some(tool_id),
+        Ok(false) => None,
+        Err(err) => {
+            debug!("tool-update: {tool_id}: {err:#}");
+            None
+        }
+    }
+}
+
+/// Whether [`claim_due_request`] would claim `request` now, without claiming
+/// it: lets the service skip version lookups that can't lead to an update.
+pub fn is_due(request: &ToolRequest, updater: Updater) -> bool {
+    eligible(request, updater)
+        .is_some_and(|(tool_id, interval)| !checked_within(&tool_id, interval))
+}
+
+/// The tool id and check interval of a request that may be updated now, apart
+/// from whether its interval has elapsed.
+fn eligible(request: &ToolRequest, updater: Updater) -> Option<(String, Duration)> {
     if updater == Updater::Launch && std::env::var_os(UPDATING_ENV).is_some() {
         return None;
     }
@@ -115,21 +136,19 @@ pub fn claim_due_request(request: &ToolRequest, updater: Updater) -> Option<Stri
         return None;
     }
     let tool_id = request.ba().full_without_opts();
-    let interval = match parse_auto_update(&value) {
-        Ok(interval) => interval?,
-        Err(err) => {
-            debug!("tool-update: {tool_id}: {err:#}");
-            return None;
-        }
-    };
-    match claim(&tool_id, interval) {
-        Ok(true) => Some(tool_id),
-        Ok(false) => None,
+    match parse_auto_update(&value) {
+        Ok(interval) => Some((tool_id, interval?)),
         Err(err) => {
             debug!("tool-update: {tool_id}: {err:#}");
             None
         }
     }
+}
+
+/// Whether `tool_id` was checked within `interval` (at least an hour).
+fn checked_within(tool_id: &str, interval: Duration) -> bool {
+    file::modified_duration(&StatePaths::new(tool_id).marker)
+        .is_ok_and(|age| age < interval.max(MIN_CHECK_DURATION))
 }
 
 /// Whether the launching command itself asked for `--locked` (or
@@ -151,9 +170,7 @@ fn claim(tool_id: &str, interval: Duration) -> Result<bool> {
     let Some(_claim) = lock_file::LockFile::at(&paths.claim).try_lock()? else {
         return Ok(false);
     };
-    if file::modified_duration(&paths.marker)
-        .is_ok_and(|age| age < interval.max(MIN_CHECK_DURATION))
-    {
+    if checked_within(tool_id, interval) {
         return Ok(false);
     }
     file::write_atomic(&paths.marker, "")?;
