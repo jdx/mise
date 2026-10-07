@@ -429,3 +429,21 @@ assert_contains "mise dotfiles status ~/selected.toml/defaults" "keys are missin
 assert_contains "mise dotfiles diff ~/selected.toml/defaults" '+model = "default"'
 assert_succeed "mise dotfiles apply ~/selected.toml/defaults --yes"
 assert_contains "cat ~/selected.toml" 'model = "default"'
+
+# Competing defaults are previewed in the same order as apply.
+echo 'model = "first"' >~/competing-first.toml
+echo 'model = "second"' >~/competing-second.toml
+echo 'theme = "existing"' >~/competing-target.toml
+cat >>~/.config/mise/config.toml <<'TOML'
+
+[dotfiles."~/competing-target.toml/first"]
+source = "~/competing-first.toml"
+merge = "missing"
+[dotfiles."~/competing-target.toml/second"]
+source = "~/competing-second.toml"
+merge = "missing"
+TOML
+assert_contains 'mise dot diff ~/competing-target.toml' '+model = "first"'
+assert_not_contains 'mise dot diff ~/competing-target.toml' '+model = "second"'
+assert_succeed 'mise dot apply ~/competing-target.toml --yes'
+assert_contains 'cat ~/competing-target.toml' 'model = "first"'

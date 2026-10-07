@@ -756,7 +756,7 @@ pub fn check(config: &Config, req: &EditRequest) -> Result<FileState> {
     check_selected(config, req, &selected)
 }
 
-/// Inspect an edit after only the enforced merges selected for this run.
+/// Inspect an edit after the earlier merges selected for this run.
 pub fn check_selected(
     config: &Config,
     req: &EditRequest,
@@ -795,9 +795,8 @@ pub fn check_selected(
     }
 }
 
-/// `text` as apply leaves it for a fill-only entry: with every other merge
-/// entry for the same file already applied, since defaults go in last. Any
-/// other entry sees `text` unchanged.
+/// `text` as apply leaves it for a fill-only entry: enforced merges first,
+/// then earlier defaults for the same file. Other entries see `text` unchanged.
 fn projected_text(
     config: &Config,
     req: &EditRequest,
@@ -808,20 +807,31 @@ fn projected_text(
         return Ok(text.to_string());
     }
     let mut text = text.to_string();
-    for other in selected {
+    let mut ordered = selected.iter().collect::<Vec<_>>();
+    ordered.sort_by_key(|other| other.op.fills_missing_only());
+    for other in ordered {
         let EditOp::Merge {
             format,
-            missing_only: false,
+            missing_only,
             ..
         } = &other.op
         else {
             continue;
         };
-        if (other.path == req.path && other.id == req.id) || !same_target(&other.path, &req.path) {
+        if other.path == req.path && other.id == req.id {
+            break;
+        }
+        if !same_target(&other.path, &req.path) {
             continue;
         }
         if let Some(desired) = desired_content(config, other)? {
-            text = structured_merge::merge(*format, &text, &desired)?;
+            if *missing_only {
+                if let Some(merged) = structured_merge::missing(*format, &text, &desired)? {
+                    text = merged;
+                }
+            } else {
+                text = structured_merge::merge(*format, &text, &desired)?;
+            }
         }
     }
     Ok(text)
