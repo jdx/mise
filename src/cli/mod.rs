@@ -1264,6 +1264,7 @@ impl Cli {
                         context_builder: Default::default(),
                         executor: None,
                         telemetry: None,
+                        secrets_denied: None,
                         no_cache: Default::default(),
                         task_cache: crate::task::TaskCacheMode::from_env()?,
                         task_cache_explain: false,

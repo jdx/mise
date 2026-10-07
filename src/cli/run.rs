@@ -331,6 +331,10 @@ pub(crate) struct Run {
 
     #[usage(skip)]
     pub telemetry: Option<otel::TaskRunTelemetry>,
+
+    /// Set by launchers that start tasks without a person asking for them.
+    #[usage(skip)]
+    pub secrets_denied: Option<crate::secrets::SecretsDenied>,
 }
 
 fn affected_task_args(args: &[String]) -> Vec<String> {
@@ -992,6 +996,7 @@ impl Run {
                 .await
                 .wrap_err_with(|| format!("failed to validate task {}", task.name))?;
         }
+        executor.preflight_secrets(&config, tasks.all()).await?;
 
         // Disable exit-on-ctrl-c so tasks can handle SIGINT gracefully
         ctrlc::exit_on_ctrl_c(false);
@@ -1278,7 +1283,12 @@ impl Run {
                         && Error::is_killed_by_signal(err);
                     was_stopping
                 };
-                if !interrupted && !was_stopping && (panicked || status.is_none()) {
+                // the executor already printed a secrets resolve failure itself
+                if !interrupted
+                    && !was_stopping
+                    && (panicked || status.is_none())
+                    && !crate::secrets::is_resolve_failure(err)
+                {
                     let prefix = task.estyled_prefix();
                     if Settings::get().verbose {
                         this.eprint(&task, &prefix, &format!("{} {err:?}", style::ered("ERROR")));
@@ -1496,6 +1506,8 @@ impl Run {
             task_cache: self.task_cache,
             task_cache_explain: self.task_cache_explain,
             task_cache_explain_json: self.task_cache_explain_json,
+            secrets_file_dir: self.tmpdir.join("secrets"),
+            secrets_denied: self.secrets_denied,
             sandbox: crate::sandbox::SandboxConfig::from_settings_and_cli(
                 &Settings::get().sandbox,
                 self.deny_all,

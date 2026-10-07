@@ -701,6 +701,13 @@ pub struct Task {
     /// starts. Skipped along with dependencies under `--skip-deps`.
     #[serde(default)]
     pub daemons: Option<TaskDaemons>,
+    /// [experimental] Secret keys this task receives when it starts. Dependencies and
+    /// subtasks get only their own lists.
+    #[serde(default)]
+    pub secrets: Option<crate::secrets::TaskSecrets>,
+    /// The `git::` or `oci::` include this task was loaded through, if any.
+    #[serde(skip)]
+    pub(crate) remote_include: Option<String>,
     #[serde(default, deserialize_with = "deserialize_arr")]
     pub depends_post: Vec<TaskDep>,
     #[serde(default, deserialize_with = "deserialize_arr")]
@@ -1104,6 +1111,27 @@ fn parse_task_dependencies(parser: &mut TrackingTomlParser<'_>, key: &str) -> Re
 /// at load time, so they must still require trust. `.toml` task files are
 /// checked whole; script files are checked through their `#MISE` headers (the
 /// only part parsed and rendered at load).
+pub(crate) fn file_declares_secrets(path: &Path, body: &str) -> bool {
+    fn table_declares(v: &toml::Value) -> bool {
+        v.as_table().is_some_and(|t| t.contains_key("secrets"))
+    }
+    let body = file::strip_utf8_bom(body);
+    if path.extension().is_some_and(|e| e == "toml") {
+        let Ok(toml::Value::Table(root)) = toml::from_str::<toml::Value>(body) else {
+            return false;
+        };
+        // a task file is `[name] ...` tables; also accept a top-level `[tasks.name]` shape
+        root.values().any(|v| {
+            table_declares(v) || v.as_table().is_some_and(|t| t.values().any(table_declares))
+        })
+    } else {
+        scan_mise_header_entries(body)
+            .into_iter()
+            .filter_map(|entry| entry.parse_toml().ok())
+            .any(|value| table_declares(&value))
+    }
+}
+
 pub(crate) fn file_has_decoded_template(path: &Path, body: &str) -> bool {
     use crate::config::config_file::mise_toml::toml_value_has_template;
     // Must see exactly what the loader sees. `Task::from_path_unrendered_with_cf` strips a
@@ -1549,6 +1577,13 @@ impl Task {
             .map(|v| {
                 TaskDaemons::deserialize(v.clone())
                     .map_err(|e| eyre!("failed to parse daemons field in task header: {e}"))
+            })
+            .transpose()?;
+        task.secrets = p
+            .get_raw("secrets")
+            .map(|v| {
+                crate::secrets::TaskSecrets::deserialize(v.clone())
+                    .map_err(|e| eyre!("failed to parse secrets field in task header: {e}"))
             })
             .transpose()?;
         task.depends_post = parse_task_dependencies(&mut p, "depends_post")?;
@@ -2655,6 +2690,14 @@ impl Task {
         config.config_files.get(&self.config_source)
     }
 
+    /// The remote source this task was loaded from, for the secrets rule. Unlike
+    /// `is_remote()` this also covers `git::` and `oci::` includes, which otherwise look local.
+    pub(crate) fn secrets_remote_source(&self) -> Option<&str> {
+        self.remote_file_source
+            .as_deref()
+            .or(self.remote_include.as_deref())
+    }
+
     /// Check if this task is a remote task (loaded from git:// or http:// URL)
     /// Remote tasks should not use monorepo config file context because they need
     /// access to tools from the full config hierarchy, not just the local config file
@@ -2763,6 +2806,10 @@ impl Task {
         // in the overlay means what it says.
         if other.daemons.is_some() {
             self.daemons = other.daemons;
+        }
+        // `secrets = []` in an overlay clears the file task's list.
+        if other.secrets.is_some() {
+            self.secrets = other.secrets;
         }
         if other.dir.is_some() {
             self.dir = other.dir;
@@ -3107,9 +3154,15 @@ impl Task {
         &self,
         config: &Arc<Config>,
         ts: &Toolset,
-    ) -> Result<(EnvMap, Vec<(String, String)>, BTreeSet<String>)> {
+    ) -> Result<(
+        EnvMap,
+        Vec<(String, String)>,
+        BTreeSet<String>,
+        crate::task::task_context_builder::TaskEnvKeys,
+    )> {
         let mut tera_ctx = ts.tera_ctx(config).await?.clone();
-        let (mut env, mut env_remove) = ts.full_env_with_removals(config).await?;
+        let (mut env, mut env_remove, mut mise_keys) =
+            ts.full_env_with_removals_and_keys(config).await?;
         if let Some(root) = &config.project_root {
             tera_ctx.insert("config_root", &root);
         }
@@ -3162,9 +3215,11 @@ impl Task {
             &redaction_exclusions,
         );
 
+        let rendered_defaults = env_results.rendered_defaults.clone();
         let task_env = env_results.env.into_iter().map(|(k, (v, _))| (k, v));
         for (key, _) in task_env.clone() {
             env_remove.remove(&key);
+            mise_keys.insert(key);
         }
         // Apply the resolved environment variables
         env.extend(task_env.clone());
@@ -3186,7 +3241,15 @@ impl Task {
             env.insert(env::PATH_KEY.to_string(), path_env.to_string());
         }
 
-        Ok((env, task_env.collect(), env_remove))
+        Ok((
+            env,
+            task_env.collect(),
+            env_remove,
+            crate::task::task_context_builder::TaskEnvKeys {
+                mise: mise_keys,
+                rendered_defaults,
+            },
+        ))
     }
 }
 
@@ -3560,6 +3623,8 @@ impl Default for Task {
             confirm: None,
             depends: vec![],
             daemons: None,
+            secrets: None,
+            remote_include: None,
             depends_post: vec![],
             wait_for: vec![],
             env: Default::default(),
@@ -5308,7 +5373,7 @@ echo "Hello $USR"
         let task = Task::from_path(&config, &task_path, temp_dir.path(), temp_dir.path())
             .await
             .unwrap();
-        let (env, task_env, _) = task.render_env(&config, ts).await.unwrap();
+        let (env, task_env, _, _) = task.render_env(&config, ts).await.unwrap();
 
         assert_eq!(task_env, vec![("USR".to_string(), "World!".to_string())]);
         assert_eq!(env.get("USR"), Some(&"World!".to_string()));
@@ -6024,6 +6089,73 @@ echo "hello world"
         );
     }
 
+    #[test]
+    fn toml_overlay_replaces_and_clears_secrets() {
+        use crate::secrets::TaskSecrets;
+        let overlay = |secrets: Option<TaskSecrets>| {
+            let mut task = Task {
+                secrets: Some(TaskSecrets(vec!["A".into()])),
+                remote_include: Some("git::x".into()),
+                ..Default::default()
+            };
+            task.merge_toml_overlay(Task {
+                secrets,
+                ..Default::default()
+            });
+            (task.secrets, task.remote_include)
+        };
+        assert_eq!(
+            overlay(Some(TaskSecrets(vec!["B".into()]))).0,
+            Some(TaskSecrets(vec!["B".into()]))
+        );
+        let (cleared, remote) = overlay(Some(TaskSecrets(vec![])));
+        assert_eq!(cleared, Some(TaskSecrets(vec![])));
+        assert_eq!(remote.as_deref(), Some("git::x"));
+        assert_eq!(overlay(None).0, Some(TaskSecrets(vec!["A".into()])));
+    }
+
+    #[test]
+    fn secrets_remote_source_covers_includes() {
+        let t = Task {
+            remote_include: Some("git::https://x/y.git//t".into()),
+            ..Default::default()
+        };
+        assert!(t.secrets_remote_source().is_some());
+        assert!(!t.is_remote());
+        assert!(Task::default().secrets_remote_source().is_none());
+    }
+
+    #[test]
+    fn file_declares_secrets_parses_headers() {
+        let sh = Path::new("/p/mise-tasks/ft");
+        for yes in [
+            "#MISE secrets=[\"A\"]\n",
+            "#MISE \"secrets\"=[\"A\"]\n",
+            "# [MISE] 'secrets' = [\"A\"]\n",
+            "#!/bin/sh\n#MISE \"\\u0073ecrets\"=[\"A\"]\necho\n",
+            "\u{feff}#MISE secrets=[\"A\"]\n",
+        ] {
+            assert!(crate::task::file_declares_secrets(sh, yes), "{yes:?}");
+        }
+        assert!(!crate::task::file_declares_secrets(
+            sh,
+            "#MISE description=\"secrets\"\n"
+        ));
+        let toml = Path::new("/p/tasks.toml");
+        assert!(crate::task::file_declares_secrets(
+            toml,
+            "[build]\nrun='x'\nsecrets=['A']\n"
+        ));
+        assert!(crate::task::file_declares_secrets(
+            toml,
+            "[tasks.build]\nrun='x'\nsecrets=['A']\n"
+        ));
+        assert!(!crate::task::file_declares_secrets(
+            toml,
+            "[build]\nrun='x'\n"
+        ));
+    }
+
     #[tokio::test]
     #[cfg(unix)]
     async fn test_parses_all_fields() {
@@ -6043,6 +6175,7 @@ echo "hello world"
 #MISE aliases=["alias1", "alias2"]
 #MISE depends=["dep1", "dep2"]
 #MISE daemons=["postgres"]
+#MISE secrets=["DEPLOY_KEY"]
 #MISE depends_post=["post1"]
 #MISE wait_for=["wait1"]
 #MISE env={TEST_VAR="value"}
@@ -6080,6 +6213,10 @@ echo "test"
         assert_eq!(
             task.daemons,
             Some(super::TaskDaemons::Names(vec!["postgres".to_string()]))
+        );
+        assert_eq!(
+            task.secrets,
+            Some(crate::secrets::TaskSecrets(vec!["DEPLOY_KEY".to_string()]))
         );
         assert_eq!(task.depends_post.len(), 1);
         assert_eq!(task.wait_for.len(), 1);

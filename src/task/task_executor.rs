@@ -37,6 +37,7 @@ use itertools::Itertools;
 #[cfg(unix)]
 use nix::errno::Errno;
 use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::io::IsTerminal;
 use std::iter::once;
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
@@ -48,6 +49,8 @@ use tokio::sync::Mutex;
 use tokio::sync::RwLock;
 use tokio::sync::{OwnedSemaphorePermit, Semaphore, mpsc, oneshot};
 use xx::file;
+
+use crate::secrets::{SecretBroker, SecretsDenied, SpawnSecrets};
 
 /// Global lock for interactive task exclusivity.
 /// Interactive tasks acquire a write lock (exclusive), non-interactive tasks acquire a read lock (shared).
@@ -81,6 +84,9 @@ struct TaskExecContext<'a> {
     /// Context of this task's live OpenTelemetry span, used to correlate
     /// exported log records with the task that produced them.
     otel_span_cx: Option<&'a opentelemetry::trace::SpanContext>,
+    /// The values this task was granted. Added to the child's env only inside `exec_program`,
+    /// after every render and after `__MISE_DIFF` was computed.
+    secrets: Option<&'a SpawnSecrets>,
 }
 
 struct TaskRunEntriesContext<'a> {
@@ -100,6 +106,13 @@ struct PreparedTaskContext {
     env_remove: BTreeSet<String>,
     task_env: Vec<(String, String)>,
     extra_vars: Option<IndexMap<String, String>>,
+    /// Inherited secret keys that mise's own config set for this task. M2's strip removes
+    /// them from `env`, so G11 needs them recorded first.
+    mise_set_inherited: BTreeSet<String>,
+    /// Every key mise itself sets for this task, whatever its value.
+    mise_env_keys: BTreeSet<String>,
+    /// keys whose task-env `default` rendered
+    rendered_defaults: BTreeSet<String>,
 }
 
 /// Format a task path for a child process without leaking the mixture of `/` and `\` that
@@ -120,6 +133,68 @@ pub(super) fn task_env_path(path: &Path) -> String {
     #[cfg(not(windows))]
     {
         path
+    }
+}
+
+/// Whether output must go through the redactor: a configured `redact` entry, or a value this
+/// task was granted. A task without a grant holds no inherited secret (M2 strips them), so a
+/// nested run keeps stdin and the terminal.
+fn needs_redaction(config_redactions: bool, has_values: bool) -> bool {
+    config_redactions || has_values
+}
+
+/// Raw output cannot be forced on a task that receives secret values: it needs the task's
+/// own `raw`/`interactive` and a real terminal on both ends.
+fn task_raw(has_values: bool, wants_raw: bool, task_wants_raw: bool, attended: bool) -> bool {
+    if has_values {
+        task_wants_raw && attended
+    } else {
+        wants_raw
+    }
+}
+
+/// Takes the terminal for fnox's prompt, exactly as an `interactive = true` task does.
+struct TaskTerminal<'a> {
+    executor: &'a TaskExecutor,
+    task: &'a Task,
+    prefix: &'a str,
+    /// the task already holds the write guard (`confirm_guard`)
+    holds_write: bool,
+}
+
+#[async_trait::async_trait]
+impl crate::secrets::TerminalAccess for TaskTerminal<'_> {
+    async fn acquire(
+        &self,
+        keys: &[crate::secrets::SecretName],
+    ) -> Option<tokio::sync::RwLockWriteGuard<'static, ()>> {
+        let names = keys
+            .iter()
+            .map(|k| k.as_str())
+            .collect::<Vec<_>>()
+            .join(", ");
+        self.executor.eprint(
+            self.task,
+            self.prefix,
+            &format!("secrets: asking fnox for {names}"),
+        );
+        if self.holds_write {
+            return None;
+        }
+        match TASK_RUNTIME_LOCK.try_write() {
+            Ok(guard) => Some(guard),
+            Err(_) => {
+                self.executor.eprint(
+                    self.task,
+                    self.prefix,
+                    &format!(
+                        "task {}: waiting for running tasks to finish so fnox can use the terminal",
+                        self.task.name
+                    ),
+                );
+                Some(TASK_RUNTIME_LOCK.write().await)
+            }
+        }
     }
 }
 
@@ -306,6 +381,10 @@ pub struct TaskExecutorConfig {
     pub task_cache_explain_json: bool,
     /// CLI-level sandbox overrides (merged with task-level sandbox config)
     pub sandbox: crate::sandbox::SandboxConfig,
+    /// Where `as_file` secrets are written for this run (0700, removed with the run).
+    pub secrets_file_dir: PathBuf,
+    /// Set by launchers that start tasks without a person asking for them.
+    pub secrets_denied: Option<SecretsDenied>,
 }
 
 /// Executes tasks with proper context, environment, and output handling
@@ -330,6 +409,9 @@ pub struct TaskExecutor {
     pub task_cache_explain: bool,
     pub task_cache_explain_json: bool,
     pub sandbox: crate::sandbox::SandboxConfig,
+    secrets: Arc<SecretBroker>,
+    secrets_file_dir: PathBuf,
+    secrets_denied: Option<SecretsDenied>,
     /// Forwards task stdout/stderr to the OTEL log pipeline (when enabled).
     pub output_forwarder: Option<crate::otel::TaskOutputForwarder>,
 }
@@ -385,8 +467,24 @@ impl TaskExecutor {
             task_cache_explain: config.task_cache_explain,
             task_cache_explain_json: config.task_cache_explain_json,
             sandbox: config.sandbox,
+            secrets: Arc::new(SecretBroker::default()),
+            secrets_file_dir: config.secrets_file_dir,
+            secrets_denied: Self::secrets_denied_from(config.secrets_denied),
             output_forwarder: None,
         }
+    }
+
+    /// `__MISE_SECRETS_DENIED` first (an unknown value fails closed), then the pitchfork
+    /// daemon marker, then what the launcher said.
+    fn secrets_denied_from(configured: Option<SecretsDenied>) -> Option<SecretsDenied> {
+        std::env::var(crate::secrets::DENIED_MARKER)
+            .ok()
+            .and_then(|v| SecretsDenied::from_marker(&v))
+            .or_else(|| {
+                mise_util::env::var_is_true(crate::daemons::DAEMON_TASK_MARKER)
+                    .then_some(SecretsDenied::PitchforkDaemon)
+            })
+            .or(configured)
     }
 
     pub fn is_stopping(&self) -> bool {
@@ -545,8 +643,17 @@ impl TaskExecutor {
         }
         // If any dependency executed or restored, skip the source freshness check
         // so that downstream tasks are invalidated by upstream changes.
-        let artifact_cache_enabled =
-            self.task_cache.enabled() && task.cache.as_ref().is_some_and(|cache| cache.enabled);
+        let (grant, grant_problems) = crate::secrets::grant_for_task(task);
+        // An unusable list leaves the grant empty, so this is the only place a subtask
+        // injected by `run = [{ task }]` hears about it. No fnox is started.
+        if !grant_problems.is_empty() {
+            return Err(crate::secrets::aggregate_error(&grant_problems));
+        }
+        // A task that receives secrets is never cached as an artifact, so the plain
+        // fresh-sources skip below still applies, and no value is resolved for a skipped task.
+        let artifact_cache_enabled = self.task_cache.enabled()
+            && task.cache.as_ref().is_some_and(|cache| cache.enabled)
+            && grant.is_empty();
         if !artifact_cache_enabled
             && !self.force
             && !dependency_state.any_did_work
@@ -564,6 +671,9 @@ impl TaskExecutor {
             env_remove,
             task_env,
             extra_vars,
+            mise_set_inherited,
+            mise_env_keys,
+            rendered_defaults,
         } = self
             .prepare_task_context(config, task, otel_span_cx.as_ref())
             .await?;
@@ -580,7 +690,16 @@ impl TaskExecutor {
         };
         self.check_confirmation(config, task, &env).await?;
 
-        let artifact_cache = if self.task_cache.enabled()
+        let artifact_cache = if !grant.is_empty()
+            && self.task_cache.enabled()
+            && task.cache.as_ref().is_some_and(|cache| cache.enabled)
+        {
+            warn!(
+                "task {}: artifact caching disabled because the task receives secrets",
+                task.name
+            );
+            None
+        } else if self.task_cache.enabled()
             && task.cache.as_ref().is_some_and(|cache| cache.enabled)
         {
             match TaskArtifactCache::prepare(task, config, self.dry_run).await? {
@@ -729,6 +848,70 @@ impl TaskExecutor {
             .as_ref()
             .filter(|_| self.task_cache.writes())
             .map(|_| Arc::new(StdMutex::new(Vec::new())));
+        // Resolved here, after the skip, confirmation and cache checks: a task that does not
+        // run never asks fnox. Held until every run entry ends, then dropped, which deletes
+        // any secret files.
+        let spawn_secrets = if grant.is_empty() {
+            None
+        } else if self.dry_run {
+            let names = grant
+                .keys
+                .keys()
+                .map(|k| k.as_str())
+                .collect::<Vec<_>>()
+                .join(", ");
+            self.eprint(
+                task,
+                &prefix,
+                &format!("secrets: {names} (not resolved: dry run)"),
+            );
+            None
+        } else if task.run().is_empty() && task_file.is_none() {
+            None
+        } else {
+            let task_env_keys: BTreeSet<String> = task_env.iter().map(|(k, _)| k.clone()).collect();
+            let sandbox = self.build_sandbox_for_task(task, config).await?;
+            let terminal = TaskTerminal {
+                executor: self,
+                task,
+                prefix: &prefix,
+                holds_write: task.interactive,
+            };
+            self.secrets
+                .prepare_spawn(
+                    config,
+                    crate::secrets::SpawnRequest {
+                        grantee: crate::secrets::Grantee::Task(task),
+                        grant: &grant,
+                        base_env: &env,
+                        task_env_keys: &task_env_keys,
+                        mise_set_inherited: &mise_set_inherited,
+                        mise_env_keys: &mise_env_keys,
+                        rendered_defaults: &rendered_defaults,
+                        sandbox: &sandbox,
+                        file_dir: Some(&self.secrets_file_dir),
+                        terminal: &terminal,
+                        ctx_builder: &self.context_builder,
+                        denied: self.secrets_denied,
+                        interactive: crate::secrets::is_interactive(),
+                    },
+                )
+                .await
+                .map_err(|err| {
+                    // after Ctrl-C fnox died with the rest of the group; say nothing about it
+                    if let Err(interrupted) = Self::check_interruption(allow_during_interruption) {
+                        return interrupted;
+                    }
+                    if crate::secrets::is_resolve_failure(&err) {
+                        self.eprint(
+                            task,
+                            &prefix,
+                            &format!("{} {err}", crate::ui::style::ered("ERROR")),
+                        );
+                    }
+                    err
+                })?
+        };
         let exec_ctx = TaskExecContext {
             task,
             env: &env,
@@ -737,6 +920,7 @@ impl TaskExecutor {
             output_capture: output_capture.as_ref(),
             allow_during_interruption,
             otel_span_cx: otel_span_cx.as_ref(),
+            secrets: spawn_secrets.as_ref(),
         };
 
         let timer = std::time::Instant::now();
@@ -1441,8 +1625,8 @@ impl TaskExecutor {
         let filtered_env = if sandbox.is_active() {
             let mut filtered = sandbox.filter_env(resolved_env);
             // filter_env reads allowed names back from mise's own process
-            // environment, which still holds inherited secrets. M3 must apply
-            // task grants after this point.
+            // environment, which still holds inherited secrets. A task that receives
+            // secrets has no artifact cache, so grants never reach command inputs.
             mise_util::env::strip_inherited_secrets_for_child(&mut filtered, &mut BTreeSet::new());
             filtered
         } else {
@@ -1604,6 +1788,7 @@ impl TaskExecutor {
             output_capture,
             allow_during_interruption,
             otel_span_cx,
+            secrets,
         } = ctx;
         #[cfg(not(windows))]
         let _ = cmd_verbatim;
@@ -1615,28 +1800,96 @@ impl TaskExecutor {
         let requested_program = program.to_string();
         let config = Config::get().await?;
         let program = program.to_executable();
+        // Granted values were registered with the redactor when they were resolved.
         let redactions = config.redactions();
-        let raw = self.raw(Some(task));
-        let sandbox = self.build_sandbox_for_task(task, &config).await?;
+        let has_values = secrets.is_some_and(SpawnSecrets::has_values);
+        let needs_redaction = needs_redaction(crate::config::has_config_redactions(), has_values);
+        let wants_raw = self.raw(Some(task));
+        let raw = task_raw(
+            has_values,
+            wants_raw,
+            task.raw || task.interactive,
+            console::user_attended() && console::user_attended_stderr(),
+        );
+        if has_values && wants_raw && !raw {
+            if task.raw || task.interactive {
+                let setting = if task.interactive {
+                    "interactive"
+                } else {
+                    "raw"
+                };
+                warn_once!(
+                    "task {} sets {setting} = true, but its output is not a terminal, so mise redacts its output and does not connect stdin",
+                    task.name
+                );
+            } else {
+                warn_once!(
+                    "task {} receives secrets, so mise ignores --raw and the raw setting for it and redacts its output; set raw = true or interactive = true on the task to hand it the terminal (then its output is not redacted)",
+                    task.name
+                );
+            }
+        }
+        let mut sandbox = self.build_sandbox_for_task(task, &config).await?;
+        if let Some(secrets) = secrets
+            && sandbox.effective_deny_read()
+        {
+            // as_file secrets live in files mise wrote for this task
+            sandbox.allow_read.extend(
+                secrets
+                    .file_paths()
+                    .map(|p| dunce::canonicalize(p).unwrap_or_else(|_| p.to_path_buf())),
+            );
+        }
         let sandbox_env;
         let env = if sandbox.is_active() {
             let mut filtered = sandbox.filter_env(env);
             // filter_env reads allowed names back from mise's own process
             // environment, which still holds inherited secrets. `env_remove`
-            // cannot undo this because the runner sets `env` afterwards. M3
-            // must apply task grants after this point.
+            // cannot undo this because the runner sets `env` afterwards.
             mise_util::env::strip_inherited_secrets_for_child(&mut filtered, &mut BTreeSet::new());
             sandbox_env = filtered;
             &sandbox_env
         } else {
             env
         };
+        // Grants go in last, after the sandbox filter and the inherited-secret strip: a
+        // granted key that shares a name with an inherited one must survive both. The
+        // marker carries names only, so it survives `deny_env` too.
+        let granted_env;
+        let granted_env_remove;
+        let (env, env_remove) = if secrets.is_some() || self.secrets_denied.is_some() {
+            let mut e = env.clone();
+            let mut r = env_remove.clone();
+            // a nested `mise run` keeps refusing grants, as it does under hooks
+            if let Some(denied) = self.secrets_denied {
+                e.insert(
+                    crate::secrets::DENIED_MARKER.to_string(),
+                    denied.marker().to_string(),
+                );
+            }
+            if let Some(secrets) = secrets {
+                secrets.apply(&mut e, &mut r);
+                if has_values {
+                    r.remove(mise_util::env::SECRET_KEYS_MARKER);
+                    e.insert(
+                        mise_util::env::SECRET_KEYS_MARKER.to_string(),
+                        secrets.marker_value(),
+                    );
+                }
+            }
+            granted_env = e;
+            granted_env_remove = r;
+            (&granted_env, &granted_env_remove)
+        } else {
+            (env, env_remove)
+        };
         // On Windows, resolve a POSIX shell to an absolute path before spawning it, so which
         // `bash` runs does not depend on how Win32 searches PATH. See discussion #6513.
         #[cfg(windows)]
         let program =
             crate::path::resolve_posix_shell_program_path(&program, env).unwrap_or(program);
-        let audit = if raw || self.dry_run {
+        // strace records descendant argv, which would carry values
+        let audit = if raw || self.dry_run || secrets.is_some() {
             None
         } else {
             TaskCacheAudit::prepare(task, &config).await?
@@ -1677,6 +1930,10 @@ impl TaskExecutor {
             .redact(redactions.deref().clone())
             .raw(raw)
             .with_sandbox(sandbox);
+        if has_values && !raw {
+            // redaction cannot be bypassed by the global raw setting
+            cmd = cmd.never_raw();
+        }
         if let Some((body, forwarded)) = inline {
             cmd = cmd
                 .current_dir(task_cwd(task, &config).await?)
@@ -1686,7 +1943,7 @@ impl TaskExecutor {
                     audit.is_none() && self.implicit_inline_shell(task),
                 );
         }
-        if raw && !redactions.is_empty() {
+        if raw && needs_redaction {
             if task.interactive && !task.raw && !Settings::get().raw {
                 hint!(
                     "interactive_redactions",
@@ -1862,7 +2119,15 @@ impl TaskExecutor {
             // from style; it maps to `Interleave`), but the variant still exists as
             // a config value so it's kept here for match exhaustiveness.
             TaskOutput::Quiet | TaskOutput::Interleave => {
-                if raw || redactions.is_empty() {
+                if has_values && !raw && std::io::stdin().is_terminal() {
+                    let task_name = &task.name;
+                    hint!(
+                        "task_secrets_stdin",
+                        "task {task_name} receives secrets, so mise redacts its output and does not connect stdin; set interactive = true on the task if it needs the terminal (its output is then not redacted)",
+                        ""
+                    );
+                }
+                if raw || !needs_redaction {
                     cmd = cmd.stdin(Stdio::inherit());
                 }
                 if output_capture.is_some() {
@@ -1872,7 +2137,7 @@ impl TaskExecutor {
                     if task.silent.suppresses_stderr() {
                         cmd = cmd.with_on_stderr(|_| {});
                     }
-                } else if raw || redactions.is_empty() {
+                } else if raw || !needs_redaction {
                     // Inheriting stdio hands the child the terminal directly,
                     // which would bypass the observer that tees lines to the
                     // collector — keep the pipe when log export is active.
@@ -2051,6 +2316,87 @@ impl TaskExecutor {
             }
         }
         Ok(())
+    }
+
+    /// Checks every grant in the task graph before the scheduler starts: static problems
+    /// first, then one describe per distinct source. Every problem comes back in one error.
+    /// Under `--dry-run` only the static checks run and fnox is never spawned.
+    pub async fn preflight_secrets(
+        &self,
+        config: &Arc<Config>,
+        tasks: impl Iterator<Item = &Task>,
+    ) -> Result<()> {
+        let mut items = vec![];
+        let mut problems = vec![];
+        let mut privilege_problem = false;
+        let root_env_view = crate::secrets::EnvView::load(config).await;
+        for task in tasks {
+            let (grant, mut found) = crate::secrets::grant_for_task(task);
+            // a task without a grant never needs the view (and must not pay for it)
+            let env_view = if grant.is_empty() {
+                root_env_view.clone()
+            } else {
+                root_env_view
+                    .for_task(config, &self.context_builder, task, true)
+                    .await
+            };
+            found.extend(crate::secrets::static_problems(
+                task,
+                &grant,
+                self.secrets_denied,
+                &env_view,
+            ));
+            privilege_problem |= found.iter().any(|p| {
+                matches!(
+                    p.kind,
+                    crate::secrets::ProblemKind::Remote
+                        | crate::secrets::ProblemKind::NotProject
+                        | crate::secrets::ProblemKind::Denied
+                )
+            });
+            if !grant.is_empty() && !self.dry_run {
+                // the sandbox and a plainly declared env var decide before anything runs
+                let sandbox = self.build_sandbox_for_task(task, config).await?;
+                let declared = env_view.declared_keys(task);
+                for key in grant.keys.keys() {
+                    if !sandbox.keeps_env_key(key.as_str()) {
+                        found.push(crate::secrets::sandbox_problem(&task.name, key.as_str()));
+                    }
+                    if declared
+                        .iter()
+                        .any(|d| mise_util::env::env_key_eq(d, key.as_str()))
+                    {
+                        found.push(crate::secrets::collision_problem(&task.name, key.as_str()));
+                    }
+                }
+            }
+            problems.extend(found);
+            if !grant.is_empty() {
+                items.push((task, grant));
+            }
+        }
+        if items.is_empty() && problems.is_empty() {
+            return Ok(());
+        }
+        if !items.is_empty() {
+            Settings::get().ensure_experimental("mise secrets")?;
+            Settings::ensure_not_safe("mise secrets")?;
+        }
+        if !self.dry_run && !privilege_problem {
+            let items: Vec<_> = items
+                .iter()
+                .map(|(task, grant)| (crate::secrets::Grantee::Task(task), grant.clone()))
+                .collect();
+            problems.extend(
+                self.secrets
+                    .preflight(config, &self.context_builder, &items)
+                    .await?,
+            );
+        }
+        if problems.is_empty() {
+            return Ok(());
+        }
+        Err(crate::secrets::aggregate_error(&problems))
     }
 
     /// Validate a task invocation before the scheduler starts any task commands.
@@ -2233,16 +2579,15 @@ impl TaskExecutor {
 
         let env_render_start = std::time::Instant::now();
         // extra_vars contains resolved vars from the task's config hierarchy.
-        let (mut env, task_env, extra_vars, mut env_remove) = if let Some(task_cf) = task_cf {
-            let (env, task_env, extra_vars, env_remove) = self
-                .context_builder
-                .resolve_task_env_with_config(config, task, task_cf, &toolset)
-                .await?;
-            (env, task_env, extra_vars, env_remove)
-        } else {
-            let (env, task_env, env_remove) = task.render_env(config, &toolset).await?;
-            (env, task_env, None, env_remove)
-        };
+        let (mut env, task_env, extra_vars, mut env_remove, env_keys) =
+            if let Some(task_cf) = task_cf {
+                self.context_builder
+                    .resolve_task_env_with_config(config, task, task_cf, &toolset)
+                    .await?
+            } else {
+                let (env, task_env, env_remove, keys) = task.render_env(config, &toolset).await?;
+                (env, task_env, None, env_remove, keys)
+            };
         trace!(
             "task {} render_env took {}ms",
             task.name,
@@ -2388,6 +2733,9 @@ impl TaskExecutor {
             );
         }
 
+        let mut mise_env_keys = env_keys.mise;
+        mise_env_keys.extend(nested_mise_diff_exclude_keys.iter().cloned());
+        let rendered_defaults = env_keys.rendered_defaults;
         let env_for_diff = self.env_for_nested_mise_diff(&env, &nested_mise_diff_exclude_keys);
         if let Ok(serialized) =
             EnvDiff::from_final_env(&crate::env::PRISTINE_ENV, &env_for_diff).serialize()
@@ -2395,6 +2743,13 @@ impl TaskExecutor {
             env.insert("__MISE_DIFF".into(), serialized);
         }
 
+        // PRISTINE_ENV already lacks the inherited keys, so any that `env` holds were set by
+        // mise itself
+        let mise_set_inherited: BTreeSet<String> = mise_util::env::INHERITED_SECRET_KEYS
+            .iter()
+            .filter(|k| env.keys().any(|e| mise_util::env::env_key_eq(e, k)))
+            .cloned()
+            .collect();
         mise_util::env::strip_inherited_secrets_for_child(&mut env, &mut env_remove);
 
         Ok(PreparedTaskContext {
@@ -2403,6 +2758,9 @@ impl TaskExecutor {
             env_remove,
             task_env,
             extra_vars,
+            mise_set_inherited,
+            mise_env_keys,
+            rendered_defaults,
         })
     }
 
@@ -2650,6 +3008,79 @@ fn shell_from_shebang(path: &Path) -> Option<Vec<String>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn needs_redaction_truth_table() {
+        for (cfg, values, want) in [
+            (false, false, false),
+            (true, false, true),
+            (false, true, true),
+            (true, true, true),
+        ] {
+            assert_eq!(needs_redaction(cfg, values), want);
+        }
+    }
+
+    #[test]
+    fn raw_decision_table() {
+        // (has_values, flag/setting wants raw, task.raw or interactive, terminal) -> raw
+        for (has_values, wants_raw, task_raw_flag, tty, want) in [
+            // without grants the usual rule applies
+            (false, true, false, false, true),
+            (false, false, false, true, false),
+            // with grants a global flag or setting cannot take redaction away
+            (true, true, false, true, false),
+            (true, true, false, false, false),
+            // the task's own raw/interactive works on a terminal only
+            (true, true, true, true, true),
+            (true, true, true, false, false),
+            (true, false, true, true, true),
+            (true, false, false, true, false),
+        ] {
+            assert_eq!(
+                task_raw(has_values, wants_raw, task_raw_flag, tty),
+                want,
+                "{has_values} {wants_raw} {task_raw_flag} {tty}"
+            );
+        }
+    }
+
+    #[test]
+    fn applying_grants_leaves_mise_diff_alone() {
+        let original = crate::env_diff::EnvMap::from([("PATH".to_string(), "/bin".to_string())]);
+        let mut final_env = original.clone();
+        final_env.insert("FOO".into(), "bar".into());
+        let diff = EnvDiff::from_final_env(&original, &final_env)
+            .serialize()
+            .unwrap();
+        let mut env = final_env;
+        env.insert("__MISE_DIFF".into(), diff.clone());
+        let mut env_remove = BTreeSet::from(["DEPLOY_KEY".to_string()]);
+        let secrets = SpawnSecrets::for_test(&[("DEPLOY_KEY", "deploy-s3cr3t")]);
+        secrets.apply(&mut env, &mut env_remove);
+        assert_eq!(env["__MISE_DIFF"], diff);
+        assert_eq!(env["DEPLOY_KEY"], "deploy-s3cr3t");
+        assert!(!env_remove.contains("DEPLOY_KEY"));
+        let decoded = EnvDiff::deserialize(&env["__MISE_DIFF"]).unwrap();
+        let keys: Vec<String> = decoded
+            .to_patches()
+            .iter()
+            .map(|p| format!("{p:?}"))
+            .collect();
+        assert!(keys.iter().all(|k| !k.contains("DEPLOY_KEY")), "{keys:?}");
+    }
+
+    #[test]
+    fn secrets_denied_marker_wins_over_the_launcher() {
+        assert_eq!(
+            SecretsDenied::from_marker("watch_files"),
+            Some(SecretsDenied::WatchFiles)
+        );
+        assert_eq!(
+            TaskExecutor::secrets_denied_from(Some(SecretsDenied::Bootstrap)),
+            Some(SecretsDenied::Bootstrap)
+        );
+    }
 
     #[test]
     fn task_env_path_preserves_host_path_spelling() {

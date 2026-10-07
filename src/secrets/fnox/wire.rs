@@ -1,5 +1,7 @@
 //! fnox `env --json` schema 1. No `deny_unknown_fields`: fnox may add fields.
 
+use std::collections::BTreeMap;
+
 use serde::Deserialize;
 
 #[derive(Deserialize)]
@@ -55,4 +57,30 @@ pub(super) struct WireError {
     pub(super) kind: String,
     #[serde(default)]
     pub(super) message: String,
+    /// `invalid_keys` only
+    #[serde(default)]
+    pub(super) unknown: Vec<String>,
+    #[serde(default)]
+    pub(super) suggestions: BTreeMap<String, Vec<String>>,
+    #[serde(default)]
+    pub(super) not_injectable: Vec<WireNotInjectable>,
+}
+
+#[derive(Deserialize)]
+pub(super) struct WireNotInjectable {
+    pub(super) key: String,
+}
+
+/// The success document of a resolve. Holds secret values: never print it, and `Deserialize`
+/// only (no `Debug`).
+#[derive(Deserialize)]
+pub(super) struct EnvDocument {
+    #[serde(default)]
+    pub(super) set: BTreeMap<String, String>,
+    #[serde(default)]
+    pub(super) files: BTreeMap<String, String>,
+    #[serde(default)]
+    pub(super) remove: Vec<String>,
+    #[serde(default)]
+    pub(super) missing: Vec<String>,
 }

@@ -335,6 +335,27 @@ run = [
 ]
 ```
 
+### `secrets` <Badge type="warning" text="experimental" />
+
+- **Type**: `string | string[]`
+
+Secret keys this task receives when it starts, resolved from the project's
+[secrets source](/environments/secrets/fnox.html) (`[secrets.fnox]`). Only this task gets them:
+dependencies, post-dependencies and `run = [{ task = "..." }]` subtasks receive only their own
+lists, and mise redacts the values from the task's output. Requires `min_version` of the release
+that added the field.
+
+```mise-toml
+[secrets.fnox]
+
+[tasks.deploy]
+secrets = ["DEPLOY_KEY", "DATABASE_URL"]
+run = "./deploy.sh"
+```
+
+Not allowed in task templates or `monorepo.task_defaults`, and not available to remote tasks or
+to tasks started by hooks, `watch_files`, daemons or `mise bootstrap`.
+
 ### `vars` {#task-vars}
 
 - **Type**: `{ [key]: string | int | bool | directive }`
