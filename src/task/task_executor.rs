@@ -571,11 +571,6 @@ impl TaskExecutor {
             .parse_task_usage(config, task, &mut env, extra_vars.clone())
             .await?;
 
-        // The task environment now contains the tool paths selected for this
-        // invocation. Schedule detached updates only after that point so a
-        // successful update is used by a later resolution, never this task.
-        crate::tool_update::schedule(config, &ts);
-
         // Confirmation must happen before a cache restore because restoring
         // outputs mutates the working tree just like executing the task.
         let confirm_guard = if task.interactive {
@@ -750,6 +745,12 @@ impl TaskExecutor {
             let exec_start = std::time::Instant::now();
             Self::check_interruption(allow_during_interruption)?;
             remove_auto_output(task, config).await?;
+            // Schedule only for a task that will actually execute. In
+            // particular, previews, declined confirmations, and cache hits
+            // must not turn into installs in the background.
+            if !self.dry_run {
+                crate::tool_update::schedule(config, &ts);
+            }
             self.exec_file(config, &file, confirm_guard, exec_ctx)
                 .await?;
             trace!(
@@ -772,6 +773,11 @@ impl TaskExecutor {
             let exec_start = std::time::Instant::now();
             Self::check_interruption(allow_during_interruption)?;
             remove_auto_output(task, config).await?;
+            // See the file-task branch above: scheduling happens after all
+            // non-execution exits and immediately before a real task launch.
+            if !self.dry_run && !rendered_run_scripts.is_empty() {
+                crate::tool_update::schedule(config, &ts);
+            }
             self.exec_task_run_entries(
                 rendered_run_scripts,
                 TaskRunEntriesContext {

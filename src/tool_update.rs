@@ -68,6 +68,12 @@ pub fn bounded_update_selector(policy: UpdatePolicy, current: &str, configured: 
     let Some(candidate) = policy.candidate_selector(current) else {
         return configured.to_string();
     };
+    // `prefix:` is a parsing hint rather than part of the version prefix. It
+    // must travel with a refined candidate, otherwise `prefix:1` plus a patch
+    // policy would fall back to `prefix:1` and could install 1.3 after 1.2.
+    let (scheme, configured) = configured
+        .strip_prefix("prefix:")
+        .map_or(("", configured), |prefix| ("prefix:", prefix));
     if candidate == configured
         // `latest` is mise's explicit unbounded floating selector, so a
         // version prefix derived from the working installation can only
@@ -77,9 +83,9 @@ pub fn bounded_update_selector(policy: UpdatePolicy, current: &str, configured: 
             rest.starts_with('.') || rest.starts_with('-') || rest.starts_with('_')
         })
     {
-        candidate
+        format!("{scheme}{candidate}")
     } else {
-        configured.to_string()
+        format!("{scheme}{configured}")
     }
 }
 
@@ -267,7 +273,7 @@ pub fn schedule(config: &Arc<Config>, toolset: &Toolset) {
             .arg(&tool.short)
             .arg("--current")
             .arg(&tool_version.version)
-            .arg("--request")
+            .arg("--selector")
             .arg(tool_version.request.version())
             .arg("--policy")
             .arg(policy.as_str())
@@ -350,7 +356,7 @@ fn spawn_detached(command: &mut Command) -> std::io::Result<()> {
                 .map_err(|err| std::io::Error::from_raw_os_error(err as i32))
         });
     }
-    command.spawn().map(|_| ())
+    reap_detached(command.spawn()?)
 }
 
 #[cfg(windows)]
@@ -362,12 +368,26 @@ fn spawn_detached(command: &mut Command) -> std::io::Result<()> {
     // the foreground shim/terminal group. Do not use the kill-on-drop job used
     // for bounded child commands: this updater is intentionally independent.
     command.creation_flags(CREATE_NEW_PROCESS_GROUP | DETACHED_PROCESS);
-    command.spawn().map(|_| ())
+    reap_detached(command.spawn()?)
 }
 
 #[cfg(not(any(unix, windows)))]
 fn spawn_detached(command: &mut Command) -> std::io::Result<()> {
-    command.spawn().map(|_| ())
+    reap_detached(command.spawn()?)
+}
+
+/// Detached children do not inherit the terminal, but they are still children
+/// of mise. Reap each one on a tiny helper thread so repeated launches cannot
+/// accumulate zombies while the foreground process remains alive.
+fn reap_detached(mut child: std::process::Child) -> std::io::Result<()> {
+    std::thread::Builder::new()
+        .name("mise-tool-update-reaper".into())
+        .spawn(move || {
+            if let Err(err) = child.wait() {
+                debug!("failed to reap background tool update: {err}");
+            }
+        })?;
+    Ok(())
 }
 
 #[cfg(test)]
@@ -436,6 +456,14 @@ mod tests {
         assert_eq!(
             bounded_update_selector(UpdatePolicy::Minor, "1.2.3", "latest"),
             "1"
+        );
+        assert_eq!(
+            bounded_update_selector(UpdatePolicy::Patch, "1.2.3", "prefix:1"),
+            "prefix:1.2"
+        );
+        assert_eq!(
+            bounded_update_selector(UpdatePolicy::Patch, "1.2.3", "prefix:lts"),
+            "prefix:lts"
         );
         assert_eq!(
             bounded_update_selector(UpdatePolicy::Minor, "go1.23.4", "go1"),

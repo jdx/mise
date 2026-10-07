@@ -19,8 +19,11 @@ pub(crate) struct ToolUpdate {
     current: String,
 
     /// Configured selector whose install options must accompany the bounded update.
+    ///
+    /// `request` is reserved by usage-rs, so use an explicit internal flag
+    /// name rather than silently dropping this value in the child process.
     #[usage(long, hide = true)]
-    request: String,
+    selector: String,
 
     /// Boundary selected from trusted global configuration by the foreground process.
     #[usage(long, hide = true)]
@@ -55,7 +58,7 @@ impl ToolUpdate {
             &config,
             self.tool,
             &self.current,
-            &self.request,
+            &self.selector,
             self.policy,
         )
         .await

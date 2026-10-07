@@ -2934,12 +2934,15 @@ pub trait Backend: Debug + Send + Sync {
     ) -> bool {
         let check_path = |install_path: &Path, check_symlink: bool| {
             let is_installed = install_path.exists();
-            let is_not_incomplete = !self.incomplete_file_path(tv).exists();
+            let is_active_postinstall = is_active_postinstall_install(tv, install_path);
+            let is_not_incomplete =
+                !self.incomplete_file_path(tv).exists() || is_active_postinstall;
             let is_valid_symlink = !check_symlink || !is_runtime_symlink(install_path);
             let is_healthy = is_installed && self.is_install_path_healthy(install_path);
             // An identity-layout installation is complete once its receipt is there;
             // the receipt is written last.
-            let has_receipt = crate::install_layout::resolver::dir_name_of(install_path).is_none()
+            let has_receipt = is_active_postinstall
+                || crate::install_layout::resolver::dir_name_of(install_path).is_none()
                 || crate::install_layout::resolver::is_complete(install_path);
 
             let installed = is_healthy && is_not_incomplete && is_valid_symlink && has_receipt;
@@ -5310,6 +5313,22 @@ pub trait Backend: Debug + Send + Sync {
             ..Default::default()
         })
     }
+}
+
+/// A postinstall hook may invoke mise for the exact installation it is
+/// finishing. That process is entitled to use the path supplied by its parent,
+/// even though the generic incomplete marker remains in place until the hook
+/// and verification succeed. Other processes never receive this environment,
+/// so they keep treating the install as incomplete.
+pub(crate) fn is_active_postinstall_install(tv: &ToolVersion, install_path: &Path) -> bool {
+    std::env::var_os("MISE_TOOL_INSTALL_PATH")
+        .as_deref()
+        .is_some_and(|path| Path::new(path) == install_path)
+        && std::env::var("MISE_TOOL_NAME").ok().as_deref() == Some(tv.ba().short.as_str())
+        && std::env::var(env::MISE_TOOL_VERSION_ENV_VAR)
+            .ok()
+            .as_deref()
+            == Some(tv.version.as_str())
 }
 
 fn effective_latest_before_date<B: Backend + ?Sized>(

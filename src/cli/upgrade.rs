@@ -202,7 +202,7 @@ impl Upgrade {
         mut self,
         lockfile_update_mode: crate::lockfile::LockfileUpdateMode,
         background_tool_update: bool,
-        background_scheduled_request: Option<&ToolRequest>,
+        background_scheduled_tool: Option<&BackendArg>,
     ) -> Result<()> {
         if self.legacy_bump {
             deprecated_at!(
@@ -396,15 +396,17 @@ impl Upgrade {
         if background_tool_update {
             // Filtering by a ToolArg is backend-wide, so a tool with multiple
             // configured selectors can include a pinned or lockfile-bound
-            // sibling beside the selector that scheduled this child. Keep the
-            // scheduler's reproducibility exclusions authoritative at the
-            // final install boundary as well. An unreadable lockfile is also
-            // conservatively ineligible.
+            // sibling beside the selector that scheduled this child. Runtime
+            // arguments replace those selectors, so retain only this child’s
+            // argument-owned request rather than comparing options that the
+            // builder can legitimately re-layer. Keep the scheduler's
+            // reproducibility exclusions authoritative at the final install
+            // boundary as well. An unreadable lockfile is also conservatively
+            // ineligible.
             outdated.retain(|outdated| {
-                background_scheduled_request.is_some_and(|scheduled| {
-                    outdated.tool_version.request.ba() == scheduled.ba()
-                        && outdated.tool_version.request.version() == scheduled.version()
-                        && outdated.tool_version.request.options() == scheduled.options()
+                background_scheduled_tool.is_some_and(|scheduled| {
+                    outdated.tool_version.request.ba().as_ref() == scheduled
+                        && matches!(outdated.tool_version.request.source(), ToolSource::Argument)
                 }) && !outdated.request_pinned_to_current_version()
                     && matches!(
                         crate::tool_update::request_has_lockfile(
@@ -1304,10 +1306,7 @@ pub(crate) async fn run_background_tool_update(
     // constraints through ToolsetBuilder's runtime-argument option layering.
     let selector = crate::tool_update::bounded_update_selector(policy, current, request);
     let tool = background_update_tool_arg(config, tool, &selector, request)?;
-    let scheduled_request = tool
-        .tvr
-        .clone()
-        .ok_or_else(|| eyre!("background updater requires a concrete tool request"))?;
+    let scheduled_tool = tool.ba.clone();
     Upgrade {
         tool: vec![tool],
         bump: false,
@@ -1328,7 +1327,7 @@ pub(crate) async fn run_background_tool_update(
     .run_with_lockfile_update_mode(
         crate::lockfile::LockfileUpdateMode::Skip,
         true,
-        Some(&scheduled_request),
+        Some(&scheduled_tool),
     )
     .await
 }
@@ -1354,11 +1353,18 @@ fn background_update_tool_arg(
                 || candidate.short == tool.short
         })
         .and_then(|(_, versions)| {
-            versions
+            let supported = versions
                 .requests
                 .iter()
+                .filter(|request| request.is_os_supported());
+            supported
+                .clone()
                 .find(|request| request.version() == configured_selector)
-                .or_else(|| (versions.requests.len() == 1).then(|| &versions.requests[0]))
+                .or_else(|| {
+                    let mut supported = supported;
+                    let only = supported.next()?;
+                    supported.next().is_none().then_some(only)
+                })
         })
         .map(ToolRequest::options)
         .unwrap_or_default();

@@ -145,6 +145,14 @@ mise install dummy@1.0.0
 assert_contains "mise run current" "Dummy 1.0.0"
 wait_for_dummy "1.1.0"
 
+# A task preview resolves its environment but never runs its body, so it must
+# not trigger a real background install.
+fresh_state run-dry-run
+mise uninstall dummy --all
+mise install dummy@1.0.0
+assert_succeed "mise run --dry-run current"
+assert_fail "test -e '$MISE_STATE_DIR/tool-update'"
+
 # A PATH shim uses the same post-resolution scheduler, without making shell
 # activation or hook-env do foreground update work.
 fresh_state shim
