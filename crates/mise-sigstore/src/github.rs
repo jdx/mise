@@ -108,6 +108,7 @@ pub(crate) async fn verify_github_attestation_sources_for_artifact(
     let mut trust_roots = TrustRoots::default();
     let mut sources = Vec::new();
     let mut errors = Vec::new();
+    let mut trust_root_failures = 0;
     for attestation in attestations {
         let Some(bundle_value) = &attestation.bundle else {
             continue;
@@ -135,13 +136,16 @@ pub(crate) async fn verify_github_attestation_sources_for_artifact(
                 None => {
                     const ERROR: &str = "verified attestation names no source repository";
                     log::debug!(
-                        "cached GitHub attestation verification method failed; continuing with other attestations: {ERROR}"
+                        "GitHub attestation verification method failed; continuing with other attestations: {ERROR}"
                     );
                     errors.push(ERROR.to_string());
                 }
             },
             Err(error) => {
                 log_attestation_method_failure(&error);
+                if matches!(error, AttestationError::TrustRoot(_)) {
+                    trust_root_failures += 1;
+                }
                 errors.push(error.to_string());
             }
         }
@@ -162,12 +166,24 @@ pub(crate) async fn verify_github_attestation_sources_for_artifact(
             errors.len()
         );
     }
+    warn_if_trust_root_unreachable(trust_root_failures);
     Ok(sources)
+}
+
+/// Verification passes when any one attestation verifies, so attestations that
+/// were skipped because their trust root could not be fetched would otherwise
+/// go unnoticed. Warn once rather than per attestation.
+pub(crate) fn warn_if_trust_root_unreachable(skipped: usize) {
+    if skipped > 0 {
+        log::warn!(
+            "{skipped} GitHub attestation(s) were not checked because the Sigstore TUF trust root could not be fetched; verification passed on the remaining attestations. Check network access to the Sigstore TUF repository (tuf-repo-cdn.sigstore.dev by default)"
+        );
+    }
 }
 
 pub(crate) fn log_attestation_method_failure(error: &AttestationError) {
     log::debug!(
-        "cached GitHub attestation verification method failed; continuing with other attestations: {}",
+        "GitHub attestation verification method failed; continuing with other attestations: {}",
         error.diagnostic_summary()
     );
 }

@@ -36,7 +36,9 @@ pub(crate) async fn production_trusted_root() -> Result<TrustedRoot> {
         .read()
         .unwrap_or_else(|e| e.into_inner())
         .clone();
-    Ok(TrustedRoot::from_tuf(select_tuf_config(override_url)).await?)
+    TrustedRoot::from_tuf(select_tuf_config(override_url))
+        .await
+        .map_err(|e| AttestationError::TrustRoot(e.to_string()))
 }
 
 pub(crate) fn github_embedded_trusted_root() -> Result<TrustedRoot> {
@@ -44,7 +46,9 @@ pub(crate) fn github_embedded_trusted_root() -> Result<TrustedRoot> {
 }
 
 pub(crate) async fn github_tuf_trusted_root() -> Result<TrustedRoot> {
-    Ok(TrustedRoot::from_tuf(TufConfig::github()).await?)
+    TrustedRoot::from_tuf(TufConfig::github())
+        .await
+        .map_err(|e| AttestationError::TrustRoot(e.to_string()))
 }
 
 /// Per-process cache so we only fetch the Sigstore TUF root or parse the

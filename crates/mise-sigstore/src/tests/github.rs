@@ -108,7 +108,7 @@ async fn github_attestation_sources_succeeds_when_one_method_fails() {
     assert_eq!(sources, ["jdx/mise"]);
     let messages = captured_messages(&capture);
     assert!(messages.iter().any(|message| message.contains(
-        "cached GitHub attestation verification method failed; continuing with other attestations: invalid attestation JSON"
+        "GitHub attestation verification method failed; continuing with other attestations: invalid attestation JSON"
     )));
     assert!(messages.iter().any(|message| message.contains(
         "cached GitHub attestation verification succeeded overall despite 1 failed attestation method(s)"
@@ -130,7 +130,7 @@ async fn github_attestation_sources_fails_when_all_methods_fail() {
     assert!(matches!(error, AttestationError::Verification(_)));
     let messages = captured_messages(&capture);
     assert!(messages.iter().any(|message| message.contains(
-        "cached GitHub attestation verification method failed; continuing with other attestations: invalid attestation JSON"
+        "GitHub attestation verification method failed; continuing with other attestations: invalid attestation JSON"
     )));
     assert!(messages.iter().any(|message| message
         == "cached GitHub attestation verification failed overall: no attestation verified"));
@@ -160,4 +160,33 @@ fn attestation_diagnostic_logs_do_not_leak_secrets() {
         assert!(!message.contains(secret), "leaked {secret}: {message}");
     }
     assert!(message.contains("attestation signature verification failed"));
+}
+
+#[tokio::test]
+async fn tuf_fetch_failure_is_a_trust_root_error_not_a_signature_failure() {
+    // Port 1 refuses connections, standing in for a sandbox that blocks the
+    // Sigstore TUF repository.
+    crate::set_tuf_url(Some("http://127.0.0.1:1".to_string()));
+    let result = crate::trust::production_trusted_root().await;
+    crate::set_tuf_url(None);
+
+    let error = result.expect_err("unreachable TUF repository must fail");
+    assert!(matches!(error, AttestationError::TrustRoot(_)), "{error}");
+    assert_eq!(
+        error.diagnostic_summary(),
+        "could not fetch the TUF trust root, so the signature was not checked"
+    );
+}
+
+#[test]
+fn skipped_trust_root_attestations_warn_once() {
+    let capture = capture_logs();
+    crate::github::warn_if_trust_root_unreachable(0);
+    assert!(captured_messages(&capture).is_empty());
+
+    crate::github::warn_if_trust_root_unreachable(2);
+    let messages = captured_messages(&capture);
+    assert_eq!(messages.len(), 1);
+    assert!(messages[0].starts_with("2 GitHub attestation(s) were not checked"));
+    assert!(messages[0].contains("tuf-repo-cdn.sigstore.dev"));
 }
