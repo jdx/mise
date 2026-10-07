@@ -30,6 +30,9 @@ mise use -g --tool-option auto_update=12h dummy@1
 assert_contains "cat $MISE_CONFIG_DIR/config.toml" 'auto_update = "12h"'
 mise use -g dummy@1
 assert_contains "cat $MISE_CONFIG_DIR/config.toml" 'auto_update = "12h"'
+printf '[tools.dummy]\nversion = "1"\n' >"$MISE_CONFIG_DIR/config.toml"
+mise use -g --tool-option auto_update=true dummy@1
+assert_contains "cat $MISE_CONFIG_DIR/config.toml" "auto_update = true"
 
 # `mise x` updates within the range first and runs the new version, with
 # nothing added to the tool's stdout.
