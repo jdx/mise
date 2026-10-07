@@ -22,6 +22,15 @@ assert_not_checked() {
   assert_fail "test -e '$MISE_STATE_DIR/tool-update'"
 }
 
+# `mise use` writes the option, and rewriting the entry keeps it.
+global_config '# no tools'
+mise use -g --tool-option auto_update=true dummy@1
+assert_contains "cat $MISE_CONFIG_DIR/config.toml" "auto_update = true"
+mise use -g --tool-option auto_update=12h dummy@1
+assert_contains "cat $MISE_CONFIG_DIR/config.toml" 'auto_update = "12h"'
+mise use -g dummy@1
+assert_contains "cat $MISE_CONFIG_DIR/config.toml" 'auto_update = "12h"'
+
 # `mise x` updates within the range first and runs the new version, with
 # nothing added to the tool's stdout.
 fresh_state exec
@@ -33,6 +42,17 @@ assert_not_contains "mise ls --installed dummy" "2.0.0"
 # Within the interval it runs what is installed without checking again.
 mise uninstall dummy@1.1.0
 assert "mise x -- dummy" "This is Dummy 1.0.0!"
+
+# Another version of the tool that doesn't opt in is left alone.
+fresh_state mixed
+reset_dummy
+cat >"$MISE_CONFIG_DIR/config.toml" <<'EOF'
+[tools]
+dummy = [{ version = "1", auto_update = true }, { version = "latest", auto_update = false }]
+EOF
+assert "mise x -- dummy" "This is Dummy 1.1.0!"
+assert_not_contains "mise ls --installed dummy" "2.0.0"
+global_config 'dummy = { version = "1", auto_update = true }'
 
 # Shims update the same way.
 fresh_state shim

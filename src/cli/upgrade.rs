@@ -411,8 +411,13 @@ impl Upgrade {
                 }
             }
         }
-        if self.for_auto_update && outdated.is_empty() {
-            return Ok(());
+        if self.for_auto_update {
+            // Another version of the same tool can opt out: `auto_update` upgrades
+            // only the requests that enable it.
+            outdated.retain(|o| crate::tool_update::enabled(&o.tool_version.request));
+            if outdated.is_empty() {
+                return Ok(());
+            }
         }
         if !self.for_auto_update {
             self.warn_if_newer_versions_hidden_by_minimum_release_age(

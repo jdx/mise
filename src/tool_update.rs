@@ -59,6 +59,13 @@ fn global_auto_update(request: &ToolRequest) -> Option<String> {
     request.options().get("auto_update").map(str::to_string)
 }
 
+/// Whether `request`, from a global config file, has `auto_update` enabled.
+pub fn enabled(request: &ToolRequest) -> bool {
+    global_auto_update(request)
+        .and_then(|value| parse_auto_update(&value).ok().flatten())
+        .is_some()
+}
+
 /// Whether any tool in `toolset` opted in. This is in memory only, so a
 /// launch can rule out updates before doing any lookup or I/O.
 pub fn any_opted_in(toolset: &Toolset) -> bool {
@@ -192,11 +199,6 @@ pub fn record_result(tool_id: &str, result: &Result<()>) {
 /// never update again to clear its failure, and a shell's `MISE_<TOOL>_VERSION`
 /// must not hide one.
 pub fn failures(global: &Toolset) -> Vec<Failure> {
-    let enabled = |request: &ToolRequest| {
-        global_auto_update(request)
-            .and_then(|value| parse_auto_update(&value).ok().flatten())
-            .is_some()
-    };
     let opted_in = global
         .versions
         .iter()
