@@ -1458,6 +1458,9 @@ Adopt global configuration or shared dotfile history from a Git repository, then
 \fB\-\-replace\-history\fR
 Replace local dotfile history while adopting a setup repository
 .TP
+\fB\-\-take\-remote\-all\fR
+While adopting a setup repository, take its version of every existing file that differs; the replaced versions are saved first, so `mise dot undo` restores them
+.TP
 \fB\-\-from\-dir\fR \fI<DIR>\fR
 Directory used for the repository cloned by \-\-from
 .TP
