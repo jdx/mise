@@ -322,6 +322,10 @@ cannot be combined with `pubkey`, `identity`, `identity_prefix`, or `issuer`;
 use those to pin another ref or forge. Like those options, it pins the
 signer by name, so a renamed repository needs the new name here.
 
+The same prefix also applies to the project's signed release list. If the
+vendor signs that list from another workflow or ref, pin it with
+[`list_identity_prefix`](#list-identity-prefix).
+
 ### `list_identity_prefix` {#list-identity-prefix}
 
 When a different workflow signs the vendor's release list, pin its certificate
