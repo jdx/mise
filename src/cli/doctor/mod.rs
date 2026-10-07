@@ -17,7 +17,7 @@ use crate::plugins::PluginType;
 use crate::plugins::core::CORE_PLUGINS;
 use crate::registry::REGISTRY;
 use crate::toolset::install_state;
-use crate::toolset::{ConfigScope, ToolRequest, ToolVersion, Toolset, ToolsetBuilder};
+use crate::toolset::{ToolRequest, ToolVersion, Toolset, ToolsetBuilder};
 use crate::ui::{info, style};
 use crate::version::VERSION;
 use crate::{backend, dirs, duration, env, file, plugins, shims};
@@ -505,13 +505,7 @@ impl Doctor {
         let Ok(config) = Config::get().await else {
             return;
         };
-        let Ok(global) = ToolsetBuilder::new()
-            .with_scope(ConfigScope::GlobalOnly)
-            .build_unresolved(&config)
-        else {
-            return;
-        };
-        for failure in crate::tool_update::failures(&global) {
+        for failure in crate::tool_update::failures(&config) {
             self.warnings.push(format!(
                 "the last auto_update of {} failed: {}",
                 failure.tool, failure.error,

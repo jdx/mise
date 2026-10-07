@@ -57,6 +57,7 @@ pub(crate) async fn update_before_launch(config: &Arc<Config>, ts: &Toolset, bin
                 .iter()
                 .filter(|(key, _)| !key.starts_with("__MISE_")),
         )
+        .env(tool_update::UPDATING_ENV, "1")
         .current_dir(*dirs::HOME)
         .stdin(Stdio::null())
         .stdout(std::io::stderr())
