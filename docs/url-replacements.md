@@ -62,9 +62,9 @@ The second sends GitHub API requests, such as release lookups, to the proxy's AP
 overlap.
 
 Reroute the API only if the proxy serves it: doing so stops mise from using
-[mise-versions](/configuration/settings.html#use_versions_host) for GitHub metadata. If
-the proxy only mirrors release downloads, keep just the first rule. Use a regex rule only
-when the proxy's path layout cannot be expressed as a prefix.
+[mise-versions](/configuration/settings.html#use_versions_host) for GitHub release and
+attestation metadata. If the proxy only mirrors release downloads, keep just the first
+rule. Use a regex rule only when the proxy's path layout cannot be expressed as a prefix.
 
 ## Advanced Regex Replacement
 
