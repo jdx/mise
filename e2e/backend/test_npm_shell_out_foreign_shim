@@ -26,9 +26,13 @@ mise trust --yes
 mise cache clear
 
 # Cap processes so a regression fails here instead of exhausting the runner.
-# RLIMIT_NPROC counts every thread of this user, not just processes.
-threads="$(ps -L -u "$(id -u)" -o lwp= | wc -l)"
-ulimit -u $((threads + 300))
+# RLIMIT_NPROC counts threads on Linux (/proc/*/task) and processes elsewhere.
+if [[ -d /proc/self/task ]]; then
+  tasks=(/proc/[0-9]*/task/*)
+else
+  mapfile -t tasks < <(ps -ax -o pid=)
+fi
+ulimit -u $((${#tasks[@]} + 300))
 
 # Without the fix: fork bomb until the timeout or the cap.
 # With the fix: the foreign shim is skipped. With no real npm behind it, mise
