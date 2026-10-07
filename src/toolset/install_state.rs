@@ -1138,8 +1138,13 @@ impl PostinstallToken {
     }
 
     /// Whether `token` is the one the running hook of this version was given.
+    /// The install must also still hold the version's lock: an installer that
+    /// was killed mid-hook never removed its token.
     pub(crate) fn matches(ba: &BackendArg, v: &str, token: &str) -> bool {
         file::read_to_string(postinstall_token_path(ba, v)).is_ok_and(|current| current == token)
+            && LockFile::new(&incomplete_file_path(ba, v))
+                .try_lock()
+                .is_ok_and(|lock| lock.is_none())
     }
 }
 
@@ -1391,6 +1396,7 @@ mod tests {
     #[test]
     fn postinstall_token_matches_only_the_running_hook() {
         let ba = BackendArg::from(format!("token_test_{}", std::process::id()).as_str());
+        let install = lock_tool_version(&ba, "1.0.0").unwrap();
         let first = PostinstallToken::start(&ba, "1.0.0").unwrap();
         let first_token = first.token.clone();
         assert!(PostinstallToken::matches(&ba, "1.0.0", &first_token));
@@ -1401,6 +1407,9 @@ mod tests {
         let retry = PostinstallToken::start(&ba, "1.0.0").unwrap();
         assert!(!PostinstallToken::matches(&ba, "1.0.0", &first_token));
         assert!(PostinstallToken::matches(&ba, "1.0.0", &retry.token));
+        // An installer killed mid-hook leaves its token but not its lock.
+        drop(install);
+        assert!(!PostinstallToken::matches(&ba, "1.0.0", &retry.token));
     }
 
     #[test]

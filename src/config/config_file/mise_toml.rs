@@ -90,8 +90,10 @@ fn normalize_option_template_value(value: toml::Value) -> toml::Value {
 }
 
 fn should_normalize_option_template(key: &str) -> bool {
-    !matches!(key, "os" | "depends" | "install_env" | "lazy" | "lazy_bins")
-        && !key.starts_with("install_env.")
+    !matches!(
+        key,
+        "os" | "depends" | "install_env" | "lazy" | "lazy_bins" | "auto_update"
+    ) && !key.starts_with("install_env.")
 }
 
 fn insert_tool_option<E>(
@@ -209,6 +211,14 @@ fn insert_core_options(table: &mut InlineTable, options: ToolVersionOptions) {
             bins.push(Value::from(bin));
         }
         table.insert("lazy_bins", Value::Array(bins));
+    }
+    if let Some(auto_update) = core.auto_update {
+        let value = match auto_update.as_str() {
+            "true" => Value::from(true),
+            "false" => Value::from(false),
+            _ => Value::from(auto_update),
+        };
+        table.insert("auto_update", value);
     }
 }
 

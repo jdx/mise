@@ -135,7 +135,7 @@ async fn update_due_tools() -> Result<()> {
         for request in versions
             .requests
             .iter()
-            .filter(|request| tool_update::opted_in(request))
+            .filter(|request| tool_update::enabled(request))
         {
             let tv = match request.resolve(&config, &ResolveOptions::default()).await {
                 Ok(tv) => tv,
