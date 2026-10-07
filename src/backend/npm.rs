@@ -56,6 +56,11 @@ fn is_git_spec(name: &str) -> bool {
 
 /// The npm install specifier for a git source; `latest` means the default branch.
 fn git_requirement(name: &str, version: &str) -> String {
+    // mise keeps `ref:`/`branch:`/`tag:`/`rev:` request prefixes; git refs can't contain `:`.
+    let version = match version.split_once(':') {
+        Some(("ref" | "branch" | "tag" | "rev", git_ref)) => git_ref,
+        _ => version,
+    };
     if version == "latest" {
         name.to_string()
     } else {
@@ -65,7 +70,7 @@ fn git_requirement(name: &str, version: &str) -> String {
 
 /// An alias to install a git source under: the repository name.
 fn git_alias(name: &str) -> String {
-    let url = name.split('#').next().unwrap_or(name);
+    let url = name.split('#').next().unwrap_or(name).trim_end_matches('/');
     let url = url.strip_suffix(".git").unwrap_or(url);
     url.rsplit(['/', ':']).next().unwrap_or(url).to_string()
 }
@@ -2454,6 +2459,11 @@ mod tests {
         assert_eq!(git_alias("git+https://github.com/o/r"), "r");
         assert_eq!(git_alias("git+ssh://git@github.com/o/r.git#main"), "r");
         assert_eq!(git_alias("github:o/r"), "r");
+        assert_eq!(git_alias("git+https://github.com/o/r.git/"), "r");
+        assert_eq!(
+            git_requirement("github:o/r", "branch:feature/foo"),
+            "github:o/r#feature/foo"
+        );
         assert_eq!(
             git_requirement("git+https://github.com/o/r", "latest"),
             "git+https://github.com/o/r"
