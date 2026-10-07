@@ -973,6 +973,32 @@ fn rust_state_lock_identities(rustup_home: &Path, cargo_home: &Path) -> Vec<Path
     identities
 }
 
+/// Serializes rustup state changes for the homes `config` resolves to. Callers that spawn
+/// `cargo` (which may run rustup itself) must hold this so they don't race the rust plugin.
+pub(crate) async fn lock_rust_state_for_config(
+    toolset_env: &BTreeMap<String, String>,
+    install_env: &IndexMap<String, crate::config::env_directive::EnvValue>,
+) -> Result<Vec<fslock::LockFile>> {
+    // Mirror the child's environment: it inherits the process env, then the toolset
+    // env and `install_env` override it. Cargo only reads CARGO_HOME/RUSTUP_HOME.
+    let mut effective: BTreeMap<String, String> = env::vars_safe().collect();
+    effective.extend(toolset_env.iter().map(|(k, v)| (k.clone(), v.clone())));
+    for (key, value) in install_env {
+        match value.clone().into_string() {
+            Some(value) => effective.insert(key.clone(), value),
+            None => effective.remove(key),
+        };
+    }
+    let homes = RustHomes::from_sources(
+        &IndexMap::new(),
+        None,
+        effective.get("CARGO_HOME").map(PathBuf::from),
+        None,
+        effective.get("RUSTUP_HOME").map(PathBuf::from),
+    );
+    lock_rust_state(&homes).await
+}
+
 async fn lock_rust_state(homes: &RustHomes) -> Result<Vec<fslock::LockFile>> {
     let identities = rust_state_lock_identities(&homes.rustup, &homes.cargo);
     tokio::task::spawn_blocking(move || {
