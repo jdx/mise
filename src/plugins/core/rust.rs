@@ -992,8 +992,13 @@ pub(crate) async fn lock_rust_state_for_config(
             None => {
                 config_env.shift_remove(key);
                 // the child unsets the variable, so it uses the default home
-                cargo_removed |= key == "CARGO_HOME";
-                rustup_removed |= key == "RUSTUP_HOME";
+                if key == "CARGO_HOME" {
+                    cargo_removed = true;
+                    config_env.shift_remove("MISE_CARGO_HOME");
+                } else if key == "RUSTUP_HOME" {
+                    rustup_removed = true;
+                    config_env.shift_remove("MISE_RUSTUP_HOME");
+                }
             }
         }
     }
