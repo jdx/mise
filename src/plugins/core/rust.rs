@@ -977,8 +977,24 @@ fn rust_state_lock_identities(rustup_home: &Path, cargo_home: &Path) -> Vec<Path
 /// `cargo` (which may run rustup itself) must hold this so they don't race the rust plugin.
 pub(crate) async fn lock_rust_state_for_config(
     config: &Arc<Config>,
+    install_env: &IndexMap<String, crate::config::env_directive::EnvValue>,
 ) -> Result<Vec<fslock::LockFile>> {
-    lock_rust_state(&RustHomes::resolve(config).await?).await
+    let mut config_env = config.env().await?.clone();
+    for (key, value) in install_env {
+        match value.clone().into_string() {
+            Some(value) => config_env.insert(key.clone(), value),
+            None => config_env.shift_remove(key),
+        };
+    }
+    let settings = Settings::get();
+    let homes = RustHomes::from_sources(
+        &config_env,
+        settings.rust.cargo_home.clone(),
+        env::var_path("CARGO_HOME"),
+        settings.rust.rustup_home.clone(),
+        env::var_path("RUSTUP_HOME"),
+    );
+    lock_rust_state(&homes).await
 }
 
 async fn lock_rust_state(homes: &RustHomes) -> Result<Vec<fslock::LockFile>> {

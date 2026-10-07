@@ -317,7 +317,8 @@ impl Backend for CargoBackend {
 
         // cargo may sync the toolchain through rustup, which can't run concurrently
         let _rust_state_locks =
-            crate::plugins::core::rust::lock_rust_state_for_config(&config).await?;
+            crate::plugins::core::rust::lock_rust_state_for_config(&config, &tv.install_env())
+                .await?;
         let mut cmd = CmdLineRunner::new(
             self.spawn_program(&ctx.config, Some(&ctx.ts), "cargo")
                 .await,
