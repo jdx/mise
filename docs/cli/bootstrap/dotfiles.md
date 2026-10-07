@@ -25,6 +25,7 @@ Manage dotfiles from `[dotfiles]`
 - [`mise bootstrap dotfiles exclude <GLOB>`](/cli/bootstrap/dotfiles/exclude.html)
 - [`mise bootstrap dotfiles history [FLAGS] [SUBCOMMAND]`](/cli/bootstrap/dotfiles/history.html)
 - [`mise bootstrap dotfiles include <GLOB>`](/cli/bootstrap/dotfiles/include.html)
+- [`mise bootstrap dotfiles notify`](/cli/bootstrap/dotfiles/notify.html)
 - [`mise bootstrap dotfiles origin [--remove] [SUBCOMMAND]`](/cli/bootstrap/dotfiles/origin.html)
 - [`mise bootstrap dotfiles paths [FLAGS]`](/cli/bootstrap/dotfiles/paths.html)
 - [`mise bootstrap dotfiles pull [FLAGS] [PATH]…`](/cli/bootstrap/dotfiles/pull.html)

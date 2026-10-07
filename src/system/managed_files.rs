@@ -32,6 +32,8 @@ pub struct ManagedFileTomlConfig {
     pub replace: bool,
     #[serde(default)]
     pub notify: Vec<String>,
+    #[serde(default, deserialize_with = "crate::system::deserialize_package_os")]
+    pub os: Vec<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
@@ -49,6 +51,8 @@ pub struct ManagedDirectoryTomlConfig {
     pub replace: bool,
     #[serde(default)]
     pub notify: Vec<String>,
+    #[serde(default, deserialize_with = "crate::system::deserialize_package_os")]
+    pub os: Vec<String>,
 }
 
 pub use mise_bootstrap::ManagedFilePhase;
@@ -430,7 +434,15 @@ fn merged_files_from_config_files(
                 environment: crate::config::environments_for_config_path(cf.get_path()),
                 source: None,
             };
-            for (path, file) in bootstrap.files {
+            for (path, mut file) in bootstrap.files {
+                // skip before any validation: a path meant for another OS may not
+                // even be absolute here
+                if !os_matches(&file.os) {
+                    continue;
+                }
+                // the selector has done its job; overlapping selectors from
+                // different hierarchies must not read as conflicting declarations
+                file.os.clear();
                 let target = absolute_target(&path)?;
                 if let Some(previous) = layer_paths.insert(target.clone(), path.clone()) {
                     bail!(
@@ -450,6 +462,14 @@ fn merged_files_from_config_files(
         }
     }
     Ok(merged)
+}
+
+/// Whether an entry's `os` selectors match this machine; no selectors match everywhere.
+fn os_matches(selectors: &[String]) -> bool {
+    selectors.is_empty()
+        || selectors
+            .iter()
+            .any(|entry| crate::platform::os_selector_matches(entry))
 }
 
 fn directories_from_config(config: &Config) -> Result<Vec<ManagedDirectoryRequest>> {
@@ -491,7 +511,15 @@ fn directories_from_config_files(
                 source: None,
             };
             let mut layer_paths = IndexMap::new();
-            for (path, directory) in bootstrap.directories {
+            for (path, mut directory) in bootstrap.directories {
+                // skip before any validation: a path meant for another OS may not
+                // even be absolute here
+                if !os_matches(&directory.os) {
+                    continue;
+                }
+                // the selector has done its job; overlapping selectors from
+                // different hierarchies must not read as conflicting declarations
+                directory.os.clear();
                 let target = absolute_target(&path)?;
                 if let Some(previous) = layer_paths.insert(target.clone(), path.clone()) {
                     bail!(

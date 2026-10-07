@@ -232,6 +232,9 @@ Show one checkpoint: what triggered it, what changed, and its journal
 \fBbootstrap dotfiles include\fR
 Stop excluding paths matching a glob
 .TP
+\fBbootstrap dotfiles notify\fR
+Send a test desktop notification
+.TP
 \fBbootstrap dotfiles origin\fR
 Connect or disconnect the setup repository
 .TP
@@ -616,6 +619,9 @@ Show one checkpoint: what triggered it, what changed, and its journal
 \fBdotfiles include\fR
 Stop excluding paths matching a glob
 .TP
+\fBdotfiles notify\fR
+Send a test desktop notification
+.TP
 \fBdotfiles origin\fR
 Connect or disconnect the setup repository
 .TP
@@ -888,6 +894,15 @@ Run tasks and their dependencies
 .TP
 \fBsearch\fR
 Search for available tools
+.TP
+\fBsecrets\fR
+[experimental] List the secret names this project's secrets source provides, without their values
+.TP
+\fBsecrets ls\fR
+List the secret names this project's secrets source provides, without their values
+.RS
+\fIAliases: \fRlist
+.RE
 .TP
 \fBself\-update\fR
 Update mise itself
@@ -2026,6 +2041,33 @@ Print help
 .TP
 \fB<GLOB>\fR
 The glob as written by `mise dot exclude`
+.SH "MISE BOOTSTRAP DOTFILES NOTIFY"
+Send a test desktop notification
+
+Checks that `history.notify` can reach you. On macOS the first
+notification asks for permission, so run this once to be prompted now
+instead of at the first sync conflict. Fails with the reason when this
+build or machine cannot show notifications, such as an unofficial macOS
+build (Homebrew), a missing `notify\-send` on Linux, denied permission, or
+`history.notify = false`.
+
+Notifications are only sent when conflicts pause sharing for the setup.
+Other problems, such as a watcher that cannot save, show in `mise doctor`
+and `mise dot status`.
+.PP
+\fBUsage:\fR mise bootstrap dotfiles notify [OPTIONS]
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-h, \-\-help\fR
+Print help
+\fBExamples:\fR
+.PP
+.PP
+.RS 4
+mise dot notify
+.RE
 .SH "MISE BOOTSTRAP DOTFILES ORIGIN"
 Connect or disconnect the setup repository
 
@@ -2346,6 +2388,8 @@ saved automatically; without it, `mise dot save` saves them.
 `\-\-os` and `\-\-profile` declare a variant: a separate shared stream for
 machines matching that platform or mise environment, so a Mac and a
 Linux box can share the same live path with different contents.
+`\-\-machine` gives every machine its own stream instead, for files such
+as a monitor layout that should never be applied on another machine.
 .PP
 \fBUsage:\fR mise bootstrap dotfiles track [OPTIONS] <PATH> ...
 .PP
@@ -2357,6 +2401,9 @@ Declare a variant for this platform (macos, linux, linux/arm64, …)
 .TP
 \fB\-\-profile\fR \fI<PROFILE>\fR
 Declare a variant for this mise environment
+.TP
+\fB\-\-machine\fR
+Keep a separate stream on every machine, never applied on another
 .TP
 \fB\-\-no\-autosave\fR
 Save only on `mise dot save <path>`, never automatically
@@ -4685,6 +4732,33 @@ Print help
 .TP
 \fB<GLOB>\fR
 The glob as written by `mise dot exclude`
+.SH "MISE DOTFILES NOTIFY"
+Send a test desktop notification
+
+Checks that `history.notify` can reach you. On macOS the first
+notification asks for permission, so run this once to be prompted now
+instead of at the first sync conflict. Fails with the reason when this
+build or machine cannot show notifications, such as an unofficial macOS
+build (Homebrew), a missing `notify\-send` on Linux, denied permission, or
+`history.notify = false`.
+
+Notifications are only sent when conflicts pause sharing for the setup.
+Other problems, such as a watcher that cannot save, show in `mise doctor`
+and `mise dot status`.
+.PP
+\fBUsage:\fR mise dotfiles notify [OPTIONS]
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-h, \-\-help\fR
+Print help
+\fBExamples:\fR
+.PP
+.PP
+.RS 4
+mise dot notify
+.RE
 .SH "MISE DOTFILES ORIGIN"
 Connect or disconnect the setup repository
 
@@ -5005,6 +5079,8 @@ saved automatically; without it, `mise dot save` saves them.
 `\-\-os` and `\-\-profile` declare a variant: a separate shared stream for
 machines matching that platform or mise environment, so a Mac and a
 Linux box can share the same live path with different contents.
+`\-\-machine` gives every machine its own stream instead, for files such
+as a monitor layout that should never be applied on another machine.
 .PP
 \fBUsage:\fR mise dotfiles track [OPTIONS] <PATH> ...
 .PP
@@ -5016,6 +5092,9 @@ Declare a variant for this platform (macos, linux, linux/arm64, …)
 .TP
 \fB\-\-profile\fR \fI<PROFILE>\fR
 Declare a variant for this mise environment
+.TP
+\fB\-\-machine\fR
+Keep a separate stream on every machine, never applied on another
 .TP
 \fB\-\-no\-autosave\fR
 Save only on `mise dot save <path>`, never automatically
@@ -5400,6 +5479,12 @@ Skip automatic dependency preparation
 \fB\-\-raw\fR
 Connect backend install command stdin/stdout/stderr directly to the terminal. Implies `\-\-jobs=1`
 .TP
+\fB\-\-secrets\fR \fI<SECRET>\fR
+Give the command these secrets (comma\-separated); by default it gets none
+.TP
+\fB\-\-secrets\-all\fR
+Give the command every secret the project can inject, except file secrets
+.TP
 \fB\-h, \-\-help\fR
 Print help
 \fBArguments:\fR
@@ -5423,6 +5508,12 @@ Specify command as a string:
 .PP
 .RS 4
 mise exec node@20 python@3.11 \-\-command "node \-v && python \-V"
+.RE
+.PP
+Give the command the GH_TOKEN secret from the project's secrets source. Without a flag it gets none.
+.PP
+.RS 4
+mise x \-\-secrets GH_TOKEN \-\- gh release list
 .RE
 .PP
 Run a command in a different directory:
@@ -6190,6 +6281,14 @@ directory is moved aside while its replacement installs, and put back if that
 fails. Versions whose recorded backend is not the one their tool resolves to
 now are left alone, as are tools that keep the legacy layout (`http:`,
 `rust`, `dotnet`).
+
+A version that cannot be reinstalled (its release was withdrawn or is signed
+by someone else now, or the network is unavailable) is not an error: its
+directory is moved as it is into the identity layout, behind the same version
+link. Only a version that cannot be moved either keeps its old directory,
+reported as kept in the legacy layout. The command ends with a count of what
+was migrated, relocated, kept and failed, and fails only when a migration
+itself broke.
 .PP
 \fBUsage:\fR mise installs migrate [OPTIONS] [<TOOL@VERSION>] ...
 .PP
@@ -7166,7 +7265,7 @@ These are hidden by default
 .TP
 \fB\-u, \-\-urls\fR
 Show the git url for each plugin
-e.g.: https://github.com/mise\-plugins/vfox\-cmake.git
+e.g.: https://github.com/jdx/vfox\-cmake.git
 .TP
 \fB\-\-refs\fR
 Show the git refs for each plugin
@@ -7311,7 +7410,7 @@ Checks the remote for newer versions and only displays plugins that are outdated
 .TP
 \fB\-u, \-\-urls\fR
 Show the git url for each plugin
-e.g.: https://github.com/mise\-plugins/vfox\-cmake.git
+e.g.: https://github.com/jdx/vfox\-cmake.git
 .TP
 \fB\-\-refs\fR
 Show the git refs for each plugin
@@ -7345,7 +7444,7 @@ These are the shorthand names from the registry: https://github.com/jdx/mise/blo
 .PP
 .TP
 \fB\-u, \-\-urls\fR
-Show the git url for each plugin, e.g. https://github.com/mise\-plugins/mise\-poetry.git
+Show the plugin source for each shorthand, e.g. vfox:jdx/vfox\-poetry
 .TP
 \fB\-\-only\-names\fR
 Only show the name of each plugin, without the "*" marking installed plugins
@@ -7579,6 +7678,9 @@ as will versions only referenced on the command line `mise exec <TOOL>@<VERSION>
 Tool stubs that have been executed are tracked in ~/.local/state/mise/tracked\-stubs.
 Versions still referenced by a tracked stub are not deleted.
 
+Versions that a running process was started from are not deleted either,
+so a long\-running program keeps its files after its version stops being needed.
+
 You can list prunable tools with `mise ls \-\-prunable`
 .PP
 \fBUsage:\fR mise prune [OPTIONS] [<INSTALLED_TOOL>] ...
@@ -7797,6 +7899,14 @@ Read/write directly to stdin/stdout/stderr instead of by line
 Redactions are not applied with this option
 Configure with `raw` config or `MISE_RAW` env var
 .TP
+\fB\-\-secrets\fR \fI<SECRET>\fR
+Give the tasks named on the command line these secrets (comma\-separated)
+Their dependencies and subtasks do not receive them. Put this flag before the task name.
+.TP
+\fB\-\-secrets\-all\fR
+Give the tasks named on the command line every secret the project can inject
+(fnox env = true or "exec"; never env = false). Dependencies and subtasks do not receive them.
+.TP
 \fB\-s, \-\-shell\fR \fI<SHELL>\fR
 Shell to use to run toml tasks
 
@@ -7925,6 +8035,12 @@ Run "test" with stdin/stdout/stderr all connected to the current terminal. This 
 mise run \-\-raw test
 .RE
 .PP
+Give the "deploy" task the DEPLOY_KEY secret from the project's secrets source. Its dependencies do not receive it.
+.PP
+.RS 4
+mise run \-\-secrets DEPLOY_KEY deploy
+.RE
+.PP
 Run the "lint", "test", and "check" tasks in parallel.
 .PP
 .RS 4
@@ -8012,6 +8128,54 @@ Search a tool
   gojq  Pure Go implementation of jq. https://github.com/itchyny/gojq
 /jq
 esc clear filter • enter confirm
+.RE
+.SH "MISE SECRETS"
+[experimental] List the secret names this project's secrets source provides, without their values
+.PP
+\fBUsage:\fR mise secrets [OPTIONS] [COMMAND]
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-J, \-\-json\fR
+Output in JSON format
+.TP
+\fB\-\-no\-header\fR
+Don't show table header
+.TP
+\fB\-h, \-\-help\fR
+Print help
+.SH "MISE SECRETS LS"
+List the secret names this project's secrets source provides, without their values
+
+Shows names and metadata only; values are never shown. The source is declared in the
+project's `mise.toml` with `[secrets.fnox]`.
+.PP
+\fBUsage:\fR mise secrets ls [OPTIONS]
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-J, \-\-json\fR
+Output in JSON format
+.TP
+\fB\-\-no\-header\fR
+Don't show table header
+.TP
+\fB\-\-complete\fR
+Render completions: the injectable key names, one per line
+.TP
+\fB\-h, \-\-help\fR
+Print help
+\fBExamples:\fR
+.PP
+.PP
+.RS 4
+mise secrets ls
+KEY                ENV    FILE  SCOPES  TASKS   DESCRIPTION
+DATABASE_URL       true   no    run, exec  deploy  app database
+GCP_SA_JSON        exec   yes   run               service account
+SIGNING_KEY        false  no    \-                 release signing key
 .RE
 .SH "MISE SELF-UPDATE"
 Update mise itself
@@ -9242,6 +9406,14 @@ Read/write directly to stdin/stdout/stderr instead of by line
 Redactions are not applied with this option
 Configure with `raw` config or `MISE_RAW` env var
 .TP
+\fB\-\-secrets\fR \fI<SECRET>\fR
+Give the tasks named on the command line these secrets (comma\-separated)
+Their dependencies and subtasks do not receive them. Put this flag before the task name.
+.TP
+\fB\-\-secrets\-all\fR
+Give the tasks named on the command line every secret the project can inject
+(fnox env = true or "exec"; never env = false). Dependencies and subtasks do not receive them.
+.TP
 \fB\-s, \-\-shell\fR \fI<SHELL>\fR
 Shell to use to run toml tasks
 
@@ -9368,6 +9540,12 @@ Run "test" with stdin/stdout/stderr all connected to the current terminal. This 
 .PP
 .RS 4
 mise run \-\-raw test
+.RE
+.PP
+Give the "deploy" task the DEPLOY_KEY secret from the project's secrets source. Its dependencies do not receive it.
+.PP
+.RS 4
+mise run \-\-secrets DEPLOY_KEY deploy
 .RE
 .PP
 Run the "lint", "test", and "check" tasks in parallel.

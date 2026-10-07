@@ -17,7 +17,7 @@ use crate::plugins::PluginType;
 use crate::plugins::core::CORE_PLUGINS;
 use crate::registry::REGISTRY;
 use crate::toolset::install_state;
-use crate::toolset::{ToolRequest, ToolVersion, Toolset, ToolsetBuilder};
+use crate::toolset::{ConfigScope, ToolRequest, ToolVersion, Toolset, ToolsetBuilder};
 use crate::ui::{info, style};
 use crate::version::VERSION;
 use crate::{backend, dirs, duration, env, file, plugins, shims};
@@ -94,6 +94,8 @@ struct DotfilesDiagnosis {
     sync_failing_for_secs: Option<u64>,
     /// Failed syncs in a row, since the last success.
     sync_failures: u32,
+    /// Whether conflict notifications can reach the user.
+    notifications: String,
 }
 
 /// How long syncs have been failing: since the current run of failures
@@ -211,6 +213,8 @@ impl Doctor {
         );
 
         let config = Config::get().await?;
+        self.warnings
+            .extend(crate::secrets::doctor_warnings(&config).await);
         let ts = config.get_toolset().await?;
         let desired_shims = self.analyze_shims(&config, ts).await;
         self.analyze_plugins();
@@ -218,6 +222,7 @@ impl Doctor {
         self.analyze_backend_mismatches();
         self.analyze_system_deps(ts).await;
         self.analyze_new_version().await;
+        self.analyze_tool_updates().await;
         #[cfg(all(windows, feature = "self_update"))]
         self.analyze_self_update_leftovers();
         self.check_path_ordering(ts, &config).await;
@@ -374,6 +379,7 @@ impl Doctor {
         self.analyze_settings()?;
 
         self.analyze_new_version().await;
+        self.analyze_tool_updates().await;
         #[cfg(all(windows, feature = "self_update"))]
         self.analyze_self_update_leftovers();
 
@@ -495,6 +501,27 @@ impl Doctor {
         ));
     }
 
+    /// A failed `auto_update` only warns on the launch that tried it, so the
+    /// last failure is kept for here.
+    async fn analyze_tool_updates(&mut self) {
+        let Ok(config) = Config::get().await else {
+            return;
+        };
+        let Ok(global) = ToolsetBuilder::new()
+            .with_scope(ConfigScope::GlobalOnly)
+            .without_runtime_env()
+            .build_unresolved(&config)
+        else {
+            return;
+        };
+        for failure in crate::tool_update::failures(&global) {
+            self.warnings.push(format!(
+                "the last auto_update of {} failed: {}",
+                failure.tool, failure.error,
+            ));
+        }
+    }
+
     fn analyze_settings(&mut self) -> eyre::Result<()> {
         match cmd!("mise", "settings").read() {
             Ok(settings) => {
@@ -518,6 +545,8 @@ impl Doctor {
         }
         info::section("backends", render_backends())?;
         info::section("plugins", render_plugins())?;
+        self.warnings
+            .extend(crate::secrets::doctor_warnings(config).await);
 
         for backend in backend::list() {
             if let Some(plugin) = backend.plugin()
@@ -768,6 +797,7 @@ impl Doctor {
             sync_error: None,
             sync_failing_for_secs: None,
             sync_failures: 0,
+            notifications: crate::system::history::notify::summary(),
         };
         if let Some(reason) = unavailable {
             self.errors.push(format!(
@@ -948,6 +978,7 @@ impl Doctor {
                 None => {}
             }
         }
+        lines.push(format!("notifications: {}", diagnosis.notifications));
         info::section("dotfiles", lines.join("\n"))?;
         Ok(())
     }
@@ -1213,33 +1244,47 @@ impl Doctor {
                 continue;
             };
 
-            // Get recommended backend for current platform
-            let backends = rt.backends();
-            let Some(registry_full) = backends.first() else {
+            // Recommended backend for the installed versions: a registry backend can
+            // start at a later version (`min_version`), so an older install is not
+            // one the registry has moved. Strip options for comparison
+            // (e.g., "github:repo[exe=bin]" -> "github:repo").
+            let stored_stripped = stored_full.split('[').next().unwrap_or(stored_full);
+            let recommended: Vec<&str> = if ist.versions.is_empty() {
+                rt.backends().into_iter().take(1).collect()
+            } else {
+                ist.versions
+                    .iter()
+                    .filter_map(|v| rt.backends_for_version(Some(v)).into_iter().next())
+                    .collect()
+            };
+            // The install state records one backend per tool, so versions installed
+            // on either side of a cutover cannot all match it. Only warn when none do.
+            // Only a change of backend kind counts; a repo or org rename within one does not.
+            if recommended.iter().any(|full| {
+                let stripped = full.split('[').next().unwrap_or(full);
+                crate::args::same_backend_kind(stripped, stored_stripped)
+            }) {
+                continue;
+            }
+            let Some(registry_full) = recommended.first() else {
                 continue;
             };
-
-            // Strip options for comparison (e.g., "github:repo[exe=bin]" -> "github:repo")
-            let stored_stripped = stored_full.split('[').next().unwrap_or(stored_full);
-            let registry_stripped = registry_full.split('[').next().unwrap_or(registry_full);
-
-            // Compare backends
-            if stored_stripped != registry_stripped {
-                let msg = if ist.explicit_backend {
-                    formatdoc!(
-                        r#"tool '{short}' installed with explicit backend '{stored_full}'
-                           differs from registry recommendation '{registry_full}'.
-                           To switch: mise uninstall --all {short} && mise install {short}"#
-                    )
-                } else {
-                    formatdoc!(
-                        r#"tool '{short}' installed with backend '{stored_full}'
-                           but registry now recommends '{registry_full}'.
-                           To migrate: mise uninstall --all {short} && mise install {short}"#
-                    )
-                };
-                self.warnings.push(msg);
-            }
+            let msg = if ist.explicit_backend {
+                formatdoc!(
+                    r#"tool '{short}' installed with explicit backend '{stored_full}'
+                       differs from registry recommendation '{registry_full}'.
+                       To switch: mise backends switch {short} (add --global for the global lockfile)
+                       If it is not locked, run: mise uninstall --all {short} && mise install {short}"#
+                )
+            } else {
+                formatdoc!(
+                    r#"tool '{short}' installed with backend '{stored_full}'
+                       but registry now recommends '{registry_full}'.
+                       To migrate: mise backends switch {short} (add --global for the global lockfile)
+                       If it is not locked, run: mise uninstall --all {short} && mise install {short}"#
+                )
+            };
+            self.warnings.push(msg);
         }
     }
 

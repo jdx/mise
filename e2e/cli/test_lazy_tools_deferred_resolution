@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+
+# Running one tool's shim must not list remote versions for lazy tools that
+# nobody has run yet. Offline, each of those lookups waits for a timeout, so
+# every shim call stalled; online, each one queried GitHub.
+unset GITHUB_TOKEN MISE_GITHUB_TOKEN GH_TOKEN
+credential_marker="$HOME/github-credential-command-called"
+credential_command="$HOME/fake-github-credential-command"
+cat >"$credential_command" <<'EOF'
+#!/usr/bin/env bash
+touch "$HOME/github-credential-command-called"
+echo fake-token
+EOF
+chmod +x "$credential_command"
+
+mkdir -p "$MISE_CONFIG_DIR"
+cat >"$MISE_CONFIG_DIR/config.toml" <<EOF
+[settings]
+github.credential_command = "$credential_command"
+github.gh_cli_tokens = false
+
+[tools]
+dummy = "1.0.0"
+gh = { version = "latest", lazy = true }
+crush = { version = "prefix:0", lazy = true }
+hunk = { version = "sub-1:latest", lazy = true }
+EOF
+mise install dummy@1.0.0
+mise reshim
+export PATH="$MISE_DATA_DIR/shims:$PATH"
+# Setup above may list remote versions; start from a cold cache.
+rm -rf "$MISE_CACHE_DIR" "$credential_marker"
+
+assert_contains "dummy --version 2>&1" "This is Dummy 1.0.0"
+assert_contains "mise x -- dummy --version 2>&1" "This is Dummy 1.0.0"
+assert_succeed "mise env >/dev/null"
+assert_fail "test -f '$credential_marker'"
+
+# Installing the lazy tool still resolves `latest`.
+assert_contains "mise install --include-lazy --dry-run 2>&1" "gh@"
+assert_not_contains "mise install --include-lazy --dry-run 2>&1" "gh@latest"

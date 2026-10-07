@@ -1,0 +1,216 @@
+#!/usr/bin/env bash
+
+# auto_update on a global [tools] entry upgrades the tool, within its
+# configured version, before a shim or `mise x` launches it. The dummy backend
+# offers 1.0.0, 1.1.0, and 2.0.0. Each case gets its own state dir, so its
+# first check is always due.
+
+fresh_state() {
+  export MISE_STATE_DIR="$PWD/state-$1"
+}
+
+global_config() {
+  printf '[tools]\n%s\n' "$1" >"$MISE_CONFIG_DIR/config.toml"
+}
+
+reset_dummy() {
+  mise uninstall dummy --all
+  mise install dummy@1.0.0
+}
+
+assert_not_checked() {
+  assert_fail "test -e '$MISE_STATE_DIR/tool-update'"
+}
+
+# `mise use` writes the option, and rewriting the entry keeps it.
+global_config '# no tools'
+mise use -g --tool-option auto_update=true dummy@1
+assert_contains "cat $MISE_CONFIG_DIR/config.toml" "auto_update = true"
+mise use -g --tool-option auto_update=12h dummy@1
+assert_contains "cat $MISE_CONFIG_DIR/config.toml" 'auto_update = "12h"'
+mise use -g dummy@1
+assert_contains "cat $MISE_CONFIG_DIR/config.toml" 'auto_update = "12h"'
+printf '[tools.dummy]\nversion = "1"\n' >"$MISE_CONFIG_DIR/config.toml"
+mise use -g --tool-option auto_update=true dummy@1
+assert_contains "cat $MISE_CONFIG_DIR/config.toml" "auto_update = true"
+
+# `mise x` updates within the range first and runs the new version, with
+# nothing added to the tool's stdout.
+fresh_state exec
+global_config 'dummy = { version = "1", auto_update = true }'
+reset_dummy
+assert "mise x -- dummy" "This is Dummy 1.1.0!"
+assert_not_contains "mise ls --installed dummy" "2.0.0"
+
+# Within the interval it runs what is installed without checking again.
+mise uninstall dummy@1.1.0
+assert "mise x -- dummy" "This is Dummy 1.0.0!"
+
+# Another version of the tool that doesn't opt in is left alone.
+fresh_state mixed
+reset_dummy
+cat >"$MISE_CONFIG_DIR/config.toml" <<'EOF'
+[tools]
+dummy = [{ version = "1", auto_update = true }, { version = "latest", auto_update = false }]
+EOF
+assert "mise x -- dummy" "This is Dummy 1.1.0!"
+assert_not_contains "mise ls --installed dummy" "2.0.0"
+global_config 'dummy = { version = "1", auto_update = true }'
+
+# Shims update the same way.
+fresh_state shim
+reset_dummy
+mise reshim
+assert "$MISE_DATA_DIR/shims/dummy" "This is Dummy 1.1.0!"
+
+# Only the tool being launched is checked.
+fresh_state other-command
+reset_dummy
+assert_succeed "mise x -- true"
+assert_not_checked
+
+# A project config can't turn it on, and a project that sets its own version
+# of the tool doesn't update the global entry's tool.
+fresh_state project-option
+global_config '# no tools'
+cat >mise.toml <<'EOF'
+[tools]
+dummy = { version = "1", auto_update = true }
+EOF
+reset_dummy
+assert "mise x -- dummy" "This is Dummy 1.0.0!"
+assert_not_checked
+
+fresh_state project-version
+global_config 'dummy = { version = "1", auto_update = true }'
+cat >mise.toml <<'EOF'
+[tools]
+dummy = "1"
+EOF
+assert "mise x -- dummy" "This is Dummy 1.0.0!"
+assert_not_checked
+rm mise.toml
+
+# Exact versions are never updated; nothing is checked offline or from hook-env.
+fresh_state pin
+global_config 'dummy = { version = "1.0.0", auto_update = true }'
+assert "mise x -- dummy" "This is Dummy 1.0.0!"
+assert_not_checked
+
+global_config 'dummy = { version = "1", auto_update = true }'
+fresh_state locked
+mise lock --global dummy
+assert "mise --locked x -- dummy" "This is Dummy 1.0.0!"
+assert_not_checked
+rm "$MISE_CONFIG_DIR/mise.lock"
+fresh_state offline
+assert "MISE_OFFLINE=1 mise x -- dummy" "This is Dummy 1.0.0!"
+assert_not_checked
+fresh_state hook-env
+assert_succeed "mise hook-env -s bash >/dev/null"
+assert_not_checked
+
+# A per-tool interval is accepted; one under an hour is raised with a warning.
+fresh_state interval
+global_config 'dummy = { version = "1", auto_update = "1m" }'
+assert_contains "mise x -- dummy 2>&1" "below the 1h minimum"
+assert_contains "mise ls --installed dummy" "1.1.0"
+
+# A failed update warns, runs the installed version, and shows in doctor
+# until an update succeeds.
+fresh_state failed
+global_config 'dummy = { version = "1", auto_update = true }'
+reset_dummy
+global_config 'dummy = { version = "1", auto_update = true, postinstall = "exit 1" }'
+assert_contains "mise x -- dummy 2>&1" "could not update asdf:dummy"
+assert "mise x -- dummy" "This is Dummy 1.0.0!"
+assert_contains "mise doctor 2>&1 || true" "the last auto_update of asdf:dummy failed"
+# A shell override of the version still shows it; a tool that no longer opts
+# in does not, since nothing would clear it.
+assert_contains "MISE_DUMMY_VERSION=1.0.0 mise doctor 2>&1 || true" "the last auto_update of asdf:dummy failed"
+global_config 'dummy = { version = "1", auto_update = false }'
+assert_not_contains "mise doctor 2>&1 || true" "auto_update of asdf:dummy failed"
+global_config 'dummy = { version = "1", auto_update = true }'
+printf '[tools]\ndummy = "1"\n' >"$MISE_CONFIG_DIR/config.local.toml"
+assert_not_contains "mise doctor 2>&1 || true" "auto_update of asdf:dummy failed"
+rm "$MISE_CONFIG_DIR/config.local.toml"
+global_config 'dummy = "1"'
+assert_not_contains "mise doctor 2>&1 || true" "auto_update of asdf:dummy failed"
+global_config 'dummy = { version = "1", auto_update = true }'
+find "$MISE_STATE_DIR/tool-update" -type f ! -name '*.*' -delete
+assert "mise x -- dummy" "This is Dummy 1.1.0!"
+assert_not_contains "mise doctor 2>&1 || true" "auto_update of asdf:dummy failed"
+
+# A check whose version lookup fails is a failure, not "up to date".
+fresh_state lookup-failed
+reset_dummy
+global_config 'dummy = { version = "1.0", auto_update = true }'
+MISE_CACHE_DIR="$PWD/empty-cache" RTX_FAILURE=1 mise x -- dummy 2>/dev/null || true
+assert_contains "mise doctor 2>&1 || true" "the last auto_update of asdf:dummy failed"
+global_config 'dummy = { version = "1", auto_update = true }'
+
+# In an activated shell the project's [env] is exported, but the update runs
+# with the environment activation started from.
+fresh_state activated
+reset_dummy
+cat >"$MISE_CONFIG_DIR/config.toml" <<'EOF'
+[tools]
+dummy = { version = "1", auto_update = true, postinstall = "echo FOO=$FOO >> $HOME/postinstall.log" }
+EOF
+cat >mise.toml <<'EOF'
+[env]
+FOO = "project"
+EOF
+eval "$(mise activate bash)" && _mise_hook
+assert "printenv FOO" "project"
+assert "mise x -- dummy" "This is Dummy 1.1.0!"
+assert "cat $HOME/postinstall.log" "FOO="
+eval "$(mise deactivate)"
+rm mise.toml
+global_config 'dummy = { version = "1", auto_update = true }'
+
+# A hook of an update that runs another opted-in tool whose check is due
+# doesn't start a nested update, which would wait on the update lock forever.
+fresh_state nested
+reset_dummy
+mise install needs-dummy@1.0.0
+cat >"$MISE_CONFIG_DIR/config.toml" <<'EOF'
+[tools]
+dummy = { version = "1", auto_update = true, postinstall = "mise x -- needs-dummy" }
+needs-dummy = { version = "1", auto_update = true }
+EOF
+assert_contains "timeout 30 mise x -- dummy" "This is Dummy 1.1.0!"
+global_config 'dummy = { version = "1", auto_update = true }'
+
+# `--no-hooks` on the launch applies to its update.
+fresh_state no-hooks
+reset_dummy
+cat >"$MISE_CONFIG_DIR/config.toml" <<'EOF'
+[tools]
+dummy = { version = "1", auto_update = true }
+
+[hooks]
+postinstall = "touch $HOME/global-hook-ran"
+EOF
+assert "mise --no-hooks x -- dummy" "This is Dummy 1.1.0!"
+assert_fail "test -e $HOME/global-hook-ran"
+global_config 'dummy = { version = "1", auto_update = true }'
+
+# A global lockfile follows the update; a project lockfile is never touched.
+fresh_state lockfile
+reset_dummy
+cat >mise.toml <<'EOF'
+[env]
+PROJECT = "1"
+EOF
+cat >mise.lock <<'EOF'
+[[tools.dummy]]
+version = "1.0.0"
+backend = "asdf:dummy"
+EOF
+mise lock --global dummy
+project_lock="$(cksum mise.lock)"
+assert_contains "cat '$MISE_CONFIG_DIR/mise.lock'" '1.0.0'
+assert "mise x -- dummy" "This is Dummy 1.1.0!"
+assert_contains "cat '$MISE_CONFIG_DIR/mise.lock'" '1.1.0'
+assert "cksum mise.lock" "$project_lock"

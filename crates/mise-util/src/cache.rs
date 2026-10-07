@@ -4,6 +4,7 @@ use std::cmp::min;
 use std::fs::File;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::time::Duration;
 
 use eyre::{Result, WrapErr};
@@ -129,6 +130,7 @@ impl CacheManagerBuilder {
             cache_file_path,
             cache: Box::new(OnceCell::new()),
             cache_async: Box::new(tokio::sync::OnceCell::new()),
+            fetch_lock: Arc::default(),
             fresh_files: self.fresh_files,
             fresh_duration: self.fresh_duration,
         }
@@ -145,6 +147,9 @@ where
     fresh_files: Vec<PathBuf>,
     cache: Box<OnceCell<T>>,
     cache_async: Box<tokio::sync::OnceCell<T>>,
+    /// Held while fetching, so concurrent callers of one cache wait for the
+    /// first fetch instead of each making the same request.
+    fetch_lock: Arc<tokio::sync::Mutex<()>>,
 }
 
 impl<T> CacheManager<T>
@@ -211,6 +216,13 @@ where
         T: Clone,
     {
         if let Some(val) = self.cache_async.get().or_else(|| self.cache.get())
+            && should_cache(val)
+        {
+            return Ok(val.clone());
+        }
+
+        let _fetching = self.fetch_lock.lock().await;
+        if let Some(val) = self.cache_async.get()
             && should_cache(val)
         {
             return Ok(val.clone());
@@ -616,6 +628,34 @@ mod tests {
 
     use super::*;
     use pretty_assertions::assert_eq;
+
+    #[tokio::test]
+    async fn concurrent_callers_share_one_fetch() {
+        let dir = tempfile::tempdir().unwrap();
+        let cache = CacheManagerBuilder::new(dir.path().join("value.msgpack.z"))
+            .with_fresh_duration(Some(Duration::from_secs(60)))
+            .build::<String>();
+        let fetches = std::sync::atomic::AtomicUsize::new(0);
+        let fetch = async || {
+            fetches.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            tokio::time::sleep(Duration::from_millis(50)).await;
+            Ok("value".to_string())
+        };
+        let (a, b, c) = tokio::join!(
+            cache.get_or_try_init_async_if(fetch, |_| true),
+            cache.get_or_try_init_async_if(fetch, |_| true),
+            cache.get_or_try_init_async_if(fetch, |_| true),
+        );
+        assert_eq!(
+            (a.unwrap(), b.unwrap(), c.unwrap()),
+            (
+                "value".to_string(),
+                "value".to_string(),
+                "value".to_string()
+            )
+        );
+        assert_eq!(fetches.load(std::sync::atomic::Ordering::SeqCst), 1);
+    }
 
     fn environment(values: &[(&str, &str)]) -> impl Fn(&str) -> Option<String> {
         let values = values

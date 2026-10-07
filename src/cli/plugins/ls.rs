@@ -43,7 +43,7 @@ pub(super) struct PluginsLs {
     pub outdated: bool,
 
     /// Show the git url for each plugin
-    /// e.g.: https://github.com/mise-plugins/vfox-cmake.git
+    /// e.g.: https://github.com/jdx/vfox-cmake.git
     #[usage(short, long, alias = "url", verbatim_doc_comment)]
     pub urls: bool,
 

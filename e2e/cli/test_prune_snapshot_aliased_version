@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+# A project's version alias is applied when it resolves a templated version. Prune
+# rebuilds the request without the project's aliases, so the snapshot also records the
+# version the command settled on.
+export MISE_EXPERIMENTAL=1
+export MISE_INSTALL_LAYOUT=identity
+
+mkdir -p project elsewhere
+cat >project/mise.toml <<'EOT'
+[tool_alias.dummy.versions]
+project-release = "1.0.0"
+
+[tools]
+dummy = "{{env.PRUNE_VERSION}}"
+EOT
+assert "PRUNE_VERSION=project-release mise -C project install"
+assert "mise install dummy@3.0.0"
+assert "ls $MISE_DATA_DIR/installs/dummy/1.0.0"
+
+assert "mise -C elsewhere ls --prunable --json >prunable.json"
+assert "jq -e '[.dummy[].version] == [\"3.0.0\"]' prunable.json"

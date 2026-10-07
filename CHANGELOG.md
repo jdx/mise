@@ -1,5 +1,130 @@
 # Changelog
 
+## [2026.10.4](https://github.com/jdx/mise/compare/v2026.10.3..v2026.10.4) - 2026-10-07
+
+### 🚀 Features
+
+- **(bootstrap)** add a tool-update service that keeps auto_update tools current by @jdx in [#14040](https://github.com/jdx/mise/pull/14040)
+- **(config)** add global section write targets by @jdx in [#14018](https://github.com/jdx/mise/pull/14018)
+- **(config)** move mise's auto-update settings under self_update.* by @jdx in [#14038](https://github.com/jdx/mise/pull/14038)
+- **(dotfiles)** report notification availability and add notify command by @jdx in [#14009](https://github.com/jdx/mise/pull/14009)
+- **(dotfiles)** add merge entries that own only some keys of a config file by @jdx in [#14012](https://github.com/jdx/mise/pull/14012)
+- **(http)** add headers option for bearer and API-key auth by @jdx in [#14022](https://github.com/jdx/mise/pull/14022)
+- **(install)** add an opt-in identity-based install layout by @jdx in [#13951](https://github.com/jdx/mise/pull/13951)
+- **(install)** keep identity-layout installations in a shorter directory on Windows by @jdx in [#13952](https://github.com/jdx/mise/pull/13952)
+- **(installs)** list installations and choose the one requests without a lockfile use by @jdx in [#13953](https://github.com/jdx/mise/pull/13953)
+- **(installs)** move legacy installations into the identity layout by @jdx in [#13955](https://github.com/jdx/mise/pull/13955)
+- **(lock)** preserve shared lockfile entries on request by @jdx in [#13980](https://github.com/jdx/mise/pull/13980)
+- **(npm)** install packages from git repositories by @jdx in [#14044](https://github.com/jdx/mise/pull/14044)
+- **(prune)** add prune.exclude to keep chosen tools from being pruned by @jdx in [#14030](https://github.com/jdx/mise/pull/14030)
+- **(secrets)** add [secrets.fnox] project config and mise secrets ls by @jdx in [#13967](https://github.com/jdx/mise/pull/13967)
+- **(secrets)** add --secrets and --secrets-all to mise run and mise x by @jdx in [#13975](https://github.com/jdx/mise/pull/13975)
+- **(task)** give tasks only the fnox secrets they list by @jdx in [#13974](https://github.com/jdx/mise/pull/13974)
+- **(task)** allow {{ secrets.X }} in task env values by @jdx in [#13978](https://github.com/jdx/mise/pull/13978)
+- **(upgrade)** update global tools before they run with auto_update by @jdx in [#14026](https://github.com/jdx/mise/pull/14026)
+- **(util)** add a comment-preserving YAML merge helper by @jdx in [#14010](https://github.com/jdx/mise/pull/14010)
+- **(util)** add format-aware merge for JSON, TOML, and YAML files by @jdx in [#14011](https://github.com/jdx/mise/pull/14011)
+
+### 🐛 Bug Fixes
+
+- **(backend)** read a repository's packslip release list once per command by @jdx in [#13991](https://github.com/jdx/mise/pull/13991)
+- **(backend)** only warn about a backend switch when the backend kind changes by @jdx in [#14032](https://github.com/jdx/mise/pull/14032)
+- **(bootstrap)** don't create history state or fail on its lock unless writing files by @jdx in [#14029](https://github.com/jdx/mise/pull/14029)
+- **(cargo)** serialize rustup state across cargo install fallbacks by @jdx in [#14042](https://github.com/jdx/mise/pull/14042)
+- **(config)** keep global config when a project ignore resolves onto it via symlink by @jdx in [#14006](https://github.com/jdx/mise/pull/14006)
+- **(doctor)** only warn about backend mismatches the registry serves by @jdx in [#14005](https://github.com/jdx/mise/pull/14005)
+- **(dotenv)** leave a value ending in escaped whitespace unquoted by @jdx in [#13956](https://github.com/jdx/mise/pull/13956)
+- **(dotfiles)** explain missing sources in conflicting declaration errors by @himkt in [#13973](https://github.com/jdx/mise/pull/13973)
+- **(dotfiles)** skip legacy link discovery for group entries by @jdx in [#14023](https://github.com/jdx/mise/pull/14023)
+- **(dotnet)** disable lockfile url enforcement for dotnet tool backend by @james-newell-forge in [#13971](https://github.com/jdx/mise/pull/13971)
+- **(env)** fully redact secrets when redaction values overlap by @jdx in [#13962](https://github.com/jdx/mise/pull/13962)
+- **(github)** log partial attestation verification failures by @jdx in [#14035](https://github.com/jdx/mise/pull/14035)
+- **(github)** warn when attestations are skipped because the Sigstore trust root is unreachable by @jdx in [#14036](https://github.com/jdx/mise/pull/14036)
+- **(http)** fetch a cached GitHub release once when callers race by @jdx in [#13990](https://github.com/jdx/mise/pull/13990)
+- **(http)** don't retry a 429 whose Retry-After outlasts the backoff by @jdx in [#14027](https://github.com/jdx/mise/pull/14027)
+- **(http)** retry downloads when an HTTP/2 stream reset fails the body read by @jdx in [#14049](https://github.com/jdx/mise/pull/14049)
+- **(install)** switch backends into a new installation, and resolve CLI-named versions without guessing by @jdx in [#13957](https://github.com/jdx/mise/pull/13957)
+- **(install)** keep a version incomplete until its postinstall hook succeeds by @jdx in [#14037](https://github.com/jdx/mise/pull/14037)
+- **(install)** keep incomplete-install markers out of the cache by @jdx in [#14051](https://github.com/jdx/mise/pull/14051)
+- **(mcp)** reject run_task task names that start with a dash by @jdx in [#13961](https://github.com/jdx/mise/pull/13961)
+- **(oci)** stream large blob uploads in one PATCH by @jdx in [#14017](https://github.com/jdx/mise/pull/14017)
+- **(outdated)** don't bump vendor-only requests like java@temurin by @jdx in [#14031](https://github.com/jdx/mise/pull/14031)
+- **(prune)** keep versions that a running process was started from by @jdx in [#14020](https://github.com/jdx/mise/pull/14020)
+- **(prune)** snapshot what templated tool versions render to in the identity layout by @jdx in [#14025](https://github.com/jdx/mise/pull/14025)
+- **(pypi)** build uv tool venvs on mise's python by @jdx in [#14024](https://github.com/jdx/mise/pull/14024)
+- **(pypi)** lock from <root>/simple/ for JSON URLs by @deiga in [#14007](https://github.com/jdx/mise/pull/14007)
+- **(python)** create the auto uv venv with mise's python during install by @halms in [#13981](https://github.com/jdx/mise/pull/13981)
+- **(release)** skip the vfox-tiny test fixture when vendoring embedded plugins by @jdx in [#14047](https://github.com/jdx/mise/pull/14047)
+- **(ruby)** keep Gemfile reload watches out of executable hooks by @DahanItamar in [#13985](https://github.com/jdx/mise/pull/13985)
+- **(task)** list monorepo subproject tasks in the mise://tasks MCP resource by @jdx in [#14053](https://github.com/jdx/mise/pull/14053)
+- **(uninstall)** report each version once in a dry run by @jdx in [#13992](https://github.com/jdx/mise/pull/13992)
+
+### 📚 Documentation
+
+- **(http)** show a package proxy recipe for url_replacements by @jdx in [#14050](https://github.com/jdx/mise/pull/14050)
+- **(readme)** add Star History badges by @jdx in [#13968](https://github.com/jdx/mise/pull/13968)
+- keep code blocks and alert markers out of llms.txt summaries by @DahanItamar in [#14034](https://github.com/jdx/mise/pull/14034)
+
+### ⚡ Performance
+
+- **(secrets)** read cached fnox secrets from the fnox daemon by @jdx in [#13979](https://github.com/jdx/mise/pull/13979)
+
+### 🧪 Testing
+
+- **(e2e)** stabilize task timing assertions by @jdx in [#13977](https://github.com/jdx/mise/pull/13977)
+- **(go)** disable minimum_release_age in go install e2e by @jdx in [#13989](https://github.com/jdx/mise/pull/13989)
+
+### 📦️ Dependency Updates
+
+- lock file maintenance by @renovate[bot] in [#13963](https://github.com/jdx/mise/pull/13963)
+- update github actions by @renovate[bot] in [#13994](https://github.com/jdx/mise/pull/13994)
+- update rust crates by @renovate[bot] in [#13996](https://github.com/jdx/mise/pull/13996)
+- update rust crate nodejs-semver to v7 by @renovate[bot] in [#13999](https://github.com/jdx/mise/pull/13999)
+- update jdx/mise-action action to v5 by @renovate[bot] in [#13997](https://github.com/jdx/mise/pull/13997)
+- update jdx/renovate-config action to v1.0.2 by @renovate[bot] in [#14003](https://github.com/jdx/mise/pull/14003)
+- update dependency usage to latest by @renovate[bot] in [#14004](https://github.com/jdx/mise/pull/14004)
+- update jdx crates to v6.12.1 by @renovate[bot] in [#14002](https://github.com/jdx/mise/pull/14002)
+- update rust crate sigstore-verify to 0.14 by @jdx in [#14019](https://github.com/jdx/mise/pull/14019)
+- update rattler by @renovate[bot] in [#13998](https://github.com/jdx/mise/pull/13998)
+- update rust crate clx to v3.0.4 by @renovate[bot] in [#14028](https://github.com/jdx/mise/pull/14028)
+
+### 📦 Registry
+
+- update moved plugin references by @jdx in [#13972](https://github.com/jdx/mise/pull/13972)
+
+### Chore
+
+- **(ci)** update pr-closer to v1.3.0 by @jdx in [83f3e90](https://github.com/jdx/mise/commit/83f3e906dd5741f59722b558efec682cf7aa0137)
+
+### Ci
+
+- update pr closer action by @jdx in [#13970](https://github.com/jdx/mise/pull/13970)
+- add manual M4 sandbox pilot by @jdx in [09e8f8f](https://github.com/jdx/mise/commit/09e8f8f6a6b3ccdce8bddf026fa44e1c425b81d1)
+
+### Security
+
+- **(env)** keep secrets inherited from a parent mise out of templates, caches and other tasks by @jdx in [#13966](https://github.com/jdx/mise/pull/13966)
+
+### New Contributors
+
+- @DahanItamar made their first contribution in [#14034](https://github.com/jdx/mise/pull/14034)
+- @deiga made their first contribution in [#14007](https://github.com/jdx/mise/pull/14007)
+- @james-newell-forge made their first contribution in [#13971](https://github.com/jdx/mise/pull/13971)
+
+### 📦 Aqua Registry Updates
+
+#### New Packages (3)
+
+- [`editorconfig/editorconfig-core-go`](https://github.com/editorconfig/editorconfig-core-go)
+- [`jdx/jactionlint`](https://github.com/jdx/jactionlint)
+- [`tontinton/maki`](https://github.com/tontinton/maki)
+
+#### Updated Packages (3)
+
+- [`anchore/syft`](https://github.com/anchore/syft)
+- [`eksctl-io/eksctl`](https://github.com/eksctl-io/eksctl)
+- [`regclient/regclient/regsync`](https://github.com/regclient/regclient)
+
 ## [2026.10.3](https://github.com/jdx/mise/compare/v2026.10.2..v2026.10.3) - 2026-10-05
 
 ### 🚀 Features

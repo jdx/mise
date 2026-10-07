@@ -29,6 +29,14 @@ mise bootstrap services apply
 mise dot status
 ```
 
+To update tools that set [`auto_update`](/configuration.html#automatic-tool-updates) in the
+background instead of when they launch, add:
+
+```toml
+[bootstrap.services.mise-tool-update]
+builtin = "tool-update"
+```
+
 Once the watcher is running, keep editing your files normally. See
 [automatic saves](/history.html#automatic-saves) for saving behavior and
 [troubleshooting](#troubleshooting-user-services) if it fails to start.
@@ -67,8 +75,9 @@ for the command, tool installation, and migration from `pitchfork boot enable`.
 - `command`: the command line to run. `~` and `~/` are expanded. Required
   unless `builtin` is set.
 - `builtin`: a service supplied by mise. `"history-watch"` runs
-  `mise dot watch` at low priority. It sets `scope = "user"`
-  and `restart = "on-failure"`. Use it without `command`.
+  `mise dot watch`; `"tool-update"` checks tools with `auto_update` once an hour and updates
+  the ones that are due. Both run at low priority, set `scope = "user"` and
+  `restart = "on-failure"`, and are used without `command`.
 - `description`: shown by the service manager.
 - `restart`: `"on-failure"` (default), `"always"`, or `"never"`. Windows
   restarts after failures only; see [platform differences](#platform-differences).

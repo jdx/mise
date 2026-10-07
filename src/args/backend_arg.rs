@@ -724,7 +724,7 @@ impl BackendArg {
             .first()?
             .to_string();
         let current = self.full_without_opts();
-        (current != registry).then_some((current, registry))
+        (!same_backend_kind(&current, &registry)).then_some((current, registry))
     }
 
     /// [`Self::superseded_backend`], when it is a lock entry that keeps the
@@ -1027,6 +1027,15 @@ impl Hash for BackendArg {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.short.hash(state);
     }
+}
+
+/// Whether two backends use the same backend kind (`aqua`, `vfox`, `asdf`,
+/// `github`, ...), ignoring the repository or package they name. A registry
+/// entry that moves to another repo or org within a kind installs the same way,
+/// so only a change of kind counts as a backend switch.
+pub fn same_backend_kind(a: &str, b: &str) -> bool {
+    a == b
+        || matches!((a.split_once(':'), b.split_once(':')), (Some((a, _)), Some((b, _))) if a == b)
 }
 
 #[cfg(test)]
@@ -1346,4 +1355,15 @@ fn pypi_and_pipx_use_distinct_tool_identities() {
     assert_eq!(preferred.tool_dir_name(), "pypi-black");
     assert_eq!(BackendType::guess("pipx:black"), BackendType::Pipx);
     assert_eq!(BackendType::guess("pypi:black"), BackendType::Pipx);
+}
+
+#[test]
+fn same_backend_kind_ignores_the_repository() {
+    assert!(same_backend_kind(
+        "vfox:mise-plugins/vfox-lua",
+        "vfox:jdx/vfox-lua"
+    ));
+    assert!(same_backend_kind("aqua:old/name", "aqua:new/other-name"));
+    assert!(!same_backend_kind("aqua:foo/bar", "github:foo/bar"));
+    assert!(!same_backend_kind("vfox:jdx/vfox-lua", "asdf:jdx/vfox-lua"));
 }

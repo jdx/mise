@@ -29,6 +29,15 @@ For a scoped package, quote its full identifier, for example
 `mise use 'npm:@biomejs/biome'`. The package's executable name can differ from its
 registry name. mise installs CLI packages, not arbitrary libraries.
 
+To install from a git repository instead of the registry, use a git URL or a
+`github:`, `gitlab:` or `bitbucket:` shorthand. The version is the git ref
+(a tag, branch or commit), and `latest` is the repository's default branch:
+
+```sh
+mise use 'npm:git+https://github.com/owner/repo'
+mise use 'npm:github:owner/repo@v1.2.0'
+```
+
 If the project already declares Prettier in `package.json`, run that copy through
 a package script to keep its plugins and version aligned with the project.
 

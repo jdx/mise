@@ -523,7 +523,7 @@ pub(crate) fn begin_changes_with(
     item: &str,
     paths: impl IntoIterator<Item = (PathBuf, Capture)>,
 ) -> Result<Vec<PendingChange>> {
-    if !super::scope::is_active() {
+    if !super::scope::ensure_started()? {
         return Ok(vec![]);
     }
     let mut pending = vec![];

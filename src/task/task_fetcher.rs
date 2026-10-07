@@ -150,6 +150,13 @@ impl TaskFetcher {
                 remote.show_args_in_prefix = original.show_args_in_prefix;
                 remote.inherited_env.clone_from(&original.inherited_env);
                 remote.overlay_env.clone_from(&original.overlay_env);
+                remote.late_secret_env.extend(
+                    original
+                        .late_secret_env
+                        .iter()
+                        .filter(|l| l.overlay)
+                        .cloned(),
+                );
                 remote.overlay_vars.clone_from(&original.overlay_vars);
                 remote.render(config, &config_root).await?;
                 remote.merge_toml_overlay(original.clone());

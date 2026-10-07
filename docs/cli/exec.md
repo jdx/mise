@@ -47,6 +47,8 @@ The "--" separates tools from the command to pass along to the subprocess.
 - **`--fresh-env`** — Bypass the environment cache and recompute the environment
 - **`--no-deps`** — Skip automatic dependency preparation
 - **`--raw`** — Connect backend install command stdin/stdout/stderr directly to the terminal. Implies `--jobs=1`
+- **`--secrets <SECRET>`** — Give the command these secrets (comma-separated); by default it gets none
+- **`--secrets-all`** — Give the command every secret the project can inject, except file secrets
 - **`-h --help`** — Print help
 
 ## Examples
@@ -62,6 +64,12 @@ Specify command as a string:
 
 ```
 mise exec node@20 python@3.11 --command "node -v && python -V"
+```
+
+Give the command the GH_TOKEN secret from the project's secrets source. Without a flag it gets none.
+
+```
+mise x --secrets GH_TOKEN -- gh release list
 ```
 
 Run a command in a different directory:

@@ -237,6 +237,7 @@ complete task run="mise tasks ls --complete" descriptions=#true
 complete tool run="mise search --complete {{words[CURRENT]}}" descriptions=#true
 complete env_var run="mise set --complete | awk '{print $1\"=\"}'"
 complete env_key run="mise set --complete"
+complete secret run="mise secrets ls --complete"
 complete backend run="mise backends"
 complete bin_name run="mise which --complete"
 complete tool@version run=#"""
@@ -434,6 +435,28 @@ mise tool-alias unset ripgrep
 mise tool-alias unset node project
 """#
     }
+}
+cmd __tool-update hide=#true help="Update globally configured tools for `auto_update`." effect=write {
+    long_help #"""
+Update globally configured tools for `auto_update`.
+
+With a tool, upgrade it within its global config request. A shim or
+`mise x` runs this before launching a tool whose check is due. Updates run
+one at a time.
+
+With `--watch`, run as the `tool-update` service: check every opted-in tool
+once an hour and update the ones that are due. Declare the service with:
+
+    [bootstrap.services.mise-tool-update]
+    builtin = "tool-update"
+"""#
+    flag --watch help="Run until stopped, updating due tools once an hour" conflicts=TOOL
+    flag --due help="Update every opted-in tool that is due, once (one `--watch` pass)" hide=#true conflicts=TOOL
+    flag --id help="The tool id the launch claimed the check under; the result is recorded there, so `mise doctor` finds it under the same id" hide=#true {
+        arg <ID>
+    }
+    flag "-h --help" help="Print help" action=help builtin=#true
+    arg "[TOOL]" required=#false
 }
 cmd asdf hide=#true help="[internal] simulates asdf for plugins that call \"asdf\" internally" {
     flag "-h --help" help="Print help" action=help builtin=#true
@@ -945,6 +968,24 @@ to select which files the directory saves.
             flag "-h --help" help="Print help" action=help builtin=#true
             arg <GLOB> help="The glob as written by `mise dot exclude`"
         }
+        cmd notify help="Send a test desktop notification" effect=write {
+            long_help #"""
+Send a test desktop notification
+
+Checks that `history.notify` can reach you. On macOS the first
+notification asks for permission, so run this once to be prompted now
+instead of at the first sync conflict. Fails with the reason when this
+build or machine cannot show notifications, such as an unofficial macOS
+build (Homebrew), a missing `notify-send` on Linux, denied permission, or
+`history.notify = false`.
+
+Notifications are only sent when conflicts pause sharing for the setup.
+Other problems, such as a watcher that cannot save, show in `mise doctor`
+and `mise dot status`.
+"""#
+            flag "-h --help" help="Print help" action=help builtin=#true
+            example "mise dot notify"
+        }
         cmd origin help="Connect or disconnect the setup repository" effect=destructive {
             long_help #"""
 Connect or disconnect the setup repository
@@ -1170,14 +1211,17 @@ saved automatically; without it, `mise dot save` saves them.
 `--os` and `--profile` declare a variant: a separate shared stream for
 machines matching that platform or mise environment, so a Mac and a
 Linux box can share the same live path with different contents.
+`--machine` gives every machine its own stream instead, for files such
+as a monitor layout that should never be applied on another machine.
 """#
-            after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise dot track ~/.zshrc ~/.config/hypr\u{1b}[22m\n    $ \u{1b}[1mmise dot track --dry-run ~/.codex\u{1b}[22m\n    $ \u{1b}[1mmise dot track ~/.zshrc --os macos\u{1b}[22m\n    $ \u{1b}[1mmise dot track ~/.config/app/credentials --encrypt\u{1b}[22m\n    $ \u{1b}[1mmise dot track ~/.config/app/state.json --no-autosave\u{1b}[22m\n"
+            after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise dot track ~/.zshrc ~/.config/hypr\u{1b}[22m\n    $ \u{1b}[1mmise dot track --dry-run ~/.codex\u{1b}[22m\n    $ \u{1b}[1mmise dot track ~/.zshrc --os macos\u{1b}[22m\n    $ \u{1b}[1mmise dot track ~/.config/hypr/monitors.lua --machine\u{1b}[22m\n    $ \u{1b}[1mmise dot track ~/.config/app/credentials --encrypt\u{1b}[22m\n    $ \u{1b}[1mmise dot track ~/.config/app/state.json --no-autosave\u{1b}[22m\n"
             flag --os help="Declare a variant for this platform (macos, linux, linux/arm64, …)" {
                 arg <OS>
             }
             flag --profile help="Declare a variant for this mise environment" {
                 arg <PROFILE>
             }
+            flag --machine help="Keep a separate stream on every machine, never applied on another"
             flag --no-autosave help="Save only on `mise dot save <path>`, never automatically"
             flag --encrypt help="Encrypt contents before saving them to history (requires `[history.encryption].recipients`)"
             flag --allow-plaintext help="Save an explicitly tracked credential-named file in plaintext"
@@ -2736,6 +2780,24 @@ to select which files the directory saves.
         flag "-h --help" help="Print help" action=help builtin=#true
         arg <GLOB> help="The glob as written by `mise dot exclude`"
     }
+    cmd notify help="Send a test desktop notification" effect=write {
+        long_help #"""
+Send a test desktop notification
+
+Checks that `history.notify` can reach you. On macOS the first
+notification asks for permission, so run this once to be prompted now
+instead of at the first sync conflict. Fails with the reason when this
+build or machine cannot show notifications, such as an unofficial macOS
+build (Homebrew), a missing `notify-send` on Linux, denied permission, or
+`history.notify = false`.
+
+Notifications are only sent when conflicts pause sharing for the setup.
+Other problems, such as a watcher that cannot save, show in `mise doctor`
+and `mise dot status`.
+"""#
+        flag "-h --help" help="Print help" action=help builtin=#true
+        example "mise dot notify"
+    }
     cmd origin help="Connect or disconnect the setup repository" effect=destructive {
         long_help #"""
 Connect or disconnect the setup repository
@@ -2961,14 +3023,17 @@ saved automatically; without it, `mise dot save` saves them.
 `--os` and `--profile` declare a variant: a separate shared stream for
 machines matching that platform or mise environment, so a Mac and a
 Linux box can share the same live path with different contents.
+`--machine` gives every machine its own stream instead, for files such
+as a monitor layout that should never be applied on another machine.
 """#
-        after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise dot track ~/.zshrc ~/.config/hypr\u{1b}[22m\n    $ \u{1b}[1mmise dot track --dry-run ~/.codex\u{1b}[22m\n    $ \u{1b}[1mmise dot track ~/.zshrc --os macos\u{1b}[22m\n    $ \u{1b}[1mmise dot track ~/.config/app/credentials --encrypt\u{1b}[22m\n    $ \u{1b}[1mmise dot track ~/.config/app/state.json --no-autosave\u{1b}[22m\n"
+        after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise dot track ~/.zshrc ~/.config/hypr\u{1b}[22m\n    $ \u{1b}[1mmise dot track --dry-run ~/.codex\u{1b}[22m\n    $ \u{1b}[1mmise dot track ~/.zshrc --os macos\u{1b}[22m\n    $ \u{1b}[1mmise dot track ~/.config/hypr/monitors.lua --machine\u{1b}[22m\n    $ \u{1b}[1mmise dot track ~/.config/app/credentials --encrypt\u{1b}[22m\n    $ \u{1b}[1mmise dot track ~/.config/app/state.json --no-autosave\u{1b}[22m\n"
         flag --os help="Declare a variant for this platform (macos, linux, linux/arm64, …)" {
             arg <OS>
         }
         flag --profile help="Declare a variant for this mise environment" {
             arg <PROFILE>
         }
+        flag --machine help="Keep a separate stream on every machine, never applied on another"
         flag --no-autosave help="Save only on `mise dot save <path>`, never automatically"
         flag --encrypt help="Encrypt contents before saving them to history (requires `[history.encryption].recipients`)"
         flag --allow-plaintext help="Save an explicitly tracked credential-named file in plaintext"
@@ -3218,6 +3283,10 @@ On Windows, sandboxing is unavailable: mise warns and runs without host filterin
     flag --fresh-env help="Bypass the environment cache and recompute the environment"
     flag --no-deps help="Skip automatic dependency preparation"
     flag --raw help="Connect backend install command stdin/stdout/stderr directly to the terminal. Implies `--jobs=1`" overrides=--jobs
+    flag --secrets help="Give the command these secrets (comma-separated); by default it gets none" var=#true {
+        arg <SECRET> delimiter=,
+    }
+    flag --secrets-all help="Give the command every secret the project can inject, except file secrets" conflicts=--secrets
     flag "-h --help" help="Print help" action=help builtin=#true
     arg "[TOOL@VERSION]…" help="Tool(s) to load e.g.: node@20 python@3.10" required=#false var=#true
     arg "[-- COMMAND]…" help="Executable and arguments to run directly, after `--`" required=#false var=#true conflicts=--command required_unless=--command
@@ -3226,6 +3295,7 @@ mise exec node@20 -- node ./app.js
 mise x node@20 -- node ./app.js
 """# help="Launch app.js using node-20.x, with the full command or its shorter alias."
     example "mise exec node@20 python@3.11 --command \"node -v && python -V\"" help="Specify command as a string:"
+    example "mise x --secrets GH_TOKEN -- gh release list" help="Give the command the GH_TOKEN secret from the project's secrets source. Without a flag it gets none."
     example "mise x -C /path/to/project node@20 -- node ./app.js" help="Run a command in a different directory:"
     complete command type=command
 }
@@ -3978,6 +4048,14 @@ directory is moved aside while its replacement installs, and put back if that
 fails. Versions whose recorded backend is not the one their tool resolves to
 now are left alone, as are tools that keep the legacy layout (`http:`,
 `rust`, `dotnet`).
+
+A version that cannot be reinstalled (its release was withdrawn or is signed
+by someone else now, or the network is unavailable) is not an error: its
+directory is moved as it is into the identity layout, behind the same version
+link. Only a version that cannot be moved either keeps its old directory,
+reported as kept in the legacy layout. The command ends with a count of what
+was migrated, relocated, kept and failed, and fails only when a migration
+itself broke.
 """#
         flag "-n --dry-run" help="Show what would move without changing anything"
         flag "-h --help" help="Print help" action=help builtin=#true
@@ -4717,7 +4795,7 @@ These are hidden by default
 """# conflicts=--all
     flag "-u --urls" help=#"""
 Show the git url for each plugin
-e.g.: https://github.com/mise-plugins/vfox-cmake.git
+e.g.: https://github.com/jdx/vfox-cmake.git
 """# {
         alias "--url" hide=#true
     }
@@ -4820,7 +4898,7 @@ Checks the remote for newer versions and only displays plugins that are outdated
 """#
         flag "-u --urls" help=#"""
 Show the git url for each plugin
-e.g.: https://github.com/mise-plugins/vfox-cmake.git
+e.g.: https://github.com/jdx/vfox-cmake.git
 """# {
             alias "--url" hide=#true
         }
@@ -4851,7 +4929,7 @@ List all available remote plugins
 
 These are the shorthand names from the registry: https://github.com/jdx/mise/blob/main/registry/
 """#
-        flag "-u --urls" help="Show the git url for each plugin, e.g. https://github.com/mise-plugins/mise-poetry.git"
+        flag "-u --urls" help="Show the plugin source for each shorthand, e.g. vfox:jdx/vfox-poetry"
         flag --only-names help="Only show the name of each plugin, without the \"*\" marking installed plugins"
         flag "-h --help" help="Print help" action=help builtin=#true
         example "mise plugins ls-remote"
@@ -5001,6 +5079,9 @@ as will versions only referenced on the command line `mise exec <TOOL>@<VERSION>
 
 Tool stubs that have been executed are tracked in ~/.local/state/mise/tracked-stubs.
 Versions still referenced by a tracked stub are not deleted.
+
+Versions that a running process was started from are not deleted either,
+so a long-running program keeps its files after its version stops being needed.
 
 You can list prunable tools with `mise ls --prunable`
 """#
@@ -5163,6 +5244,18 @@ Read/write directly to stdin/stdout/stderr instead of by line
 Redactions are not applied with this option
 Configure with `raw` config or `MISE_RAW` env var
 """#
+    flag --secrets help=#"""
+Give the tasks named on the command line these secrets (comma-separated)
+Their dependencies and subtasks do not receive them. Put this flag before the task name.
+"""# var=#true conflicts=--affected {
+        arg <SECRET> delimiter=,
+    }
+    flag --secrets-all help=#"""
+Give the tasks named on the command line every secret the project can inject
+(fnox env = true or "exec"; never env = false). Dependencies and subtasks do not receive them.
+"""# {
+        conflicts "--secrets" "--affected"
+    }
     flag "-s --shell" help="Shell to use to run toml tasks" {
         long_help #"""
 Shell to use to run toml tasks
@@ -5263,6 +5356,7 @@ Set `MISE_TASK_TIMINGS=1` to show it by default
     example "mise run lint" help="Run the \"lint\" task, defined either in mise.toml or as a standalone script."
     example "mise run --force build" help="Force the \"build\" task to run even if its sources are up to date."
     example "mise run --raw test" help="Run \"test\" with stdin/stdout/stderr all connected to the current terminal. This forces `--jobs=1` to prevent interleaving of output."
+    example "mise run --secrets DEPLOY_KEY deploy" help="Give the \"deploy\" task the DEPLOY_KEY secret from the project's secrets source. Its dependencies do not receive it."
     example "mise run lint ::: test ::: check" help="Run the \"lint\", \"test\", and \"check\" tasks in parallel."
     example "mise run cmd1 arg1 arg2 ::: cmd2 arg1 arg2" help="Run multiple tasks, each with its own arguments."
     complete cd type=dir
@@ -5325,6 +5419,31 @@ Search a tool
 /jq
 esc clear filter • enter confirm
 """#
+}
+cmd secrets help="[experimental] List the secret names this project's secrets source provides, without their values" effect=read {
+    flag "-J --json" help="Output in JSON format"
+    flag --no-header help="Don't show table header"
+    flag "-h --help" help="Print help" action=help builtin=#true
+    cmd ls help="List the secret names this project's secrets source provides, without their values" effect=read {
+        alias list
+        long_help #"""
+List the secret names this project's secrets source provides, without their values
+
+Shows names and metadata only; values are never shown. The source is declared in the
+project's `mise.toml` with `[secrets.fnox]`.
+"""#
+        flag "-J --json" help="Output in JSON format"
+        flag --no-header help="Don't show table header"
+        flag --complete help="Render completions: the injectable key names, one per line" hide=#true
+        flag "-h --help" help="Print help" action=help builtin=#true
+        example #"""
+mise secrets ls
+KEY                ENV    FILE  SCOPES  TASKS   DESCRIPTION
+DATABASE_URL       true   no    run, exec  deploy  app database
+GCP_SA_JSON        exec   yes   run               service account
+SIGNING_KEY        false  no    -                 release signing key
+"""#
+    }
 }
 cmd self-update help="Update mise itself" effect=write {
     long_help #"""
@@ -6042,6 +6161,18 @@ Read/write directly to stdin/stdout/stderr instead of by line
 Redactions are not applied with this option
 Configure with `raw` config or `MISE_RAW` env var
 """#
+        flag --secrets help=#"""
+Give the tasks named on the command line these secrets (comma-separated)
+Their dependencies and subtasks do not receive them. Put this flag before the task name.
+"""# var=#true conflicts=--affected {
+            arg <SECRET> delimiter=,
+        }
+        flag --secrets-all help=#"""
+Give the tasks named on the command line every secret the project can inject
+(fnox env = true or "exec"; never env = false). Dependencies and subtasks do not receive them.
+"""# {
+            conflicts "--secrets" "--affected"
+        }
         flag "-s --shell" help="Shell to use to run toml tasks" {
             long_help #"""
 Shell to use to run toml tasks
@@ -6142,6 +6273,7 @@ Set `MISE_TASK_TIMINGS=1` to show it by default
         example "mise run lint" help="Run the \"lint\" task, defined either in mise.toml or as a standalone script."
         example "mise run --force build" help="Force the \"build\" task to run even if its sources are up to date."
         example "mise run --raw test" help="Run \"test\" with stdin/stdout/stderr all connected to the current terminal. This forces `--jobs=1` to prevent interleaving of output."
+        example "mise run --secrets DEPLOY_KEY deploy" help="Give the \"deploy\" task the DEPLOY_KEY secret from the project's secrets source. Its dependencies do not receive it."
         example "mise run lint ::: test ::: check" help="Run the \"lint\", \"test\", and \"check\" tasks in parallel."
         example "mise run cmd1 arg1 arg2 ::: cmd2 arg1 arg2" help="Run multiple tasks, each with its own arguments."
         complete cd type=dir

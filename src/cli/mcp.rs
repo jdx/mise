@@ -381,11 +381,16 @@ impl ServerHandler for MiseServer {
                     data: None,
                 })?;
 
-                let tasks = config.tasks().await.map_err(|e| ErrorData {
-                    code: ErrorCode::INTERNAL_ERROR,
-                    message: Cow::Owned(format!("Failed to load tasks: {e}")),
-                    data: None,
-                })?;
+                // Load every monorepo subproject task (`//app:task`), not just the cwd's.
+                let ctx = crate::task::TaskLoadContext::all();
+                let tasks = config
+                    .tasks_with_context(Some(&ctx))
+                    .await
+                    .map_err(|e| ErrorData {
+                        code: ErrorCode::INTERNAL_ERROR,
+                        message: Cow::Owned(format!("Failed to load tasks: {e}")),
+                        data: None,
+                    })?;
 
                 let task_list: Vec<_> = tasks.iter().map(|(name, task)| {
                     json!({
@@ -400,6 +405,7 @@ impl ServerHandler for MiseServer {
                             .collect::<Vec<_>>(),
                         "depends": task.depends.iter().map(|d| d.task.clone()).collect::<Vec<_>>(),
                         "daemons": task.daemons,
+                        "secrets": task.secrets.as_ref().map(|s| s.names()).unwrap_or_default(),
                         "depends_post": task.depends_post.iter().map(|d| d.task.clone()).collect::<Vec<_>>(),
                         "wait_for": task.wait_for.iter().map(|d| d.task.clone()).collect::<Vec<_>>(),
                         "env": json!({}), // EnvList is not directly iterable, keeping empty for now

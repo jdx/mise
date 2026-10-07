@@ -295,26 +295,33 @@ rust_type = "Vec<String>"
 type = "ListString"
 
 [auto_update]
-default = false
-description = "Automatically update mise before running eligible commands."
+default_docs = "false"
+deprecated = "Use self_update.auto instead."
+deprecated_remove_at = "2028.4.0"
+deprecated_warn_at = "2027.4.0"
+description = "[deprecated] Use `self_update.auto` instead."
 docs = """
-When enabled, mise periodically checks for a newer release before running commands that permit
-network access. If an update is available, mise installs it without updating plugins, then re-runs
-the original command with the new binary.
-
-Automatic updates are skipped in CI, offline and prefer-offline modes, non-interactive sessions,
-shell integration commands, and installations whose packager disabled self-update. This setting is
-global-only so a project's configuration cannot opt users into replacing their mise binary.
+Renamed to [`self_update.auto`](#self_update.auto). mise still reads this setting and
+`MISE_AUTO_UPDATE` when `self_update.auto` is not set.
 """
 env = "MISE_AUTO_UPDATE"
 global_only = true
+optional = true
 type = "Bool"
 
 [auto_update_check_duration]
-default = "7d"
-description = "How often to check for a new mise release when auto-update is enabled."
+default_docs = "7d"
+deprecated = "Use self_update.check_duration instead."
+deprecated_remove_at = "2028.4.0"
+deprecated_warn_at = "2027.4.0"
+description = "[deprecated] Use `self_update.check_duration` instead."
+docs = """
+Renamed to [`self_update.check_duration`](#self_update.check_duration). mise still reads this
+setting and `MISE_AUTO_UPDATE_CHECK_DURATION` when `self_update.check_duration` is not set.
+"""
 env = "MISE_AUTO_UPDATE_CHECK_DURATION"
 global_only = true
+optional = true
 type = "Duration"
 
 [cache_prune_age]
@@ -570,7 +577,7 @@ description = "Suppress warnings when a newer mise version is available."
 docs = """
 Disables mise update notices in `mise version`, `mise --version`, and `mise doctor`.
 Other warnings are unaffected. This does not disable `mise self-update` or automatic updates
-enabled with [`auto_update`](#auto_update).
+enabled with [`self_update.auto`](#self_update.auto).
 """
 env = "MISE_DISABLE_UPDATE_WARNING"
 type = "Bool"
@@ -1339,6 +1346,14 @@ explicitly commits tracked changes. Git history lives under `$MISE_STATE_DIR/his
 `mise bootstrap dotfiles history` lists and compares its file versions. Bootstrap without
 tracking does not start a committed history, and dry runs never record. Set to `false` to
 turn recording off without deleting existing commits.
+
+A bootstrap that records no history (nothing tracked, no existing history) touches the history
+state only when it first rewrites a dotfile or edit, to keep a private write-recovery journal.
+If another history operation in the same `$MISE_STATE_DIR` holds the lock at that point, it warns
+and runs without the journal instead of failing. Runs that record history wait up to 30 seconds,
+then fail. A run that starts with nothing to record but declares tracking before it ends waits the
+same 30 seconds at the end; if the lock is still busy, or an earlier write already ran without the
+journal, it warns that its outcome was not recorded and keeps its result.
 """
 env = "MISE_HISTORY_ENABLED"
 type = "Bool"
@@ -1353,11 +1368,19 @@ type = "Duration"
 default = true
 description = "Show a desktop notification when conflicts pause sharing for the setup. Enabled by default; retries stay silent until sharing recovers, and a notifier that is missing or failing never holds up history or sync."
 docs = """
-On Linux, notifications require `notify-send`. On macOS, allow notifications
-for mise when prompted. Unofficial macOS builds, such as Homebrew, warn when
-connecting a setup repository because notifications are unavailable. Unsupported
-platforms log the conflict only.
-`mise bootstrap dotfiles status` and `mise doctor` show the same conflicts without notifications.
+Notifications announce sync conflicts only: the moment conflicts newly pause
+sharing for the setup. They are not a general alert channel. Other problems,
+such as a watcher that cannot save checkpoints, are reported only by
+`mise doctor` and `mise dot status`.
+
+On Linux, notifications require `notify-send`. On macOS, the first notification
+asks for permission, so mise does not appear in System Settings > Notifications
+until a conflict first occurs. Run `mise dot notify` to send a test
+notification and be prompted now. Unofficial macOS builds, such as Homebrew,
+never show notifications and warn when connecting a setup repository.
+Unsupported platforms log the conflict only.
+`mise bootstrap dotfiles status` and `mise doctor` show the same conflicts without notifications;
+`mise doctor` also reports whether notifications can be delivered.
 """
 env = "MISE_HISTORY_NOTIFY"
 type = "Bool"
@@ -1830,6 +1853,31 @@ When unset (the default), existing lockfiles are read and written, but new lockf
 """
 env = "MISE_LOCKFILE"
 optional = true
+type = "Bool"
+
+[lockfile_auto_prune]
+default = true
+description = "Remove lockfile tools that are absent from the active configuration."
+docs = """
+By default, a full `mise lock` run removes entries for tools that are not
+declared by the active configuration. This keeps lockfiles in sync with one
+configuration and removes obsolete entries.
+
+Set this to `false` for a shared lockfile where different profiles
+intentionally configure different tools. The setting changes only top-level
+tool retention: configured tools still refresh, and their stale versions,
+option variants, and native dependency graphs are still removed.
+
+```toml
+[settings]
+lockfile_auto_prune = false
+```
+
+This applies to both `lockfile_mode = "merge"` and `lockfile_mode = "generate"`,
+including `mise lock --global`. Filtered commands such as `mise lock node`
+already retain tools outside their explicit filter.
+"""
+env = "MISE_LOCKFILE_AUTO_PRUNE"
 type = "Bool"
 
 [lockfile_mode]
@@ -2588,6 +2636,29 @@ lockfiles that already require provenance for the tool being installed.
 env = "MISE_PROVENANCE_API_FAILURES_FATAL"
 type = "Bool"
 
+[prune.exclude]
+default = []
+description = "Tools that `mise prune` never removes, such as `node` or `aqua:BurntSushi/ripgrep`."
+docs = """
+Versions of the listed tools are kept by `mise prune`, `mise ls --prunable`, and the automatic
+removal that follows `mise upgrade`, even when no tracked config uses them and even when the tool
+is named on the command line. Tools are named as they are elsewhere in mise: `node`, `core:node`,
+and `aqua:BurntSushi/ripgrep` are all accepted, and a short name matches the same tool as its full
+name.
+
+Use this for a tool that something outside of mise resolves through its install path, or whose old
+versions you keep on purpose. `mise uninstall` is unaffected.
+
+```toml
+[settings]
+prune.exclude = ["node", "aqua:BurntSushi/ripgrep"]
+```
+"""
+env = "MISE_PRUNE_EXCLUDE"
+parse_env = "set_by_comma"
+rust_type = "BTreeSet<String>"
+type = "SetString"
+
 [pypi.registry_url]
 description = "Package registry URL for Python tools (pipx.registry_url is a compatibility alias)."
 env = "MISE_PYPI_REGISTRY_URL"
@@ -2921,6 +2992,9 @@ When enabled, mise refuses (with an error, never a silent fallback) to:
 - execute asdf plugin scripts
 - install plugins (already-installed and embedded vfox plugins still work — their
   code was chosen by the operator, not the repository)
+- resolve mise secrets (`[secrets.*]` sources are not used; `mise secrets ls` refuses,
+  tasks that list secrets refuse to run, and so do `mise run --secrets`, `mise x --secrets`
+  and their `--secrets-all` forms)
 
 It also ignores environment and shell configuration from project (non-global) config —
 `[env]` values, `_.path`, `_.file`, and `[shell_alias]` entries — since those would be
@@ -2980,6 +3054,40 @@ This setting is global-only so a project configuration cannot redirect updates o
 env = "MISE_SELF_UPDATE_API_URL"
 global_only = true
 type = "Url"
+
+[self_update.auto]
+default = false
+description = "Automatically update mise before running eligible commands."
+docs = """
+When enabled, mise periodically checks for a newer release before running commands that permit
+network access. If an update is available, mise installs it without updating plugins, then re-runs
+the original command with the new binary.
+
+Automatic updates are skipped in CI, offline and prefer-offline modes, non-interactive sessions,
+shell integration commands, and installations whose packager disabled self-update. This setting is
+global-only so a project's configuration cannot opt users into replacing their mise binary.
+
+```toml
+[settings]
+self_update.auto = true
+```
+
+This replaces the deprecated `auto_update` setting, which mise still reads when this one is not set.
+"""
+env = "MISE_SELF_UPDATE_AUTO"
+global_only = true
+type = "Bool"
+
+[self_update.check_duration]
+default = "7d"
+description = "How often to check for a new mise release when `self_update.auto` is enabled."
+docs = """
+How often automatic updates check for a new mise release. This replaces the deprecated
+`auto_update_check_duration` setting, which mise still reads when this one is not set.
+"""
+env = "MISE_SELF_UPDATE_CHECK_DURATION"
+global_only = true
+type = "Duration"
 
 [self_update.minimum_release_age]
 description = "Minimum release age for mise itself; inherits minimum_release_age (24h by default)."
@@ -3922,6 +4030,20 @@ Set to false to disable this feature if you prefer not to see these indicators.
 env = "MISE_TERMINAL_PROGRESS"
 type = "Bool"
 
+[tool_update.check_duration]
+default = "24h"
+description = "How often to check for updates to a global tool with `auto_update = true`."
+docs = """
+The default interval between update checks for a tool whose global `[tools]` entry sets
+`auto_update = true`. A tool can set its own interval instead, such as `auto_update = "6h"`.
+Intervals under `1h` are raised to `1h`.
+
+See [Automatic tool updates](/configuration.html#automatic-tool-updates).
+"""
+env = "MISE_TOOL_UPDATE_CHECK_DURATION"
+global_only = true
+type = "Duration"
+
 [trace]
 description = "Sets log level to trace"
 env = "MISE_TRACE"
@@ -3982,8 +4104,9 @@ mise-managed interpreter, for example — and the old version is left in place w
 removal.
 
 Versions that another tracked config or tool stub still needs are kept regardless of this setting.
-Once such a version is due, mise checks it again at most once a day, so it can be pruned up to a
-day after the last reference to it goes away.
+So are versions that a running process was started from, even after the grace period
+ends. Once such a version is due, mise checks it again at most once a day, so it can be
+pruned up to a day after the last reference to it goes away or the last process using it exits.
 `mise upgrade --prune` removes the replaced version immediately, and `--no-prune` leaves it in
 place without scheduling removal.
 """
@@ -4141,6 +4264,24 @@ docs = """
 """
 env = "MISE_WINDOWS_SHIM_MODE"
 type = "String"
+
+[write_targets.dotfiles]
+description = "Global config file to create new [dotfiles] entries in. Existing entries stay in the config file that already declares them."
+global_only = true
+optional = true
+type = "Path"
+
+[write_targets.packages]
+description = "Global config file to create new [bootstrap.packages] entries in. Existing entries stay in the config file that already declares them."
+global_only = true
+optional = true
+type = "Path"
+
+[write_targets.tools]
+description = "Global config file to create new [tools] entries in. Existing entries stay in the config file that already declares them."
+global_only = true
+optional = true
+type = "Path"
 
 [yes]
 description = "This will automatically answer yes or no to prompts. This is useful for scripting."

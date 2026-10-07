@@ -109,6 +109,27 @@ changed this way. Status and dry-run report such a file as `unknown` with the
 symlink it crosses, and apply fails with the same reason. Declare the resolved
 path instead.
 
+## Choose platforms
+
+Set `os` on a file or directory to manage it only on matching machines. It
+accepts one value or a list, with the same names and aliases as
+[`[bootstrap.packages]`](/bootstrap/packages/#choose-platforms), such as
+`linux`, `macos`, `windows`, `unix`, `linux/x64`, and `macos/arm64`.
+
+```toml
+[bootstrap.files."/etc/docker/daemon.json"]
+os = "linux"
+source = "./files/docker-daemon.json"
+
+[bootstrap.files."~/.colima/default/colima.yaml"]
+os = "macos"
+source = "./files/colima.yaml"
+```
+
+An entry whose selectors do not match the current machine is skipped as if it
+were not declared: apply, status, and dry-run ignore it, and mise does not
+remove or touch the target.
+
 ## Permissions without content
 
 Leave out `source` and `content` to manage a file's mode, owner, or group while

@@ -113,6 +113,7 @@ use crate::file::display_path;
 use crate::fuzzy::{FuzzyMatcher, FuzzyPattern};
 use crate::toolset::{ToolRequest, ToolSource, ToolVersionOptions, Toolset};
 use crate::ui::style;
+pub(crate) use deps::task_key;
 pub use deps::{Deps, TaskCompletionState, TaskCycleError, TaskDependencyState, TaskKey};
 use task_dep::TaskDep;
 use task_sources::{RawOutputTemplates, TaskOutputs};
@@ -701,6 +702,19 @@ pub struct Task {
     /// starts. Skipped along with dependencies under `--skip-deps`.
     #[serde(default)]
     pub daemons: Option<TaskDaemons>,
+    /// [experimental] Secret keys this task receives when it starts. Dependencies and
+    /// subtasks get only their own lists.
+    #[serde(default)]
+    pub secrets: Option<crate::secrets::TaskSecrets>,
+    /// The `git::` or `oci::` include this task was loaded through, if any.
+    #[serde(skip)]
+    pub(crate) remote_include: Option<String>,
+    /// The task's own env values that use `{{ secrets.X }}`, recorded when the config is
+    /// loaded. They are not rendered with the rest of the env: the executor renders them just
+    /// before spawn. Env that arrives later (dependency and run-entry env) is never recorded,
+    /// so it cannot become a grant.
+    #[serde(skip)]
+    pub(crate) late_secret_env: Vec<crate::secrets::LateSecretEnv>,
     #[serde(default, deserialize_with = "deserialize_arr")]
     pub depends_post: Vec<TaskDep>,
     #[serde(default, deserialize_with = "deserialize_arr")]
@@ -1104,6 +1118,27 @@ fn parse_task_dependencies(parser: &mut TrackingTomlParser<'_>, key: &str) -> Re
 /// at load time, so they must still require trust. `.toml` task files are
 /// checked whole; script files are checked through their `#MISE` headers (the
 /// only part parsed and rendered at load).
+pub(crate) fn file_declares_secrets(path: &Path, body: &str) -> bool {
+    fn table_declares(v: &toml::Value) -> bool {
+        v.as_table().is_some_and(|t| t.contains_key("secrets"))
+    }
+    let body = file::strip_utf8_bom(body);
+    if path.extension().is_some_and(|e| e == "toml") {
+        let Ok(toml::Value::Table(root)) = toml::from_str::<toml::Value>(body) else {
+            return false;
+        };
+        // a task file is `[name] ...` tables; also accept a top-level `[tasks.name]` shape
+        root.values().any(|v| {
+            table_declares(v) || v.as_table().is_some_and(|t| t.values().any(table_declares))
+        })
+    } else {
+        scan_mise_header_entries(body)
+            .into_iter()
+            .filter_map(|entry| entry.parse_toml().ok())
+            .any(|value| table_declares(&value))
+    }
+}
+
 pub(crate) fn file_has_decoded_template(path: &Path, body: &str) -> bool {
     use crate::config::config_file::mise_toml::toml_value_has_template;
     // Must see exactly what the loader sees. `Task::from_path_unrendered_with_cf` strips a
@@ -1551,9 +1586,20 @@ impl Task {
                     .map_err(|e| eyre!("failed to parse daemons field in task header: {e}"))
             })
             .transpose()?;
+        task.secrets = p
+            .get_raw("secrets")
+            .map(|v| {
+                crate::secrets::TaskSecrets::deserialize(v.clone())
+                    .map_err(|e| eyre!("failed to parse secrets field in task header: {e}"))
+            })
+            .transpose()?;
         task.depends_post = parse_task_dependencies(&mut p, "depends_post")?;
         task.wait_for = parse_task_dependencies(&mut p, "wait_for")?;
         task.env = p.parse_env("env")?.unwrap_or_default();
+        if let toml::Value::Table(table) = &info {
+            crate::secrets::check_toml_locations(crate::secrets::TomlShape::Header, table, path)?;
+        }
+        task.record_late_secret_env(path)?;
         task.dir = p.parse_str("dir");
         task.hide = !file::is_executable(path) || p.parse_bool("hide").unwrap_or_default();
         task.raw = p.parse_bool("raw").unwrap_or_default();
@@ -1640,6 +1686,197 @@ impl Task {
             tests::capture_parsed_fields(fields);
         }
         Ok(task)
+    }
+
+    /// Records the task's own `env` values that use `{{ secrets.X }}`. Called where a task is
+    /// loaded, before anything is appended to its env, so only the task's own directives are
+    /// recorded. A value that mixes a reference with other template syntax is an error (T3).
+    pub(crate) fn record_late_secret_env(&mut self, file: &Path) -> Result<()> {
+        use crate::secrets::template;
+        self.late_secret_env.retain(|l| l.overlay);
+        let mut late = vec![];
+        for directive in &self.env.0 {
+            if let EnvDirective::Val(key, value, _) = directive
+                && template::has_secret_ref(value)
+            {
+                let refs = template::secret_refs(value)
+                    .map_err(|_| eyre!("{}", template::mixed_message(&self.name, key)))?;
+                if template::dollar_before_ref(value) {
+                    bail!(
+                        "{}",
+                        template::dollar_before_ref_message(&self.name, key, value)
+                    );
+                }
+                late.push(crate::secrets::LateSecretEnv {
+                    key: key.clone(),
+                    template: value.clone(),
+                    refs,
+                    file: file.to_path_buf(),
+                    overlay: false,
+                });
+            }
+        }
+        late.extend(std::mem::take(&mut self.late_secret_env));
+        self.late_secret_env = late;
+        Ok(())
+    }
+
+    /// Env directives in resolution order, without the values rendered at spawn. See
+    /// [`Self::plan_late_env`].
+    pub(crate) fn render_env_directives(&self) -> Vec<(EnvDirective, PathBuf)> {
+        self.plan_late_env().0
+    }
+
+    /// The recorded `{{ secrets.X }}` values that still apply: the ones no later directive
+    /// for the same key overrides.
+    pub(crate) fn live_late_secret_env(&self) -> Vec<&crate::secrets::LateSecretEnv> {
+        self.plan_late_env().1
+    }
+
+    /// Resolves env precedence for values rendered at spawn. Directives are applied in the
+    /// order the env resolves in: inherited env, the task's own env (template entries first,
+    /// dependency env last), then the overlay's. A recorded value is matched by key and text,
+    /// once each, within the task's own env or within the overlay's, so identical text that
+    /// arrived through dependency or run-entry env is not recorded and still fails as an
+    /// undefined Tera variable.
+    ///
+    /// A recorded value is a writer like `Val`, `Age` and `Rm`. If it is the last writer for
+    /// its key, every earlier directive for the key is dropped, and so is every `default` and
+    /// `required`, which it satisfies. If a later writer follows, that directive stays and the
+    /// recorded value is dropped from the live set: it is never granted, rendered or fetched.
+    /// Directives that do not name their key (`_.file`, `_.source`, ...) are left alone.
+    pub(crate) fn plan_late_env(
+        &self,
+    ) -> (
+        Vec<(EnvDirective, PathBuf)>,
+        Vec<&crate::secrets::LateSecretEnv>,
+    ) {
+        use mise_util::env::env_key_eq;
+        let mut own = self.late_matcher(false);
+        let mut overlay = self.late_matcher(true);
+        let mut items: Vec<(&EnvDirective, PathBuf, Option<usize>)> = vec![];
+        for d in &self.inherited_env.0 {
+            items.push((d, self.config_source.clone(), None));
+        }
+        for d in &self.env.0 {
+            items.push((d, self.config_source.clone(), own(d)));
+        }
+        for (d, source) in &self.overlay_env {
+            items.push((d, source.clone(), overlay(d)));
+        }
+        fn writes(d: &EnvDirective) -> Option<&str> {
+            match d {
+                EnvDirective::Val(k, ..) | EnvDirective::Rm(k, _) => Some(k.as_str()),
+                EnvDirective::Age { key, .. } => Some(key.as_str()),
+                _ => None,
+            }
+        }
+        let late_key = |i: usize| self.late_secret_env[i].key.as_str();
+        // a recorded value is live when no later item writes its key
+        let live_at: Vec<Option<usize>> = items
+            .iter()
+            .enumerate()
+            .map(|(at, (_, _, late))| {
+                let i = (*late)?;
+                let key = late_key(i);
+                let overridden = items[at + 1..].iter().any(|(d, _, l)| {
+                    l.map_or_else(
+                        || writes(d).is_some_and(|k| env_key_eq(k, key)),
+                        |j| env_key_eq(late_key(j), key),
+                    )
+                });
+                (!overridden).then_some(i)
+            })
+            .collect();
+        let live_keys: Vec<&str> = live_at.iter().flatten().map(|i| late_key(*i)).collect();
+        let mut directives = vec![];
+        for (at, (d, source, late)) in items.iter().enumerate() {
+            if late.is_some() {
+                continue;
+            }
+            let covered = |key: &str| live_keys.iter().any(|k| env_key_eq(k, key));
+            let drop = match d {
+                EnvDirective::Default(k, ..) | EnvDirective::Required(k, _) => covered(k),
+                other => writes(other).is_some_and(|k| {
+                    // a live composite later in the list takes the key over
+                    live_at[at + 1..]
+                        .iter()
+                        .flatten()
+                        .any(|i| env_key_eq(late_key(*i), k))
+                }),
+            };
+            if !drop {
+                directives.push(((*d).clone(), source.clone()));
+            }
+        }
+        let live = live_at
+            .into_iter()
+            .flatten()
+            .map(|i| &self.late_secret_env[i])
+            .collect();
+        (directives, live)
+    }
+
+    fn late_matcher(&self, overlay: bool) -> impl FnMut(&EnvDirective) -> Option<usize> + use<'_> {
+        self.late_matcher_with(overlay, mise_util::env::env_key_eq)
+    }
+
+    /// `eq` compares env names, so a test can run the case-insensitive (Windows) rule anywhere.
+    fn late_matcher_with(
+        &self,
+        overlay: bool,
+        eq: fn(&str, &str) -> bool,
+    ) -> impl FnMut(&EnvDirective) -> Option<usize> + use<'_> {
+        let mut remaining: Vec<(usize, &str, &str)> = self
+            .late_secret_env
+            .iter()
+            .enumerate()
+            .filter(|(_, l)| l.overlay == overlay)
+            .map(|(i, l)| (i, l.key.as_str(), l.template.as_str()))
+            .collect();
+        move |directive| {
+            let EnvDirective::Val(key, value, _) = directive else {
+                return None;
+            };
+            let at = remaining
+                .iter()
+                .position(|(_, k, v)| eq(k, key) && *v == value.as_str())?;
+            Some(remaining.remove(at).0)
+        }
+    }
+
+    /// Every text in the task's env that could read another env var through a template:
+    /// values and defaults under their key, and path-like directives under `_.file`,
+    /// `_.path` and `_.source`.
+    pub(crate) fn non_late_env_texts(&self) -> Vec<(String, String)> {
+        self.render_env_directives()
+            .into_iter()
+            .filter_map(|(d, _)| match d {
+                EnvDirective::Val(k, v, _) | EnvDirective::Default(k, v, _) => Some((k, v)),
+                EnvDirective::File(p, _) => Some(("_.file".to_string(), p)),
+                EnvDirective::Path(p, _) => Some(("_.path".to_string(), p)),
+                EnvDirective::Source(p, _) => Some(("_.source".to_string(), p)),
+                EnvDirective::PythonVenv { path, .. } => Some(("_.python.venv".to_string(), path)),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// The keys the task asks for: `secrets = [...]`, then the ones its env values name.
+    pub fn secret_names(&self) -> Vec<String> {
+        let mut names: Vec<String> = self
+            .secrets
+            .as_ref()
+            .map(|s| s.names().to_vec())
+            .unwrap_or_default();
+        for late in self.live_late_secret_env() {
+            for name in &late.refs {
+                if !names.iter().any(|n| n == name.as_str()) {
+                    names.push(name.to_string());
+                }
+            }
+        }
+        names
     }
 
     /// Add env vars that were inherited from parent tasks (e.g., via `run = [{ task = "..." }]`)
@@ -2655,6 +2892,14 @@ impl Task {
         config.config_files.get(&self.config_source)
     }
 
+    /// The remote source this task was loaded from, for the secrets rule. Unlike
+    /// `is_remote()` this also covers `git::` and `oci::` includes, which otherwise look local.
+    pub(crate) fn secrets_remote_source(&self) -> Option<&str> {
+        self.remote_file_source
+            .as_deref()
+            .or(self.remote_include.as_deref())
+    }
+
     /// Check if this task is a remote task (loaded from git:// or http:// URL)
     /// Remote tasks should not use monorepo config file context because they need
     /// access to tools from the full config hierarchy, not just the local config file
@@ -2726,6 +2971,15 @@ impl Task {
             .extend(other.env.0.into_iter().map(|d| (d, overlay_src.clone())));
         self.overlay_vars
             .extend(other.vars.0.into_iter().map(|d| (d, overlay_src.clone())));
+        // Only `other`'s own env moved to `overlay_env` above, so only its recorded values
+        // follow it.
+        self.late_secret_env.extend(
+            other
+                .late_secret_env
+                .into_iter()
+                .filter(|l| !l.overlay)
+                .map(|l| crate::secrets::LateSecretEnv { overlay: true, ..l }),
+        );
         // Keep the *_raw (pre-render) snapshots in sync with the live deps
         // so `render_runtime_templates_with_usage` re-renders the merged set rather
         // than silently dropping overlay deps. Prefer the overlay's raw
@@ -2763,6 +3017,10 @@ impl Task {
         // in the overlay means what it says.
         if other.daemons.is_some() {
             self.daemons = other.daemons;
+        }
+        // `secrets = []` in an overlay clears the file task's list.
+        if other.secrets.is_some() {
+            self.secrets = other.secrets;
         }
         if other.dir.is_some() {
             self.dir = other.dir;
@@ -3107,9 +3365,15 @@ impl Task {
         &self,
         config: &Arc<Config>,
         ts: &Toolset,
-    ) -> Result<(EnvMap, Vec<(String, String)>, BTreeSet<String>)> {
+    ) -> Result<(
+        EnvMap,
+        Vec<(String, String)>,
+        BTreeSet<String>,
+        crate::task::task_context_builder::TaskEnvKeys,
+    )> {
         let mut tera_ctx = ts.tera_ctx(config).await?.clone();
-        let (mut env, mut env_remove) = ts.full_env_with_removals(config).await?;
+        let (mut env, mut env_remove, mut mise_keys) =
+            ts.full_env_with_removals_and_keys(config).await?;
         if let Some(root) = &config.project_root {
             tera_ctx.insert("config_root", &root);
         }
@@ -3117,17 +3381,12 @@ impl Task {
         // Convert task env directives to (EnvDirective, PathBuf) pairs
         // Use the config file path as source for proper path resolution
         // Include inherited_env first (so task's own env can override it)
-        let mut env_directives: Vec<_> = self
-            .inherited_env
-            .0
-            .iter()
-            .chain(self.env.0.iter())
-            .map(|directive| (directive.clone(), self.config_source.clone()))
-            .collect();
         // Append overlay entries last so TOML-block env overrides file task env
         // on key collision; each carries its own source path so directives like
         // `_.file = ".env"` resolve relative to the overlay's config file.
-        env_directives.extend(self.overlay_env.iter().cloned());
+        // Values that use `{{ secrets.X }}` are left out: they are rendered just before
+        // spawn, so they never reach the env map, the Tera context or any cache.
+        let env_directives = self.render_env_directives();
 
         // Resolve environment directives using the same system as global env
         let env_results = EnvResults::resolve(
@@ -3162,9 +3421,11 @@ impl Task {
             &redaction_exclusions,
         );
 
+        let rendered_defaults = env_results.rendered_defaults.clone();
         let task_env = env_results.env.into_iter().map(|(k, (v, _))| (k, v));
         for (key, _) in task_env.clone() {
             env_remove.remove(&key);
+            mise_keys.insert(key);
         }
         // Apply the resolved environment variables
         env.extend(task_env.clone());
@@ -3186,7 +3447,15 @@ impl Task {
             env.insert(env::PATH_KEY.to_string(), path_env.to_string());
         }
 
-        Ok((env, task_env.collect(), env_remove))
+        Ok((
+            env,
+            task_env.collect(),
+            env_remove,
+            crate::task::task_context_builder::TaskEnvKeys {
+                mise: mise_keys,
+                rendered_defaults,
+            },
+        ))
     }
 }
 
@@ -3560,6 +3829,9 @@ impl Default for Task {
             confirm: None,
             depends: vec![],
             daemons: None,
+            secrets: None,
+            remote_include: None,
+            late_secret_env: vec![],
             depends_post: vec![],
             wait_for: vec![],
             env: Default::default(),
@@ -5308,7 +5580,7 @@ echo "Hello $USR"
         let task = Task::from_path(&config, &task_path, temp_dir.path(), temp_dir.path())
             .await
             .unwrap();
-        let (env, task_env, _) = task.render_env(&config, ts).await.unwrap();
+        let (env, task_env, _, _) = task.render_env(&config, ts).await.unwrap();
 
         assert_eq!(task_env, vec![("USR".to_string(), "World!".to_string())]);
         assert_eq!(env.get("USR"), Some(&"World!".to_string()));
@@ -6024,6 +6296,257 @@ echo "hello world"
         );
     }
 
+    #[test]
+    fn toml_overlay_replaces_and_clears_secrets() {
+        use crate::secrets::TaskSecrets;
+        let overlay = |secrets: Option<TaskSecrets>| {
+            let mut task = Task {
+                secrets: Some(TaskSecrets(vec!["A".into()])),
+                remote_include: Some("git::x".into()),
+                ..Default::default()
+            };
+            task.merge_toml_overlay(Task {
+                secrets,
+                ..Default::default()
+            });
+            (task.secrets, task.remote_include)
+        };
+        assert_eq!(
+            overlay(Some(TaskSecrets(vec!["B".into()]))).0,
+            Some(TaskSecrets(vec!["B".into()]))
+        );
+        let (cleared, remote) = overlay(Some(TaskSecrets(vec![])));
+        assert_eq!(cleared, Some(TaskSecrets(vec![])));
+        assert_eq!(remote.as_deref(), Some("git::x"));
+        assert_eq!(overlay(None).0, Some(TaskSecrets(vec!["A".into()])));
+    }
+
+    #[test]
+    fn secrets_remote_source_covers_includes() {
+        let t = Task {
+            remote_include: Some("git::https://x/y.git//t".into()),
+            ..Default::default()
+        };
+        assert!(t.secrets_remote_source().is_some());
+        assert!(!t.is_remote());
+        assert!(Task::default().secrets_remote_source().is_none());
+    }
+
+    fn late_task(env: &str) -> Task {
+        let body = format!("[tasks.m]\nrun = 'true'\n{env}\n");
+        let mut tasks: BTreeMap<String, Task> =
+            toml::from_str::<toml::Table>(&body).unwrap()["tasks"]
+                .clone()
+                .try_into()
+                .unwrap();
+        let mut task = tasks.remove("m").unwrap();
+        task.name = "m".into();
+        task.record_late_secret_env(Path::new("/p/mise.toml"))
+            .unwrap();
+        task
+    }
+
+    fn val(key: &str, value: &str) -> crate::config::env_directive::EnvDirective {
+        crate::config::env_directive::EnvDirective::Val(
+            key.into(),
+            value.into(),
+            Default::default(),
+        )
+    }
+
+    #[test]
+    fn env_references_extend_the_grant_and_are_deferred() {
+        let task = late_task(
+            "env.PGURL = 'p://{{ secrets.DB_PASSWORD }}@{{secrets.HOST}}'\nenv.PLAIN = 'x'",
+        );
+        assert_eq!(task.late_secret_env.len(), 1);
+        assert_eq!(task.secret_names(), ["DB_PASSWORD", "HOST"]);
+        let (grant, problems) = crate::secrets::grant_for_task(&task);
+        assert!(problems.is_empty());
+        assert_eq!(grant.keys.len(), 2);
+        assert!(grant.exported_keys().next().is_none());
+        assert_eq!(
+            grant.granted_by(&crate::secrets::SecretName::new("HOST").unwrap()),
+            "{{ secrets.HOST }} in env.PGURL"
+        );
+        // the late directive is not resolved with the rest of the env
+        let keys: Vec<_> = task
+            .render_env_directives()
+            .into_iter()
+            .map(|(d, _)| format!("{d:?}"))
+            .collect();
+        assert_eq!(keys.len(), 1);
+        assert!(keys[0].contains("PLAIN") && !keys.join("").contains("secrets"));
+    }
+
+    #[test]
+    fn dependency_env_with_identical_text_is_not_late() {
+        let text = "{{ secrets.DB_PASSWORD }}";
+        let task = late_task(&format!("env.PGURL = '{text}'"));
+        // env that arrives later is never recorded, however it is spelled
+        let dep = task.with_dependency_env(&[val("PGURL", text)]);
+        assert_eq!(dep.late_secret_env.len(), 1);
+        let remaining = dep.render_env_directives();
+        assert_eq!(remaining.len(), 1, "the dependency's copy still resolves");
+        assert!(crate::secrets::grant_for_task(&dep).0.late.is_empty());
+        // inherited env comes first, so the task's own composite overrides it
+        let inherited = task.derive_env(&[val("PGURL", text)]);
+        assert!(inherited.render_env_directives().is_empty());
+        assert_eq!(crate::secrets::grant_for_task(&inherited).0.late.len(), 1);
+        // and a task with only dependency env records nothing
+        let plain = Task::default().with_dependency_env(&[val("PGURL", text)]);
+        assert!(plain.late_secret_env.is_empty());
+        assert_eq!(plain.render_env_directives().len(), 1);
+    }
+
+    #[test]
+    fn late_values_match_env_names_by_the_platform_rule() {
+        let task = late_task("env.PGURL = 'p://{{ secrets.DB_PASSWORD }}@h'");
+        let text = "p://{{ secrets.DB_PASSWORD }}@h";
+        // the case-insensitive rule (Windows) matches a differently cased name
+        let mut insensitive = task.late_matcher_with(false, |a, b| a.eq_ignore_ascii_case(b));
+        assert_eq!(insensitive(&val("pgurl", text)), Some(0));
+        // the exact rule (Unix) does not
+        let mut exact = task.late_matcher_with(false, |a, b| a == b);
+        assert_eq!(exact(&val("pgurl", text)), None);
+        assert_eq!(exact(&val("PGURL", text)), Some(0));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn late_matcher_is_case_insensitive_on_windows() {
+        let task = late_task("env.PGURL = 'p://{{ secrets.DB_PASSWORD }}@h'");
+        let mut matcher = task.late_matcher(false);
+        assert_eq!(
+            matcher(&val("pgurl", "p://{{ secrets.DB_PASSWORD }}@h")),
+            Some(0)
+        );
+    }
+
+    #[test]
+    fn a_composed_value_follows_env_precedence() {
+        use crate::config::config_file::mise_toml::EnvList;
+        use crate::config::env_directive::EnvDirective;
+        let composite = "env.PGURL = 'postgres://{{ secrets.DB_PASSWORD }}@h'";
+        let plain = |directive: EnvDirective| Task {
+            name: "m".into(),
+            env: EnvList(vec![directive]),
+            ..Default::default()
+        };
+        let check = |task: &Task, directives: usize, late: usize| {
+            assert_eq!(task.render_env_directives().len(), directives, "{task:?}");
+            assert_eq!(
+                crate::secrets::grant_for_task(task).0.late.len(),
+                late,
+                "{task:?}"
+            );
+        };
+        let base = late_task(composite);
+        // a parent's env is inherited first, so the composite overrides it
+        check(&base.derive_env(&[val("PGURL", "sqlite://parent")]), 0, 1);
+        // a dependency's env is appended after the task's own, so it wins
+        let dep = base.with_dependency_env(&[val("PGURL", "sqlite://test")]);
+        check(&dep, 1, 0);
+        // a plain base, then an overlay composite
+        let mut overlaid = plain(val("PGURL", "sqlite://base"));
+        overlaid.merge_toml_overlay(late_task(composite));
+        check(&overlaid, 0, 1);
+        // a composite base, then an overlay plain value
+        let mut overlaid = base.clone();
+        overlaid.merge_toml_overlay(plain(val("PGURL", "sqlite://over")));
+        check(&overlaid, 1, 0);
+        // then an overlay that unsets the key: nothing is fetched
+        let mut unset = base.clone();
+        unset.merge_toml_overlay(plain(EnvDirective::Rm("PGURL".into(), Default::default())));
+        check(&unset, 1, 0);
+        let (grant, _) = crate::secrets::grant_for_task(&unset);
+        assert!(grant.keys.is_empty());
+        // an overlay default is satisfied by the composite
+        let mut defaulted = base.clone();
+        defaulted.merge_toml_overlay(plain(EnvDirective::Default(
+            "PGURL".into(),
+            "x".into(),
+            Default::default(),
+        )));
+        check(&defaulted, 0, 1);
+        // a template's env goes ahead of the task's own
+        let template: crate::task::TaskTemplate =
+            toml::from_str("env.PGURL = 'postgres://localhost/dev'").unwrap();
+        let mut extended = base.clone();
+        extended.merge_extended_template(&template);
+        check(&extended, 0, 1);
+    }
+
+    #[test]
+    fn a_dollar_before_a_reference_fails_to_load() {
+        let mut task = Task {
+            name: "m".into(),
+            env: crate::config::config_file::mise_toml::EnvList(vec![val("A", "${{ secrets.B }}")]),
+            ..Default::default()
+        };
+        let err = task.record_late_secret_env(Path::new("/p")).unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("task m: env.A has ${{ secrets.B }}; drop the $"),
+            "{err}"
+        );
+        // other `$` syntax is a spawn-time problem that follows env_shell_expand
+        let mut task = Task {
+            name: "m".into(),
+            env: crate::config::config_file::mise_toml::EnvList(vec![val(
+                "A",
+                "p://$USER:{{ secrets.B }}@h",
+            )]),
+            ..Default::default()
+        };
+        task.record_late_secret_env(Path::new("/p")).unwrap();
+    }
+
+    #[test]
+    fn mixing_secrets_with_other_syntax_fails_to_load() {
+        let mut task = Task {
+            name: "m".into(),
+            env: crate::config::config_file::mise_toml::EnvList(vec![val(
+                "A",
+                "{{ secrets.B | upper }}",
+            )]),
+            ..Default::default()
+        };
+        let err = task.record_late_secret_env(Path::new("/p")).unwrap_err();
+        assert!(err.to_string().contains("task m: env.A mixes"), "{err}");
+    }
+
+    #[test]
+    fn file_declares_secrets_parses_headers() {
+        let sh = Path::new("/p/mise-tasks/ft");
+        for yes in [
+            "#MISE secrets=[\"A\"]\n",
+            "#MISE \"secrets\"=[\"A\"]\n",
+            "# [MISE] 'secrets' = [\"A\"]\n",
+            "#!/bin/sh\n#MISE \"\\u0073ecrets\"=[\"A\"]\necho\n",
+            "\u{feff}#MISE secrets=[\"A\"]\n",
+        ] {
+            assert!(crate::task::file_declares_secrets(sh, yes), "{yes:?}");
+        }
+        assert!(!crate::task::file_declares_secrets(
+            sh,
+            "#MISE description=\"secrets\"\n"
+        ));
+        let toml = Path::new("/p/tasks.toml");
+        assert!(crate::task::file_declares_secrets(
+            toml,
+            "[build]\nrun='x'\nsecrets=['A']\n"
+        ));
+        assert!(crate::task::file_declares_secrets(
+            toml,
+            "[tasks.build]\nrun='x'\nsecrets=['A']\n"
+        ));
+        assert!(!crate::task::file_declares_secrets(
+            toml,
+            "[build]\nrun='x'\n"
+        ));
+    }
+
     #[tokio::test]
     #[cfg(unix)]
     async fn test_parses_all_fields() {
@@ -6043,6 +6566,7 @@ echo "hello world"
 #MISE aliases=["alias1", "alias2"]
 #MISE depends=["dep1", "dep2"]
 #MISE daemons=["postgres"]
+#MISE secrets=["DEPLOY_KEY"]
 #MISE depends_post=["post1"]
 #MISE wait_for=["wait1"]
 #MISE env={TEST_VAR="value"}
@@ -6080,6 +6604,10 @@ echo "test"
         assert_eq!(
             task.daemons,
             Some(super::TaskDaemons::Names(vec!["postgres".to_string()]))
+        );
+        assert_eq!(
+            task.secrets,
+            Some(crate::secrets::TaskSecrets(vec!["DEPLOY_KEY".to_string()]))
         );
         assert_eq!(task.depends_post.len(), 1);
         assert_eq!(task.wait_for.len(), 1);

@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+# Only a command that uses a project's tools records them. Prune and `ls --prunable`
+# inspect from whatever environment they were started in, and a command that resolved
+# only part of the config (an argument replacing a templated tool) cannot vouch for
+# the rest, so none of them may replace what the project's snapshot says.
+export MISE_EXPERIMENTAL=1
+export MISE_INSTALL_LAYOUT=identity
+
+mkdir -p project elsewhere
+echo '[tools]
+dummy = "{{env.PRUNE_VERSION}}"' >project/mise.toml
+assert "PRUNE_VERSION=1.0.0 mise -C project install"
+assert "mise install dummy@3.0.0"
+
+# Prune from inside the project without the install-time input.
+assert "PRUNE_VERSION=2.0.0 mise -C project ls --prunable --json >prunable.json"
+assert "jq -e '[.dummy[].version] == [\"3.0.0\"]' prunable.json"
+assert "PRUNE_VERSION=2.0.0 mise -C project prune --dry-run"
+
+# An argument replacing the templated tool resolves less than the config.
+assert "PRUNE_VERSION=2.0.0 mise -C project exec dummy@3.0.0 -- true"
+
+assert "mise -C elsewhere ls --prunable --json >prunable.json"
+assert "jq -e '[.dummy[].version] == [\"3.0.0\"]' prunable.json"
+
+# A real prune from inside the project, which also rebuilds shims afterwards, keeps
+# the version the project recorded and does not replace the snapshot.
+assert "PRUNE_VERSION=2.0.0 mise -C project prune --yes"
+assert "mise -C elsewhere ls --prunable --json >prunable.json"
+assert "jq -e 'has(\"dummy\") | not' prunable.json"
+assert "ls $MISE_DATA_DIR/installs/dummy/1.0.0 >/dev/null"

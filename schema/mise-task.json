@@ -491,6 +491,22 @@
             "type": "string"
           },
           "type": "array"
+        },
+        "secrets": {
+          "description": "[experimental] Secret keys this task receives when it starts, e.g. [\"DEPLOY_KEY\"]. Dependencies do not inherit them. See `mise secrets ls`.",
+          "oneOf": [
+            {
+              "type": "string",
+              "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+              }
+            }
+          ]
         }
       },
       "type": "object"
@@ -962,6 +978,17 @@
             },
             {
               "properties": {
+                "auto_update": {
+                  "description": "update this tool before it runs when its check is due; true, or a check interval such as \"12h\". Only honored in global config",
+                  "oneOf": [
+                    {
+                      "type": "boolean"
+                    },
+                    {
+                      "type": "string"
+                    }
+                  ]
+                },
                 "install_env": {
                   "type": "object",
                   "additionalProperties": {
@@ -2043,6 +2070,30 @@
           "description": "expr-lang expression extracting algo:hash from the checksum_url manifest",
           "type": "string"
         },
+        "headers": {
+          "description": "request headers sent with the download, version_list_url and checksum_url requests; values are tera templated (e.g. Bearer {{ env.TOKEN }})",
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "headers_forward": {
+          "description": "hosts each header in headers may follow a redirect to; exact hosts or *.suffix, and a header with no entry is never forwarded",
+          "type": "object",
+          "additionalProperties": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            ]
+          }
+        },
         "size": {
           "description": "expected artifact size in bytes",
           "oneOf": [
@@ -2569,6 +2620,10 @@
         },
         "identity_prefix": {
           "description": "keyless signer certificate identity prefix",
+          "type": "string"
+        },
+        "workflow": {
+          "description": "repository workflow file that signs releases on a tag; github.com projects only, not valid with pubkey, identity, identity_prefix, or issuer",
           "type": "string"
         },
         "list_identity_prefix": {

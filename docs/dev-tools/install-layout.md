@@ -343,8 +343,39 @@ mise installs migrate node python@3.12.1
 ```
 
 The old directory is moved aside while its replacement installs, and put back
-if the install fails. Each migration is recorded in `installs/.mise/migrations/`
-before anything moves, so if a run is interrupted, the next
+if the install fails.
+
+A version that cannot be reinstalled is not an error. It happens when its
+release was withdrawn or is signed by a different identity than mise accepted
+before, when the network is unavailable, or when its installer fails. mise then
+moves the existing directory, as it is, into its own `<label>-<hash>` directory,
+writes the same receipt an install would, and leaves the version link at the old
+path. Paths the tool recorded about itself (virtual environment shebangs,
+`node_modules/.bin` links) keep resolving through that link. Nothing in it is
+rewritten, and the identity only holds what the old directory can say: the
+backend, version, platform and the options of the request. A digest that comes
+from a lockfile, such as an artifact checksum or the dependency graph of an
+`npm:` or `pipx:` install, is not reconstructed.
+
+```text
+relocated aube@2.2.4 to ~/.local/share/mise/installs/aube-4h2kfq7a
+  aube@2.2.4 could not be reinstalled (github.com/aubepkg/aube has no release 2.2.4 ...); moved as it is
+170 migrated, 12 relocated, 0 kept legacy, 0 failed
+```
+
+If it cannot be moved either (it is on another file system than the install
+store, say), it stays in the legacy layout, untouched, and still works:
+
+```text
+skipped aube@2.2.4 (kept legacy layout): <why it was not reinstalled>; not moved either: <why>
+```
+
+A later `mise installs migrate` tries it again. The command exits non-zero only
+when a migration itself broke, for example when the old directory could not be
+put back. A move is recorded like a reinstall, so an interrupted one is put back
+by the next run.
+
+Each migration is recorded in `installs/.mise/migrations/` before anything moves, so if a run is interrupted, the next
 `mise installs migrate` either removes the old directory (the replacement had
 finished) or puts it back and withdraws the unfinished replacement. Run it while
 nothing is using the tools being moved.
@@ -370,6 +401,29 @@ Both work on one installation directory at a time.
   installations of its backend and version, narrowed to the pinned artifact when
   the entry has a checksum for your platform. Legacy installations are pruned as
   before.
+- A tool version that is a template, such as `node = "{{ vars.node }}"`, depends
+  on the vars, env, `MISE_ENV`, `--no-env`, settings and dotenv files in effect
+  where the project is used, which `mise prune` cannot reproduce from another
+  directory. So the catalog keeps a snapshot, under `installs/.mise/snapshots/`,
+  of what a config's templated versions rendered to, taken by a command that
+  resolves the config's tools, and `mise prune` reads it instead of rendering. A
+  command that resolves fewer tools than the config sets (`mise exec node@22`)
+  records nothing, and prune, `mise ls --prunable` and the automatic removal after
+  an upgrade only read snapshots. A snapshot covers one context, the `MISE_ENV`
+  plus the set of loaded config files, and a new snapshot of that context
+  replaces the old one, so a version a project stopped using becomes prunable. If
+  a config file a snapshot loaded has changed, or a config has no snapshot,
+  `mise prune` keeps every installation of that config's templated tools until a
+  command is run in the project again. A snapshot whose config file is gone is
+  ignored, and `mise prune --configs` removes it. A change that is not in a config file, such as a shell variable, is
+  noticed at the next such command, not before. A template in a tool's options
+  makes the tool templated too. A snapshot stores the requested version and the
+  version the command settled on, so project aliases are followed, and it is
+  written with owner-only permissions. A tool with backend options or an
+  `install_env`, which can hold a credential under any name, is not stored, and
+  prune keeps every installation of it instead. To keep a version that
+  a snapshot no longer lists, reference it in a tracked config or lockfile. Without the new
+  layout, `mise prune` renders these versions from where it runs and can fail.
 - `mise plugins uninstall --purge` also removes the plugin's installations in
   the new layout.
 - `mise ls` and `mise prune` list each installation separately. When several

@@ -22,7 +22,7 @@ use packslip::model::{
     Artifact, Host, ReleaseListStatement, ReleaseRef, Selection, Statement, is_bare_format,
     repository, repository_subpath, tag_version,
 };
-use packslip::sigstore::{Policy, Trust};
+use packslip::sigstore::{GITHUB_ISSUER, Policy, Trust};
 
 use crate::args::BackendArg;
 use crate::backend::options::VersionOrder;
@@ -95,6 +95,11 @@ impl<'a> PackslipOptions<'a> {
         self.raw.get_string("issuer")
     }
 
+    /// The file name of the repository workflow that signs releases.
+    fn workflow(&self) -> Option<String> {
+        self.raw.get_string("workflow")
+    }
+
     /// Accept a key-signed bundle with no transparency log entry.
     fn allow_unlogged(&self) -> bool {
         matches!(self.raw.get("allow_unlogged"), Some("true"))
@@ -115,6 +120,7 @@ pub(crate) fn install_time_option_keys() -> Vec<String> {
         "identity_prefix",
         "list_identity_prefix",
         "issuer",
+        "workflow",
         "allow_unlogged",
         "ignore_requirements",
         "trust",
@@ -157,6 +163,49 @@ fn release_url_tag(url: &str) -> Option<String> {
     let (_, tag) = url.rsplit_once("/releases/tag/")?;
     let tag = urlencoding::decode(tag).ok()?;
     (!tag.is_empty()).then(|| tag.into_owned())
+}
+
+/// The text of a release list at `url`, or `None` when the repository keeps
+/// none. A resolution reads the list for every release it looks at, so one
+/// command would otherwise fetch the same file over and over, and wait on a
+/// 404 each time. An answer is reused for a few seconds, which covers a
+/// command and no more: a long-running process (`mise mcp`, `mise watch`) reads
+/// the list again, so a withdrawal is still noticed.
+async fn fetch_github_list(url: &str) -> Result<Option<String>> {
+    type Fetched = Arc<tokio::sync::OnceCell<(std::time::Instant, Option<String>)>>;
+    const REUSE: std::time::Duration = std::time::Duration::from_secs(30);
+    static FETCHED: std::sync::LazyLock<std::sync::Mutex<BTreeMap<String, Fetched>>> =
+        std::sync::LazyLock::new(Default::default);
+    let cell: Fetched = {
+        let mut fetched = FETCHED.lock().unwrap();
+        let cell = fetched.entry(url.to_string()).or_default();
+        // The window opens when a fetch finishes, so a slow one is never
+        // replaced while it is still running.
+        if cell
+            .get()
+            .is_some_and(|(fetched_at, _)| fetched_at.elapsed() > REUSE)
+        {
+            *cell = Fetched::default();
+        }
+        cell.clone()
+    };
+    let (_, text) = cell
+        .get_or_try_init(|| async {
+            let headers = github::get_headers(url)?;
+            let text = match HTTP_FETCH
+                .get_text_request(url)
+                .headers(&headers)
+                .send()
+                .await
+            {
+                Ok(text) => Some(text),
+                Err(err) if crate::http::error_code(&err) == Some(404) => None,
+                Err(err) => return Err(err),
+            };
+            Ok((std::time::Instant::now(), text))
+        })
+        .await?;
+    Ok(text.clone())
 }
 
 /// The signed release list of a project on its own domain.
@@ -542,6 +591,11 @@ pub(crate) enum Pin {
 }
 
 fn pin(project: &str, opts: &PackslipOptions<'_>) -> Result<Pin> {
+    // An identity pin, not a forge one: forge verification derives its own
+    // repository-wide policy from the bundle and would ignore the workflow.
+    if let Some(workflow) = opts.workflow() {
+        return Ok(Pin::Identity(workflow_policy(project, opts, &workflow)?));
+    }
     if let Some(pubkey) = opts.pubkey() {
         let text = if Path::new(&pubkey).is_file() {
             file::read_to_string(&pubkey)?
@@ -566,6 +620,33 @@ fn pin(project: &str, opts: &PackslipOptions<'_>) -> Result<Pin> {
             "packslip:{project} is not on a forge mise knows, so nothing pins its signer; set `pubkey`, or `identity` and `issuer`, in its tool options"
         ),
     }
+}
+
+/// The forge policy narrowed to one workflow file run on a tag, so a
+/// workflow on a branch of the same repository cannot sign a release.
+fn workflow_policy(project: &str, opts: &PackslipOptions<'_>, workflow: &str) -> Result<Policy> {
+    if opts.pubkey().is_some()
+        || opts.identity().is_some()
+        || opts.identity_prefix().is_some()
+        || opts.issuer().is_some()
+    {
+        bail!(
+            "packslip:{project}: `workflow` cannot be combined with `pubkey`, `identity`, `identity_prefix`, or `issuer`"
+        );
+    }
+    let workflow = workflow.trim();
+    if workflow.is_empty() || workflow.contains(['/', '@']) {
+        bail!("packslip:{project}: `workflow` must be a workflow file name such as `release.yaml`");
+    }
+    let mut policy = Policy::for_project(project)
+        .filter(|policy| policy.issuer.as_deref() == Some(GITHUB_ISSUER))
+        .ok_or_else(|| eyre!("packslip:{project}: `workflow` needs a github.com project"))?;
+    let repo = policy
+        .identity_prefix
+        .take()
+        .ok_or_else(|| eyre!("packslip:{project}: no repository to pin `workflow` under"))?;
+    policy.identity_prefix = Some(format!("{repo}.github/workflows/{workflow}@refs/tags/"));
+    Ok(policy)
 }
 
 impl Pin {
@@ -950,22 +1031,12 @@ impl PackslipBackend {
         // users without a token. The CDN serves the default branch for `HEAD`
         // and takes the same token for a private repository.
         let url = format!("https://raw.githubusercontent.com/{repo}/HEAD/{path}");
-        let headers = github::get_headers(&url)?;
-        let text = match HTTP_FETCH
-            .get_text_request(&url)
-            .headers(&headers)
-            .send()
+        let Some(text) = fetch_github_list(&url)
             .await
-        {
-            Ok(text) => text,
-            Err(err) if crate::http::error_code(&err) == Some(404) => {
-                packslip_pins::check_missing_list(project, None)?;
-                return Ok(None);
-            }
-            Err(err) => {
-                return Err(err)
-                    .wrap_err_with(|| format!("fetching the release list of packslip:{project}"));
-            }
+            .wrap_err_with(|| format!("fetching the release list of packslip:{project}"))?
+        else {
+            packslip_pins::check_missing_list(project, None)?;
+            return Ok(None);
         };
         let (list, forge) =
             verify_project_release_list(project, &text, &pin, !opts.allow_unlogged())
@@ -1778,6 +1849,7 @@ impl Backend for PackslipBackend {
             "identity_prefix",
             "list_identity_prefix",
             "issuer",
+            "workflow",
             "allow_unlogged",
             "trust",
         ]
@@ -1932,15 +2004,7 @@ impl Backend for PackslipBackend {
         // extracted, but declared skills are verified only after the hook;
         // treating that exact active install as unsatisfied would make the
         // nested invocation wait on this installation's lock.
-        if std::env::var_os("MISE_TOOL_INSTALL_PATH")
-            .as_deref()
-            .is_some_and(|path| Path::new(path) == install_path)
-            && std::env::var("MISE_TOOL_NAME").ok().as_deref() == Some(tv.ba().short.as_str())
-            && std::env::var(crate::env::MISE_TOOL_VERSION_ENV_VAR)
-                .ok()
-                .as_deref()
-                == Some(tv.version.as_str())
-        {
+        if crate::backend::is_active_postinstall_install(tv, &install_path) {
             return Ok(true);
         }
         if !self.is_version_installed(config, tv, check_symlink) {
@@ -2328,6 +2392,71 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn a_release_list_is_fetched_once_however_many_callers_ask() {
+        let _config = Config::get().await.unwrap();
+        let mut server = mockito::Server::new_async().await;
+        let list = server
+            .mock("GET", "/fetched-once/HEAD/.well-known/packslip.json")
+            .with_body("{}")
+            .expect(1)
+            .create_async()
+            .await;
+        let url = format!(
+            "{}/fetched-once/HEAD/.well-known/packslip.json",
+            server.url()
+        );
+        let (a, b, c) = tokio::join!(
+            fetch_github_list(&url),
+            fetch_github_list(&url),
+            fetch_github_list(&url)
+        );
+        for fetched in [a, b, c, fetch_github_list(&url).await] {
+            assert_eq!(fetched.unwrap().as_deref(), Some("{}"));
+        }
+        list.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn a_missing_release_list_is_looked_for_once() {
+        let _config = Config::get().await.unwrap();
+        let mut server = mockito::Server::new_async().await;
+        let missing = server
+            .mock("GET", "/missing/HEAD/.well-known/packslip.json")
+            .with_status(404)
+            .expect(1)
+            .create_async()
+            .await;
+        let url = format!("{}/missing/HEAD/.well-known/packslip.json", server.url());
+        assert_eq!(fetch_github_list(&url).await.unwrap(), None);
+        assert_eq!(fetch_github_list(&url).await.unwrap(), None);
+        missing.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn a_failed_release_list_fetch_is_retried() {
+        let _config = Config::get().await.unwrap();
+        let mut server = mockito::Server::new_async().await;
+        let failing = server
+            .mock("GET", "/retried/HEAD/.well-known/packslip.json")
+            .with_status(500)
+            .expect_at_least(1)
+            .create_async()
+            .await;
+        let url = format!("{}/retried/HEAD/.well-known/packslip.json", server.url());
+        assert!(fetch_github_list(&url).await.is_err());
+        failing.remove_async().await;
+        let _working = server
+            .mock("GET", "/retried/HEAD/.well-known/packslip.json")
+            .with_body("{}")
+            .create_async()
+            .await;
+        assert_eq!(
+            fetch_github_list(&url).await.unwrap().as_deref(),
+            Some("{}")
+        );
+    }
+
+    #[tokio::test]
     async fn failed_skill_fetch_keeps_the_binary_and_plain_retry_repairs_it() {
         let config = Config::get().await.unwrap();
         let mut server = mockito::Server::new_async().await;
@@ -2377,7 +2506,7 @@ mod tests {
             "original binary"
         );
         assert!(
-            !install_state::incomplete_file_path(&ba, &tv.state_key()).exists(),
+            !install_state::is_incomplete(&ba, &tv.state_key()),
             "the generic marker is cleared after the payload succeeds"
         );
         assert!(crate::packslip::skills_incomplete_path(&install_path).is_file());
@@ -2429,6 +2558,73 @@ mod tests {
             .unwrap();
         assert_eq!(backend.payload_installs.load(Ordering::SeqCst), 1);
         assert_eq!(backend.repairs.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn workflow_option_pins_one_workflow_on_tags() {
+        let policy = |project: &str, toml: &str| {
+            let raw: ToolVersionOptions = toml::from_str(toml).unwrap();
+            pin(project, &PackslipOptions::new(&raw))
+        };
+        let Pin::Identity(policy) = policy(
+            "github.com/max-sixty/worktrunk",
+            r#"workflow = "release.yaml""#,
+        )
+        .unwrap() else {
+            panic!("expected an identity policy");
+        };
+        assert_eq!(policy.issuer.as_deref(), Some(GITHUB_ISSUER));
+        assert_eq!(policy.identity, None);
+        assert_eq!(
+            policy.identity_prefix.as_deref(),
+            Some(
+                "https://github.com/max-sixty/worktrunk/.github/workflows/release.yaml@refs/tags/"
+            )
+        );
+        // A monorepo tool is pinned by its repository's workflow.
+        let Pin::Identity(policy) = policy_for("github.com/o/r/tool") else {
+            panic!("expected an identity policy");
+        };
+        assert_eq!(
+            policy.identity_prefix.as_deref(),
+            Some("https://github.com/o/r/.github/workflows/release.yml@refs/tags/")
+        );
+
+        for conflicting in [
+            r#"issuer = "https://token.actions.githubusercontent.com""#,
+            r#"identity = "https://github.com/o/r/.github/workflows/x.yml@refs/tags/v1""#,
+            r#"identity_prefix = "https://github.com/o/r/""#,
+            r#"pubkey = "not read: the combination is rejected first""#,
+        ] {
+            let raw: ToolVersionOptions =
+                toml::from_str(&format!("workflow = \"release.yaml\"\n{conflicting}")).unwrap();
+            let err = pin("github.com/o/r", &PackslipOptions::new(&raw))
+                .err()
+                .unwrap_or_else(|| panic!("{conflicting}"));
+            assert!(err.to_string().contains("cannot be combined"), "{err}");
+        }
+        for bad in [
+            r#"workflow = "a/b.yaml""#,
+            r#"workflow = "b.yaml@refs/heads/main""#,
+            r#"workflow = " ""#,
+        ] {
+            let raw: ToolVersionOptions = toml::from_str(bad).unwrap();
+            assert!(
+                pin("github.com/o/r", &PackslipOptions::new(&raw)).is_err(),
+                "{bad}"
+            );
+        }
+        assert!(policy_none("gitlab.com/o/r").is_err());
+        assert!(policy_none("tool.example.com").is_err());
+
+        fn policy_for(project: &str) -> Pin {
+            let raw: ToolVersionOptions = toml::from_str(r#"workflow = "release.yml""#).unwrap();
+            pin(project, &PackslipOptions::new(&raw)).unwrap()
+        }
+        fn policy_none(project: &str) -> Result<Pin> {
+            let raw: ToolVersionOptions = toml::from_str(r#"workflow = "release.yml""#).unwrap();
+            pin(project, &PackslipOptions::new(&raw))
+        }
     }
 
     #[test]

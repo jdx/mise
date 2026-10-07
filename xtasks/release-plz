@@ -608,17 +608,22 @@ EMBEDDED_PLUGINS_DIR="crates/vfox/embedded-plugins"
 rm -rf "$EMBEDDED_PLUGINS_DIR"
 mkdir -p "$EMBEDDED_PLUGINS_DIR"
 
-# Clone mise-plugins vfox tools when vfox is the default backend or the
+# Clone managed vfox tools when vfox is the default backend or the
 # fallback after an asdf default backend.
 mise registry | awk '
-	$2 ~ /^vfox:mise-plugins\// {
+	$2 ~ /^vfox:(mise-plugins|jdx)\// {
 		print $2
 	}
-	$2 ~ /^asdf:/ && $3 ~ /^vfox:mise-plugins\// {
+	$2 ~ /^asdf:/ && $3 ~ /^vfox:(mise-plugins|jdx)\// {
 		print $3
 	}
 ' | sed 's|vfox:||' | sort -u | while read -r repo_path; do
 	plugin="$(basename "$repo_path")"
+	# vfox-tiny is a fake plugin the e2e suite uses as a non-embedded fixture;
+	# embedding it changes how `tiny` resolves and breaks those tests.
+	if [[ $plugin == vfox-tiny ]]; then
+		continue
+	fi
 	echo "Cloning $plugin from https://github.com/$repo_path"
 	TEMP_DIR="$(mktemp -d)"
 	git clone --depth 1 "https://github.com/$repo_path.git" "$TEMP_DIR" 2>&1 | grep -v "^Cloning" || true

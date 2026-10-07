@@ -273,7 +273,7 @@ pub(crate) fn identity_of(tv: &ToolVersion) -> Option<InstallIdentity> {
 /// is downloaded (`?id=2`), is replaced by a digest of itself, so two queries
 /// still make two identities. Applied to whole values and to values that merely
 /// contain a URL.
-fn redact_credentials(value: &str) -> String {
+pub(crate) fn redact_credentials(value: &str) -> String {
     let ends_at = |s: &str, stop: &dyn Fn(char) -> bool| s.find(stop).unwrap_or(s.len());
     let mut out = String::with_capacity(value.len());
     let mut rest = value;
@@ -1975,6 +1975,46 @@ pub fn migration_target(tv: &ToolVersion) -> std::result::Result<PathBuf, String
     }
 }
 
+/// Move `from`, an existing installation of `tv`'s version, into the directory
+/// the identity layout allocates for it, give it the receipt and selection a
+/// fresh install would, and link `installs/<tool>/<version>` to it. Nothing
+/// inside is rewritten; the caller keeps the old path resolving with that link.
+///
+/// The move is a rename: it fails (and changes nothing) where the directory
+/// cannot be renamed, for instance across file systems.
+pub fn relocate(tv: &ToolVersion, from: &Path) -> Result<PathBuf> {
+    let mut bare = tv.clone();
+    bare.install_path = None;
+    let allocated = allocate(&bare, false)?
+        .filter(|a| !a.read_only)
+        .ok_or_else(|| eyre::eyre!("the identity layout does not govern it"))?;
+    let _lock = lock_install(&allocated.dir, &|_| {})?;
+    // Under the lock: an install that finished there while this waited is
+    // someone else's, and is neither written to nor recorded as ours. What a
+    // failed reinstall left there is not.
+    clear_leftover(&allocated.dir)?;
+    // Recorded before anything moves, so an interrupted move is put back.
+    note_writing(&allocated)?;
+    file::rename(from, &allocated.dir)?;
+    finish(&bare, &allocated, false)?;
+    Ok(allocated.dir)
+}
+
+/// Clear the way for a relocation into `dir`, which the caller holds the
+/// install lock of. Nothing is there, or only what an install that failed left
+/// (a real directory with no receipt: the lock means nobody is still writing
+/// it) and that is removed. A finished installation, or anything that is not a
+/// plain directory, is never touched and fails the relocation.
+fn clear_leftover(dir: &Path) -> Result<()> {
+    let Ok(meta) = std::fs::symlink_metadata(dir) else {
+        return Ok(());
+    };
+    if !meta.is_dir() || meta.file_type().is_symlink() || is_complete(dir) {
+        eyre::bail!("{} already exists", dir.display());
+    }
+    file::remove_all(dir)
+}
+
 /// Make sure `installs/<tool>/<version>` links to the installation `dir` (which
 /// may be in a shared root), as [`link`] does after an install. An installation
 /// that was reused rather than installed may not have made one.
@@ -2103,6 +2143,31 @@ pub fn dir_name_of(path: &Path) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn clear_leftover_removes_only_what_a_failed_install_left() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path().join("tool-abcdefgh");
+        assert!(super::clear_leftover(&dir).is_ok());
+        // a failed reinstall: payload, no receipt
+        std::fs::create_dir_all(dir.join("bin")).unwrap();
+        std::fs::write(dir.join("bin/x"), "").unwrap();
+        assert!(super::clear_leftover(&dir).is_ok());
+        assert!(!dir.exists());
+        // a finished install is never touched
+        std::fs::create_dir(&dir).unwrap();
+        std::fs::write(dir.join(super::RECEIPT_FILE), "").unwrap();
+        if super::is_complete(&dir) {
+            assert!(super::clear_leftover(&dir).is_err());
+            assert!(dir.exists());
+        }
+        #[cfg(unix)]
+        {
+            let link = tmp.path().join("dangling");
+            std::os::unix::fs::symlink(tmp.path().join("nowhere"), &link).unwrap();
+            assert!(super::clear_leftover(&link).is_err());
+        }
+    }
+
     use super::*;
 
     #[test]
@@ -2141,6 +2206,28 @@ mod tests {
             redact_credentials("https://user:tok@registry.example.com/simple/"),
             "https://registry.example.com/simple/"
         );
+        assert_eq!(
+            redact_credentials("git+https://github.com/o/r.git#main"),
+            "git+https://github.com/o/r.git#main"
+        );
+        assert_eq!(
+            redact_credentials("git+ssh://git@github.com:org/repo.git"),
+            "git+ssh://github.com:org/repo.git"
+        );
+        let percent_encoded = "git+https://user%40example.test:token%2Fvalue@host.example/o/r.git?access_token=query-token";
+        let redacted_percent_encoded = redact_credentials(percent_encoded);
+        for secret in [
+            "user%40example.test",
+            "token%2Fvalue",
+            "access_token=query-token",
+            "query-token",
+        ] {
+            assert!(
+                !redacted_percent_encoded.contains(secret),
+                "redacted URL leaked {secret:?}: {redacted_percent_encoded}"
+            );
+        }
+        assert!(redacted_percent_encoded.starts_with("git+https://host.example/o/r.git?"));
         let query = |q: &str| digest_of_string(q)[..16].to_string();
         assert_eq!(
             redact_credentials("https://tok@host.example/a?b=c@d"),

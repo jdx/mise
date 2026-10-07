@@ -1,0 +1,52 @@
+#!/usr/bin/env bash
+# e2e:non-root
+# Regression test for https://github.com/jdx/mise/issues/14068.
+#
+# `dependency_env` strips mise's own shims dirs (`dirs::SHIMS`, #8475, and the
+# system shims dir, see test_npm_shim_recursion_system_dir) by location. A mise
+# shim from another data dir is not recognized: an outer mise's shims while
+# HOME or MISE_DATA_DIR point elsewhere, as test runners and CI do. With
+# npm.shell_out, `npm view` resolved to that shim, re-entered mise, and ran
+# `npm view` again for every `latest` npm tool.
+
+export MISE_NPM_SHELL_OUT=1
+
+# The outer shims dir: a symlink to this mise, outside every dir mise knows.
+outer_shims="$PWD/outer-shims"
+mkdir -p "$outer_shims"
+ln -s "$(command -v mise)" "$outer_shims/npm"
+export PATH="$outer_shims:$PATH"
+
+cat >>mise.toml <<'EOF'
+[tools]
+"npm:prettier" = "latest"
+"npm:semver" = "latest"
+"npm:cowsay" = "latest"
+EOF
+mise trust --yes
+mise cache clear
+
+# Cap processes so a regression fails here instead of exhausting the runner.
+# RLIMIT_NPROC is per user and counts threads on Linux, processes elsewhere.
+if [[ -d /proc/self/task ]]; then
+  # The e2e image has no procps, so sum the Threads: lines under /proc.
+  tasks="$(awk -v uid="$(id -u)" '/^Uid:/ { u = $2 } /^Threads:/ { if (u == uid) n += $2 } END { print n + 0 }' /proc/[0-9]*/status 2>/dev/null || true)"
+else
+  tasks="$(ps -u "$(id -u)" -o pid= | wc -l)"
+fi
+ulimit -u $((tasks + 1000))
+
+# Without the fix: fork bomb until the timeout or the cap.
+# With the fix: the foreign shim is skipped. With no real npm behind it, mise
+# refuses with a clear message; with one, the lookup succeeds through it.
+real_npm="$(PATH="${PATH#"$outer_shims:"}" command -v npm || true)"
+output="$(run_with_timeout 60 mise latest npm:prettier 2>&1 || true)"
+if [[ -z $real_npm ]]; then
+  [[ $output == *"only npm on PATH is a mise shim"* ]] ||
+    fail "expected the foreign shim to be refused, got: $output"
+  ok "foreign mise shim refused as npm"
+else
+  [[ $output =~ ^[0-9]+\.[0-9]+\.[0-9]+ ]] ||
+    fail "expected a version through $real_npm, got: $output"
+  ok "foreign mise shim skipped; $real_npm used"
+fi

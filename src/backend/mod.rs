@@ -266,7 +266,18 @@ fn has_local_version_listing_option_override(
 fn listing_option_digest(opts: &ToolVersionOptions, version_listing_opt_keys: &[&str]) -> String {
     let values: BTreeMap<&str, String> = version_listing_opt_keys
         .iter()
-        .filter_map(|key| opts.get_string(key).map(|value| (*key, value)))
+        .filter_map(|key| {
+            // A table such as `headers` has no scalar form but still shapes the list, and its
+            // values can be credentials, so only the digest of it is kept.
+            opts.get_string(key)
+                .or_else(|| {
+                    opts.opts
+                        .get(*key)
+                        .filter(|value| value.is_table())
+                        .map(ToString::to_string)
+                })
+                .map(|value| (*key, value))
+        })
         .collect();
     hash::hash_to_str(&values)
 }
@@ -911,6 +922,17 @@ pub(crate) fn which_no_shims_spawnable(bin: &str) -> Option<PathBuf> {
     which_in_dirs(dirs, bin, true)
 }
 
+/// [`which_no_shims_spawnable`] over an explicit PATH value instead of the inherited one.
+pub(crate) fn which_in_path_value_no_shims_spawnable(
+    bin: &str,
+    path: &std::ffi::OsStr,
+) -> Option<PathBuf> {
+    let dirs = std::env::split_paths(path)
+        .filter(|p| !file::is_mise_dispatch_dir(p))
+        .collect::<Vec<_>>();
+    which_in_dirs(dirs, bin, true)
+}
+
 pub(crate) async fn configured_toolset_or_path_which(
     config: &Arc<Config>,
     tools: impl IntoIterator<Item = String>,
@@ -1113,6 +1135,27 @@ mod tests {
                 "{name} should still satisfy the permissive predicate"
             );
         }
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn which_in_path_value_finds_a_binary_on_the_given_path() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = tempfile::tempdir().unwrap();
+        let bin = dir.path().join("fnox-fixture");
+        fs::write(&bin, "#!/bin/sh\nexit 0\n").unwrap();
+        fs::set_permissions(&bin, fs::Permissions::from_mode(0o755)).unwrap();
+        let other = tempfile::tempdir().unwrap();
+        let path = std::env::join_paths([other.path(), dir.path()]).unwrap();
+        assert_eq!(
+            which_in_path_value_no_shims_spawnable("fnox-fixture", &path),
+            Some(bin)
+        );
+        assert_eq!(
+            which_in_path_value_no_shims_spawnable("fnox-fixture", other.path().as_os_str()),
+            None
+        );
     }
 
     #[test]
@@ -2934,12 +2977,15 @@ pub trait Backend: Debug + Send + Sync {
     ) -> bool {
         let check_path = |install_path: &Path, check_symlink: bool| {
             let is_installed = install_path.exists();
-            let is_not_incomplete = !self.incomplete_file_path(tv).exists();
+            let is_active_postinstall = is_active_postinstall_install(tv, install_path);
+            let is_not_incomplete =
+                !install_state::is_incomplete(tv.ba(), &tv.state_key()) || is_active_postinstall;
             let is_valid_symlink = !check_symlink || !is_runtime_symlink(install_path);
             let is_healthy = is_installed && self.is_install_path_healthy(install_path);
             // An identity-layout installation is complete once its receipt is there;
             // the receipt is written last.
-            let has_receipt = crate::install_layout::resolver::dir_name_of(install_path).is_none()
+            let has_receipt = is_active_postinstall
+                || crate::install_layout::resolver::dir_name_of(install_path).is_none()
                 || crate::install_layout::resolver::is_complete(install_path);
 
             let installed = is_healthy && is_not_incomplete && is_valid_symlink && has_receipt;
@@ -3570,7 +3616,7 @@ pub trait Backend: Debug + Send + Sync {
                     // version is a pre-release must not keep winning, and neither
                     // may one left pointing into an interrupted install.
                     if (!filter || !self.is_backend_prerelease(&version))
-                        && !install_state::incomplete_file_path(self.ba(), &version).exists()
+                        && !install_state::is_incomplete(self.ba(), &version)
                     {
                         return Ok(Some(version));
                     }
@@ -3580,7 +3626,7 @@ pub trait Backend: Debug + Send + Sync {
                     .into_iter()
                     .filter(|v| !v.starts_with('.'))
                     .filter(|v| !is_runtime_symlink(&installs_path.join(v)))
-                    .filter(|v| !install_state::incomplete_file_path(self.ba(), v).exists())
+                    .filter(|v| !install_state::is_incomplete(self.ba(), v))
                     .filter(|v| v != "latest")
                     .sorted_by_cached_key(|v| (Versioning::new(v), v.to_string()))
                     .collect_vec();
@@ -3692,6 +3738,7 @@ pub trait Backend: Debug + Send + Sync {
         remove_all_with_progress(self.ba().installs_path(), pr)?;
         remove_all_with_progress(self.ba().cache_path(), pr)?;
         remove_all_with_progress(self.ba().downloads_path(), pr)?;
+        install_state::clear_incomplete_markers(self.ba())?;
         Ok(())
     }
     fn get_aliases(&self) -> eyre::Result<BTreeMap<String, String>> {
@@ -4187,9 +4234,15 @@ pub trait Backend: Debug + Send + Sync {
         }
 
         self.cleanup_install_dirs(&tv);
-        install_state::clear_incomplete_marker_best_effort(tv.ba(), &tv.state_key());
         let finished = match self.finish_install_changes(&ctx, &tv).await {
-            Ok(()) => self.verify_install(&ctx, &tv).await,
+            Ok(()) => {
+                // Keep the incomplete marker through the postinstall hook, so a
+                // failed hook leaves a version no later resolution selects. A
+                // verification failure is the backend's to track (packslip keeps
+                // a usable binary and marks only its skills incomplete).
+                install_state::clear_incomplete_marker_best_effort(tv.ba(), &tv.state_key());
+                self.verify_install(&ctx, &tv).await
+            }
             Err(err) => Err(err),
         };
         if let Err(err) = finished {
@@ -4349,6 +4402,7 @@ pub trait Backend: Debug + Send + Sync {
             )
         })?;
 
+        let token = install_state::PostinstallToken::start(tv.ba(), &tv.state_key())?;
         let mut runner = CmdLineRunner::new(program)
             .env(&*env::PATH_KEY, path_env.join())
             .env("MISE_TOOL_INSTALL_PATH", tv.install_path())
@@ -4360,6 +4414,8 @@ pub trait Backend: Debug + Send + Sync {
         for key in install_env_removals {
             runner = runner.env_remove(key);
         }
+        // After `install_env`, which must not be able to replace or remove it.
+        runner = runner.env(POSTINSTALL_TOKEN_ENV, &token.token);
 
         // Keep the declaring config and active project distinct. MISE_CONFIG_FILE is also a
         // legacy alias for the global config, so pin the actual global path for nested mise calls.
@@ -4384,6 +4440,7 @@ pub trait Backend: Debug + Send + Sync {
         // output that an `[env]` value reads, and the hooks after it are entitled
         // to see that.
         invalidate_postinstall_env();
+        drop(token);
         result?;
         Ok(())
     }
@@ -4468,12 +4525,15 @@ pub trait Backend: Debug + Send + Sync {
         if !dryrun {
             self.uninstall_version_impl(config, pr, tv).await?;
         }
-        let rmdir = |dir: &Path| {
+        // A dry run reports once, after every path is known: each message on a live
+        // progress row is drawn as a row of its own, so reporting per path repeated the row.
+        let mut would_remove: Vec<String> = vec![];
+        let mut rmdir = |dir: &Path| {
             if dryrun {
                 // Not `exists()`, which resolves a link: a dry run has to name the entry the real
                 // run would remove, and a link whose target is gone is one of them.
                 if entry_exists(dir) {
-                    pr.set_message(format!("remove {}", display_path(dir)));
+                    would_remove.push(display_path(dir));
                 }
                 return Ok(());
             }
@@ -4494,7 +4554,13 @@ pub trait Backend: Debug + Send + Sync {
             rmdir(&tv.download_path())?;
         }
         rmdir(&tv.cache_path())?;
-        if !dryrun {
+        if dryrun {
+            if !would_remove.is_empty() {
+                pr.set_message(format!("remove {}", would_remove.join(", ")));
+            }
+        } else {
+            // The marker is outside the cache dir removed above.
+            install_state::clear_incomplete_marker(tv.ba(), &tv.state_key())?;
             self.cleanup_empty_installs_dir();
         }
         Ok(())
@@ -4594,14 +4660,10 @@ pub trait Backend: Debug + Send + Sync {
         file::create_dir_all(tv.install_path())?;
         file::create_dir_all(tv.download_path())?;
         file::create_dir_all(tv.cache_path())?;
-        // `file::create` rather than `File::create`: it names the path in the error. The three
-        // calls above can return Ok without having created anything -- `std::fs::create_dir_all`
-        // does that for a path Windows refuses, such as one ending in `nul` -- and the first thing
-        // to notice is this write, three calls away from the cause. Unwrapped it was a bare
-        // `The system cannot find the path specified. (os error 3)` naming neither the file nor
-        // the operation.
-        file::create(&self.incomplete_file_path(tv))?;
-        Ok(())
+        // The three calls above can return Ok without having created anything for a version
+        // Windows refuses as a path; the marker sits in a directory named for the same version,
+        // so its write is what reports it, naming the path.
+        install_state::mark_incomplete(tv.ba(), &tv.state_key())
     }
     fn cleanup_install_dirs_on_error(&self, tv: &ToolVersion) {
         if !Settings::get().always_keep_install {
@@ -4660,12 +4722,8 @@ pub trait Backend: Debug + Send + Sync {
             .await
             && self.verify_repaired_install(ctx, tv).await.is_ok();
         if !usable {
-            let _ = file::create(&self.incomplete_file_path(tv));
+            let _ = install_state::mark_incomplete(tv.ba(), &tv.state_key());
         }
-    }
-
-    fn incomplete_file_path(&self, tv: &ToolVersion) -> PathBuf {
-        install_state::incomplete_file_path(tv.ba(), &tv.state_key())
     }
 
     async fn path_env_for_cmd(&self, config: &Arc<Config>, tv: &ToolVersion) -> Result<OsString> {
@@ -4709,7 +4767,13 @@ pub trait Backend: Debug + Send + Sync {
     }
 
     async fn dependency_which(&self, config: &Arc<Config>, bin: &str) -> Option<PathBuf> {
-        if let Some(bin) = which_non_pristine_executable(bin) {
+        // Never resolve a dependency to a mise shim: a shim re-enters mise and fails
+        // ("No version is set for shim") when the tool is installed but not active in
+        // any config. The dependency toolset below resolves the real install instead.
+        if let Some(bin) = file::executable_names(bin)
+            .into_iter()
+            .find_map(file::which_no_shims)
+        {
             return Some(bin);
         }
         let Ok(ts) = self.dependency_toolset(config).await else {
@@ -5301,6 +5365,32 @@ pub trait Backend: Debug + Send + Sync {
         })
     }
 }
+
+/// A postinstall hook may invoke mise for the exact installation it is
+/// finishing. That process is entitled to use the path supplied by its parent,
+/// even though the generic incomplete marker remains in place until the hook
+/// succeeds. Other processes never receive this environment, so they keep
+/// treating the install as incomplete. The hook's token must also still be the
+/// current one: a process the hook left running inherits the environment, but
+/// once that hook ends (or another install retries the version), the half-done
+/// version is not its to use.
+pub(crate) fn is_active_postinstall_install(tv: &ToolVersion, install_path: &Path) -> bool {
+    std::env::var_os("MISE_TOOL_INSTALL_PATH")
+        .as_deref()
+        .is_some_and(|path| Path::new(path) == install_path)
+        && std::env::var("MISE_TOOL_NAME").ok().as_deref() == Some(tv.ba().short.as_str())
+        && std::env::var(env::MISE_TOOL_VERSION_ENV_VAR)
+            .ok()
+            .as_deref()
+            == Some(tv.version.as_str())
+        && std::env::var(POSTINSTALL_TOKEN_ENV).is_ok_and(|token| {
+            install_state::PostinstallToken::matches(tv.ba(), &tv.state_key(), &token)
+        })
+}
+
+/// The token a tool-level postinstall hook receives; see
+/// [`install_state::PostinstallToken`].
+const POSTINSTALL_TOKEN_ENV: &str = "MISE_TOOL_INSTALL_TOKEN";
 
 fn effective_latest_before_date<B: Backend + ?Sized>(
     backend: &B,

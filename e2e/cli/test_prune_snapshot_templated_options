@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+# A template in a tool's options makes the tool templated even when its version is a
+# literal, so prune does not render it from the prune directory. A tool with backend
+# options is not stored in a snapshot, so prune keeps every installation of it.
+export MISE_EXPERIMENTAL=1
+export MISE_INSTALL_LAYOUT=identity
+
+mkdir -p project/child elsewhere
+echo '[vars]
+o = "x"' >project/mise.toml
+echo '[tools]
+tiny = { version = "2.0.0", note = "{{vars.o}}" }' >project/child/mise.toml
+assert "mise -C project/child install"
+assert "mise install tiny@3.0.0"
+
+assert "mise -C elsewhere ls --prunable --json >prunable.json"
+assert "jq -e 'has(\"tiny\") | not' prunable.json"

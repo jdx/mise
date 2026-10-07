@@ -1,4 +1,4 @@
-backends = ["vfox:mise-plugins/vfox-bpkg", "asdf:mise-plugins/mise-bpkg"]
+backends = ["vfox:jdx/vfox-bpkg", "asdf:mise-plugins/mise-bpkg"]
 bins = [
   "bpkg",
   "bpkg-env",

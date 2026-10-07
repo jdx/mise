@@ -1,0 +1,75 @@
+#!/usr/bin/env bash
+# Incoming history that writes no file here (another machine's variant) is
+# reported as such, and pulling it says it was recorded.
+require_cmd git
+export MISE_HISTORY_NOTIFY=false
+origin="$PWD/variant-origin.git"
+git init -q --bare -b main "$origin"
+cat >~/.config/mise/config.toml <<'TOML'
+[dotfiles]
+"~/.x" = { mode = "track", variants = [{ profile = "work" }, { default = true }] }
+TOML
+echo home >~/.x
+assert_succeed "mise dot save"
+assert_succeed "mise dot origin set file://$origin --sync manual --yes"
+
+second="$(dirname "$HOME")/second"
+mkdir -p "$second/.config/mise"
+cp ~/.config/mise/config.toml "$second/.config/mise/config.toml"
+echo work >"$second/.x"
+b() {
+  (
+    cd "$second" || exit
+    env HOME="$second" XDG_CONFIG_HOME="$second/.config" MISE_CONFIG_DIR="$second/.config/mise" \
+      MISE_STATE_DIR="$second/.local/state/mise" MISE_DATA_DIR="$second/.local/share/mise" \
+      MISE_CACHE_DIR="$second/.cache/mise" MISE_TRUSTED_CONFIG_PATHS="$second" MISE_ENV=work mise "$@"
+  )
+}
+export second
+export -f b
+assert_succeed "b bootstrap --adopt file://$origin --yes --only dotfiles"
+echo work-edited >"$second/.x"
+assert_succeed "b dot save"
+assert_succeed "b dot sync"
+
+# only the work machine's stream changed
+assert_contains "mise dot sync 2>&1" "incoming history changes no files here"
+assert_not_contains "mise dot sync 2>&1" "incoming change(s) pending"
+assert_contains "mise dot pull --yes 2>&1" "recorded incoming history; no files here changed"
+assert "cat ~/.x" "home"
+echo home-edited >~/.x
+assert_succeed "mise dot save"
+assert_contains "mise dot sync 2>&1" "published"
+assert "git --git-dir=$origin show main:home@work/.x" "work-edited"
+assert "git --git-dir=$origin show main:home@default/.x" "home-edited"
+
+# a shared directory whose permissions change is a change here, though no
+# file is written
+mkdir -p ~/.dir "$second/.dir"
+echo shared >~/.dir/file
+echo shared >"$second/.dir/file"
+chmod 755 ~/.dir "$second/.dir"
+cat >>~/.config/mise/config.toml <<'TOML'
+"~/.dir" = { mode = "track" }
+TOML
+cat >>"$second/.config/mise/config.toml" <<'TOML'
+"~/.dir" = { mode = "track" }
+TOML
+assert_succeed "mise dot save"
+assert_succeed "mise dot sync"
+assert_succeed "b dot sync"
+assert_succeed "b dot pull --yes"
+assert_succeed "b dot sync"
+assert_succeed "mise dot sync"
+assert_succeed "mise dot pull --yes"
+chmod 700 ~/.dir
+assert_succeed "mise dot save"
+assert_succeed "mise dot sync"
+assert_contains "b dot sync 2>&1" "incoming change(s) pending"
+assert_succeed "b dot pull --yes"
+if [[ "$(uname)" == Darwin ]]; then
+  mode_of='stat -f %Lp'
+else
+  mode_of='stat -c %a'
+fi
+assert "$mode_of $second/.dir" "700"

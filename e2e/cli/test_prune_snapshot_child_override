@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+# A child that overrides one of a parent's templated tools does not supply it from the
+# parent in that directory, and deleting the child ends that directory's snapshot.
+export MISE_EXPERIMENTAL=1
+export MISE_INSTALL_LAYOUT=identity
+
+mkdir -p project/child elsewhere
+echo '[vars]
+d = "1.0.0"
+t = "2.0.0"
+[tools]
+dummy = "{{vars.d}}"
+tiny = "{{vars.t}}"' >project/mise.toml
+echo '[tools]
+tiny = "3.0.0"' >project/child/mise.toml
+assert "mise -C project install"
+assert "mise -C project/child install"
+assert "mise install dummy@3.0.0"
+
+assert "mise -C elsewhere ls --prunable --json >prunable.json"
+assert "jq -e '[.dummy[].version] == [\"3.0.0\"] and (has(\"tiny\") | not)' prunable.json"
+
+rm project/child/mise.toml
+assert "mise -C elsewhere ls --prunable --json >prunable.json"
+assert "jq -e '[.dummy[].version] == [\"3.0.0\"] and [.tiny[].version] == [\"3.0.0\"]' prunable.json"

@@ -1,6 +1,6 @@
 backends = [
   "aqua:fsaintjacques/semver-tool",
-  "vfox:mise-plugins/vfox-semver",
+  "vfox:jdx/vfox-semver",
   "asdf:mathew-fleisch/asdf-semver",
 ]
 description = "semver bash implementation"

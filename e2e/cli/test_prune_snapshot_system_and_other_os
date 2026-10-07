@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+# A templated version that renders to `system` installs nothing, and one restricted to
+# another OS is never resolved here. Neither may be rendered from the prune directory
+# or make prune fail.
+export MISE_EXPERIMENTAL=1
+export MISE_INSTALL_LAYOUT=identity
+
+mkdir -p system/child other_os/child elsewhere
+echo '[vars]
+v = "system"' >system/mise.toml
+echo '[tools]
+dummy = "{{vars.v}}"' >system/child/mise.toml
+assert "mise -C system/child install"
+
+echo '[vars]
+t = "2.0.0"' >other_os/mise.toml
+echo '[tools]
+tiny = { version = "{{vars.t}}", os = ["windows"] }
+dummy = "1.0.0"' >other_os/child/mise.toml
+assert "mise -C other_os/child install"
+assert "mise install dummy@3.0.0"
+
+assert "mise -C elsewhere ls --prunable --json >prunable.json"
+assert "jq -e '[.dummy[].version] == [\"3.0.0\"]' prunable.json"

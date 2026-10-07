@@ -377,7 +377,49 @@ fn normalize_verbosity(settings: &mut Settings) {
     }
 }
 
+/// Move the deprecated top-level `auto_update` and `auto_update_check_duration` onto
+/// `self_update.*` within a single layer.
+///
+/// Done per layer rather than on the merged settings so that a source's own `self_update.*` value
+/// wins over its deprecated spelling while precedence between sources stays as it was: a deprecated
+/// key in the global config still beats the new key's default, and loses to the new key set in a
+/// higher-priority source.
+fn normalize_self_update_aliases(partial: &mut SettingsPartial) {
+    if let Some(v) = partial.auto_update.take() {
+        warn_deprecated("auto_update");
+        partial.self_update.auto.get_or_insert(v);
+    }
+    if let Some(v) = partial.auto_update_check_duration.take() {
+        warn_deprecated("auto_update_check_duration");
+        partial.self_update.check_duration.get_or_insert(v);
+    }
+}
+
+/// Environment variables of the deprecated settings that [`normalize_self_update_aliases`]
+/// migrates.
+const DEPRECATED_SELF_UPDATE_ENV: [&str; 2] =
+    ["MISE_AUTO_UPDATE", "MISE_AUTO_UPDATE_CHECK_DURATION"];
+
+/// The environment's deprecated self-update settings, moved to `self_update.*`, as a layer to sit
+/// at the environment's own precedence. `None` when none of their variables is set, so the common
+/// case does not read the environment a second time.
+fn self_update_env_alias_layer() -> Result<Option<SettingsPartial>> {
+    if !DEPRECATED_SELF_UPDATE_ENV
+        .iter()
+        .any(|name| std::env::var_os(name).is_some())
+    {
+        return Ok(None);
+    }
+    let mut env_layer = SettingsPartial::from_env()?;
+    normalize_self_update_aliases(&mut env_layer);
+    let mut alias_layer = SettingsPartial::empty();
+    alias_layer.self_update.auto = env_layer.self_update.auto;
+    alias_layer.self_update.check_duration = env_layer.self_update.check_duration;
+    Ok(Some(alias_layer))
+}
+
 fn normalize_hidden_config_aliases(mut partial: SettingsPartial) -> SettingsPartial {
+    normalize_self_update_aliases(&mut partial);
     if let Some(v) = partial.install_before.take() {
         warn_deprecated("install_before");
         if partial.minimum_release_age.is_none() {
@@ -752,8 +794,10 @@ pub trait SettingsExt: Sized {
 
     fn upgrade_prune_after_duration(&self) -> eyre::Result<Duration>;
 
+    fn tool_update_check_duration(&self) -> eyre::Result<Duration>;
+
     #[cfg(feature = "self_update")]
-    fn auto_update_check_duration(&self) -> eyre::Result<Duration>;
+    fn self_update_check_duration(&self) -> eyre::Result<Duration>;
 
     fn fetch_remote_versions_timeout(&self) -> Duration;
 
@@ -1091,9 +1135,13 @@ impl SettingsExt for Settings {
         duration::parse_duration(&self.upgrade.prune_after)
     }
 
+    fn tool_update_check_duration(&self) -> eyre::Result<Duration> {
+        duration::parse_duration(&self.tool_update.check_duration)
+    }
+
     #[cfg(feature = "self_update")]
-    fn auto_update_check_duration(&self) -> eyre::Result<Duration> {
-        duration::parse_duration(&self.auto_update_check_duration)
+    fn self_update_check_duration(&self) -> eyre::Result<Duration> {
+        duration::parse_duration(&self.self_update.check_duration)
     }
 
     fn fetch_remote_versions_timeout(&self) -> Duration {
@@ -1333,6 +1381,9 @@ impl SettingsInternal for Settings {
                 alias_layer.pypi.registry_url = env_aliases.pypi.registry_url.clone();
                 alias_layer.pipx.registry_url = env_aliases.pypi.registry_url;
             }
+            builder = builder.preloaded(alias_layer);
+        }
+        if let Some(alias_layer) = self_update_env_alias_layer()? {
             builder = builder.preloaded(alias_layer);
         }
         builder = builder.env();
@@ -2786,6 +2837,38 @@ mod tests {
         Settings::reset(Some(partial));
         let settings = Settings::get();
         assert_eq!(settings.minimum_release_age.as_deref(), Some("3d"));
+    }
+
+    #[test]
+    fn test_auto_update_hidden_aliases_set_self_update_settings() {
+        let _settings = crate::test::SettingsGuard::lock();
+        let mut partial = SettingsPartial::empty();
+        partial.auto_update = Some(true);
+        partial.auto_update_check_duration = Some("1d".to_string());
+        Settings::reset(Some(partial));
+        let settings = Settings::get();
+        assert!(settings.self_update.auto);
+        assert_eq!(settings.self_update.check_duration, "1d");
+    }
+
+    #[test]
+    fn test_self_update_settings_win_over_auto_update_hidden_aliases() {
+        let settings_file: SettingsFile = toml::from_str(
+            r#"
+            [settings]
+            auto_update = true
+            auto_update_check_duration = "1d"
+            self_update.auto = false
+            self_update.check_duration = "2d"
+            "#,
+        )
+        .unwrap();
+
+        let partial = normalize_hidden_config_aliases(settings_file.settings);
+        assert_eq!(partial.auto_update, None);
+        assert_eq!(partial.auto_update_check_duration, None);
+        assert_eq!(partial.self_update.auto, Some(false));
+        assert_eq!(partial.self_update.check_duration.as_deref(), Some("2d"));
     }
 
     #[test]

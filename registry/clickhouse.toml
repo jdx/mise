@@ -1,7 +1,4 @@
-backends = [
-  "vfox:mise-plugins/vfox-clickhouse",
-  "asdf:mise-plugins/mise-clickhouse",
-]
+backends = ["vfox:jdx/vfox-clickhouse", "asdf:mise-plugins/mise-clickhouse"]
 bins = [
   "clickhouse",
   "clickhouse-benchmark",
