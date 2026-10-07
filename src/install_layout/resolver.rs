@@ -1958,6 +1958,30 @@ pub fn migration_target(tv: &ToolVersion) -> std::result::Result<PathBuf, String
     }
 }
 
+/// Move `from`, an existing installation of `tv`'s version, into the directory
+/// the identity layout allocates for it, give it the receipt and selection a
+/// fresh install would, and link `installs/<tool>/<version>` to it. Nothing
+/// inside is rewritten; the caller keeps the old path resolving with that link.
+///
+/// The move is a rename: it fails (and changes nothing) where the directory
+/// cannot be renamed, for instance across file systems.
+pub fn relocate(tv: &ToolVersion, from: &Path) -> Result<PathBuf> {
+    let mut bare = tv.clone();
+    bare.install_path = None;
+    let allocated = allocate(&bare, false)?
+        .filter(|a| !a.read_only)
+        .ok_or_else(|| eyre::eyre!("the identity layout does not govern it"))?;
+    if std::fs::symlink_metadata(&allocated.dir).is_ok() {
+        eyre::bail!("{} already exists", allocated.dir.display());
+    }
+    let _lock = lock_install(&allocated.dir, &|_| {})?;
+    // Recorded before anything moves, so an interrupted move is put back.
+    note_writing(&allocated)?;
+    file::rename(from, &allocated.dir)?;
+    finish(&bare, &allocated, false)?;
+    Ok(allocated.dir)
+}
+
 /// Make sure `installs/<tool>/<version>` links to the installation `dir` (which
 /// may be in a shared root), as [`link`] does after an install. An installation
 /// that was reused rather than installed may not have made one.

@@ -42,24 +42,30 @@ assert_empty "find '$installs/dummy' -maxdepth 1 -name '.*mise-migrating'"
 # the version that was not named is still legacy
 assert "test -d '$installs/dummy/1.0.0' && test ! -L '$installs/dummy/1.0.0'"
 
-echo "=== a version that cannot be reinstalled keeps its legacy directory, and is not an error ==="
+echo "=== a version that cannot be reinstalled is moved as it is, and is not an error ==="
 # the dummy plugin refuses to install this version
 mkdir -p "$installs/dummy/other-dummy/bin"
 echo kept >"$installs/dummy/other-dummy/marker"
-assert_contains "mise installs migrate dummy@other-dummy 2>&1" "skipped dummy@other-dummy (kept legacy layout)"
-assert_contains "mise installs migrate dummy@other-dummy 2>&1" "0 migrated, 1 kept legacy, 0 failed"
-assert "mise installs migrate dummy@other-dummy"
-assert "test -d '$installs/dummy/other-dummy' && test ! -L '$installs/dummy/other-dummy'"
+assert_contains "mise installs migrate dummy@other-dummy 2>&1" "relocated dummy@other-dummy"
+legacy_moved="$(readlink "$installs/dummy/other-dummy")"
+assert_matches "echo '$legacy_moved'" "^\.\./dummy-[a-z2-7]{8}\$"
+# the same files, now an identity installation behind the version link
 assert_contains "cat '$installs/dummy/other-dummy/marker'" "kept"
+assert "test -f '$installs/$(basename "$legacy_moved")/.mise-install.toml'"
+assert_matches "mise where dummy@other-dummy" "^$installs/dummy-[a-z2-7]{8}\$"
+assert_contains "mise ls dummy 2>&1" "other-dummy"
+assert_contains "mise installs migrate dummy@other-dummy 2>&1" "no legacy installations to migrate"
 assert_empty "find '$installs/dummy' -maxdepth 1 -name '.*mise-migrating'"
-rm -rf "$installs/dummy/other-dummy"
+assert_empty "ls '$installs/.mise/migrations'"
+assert "mise uninstall dummy@other-dummy"
+assert "test ! -e '$installs/dummy/other-dummy'"
 
 echo "=== with no arguments, every remaining legacy installation moves ==="
 # a version that cannot be reinstalled does not stop the others, or fail the run
 mkdir -p "$installs/dummy/other-dummy/bin"
-assert_contains "mise installs migrate 2>&1" "2 migrated, 1 kept legacy, 0 failed"
-assert "test -d '$installs/dummy/other-dummy' && test ! -L '$installs/dummy/other-dummy'"
-rm -rf "$installs/dummy/other-dummy"
+assert_contains "mise installs migrate 2>&1" "2 migrated, 1 relocated, 0 kept legacy, 0 failed"
+assert "test -L '$installs/dummy/other-dummy'"
+assert "mise uninstall dummy@other-dummy"
 assert "test -L '$installs/dummy/1.0.0'"
 assert "test -L '$installs/tiny/3.1.0'"
 assert_matches "mise where tiny@3.1.0" "^$installs/tiny-[a-z2-7]{8}\$"
@@ -146,3 +152,27 @@ assert "test -d '$installs/tiny/3.0.0' && test ! -L '$installs/tiny/3.0.0'"
 assert "mise installs migrate tiny@3.0.0"
 assert "test -L '$installs/tiny/3.0.0'"
 assert "realpath '$installs/tiny/3.0.0'" "$(realpath "$(mise where vfox:tiny@3.0.0)")"
+
+echo "=== an interrupted relocation is put back on the next run ==="
+mkdir -p "$installs/dummy/other-dummy/bin"
+echo moved >"$installs/dummy/other-dummy/marker"
+assert_contains "mise installs migrate dummy@other-dummy 2>&1" "relocated dummy@other-dummy"
+moved="$installs/$(basename "$(readlink "$installs/dummy/other-dummy")")"
+# as if the run stopped after moving the directory and linking it, before it
+# recorded the migration as finished
+cat >"$installs/.mise/migrations/dummy@other-dummy.toml" <<EOF2
+tool = "dummy"
+legacy = "$installs/dummy/other-dummy"
+backend = "$backend"
+version = "other-dummy"
+made = ["$moved"]
+relocating = true
+finished = false
+EOF2
+assert_contains "mise installs migrate --dry-run 2>&1" "then migrate it"
+assert_contains "mise installs migrate dummy@other-dummy 2>&1" "restored"
+# put back, then moved again by the same run
+assert_contains "cat '$installs/dummy/other-dummy/marker'" "moved"
+assert "test -L '$installs/dummy/other-dummy'"
+assert_empty "ls '$installs/.mise/migrations'"
+assert_empty "find '$installs/dummy' -maxdepth 1 -name '.*mise-migrating'"

@@ -347,17 +347,33 @@ if the install fails.
 
 A version that cannot be reinstalled is not an error. It happens when its
 release was withdrawn or is signed by a different identity than mise accepted
-before, when the network is unavailable, or when its installer fails. Its old
-directory is put back untouched, still works, and is reported as kept:
+before, when the network is unavailable, or when its installer fails. mise then
+moves the existing directory, as it is, into its own `<label>-<hash>` directory,
+writes the same receipt an install would, and leaves the version link at the old
+path. Paths the tool recorded about itself (virtual environment shebangs,
+`node_modules/.bin` links) keep resolving through that link. Nothing in it is
+rewritten, and the identity only holds what the old directory can say: the
+backend, version, platform and the options of the request. A digest that comes
+from a lockfile, such as an artifact checksum or the dependency graph of an
+`npm:` or `pipx:` install, is not reconstructed.
 
 ```text
-skipped aube@2.2.4 (kept legacy layout): github.com/aubepkg/aube has no release 2.2.4 ...
-170 migrated, 12 kept legacy, 0 failed
+relocated aube@2.2.4 to ~/.local/share/mise/installs/aube-4h2kfq7a
+  aube@2.2.4 could not be reinstalled (github.com/aubepkg/aube has no release 2.2.4 ...); moved as it is
+170 migrated, 12 relocated, 0 kept legacy, 0 failed
 ```
 
-A later `mise installs migrate` tries the kept versions again. The command exits
-non-zero only when a migration itself broke, for example when the old directory
-could not be put back.
+If it cannot be moved either (it is on another file system than the install
+store, say), it stays in the legacy layout, untouched, and still works:
+
+```text
+skipped aube@2.2.4 (kept legacy layout): <why it was not reinstalled>; not moved either: <why>
+```
+
+A later `mise installs migrate` tries it again. The command exits non-zero only
+when a migration itself broke, for example when the old directory could not be
+put back. A move is recorded like a reinstall, so an interrupted one is put back
+by the next run.
 
 Each migration is recorded in `installs/.mise/migrations/` before anything moves, so if a run is interrupted, the next
 `mise installs migrate` either removes the old directory (the replacement had
