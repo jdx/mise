@@ -76,7 +76,7 @@ fn git_requirement(name: &str, version: &str) -> String {
             Some(("ref" | "branch" | "tag" | "rev", git_ref)) => git_ref,
             _ => version,
         };
-        let base = name.split('#').next().unwrap_or(name);
+        let base = name.split('#').next().unwrap_or(name).trim_end_matches('/');
         format!("{base}#{version}")
     }
 }
@@ -2485,6 +2485,10 @@ mod tests {
             "git+https://gitlab.com/o/r.git"
         );
         assert_eq!(git_requirement("gitlab:o/r", "v1"), "gitlab:o/r#v1");
+        assert_eq!(
+            git_requirement("gitlab:o/r.git/", "v1"),
+            "gitlab:o/r.git#v1"
+        );
         assert_eq!(
             git_requirement("gitlab:o/r.git/", "latest"),
             "git+https://gitlab.com/o/r.git"
