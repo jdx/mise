@@ -979,40 +979,22 @@ pub(crate) async fn lock_rust_state_for_config(
     toolset_env: &BTreeMap<String, String>,
     install_env: &IndexMap<String, crate::config::env_directive::EnvValue>,
 ) -> Result<Vec<fslock::LockFile>> {
-    let mut config_env: IndexMap<String, String> = toolset_env
-        .iter()
-        .map(|(k, v)| (k.clone(), v.clone()))
-        .collect();
-    let (mut cargo_removed, mut rustup_removed) = (false, false);
+    // Mirror the child's environment: it inherits the process env, then the toolset
+    // env and `install_env` override it. Cargo only reads CARGO_HOME/RUSTUP_HOME.
+    let mut effective: BTreeMap<String, String> = env::vars_safe().collect();
+    effective.extend(toolset_env.iter().map(|(k, v)| (k.clone(), v.clone())));
     for (key, value) in install_env {
         match value.clone().into_string() {
-            Some(value) => {
-                config_env.insert(key.clone(), value);
-            }
-            None => {
-                config_env.shift_remove(key);
-                // the child unsets the variable, so it uses the default home
-                if key == "CARGO_HOME" {
-                    cargo_removed = true;
-                    config_env.shift_remove("MISE_CARGO_HOME");
-                } else if key == "RUSTUP_HOME" {
-                    rustup_removed = true;
-                    config_env.shift_remove("MISE_RUSTUP_HOME");
-                }
-            }
-        }
+            Some(value) => effective.insert(key.clone(), value),
+            None => effective.remove(key),
+        };
     }
-    let settings = Settings::get();
     let homes = RustHomes::from_sources(
-        &config_env,
-        settings.rust.cargo_home.clone().filter(|_| !cargo_removed),
-        env::var_path("CARGO_HOME").filter(|_| !cargo_removed),
-        settings
-            .rust
-            .rustup_home
-            .clone()
-            .filter(|_| !rustup_removed),
-        env::var_path("RUSTUP_HOME").filter(|_| !rustup_removed),
+        &IndexMap::new(),
+        None,
+        effective.get("CARGO_HOME").map(PathBuf::from),
+        None,
+        effective.get("RUSTUP_HOME").map(PathBuf::from),
     );
     lock_rust_state(&homes).await
 }
