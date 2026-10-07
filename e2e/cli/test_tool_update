@@ -98,6 +98,11 @@ assert "mise x -- dummy" "This is Dummy 1.0.0!"
 assert_not_checked
 
 global_config 'dummy = { version = "1", auto_update = true }'
+fresh_state locked
+mise lock --global dummy
+assert "mise --locked x -- dummy" "This is Dummy 1.0.0!"
+assert_not_checked
+rm "$MISE_CONFIG_DIR/mise.lock"
 fresh_state offline
 assert "MISE_OFFLINE=1 mise x -- dummy" "This is Dummy 1.0.0!"
 assert_not_checked
