@@ -905,6 +905,15 @@ the application wrote. A missing target is created from the source.
   filter. mise does not compare a merge with a
   `block` or `line` edit of the same file, so don't have both own one key.
 - `template = "tera"` renders the source first, like other edit entries.
+- Like a `symlink` entry, a merge entry without `source` uses the target's path
+  under [`dotfiles.root`](/configuration/settings.html#dotfiles.root), so
+  `"~/.codex/config.toml/shared" = { merge = true }` reads
+  `<dotfiles.root>/.codex/config.toml`.
+- To switch an entry from `symlink` to `merge`, point the merge at the same
+  source. If the target is a link to that source, `mise dot apply` replaces the
+  link with a regular copy before merging, so the application's keys survive
+  when you later trim the source down to the keys you own. A target that links
+  anywhere else is refused.
 - `mise dot unapply` leaves merged keys in place, because the application may
   have changed them since.
 

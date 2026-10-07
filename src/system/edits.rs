@@ -534,15 +534,21 @@ fn merge_op(
     if entry.position.is_some() || entry.comment.is_some() {
         bail!("\"{path_raw}\".{id}: position and comment do not apply to merge, ignoring entry");
     }
-    let Some(source) = &entry.source else {
-        bail!("\"{path_raw}\".{id}: merge needs a source file, ignoring entry");
+    // like a symlink entry, an omitted source is the target's path under
+    // dotfiles.root
+    let source = match &entry.source {
+        Some(source) => source.clone(),
+        None => crate::system::files::implied_source(path)
+            .map_err(|err| eyre::eyre!("\"{path_raw}\".{id}: {err}, ignoring entry"))?
+            .to_string_lossy()
+            .into_owned(),
     };
     let Some(format) = Format::from_path(path) else {
         bail!(
             "\"{path_raw}\".{id}: merge needs a .json, .toml, .yaml, or .yml target, ignoring entry"
         );
     };
-    let source = file::replace_path(source);
+    let source = file::replace_path(&source);
     let source = if source.is_relative() {
         base.join(source)
     } else {
@@ -726,6 +732,19 @@ pub fn check(config: &Config, req: &EditRequest) -> Result<FileState> {
 }
 
 const SYMLINK_REASON: &str = "target is a symlink; edit the real file instead";
+const MERGE_SYMLINK_REASON: &str = "target is a symlink; replace it with a copy of the real file before merging (the merge source may be trimmed to the owned keys only afterwards)";
+
+/// a merge target that is a link to the merge's own source, as when the entry
+/// used to be a `symlink`: the file behind it holds the application's state
+fn links_to_merge_source(req: &EditRequest) -> bool {
+    let Some(source) = req.op.source_file() else {
+        return false;
+    };
+    matches!(
+        (req.path.canonicalize(), source.canonicalize()),
+        (Ok(target), Ok(source)) if target == source
+    )
+}
 
 /// outcome of inspecting one edit: an ordinary state, or a condition mise
 /// refuses to apply automatically (corrupted markers, symlink target)
@@ -743,7 +762,19 @@ fn precheck(req: &EditRequest) -> Result<Option<EditCheck>> {
     // edits write through symlinks into whatever they point at (often a
     // dotfile source) — surface that instead of silently doing it
     if req.path.is_symlink() {
-        return Ok(Some(EditCheck::Blocked(SYMLINK_REASON.into())));
+        if links_to_merge_source(req) {
+            return Ok(Some(EditCheck::State(FileState::Differs(
+                "symlink to the merge source; apply replaces it with a copy".into(),
+            ))));
+        }
+        return Ok(Some(EditCheck::Blocked(
+            if matches!(req.op, EditOp::Merge { .. }) {
+                MERGE_SYMLINK_REASON
+            } else {
+                SYMLINK_REASON
+            }
+            .into(),
+        )));
     }
     if !req.path.exists() {
         return Ok(Some(EditCheck::State(FileState::Missing)));
@@ -1559,6 +1590,14 @@ fn apply_one(req: &EditRequest, desired: Option<&str>, written: &mut Vec<PathBuf
     debug!("edits: {} ({})", req.path.display_user(), req.describe_op());
     if let Some(parent) = req.path.parent() {
         file::create_dir_all(parent)?;
+    }
+    // switching from `symlink`: keep what the link points at as a regular file
+    // before merging, so trimming the source afterwards loses nothing
+    if matches!(req.op, EditOp::Merge { .. }) && req.path.is_symlink() && links_to_merge_source(req)
+    {
+        let content = file::read_to_string(&req.path)?;
+        file::remove_file(&req.path)?;
+        file::write(&req.path, &content)?;
     }
     let existed = req.path.exists();
     let text = if existed {
