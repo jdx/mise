@@ -119,28 +119,45 @@ fn git_remote(name: &str) -> String {
 
 /// Resolve a git remote's default-branch HEAD to a concrete commit.
 async fn git_head(remote: &str) -> eyre::Result<String> {
+    let display_remote = redact_credentials(remote);
     timeout::run_with_timeout_async(
         async || {
-            let output = crate::cmd::cmd_read_async_inherited_env(
-                "git",
-                &["ls-remote", remote, "HEAD"],
-                std::iter::empty::<(&str, &std::ffi::OsStr)>(),
-            )
-            .await?;
-            output
+            // Keep the actual remote intact for Git, but never let userinfo or
+            // query tokens reach the command trace or command-derived errors.
+            debug!("$ git ls-remote {display_remote} HEAD");
+            let output = tokio::process::Command::new("git")
+                .args(["ls-remote", remote, "HEAD"])
+                .stdin(std::process::Stdio::null())
+                .stdout(std::process::Stdio::piped())
+                .stderr(std::process::Stdio::piped())
+                .kill_on_drop(true)
+                .output()
+                .await
+                .map_err(|err| {
+                    eyre::eyre!(
+                        "failed to execute command: git ls-remote {display_remote} HEAD: {err}"
+                    )
+                })?;
+            if !output.status.success() {
+                let stderr = redact_credentials(String::from_utf8_lossy(&output.stderr).as_ref());
+                eyre::bail!(
+                    "git ls-remote {display_remote} HEAD failed: exit code {}\n{}",
+                    output.status.code().unwrap_or(-1),
+                    stderr.trim()
+                );
+            }
+            String::from_utf8(output.stdout)
+                .map_err(|err| eyre::eyre!("git produced invalid UTF-8 output: {err}"))?
                 .lines()
                 .find_map(|line| {
                     let (sha, git_ref) = line.split_once('\t')?;
                     (git_ref == "HEAD").then(|| sha.to_string())
                 })
-                .ok_or_else(|| eyre::eyre!("no HEAD found for {remote}"))
+                .ok_or_else(|| eyre::eyre!("no HEAD found for {display_remote}"))
         },
         Settings::get().fetch_remote_versions_timeout(),
     )
     .await
-    // `git` includes its remote in failures. Keep the raw remote for the
-    // command, but do not propagate URL userinfo or query tokens in errors.
-    .map_err(|err| eyre::eyre!(redact_credentials(&format!("{err:#}"))))
 }
 
 /// An alias to install a git source under: the repository name.
@@ -2706,6 +2723,25 @@ mod tests {
             git_package_install_spec(GIT_SOURCE_WITH_CREDENTIALS, "tag:v1", false).unwrap(),
             "git+https://user%40example.test:password%2Fvalue@git.example.test/org/repo.git?access_token=query-token#v1"
         );
+    }
+
+    #[tokio::test]
+    async fn git_head_failure_redacts_command_credentials() {
+        let remote = "https://user%40example.test:password%2Fvalue@127.0.0.1:1/mise-git-head-does-not-exist?access_token=query-token";
+        let error = git_head(remote).await.unwrap_err().to_string();
+
+        for secret in [
+            "user%40example.test",
+            "password%2Fvalue",
+            "access_token=query-token",
+            "query-token",
+        ] {
+            assert!(
+                !error.contains(secret),
+                "diagnostic leaked {secret:?}: {error}"
+            );
+        }
+        assert!(error.contains("git ls-remote https://127.0.0.1:1/mise-git-head-does-not-exist?"));
     }
 
     #[test]
