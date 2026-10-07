@@ -2,6 +2,9 @@
 
 # A version whose install never finished stays incomplete after the cache is
 # cleared, so it is neither listed nor selected over the complete one.
+# This fixture also migrates version-keyed cache markers written by older
+# mise, so its installations use that older layout explicitly.
+export MISE_INSTALL_LAYOUT=legacy
 plugin="$MISE_DATA_DIR/plugins/halfdone"
 mkdir -p "$plugin/bin"
 cat >"$plugin/bin/list-all" <<'SH'
