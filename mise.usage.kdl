@@ -547,6 +547,7 @@ Append `?ref=<branch|tag|commit>` to the URL to check out a ref instead of the d
         arg "<GIT_URL|OWNER/REPO>"
     }
     flag --replace-history help="Replace local dotfile history while adopting a setup repository" requires=--adopt
+    flag --take-remote-all help="While adopting a setup repository, take its version of every existing file that differs; the replaced versions are saved first, so `mise dot undo` restores them" requires=--adopt
     flag --from-dir help="Directory used for the repository cloned by --from" requires=--from {
         arg <DIR>
     }

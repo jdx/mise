@@ -38,6 +38,7 @@ repeated or comma-separated parts and cannot be combined.
   Append `?ref=<branch|tag|commit>` to the URL to check out a ref instead of the default branch, for example `git::https://github.com/example/dotfiles.git?ref=v1`.
 - **`--adopt <GIT_URL|OWNER/REPO>`** — Adopt global configuration or shared dotfile history from a Git repository, then bootstrap
 - **`--replace-history`** — Replace local dotfile history while adopting a setup repository
+- **`--take-remote-all`** — While adopting a setup repository, take its version of every existing file that differs; the replaced versions are saved first, so `mise dot undo` restores them
 - **`--from-dir <DIR>`** — Directory used for the repository cloned by --from
 - **`-n --dry-run`** — Print what would happen without installing anything
 - **`-y --yes`** — Skip confirmation prompts

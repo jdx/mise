@@ -600,6 +600,8 @@ pub(crate) async fn apply_locked_with_scope(
     let application_head =
         repo.ref_oid(crate::system::history::shadow::HistoryRepo::HISTORY_REF)?;
     let mut touched = vec![];
+    // set when a fresh adoption saved the files it replaces (see below)
+    let mut protected_head: Option<String> = None;
     let result = (|| -> Result<()> {
         scope.validate_starting_head(planned_head.as_deref())?;
         if let (Some(tree), Some(local)) = (&inventory_tree, &planned_head) {
@@ -657,6 +659,31 @@ pub(crate) async fn apply_locked_with_scope(
                 );
             }
         }
+        // A fresh adoption has no history of its own, so its operation took
+        // no protective checkpoint, and taking the repository's version of
+        // a file that exists here would leave the replaced contents nowhere.
+        // Adopt the repository's history first and save those files on top
+        // of it, so `mise dot undo` restores them.
+        let replaced: Vec<PathBuf> = ready
+            .iter()
+            .filter(|step| step.before.is_some() && step.before != step.pending.object)
+            .map(|step| step.path.clone())
+            .collect();
+        if fresh_adoption && !replaced.is_empty() {
+            let heads = super::graph::Heads::read(repo)?;
+            if heads.local != application_head || heads.remote != status.upstream_commit {
+                bail!("setup history changed during adoption; retry pull");
+            }
+            let remote = heads
+                .remote
+                .as_deref()
+                .ok_or_else(|| eyre::eyre!("setup branch disappeared during adoption"))?;
+            audit_incoming_history(repo, remote)?;
+            repo.update_history_head(remote, None)?;
+            scope.recapture_before(&replaced)?;
+            protected_head =
+                repo.ref_oid(crate::system::history::shadow::HistoryRepo::HISTORY_REF)?;
+        }
         for directory in &mut directories {
             directory.apply()?;
         }
@@ -707,6 +734,16 @@ pub(crate) async fn apply_locked_with_scope(
                 directory.verify_written()?;
             }
             let heads = super::graph::Heads::read(repo)?;
+            if let Some(protected) = &protected_head {
+                // the repository's history is already this machine's, with
+                // the replaced files saved on top: the outcome checkpoint
+                // records the applied ones after them
+                if heads.local.as_ref() != Some(protected) || heads.remote != status.upstream_commit
+                {
+                    bail!("setup history changed during adoption; retry pull");
+                }
+                return Ok(());
+            }
             if heads.local != application_head || heads.remote != status.upstream_commit {
                 bail!("setup history changed during adoption; retry pull");
             }

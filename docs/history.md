@@ -496,7 +496,9 @@ mise bootstrap --adopt <url> --replace-history --yes
 
 Back up any local history you want to retain before running this command.
 It replaces checkpoint history; existing files that differ still require a
-decision before setup can finish. This recovery path requires a mise setup
+decision before setup can finish. Add `--take-remote-all` to take the
+repository's version of each; the replaced versions are saved first, so
+`mise dot undo` restores them. This recovery path requires a mise setup
 repository and does not apply to an ordinary Git repository without mise
 enrollment metadata. See [removing plaintext from history](#remove-plaintext-from-history)
 if you are replacing history to remove a secret.
