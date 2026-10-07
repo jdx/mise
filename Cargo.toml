@@ -158,6 +158,7 @@ globwalk = "0.9"
 globset = "0.4"
 ignore = { version = "0.4", features = [] }
 heck = "0.5"
+fnox-client = "1"
 hex = "0.4"
 http = "1"
 indenter = "0.3"

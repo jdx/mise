@@ -21,6 +21,9 @@ pub(super) struct DescribeDocument {
     pub(super) keys: Vec<WireKey>,
     #[serde(default)]
     pub(super) dynamic_leases: Vec<String>,
+    /// fnox's own decision about its daemon; absent from an older fnox
+    #[serde(default)]
+    pub(super) daemon_enabled: Option<bool>,
 }
 
 #[derive(Deserialize)]
@@ -69,21 +72,4 @@ pub(super) struct WireError {
 #[derive(Deserialize)]
 pub(super) struct WireNotInjectable {
     pub(super) key: String,
-}
-
-/// The success document of a resolve. Holds secret values: never print it, and `Deserialize`
-/// only (no `Debug`).
-#[derive(Deserialize)]
-pub(super) struct EnvDocument {
-    #[serde(default)]
-    pub(super) set: BTreeMap<String, String>,
-    #[serde(default)]
-    pub(super) files: BTreeMap<String, String>,
-    #[serde(default)]
-    pub(super) remove: Vec<String>,
-    #[serde(default)]
-    pub(super) missing: Vec<String>,
-    /// The leases that ran
-    #[serde(default)]
-    pub(super) leases: Vec<String>,
 }

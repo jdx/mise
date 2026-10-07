@@ -3621,6 +3621,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "fnox-client"
+version = "1.39.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "08a08b18c98d5c1e2fe60da5c7d59bdc809c5fd0f5fc0ba1ad0ebd3046d1fac6"
+dependencies = [
+ "blake3",
+ "indexmap 2.14.2",
+ "libc",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "fnv"
 version = "1.0.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6534,6 +6547,7 @@ dependencies = [
  "file-id",
  "filetime",
  "flate2",
+ "fnox-client",
  "fslock",
  "futures-util",
  "gix",

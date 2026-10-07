@@ -40,6 +40,9 @@ pub struct Catalog {
     pub profile: Vec<String>,
     pub dynamic_leases: Vec<String>,
     pub tool_version: String,
+    /// The source's own cache (fnox: its daemon) is enabled for this project and env; `None`
+    /// when the source did not say.
+    pub cache: Option<bool>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -65,6 +68,21 @@ pub(crate) trait SecretSource: Send + Sync + std::fmt::Debug {
         keys: &KeySelection,
         catalog: &Catalog,
     ) -> Result<Resolved, ResolveError>;
+    /// Answers from a cache without prompting or spawning a process. `Ok(None)` means not
+    /// available: use `resolve`. Only called for an interactive run.
+    async fn resolve_cached(
+        &self,
+        _cx: &SourceCx,
+        _keys: &KeySelection,
+        _catalog: &Catalog,
+    ) -> Result<Option<Resolved>, ResolveError> {
+        Ok(None)
+    }
+    /// One line for `mise secrets ls` about the source's cache, if it has one. Never starts
+    /// anything.
+    async fn daemon_status(&self, _catalog: &Catalog) -> Option<String> {
+        None
+    }
     /// Identifies the executable and environment this source was built with.
     fn build_fingerprint(&self) -> String;
 }
@@ -81,11 +99,11 @@ pub(crate) enum KeySelection {
 }
 
 impl KeySelection {
-    /// The keys asked for by name; empty for `AllInScope`.
-    pub(crate) fn keys(&self) -> BTreeSet<SecretName> {
+    /// The keys asked for by name; `None` for `AllInScope`.
+    pub(crate) fn names(&self) -> Option<&BTreeSet<SecretName>> {
         match self {
-            Self::Keys(keys) => keys.clone(),
-            Self::AllInScope => BTreeSet::new(),
+            Self::Keys(keys) => Some(keys),
+            Self::AllInScope => None,
         }
     }
 }

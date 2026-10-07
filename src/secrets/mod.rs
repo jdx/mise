@@ -74,6 +74,8 @@ pub struct SourceInfo {
     pub declared_in: Vec<PathBuf>,
     pub profile: Option<String>,
     pub tool_path: PathBuf,
+    /// The source's cache, when it has one (`daemon: running (protocol 6)`)
+    pub daemon: Option<String>,
 }
 
 /// A task that asks for secrets from this source.
@@ -209,8 +211,9 @@ pub async fn prepare_exec_secrets(
 }
 
 /// Used by `mise secrets ls`. Gated (safe mode, trust). Spawns
-/// `fnox ... env --json --describe` once.
-pub async fn inventory(config: &Arc<Config>) -> eyre::Result<Inventory> {
+/// `fnox ... env --json --describe` once. `probe_daemon` also asks the source about its cache,
+/// for the human header only.
+pub async fn inventory(config: &Arc<Config>, probe_daemon: bool) -> eyre::Result<Inventory> {
     let selection = config::select_for_cwd(config)?;
     let Some(selected) = selection.source else {
         return Ok(Inventory {
@@ -227,6 +230,7 @@ pub async fn inventory(config: &Arc<Config>) -> eyre::Result<Inventory> {
     let catalog = source.describe().await?;
     let id = source.id();
     let (tasks, problems) = inventory_tasks(config, id, &catalog, &source.label()).await;
+    let daemon = cache_status(&source, &catalog, probe_daemon).await;
     Ok(Inventory {
         source: Some(SourceInfo {
             kind: id.kind,
@@ -234,12 +238,26 @@ pub async fn inventory(config: &Arc<Config>) -> eyre::Result<Inventory> {
             declared_in: selected.declared_in,
             profile: id.profile.clone(),
             tool_path: source.tool_path().to_path_buf(),
+            daemon,
         }),
         catalog: Some(Arc::new(catalog)),
         ignored: selection.ignored,
         tasks,
         problems,
     })
+}
+
+/// The source's cache line, asked for only when the caller shows it.
+async fn cache_status(
+    source: &dyn SecretSource,
+    catalog: &Catalog,
+    probe_daemon: bool,
+) -> Option<String> {
+    if probe_daemon {
+        source.daemon_status(catalog).await
+    } else {
+        None
+    }
 }
 
 /// Tasks whose own selection lands on `id`, and what is wrong with their grants. A task whose
@@ -481,6 +499,65 @@ pub async fn doctor_warnings(config: &Arc<Config>) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::is_env_fnox_plugin;
+    use super::*;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    #[derive(Debug)]
+    struct Counting {
+        id: source::SourceId,
+        probes: AtomicUsize,
+    }
+
+    #[async_trait::async_trait]
+    impl SecretSource for Counting {
+        fn id(&self) -> &source::SourceId {
+            &self.id
+        }
+        fn label(&self) -> String {
+            "counting".into()
+        }
+        async fn describe(&self) -> eyre::Result<Catalog> {
+            unreachable!()
+        }
+        async fn resolve(
+            &self,
+            _cx: &source::SourceCx,
+            _keys: &source::KeySelection,
+            _catalog: &Catalog,
+        ) -> Result<source::Resolved, source::ResolveError> {
+            unreachable!()
+        }
+        async fn daemon_status(&self, _catalog: &Catalog) -> Option<String> {
+            self.probes.fetch_add(1, Ordering::SeqCst);
+            Some("daemon: running".into())
+        }
+        fn build_fingerprint(&self) -> String {
+            String::new()
+        }
+    }
+
+    #[tokio::test]
+    async fn the_cache_is_probed_only_when_the_caller_shows_it() {
+        let source = Counting {
+            id: source::SourceId {
+                kind: "fake",
+                root: PathBuf::from("/p"),
+                profile: None,
+            },
+            probes: AtomicUsize::new(0),
+        };
+        let catalog = Catalog {
+            entries: Default::default(),
+            profile: vec![],
+            dynamic_leases: vec![],
+            tool_version: "1".into(),
+            cache: Some(true),
+        };
+        assert_eq!(cache_status(&source, &catalog, false).await, None);
+        assert_eq!(source.probes.load(Ordering::SeqCst), 0);
+        assert!(cache_status(&source, &catalog, true).await.is_some());
+        assert_eq!(source.probes.load(Ordering::SeqCst), 1);
+    }
 
     #[test]
     fn env_fnox_plugin_matches_by_name_or_repo() {

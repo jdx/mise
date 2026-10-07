@@ -87,7 +87,7 @@ impl SecretsLs {
             ignored,
             tasks,
             problems,
-        } = secrets::inventory(&config).await?;
+        } = secrets::inventory(&config, !self.json).await?;
         let (Some(source), Some(catalog)) = (source, catalog) else {
             return self.print_no_source(&ignored);
         };
@@ -144,8 +144,13 @@ impl SecretsLs {
             .and_then(|p| p.file_name())
             .map(|n| n.to_string_lossy().to_string())
             .unwrap_or_default();
+        let daemon = source
+            .daemon
+            .as_ref()
+            .map(|d| format!(" · {d}"))
+            .unwrap_or_default();
         eprintln!(
-            "{} · profile {} · {} ({}) · {} {}",
+            "{} · profile {} · {} ({}) · {} {}{daemon}",
             source.kind,
             catalog.profile.join(","),
             display_path(&source.root),
@@ -201,7 +206,7 @@ impl SecretsLs {
         if let Ok(Inventory {
             catalog: Some(catalog),
             ..
-        }) = secrets::inventory(&config).await
+        }) = secrets::inventory(&config, false).await
         {
             for (name, entry) in &catalog.entries {
                 if entry.injectable {
