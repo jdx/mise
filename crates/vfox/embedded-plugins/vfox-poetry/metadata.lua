@@ -9,4 +9,5 @@ PLUGIN = {
     homepage = "https://python-poetry.org/",
     license = "MIT",
     minRuntimeVersion = "0.3.0",
+    depends = { "python" },
 }
