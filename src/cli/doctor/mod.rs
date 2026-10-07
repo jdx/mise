@@ -17,7 +17,7 @@ use crate::plugins::PluginType;
 use crate::plugins::core::CORE_PLUGINS;
 use crate::registry::REGISTRY;
 use crate::toolset::install_state;
-use crate::toolset::{ToolRequest, ToolVersion, Toolset, ToolsetBuilder};
+use crate::toolset::{ConfigScope, ToolRequest, ToolVersion, Toolset, ToolsetBuilder};
 use crate::ui::{info, style};
 use crate::version::VERSION;
 use crate::{backend, dirs, duration, env, file, plugins, shims};
@@ -220,7 +220,7 @@ impl Doctor {
         self.analyze_backend_mismatches();
         self.analyze_system_deps(ts).await;
         self.analyze_new_version().await;
-        self.analyze_tool_updates();
+        self.analyze_tool_updates().await;
         #[cfg(all(windows, feature = "self_update"))]
         self.analyze_self_update_leftovers();
         self.check_path_ordering(ts, &config).await;
@@ -377,7 +377,7 @@ impl Doctor {
         self.analyze_settings()?;
 
         self.analyze_new_version().await;
-        self.analyze_tool_updates();
+        self.analyze_tool_updates().await;
         #[cfg(all(windows, feature = "self_update"))]
         self.analyze_self_update_leftovers();
 
@@ -501,8 +501,17 @@ impl Doctor {
 
     /// A failed `auto_update` only warns on the launch that tried it, so the
     /// last failure is kept for here.
-    fn analyze_tool_updates(&mut self) {
-        for failure in crate::tool_update::failures() {
+    async fn analyze_tool_updates(&mut self) {
+        let Ok(config) = Config::get().await else {
+            return;
+        };
+        let Ok(global) = ToolsetBuilder::new()
+            .with_scope(ConfigScope::GlobalOnly)
+            .build_unresolved(&config)
+        else {
+            return;
+        };
+        for failure in crate::tool_update::failures(&global) {
             self.warnings.push(format!(
                 "the last auto_update of {} failed: {}",
                 failure.tool, failure.error,

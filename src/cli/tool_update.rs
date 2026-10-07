@@ -12,9 +12,8 @@ use crate::{dirs, env};
 /// Update globally configured tools for `auto_update`.
 ///
 /// With a tool, upgrade it within its global config request. A shim or
-/// `mise x` runs this before launching a tool whose check is due; the
-/// per-tool lock keeps a second update of the same tool from running
-/// alongside it.
+/// `mise x` runs this before launching a tool whose check is due. Updates run
+/// one at a time.
 ///
 /// With `--watch`, run as the `tool-update` service: check every opted-in tool
 /// once an hour and update the ones that are due. Declare the service with:
@@ -41,10 +40,9 @@ impl ToolUpdate {
             bail!("pass a tool or --watch");
         };
         let tool_id = tool.ba.full_without_opts();
-        let Some(_lock) = tool_update::lock_for_update(&tool_id)? else {
-            debug!("tool-update: another update of {tool_id} is running");
-            return Ok(());
-        };
+        let _lock = tool_update::lock_for_update()?;
+        // Another update may have changed the global lockfile while this waited.
+        Config::reset().await?;
         let result = super::upgrade::upgrade_global_tool(tool).await;
         tool_update::record_result(&tool_id, &result);
         result
@@ -84,12 +82,19 @@ async fn update_due_tools() -> Result<()> {
     Ok(())
 }
 
-/// Run `mise __tool-update <tool>` and wait for it. It runs from $HOME, so it
-/// loads only global config and can't read or rewrite a project's config or
-/// lockfile.
+/// Run `mise __tool-update <tool>` and wait for it. A separate process from
+/// $HOME, with the environment mise's activation started from, loads only
+/// global config: the project's config, lockfile, and `[env]` (PATH included)
+/// can't steer or be rewritten by the upgrade.
 fn run_update(tool: &str, stdout: Stdio) -> std::io::Result<ExitStatus> {
     Command::new(&*env::MISE_BIN)
         .args(["__tool-update", tool])
+        .env_clear()
+        .envs(
+            env::PRISTINE_ENV
+                .iter()
+                .filter(|(key, _)| !key.starts_with("__MISE_")),
+        )
         .current_dir(*dirs::HOME)
         .stdin(Stdio::null())
         .stdout(stdout)

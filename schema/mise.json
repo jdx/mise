@@ -716,17 +716,6 @@
             "type": "string"
           }
         },
-        "tool_update": {
-          "type": "object",
-          "unevaluatedProperties": false,
-          "properties": {
-            "check_duration": {
-              "default": "24h",
-              "description": "How often to check for updates to a global tool with `auto_update = true`.",
-              "type": "string"
-            }
-          }
-        },
         "auto_update": {
           "default": false,
           "description": "Automatically update mise before running eligible commands.",
@@ -2424,6 +2413,17 @@
           "default": true,
           "description": "Enable terminal progress indicators (OSC 9;4) for compatible terminals.",
           "type": "boolean"
+        },
+        "tool_update": {
+          "type": "object",
+          "unevaluatedProperties": false,
+          "properties": {
+            "check_duration": {
+              "default": "24h",
+              "description": "How often to check for updates to a global tool with `auto_update = true`.",
+              "type": "string"
+            }
+          }
         },
         "trace": {
           "description": "Sets log level to trace",

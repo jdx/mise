@@ -440,9 +440,8 @@ cmd __tool-update hide=#true help="Update globally configured tools for `auto_up
 Update globally configured tools for `auto_update`.
 
 With a tool, upgrade it within its global config request. A shim or
-`mise x` runs this before launching a tool whose check is due; the
-per-tool lock keeps a second update of the same tool from running
-alongside it.
+`mise x` runs this before launching a tool whose check is due. Updates run
+one at a time.
 
 With `--watch`, run as the `tool-update` service: check every opted-in tool
 once an hour and update the ones that are due. Declare the service with:

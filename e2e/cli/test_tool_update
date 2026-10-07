@@ -97,10 +97,33 @@ global_config 'dummy = { version = "1", auto_update = true, postinstall = "exit 
 assert_contains "mise x -- dummy 2>&1" "could not update asdf:dummy"
 assert "mise x -- dummy" "This is Dummy 1.0.0!"
 assert_contains "mise doctor 2>&1 || true" "the last auto_update of asdf:dummy failed"
+# A tool that no longer opts in is not reported: nothing would clear it.
+global_config 'dummy = "1"'
+assert_not_contains "mise doctor 2>&1 || true" "auto_update of asdf:dummy failed"
 global_config 'dummy = { version = "1", auto_update = true }'
 find "$MISE_STATE_DIR/tool-update" -type f ! -name '*.*' -delete
 assert "mise x -- dummy" "This is Dummy 1.1.0!"
 assert_not_contains "mise doctor 2>&1 || true" "auto_update of asdf:dummy failed"
+
+# In an activated shell the project's [env] is exported, but the update runs
+# with the environment activation started from.
+fresh_state activated
+reset_dummy
+cat >"$MISE_CONFIG_DIR/config.toml" <<'EOF'
+[tools]
+dummy = { version = "1", auto_update = true, postinstall = "echo FOO=$FOO >> $HOME/postinstall.log" }
+EOF
+cat >mise.toml <<'EOF'
+[env]
+FOO = "project"
+EOF
+eval "$(mise activate bash)" && _mise_hook
+assert "printenv FOO" "project"
+assert "mise x -- dummy" "This is Dummy 1.1.0!"
+assert "cat $HOME/postinstall.log" "FOO="
+eval "$(mise deactivate)"
+rm mise.toml
+global_config 'dummy = { version = "1", auto_update = true }'
 
 # A global lockfile follows the update; a project lockfile is never touched.
 fresh_state lockfile

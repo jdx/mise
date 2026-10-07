@@ -13,7 +13,7 @@ use std::time::Duration;
 use eyre::{Result, bail};
 
 use crate::config::{Settings, SettingsExt, is_global_config};
-use crate::toolset::{ToolOptionSource, ToolSource, ToolVersion, Toolset};
+use crate::toolset::{ToolOptionSource, ToolRequest, ToolSource, ToolVersion, Toolset};
 use crate::{dirs, duration, file, hash, lock_file};
 
 const STATE_DIR: &str = "tool-update";
@@ -39,20 +39,20 @@ pub fn parse_auto_update(value: &str) -> Result<Option<Duration>> {
 /// Options layered on from anywhere else (a runtime argument, an env var, a
 /// project's tool alias, the registry) never count: a project must not be able
 /// to make a user's commands download and install tools.
-fn global_auto_update(tv: &ToolVersion) -> Option<String> {
-    let ToolSource::MiseToml(path) = tv.request.source() else {
+fn global_auto_update(request: &ToolRequest) -> Option<String> {
+    let ToolSource::MiseToml(path) = request.source() else {
         return None;
     };
     // Options in the entry's own table are `InlineBackendArg`, and in its
     // version spec `Request`; both were written in this file.
     let from_entry = matches!(
-        tv.request.option_source("auto_update"),
+        request.option_source("auto_update"),
         Some(ToolOptionSource::Request | ToolOptionSource::InlineBackendArg)
     );
     if !from_entry || !is_global_config(path) {
         return None;
     }
-    tv.request.options().get("auto_update").map(str::to_string)
+    request.options().get("auto_update").map(str::to_string)
 }
 
 /// Whether any tool in `toolset` opted in. This is in memory only, so a
@@ -61,7 +61,7 @@ pub fn any_opted_in(toolset: &Toolset) -> bool {
     toolset
         .list_current_versions()
         .iter()
-        .any(|(_, tv)| global_auto_update(tv).is_some())
+        .any(|(_, tv)| global_auto_update(&tv.request).is_some())
 }
 
 /// Who is asking to update a tool.
@@ -79,7 +79,7 @@ pub enum Updater {
 /// as made right away, so concurrent claims start one update and a failed or
 /// offline update is not retried until the next interval.
 pub fn claim_due(tv: &ToolVersion, updater: Updater) -> Option<String> {
-    let value = global_auto_update(tv)?;
+    let value = global_auto_update(&tv.request)?;
     let settings = Settings::get();
     if tv.request_pinned_this_version()
         || settings.offline()
@@ -151,11 +151,13 @@ fn service_lock_path() -> PathBuf {
     state_dir().join("service.lock")
 }
 
-/// Lock `tool_id` for an update, or `None` when another process is updating it.
-pub fn lock_for_update(tool_id: &str) -> Result<Option<fslock::LockFile>> {
-    lock_file::LockFile::at(&StatePaths::new(tool_id).lock)
+/// Take the lock every update holds, waiting for one already running. Updates
+/// of different tools rewrite the same global lockfile, so they run one at a
+/// time, each from config read after the previous one finished.
+pub fn lock_for_update() -> Result<fslock::LockFile> {
+    lock_file::LockFile::at(&state_dir().join("update.lock"))
         .with_pid()
-        .try_lock()
+        .lock()
 }
 
 /// Files under `$MISE_STATE_DIR/tool-update` for one tool.
@@ -164,8 +166,6 @@ struct StatePaths {
     marker: PathBuf,
     /// Held while a launch checks and touches the marker.
     claim: PathBuf,
-    /// Held while `mise __tool-update` installs an update.
-    lock: PathBuf,
     /// The last update's error, removed when an update succeeds.
     failure: PathBuf,
 }
@@ -177,7 +177,6 @@ impl StatePaths {
         Self {
             marker: dir.join(&key),
             claim: dir.join(format!("{key}.claim")),
-            lock: dir.join(format!("{key}.lock")),
             failure: dir.join(format!("{key}.failed.json")),
         }
     }
@@ -215,8 +214,28 @@ pub fn record_result(tool_id: &str, result: &Result<()>) {
     }
 }
 
-/// Failures recorded by updates that have not succeeded since.
-pub fn failures() -> Vec<Failure> {
+/// Failures recorded by updates that have not succeeded since, for tools that
+/// still opt in to `auto_update` in `global` (a global-only toolset): one that
+/// no longer does will never update again to clear its failure.
+pub fn failures(global: &Toolset) -> Vec<Failure> {
+    let opted_in = global
+        .versions
+        .iter()
+        .filter(|(_, versions)| {
+            versions
+                .requests
+                .iter()
+                .any(|request| global_auto_update(request).is_some())
+        })
+        .map(|(ba, _)| ba.full_without_opts())
+        .collect::<std::collections::HashSet<_>>();
+    recorded_failures()
+        .into_iter()
+        .filter(|failure| opted_in.contains(&failure.tool))
+        .collect()
+}
+
+fn recorded_failures() -> Vec<Failure> {
     let Ok(entries) = std::fs::read_dir(state_dir()) else {
         return vec![];
     };
@@ -249,6 +268,6 @@ mod tests {
         let claude = StatePaths::new("claude");
         assert_eq!(claude.marker, StatePaths::new("claude").marker);
         assert_ne!(claude.marker, StatePaths::new("codex").marker);
-        assert_ne!(claude.claim, claude.lock);
+        assert_ne!(claude.marker, claude.claim);
     }
 }
