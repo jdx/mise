@@ -189,4 +189,5 @@ fn skipped_trust_root_attestations_warn_once() {
     assert_eq!(messages.len(), 1);
     assert!(messages[0].starts_with("2 GitHub attestation(s) were not checked"));
     assert!(messages[0].contains("tuf-repo-cdn.sigstore.dev"));
+    assert!(messages[0].contains("tuf-repo.github.com"));
 }

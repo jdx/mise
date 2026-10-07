@@ -150,10 +150,18 @@ where
         Err(embedded_err) => match verify_with_tuf().await {
             Ok(()) => Ok(()),
             Err(tuf_err) if is_signer_workflow_mismatch(&tuf_err) => Err(tuf_err),
-            Err(tuf_err) => Err(AttestationError::Verification(format!(
-                "GitHub attestation verification failed with embedded trusted root: \
-                 {embedded_err}; GitHub TUF trusted root retry also failed: {tuf_err}"
-            ))),
+            Err(tuf_err) => {
+                let message = format!(
+                    "GitHub attestation verification failed with embedded trusted root: \
+                     {embedded_err}; GitHub TUF trusted root retry also failed: {tuf_err}"
+                );
+                // Keep the category: a trust root that could not be fetched is
+                // not a signature failure, and callers count it to warn.
+                Err(match tuf_err {
+                    AttestationError::TrustRoot(_) => AttestationError::TrustRoot(message),
+                    _ => AttestationError::Verification(message),
+                })
+            }
         },
     }
 }

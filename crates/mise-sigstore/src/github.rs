@@ -176,7 +176,7 @@ pub(crate) async fn verify_github_attestation_sources_for_artifact(
 pub(crate) fn warn_if_trust_root_unreachable(skipped: usize) {
     if skipped > 0 {
         log::warn!(
-            "{skipped} GitHub attestation(s) were not checked because the Sigstore TUF trust root could not be fetched; verification passed on the remaining attestations. Check network access to the Sigstore TUF repository (tuf-repo-cdn.sigstore.dev by default)"
+            "{skipped} GitHub attestation(s) were not checked because a TUF trust root could not be fetched; verification passed on the remaining attestations. Check network access to the Sigstore and GitHub TUF repositories (tuf-repo-cdn.sigstore.dev and tuf-repo.github.com by default)"
         );
     }
 }

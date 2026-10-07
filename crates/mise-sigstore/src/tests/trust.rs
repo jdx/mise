@@ -70,3 +70,37 @@ async fn github_tuf_retry_preserves_workflow_mismatch() {
 
     assert!(matches!(result, Err(AttestationError::WorkflowMismatch(_))));
 }
+
+#[tokio::test]
+async fn github_tuf_retry_preserves_trust_root_fetch_failure() {
+    let result = verify_github_bundle_with_tuf_retry_after_embedded_result(
+        Err(AttestationError::Verification(
+            "embedded root rejected bundle".to_string(),
+        )),
+        || async {
+            Err(AttestationError::TrustRoot(
+                "connection refused".to_string(),
+            ))
+        },
+    )
+    .await;
+
+    let Err(AttestationError::TrustRoot(message)) = result else {
+        panic!("expected a TrustRoot error, got {result:?}");
+    };
+    assert!(message.contains("embedded root rejected bundle"));
+    assert!(message.contains("connection refused"));
+}
+
+#[tokio::test]
+async fn github_tuf_retry_keeps_other_failures_as_verification_errors() {
+    let result = verify_github_bundle_with_tuf_retry_after_embedded_result(
+        Err(AttestationError::Verification(
+            "embedded root rejected bundle".to_string(),
+        )),
+        || async { Err(AttestationError::Verification("bad signature".to_string())) },
+    )
+    .await;
+
+    assert!(matches!(result, Err(AttestationError::Verification(_))));
+}
