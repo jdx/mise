@@ -3,8 +3,8 @@
 function Wait-MiseFixtureExecutables {
     param([Parameter(Mandatory)][string]$Directory)
 
-    $elapsed = [System.Diagnostics.Stopwatch]::StartNew()
     foreach ($executable in Get-ChildItem -LiteralPath $Directory -Recurse -File -Filter '*.exe') {
+        $elapsed = [System.Diagnostics.Stopwatch]::StartNew()
         while ($true) {
             try {
                 $stream = [System.IO.File]::Open($executable.FullName, 'Open', 'ReadWrite', 'None')
