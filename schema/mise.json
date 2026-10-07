@@ -6020,6 +6020,23 @@
         }
       ]
     },
+    "secrets": {
+      "description": "[experimental] Project-only sources for listing secret names and metadata with `mise secrets ls`. Tasks and commands do not receive secret values yet.",
+      "type": "object",
+      "properties": {
+        "fnox": {
+          "description": "Use fnox (fnox.toml discovered from this config's directory). https://mise.jdx.dev/environments/secrets/fnox.html",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "profile": {
+              "type": "string",
+              "description": "fnox profile (fnox -P); defaults to FNOX_PROFILE, then \"default\""
+            }
+          }
+        }
+      }
+    },
     "redactions": {
       "description": "env or vars keys to redact from logs",
       "type": "array",

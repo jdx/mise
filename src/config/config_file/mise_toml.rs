@@ -436,6 +436,9 @@ pub struct MiseToml {
     plugins: HashMap<String, String>,
     #[serde(default)]
     redactions: Redactions,
+    /// Raw on purpose: a malformed `[secrets]` must not fail the whole file.
+    #[serde(default)]
+    secrets: Option<toml::Value>,
     #[serde(default)]
     task_config: TaskConfig,
     #[serde(default)]
@@ -2053,6 +2056,10 @@ impl ConfigFile for MiseToml {
         self.bootstrap.clone()
     }
 
+    fn secrets_config(&self) -> Option<toml::Value> {
+        self.secrets.clone()
+    }
+
     fn dotfiles_config(&self) -> Option<DotfilesTomlConfig> {
         self.dotfiles.clone()
     }
@@ -2239,6 +2246,7 @@ impl Clone for MiseToml {
             hooks: self.hooks.clone(),
             tools: Mutex::new(self.tools.lock().unwrap().clone()),
             redactions: self.redactions.clone(),
+            secrets: self.secrets.clone(),
             plugins: self.plugins.clone(),
             tasks: self.tasks.clone(),
             task_templates: self.task_templates.clone(),
@@ -5438,6 +5446,22 @@ run = "cargo build"
     }
 
     #[test]
+    fn test_secrets_section_is_never_trust_exempt() {
+        assert!(!is_safe_config_body("[secrets.fnox]\n"));
+        assert!(!is_safe_config_body("[secrets.fnox]\nprofile = \"dev\"\n"));
+    }
+
+    #[tokio::test]
+    async fn test_malformed_secrets_does_not_fail_the_file() {
+        let _config = Config::get().await.unwrap();
+        let cf = parse("secrets = [\"X\"]\n".to_string());
+        assert!(cf.secrets_config().is_some_and(|v| v.is_array()));
+        let cf = parse("[secrets.fnox]\nprofle = \"x\"\n".to_string());
+        assert!(cf.secrets_config().is_some_and(|v| v.is_table()));
+        assert!(parse(String::new()).secrets_config().is_none());
+    }
+
+    #[test]
     fn test_remote_fragment_rejects_what_cannot_apply() {
         let including = Path::new("/work/project/mise.toml");
         for (body, key) in [
@@ -5448,6 +5472,7 @@ run = "cargo build"
             ("[dotfiles]\n", "dotfiles"),
             ("[daemons.a]\ncommand = \"x\"\n", "daemons"),
             ("[redactions]\nenv = [\"X\"]\n", "redactions"),
+            ("[secrets.fnox]\n", "secrets"),
         ] {
             let err = MiseToml::parse_remote_fragment(body, including)
                 .unwrap_err()

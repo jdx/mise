@@ -210,6 +210,8 @@ sharing the same config root; it is not merged into invocation-wide settings
 locked = true
 ```
 
+**Secrets sources** (`[secrets.*]`): The nearest project file wins per field; ignored in global config
+
 **Environment Variables** (`[env]`): Additive with overrides
 
 ```toml
@@ -359,6 +361,14 @@ root's tools to resolve and install from their lockfiles. See [mise.lock](/dev-t
 ### `[env]` - Arbitrary Environment Variables
 
 See [environments](/environments/).
+
+### `[secrets.*]` - Secrets sources {#secrets}
+
+<Badge type="warning" text="experimental" />
+
+Project-only sources for listing secret names and metadata with `mise secrets ls`, such as
+`[secrets.fnox]`. Tasks and commands do not receive secret values yet. Only project config can
+declare a source. See [mise secrets with fnox](/environments/secrets/fnox.html).
 
 ### `[vars]` - Configuration Variables
 
@@ -510,6 +520,8 @@ applies to every directory.
 
 Only a few common settings are shown here. See [Settings](/configuration/settings) for the full
 list and descriptions.
+
+`[secrets.*]` is ignored in global config; see [`[secrets.*]`](#secrets).
 
 ```toml [~/.config/mise/config.toml]
 [tools]

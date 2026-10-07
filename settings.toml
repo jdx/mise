@@ -2984,6 +2984,7 @@ When enabled, mise refuses (with an error, never a silent fallback) to:
 - execute asdf plugin scripts
 - install plugins (already-installed and embedded vfox plugins still work — their
   code was chosen by the operator, not the repository)
+- resolve mise secrets (`[secrets.*]` sources are not used; `mise secrets ls` refuses)
 
 It also ignores environment and shell configuration from project (non-global) config —
 `[env]` values, `_.path`, `_.file`, and `[shell_alias]` entries — since those would be

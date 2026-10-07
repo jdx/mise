@@ -5365,6 +5365,29 @@ Search a tool
 esc clear filter • enter confirm
 """#
 }
+cmd secrets help="[experimental] List the secret names this project's secrets source provides, without their values" effect=read {
+    flag "-J --json" help="Output in JSON format"
+    flag --no-header help="Don't show table header"
+    flag "-h --help" help="Print help" action=help builtin=#true
+    cmd ls help="List the secret names this project's secrets source provides, without their values" effect=read {
+        alias list
+        long_help #"""
+List the secret names this project's secrets source provides, without their values
+
+Shows names and metadata only; values are never shown. The source is declared in the
+project's `mise.toml` with `[secrets.fnox]`.
+"""#
+        flag "-J --json" help="Output in JSON format"
+        flag --no-header help="Don't show table header"
+        flag "-h --help" help="Print help" action=help builtin=#true
+        example #"""
+mise secrets ls
+KEY                ENV    FILE  DESCRIPTION
+DATABASE_URL       true   no    app database
+DEPLOY_KEY         exec   no
+"""#
+    }
+}
 cmd self-update help="Update mise itself" effect=write {
     long_help #"""
 Update mise itself

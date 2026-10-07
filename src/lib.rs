@@ -92,6 +92,7 @@ mod remote_source;
 pub(crate) mod result;
 pub mod runtime_symlinks;
 pub mod sandbox;
+pub mod secrets;
 pub mod semver;
 pub mod shell;
 pub mod shims;

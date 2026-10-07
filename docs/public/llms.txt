@@ -382,6 +382,8 @@
 - [mise reshim](https://mise.jdx.dev/cli/reshim.html): Create shims for executables provided by installed tools
 - [mise run](https://mise.jdx.dev/cli/run.html): Run tasks and their dependencies
 - [mise search](https://mise.jdx.dev/cli/search.html): Search for available tools
+- [mise secrets](https://mise.jdx.dev/cli/secrets.html): [experimental] List the secret names this project's secrets source provides, without their values
+- [mise secrets ls](https://mise.jdx.dev/cli/secrets/ls.html): List the secret names this project's secrets source provides, without their values
 - [mise self-update](https://mise.jdx.dev/cli/self-update.html): Update mise itself
 - [mise set](https://mise.jdx.dev/cli/set.html): Set environment variables in mise.toml
 - [mise settings](https://mise.jdx.dev/cli/settings.html): Manage settings

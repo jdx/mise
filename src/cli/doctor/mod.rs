@@ -213,6 +213,8 @@ impl Doctor {
         );
 
         let config = Config::get().await?;
+        self.warnings
+            .extend(crate::secrets::doctor_warnings(&config).await);
         let ts = config.get_toolset().await?;
         let desired_shims = self.analyze_shims(&config, ts).await;
         self.analyze_plugins();
@@ -520,6 +522,8 @@ impl Doctor {
         }
         info::section("backends", render_backends())?;
         info::section("plugins", render_plugins())?;
+        self.warnings
+            .extend(crate::secrets::doctor_warnings(config).await);
 
         for backend in backend::list() {
             if let Some(plugin) = backend.plugin()
