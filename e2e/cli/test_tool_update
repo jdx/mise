@@ -97,6 +97,9 @@ global_config 'dummy = { version = "1", auto_update = true, postinstall = "exit 
 assert_contains "mise x -- dummy 2>&1" "could not update asdf:dummy"
 assert "mise x -- dummy" "This is Dummy 1.0.0!"
 assert_contains "mise doctor 2>&1 || true" "the last auto_update of asdf:dummy failed"
+# A tool that no longer opts in is not reported: nothing would clear it.
+global_config 'dummy = "1"'
+assert_not_contains "mise doctor 2>&1 || true" "auto_update of asdf:dummy failed"
 global_config 'dummy = { version = "1", auto_update = true }'
 find "$MISE_STATE_DIR/tool-update" -type f ! -name '*.*' -delete
 assert "mise x -- dummy" "This is Dummy 1.1.0!"

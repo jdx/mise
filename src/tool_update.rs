@@ -12,7 +12,7 @@ use std::time::Duration;
 use eyre::{Result, bail};
 
 use crate::config::{Settings, SettingsExt, is_global_config};
-use crate::toolset::{ToolOptionSource, ToolSource, ToolVersion, Toolset};
+use crate::toolset::{ToolOptionSource, ToolRequest, ToolSource, ToolVersion, Toolset};
 use crate::{dirs, duration, file, hash, lock_file};
 
 const STATE_DIR: &str = "tool-update";
@@ -38,20 +38,20 @@ pub fn parse_auto_update(value: &str) -> Result<Option<Duration>> {
 /// Options layered on from anywhere else (a runtime argument, an env var, a
 /// project's tool alias, the registry) never count: a project must not be able
 /// to make a user's commands download and install tools.
-fn global_auto_update(tv: &ToolVersion) -> Option<String> {
-    let ToolSource::MiseToml(path) = tv.request.source() else {
+fn global_auto_update(request: &ToolRequest) -> Option<String> {
+    let ToolSource::MiseToml(path) = request.source() else {
         return None;
     };
     // Options in the entry's own table are `InlineBackendArg`, and in its
     // version spec `Request`; both were written in this file.
     let from_entry = matches!(
-        tv.request.option_source("auto_update"),
+        request.option_source("auto_update"),
         Some(ToolOptionSource::Request | ToolOptionSource::InlineBackendArg)
     );
     if !from_entry || !is_global_config(path) {
         return None;
     }
-    tv.request.options().get("auto_update").map(str::to_string)
+    request.options().get("auto_update").map(str::to_string)
 }
 
 /// Whether any tool in `toolset` opted in. This is in memory only, so a
@@ -60,7 +60,7 @@ pub fn any_opted_in(toolset: &Toolset) -> bool {
     toolset
         .list_current_versions()
         .iter()
-        .any(|(_, tv)| global_auto_update(tv).is_some())
+        .any(|(_, tv)| global_auto_update(&tv.request).is_some())
 }
 
 /// Claim the update check for `tv` if it opted in, is not an exact version,
@@ -68,7 +68,7 @@ pub fn any_opted_in(toolset: &Toolset) -> bool {
 /// as made right away, so concurrent launches start one update and a failed or
 /// offline update is not retried until the next interval.
 pub fn claim_due(tv: &ToolVersion) -> Option<String> {
-    let value = global_auto_update(tv)?;
+    let value = global_auto_update(&tv.request)?;
     let settings = Settings::get();
     if tv.request_pinned_this_version()
         || settings.offline()
@@ -178,8 +178,28 @@ pub fn record_result(tool_id: &str, result: &Result<()>) {
     }
 }
 
-/// Failures recorded by updates that have not succeeded since.
-pub fn failures() -> Vec<Failure> {
+/// Failures recorded by updates that have not succeeded since, for tools that
+/// still opt in to `auto_update` in `global` (a global-only toolset): one that
+/// no longer does will never update again to clear its failure.
+pub fn failures(global: &Toolset) -> Vec<Failure> {
+    let opted_in = global
+        .versions
+        .iter()
+        .filter(|(_, versions)| {
+            versions
+                .requests
+                .iter()
+                .any(|request| global_auto_update(request).is_some())
+        })
+        .map(|(ba, _)| ba.full_without_opts())
+        .collect::<std::collections::HashSet<_>>();
+    recorded_failures()
+        .into_iter()
+        .filter(|failure| opted_in.contains(&failure.tool))
+        .collect()
+}
+
+fn recorded_failures() -> Vec<Failure> {
     let Ok(entries) = std::fs::read_dir(state_dir()) else {
         return vec![];
     };
