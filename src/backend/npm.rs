@@ -1765,7 +1765,7 @@ impl NPMBackend {
     fn format_aube_install_error(&self, err: miette::Report) -> eyre::Report {
         eyre::eyre!(redact_credentials(&build_aube_install_error_message(
             &err,
-            &self.display_backend_name()
+            &self.ba().full()
         )))
     }
 
@@ -2720,6 +2720,27 @@ mod tests {
             .to_string();
 
         assert_diagnostic_redacts_credentials(&error);
+    }
+
+    #[test]
+    fn aube_diagnostic_redacts_credentials_once() {
+        use miette::Diagnostic;
+        use thiserror::Error;
+
+        #[derive(Debug, Error, Diagnostic)]
+        #[error("refusing to add a low-download package")]
+        #[diagnostic(code(ERR_AUBE_LOW_DOWNLOAD_PACKAGE))]
+        struct LowDownloads;
+
+        let backend = create_npm_git_backend(GIT_SOURCE_WITH_CREDENTIALS);
+        let error = backend
+            .format_aube_install_error(miette::Report::new(LowDownloads))
+            .to_string();
+
+        assert_diagnostic_redacts_credentials(&error);
+        assert!(error.contains(&redact_credentials(&format!(
+            "npm:{GIT_SOURCE_WITH_CREDENTIALS}"
+        ))));
     }
 
     #[derive(Debug, Default)]
