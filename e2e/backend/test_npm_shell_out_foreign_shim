@@ -29,11 +29,12 @@ mise cache clear
 # Cap processes so a regression fails here instead of exhausting the runner.
 # RLIMIT_NPROC is per user and counts threads on Linux, processes elsewhere.
 if [[ -d /proc/self/task ]]; then
-  tasks="$(ps -L -u "$(id -u)" -o lwp= | wc -l)"
+  # The e2e image has no procps, so sum the Threads: lines under /proc.
+  tasks="$(awk -v uid="$(id -u)" '/^Uid:/ { u = $2 } /^Threads:/ { if (u == uid) n += $2 } END { print n + 0 }' /proc/[0-9]*/status 2>/dev/null || true)"
 else
   tasks="$(ps -u "$(id -u)" -o pid= | wc -l)"
 fi
-ulimit -u $((tasks + 300))
+ulimit -u $((tasks + 1000))
 
 # Without the fix: fork bomb until the timeout or the cap.
 # With the fix: the foreign shim is skipped. With no real npm behind it, mise
