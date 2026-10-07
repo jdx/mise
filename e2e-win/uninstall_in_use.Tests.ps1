@@ -2,7 +2,7 @@ Describe 'uninstall while the tool is running' {
     BeforeAll {
         $script:originalPath = Get-Location
         $script:originalEnv = @{}
-        foreach ($name in 'MISE_TRUSTED_CONFIG_PATHS', 'MISE_YES') {
+        foreach ($name in 'MISE_TRUSTED_CONFIG_PATHS', 'MISE_YES', 'MISE_DATA_DIR', 'MISE_CONFIG_FILE', 'MISE_INSTALLS_DIR', 'MISE_INSTALL_STORE_DIR') {
             $script:originalEnv[$name] = [Environment]::GetEnvironmentVariable($name, 'Process')
         }
 
@@ -11,6 +11,12 @@ Describe 'uninstall while the tool is running' {
         Set-Location $script:testDir
         $env:MISE_TRUSTED_CONFIG_PATHS = $script:testDir
         $env:MISE_YES = '1'
+        # A fresh install keeps this test independent of cached versions and
+        # version links left by other layout tests in the same Pester process.
+        $env:MISE_DATA_DIR = Join-Path $script:testDir 'data'
+        $env:MISE_CONFIG_FILE = Join-Path $script:testDir 'mise.toml'
+        Remove-Item Env:\MISE_INSTALLS_DIR, Env:\MISE_INSTALL_STORE_DIR -ErrorAction SilentlyContinue
+        '' | Out-File -FilePath $env:MISE_CONFIG_FILE -Encoding utf8NoBOM
 
         mise install jq@1.8.2 | Out-Null
         if ($LASTEXITCODE -ne 0) {
@@ -33,6 +39,7 @@ Describe 'uninstall while the tool is running' {
             $script:held.Kill()
             $script:held.WaitForExit()
         }
+        if ($script:held) { $script:held.Dispose() }
         Set-Location $script:originalPath
         foreach ($name in $script:originalEnv.Keys) {
             if ($null -eq $script:originalEnv[$name]) {
@@ -47,7 +54,7 @@ Describe 'uninstall while the tool is running' {
         $script:held.HasExited | Should -BeFalse -Because 'the lock is the whole premise'
 
         $out = & mise uninstall jq@1.8.2 2>&1 | Out-String
-        $LASTEXITCODE | Should -Not -Be 0
+        $LASTEXITCODE | Should -Not -Be 0 -Because $out
         $out | Should -Match 'in use'
         # `rm -rf` is not a command a Windows reader has.
         $out | Should -Not -Match 'rm -rf'

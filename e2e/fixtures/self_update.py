@@ -16,7 +16,7 @@ def digest(path):
 
 def run(binary, args, env, cwd):
     result = subprocess.run(
-        [str(binary), *args], env=env, cwd=cwd, text=True,
+        [str(binary), *args], env=env, cwd=cwd, text=True, encoding="utf-8", errors="backslashreplace",
         stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=240,
     )
     print(result.stdout, flush=True)
