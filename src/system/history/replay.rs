@@ -181,7 +181,8 @@ pub async fn rollback(req: RollbackRequest) -> Result<()> {
         None => {
             let mut by_id: BTreeMap<u64, Target> = BTreeMap::new();
             for path in &paths {
-                let Some(entry) = newest_differing(repo, &entries, &live, path)? else {
+                let Some(entry) = newest_differing(repo, &entries, &live, path, &tracked.local)?
+                else {
                     info!(
                         "history: {} has no saved version that differs from the working tree",
                         display_path(path)
@@ -420,7 +421,7 @@ async fn execute(
     live: String,
 ) -> Result<()> {
     let repo = store.repo().expect("checked by the caller");
-    let mut steps = plan(repo, &exec, &live)?;
+    let mut steps = plan(repo, &exec, &live, &tracked.local)?;
     print_plan(&steps, &exec, tracked)?;
     if exec.dry_run {
         return Ok(());
@@ -513,7 +514,7 @@ async fn apply_steps(
         round += 1;
         // editors may have written while the prompt was open: re-plan
         live = live_tree(repo, tracked)?;
-        let fresh = plan(repo, exec, &live)?;
+        let fresh = plan(repo, exec, &live, &tracked.local)?;
         let changed = actionable(&fresh) != actionable(steps);
         if changed {
             *steps = fresh.clone();
@@ -918,7 +919,7 @@ fn repository_path(repo: &HistoryRepo, tree: &str, path: &Path) -> Result<String
     Ok(display_to_tree_path(&path.to_string_lossy()))
 }
 
-fn plan(repo: &HistoryRepo, exec: &Execution, live: &str) -> Result<Vec<Step>> {
+fn plan(repo: &HistoryRepo, exec: &Execution, live: &str, local: &[PathBuf]) -> Result<Vec<Step>> {
     let force = exec.force;
     let mut steps = vec![];
     for target in &exec.targets {
@@ -994,6 +995,11 @@ fn plan(repo: &HistoryRepo, exec: &Execution, live: &str) -> Result<Vec<Step>> {
                 );
                 // the link itself, never its destination
                 let abs = normalize_target(&abs);
+                // a local-only path is the local history's: whatever this
+                // history held there from before is never written back
+                if local.iter().any(|local| abs.starts_with(local)) {
+                    continue;
+                }
                 // An explicit child selection owns its subtree, even when
                 // its differing checkpoint is older than its parent's.
                 if exec
@@ -1029,6 +1035,14 @@ fn plan(repo: &HistoryRepo, exec: &Execution, live: &str) -> Result<Vec<Step>> {
                     decide(checkpoint, &file, saved.clone(), current, force)
                 };
                 let mut bits = recorded_bits(checkpoint, &file, &abs);
+                if abs.is_dir()
+                    && !abs.is_symlink()
+                    && local.iter().any(|local| local.starts_with(&abs))
+                    && (matches!(&action, Action::Write { mode, .. } if mode != "040000")
+                        || matches!(action, Action::Delete))
+                {
+                    action = Action::Conflict("directory contains local-only files".into());
+                }
                 // the same bytes under other permissions: a change too
                 if matches!(action, Action::Unchanged)
                     && let Some((smode, soid)) = &saved
@@ -1532,7 +1546,7 @@ pub fn live_tree(repo: &HistoryRepo, tracked: &TrackedSet) -> Result<String> {
     } else {
         vec![]
     };
-    let captured = repo.capture_tracked(&walk, &recipients, console::user_attended_stderr())?;
+    let captured = repo.capture_live(&walk, &recipients, console::user_attended_stderr())?;
     if !captured.omitted.is_empty() {
         bail!(
             "cannot verify current files for restoration: {}",
@@ -1549,7 +1563,10 @@ fn newest_differing(
     entries: &[Entry],
     live: &str,
     path: &Path,
+    local: &[PathBuf],
 ) -> Result<Option<Entry>> {
+    let live = without_local(repo, live, local)?;
+    let live = live.as_str();
     let tree_path = repository_path(repo, live, path)?;
     let current = repo.restored_object_at(live, &tree_path)?;
     for entry in entries.iter().rev() {
@@ -1559,6 +1576,8 @@ fn newest_differing(
         if entry.checkpoint.status() == Some(OperationStatus::Pending) {
             continue;
         }
+        let snapshot = without_local(repo, snapshot, local)?;
+        let snapshot = snapshot.as_str();
         let saved_path = repository_path(repo, snapshot, path)?;
         let saved = repo.restored_object_at(snapshot, &saved_path)?;
         if saved == current {
@@ -1611,6 +1630,28 @@ fn newest_differing(
         }
     }
     Ok(None)
+}
+
+fn without_local(repo: &HistoryRepo, tree: &str, local: &[PathBuf]) -> Result<String> {
+    if local.is_empty() {
+        return Ok(tree.to_owned());
+    }
+    let roots = super::sync::layout::Roots::current();
+    let overlays = repo
+        .ls_tree(tree)?
+        .into_iter()
+        .filter(|entry| {
+            roots
+                .locate(&entry.path)
+                .path()
+                .is_some_and(|path| local.iter().any(|local| path.starts_with(local)))
+        })
+        .map(|entry| super::shadow::Overlay {
+            path: entry.path,
+            object: None,
+        })
+        .collect::<Vec<_>>();
+    repo.compose(tree, &overlays)
 }
 
 fn refuse_unusable(entry: &Entry) -> Result<()> {

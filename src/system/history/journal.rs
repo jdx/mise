@@ -15,7 +15,6 @@ use std::path::{Path, PathBuf};
 use eyre::Result;
 use serde::{Deserialize, Serialize};
 
-use crate::dirs;
 use crate::file::{self, display_path};
 
 /// Prior content at or below this size is embedded in the record itself.
@@ -528,7 +527,7 @@ pub(crate) fn begin_changes_with(
     }
     let mut pending = vec![];
     for (path, capture) in paths {
-        let prior = PathSnapshot::capture_with(&dirs::STATE, &path, capture);
+        let prior = PathSnapshot::capture_with(&super::local::root(), &path, capture);
         if let PathSnapshot::Unrecorded { reason, .. } = &prior {
             if super::scope::requires_recovery_preimage() {
                 eyre::bail!(

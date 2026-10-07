@@ -259,6 +259,12 @@ pub struct TrackedSet {
     /// Declarations that could not be honoured, so they are never mistaken
     /// for protection.
     pub invalid: Vec<PathReason>,
+    /// Malformed local declarations still protect their paths from shared capture.
+    pub invalid_local: Vec<PathBuf>,
+    /// Outside the local scope, the paths `mode = "track-local"` keeps in
+    /// this machine's own history: never this history's to capture, apply,
+    /// or publish (see [`Self::keep_local_out`]).
+    pub local: Vec<PathBuf>,
 }
 
 /// What a walk of the tracked set found.
@@ -293,6 +299,9 @@ pub struct Walk {
     pub warnings: Vec<String>,
     /// Notices that claim selected contents were saved.
     pub capture_warnings: Vec<String>,
+    /// The set's local-only paths, whose saved versions a capture carries
+    /// over unchanged.
+    pub local: Vec<PathBuf>,
 }
 
 impl TrackedSet {
@@ -300,11 +309,12 @@ impl TrackedSet {
     pub async fn effective() -> Result<Self> {
         let config = Config::get().await?;
         let declared = Self::from_config(&config)?;
-        if !super::shadow::HistoryRepo::path_in(&dirs::STATE).is_dir() {
+        let root = super::local::root();
+        if !super::shadow::HistoryRepo::path_in(&root).is_dir() {
             return Ok(declared);
         }
-        match super::shadow::HistoryRepo::open_or_init_in(&dirs::STATE)? {
-            Some(repo) => super::enrollment::resolve(&dirs::STATE, &repo, &declared, &[], &[]),
+        match super::shadow::HistoryRepo::open_or_init_in(&root)? {
+            Some(repo) => super::enrollment::resolve(&root, &repo, &declared, &[], &[]),
             None => Ok(declared),
         }
     }
@@ -323,11 +333,24 @@ impl TrackedSet {
             if !crate::system::files::tracking_config_is_global(config, &invalid.config) {
                 continue;
             }
+            if invalid.local {
+                let path = normalize_target(Path::new(&invalid.target));
+                set.invalid_local.push(path.clone());
+                if !super::local::active() {
+                    if !set.local.contains(&path) {
+                        set.local.push(path);
+                    }
+                    // Shared commit metadata must not name a private path,
+                    // even when its declaration is malformed.
+                    continue;
+                }
+            }
             set.invalid.push(PathReason {
                 path: invalid.target,
                 reason: format!("{} ({})", invalid.reason, display_path(&invalid.config)),
             });
         }
+        set.keep_local_out();
         set.manifest.exclude = set.exclude.clone();
         if set.manifest.enrollment.iter().any(|entry| entry.encrypt) {
             set.manifest.recipients = super::config::file_recipients()?;
@@ -345,6 +368,15 @@ impl TrackedSet {
         let set = self;
         let environments = select::active_environments();
         for request in requests {
+            // a local-only entry belongs to this machine's own history, and
+            // a shared one to the history a setup repository shares: each
+            // scope enrolls only its own (see `super::local`)
+            if request.mode == FileMode::Track && request.policy.local != super::local::active() {
+                if request.enabled && request.policy.local {
+                    set.local.push(normalize_target(&request.target));
+                }
+                continue;
+            }
             if !request.enabled && request.mode == FileMode::Track {
                 set.disabled.push(normalize_target(&request.target));
             }
@@ -471,6 +503,49 @@ impl TrackedSet {
                     set.push(entry);
                 }
                 _ => unreachable!("only explicit tracking requests are enrolled"),
+            }
+        }
+    }
+
+    /// **Nothing local-only is ever this history's.** A path some entry
+    /// keeps in local-only history is dropped where this set would enroll
+    /// it or anything under it itself (another machine may share that
+    /// path; a local directory keeps everything in it), and excluded from
+    /// any directory entry that would save it, so no capture, pull, or
+    /// publication reaches it. The exclusion is the entry's own and never
+    /// enters the manifest, so the name of a local path is not published
+    /// either.
+    pub(crate) fn keep_local_out(&mut self) {
+        if self.local.is_empty() {
+            return;
+        }
+        let local = self.local.clone();
+        self.entries
+            .retain(|entry| !local.iter().any(|path| entry.path.starts_with(path)));
+        for entry in &mut self.entries {
+            for path in &local {
+                let Ok(relative) = path.strip_prefix(&entry.path) else {
+                    continue;
+                };
+                if relative.as_os_str().is_empty() {
+                    continue;
+                }
+                // a leading `/` anchors the pattern to the entry, and a
+                // pattern matching a directory skips everything under it
+                let pattern = format!(
+                    "/{}",
+                    glob::Pattern::escape(
+                        &relative
+                            .components()
+                            .map(|part| part.as_os_str().to_string_lossy())
+                            .collect::<Vec<_>>()
+                            .join("/")
+                    )
+                );
+                let exclude = entry.exclude.get_or_insert_with(Vec::new);
+                if !exclude.contains(&pattern) {
+                    exclude.push(pattern);
+                }
             }
         }
     }
@@ -724,6 +799,7 @@ impl TrackedSet {
         let home = normalize(&dirs::HOME);
         let mut walk = Walk {
             manifest: set.manifest.clone(),
+            local: set.local.clone(),
             ..Default::default()
         };
         walk.manifest.exclude = set.exclude.clone();
@@ -2493,6 +2569,63 @@ mod tests {
     /// Tracked root for the matcher tests: ancestors stop here.
     const ROOT: &str = "/nonexistent-mise-test";
     use super::*;
+
+    #[test]
+    fn local_only_paths_are_never_this_histories() {
+        let policy = FilePolicy::for_mode(FileMode::Track);
+        let mut set = TrackedSet {
+            entries: vec![
+                TrackedEntry::new("/home/u/.config/app".into(), "track", policy),
+                TrackedEntry::new("/home/u/.mine".into(), "track", policy),
+                TrackedEntry::new("/home/u/.mine/state.json".into(), "track", policy),
+                TrackedEntry::new("/home/u/.other".into(), "track", policy),
+                TrackedEntry::new("/home/u/.mine-too".into(), "track", policy),
+            ],
+            local: vec![
+                "/home/u/.mine".into(),
+                "/home/u/.config/app/sta[te].json".into(),
+            ],
+            ..Default::default()
+        };
+        set.keep_local_out();
+        let paths: Vec<_> = set.entries.iter().map(|entry| entry.path.clone()).collect();
+        assert_eq!(
+            paths,
+            vec![
+                PathBuf::from("/home/u/.config/app"),
+                "/home/u/.other".into(),
+                "/home/u/.mine-too".into()
+            ]
+        );
+        let app = &set.entries[0];
+        assert_eq!(
+            app.exclude.as_deref(),
+            Some(&["/sta[[]te[]].json".to_string()][..])
+        );
+        assert!(app.is_excluded(Path::new("/home/u/.config/app/sta[te].json")));
+        assert!(!app.is_excluded(Path::new("/home/u/.config/app/state.json")));
+        assert!(set.entries[1].exclude.is_none());
+        // applying it again adds nothing
+        set.keep_local_out();
+        assert_eq!(set.entries[0].exclude.as_ref().map(Vec::len), Some(1));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn local_only_backslash_name_is_excluded_literally() {
+        let mut set = TrackedSet {
+            entries: vec![TrackedEntry::new(
+                "/home/u/.config".into(),
+                "track",
+                FilePolicy::for_mode(FileMode::Track),
+            )],
+            local: vec![PathBuf::from(r"/home/u/.config/private\file")],
+            ..Default::default()
+        };
+        set.keep_local_out();
+        assert!(set.entries[0].is_excluded(Path::new(r"/home/u/.config/private\file")));
+        assert!(!set.entries[0].is_excluded(Path::new("/home/u/.config/private/file")));
+    }
 
     #[cfg(unix)]
     #[test]

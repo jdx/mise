@@ -159,7 +159,7 @@ fn open_lazy(wait: std::time::Duration) -> Result<bool> {
 
 fn start_lazy(start: &LazyStart, wait: std::time::Duration) -> Result<Option<Shared>> {
     match Writer::begin(
-        &dirs::STATE,
+        &super::local::root(),
         start.kind,
         &start.command,
         start.tracked.clone(),
@@ -279,7 +279,14 @@ impl OperationScope {
             });
         }
         let writer = tokio::task::spawn_blocking(move || {
-            Writer::begin(&dirs::STATE, kind, &command, tracked, wait, fresh_adoption)
+            Writer::begin(
+                &super::local::root(),
+                kind,
+                &command,
+                tracked,
+                wait,
+                fresh_adoption,
+            )
         })
         .await??;
         let uuid = writer.pending.checkpoint.uuid.clone();
@@ -855,7 +862,7 @@ fn records_file_history(
 /// [`would_record`] off the async worker: it reads the filesystem.
 async fn would_record_blocking(tracked: &TrackedSet, kind: OperationKind) -> Result<bool> {
     let tracked = tracked.clone();
-    tokio::task::spawn_blocking(move || would_record(&dirs::STATE, &tracked, kind)).await?
+    tokio::task::spawn_blocking(move || would_record(&super::local::root(), &tracked, kind)).await?
 }
 
 /// Whether a run of `kind` would record file history, decided without

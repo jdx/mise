@@ -73,6 +73,77 @@ impl DotfilesSave {
             bail!("history is disabled (history.enabled = false)");
         }
         let (store, tracked, entries) = super::history::open().await?;
+        if !crate::system::history::local::active()
+            && tracked.invalid_local.iter().any(|invalid| {
+                self.paths.is_empty()
+                    || self.paths.iter().any(|path| {
+                        let path = normalize_target(path);
+                        path.starts_with(invalid) || invalid.starts_with(path)
+                    })
+            })
+        {
+            bail!(
+                "invalid local-only declaration: correct it before saving the affected shared paths"
+            );
+        }
+        // local-only paths are saved in this machine's own history, by the
+        // same command in the local scope
+        let mut shared = self.paths.clone();
+        if !tracked.local.is_empty() {
+            let (local, rest): (Vec<_>, Vec<_>) = self.paths.iter().cloned().partition(|path| {
+                let path = normalize_target(path);
+                tracked.local.iter().any(|local| path.starts_with(local))
+            });
+            shared = rest;
+            if self.paths.is_empty() || !local.is_empty() {
+                let result = crate::system::history::local::run(self.local_args(&local));
+                match result {
+                    Err(err) if self.best_effort => warn!("history save: {err:#}"),
+                    result => result?,
+                }
+            }
+            if !self.paths.is_empty() && shared.is_empty() {
+                return Ok(());
+            }
+        }
+        let mut this = self;
+        this.paths = shared;
+        this.save_shared(store, tracked, entries, trigger).await
+    }
+
+    /// `mise dot save` arguments that save `paths` (all, when empty) in
+    /// the local-only history.
+    fn local_args(&self, paths: &[PathBuf]) -> Vec<std::ffi::OsString> {
+        let mut args: Vec<std::ffi::OsString> = vec![
+            "dot".into(),
+            "save".into(),
+            "--trigger".into(),
+            self.trigger.clone().into(),
+        ];
+        if let Some(description) = &self.description {
+            args.extend(["--description".into(), description.into()]);
+        }
+        if let Some(task) = &self.task {
+            args.extend(["--task".into(), task.into()]);
+        }
+        for label in &self.label {
+            args.extend(["--label".into(), label.into()]);
+        }
+        if self.best_effort {
+            args.push("--best-effort".into());
+        }
+        args.push("--".into());
+        args.extend(paths.iter().map(|path| path.clone().into_os_string()));
+        args
+    }
+
+    async fn save_shared(
+        self,
+        store: Store,
+        tracked: crate::system::history::tracked::TrackedSet,
+        entries: Vec<Entry>,
+        trigger: Trigger,
+    ) -> Result<()> {
         if !self.paths.is_empty() {
             let walk = tracked.walk()?;
             for path in &self.paths {
@@ -131,8 +202,13 @@ impl DotfilesSave {
         let _operation = crate::system::history::scope::take_operation_lock(store, tracked)?;
         match store.attempt(tracked, draft)? {
             Outcome::Created(entry) => {
+                let scope = if crate::system::history::local::active() {
+                    " (local-only)"
+                } else {
+                    ""
+                };
                 info!(
-                    "history: saved checkpoint {}: {}",
+                    "history{scope}: saved checkpoint {}: {}",
                     entry.id, entry.checkpoint.description
                 );
                 Ok(())

@@ -440,7 +440,7 @@ fn reset_sync_state(repo: &crate::system::history::shadow::HistoryRepo) -> Resul
 /// Disconnects: the declaration is removed; local refs, state, and
 /// checkpoints stay.
 pub fn remove() -> Result<()> {
-    let state_dir: &std::path::Path = &crate::dirs::STATE;
+    let state_dir: &std::path::Path = &super::super::local::root();
     let _sync_lock = run::lock_wait(state_dir, run::STATUS_LOCK_WAIT)?;
     let mut status = run::read_status(state_dir)?;
     remove_locked(state_dir, &mut status)

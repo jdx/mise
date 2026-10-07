@@ -340,11 +340,35 @@ impl HistoryRepo {
         self.git.git_dir()
     }
 
+    /// The tracked set as a tree to commit: a local-only path keeps what
+    /// this history already held for it ([`Self::carry_local`]).
     pub(crate) fn capture_tracked(
         &self,
         walk: &super::tracked::Walk,
         recipient_strings: &[String],
         interactive: bool,
+    ) -> Result<CaptureResult> {
+        self.capture_walk(walk, recipient_strings, interactive, true)
+    }
+
+    /// The tracked set as it is on disk, to compare against. A local-only
+    /// path is absent here like any other excluded file, so a rollback or
+    /// diff of a directory around it never sees, nor restores, it.
+    pub(crate) fn capture_live(
+        &self,
+        walk: &super::tracked::Walk,
+        recipient_strings: &[String],
+        interactive: bool,
+    ) -> Result<CaptureResult> {
+        self.capture_walk(walk, recipient_strings, interactive, false)
+    }
+
+    fn capture_walk(
+        &self,
+        walk: &super::tracked::Walk,
+        recipient_strings: &[String],
+        interactive: bool,
+        carry_local: bool,
     ) -> Result<CaptureResult> {
         let mut manifest = walk.manifest.clone();
         manifest.recipients = recipient_strings.to_vec();
@@ -359,8 +383,41 @@ impl HistoryRepo {
         manifest.recipients.dedup();
         let mut result = self.capture_tracked_files(walk, &manifest.recipients, interactive)?;
         result.tree = manifest.preserve_other_files(self, &result.tree)?;
+        if carry_local {
+            result.tree = self.carry_local(walk, &result.tree)?;
+        }
         result.tree = manifest.write(self, &result.tree)?;
         Ok(result)
+    }
+
+    /// **A local-only path keeps whatever this history already held for
+    /// it.** It is never captured here, so without this a commit would read
+    /// its absence as a deletion, and publishing it would remove a file
+    /// another machine shares at that path.
+    fn carry_local(&self, walk: &super::tracked::Walk, tree: &str) -> Result<String> {
+        if walk.local.is_empty() {
+            return Ok(tree.to_string());
+        }
+        let Some(head) = self.ref_oid(Self::HISTORY_REF)? else {
+            return Ok(tree.to_string());
+        };
+        let roots = super::sync::layout::Roots::current();
+        let mut overlays = vec![];
+        // The owning declaration may have been dropped by keep_local_out.
+        // Preserve every previously saved stream, including selected variants.
+        for entry in self.ls_tree(&head)? {
+            if roots
+                .locate(&entry.path)
+                .path()
+                .is_some_and(|path| walk.local.iter().any(|local| path.starts_with(local)))
+            {
+                overlays.push(Overlay {
+                    object: Some((entry.mode, entry.oid)),
+                    path: entry.path,
+                });
+            }
+        }
+        self.compose(tree, &overlays)
     }
 
     fn capture_tracked_files(
@@ -1468,7 +1525,13 @@ impl HistoryRepo {
             .run(PlumbingCall::new(["read-tree", base]).index_file(index))?;
         for overlay in overlays {
             let listed = self.git.output(
-                PlumbingCall::new(["ls-files", "-z", "--", &overlay.path]).index_file(index),
+                PlumbingCall::new([
+                    "ls-files",
+                    "-z",
+                    "--",
+                    &format!(":(literal){}", overlay.path),
+                ])
+                .index_file(index),
             )?;
             let mut removals: Vec<u8> = vec![];
             for entry in listed.split(|byte| *byte == 0) {
