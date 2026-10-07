@@ -108,7 +108,7 @@ pub fn claim_due_request(request: &ToolRequest, updater: Updater) -> Option<Stri
     // Only what describes this machine right now. Settings about a project's
     // lockfile or remote lookups don't apply: the update runs on global config
     // alone, and checks the global `locked` setting itself.
-    if settings.offline() || settings.ci || ci_info::is_ci() {
+    if settings.offline() || settings.ci || ci_info::is_ci() || locked_by_command() {
         return None;
     }
     if updater == Updater::Launch && service_running() {
@@ -130,6 +130,20 @@ pub fn claim_due_request(request: &ToolRequest, updater: Updater) -> Option<Stri
             None
         }
     }
+}
+
+/// Whether the launching command itself asked for `--locked` (or
+/// `MISE_LOCKED`). A project's `locked` setting doesn't stop global updates,
+/// and the updater checks the global one; but the updater can't see the flag.
+fn locked_by_command() -> bool {
+    crate::env::var_is_true("MISE_LOCKED")
+        || !*crate::env::IS_RUNNING_AS_SHIM
+            && crate::env::ARGS
+                .read()
+                .unwrap()
+                .iter()
+                .take_while(|arg| *arg != "--")
+                .any(|arg| arg == "--locked")
 }
 
 fn claim(tool_id: &str, interval: Duration) -> Result<bool> {

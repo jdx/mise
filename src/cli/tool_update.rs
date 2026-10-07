@@ -130,6 +130,11 @@ async fn stop_signal() {
 /// be looked up doesn't stop the others; requests overridden by the
 /// environment (`MISE_*_VERSION`) still count.
 async fn update_due_tools() -> Result<()> {
+    // Before claiming anything, so the tools are checked as soon as it's off.
+    if Settings::get().locked {
+        debug!("tool-update: skipped, `locked` is set");
+        return Ok(());
+    }
     let config = Config::get().await?;
     let global = ToolsetBuilder::new()
         .with_scope(ConfigScope::GlobalOnly)
@@ -158,6 +163,14 @@ async fn update_due_tools() -> Result<()> {
                 continue;
             };
             info!("tool-update: updating {tool_id}");
+            // Replaced by the real result when the update ends; left in place
+            // if the pass is stopped first (timed out, service stopped).
+            tool_update::record_result(
+                &tool_id,
+                &Err(eyre::eyre!(
+                    "the update did not finish: it was stopped after {TICK_TIMEOUT:?} or the service stopped"
+                )),
+            );
             let tool: ToolArg = match tv.ba().short.parse() {
                 Ok(tool) => tool,
                 Err(err) => {
