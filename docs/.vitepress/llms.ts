@@ -63,7 +63,7 @@ function plain(md: string): string {
  * frontmatter, VitePress containers, badges and code. Pages that open with a
  * blockquote summary (`> ...`) use that.
  */
-function description(file: string): string | undefined {
+export function description(file: string): string | undefined {
   let md: string;
   try {
     md = readFileSync(file, "utf8");
@@ -74,10 +74,39 @@ function description(file: string): string | undefined {
   md = md.replace(/^---\n[\s\S]*?\n---\n/, ""); // frontmatter
 
   let seenHeading = false;
+  let codeFence: { marker: string; quoted: boolean } | undefined;
   const paragraph: string[] = [];
 
-  for (const raw of md.split("\n")) {
-    const line = raw.trim();
+  for (const raw of md.split(/\r?\n/)) {
+    // Blockquotes can contain fenced examples as well as summary prose.
+    const content = raw.replace(/^ {0,3}>[\t ]?/, "");
+    const line = content.trim();
+
+    // An unclosed quoted fence ends with its blockquote. Process the first
+    // unquoted line normally so it can start a separate code block or prose.
+    if (codeFence?.quoted && content === raw) codeFence = undefined;
+
+    // Skip the entire fenced block, including headings and blank lines in it.
+    // A closing fence must use the same character and be at least as long.
+    if (codeFence) {
+      // Quote markers inside an ordinary example are literal code content.
+      const closing = (codeFence.quoted ? content : raw).match(
+        /^ {0,3}(`{3,}|~{3,})[\t ]*$/,
+      )?.[1];
+      if (
+        closing &&
+        closing[0] === codeFence.marker[0] &&
+        closing.length >= codeFence.marker.length
+      )
+        codeFence = undefined;
+      continue;
+    }
+    const opening = content.match(/^ {0,3}(`{3,}|~{3,})(.*)$/);
+    if (opening && !(opening[1][0] === "`" && opening[2].includes("`"))) {
+      if (paragraph.length) break;
+      codeFence = { marker: opening[1], quoted: content !== raw };
+      continue;
+    }
 
     if (!seenHeading) {
       if (line.startsWith("# ")) seenHeading = true;
@@ -89,9 +118,9 @@ function description(file: string): string | undefined {
       // Skip anything before the first prose block.
       if (
         line === "" ||
+        /^>\s*\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\]\s*$/.test(raw.trim()) ||
         line.startsWith("#") ||
         line.startsWith(":::") ||
-        line.startsWith("```") ||
         line.startsWith("<") ||
         line.startsWith("|") ||
         line.startsWith("- ") ||
@@ -106,7 +135,7 @@ function description(file: string): string | undefined {
     } else if (line === "" || line.startsWith("#") || line.startsWith(":::")) {
       break;
     }
-    paragraph.push(line.replace(/^>\s?/, ""));
+    paragraph.push(line);
   }
 
   // Many lead paragraphs introduce a list or code block, so they end in a colon.
@@ -132,50 +161,54 @@ function flatten(items: SidebarItem[], into: Entry[] = []): Entry[] {
   return into;
 }
 
-const missing: string[] = [];
-const sections: string[] = [];
+function main() {
+  const missing: string[] = [];
+  const sections: string[] = [];
 
-for (const group of sidebar) {
-  const entries = flatten(group.items ?? []);
-  if (group.link?.startsWith("/")) {
-    entries.unshift({ text: group.text, link: group.link });
+  for (const group of sidebar) {
+    const entries = flatten(group.items ?? []);
+    if (group.link?.startsWith("/")) {
+      entries.unshift({ text: group.text, link: group.link });
+    }
+    if (entries.length === 0) continue;
+
+    const lines = entries.map(({ text, link }) => {
+      const file = sourceFile(link);
+      const desc = description(file);
+      if (!desc) missing.push(link);
+      return desc
+        ? `- [${text}](${pageUrl(link)}): ${desc}`
+        : `- [${text}](${pageUrl(link)})`;
+    });
+
+    sections.push(`## ${group.text}\n\n${lines.join("\n")}`);
   }
-  if (entries.length === 0) continue;
 
-  const lines = entries.map(({ text, link }) => {
-    const file = sourceFile(link);
-    const desc = description(file);
-    if (!desc) missing.push(link);
-    return desc
-      ? `- [${text}](${pageUrl(link)}): ${desc}`
-      : `- [${text}](${pageUrl(link)})`;
-  });
+  // The llms.txt format wants a title and a one-line summary. Both already exist
+  // as the docs homepage hero, so take them from there rather than writing a
+  // second description that can disagree with the site.
+  const home = readFileSync(resolve(docsDir, "index.md"), "utf8");
+  const hero = (key: string): string => {
+    const match = home.match(new RegExp(`^\\s{2}${key}:\\s*(.+)$`, "m"));
+    if (!match) throw new Error(`docs/index.md has no hero.${key}`);
+    return match[1].trim().replace(/^["']|["']$/g, "");
+  };
 
-  sections.push(`## ${group.text}\n\n${lines.join("\n")}`);
-}
-
-// The llms.txt format wants a title and a one-line summary. Both already exist
-// as the docs homepage hero, so take them from there rather than writing a
-// second description that can disagree with the site.
-const home = readFileSync(resolve(docsDir, "index.md"), "utf8");
-const hero = (key: string): string => {
-  const match = home.match(new RegExp(`^\\s{2}${key}:\\s*(.+)$`, "m"));
-  if (!match) throw new Error(`docs/index.md has no hero.${key}`);
-  return match[1].trim().replace(/^["']|["']$/g, "");
-};
-
-const out = `# ${hero("name")}
+  const out = `# ${hero("name")}
 
 > ${hero("tagline")}
 
 ${sections.join("\n\n")}
 `;
 
-writeFileSync(outFile, out);
+  writeFileSync(outFile, out);
 
-const pages = out.split("\n").filter((l) => l.startsWith("- ")).length;
-console.log(`wrote ${outFile} (${pages} pages, ${out.length} bytes)`);
-if (missing.length > 0) {
-  console.log(`no lead paragraph found for ${missing.length} page(s):`);
-  for (const link of missing) console.log(`  ${link}`);
+  const pages = out.split("\n").filter((l) => l.startsWith("- ")).length;
+  console.log(`wrote ${outFile} (${pages} pages, ${out.length} bytes)`);
+  if (missing.length > 0) {
+    console.log(`no lead paragraph found for ${missing.length} page(s):`);
+    for (const link of missing) console.log(`  ${link}`);
+  }
 }
+
+if (import.meta.main) main();
