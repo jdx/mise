@@ -1,10 +1,63 @@
+use crate::env;
 use aho_corasick::AhoCorasick;
 use indexmap::IndexSet;
+use std::collections::BTreeSet;
 use std::sync::LazyLock;
 use std::sync::{Arc, Mutex};
 
 /// Process-wide redaction patterns, registered by config loading.
-pub static GLOBAL_REDACTOR: LazyLock<Mutex<Redactor>> = LazyLock::new(Default::default);
+///
+/// Seeded with the secrets inherited from a parent mise, so the first log
+/// record of the process is already redacted.
+pub static GLOBAL_REDACTOR: LazyLock<Mutex<Redactor>> = LazyLock::new(|| {
+    Mutex::new(Redactor::new(inherited_secret_patterns(
+        &env::INHERITED_SECRET_KEYS,
+        &|k| std::env::var(k).ok(),
+    )))
+});
+
+/// Every form of `value` that should be redacted: the value itself; for a
+/// multi-line value each trimmed line of at least 4 bytes that contains an
+/// ASCII alphanumeric (output is redacted line by line); and its JSON-escaped
+/// form (without quotes) when that differs from the value.
+pub fn secret_patterns(value: &str) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    let mut push = |p: String| {
+        if !p.is_empty() && !out.contains(&p) {
+            out.push(p);
+        }
+    };
+    push(value.to_string());
+    if value.contains('\n') {
+        for line in value.lines().map(str::trim) {
+            if line.len() >= 4 && line.bytes().any(|b| b.is_ascii_alphanumeric()) {
+                push(line.to_string());
+            }
+        }
+    }
+    if let Ok(json) = serde_json::to_string(value)
+        && let Some(inner) = json.strip_prefix('"').and_then(|j| j.strip_suffix('"'))
+        && inner != value
+    {
+        push(inner.to_string());
+    }
+    // Rust's `{:?}` spelling (task argument trace logging): U+0001 is `\u{1}`.
+    let debug = format!("{value:?}");
+    if let Some(inner) = debug.strip_prefix('"').and_then(|d| d.strip_suffix('"')) {
+        push(inner.to_string());
+    }
+    out
+}
+
+pub(crate) fn inherited_secret_patterns(
+    keys: &BTreeSet<String>,
+    get: &dyn Fn(&str) -> Option<String>,
+) -> Vec<String> {
+    keys.iter()
+        .filter_map(|k| get(k))
+        .flat_map(|v| secret_patterns(&v))
+        .collect()
+}
 
 /// Redact registered secrets without needing a loaded `Config`.
 ///
@@ -137,6 +190,55 @@ fn replace_spans(input: &str, mut spans: Vec<(usize, usize)>) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_secret_patterns_single_line() {
+        assert_eq!(secret_patterns("abc123"), vec!["abc123"]);
+        assert!(secret_patterns("").is_empty());
+    }
+
+    #[test]
+    fn test_secret_patterns_pem_lines() {
+        let pem = "-----BEGIN KEY-----\nMIIEvQIBADAN\nZm9v\nabc\n}\n-----END KEY-----";
+        let p = secret_patterns(pem);
+        assert!(p.contains(&pem.to_string()));
+        assert!(p.contains(&"Zm9v".to_string()));
+        assert!(p.contains(&"MIIEvQIBADAN".to_string()));
+        assert!(!p.contains(&"abc".to_string()));
+        assert!(!p.contains(&"}".to_string()));
+        let dashes = secret_patterns("-----\n-----\nxx");
+        assert!(!dashes.contains(&"-----".to_string()));
+    }
+
+    #[test]
+    fn test_secret_patterns_cover_rust_debug_spelling() {
+        let secret = "ab\u{1}cd\"e";
+        let r = Redactor::new(secret_patterns(secret));
+        let rendered = format!("{secret:?}");
+        assert!(rendered.contains("\\u{1}"));
+        assert_eq!(r.redact(&format!("args={rendered}")), "args=\"[redacted]\"");
+    }
+
+    #[test]
+    fn test_secret_patterns_json_escaped_form() {
+        let p = secret_patterns("a\nb\"c");
+        assert!(p.contains(&"a\\nb\\\"c".to_string()));
+    }
+
+    #[test]
+    fn test_inherited_values_that_overlap_leave_no_residue() {
+        let keys: BTreeSet<String> = ["A", "B"].map(String::from).into();
+        let get = |k: &str| Some(if k == "A" { "a" } else { "abcdef" }.to_string());
+        let r = Redactor::new(inherited_secret_patterns(&keys, &get));
+        assert!(!r.redact("x abcdef y").contains("bcdef"));
+    }
+
+    #[test]
+    fn test_inherited_secret_patterns_use_injected_getter() {
+        let keys: BTreeSet<String> = ["A", "B"].map(String::from).into();
+        let get = |k: &str| (k == "A").then(|| "value-a".to_string());
+        assert_eq!(inherited_secret_patterns(&keys, &get), vec!["value-a"]);
+    }
 
     #[test]
     fn test_empty_redactor() {
