@@ -837,10 +837,23 @@ pub(crate) async fn apply_locked_with_scope(
             && touched.is_empty()
             && recovery_errors.is_empty()
         {
+            // Only what this operation recorded: a root of its own (a fresh
+            // machine had no history to record on), or a commit on the
+            // repository's head or its own protective checkpoint. The
+            // operation lock is released by now, and a save that landed
+            // since is the user's to keep.
+            let ours = |commit: &String| {
+                Some(commit) == status.upstream_commit.as_ref()
+                    || Some(commit) == protected_head.as_ref()
+            };
             if let Some(head) =
                 repo.ref_oid(crate::system::history::shadow::HistoryRepo::HISTORY_REF)?
+                && (ours(&head) || {
+                    let parents = repo.parents_of(&head)?;
+                    parents.is_empty() || parents.iter().any(ours)
+                })
+                && repo.delete_history_head(&head).is_ok()
             {
-                repo.delete_history_head(&head)?;
                 store.rebuild_index()?;
             }
             status.application_failure = None;

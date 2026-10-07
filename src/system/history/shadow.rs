@@ -1342,6 +1342,15 @@ impl HistoryRepo {
         Ok(changes)
     }
 
+    /// The parents of a commit.
+    pub(crate) fn parents_of(&self, commit: &str) -> Result<Vec<String>> {
+        Ok(self
+            .output_str(PlumbingCall::new(["rev-parse", &format!("{commit}^@")]))?
+            .lines()
+            .map(str::to_owned)
+            .collect())
+    }
+
     /// The tree of a commit.
     pub(crate) fn output_tree_of(&self, commit: &str) -> Result<String> {
         self.output_str(PlumbingCall::new([

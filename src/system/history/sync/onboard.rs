@@ -547,6 +547,9 @@ fn restore_after_failed_replacement(
         _ => {}
     }
     run::write_status(store.state_dir(), previous_status)?;
+    // the failed application may have rebuilt the index for the history it
+    // replaced; it must describe the history restored here
+    store.rebuild_index()?;
     super::state::save(repo, previous_sync_state, "history replacement rolled back")
 }
 
