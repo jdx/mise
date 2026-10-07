@@ -213,12 +213,16 @@ fn insert_core_options(table: &mut InlineTable, options: ToolVersionOptions) {
         table.insert("lazy_bins", Value::Array(bins));
     }
     if let Some(auto_update) = core.auto_update {
-        let value = match auto_update.as_str() {
-            "true" => Value::from(true),
-            "false" => Value::from(false),
-            _ => Value::from(auto_update),
-        };
-        table.insert("auto_update", value);
+        table.insert("auto_update", auto_update_value(&auto_update));
+    }
+}
+
+/// `auto_update` as written: `true`/`false` as booleans, an interval as a string.
+fn auto_update_value(auto_update: &str) -> Value {
+    match auto_update {
+        "true" => Value::from(true),
+        "false" => Value::from(false),
+        _ => Value::from(auto_update),
     }
 }
 
@@ -323,6 +327,13 @@ fn update_explicit_tool_options(table: &mut toml_edit::Table, options: &ToolVers
             bins.push(bin.as_str());
         }
         insert_table_item_preserving_decor(table, "lazy_bins", Item::Value(Value::Array(bins)));
+    }
+    if let Some(auto_update) = &options.auto_update {
+        insert_table_item_preserving_decor(
+            table,
+            "auto_update",
+            Item::Value(auto_update_value(auto_update)),
+        );
     }
     update_install_env_table(table, options);
 }
