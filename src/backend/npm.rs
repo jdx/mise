@@ -81,6 +81,12 @@ fn git_requirement(name: &str, version: &str) -> String {
     }
 }
 
+/// Whether a git source follows its remote's default branch, as opposed to one
+/// that already pins a `#ref` in its URL.
+fn git_tracks_head(name: &str) -> bool {
+    is_git_spec(name) && !name.contains('#')
+}
+
 /// The remote to query for a git source's refs, without any `#ref` fragment.
 fn git_remote(name: &str) -> String {
     let url = name.split('#').next().unwrap_or(name);
@@ -95,7 +101,19 @@ fn git_remote(name: &str) -> String {
             return format!("https://{host}/{repo}.git");
         }
     }
-    url.strip_prefix("git+").unwrap_or(url).to_string()
+    let url = url.strip_prefix("git+").unwrap_or(url);
+    // npm accepts `ssh://git@host:owner/repo`, but git reads that colon as a
+    // port separator; the scp-like form `git@host:owner/repo` is what it wants.
+    if let Some((host, path)) = url.strip_prefix("ssh://").and_then(|r| r.split_once(':'))
+        && !host.contains('/')
+        && !path
+            .split('/')
+            .next()
+            .is_some_and(|p| !p.is_empty() && p.chars().all(|c| c.is_ascii_digit()))
+    {
+        return format!("{host}:{path}");
+    }
+    url.to_string()
 }
 
 /// Resolve a git remote's default-branch HEAD to a concrete commit.
@@ -655,13 +673,27 @@ impl Backend for NPMBackend {
     }
 
     async fn _list_remote_versions(&self, config: &Arc<Config>) -> eyre::Result<Vec<VersionInfo>> {
-        if is_git_spec(&self.tool_name()) {
+        let name = self.tool_name();
+        if is_git_spec(&name) {
             // A git source has no registry history; the only version is the
-            // commit its default branch currently points at.
-            return Ok(vec![VersionInfo {
-                version: git_head(&git_remote(&self.tool_name())).await?,
-                ..Default::default()
-            }]);
+            // commit its default branch currently points at. A pinned ref
+            // never needs it, so a failed lookup must not block that install.
+            if !git_tracks_head(&name) {
+                return Ok(vec![VersionInfo {
+                    version: "latest".to_string(),
+                    ..Default::default()
+                }]);
+            }
+            return Ok(match git_head(&git_remote(&name)).await {
+                Ok(version) => vec![VersionInfo {
+                    version,
+                    ..Default::default()
+                }],
+                Err(err) => {
+                    debug!("could not resolve the default branch of {name}: {err:#}");
+                    vec![]
+                }
+            });
         }
         if Settings::get().npm.shell_out {
             return self.list_remote_versions_npm_view(config).await;
@@ -677,7 +709,7 @@ impl Backend for NPMBackend {
     }
 
     fn is_rolling_channel(&self, version: &str) -> bool {
-        version == "latest" && is_git_spec(&self.tool_name())
+        version == "latest" && git_tracks_head(&self.tool_name())
     }
 
     fn latest_installed_channel_version(&self, _channel: &str) -> Option<String> {
@@ -701,8 +733,12 @@ impl Backend for NPMBackend {
     }
 
     async fn latest_stable_version(&self, config: &Arc<Config>) -> eyre::Result<Option<String>> {
-        if is_git_spec(&self.tool_name()) {
-            return git_head(&git_remote(&self.tool_name())).await.map(Some);
+        let name = self.tool_name();
+        if is_git_spec(&name) {
+            if !git_tracks_head(&name) {
+                return Ok(Some("latest".to_string()));
+            }
+            return git_head(&git_remote(&name)).await.map(Some);
         }
         if Settings::get().npm.shell_out {
             self.ensure_npm_for_version_check(config).await;
@@ -2554,6 +2590,16 @@ mod tests {
         assert_eq!(git_alias("git+ssh://git@github.com/o/r.git#main"), "r");
         assert_eq!(git_alias("github:o/r"), "r");
         assert!(validate_git_alias("github:o/r").is_ok());
+        assert_eq!(
+            git_remote("git+ssh://git@github.com:npm/cli.git"),
+            "git@github.com:npm/cli.git"
+        );
+        assert_eq!(
+            git_remote("git+ssh://git@github.com:22/npm/cli.git"),
+            "ssh://git@github.com:22/npm/cli.git"
+        );
+        assert!(git_tracks_head("github:o/r"));
+        assert!(!git_tracks_head("github:o/r#v1"));
         assert!(validate_git_alias("github:o/.git").is_err());
         assert!(validate_git_alias("github:o/.").is_err());
         assert_eq!(git_remote("github:o/r#main"), "https://github.com/o/r.git");
