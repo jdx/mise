@@ -737,6 +737,9 @@ const MERGE_SYMLINK_REASON: &str = "target is a symlink; replace it with a copy 
 /// a merge target that is a link to the merge's own source, as when the entry
 /// used to be a `symlink`: the file behind it holds the application's state
 fn links_to_merge_source(req: &EditRequest) -> bool {
+    if !matches!(req.op, EditOp::Merge { .. }) {
+        return false;
+    }
     let Some(source) = req.op.source_file() else {
         return false;
     };
@@ -1595,9 +1598,19 @@ fn apply_one(req: &EditRequest, desired: Option<&str>, written: &mut Vec<PathBuf
     // before merging, so trimming the source afterwards loses nothing
     if matches!(req.op, EditOp::Merge { .. }) && req.path.is_symlink() && links_to_merge_source(req)
     {
-        let content = file::read_to_string(&req.path)?;
-        file::remove_file(&req.path)?;
-        file::write(&req.path, &content)?;
+        // prepare the whole copy (std::fs::copy keeps the source's mode)
+        // beside the link, then rename it over the link, so a failure leaves
+        // the link in place
+        let tmp = req
+            .path
+            .with_extension(format!("mise-tmp-{}", std::process::id()));
+        let result = std::fs::copy(&req.path, &tmp)
+            .and_then(|_| std::fs::rename(&tmp, &req.path))
+            .wrap_err_with(|| format!("failed to replace symlink: {}", req.path.display_user()));
+        if result.is_err() {
+            let _ = std::fs::remove_file(&tmp);
+        }
+        result?;
     }
     let existed = req.path.exists();
     let text = if existed {
