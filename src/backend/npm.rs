@@ -579,6 +579,42 @@ fn aube_install_tree_health(install_path: &Path) -> AubeTreeHealth {
     health
 }
 
+/// The `npm` that `npm view` should run, resolved from the child PATH on unix.
+///
+/// `dependency_env` already drops this mise's own shims dir, but it recognizes shims by
+/// location only. A mise shim from another data dir — an outer mise's shims while HOME or
+/// MISE_DATA_DIR point elsewhere, as in test runners and CI — still resolves as `npm`,
+/// re-enters mise, and runs `npm view` again for every `latest` npm tool (#14068). Skip
+/// any candidate that is this mise binary. When that was the only npm, fail instead of
+/// spawning it; when there is no npm at all, keep the bare name and today's error.
+fn npm_view_program(env: &BTreeMap<String, String>) -> eyre::Result<OsString> {
+    let Some(path) = env.get(&*crate::env::PATH_KEY) else {
+        return Ok(OsString::from("npm"));
+    };
+    let mut skipped_mise_shim = None;
+    for dir in std::env::split_paths(path) {
+        if crate::file::is_mise_dispatch_dir(&dir) {
+            continue;
+        }
+        let candidate = dir.join("npm");
+        if !crate::file::is_spawnable(&candidate) {
+            continue;
+        }
+        if crate::file::same_file(&candidate, &crate::env::MISE_BIN) {
+            skipped_mise_shim.get_or_insert(candidate);
+            continue;
+        }
+        return Ok(candidate.into_os_string());
+    }
+    match skipped_mise_shim {
+        Some(shim) => Err(eyre::eyre!(
+            "npm.shell_out needs npm, but the only npm on PATH is a mise shim ({}); running it would re-enter mise. Install node first (`mise install node`) or disable npm.shell_out.",
+            shim.display()
+        )),
+        None => Ok(OsString::from("npm")),
+    }
+}
+
 #[cfg(test)]
 fn aube_install_tree_is_healthy(install_path: &Path) -> bool {
     aube_install_tree_health(install_path) != AubeTreeHealth::Broken
@@ -1478,19 +1514,23 @@ impl NPMBackend {
     ) -> eyre::Result<String> {
         let prefix = Self::npm_meta_prefix()?;
         let env = self.dependency_env(config).await?;
-        self.npm_command(config, None, |cmd| {
-            cmd.arg("view")
-                .arg(package)
-                .args(fields)
-                .arg(format!("--json={json}"))
-                .arg("--prefix")
-                .arg(prefix)
-                .env_clear()
-                .envs(env)
-        })
-        .await
-        .read()
-        .await
+        let npm = if cfg!(windows) {
+            self.spawn_program(config, None, "npm").await
+        } else {
+            npm_view_program(&env)?
+        };
+        CmdLineRunner::new(npm)
+            .arg("view")
+            .arg(package)
+            .args(fields)
+            .arg(format!("--json={json}"))
+            .arg("--prefix")
+            .arg(prefix)
+            .env_clear()
+            .envs(env)
+            .env("NPM_CONFIG_UPDATE_NOTIFIER", "false")
+            .read()
+            .await
     }
 
     /// Fetch deprecation metadata in one combined query, or skip the lookup for
@@ -2665,6 +2705,58 @@ mod tests {
     use super::*;
     use crate::args::{BackendArg, BackendResolution};
     use crate::toolset::{ToolRequest, ToolSource, ToolVersion};
+
+    #[cfg(unix)]
+    fn npm_view_env(dirs: &[&Path]) -> BTreeMap<String, String> {
+        let path = std::env::join_paths(dirs).unwrap();
+        BTreeMap::from([(
+            crate::env::PATH_KEY.to_string(),
+            path.to_string_lossy().into_owned(),
+        )])
+    }
+
+    #[cfg(unix)]
+    fn fake_mise_shim(dir: &Path) {
+        std::os::unix::fs::symlink(&*crate::env::MISE_BIN, dir.join("npm")).unwrap();
+    }
+
+    #[cfg(unix)]
+    fn real_npm(dir: &Path) -> PathBuf {
+        use std::os::unix::fs::PermissionsExt;
+        let npm = dir.join("npm");
+        std::fs::write(&npm, "#!/bin/sh\n").unwrap();
+        std::fs::set_permissions(&npm, std::fs::Permissions::from_mode(0o755)).unwrap();
+        npm
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn npm_view_program_skips_foreign_mise_shim() {
+        let shims = tempfile::tempdir().unwrap();
+        let node_bin = tempfile::tempdir().unwrap();
+        fake_mise_shim(shims.path());
+        let npm = real_npm(node_bin.path());
+        let env = npm_view_env(&[shims.path(), node_bin.path()]);
+        assert_eq!(npm_view_program(&env).unwrap(), npm.into_os_string());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn npm_view_program_refuses_when_only_a_mise_shim_provides_npm() {
+        let shims = tempfile::tempdir().unwrap();
+        fake_mise_shim(shims.path());
+        let env = npm_view_env(&[shims.path()]);
+        let err = npm_view_program(&env).unwrap_err().to_string();
+        assert!(err.contains("only npm on PATH is a mise shim"), "{err}");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn npm_view_program_keeps_bare_name_when_npm_is_missing() {
+        let empty = tempfile::tempdir().unwrap();
+        let env = npm_view_env(&[empty.path()]);
+        assert_eq!(npm_view_program(&env).unwrap(), OsString::from("npm"));
+    }
 
     const GIT_SOURCE_WITH_CREDENTIALS: &str = "git+https://user%40example.test:password%2Fvalue@git.example.test/org/repo.git?access_token=query-token#main";
 
