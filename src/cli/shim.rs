@@ -233,6 +233,7 @@ async fn which_shim(
     let mut ts = ToolsetBuilder::new()
         .with_args(&task_tools)
         .with_resolve_options(resolve_options)
+        .with_deferred_lazy_resolution()
         .build(config)
         .await?;
     if let Some(wrapper) =

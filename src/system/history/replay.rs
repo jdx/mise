@@ -522,8 +522,8 @@ async fn apply_steps(
                 bail!("the refreshed plan has conflicts; nothing was changed");
             }
             if !exec.yes && !crate::config::Settings::get().yes {
-                // The plan the caller saw is not the plan that would run, so
-                // unlike the first confirmation this one is never implied.
+                // the plan the caller saw is not the plan that would run, so
+                // this is never implied
                 if !prompt::confirm_destructive(
                     "history: apply the refreshed plan?",
                     "applying a plan that changed since it was shown",
@@ -571,6 +571,42 @@ async fn apply_steps(
             missing.len()
         );
         scope.recapture_before(&missing)?;
+    }
+    // files no checkpoint holds go with a replaced directory and cannot be
+    // undone: decide before the first mutation, so an unattended replay
+    // without --yes fails with nothing changed instead of part way through
+    let mut approved: Option<Vec<PathBuf>> = None;
+    if !exec.yes && !crate::config::Settings::get().yes {
+        let mut uncovered = vec![];
+        // an empty-directory removal only calls remove_dir and leaves other
+        // files in place, so it is not a replacement
+        for step in steps
+            .iter()
+            .filter(|step| matches!(step.action, Action::Write { .. } | Action::Delete))
+        {
+            let replaces_dir = step.path.is_dir()
+                && !step.path.is_symlink()
+                && !matches!(&step.action, Action::Write { mode, .. } if mode == "040000");
+            if replaces_dir {
+                uncovered.extend(directory_contents(&step.path, steps, tracked)?.uncovered);
+            }
+        }
+        if !uncovered.is_empty()
+            && !prompt::confirm_destructive(
+                format!(
+                    "history: remove files history does not cover and cannot undo ({})?",
+                    uncovered
+                        .iter()
+                        .map(display_path)
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                ),
+                &format!("mise {}", exec.command),
+            )?
+        {
+            bail!("declined; nothing was changed");
+        }
+        approved = Some(uncovered);
     }
     let mut touched = vec![];
     // deletions deepest first, then writes shallowest first: a directory is
@@ -656,6 +692,18 @@ async fn apply_steps(
             if let Some(stray) = inside.appeared.first() {
                 bail!(
                     "{} appeared after {} was protected; nothing more was changed",
+                    display_path(stray),
+                    display_path(&step.path)
+                );
+            }
+            if let Some(approved) = &approved
+                && let Some(stray) = inside
+                    .uncovered
+                    .iter()
+                    .find(|path| !approved.contains(path))
+            {
+                bail!(
+                    "{} appeared in {} after the removal was confirmed; nothing more was changed",
                     display_path(stray),
                     display_path(&step.path)
                 );

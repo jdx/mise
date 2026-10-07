@@ -302,6 +302,9 @@ fn validate_file_variants(
 ) -> Result<Option<PathBuf>> {
     let selectors: Vec<_> = variants.iter().map(|v| v.selector.clone()).collect();
     crate::system::history::select::validate(&selectors)?;
+    if mode != Some("track") && selectors.iter().any(|selector| selector.machine) {
+        bail!("machine variants are supported only with mode = \"track\"");
+    }
     let has_target_override = variants.iter().any(|v| v.target.is_some());
     if has_target_override && mode == Some("track") {
         bail!("target overrides are not supported with mode = \"track\"");

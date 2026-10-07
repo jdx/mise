@@ -52,7 +52,7 @@ assert_fail "b bootstrap --adopt file://$origin --replace-history </dev/null" '-
 # irreversible: refuse loudly and name --yes, never skip silently
 mkdir -p "$HOME/implode-me"
 assert_fail 'mise implode </dev/null' '--yes'
-assert_succeed 'test -d "$MISE_DATA_DIR" -o -d "$MISE_CONFIG_DIR"'
+assert_succeed "test -d '$MISE_DATA_DIR' -o -d '$MISE_CONFIG_DIR'"
 
 # with a terminal attached it must not prompt either: track finishes without
 # an answer (stdin at EOF) and without --yes

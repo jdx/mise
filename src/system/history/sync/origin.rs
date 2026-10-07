@@ -292,10 +292,19 @@ pub fn report(outcome: &run::SyncOutcome) {
         ),
         None => info!("history: nothing new to publish"),
     }
-    if outcome.pending > 0 {
+    // a directory whose permissions change is a change here, though no
+    // file is written
+    let here = outcome
+        .pending
+        .saturating_sub(usize::from(outcome.pending_repository))
+        + outcome.pending_directories;
+    if here > 0 {
+        info!("history: {here} incoming change(s) pending; `mise dot pull` applies them");
+    } else if outcome.pending_repository {
+        // another machine's own versions, or enrollment: nothing to write
+        // here, but this machine publishes only on top of it
         info!(
-            "history: {} incoming change(s) pending; `mise dot pull` applies them",
-            outcome.pending
+            "history: incoming history changes no files here; `mise dot pull` records it before this machine publishes again"
         );
     }
     if outcome.conflicts > 0 {

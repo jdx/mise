@@ -791,7 +791,11 @@ pub(crate) async fn apply_locked_with_scope(
         );
     }
     if !req.automatic {
-        info!("history: applied {written} incoming change(s)");
+        if written == 0 {
+            info!("history: recorded incoming history; no files here changed");
+        } else {
+            info!("history: applied {written} incoming change(s)");
+        }
     }
     let outcome = ApplyOutcome {
         written,
