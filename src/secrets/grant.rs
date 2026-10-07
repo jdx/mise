@@ -790,7 +790,22 @@ fn tera_read_problems(
 ) -> Vec<Problem> {
     let mut problems = vec![];
     for (name, value) in env_texts {
-        for key in tera_env_refs(value).iter().filter(|k| grant.is_late_key(k)) {
+        let (refs, dynamic) = tera_env_scan(value);
+        if dynamic {
+            // the name is only known when it renders, so any composed key could be the one
+            for late in &grant.late {
+                problems.push(Problem::new(
+                    &task.name,
+                    Some(&late.key),
+                    ProblemKind::Template,
+                    format!(
+                        "task {}: env.{name} calls get_env() with a name that is not a string literal, so it may read {}, which is rendered from secrets when the task starts; use a literal name (get_env(name=\"X\")) or build {name} from secrets directly",
+                        task.name, late.key
+                    ),
+                ));
+            }
+        }
+        for key in refs.iter().filter(|k| grant.is_late_key(k)) {
             problems.push(Problem::new(
                 &task.name,
                 Some(key),
@@ -1265,6 +1280,15 @@ impl EnvView {
 /// `{{ env.K }}`, `{{ env["K"] }}` and `get_env(name="K")` inside Tera tags. Lexical, but
 /// aware of string literals: quoted text such as `"env.K"` is data and is not an env read.
 pub(crate) fn tera_env_refs(s: &str) -> BTreeSet<String> {
+    tera_env_scan(s).0
+}
+
+/// What `tera_env_refs` cannot name: a `get_env()` whose `name` is not a string literal
+/// (`get_env(name=vars.KEY)`) reads some env var that is only known when it renders.
+const DYNAMIC_GET_ENV: &str = "\u{0}get_env";
+
+/// The names read, and whether any `get_env()` call computes its name.
+pub(crate) fn tera_env_scan(s: &str) -> (BTreeSet<String>, bool) {
     let mut out = BTreeSet::new();
     let mut rest = s;
     while let Some(start) = [rest.find("{{"), rest.find("{%"), rest.find("{#")]
@@ -1288,7 +1312,8 @@ pub(crate) fn tera_env_refs(s: &str) -> BTreeSet<String> {
         scan_tag(&tag[..end], &mut out);
         rest = &tag[end..];
     }
-    out
+    let dynamic = out.remove(DYNAMIC_GET_ENV);
+    (out, dynamic)
 }
 
 fn is_ident(c: char) -> bool {
@@ -1377,13 +1402,26 @@ fn scan_get_env_name(chars: &[char], mut i: usize, out: &mut BTreeSet<String>) {
                     j += 1;
                 }
                 if chars.get(j).is_some_and(|c| is_quote(*c)) {
-                    out.insert(read_literal(chars, j).0);
-                    return;
+                    let (name, mut next) = read_literal(chars, j);
+                    while chars.get(next) == Some(&' ') {
+                        next += 1;
+                    }
+                    // `'A' ~ 'B'` and the like are computed, not the literal `A`
+                    if chars.get(next).is_none_or(|c| matches!(c, ',' | ')')) {
+                        out.insert(name);
+                    } else {
+                        out.insert(DYNAMIC_GET_ENV.to_string());
+                    }
+                } else {
+                    out.insert(DYNAMIC_GET_ENV.to_string());
                 }
+                return;
             }
         }
         i += 1;
     }
+    // no `name=` at all: nothing to name
+    out.insert(DYNAMIC_GET_ENV.to_string());
 }
 
 #[cfg(test)]
@@ -1821,6 +1859,40 @@ mod tests {
         assert_eq!(on.len(), 1, "{on:?}");
         assert!(on[0].render().contains("uses $VAR expansion together with"));
         assert!(shell_expansion_problems(&task, &grant, &texts, false).is_empty());
+    }
+
+    #[test]
+    fn a_computed_get_env_name_may_read_any_composed_key() {
+        let task = composed(vec![]);
+        let (grant, _) = grant_for_task(&task);
+        let check = |text: &str| {
+            let texts = vec![("OTHER".to_string(), text.to_string())];
+            composed_read_problems(&task, &grant, &texts, true)
+                .into_iter()
+                .map(|p| p.render())
+                .collect::<Vec<_>>()
+        };
+        for dynamic in [
+            "{{ get_env(name=vars.KEY) }}",
+            "{{ get_env(name=vars.KEY, default='x') }}",
+            "{{ get_env(name='A' ~ 'B') }}",
+        ] {
+            let found = check(dynamic);
+            assert!(
+                found
+                    .iter()
+                    .any(|m| m.contains("not a string literal") && m.contains("PGURL")),
+                "{dynamic}: {found:?}"
+            );
+        }
+        // a literal name is an ordinary read, and unrelated literals are fine
+        assert!(check("{{ get_env(name='HOME') }}").is_empty());
+        assert_eq!(check("{{ get_env(name='PGURL') }}").len(), 1);
+        // nothing composed, nothing to refuse
+        let plain = named("m", &[]);
+        let (none, _) = grant_for_task(&plain);
+        let texts = vec![("O".to_string(), "{{ get_env(name=vars.K) }}".to_string())];
+        assert!(composed_read_problems(&plain, &none, &texts, true).is_empty());
     }
 
     #[test]
