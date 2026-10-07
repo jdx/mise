@@ -765,11 +765,11 @@ fn extra_link(tv: &ToolVersion, logical: &ToolVersion) -> Option<PathBuf> {
     (extra != tv.install_path()).then_some(extra)
 }
 
-/// Remove `extra` if this migration's install made it: a link that names one
-/// of `ours`, the installation directories the migration wrote into or made.
-/// A link to anything else (a `mise link`, another install) is not ours. It is
-/// matched by the directory name its target ends in, since after a failure the
-/// directory may be gone.
+/// Remove `extra` if this migration's install made it: a link whose full target
+/// is one of `ours`, the installation directories the migration wrote into or
+/// made. A link to anything else (a `mise link`, another install, a directory of
+/// the same name in another root) is not ours. The target is compared as a path,
+/// so it need not exist (a failed install's directory may be gone).
 fn drop_extra_link(extra: &Path, ours: &[PathBuf]) {
     if !file::is_symlink_or_junction(extra) {
         return;
@@ -777,8 +777,19 @@ fn drop_extra_link(extra: &Path, ours: &[PathBuf]) {
     let Ok(target) = std::fs::read_link(extra) else {
         return;
     };
-    let named = |dir: &PathBuf| dir.file_name().is_some() && dir.file_name() == target.file_name();
-    if ours.iter().any(named)
+    let target = match (target.is_relative(), extra.parent()) {
+        (true, Some(parent)) => parent.join(target),
+        _ => target,
+    };
+    let same = |dir: &PathBuf| {
+        use path_absolutize::Absolutize;
+        let clean = |p: &Path| p.absolutize().map(|p| p.into_owned()).ok();
+        if let (Ok(a), Ok(b)) = (target.canonicalize(), dir.canonicalize()) {
+            return a == b;
+        }
+        matches!((clean(&target), clean(dir)), (Some(a), Some(b)) if a == b)
+    };
+    if ours.iter().any(same)
         && let Err(err) = file::remove_dir_link(extra)
     {
         debug!("could not remove {}: {err:#}", display_path(extra));
@@ -909,25 +920,35 @@ mod tests {
     #[test]
     fn drop_extra_link_removes_only_a_link_to_what_the_migration_made() {
         let tmp = tempfile::tempdir().unwrap();
-        let (ours, other) = (
-            tmp.path().join("tool-aaaaaaaa"),
-            tmp.path().join("tool-bbbbbbbb"),
-        );
-        std::fs::create_dir(&ours).unwrap();
-        std::fs::create_dir(&other).unwrap();
-        let link = tmp.path().join("link");
-        // made by a `mise link` or another install since the migration began
-        std::os::unix::fs::symlink(&other, &link).unwrap();
-        drop_extra_link(&link, std::slice::from_ref(&ours));
-        assert!(link.is_symlink());
-        drop_extra_link(&link, &[]);
-        assert!(link.is_symlink());
-        std::fs::remove_file(&link).unwrap();
-        // the installer's own, even when its directory is gone again
+        let root = tmp.path().join("installs");
+        let elsewhere = tmp.path().join("shared");
+        let tools = root.join("tool");
+        std::fs::create_dir_all(&tools).unwrap();
+        let ours = root.join("tool-aaaaaaaa");
+        let same_name = elsewhere.join("tool-aaaaaaaa");
+        let other = root.join("tool-bbbbbbbb");
+        for dir in [&ours, &same_name, &other] {
+            std::fs::create_dir_all(dir).unwrap();
+        }
+        let link = tools.join("1.0.0");
+        let ours_list = std::slice::from_ref(&ours);
+        // another install, and a same-named directory in another root
+        for target in [&other, &same_name] {
+            std::os::unix::fs::symlink(target, &link).unwrap();
+            drop_extra_link(&link, ours_list);
+            assert!(link.is_symlink());
+            std::fs::remove_file(&link).unwrap();
+        }
+        drop_extra_link(&link, ours_list);
+        // a relative link to ours, as the installer writes it
+        std::os::unix::fs::symlink("../tool-aaaaaaaa", &link).unwrap();
+        drop_extra_link(&link, ours_list);
+        assert!(!link.is_symlink());
+        // dangling, its directory gone again
         std::os::unix::fs::symlink(&ours, &link).unwrap();
         std::fs::remove_dir(&ours).unwrap();
-        drop_extra_link(&link, std::slice::from_ref(&ours));
-        assert!(!link.is_symlink() && other.is_dir());
+        drop_extra_link(&link, ours_list);
+        assert!(!link.is_symlink() && other.is_dir() && same_name.is_dir());
     }
 
     #[cfg(unix)]
