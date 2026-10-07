@@ -822,6 +822,8 @@ pub(crate) async fn apply_locked_with_scope(
         let summary = Some(Summary {
             message: Some("apply failed; recovery attempted".into()),
         });
+        let mut operation_id = None;
+        scope.with_operation(|op| operation_id = Some(op.id.clone()));
         if recovery_errors.is_empty() {
             scope.finish(status.application_failure.clone(), summary);
         } else {
@@ -837,21 +839,29 @@ pub(crate) async fn apply_locked_with_scope(
             && touched.is_empty()
             && recovery_errors.is_empty()
         {
-            // Only what this operation recorded: a root of its own (a fresh
-            // machine had no history to record on), or a commit on the
-            // repository's head or its own protective checkpoint. The
-            // operation lock is released by now, and a save that landed
-            // since is the user's to keep.
-            let ours = |commit: &String| {
-                Some(commit) == status.upstream_commit.as_ref()
-                    || Some(commit) == protected_head.as_ref()
+            // Only a head this operation recorded: its own protective
+            // checkpoint, or its failure checkpoint written straight on top
+            // of that (or as a root, when there was none). The operation
+            // lock is released by now, and a save that landed since is the
+            // user's to keep. The deletion is a compare-and-swap on `head`.
+            let recorded_by_this_operation = |head: &String| -> Result<bool> {
+                if Some(head) == protected_head.as_ref() {
+                    return Ok(true);
+                }
+                let Some(id) = &operation_id else {
+                    return Ok(false);
+                };
+                let recorded = repo
+                    .read_meta(head)
+                    .ok()
+                    .and_then(|checkpoint| checkpoint.operation)
+                    .is_some_and(|operation| &operation.id == id);
+                Ok(recorded
+                    && repo.parents_of(head)? == protected_head.iter().cloned().collect::<Vec<_>>())
             };
             if let Some(head) =
                 repo.ref_oid(crate::system::history::shadow::HistoryRepo::HISTORY_REF)?
-                && (ours(&head) || {
-                    let parents = repo.parents_of(&head)?;
-                    parents.is_empty() || parents.iter().any(ours)
-                })
+                && recorded_by_this_operation(&head)?
                 && repo.delete_history_head(&head).is_ok()
             {
                 store.rebuild_index()?;
