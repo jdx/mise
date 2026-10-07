@@ -1744,11 +1744,20 @@ fn apply_one(req: &EditRequest, desired: Option<&str>, written: &mut Vec<PathBuf
             perms.set_mode(perms.mode() | 0o200);
             std::fs::set_permissions(tmp.path(), perms)?;
         }
-        #[cfg(not(unix))]
+        #[cfg(windows)]
         {
-            let mut perms = std::fs::metadata(tmp.path())?.permissions();
-            perms.set_readonly(false);
-            std::fs::set_permissions(tmp.path(), perms)?;
+            use std::os::windows::{ffi::OsStrExt, fs::MetadataExt};
+            use windows_sys::Win32::Storage::FileSystem::{
+                FILE_ATTRIBUTE_READONLY, SetFileAttributesW,
+            };
+            let path = std::fs::canonicalize(tmp.path())?;
+            let wide: Vec<u16> = path.as_os_str().encode_wide().chain(Some(0)).collect();
+            let attributes = std::fs::metadata(tmp.path())?.file_attributes();
+            if unsafe { SetFileAttributesW(wide.as_ptr(), attributes & !FILE_ATTRIBUTE_READONLY) }
+                == 0
+            {
+                return Err(std::io::Error::last_os_error().into());
+            }
         }
         tmp.persist(&req.path)
             .map_err(|err| err.error)
