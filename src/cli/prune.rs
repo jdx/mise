@@ -78,6 +78,10 @@ impl Prune {
         if self.monorepo {
             unimplemented!("mise prune --monorepo is not implemented yet");
         }
+        // Prune inspects the project it runs in from whatever environment it was
+        // started in, including when it rebuilds shims afterwards; none of that is
+        // a use of the project, so it must not replace the project's snapshots.
+        let _suspended = crate::install_layout::snapshots::suspend();
         let mut config = Config::get().await?;
         if self.configs || !self.tools {
             self.prune_configs()?;
@@ -129,6 +133,7 @@ impl Prune {
         } else {
             Tracker::clean()?;
             Trust::clean()?;
+            crate::install_layout::snapshots::clean()?;
             info!("pruned configuration links");
         }
         Ok(())
@@ -140,6 +145,7 @@ pub(super) async fn prune(
     tools: Vec<&BackendArg>,
     dry_run: bool,
 ) -> Result<()> {
+    let _suspended = crate::install_layout::snapshots::suspend();
     let PrunableTools {
         to_delete, running, ..
     } = prunable_tools_with_sources(config, tools).await?;

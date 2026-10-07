@@ -137,6 +137,36 @@ pub trait ConfigFile: Debug + Send + Sync {
         Ok(self.to_tool_request_set()?.into())
     }
     fn to_tool_request_set(&self) -> eyre::Result<ToolRequestSet>;
+    /// The tools with a template in their version (`node = "{{ vars.node }}"`) or
+    /// options that this platform resolves, each once.
+    fn templated_tool_backends(&self) -> Vec<String> {
+        vec![]
+    }
+    /// A hash of the text this config was parsed from, for a config that keeps one,
+    /// to tell that its file changed after it was loaded.
+    fn loaded_hash(&self) -> Option<String> {
+        None
+    }
+    /// Every tool this config sets, templated or not.
+    fn tool_backends(&self) -> Vec<String> {
+        self.to_tool_request_set()
+            .map(|set| {
+                set.list_tools()
+                    .iter()
+                    .map(|ba| ba.short.to_string())
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+    /// Whether any tool's version or options is a template, on any platform.
+    fn has_templated_tool_versions(&self) -> bool {
+        !self.templated_tool_backends().is_empty()
+    }
+    /// [`ConfigFile::to_tool_request_set`] without the templated versions, for a
+    /// caller that has another source for them.
+    fn to_tool_request_set_skipping_templated(&self) -> eyre::Result<ToolRequestSet> {
+        self.to_tool_request_set()
+    }
     fn aliases(&self) -> eyre::Result<AliasMap> {
         Ok(Default::default())
     }
