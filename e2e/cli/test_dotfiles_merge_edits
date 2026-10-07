@@ -351,6 +351,8 @@ EOF2
 assert_succeed "mise dotfiles apply --yes"
 assert_fail "test -L ~/.ro/config.toml"
 assert_contains "cat ~/.ro/config.toml" 'notify = ["a"]'
+# root can write a 0444 file, so check the owner-write bit itself
+assert "ls -l ~/.ro/config.toml | cut -c3" "w"
 
 # merge = "missing" fills in defaults and leaves values the app changed
 mkdir -p ~/.fill
