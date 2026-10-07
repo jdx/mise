@@ -14,7 +14,15 @@ function PLUGIN:PostInstall(ctx)
 set -e
 
 # Run the Poetry installer
-curl -sSL https://install.python-poetry.org | POETRY_HOME="%s" python3 - --version "%s"
+# The installer builds its venv with symlinks=False, which copies the python binary.
+# That breaks precompiled Pythons (e.g. missing libpython*.dylib on macOS), so patch
+# it to create a symlinked venv instead.
+installer="$(curl -fsSL https://install.python-poetry.org)"
+patched="$(printf '%%s\n' "$installer" | sed 's/symlinks=False/symlinks=True/')"
+if [ "$installer" = "$patched" ]; then
+    echo "warning: could not patch the Poetry installer to use symlinks" >&2
+fi
+printf '%%s\n' "$patched" | POETRY_HOME="%s" python3 - --version "%s"
 
 # Configure poetry for mise compatibility
 # For Poetry >= 2.0.0, use virtualenvs.use-poetry-python false
