@@ -1516,7 +1516,13 @@ impl HistoryRepo {
             .run(PlumbingCall::new(["read-tree", base]).index_file(index))?;
         for overlay in overlays {
             let listed = self.git.output(
-                PlumbingCall::new(["ls-files", "-z", "--", &overlay.path]).index_file(index),
+                PlumbingCall::new([
+                    "ls-files",
+                    "-z",
+                    "--",
+                    &format!(":(literal){}", overlay.path),
+                ])
+                .index_file(index),
             )?;
             let mut removals: Vec<u8> = vec![];
             for entry in listed.split(|byte| *byte == 0) {

@@ -73,6 +73,19 @@ impl DotfilesSave {
             bail!("history is disabled (history.enabled = false)");
         }
         let (store, tracked, entries) = super::history::open().await?;
+        if !crate::system::history::local::active()
+            && tracked.invalid_local.iter().any(|invalid| {
+                self.paths.is_empty()
+                    || self.paths.iter().any(|path| {
+                        let path = normalize_target(path);
+                        path.starts_with(invalid) || invalid.starts_with(path)
+                    })
+            })
+        {
+            bail!(
+                "invalid local-only declaration: correct it before saving the affected shared paths"
+            );
+        }
         // local-only paths are saved in this machine's own history, by the
         // same command in the local scope
         let mut shared = self.paths.clone();

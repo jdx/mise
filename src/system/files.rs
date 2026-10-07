@@ -245,8 +245,8 @@ pub enum Ignored {
 static INVALID_DECLARATIONS: std::sync::Mutex<Vec<InvalidDeclaration>> =
     std::sync::Mutex::new(Vec::new());
 
-fn record_invalid(target: &str, config: &Path, reason: impl Into<String>) {
-    record_ignored(target, config, reason, Ignored::Unreadable, false);
+fn record_invalid(target: &str, config: &Path, reason: impl Into<String>, local: bool) {
+    record_ignored(target, config, reason, Ignored::Unreadable, local);
 }
 
 fn record_ignored(
@@ -1337,12 +1337,19 @@ fn files_from_config_files_with_tracking_roots(
     merged.into_values().collect()
 }
 
+fn is_track_local_value(value: &toml::Value) -> bool {
+    value
+        .as_table()
+        .is_some_and(|table| table.get("mode").and_then(toml::Value::as_str) == Some(TRACK_LOCAL))
+}
+
 /// Parse a `[dotfiles]` whole-file declaration. A group's entries are
 /// declared under `[dotfile_groups.<name>.entries]`, which sets their group;
 /// `[dotfiles]` itself takes no `group`.
 fn parse_dotfiles_entry(target: &str, value: toml::Value, config: &Path) -> Option<FileTomlEntry> {
+    let local = is_track_local_value(&value);
     if value.as_table().is_some_and(|t| t.contains_key("group")) {
-        record_invalid(target, config, GROUP_KEY_IN_DOTFILES);
+        record_invalid(target, config, GROUP_KEY_IN_DOTFILES, local);
         return None;
     }
     parse_file_entry(target, value, config)
@@ -1353,6 +1360,7 @@ const GROUP_KEY_IN_DOTFILES: &str =
 
 /// Parse a whole-file declaration and reject unsupported encryption combinations.
 fn parse_file_entry(target: &str, value: toml::Value, config: &Path) -> Option<FileTomlEntry> {
+    let local = is_track_local_value(&value);
     if value.as_table().is_some_and(|t| {
         t.get("encrypt").and_then(toml::Value::as_bool) == Some(true)
             && ["content", "block", "line", "template", "merge"]
@@ -1363,6 +1371,7 @@ fn parse_file_entry(target: &str, value: toml::Value, config: &Path) -> Option<F
             target,
             config,
             "encrypted dotfiles require an external source, not inline content or edits",
+            local,
         );
         return None;
     }
@@ -1379,6 +1388,7 @@ fn parse_file_entry(target: &str, value: toml::Value, config: &Path) -> Option<F
             target,
             config,
             "mode = \"absent\" removes the whole file and cannot be combined with block or line edits",
+            local,
         );
         return None;
     }
@@ -1386,11 +1396,19 @@ fn parse_file_entry(target: &str, value: toml::Value, config: &Path) -> Option<F
         .as_table()
         .is_some_and(|table| table.contains_key("encrypt"));
     let entry = file_entry_from_toml(target, value);
-    if entry.is_none() && encryption_declared {
+    if entry.is_none() && local {
+        record_invalid(
+            target,
+            config,
+            "invalid local-only whole-file declaration",
+            true,
+        );
+    } else if entry.is_none() && encryption_declared {
         record_invalid(
             target,
             config,
             "invalid encryption declaration; encrypt must be a boolean on a whole-file entry",
+            local,
         );
     }
     entry
@@ -1574,7 +1592,7 @@ fn merge_file_entry(
     let permissions = match permissions.as_deref().map(parse_permissions).transpose() {
         Ok(permissions) => permissions,
         Err(err) => {
-            warn!("[dotfiles].\"{target_raw}\": {err}, ignoring entry");
+            record_invalid(&target_raw, &origin.config, err.to_string(), local);
             return;
         }
     };
@@ -1583,7 +1601,7 @@ fn merge_file_entry(
     if let Some(group) = &group
         && let Err(err) = crate::system::dotfile_groups::validate_group_name(group)
     {
-        record_invalid(&target_raw, &origin.config, err.to_string());
+        record_invalid(&target_raw, &origin.config, err.to_string(), local);
         return;
     }
     if encrypt == Some(true) && content.is_some() {
@@ -1591,6 +1609,7 @@ fn merge_file_entry(
             &target_raw,
             &origin.config,
             "encrypted dotfiles require an external source; inline content is shared in configuration",
+            local,
         );
         return;
     }
@@ -1616,7 +1635,7 @@ fn merge_file_entry(
         Ok(Some(relative)) => Some(dotfiles_root().join(relative)),
         Ok(None) => None,
         Err(err) => {
-            record_invalid(&target_raw, &origin.config, err.to_string());
+            record_invalid(&target_raw, &origin.config, err.to_string(), local);
             return;
         }
     };
@@ -1636,6 +1655,7 @@ fn merge_file_entry(
             &target_raw,
             &origin.config,
             "allow_plaintext applies only to mode = \"track\"",
+            local,
         );
         return;
     }
@@ -1644,6 +1664,7 @@ fn merge_file_entry(
             &target_raw,
             &origin.config,
             "include selects what a tracked directory saves and applies only to mode = \"track\"",
+            local,
         );
         return;
     }
@@ -1660,13 +1681,14 @@ fn merge_file_entry(
                 &target_raw,
                 &origin.config,
                 "mode = \"track\" leaves the file where it is and takes no source, content, manifest, remove_empty, relative, dot_prefix, or group",
+                local,
             );
             return;
         }
         if permissions.is_some()
             && let Some(reason) = permissions_conflict(Some(FileMode::Track), false, false, false)
         {
-            record_invalid(&target_raw, &origin.config, reason);
+            record_invalid(&target_raw, &origin.config, reason, local);
             return;
         }
         let target = resolve_target_arg(&target_raw);
@@ -1675,6 +1697,7 @@ fn merge_file_entry(
                 &target_raw,
                 &origin.config,
                 "target must be absolute or start with ~/",
+                local,
             );
             return;
         }
@@ -1693,6 +1716,7 @@ fn merge_file_entry(
                 &target_raw,
                 &origin.config,
                 "include selects paths inside a tracked directory and does nothing on a file: remove it, or track the parent directory and name this file in its include list",
+                local,
             );
             return;
         }
@@ -1711,7 +1735,7 @@ fn merge_file_entry(
                     .flatten()
                     .collect::<Vec<_>>()
                     .join("; ");
-                record_invalid(&target_raw, &origin.config, &reasons);
+                record_invalid(&target_raw, &origin.config, &reasons, local);
                 return;
             }
         };
@@ -1756,7 +1780,12 @@ fn merge_file_entry(
             .unwrap_or(target_raw),
         Selection::NoMatch => return,
         Selection::Ambiguous(_) => {
-            record_invalid(&target_raw, &origin.config, "ambiguous dotfile variants");
+            record_invalid(
+                &target_raw,
+                &origin.config,
+                "ambiguous dotfile variants",
+                local,
+            );
             return;
         }
     };
@@ -6250,7 +6279,12 @@ variants = [{{ {field} = "linux" }}]"#
     #[test]
     fn configuration_reload_discards_old_declaration_diagnostics() {
         let target = "~/.mise-diagnostic-reset-test";
-        record_invalid(target, Path::new("diagnostic-reset.toml"), "invalid mode");
+        record_invalid(
+            target,
+            Path::new("diagnostic-reset.toml"),
+            "invalid mode",
+            false,
+        );
         assert!(
             invalid_declarations()
                 .iter()

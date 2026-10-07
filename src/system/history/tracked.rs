@@ -259,6 +259,8 @@ pub struct TrackedSet {
     /// Declarations that could not be honoured, so they are never mistaken
     /// for protection.
     pub invalid: Vec<PathReason>,
+    /// Malformed local declarations still protect their paths from shared capture.
+    pub invalid_local: Vec<PathBuf>,
     /// Outside the local scope, the paths `mode = "track-local"` keeps in
     /// this machine's own history: never this history's to capture, apply,
     /// or publish (see [`Self::keep_local_out`]).
@@ -327,23 +329,23 @@ impl TrackedSet {
             .into_iter()
             .filter(|request| crate::system::files::declaration_is_global(config, request));
         set.add_requests(requests);
-        set.keep_local_out();
         for invalid in crate::system::files::invalid_declarations() {
             if !crate::system::files::tracking_config_is_global(config, &invalid.config) {
                 continue;
             }
             if invalid.local {
-                eyre::bail!(
-                    "invalid local-only declaration {}: {}; shared history cannot capture until it is corrected",
-                    invalid.target,
-                    invalid.reason
-                );
+                let path = normalize_target(Path::new(&invalid.target));
+                set.invalid_local.push(path.clone());
+                if !super::local::active() && !set.local.contains(&path) {
+                    set.local.push(path);
+                }
             }
             set.invalid.push(PathReason {
                 path: invalid.target,
                 reason: format!("{} ({})", invalid.reason, display_path(&invalid.config)),
             });
         }
+        set.keep_local_out();
         set.manifest.exclude = set.exclude.clone();
         if set.manifest.enrollment.iter().any(|entry| entry.encrypt) {
             set.manifest.recipients = super::config::file_recipients()?;

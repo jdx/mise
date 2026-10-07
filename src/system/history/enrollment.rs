@@ -140,6 +140,7 @@ pub(crate) fn resolve(
     }
     resolved.required_sources = tracked.required_sources.clone();
     resolved.invalid = tracked.invalid.clone();
+    resolved.invalid_local = tracked.invalid_local.clone();
     resolved.declarations = Some(current.clone());
     resolved.disabled = tracked.disabled.clone();
     resolved.local = tracked.local.clone();
