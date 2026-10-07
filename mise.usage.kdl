@@ -1064,7 +1064,7 @@ their shared versions follow in the same run.
 """#
             after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise dot pull --dry-run\u{1b}[22m\n    $ \u{1b}[1mmise dot pull --yes\u{1b}[22m\n    $ \u{1b}[1mmise dot pull --take-remote ~/.zshrc\u{1b}[22m\n    $ \u{1b}[1mmise dot pull --keep-local ~/.zshrc\u{1b}[22m\n    $ \u{1b}[1mmise dot pull --take-remote-all\u{1b}[22m\n    $ \u{1b}[1mmise dot pull --take-remote-all --keep-local ~/.zshrc\u{1b}[22m\n"
             flag "-n --dry-run" help="Show the plan without changing anything"
-            flag "-y --yes" help="Accepted for compatibility; pull no longer asks to confirm the apply"
+            flag "-y --yes" help="Accepted for compatibility; pull skips the apply confirmation"
             flag --take-remote help="Resolve a conflict with the repository's version" var=#true {
                 arg <PATH>
             }
@@ -2876,7 +2876,7 @@ their shared versions follow in the same run.
 """#
         after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise dot pull --dry-run\u{1b}[22m\n    $ \u{1b}[1mmise dot pull --yes\u{1b}[22m\n    $ \u{1b}[1mmise dot pull --take-remote ~/.zshrc\u{1b}[22m\n    $ \u{1b}[1mmise dot pull --keep-local ~/.zshrc\u{1b}[22m\n    $ \u{1b}[1mmise dot pull --take-remote-all\u{1b}[22m\n    $ \u{1b}[1mmise dot pull --take-remote-all --keep-local ~/.zshrc\u{1b}[22m\n"
         flag "-n --dry-run" help="Show the plan without changing anything"
-        flag "-y --yes" help="Accepted for compatibility; pull no longer asks to confirm the apply"
+        flag "-y --yes" help="Accepted for compatibility; pull skips the apply confirmation"
         flag --take-remote help="Resolve a conflict with the repository's version" var=#true {
             arg <PATH>
         }
