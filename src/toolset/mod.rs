@@ -44,6 +44,7 @@ pub use tool_source::ToolSource;
 pub use tool_version::resolve_sub_base;
 pub use tool_version::{ResolveOptions, ToolVersion};
 pub(crate) use tool_version_list::ToolVersionList;
+pub(crate) use tool_version_options::fill_registry_defaults;
 pub use tool_version_options::{
     CoreToolOptions, EPHEMERAL_OPT_KEYS, RawBackendOptions, ResolvedToolOptions, ToolOptionSource,
     ToolOptions, ToolVersionOptions, parse_tool_options, scalar_value_to_string,

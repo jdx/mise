@@ -304,13 +304,36 @@ impl ResolvedToolOptions {
     }
 }
 
-/// Registry defaults that name a signer policy a user's own signer option
-/// replaces rather than combines with: packslip rejects `workflow` next to
-/// any of these keys, so a registry `workflow` must not outlive them.
-const REGISTRY_DEFAULTS_SUPERSEDED_BY_USER_SIGNER: (&str, &[&str]) = (
+/// Options that choose who may have signed a release. A registry entry's
+/// signer options are one policy, so a user's own signer option replaces all
+/// of them: packslip rejects `workflow` next to any other, and a registry
+/// `identity` beside a user's `workflow` would be rejected the same way.
+const SIGNER_OPTION_KEYS: [&str; 5] = [
     "workflow",
-    &["pubkey", "identity", "identity_prefix", "issuer"],
-);
+    "pubkey",
+    "identity",
+    "identity_prefix",
+    "issuer",
+];
+
+/// Whether `user` sets a signer option, which retires the registry's.
+fn sets_signer_option(user: &ToolVersionOptions) -> bool {
+    SIGNER_OPTION_KEYS
+        .iter()
+        .any(|key| user.opts.contains_key(*key))
+}
+
+/// Add the registry's install-time defaults beneath the user's options,
+/// leaving out the registry's signer options when the user chose their own.
+pub(crate) fn fill_registry_defaults(user: &mut ToolVersionOptions, registry: ToolVersionOptions) {
+    let user_signer = sets_signer_option(user);
+    for (key, value) in registry.opts {
+        if user_signer && SIGNER_OPTION_KEYS.contains(&key.as_str()) {
+            continue;
+        }
+        user.opts.entry(key).or_insert(value);
+    }
+}
 
 impl ResolvedToolOptions {
     fn drop_superseded_registry_defaults(
@@ -318,15 +341,14 @@ impl ResolvedToolOptions {
         options: &ToolVersionOptions,
         source: ToolOptionSource,
     ) {
-        let (default, superseders) = REGISTRY_DEFAULTS_SUPERSEDED_BY_USER_SIGNER;
-        if source != ToolOptionSource::Registry
-            && self.sources.get(default) == Some(&ToolOptionSource::Registry)
-            && superseders
-                .iter()
-                .any(|key| options.opts.contains_key(*key))
-        {
-            self.options.opts.shift_remove(default);
-            self.sources.shift_remove(default);
+        if source == ToolOptionSource::Registry || !sets_signer_option(options) {
+            return;
+        }
+        for key in SIGNER_OPTION_KEYS {
+            if self.sources.get(key) == Some(&ToolOptionSource::Registry) {
+                self.options.opts.shift_remove(key);
+                self.sources.shift_remove(key);
+            }
         }
     }
 }
@@ -908,6 +930,40 @@ mod tests {
             assert!(!resolved.effective().contains_key("workflow"), "{key}");
             assert!(resolved.effective().contains_key(key), "{key}");
         }
+    }
+
+    #[test]
+    fn user_workflow_drops_registry_identity_and_issuer() {
+        let mut resolved = ResolvedToolOptions::default();
+        resolved.apply_overrides(
+            &opts(&[("identity", "i"), ("issuer", "x")]),
+            ToolOptionSource::Registry,
+        );
+        resolved.apply_overrides(
+            &opts(&[("workflow", "release.yml")]),
+            ToolOptionSource::Config,
+        );
+        assert_eq!(
+            resolved.effective().opts.keys().collect::<Vec<_>>(),
+            vec!["workflow"]
+        );
+    }
+
+    #[test]
+    fn fill_registry_defaults_yields_to_a_user_signer() {
+        let registry = || opts(&[("workflow", "release.yml"), ("variant", "musl")]);
+        let mut user = opts(&[("pubkey", "k")]);
+        fill_registry_defaults(&mut user, registry());
+        assert_eq!(
+            user.opts.keys().collect::<Vec<_>>(),
+            vec!["pubkey", "variant"]
+        );
+        let mut user = opts(&[("variant", "gnu")]);
+        fill_registry_defaults(&mut user, registry());
+        assert_eq!(
+            user.opts.keys().collect::<Vec<_>>(),
+            vec!["variant", "workflow"]
+        );
     }
 
     #[test]
