@@ -1,5 +1,5 @@
 backends = [
-  { full = "packslip:github.com/max-sixty/worktrunk", min_version = "0.80.0", options = { identity_prefix = "https://github.com/max-sixty/worktrunk/.github/workflows/release.yaml@refs/tags/", issuer = "https://token.actions.githubusercontent.com" } },
+  { full = "packslip:github.com/max-sixty/worktrunk", min_version = "0.80.0", options = { workflow = "release.yaml" } },
   "aqua:max-sixty/worktrunk",
   "cargo:worktrunk",
 ]
