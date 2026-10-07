@@ -393,7 +393,7 @@ Both work on one installation directory at a time.
   installations of its backend and version, narrowed to the pinned artifact when
   the entry has a checksum for your platform. Legacy installations are pruned as
   before.
-- A tool version that is a template, such as `node = "{{ vars.node }}"`, depends
+- A tool version that is a template, such as <span v-pre>`node = "{{ vars.node }}"`</span>, depends
   on the vars, env, `MISE_ENV`, `--no-env`, settings and dotenv files in effect
   where the project is used, which `mise prune` cannot reproduce from another
   directory. So the catalog keeps a snapshot, under `installs/.mise/snapshots/`,
