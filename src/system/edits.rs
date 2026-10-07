@@ -79,8 +79,19 @@ pub(crate) struct EditTomlTable {
     /// `merge = true` sets the keys in `source` on a structured target file
     /// (JSON, TOML, or YAML) and leaves every other key to the application
     /// that also writes it
+    ///
+    /// `merge = "missing"` sets only the keys of `source` the target has no
+    /// value for, so a value the application changed stays
     #[serde(default)]
-    pub merge: Option<bool>,
+    pub merge: Option<MergeSetting>,
+}
+
+/// the value of an entry's `merge` key
+#[derive(Debug, Clone, Eq, PartialEq, Deserialize)]
+#[serde(untagged)]
+pub enum MergeSetting {
+    Bool(bool),
+    Mode(String),
 }
 
 /// where a block's content comes from
@@ -108,6 +119,8 @@ pub enum EditOp {
         source: BlockSource,
         template: bool,
         format: Format,
+        /// only set keys the target has no value for
+        missing_only: bool,
     },
 }
 
@@ -125,6 +138,17 @@ impl EditOp {
             } => Some(path),
             _ => None,
         }
+    }
+
+    /// a merge that only fills in keys the target lacks
+    fn fills_missing_only(&self) -> bool {
+        matches!(
+            self,
+            Self::Merge {
+                missing_only: true,
+                ..
+            }
+        )
     }
 
     /// whether rendering the edit's content runs the template engine
@@ -415,7 +439,7 @@ fn resolve_entry(
         },
         EditTomlEntry::Table(table) => table,
     };
-    if let Some(merge) = entry.merge {
+    if let Some(merge) = &entry.merge {
         let op = merge_op(path_raw, &id, &path, &entry, merge, base, &mut origin)?;
         return Ok(EditRequest {
             path_raw: path_raw.to_string(),
@@ -521,13 +545,17 @@ fn merge_op(
     id: &str,
     path: &Path,
     entry: &EditTomlTable,
-    merge: bool,
+    merge: &MergeSetting,
     base: &Path,
     origin: &mut ResourceOrigin,
 ) -> Result<EditOp> {
-    if !merge {
-        bail!("\"{path_raw}\".{id}: merge must be true when present, ignoring entry");
-    }
+    let missing_only = match merge {
+        MergeSetting::Bool(true) => false,
+        MergeSetting::Mode(mode) if mode == "missing" => true,
+        _ => bail!(
+            "\"{path_raw}\".{id}: merge must be true or \"missing\" when present, ignoring entry"
+        ),
+    };
     if entry.block.is_some() || entry.line.is_some() {
         bail!("\"{path_raw}\".{id}: merge cannot be combined with block or line, ignoring entry");
     }
@@ -568,6 +596,7 @@ fn merge_op(
         source: BlockSource::File(source),
         template,
         format,
+        missing_only,
     })
 }
 
@@ -814,6 +843,20 @@ fn block_state(req: &EditRequest, desired: Option<&str>) -> Result<FileState> {
     let text = file::read_to_string(&req.path)?;
     let comment = match &req.op {
         EditOp::Block { comment, .. } => comment,
+        EditOp::Merge {
+            format,
+            missing_only: true,
+            ..
+        } => {
+            let desired = desired.expect("resolved merge content");
+            return Ok(
+                if structured_merge::missing(*format, &text, desired)?.is_none() {
+                    FileState::Applied
+                } else {
+                    FileState::Differs("keys are missing".into())
+                },
+            );
+        }
         EditOp::Merge { format, .. } => {
             let desired = desired.expect("resolved merge content");
             return Ok(if structured_merge::contains(*format, &text, desired)? {
@@ -918,6 +961,10 @@ fn merge_conflict(
     (second, second_format, second_content): &(&EditRequest, Format, String),
 ) -> Option<String> {
     if !same_target(&first.path, &second.path) || format != second_format {
+        return None;
+    }
+    // a fill-only entry gives way to any value another entry sets
+    if first.op.fills_missing_only() || second.op.fills_missing_only() {
         return None;
     }
     // unparseable sources were already reported by desired_content
@@ -1643,10 +1690,18 @@ fn apply_one(req: &EditRequest, desired: Option<&str>, written: &mut Vec<PathBuf
 
 fn apply_to_string(req: &EditRequest, desired: Option<&str>, text: &str) -> Result<String> {
     match &req.op {
-        EditOp::Merge { format, .. } => {
+        EditOp::Merge {
+            format,
+            missing_only,
+            ..
+        } => {
             let desired = desired.expect("resolved merge content");
-            structured_merge::merge(*format, text, desired)
-                .wrap_err_with(|| format!("merge into \"{}\" failed", req.path.display_user()))
+            let merged = if *missing_only {
+                structured_merge::fill_missing(*format, text, desired)
+            } else {
+                structured_merge::merge(*format, text, desired)
+            };
+            merged.wrap_err_with(|| format!("merge into \"{}\" failed", req.path.display_user()))
         }
         EditOp::Block { comment, .. } => {
             let mut lines: Vec<String> = text.lines().map(|l| l.to_string()).collect();
@@ -1780,6 +1835,7 @@ mod tests {
                     source: BlockSource::File(PathBuf::from("/cfg/shared.txt")),
                     template: false,
                     format,
+                    missing_only: false,
                 }
             );
             assert_eq!(req.describe_op(), "merge:shared");
@@ -1795,6 +1851,16 @@ mod tests {
         )
         .unwrap();
         assert!(req.op.is_template());
+    }
+
+    #[test]
+    fn merge_missing_fills_only_absent_keys() {
+        let req = resolve("~/a/config.toml", "source = \"s\"\nmerge = \"missing\"").unwrap();
+        assert!(req.op.fills_missing_only());
+        let err = resolve("~/a/config.toml", "source = \"s\"\nmerge = \"other\"")
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("true or \"missing\""), "{err}");
     }
 
     #[test]
@@ -1861,7 +1927,11 @@ mod tests {
                 "source = \"s\"\nmerge = true",
                 ".json, .toml",
             ),
-            ("~/a/settings.json/shared", "merge = true", "needs a source"),
+            (
+                "/outside/settings.json/shared",
+                "merge = true",
+                "source is required",
+            ),
             (
                 "~/a/settings.json/shared",
                 "source = \"s\"\nmerge = false",

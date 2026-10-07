@@ -87,6 +87,106 @@ pub fn merge(format: Format, target: &str, source: &str) -> Result<String> {
     }
 }
 
+/// The part of `source` that `target` has no value for, as text in the same
+/// format, or `None` when the target has a value for every key in `source`. A
+/// key the target holds counts as present whatever its value, and a table both
+/// sides hold is compared key by key.
+pub fn missing(format: Format, target: &str, source: &str) -> Result<Option<String>> {
+    Ok(
+        match (
+            parse(format, target, "target")?,
+            parse(format, source, "source")?,
+        ) {
+            (Doc::Json(Value::Object(target)), Doc::Json(Value::Object(source))) => {
+                let missing = json_missing(&source, &target);
+                (!missing.is_empty())
+                    .then(|| serde_json::to_string(&Value::Object(missing)))
+                    .transpose()?
+            }
+            (Doc::Toml(target), Doc::Toml(source)) => {
+                let missing = toml_missing(&source, &target);
+                (!missing.is_empty())
+                    .then(|| toml::to_string(&missing))
+                    .transpose()?
+            }
+            (Doc::Yaml(target), Doc::Yaml(source)) => {
+                let missing = yaml_missing(&source, &target);
+                (!missing.is_empty())
+                    .then(|| serde_yaml::to_string(&missing))
+                    .transpose()?
+            }
+            _ => unreachable!("both sides are parsed as the same format"),
+        },
+    )
+}
+
+/// Set only the keys of `source` that `target` has no value for and return the
+/// new text. Existing values are never changed, so a value the application
+/// rewrote stays, and a key it removed comes back.
+pub fn fill_missing(format: Format, target: &str, source: &str) -> Result<String> {
+    match missing(format, target, source)? {
+        Some(missing) => merge(format, target, &missing),
+        None => Ok(target.to_string()),
+    }
+}
+
+fn json_missing(source: &Map<String, Value>, target: &Map<String, Value>) -> Map<String, Value> {
+    let mut out = Map::new();
+    for (key, sv) in source {
+        match (sv, target.get(key)) {
+            (_, None) => {
+                out.insert(key.clone(), sv.clone());
+            }
+            (Value::Object(s), Some(Value::Object(t))) => {
+                let inner = json_missing(s, t);
+                if !inner.is_empty() {
+                    out.insert(key.clone(), Value::Object(inner));
+                }
+            }
+            _ => {}
+        }
+    }
+    out
+}
+
+fn toml_missing(source: &toml::Table, target: &toml::Table) -> toml::Table {
+    let mut out = toml::Table::new();
+    for (key, sv) in source {
+        match (sv, target.get(key)) {
+            (_, None) => {
+                out.insert(key.clone(), sv.clone());
+            }
+            (toml::Value::Table(s), Some(toml::Value::Table(t))) => {
+                let inner = toml_missing(s, t);
+                if !inner.is_empty() {
+                    out.insert(key.clone(), toml::Value::Table(inner));
+                }
+            }
+            _ => {}
+        }
+    }
+    out
+}
+
+fn yaml_missing(source: &serde_yaml::Mapping, target: &serde_yaml::Mapping) -> serde_yaml::Mapping {
+    let mut out = serde_yaml::Mapping::new();
+    for (key, sv) in source {
+        match (sv, target.get(key)) {
+            (_, None) => {
+                out.insert(key.clone(), sv.clone());
+            }
+            (serde_yaml::Value::Mapping(s), Some(serde_yaml::Value::Mapping(t))) => {
+                let inner = yaml_missing(s, t);
+                if !inner.is_empty() {
+                    out.insert(key.clone(), serde_yaml::Value::Mapping(inner));
+                }
+            }
+            _ => {}
+        }
+    }
+    out
+}
+
 fn parse(format: Format, text: &str, what: &str) -> Result<Doc> {
     // an empty file, or one holding only comments, is an empty table
     let blank = text.trim().is_empty() || (format != Format::Json && is_comments_only(text));
@@ -462,6 +562,45 @@ path = \"/Applications/X.app\"
             merge(Format::Yaml, "# c\na: 1\nb: 2\n", "a: 5\n").unwrap(),
             "# c\na: 5\nb: 2\n"
         );
+    }
+
+    #[test]
+    fn fill_missing_keeps_existing_values_and_adds_absent_keys() {
+        let target = "# app\nmodel = \"mine\"\n\n[tui]\ntheme = \"dark\"\n";
+        let source =
+            "model = \"default\"\neffort = \"high\"\n\n[tui]\ntheme = \"light\"\nsize = 3\n";
+        assert_eq!(
+            fill_missing(Format::Toml, target, source).unwrap(),
+            "# app\nmodel = \"mine\"\neffort = \"high\"\n\n[tui]\ntheme = \"dark\"\nsize = 3\n"
+        );
+        let json = fill_missing(
+            Format::Json,
+            r#"{"model": "mine"}"#,
+            r#"{"model": "d", "e": 1}"#,
+        )
+        .unwrap();
+        assert_eq!(json, "{\n  \"model\": \"mine\",\n  \"e\": 1\n}");
+        assert_eq!(
+            fill_missing(Format::Yaml, "a: 1\n", "a: 2\nb: 3\n").unwrap(),
+            "a: 1\nb: 3\n"
+        );
+    }
+
+    #[test]
+    fn nothing_is_missing_when_every_key_has_a_value() {
+        // a different value, or a non-table where the source has a table, is still present
+        for (format, target, source) in [
+            (
+                Format::Json,
+                r#"{"a": {"b": 2}, "c": 1}"#,
+                r#"{"a": {"b": 1}, "c": {"d": 1}}"#,
+            ),
+            (Format::Toml, "a = 1\n", "a = 2\n"),
+            (Format::Yaml, "a: 1\n", "a: {b: 1}\n"),
+        ] {
+            assert_eq!(missing(format, target, source).unwrap(), None, "{format:?}");
+            assert_eq!(fill_missing(format, target, source).unwrap(), target);
+        }
     }
 
     #[test]

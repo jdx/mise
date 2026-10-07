@@ -917,6 +917,29 @@ the application wrote. A missing target is created from the source.
 - `mise dot unapply` leaves merged keys in place, because the application may
   have changed them since.
 
+#### Defaults the application may change {#merge-missing}
+
+Some keys are worth shipping as a default but belong to the application once
+it has picked a value, such as the model a `/model` command writes. Use
+`merge = "missing"` for those. It sets only the keys the target has no value
+for, next to a regular `merge = true` entry for the keys you enforce:
+
+```toml
+[dotfiles]
+"~/.codex/config.toml/shared" = { merge = true }
+"~/.codex/config.toml/defaults" = { source = "codex/defaults.toml", merge = "missing" }
+```
+
+- A key the target already has keeps its value, even a different one. A key
+  the application removes is filled in again on the next apply.
+- A table that exists on both sides is compared key by key, so a default
+  inside it is added without touching its siblings. A value that is not a
+  table counts as present, so a source table under it is skipped.
+- `mise dot status` and `mise dot diff` report only missing keys, never a
+  differing value.
+- A `missing` entry never conflicts with another entry for the same key: the
+  other entry's value wins whichever applies first.
+
 ## How configuration is applied {#semantics}
 
 - Entries merge across the [config hierarchy](/configuration.html).

@@ -351,3 +351,37 @@ EOF2
 assert_succeed "mise dotfiles apply --yes"
 assert_fail "test -L ~/.ro/config.toml"
 assert_contains "cat ~/.ro/config.toml" 'notify = ["a"]'
+
+# merge = "missing" fills in defaults and leaves values the app changed
+mkdir -p ~/.fill
+cat <<'EOF2' >shared/fill-enforced.toml
+theme = "light"
+EOF2
+cat <<'EOF2' >shared/fill-defaults.toml
+model = "gpt-5"
+effort = "high"
+theme = "dark"
+
+[tui]
+size = 3
+EOF2
+cat <<'EOF2' >mise.toml
+[dotfiles]
+"~/.fill/config.toml/enforced" = { source = "shared/fill-enforced.toml", merge = true }
+"~/.fill/config.toml/defaults" = { source = "shared/fill-defaults.toml", merge = "missing" }
+EOF2
+printf 'model = "mine"\n\n[tui]\ntheme = "x"\n' >~/.fill/config.toml
+assert_contains "mise dotfiles status" "keys are missing"
+assert_succeed "mise dotfiles apply --yes"
+assert_contains "cat ~/.fill/config.toml" 'model = "mine"'
+assert_contains "cat ~/.fill/config.toml" 'effort = "high"'
+assert_contains "cat ~/.fill/config.toml" 'size = 3'
+assert_contains "cat ~/.fill/config.toml" 'theme = "light"'
+assert_succeed "mise dotfiles status --missing"
+# the app changes a default and removes another: only the removed one returns
+printf 'model = "other"\ntheme = "light"\n[tui]\nsize = 9\n' >~/.fill/config.toml
+assert_succeed "mise dotfiles apply --yes"
+assert_contains "cat ~/.fill/config.toml" 'model = "other"'
+assert_contains "cat ~/.fill/config.toml" 'effort = "high"'
+assert_contains "cat ~/.fill/config.toml" 'size = 9'
+assert_succeed "mise dotfiles status --missing"
