@@ -4767,7 +4767,13 @@ pub trait Backend: Debug + Send + Sync {
     }
 
     async fn dependency_which(&self, config: &Arc<Config>, bin: &str) -> Option<PathBuf> {
-        if let Some(bin) = which_non_pristine_executable(bin) {
+        // Never resolve a dependency to a mise shim: a shim re-enters mise and fails
+        // ("No version is set for shim") when the tool is installed but not active in
+        // any config. The dependency toolset below resolves the real install instead.
+        if let Some(bin) = file::executable_names(bin)
+            .into_iter()
+            .find_map(file::which_no_shims)
+        {
             return Some(bin);
         }
         let Ok(ts) = self.dependency_toolset(config).await else {
