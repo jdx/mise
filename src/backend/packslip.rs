@@ -2475,7 +2475,7 @@ mod tests {
             "original binary"
         );
         assert!(
-            !install_state::incomplete_file_path(&ba, &tv.state_key()).exists(),
+            !install_state::is_incomplete(&ba, &tv.state_key()),
             "the generic marker is cleared after the payload succeeds"
         );
         assert!(crate::packslip::skills_incomplete_path(&install_path).is_file());

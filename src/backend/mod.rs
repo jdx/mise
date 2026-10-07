@@ -2977,7 +2977,7 @@ pub trait Backend: Debug + Send + Sync {
     ) -> bool {
         let check_path = |install_path: &Path, check_symlink: bool| {
             let is_installed = install_path.exists();
-            let is_not_incomplete = !self.incomplete_file_path(tv).exists();
+            let is_not_incomplete = !install_state::is_incomplete(tv.ba(), &tv.state_key());
             let is_valid_symlink = !check_symlink || !is_runtime_symlink(install_path);
             let is_healthy = is_installed && self.is_install_path_healthy(install_path);
             // An identity-layout installation is complete once its receipt is there;
@@ -3613,7 +3613,7 @@ pub trait Backend: Debug + Send + Sync {
                     // version is a pre-release must not keep winning, and neither
                     // may one left pointing into an interrupted install.
                     if (!filter || !self.is_backend_prerelease(&version))
-                        && !install_state::incomplete_file_path(self.ba(), &version).exists()
+                        && !install_state::is_incomplete(self.ba(), &version)
                     {
                         return Ok(Some(version));
                     }
@@ -3623,7 +3623,7 @@ pub trait Backend: Debug + Send + Sync {
                     .into_iter()
                     .filter(|v| !v.starts_with('.'))
                     .filter(|v| !is_runtime_symlink(&installs_path.join(v)))
-                    .filter(|v| !install_state::incomplete_file_path(self.ba(), v).exists())
+                    .filter(|v| !install_state::is_incomplete(self.ba(), v))
                     .filter(|v| v != "latest")
                     .sorted_by_cached_key(|v| (Versioning::new(v), v.to_string()))
                     .collect_vec();
@@ -3735,6 +3735,7 @@ pub trait Backend: Debug + Send + Sync {
         remove_all_with_progress(self.ba().installs_path(), pr)?;
         remove_all_with_progress(self.ba().cache_path(), pr)?;
         remove_all_with_progress(self.ba().downloads_path(), pr)?;
+        install_state::clear_incomplete_markers(self.ba())?;
         Ok(())
     }
     fn get_aliases(&self) -> eyre::Result<BTreeMap<String, String>> {
@@ -4545,6 +4546,8 @@ pub trait Backend: Debug + Send + Sync {
                 pr.set_message(format!("remove {}", would_remove.join(", ")));
             }
         } else {
+            // The marker is outside the cache dir removed above.
+            install_state::clear_incomplete_marker(tv.ba(), &tv.state_key())?;
             self.cleanup_empty_installs_dir();
         }
         Ok(())
@@ -4644,14 +4647,10 @@ pub trait Backend: Debug + Send + Sync {
         file::create_dir_all(tv.install_path())?;
         file::create_dir_all(tv.download_path())?;
         file::create_dir_all(tv.cache_path())?;
-        // `file::create` rather than `File::create`: it names the path in the error. The three
-        // calls above can return Ok without having created anything -- `std::fs::create_dir_all`
-        // does that for a path Windows refuses, such as one ending in `nul` -- and the first thing
-        // to notice is this write, three calls away from the cause. Unwrapped it was a bare
-        // `The system cannot find the path specified. (os error 3)` naming neither the file nor
-        // the operation.
-        file::create(&self.incomplete_file_path(tv))?;
-        Ok(())
+        // The three calls above can return Ok without having created anything for a version
+        // Windows refuses as a path; the marker sits in a directory named for the same version,
+        // so its write is what reports it, naming the path.
+        install_state::mark_incomplete(tv.ba(), &tv.state_key())
     }
     fn cleanup_install_dirs_on_error(&self, tv: &ToolVersion) {
         if !Settings::get().always_keep_install {
@@ -4710,12 +4709,8 @@ pub trait Backend: Debug + Send + Sync {
             .await
             && self.verify_repaired_install(ctx, tv).await.is_ok();
         if !usable {
-            let _ = file::create(&self.incomplete_file_path(tv));
+            let _ = install_state::mark_incomplete(tv.ba(), &tv.state_key());
         }
-    }
-
-    fn incomplete_file_path(&self, tv: &ToolVersion) -> PathBuf {
-        install_state::incomplete_file_path(tv.ba(), &tv.state_key())
     }
 
     async fn path_env_for_cmd(&self, config: &Arc<Config>, tv: &ToolVersion) -> Result<OsString> {

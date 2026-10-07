@@ -610,11 +610,11 @@ impl ToolVersion {
     }
 
     /// Whether an install into `path` was interrupted: the incomplete marker for
-    /// it is still in the cache.
+    /// it is still in place.
     pub(crate) fn is_incomplete_at(&self, path: &Path) -> bool {
         let key = crate::install_layout::resolver::dir_name_of(path)
             .unwrap_or_else(|| self.tv_pathname());
-        install_state::incomplete_file_path(self.ba(), &key).exists()
+        install_state::is_incomplete(self.ba(), &key)
     }
 
     pub(crate) fn aube_install_identity(&self) -> Option<String> {

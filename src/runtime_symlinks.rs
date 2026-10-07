@@ -277,7 +277,7 @@ fn is_install_incomplete(backend: &Arc<dyn Backend>, installs_dir: &Path, v: &st
     let key = crate::install_layout::resolver::link_target(&installs_dir.join(v))
         .and_then(|install| install.file_name().map(|n| n.to_string_lossy().to_string()))
         .unwrap_or_else(|| v.to_string());
-    install_state::incomplete_file_path(backend.ba(), &key).exists()
+    install_state::is_incomplete(backend.ba(), &key)
 }
 
 /// Real install directories a rebuild must never replace with a selector
@@ -542,24 +542,20 @@ mod tests {
         ))
     }
 
-    /// Removes the markers [`interrupted_install`] wrote when the test ends.
-    struct InterruptedInstall(PathBuf);
+    /// Removes the marker [`interrupted_install`] wrote when the test ends.
+    struct InterruptedInstall(Arc<crate::args::BackendArg>, String);
 
     impl Drop for InterruptedInstall {
         fn drop(&mut self) {
-            let _ = fs::remove_dir_all(&self.0);
+            let _ = install_state::clear_incomplete_marker(&self.0, &self.1);
         }
     }
 
     /// Leaves version `v` of `backend` the way an interrupted install does:
-    /// the incomplete marker is still in the cache.
+    /// the incomplete marker is still in place.
     fn interrupted_install(backend: &Arc<dyn Backend>, v: &str) -> Result<InterruptedInstall> {
-        let marker = install_state::incomplete_file_path(backend.ba(), v);
-        fs::create_dir_all(marker.parent().unwrap())?;
-        fs::write(&marker, "")?;
-        Ok(InterruptedInstall(
-            marker.parent().unwrap().parent().unwrap().to_path_buf(),
-        ))
+        install_state::mark_incomplete(backend.ba(), v)?;
+        Ok(InterruptedInstall(backend.ba().clone(), v.to_string()))
     }
 
     #[test]

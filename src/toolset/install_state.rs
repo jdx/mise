@@ -285,7 +285,7 @@ fn scan_versions(dir: &Path, tool_dir_name: &str) -> Result<Vec<String>> {
                     .file_name()
                     .map(|n| n.to_string_lossy().to_string())
                     .unwrap_or_else(|| name.clone());
-                if !incomplete_marker(tool_dir_name, &key).exists() {
+                if !is_incomplete_in(tool_dir_name, &key) {
                     versions.push(name);
                 }
                 continue;
@@ -306,7 +306,7 @@ fn scan_versions(dir: &Path, tool_dir_name: &str) -> Result<Vec<String>> {
         } else if !file_type.is_dir() {
             continue;
         }
-        if incomplete_marker(tool_dir_name, &name).exists() {
+        if is_incomplete_in(tool_dir_name, &name) {
             continue;
         }
         versions.push(name);
@@ -1087,27 +1087,79 @@ fn strip_url_credentials(value: &toml::Value) -> toml::Value {
     toml::Value::String(url.to_string())
 }
 
-/// Marks `v` of `ba` as mid-install; also the identity of its install lock.
-/// Keyed by the tool's cache dir, which install, uninstall and link share
-/// across local, shared and system install paths.
-pub(crate) fn incomplete_file_path(ba: &BackendArg, v: &str) -> PathBuf {
-    ba.cache_path().join(v).join("incomplete")
+/// Marks `v` of the tool whose directory is `tool_dir_name` as mid-install.
+/// It lives in the state dir rather than the cache, so `mise cache clear` and
+/// cache pruning cannot turn an install that never finished into a complete
+/// one. Keyed by the tool's directory name, which install, uninstall and link
+/// share across local, shared and system install paths.
+///
+/// The version is a directory rather than the marker's own name: on Windows a
+/// file named for a reserved device (`nul`) opens that device, while a
+/// directory of that name makes the marker write fail and name the path.
+fn incomplete_marker(tool_dir_name: impl AsRef<Path>, v: &str) -> PathBuf {
+    incomplete_markers_dir(tool_dir_name)
+        .join(v)
+        .join("incomplete")
 }
 
-fn incomplete_marker(tool_dir_name: impl AsRef<Path>, v: &str) -> PathBuf {
+fn incomplete_markers_dir(tool_dir_name: impl AsRef<Path>) -> PathBuf {
+    dirs::STATE.join("incomplete-installs").join(tool_dir_name)
+}
+
+/// Where mise 2026.10.3 and earlier marked an install incomplete. A marker an
+/// older mise left there still counts until 2027.1, so an install it never
+/// finished is not taken for complete after an upgrade.
+fn legacy_incomplete_marker(tool_dir_name: impl AsRef<Path>, v: &str) -> PathBuf {
     dirs::CACHE.join(tool_dir_name).join(v).join("incomplete")
 }
 
+/// `cache/<tool dir>` and the incomplete markers share the tool's directory name.
+fn marker_dir_name(ba: &BackendArg) -> &std::ffi::OsStr {
+    ba.cache_path()
+        .file_name()
+        .expect("a tool's cache path names its directory")
+}
+
+fn is_incomplete_in(tool_dir_name: impl AsRef<Path>, v: &str) -> bool {
+    let tool_dir_name = tool_dir_name.as_ref();
+    incomplete_marker(tool_dir_name, v).exists()
+        || legacy_incomplete_marker(tool_dir_name, v).exists()
+}
+
+/// Whether an install of `v` of `ba` started and never finished.
+pub(crate) fn is_incomplete(ba: &BackendArg, v: &str) -> bool {
+    is_incomplete_in(marker_dir_name(ba), v)
+}
+
+/// Marks `v` of `ba` as mid-install until [`clear_incomplete_marker`].
+pub(crate) fn mark_incomplete(ba: &BackendArg, v: &str) -> Result<()> {
+    let path = incomplete_marker(marker_dir_name(ba), v);
+    if let Some(parent) = path.parent() {
+        file::create_dir_all(parent)?;
+    }
+    // `file::create` rather than `File::create`: it names the path in the error,
+    // and `create_dir_all` can return Ok without having created anything --
+    // `std::fs::create_dir_all` does that for a path Windows refuses, such as
+    // one ending in `nul`. Unwrapped it was a bare `The system cannot find the
+    // path specified. (os error 3)` naming neither the file nor the operation.
+    file::create(&path)?;
+    Ok(())
+}
+
+/// The lock is keyed by where the incomplete marker used to live, which is
+/// what older mise processes still lock: moving the marker must not let an old
+/// and a new mise install the same version at once.
 fn tool_version_lock(ba: &BackendArg, v: &str) -> LockFile {
-    LockFile::new(&incomplete_file_path(ba, v)).with_pid()
+    LockFile::new(&ba.cache_path().join(v).join("incomplete")).with_pid()
 }
 
 /// Acquires the transaction lock for one logical tool version.
 ///
 /// The incomplete marker is shared by local, shared, and system install paths,
 /// so install, uninstall, and link use this logical identity while mutating the
-/// marker and install path. The marker path is only the lock identity; the
-/// lock itself remains a separate stable file under the lockfiles cache.
+/// marker and install path. The lock's identity is the marker's former cache
+/// path (see `tool_version_lock`); the lock itself remains a separate stable
+/// file under the lockfiles cache.
 pub fn lock_tool_version(ba: &BackendArg, v: &str) -> Result<fslock::LockFile> {
     lock_tool_version_with_notice(ba, v, &|_| {})
 }
@@ -1130,10 +1182,25 @@ pub(crate) fn lock_tool_version_with_notice(
 }
 
 pub fn clear_incomplete_marker(ba: &BackendArg, v: &str) -> Result<()> {
-    let incomplete_path = incomplete_file_path(ba, v);
-    match file::remove_file(&incomplete_path) {
+    let tool_dir_name = marker_dir_name(ba);
+    let marker = incomplete_marker(tool_dir_name, v);
+    remove_marker(&marker)?;
+    if let Some(dir) = marker.parent() {
+        // Only empty; anything else in it is not ours to remove.
+        let _ = std::fs::remove_dir(dir);
+    }
+    remove_marker(&legacy_incomplete_marker(tool_dir_name, v))
+}
+
+/// Drops every incomplete marker of `ba`, for a purge that removes all its versions.
+pub(crate) fn clear_incomplete_markers(ba: &BackendArg) -> Result<()> {
+    file::remove_all(incomplete_markers_dir(marker_dir_name(ba)))
+}
+
+fn remove_marker(path: &Path) -> Result<()> {
+    match file::remove_file(path) {
         std::result::Result::Ok(()) => {
-            if let Some(parent) = incomplete_path.parent()
+            if let Some(parent) = path.parent()
                 && let Err(err) = file::sync_dir(parent)
             {
                 debug!("error syncing incomplete marker parent: {:?}", err);
@@ -1224,8 +1291,10 @@ pub(crate) fn reset_tools() {
 #[cfg(test)]
 mod tests {
     use super::{
-        InstallStateTool, incomplete_marker, lock_tool_version, merge_plugin_tools,
-        normalize_version_for_sort, read_tool_manifest_from, scan_versions, tool_version_lock,
+        InstallStateTool, clear_incomplete_marker, incomplete_marker, is_incomplete,
+        legacy_incomplete_marker, lock_tool_version, mark_incomplete, marker_dir_name,
+        merge_plugin_tools, normalize_version_for_sort, read_tool_manifest_from, scan_versions,
+        tool_version_lock,
     };
     use crate::args::BackendArg;
     use crate::plugins::PluginType;
@@ -1591,6 +1660,31 @@ explicit_backend = true
         let _ = std::fs::remove_dir_all(marker.parent().unwrap().parent().unwrap());
 
         assert_eq!(versions, ["1.0.0"]);
+    }
+
+    /// Clearing the cache must not make an unfinished install look complete,
+    /// and a marker an older mise left in the cache still counts.
+    #[test]
+    fn incomplete_markers_live_outside_the_cache_and_honor_legacy_ones() {
+        let ba = BackendArg::from(format!("marker_test_{}", std::process::id()).as_str());
+        let tool_dir_name = marker_dir_name(&ba).to_owned();
+        let marker = incomplete_marker(&tool_dir_name, "1.0.0");
+        assert!(!marker.starts_with(*crate::dirs::CACHE));
+
+        mark_incomplete(&ba, "1.0.0").unwrap();
+        let _ = std::fs::remove_dir_all(ba.cache_path());
+        assert!(is_incomplete(&ba, "1.0.0"));
+        clear_incomplete_marker(&ba, "1.0.0").unwrap();
+        assert!(!is_incomplete(&ba, "1.0.0"));
+        assert!(!marker.parent().unwrap().exists());
+
+        let legacy = legacy_incomplete_marker(&tool_dir_name, "2.0.0");
+        std::fs::create_dir_all(legacy.parent().unwrap()).unwrap();
+        std::fs::write(&legacy, "").unwrap();
+        assert!(is_incomplete(&ba, "2.0.0"));
+        clear_incomplete_marker(&ba, "2.0.0").unwrap();
+        assert!(!is_incomplete(&ba, "2.0.0"));
+        let _ = std::fs::remove_dir_all(ba.cache_path());
     }
 
     /// Also pins that `DirEntry::file_type()` reports a Windows junction as a symlink, which is
