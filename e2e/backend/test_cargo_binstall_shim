@@ -32,4 +32,4 @@ export MISE_CARGO_BINSTALL_NATIVE=0
 
 PATH="$ISOLATED_PATH" mise install cargo:shim-test@1.0.0
 assert_contains "cat '$MISE_DATA_DIR/cargo-install.log'" "install shim-test@1.0.0"
-assert_succeed "test -d \"\$(mise where cargo:shim-test@1.0.0)/bin\""
+assert_succeed 'test -d "$(mise where cargo:shim-test@1.0.0)/bin"'
