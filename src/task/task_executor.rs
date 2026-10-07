@@ -2345,6 +2345,11 @@ impl TaskExecutor {
                 self.secrets_denied,
                 &env_view,
             ));
+            // plaintext an age value decrypts to can read a composed key; found before fnox
+            // is asked anything
+            let age = crate::secrets::age_read_problems(task, &grant).await;
+            privilege_problem |= !age.is_empty();
+            found.extend(age);
             privilege_problem |= found.iter().any(|p| {
                 matches!(
                     p.kind,
@@ -2357,23 +2362,9 @@ impl TaskExecutor {
                 // the sandbox and a plainly declared env var decide before anything runs
                 let sandbox = self.build_sandbox_for_task(task, config).await?;
                 let declared = env_view.declared_keys(task);
-                for key in grant.keys.keys() {
-                    if !sandbox.keeps_env_key(key.as_str()) {
-                        found.push(crate::secrets::sandbox_problem(
-                            crate::secrets::Subject::Task(&task.name),
-                            key.as_str(),
-                        ));
-                    }
-                    if declared
-                        .iter()
-                        .any(|d| mise_util::env::env_key_eq(d, key.as_str()))
-                    {
-                        found.push(crate::secrets::collision_problem(
-                            crate::secrets::Subject::Task(&task.name),
-                            key.as_str(),
-                        ));
-                    }
-                }
+                found.extend(crate::secrets::sandbox_and_collision_problems(
+                    task, &grant, &sandbox, &declared,
+                ));
             }
             problems.extend(found);
             if !grant.is_empty() {

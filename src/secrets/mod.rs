@@ -21,17 +21,20 @@ mod grant;
 mod name;
 mod source;
 mod spawn;
+pub(crate) mod template;
 
 pub use broker::is_resolve_failure;
 pub(crate) use broker::{Grantee, Pending, SecretBroker, SpawnRequest, TerminalAccess};
 pub use grant::{CliSecretGrant, G7_TEXT, Problem, ProblemKind, SecretsDenied, TaskSecrets};
 pub(crate) use grant::{
-    DENIED_MARKER, EnvView, SecretGrant, Subject, aggregate_error, collision_problem,
-    denied_from_env, effective_grant, grant_for_task, sandbox_problem, static_problems,
+    DENIED_MARKER, EnvView, SecretGrant, Subject, age_read_problems, aggregate_error,
+    denied_from_env, effective_grant, grant_for_task, sandbox_and_collision_problems,
+    static_problems,
 };
 pub use name::SecretName;
 pub use source::{Catalog, CatalogEntry, InjectMode, KeyKind};
 pub use spawn::SpawnSecrets;
+pub(crate) use template::{LateSecretEnv, TomlShape, check_toml_locations, may_name_secrets};
 
 use source::SecretSource;
 
@@ -73,11 +76,26 @@ pub struct SourceInfo {
     pub tool_path: PathBuf,
 }
 
-/// A task that lists secrets from this source.
+/// A task that asks for secrets from this source.
 pub struct InventoryTask {
     pub task: String,
-    pub keys: Vec<String>,
+    pub uses: Vec<InventoryUse>,
     pub file: PathBuf,
+}
+
+/// One key a task asks for, and how.
+pub struct InventoryUse {
+    pub key: String,
+    /// `secrets = [...]`, or `{{ secrets.KEY }}` in an env value
+    pub via: UseVia,
+}
+
+pub enum UseVia {
+    List,
+    /// the env var whose value references the key
+    Template {
+        var: String,
+    },
 }
 
 pub struct Inventory {
@@ -262,7 +280,7 @@ async fn inventory_tasks(
         ));
         tasks.push(InventoryTask {
             task: task.name.clone(),
-            keys: grant.keys.keys().map(|k| k.to_string()).collect(),
+            uses: grant.inventory_uses(),
             file: task.config_source.clone(),
         });
     }
@@ -304,20 +322,7 @@ fn task_level_problems(
         false,
         task_sandbox,
     );
-    let declared = view.declared_keys(task);
-    let mut problems = vec![];
-    for key in grant.keys.keys() {
-        if !sandbox.keeps_env_key(key.as_str()) {
-            problems.push(sandbox_problem(Subject::Task(&task.name), key.as_str()));
-        }
-        if declared
-            .iter()
-            .any(|d| mise_util::env::env_key_eq(d, key.as_str()))
-        {
-            problems.push(collision_problem(Subject::Task(&task.name), key.as_str()));
-        }
-    }
-    problems
+    sandbox_and_collision_problems(task, grant, &sandbox, &view.declared_keys(task))
 }
 
 /// Shared by every `check_task_secrets` call of one `mise tasks validate`, so a source is
@@ -343,6 +348,7 @@ pub async fn check_task_secrets(
             .await
     };
     problems.extend(static_problems(task, &grant, None, &view));
+    problems.extend(grant::age_read_problems(task, &grant).await);
     let mut check = TaskSecretsCheck {
         problems,
         catalog_skipped: false,
@@ -403,6 +409,11 @@ pub async fn check_task_secrets(
                 &grant,
                 &catalog,
                 &label,
+            ));
+            check.problems.extend(broker::late_file_problems(
+                Subject::Task(&task.name),
+                &grant,
+                &catalog,
             ));
         }
         Err(err) => check.problems.push(Problem::new(

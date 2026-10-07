@@ -341,6 +341,75 @@ fn register_redactions<'a>(values: impl Iterator<Item = (&'a SecretName, &'a Sec
     crate::config::add_secret_redactions(patterns);
 }
 
+/// E: the references of composed values that fnox delivers as files. Needs the catalog only,
+/// so the preflight reports it before any task runs.
+pub(super) fn late_file_problems(
+    subject: Subject<'_>,
+    grant: &SecretGrant,
+    catalog: &Catalog,
+) -> Vec<Problem> {
+    let mut problems = vec![];
+    for late in &grant.late {
+        for name in &late.refs {
+            if catalog.entries.get(name).is_some_and(|e| e.as_file) {
+                problems.push(Problem::new(
+                    &subject.label(),
+                    Some(name.as_str()),
+                    ProblemKind::Template,
+                    file_composed_text(&subject.text(), &late.key, name),
+                ));
+            }
+        }
+    }
+    problems
+}
+
+/// E: a file secret cannot be composed into an env value. Value-free.
+fn file_composed_text(who: &str, var: &str, name: &SecretName) -> String {
+    format!(
+        "{who}: env.{var} uses {{{{ secrets.{name} }}}}, which fnox delivers as a file (as_file = true); a file secret cannot be composed into an env value"
+    )
+}
+
+/// Renders the task's env values that use `{{ secrets.X }}` from the resolved values, and
+/// registers each composite with the redactor before it is returned. The values are in
+/// `values` only for the caller to read; the composites are returned in order, so a later
+/// overlay entry for the same name wins.
+fn render_late(
+    grant: &SecretGrant,
+    values: &MemoValues,
+    who: &str,
+) -> Result<Vec<(SecretName, SecretValue)>> {
+    let mut out = vec![];
+    for late in &grant.late {
+        let mut found = BTreeMap::new();
+        for name in &late.refs {
+            if values.files.contains_key(name) && !values.set.contains_key(name) {
+                bail!("{}", file_composed_text(who, &late.key, name));
+            }
+            let Some(value) = values.set.get(name) else {
+                bail!(
+                    "{who}: env.{}: {{{{ secrets.{name} }}}} resolved to no value",
+                    late.key
+                );
+            };
+            found.insert(name.clone(), value.clone());
+        }
+        let Some(text) = super::template::render(&late.template, &found) else {
+            bail!("{who}: env.{} could not be rendered from secrets", late.key);
+        };
+        let key = SecretName::new(&late.key).ok_or_else(|| {
+            eyre!(
+                "{who}: env.{} is not a valid environment variable name",
+                late.key
+            )
+        })?;
+        out.push((key, SecretValue::new(text)));
+    }
+    register_redactions(out.iter().map(|(k, v)| (k, v)));
+    Ok(out)
+}
+
 fn list(keys: &[SecretName]) -> String {
     keys.iter()
         .map(|k| k.as_str())
@@ -550,12 +619,15 @@ impl SecretBroker {
             };
             match self.open_selected(config, ctx, task, selected).await {
                 Ok(memo) => match memo.catalog().await {
-                    Ok(catalog) => problems.extend(key_problems(
-                        grantee.subject(),
-                        grant,
-                        &catalog,
-                        &memo.source.label(),
-                    )),
+                    Ok(catalog) => {
+                        problems.extend(key_problems(
+                            grantee.subject(),
+                            grant,
+                            &catalog,
+                            &memo.source.label(),
+                        ));
+                        problems.extend(late_file_problems(grantee.subject(), grant, &catalog));
+                    }
                     Err(e) => source_errors
                         .entry(format!("{e:#}"))
                         .or_default()
@@ -662,6 +734,9 @@ impl SecretBroker {
         // judged by what the task env preparation already resolved: no script runs again
         let env_view = super::EnvView::resolved(req.rendered_defaults);
         problems.extend(static_problems(task, req.grant, req.denied, &env_view));
+        if problems.is_empty() {
+            problems.extend(super::grant::age_read_problems(task, req.grant).await);
+        }
         if !problems.is_empty() {
             bail!(
                 "{}",
@@ -776,7 +851,8 @@ impl SecretBroker {
         let who = subject.text();
         let catalog = memo.catalog().await?;
         let mut problems = key_problems(subject, req.grant, &catalog, &memo.source.label());
-        for key in req.grant.keys.keys() {
+        // a key that only an env value references is read, never exported or written to a file
+        for key in req.grant.exported_keys() {
             if let Some(entry) = catalog.entries.get(key)
                 && entry.as_file
                 && req.file_dir.is_none()
@@ -784,18 +860,35 @@ impl SecretBroker {
                 problems.push(file_problem(subject, key.as_str()));
             }
         }
-        // the sandbox decides before anything is resolved
-        for key in req.grant.keys.keys() {
-            if !req.sandbox.keeps_env_key(key.as_str()) {
-                problems.push(sandbox_problem(subject, key.as_str()));
+        problems.extend(late_file_problems(subject, req.grant, &catalog));
+        // the sandbox decides before anything is resolved. A composite is exported under its
+        // own name, so that name is the one checked.
+        for key in req
+            .grant
+            .exported_keys()
+            .map(|k| k.as_str())
+            .chain(req.grant.late.iter().map(|l| l.key.as_str()))
+        {
+            if !req.sandbox.keeps_env_key(key) {
+                problems.push(sandbox_problem(subject, key));
             }
         }
         // a value inherited from the shell is allowed (the secret wins); a value mise itself
-        // sets is not
-        for key in req.grant.keys.keys() {
-            if collides_for(req, key.as_str()) {
-                problems.push(collision_problem(subject, key.as_str()));
+        // sets is not. The same goes for a key an env value builds, and a key cannot be both
+        // exported and built.
+        let mut colliding: BTreeSet<&str> = BTreeSet::new();
+        for key in req.grant.exported_keys().map(|k| k.as_str()) {
+            if req.grant.is_late_key(key) || collides_for(req, key) {
+                colliding.insert(key);
             }
+        }
+        for late in &req.grant.late {
+            if collides_for(req, &late.key) {
+                colliding.insert(&late.key);
+            }
+        }
+        for key in colliding {
+            problems.push(collision_problem(subject, key));
         }
         if !problems.is_empty() {
             bail!(
@@ -807,7 +900,9 @@ impl SecretBroker {
                     .join("\n")
             );
         }
-        let keys: BTreeSet<SecretName> = req.grant.keys.keys().cloned().collect();
+        // every key to resolve, and the ones that are handed over under their own names
+        let resolve_keys: BTreeSet<SecretName> = req.grant.keys.keys().cloned().collect();
+        let keys: BTreeSet<SecretName> = req.grant.exported_keys().cloned().collect();
         let all = req.grant.all.is_some();
         // `--secrets-all`: keys that would collide or be dropped are skipped, not errors
         let refs = template_refs;
@@ -826,7 +921,7 @@ impl SecretBroker {
                 }
             }
         }
-        self.ensure_resolved(memo, &catalog, &keys, all, req, &who)
+        self.ensure_resolved(memo, &catalog, &resolve_keys, all, req, &who)
             .await?;
 
         let v = memo.values.lock().await;
@@ -869,6 +964,10 @@ impl SecretBroker {
                     file_values.insert(key.clone(), value.clone());
                 }
             }
+        }
+        let composites = render_late(req.grant, &v, &who)?;
+        for (key, value) in composites {
+            env_values.insert(key.to_string(), value);
         }
         let mut remove = removable(&v.remove);
         drop(v);
@@ -992,6 +1091,9 @@ fn skip_reason(
 ) -> Option<Skip> {
     if template_refs.contains(key) {
         Some(Skip::Template)
+    } else if req.grant.is_late_key(key) {
+        // the task builds this name itself, so `--secrets-all` leaves it alone
+        Some(Skip::MiseSets)
     } else if !req.sandbox.keeps_env_key(key) {
         Some(Skip::Sandbox)
     } else if collides_for(req, key) {
@@ -1054,6 +1156,10 @@ mod tests {
         fail: BTreeSet<String>,
         reject: StdMutex<BTreeSet<String>>,
         fingerprint: String,
+        /// catalog keys with `as_file = true` that resolve to a file
+        file_keys: BTreeSet<String>,
+        /// catalog keys that resolve without error but are left out of the document
+        omit: BTreeSet<String>,
     }
 
     fn catalog() -> Catalog {
@@ -1096,7 +1202,20 @@ mod tests {
             "fake in /p".into()
         }
         async fn describe(&self) -> Result<Catalog> {
-            Ok(catalog())
+            let mut catalog = catalog();
+            for k in self.file_keys.iter().chain(self.omit.iter()) {
+                catalog.entries.insert(
+                    SecretName::new(k).unwrap(),
+                    CatalogEntry {
+                        kind: KeyKind::Secret,
+                        mode: None,
+                        as_file: self.file_keys.contains(k),
+                        injectable: true,
+                        description: None,
+                    },
+                );
+            }
+            Ok(catalog)
         }
         fn build_fingerprint(&self) -> String {
             self.fingerprint.clone()
@@ -1152,6 +1271,14 @@ mod tests {
                 keys.keys().into_iter().collect()
             };
             for k in asked {
+                if self.omit.contains(k.as_str()) {
+                    continue;
+                }
+                if self.file_keys.contains(k.as_str()) {
+                    out.files
+                        .insert(k.clone(), SecretValue::new("file-s3cr3t-contents"));
+                    continue;
+                }
                 let value = match k.as_str() {
                     "SHORT" => "ab".to_string(),
                     "DEPLOY_KEY" => "line-one-s3cr3t\nline-two-s3cr3t \"q\"".to_string(),
@@ -1549,6 +1676,116 @@ mod tests {
             .grant_values(&memo, &inputs.req(&term, false))
             .await
             .unwrap();
+    }
+
+    fn composed_inputs(template: &str) -> Inputs {
+        use crate::config::env_directive::EnvDirective;
+        let mut inputs = Inputs::new("migrate", &[]);
+        inputs.task.env = crate::config::config_file::mise_toml::EnvList(vec![EnvDirective::Val(
+            "PGURL".into(),
+            template.into(),
+            Default::default(),
+        )]);
+        inputs
+            .task
+            .record_late_secret_env(Path::new("/p/mise.toml"))
+            .unwrap();
+        inputs.grant = grant_for_task(&inputs.task).0;
+        inputs
+    }
+
+    fn fake_with(file_keys: &[&str], omit: &[&str]) -> (Arc<Fake>, Arc<SourceMemo>) {
+        let f = Arc::new(Fake {
+            id: Some(SourceId {
+                kind: "fake",
+                root: PathBuf::from("/p"),
+                profile: None,
+            }),
+            file_keys: file_keys.iter().map(|s| s.to_string()).collect(),
+            omit: omit.iter().map(|s| s.to_string()).collect(),
+            ..Default::default()
+        });
+        let memo = SourceMemo::new(f.clone());
+        (f, memo)
+    }
+
+    #[tokio::test]
+    async fn a_composite_is_exported_and_its_references_are_not() {
+        let broker = SecretBroker::default();
+        let term = terminal();
+        let (_, memo) = fake(&[]);
+        let inputs = composed_inputs("p://{{ secrets.B }}@{{ secrets.C }}");
+        let spawn = broker
+            .grant_values(&memo, &inputs.req(&term, false))
+            .await
+            .unwrap();
+        assert_eq!(spawn.marker_value(), "PGURL");
+        assert_eq!(
+            spawn.env["PGURL"].expose(),
+            "p://B-value-s3cr3t@C-value-s3cr3t"
+        );
+    }
+
+    #[test]
+    fn all_skips_a_name_the_task_builds_itself() {
+        let (_, _memo) = fake(&[]);
+        let mut inputs = composed_inputs("p://{{ secrets.B }}@h");
+        inputs.grant.all = Some(GrantOrigin::CliAll);
+        let term = terminal();
+        let req = inputs.req(&term, false);
+        assert!(matches!(
+            skip_reason(&req, &BTreeSet::new(), "PGURL"),
+            Some(Skip::MiseSets)
+        ));
+        assert!(skip_reason(&req, &BTreeSet::new(), "B").is_none());
+    }
+
+    #[tokio::test]
+    async fn a_file_secret_cannot_be_composed() {
+        let broker = SecretBroker::default();
+        let term = terminal();
+        let (fake, memo) = fake_with(&["FILE_KEY"], &[]);
+        let inputs = composed_inputs("p://{{ secrets.FILE_KEY }}@h");
+        let err = broker
+            .grant_values(&memo, &inputs.req(&term, false))
+            .await
+            .unwrap_err()
+            .to_string();
+        assert!(
+            err.contains("task migrate: env.PGURL uses {{ secrets.FILE_KEY }}, which fnox delivers as a file (as_file = true); a file secret cannot be composed into an env value"),
+            "{err}"
+        );
+        assert!(!err.contains("s3cr3t"), "{err}");
+        assert_eq!(fake.calls.load(Ordering::SeqCst), 0);
+        // and a document that put it in files anyway is never read as a value
+        let mut values = MemoValues::default();
+        values.files.insert(
+            SecretName::new("FILE_KEY").unwrap(),
+            SecretValue::new("file-s3cr3t-contents"),
+        );
+        let err = render_late(&inputs.grant, &values, "task migrate")
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("a file secret cannot be composed"), "{err}");
+        assert!(!err.contains("s3cr3t"), "{err}");
+    }
+
+    #[tokio::test]
+    async fn a_reference_the_source_leaves_out_fails_without_producing_values() {
+        let broker = SecretBroker::default();
+        let term = terminal();
+        let (_, memo) = fake_with(&[], &["OMITTED"]);
+        let inputs = composed_inputs("p://{{ secrets.B }}@{{ secrets.OMITTED }}");
+        let err = broker
+            .grant_values(&memo, &inputs.req(&term, false))
+            .await
+            .unwrap_err()
+            .to_string();
+        assert!(
+            err.contains("task migrate: env.PGURL: {{ secrets.OMITTED }} resolved to no value"),
+            "{err}"
+        );
+        assert!(!err.contains("s3cr3t"), "{err}");
     }
 
     #[tokio::test]

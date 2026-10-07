@@ -335,6 +335,10 @@ run = [
 ]
 ```
 
+A value may reference a secret with <span v-pre>`{{ secrets.NAME }}`</span> <Badge type="warning" text="experimental" />.
+The value is composed when the task starts, and the reference grants the key to this task. See
+[Compose values](/environments/secrets/fnox.html#compose-values).
+
 ### `secrets` <Badge type="warning" text="experimental" />
 
 - **Type**: `string | string[]`

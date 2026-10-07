@@ -132,6 +132,57 @@ mise x -- gh release list                   # nothing; fnox never runs
 - The flags need a `[secrets.fnox]` source in the project, are experimental, and are refused in
   safe mode.
 
+### Compose values {#compose-values}
+
+A task's own `env` values may reference a secret with <span v-pre>`{{ secrets.NAME }}`</span>. The
+reference is the grant: you do not also list the key in `secrets`.
+
+```toml
+[tasks.migrate]
+env.PGURL = "postgres://app:{{ secrets.DB_PASSWORD }}@db.internal/app"
+run = 'psql "$PGURL" -f schema.sql'
+```
+
+`PGURL` is composed just before the task starts and redacted in its output. `DB_PASSWORD` itself
+is not exported unless the task also lists it in `secrets` (`secrets = ["DB_PASSWORD"]` exports it
+alongside `PGURL`). An env value cannot take the name of a key the task exports: `secrets =
+["DB_PASSWORD"]` with <span v-pre>`env.DB_PASSWORD = "{{ secrets.DB_PASSWORD }}x"`</span> is an
+error, because both would claim the name. `--secrets-all` still gives the task every injectable key
+under its own name, `DB_PASSWORD` included; a reference only keeps a key from going through the
+checks for listed keys, so a name mise sets or the sandbox drops is skipped with a warning instead
+of failing.
+
+- Only literal text and <span v-pre>`{{ secrets.NAME }}`</span> (spaces inside the braces are
+  optional) may appear in such a value. Filters, other variables, <span v-pre>`{{-`</span>,
+  `secrets["NAME"]` and `{% raw %}` are an error; compose anything fancier in fnox or in the
+  task's script.
+- When `env_shell_expand` is on (the default), `$NAME`, `${...}` and `$$` anywhere in the literal
+  text of such a value are an error, because mise does not shell-expand a value it composes from
+  secrets. A `$` right before a reference, <span v-pre>`${{ secrets.X }}`</span>, is always an
+  error.
+- A secret that fnox delivers as a file (`as_file = true`) cannot be composed into a value.
+- Allowed only in a task's own `env` values (and a file task's `#MISE env=` header). Not in
+  `run` (it becomes `sh -c` arguments, which other local users can read through `ps`; read
+  `$NAME` instead), not in `[env]` or `[vars]`, and not in `depends`, their `env`, run-entry
+  `env`, `[task_templates]`, `task_defaults`, hooks or `[tools]`.
+- A composed value takes part in the usual env precedence. It overrides a parent task's env
+  (through a run entry), a template's or a lower config block's value, and defaults. A
+  dependency's or run entry's env replaces a value from the task's own definition, but a value
+  from a `[tasks.<name>]` block layered over the task still wins, as plain values do. A higher
+  block's value or `env.NAME = false` replaces it, and then nothing is fetched. Env that reaches
+  a task from a dependency or a run entry is never a grant, so it cannot smuggle a reference in.
+  `[env]`, tools and settings must not set the same name.
+- Other env values cannot read the composed variable, with <span v-pre>`{{ env.PGURL }}`</span> or
+  `$PGURL`; build them from secrets directly. mise checks the env values, defaults and path
+  directives in the config, and also the values it decrypts (age). What a directive only reads
+  while it renders, such as the contents of a `_.file` dotenv file or a `_.source` script, is not
+  checked and sees the value from before the secret.
+- The same rules apply as for listed keys: remote and non-project tasks cannot use references,
+  and the sandbox must keep the variable.
+
+`mise tasks info` shows the template, never a value, and `mise secrets ls` lists the task as
+`migrate (env.PGURL)`.
+
 ### Where values go, and where they never go
 
 Values go only into the environment of the process mise starts for the task, after mise has

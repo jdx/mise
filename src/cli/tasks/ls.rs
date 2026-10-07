@@ -302,7 +302,7 @@ impl TasksLs {
                 "config_sources": task.config_sources(),
                 "depends": task.depends,
                 "daemons": task.daemons,
-                "secrets": task.secrets.as_ref().map(|s| s.names()).unwrap_or_default(),
+                "secrets": task.secret_names(),
                 "depends_post": task.depends_post,
                 "wait_for": task.wait_for,
                 "env": env_strs,

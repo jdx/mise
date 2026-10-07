@@ -128,16 +128,24 @@ pub(crate) enum GrantOrigin {
     CliFlag,
     /// `--secrets-all` on the command line
     CliAll,
+    /// `{{ secrets.X }}` in the value of the task's own `env.<var>`
+    Template { var: String, file: PathBuf },
 }
 
 impl GrantOrigin {
     /// A grant the task's own config wrote, which is the only kind the G8/G9 rules police.
     fn is_self(&self) -> bool {
-        matches!(self, Self::TaskList { .. })
+        matches!(self, Self::TaskList { .. } | Self::Template { .. })
     }
 
-    fn describe(&self) -> String {
+    /// Whether the grant exports the key itself. A reference in an env value only reads it.
+    fn exports(&self) -> bool {
+        !matches!(self, Self::Template { .. })
+    }
+
+    fn describe(&self, key: &SecretName) -> String {
         match self {
+            Self::Template { var, .. } => format!("{{{{ secrets.{key} }}}} in env.{var}"),
             Self::TaskList { file } => format!(
                 "secrets = [...] in {}",
                 file.file_name()
@@ -156,11 +164,61 @@ pub(crate) struct SecretGrant {
     /// Every key the source can inject (`--secrets-all`). The keys are only known once the
     /// source is described, so they are not listed in `keys`.
     pub(crate) all: Option<GrantOrigin>,
+    /// The task's own env values that use `{{ secrets.X }}`. Each is rendered once its
+    /// references are resolved and exported as `key`. Their references are in `keys`.
+    pub(crate) late: Vec<super::LateSecretEnv>,
 }
 
 impl SecretGrant {
     pub(crate) fn is_empty(&self) -> bool {
-        self.keys.is_empty() && self.all.is_none()
+        self.keys.is_empty() && self.all.is_none() && self.late.is_empty()
+    }
+
+    /// Whether the grant itself hands `key` over under its own name. A key that only an env
+    /// value references is not exported by the grant, so it never meets the listed-key checks;
+    /// under `--secrets-all` it is still handed over by the `all` path in `grant_values`, after
+    /// the C4 skips.
+    pub(crate) fn exports(&self, key: &SecretName) -> bool {
+        self.keys
+            .get(key)
+            .is_some_and(|origins| origins.iter().any(GrantOrigin::exports))
+    }
+
+    /// The keys handed over under their own names.
+    pub(crate) fn exported_keys(&self) -> impl Iterator<Item = &SecretName> {
+        self.keys.keys().filter(|k| self.exports(k))
+    }
+
+    /// Every key the task names, once per way it names it (`mise secrets ls`).
+    pub(crate) fn inventory_uses(&self) -> Vec<super::InventoryUse> {
+        let mut uses = vec![];
+        for (key, origins) in &self.keys {
+            let mut list = false;
+            for origin in origins {
+                match origin {
+                    GrantOrigin::Template { var, .. } => uses.push(super::InventoryUse {
+                        key: key.to_string(),
+                        via: super::UseVia::Template { var: var.clone() },
+                    }),
+                    _ if !list => {
+                        list = true;
+                        uses.push(super::InventoryUse {
+                            key: key.to_string(),
+                            via: super::UseVia::List,
+                        });
+                    }
+                    _ => {}
+                }
+            }
+        }
+        uses
+    }
+
+    /// Whether `key` is built from secrets by one of the task's env values.
+    pub(crate) fn is_late_key(&self, key: &str) -> bool {
+        self.late
+            .iter()
+            .any(|l| mise_util::env::env_key_eq(&l.key, key))
     }
 
     /// Whether the task's own config grants anything. A command-line grant is the person
@@ -180,6 +238,11 @@ impl SecretGrant {
             }
         }
         self.all = other.all.or(self.all);
+        for late in other.late {
+            if !self.late.contains(&late) {
+                self.late.push(late);
+            }
+        }
         self
     }
 
@@ -190,7 +253,7 @@ impl SecretGrant {
             .get(key)
             .into_iter()
             .flatten()
-            .map(GrantOrigin::describe)
+            .map(|o| o.describe(key))
             .collect();
         by.sort();
         by.dedup();
@@ -345,32 +408,81 @@ pub(crate) fn validate_name(raw: &str) -> std::result::Result<SecretName, NameEr
     Ok(name)
 }
 
-/// G3, G6 and the grant of the valid names. Invalid names are reported, not granted.
+/// G3, G6 and the grant of the valid names. Invalid names are reported, not granted. The
+/// task's `{{ secrets.X }}` env values add their references: the reference is the grant.
 pub(crate) fn grant_for_task(task: &Task) -> (SecretGrant, Vec<Problem>) {
     let mut grant = SecretGrant::default();
     let mut problems = vec![];
-    let Some(list) = &task.secrets else {
-        return (grant, problems);
-    };
     let file = task.config_source.clone();
-    for raw in list.names() {
-        let name = match validate_name(raw) {
-            Ok(name) => name,
-            Err(e) => {
+    if let Some(list) = &task.secrets {
+        for raw in list.names() {
+            let name = match validate_name(raw) {
+                Ok(name) => name,
+                Err(e) => {
+                    problems.push(Problem::new(
+                        &task.name,
+                        Some(raw),
+                        e.kind(),
+                        format!("task {}: {}", task.name, e.text(raw, "secrets")),
+                    ));
+                    continue;
+                }
+            };
+            let origins = grant.keys.entry(name).or_default();
+            let origin = GrantOrigin::TaskList { file: file.clone() };
+            if !origins.contains(&origin) {
+                origins.push(origin);
+            }
+        }
+    }
+    for late in task.live_late_secret_env() {
+        // the exported name must survive the marker M2 reads back in a nested mise
+        let key_problem = match validate_name(&late.key) {
+            Ok(_) => None,
+            Err(NameError::Reserved) => Some((
+                ProblemKind::Reserved,
+                super::template::reserved_key_message(&task.name, &late.key),
+            )),
+            Err(_) => Some((
+                ProblemKind::InvalidName,
+                super::template::invalid_key_message(&task.name, &late.key),
+            )),
+        };
+        if let Some((kind, text)) = key_problem {
+            problems.push(Problem::new(&task.name, Some(&late.key), kind, text));
+            continue;
+        }
+        let mut usable = true;
+        for name in &late.refs {
+            if let Err(e) = validate_name(name.as_str()) {
+                usable = false;
                 problems.push(Problem::new(
                     &task.name,
-                    Some(raw),
+                    Some(name.as_str()),
                     e.kind(),
-                    format!("task {}: {}", task.name, e.text(raw, "secrets")),
+                    format!(
+                        "task {}: env.{}: {}",
+                        task.name,
+                        late.key,
+                        e.text(name.as_str(), "{{ secrets.* }}")
+                    ),
                 ));
-                continue;
             }
-        };
-        let origins = grant.keys.entry(name).or_default();
-        let origin = GrantOrigin::TaskList { file: file.clone() };
-        if !origins.contains(&origin) {
-            origins.push(origin);
         }
+        if !usable {
+            continue;
+        }
+        for name in &late.refs {
+            let origins = grant.keys.entry(name.clone()).or_default();
+            let origin = GrantOrigin::Template {
+                var: late.key.clone(),
+                file: late.file.clone(),
+            };
+            if !origins.contains(&origin) {
+                origins.push(origin);
+            }
+        }
+        grant.late.push(late.clone());
     }
     (grant, problems)
 }
@@ -431,6 +543,7 @@ impl CliSecretGrant {
                 .map(|k| (k.clone(), vec![GrantOrigin::CliFlag]))
                 .collect(),
             all: self.all.then_some(GrantOrigin::CliAll),
+            late: vec![],
         })
     }
 }
@@ -513,13 +626,24 @@ pub(crate) fn static_problems(
     // Only a task's own `secrets = [...]` is held to where the task is defined. A person who
     // names the task and its secrets on the command line is the one granting.
     let own = grant.has_self_grant();
+    // what the task's own config does to ask: list keys, or name them in env values
+    let asks = if grant
+        .keys
+        .values()
+        .flatten()
+        .any(|o| matches!(o, GrantOrigin::TaskList { .. }))
+    {
+        "list secrets"
+    } else {
+        "use {{ secrets.* }}"
+    };
     if own && let Some(source) = task.secrets_remote_source() {
         problems.push(Problem::new(
             &task.name,
             None,
             ProblemKind::Remote,
             format!(
-                "task {} comes from a remote source ({source}) and cannot list secrets; grant for one run with mise run --secrets-all {} or --secrets KEY",
+                "task {} comes from a remote source ({source}) and cannot {asks}; grant for one run with mise run --secrets-all {} or --secrets KEY",
                 task.name, task.name
             ),
         ));
@@ -534,7 +658,7 @@ pub(crate) fn static_problems(
             None,
             ProblemKind::NotProject,
             format!(
-                "task {} is defined in {}, which is not project config (global or system config, or a file in or above your home directory), so it cannot list secrets; grant for one run with mise run --secrets-all {} or --secrets KEY",
+                "task {} is defined in {}, which is not project config (global or system config, or a file in or above your home directory), so it cannot {asks}; grant for one run with mise run --secrets-all {} or --secrets KEY",
                 task.name,
                 crate::file::display_path(&task.config_source),
                 task.name
@@ -551,7 +675,11 @@ pub(crate) fn static_problems(
                     "task {} {}, but it was started by {}",
                     task.name,
                     if own {
-                        "lists secrets"
+                        if asks == "list secrets" {
+                            "lists secrets"
+                        } else {
+                            "uses {{ secrets.* }}"
+                        }
                     } else {
                         "was granted secrets on the command line"
                     },
@@ -585,9 +713,18 @@ pub(crate) fn static_problems(
             ),
         ));
     }
-    let granted: BTreeSet<&str> = grant.keys.keys().map(|k| k.as_str()).collect();
+    // a key that the task exports under its own name is not in the environment when a
+    // template is rendered
+    let granted: BTreeSet<&str> = grant.exported_keys().map(|k| k.as_str()).collect();
+    let mut run_refs = BTreeSet::new();
+    for script in task.run_script_strings() {
+        run_refs.extend(tera_env_refs(&script));
+    }
+    let env_texts = task.non_late_env_texts();
     for key in view.template_refs(task) {
-        if granted.contains(key.as_str()) {
+        // a key built from secrets is read from env only through T5 below
+        let late = grant.is_late_key(&key) && run_refs.contains(&key);
+        if granted.contains(key.as_str()) || late {
             problems.push(
                 Problem::new(
                     &task.name,
@@ -606,7 +743,156 @@ pub(crate) fn static_problems(
             );
         }
     }
+    problems.extend(tera_read_problems(task, grant, &env_texts));
+    problems.extend(shell_expansion_problems(
+        task,
+        grant,
+        &env_texts,
+        crate::config::Settings::try_get().is_ok_and(|s| s.env_shell_expand),
+    ));
     problems
+}
+
+/// What `env_shell_expand` means for a task with composed values. With it on, mise expands
+/// `$NAME` in other env values, so a read of a composed key (T5) is detected through the
+/// expander, and the literal text of a composed value may not hold `$` syntax, because mise
+/// does not expand after substituting a secret. With it off a `$` is literal.
+fn shell_expansion_problems(
+    task: &Task,
+    grant: &SecretGrant,
+    env_texts: &[(String, String)],
+    expand: bool,
+) -> Vec<Problem> {
+    let mut problems = vec![];
+    if !expand || grant.late.is_empty() {
+        return problems;
+    }
+    for late in &grant.late {
+        if super::template::literal_has_shell_expansion(&late.template) {
+            problems.push(Problem::new(
+                &task.name,
+                Some(&late.key),
+                ProblemKind::Template,
+                super::template::shell_expansion_message(&task.name, &late.key),
+            ));
+        }
+    }
+    problems.extend(shell_read_problems(task, grant, env_texts, expand));
+    problems
+}
+
+/// T5: an env value reads, through Tera, a key that is built from secrets when the task
+/// starts. Names only the env key and the composed key, never a text.
+fn tera_read_problems(
+    task: &Task,
+    grant: &SecretGrant,
+    env_texts: &[(String, String)],
+) -> Vec<Problem> {
+    let mut problems = vec![];
+    for (name, value) in env_texts {
+        let (refs, dynamic) = tera_env_scan(value);
+        if dynamic {
+            // the name is only known when it renders, so any composed key could be the one
+            for late in &grant.late {
+                problems.push(Problem::new(
+                    &task.name,
+                    Some(&late.key),
+                    ProblemKind::Template,
+                    format!(
+                        "task {}: env.{name} calls get_env() with a name that is not a string literal, so it may read {}, which is rendered from secrets when the task starts; use a literal name (get_env(name=\"X\")) or build {name} from secrets directly",
+                        task.name, late.key
+                    ),
+                ));
+            }
+        }
+        for key in refs.iter().filter(|k| grant.is_late_key(k)) {
+            problems.push(Problem::new(
+                &task.name,
+                Some(key),
+                ProblemKind::Template,
+                format!(
+                    "task {}: env.{name} uses {{{{ env.{key} }}}}, but {key} is rendered from secrets when the task starts; build {name} from secrets directly",
+                    task.name
+                ),
+            ));
+        }
+    }
+    problems
+}
+
+/// T5 through a shell-style `$KEY` that `env_shell_expand` expands. Same rule on names only.
+fn shell_read_problems(
+    task: &Task,
+    grant: &SecretGrant,
+    env_texts: &[(String, String)],
+    expand: bool,
+) -> Vec<Problem> {
+    let mut problems = vec![];
+    if !expand || grant.late.is_empty() {
+        return problems;
+    }
+    for (name, value) in env_texts.iter().filter(|(_, v)| v.contains('$')) {
+        for late in &grant.late {
+            let key = &late.key;
+            if name == key {
+                continue;
+            }
+            let sentinel = format!("\u{1}{key}\u{1}");
+            let vars = BTreeMap::from([(key.clone(), sentinel.clone())]);
+            let expanded =
+                crate::config::env_directive::shell_expand_env(value, &vars, &mut vec![]);
+            if expanded.contains(&sentinel) {
+                problems.push(Problem::new(
+                    &task.name,
+                    Some(key),
+                    ProblemKind::Template,
+                    format!(
+                        "task {}: env.{name} uses ${key}, but {key} is rendered from secrets when the task starts; build {name} from secrets directly",
+                        task.name
+                    ),
+                ));
+            }
+        }
+    }
+    problems
+}
+
+/// Both T5 checks over texts that are not the task's own config text.
+pub(crate) fn composed_read_problems(
+    task: &Task,
+    grant: &SecretGrant,
+    texts: &[(String, String)],
+    expand: bool,
+) -> Vec<Problem> {
+    let mut problems = tera_read_problems(task, grant, texts);
+    problems.extend(shell_read_problems(task, grant, texts, expand));
+    problems
+}
+
+/// T5 for age-encrypted env values: mise renders the plaintext after decrypting it, so it
+/// can read a composed key, and only a decrypted text shows that. Nothing is returned unless
+/// the task composes a value and has an age value, a decrypt error is left for the render to
+/// report (`age.strict`), and the plaintext lives in a local that is dropped here. The
+/// problems name env keys only.
+pub(crate) async fn age_read_problems(task: &Task, grant: &SecretGrant) -> Vec<Problem> {
+    use crate::config::env_directive::EnvDirective;
+    if grant.late.is_empty() {
+        return vec![];
+    }
+    let mut texts = vec![];
+    for (directive, _) in task.render_env_directives() {
+        if let EnvDirective::Age { key, .. } = &directive
+            && let Ok(plain) = crate::agecrypt::decrypt_age_directive(&directive).await
+        {
+            texts.push((key.clone(), plain));
+        }
+    }
+    composed_read_problems(
+        task,
+        grant,
+        &texts,
+        crate::config::Settings::try_get().is_ok_and(|s| s.env_shell_expand),
+    )
 }
 
 /// G1 and G2 for a grant, against what the source describes.
@@ -759,6 +1045,44 @@ pub(crate) fn collision_problem(subject: Subject<'_>, key: &str) -> Problem {
     ))
 }
 
+/// G13 and G11 from what is known before anything runs: the sandbox, and the env names the
+/// config and the task's other env declare. A key a composed value builds is exported under
+/// its own name, so it is checked like an exported one; the spawn repeats the exact check.
+pub(crate) fn sandbox_and_collision_problems(
+    task: &Task,
+    grant: &SecretGrant,
+    sandbox: &crate::sandbox::SandboxConfig,
+    declared: &BTreeSet<String>,
+) -> Vec<Problem> {
+    let subject = Subject::Task(&task.name);
+    let mut problems = vec![];
+    for key in grant
+        .exported_keys()
+        .map(|k| k.as_str())
+        .chain(grant.late.iter().map(|l| l.key.as_str()))
+    {
+        if !sandbox.keeps_env_key(key) {
+            problems.push(sandbox_problem(subject, key));
+        }
+    }
+    let is_declared = |key: &str| declared.iter().any(|d| mise_util::env::env_key_eq(d, key));
+    let mut colliding: BTreeSet<&str> = BTreeSet::new();
+    for key in grant.exported_keys().map(|k| k.as_str()) {
+        if grant.is_late_key(key) || is_declared(key) {
+            colliding.insert(key);
+        }
+    }
+    for late in &grant.late {
+        if is_declared(&late.key) {
+            colliding.insert(&late.key);
+        }
+    }
+    for key in colliding {
+        problems.push(collision_problem(subject, key));
+    }
+    problems
+}
+
 /// The environment task `[env]` directives are evaluated against, as the resolver sees it:
 /// the process env minus what config `_.unset`s, plus config `[env]` results. Every static
 /// check that depends on whether a `default` applies reads this one view, so they cannot drift
@@ -887,13 +1211,10 @@ impl EnvView {
         let mut env = self.base.clone();
         let mut declared = BTreeSet::new();
         let mut texts = vec![];
-        let directives = task
-            .inherited_env
-            .0
-            .iter()
-            .chain(task.env.0.iter())
-            .chain(task.overlay_env.iter().map(|(d, _)| d));
-        for d in directives {
+        // in the order the env resolves, without the values rendered at spawn (a composite is
+        // not something that could collide with itself, and a superseded one never applies)
+        let directives = task.render_env_directives();
+        for (d, _) in &directives {
             match d {
                 EnvDirective::Val(k, v, _) => {
                     env.retain(|e, _| !env_key_eq(e, k));
@@ -959,20 +1280,40 @@ impl EnvView {
 /// `{{ env.K }}`, `{{ env["K"] }}` and `get_env(name="K")` inside Tera tags. Lexical, but
 /// aware of string literals: quoted text such as `"env.K"` is data and is not an env read.
 pub(crate) fn tera_env_refs(s: &str) -> BTreeSet<String> {
+    tera_env_scan(s).0
+}
+
+/// What `tera_env_refs` cannot name: a `get_env()` whose `name` is not a string literal
+/// (`get_env(name=vars.KEY)`) reads some env var that is only known when it renders.
+const DYNAMIC_GET_ENV: &str = "\u{0}get_env";
+
+/// The names read, and whether any `get_env()` call computes its name.
+pub(crate) fn tera_env_scan(s: &str) -> (BTreeSet<String>, bool) {
     let mut out = BTreeSet::new();
     let mut rest = s;
-    while let Some(start) = [rest.find("{{"), rest.find("{%")]
+    while let Some(start) = [rest.find("{{"), rest.find("{%"), rest.find("{#")]
         .into_iter()
         .flatten()
         .min()
     {
         let tag = &rest[start..];
+        // Tera does not evaluate comments and raw blocks, so text in them reads nothing
+        if let Some(after) = super::template::skip_inert(tag) {
+            rest = after;
+            continue;
+        }
+        if tag.starts_with("{#") {
+            // an unterminated comment: scan it as text, since Tera rejects it anyway
+            scan_tag(tag, &mut out);
+            break;
+        }
         let close = if tag.starts_with("{{") { "}}" } else { "%}" };
         let end = tag.find(close).map(|e| e + 2).unwrap_or(tag.len());
         scan_tag(&tag[..end], &mut out);
         rest = &tag[end..];
     }
-    out
+    let dynamic = out.remove(DYNAMIC_GET_ENV);
+    (out, dynamic)
 }
 
 fn is_ident(c: char) -> bool {
@@ -1052,22 +1393,35 @@ fn scan_get_env_name(chars: &[char], mut i: usize, out: &mut BTreeSet<String>) {
         let boundary = i == 0 || !is_ident(chars[i - 1]);
         if boundary && chars[i..].starts_with(&['n', 'a', 'm', 'e']) {
             let mut j = i + 4;
-            while chars.get(j) == Some(&' ') {
+            while chars.get(j).is_some_and(|c| c.is_whitespace()) {
                 j += 1;
             }
             if chars.get(j) == Some(&'=') {
                 j += 1;
-                while chars.get(j) == Some(&' ') {
+                while chars.get(j).is_some_and(|c| c.is_whitespace()) {
                     j += 1;
                 }
                 if chars.get(j).is_some_and(|c| is_quote(*c)) {
-                    out.insert(read_literal(chars, j).0);
-                    return;
+                    let (name, mut next) = read_literal(chars, j);
+                    while chars.get(next).is_some_and(|c| c.is_whitespace()) {
+                        next += 1;
+                    }
+                    // `'A' ~ 'B'` and the like are computed, not the literal `A`
+                    if chars.get(next).is_none_or(|c| matches!(c, ',' | ')')) {
+                        out.insert(name);
+                    } else {
+                        out.insert(DYNAMIC_GET_ENV.to_string());
+                    }
+                } else {
+                    out.insert(DYNAMIC_GET_ENV.to_string());
                 }
+                return;
             }
         }
         i += 1;
     }
+    // no `name=` at all: nothing to name
+    out.insert(DYNAMIC_GET_ENV.to_string());
 }
 
 #[cfg(test)]
@@ -1408,6 +1762,275 @@ mod tests {
         }
     }
 
+    fn composed(more: Vec<crate::config::env_directive::EnvDirective>) -> Task {
+        use crate::config::env_directive::EnvDirective;
+        let mut env = vec![EnvDirective::Val(
+            "PGURL".into(),
+            "postgres://{{ secrets.A }}@h".into(),
+            Default::default(),
+        )];
+        env.extend(more);
+        let mut task = Task {
+            name: "migrate".into(),
+            env: crate::config::config_file::mise_toml::EnvList(env),
+            ..Default::default()
+        };
+        task.record_late_secret_env(std::path::Path::new("/p/mise.toml"))
+            .unwrap();
+        task
+    }
+
+    fn val(key: &str, value: &str) -> crate::config::env_directive::EnvDirective {
+        crate::config::env_directive::EnvDirective::Val(
+            key.into(),
+            value.into(),
+            Default::default(),
+        )
+    }
+
+    fn t5(task: &Task) -> Vec<String> {
+        let (grant, _) = grant_for_task(task);
+        static_problems(task, &grant, None, &EnvView::default())
+            .into_iter()
+            .filter(|p| p.kind == ProblemKind::Template)
+            .map(|p| p.render())
+            .collect()
+    }
+
+    #[test]
+    fn declared_env_keys_omit_a_composite_only_key() {
+        let task = composed(vec![val("OTHER", "x")]);
+        let keys = EnvView::default().declared_keys(&task);
+        assert!(
+            keys.contains("OTHER") && !keys.contains("PGURL"),
+            "{keys:?}"
+        );
+    }
+
+    #[test]
+    fn every_env_reader_of_a_composed_key_is_t5() {
+        use crate::config::env_directive::EnvDirective;
+        let default =
+            EnvDirective::Default("X".into(), "{{ env.PGURL }}".into(), Default::default());
+        let file = EnvDirective::File("{{ env.PGURL }}.env".into(), Default::default());
+        for (task, reader) in [
+            (
+                composed(vec![val("X", "{{ env.PGURL }}/x")]),
+                "env.X uses {{ env.PGURL }}",
+            ),
+            (composed(vec![default]), "env.X uses {{ env.PGURL }}"),
+            (composed(vec![file]), "env._.file uses {{ env.PGURL }}"),
+        ] {
+            let found = t5(&task);
+            assert!(
+                found
+                    .iter()
+                    .any(|m| m.contains(reader) && m.contains("PGURL is rendered from secrets")),
+                "{reader}: {found:?}"
+            );
+        }
+        // an overlay on a file task reads it too
+        let mut overlaid = composed(vec![]);
+        overlaid.merge_toml_overlay(Task {
+            env: crate::config::config_file::mise_toml::EnvList(vec![val("X", "{{ env.PGURL }}")]),
+            ..named("migrate", &[])
+        });
+        assert!(
+            t5(&overlaid)
+                .iter()
+                .any(|m| m.contains("env.X uses {{ env.PGURL }}")),
+            "overlay"
+        );
+        // unrelated reads are fine
+        assert!(t5(&composed(vec![val("X", "{{ env.HOME }}")])).is_empty());
+    }
+
+    #[test]
+    fn dollar_syntax_in_a_composed_value_follows_env_shell_expand() {
+        let task = composed(vec![]);
+        let mut task = task;
+        task.env.0[0] = val("PGURL", "postgres://{{ secrets.A }}@h?x=$user");
+        task.late_secret_env.clear();
+        task.record_late_secret_env(std::path::Path::new("/p/mise.toml"))
+            .unwrap();
+        let (grant, _) = grant_for_task(&task);
+        let texts = task.non_late_env_texts();
+        let on = shell_expansion_problems(&task, &grant, &texts, true);
+        assert_eq!(on.len(), 1, "{on:?}");
+        assert!(on[0].render().contains("uses $VAR expansion together with"));
+        assert!(shell_expansion_problems(&task, &grant, &texts, false).is_empty());
+    }
+
+    #[test]
+    fn a_computed_get_env_name_may_read_any_composed_key() {
+        let task = composed(vec![]);
+        let (grant, _) = grant_for_task(&task);
+        let check = |text: &str| {
+            let texts = vec![("OTHER".to_string(), text.to_string())];
+            composed_read_problems(&task, &grant, &texts, true)
+                .into_iter()
+                .map(|p| p.render())
+                .collect::<Vec<_>>()
+        };
+        for dynamic in [
+            "{{ get_env(name=vars.KEY) }}",
+            "{{ get_env(name=vars.KEY, default='x') }}",
+            "{{ get_env(name='A' ~ 'B') }}",
+        ] {
+            let found = check(dynamic);
+            assert!(
+                found
+                    .iter()
+                    .any(|m| m.contains("not a string literal") && m.contains("PGURL")),
+                "{dynamic}: {found:?}"
+            );
+        }
+        // whitespace of any kind around the name is still a literal name
+        for literal in [
+            "{{ get_env(name='HOME'\n) }}",
+            "{{ get_env(\tname\t=\t'HOME'\t) }}",
+            "{{ get_env(\n  name = 'HOME',\n  default = 'x'\n) }}",
+        ] {
+            assert!(check(literal).is_empty(), "{literal:?}");
+        }
+        assert_eq!(check("{{ get_env(name =\n'PGURL'\n) }}").len(), 1);
+        // a literal name is an ordinary read, and unrelated literals are fine
+        assert!(check("{{ get_env(name='HOME') }}").is_empty());
+        assert_eq!(check("{{ get_env(name='PGURL') }}").len(), 1);
+        // nothing composed, nothing to refuse
+        let plain = named("m", &[]);
+        let (none, _) = grant_for_task(&plain);
+        let texts = vec![("O".to_string(), "{{ get_env(name=vars.K) }}".to_string())];
+        assert!(composed_read_problems(&plain, &none, &texts, true).is_empty());
+    }
+
+    #[test]
+    fn raw_blocks_and_comments_read_nothing() {
+        let task = composed(vec![]);
+        let (grant, _) = grant_for_task(&task);
+        let check = |text: &str| {
+            let texts = vec![("OTHER".to_string(), text.to_string())];
+            composed_read_problems(&task, &grant, &texts, true).len()
+        };
+        assert_eq!(check("{% raw %}{{ env.PGURL }}{% endraw %}"), 0);
+        assert_eq!(check("{%- raw -%}{{ env.PGURL }}{%- endraw -%}"), 0);
+        assert_eq!(check("a{# {{ env.PGURL }} #}b"), 0);
+        // a real read next to one still counts, before or after
+        assert_eq!(check("{% raw %}x{% endraw %}{{ env.PGURL }}"), 1);
+        assert_eq!(check("{{ env.PGURL }}{# c #}"), 1);
+        assert_eq!(
+            check("{# c #}{% raw %}{{ env.HOME }}{% endraw %}{{ env.PGURL }}"),
+            1
+        );
+        // an unterminated block is a Tera error anyway; it is scanned, not trusted
+        assert_eq!(check("{% raw %}{{ env.PGURL }}"), 1);
+        assert_eq!(check("{# {{ env.PGURL }}"), 1);
+        // the run-script scanner is the same one
+        assert!(tera_env_refs("{% raw %}{{ env.PGURL }}{% endraw %}").is_empty());
+    }
+
+    #[test]
+    fn composed_reads_in_given_texts_are_t5_and_value_free() {
+        let task = composed(vec![]);
+        let (grant, _) = grant_for_task(&task);
+        let texts = vec![
+            ("OTHER".to_string(), "x-s3cr3t-{{ env.PGURL }}".to_string()),
+            ("THIRD".to_string(), "$PGURL".to_string()),
+            ("FINE".to_string(), "{{ env.HOME }}-s3cr3t".to_string()),
+        ];
+        let found = composed_read_problems(&task, &grant, &texts, true);
+        let text: Vec<String> = found.iter().map(|p| p.render()).collect();
+        assert_eq!(found.len(), 2, "{text:?}");
+        assert!(
+            text.iter()
+                .any(|m| m.contains("env.OTHER uses {{ env.PGURL }}"))
+        );
+        assert!(text.iter().any(|m| m.contains("env.THIRD uses $PGURL")));
+        assert!(text.iter().all(|m| !m.contains("s3cr3t")), "{text:?}");
+        // with expansion off only the Tera read counts
+        assert_eq!(
+            composed_read_problems(&task, &grant, &texts, false).len(),
+            1
+        );
+        // nothing composed, nothing to check
+        let plain = named("m", &[]);
+        let (none, _) = grant_for_task(&plain);
+        assert!(composed_read_problems(&plain, &none, &texts, true).is_empty());
+    }
+
+    #[test]
+    fn a_venv_path_reading_a_composed_key_is_t5() {
+        use crate::config::env_directive::EnvDirective;
+        let venv = |path: &str| EnvDirective::PythonVenv {
+            path: path.into(),
+            create: false,
+            python: None,
+            uv_create_args: None,
+            python_create_args: None,
+            options: Default::default(),
+        };
+        let mut task = composed(vec![venv("{{ env.PGURL }}/venv")]);
+        let found = t5(&task);
+        assert!(
+            found
+                .iter()
+                .any(|m| m.contains("env._.python.venv uses {{ env.PGURL }}")),
+            "{found:?}"
+        );
+        task = composed(vec![venv("$PGURL/venv")]);
+        let (grant, _) = grant_for_task(&task);
+        let texts = task.non_late_env_texts();
+        let on = shell_expansion_problems(&task, &grant, &texts, true);
+        assert!(
+            on.iter()
+                .any(|p| p.render().contains("env._.python.venv uses $PGURL")),
+            "{on:?}"
+        );
+        assert!(shell_expansion_problems(&task, &grant, &texts, false).is_empty());
+        // a path that reads nothing composed is fine
+        let task = composed(vec![venv("{{ env.HOME }}/venv")]);
+        assert!(t5(&task).is_empty());
+    }
+
+    #[test]
+    fn shell_reads_of_a_composed_key_are_t5_unless_escaped() {
+        // env_shell_expand is on by default
+        let found = t5(&composed(vec![val("X", "$PGURL?s")]));
+        assert!(
+            found
+                .iter()
+                .any(|m| m.contains("env.X uses $PGURL, but PGURL is rendered from secrets")),
+            "{found:?}"
+        );
+        assert!(!t5(&composed(vec![val("X", "${PGURL}")])).is_empty());
+        assert!(t5(&composed(vec![val("X", "$$PGURL")])).is_empty());
+        assert!(t5(&composed(vec![val("X", "$PGURLX")])).is_empty());
+    }
+
+    #[test]
+    fn all_does_not_export_what_templates_only_read() {
+        let a = SecretName::new("A").unwrap();
+        let file = PathBuf::from("/p/mise.toml");
+        let read = SecretGrant {
+            keys: BTreeMap::from([(
+                a.clone(),
+                vec![GrantOrigin::Template {
+                    var: "PGURL".into(),
+                    file: file.clone(),
+                }],
+            )]),
+            all: Some(GrantOrigin::CliAll),
+            late: vec![],
+        };
+        assert!(read.exported_keys().next().is_none());
+        let listed = SecretGrant {
+            keys: BTreeMap::from([(a.clone(), vec![GrantOrigin::TaskList { file }])]),
+            all: Some(GrantOrigin::CliAll),
+            late: vec![],
+        };
+        assert_eq!(listed.exported_keys().collect::<Vec<_>>(), [&a]);
+    }
+
     #[test]
     fn cli_grant_reaches_only_the_tasks_named_on_the_command_line() {
         let build = named("build", &[]);
@@ -1497,6 +2120,7 @@ mod tests {
                 }],
             )]),
             all: None,
+            late: vec![],
         };
         assert!(
             static_problems(&task, &own, None, &EnvView::default())
@@ -1506,11 +2130,13 @@ mod tests {
         let cli = SecretGrant {
             keys: BTreeMap::from([(a.clone(), vec![GrantOrigin::CliFlag])]),
             all: None,
+            late: vec![],
         };
         assert!(static_problems(&task, &cli, None, &EnvView::default()).is_empty());
         let all = SecretGrant {
             keys: BTreeMap::new(),
             all: Some(GrantOrigin::CliAll),
+            late: vec![],
         };
         assert!(!all.is_empty());
         assert!(static_problems(&task, &all, None, &EnvView::default()).is_empty());

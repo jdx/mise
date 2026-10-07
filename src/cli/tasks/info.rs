@@ -121,8 +121,9 @@ impl TasksInfo {
             }
             _ => {}
         }
-        if let Some(secrets) = task.secrets.as_ref().filter(|s| !s.names().is_empty()) {
-            info::inline_section("Secrets", secrets.names().join(", "))?;
+        let secrets = task.secret_names();
+        if !secrets.is_empty() {
+            info::inline_section("Secrets", secrets.join(", "))?;
         }
         if let Some(dir) = &task.dir {
             info::inline_section("Directory", display_path(dir))?;
@@ -178,7 +179,7 @@ impl TasksInfo {
             "depends": task.depends,
             "depends_post": task.depends_post,
             "daemons": task.daemons,
-            "secrets": task.secrets.as_ref().map(|s| s.names()).unwrap_or_default(),
+            "secrets": task.secret_names(),
             "wait_for": task.wait_for,
             "env": task
                 .env

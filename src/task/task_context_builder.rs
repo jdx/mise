@@ -612,20 +612,13 @@ impl TaskContextBuilder {
     }
 
     /// Build env directives from task-specific env (including inherited env)
+    ///
+    /// Inherited env comes first (so the task's own env can override it), and overlay entries
+    /// come last so a TOML `[tasks.<name>]` block's env overrides the file task's on key
+    /// collision, using the overlay's own config path for path-based directives. Values
+    /// that use `{{ secrets.X }}` are left out: the executor renders them just before spawn.
     fn build_task_env_directives(&self, task: &Task) -> Vec<(EnvDirective, PathBuf)> {
-        // Include inherited_env first (so task's own env can override it).
-        // Overlay entries come last so a TOML `[tasks.<name>]` block's env
-        // overrides the file task's on key collision, using the overlay's
-        // own config path for path-based directives.
-        let mut directives: Vec<(EnvDirective, PathBuf)> = task
-            .inherited_env
-            .0
-            .iter()
-            .chain(task.env.0.iter())
-            .map(|directive| (directive.clone(), task.config_source.clone()))
-            .collect();
-        directives.extend(task.overlay_env.iter().cloned());
-        directives
+        task.render_env_directives()
     }
 
     /// Resolve env directives using EnvResults
