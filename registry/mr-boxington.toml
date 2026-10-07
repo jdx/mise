@@ -1,6 +1,6 @@
 aliases = ["mbx"]
 backends = [
-  { full = "packslip:github.com/jdx/mr-boxington", min_version = "1.8.3" },
+  { full = "packslip:github.com/jdx/mr-boxington", min_version = "1.8.3", options = { identity = "https://github.com/jdx/mr-boxington/.github/workflows/release.yml@refs/heads/main", issuer = "https://token.actions.githubusercontent.com" } },
   { full = "github:jdx/mr-boxington", attestations_since = "0.5.2" },
 ]
 bins = ["mbx"]
