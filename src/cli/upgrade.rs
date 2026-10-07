@@ -172,6 +172,11 @@ impl Upgrade {
         self.dry_run || self.dry_run_code
     }
 
+    /// An `auto_update` launch shows only the install itself, not the lookups.
+    fn show_resolution_progress(&self) -> bool {
+        !self.is_dry_run() && !self.raw && !self.for_auto_update
+    }
+
     /// How versions upgraded away from should be handled. Either flag wins over
     /// the settings, and `overrides_with` makes the later flag win.
     fn prune_mode(&self) -> Result<PruneMode> {
@@ -293,7 +298,7 @@ impl Upgrade {
             crate::lockfile::migrate_monorepo_lockfiles(&config, false)?;
         }
         let ts = ToolsetBuilder::new()
-            .with_resolution_progress(!self.is_dry_run() && !self.raw)
+            .with_resolution_progress(self.show_resolution_progress())
             .with_args(&self.tool)
             .with_scope(self.scope())
             .build(&config)
@@ -349,7 +354,7 @@ impl Upgrade {
                     &opts,
                     Some(&explicit_filter_tools),
                     exclude_tools,
-                    !self.is_dry_run() && !self.raw,
+                    self.show_resolution_progress(),
                 )
                 .await;
             let bare_filter_tools = self
@@ -366,7 +371,7 @@ impl Upgrade {
                         &opts,
                         Some(&bare_filter_tools),
                         exclude_tools,
-                        !self.is_dry_run() && !self.raw,
+                        self.show_resolution_progress(),
                     )
                     .await,
                 );
@@ -379,7 +384,7 @@ impl Upgrade {
                 &opts,
                 filter_tools,
                 exclude_tools,
-                !self.is_dry_run() && !self.raw,
+                self.show_resolution_progress(),
             )
             .await
         };
