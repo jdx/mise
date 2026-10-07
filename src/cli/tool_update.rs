@@ -51,20 +51,33 @@ impl ToolUpdate {
         let Some(tool) = self.tool else {
             bail!("pass a tool or --watch");
         };
-        update_tool(tool).await
+        update_tool(tool, false).await
     }
 }
 
-async fn update_tool(tool: ToolArg) -> Result<()> {
+async fn update_tool(tool: ToolArg, in_pass: bool) -> Result<()> {
     if Settings::get().locked {
         debug!("tool-update: skipped, `locked` is set");
         return Ok(());
     }
     let tool_id = tool.ba.full_without_opts();
-    let _lock = tool_update::lock_for_update()?;
-    // Another update may have changed the global lockfile while this waited.
-    Config::reset().await?;
-    let result = super::upgrade::upgrade_global_tool(tool).await;
+    let result = async {
+        let _lock = tool_update::lock_for_update()?;
+        // Another update may have changed the global lockfile while this waited.
+        Config::reset().await?;
+        if in_pass {
+            // Replaced by the real result below; left in place if the pass is
+            // stopped first (timed out, service stopped).
+            tool_update::record_result(
+                &tool_id,
+                &Err(eyre::eyre!(
+                    "the update did not finish: it was stopped after {TICK_TIMEOUT:?} or the service stopped"
+                )),
+            );
+        }
+        super::upgrade::upgrade_global_tool(tool).await
+    }
+    .await;
     tool_update::record_result(&tool_id, &result);
     result
 }
@@ -167,22 +180,15 @@ async fn update_due_tools() -> Result<()> {
                 continue;
             };
             info!("tool-update: updating {tool_id}");
-            // Replaced by the real result when the update ends; left in place
-            // if the pass is stopped first (timed out, service stopped).
-            tool_update::record_result(
-                &tool_id,
-                &Err(eyre::eyre!(
-                    "the update did not finish: it was stopped after {TICK_TIMEOUT:?} or the service stopped"
-                )),
-            );
             let tool: ToolArg = match tv.ba().short.parse() {
                 Ok(tool) => tool,
                 Err(err) => {
                     warn!("tool-update: could not update {tool_id}: {err:#}");
+                    tool_update::record_result(&tool_id, &Err(err));
                     continue;
                 }
             };
-            if let Err(err) = update_tool(tool).await {
+            if let Err(err) = update_tool(tool, true).await {
                 warn!("tool-update: could not update {tool_id}: {err:#}");
             }
         }

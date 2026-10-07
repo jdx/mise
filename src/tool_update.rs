@@ -92,6 +92,11 @@ pub enum Updater {
 /// offline update is not retried until the next interval.
 pub fn claim_due(tv: &ToolVersion, updater: Updater) -> Option<String> {
     if tv.request_pinned_this_version() {
+        // Nothing to update. The service marks it checked anyway, so its
+        // passes don't resolve it again until the interval is up.
+        if updater == Updater::Service {
+            claim_due_request(&tv.request, updater);
+        }
         return None;
     }
     claim_due_request(&tv.request, updater)
@@ -253,7 +258,9 @@ impl Tick {
         #[cfg(unix)]
         {
             use std::os::unix::process::CommandExt;
-            command.process_group(0);
+            // Nested mise (installers, hooks) skip their own process group
+            // when this is set, so killing the pass's group reaches them.
+            command.env("MISE_TASK_PGID_MANAGED", "1").process_group(0);
             Ok(Self {
                 child: command.spawn()?,
                 done: false,
