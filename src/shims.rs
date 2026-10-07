@@ -568,14 +568,17 @@ fn publish_staged_shim_farm(
     desired.extend(
         entries
             .iter()
-            .filter_map(|entry| entry.file_name().into_string().ok()),
+            .filter_map(|entry| entry.file_name().into_string().ok())
+            .map(shim_filename_key),
     );
     for entry in entries {
         let source = entry.path();
         let destination = shims_dir.join(entry.file_name());
         let destination_exists = destination.exists() || destination.is_symlink();
         let destination_owned = is_hidden_shim_name(&entry.file_name())
-            || known_owned.contains(&entry.file_name().to_string_lossy().into_owned())
+            || known_owned.contains(&shim_filename_key(
+                entry.file_name().to_string_lossy().into_owned(),
+            ))
             || (destination_exists
                 && (is_mise_shim(&destination, mise_bin)?
                     || symlink_target_names_mise(&destination)?));
@@ -1442,6 +1445,14 @@ fn list_executables_in_dir(dir: &Path) -> Result<HashSet<String>> {
         .collect())
 }
 
+fn shim_filename_key(name: String) -> String {
+    if cfg!(windows) {
+        name.to_ascii_lowercase()
+    } else {
+        name
+    }
+}
+
 fn list_shims_in(dir: &Path) -> Result<HashSet<String>> {
     Ok(dir
         .read_dir()?
@@ -1456,7 +1467,7 @@ fn list_shims_in(dir: &Path) -> Result<HashSet<String>> {
             if (file::is_executable(&bin.path()) || bin.path().extension().is_none())
                 && (bin.file_type()?.is_file() || bin.file_type()?.is_symlink())
             {
-                Ok(name.into_string().ok())
+                Ok(name.into_string().ok().map(shim_filename_key))
             } else {
                 Ok(None)
             }
@@ -1599,7 +1610,10 @@ fn platform_shim_names(_mise_bin: &Path, bin: &str) -> Vec<String> {
         let shim_mode = effective_shim_mode(_mise_bin);
         #[cfg(not(windows))]
         let shim_mode = String::new();
-        let p = PathBuf::from(bin);
+        // Windows resolves ASCII case variants to the same file. Match lazy
+        // declarations (JQ.EXE) to installed tool names (jq.exe) before diffing,
+        // so installing through a hardlink never replaces the executing shim.
+        let p = PathBuf::from(bin.to_ascii_lowercase());
         match shim_mode.as_ref() {
             "hardlink" | "symlink" | "exe" => {
                 vec![p.with_extension("exe").to_string_lossy().to_string()]
@@ -1850,6 +1864,47 @@ mod tests {
     use super::*;
     use crate::args::BackendArg;
     use crate::toolset::{ToolRequest, ToolSource, ToolVersionList};
+
+    #[cfg(windows)]
+    #[test]
+    fn publishing_uppercase_plugin_shim_keeps_it_in_the_farm() {
+        let dir = tempfile::tempdir().unwrap();
+        let staging = tempfile::tempdir_in(dir.path()).unwrap();
+        std::fs::write(staging.path().join("PLUGIN.EXE"), b"fixture").unwrap();
+        publish_staged_shim_farm(
+            dir.path(),
+            Path::new("mise.exe"),
+            staging,
+            HashSet::new(),
+            HashSet::new(),
+            HashSet::new(),
+            true,
+        )
+        .unwrap();
+        assert!(dir.path().join("PLUGIN.EXE").is_file());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn existing_uppercase_shim_satisfies_lowercase_installed_tool() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("JQ.EXE"), b"fixture").unwrap();
+        let present = list_shims_in(dir.path()).unwrap();
+        assert_eq!(present, HashSet::from(["jq.exe".to_string()]));
+        let desired = platform_shim_names(Path::new("mise.exe"), "JQ.EXE");
+        assert!(desired.iter().all(|name| name.starts_with("jq")));
+        let actual = ActualShims {
+            current: present.clone(),
+            dedicated_present: present.clone(),
+            owned: present.clone(),
+            occupied: present,
+            repairable: HashSet::new(),
+        };
+        let (missing, extra) =
+            calculate_shim_diffs(&actual, &HashSet::from(["jq.exe".to_string()]), true);
+        assert!(missing.is_empty());
+        assert!(extra.is_empty());
+    }
 
     #[test]
     fn shims_exclude_matches_regardless_of_exe_suffix() {
