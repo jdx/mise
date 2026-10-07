@@ -246,7 +246,7 @@ pub fn origin() -> Result<OriginTomlConfig> {
     }
     // recorded when it was connected: a fresh machine's declaration may
     // still be on its way in the configuration being pulled
-    let status = read_status(&crate::dirs::STATE)?;
+    let status = read_status(&super::super::local::root())?;
     if let (Some(url), Some(branch), false) =
         (status.origin_url, status.origin_branch, status.disconnected)
     {
@@ -1149,7 +1149,7 @@ pub(super) fn incoming_repository_tree(
 /// A bootstrap finished: the declarations that arrived through sync are
 /// applied now, so `status` stops asking for one.
 pub fn bootstrap_completed() {
-    let state_dir: &Path = &crate::dirs::STATE;
+    let state_dir: &Path = &super::super::local::root();
     let status = match read_status(state_dir) {
         Ok(status) => status,
         Err(err) => {

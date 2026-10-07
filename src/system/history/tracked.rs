@@ -307,11 +307,12 @@ impl TrackedSet {
     pub async fn effective() -> Result<Self> {
         let config = Config::get().await?;
         let declared = Self::from_config(&config)?;
-        if !super::shadow::HistoryRepo::path_in(&dirs::STATE).is_dir() {
+        let root = super::local::root();
+        if !super::shadow::HistoryRepo::path_in(&root).is_dir() {
             return Ok(declared);
         }
-        match super::shadow::HistoryRepo::open_or_init_in(&dirs::STATE)? {
-            Some(repo) => super::enrollment::resolve(&dirs::STATE, &repo, &declared, &[], &[]),
+        match super::shadow::HistoryRepo::open_or_init_in(&root)? {
+            Some(repo) => super::enrollment::resolve(&root, &repo, &declared, &[], &[]),
             None => Ok(declared),
         }
     }
@@ -494,7 +495,8 @@ impl TrackedSet {
 
     /// **Nothing local-only is ever this history's.** A path some entry
     /// keeps in local-only history is dropped where this set would enroll
-    /// it itself (another machine may share that path), and excluded from
+    /// it or anything under it itself (another machine may share that
+    /// path; a local directory keeps everything in it), and excluded from
     /// any directory entry that would save it, so no capture, pull, or
     /// publication reaches it. The exclusion is the entry's own and never
     /// enters the manifest, so the name of a local path is not published
@@ -504,7 +506,8 @@ impl TrackedSet {
             return;
         }
         let local = self.local.clone();
-        self.entries.retain(|entry| !local.contains(&entry.path));
+        self.entries
+            .retain(|entry| !local.iter().any(|path| entry.path.starts_with(path)));
         for entry in &mut self.entries {
             for path in &local {
                 let Ok(relative) = path.strip_prefix(&entry.path) else {
@@ -2554,7 +2557,9 @@ mod tests {
             entries: vec![
                 TrackedEntry::new("/home/u/.config/app".into(), "track", policy),
                 TrackedEntry::new("/home/u/.mine".into(), "track", policy),
+                TrackedEntry::new("/home/u/.mine/state.json".into(), "track", policy),
                 TrackedEntry::new("/home/u/.other".into(), "track", policy),
+                TrackedEntry::new("/home/u/.mine-too".into(), "track", policy),
             ],
             local: vec![
                 "/home/u/.mine".into(),
@@ -2568,7 +2573,8 @@ mod tests {
             paths,
             vec![
                 PathBuf::from("/home/u/.config/app"),
-                "/home/u/.other".into()
+                "/home/u/.other".into(),
+                "/home/u/.mine-too".into()
             ]
         );
         let app = &set.entries[0];

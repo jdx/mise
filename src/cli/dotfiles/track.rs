@@ -142,17 +142,18 @@ impl DotfilesTrack {
         // needs only configuration when the repository is damaged. So it
         // asks only when there is something to read, and falls back to
         // the declarations when reading fails.
-        let effective =
-            match crate::system::history::shadow::HistoryRepo::path_in(&crate::dirs::STATE)
-                .join("HEAD")
-                .is_file()
-            {
-                true => TrackedSet::effective().await.unwrap_or_else(|err| {
-                    debug!("dotfiles: previewing from declarations alone: {err:#}");
-                    TrackedSet::default()
-                }),
-                false => TrackedSet::default(),
-            };
+        let effective = match crate::system::history::shadow::HistoryRepo::path_in(
+            &crate::system::history::local::root(),
+        )
+        .join("HEAD")
+        .is_file()
+        {
+            true => TrackedSet::effective().await.unwrap_or_else(|err| {
+                debug!("dotfiles: previewing from declarations alone: {err:#}");
+                TrackedSet::default()
+            }),
+            false => TrackedSet::default(),
+        };
         let mut preview_set = TrackedSet {
             exclude: exclude.clone(),
             ..Default::default()
@@ -204,6 +205,24 @@ impl DotfilesTrack {
             let existing = managed
                 .iter()
                 .find(|req| req.target == target && req.mode == FileMode::Track);
+            // local-only history takes neither; dropping one would quietly
+            // change how the file is kept
+            if self.local
+                && let Some(existing) = existing
+            {
+                if existing.policy.encrypt {
+                    bail!(
+                        "{target_raw} is declared with encrypt = true, which local-only history does not take. Remove it from the declaration in {} first",
+                        display_path(&existing.origin.config)
+                    );
+                }
+                if !existing.variants.is_empty() {
+                    bail!(
+                        "{target_raw} is declared with variants, which local-only history does not take. Remove them from the declaration in {} first",
+                        display_path(&existing.origin.config)
+                    );
+                }
+            }
             let normalized = normalize_target(&target);
             if self.allow_plaintext && target.is_dir() {
                 bail!("{target_raw}: --allow-plaintext applies to a file, not a directory");
@@ -841,12 +860,22 @@ async fn activate_and_baseline(
                 .is_some_and(|entry| entry.path == path)
         };
         if !active {
-            let reason = tracked
-                .invalid
-                .iter()
-                .find(|invalid| invalid.path == display_path(&path))
-                .map(|invalid| invalid.reason.clone())
-                .unwrap_or_else(|| "the declaration was not loaded".into());
+            let inside_local = (!local)
+                .then(|| tracked.local.iter().find(|dir| path.starts_with(dir)))
+                .flatten();
+            let reason = if let Some(dir) = inside_local {
+                format!(
+                    "it is inside {}, which is kept in local-only history",
+                    display_path(dir)
+                )
+            } else {
+                tracked
+                    .invalid
+                    .iter()
+                    .find(|invalid| invalid.path == display_path(&path))
+                    .map(|invalid| invalid.reason.clone())
+                    .unwrap_or_else(|| "the declaration was not loaded".into())
+            };
             bail!("dotfiles: {key} could not be tracked: {reason}");
         }
     }
@@ -959,10 +988,11 @@ fn inside_capture() -> Result<bool> {
         return Ok(false);
     };
     Ok(
-        crate::system::history::store::read_marker_in(&crate::dirs::STATE)?.is_some_and(|marker| {
-            marker.kind == crate::system::history::store::OperationKind::Capture
-                && parent == std::ffi::OsStr::new(&marker.uuid)
-        }),
+        crate::system::history::store::read_marker_in(&crate::system::history::local::root())?
+            .is_some_and(|marker| {
+                marker.kind == crate::system::history::store::OperationKind::Capture
+                    && parent == std::ffi::OsStr::new(&marker.uuid)
+            }),
     )
 }
 

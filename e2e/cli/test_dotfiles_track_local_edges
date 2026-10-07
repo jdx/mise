@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+# `mode = "track-local"` edge cases: a file shared before it became local,
+# the commands a local-only scope runs, and declarations it cannot take.
+require_cmd git
+export MISE_HISTORY_NOTIFY=false
+mkdir -p ~/.config/app
+echo shared-v1 >~/.config/app/settings.toml
+echo app-v1 >~/.config/app/cache.json
+assert_succeed "mise dot track ~/.config/app --yes"
+before_local=$(mise dot history --json | jq -r '.[0].id')
+
+# a file shared before it became local keeps that version in shared
+# history, but a shared rollback never writes it back, present or deleted
+echo app-v2 >~/.config/app/cache.json
+assert_succeed "mise dot save"
+assert_succeed "mise dot track --local ~/.config/app/cache.json --yes"
+echo app-v3 >~/.config/app/cache.json
+assert_succeed "mise dot rollback ~/.config/app --to $before_local --yes"
+assert "cat ~/.config/app/cache.json" "app-v3"
+rm ~/.config/app/cache.json
+assert_succeed "mise dot rollback ~/.config/app --to $before_local --yes"
+assert_fail "test -e ~/.config/app/cache.json"
+echo app-v3 >~/.config/app/cache.json
+
+# a command run by a local-only capture is outside the local scope
+assert_not_contains "mise dot --local capture -- env 2>&1" "__MISE_HISTORY_LOCAL"
+
+# the local scope keeps the state directory's trust decisions
+mkdir -p ~/project
+echo '[env]
+PROJECT = "1"' >~/project/mise.toml
+assert_succeed "cd ~/project && MISE_TRUSTED_CONFIG_PATHS= mise trust"
+assert_succeed "cd ~/project && MISE_TRUSTED_CONFIG_PATHS= MISE_YES=0 mise dot --local status"
+
+# a declaration local-only history cannot take is refused, not dropped
+echo variant >~/.vrc
+assert_succeed "mise dot track --os linux ~/.vrc --yes"
+assert_fail "mise dot track --local ~/.vrc --yes 2>&1" "variants, which local-only history does not take"
+assert_succeed "mise dot untrack ~/.vrc"

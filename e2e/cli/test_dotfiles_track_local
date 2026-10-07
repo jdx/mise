@@ -9,11 +9,16 @@ mkdir -p ~/.config/app
 echo shared-v1 >~/.config/app/settings.toml
 echo '{"window":1}' >~/.config/app/state.json
 echo local-v1 >~/.localrc
+mkdir -p ~/.private
+echo private-v1 >~/.private/state.json
 
 # declared local before the directory around it is first saved: versions
 # already in shared history stay there, as with untracking
 assert_succeed "mise dot track --local ~/.localrc ~/.config/app/state.json --yes"
 assert_succeed "mise dot track ~/.config/app --yes"
+# everything under a local directory is local
+assert_succeed "mise dot track --local ~/.private --yes"
+assert_fail "mise dot track ~/.private/state.json --yes 2>&1" "kept in local-only history"
 assert_contains "cat ~/.config/mise/config.toml" '"~/.localrc" = { mode = "track-local" }'
 assert_succeed "mise dot origin set file://$origin --sync manual --yes"
 
@@ -23,8 +28,9 @@ echo '{"window":2}' >~/.config/app/state.json
 echo shared-v2 >~/.config/app/settings.toml
 assert_contains "mise dot save 2>&1" "(local-only): saved checkpoint"
 assert_succeed "mise dot sync"
-assert "git --git-dir=$origin ls-tree -r --name-only main | grep -c -e localrc -e state.json || true" "0"
-assert "git --git-dir=$origin log --all --format=%B | grep -c -e localrc -e state.json || true" "0"
+assert "git --git-dir=$origin ls-tree -r --name-only main | grep -c -e localrc -e state.json -e private || true" "0"
+assert "git --git-dir=$origin log --all --format=%B | grep -c -e localrc -e state.json -e private || true" "0"
+assert_contains "git --git-dir=$HOME/.local/state/mise/history-local/history/repo.git show main:home/.private/state.json" "private-v1"
 assert "git --git-dir=$origin show main:home/.config/app/settings.toml" "shared-v2"
 assert_contains "git --git-dir=$HOME/.local/state/mise/history-local/history/repo.git show main:home/.localrc" "local-v2"
 
@@ -41,25 +47,6 @@ rm -rf ~/.local/state/mise/history/index
 assert_succeed "mise dot rollback ~/.config/app --yes"
 assert "cat ~/.config/app/settings.toml" "shared-v1"
 assert "cat ~/.config/app/state.json" '{"window":2}'
-
-# a file shared before it became local keeps that version in shared
-# history, but a shared rollback never writes it back, present or deleted
-echo app-v1 >~/.config/app/cache.json
-assert_succeed "mise dot save"
-before_local=$(mise dot history --json | jq -r '.[0].id')
-echo app-v2 >~/.config/app/cache.json
-assert_succeed "mise dot save"
-assert_succeed "mise dot track --local ~/.config/app/cache.json --yes"
-echo app-v3 >~/.config/app/cache.json
-assert_succeed "mise dot rollback ~/.config/app --to $before_local --yes"
-assert "cat ~/.config/app/cache.json" "app-v3"
-rm ~/.config/app/cache.json
-assert_succeed "mise dot rollback ~/.config/app --to $before_local --yes"
-assert_fail "test -e ~/.config/app/cache.json"
-echo app-v3 >~/.config/app/cache.json
-
-# a command run by a local-only capture gets the real state directory
-assert_not_contains "mise dot --local capture -- env 2>&1" "history-local"
 
 # capture labels both histories; watch --once reconciles both
 echo local-v3 >~/.localrc

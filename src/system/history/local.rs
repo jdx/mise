@@ -3,9 +3,10 @@
 //!
 //! The store is a complete history store of its own, under
 //! `$MISE_STATE_DIR/history-local`. A command works on it by running in the
-//! local scope: the same mise, with `MISE_STATE_DIR` pointed at that
-//! directory and [`ENV`] holding the state directory it came from. In that
-//! scope only local entries are tracked and nothing is ever synchronized.
+//! local scope: the same mise with [`ENV`] set, where history's [`root`] is
+//! that directory. Everything else mise keeps in its state directory (trust
+//! decisions, for one) stays where it is. In that scope only local entries
+//! are tracked and nothing is ever synchronized.
 //! Outside it local entries are never tracked
 //! ([`super::tracked::TrackedSet::keep_local_out`]), so nothing local can
 //! reach the shared history, its manifest, or an origin.
@@ -16,7 +17,7 @@ use std::process::Command;
 
 use eyre::{Result, WrapErr, ensure};
 
-/// Set in the local scope, to the state directory it came from.
+/// Set in the local scope.
 pub const ENV: &str = "__MISE_HISTORY_LOCAL";
 
 /// Whether this process works on the local-only history.
@@ -24,9 +25,19 @@ pub fn active() -> bool {
     std::env::var_os(ENV).is_some()
 }
 
-/// The state directory of the local-only store, seen from outside it.
-pub fn state_dir() -> PathBuf {
+/// The directory the local-only store lives under.
+pub fn local_root() -> PathBuf {
     crate::dirs::STATE.join("history-local")
+}
+
+/// The directory this process's history lives under: the state directory,
+/// or [`local_root`] in the local scope.
+pub fn root() -> PathBuf {
+    if active() {
+        local_root()
+    } else {
+        crate::dirs::STATE.to_path_buf()
+    }
 }
 
 /// `mise <args>` in the local scope. An operation this process records is
@@ -39,8 +50,7 @@ where
     let mut command = Command::new(std::env::current_exe()?);
     command
         .args(args)
-        .env("MISE_STATE_DIR", state_dir())
-        .env(ENV, *crate::dirs::STATE)
+        .env(ENV, "1")
         .env_remove(super::scope::ENV_VAR);
     Ok(command)
 }
@@ -69,10 +79,7 @@ where
     Ok(())
 }
 
-/// A command the local scope runs on the user's behalf gets the
-/// environment the scope came from.
+/// A command the local scope runs on the user's behalf is outside it.
 pub fn restore_env(command: &mut Command) {
-    if let Some(original) = std::env::var_os(ENV) {
-        command.env("MISE_STATE_DIR", original).env_remove(ENV);
-    }
+    command.env_remove(ENV);
 }

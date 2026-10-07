@@ -1326,6 +1326,8 @@ history then leaves that file out. Versions already saved in the shared
 history before the path became local stay there, as with
 [untracking](#stop-tracking-a-file). If another machine shares the same
 path, this machine neither applies its versions nor publishes its own.
+Everything inside a local-only directory is local-only too: a shared
+declaration of a path in it is refused.
 
 `track-local` takes no `encrypt` or `variants`, since its history never
 leaves the machine. Credential-named files are still left out unless the
