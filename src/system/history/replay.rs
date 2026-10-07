@@ -457,13 +457,6 @@ async fn execute(
         info!("history: nothing to do");
         return Ok(());
     }
-    if !exec.yes
-        && !crate::config::Settings::get().yes
-        && !prompt::confirm_recoverable("history: apply this plan?")?
-    {
-        info!("history: skipped");
-        return Ok(());
-    }
     // resolved from the trusted layers now, so nothing this operation writes
     // can change which commands run afterwards
     let reload = super::config::reload_commands()?;
@@ -530,8 +523,8 @@ async fn apply_steps(
                 bail!("the refreshed plan has conflicts; nothing was changed");
             }
             if !exec.yes && !crate::config::Settings::get().yes {
-                // The plan the caller saw is not the plan that would run, so
-                // unlike the first confirmation this one is never implied.
+                // the plan the caller saw is not the plan that would run, so
+                // this is never implied
                 if !prompt::confirm_destructive(
                     "history: apply the refreshed plan?",
                     &format!("mise {}", exec.command),

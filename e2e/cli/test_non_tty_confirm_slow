@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Without a terminal a confirmation must neither skip silently nor hang:
-# recoverable operations (journaled, with a protective checkpoint) proceed,
-# irreversible ones fail with an error that names --yes. e2e runs with stderr
+# Recoverable operations (journaled, with a protective checkpoint) never
+# prompt, with or without a terminal. Irreversible ones fail with an error
+# that names --yes when nobody can answer. e2e runs with stderr
 # and stdin detached from any tty.
 require_cmd git
 export MISE_HISTORY_NOTIFY=false
@@ -28,7 +28,7 @@ export second
 export -f b
 assert_succeed "b bootstrap --adopt file://$origin --yes </dev/null"
 
-# pull applies without --yes (and without a terminal)
+# pull applies without --yes, even with MISE_YES=0
 echo incoming >~/.native
 assert_succeed 'mise bootstrap dotfiles sync'
 assert_succeed 'b bootstrap dotfiles sync --fetch-only'
@@ -46,7 +46,51 @@ assert 'cat ~/.config/hypr/bindings.lua' kitty
 assert_succeed 'mise bootstrap dotfiles undo </dev/null'
 assert 'cat ~/.config/hypr/bindings.lua' alacritty
 
+# replacing local history cannot be undone: refuse loudly too
+assert_fail "b bootstrap --adopt file://$origin --replace-history </dev/null" '--yes'
+
 # irreversible: refuse loudly and name --yes, never skip silently
 mkdir -p "$HOME/implode-me"
 assert_fail 'mise implode </dev/null' '--yes'
 assert_succeed "test -d '$MISE_DATA_DIR' -o -d '$MISE_CONFIG_DIR'"
+
+# with a terminal attached it must not prompt either: track finishes without
+# an answer (stdin at EOF) and without --yes
+require_cmd python3
+echo extra >~/.pty-tracked
+python3 - <<'PY'
+import errno
+import os
+import pty
+import subprocess
+from pathlib import Path
+
+master, slave = pty.openpty()
+try:
+    result = subprocess.run(
+        ["mise", "bootstrap", "dotfiles", "track", str(Path.home() / ".pty-tracked")],
+        env={**os.environ, "MISE_YES": "0"},
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.PIPE,
+        stderr=slave,
+        timeout=60,
+    )
+finally:
+    os.close(slave)
+chunks = []
+while True:
+    try:
+        chunk = os.read(master, 4096)
+    except OSError as error:
+        if error.errno != errno.EIO:
+            raise
+        break
+    if not chunk:
+        break
+    chunks.append(chunk)
+os.close(master)
+output = result.stdout + b"".join(chunks)
+assert result.returncode == 0, output
+assert b"dotfiles: track " not in output, output
+PY
+assert_contains 'mise bootstrap dotfiles paths --json' '.pty-tracked'
