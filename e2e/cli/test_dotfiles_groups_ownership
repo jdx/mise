@@ -320,8 +320,10 @@ EOF2
   chmod 755 "$HOME/.config/pp/y"
   chmod 644 "$HOME/.config/pp/y/b.conf"
   assert "cat $HOME/.config/pp/x/a.conf" "x2"
-  # the interrupted write is accepted as it is before going on
-  assert_succeed "mise dot recover --keep-current --yes"
+  # the interrupted write is accepted as it is before going on; without a
+  # terminal, MISE_YES answers the confirmation
+  assert_contains "MISE_YES=0 mise dot recover --keep-current </dev/null 2>&1" "recovery copies preserved"
+  assert_succeed "MISE_YES=1 mise dot recover --keep-current </dev/null"
   cat <<EOF2 >>mise.toml
 
 [bootstrap]
