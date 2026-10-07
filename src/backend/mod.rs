@@ -5332,8 +5332,10 @@ pub trait Backend: Debug + Send + Sync {
 /// A postinstall hook may invoke mise for the exact installation it is
 /// finishing. That process is entitled to use the path supplied by its parent,
 /// even though the generic incomplete marker remains in place until the hook
-/// and verification succeed. Other processes never receive this environment,
-/// so they keep treating the install as incomplete.
+/// succeeds. Other processes never receive this environment, so they keep
+/// treating the install as incomplete. The install must also still hold its
+/// lock: a process the hook left running inherits the environment, but once a
+/// failed hook ends the install, that half-done version is not its to use.
 pub(crate) fn is_active_postinstall_install(tv: &ToolVersion, install_path: &Path) -> bool {
     std::env::var_os("MISE_TOOL_INSTALL_PATH")
         .as_deref()
@@ -5343,6 +5345,7 @@ pub(crate) fn is_active_postinstall_install(tv: &ToolVersion, install_path: &Pat
             .ok()
             .as_deref()
             == Some(tv.version.as_str())
+        && install_state::tool_version_locked(tv.ba(), &tv.state_key())
 }
 
 fn effective_latest_before_date<B: Backend + ?Sized>(

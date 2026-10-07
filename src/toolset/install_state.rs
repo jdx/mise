@@ -1112,6 +1112,13 @@ pub fn lock_tool_version(ba: &BackendArg, v: &str) -> Result<fslock::LockFile> {
     lock_tool_version_with_notice(ba, v, &|_| {})
 }
 
+/// Whether an install of this logical tool version holds its lock right now.
+pub fn tool_version_locked(ba: &BackendArg, v: &str) -> bool {
+    LockFile::new(&incomplete_file_path(ba, v))
+        .try_lock()
+        .is_ok_and(|lock| lock.is_none())
+}
+
 /// [`lock_tool_version`] that also tells the caller when it is actually
 /// waiting, so an install can report the pause instead of looking hung.
 /// `on_wait` receives the PID of the process holding the lock when known:
@@ -1226,6 +1233,7 @@ mod tests {
     use super::{
         InstallStateTool, incomplete_marker, lock_tool_version, merge_plugin_tools,
         normalize_version_for_sort, read_tool_manifest_from, scan_versions, tool_version_lock,
+        tool_version_locked,
     };
     use crate::args::BackendArg;
     use crate::plugins::PluginType;
@@ -1344,6 +1352,16 @@ mod tests {
             .expect("waiter acquires after release");
         waiter.join().unwrap();
         assert_eq!(count(), 1);
+    }
+
+    #[test]
+    fn tool_version_locked_reports_a_held_lock() {
+        let ba = BackendArg::from(format!("locked_test_{}", std::process::id()).as_str());
+        assert!(!tool_version_locked(&ba, "1.0.0"));
+        let lock = lock_tool_version(&ba, "1.0.0").unwrap();
+        assert!(tool_version_locked(&ba, "1.0.0"));
+        drop(lock);
+        assert!(!tool_version_locked(&ba, "1.0.0"));
     }
 
     #[test]
