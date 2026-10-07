@@ -1131,13 +1131,26 @@ static LEGACY_INCOMPLETE_MARKERS_REMAIN: Lazy<bool> =
 pub(crate) fn migrate_legacy_incomplete_markers() -> Result<bool> {
     let mut all_moved = true;
     for tool_dir_name in file::dir_subdirs(&dirs::CACHE)? {
-        for v in file::dir_subdirs(&dirs::CACHE.join(&tool_dir_name))? {
+        // One unreadable entry must not keep the rest from moving; it is left
+        // in place, still honored, for a later run.
+        let versions = match file::dir_subdirs(&dirs::CACHE.join(&tool_dir_name)) {
+            std::result::Result::Ok(versions) => versions,
+            Err(err) => {
+                debug!("migrate: reading {tool_dir_name} in the cache failed: {err:?}");
+                all_moved = false;
+                continue;
+            }
+        };
+        for v in versions {
             let legacy = legacy_incomplete_marker(&tool_dir_name, &v);
             if !legacy.is_file() {
                 continue;
             }
             // The legacy path is also the version's lock identity.
-            let Some(_lock) = LockFile::new(&legacy).try_lock()? else {
+            let Some(_lock) = LockFile::new(&legacy).try_lock().unwrap_or_else(|err| {
+                debug!("migrate: locking {}: {err:?}", display_path(&legacy));
+                None
+            }) else {
                 all_moved = false;
                 continue;
             };
