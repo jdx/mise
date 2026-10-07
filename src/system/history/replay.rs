@@ -689,7 +689,7 @@ async fn apply_steps(
                             "history: remove {} and the files in it that history does not cover?",
                             display_path(&step.path)
                         ),
-                        "mise dot rollback --force",
+                        &format!("mise {}", exec.command),
                     )?
                 {
                     bail!("declined; nothing more was changed");
