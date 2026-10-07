@@ -1356,6 +1356,14 @@ explicitly commits tracked changes. Git history lives under `$MISE_STATE_DIR/his
 `mise bootstrap dotfiles history` lists and compares its file versions. Bootstrap without
 tracking does not start a committed history, and dry runs never record. Set to `false` to
 turn recording off without deleting existing commits.
+
+A bootstrap that records no history (nothing tracked, no existing history) touches the history
+state only when it first rewrites a dotfile or edit, to keep a private write-recovery journal.
+If another history operation in the same `$MISE_STATE_DIR` holds the lock at that point, it warns
+and runs without the journal instead of failing. Runs that record history wait up to 30 seconds,
+then fail. A run that starts with nothing to record but declares tracking before it ends waits the
+same 30 seconds at the end; if the lock is still busy, or an earlier write already ran without the
+journal, it warns that its outcome was not recorded and keeps its result.
 """
 env = "MISE_HISTORY_ENABLED"
 type = "Bool"
@@ -2636,6 +2644,29 @@ lockfiles that already require provenance for the tool being installed.
 """
 env = "MISE_PROVENANCE_API_FAILURES_FATAL"
 type = "Bool"
+
+[prune.exclude]
+default = []
+description = "Tools that `mise prune` never removes, such as `node` or `aqua:BurntSushi/ripgrep`."
+docs = """
+Versions of the listed tools are kept by `mise prune`, `mise ls --prunable`, and the automatic
+removal that follows `mise upgrade`, even when no tracked config uses them and even when the tool
+is named on the command line. Tools are named as they are elsewhere in mise: `node`, `core:node`,
+and `aqua:BurntSushi/ripgrep` are all accepted, and a short name matches the same tool as its full
+name.
+
+Use this for a tool that something outside of mise resolves through its install path, or whose old
+versions you keep on purpose. `mise uninstall` is unaffected.
+
+```toml
+[settings]
+prune.exclude = ["node", "aqua:BurntSushi/ripgrep"]
+```
+"""
+env = "MISE_PRUNE_EXCLUDE"
+parse_env = "set_by_comma"
+rust_type = "BTreeSet<String>"
+type = "SetString"
 
 [pypi.registry_url]
 description = "Package registry URL for Python tools (pipx.registry_url is a compatibility alias)."
@@ -4191,6 +4222,24 @@ docs = """
 """
 env = "MISE_WINDOWS_SHIM_MODE"
 type = "String"
+
+[write_targets.dotfiles]
+description = "Global config file to create new [dotfiles] entries in. Existing entries stay in the config file that already declares them."
+global_only = true
+optional = true
+type = "Path"
+
+[write_targets.packages]
+description = "Global config file to create new [bootstrap.packages] entries in. Existing entries stay in the config file that already declares them."
+global_only = true
+optional = true
+type = "Path"
+
+[write_targets.tools]
+description = "Global config file to create new [tools] entries in. Existing entries stay in the config file that already declares them."
+global_only = true
+optional = true
+type = "Path"
 
 [yes]
 description = "This will automatically answer yes or no to prompts. This is useful for scripting."

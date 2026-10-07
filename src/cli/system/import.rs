@@ -1,10 +1,12 @@
 #[cfg(unix)]
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 #[cfg(unix)]
 use std::path::Path;
 use std::path::PathBuf;
 
 use eyre::{Result, bail};
+#[cfg(unix)]
+use indexmap::IndexSet;
 
 #[cfg(unix)]
 use crate::config::Config;
@@ -14,7 +16,9 @@ use crate::config::config_file::ConfigFile;
 #[cfg(unix)]
 use crate::config::config_file::mise_toml::MiseToml;
 #[cfg(unix)]
-use crate::config::{ConfigPathOptions, resolve_target_config_path};
+use crate::config::{ConfigPathOptions, GlobalWriteSection, resolve_target_config_path};
+#[cfg(unix)]
+use crate::env;
 #[cfg(unix)]
 use crate::file::display_path;
 #[cfg(unix)]
@@ -109,6 +113,13 @@ impl SystemImport {
             return Ok(());
         }
 
+        let config = Config::get().await?;
+        let requested = formulae
+            .iter()
+            .map(|formula| formula.config_key())
+            .collect();
+        let (existing_global_paths, has_new_global_entries) =
+            self.global_write_paths(&config, &requested);
         let path = resolve_target_config_path(ConfigPathOptions {
             global: self.global,
             path: self.path.clone(),
@@ -116,10 +127,12 @@ impl SystemImport {
             cwd: None,
             prefer_toml: true,
             prevent_home_local: true,
+            global_write_section: Some(GlobalWriteSection::Packages),
+            existing_global_paths,
+            has_new_global_entries,
         })?;
 
         let configured_taps = configured_brew_taps(&path).await?;
-        let config = Config::get().await?;
         let configured_packages = system::package_configs_for_target(&config, &path);
         let target_taps = target_brew_taps(&path)?;
         let target_packages = target_bootstrap_packages(&path)?;
@@ -183,6 +196,33 @@ impl SystemImport {
             formulae.len()
         );
         Ok(())
+    }
+
+    #[cfg(unix)]
+    fn global_write_paths(
+        &self,
+        config: &Config,
+        requested: &BTreeSet<String>,
+    ) -> (IndexSet<PathBuf>, bool) {
+        if !(self.global || env::in_home_dir()) || self.path.is_some() || self.env.is_some() {
+            return (Default::default(), false);
+        }
+        let mut paths = IndexSet::new();
+        let mut existing = BTreeSet::new();
+        for (path, cf) in &config.config_files {
+            if !crate::config::is_global_config(path) || crate::config::is_system_config(path) {
+                continue;
+            }
+            if let Some(bootstrap) = cf.bootstrap_config() {
+                for spec in bootstrap.packages.keys() {
+                    if requested.contains(spec) {
+                        paths.insert(path.clone());
+                        existing.insert(spec.clone());
+                    }
+                }
+            }
+        }
+        (paths, existing.len() != requested.len())
     }
 
     #[cfg(not(unix))]

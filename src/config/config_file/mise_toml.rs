@@ -392,6 +392,10 @@ pub struct MiseToml {
     context: TeraContext,
     #[serde(skip)]
     path: PathBuf,
+    /// Hash of the text this config was parsed from, so a command can tell that the
+    /// file changed after it was loaded.
+    #[serde(skip)]
+    loaded_hash: String,
     #[serde(default, deserialize_with = "deserialize_arr")]
     include: Vec<String>,
     /// The cache files of the remote `include` fragments merged into this
@@ -752,6 +756,7 @@ impl MiseToml {
             );
             rf.monorepo_root.get_or_insert(legacy_monorepo_root);
         }
+        rf.loaded_hash = crate::install_layout::snapshots::bytes_hash_of(body.as_bytes());
         rf.context = BASE_CONTEXT.clone();
         rf.context.insert(
             "config_root",
@@ -1283,6 +1288,135 @@ impl MiseToml {
         }
     }
 
+    fn build_tool_request_set(&self, skip_templated: bool) -> eyre::Result<ToolRequestSet> {
+        let source = ToolSource::MiseToml(self.path.clone());
+        let mut trs = ToolRequestSet::new();
+        let tools = self.tools.lock().unwrap();
+        let mut context = self.context.clone();
+        if let Some(config) = Config::maybe_get()
+            && let Some(env_results) = config.env_results_cached()
+        {
+            let mut env_vars: EnvMap =
+                if let Some(existing_env) = context.get("env").and_then(|v| v.as_map()) {
+                    existing_env
+                        .iter()
+                        .filter_map(|(k, v)| v.as_str().map(|s| (k.to_string(), s.to_string())))
+                        .collect()
+                } else {
+                    env::PRISTINE_ENV.clone()
+                };
+            for key in &env_results.env_remove {
+                env_vars.remove(key);
+            }
+            env_vars.extend(
+                env_results
+                    .env
+                    .iter()
+                    .map(|(k, (v, _))| (k.clone(), v.clone())),
+            );
+            context.insert("env", &env_vars);
+        }
+        Self::insert_resolved_vars(&mut context);
+        for (ba, tvp) in tools.iter() {
+            for tool in &tvp.0 {
+                if skip_templated && tool_has_template(tool) {
+                    continue;
+                }
+                let version = self.parse_template_with_context(&context, &tool.request)?;
+                // taken before `ba` is consumed below
+                let short = ba.short.clone();
+                let tvr = if let Some(mut options) = tool.options.clone() {
+                    // Add placeholder for version since it's not available at config load time
+                    // This preserves {{ version }} in the output for install-time rendering
+                    let mut opts_context = context.clone();
+                    opts_context.insert("version", "{{ version }}");
+                    // The http and s3 backends re-render their url/checksum_url per
+                    // target platform (host at install, any target during `mise
+                    // lock`), so only those two options defer os()/arch() instead of
+                    // resolving them now. Every other option (here and for other
+                    // backends) is consumed verbatim, so it keeps host resolution at
+                    // config load — deferring it would leak raw `{{ os() }}`
+                    // fragments into consumers that never render again (e.g.
+                    // checksum_expr).
+                    let defer_os_arch = matches!(
+                        ba.backend_type(),
+                        crate::backend::backend_type::BackendType::Http
+                            | crate::backend::backend_type::BackendType::S3
+                    );
+                    // `install_env` is a typed core option, so it never reaches the
+                    // `opts` loop below and its values went to the installer
+                    // unrendered — `{{ env.HOME }}` arrived literally, unlike every
+                    // other tool option (#13306). Render it here, with `version`
+                    // bound to itself so the placeholder still round-trips: core
+                    // options are deliberately exempt from the backend `{version}`
+                    // normalization, and nothing renders `install_env` again later.
+                    let mut install_env_context = context.clone();
+                    install_env_context.insert("version", "{{version}}");
+                    for value in options.core.install_env.values_mut() {
+                        if let EnvValue::String(s) = value {
+                            *s = self.parse_template_with_context(&install_env_context, s)?;
+                        }
+                    }
+                    for (k, v) in options.opts.iter_mut() {
+                        self.parse_tool_option_value_template(
+                            &opts_context,
+                            Some(k),
+                            v,
+                            defer_os_arch,
+                        )?;
+                    }
+                    let mut ba = ba.clone();
+                    // Start with cached options but filter out install-time-only options
+                    // when config provides its own options. This allows:
+                    // - Changing url/asset_pattern/checksum without reinstall issues
+                    // - Replacing stale layout options like bin_path with current config values
+                    let mut ba_opts = ba.opts().clone();
+                    let backend_type = ba.backend_type();
+                    ba_opts.opts.retain(|k, _| {
+                        !crate::backend::is_install_time_option_key_for_type(&backend_type, k)
+                    });
+                    ba_opts.apply_overrides(&options);
+                    // Re-apply registry defaults for install-time keys not overridden by user.
+                    // The filtering above strips both stale install-state cache AND registry
+                    // defaults. We want to keep registry defaults while discarding stale cache.
+                    if let Some(rt) = crate::registry::REGISTRY.get(ba.short.as_str()) {
+                        let full = ba.full();
+                        // Get structured options from registry (table-format backends)
+                        let mut registry_opts = rt.backend_options(&full);
+                        // Also parse inline options from [key=val,...] in the full string
+                        if let Some(start) = full.rfind('[')
+                            && full.ends_with(']')
+                        {
+                            let inline = crate::toolset::parse_tool_options(
+                                &full[start + 1..full.len() - 1],
+                            );
+                            for (k, v) in inline.opts {
+                                registry_opts.opts.entry(k).or_insert(v);
+                            }
+                        }
+                        for (k, v) in registry_opts.opts {
+                            ba_opts.opts.entry(k).or_insert(v);
+                        }
+                    }
+                    // Replace config-owned fields rather than merging them with cached values.
+                    // This intentionally supersedes apply_overrides above so omitted values clear
+                    // stale cache and install_env does not retain cached entries.
+                    ba_opts.os = options.os.clone();
+                    ba_opts.depends = options.depends.clone();
+                    ba_opts.install_env = options.install_env.clone();
+                    ba.set_opts(Some(ba_opts.clone()));
+                    ToolRequest::new_with_options(ba.into(), &version, ba_opts, source.clone())
+                        .wrap_err_with(|| self.tool_request_error_context(&short, tool, &version))?
+                } else {
+                    ToolRequest::new(ba.clone().into(), &version, source.clone())
+                        .wrap_err_with(|| self.tool_request_error_context(&short, tool, &version))?
+                };
+                trs.add_version(tvr, &source);
+            }
+        }
+        Ok(trs)
+    }
+
     fn parse_template_with_context(
         &self,
         context: &TeraContext,
@@ -1381,6 +1515,18 @@ impl MiseToml {
         }
         Ok(())
     }
+}
+
+/// Whether anything that selects or configures a tool is a template: its version,
+/// a backend option, or an `install_env` value.
+fn tool_has_template(tool: &MiseTomlTool) -> bool {
+    contains_template_syntax(&tool.request)
+        || tool.options.as_ref().is_some_and(|options| {
+            options.opts.values.values().any(toml_value_has_template)
+                || options.core.install_env.values().any(
+                    |value| matches!(value, EnvValue::String(s) if contains_template_syntax(s)),
+                )
+        })
 }
 
 impl ConfigFile for MiseToml {
@@ -1655,130 +1801,62 @@ impl ConfigFile for MiseToml {
         ToolSource::MiseToml(self.path.clone())
     }
 
+    fn loaded_hash(&self) -> Option<String> {
+        (!self.loaded_hash.is_empty()).then(|| self.loaded_hash.clone())
+    }
+
     fn to_tool_request_set(&self) -> eyre::Result<ToolRequestSet> {
-        let source = ToolSource::MiseToml(self.path.clone());
-        let mut trs = ToolRequestSet::new();
-        let tools = self.tools.lock().unwrap();
-        let mut context = self.context.clone();
-        if let Some(config) = Config::maybe_get()
-            && let Some(env_results) = config.env_results_cached()
-        {
-            let mut env_vars: EnvMap =
-                if let Some(existing_env) = context.get("env").and_then(|v| v.as_map()) {
-                    existing_env
-                        .iter()
-                        .filter_map(|(k, v)| v.as_str().map(|s| (k.to_string(), s.to_string())))
-                        .collect()
-                } else {
-                    env::PRISTINE_ENV.clone()
-                };
-            for key in &env_results.env_remove {
-                env_vars.remove(key);
+        self.build_tool_request_set(false)
+    }
+
+    fn to_tool_request_set_skipping_templated(&self) -> eyre::Result<ToolRequestSet> {
+        self.build_tool_request_set(true)
+    }
+
+    fn templated_tool_backends(&self) -> Vec<String> {
+        let mut backends = vec![];
+        for (ba, tvp) in self.tools.lock().unwrap().iter() {
+            // A tool this platform never resolves is never recorded either.
+            if !ba.is_os_supported() {
+                continue;
             }
-            env_vars.extend(
-                env_results
-                    .env
-                    .iter()
-                    .map(|(k, (v, _))| (k.clone(), v.clone())),
-            );
-            context.insert("env", &env_vars);
-        }
-        Self::insert_resolved_vars(&mut context);
-        for (ba, tvp) in tools.iter() {
             for tool in &tvp.0 {
-                let version = self.parse_template_with_context(&context, &tool.request)?;
-                // taken before `ba` is consumed below
-                let short = ba.short.clone();
-                let tvr = if let Some(mut options) = tool.options.clone() {
-                    // Add placeholder for version since it's not available at config load time
-                    // This preserves {{ version }} in the output for install-time rendering
-                    let mut opts_context = context.clone();
-                    opts_context.insert("version", "{{ version }}");
-                    // The http and s3 backends re-render their url/checksum_url per
-                    // target platform (host at install, any target during `mise
-                    // lock`), so only those two options defer os()/arch() instead of
-                    // resolving them now. Every other option (here and for other
-                    // backends) is consumed verbatim, so it keeps host resolution at
-                    // config load — deferring it would leak raw `{{ os() }}`
-                    // fragments into consumers that never render again (e.g.
-                    // checksum_expr).
-                    let defer_os_arch = matches!(
-                        ba.backend_type(),
-                        crate::backend::backend_type::BackendType::Http
-                            | crate::backend::backend_type::BackendType::S3
-                    );
-                    // `install_env` is a typed core option, so it never reaches the
-                    // `opts` loop below and its values went to the installer
-                    // unrendered — `{{ env.HOME }}` arrived literally, unlike every
-                    // other tool option (#13306). Render it here, with `version`
-                    // bound to itself so the placeholder still round-trips: core
-                    // options are deliberately exempt from the backend `{version}`
-                    // normalization, and nothing renders `install_env` again later.
-                    let mut install_env_context = context.clone();
-                    install_env_context.insert("version", "{{version}}");
-                    for value in options.core.install_env.values_mut() {
-                        if let EnvValue::String(s) = value {
-                            *s = self.parse_template_with_context(&install_env_context, s)?;
-                        }
-                    }
-                    for (k, v) in options.opts.iter_mut() {
-                        self.parse_tool_option_value_template(
-                            &opts_context,
-                            Some(k),
-                            v,
-                            defer_os_arch,
-                        )?;
-                    }
-                    let mut ba = ba.clone();
-                    // Start with cached options but filter out install-time-only options
-                    // when config provides its own options. This allows:
-                    // - Changing url/asset_pattern/checksum without reinstall issues
-                    // - Replacing stale layout options like bin_path with current config values
-                    let mut ba_opts = ba.opts().clone();
-                    let backend_type = ba.backend_type();
-                    ba_opts.opts.retain(|k, _| {
-                        !crate::backend::is_install_time_option_key_for_type(&backend_type, k)
+                let on_this_os = tool
+                    .options
+                    .as_ref()
+                    .and_then(|options| options.os.as_ref())
+                    .is_none_or(|os| {
+                        os.iter()
+                            .any(|entry| crate::platform::os_selector_matches(entry))
                     });
-                    ba_opts.apply_overrides(&options);
-                    // Re-apply registry defaults for install-time keys not overridden by user.
-                    // The filtering above strips both stale install-state cache AND registry
-                    // defaults. We want to keep registry defaults while discarding stale cache.
-                    if let Some(rt) = crate::registry::REGISTRY.get(ba.short.as_str()) {
-                        let full = ba.full();
-                        // Get structured options from registry (table-format backends)
-                        let mut registry_opts = rt.backend_options(&full);
-                        // Also parse inline options from [key=val,...] in the full string
-                        if let Some(start) = full.rfind('[')
-                            && full.ends_with(']')
-                        {
-                            let inline = crate::toolset::parse_tool_options(
-                                &full[start + 1..full.len() - 1],
-                            );
-                            for (k, v) in inline.opts {
-                                registry_opts.opts.entry(k).or_insert(v);
-                            }
-                        }
-                        for (k, v) in registry_opts.opts {
-                            ba_opts.opts.entry(k).or_insert(v);
-                        }
-                    }
-                    // Replace config-owned fields rather than merging them with cached values.
-                    // This intentionally supersedes apply_overrides above so omitted values clear
-                    // stale cache and install_env does not retain cached entries.
-                    ba_opts.os = options.os.clone();
-                    ba_opts.depends = options.depends.clone();
-                    ba_opts.install_env = options.install_env.clone();
-                    ba.set_opts(Some(ba_opts.clone()));
-                    ToolRequest::new_with_options(ba.into(), &version, ba_opts, source.clone())
-                        .wrap_err_with(|| self.tool_request_error_context(&short, tool, &version))?
-                } else {
-                    ToolRequest::new(ba.clone().into(), &version, source.clone())
-                        .wrap_err_with(|| self.tool_request_error_context(&short, tool, &version))?
-                };
-                trs.add_version(tvr, &source);
+                if on_this_os
+                    && tool_has_template(tool)
+                    && !backends.contains(&ba.short.to_string())
+                {
+                    backends.push(ba.short.to_string());
+                }
             }
         }
-        Ok(trs)
+        backends
+    }
+
+    fn tool_backends(&self) -> Vec<String> {
+        // `tiny = []` adds no request, so it does not replace a parent's.
+        self.tools
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|(_, tvp)| !tvp.0.is_empty())
+            .map(|(ba, _)| ba.short.to_string())
+            .collect()
+    }
+
+    fn has_templated_tool_versions(&self) -> bool {
+        self.tools
+            .lock()
+            .unwrap()
+            .values()
+            .any(|tvp| tvp.0.iter().any(tool_has_template))
     }
 
     fn aliases(&self) -> eyre::Result<AliasMap> {
@@ -2142,6 +2220,7 @@ impl Clone for MiseToml {
             min_version: self.min_version.clone(),
             context: self.context.clone(),
             path: self.path.clone(),
+            loaded_hash: self.loaded_hash.clone(),
             include: self.include.clone(),
             included_paths: self.included_paths.clone(),
             env_file: self.env_file.clone(),

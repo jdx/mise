@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+# What a project renders to can depend on inputs prune cannot see: the command line,
+# a settings-level env file. The snapshot is taken where the project is used, so prune
+# keeps the version that was rendered there.
+export MISE_EXPERIMENTAL=1
+export MISE_INSTALL_LAYOUT=identity
+
+mkdir -p noenv/child envfile/child elsewhere
+echo '[env]
+PRUNE_VERSION = "1.0.0"' >noenv/mise.toml
+echo '[tools]
+dummy = "{{env.PRUNE_VERSION}}"' >noenv/child/mise.toml
+echo '[settings]
+env_file = ".env"
+[env]
+PRUNE_VERSION = "1.0.0"' >envfile/mise.toml
+echo 'PRUNE_VERSION=2.0.0' >envfile/.env
+echo '[tools]
+dummy = "{{env.PRUNE_VERSION}}"' >envfile/child/mise.toml
+
+assert "mise install dummy@3.0.0"
+assert "PRUNE_VERSION=2.0.0 mise --no-env -C noenv/child install"
+assert "mise -C envfile/child install"
+assert "mise install dummy@4.0.0"
+
+assert "mise -C elsewhere ls --prunable --json >prunable.json"
+assert "jq -e '[.dummy[].version] | sort == [\"3.0.0\", \"4.0.0\"]' prunable.json"

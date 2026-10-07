@@ -1,0 +1,25 @@
+name: mise M4 sandbox pilot
+
+on:
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: jdx-m4-mise-pilot
+  cancel-in-progress: false
+
+jobs:
+  isolated-runner-smoke-test:
+    # Routing convenience only. The protected guest admission hook remains the
+    # authority and independently validates both actor identities.
+    if: github.actor_id == '216188' && github.triggering_actor == 'jdx'
+    runs-on: [self-hosted, macOS, ARM64, jdx-m4-mise-pilot]
+    timeout-minutes: 15
+    steps:
+      - name: Verify the isolated macOS runner
+        shell: bash
+        run: |
+          set -euo pipefail
+          sw_vers
+          uname -m

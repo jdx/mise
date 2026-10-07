@@ -92,6 +92,19 @@ pub async fn verify_github_attestation_sources(
     }
 
     let artifact = tokio::fs::read(artifact_path).await?;
+    verify_github_attestation_sources_for_artifact(
+        Artifact::from(artifact.as_slice()),
+        attestations,
+        signer_workflow,
+    )
+    .await
+}
+
+pub(crate) async fn verify_github_attestation_sources_for_artifact(
+    artifact: Artifact<'_>,
+    attestations: &[Attestation],
+    signer_workflow: Option<&str>,
+) -> Result<Vec<String>> {
     let mut trust_roots = TrustRoots::default();
     let mut sources = Vec::new();
     let mut errors = Vec::new();
@@ -102,12 +115,15 @@ pub async fn verify_github_attestation_sources(
         let bundle = match serde_json::from_value::<Bundle>(bundle_value.clone()) {
             Ok(bundle) => bundle,
             Err(e) => {
-                errors.push(e.to_string());
+                let error_message = e.to_string();
+                let error = AttestationError::Json(e);
+                log_attestation_method_failure(&error);
+                errors.push(error_message);
                 continue;
             }
         };
         match verify_bundle_with_trust_roots(
-            Artifact::from(artifact.as_slice()),
+            artifact.clone(),
             &bundle,
             signer_workflow,
             &mut trust_roots,
@@ -116,19 +132,44 @@ pub async fn verify_github_attestation_sources(
         {
             Ok(()) => match bundle_source_repository(&bundle) {
                 Some(repository) => sources.push(repository),
-                None => errors.push("verified attestation names no source repository".to_string()),
+                None => {
+                    const ERROR: &str = "verified attestation names no source repository";
+                    log::debug!(
+                        "cached GitHub attestation verification method failed; continuing with other attestations: {ERROR}"
+                    );
+                    errors.push(ERROR.to_string());
+                }
             },
-            Err(e) => errors.push(e.to_string()),
+            Err(error) => {
+                log_attestation_method_failure(&error);
+                errors.push(error.to_string());
+            }
         }
     }
 
     if sources.is_empty() {
+        log::debug!(
+            "cached GitHub attestation verification failed overall: no attestation verified"
+        );
         return Err(AttestationError::Verification(join_error_strings(
             errors,
             || "No valid attestations found".to_string(),
         )));
     }
+    if !errors.is_empty() {
+        log::debug!(
+            "cached GitHub attestation verification succeeded overall despite {} failed attestation method(s)",
+            errors.len()
+        );
+    }
     Ok(sources)
+}
+
+pub(crate) fn log_attestation_method_failure(error: &AttestationError) {
+    log::debug!(
+        "cached GitHub attestation verification method failed; continuing with other attestations: {}",
+        error.diagnostic_summary()
+    );
 }
 
 pub(crate) async fn verify_github_attestation_inner(

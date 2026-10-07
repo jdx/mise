@@ -266,7 +266,18 @@ fn has_local_version_listing_option_override(
 fn listing_option_digest(opts: &ToolVersionOptions, version_listing_opt_keys: &[&str]) -> String {
     let values: BTreeMap<&str, String> = version_listing_opt_keys
         .iter()
-        .filter_map(|key| opts.get_string(key).map(|value| (*key, value)))
+        .filter_map(|key| {
+            // A table such as `headers` has no scalar form but still shapes the list, and its
+            // values can be credentials, so only the digest of it is kept.
+            opts.get_string(key)
+                .or_else(|| {
+                    opts.opts
+                        .get(*key)
+                        .filter(|value| value.is_table())
+                        .map(ToString::to_string)
+                })
+                .map(|value| (*key, value))
+        })
         .collect();
     hash::hash_to_str(&values)
 }
@@ -4191,7 +4202,14 @@ pub trait Backend: Debug + Send + Sync {
 
         self.cleanup_install_dirs(&tv);
         let finished = match self.finish_install_changes(&ctx, &tv).await {
-            Ok(()) => self.verify_install(&ctx, &tv).await,
+            Ok(()) => {
+                // Keep the incomplete marker through the postinstall hook, so a
+                // failed hook leaves a version no later resolution selects. A
+                // verification failure is the backend's to track (packslip keeps
+                // a usable binary and marks only its skills incomplete).
+                install_state::clear_incomplete_marker_best_effort(tv.ba(), &tv.state_key());
+                self.verify_install(&ctx, &tv).await
+            }
             Err(err) => Err(err),
         };
         if let Err(err) = finished {

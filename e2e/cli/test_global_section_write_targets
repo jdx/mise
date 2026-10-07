@@ -1,0 +1,152 @@
+#!/usr/bin/env bash
+
+# Per-section targets keep global config split into readable conf.d fragments.
+mkdir -p "$MISE_CONFIG_DIR/conf.d"
+cat >"$MISE_CONFIG_DIR/config.toml" <<EOF
+[settings.write_targets]
+tools = "$MISE_CONFIG_DIR/conf.d/10-tools.toml"
+packages = "$MISE_CONFIG_DIR/conf.d/20-packages.toml"
+dotfiles = "$MISE_CONFIG_DIR/conf.d/30-dotfiles.toml"
+EOF
+
+# New entries select the configured category target.
+mise use --global dummy@system
+assert_contains "cat $MISE_CONFIG_DIR/conf.d/10-tools.toml" 'dummy = "system"'
+assert_not_contains "cat $MISE_CONFIG_DIR/config.toml" 'dummy = "system"'
+
+mise bootstrap packages use --global --no-install pacman:ripgrep
+assert_contains "cat $MISE_CONFIG_DIR/conf.d/20-packages.toml" '"pacman:ripgrep" = "latest"'
+assert_not_contains "cat $MISE_CONFIG_DIR/config.toml" 'pacman:ripgrep'
+
+printf 'new dotfile\n' >"$HOME/.write-target"
+mise dot add --global --no-apply --yes "$HOME/.write-target"
+assert_contains "cat $MISE_CONFIG_DIR/conf.d/30-dotfiles.toml" '"~/.write-target"'
+assert_not_contains "cat $MISE_CONFIG_DIR/config.toml" 'write-target'
+
+# Writes that select the global config because they run from $HOME use the same defaults.
+mise use --global --remove dummy
+(
+  cd "$HOME"
+  mise use dummy@system
+  assert_contains "cat $MISE_CONFIG_DIR/conf.d/10-tools.toml" 'dummy = "system"'
+
+  mise bootstrap packages use --no-install pacman:home-package
+  assert_contains "cat $MISE_CONFIG_DIR/conf.d/20-packages.toml" '"pacman:home-package" = "latest"'
+)
+
+# Explicit paths still win over defaults.
+mise use --path explicit-tools.toml dummy@1
+assert_contains "cat explicit-tools.toml" 'dummy = "1"'
+assert_not_contains "cat $MISE_CONFIG_DIR/conf.d/10-tools.toml" 'dummy = "1"'
+
+mise bootstrap packages use --path explicit-packages.toml --no-install pacman:jq
+assert_contains "cat explicit-packages.toml" '"pacman:jq" = "latest"'
+assert_not_contains "cat $MISE_CONFIG_DIR/conf.d/20-packages.toml" 'pacman:jq'
+
+printf 'explicit dotfile\n' >"$HOME/.explicit-write-target"
+mise dot add --path explicit-dotfiles.toml --no-apply --yes "$HOME/.explicit-write-target"
+assert_contains "cat explicit-dotfiles.toml" '"~/.explicit-write-target"'
+assert_not_contains "cat $MISE_CONFIG_DIR/conf.d/30-dotfiles.toml" 'explicit-write-target'
+
+# Existing global entries remain in their fragment, regardless of the default.
+mise use --global dummy@2
+assert_contains "cat $MISE_CONFIG_DIR/conf.d/10-tools.toml" 'dummy = "2"'
+assert_not_contains "cat $MISE_CONFIG_DIR/config.toml" 'dummy = "2"'
+
+mise bootstrap packages use --global --no-install pacman:ripgrep@2
+assert_contains "cat $MISE_CONFIG_DIR/conf.d/20-packages.toml" '"pacman:ripgrep" = "2"'
+assert_not_contains "cat $MISE_CONFIG_DIR/config.toml" 'pacman:ripgrep'
+
+mkdir -p "$HOME/.dotfiles"
+printf 'old source\n' >"$HOME/.dotfiles/existing-write-target"
+printf 'updated source\n' >"$HOME/.existing-write-target"
+cat >>"$MISE_CONFIG_DIR/conf.d/30-dotfiles.toml" <<'EOF'
+"~/.existing-write-target" = { source = "~/.dotfiles/existing-write-target", mode = "copy" }
+EOF
+mise dot add --global --no-apply --yes "$HOME/.existing-write-target"
+assert "cat $HOME/.dotfiles/existing-write-target" "updated source"
+assert_not_contains "cat $MISE_CONFIG_DIR/config.toml" 'existing-write-target'
+
+# Existing global entries win even after defaults change or are removed.
+cat >"$MISE_CONFIG_DIR/config.toml" <<EOF
+[settings.write_targets]
+tools = "$MISE_CONFIG_DIR/conf.d/40-new-tools.toml"
+packages = "$MISE_CONFIG_DIR/conf.d/50-new-packages.toml"
+dotfiles = "$MISE_CONFIG_DIR/conf.d/60-new-dotfiles.toml"
+EOF
+mise use --global dummy@3
+assert_contains "cat $MISE_CONFIG_DIR/conf.d/10-tools.toml" 'dummy = "3"'
+assert_not_contains "test ! -e $MISE_CONFIG_DIR/conf.d/40-new-tools.toml || cat $MISE_CONFIG_DIR/conf.d/40-new-tools.toml" 'dummy'
+
+mise bootstrap packages use --global --no-install pacman:home-package@2
+assert_contains "cat $MISE_CONFIG_DIR/conf.d/20-packages.toml" '"pacman:home-package" = "2"'
+assert_not_contains "test ! -e $MISE_CONFIG_DIR/conf.d/50-new-packages.toml || cat $MISE_CONFIG_DIR/conf.d/50-new-packages.toml" 'home-package'
+
+printf 'changed default source\n' >"$HOME/.existing-write-target"
+mise dot add --global --no-apply --yes "$HOME/.existing-write-target"
+assert "cat $HOME/.dotfiles/existing-write-target" "changed default source"
+assert_not_contains "test ! -e $MISE_CONFIG_DIR/conf.d/60-new-dotfiles.toml || cat $MISE_CONFIG_DIR/conf.d/60-new-dotfiles.toml" 'existing-write-target'
+
+cat >"$MISE_CONFIG_DIR/config.toml" <<'EOF'
+# Existing entries still resolve to their defining fragments without write targets.
+EOF
+mise use --global dummy@4
+assert_contains "cat $MISE_CONFIG_DIR/conf.d/10-tools.toml" 'dummy = "4"'
+mise use --global --remove dummy
+assert_not_contains "cat $MISE_CONFIG_DIR/conf.d/10-tools.toml" 'dummy ='
+
+mise bootstrap packages use --global --no-install pacman:home-package@3
+assert_contains "cat $MISE_CONFIG_DIR/conf.d/20-packages.toml" '"pacman:home-package" = "3"'
+
+printf 'removed default source\n' >"$HOME/.existing-write-target"
+mise dot add --global --no-apply --yes "$HOME/.existing-write-target"
+assert "cat $HOME/.dotfiles/existing-write-target" "removed default source"
+
+# Environment selectors are still project-local and do not use global defaults.
+cat >"$MISE_CONFIG_DIR/config.toml" <<EOF
+[settings.write_targets]
+tools = "$MISE_CONFIG_DIR/conf.d/40-new-tools.toml"
+packages = "$MISE_CONFIG_DIR/conf.d/50-new-packages.toml"
+dotfiles = "$MISE_CONFIG_DIR/conf.d/60-new-dotfiles.toml"
+EOF
+mise use --env staging dummy@3
+assert_contains "cat mise.staging.toml" 'dummy = "3"'
+assert_not_contains "test ! -e $MISE_CONFIG_DIR/conf.d/40-new-tools.toml || cat $MISE_CONFIG_DIR/conf.d/40-new-tools.toml" 'dummy = "3"'
+
+mise bootstrap packages use --env staging --no-install pacman:fd
+assert_contains "cat mise.staging.toml" '"pacman:fd" = "latest"'
+assert_not_contains "test ! -e $MISE_CONFIG_DIR/conf.d/50-new-packages.toml || cat $MISE_CONFIG_DIR/conf.d/50-new-packages.toml" 'pacman:fd'
+
+# Multiple existing fragments are intentionally not guessed; an explicit path is required.
+cat >"$MISE_CONFIG_DIR/conf.d/10-tools.toml" <<'EOF'
+[tools]
+home-tool = "system"
+EOF
+cat >"$MISE_CONFIG_DIR/conf.d/11-other-tools.toml" <<'EOF'
+[tools]
+dummy = "1"
+EOF
+assert_fail_contains "mise use --global --dry-run home-tool@system dummy@1 2>&1" "use --path to choose one"
+assert_fail_contains "mise use --global --dry-run dummy@2 fresh@1 2>&1" "run separate commands"
+
+# Missing removals do not make an existing update look like a new declaration.
+mise use --global --dry-run dummy@2 --remove missing-tool
+
+# Invalid defaults fail before writing an unreadable config file.
+cat >invalid-relative.toml <<'EOF'
+[settings.write_targets]
+tools = "relative-tools.toml"
+EOF
+assert_fail_contains "MISE_GLOBAL_CONFIG_FILE=$PWD/invalid-relative.toml mise use --global --dry-run invalid-relative@system 2>&1" "settings.write_targets.tools must resolve to an absolute path"
+
+mkdir invalid-target-directory
+cat >invalid-directory.toml <<EOF
+[settings.write_targets]
+packages = "$PWD/invalid-target-directory"
+EOF
+assert_fail_contains "MISE_GLOBAL_CONFIG_FILE=$PWD/invalid-directory.toml mise bootstrap packages use --global --dry-run --no-install pacman:invalid-directory 2>&1" "settings.write_targets.packages must name a config file, not a directory"
+
+# Without a configured default, global writes retain their existing destination.
+mkdir -p no-defaults
+MISE_CONFIG_DIR="$PWD/no-defaults" mise use --global dummy@system
+assert_contains "cat no-defaults/config.toml" 'dummy = "system"'

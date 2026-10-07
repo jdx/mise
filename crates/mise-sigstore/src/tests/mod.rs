@@ -12,6 +12,7 @@ const GENUINE_INTOTO_ENVELOPE: &str = include_str!("../../tests/fixtures/sops_v3
 
 mod certificate;
 mod cosign;
+mod github;
 mod retry;
 mod slsa;
 mod trust;

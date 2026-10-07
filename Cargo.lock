@@ -6754,6 +6754,7 @@ dependencies = [
  "async-trait",
  "base64 0.23.1",
  "hex",
+ "log",
  "regex",
  "reqwest",
  "rustls-pki-types",
@@ -6862,6 +6863,7 @@ dependencies = [
  "windows-sys 0.61.2",
  "xx",
  "xz2",
+ "yaml-edit",
  "zip 8.6.0",
  "zstd 0.14.0",
 ]
@@ -9204,6 +9206,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "rowan"
+version = "0.16.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "417a3a9f582e349834051b8a10c8d71ca88da4211e4093528e36b9845f6b5f21"
+dependencies = [
+ "countme",
+ "hashbrown 0.14.5",
+ "rustc-hash 1.1.0",
+ "text-size",
+]
+
+[[package]]
 name = "rsa"
 version = "0.9.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -10820,7 +10834,7 @@ dependencies = [
  "itertools 0.10.5",
  "logos",
  "once_cell",
- "rowan",
+ "rowan 0.15.19",
  "serde",
  "serde_json",
  "thiserror 1.0.69",
@@ -12679,6 +12693,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "388c44dc09d76f1536602ead6d325eb532f5c122f17782bd57fb47baeeb767e2"
 dependencies = [
  "lzma-sys",
+]
+
+[[package]]
+name = "yaml-edit"
+version = "0.3.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "79e531de3d80075e0a2dc8246ca46c9167211297f8b9d513130880c2ef98d0b8"
+dependencies = [
+ "base64 0.22.1",
+ "rowan 0.16.1",
 ]
 
 [[package]]

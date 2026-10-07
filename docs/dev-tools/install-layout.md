@@ -370,6 +370,29 @@ Both work on one installation directory at a time.
   installations of its backend and version, narrowed to the pinned artifact when
   the entry has a checksum for your platform. Legacy installations are pruned as
   before.
+- A tool version that is a template, such as `node = "{{ vars.node }}"`, depends
+  on the vars, env, `MISE_ENV`, `--no-env`, settings and dotenv files in effect
+  where the project is used, which `mise prune` cannot reproduce from another
+  directory. So the catalog keeps a snapshot, under `installs/.mise/snapshots/`,
+  of what a config's templated versions rendered to, taken by a command that
+  resolves the config's tools, and `mise prune` reads it instead of rendering. A
+  command that resolves fewer tools than the config sets (`mise exec node@22`)
+  records nothing, and prune, `mise ls --prunable` and the automatic removal after
+  an upgrade only read snapshots. A snapshot covers one context, the `MISE_ENV`
+  plus the set of loaded config files, and a new snapshot of that context
+  replaces the old one, so a version a project stopped using becomes prunable. If
+  a config file a snapshot loaded has changed, or a config has no snapshot,
+  `mise prune` keeps every installation of that config's templated tools until a
+  command is run in the project again. A snapshot whose config file is gone is
+  ignored, and `mise prune --configs` removes it. A change that is not in a config file, such as a shell variable, is
+  noticed at the next such command, not before. A template in a tool's options
+  makes the tool templated too. A snapshot stores the requested version and the
+  version the command settled on, so project aliases are followed, and it is
+  written with owner-only permissions. A tool with backend options or an
+  `install_env`, which can hold a credential under any name, is not stored, and
+  prune keeps every installation of it instead. To keep a version that
+  a snapshot no longer lists, reference it in a tracked config or lockfile. Without the new
+  layout, `mise prune` renders these versions from where it runs and can fail.
 - `mise plugins uninstall --purge` also removes the plugin's installations in
   the new layout.
 - `mise ls` and `mise prune` list each installation separately. When several

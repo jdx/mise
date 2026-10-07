@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+# The deferred removal that runs at the start of nearly every command builds the
+# current directory's toolset. That is not a use of the project, so it must not record
+# a snapshot from the environment the command happens to run in.
+export MISE_EXPERIMENTAL=1
+export MISE_INSTALL_LAYOUT=identity
+
+mkdir -p project other elsewhere
+echo '[tools]
+dummy = "{{env.PRUNE_VERSION}}"' >project/mise.toml
+assert "PRUNE_VERSION=1.0.0 mise -C project install"
+assert "mise install dummy@3.0.0"
+
+# A deferred removal that is due.
+echo '[tools]
+tiny = "1"' >other/mise.toml
+assert "mise -C other install tiny@1.0.0"
+assert "mise -C other upgrade tiny"
+jq '.entries[].remove_after = 0' "$MISE_STATE_DIR/tool-purgatory.json" >purgatory.json
+mv purgatory.json "$MISE_STATE_DIR/tool-purgatory.json"
+
+# `version` resolves no toolset itself; only the cleanup does.
+assert "PRUNE_VERSION=2.0.0 mise -C project version"
+assert_fail "test -f '$MISE_STATE_DIR/tool-purgatory.json'"
+
+assert "mise -C elsewhere ls --prunable --json >prunable.json"
+assert "jq -e '[.dummy[].version] == [\"3.0.0\"]' prunable.json"
+
+# The cleanup must not stand in for the command's own resolution: when the command does
+# resolve the project's tools, that is a use, and it records.
+assert "mise -C other uninstall tiny --all"
+assert "mise -C other install tiny@1.0.0"
+assert "mise -C other upgrade tiny"
+jq '.entries[].remove_after = 0' "$MISE_STATE_DIR/tool-purgatory.json" >purgatory.json
+mv purgatory.json "$MISE_STATE_DIR/tool-purgatory.json"
+assert "PRUNE_VERSION=2.0.0 mise -C project ls >/dev/null"
+assert_fail "test -f '$MISE_STATE_DIR/tool-purgatory.json'"
+assert "mise -C elsewhere ls --prunable --json >prunable.json"
+assert "jq -e '[.dummy[].version] | sort == [\"1.0.0\", \"3.0.0\"]' prunable.json"
