@@ -222,6 +222,154 @@ fn hostname() -> String {
         .unwrap_or_else(|| "machine".to_string())
 }
 
+/// The file holding the name generated for this machine's store.
+fn machine_name_path_in(state_dir: &Path) -> PathBuf {
+    store_dir_in(state_dir).join("machine")
+}
+
+/// This machine's name in per-machine stream names (`machine-<name>`):
+/// `[history] machine` when set, otherwise a name generated once and kept
+/// with the store. A hostname alone is not enough: installers often leave
+/// every machine with the same default one, and renaming a host must not
+/// move its streams.
+pub(crate) fn machine_name() -> String {
+    let configured = super::config::machine_name().unwrap_or_else(|err| {
+        warn_once!("history: {err:#}");
+        None
+    });
+    configured.unwrap_or_else(|| {
+        machine_name_in(&crate::dirs::STATE).unwrap_or_else(|err| {
+            // history cannot save anything without its store either; name
+            // the stream after the host rather than fail every reader
+            warn_once!("history: cannot keep a machine name: {err:#}");
+            generated_name_prefix()
+        })
+    })
+}
+
+/// The name kept in the store under `state_dir`, generated on first use.
+pub(crate) fn machine_name_in(state_dir: &Path) -> Result<String> {
+    let path = machine_name_path_in(state_dir);
+    if let Some(name) = read_machine_name(&path)? {
+        return Ok(name);
+    }
+    ensure_store_dir_in(state_dir)?;
+    let name = format!(
+        "{}-{}",
+        generated_name_prefix(),
+        crate::rand::random_string(8).to_ascii_lowercase()
+    );
+    // write it beside the final path, then link it into place: the link
+    // fails when another process got there first, and nobody ever reads a
+    // half-written name
+    let staging = path.with_extension(format!("{}.tmp", std::process::id()));
+    file::write(&staging, format!("{name}\n"))?;
+    let linked = std::fs::hard_link(&staging, &path);
+    let _ = std::fs::remove_file(&staging);
+    match linked {
+        Ok(()) => Ok(name),
+        Err(err) if err.kind() == std::io::ErrorKind::AlreadyExists => {
+            read_machine_name(&path)?.ok_or_else(|| eyre!("{} is empty", display_path(&path)))
+        }
+        Err(err) => Err(err).wrap_err_with(|| format!("writing {}", display_path(&path))),
+    }
+}
+
+fn read_machine_name(path: &Path) -> Result<Option<String>> {
+    match std::fs::read_to_string(path) {
+        Ok(content) => {
+            let name = content.trim();
+            if !is_valid_machine_name(name) {
+                bail!(
+                    "{} does not hold a valid machine name; remove it to generate a new one, or set [history] machine",
+                    display_path(path)
+                );
+            }
+            Ok(Some(name.to_string()))
+        }
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(err) => Err(err).wrap_err_with(|| format!("reading {}", display_path(path))),
+    }
+}
+
+/// The hostname reduced to characters every stream name accepts.
+fn generated_name_prefix() -> String {
+    let mut prefix = String::new();
+    for c in hostname().chars().map(|c| c.to_ascii_lowercase()) {
+        if c.is_ascii_alphanumeric() {
+            prefix.push(c);
+        } else if !prefix.is_empty() && !prefix.ends_with('-') {
+            prefix.push('-');
+        }
+        if prefix.len() >= 40 {
+            break;
+        }
+    }
+    let prefix = prefix.trim_end_matches('-');
+    if prefix.is_empty() {
+        "machine".to_string()
+    } else {
+        prefix.to_string()
+    }
+}
+
+#[cfg(test)]
+mod machine_name_tests {
+    use super::*;
+
+    #[test]
+    fn a_generated_name_is_kept_with_the_store() {
+        let temp = tempfile::tempdir().unwrap();
+        let first = machine_name_in(temp.path()).unwrap();
+        assert!(is_valid_machine_name(&first), "{first}");
+        let (prefix, suffix) = first.rsplit_once('-').unwrap();
+        assert!(!prefix.is_empty(), "{first}");
+        assert_eq!(suffix.len(), 8, "{first}");
+        assert_eq!(machine_name_in(temp.path()).unwrap(), first);
+        // another store is another machine, even under the same hostname
+        let other = tempfile::tempdir().unwrap();
+        assert_ne!(machine_name_in(other.path()).unwrap(), first);
+    }
+
+    #[test]
+    fn a_damaged_name_is_reported_not_replaced() {
+        let temp = tempfile::tempdir().unwrap();
+        ensure_store_dir_in(temp.path()).unwrap();
+        std::fs::write(machine_name_path_in(temp.path()), "../x\n").unwrap();
+        assert!(machine_name_in(temp.path()).is_err());
+    }
+
+    #[test]
+    fn machine_names_are_single_stream_components() {
+        for valid in ["desk", "omarchy-3f2a9c1b", "work-mbp.local", "a_b"] {
+            assert!(is_valid_machine_name(valid), "{valid}");
+        }
+        for invalid in [
+            "",
+            ".",
+            "..",
+            "-x",
+            ".hidden",
+            "a/b",
+            "a@b",
+            "a b",
+            &"x".repeat(64),
+        ] {
+            assert!(!is_valid_machine_name(invalid), "{invalid}");
+        }
+    }
+}
+
+/// Whether `name` can follow `machine-` in a stream name: 1-63 letters,
+/// digits, `.`, `-`, or `_`, starting with a letter or digit.
+pub(crate) fn is_valid_machine_name(name: &str) -> bool {
+    (1..=63).contains(&name.len())
+        && name.starts_with(|c: char| c.is_ascii_alphanumeric())
+        && name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_'))
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum Trigger {

@@ -140,7 +140,10 @@ impl Manifest {
             .iter()
             .filter(|entry| portable == entry.path || strictly_below(&portable, &entry.path))
             .any(|entry| match variant {
-                Some(name) => entry.variants.iter().any(|variant| variant.name() == name),
+                Some(name) => entry
+                    .variants
+                    .iter()
+                    .any(|variant| variant.declares_stream(name)),
                 None => entry.variants.is_empty(),
             })
     }
@@ -448,7 +451,10 @@ impl Manifest {
                     };
                     variant != selected.as_deref()
                         && variant.is_some_and(|name| {
-                            entry.variants.iter().any(|variant| variant.name() == name)
+                            entry
+                                .variants
+                                .iter()
+                                .any(|variant| variant.declares_stream(name))
                         })
                 }
             };
@@ -478,6 +484,14 @@ impl Manifest {
             }
             let mut variants = std::collections::BTreeSet::new();
             super::select::validate(&entry.variants)?;
+            // every machine's encrypted stream must be listed to audit its
+            // history, and other machines' names are not known here
+            if entry.encrypt && entry.variants.iter().any(|variant| variant.machine) {
+                bail!(
+                    "encryption is not supported with a machine variant: {}",
+                    entry.path
+                );
+            }
             // both lists are validated, and either may be absent: a
             // declaration that states none is not a declaration that
             // states an empty one
@@ -493,7 +507,9 @@ impl Manifest {
                     }
                 }
             }
-            for variant in &entry.variants {
+            // a machine variant stands alone and names a valid stream on
+            // every machine
+            for variant in entry.variants.iter().filter(|variant| !variant.machine) {
                 let name = variant.name();
                 if name.contains('@')
                     || !super::sync::layout::is_safe_branch_path(&name)
@@ -1261,6 +1277,84 @@ mod tests {
             repo.object_at(&parent, &active_path).unwrap(),
             Some(("100644".into(), before))
         );
+    }
+
+    /// Another machine's stream is not this machine's to drop: a capture
+    /// here carries it, and its permissions stay owned, although its name
+    /// is known only to the machine that wrote it.
+    #[test]
+    fn capture_carries_other_machines_streams() {
+        let temp = tempfile::tempdir().unwrap();
+        let Some(repo) = HistoryRepo::open_or_init_in(temp.path()).unwrap() else {
+            return;
+        };
+        let machine = Variant {
+            machine: true,
+            ..Default::default()
+        };
+        let own_path = format!("home@{}/.config/hypr/monitors.lua", machine.name());
+        let other_path = "home@machine-another-host-0a1b2c3d/.config/hypr/monitors.lua";
+        assert_ne!(own_path, other_path);
+        let manifest = Manifest {
+            enrollment: vec![Enrollment {
+                path: "home/.config/hypr/monitors.lua".into(),
+                autosave: true,
+                encrypt: false,
+                allow_plaintext: None,
+                variants: vec![machine.clone()],
+                exclude: None,
+                include: None,
+            }],
+            permissions: [(other_path.to_string(), 0o600)].into(),
+            ..Default::default()
+        };
+        manifest.validate().unwrap();
+        let empty = repo.empty_object("tree").unwrap();
+        let own = repo.hash_blob(b"this machine").unwrap();
+        let other = repo.hash_blob(b"another machine").unwrap();
+        let prior_tree = repo
+            .compose(
+                &empty,
+                &[Overlay {
+                    path: other_path.into(),
+                    object: Some(("100644".into(), other.clone())),
+                }],
+            )
+            .unwrap();
+        let prior_tree = manifest.write(&repo, &prior_tree).unwrap();
+        let parent = repo.commit_tree(&prior_tree, vec![], "initial").unwrap();
+        repo.update_ref(HistoryRepo::HISTORY_REF, &parent, None)
+            .unwrap();
+        let captured = repo
+            .compose(
+                &empty,
+                &[Overlay {
+                    path: own_path.clone(),
+                    object: Some(("100644".into(), own.clone())),
+                }],
+            )
+            .unwrap();
+        let next = manifest.preserve_other_files(&repo, &captured).unwrap();
+        assert_eq!(
+            repo.object_at(&next, &own_path).unwrap(),
+            Some(("100644".into(), own))
+        );
+        assert_eq!(
+            repo.object_at(&next, other_path).unwrap(),
+            Some(("100644".into(), other))
+        );
+        // a machine stream cannot be encrypted: other machines' streams
+        // could not be listed to audit their history
+        let mut encrypted = manifest.clone();
+        encrypted.enrollment[0].encrypt = true;
+        assert!(encrypted.validate().is_err());
+        // nor share its entry with another variant
+        let mut mixed = manifest;
+        mixed.enrollment[0].variants.push(Variant {
+            default: true,
+            ..Default::default()
+        });
+        assert!(mixed.validate().is_err());
     }
 
     #[test]

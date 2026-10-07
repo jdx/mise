@@ -397,6 +397,13 @@ impl TrackedSet {
                 });
                 continue;
             }
+            if request.policy.encrypt && request.variants.iter().any(|variant| variant.machine) {
+                set.invalid.push(PathReason {
+                    path: display_path(&target),
+                    reason: "encryption is not supported with a machine variant".into(),
+                });
+                continue;
+            }
             set.manifest.enrollment.retain(|entry| entry.path != path);
             set.manifest.enrollment.push(super::manifest::Enrollment {
                 path,
