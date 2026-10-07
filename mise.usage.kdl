@@ -436,6 +436,18 @@ mise tool-alias unset node project
 """#
     }
 }
+cmd __tool-update hide=#true help="Upgrade one globally configured tool for `auto_update`." effect=write {
+    long_help #"""
+Upgrade one globally configured tool for `auto_update`.
+
+Run by a shim or `mise x` before it launches a tool whose global `[tools]` entry sets `auto_update` and whose check is due. Updates run one at a time.
+"""#
+    flag --id help="The tool id the launch claimed the check under; the result is recorded there, so `mise doctor` finds it under the same id" hide=#true {
+        arg <ID>
+    }
+    flag "-h --help" help="Print help" action=help builtin=#true
+    arg <TOOL>
+}
 cmd asdf hide=#true help="[internal] simulates asdf for plugins that call \"asdf\" internally" {
     flag "-h --help" help="Print help" action=help builtin=#true
     arg "[ARGS]…" help="all arguments" required=#false double_dash=automatic var=#true

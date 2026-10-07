@@ -11,6 +11,9 @@ export const commands: { [key: string]: Command } = {
   "__publish-system-install": {
     hide: true,
   },
+  "__tool-update": {
+    hide: true,
+  },
   activate: {
     hide: false,
   },

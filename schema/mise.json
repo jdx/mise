@@ -2424,6 +2424,17 @@
           "description": "Enable terminal progress indicators (OSC 9;4) for compatible terminals.",
           "type": "boolean"
         },
+        "tool_update": {
+          "type": "object",
+          "unevaluatedProperties": false,
+          "properties": {
+            "check_duration": {
+              "default": "24h",
+              "description": "How often to check for updates to a global tool with `auto_update = true`.",
+              "type": "string"
+            }
+          }
+        },
         "trace": {
           "description": "Sets log level to trace",
           "type": "boolean"
@@ -3018,6 +3029,17 @@
             },
             {
               "properties": {
+                "auto_update": {
+                  "description": "update this tool before it runs when its check is due; true, or a check interval such as \"12h\". Only honored in global config",
+                  "oneOf": [
+                    {
+                      "type": "boolean"
+                    },
+                    {
+                      "type": "string"
+                    }
+                  ]
+                },
                 "install_env": {
                   "type": "object",
                   "additionalProperties": {

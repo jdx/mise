@@ -34,6 +34,7 @@ pub struct ToolsetBuilder {
     resolution_progress: bool,
     config_files: Option<ConfigMap>,
     warn_overridden_lockfiles: bool,
+    skip_runtime_env: bool,
 }
 
 impl ToolsetBuilder {
@@ -53,6 +54,13 @@ impl ToolsetBuilder {
 
     pub fn with_scope(mut self, scope: ConfigScope) -> Self {
         self.scope = scope;
+        self
+    }
+
+    /// Leave out tool versions selected by the environment (`MISE_*_VERSION`),
+    /// keeping only what the config files request.
+    pub fn without_runtime_env(mut self) -> Self {
+        self.skip_runtime_env = true;
         self
     }
 
@@ -164,7 +172,7 @@ impl ToolsetBuilder {
     }
 
     fn load_runtime_env(&self, ts: &mut Toolset, env: EnvMap) -> eyre::Result<()> {
-        if self.scope == ConfigScope::LocalOnly {
+        if self.scope == ConfigScope::LocalOnly || self.skip_runtime_env {
             // LocalOnly excludes env-based tool versions (MISE_*_VERSION).
             return Ok(());
         }

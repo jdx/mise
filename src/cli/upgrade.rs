@@ -48,7 +48,7 @@ struct ExplicitConfigBump {
 /// rewrite the version in mise.toml.
 ///
 /// This also updates mise.lock if lockfiles are enabled, see https://mise.jdx.dev/configuration/settings.html#lockfile
-#[derive(Debug, usage_rs::Args)]
+#[derive(Debug, Default, usage_rs::Args)]
 #[usage(visible_alias = "up", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP,
     example(r###"mise upgrade node"###, help = r###"Upgrades node to the latest version matching the range in mise.toml"###),
     example(r###"mise upgrade node --bump"###, help = r###"Upgrades node to the latest version and bumps the version in mise.toml"###),
@@ -153,6 +153,11 @@ pub(crate) struct Upgrade {
     /// Implies `--jobs=1`
     #[usage(long, overrides = "jobs")]
     raw: bool,
+
+    /// Upgrading a global tool for `auto_update` as it launches: read only
+    /// global config, and keep stdout, which belongs to the launched tool, clean.
+    #[usage(skip)]
+    for_auto_update: bool,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -165,6 +170,11 @@ enum PruneMode {
 impl Upgrade {
     pub(super) fn is_dry_run(&self) -> bool {
         self.dry_run || self.dry_run_code
+    }
+
+    /// An `auto_update` launch shows only the install itself, not the lookups.
+    fn show_resolution_progress(&self) -> bool {
+        !self.is_dry_run() && !self.raw && !self.for_auto_update
     }
 
     /// How versions upgraded away from should be handled. Either flag wins over
@@ -182,7 +192,9 @@ impl Upgrade {
     }
 
     fn scope(&self) -> ConfigScope {
-        if self.local {
+        if self.for_auto_update {
+            ConfigScope::GlobalOnly
+        } else if self.local {
             ConfigScope::LocalOnly
         } else {
             ConfigScope::All
@@ -282,11 +294,11 @@ impl Upgrade {
                     .any(|tool| backend_args_match(tool.ba.as_ref(), bump.request.ba()))
             });
         }
-        if !self.is_dry_run() && !Settings::get().generate_lockfiles() {
+        if !self.is_dry_run() && !self.for_auto_update && !Settings::get().generate_lockfiles() {
             crate::lockfile::migrate_monorepo_lockfiles(&config, false)?;
         }
         let ts = ToolsetBuilder::new()
-            .with_resolution_progress(!self.is_dry_run() && !self.raw)
+            .with_resolution_progress(self.show_resolution_progress())
             .with_args(&self.tool)
             .with_scope(self.scope())
             .build(&config)
@@ -342,7 +354,7 @@ impl Upgrade {
                     &opts,
                     Some(&explicit_filter_tools),
                     exclude_tools,
-                    !self.is_dry_run() && !self.raw,
+                    self.show_resolution_progress(),
                 )
                 .await;
             let bare_filter_tools = self
@@ -359,7 +371,7 @@ impl Upgrade {
                         &opts,
                         Some(&bare_filter_tools),
                         exclude_tools,
-                        !self.is_dry_run() && !self.raw,
+                        self.show_resolution_progress(),
                     )
                     .await,
                 );
@@ -372,7 +384,7 @@ impl Upgrade {
                 &opts,
                 filter_tools,
                 exclude_tools,
-                !self.is_dry_run() && !self.raw,
+                self.show_resolution_progress(),
             )
             .await
         };
@@ -399,14 +411,38 @@ impl Upgrade {
                 }
             }
         }
-        self.warn_if_newer_versions_hidden_by_minimum_release_age(
-            &config,
-            &ts,
-            &opts,
-            filter_tools,
-            exclude_tools,
-        )
-        .await;
+        if self.for_auto_update {
+            // Another version of the same tool can opt out: `auto_update` upgrades
+            // only the requests that enable it.
+            outdated.retain(|o| crate::tool_update::enabled(&o.tool_version.request));
+            if outdated.is_empty() {
+                // Nothing outdated can also mean a lookup failed and was only
+                // warned about. Check again so a failure isn't taken as "up to
+                // date" (which would clear the failure `mise doctor` reports).
+                for (_, tv) in ts.list_current_versions() {
+                    let requested = self
+                        .tool
+                        .iter()
+                        .any(|tool| backend_args_match(tool.ba.as_ref(), tv.ba()));
+                    if requested && crate::tool_update::enabled(&tv.request) {
+                        self.latest_for_upgrade(&config, &tv, &opts)
+                            .await
+                            .wrap_err_with(|| format!("checking {} for updates", tv.ba()))?;
+                    }
+                }
+                return Ok(());
+            }
+        }
+        if !self.for_auto_update {
+            self.warn_if_newer_versions_hidden_by_minimum_release_age(
+                &config,
+                &ts,
+                &opts,
+                filter_tools,
+                exclude_tools,
+            )
+            .await;
+        }
         if self.interactive && !outdated.is_empty() {
             outdated = self.get_interactive_tool_set(&outdated)?;
             if outdated.is_empty() {
@@ -924,7 +960,7 @@ impl Upgrade {
                 }
             }
 
-            if scheduled_pruning {
+            if scheduled_pruning && !self.for_auto_update {
                 let prune_after = &Settings::get().upgrade.prune_after;
                 hint!(
                     "upgrade_auto_prune",
@@ -1020,7 +1056,9 @@ impl Upgrade {
         .await;
 
         mpr.finish_progress();
-        Self::print_summary(&outdated, &successful_versions)?;
+        if !self.for_auto_update {
+            Self::print_summary(&outdated, &successful_versions)?;
+        }
 
         match (install_error, post_install_result) {
             (Err(install), Err(post)) => Err(eyre!("{install:#}\n{post:#}")),
@@ -1233,6 +1271,18 @@ impl Upgrade {
         };
         backend.latest_version_unfiltered(config, query).await
     }
+}
+
+/// Upgrade one tool within its global config request, for `auto_update`. Only
+/// global config is read, so a project's config and lockfile never change.
+pub(crate) async fn upgrade_global_tool(tool: ToolArg) -> Result<()> {
+    Upgrade {
+        tool: vec![tool],
+        for_auto_update: true,
+        ..Default::default()
+    }
+    .run()
+    .await
 }
 
 fn current_satisfies_hidden_release(
