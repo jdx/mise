@@ -46,6 +46,30 @@ const NPM_PACKAGE_MANAGER_IDENTITY_KEY: &str = "npm.package_manager";
 const PNPM_MIN_RELEASE_AGE_VERSION: &str = "10.16.0";
 const PNPM_GLOBAL_DIR_ENV_VERSION: &str = "12.0.0";
 
+/// Whether the tool name is a git source (`git+https://…`, `github:o/r`, …)
+/// rather than a registry package.
+fn is_git_spec(name: &str) -> bool {
+    ["git+", "git://", "github:", "gitlab:", "bitbucket:"]
+        .iter()
+        .any(|prefix| name.starts_with(prefix))
+}
+
+/// The npm install specifier for a git source; `latest` means the default branch.
+fn git_requirement(name: &str, version: &str) -> String {
+    if version == "latest" {
+        name.to_string()
+    } else {
+        format!("{name}#{version}")
+    }
+}
+
+/// An alias to install a git source under: the repository name.
+fn git_alias(name: &str) -> String {
+    let url = name.split('#').next().unwrap_or(name);
+    let url = url.strip_suffix(".git").unwrap_or(url);
+    url.rsplit(['/', ':']).next().unwrap_or(url).to_string()
+}
+
 #[derive(Debug)]
 pub(crate) struct NPMBackend {
     ba: Arc<BackendArg>,
@@ -564,6 +588,13 @@ impl Backend for NPMBackend {
     }
 
     async fn _list_remote_versions(&self, config: &Arc<Config>) -> eyre::Result<Vec<VersionInfo>> {
+        if is_git_spec(&self.tool_name()) {
+            // A git source has no registry history; the version is a ref.
+            return Ok(vec![VersionInfo {
+                version: "latest".to_string(),
+                ..Default::default()
+            }]);
+        }
         if Settings::get().npm.shell_out {
             return self.list_remote_versions_npm_view(config).await;
         }
@@ -578,6 +609,9 @@ impl Backend for NPMBackend {
     }
 
     async fn latest_stable_version(&self, config: &Arc<Config>) -> eyre::Result<Option<String>> {
+        if is_git_spec(&self.tool_name()) {
+            return Ok(Some("latest".to_string()));
+        }
         if Settings::get().npm.shell_out {
             self.ensure_npm_for_version_check(config).await;
         }
@@ -909,6 +943,9 @@ impl NPMBackend {
         tv: &ToolVersion,
         options: &NpmOptions<'_>,
     ) -> Result<String> {
+        if is_git_spec(&self.tool_name()) {
+            return Ok(git_requirement(&self.tool_name(), &tv.version));
+        }
         let Some(checksum) = options.checksum() else {
             return Ok(format!("{}@{}", self.tool_name(), tv.version));
         };
@@ -925,6 +962,27 @@ impl NPMBackend {
             .set_message(format!("verify {}@{}", self.tool_name(), tv.version));
         crate::hash::ensure_checksum(&archive, digest, Some(ctx.pr.as_ref()), algorithm)?;
         Ok(archive.to_string_lossy().into_owned())
+    }
+
+    /// The dependency name the package is installed under: the registry name,
+    /// or for a git source an alias taken from the repository name.
+    fn package_key(&self) -> String {
+        let name = self.tool_name();
+        if is_git_spec(&name) {
+            git_alias(&name)
+        } else {
+            name
+        }
+    }
+
+    /// The root dependency specifier: the version, or a git URL with the ref.
+    fn package_requirement(&self, tv: &ToolVersion) -> String {
+        let name = self.tool_name();
+        if is_git_spec(&name) {
+            git_requirement(&name, &tv.version)
+        } else {
+            tv.version.clone()
+        }
     }
 
     pub(crate) fn from_arg(ba: BackendArg) -> Self {
@@ -1369,7 +1427,7 @@ impl NPMBackend {
             &allow_builds,
             tv.resolved_from_lockfile(),
         )?;
-        self.write_aube_root_dependency(&install_path, &self.tool_name(), &tv.version)?;
+        self.write_aube_root_dependency(&install_path, tv)?;
 
         if let Some(lock) = &tv.aube_lock {
             crate::file::write(install_path.join("aube-lock.yaml"), lock.load()?.to_yaml()?)?;
@@ -1625,16 +1683,12 @@ impl NPMBackend {
         Ok(())
     }
 
-    fn write_aube_root_dependency(
-        &self,
-        install_path: &Path,
-        package: &str,
-        version: &str,
-    ) -> Result<()> {
+    fn write_aube_root_dependency(&self, install_path: &Path, tv: &ToolVersion) -> Result<()> {
         let path = install_path.join("package.json");
         let mut manifest: serde_json::Value =
             serde_json::from_str(&crate::file::read_to_string(&path)?)?;
-        manifest["dependencies"] = serde_json::json!({ package: version });
+        manifest["dependencies"] =
+            serde_json::json!({ self.package_key(): self.package_requirement(tv) });
         crate::file::write(
             path,
             format!("{}\n", serde_json::to_string_pretty(&manifest)?),
@@ -1652,10 +1706,10 @@ impl NPMBackend {
             .get("importers")
             .and_then(|v| v.get("."))
             .and_then(|v| v.get("dependencies"))
-            .and_then(|v| v.get(self.tool_name()))
+            .and_then(|v| v.get(self.package_key()))
             .and_then(|v| v.get("specifier"))
             .and_then(toml::Value::as_str);
-        if requirement != Some(tv.version.as_str()) {
+        if requirement != Some(self.package_requirement(tv).as_str()) {
             eyre::bail!(
                 "npm:{} dependency graph does not match root version {}; run `mise lock`",
                 self.tool_name(),
@@ -1675,7 +1729,7 @@ impl NPMBackend {
         let options = NpmOptions::new(&request_options);
         let allow_builds = options.allow_builds()?;
         self.write_aube_embed_project(temp.path(), tv.before_date, &options, &allow_builds, false)?;
-        self.write_aube_root_dependency(temp.path(), &self.tool_name(), &tv.version)?;
+        self.write_aube_root_dependency(temp.path(), tv)?;
         let mut install_options = aube::embed::InstallOptions::new(temp.path());
         install_options.lockfile_only = true;
         install_options.ignore_scripts = true;
@@ -1764,7 +1818,7 @@ impl NPMBackend {
             // A matching mise.lock pin is itself approval for this check.
             config.insert(
                 "allowedUnpopularPackages".to_string(),
-                toml::Value::Array(vec![toml::Value::String(self.tool_name())]),
+                toml::Value::Array(vec![toml::Value::String(self.package_key())]),
             );
         }
         match allow_exotic_deps {
@@ -1819,7 +1873,7 @@ impl NPMBackend {
     }
 
     fn warn_if_npm_package_lifecycle_scripts_skipped(&self, tv: &ToolVersion) {
-        let tool_name = self.tool_name();
+        let tool_name = self.package_key();
         let Some((package_json_path, hooks)) =
             Self::installed_package_lifecycle_scripts(&tv.install_path(), &tool_name)
         else {
@@ -2385,6 +2439,30 @@ pub(crate) fn test_backend(
 mod tests {
     use super::*;
     use crate::args::{BackendArg, BackendResolution};
+
+    #[test]
+    fn git_specs_are_detected_and_aliased() {
+        for name in [
+            "git+https://github.com/o/r",
+            "git+ssh://git@github.com/o/r.git",
+            "github:o/r",
+        ] {
+            assert!(is_git_spec(name), "{name}");
+        }
+        assert!(!is_git_spec("prettier"));
+        assert!(!is_git_spec("@biomejs/biome"));
+        assert_eq!(git_alias("git+https://github.com/o/r"), "r");
+        assert_eq!(git_alias("git+ssh://git@github.com/o/r.git#main"), "r");
+        assert_eq!(git_alias("github:o/r"), "r");
+        assert_eq!(
+            git_requirement("git+https://github.com/o/r", "latest"),
+            "git+https://github.com/o/r"
+        );
+        assert_eq!(
+            git_requirement("git+https://github.com/o/r", "v1.2.0"),
+            "git+https://github.com/o/r#v1.2.0"
+        );
+    }
 
     #[derive(Debug, Default)]
     struct RecordingReport(std::sync::Mutex<Vec<String>>);
