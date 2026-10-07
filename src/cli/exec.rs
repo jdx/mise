@@ -213,7 +213,8 @@ impl Exec {
         let command = self.command.as_ref()?;
         let program = command.first()?;
         // A native Windows shim runs `mise x -- usage complete-word` for tab completion.
-        (!program.contains(['/', '\\']) && !super::shim::is_offline_completion(program, command))
+        let name = crate::shims::command_name_without_exe_suffix(program);
+        (!program.contains(['/', '\\']) && !super::shim::is_offline_completion(name, command))
             .then_some(program.as_str())
     }
 

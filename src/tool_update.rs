@@ -85,13 +85,10 @@ pub fn claim_due(tv: &ToolVersion) -> Option<String> {
     }
     let value = global_auto_update(&tv.request)?;
     let settings = Settings::get();
-    if tv.request_pinned_this_version()
-        || settings.offline()
-        || settings.prefer_offline
-        || settings.locked
-        || settings.ci
-        || ci_info::is_ci()
-    {
+    // Only what describes this machine right now. Settings about a project's
+    // lockfile or remote lookups don't apply: the update runs on global config
+    // alone, and checks the global `locked` setting itself.
+    if tv.request_pinned_this_version() || settings.offline() || settings.ci || ci_info::is_ci() {
         return None;
     }
     let tool_id = tv.ba().full_without_opts();

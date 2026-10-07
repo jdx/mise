@@ -136,6 +136,14 @@ find "$MISE_STATE_DIR/tool-update" -type f ! -name '*.*' -delete
 assert "mise x -- dummy" "This is Dummy 1.1.0!"
 assert_not_contains "mise doctor 2>&1 || true" "auto_update of asdf:dummy failed"
 
+# A check whose version lookup fails is a failure, not "up to date".
+fresh_state lookup-failed
+reset_dummy
+global_config 'dummy = { version = "1.0", auto_update = true }'
+MISE_CACHE_DIR="$PWD/empty-cache" RTX_FAILURE=1 mise x -- dummy 2>/dev/null || true
+assert_contains "mise doctor 2>&1 || true" "the last auto_update of asdf:dummy failed"
+global_config 'dummy = { version = "1", auto_update = true }'
+
 # In an activated shell the project's [env] is exported, but the update runs
 # with the environment activation started from.
 fresh_state activated

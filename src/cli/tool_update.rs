@@ -21,6 +21,10 @@ pub(crate) struct ToolUpdate {
 
 impl ToolUpdate {
     pub(crate) async fn run(self) -> Result<()> {
+        if Settings::get().locked {
+            debug!("tool-update: skipped, `locked` is set");
+            return Ok(());
+        }
         let tool_id = self.tool.ba.full_without_opts();
         let _lock = tool_update::lock_for_update()?;
         // Another update may have changed the global lockfile while this waited.
