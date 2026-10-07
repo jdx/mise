@@ -40,6 +40,6 @@ git add .github/workflows/ci.yml
 
 ## Related documentation
 
-- [Continuous integration](/continuous-integration.html).
+- [Continuous integration](/continuous-integration.html#github-actions).
 - [`mise generate <SUBCOMMAND>`](/cli/generate.html).
 - [Global flags and argument syntax](/cli/#global-flags).

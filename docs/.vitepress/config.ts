@@ -37,7 +37,7 @@ const siteUrl = "https://mise.jdx.dev";
 // public/site.webmanifest so browser chrome matches the installed-app chrome.
 const brandColor = "#8B2252";
 const siteDescription =
-  "mise manages developer tools, environment variables, tasks, packages, and dotfiles in one project configuration for macOS, Linux, and Windows.";
+  "mise installs a project's tools, sets its environment variables, and runs its tasks from one mise.toml, and can set up whole machines with packages and dotfiles.";
 
 // `foo/index.md` publishes as `foo/`, everything else as `foo/bar.html`. Anchor
 // the index match on the leading slash so `guide/myindex.md` keeps its name.
@@ -138,6 +138,8 @@ export default withMermaid(
     title: "mise-en-place",
     description: siteDescription,
     lang: "en-US",
+    // The contributor guide in docs/README.md is for GitHub, not the site.
+    srcExclude: ["README.md"],
     lastUpdated: true,
     appearance: true,
     mermaid: {},
@@ -149,10 +151,51 @@ export default withMermaid(
       logo: { light: "/logo-light.svg", dark: "/logo-dark.svg" },
       outline: "deep",
       nav: [
+        {
+          text: "Dev tools",
+          link: "/dev-tools/",
+          activeMatch: "^/(dev-tools|lang|core-tools|registry)",
+        },
+        {
+          text: "Environments",
+          link: "/environments/",
+          activeMatch: "^/(environments|shell-aliases|hooks|direnv)",
+        },
+        { text: "Tasks", link: "/tasks/", activeMatch: "^/(tasks|daemons)" },
+        {
+          text: "Bootstrap",
+          link: "/bootstrap",
+          activeMatch: "^/(bootstrap|dotfiles)",
+        },
+        {
+          text: "Reference",
+          items: [
+            {
+              items: [
+                { text: "CLI commands", link: "/cli/" },
+                { text: "mise.toml", link: "/configuration" },
+                { text: "Settings", link: "/configuration/settings" },
+                {
+                  text: "MISE_* variables",
+                  link: "/configuration/environment-variables",
+                },
+                {
+                  text: "Task configuration",
+                  link: "/tasks/task-configuration",
+                },
+                { text: "Tool registry", link: "/registry" },
+              ],
+            },
+            {
+              items: [
+                { text: "Troubleshooting", link: "/troubleshooting" },
+                { text: "Error messages", link: "/errors" },
+                { text: "Glossary", link: "/glossary" },
+              ],
+            },
+          ],
+        },
         { text: "mise-versions", link: "https://mise-versions.jdx.dev/" },
-        { text: "Dev Tools", link: "/dev-tools/" },
-        { text: "Environments", link: "/environments/" },
-        { text: "Tasks", link: "/tasks/" },
         {
           text: `v${latestVersion}`,
           // The releases page opens the release named in the hash.
@@ -163,7 +206,7 @@ export default withMermaid(
 
       socialLinks: [
         { icon: "github", link: "https://github.com/jdx/mise" },
-        { icon: "discord", link: "https://discord.gg/UBa7pJUN7Z" },
+        { icon: "discord", link: "https://discord.gg/mABnUDvP57" },
       ],
 
       editLink: {
@@ -372,7 +415,7 @@ export default withMermaid(
     transformHead({ pageData, title, description, siteConfig }) {
       const heading =
         pageData.relativePath === "index.md"
-          ? "Dev tools, environments, and tasks"
+          ? "Dev tools, env vars, and tasks in one CLI"
           : pageData.title || "mise";
       const card = socialCard(
         heading,

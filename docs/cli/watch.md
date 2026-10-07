@@ -516,6 +516,6 @@ mise watch serve --watch src --exts rs --restart
 
 ## Related documentation
 
-- [Watching tasks](/tasks/running-tasks.html).
+- [Rerun tasks when files change](/tasks/running-tasks.html#rerun-tasks-when-files-change).
 - [All commands](/cli/).
 - [Global flags and argument syntax](/cli/#global-flags).

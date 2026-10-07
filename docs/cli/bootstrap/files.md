@@ -26,6 +26,6 @@ For personal symlinks, copies, or edits, use `[dotfiles]` and `bootstrap dotfile
 
 ## Related documentation
 
-- [Privileged files and directories](/bootstrap/files.html).
+- [System files and directories](/bootstrap/files.html).
 - [`mise bootstrap [FLAGS] [SUBCOMMAND]`](/cli/bootstrap.html).
 - [Global flags and argument syntax](/cli/#global-flags).

@@ -29,6 +29,6 @@ mise dot diff ~/.zshrc
 
 ## Related documentation
 
-- [Getting started](/getting-started.html).
+- [Dotfiles](/dotfiles.html).
 - [`mise dotfiles [--local] <SUBCOMMAND>`](/cli/dotfiles.html).
 - [Global flags and argument syntax](/cli/#global-flags).

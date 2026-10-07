@@ -49,6 +49,6 @@ mise -C /path/to/project mcp
 
 ## Related documentation
 
-- [MCP integration](/mcp.html).
+- [AI assistants (MCP)](/mcp.html).
 - [All commands](/cli/).
 - [Global flags and argument syntax](/cli/#global-flags).

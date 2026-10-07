@@ -1,75 +1,99 @@
 ---
-description: "mise can restrict filesystem, network, and environment access for commands launched by mise exec and mise run."
+description: "Restrict the files, network access, and environment variables available to commands that mise exec and mise run start."
+socialDescription: "Restrict files, network, and environment for commands run by mise exec and mise run."
 ---
 
 # Sandboxing
 
-mise can restrict filesystem, network, and environment access for commands launched by
-`mise exec` and `mise run`. Restrictions use the host operating system, with different support
-on Linux and macOS. Read [platform support](#platform-support) before relying on a policy;
-Windows does not enforce filesystem or network restrictions.
+[`mise exec`](/cli/exec.html) and [`mise run`](/cli/run.html) can limit what
+the command they start may read, write, reach on the network and see in its
+environment. Add a `--deny-*` or `--allow-*` flag, or set the matching property
+on a task.
 
-The sandbox applies to the child command. Configuration evaluation, tool installation, and
-other preparation by mise happen outside that command's sandbox. For untrusted configuration,
-see [safe mode](/security.html#safe-mode).
+The sandbox covers only that command. mise loads config, installs tools and runs
+hooks outside it. To load config you have not reviewed, use
+[safe mode](/security.html#safe-mode) instead.
 
-## Quick Start
+## Platform support
 
-Any `--deny-*` or `--allow-*` flag enables the corresponding restriction. In a project that
-has Node installed:
+| Restriction                                                                       | Linux                                   | macOS                                             | Windows                              |
+| --------------------------------------------------------------------------------- | --------------------------------------- | ------------------------------------------------- | ------------------------------------ |
+| Reads and writes (`--deny-read`, `--deny-write`, `--allow-read`, `--allow-write`) | Landlock, Linux 5.13 or later           | Seatbelt (`sandbox-exec`)                         | Not enforced                         |
+| All network access (`--deny-net`)                                                 | seccomp, on x86_64 and arm64            | Seatbelt                                          | Not enforced                         |
+| Access to particular hosts (`--allow-net`)                                        | Not supported; mise exits with an error | Not supported; `sandbox-exec` rejects the profile | Not enforced                         |
+| Environment variables (`--deny-env`, `--allow-env`)                               | Filtered by mise                        | Filtered by mise                                  | Not enforced for inherited variables |
+
+On Windows, mise warns that the sandbox is not supported and runs the command
+without it. In a container, the host kernel provides Landlock and seccomp; if
+Landlock is unavailable, the command fails instead of running unrestricted. See
+[platform details](#platform-details).
+
+## Quick start
+
+<a id="run-untrusted-script-with-no-filesystem-writes"></a>
 
 ```sh
-# Block network access for a local build
+# Block network access
 mise exec --deny-net -- npm run build
 
-# Restrict writes to an existing output directory, plus implicit system exceptions
+# Run a script that must not write files outside /tmp
+mise exec --deny-write -- bash script.sh
+
+# Write only to ./dist (on Linux it must already exist)
 mkdir -p dist
 mise exec --allow-write=./dist -- npm run build
 
-# Deny reads, writes, network, and nonessential environment variables,
-# then allow reading this project and writing its output
+# Deny everything, then allow reading the project and writing ./dist
 mise exec --deny-all --allow-read=. --allow-write=./dist -- node build.js
+
+# Pass only MYAPP_* variables, plus the essential ones
+mise exec --allow-env='MYAPP_*' -- node app.js
 ```
 
-The npm commands require a `build` script; the final command requires `build.js`. Adjust
-allowed paths for the files and caches your build actually uses. `--deny-all` retains the
-[implicit access](#implicit-access) described below; it is not a container with an empty filesystem.
+`--deny-all` still allows the [implicit access](#implicit-access) that programs
+need to start, such as system libraries and `/tmp`. Add any caches your command
+uses, such as `~/.npm`, to the allowed paths. On Linux, an allowed path must
+exist before the command starts ([why](#linux)).
 
-## CLI Flags
+## Flags and task properties {#cli-flags}
 
-| Flag                   | Description                                                                                                            |
-| ---------------------- | ---------------------------------------------------------------------------------------------------------------------- |
-| `--deny-all`           | Block reads, writes, network, and env vars                                                                             |
-| `--deny-read`          | Block filesystem reads (system libs and tool dirs still accessible)                                                    |
-| `--deny-write`         | Block writes except implicit temporary/device paths                                                                    |
-| `--deny-net`           | Block all network access                                                                                               |
-| `--deny-env`           | Block env var inheritance (essential variables and explicit exceptions still pass through)                             |
-| `--allow-read=<path>`  | Allow reads from specific path (implies `--deny-read` for everything else)                                             |
-| `--allow-write=<path>` | Allow writes to specific path (implies `--deny-write` for everything else)                                             |
-| `--allow-net=<host>`   | Request host exceptions on macOS (see platform limitations); rejected on Linux                                         |
-| `--allow-env=<var>`    | Allow specific env var through (implies `--deny-env` for everything else). Supports wildcards: `--allow-env='MYAPP_*'` |
+Each flag works with `mise exec` and `mise run`, and has a task property with
+the same meaning. Repeat an `--allow-*` flag to allow more paths or variables.
 
-These flags work with both `mise exec` (`mise x`) and `mise run`.
+| Flag                   | Task property      | Effect                                                                                           |
+| ---------------------- | ------------------ | ------------------------------------------------------------------------------------------------ |
+| `--deny-all`           | `deny_all`         | Turn on the read, write, network and environment restrictions                                    |
+| `--deny-read`          | `deny_read`        | Block reads, except the [implicit paths](#implicit-access)                                       |
+| `--deny-write`         | `deny_write`       | Block writes, except to `/tmp` and `/dev`                                                        |
+| `--deny-net`           | `deny_net`         | Block IPv4 and IPv6 sockets; Unix sockets still work                                             |
+| `--deny-env`           | `deny_env`         | Pass only the [essential variables](#environment-variables)                                      |
+| `--allow-read=<path>`  | `allow_read`       | Allow reads under a path, and block other reads                                                  |
+| `--allow-write=<path>` | `allow_write`      | Allow reads and writes under a path, and block other writes                                      |
+| `--allow-env=<var>`    | `allow_env`        | Pass a variable or a `*` pattern, and block other variables                                      |
+| `--allow-net=<host>`   | `allow_net`        | Does not work on any platform; see [access to particular hosts](#access-to-particular-hosts)     |
+|                        | `pass_through_env` | Experimental. Pass a variable without adding it to the task cache key; does not filter by itself |
 
-## Default Restrictions
+## Sandbox every command {#default-restrictions}
 
-Sandbox deny rules can be enabled for every `mise exec` and `mise run` invocation with settings:
+The `sandbox.*` settings apply deny rules to every `mise exec` and `mise run`:
 
 ```toml
-[settings.sandbox]
-deny_all = true
+[settings]
+sandbox.deny_net = true
 ```
 
-The available settings mirror the deny flags: `deny_all`, `deny_read`, `deny_write`, `deny_net`,
-and `deny_env`. Tasks and CLI flags can still add `allow_read`, `allow_write`, `allow_net`, or
-`allow_env` exceptions as needed.
+The settings are [`sandbox.deny_all`](/configuration/settings.html#sandbox.deny_all),
+`sandbox.deny_read`, `sandbox.deny_write`, `sandbox.deny_net` and
+`sandbox.deny_env`, with environment variables such as `MISE_SANDBOX_DENY_NET`.
+Put them in a project's `mise.toml` to apply them to everyone who runs its tasks,
+or in your global config. Tasks and flags can still allow particular paths and
+environment variables, but not particular hosts.
 
-## Task Sandboxing
+## Task sandboxing
 
-Tasks can declare restrictions next to the command. This example assumes Node is configured,
-`npm run build` exists, and the output directory has been created:
+Declare restrictions next to the command:
 
-```toml
+```mise-toml
 [tasks.build]
 run = "npm run build"
 deny_net = true
@@ -78,155 +102,137 @@ allow_write = ["./dist"]
 [tasks.lint]
 run = "npm run lint"
 deny_write = true
-```
 
-```sh
-mkdir -p dist
-mise run build
-```
-
-Global settings, task deny rules, and CLI deny flags are combined. Task and CLI allow lists
-are combined too; CLI flags add exceptions rather than replacing the task policy. Task paths
-are relative to the task's working directory, while CLI paths are relative to the directory
-where you invoke mise.
-
-The host-exception flag is intended for macOS tasks that need network access:
-
-```sh
-mise run --allow-net=registry.npmjs.org build
-```
-
-A package manager may contact additional hosts and write a cache or lockfile outside the
-output directory. Allow only the resources required by the actual command. Linux rejects
-`--allow-net`; macOS can also reject the generated profile as described below. Use
-`--deny-net` for a command that needs no internet sockets.
-
-## Implicit Access
-
-When filesystem restrictions are active, certain paths remain accessible so tools can function:
-
-### Always Readable
-
-- **System paths** (Linux): `/usr`, `/lib`, `/lib64`, `/bin`, `/sbin`, `/etc`, `/dev`, `/proc`, `/sys`, `/tmp`, `/nix`, `/snap`, `/home/linuxbrew`
-- **System paths** (macOS): `/System`, `/Library`, `/usr`, `/bin`, `/sbin`, `/dev`, `/etc`, `/var/run`, `/tmp`, `/private/tmp`, `/private/etc`, `/private/var/run`, `/opt/homebrew`, `/nix`
-- **Mise data directory**: the configured `MISE_DATA_DIR`, not just individual tool binaries
-
-### Always Writable
-
-- `/tmp` (and `/private/tmp` on macOS)
-- `/dev` (for `/dev/null`, `/dev/tty`, etc.)
-
-### Implicit Rules
-
-- `--allow-write` paths are implicitly readable
-- `--allow-read` paths include system essentials above
-
-When environment filtering is active, `PATH`, `HOME`, `USER`, `SHELL`, `TERM`, `COLORTERM`,
-and `LANG` remain available, along with explicitly allowed variables and task-specific
-pass-through/cache environment inputs. Unix sockets remain available even with `--deny-net`.
-
-## Platform Support
-
-| Feature                                 | Linux    | macOS    |
-| --------------------------------------- | -------- | -------- |
-| Deny/allow reads                        | Landlock | Seatbelt |
-| Deny/allow writes                       | Landlock | Seatbelt |
-| Deny all network                        | seccomp  | Seatbelt |
-| Per-host network (`--allow-net=<host>`) | Rejected | Seatbelt |
-| Env filtering                           | Built-in | Built-in |
-| Docker support                          | Yes      | N/A      |
-
-### Linux
-
-Filesystem sandboxing uses [Landlock](https://landlock.io/) (available since Linux 5.13). Network sandboxing uses [seccomp-bpf](https://www.kernel.org/doc/html/latest/userspace-api/seccomp_filter.html) to block inet socket creation while allowing Unix sockets.
-
-If Landlock is unavailable or cannot apply filesystem restrictions, the command fails.
-
-**Limitation**: Per-host network filtering (`--allow-net=<host>`) is not supported on Linux.
-mise returns an error before executing the command; it does not silently allow all network
-access. Use `--deny-net` to block internet sockets, or omit network restrictions when needed.
-
-**Limitation**: An allow-list entry has to exist when the sandbox is built. Landlock binds each rule to an open descriptor, so a path that has not been created yet cannot be named by one, and mise warns that the rule was dropped. The task can still reach that path if another rule covers it — an allowed ancestor directory, for instance — but nothing else grants access on the dropped rule's behalf. To let a task create something, allow a directory that already exists and contains it.
-
-```toml
-[tasks.install]
-run = "npm install"
-allow_read = ["package.json", "~/.npm"]
-# not ["node_modules"] — that does not exist until the task creates it
-allow_write = [".", "~/.npm"]
-```
-
-Landlock cannot restrict creation to a single name, so allowing the containing directory necessarily grants write access to everything else in it. This applies to Linux only; on macOS, Seatbelt rules are path patterns and do not need the path to exist.
-
-### macOS
-
-Sandboxing uses Apple's `sandbox-exec` (Seatbelt) with a generated profile. Network host
-exceptions resolve hostnames to IP addresses when the profile is built. The intended policy allows those IPs,
-not a particular HTTP hostname or URL path; services sharing an IP may also be reachable.
-
-**Limitation**: `sandbox-exec` can reject the generated host-exception profile with
-`host must be * or localhost in network address`. This prevents the child command from
-starting; it does not fall back to unrestricted network access. If you need network access
-to selected hosts, verify the policy on your macOS version and use an external network
-control when `--allow-net` cannot express it.
-
-When reads are restricted, Seatbelt requires data access to the root directory for process startup.
-Sandboxed processes can enumerate names directly under `/`, but cannot read unallowed entries or
-their descendants. Mise also permits metadata access to the directories leading to every readable
-path above — the system paths, `MISE_DATA_DIR`, and anything named by `--allow-read` or
-`--allow-write`. `realpath` resolves a path one component at a time, so without this a portable
-executable could not resolve its own location even inside a fully readable directory. The permission
-is metadata only: those directories can be stat'd, but not listed, and their other entries stay
-unreadable.
-
-### Windows
-
-Filesystem and network sandboxing is not supported on Windows. mise warns and runs the
-command without those OS restrictions. Do not treat a successful Windows invocation with
-sandbox flags as evidence that the filesystem or network policy was enforced.
-
-## Examples
-
-### Restrict script writes {#run-untrusted-script-with-no-filesystem-writes}
-
-```bash
-mise x --deny-write -- bash script.sh
-```
-
-### Build with network isolation
-
-```bash
-mise x --deny-net -- make build
-```
-
-### Run tool with minimal permissions
-
-```bash
-mkdir -p dist
-mise exec --deny-all --allow-read=. --allow-write=./dist -- node build.js
-```
-
-### Restrict env vars to a namespace
-
-```bash
-# Pass MYAPP_* in addition to the essential variables
-mise x --allow-env='MYAPP_*' -- node app.js
-
-# Allow multiple patterns
-mise x --allow-env='MYAPP_*' --allow-env='NODE_*' -- node app.js
-```
-
-### Sandboxed task definition
-
-Create `coverage/` and `node_modules/.cache/` before running this task on Linux, and adjust
-the paths for your test runner. Allowing `NODE_*` and `npm_*` also exposes any matching
-credentials or runtime options; list exact variable names if a narrower policy is needed.
-
-```toml
 [tasks.test]
 run = "npm test"
 deny_net = true
-deny_write = true
 allow_write = ["./coverage", "./node_modules/.cache"]
 allow_env = ["NODE_*", "npm_*"]
 ```
+
+On Linux, create `dist`, `coverage` and `node_modules/.cache` before the first
+run. Allowing `NODE_*` and `npm_*` also passes any credentials or runtime options
+with those names; list exact names for a narrower policy.
+
+Settings, task properties and flags combine. Any of them can turn a restriction
+on, and the task's allow lists and the flags' allow lists are merged, so a flag
+adds an exception rather than replacing the task's. Flags on `mise run` apply to
+every task that command runs, including dependencies.
+
+Relative paths in a task resolve from the task's working directory, and relative
+paths in flags from the directory where you run mise. Paths can start with `~`,
+and task paths can use templates such as <code v-pre>{{config_root}}</code>. See
+the [task configuration reference](/tasks/task-configuration.html) for each
+property.
+
+## Implicit access
+
+When filesystem restrictions are on, these paths stay available so that programs
+can start.
+
+### Always readable
+
+- Linux: `/usr`, `/lib`, `/lib64`, `/bin`, `/sbin`, `/etc`, `/dev`, `/proc`,
+  `/sys`, `/tmp`, `/nix`, `/snap`, `/home/linuxbrew`, and the file
+  `/etc/resolv.conf` points to
+- macOS: `/System`, `/Library`, `/usr`, `/bin`, `/sbin`, `/dev`, `/etc`,
+  `/var/run`, `/tmp`, `/private/tmp`, `/private/etc`, `/private/var/run`,
+  `/opt/homebrew`, `/nix`
+- mise's data directory (`MISE_DATA_DIR`), so installed tools can run. On Linux
+  this also covers `MISE_INSTALLS_DIR` when it is outside the data directory.
+
+`--allow-read` adds to these paths; it does not replace them. Paths you allow for
+writing are also readable.
+
+### Always writable
+
+- `/tmp`, and `/private/tmp` on macOS
+- `/dev`, for `/dev/null`, `/dev/tty` and similar files
+
+### Environment variables
+
+When environment filtering is on, the command gets only `PATH`, `HOME`, `USER`,
+`SHELL`, `TERM`, `COLORTERM` and `LANG`, plus the variables you allow. Variables
+set in `[env]` are dropped too unless you allow them. `PATH` still
+includes the tools mise adds. A task also keeps the variables in its
+`pass_through_env` and in its cache `env`.
+
+## When the sandbox blocks something
+
+A blocked operation fails inside the command, and the command decides what to
+print. It sees an ordinary error such as `Permission denied` or
+`Operation not permitted`; a blocked DNS lookup often appears as
+`Could not resolve host`. mise does not report these.
+
+mise itself reports problems that affect the sandbox before the command runs: a
+missing allowed path on Linux is a warning, while `--allow-net` on Linux and an
+unavailable Landlock are errors. On macOS, `sandbox-exec` itself rejects an
+`--allow-net` profile.
+
+## Access to particular hosts
+
+`--allow-net` and the `allow_net` task property cannot limit network access to
+particular hosts:
+
+- On Linux, mise exits with an error before it runs the command:
+  `per-host network filtering (--allow-net=<host>) is not supported on Linux`.
+- On macOS, mise resolves each host to IP addresses and writes them into the
+  Seatbelt profile. Seatbelt accepts only `*` or `localhost` as a network host,
+  so `sandbox-exec` rejects the profile with
+  `host must be * or localhost in network address` and the command does not
+  start. This happens for `localhost` too, because mise writes its IP addresses.
+- On Windows, mise warns and runs the command without a sandbox.
+
+Use `--deny-net` to block internet sockets, and a firewall or proxy outside mise
+when a command may reach only certain hosts.
+
+## Platform details
+
+### Linux
+
+Filesystem rules use [Landlock](https://landlock.io/), available since Linux
+5.13. Landlock gained features over several kernel releases, and mise uses what
+the running kernel supports, so an older kernel enforces fewer rules. If Landlock
+is unavailable or cannot apply the rules, the command fails.
+
+Network rules use a
+[seccomp-bpf](https://www.kernel.org/doc/html/latest/userspace-api/seccomp_filter.html)
+filter that blocks IPv4 and IPv6 sockets and allows Unix sockets. It supports
+x86_64 and arm64; on other architectures, `--deny-net` is an error.
+
+Every allowed path must exist when the command starts. Landlock attaches a rule
+to an open file, so mise drops the rule for a missing path and warns:
+`sandbox: <path> does not exist, so its rule was dropped`. To let a task create
+`node_modules`, allow its existing parent directory instead:
+
+```mise-toml
+[tasks.install]
+run = "npm install"
+allow_write = [".", "~/.npm"] # node_modules does not exist yet
+```
+
+Allowing a directory allows everything in it.
+
+### macOS
+
+mise writes the rules into a Seatbelt profile and runs the command through
+`sandbox-exec`. Seatbelt rules are path patterns, so an allowed path does not
+need to exist yet.
+
+`$TMPDIR` usually points under `/var/folders`, which is not in the writable list.
+If a program writes temporary files there, allow it with
+`--allow-write="$TMPDIR"`.
+
+When reads are restricted, sandboxed programs can still list the names directly
+under `/` and look up the directories that lead to each allowed path, which many
+runtimes need to find their own location. They cannot list those directories or
+read anything else in them.
+
+### Windows
+
+Windows has no sandbox support. mise warns and runs the command without
+filesystem or network restrictions. Environment filtering is incomplete: mise
+leaves out the variables it would have added, but the command still inherits
+mise's own environment, so `--deny-env` does not hide your shell's variables
+from it. A successful run with sandbox flags on Windows is not evidence that the
+policy held.

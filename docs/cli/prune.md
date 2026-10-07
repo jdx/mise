@@ -49,6 +49,6 @@ mise prune --dry-run
 
 ## Related documentation
 
-- [Development tools](/dev-tools/).
+- [Removing tools](/dev-tools/#remove-tools).
 - [All commands](/cli/).
 - [Global flags and argument syntax](/cli/#global-flags).

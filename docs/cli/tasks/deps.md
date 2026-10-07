@@ -58,6 +58,6 @@ mise tasks deps --compact
 
 ## Related documentation
 
-- [Task dependency graph](/tasks/architecture.html).
+- [Dependencies and execution order](/tasks/architecture.html).
 - [`mise tasks [FLAGS] [TASK] [SUBCOMMAND]`](/cli/tasks.html).
 - [Global flags and argument syntax](/cli/#global-flags).

@@ -66,6 +66,6 @@ mise unuse --env staging node@20
 
 ## Related documentation
 
-- [Configuration write targets](/configuration.html#target-file-for-write-operations).
+- [Removing tools](/dev-tools/#remove-tools).
 - [All commands](/cli/).
 - [Global flags and argument syntax](/cli/#global-flags).

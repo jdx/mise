@@ -57,6 +57,6 @@ running tests
 
 ## Related documentation
 
-- [Tasks and automation](/tasks/).
+- [Project-local task entrypoints](/tips-and-tricks.html#bootstrap-script).
 - [`mise generate <SUBCOMMAND>`](/cli/generate.html).
 - [Global flags and argument syntax](/cli/#global-flags).

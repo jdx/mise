@@ -137,6 +137,6 @@ After removal, `-l` will become shorthand for `--local`. Use `-b` or `--bump` in
 
 ## Related documentation
 
-- [Development tools](/dev-tools/).
+- [Upgrading tools](/dev-tools/#upgrade-tools).
 - [All commands](/cli/).
 - [Global flags and argument syntax](/cli/#global-flags).
