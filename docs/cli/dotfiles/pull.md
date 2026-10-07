@@ -35,7 +35,7 @@ their shared versions follow in the same run.
 
 ## Flags
 - **`-n --dry-run`** — Show the plan without changing anything
-- **`-y --yes`** — Accepted for compatibility; pull no longer prompts
+- **`-y --yes`** — Accepted for compatibility; pull no longer asks to confirm the apply
 - **`--take-remote <PATH>`** — Resolve a conflict with the repository's version
 - **`--keep-local <PATH>`** — Resolve a conflict by keeping this machine's version (published next)
 - **`--take-remote-all`** — Resolve every remaining conflict with the repository's version
