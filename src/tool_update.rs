@@ -12,11 +12,16 @@ use std::time::Duration;
 
 use eyre::{Result, bail};
 
-use crate::config::{Settings, SettingsExt, is_global_config};
+use crate::config::{Config, Settings, SettingsExt, is_global_config};
 use crate::toolset::{ToolOptionSource, ToolRequest, ToolSource, ToolVersion, Toolset};
 use crate::{dirs, duration, file, hash, lock_file};
 
 const STATE_DIR: &str = "tool-update";
+
+/// Set in `mise __tool-update`'s environment. A hook of that upgrade that
+/// launches another opted-in tool must not start a nested update: it would
+/// wait for the update lock its own updater holds.
+pub const UPDATING_ENV: &str = "__MISE_TOOL_UPDATE";
 
 /// Shorter intervals are raised to this, so a misconfigured interval cannot
 /// turn every launch into an update check.
@@ -79,6 +84,9 @@ pub enum Updater {
 /// as made right away, so concurrent claims start one update and a failed or
 /// offline update is not retried until the next interval.
 pub fn claim_due(tv: &ToolVersion, updater: Updater) -> Option<String> {
+    if updater == Updater::Launch && std::env::var_os(UPDATING_ENV).is_some() {
+        return None;
+    }
     let value = global_auto_update(&tv.request)?;
     let settings = Settings::get();
     if tv.request_pinned_this_version()
@@ -214,19 +222,23 @@ pub fn record_result(tool_id: &str, result: &Result<()>) {
     }
 }
 
-/// Failures recorded by updates that have not succeeded since, for tools that
-/// still opt in to `auto_update` in `global` (a global-only toolset): one that
-/// no longer does will never update again to clear its failure.
-pub fn failures(global: &Toolset) -> Vec<Failure> {
-    let opted_in = global
-        .versions
+/// Failures recorded by updates that have not succeeded since, for tools whose
+/// entry in a global config file still enables `auto_update`: one that no longer
+/// does will never update again to clear its failure. Read from the files
+/// themselves, so a shell's `MISE_<TOOL>_VERSION` doesn't hide a failure.
+pub fn failures(config: &Config) -> Vec<Failure> {
+    let enabled = |request: &ToolRequest| {
+        global_auto_update(request)
+            .and_then(|value| parse_auto_update(&value).ok().flatten())
+            .is_some()
+    };
+    let opted_in = config
+        .config_files
         .iter()
-        .filter(|(_, versions)| {
-            versions
-                .requests
-                .iter()
-                .any(|request| global_auto_update(request).is_some())
-        })
+        .filter(|(path, _)| is_global_config(path))
+        .filter_map(|(_, cf)| cf.to_tool_request_set().ok())
+        .flat_map(|requests| requests.tools)
+        .filter(|(_, requests)| requests.iter().any(enabled))
         .map(|(ba, _)| ba.full_without_opts())
         .collect::<std::collections::HashSet<_>>();
     recorded_failures()

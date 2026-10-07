@@ -10,6 +10,7 @@ mise install dummy@1.0.0
 
 mise __tool-update --watch >service.log 2>&1 &
 service=$!
+trap 'kill "$service" 2>/dev/null || true; wait "$service" 2>/dev/null || true' EXIT
 for _ in {1..300}; do
   mise ls --installed dummy | grep -q 1.1.0 && break
   sleep 0.1
