@@ -23,7 +23,9 @@ while (($#)); do
 done
 EOF2
 chmod u+x ~/bin/cargo
-export PATH="$MISE_DATA_DIR/shims:$HOME/bin:$PATH"
+# minimal PATH so a host cargo-binstall (CARGO_HOME/bin, Homebrew) can not be picked up
+MISE_BIN_DIR="$(dirname "$(command -v mise)")"
+export PATH="$MISE_DATA_DIR/shims:$HOME/bin:$MISE_BIN_DIR:/usr/bin:/bin"
 export MISE_CARGO_BINSTALL=1
 export MISE_CARGO_BINSTALL_NATIVE=0
 
