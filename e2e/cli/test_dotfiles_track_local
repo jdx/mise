@@ -42,6 +42,25 @@ assert_succeed "mise dot rollback ~/.config/app --yes"
 assert "cat ~/.config/app/settings.toml" "shared-v1"
 assert "cat ~/.config/app/state.json" '{"window":2}'
 
+# a file shared before it became local keeps that version in shared
+# history, but a shared rollback never writes it back, present or deleted
+echo app-v1 >~/.config/app/cache.json
+assert_succeed "mise dot save"
+before_local=$(mise dot history --json | jq -r '.[0].id')
+echo app-v2 >~/.config/app/cache.json
+assert_succeed "mise dot save"
+assert_succeed "mise dot track --local ~/.config/app/cache.json --yes"
+echo app-v3 >~/.config/app/cache.json
+assert_succeed "mise dot rollback ~/.config/app --to $before_local --yes"
+assert "cat ~/.config/app/cache.json" "app-v3"
+rm ~/.config/app/cache.json
+assert_succeed "mise dot rollback ~/.config/app --to $before_local --yes"
+assert_fail "test -e ~/.config/app/cache.json"
+echo app-v3 >~/.config/app/cache.json
+
+# a command run by a local-only capture gets the real state directory
+assert_not_contains "mise dot --local capture -- env 2>&1" "history-local"
+
 # capture labels both histories; watch --once reconciles both
 echo local-v3 >~/.localrc
 assert_succeed "mise dot capture --label tweak -- true"

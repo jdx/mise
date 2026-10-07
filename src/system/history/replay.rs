@@ -420,7 +420,7 @@ async fn execute(
     live: String,
 ) -> Result<()> {
     let repo = store.repo().expect("checked by the caller");
-    let mut steps = plan(repo, &exec, &live)?;
+    let mut steps = plan(repo, &exec, &live, &tracked.local)?;
     print_plan(&steps, &exec, tracked)?;
     if exec.dry_run {
         return Ok(());
@@ -513,7 +513,7 @@ async fn apply_steps(
         round += 1;
         // editors may have written while the prompt was open: re-plan
         live = live_tree(repo, tracked)?;
-        let fresh = plan(repo, exec, &live)?;
+        let fresh = plan(repo, exec, &live, &tracked.local)?;
         let changed = actionable(&fresh) != actionable(steps);
         if changed {
             *steps = fresh.clone();
@@ -918,7 +918,7 @@ fn repository_path(repo: &HistoryRepo, tree: &str, path: &Path) -> Result<String
     Ok(display_to_tree_path(&path.to_string_lossy()))
 }
 
-fn plan(repo: &HistoryRepo, exec: &Execution, live: &str) -> Result<Vec<Step>> {
+fn plan(repo: &HistoryRepo, exec: &Execution, live: &str, local: &[PathBuf]) -> Result<Vec<Step>> {
     let force = exec.force;
     let mut steps = vec![];
     for target in &exec.targets {
@@ -994,6 +994,11 @@ fn plan(repo: &HistoryRepo, exec: &Execution, live: &str) -> Result<Vec<Step>> {
                 );
                 // the link itself, never its destination
                 let abs = normalize_target(&abs);
+                // a local-only path is the local history's: whatever this
+                // history held there from before is never written back
+                if local.iter().any(|local| abs.starts_with(local)) {
+                    continue;
+                }
                 // An explicit child selection owns its subtree, even when
                 // its differing checkpoint is older than its parent's.
                 if exec
@@ -1532,7 +1537,7 @@ pub fn live_tree(repo: &HistoryRepo, tracked: &TrackedSet) -> Result<String> {
     } else {
         vec![]
     };
-    let captured = repo.capture_tracked(&walk, &recipients, console::user_attended_stderr())?;
+    let captured = repo.capture_live(&walk, &recipients, console::user_attended_stderr())?;
     if !captured.omitted.is_empty() {
         bail!(
             "cannot verify current files for restoration: {}",

@@ -55,8 +55,12 @@ impl DotfilesCapture {
         // local-only history gets a labeled checkpoint on each side
         let local_label = self.label.clone().unwrap_or_else(|| "capture".into());
         save_local(&local_label).await;
-        let result = Command::new(program)
-            .args(args)
+        let mut command = Command::new(program);
+        command.args(args);
+        // under `mise dot --local`, the command runs with the state
+        // directory it was given, never the local-only store's
+        crate::system::history::local::restore_env(&mut command);
+        let result = command
             .status()
             .wrap_err_with(|| format!("could not run {program}"));
         if let Some(scope) = scope {
