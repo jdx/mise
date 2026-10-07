@@ -87,7 +87,10 @@ long-running command so it receives stop signals directly.
 
 Fields such as `ready_port`, `ready_cmd`, and `auto` configure pitchfork's daemon
 behavior. Set a readiness check that reflects when your service can accept work;
-the example above waits for port 3000. Use an integer `port` for a fixed port or
+the example above waits for port 3000. mise runs `ready_cmd` and `health_cmd` in
+`mise x`, so they see the project's tools and `[env]`, unless the daemon sets
+`mise = false`. They can also be an argument array, which pitchfork 2.30.0 and later
+run without a shell. Use an integer `port` for a fixed port or
 [automatic ports](#ports-across-git-worktrees) to run services across worktrees.
 Use [`ports`](#ports) to configure a preset's additional listeners. Custom daemons
 also accept pitchfork's structured `port` table; presets accept only an integer or
