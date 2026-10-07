@@ -22,7 +22,7 @@ use packslip::model::{
     Artifact, Host, ReleaseListStatement, ReleaseRef, Selection, Statement, is_bare_format,
     repository, repository_subpath, tag_version,
 };
-use packslip::sigstore::{Policy, Trust};
+use packslip::sigstore::{GITHUB_ISSUER, Policy, Trust};
 
 use crate::args::BackendArg;
 use crate::backend::options::VersionOrder;
@@ -95,6 +95,11 @@ impl<'a> PackslipOptions<'a> {
         self.raw.get_string("issuer")
     }
 
+    /// The file name of the repository workflow that signs releases.
+    fn workflow(&self) -> Option<String> {
+        self.raw.get_string("workflow")
+    }
+
     /// Accept a key-signed bundle with no transparency log entry.
     fn allow_unlogged(&self) -> bool {
         matches!(self.raw.get("allow_unlogged"), Some("true"))
@@ -115,6 +120,7 @@ pub(crate) fn install_time_option_keys() -> Vec<String> {
         "identity_prefix",
         "list_identity_prefix",
         "issuer",
+        "workflow",
         "allow_unlogged",
         "ignore_requirements",
         "trust",
@@ -595,6 +601,9 @@ fn pin(project: &str, opts: &PackslipOptions<'_>) -> Result<Pin> {
             .map_err(|e| eyre!("packslip:{project}: pubkey: {e}"))?;
         return Ok(Pin::Key(key));
     }
+    if let Some(workflow) = opts.workflow() {
+        return Ok(Pin::Forge(workflow_policy(project, opts, &workflow)?));
+    }
     let explicit = Policy {
         issuer: opts.issuer(),
         identity: opts.identity(),
@@ -609,6 +618,30 @@ fn pin(project: &str, opts: &PackslipOptions<'_>) -> Result<Pin> {
             "packslip:{project} is not on a forge mise knows, so nothing pins its signer; set `pubkey`, or `identity` and `issuer`, in its tool options"
         ),
     }
+}
+
+/// The forge policy narrowed to one workflow file run on a tag, so a
+/// workflow on a branch of the same repository cannot sign a release.
+fn workflow_policy(project: &str, opts: &PackslipOptions<'_>, workflow: &str) -> Result<Policy> {
+    if opts.pubkey().is_some()
+        || opts.identity().is_some()
+        || opts.identity_prefix().is_some()
+        || opts.issuer().is_some()
+    {
+        bail!(
+            "packslip:{project}: `workflow` cannot be combined with `pubkey`, `identity`, `identity_prefix`, or `issuer`"
+        );
+    }
+    let workflow = workflow.trim();
+    if workflow.is_empty() || workflow.contains(['/', '@']) {
+        bail!("packslip:{project}: `workflow` must be a workflow file name such as `release.yaml`");
+    }
+    let mut policy = Policy::for_project(project)
+        .filter(|policy| policy.issuer.as_deref() == Some(GITHUB_ISSUER))
+        .ok_or_else(|| eyre!("packslip:{project}: `workflow` needs a github.com project"))?;
+    let repo = policy.identity_prefix.take().unwrap_or_default();
+    policy.identity_prefix = Some(format!("{repo}.github/workflows/{workflow}@refs/tags/"));
+    Ok(policy)
 }
 
 impl Pin {
@@ -2519,6 +2552,69 @@ mod tests {
             .unwrap();
         assert_eq!(backend.payload_installs.load(Ordering::SeqCst), 1);
         assert_eq!(backend.repairs.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn workflow_option_pins_one_workflow_on_tags() {
+        let policy = |project: &str, toml: &str| {
+            let raw: ToolVersionOptions = toml::from_str(toml).unwrap();
+            pin(project, &PackslipOptions::new(&raw))
+        };
+        let Pin::Forge(policy) = policy(
+            "github.com/max-sixty/worktrunk",
+            r#"workflow = "release.yaml""#,
+        )
+        .unwrap() else {
+            panic!("expected a forge policy");
+        };
+        assert_eq!(policy.issuer.as_deref(), Some(GITHUB_ISSUER));
+        assert_eq!(policy.identity, None);
+        assert_eq!(
+            policy.identity_prefix.as_deref(),
+            Some(
+                "https://github.com/max-sixty/worktrunk/.github/workflows/release.yaml@refs/tags/"
+            )
+        );
+        // A monorepo tool is pinned by its repository's workflow.
+        let Pin::Forge(policy) = policy_for("github.com/o/r/tool") else {
+            panic!("expected a forge policy");
+        };
+        assert_eq!(
+            policy.identity_prefix.as_deref(),
+            Some("https://github.com/o/r/.github/workflows/release.yml@refs/tags/")
+        );
+
+        for bad in [
+            r#"workflow = "release.yaml"
+issuer = "https://token.actions.githubusercontent.com""#,
+            r#"workflow = "release.yaml"
+identity_prefix = "https://github.com/o/r/""#,
+            r#"workflow = "release.yaml"
+pubkey = "x""#,
+            r#"workflow = "a/b.yaml""#,
+            r#"workflow = "b.yaml@refs/heads/main""#,
+            r#"workflow = " ""#,
+        ] {
+            assert!(
+                pin(
+                    "github.com/o/r",
+                    &PackslipOptions::new(&toml::from_str(bad).unwrap())
+                )
+                .is_err(),
+                "{bad}"
+            );
+        }
+        assert!(policy_none("gitlab.com/o/r").is_err());
+        assert!(policy_none("tool.example.com").is_err());
+
+        fn policy_for(project: &str) -> Pin {
+            let raw: ToolVersionOptions = toml::from_str(r#"workflow = "release.yml""#).unwrap();
+            pin(project, &PackslipOptions::new(&raw)).unwrap()
+        }
+        fn policy_none(project: &str) -> Result<Pin> {
+            let raw: ToolVersionOptions = toml::from_str(r#"workflow = "release.yml""#).unwrap();
+            pin(project, &PackslipOptions::new(&raw))
+        }
     }
 
     #[test]
