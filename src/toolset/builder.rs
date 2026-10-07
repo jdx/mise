@@ -74,6 +74,14 @@ impl ToolsetBuilder {
         self
     }
 
+    /// For commands that run a tool rather than manage versions (shims, `mise x`,
+    /// `mise env`): under `prefer_offline`, skip remote version lookups for lazy tools
+    /// that are not installed. Installing one resolves it with the install options.
+    pub fn with_deferred_lazy_resolution(mut self) -> Self {
+        self.resolve_options.defer_missing_lazy_tools = true;
+        self
+    }
+
     pub fn with_overridden_lockfile_warnings(mut self) -> Self {
         self.warn_overridden_lockfiles = true;
         self
