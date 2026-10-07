@@ -319,7 +319,8 @@ This expands to the identity prefix
 `https://github.com/example/tool/.github/workflows/release.yaml@refs/tags/` with
 GitHub's OIDC issuer, so a workflow run on a branch cannot sign a release. It
 cannot be combined with `pubkey`, `identity`, `identity_prefix`, or `issuer`;
-use those to pin another ref or forge.
+use those to pin another ref or forge. Like those options, it pins the
+signer by name, so a renamed repository needs the new name here.
 
 ### `list_identity_prefix` {#list-identity-prefix}
 

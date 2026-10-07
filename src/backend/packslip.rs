@@ -591,6 +591,11 @@ pub(crate) enum Pin {
 }
 
 fn pin(project: &str, opts: &PackslipOptions<'_>) -> Result<Pin> {
+    // An identity pin, not a forge one: forge verification derives its own
+    // repository-wide policy from the bundle and would ignore the workflow.
+    if let Some(workflow) = opts.workflow() {
+        return Ok(Pin::Identity(workflow_policy(project, opts, &workflow)?));
+    }
     if let Some(pubkey) = opts.pubkey() {
         let text = if Path::new(&pubkey).is_file() {
             file::read_to_string(&pubkey)?
@@ -600,9 +605,6 @@ fn pin(project: &str, opts: &PackslipOptions<'_>) -> Result<Pin> {
         let key = packslip::minisign::PublicKey::parse(&text)
             .map_err(|e| eyre!("packslip:{project}: pubkey: {e}"))?;
         return Ok(Pin::Key(key));
-    }
-    if let Some(workflow) = opts.workflow() {
-        return Ok(Pin::Forge(workflow_policy(project, opts, &workflow)?));
     }
     let explicit = Policy {
         issuer: opts.issuer(),
@@ -2560,12 +2562,12 @@ mod tests {
             let raw: ToolVersionOptions = toml::from_str(toml).unwrap();
             pin(project, &PackslipOptions::new(&raw))
         };
-        let Pin::Forge(policy) = policy(
+        let Pin::Identity(policy) = policy(
             "github.com/max-sixty/worktrunk",
             r#"workflow = "release.yaml""#,
         )
         .unwrap() else {
-            panic!("expected a forge policy");
+            panic!("expected an identity policy");
         };
         assert_eq!(policy.issuer.as_deref(), Some(GITHUB_ISSUER));
         assert_eq!(policy.identity, None);
@@ -2576,31 +2578,35 @@ mod tests {
             )
         );
         // A monorepo tool is pinned by its repository's workflow.
-        let Pin::Forge(policy) = policy_for("github.com/o/r/tool") else {
-            panic!("expected a forge policy");
+        let Pin::Identity(policy) = policy_for("github.com/o/r/tool") else {
+            panic!("expected an identity policy");
         };
         assert_eq!(
             policy.identity_prefix.as_deref(),
             Some("https://github.com/o/r/.github/workflows/release.yml@refs/tags/")
         );
 
+        for conflicting in [
+            r#"issuer = "https://token.actions.githubusercontent.com""#,
+            r#"identity = "https://github.com/o/r/.github/workflows/x.yml@refs/tags/v1""#,
+            r#"identity_prefix = "https://github.com/o/r/""#,
+            r#"pubkey = "not read: the combination is rejected first""#,
+        ] {
+            let raw: ToolVersionOptions =
+                toml::from_str(&format!("workflow = \"release.yaml\"\n{conflicting}")).unwrap();
+            let err = pin("github.com/o/r", &PackslipOptions::new(&raw))
+                .err()
+                .unwrap_or_else(|| panic!("{conflicting}"));
+            assert!(err.to_string().contains("cannot be combined"), "{err}");
+        }
         for bad in [
-            r#"workflow = "release.yaml"
-issuer = "https://token.actions.githubusercontent.com""#,
-            r#"workflow = "release.yaml"
-identity_prefix = "https://github.com/o/r/""#,
-            r#"workflow = "release.yaml"
-pubkey = "x""#,
             r#"workflow = "a/b.yaml""#,
             r#"workflow = "b.yaml@refs/heads/main""#,
             r#"workflow = " ""#,
         ] {
+            let raw: ToolVersionOptions = toml::from_str(bad).unwrap();
             assert!(
-                pin(
-                    "github.com/o/r",
-                    &PackslipOptions::new(&toml::from_str(bad).unwrap())
-                )
-                .is_err(),
+                pin("github.com/o/r", &PackslipOptions::new(&raw)).is_err(),
                 "{bad}"
             );
         }
