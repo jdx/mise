@@ -4372,7 +4372,6 @@ pub trait Backend: Debug + Send + Sync {
         let token = install_state::PostinstallToken::start(tv.ba(), &tv.state_key())?;
         let mut runner = CmdLineRunner::new(program)
             .env(&*env::PATH_KEY, path_env.join())
-            .env(POSTINSTALL_TOKEN_ENV, &token.token)
             .env("MISE_TOOL_INSTALL_PATH", tv.install_path())
             .env("MISE_TOOL_NAME", tv.ba().short.clone())
             .env(env::MISE_TOOL_VERSION_ENV_VAR, tv.version.clone())
@@ -4382,6 +4381,8 @@ pub trait Backend: Debug + Send + Sync {
         for key in install_env_removals {
             runner = runner.env_remove(key);
         }
+        // After `install_env`, which must not be able to replace or remove it.
+        runner = runner.env(POSTINSTALL_TOKEN_ENV, &token.token);
 
         // Keep the declaring config and active project distinct. MISE_CONFIG_FILE is also a
         // legacy alias for the global config, so pin the actual global path for nested mise calls.
