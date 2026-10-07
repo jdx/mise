@@ -435,15 +435,17 @@ fn merged_files_from_config_files(
                 source: None,
             };
             for (path, file) in bootstrap.files {
+                // skip before any validation: a path meant for another OS may not
+                // even be absolute here
+                if !os_matches(&file.os) {
+                    continue;
+                }
                 let target = absolute_target(&path)?;
                 if let Some(previous) = layer_paths.insert(target.clone(), path.clone()) {
                     bail!(
                         "managed file paths '{previous}' and '{path}' normalize to the same target '{}'",
                         target.display()
                     );
-                }
-                if !os_matches(&file.os) {
-                    continue;
                 }
                 let mut file_origin = origin.clone();
                 file_origin.source = file
@@ -507,15 +509,17 @@ fn directories_from_config_files(
             };
             let mut layer_paths = IndexMap::new();
             for (path, directory) in bootstrap.directories {
+                // skip before any validation: a path meant for another OS may not
+                // even be absolute here
+                if !os_matches(&directory.os) {
+                    continue;
+                }
                 let target = absolute_target(&path)?;
                 if let Some(previous) = layer_paths.insert(target.clone(), path.clone()) {
                     bail!(
                         "managed directory paths '{previous}' and '{path}' normalize to the same target '{}'",
                         target.display()
                     );
-                }
-                if !os_matches(&directory.os) {
-                    continue;
                 }
                 merged
                     .entry(target)
