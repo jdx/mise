@@ -1,11 +1,18 @@
 import { socialCard, writeSocialCard } from "./social-images.mjs";
 import { pageDescription } from "./social-descriptions.mjs";
 import { showreelFiles } from "./showreel.data";
-import { readdirSync, readFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  writeFileSync,
+} from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { defineConfig } from "vitepress";
 import { sidebar } from "./sidebar";
+import { pageRedirects, redirectStub, stubFile } from "./redirects.mjs";
 import { releaseNotesPlugin } from "@jdxcode/docs-releases/vitepress";
 import {
   groupIconMdPlugin,
@@ -110,6 +117,18 @@ function assertNoEmptyDocPages(outDir: string) {
     throw new Error(
       `generated empty documentation pages:\n${emptyPages.map((page) => `- ${page}`).join("\n")}`,
     );
+  }
+}
+
+/** Write a stub at each removed page's URL that sends readers to its new home. */
+function writeRedirectStubs(outDir: string) {
+  for (const [from, redirect] of Object.entries(pageRedirects)) {
+    const file = join(outDir, stubFile(from));
+    if (existsSync(file)) {
+      throw new Error(`${from} is both a documentation page and a redirect`);
+    }
+    mkdirSync(dirname(file), { recursive: true });
+    writeFileSync(file, redirectStub(redirect, siteUrl));
   }
 }
 
@@ -437,6 +456,7 @@ export default withMermaid(
     },
     buildEnd(siteConfig) {
       assertNoEmptyDocPages(siteConfig.outDir);
+      writeRedirectStubs(siteConfig.outDir);
     },
   }),
 );

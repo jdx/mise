@@ -4,6 +4,7 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { socialCard } from "./social-images.mjs";
+import { pageRedirects, stubFile } from "./redirects.mjs";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { resolve, join } from "node:path";
 
@@ -47,7 +48,13 @@ const walk = (dir) =>
   );
 let posts = 0;
 const images = new Set();
-for (const file of walk(root).filter((file) => file.endsWith(".html"))) {
+// Redirect stubs written for moved pages have no previews of their own.
+const redirectStubs = new Set(
+  Object.keys(pageRedirects).map((from) => join(root, stubFile(from))),
+);
+for (const file of walk(root).filter(
+  (file) => file.endsWith(".html") && !redirectStubs.has(file),
+)) {
   const html = readFileSync(file, "utf8");
   const home = file === join(root, "index.html");
   assert.equal(meta(html, "og:title"), meta(html, "twitter:title"));
