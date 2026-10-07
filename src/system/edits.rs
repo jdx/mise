@@ -758,9 +758,53 @@ pub fn check(config: &Config, req: &EditRequest) -> Result<FileState> {
         Some(EditCheck::Blocked(reason)) => Ok(FileState::Differs(reason)),
         None => {
             let desired = desired_content(config, req)?;
+            if let EditOp::Merge {
+                format,
+                missing_only: true,
+                ..
+            } = &req.op
+            {
+                // judged the way apply runs it: after the file's other merges
+                let text = projected_text(config, req, &file::read_to_string(&req.path)?)?;
+                let desired = desired.expect("resolved merge content");
+                return Ok(
+                    if structured_merge::missing(*format, &text, &desired)?.is_none() {
+                        FileState::Applied
+                    } else {
+                        FileState::Differs("keys are missing".into())
+                    },
+                );
+            }
             block_state(req, desired.as_deref())
         }
     }
+}
+
+/// `text` as apply leaves it for a fill-only entry: with every other merge
+/// entry for the same file already applied, since defaults go in last. Any
+/// other entry sees `text` unchanged.
+fn projected_text(config: &Config, req: &EditRequest, text: &str) -> Result<String> {
+    if !req.op.fills_missing_only() {
+        return Ok(text.to_string());
+    }
+    let mut text = text.to_string();
+    for other in edits_from_config(config).unwrap_or_default() {
+        let EditOp::Merge {
+            format,
+            missing_only: false,
+            ..
+        } = &other.op
+        else {
+            continue;
+        };
+        if (other.path == req.path && other.id == req.id) || !same_target(&other.path, &req.path) {
+            continue;
+        }
+        if let Some(desired) = desired_content(config, &other)? {
+            text = structured_merge::merge(*format, &text, &desired)?;
+        }
+    }
+    Ok(text)
 }
 
 const SYMLINK_REASON: &str = "target is a symlink; edit the real file instead";
@@ -1304,7 +1348,7 @@ pub fn print_diffs(config: &Config, requests: &[EditRequest]) -> Result<()> {
                 continue;
             }
         };
-        if pre.is_none() {
+        if pre.is_none() && !req.op.fills_missing_only() {
             match block_state(req, desired.as_deref()) {
                 Ok(FileState::Applied) => continue,
                 Ok(_) => {}
@@ -1332,6 +1376,18 @@ pub fn print_diffs(config: &Config, requests: &[EditRequest]) -> Result<()> {
             }
         } else {
             String::new()
+        };
+        // a fill-only entry is shown against the file after its other merges
+        let current = match projected_text(config, req, &current) {
+            Ok(current) => current,
+            Err(err) => {
+                problems.push(format!(
+                    "  \"{}\" ({}): {err}",
+                    req.path_raw,
+                    req.describe_op()
+                ));
+                continue;
+            }
         };
         let output = match apply_to_string(req, desired.as_deref(), &current) {
             Ok(output) => output,

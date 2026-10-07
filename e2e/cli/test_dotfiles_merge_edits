@@ -408,3 +408,10 @@ assert_succeed "mise dotfiles apply --yes"
 assert_contains "cat ~/order.toml" 'size = 3'
 assert_contains "cat ~/order.toml" 'theme = "light"'
 assert_succeed "mise dotfiles status --missing"
+
+# status and diff judge defaults the way apply runs them, after the enforced merge
+echo 'tui = false' >~/order.toml
+assert_contains "mise dotfiles status" "keys are missing"
+assert_contains "mise dotfiles diff" '+size = 3'
+assert_succeed "mise dotfiles apply --yes"
+assert_succeed "mise dotfiles status --missing"
