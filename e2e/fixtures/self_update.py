@@ -25,6 +25,8 @@ def run(binary, args, env, cwd):
 
 
 def main():
+    # Windows runners default stdout to cp1252, which cannot print the updater's checkmarks.
+    sys.stdout.reconfigure(encoding="utf-8", errors="backslashreplace")
     source = Path(sys.argv[1]).resolve()
     original = digest(source)
     # Each case starts with the newly built updater, never the release installed
