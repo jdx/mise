@@ -353,3 +353,106 @@ assert_fail "test -L ~/.ro/config.toml"
 assert_contains "cat ~/.ro/config.toml" 'notify = ["a"]'
 # root can write a 0444 file, so check the owner-write bit itself
 assert "ls -l ~/.ro/config.toml | cut -c3" "w"
+
+# merge = "missing" fills in defaults and leaves values the app changed
+mkdir -p ~/.fill
+cat <<'EOF2' >shared/fill-enforced.toml
+theme = "light"
+EOF2
+cat <<'EOF2' >shared/fill-defaults.toml
+model = "gpt-5"
+effort = "high"
+theme = "dark"
+
+[tui]
+size = 3
+EOF2
+cat <<'EOF2' >mise.toml
+[dotfiles]
+"~/.fill/config.toml/enforced" = { source = "shared/fill-enforced.toml", merge = true }
+"~/.fill/config.toml/defaults" = { source = "shared/fill-defaults.toml", merge = "missing" }
+EOF2
+printf 'model = "mine"\n\n[tui]\ntheme = "x"\n' >~/.fill/config.toml
+assert_contains "mise dotfiles status" "keys are missing"
+assert_succeed "mise dotfiles apply --yes"
+assert_contains "cat ~/.fill/config.toml" 'model = "mine"'
+assert_contains "cat ~/.fill/config.toml" 'effort = "high"'
+assert_contains "cat ~/.fill/config.toml" 'size = 3'
+assert_contains "cat ~/.fill/config.toml" 'theme = "light"'
+assert_succeed "mise dotfiles status --missing"
+# the app changes a default and removes another: only the removed one returns
+printf 'model = "other"\ntheme = "light"\n[tui]\nsize = 9\n' >~/.fill/config.toml
+assert_succeed "mise dotfiles apply --yes"
+assert_contains "cat ~/.fill/config.toml" 'model = "other"'
+assert_contains "cat ~/.fill/config.toml" 'effort = "high"'
+assert_contains "cat ~/.fill/config.toml" 'size = 9'
+assert_succeed "mise dotfiles status --missing"
+
+# defaults are reconsidered after an enforced merge on the same file: a scalar
+# the enforced entry replaces with a table does not hide the defaults inside it
+cat <<'EOF2' >shared/order-enforced.toml
+[tui]
+theme = "light"
+EOF2
+cat <<'EOF2' >shared/order-defaults.toml
+[tui]
+size = 3
+EOF2
+cat <<'EOF2' >mise.toml
+[dotfiles]
+"~/order.toml/a" = { source = "shared/order-defaults.toml", merge = "missing" }
+"~/order.toml/b" = { source = "shared/order-enforced.toml", merge = true }
+EOF2
+echo 'tui = false' >~/order.toml
+assert_succeed "mise dotfiles apply --yes"
+assert_contains "cat ~/order.toml" 'size = 3'
+assert_contains "cat ~/order.toml" 'theme = "light"'
+assert_succeed "mise dotfiles status --missing"
+
+# status and diff judge defaults the way apply runs them, after the enforced merge
+echo 'tui = false' >~/order.toml
+assert_contains "mise dotfiles status" "keys are missing"
+assert_contains "mise dotfiles diff" '+size = 3'
+assert_succeed "mise dotfiles apply --yes"
+assert_succeed "mise dotfiles status --missing"
+
+# a filtered preview runs only selected enforced merges, just like apply
+printf 'model = "enforced"\n' >shared/selected-enforced.toml
+printf 'model = "default"\n' >shared/selected-defaults.toml
+cat <<'EOF2' >mise.toml
+[dotfiles]
+"~/selected.toml/enforced" = { source = "shared/selected-enforced.toml", merge = true }
+"~/selected.toml/defaults" = { source = "shared/selected-defaults.toml", merge = "missing" }
+EOF2
+echo 'theme = "mine"' >~/selected.toml
+assert_contains "mise dotfiles status ~/selected.toml/defaults" "keys are missing"
+assert_contains "mise dotfiles diff ~/selected.toml/defaults" '+model = "default"'
+assert_succeed "mise dotfiles apply ~/selected.toml/defaults --yes"
+assert_contains "cat ~/selected.toml" 'model = "default"'
+
+# Competing defaults are previewed in the same order as apply.
+echo 'model = "first"' >~/competing-first.toml
+echo 'model = "second"' >~/competing-second.toml
+echo 'theme = "existing"' >~/competing-target.toml
+cat >>~/.config/mise/config.toml <<'TOML'
+
+[dotfiles."~/competing-target.toml/first"]
+source = "~/competing-first.toml"
+merge = "missing"
+[dotfiles."~/competing-target.toml/second"]
+source = "~/competing-second.toml"
+merge = "missing"
+TOML
+assert_contains 'mise dot diff ~/competing-target.toml' '+model = "first"'
+assert_not_contains 'mise dot diff ~/competing-target.toml' '+model = "second"'
+assert_succeed 'mise dot apply ~/competing-target.toml --yes'
+assert_contains 'cat ~/competing-target.toml' 'model = "first"'
+
+# Earlier defaults retain live keys for subsequent defaults' status and diff.
+echo 'effort = "high"' >~/competing-first.toml
+echo 'model = "mine"' >~/competing-target.toml
+assert_not_contains 'mise dot diff ~/competing-target.toml' '+model = "second"'
+assert_contains 'mise dot status ~/competing-target.toml/second' 'applied'
+assert_succeed 'mise dot apply ~/competing-target.toml --yes'
+assert_contains 'cat ~/competing-target.toml' 'model = "mine"'
+assert_contains 'cat ~/competing-target.toml' 'effort = "high"'
