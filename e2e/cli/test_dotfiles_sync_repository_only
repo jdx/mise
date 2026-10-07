@@ -42,3 +42,29 @@ assert_succeed "mise dot save"
 assert_contains "mise dot sync 2>&1" "published"
 assert "git --git-dir=$origin show main:home@work/.x" "work-edited"
 assert "git --git-dir=$origin show main:home@default/.x" "home-edited"
+
+# a shared directory whose permissions change is a change here, though no
+# file is written
+mkdir -p ~/.dir "$second/.dir"
+echo shared >~/.dir/file
+echo shared >"$second/.dir/file"
+chmod 755 ~/.dir "$second/.dir"
+cat >>~/.config/mise/config.toml <<'TOML'
+"~/.dir" = { mode = "track" }
+TOML
+cat >>"$second/.config/mise/config.toml" <<'TOML'
+"~/.dir" = { mode = "track" }
+TOML
+assert_succeed "mise dot save"
+assert_succeed "mise dot sync"
+assert_succeed "b dot sync"
+assert_succeed "b dot pull --yes"
+assert_succeed "b dot sync"
+assert_succeed "mise dot sync"
+assert_succeed "mise dot pull --yes"
+chmod 700 ~/.dir
+assert_succeed "mise dot save"
+assert_succeed "mise dot sync"
+assert_contains "b dot sync 2>&1" "incoming change(s) pending"
+assert_succeed "b dot pull --yes"
+assert "stat -c %a $second/.dir" "700"
