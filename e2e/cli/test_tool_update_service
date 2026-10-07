@@ -1,0 +1,57 @@
+#!/usr/bin/env bash
+
+# The tool-update service (`[bootstrap.services.<name>] builtin = "tool-update"`
+# runs `mise __tool-update --watch`) updates opted-in global tools, and
+# launches leave updates to it while it runs.
+
+printf '[tools]\ndummy = { version = "1", auto_update = true }\n' >"$MISE_CONFIG_DIR/config.toml"
+mise uninstall dummy --all
+mise install dummy@1.0.0
+
+mise __tool-update --watch >service.log 2>&1 &
+service=$!
+trap 'kill "$service" 2>/dev/null || true; wait "$service" 2>/dev/null || true' EXIT
+for _ in {1..300}; do
+  mise ls --installed dummy | grep -q 1.1.0 && break
+  sleep 0.1
+done
+assert_contains "mise ls --installed dummy" "1.1.0"
+# Let the pass finish: it holds update.lock, with its PID in it, until done.
+for _ in {1..300}; do
+  grep -q '[0-9]' "$MISE_STATE_DIR/tool-update/update.lock" 2>/dev/null || break
+  sleep 0.1
+done
+
+# While it runs, a launch with a due check runs what is installed.
+mise uninstall dummy@1.1.0
+find "$MISE_STATE_DIR/tool-update" -type f ! -name '*.*' -delete
+assert "mise x -- dummy" "This is Dummy 1.0.0!"
+assert_fail "find '$MISE_STATE_DIR/tool-update' -type f ! -name '*.*' | grep -q ."
+
+# It only covers its own environments: a launch with others updates itself.
+assert "MISE_ENV=work mise x -- dummy" "This is Dummy 1.1.0!"
+mise uninstall dummy@1.1.0
+find "$MISE_STATE_DIR/tool-update" -type f ! -name '*.*' -delete
+
+# Asked to stop, it exits cleanly and releases its lock.
+kill -TERM "$service"
+status=0
+wait "$service" || status=$?
+assert "echo $status" "0"
+
+# Without it, the launch updates in the foreground again.
+assert "mise x -- dummy" "This is Dummy 1.1.0!"
+
+# A pass still updates a tool the environment overrides.
+mise uninstall dummy@1.1.0
+find "$MISE_STATE_DIR/tool-update" -type f ! -name '*.*' -delete
+assert_succeed "MISE_DUMMY_VERSION=1.0.0 mise __tool-update --due"
+assert_contains "mise ls --installed dummy" "1.1.0"
+
+# An exact pin next to a floating version of the same tool doesn't hold the
+# floating one back: the pass checks the tool as a whole.
+printf '[tools]\ndummy = [{ version = "1.0.0", auto_update = true }, { version = "1", auto_update = true }]\n' >"$MISE_CONFIG_DIR/config.toml"
+mise uninstall dummy@1.1.0
+find "$MISE_STATE_DIR/tool-update" -type f ! -name '*.*' -delete
+assert_succeed "mise __tool-update --due"
+assert_contains "mise ls --installed dummy" "1.1.0"

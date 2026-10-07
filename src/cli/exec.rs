@@ -176,14 +176,23 @@ impl Exec {
         } else {
             &shim_task_tools
         };
-        let mut ts = measure!("toolset", {
+        let build = async |config: &Arc<Config>| {
             ToolsetBuilder::new()
                 .with_args(tool_args)
                 .with_default_to_latest(true)
                 .with_resolve_options(resolve_options.clone())
-                .build(&config)
-                .await?
-        });
+                .build(config)
+                .await
+        };
+        let mut ts = measure!("toolset", { build(&config).await? });
+        // A due `auto_update` upgrades the command's tool before it runs, so
+        // resolve again to launch the new version.
+        if let Some(program) = self.update_target()
+            && super::tool_update::update_before_launch(&config, &ts, program).await
+        {
+            config = Config::reset().await?;
+            ts = build(&config).await?;
+        }
 
         // A native Windows shim runs `mise x -- <name>` rather than mise as `<name>`, so its
         // command wrapper is applied here instead of by `handle_shim`.
@@ -205,6 +214,20 @@ impl Exec {
             false,
         )
         .await
+    }
+
+    /// The bare command name `mise x -- <cmd>` launches, which `auto_update`
+    /// looks up to find the tool to update. Shell bodies and paths have none.
+    fn update_target(&self) -> Option<&str> {
+        if self.c.is_some() {
+            return None;
+        }
+        let command = self.command.as_ref()?;
+        let program = command.first()?;
+        // A native Windows shim runs `mise x -- usage complete-word` for tab completion.
+        let name = crate::shims::command_name_without_exe_suffix(program);
+        (!program.contains(['/', '\\']) && !super::shim::is_offline_completion(name, command))
+            .then_some(program.as_str())
     }
 
     /// Execute with a toolset that the shim path has already resolved while

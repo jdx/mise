@@ -112,6 +112,7 @@ pub mod toml;
 pub mod tool_catalog;
 pub mod tool_purgatory;
 pub mod tool_stub;
+pub mod tool_update;
 pub mod toolset;
 pub mod ui;
 pub mod upgrade_hint;

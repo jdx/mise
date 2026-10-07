@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+
+# npm: tools can be installed from a git repository instead of the registry.
+repo="$PWD/gitpkg"
+mkdir -p "$repo/bin"
+cat >"$repo/package.json" <<'JSON'
+{"name":"gitpkg","version":"1.0.0","bin":{"gitpkg":"bin/gitpkg.sh"}}
+JSON
+printf '#!/bin/sh\necho gitpkg-v1\n' >"$repo/bin/gitpkg.sh"
+chmod +x "$repo/bin/gitpkg.sh"
+git -C "$repo" init -q -b main
+git -C "$repo" -c user.name=t -c user.email=t@t add -A
+git -C "$repo" -c user.name=t -c user.email=t@t commit -q -m v1
+git -C "$repo" tag v1
+
+printf '#!/bin/sh\necho gitpkg-v2\n' >"$repo/bin/gitpkg.sh"
+git -C "$repo" -c user.name=t -c user.email=t@t commit -q -am v2
+
+assert_contains "mise x 'npm:git+file://$repo@latest' -- gitpkg" "gitpkg-v2"
+assert_contains "mise x 'npm:git+file://$repo@v1' -- gitpkg" "gitpkg-v1"

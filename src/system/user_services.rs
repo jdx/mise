@@ -29,13 +29,19 @@ struct Builtin {
     nice: Option<i8>,
 }
 
-const BUILTIN_NAMES: &[&str] = &["history-watch"];
+const BUILTIN_NAMES: &[&str] = &["history-watch", "tool-update"];
 
 fn builtin(name: &str) -> Option<Builtin> {
     match name {
         "history-watch" => Some(Builtin {
             args: &["dot", "watch"],
             description: "mise dot history: save tracked files as they change",
+            restart: ServiceRestart::OnFailure,
+            nice: Some(10),
+        }),
+        "tool-update" => Some(Builtin {
+            args: &["__tool-update", "--watch"],
+            description: "mise auto_update: update global tools in the background",
             restart: ServiceRestart::OnFailure,
             nice: Some(10),
         }),
@@ -204,10 +210,18 @@ impl UserServiceRequest {
             ..Default::default()
         };
         let mut request = SystemdRequest::from_toml(self.name.clone(), config)?;
-        if self.builtin.as_deref() == Some("history-watch") {
+        if self.is_throttled_builtin() {
             request.start_limit = Some((300, 3));
         }
         Ok(request)
+    }
+
+    /// A builtin that runs until stopped; a crash loop is capped rather than
+    /// restarted every 5s forever.
+    fn is_throttled_builtin(&self) -> bool {
+        self.builtin
+            .as_deref()
+            .is_some_and(|builtin| BUILTIN_NAMES.contains(&builtin))
     }
 
     pub(crate) fn launchd_request(&self) -> Result<LaunchdRequest> {
@@ -230,7 +244,7 @@ impl UserServiceRequest {
             keep_alive_on_failure: self.enabled
                 && self.start()
                 && self.restart == ServiceRestart::OnFailure,
-            throttle_interval: (self.builtin.as_deref() == Some("history-watch")).then_some(300),
+            throttle_interval: self.is_throttled_builtin().then_some(300),
             environment: self.environment.clone(),
             working_directory: self.working_directory.clone(),
             kickstart: self.start(),
@@ -873,7 +887,7 @@ mod tests {
         .unwrap_err();
         assert!(
             err.to_string()
-                .contains("unknown builtin 'nope'; available: history-watch")
+                .contains("unknown builtin 'nope'; available: history-watch, tool-update")
         );
         let err = request_result(ServiceTomlConfig {
             masked: true,
@@ -987,6 +1001,25 @@ mod tests {
                 .as_deref()
                 .unwrap()
                 .contains("no durable mise executable")
+        );
+    }
+
+    #[test]
+    fn tool_update_builtin_runs_the_watch_loop() {
+        let request = request(ServiceTomlConfig {
+            builtin: Some("tool-update".into()),
+            ..Default::default()
+        });
+        assert_eq!(
+            request.command.as_deref(),
+            Some("/usr/bin/mise __tool-update --watch")
+        );
+        assert_eq!(request.restart, ServiceRestart::OnFailure);
+        let unit = systemd::render_unit(&request.systemd_request().unwrap());
+        assert!(unit.contains("StartLimitIntervalSec=300\nStartLimitBurst=3\n"));
+        assert_eq!(
+            request.launchd_request().unwrap().throttle_interval,
+            Some(300)
         );
     }
 

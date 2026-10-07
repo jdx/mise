@@ -442,8 +442,8 @@ impl ToolRequest {
         }
     }
 
-    #[cfg(test)]
-    pub(super) fn option_source(&self, key: &str) -> Option<ToolOptionSource> {
+    /// Where the effective value of an option came from.
+    pub(crate) fn option_source(&self, key: &str) -> Option<ToolOptionSource> {
         self.resolved_options().source_for_key(key)
     }
 

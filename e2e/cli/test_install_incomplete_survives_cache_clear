@@ -6,7 +6,7 @@ plugin="$MISE_DATA_DIR/plugins/halfdone"
 mkdir -p "$plugin/bin"
 cat >"$plugin/bin/list-all" <<'SH'
 #!/usr/bin/env bash
-echo 1.0.0 1.1.0
+echo 1.0.0 1.1.0 1.2.0
 SH
 # 1.1.0 writes a working binary, then fails: an install that died partway.
 cat >"$plugin/bin/install" <<'SH'
@@ -41,3 +41,26 @@ assert "mise x -- halfdone" "halfdone 1.0.0"
 mise uninstall halfdone@1.1.0
 assert_directory_not_exists "$MISE_DATA_DIR/installs/halfdone/1.1.0"
 assert_directory_not_exists "$MISE_STATE_DIR/incomplete-installs/halfdone/1.1.0"
+
+# A failed tool-level postinstall hook leaves the version incomplete the same way.
+cat >mise.toml <<'TOML'
+[tools]
+halfdone = { version = "1", postinstall = "exit 1" }
+TOML
+assert_fail "mise install halfdone@1.2.0"
+assert_directory_exists "$MISE_DATA_DIR/installs/halfdone/1.2.0"
+assert_not_contains "mise ls --installed halfdone" "1.2.0"
+mise cache clear
+assert_not_contains "mise ls --installed halfdone" "1.2.0"
+assert "mise x -- halfdone" "halfdone 1.0.0"
+
+# A marker an older mise left in the cache moves to the state dir before
+# anything can clear it.
+rm -rf "$MISE_STATE_DIR/incomplete-installs"
+mkdir -p "$MISE_CACHE_DIR/halfdone/1.2.0"
+touch "$MISE_CACHE_DIR/halfdone/1.2.0/incomplete"
+assert_not_contains "mise ls --installed halfdone" "1.2.0"
+assert_directory_exists "$MISE_STATE_DIR/incomplete-installs/halfdone/1.2.0"
+assert_succeed "test -f '$MISE_STATE_DIR/incomplete-installs/.migrated'"
+mise cache clear
+assert_not_contains "mise ls --installed halfdone" "1.2.0"

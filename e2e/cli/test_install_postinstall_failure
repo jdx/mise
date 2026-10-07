@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+
+# A failed postinstall hook leaves the version incomplete, so nothing selects
+# it and the next install repairs it instead of trusting a half-done install.
+cat >mise.toml <<'EOF'
+[tools]
+dummy = { version = "1.0.0", postinstall = "exit 1" }
+EOF
+assert_fail "mise install"
+assert_not_contains "mise ls --installed dummy" "1.0.0"
+
+cat >mise.toml <<'EOF'
+[tools]
+dummy = { version = "1.0.0", postinstall = "echo POSTINSTALL_RAN" }
+EOF
+assert_contains "mise install 2>&1" "POSTINSTALL_RAN"
+assert_contains "mise ls --installed dummy" "1.0.0"
+
+# A hook that runs the tool it is installing must see that install, not wait
+# on the install lock it is itself holding.
+mise uninstall dummy --all
+cat >mise.toml <<'EOF'
+[tools]
+dummy = { version = "1.0.0", postinstall = "mise x -- dummy" }
+EOF
+assert_contains "timeout 60 mise install 2>&1" "Dummy 1.0.0"

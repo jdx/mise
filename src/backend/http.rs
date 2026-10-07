@@ -1475,7 +1475,8 @@ impl Backend for HttpBackend {
             _ => {
                 let install_path = Self::lookup_install_path(tv);
                 install_path.exists()
-                    && !install_state::is_incomplete(tv.ba(), &tv.state_key())
+                    && (!install_state::is_incomplete(tv.ba(), &tv.state_key())
+                        || super::is_active_postinstall_install(tv, &install_path))
                     && (!check_symlink || !is_runtime_symlink(&install_path))
             }
         }

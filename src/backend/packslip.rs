@@ -1965,15 +1965,7 @@ impl Backend for PackslipBackend {
         // extracted, but declared skills are verified only after the hook;
         // treating that exact active install as unsatisfied would make the
         // nested invocation wait on this installation's lock.
-        if std::env::var_os("MISE_TOOL_INSTALL_PATH")
-            .as_deref()
-            .is_some_and(|path| Path::new(path) == install_path)
-            && std::env::var("MISE_TOOL_NAME").ok().as_deref() == Some(tv.ba().short.as_str())
-            && std::env::var(crate::env::MISE_TOOL_VERSION_ENV_VAR)
-                .ok()
-                .as_deref()
-                == Some(tv.version.as_str())
-        {
+        if crate::backend::is_active_postinstall_install(tv, &install_path) {
             return Ok(true);
         }
         if !self.is_version_installed(config, tv, check_symlink) {

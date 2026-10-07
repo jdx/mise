@@ -29,7 +29,7 @@ mod ruby_common;
 pub(crate) fn gemfile_watch_patterns(path: &std::path::Path) -> Vec<String> {
     ruby_common::gemfile_watch_patterns(path)
 }
-mod rust;
+pub(crate) mod rust;
 mod swift;
 mod zig;
 

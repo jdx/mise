@@ -311,6 +311,7 @@ See [Tools](/dev-tools/). In addition to specifying versions, each tool entry ca
 - `depends`: Install order relative to other tools in this config only; vfox plugin hook dependencies belong in plugin `metadata.lua` (see [Tool Dependencies](/dev-tools/#tool-dependencies))
 - `install_env`: Environment vars used during download, install, and tool-level `postinstall`
 - `postinstall`: Command to run after installation completes for that specific tool
+- `auto_update`: Update a global tool before it runs (`true`, or a check interval such as `"6h"`); see [Automatic tool updates](#automatic-tool-updates)
 
 Examples:
 
@@ -318,6 +319,51 @@ Examples:
 [tools]
 node = { version = "22", postinstall = "corepack enable" }
 ```
+
+### Automatic tool updates
+
+A tool in your global config (for example `~/.config/mise/config.toml`) can keep itself up to
+date. Set `auto_update` on its entry:
+
+```toml
+[tools]
+claude = { version = "latest", auto_update = true }
+node = { version = "22", auto_update = "6h" }
+```
+
+When a shim or `mise x` is about to run the tool and mise hasn't checked for an update within the
+interval, it runs `mise upgrade` for that tool first, showing the usual install progress, then
+runs the new version. Updates stay within the configured version: `node = "22"` gets the newest
+22.x, never 23. If the update fails or you're offline, mise warns and runs the version you have.
+
+`auto_update = true` checks every 24 hours, or every
+[`tool_update.check_duration`](/configuration/settings.html#tool_update.check_duration). A
+duration such as `"6h"` sets that tool's own interval. Intervals under one hour are raised to one
+hour.
+
+- Only global config can turn this on. A project config can't, and when a project sets its own
+  version of the tool, runs in that project don't update it.
+- Only the tool being run is checked: `mise x -- npm test` doesn't update `claude`. Tasks,
+  `mise hook-env`, and shell activation never update tools.
+- Exact versions such as `node = "22.11.0"` are never updated. If a global lockfile
+  (`mise lock --global`) pins the tool, the update moves the lock entry to the new version. A
+  project's config and lockfile are never changed.
+- No updates run offline, in CI, or with `locked = true`.
+- The previous version is pruned on the same schedule as `mise upgrade` (see
+  [`upgrade.auto_prune`](/configuration/settings.html#upgrade.auto_prune)).
+- If the last update of a tool failed, `mise doctor` shows the error.
+
+To update in the background instead, so launches never wait and tools run directly from PATH
+(with shell activation) stay current too, declare the `tool-update` service in your global config
+and run `mise bootstrap services apply`:
+
+```toml
+[bootstrap.services.mise-tool-update]
+builtin = "tool-update"
+```
+
+The service checks once an hour and updates each tool when its interval is due. While it runs,
+launches don't update tools themselves. See [services](/bootstrap/services.html#user-services).
 
 ### `include` - Share config from a remote file {#include}
 

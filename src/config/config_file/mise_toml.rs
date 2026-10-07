@@ -90,8 +90,10 @@ fn normalize_option_template_value(value: toml::Value) -> toml::Value {
 }
 
 fn should_normalize_option_template(key: &str) -> bool {
-    !matches!(key, "os" | "depends" | "install_env" | "lazy" | "lazy_bins")
-        && !key.starts_with("install_env.")
+    !matches!(
+        key,
+        "os" | "depends" | "install_env" | "lazy" | "lazy_bins" | "auto_update"
+    ) && !key.starts_with("install_env.")
 }
 
 fn insert_tool_option<E>(
@@ -210,6 +212,18 @@ fn insert_core_options(table: &mut InlineTable, options: ToolVersionOptions) {
         }
         table.insert("lazy_bins", Value::Array(bins));
     }
+    if let Some(auto_update) = core.auto_update {
+        table.insert("auto_update", auto_update_value(&auto_update));
+    }
+}
+
+/// `auto_update` as written: `true`/`false` as booleans, an interval as a string.
+fn auto_update_value(auto_update: &str) -> Value {
+    match auto_update {
+        "true" => Value::from(true),
+        "false" => Value::from(false),
+        _ => Value::from(auto_update),
+    }
 }
 
 const TOOL_SELECTOR_KEYS: [&str; 4] = ["version", "prefix", "ref", "path"];
@@ -313,6 +327,13 @@ fn update_explicit_tool_options(table: &mut toml_edit::Table, options: &ToolVers
             bins.push(bin.as_str());
         }
         insert_table_item_preserving_decor(table, "lazy_bins", Item::Value(Value::Array(bins)));
+    }
+    if let Some(auto_update) = &options.auto_update {
+        insert_table_item_preserving_decor(
+            table,
+            "auto_update",
+            Item::Value(auto_update_value(auto_update)),
+        );
     }
     update_install_env_table(table, options);
 }
