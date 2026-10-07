@@ -976,10 +976,13 @@ fn rust_state_lock_identities(rustup_home: &Path, cargo_home: &Path) -> Vec<Path
 /// Serializes rustup state changes for the homes `config` resolves to. Callers that spawn
 /// `cargo` (which may run rustup itself) must hold this so they don't race the rust plugin.
 pub(crate) async fn lock_rust_state_for_config(
-    config: &Arc<Config>,
+    toolset_env: &BTreeMap<String, String>,
     install_env: &IndexMap<String, crate::config::env_directive::EnvValue>,
 ) -> Result<Vec<fslock::LockFile>> {
-    let mut config_env = config.env().await?.clone();
+    let mut config_env: IndexMap<String, String> = toolset_env
+        .iter()
+        .map(|(k, v)| (k.clone(), v.clone()))
+        .collect();
     for (key, value) in install_env {
         match value.clone().into_string() {
             Some(value) => config_env.insert(key.clone(), value),
