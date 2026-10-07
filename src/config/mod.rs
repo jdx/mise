@@ -182,6 +182,19 @@ pub struct Alias {
 
 static _CONFIG: RwLock<Option<Arc<Config>>> = RwLock::new(None);
 use mise_util::redactions::GLOBAL_REDACTOR as _REDACTOR;
+/// Set when a `redact` entry from config or task env registered a non-empty value.
+static CONFIG_REDACTIONS: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// See `Config::add_secret_redactions`.
+pub(crate) fn add_secret_redactions(values: impl IntoIterator<Item = String>) {
+    let mut r = _REDACTOR.lock().unwrap();
+    *r = r.with_additional(values);
+}
+
+/// Whether any configured (not secret-grant) redaction exists in this process.
+pub(crate) fn has_config_redactions() -> bool {
+    CONFIG_REDACTIONS.load(std::sync::atomic::Ordering::Relaxed)
+}
 const BOOTSTRAP_CONFIG_ROOTS_WARN_AT: &str = "2026.9.3";
 const BOOTSTRAP_CONFIG_ROOTS_REMOVE_AT: &str = "2027.3.3";
 const MONOREPO_LOCKFILE_WARN_AT: &str = "2026.12.0";
@@ -1562,6 +1575,7 @@ impl Config {
                 redactions: cached.redactions.clone(),
                 redaction_exclusions: cached.redaction_exclusions.clone(),
                 caller_env_keys: cached.caller_env_keys.clone(),
+                rendered_defaults: Default::default(),
                 tool_add_paths: Vec::new(),
                 watch_files: cached.watch_files.clone(),
                 has_uncacheable: false,
@@ -1638,8 +1652,11 @@ impl Config {
                         Ok(content) => {
                             // Keep the assignments that precede a syntax error, like a
                             // line-by-line loader would, and name the file cut short.
-                            let (items, err) =
-                                mise_dotenv::parse_partial(&content, true, crate::env::vars_safe());
+                            let (items, err) = mise_dotenv::parse_partial(
+                                &content,
+                                true,
+                                mise_util::env::vars_without_inherited_secrets(),
+                            );
                             for (k, v) in items {
                                 env_results.env.insert(k, (v, env_file.clone()));
                             }
@@ -1817,6 +1834,10 @@ impl Config {
     /// Append-only for the same reason as `add_redactions_excluding`: removing a
     /// value could expose a different key that happens to share it.
     pub(crate) fn add_redactions(&self, values: impl IntoIterator<Item = String>) {
+        let values: Vec<String> = values.into_iter().collect();
+        if values.iter().any(|v| !v.is_empty()) {
+            CONFIG_REDACTIONS.store(true, std::sync::atomic::Ordering::Relaxed);
+        }
         let mut r = _REDACTOR.lock().unwrap();
         *r = r.with_additional(values);
     }
@@ -1831,13 +1852,19 @@ impl Config {
         // Redactions are intentionally append-only. An exclusion prevents this key from
         // contributing its value, but removing an already registered value could expose a
         // different secret key (or concurrent task) that uses the same value.
-        let new_redactions = redactions.into_iter().flat_map(|pattern| {
-            let matcher = Wildcard::new(vec![pattern]);
-            env.iter()
-                .filter(|(k, _)| !exclusions.contains(*k) && matcher.match_any(k))
-                .map(|(_, v)| v.clone())
-                .collect::<Vec<_>>()
-        });
+        let new_redactions: Vec<String> = redactions
+            .into_iter()
+            .flat_map(|pattern| {
+                let matcher = Wildcard::new(vec![pattern]);
+                env.iter()
+                    .filter(|(k, _)| !exclusions.contains(*k) && matcher.match_any(k))
+                    .map(|(_, v)| v.clone())
+                    .collect::<Vec<_>>()
+            })
+            .collect();
+        if new_redactions.iter().any(|v| !v.is_empty()) {
+            CONFIG_REDACTIONS.store(true, std::sync::atomic::Ordering::Relaxed);
+        }
         *r = r.with_additional(new_redactions);
     }
 
@@ -3484,6 +3511,33 @@ pub(crate) fn local_toml_config_path_from_dir(cwd: &Path) -> PathBuf {
         .unwrap_or_else(|| cwd.join(&*env::MISE_DEFAULT_CONFIG_FILENAME))
 }
 
+/// A global configuration section with an optional configured default write target.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GlobalWriteSection {
+    Tools,
+    Packages,
+    Dotfiles,
+}
+
+impl GlobalWriteSection {
+    fn configured_path(self) -> Option<PathBuf> {
+        let targets = &Settings::get().write_targets;
+        match self {
+            Self::Tools => targets.tools.clone(),
+            Self::Packages => targets.packages.clone(),
+            Self::Dotfiles => targets.dotfiles.clone(),
+        }
+    }
+
+    fn setting_name(self) -> &'static str {
+        match self {
+            Self::Tools => "settings.write_targets.tools",
+            Self::Packages => "settings.write_targets.packages",
+            Self::Dotfiles => "settings.write_targets.dotfiles",
+        }
+    }
+}
+
 /// Options for resolving target config file path
 #[derive(Debug, Default)]
 pub struct ConfigPathOptions {
@@ -3493,6 +3547,56 @@ pub struct ConfigPathOptions {
     pub cwd: Option<PathBuf>,
     pub prefer_toml: bool,
     pub prevent_home_local: bool,
+    /// The section whose configured global default may be used.
+    pub global_write_section: Option<GlobalWriteSection>,
+    /// Global config files that already declare the entries being updated.
+    ///
+    /// The caller deliberately supplies only global files and only when no
+    /// explicit `--path` or environment selector was requested. Keeping the
+    /// policy here makes every section use the same precedence rules.
+    pub existing_global_paths: IndexSet<PathBuf>,
+    /// Whether the requested global write also contains a new declaration.
+    ///
+    /// A command cannot safely write an existing declaration and a new one to
+    /// different files in one atomic config edit. Callers set this only for
+    /// section-aware global writes, after checking the requested entries.
+    pub has_new_global_entries: bool,
+}
+
+fn configured_global_write_path(section: GlobalWriteSection) -> Result<Option<PathBuf>> {
+    let Some(path) = section.configured_path() else {
+        return Ok(None);
+    };
+    let path = file::replace_path(&path);
+    if !path.is_absolute() {
+        bail!(
+            "{} must resolve to an absolute path",
+            section.setting_name()
+        );
+    }
+    if path.is_dir() {
+        bail!(
+            "{} must name a config file, not a directory: {}",
+            section.setting_name(),
+            display_path(&path)
+        );
+    }
+    if !is_loadable_global_write_path(&path) {
+        bail!(
+            "{} must name a global config file that mise loads (such as config.toml or conf.d/*.toml): {}",
+            section.setting_name(),
+            display_path(&path)
+        );
+    }
+    Ok(Some(path))
+}
+
+fn is_loadable_global_write_path(path: &Path) -> bool {
+    if let Some(global_config_file) = &*env::MISE_GLOBAL_CONFIG_FILE {
+        return lockfile::same_file_path(global_config_file, path);
+    }
+    let incoming = BTreeSet::from([path.to_path_buf()]);
+    config_set_contains(&config_files_with_incoming(&dirs::CONFIG, &incoming), path)
 }
 
 /// Unified config file path resolution for both `mise use` and `mise set`
@@ -3526,9 +3630,10 @@ pub fn resolve_target_config_path(opts: ConfigPathOptions) -> Result<PathBuf> {
         }
     }
 
-    // If global flag is set and no explicit path provided, use global config
+    // If global flag is set and no explicit path provided, update an existing
+    // declaration in place before considering an opt-in section default.
     if opts.global {
-        return Ok(global_config_path());
+        return resolve_global_write_path(&opts);
     }
 
     // If env-specific config is requested
@@ -3543,7 +3648,7 @@ pub fn resolve_target_config_path(opts: ConfigPathOptions) -> Result<PathBuf> {
 
     // If we're in HOME directory and prevent_home_local is true, use global config
     if opts.prevent_home_local && env::in_home_dir() {
-        return Ok(global_config_path());
+        return resolve_global_write_path(&opts);
     }
 
     // Default: determine based on current directory
@@ -3555,6 +3660,39 @@ pub fn resolve_target_config_path(opts: ConfigPathOptions) -> Result<PathBuf> {
         // For mise use, use existing config_file_from_dir logic which respects ASDF compat
         Ok(config_file_from_dir(&cwd))
     }
+}
+
+fn resolve_global_write_path(opts: &ConfigPathOptions) -> Result<PathBuf> {
+    if let Some(section) = opts.global_write_section {
+        if opts.existing_global_paths.len() > 1 {
+            let paths = opts
+                .existing_global_paths
+                .iter()
+                .map(|path| display_path(path).to_string())
+                .join(", ");
+            bail!(
+                "requested entries are declared in multiple global config files ({paths}); use --path to choose one"
+            );
+        }
+        if let Some(path) = opts.existing_global_paths.first() {
+            if opts.has_new_global_entries {
+                let new_entry_path =
+                    configured_global_write_path(section)?.unwrap_or_else(global_config_path);
+                if !crate::lockfile::same_file_path(path, &new_entry_path) {
+                    bail!(
+                        "requested entries include existing declarations in {} and new declarations for {}; run separate commands or use --path",
+                        display_path(path),
+                        display_path(&new_entry_path),
+                    );
+                }
+            }
+            return Ok(path.clone());
+        }
+        if let Some(path) = configured_global_write_path(section)? {
+            return Ok(path);
+        }
+    }
+    Ok(global_config_path())
 }
 
 /// Whether `err` is the untrusted-config error for a config the user has just
@@ -6788,6 +6926,7 @@ async fn load_task_sources_from_configs(
                 .map(TaskFileArtifact::persistent)
                 .collect()
         };
+        let remote = is_remote_task_include(include).then(|| include.clone());
         for artifact in artifacts {
             let p = artifact.path;
             let mut loaded = load_tasks_includes(
@@ -6805,6 +6944,7 @@ async fn load_task_sources_from_configs(
             )
             .await?;
             for task in &mut loaded {
+                task.remote_include = remote.clone();
                 // Both task kinds are reachable only because some config's
                 // `task_config.includes` named this path, so both answer to that
                 // config's precedence when an inline block claims their name.
@@ -6850,7 +6990,9 @@ fn task_include_requires_trust(path: &Path) -> bool {
     };
     // literal delimiters, plus escaped ones (e.g. `{{`) that decode to
     // templates after TOML parsing and would render at load time
-    contains_template_syntax(&body) || crate::task::file_has_decoded_template(path, &body)
+    contains_template_syntax(&body)
+        || crate::task::file_has_decoded_template(path, &body)
+        || crate::task::file_declares_secrets(path, &body)
 }
 
 async fn load_task_file(
@@ -6863,11 +7005,17 @@ async fn load_task_file(
     mut rendered_file_tasks: Option<&mut RenderedTaskCache>,
 ) -> Result<Vec<Task>> {
     let raw = file::read_to_string_async(path).await?;
+    if crate::secrets::may_name_secrets(&raw)
+        && let Ok(table) = toml::from_str::<toml::Table>(&raw)
+    {
+        crate::secrets::check_toml_locations(crate::secrets::TomlShape::TaskInclude, &table, path)?;
+    }
     let mut tasks = toml::from_str::<Tasks>(&raw)
         .wrap_err_with(|| format!("Error parsing task file: {}", display_path(path)))?
         .0;
     for (name, task) in &mut tasks {
         task.name = name.clone();
+        task.record_late_secret_env(path)?;
         task.config_source = path.to_path_buf();
         task.config_root = Some(config_root.to_path_buf());
         task.is_toml_include = true;
@@ -9444,5 +9592,85 @@ mod write_target_tests {
             first_config_file(&only),
             Some(&PathBuf::from("/proj/.tool-versions"))
         );
+    }
+
+    #[test]
+    fn global_section_updates_its_single_existing_file() {
+        let existing = PathBuf::from("/home/u/.config/mise/conf.d/10-tools.toml");
+        let resolved = resolve_target_config_path(ConfigPathOptions {
+            global: true,
+            global_write_section: Some(GlobalWriteSection::Tools),
+            existing_global_paths: IndexSet::from_iter([existing.clone()]),
+            ..Default::default()
+        })
+        .unwrap();
+
+        assert_eq!(resolved, existing);
+    }
+
+    #[test]
+    fn global_section_requires_an_explicit_path_for_ambiguous_existing_entries() {
+        let err = resolve_target_config_path(ConfigPathOptions {
+            global: true,
+            global_write_section: Some(GlobalWriteSection::Packages),
+            existing_global_paths: IndexSet::from_iter([
+                PathBuf::from("/home/u/.config/mise/conf.d/10-packages.toml"),
+                PathBuf::from("/home/u/.config/mise/conf.d/20-packages.toml"),
+            ]),
+            ..Default::default()
+        })
+        .unwrap_err();
+
+        assert!(err.to_string().contains("use --path to choose one"));
+    }
+
+    #[test]
+    fn global_section_requires_separate_commands_for_existing_and_new_entries_with_different_targets()
+     {
+        let err = resolve_target_config_path(ConfigPathOptions {
+            global: true,
+            global_write_section: Some(GlobalWriteSection::Tools),
+            existing_global_paths: IndexSet::from_iter([PathBuf::from(
+                "/home/u/.config/mise/conf.d/legacy-tools.toml",
+            )]),
+            has_new_global_entries: true,
+            ..Default::default()
+        })
+        .unwrap_err();
+
+        assert!(err.to_string().contains("run separate commands"));
+    }
+
+    #[test]
+    fn explicit_global_path_wins_over_section_defaults_and_existing_entries() {
+        let explicit = PathBuf::from("/tmp/explicit-tools.toml");
+        let resolved = resolve_target_config_path(ConfigPathOptions {
+            global: true,
+            path: Some(explicit.clone()),
+            global_write_section: Some(GlobalWriteSection::Tools),
+            existing_global_paths: IndexSet::from_iter([PathBuf::from(
+                "/home/u/.config/mise/conf.d/10-tools.toml",
+            )]),
+            ..Default::default()
+        })
+        .unwrap();
+
+        assert_eq!(resolved, explicit.absolutize().unwrap().to_path_buf());
+    }
+
+    #[test]
+    fn global_section_targets_must_be_discoverable() {
+        let temp = tempfile::tempdir().unwrap();
+        let config_root = temp.path().join("mise");
+        let fragment = config_root.join("conf.d/10-tools.toml");
+
+        let incoming = BTreeSet::from([fragment.clone()]);
+        let discovered = config_files_with_incoming(&config_root, &incoming);
+        assert!(config_set_contains(&discovered, &fragment));
+
+        let ignored = config_root.join("tools.toml");
+        let incoming = BTreeSet::from([ignored.clone()]);
+        let discovered = config_files_with_incoming(&config_root, &incoming);
+        assert!(!config_set_contains(&discovered, &ignored));
     }
 }

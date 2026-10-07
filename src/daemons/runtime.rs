@@ -7,7 +7,7 @@ use crate::env_diff::EnvMap;
 use crate::toolset::{ToolRequest, ToolSource, Toolset, ToolsetBuilder};
 use eyre::{Result, bail};
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -18,6 +18,34 @@ use tokio::process::Command;
 /// higher-precedence file replaces the whole daemon, so the other keys are
 /// repeated there.
 const PIN_A_PORT: &str = "declare the daemon again in a gitignored mise.local.toml with a fixed `port = <n>`, or with `port = { auto = true, base = <n> }` to move its range. That declaration replaces the whole daemon, so repeat its other keys.";
+
+/// Names a nested mise withholds from pitchfork: the secrets it inherited and
+/// the marker that names them.
+fn inherited_secret_env_names() -> Vec<&'static str> {
+    if mise_util::env::INHERITED_SECRET_KEYS.is_empty() {
+        return vec![];
+    }
+    mise_util::env::INHERITED_SECRET_KEYS
+        .iter()
+        .map(String::as_str)
+        .chain([mise_util::env::SECRET_KEYS_MARKER])
+        .collect()
+}
+
+/// Keep a nested mise from starting a pitchfork supervisor, and so every later
+/// daemon and probe, with the parent's secrets.
+fn strip_inherited_secrets(command: &mut Command, keys: &BTreeSet<String>) {
+    if keys.is_empty() {
+        return;
+    }
+    for k in keys
+        .iter()
+        .map(String::as_str)
+        .chain([mise_util::env::SECRET_KEYS_MARKER])
+    {
+        command.env_remove(k);
+    }
+}
 
 /// Whether something already listens on this loopback port, on either family.
 /// Binding is what a daemon would do next, so a failure to bind is the same
@@ -484,6 +512,7 @@ impl Runtime {
             .env_remove("PITCHFORK_CONFIG")
             .current_dir(root)
             .kill_on_drop(true);
+        strip_inherited_secrets(&mut command, &mise_util::env::INHERITED_SECRET_KEYS);
         Ok(tokio::time::timeout(Duration::from_secs(15), command.output()).await??)
     }
 
@@ -881,6 +910,9 @@ impl Runtime {
             .env_remove("PITCHFORK_CONFIG")
             .current_dir(root)
             .raw(true);
+        for k in inherited_secret_env_names() {
+            runner = runner.env_remove(k);
+        }
         runner.with_pass_signals();
         match runner.execute_async().await {
             Err(err) => match crate::errors::ProcessError::get_exit_status(&err) {
@@ -1309,6 +1341,18 @@ mod tests {
             port_origin(&claim(3007)),
             "the base offset by this worktree's path"
         );
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn inherited_secrets_are_removed_from_the_pitchfork_command() {
+        let mut command = Command::new("/usr/bin/env");
+        command.env("FOO", "secret").env("KEEP", "x");
+        strip_inherited_secrets(&mut command, &BTreeSet::from(["FOO".to_string()]));
+        let out = command.output().await.unwrap();
+        let out = String::from_utf8_lossy(&out.stdout);
+        assert!(!out.lines().any(|l| l.starts_with("FOO=")));
+        assert!(out.lines().any(|l| l == "KEEP=x"));
     }
 
     /// A failing pitchfork has already explained itself on the terminal, so the

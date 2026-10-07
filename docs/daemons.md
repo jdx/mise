@@ -145,7 +145,8 @@ task asking for everything never reaches into a referenced project.
 Daemon startup is part of dependency handling: `--skip-deps` and the
 `task.skip_depends` setting skip it. `--dry-run` validates daemon names and the
 experimental setting, and reports what would start without starting anything.
-Safe mode blocks task daemon startup.
+Safe mode blocks task daemon startup. A task that lists
+[`secrets`](/tasks/task-configuration.html#secrets) does not run as a task daemon in this version.
 
 See the [`daemons` task option](/tasks/task-configuration.html#daemons) for all
 accepted values. Use `mise tasks info <task>` to inspect a task's daemon requirements.

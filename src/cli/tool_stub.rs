@@ -356,6 +356,7 @@ async fn execute_with_tool_request(
                 env_remove,
                 &Default::default(),
                 false,
+                &[],
             )
             .await
         }
@@ -499,6 +500,7 @@ pub(crate) async fn short_circuit_stub(args: &[String]) -> Result<()> {
             Default::default(),
             &Default::default(),
             false,
+            &[],
         )
         .await;
     }

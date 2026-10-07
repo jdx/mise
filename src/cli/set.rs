@@ -403,6 +403,7 @@ impl Set {
             cwd: None,                // Use current working directory
             prefer_toml: true,        // mise set only works with TOML files
             prevent_home_local: true, // When in HOME, use global config
+            ..Default::default()
         };
         resolve_target_config_path(opts)
     }

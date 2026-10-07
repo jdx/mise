@@ -895,6 +895,15 @@ Run tasks and their dependencies
 \fBsearch\fR
 Search for available tools
 .TP
+\fBsecrets\fR
+[experimental] List the secret names this project's secrets source provides, without their values
+.TP
+\fBsecrets ls\fR
+List the secret names this project's secrets source provides, without their values
+.RS
+\fIAliases: \fRlist
+.RE
+.TP
 \fBself\-update\fR
 Update mise itself
 .TP
@@ -5460,6 +5469,12 @@ Skip automatic dependency preparation
 \fB\-\-raw\fR
 Connect backend install command stdin/stdout/stderr directly to the terminal. Implies `\-\-jobs=1`
 .TP
+\fB\-\-secrets\fR \fI<SECRET>\fR
+Give the command these secrets (comma\-separated); by default it gets none
+.TP
+\fB\-\-secrets\-all\fR
+Give the command every secret the project can inject, except file secrets
+.TP
 \fB\-h, \-\-help\fR
 Print help
 \fBArguments:\fR
@@ -5483,6 +5498,12 @@ Specify command as a string:
 .PP
 .RS 4
 mise exec node@20 python@3.11 \-\-command "node \-v && python \-V"
+.RE
+.PP
+Give the command the GH_TOKEN secret from the project's secrets source. Without a flag it gets none.
+.PP
+.RS 4
+mise x \-\-secrets GH_TOKEN \-\- gh release list
 .RE
 .PP
 Run a command in a different directory:
@@ -7860,6 +7881,14 @@ Read/write directly to stdin/stdout/stderr instead of by line
 Redactions are not applied with this option
 Configure with `raw` config or `MISE_RAW` env var
 .TP
+\fB\-\-secrets\fR \fI<SECRET>\fR
+Give the tasks named on the command line these secrets (comma\-separated)
+Their dependencies and subtasks do not receive them. Put this flag before the task name.
+.TP
+\fB\-\-secrets\-all\fR
+Give the tasks named on the command line every secret the project can inject
+(fnox env = true or "exec"; never env = false). Dependencies and subtasks do not receive them.
+.TP
 \fB\-s, \-\-shell\fR \fI<SHELL>\fR
 Shell to use to run toml tasks
 
@@ -7988,6 +8017,12 @@ Run "test" with stdin/stdout/stderr all connected to the current terminal. This 
 mise run \-\-raw test
 .RE
 .PP
+Give the "deploy" task the DEPLOY_KEY secret from the project's secrets source. Its dependencies do not receive it.
+.PP
+.RS 4
+mise run \-\-secrets DEPLOY_KEY deploy
+.RE
+.PP
 Run the "lint", "test", and "check" tasks in parallel.
 .PP
 .RS 4
@@ -8075,6 +8110,54 @@ Search a tool
   gojq  Pure Go implementation of jq. https://github.com/itchyny/gojq
 /jq
 esc clear filter • enter confirm
+.RE
+.SH "MISE SECRETS"
+[experimental] List the secret names this project's secrets source provides, without their values
+.PP
+\fBUsage:\fR mise secrets [OPTIONS] [COMMAND]
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-J, \-\-json\fR
+Output in JSON format
+.TP
+\fB\-\-no\-header\fR
+Don't show table header
+.TP
+\fB\-h, \-\-help\fR
+Print help
+.SH "MISE SECRETS LS"
+List the secret names this project's secrets source provides, without their values
+
+Shows names and metadata only; values are never shown. The source is declared in the
+project's `mise.toml` with `[secrets.fnox]`.
+.PP
+\fBUsage:\fR mise secrets ls [OPTIONS]
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-J, \-\-json\fR
+Output in JSON format
+.TP
+\fB\-\-no\-header\fR
+Don't show table header
+.TP
+\fB\-\-complete\fR
+Render completions: the injectable key names, one per line
+.TP
+\fB\-h, \-\-help\fR
+Print help
+\fBExamples:\fR
+.PP
+.PP
+.RS 4
+mise secrets ls
+KEY                ENV    FILE  SCOPES  TASKS   DESCRIPTION
+DATABASE_URL       true   no    run, exec  deploy  app database
+GCP_SA_JSON        exec   yes   run               service account
+SIGNING_KEY        false  no    \-                 release signing key
 .RE
 .SH "MISE SELF-UPDATE"
 Update mise itself
@@ -9305,6 +9388,14 @@ Read/write directly to stdin/stdout/stderr instead of by line
 Redactions are not applied with this option
 Configure with `raw` config or `MISE_RAW` env var
 .TP
+\fB\-\-secrets\fR \fI<SECRET>\fR
+Give the tasks named on the command line these secrets (comma\-separated)
+Their dependencies and subtasks do not receive them. Put this flag before the task name.
+.TP
+\fB\-\-secrets\-all\fR
+Give the tasks named on the command line every secret the project can inject
+(fnox env = true or "exec"; never env = false). Dependencies and subtasks do not receive them.
+.TP
 \fB\-s, \-\-shell\fR \fI<SHELL>\fR
 Shell to use to run toml tasks
 
@@ -9431,6 +9522,12 @@ Run "test" with stdin/stdout/stderr all connected to the current terminal. This 
 .PP
 .RS 4
 mise run \-\-raw test
+.RE
+.PP
+Give the "deploy" task the DEPLOY_KEY secret from the project's secrets source. Its dependencies do not receive it.
+.PP
+.RS 4
+mise run \-\-secrets DEPLOY_KEY deploy
 .RE
 .PP
 Run the "lint", "test", and "check" tasks in parallel.

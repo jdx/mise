@@ -15,6 +15,7 @@ path = "src/lib.rs"
 async-trait = "0.1"
 base64 = "0.23"
 hex = "0.4"
+log = "0.4"
 regex = "1"
 reqwest = { version = "0.13", default-features = false, features = ["json"] }
 serde = { version = "1", features = ["derive"] }
@@ -35,7 +36,12 @@ rustls-webpki = { version = "0.103", default-features = false, features = [
 rustls-pki-types = "1"
 
 [dev-dependencies]
-tokio = { version = "1", features = ["macros", "rt-multi-thread", "net"] }
+tokio = { version = "1", features = [
+  "macros",
+  "rt-multi-thread",
+  "net",
+  "sync",
+] }
 
 [features]
 default = ["rustls"]

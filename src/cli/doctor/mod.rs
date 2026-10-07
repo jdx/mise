@@ -213,6 +213,8 @@ impl Doctor {
         );
 
         let config = Config::get().await?;
+        self.warnings
+            .extend(crate::secrets::doctor_warnings(&config).await);
         let ts = config.get_toolset().await?;
         let desired_shims = self.analyze_shims(&config, ts).await;
         self.analyze_plugins();
@@ -520,6 +522,8 @@ impl Doctor {
         }
         info::section("backends", render_backends())?;
         info::section("plugins", render_plugins())?;
+        self.warnings
+            .extend(crate::secrets::doctor_warnings(config).await);
 
         for backend in backend::list() {
             if let Some(plugin) = backend.plugin()
@@ -1232,11 +1236,11 @@ impl Doctor {
             };
             // The install state records one backend per tool, so versions installed
             // on either side of a cutover cannot all match it. Only warn when none do.
-            let strip = |full: &str| full.split('[').next().unwrap_or(full).to_string();
-            if recommended
-                .iter()
-                .any(|full| strip(full) == stored_stripped)
-            {
+            // Only a change of backend kind counts; a repo or org rename within one does not.
+            if recommended.iter().any(|full| {
+                let stripped = full.split('[').next().unwrap_or(full);
+                crate::args::same_backend_kind(stripped, stored_stripped)
+            }) {
                 continue;
             }
             let Some(registry_full) = recommended.first() else {

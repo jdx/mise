@@ -1415,6 +1415,12 @@ pub fn initialize(
 mod tests {
     use super::*;
 
+    #[test]
+    fn tool_env_wrapper_never_asks_for_secrets() {
+        // readiness and health probes (`mise x -- sh -c`) get no secrets
+        assert!(!in_tool_env("x").contains("--secrets"));
+    }
+
     fn labels() -> super::super::urls::RootLabels {
         super::super::urls::RootLabels {
             project: Some("shop".into()),

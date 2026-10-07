@@ -922,6 +922,17 @@ pub(crate) fn which_no_shims_spawnable(bin: &str) -> Option<PathBuf> {
     which_in_dirs(dirs, bin, true)
 }
 
+/// [`which_no_shims_spawnable`] over an explicit PATH value instead of the inherited one.
+pub(crate) fn which_in_path_value_no_shims_spawnable(
+    bin: &str,
+    path: &std::ffi::OsStr,
+) -> Option<PathBuf> {
+    let dirs = std::env::split_paths(path)
+        .filter(|p| !file::is_mise_dispatch_dir(p))
+        .collect::<Vec<_>>();
+    which_in_dirs(dirs, bin, true)
+}
+
 pub(crate) async fn configured_toolset_or_path_which(
     config: &Arc<Config>,
     tools: impl IntoIterator<Item = String>,
@@ -1124,6 +1135,27 @@ mod tests {
                 "{name} should still satisfy the permissive predicate"
             );
         }
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn which_in_path_value_finds_a_binary_on_the_given_path() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = tempfile::tempdir().unwrap();
+        let bin = dir.path().join("fnox-fixture");
+        fs::write(&bin, "#!/bin/sh\nexit 0\n").unwrap();
+        fs::set_permissions(&bin, fs::Permissions::from_mode(0o755)).unwrap();
+        let other = tempfile::tempdir().unwrap();
+        let path = std::env::join_paths([other.path(), dir.path()]).unwrap();
+        assert_eq!(
+            which_in_path_value_no_shims_spawnable("fnox-fixture", &path),
+            Some(bin)
+        );
+        assert_eq!(
+            which_in_path_value_no_shims_spawnable("fnox-fixture", other.path().as_os_str()),
+            None
+        );
     }
 
     #[test]

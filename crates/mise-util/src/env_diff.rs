@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::ffi::OsString;
 use std::fmt::Debug;
 use std::io::prelude::*;
@@ -238,16 +238,28 @@ impl EnvDiff {
     /// not duplicated as plaintext in a variable every child process inherits.
     /// `old` stays as-is because restoring the environment needs those values.
     pub fn serialize(&self) -> Result<String> {
+        self.serialize_excluding(&crate::env::INHERITED_SECRET_KEYS)
+    }
+
+    /// Like [`Self::serialize`], but drops `old` entries for `exclude`d keys so
+    /// an inherited secret is never written in plaintext. Leaving a directory
+    /// then unsets such a key instead of restoring it, which fails closed.
+    pub fn serialize_excluding(&self, exclude: &BTreeSet<String>) -> Result<String> {
         #[derive(Serialize)]
         struct Wire<'a> {
             v: u32,
-            old: &'a IndexMap<String, String>,
+            old: IndexMap<&'a str, &'a str>,
             new: IndexMap<&'a str, String>,
             path: &'a [PathBuf],
         }
         let wire = Wire {
             v: ENV_STATE_VERSION,
-            old: &self.old,
+            old: self
+                .old
+                .iter()
+                .filter(|(k, _)| !exclude.iter().any(|e| crate::env::env_key_eq(k, e)))
+                .map(|(k, v)| (k.as_str(), v.as_str()))
+                .collect(),
             new: self
                 .new
                 .iter()
@@ -554,6 +566,40 @@ mod tests {
         assert_eq!(parsed.get("GOOD").map(String::as_str), Some("\"value\""));
         assert_eq!(parsed.get("AFTER").map(String::as_str), Some("\"after\""));
         assert!(!parsed.keys().any(|k| k.starts_with("BASH_FUNC_")));
+    }
+
+    #[test]
+    fn test_serialize_excluding_drops_old_entries_for_excluded_keys() {
+        let diff = EnvDiff {
+            v: ENV_STATE_VERSION,
+            old: [
+                ("SECRET".into(), "inherited-s3cr3t".into()),
+                ("OTHER".into(), "kept".into()),
+            ]
+            .into(),
+            new: [("SECRET".into(), "overridden".into())].into(),
+            path: vec![],
+        };
+        let exclude: BTreeSet<String> = ["SECRET".to_string()].into();
+        let raw = diff.serialize_excluding(&exclude).unwrap();
+        let back = EnvDiff::deserialize(&raw).unwrap();
+        assert!(!back.old.contains_key("SECRET"));
+        assert_eq!(back.old.get("OTHER").map(String::as_str), Some("kept"));
+        assert!(back.new.contains_key("SECRET"));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn test_serialize_excluding_ignores_key_case_on_windows() {
+        let diff = EnvDiff {
+            v: ENV_STATE_VERSION,
+            old: [("Secret".into(), "inherited-s3cr3t".into())].into(),
+            new: IndexMap::new(),
+            path: vec![],
+        };
+        let exclude: BTreeSet<String> = ["SECRET".to_string()].into();
+        let back = EnvDiff::deserialize(&diff.serialize_excluding(&exclude).unwrap()).unwrap();
+        assert!(back.old.is_empty());
     }
 
     #[test]

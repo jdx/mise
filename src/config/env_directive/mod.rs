@@ -256,6 +256,9 @@ pub struct EnvResults {
     /// directives yield to a value the caller already set. Redaction resolves these keys
     /// against the caller environment; only names are recorded, never values.
     pub caller_env_keys: BTreeSet<String>,
+    /// Keys whose `default` directive rendered, as opposed to yielding to a value already
+    /// present. Names only.
+    pub rendered_defaults: BTreeSet<String>,
     pub tool_add_paths: Vec<PathBuf>,
     /// Files to watch for cache invalidation (from modules and _.source directives)
     pub watch_files: Vec<PathBuf>,
@@ -559,6 +562,7 @@ impl EnvResults {
                     }
 
                     r.track_redaction_override(&k, redact);
+                    r.rendered_defaults.insert(k.clone());
                     let v = r.parse_template(&ctx, &mut tera, &source, &env_vars, &k, &v)?;
 
                     if resolve_opts.vars {

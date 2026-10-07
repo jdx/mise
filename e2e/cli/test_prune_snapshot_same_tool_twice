@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+# Two templated versions of one tool are each recorded once, and both are kept.
+export MISE_EXPERIMENTAL=1
+export MISE_INSTALL_LAYOUT=identity
+
+mkdir -p project/child elsewhere
+echo '[vars]
+a = "1.0.0"
+b = "2.0.0"' >project/mise.toml
+echo '[tools]
+dummy = ["{{vars.a}}", "{{vars.b}}"]' >project/child/mise.toml
+assert "mise -C project/child install"
+assert "mise install dummy@3.0.0"
+
+assert "mise -C elsewhere ls --prunable --json >prunable.json"
+assert "jq -e '[.dummy[].version] == [\"3.0.0\"]' prunable.json"
+assert "cat $MISE_DATA_DIR/installs/.mise/snapshots/*.toml | grep -c 'backend = \"dummy\"'" "2"

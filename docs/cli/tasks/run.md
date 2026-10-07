@@ -68,6 +68,10 @@ arguments, caching, and dependency configuration.
 - **`-r --raw`** — Read/write directly to stdin/stdout/stderr instead of by line
   Redactions are not applied with this option
   Configure with `raw` config or `MISE_RAW` env var
+- **`--secrets <SECRET>`** — Give the tasks named on the command line these secrets (comma-separated)
+  Their dependencies and subtasks do not receive them. Put this flag before the task name.
+- **`--secrets-all`** — Give the tasks named on the command line every secret the project can inject
+  (fnox env = true or "exec"; never env = false). Dependencies and subtasks do not receive them.
 - **`-s --shell <SHELL>`** — Shell to use to run toml tasks
 
   Defaults to `sh -o errexit -c` on unix, and `cmd /c` on Windows
@@ -142,6 +146,12 @@ Run "test" with stdin/stdout/stderr all connected to the current terminal. This 
 
 ```
 mise run --raw test
+```
+
+Give the "deploy" task the DEPLOY_KEY secret from the project's secrets source. Its dependencies do not receive it.
+
+```
+mise run --secrets DEPLOY_KEY deploy
 ```
 
 Run the "lint", "test", and "check" tasks in parallel.

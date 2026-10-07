@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+# One snapshot per config and context: using the project with other inputs replaces
+# it, so the version the earlier inputs rendered to is no longer protected.
+export MISE_EXPERIMENTAL=1
+export MISE_INSTALL_LAYOUT=identity
+
+mkdir -p project elsewhere
+echo '[tools]
+dummy = "{{env.PRUNE_VERSION}}"' >project/mise.toml
+assert "PRUNE_VERSION=1.0.0 mise -C project install"
+assert "mise -C elsewhere ls --prunable --json >prunable.json"
+assert "jq -e 'has(\"dummy\") | not' prunable.json"
+
+assert "PRUNE_VERSION=2.0.0 mise -C project install"
+assert "mise -C elsewhere ls --prunable --json >prunable.json"
+assert "jq -e '[.dummy[].version] == [\"1.0.0\"]' prunable.json"
+
+# A different environment is a different context with its own snapshot.
+assert "MISE_ENV=prod PRUNE_VERSION=1.0.0 mise -C project install"
+assert "mise -C elsewhere ls --prunable --json >prunable.json"
+assert "jq -e 'has(\"dummy\") | not' prunable.json"

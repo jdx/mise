@@ -33,12 +33,12 @@ which updates managed tools.
 For installations that support `mise self-update`, automatic updates can be enabled globally:
 
 ```sh
-mise settings auto_update=true
+mise settings self_update.auto=true
 ```
 
 mise then periodically checks before eligible interactive commands, installs a newer release without
 updating plugins, and re-runs the original command with the new binary. Configure the interval with
-[`auto_update_check_duration`](/configuration/settings.html#auto_update_check_duration).
+[`self_update.check_duration`](/configuration/settings.html#self_update.check_duration).
 
 For releases from v2026.9.3 onward, self-update also verifies the release's
 [packslip](https://packslip.dev): its signed archive digest, version, release

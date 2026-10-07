@@ -69,6 +69,8 @@ pub(crate) async fn handle_shim() -> Result<()> {
         allow_write: vec![],
         allow_net: vec![],
         allow_env: vec![],
+        secrets: vec![],
+        secrets_all: false,
     };
     time!("shim exec");
     if let Some(wrapper) = wrapper {

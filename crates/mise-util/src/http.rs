@@ -34,6 +34,20 @@ pub static HTTP: Lazy<Client> = Lazy::new(|| {
     )
 });
 
+/// HTTP client for streaming request bodies that can take longer than
+/// `http_timeout` to transmit.
+///
+/// It keeps HTTP's connection timeout and redirect policy but omits reqwest's
+/// read timeout. Reqwest starts that timer before a streaming request body has
+/// finished sending, so applying it here would abort a healthy slow upload
+/// before the server can send its response.
+pub static HTTP_UPLOAD: Lazy<Client> = Lazy::new(|| {
+    Client::new_shared_without_read_timeout(
+        crate::network::http_timeout(&Settings::get()),
+        ClientKind::Http,
+    )
+});
+
 pub static HTTP_FETCH: Lazy<Client> = Lazy::new(|| {
     Client::new_shared(
         crate::network::configured_fetch_remote_versions_timeout(&Settings::get()),
@@ -736,7 +750,12 @@ impl Client {
     #[doc(hidden)]
     pub fn new(timeout: Duration, kind: ClientKind) -> Result<Self> {
         Ok(Self {
-            reqwest: Ok(Self::build(timeout, kind, Downgrade::Refuse)?),
+            reqwest: Ok(Self::build(
+                timeout,
+                kind,
+                Downgrade::Refuse,
+                Some(timeout),
+            )?),
             manual_redirects: Default::default(),
             timeout,
             kind,
@@ -747,17 +766,37 @@ impl Client {
         Self::new_shared_with(timeout, kind, Downgrade::Refuse)
     }
 
-    fn new_shared_with(timeout: Duration, kind: ClientKind, downgrade: Downgrade) -> Self {
+    fn new_shared_without_read_timeout(timeout: Duration, kind: ClientKind) -> Self {
         Self {
-            reqwest: Self::build(timeout, kind, downgrade).map_err(|err| format!("{err:#}")),
+            reqwest: Self::build(timeout, kind, Downgrade::Refuse, None)
+                .map_err(|err| format!("{err:#}")),
             manual_redirects: Default::default(),
             timeout,
             kind,
         }
     }
 
-    fn build(timeout: Duration, kind: ClientKind, downgrade: Downgrade) -> Result<reqwest::Client> {
-        let builder = Self::_new().read_timeout(timeout).connect_timeout(timeout);
+    fn new_shared_with(timeout: Duration, kind: ClientKind, downgrade: Downgrade) -> Self {
+        Self {
+            reqwest: Self::build(timeout, kind, downgrade, Some(timeout))
+                .map_err(|err| format!("{err:#}")),
+            manual_redirects: Default::default(),
+            timeout,
+            kind,
+        }
+    }
+
+    fn build(
+        timeout: Duration,
+        kind: ClientKind,
+        downgrade: Downgrade,
+        read_timeout: Option<Duration>,
+    ) -> Result<reqwest::Client> {
+        let builder = Self::_new().connect_timeout(timeout);
+        let builder = match read_timeout {
+            Some(read_timeout) => builder.read_timeout(read_timeout),
+            None => builder,
+        };
         // Applied to every kind rather than per match arm, so no client can be
         // added — or edited back — into existence without it. Downloads are
         // checksum-verified where a checksum is known, but not every caller has
@@ -2688,6 +2727,11 @@ pub fn is_transient(err: &Report) -> bool {
     }
     err.chain().any(|e| {
         if e.downcast_ref::<DownloadSizeMismatch>().is_some() {
+            return true;
+        }
+        if e.downcast_ref::<std::io::Error>()
+            .is_some_and(|err| err.kind() == std::io::ErrorKind::TimedOut)
+        {
             return true;
         }
         // GitHub answers a rate limit with 403, which the status check below

@@ -189,6 +189,10 @@ pub async fn auto_prune() -> Result<()> {
         return Ok(());
     }
 
+    // This cleanup builds the current directory's toolset from whatever
+    // environment the command that triggered it runs in. That is not a use of the
+    // project, and recording it would replace what the project's snapshots say.
+    let _suspended = crate::install_layout::snapshots::suspend();
     let config = Config::get().await?;
     let prunable = crate::toolset::prunable_tools(&config, Vec::<&BackendArg>::new()).await?;
     let prunable_by_path = prunable
@@ -294,10 +298,15 @@ pub async fn auto_prune() -> Result<()> {
     if install_state_changed {
         let reconcile = async {
             let config = Config::reset().await?;
-            let ts = config.get_toolset().await?;
+            // Resolved here and not through `get_toolset`, which would cache a
+            // toolset on the config that nothing recorded, and the rest of the
+            // command would reuse it instead of resolving (and recording) its own.
+            let mut ts =
+                crate::toolset::Toolset::from(config.get_tool_request_set().await?.clone());
+            ts.resolve(&config).await?;
             crate::config::rebuild_shims_and_runtime_symlinks(
                 &config,
-                ts,
+                &ts,
                 &[],
                 crate::lockfile::LockfileUpdateMode::Normal,
             )

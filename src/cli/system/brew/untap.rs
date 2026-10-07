@@ -43,6 +43,7 @@ impl SystemBrewUntap {
             cwd: None,
             prefer_toml: true,
             prevent_home_local: true,
+            ..Default::default()
         })?;
         if self.dry_run {
             for tap in &self.taps {

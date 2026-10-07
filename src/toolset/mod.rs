@@ -155,6 +155,9 @@ impl Toolset {
             })
             .flatten();
         self.list_missing_plugins();
+        let begun = crate::install_layout::resolver::enabled()
+            .then(|| crate::install_layout::snapshots::begin(config))
+            .flatten();
         let versions = self
             .versions
             .clone()
@@ -192,6 +195,9 @@ impl Toolset {
         )
         .await?;
         self.versions = tvls.into_iter().collect();
+        if let Some(begun) = begun {
+            crate::install_layout::snapshots::observe(config, &self.versions, begun);
+        }
         if let Some(progress) = progress.as_mut() {
             progress.finish(vec![]);
         }
@@ -1010,7 +1016,29 @@ pub async fn get_versions_needed_by_tracked_configs_excluding_locks(
                 ),
             }
         }
-        let mut requests = cf.to_tool_request_set()?;
+        // The identity layout snapshots what a config's templated versions render
+        // to where the project is used; a global prune cannot render them the way
+        // the project does, so it reads the snapshot. With no current snapshot it
+        // keeps every installation of those tools until the project is used again.
+        let mut requests =
+            if crate::install_layout::resolver::enabled() && cf.has_templated_tool_versions() {
+                let mut requests = cf.to_tool_request_set_skipping_templated()?;
+                let current = crate::install_layout::snapshots::current(&path, &cf.source());
+                for request in current.requests {
+                    requests.add_version(request, &cf.source());
+                }
+                if current.keep_all {
+                    for short in cf.templated_tool_backends() {
+                        keep_every_installation(&short, &path, &mut needed);
+                    }
+                }
+                for short in &current.keep_tools {
+                    keep_every_installation(short, &path, &mut needed);
+                }
+                requests
+            } else {
+                cf.to_tool_request_set()?
+            };
         let files = [(path.clone(), cf.clone())].into_iter().collect();
         crate::daemons::load(&files)?.add_tool_requests(&mut requests)?;
         let mut ts = Toolset::from(requests);
@@ -1098,6 +1126,9 @@ pub async fn prunable_tools_with_sources(
     config: &Arc<Config>,
     tools: Vec<&BackendArg>,
 ) -> Result<PrunableTools> {
+    // Resolving the toolset of this directory inspects it from the environment
+    // prune runs in; it must not replace what the project's snapshots say.
+    let _suspended = crate::install_layout::snapshots::suspend();
     let ts = ToolsetBuilder::new().build(config).await?;
     let mut to_delete = ts
         .list_installed_versions(config)
@@ -1115,6 +1146,9 @@ pub async fn prunable_tools_with_sources(
     if !tools.is_empty() {
         to_delete.retain(|_, (_, tv)| tools.contains(&tv.ba()));
     }
+
+    // Tools the user excluded from pruning are never candidates.
+    to_delete.retain(|_, (_, tv)| !is_excluded_from_pruning(tv.ba()));
 
     // Remove versions that are still needed by tracked configs
     let mut needed = get_versions_needed_by_tracked_configs(config, true, true).await?;
@@ -1163,6 +1197,41 @@ async fn is_version_satisfied(
     }
 }
 
+/// Keep every installed version of a tool for `source`, for a config whose
+/// templated versions of it cannot be told apart.
+fn keep_every_installation(short: &str, source: &Path, needed: &mut NeededVersions) {
+    let ba = crate::args::BackendArg::from(short);
+    if let Some(backend) = backend::get(&ba) {
+        for v in backend.list_installed_versions() {
+            needed
+                .entry((ba.short.clone(), v))
+                .or_default()
+                .insert(source.to_path_buf());
+        }
+    }
+    for (_, dir) in crate::install_layout::resolver::installs_of(&ba) {
+        if let Some(dir) = crate::install_layout::resolver::dir_name_of(&dir) {
+            needed
+                .entry((String::new(), dir))
+                .or_default()
+                .insert(source.to_path_buf());
+        }
+    }
+}
+
+/// Whether `ba` is one of the tools named in `prune.exclude`.
+pub fn is_excluded_from_pruning(ba: &BackendArg) -> bool {
+    is_named_in(&Settings::get().prune.exclude, ba)
+}
+
+/// A short name and its full backend name are the same tool.
+fn is_named_in(names: &std::collections::BTreeSet<String>, ba: &BackendArg) -> bool {
+    names.iter().any(|name| {
+        let named = BackendArg::from(name.as_str());
+        named == *ba || named.full_without_opts() == ba.full_without_opts()
+    })
+}
+
 fn collect_needed_versions(
     ts: &Toolset,
     offline: bool,
@@ -1209,6 +1278,36 @@ mod tests {
     use crate::args::BackendArg;
     use crate::backend::arg_to_backend;
     use crate::toolset::{ToolRequest, ToolSource, ToolVersion};
+
+    #[test]
+    fn test_prune_exclude_matches_short_and_full_names() {
+        let names = ["node", "aqua:BurntSushi/ripgrep"]
+            .into_iter()
+            .map(String::from)
+            .collect();
+        assert!(is_named_in(&names, &BackendArg::from("node")));
+        assert!(is_named_in(&names, &BackendArg::from("core:node")));
+        assert!(is_named_in(
+            &names,
+            &BackendArg::from("aqua:BurntSushi/ripgrep")
+        ));
+        assert!(is_named_in(&names, &BackendArg::from("ripgrep")));
+        assert!(!is_named_in(&names, &BackendArg::from("python")));
+        assert!(!is_named_in(&names, &BackendArg::from("aqua:junegunn/fzf")));
+        // A different short name and stored inline options reach the comparison of
+        // full backend names, which must ignore the options.
+        let aliased = BackendArg::new(
+            "ripgrep".into(),
+            Some("aqua:BurntSushi/ripgrep[bin=rg]".into()),
+        );
+        assert!(is_named_in(&names, &aliased));
+        // Inline options do not make it another tool.
+        assert!(is_named_in(
+            &names,
+            &BackendArg::from("aqua:BurntSushi/ripgrep[bin=rg]")
+        ));
+        assert!(is_named_in(&names, &BackendArg::from("ripgrep[bin=rg]")));
+    }
 
     #[tokio::test]
     async fn test_sort_by_overrides() {

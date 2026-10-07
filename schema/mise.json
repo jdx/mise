@@ -717,14 +717,14 @@
           }
         },
         "auto_update": {
-          "default": false,
-          "description": "Automatically update mise before running eligible commands.",
-          "type": "boolean"
+          "description": "[deprecated] Use `self_update.auto` instead.",
+          "type": "boolean",
+          "deprecated": true
         },
         "auto_update_check_duration": {
-          "default": "7d",
-          "description": "How often to check for a new mise release when auto-update is enabled.",
-          "type": "string"
+          "description": "[deprecated] Use `self_update.check_duration` instead.",
+          "type": "string",
+          "deprecated": true
         },
         "cache_prune_age": {
           "default": "30d",
@@ -1719,6 +1719,20 @@
           "description": "Fail when provenance API checks cannot be completed.",
           "type": "boolean"
         },
+        "prune": {
+          "type": "object",
+          "unevaluatedProperties": false,
+          "properties": {
+            "exclude": {
+              "default": [],
+              "description": "Tools that `mise prune` never removes, such as `node` or `aqua:BurntSushi/ripgrep`.",
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        },
         "pypi": {
           "type": "object",
           "unevaluatedProperties": false,
@@ -1953,6 +1967,16 @@
             "api_url": {
               "default": "https://api.github.com",
               "description": "GitHub API base URL used by `mise self-update`.",
+              "type": "string"
+            },
+            "auto": {
+              "default": false,
+              "description": "Automatically update mise before running eligible commands.",
+              "type": "boolean"
+            },
+            "check_duration": {
+              "default": "7d",
+              "description": "How often to check for a new mise release when `self_update.auto` is enabled.",
               "type": "string"
             },
             "minimum_release_age": {
@@ -2496,6 +2520,24 @@
           "default": "exe",
           "description": "Shim file mode for Windows. Options: `exe`, `file`, `hardlink`, `symlink`.",
           "type": "string"
+        },
+        "write_targets": {
+          "type": "object",
+          "unevaluatedProperties": false,
+          "properties": {
+            "dotfiles": {
+              "description": "Global config file to create new [dotfiles] entries in. Existing entries stay in the config file that already declares them.",
+              "type": "string"
+            },
+            "packages": {
+              "description": "Global config file to create new [bootstrap.packages] entries in. Existing entries stay in the config file that already declares them.",
+              "type": "string"
+            },
+            "tools": {
+              "description": "Global config file to create new [tools] entries in. Existing entries stay in the config file that already declares them.",
+              "type": "string"
+            }
+          }
         },
         "yes": {
           "description": "This will automatically answer yes or no to prompts. This is useful for scripting.",
@@ -5616,6 +5658,22 @@
             "type": "string"
           },
           "type": "array"
+        },
+        "secrets": {
+          "description": "[experimental] Secret keys this task receives when it starts, e.g. [\"DEPLOY_KEY\"]. Dependencies do not inherit them. See `mise secrets ls`.",
+          "oneOf": [
+            {
+              "type": "string",
+              "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+              }
+            }
+          ]
         }
       },
       "type": "object"
@@ -5632,7 +5690,8 @@
             "interactive": false,
             "quiet": false,
             "raw": false,
-            "raw_args": false
+            "raw_args": false,
+            "secrets": false
           }
         }
       ],
@@ -5987,6 +6046,23 @@
           }
         }
       ]
+    },
+    "secrets": {
+      "description": "[experimental] Sources for mise secrets: values resolved only when mise starts a task or `mise x` command that was granted them. Project config only.",
+      "type": "object",
+      "properties": {
+        "fnox": {
+          "description": "Use fnox (fnox.toml discovered from this config's directory). https://mise.jdx.dev/environments/secrets/fnox.html",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "profile": {
+              "type": "string",
+              "description": "fnox profile (fnox -P); defaults to FNOX_PROFILE, then \"default\""
+            }
+          }
+        }
+      }
     },
     "redactions": {
       "description": "env or vars keys to redact from logs",

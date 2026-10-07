@@ -1,5 +1,10 @@
 use super::*;
 
+/// Tests that load the Sigstore public-good TUF root take this lock, and the
+/// test that points the process-global TUF URL at an unreachable host holds
+/// it, so the override can't make another test's fetch fail.
+pub(crate) static TUF_ROOT_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
 fn embedded_sigstore_root() -> TrustedRoot {
     TrustedRoot::from_json(sigstore_verify::trust_root::SIGSTORE_PRODUCTION_TRUSTED_ROOT)
         .expect("embedded production trusted_root.json parses")
@@ -12,6 +17,7 @@ const GENUINE_INTOTO_ENVELOPE: &str = include_str!("../../tests/fixtures/sops_v3
 
 mod certificate;
 mod cosign;
+mod github;
 mod retry;
 mod slsa;
 mod trust;

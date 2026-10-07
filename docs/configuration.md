@@ -210,6 +210,8 @@ sharing the same config root; it is not merged into invocation-wide settings
 locked = true
 ```
 
+**Secrets sources** (`[secrets.*]`): The nearest project file wins per field; ignored in global config
+
 **Environment Variables** (`[env]`): Additive with overrides
 
 ```toml
@@ -267,6 +269,39 @@ Other commands select files differently:
 
 - [`mise config get`](/cli/config/get) and [`mise config set`](/cli/config/set) default to the **highest-precedence loaded TOML file**, which can be `mise.local.toml`. Use `--file` to choose an existing project file explicitly.
 - [`mise unuse`](/cli/unuse) defaults to the first loaded config that declares any requested tool. A version-qualified argument matches the literal configured request: `node@20` matches `node = "20"`, not `node = "20.0.0"`. Use `--path` to choose the file.
+
+### Global section write targets
+
+Global configuration can keep tools, bootstrap packages, and dotfiles in separate
+files while still using their normal add commands. Configure an optional destination
+for each section:
+
+```toml [~/.config/mise/config.toml]
+[settings.write_targets]
+tools = "~/.config/mise/conf.d/10-tools.toml"
+packages = "~/.config/mise/conf.d/20-packages.toml"
+dotfiles = "~/.config/mise/conf.d/30-dotfiles.toml"
+```
+
+With these settings, new declarations from `mise use --global`,
+`mise bootstrap packages use --global`, `mise bootstrap packages import --global`,
+and global `mise dot add` go into their respective files. Targets must be absolute
+paths (or begin with `~/`) and name a
+file that mise loads from the global config root: `config.toml`, `mise.toml`, or
+a supported `conf.d` fragment such as `conf.d/10-tools.toml`. A path like
+`~/.config/mise/tools.toml` is not loaded automatically and is rejected.
+
+Existing declarations are not migrated: updating an existing global tool or package
+keeps it in the global file that already declares it, and `mise dot add` continues to
+capture an existing dotfile into its configured source. If one command asks to update
+entries found in more than one global file, mise stops and asks you to use `--path`
+rather than guessing which file should receive the combined update.
+
+`--path` always chooses its explicit target. These defaults do not affect local or
+environment-specific writes, so `mise use --env staging` and
+`mise bootstrap packages use --env staging` continue to write the selected project
+environment file. When a section target is unset, global writes keep using the normal
+global config target.
 
 ### `[tools]` - Dev tools
 
@@ -326,6 +361,13 @@ root's tools to resolve and install from their lockfiles. See [mise.lock](/dev-t
 ### `[env]` - Arbitrary Environment Variables
 
 See [environments](/environments/).
+
+### `[secrets.*]` - Secrets sources {#secrets}
+
+<Badge type="warning" text="experimental" />
+
+Sources for mise secrets: values resolved only when mise starts a task or `mise x` command that was granted them.
+Project config only, such as `[secrets.fnox]`. See [mise secrets with fnox](/environments/secrets/fnox.html).
 
 ### `[vars]` - Configuration Variables
 
@@ -477,6 +519,8 @@ applies to every directory.
 
 Only a few common settings are shown here. See [Settings](/configuration/settings) for the full
 list and descriptions.
+
+`[secrets.*]` is ignored in global config; see [`[secrets.*]`](#secrets).
 
 ```toml [~/.config/mise/config.toml]
 [tools]

@@ -1,4 +1,5 @@
 use super::*;
+use crate::github::{log_attestation_method_failure, warn_if_trust_root_unreachable};
 
 pub(crate) async fn verify_attestation_bundles(
     attestations: &[Attestation],
@@ -6,7 +7,23 @@ pub(crate) async fn verify_attestation_bundles(
     signer_workflow: Option<&str>,
     trust_roots: &mut TrustRoots,
 ) -> Result<bool> {
+    verify_attestation_bundles_for_artifact(
+        Artifact::from(artifact),
+        attestations,
+        signer_workflow,
+        trust_roots,
+    )
+    .await
+}
+
+pub(crate) async fn verify_attestation_bundles_for_artifact(
+    artifact: Artifact<'_>,
+    attestations: &[Attestation],
+    signer_workflow: Option<&str>,
+    trust_roots: &mut TrustRoots,
+) -> Result<bool> {
     let mut errors = Vec::new();
+    let mut trust_root_failures = 0;
     for attestation in attestations {
         let Some(bundle_value) = &attestation.bundle else {
             continue;
@@ -14,20 +31,31 @@ pub(crate) async fn verify_attestation_bundles(
         let bundle = match serde_json::from_value::<Bundle>(bundle_value.clone()) {
             Ok(bundle) => bundle,
             Err(e) => {
-                errors.push(e.to_string());
+                let error_message = e.to_string();
+                log_attestation_method_failure(&AttestationError::Json(e));
+                errors.push(error_message);
                 continue;
             }
         };
         match verify_bundle_with_trust_roots(
-            Artifact::from(artifact),
+            artifact.clone(),
             &bundle,
             signer_workflow,
             trust_roots,
         )
         .await
         {
-            Ok(()) => return Ok(true),
-            Err(e) => errors.push(e.to_string()),
+            Ok(()) => {
+                warn_if_trust_root_unreachable(trust_root_failures);
+                return Ok(true);
+            }
+            Err(e) => {
+                log_attestation_method_failure(&e);
+                if matches!(e, AttestationError::TrustRoot(_)) {
+                    trust_root_failures += 1;
+                }
+                errors.push(e.to_string());
+            }
         }
     }
 
@@ -137,10 +165,18 @@ where
         Err(embedded_err) => match verify_with_tuf().await {
             Ok(()) => Ok(()),
             Err(tuf_err) if is_signer_workflow_mismatch(&tuf_err) => Err(tuf_err),
-            Err(tuf_err) => Err(AttestationError::Verification(format!(
-                "GitHub attestation verification failed with embedded trusted root: \
-                 {embedded_err}; GitHub TUF trusted root retry also failed: {tuf_err}"
-            ))),
+            Err(tuf_err) => {
+                let message = format!(
+                    "GitHub attestation verification failed with embedded trusted root: \
+                     {embedded_err}; GitHub TUF trusted root retry also failed: {tuf_err}"
+                );
+                // Keep the category: a trust root that could not be loaded is
+                // not a signature failure, and callers count it to warn.
+                Err(match tuf_err {
+                    AttestationError::TrustRoot(_) => AttestationError::TrustRoot(message),
+                    _ => AttestationError::Verification(message),
+                })
+            }
         },
     }
 }

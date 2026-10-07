@@ -237,6 +237,7 @@ complete task run="mise tasks ls --complete" descriptions=#true
 complete tool run="mise search --complete {{words[CURRENT]}}" descriptions=#true
 complete env_var run="mise set --complete | awk '{print $1\"=\"}'"
 complete env_key run="mise set --complete"
+complete secret run="mise secrets ls --complete"
 complete backend run="mise backends"
 complete bin_name run="mise which --complete"
 complete tool@version run=#"""
@@ -3254,6 +3255,10 @@ On Windows, sandboxing is unavailable: mise warns and runs without host filterin
     flag --fresh-env help="Bypass the environment cache and recompute the environment"
     flag --no-deps help="Skip automatic dependency preparation"
     flag --raw help="Connect backend install command stdin/stdout/stderr directly to the terminal. Implies `--jobs=1`" overrides=--jobs
+    flag --secrets help="Give the command these secrets (comma-separated); by default it gets none" var=#true {
+        arg <SECRET> delimiter=,
+    }
+    flag --secrets-all help="Give the command every secret the project can inject, except file secrets" conflicts=--secrets
     flag "-h --help" help="Print help" action=help builtin=#true
     arg "[TOOL@VERSION]…" help="Tool(s) to load e.g.: node@20 python@3.10" required=#false var=#true
     arg "[-- COMMAND]…" help="Executable and arguments to run directly, after `--`" required=#false var=#true conflicts=--command required_unless=--command
@@ -3262,6 +3267,7 @@ mise exec node@20 -- node ./app.js
 mise x node@20 -- node ./app.js
 """# help="Launch app.js using node-20.x, with the full command or its shorter alias."
     example "mise exec node@20 python@3.11 --command \"node -v && python -V\"" help="Specify command as a string:"
+    example "mise x --secrets GH_TOKEN -- gh release list" help="Give the command the GH_TOKEN secret from the project's secrets source. Without a flag it gets none."
     example "mise x -C /path/to/project node@20 -- node ./app.js" help="Run a command in a different directory:"
     complete command type=command
 }
@@ -5202,6 +5208,18 @@ Read/write directly to stdin/stdout/stderr instead of by line
 Redactions are not applied with this option
 Configure with `raw` config or `MISE_RAW` env var
 """#
+    flag --secrets help=#"""
+Give the tasks named on the command line these secrets (comma-separated)
+Their dependencies and subtasks do not receive them. Put this flag before the task name.
+"""# var=#true conflicts=--affected {
+        arg <SECRET> delimiter=,
+    }
+    flag --secrets-all help=#"""
+Give the tasks named on the command line every secret the project can inject
+(fnox env = true or "exec"; never env = false). Dependencies and subtasks do not receive them.
+"""# {
+        conflicts "--secrets" "--affected"
+    }
     flag "-s --shell" help="Shell to use to run toml tasks" {
         long_help #"""
 Shell to use to run toml tasks
@@ -5302,6 +5320,7 @@ Set `MISE_TASK_TIMINGS=1` to show it by default
     example "mise run lint" help="Run the \"lint\" task, defined either in mise.toml or as a standalone script."
     example "mise run --force build" help="Force the \"build\" task to run even if its sources are up to date."
     example "mise run --raw test" help="Run \"test\" with stdin/stdout/stderr all connected to the current terminal. This forces `--jobs=1` to prevent interleaving of output."
+    example "mise run --secrets DEPLOY_KEY deploy" help="Give the \"deploy\" task the DEPLOY_KEY secret from the project's secrets source. Its dependencies do not receive it."
     example "mise run lint ::: test ::: check" help="Run the \"lint\", \"test\", and \"check\" tasks in parallel."
     example "mise run cmd1 arg1 arg2 ::: cmd2 arg1 arg2" help="Run multiple tasks, each with its own arguments."
     complete cd type=dir
@@ -5364,6 +5383,31 @@ Search a tool
 /jq
 esc clear filter • enter confirm
 """#
+}
+cmd secrets help="[experimental] List the secret names this project's secrets source provides, without their values" effect=read {
+    flag "-J --json" help="Output in JSON format"
+    flag --no-header help="Don't show table header"
+    flag "-h --help" help="Print help" action=help builtin=#true
+    cmd ls help="List the secret names this project's secrets source provides, without their values" effect=read {
+        alias list
+        long_help #"""
+List the secret names this project's secrets source provides, without their values
+
+Shows names and metadata only; values are never shown. The source is declared in the
+project's `mise.toml` with `[secrets.fnox]`.
+"""#
+        flag "-J --json" help="Output in JSON format"
+        flag --no-header help="Don't show table header"
+        flag --complete help="Render completions: the injectable key names, one per line" hide=#true
+        flag "-h --help" help="Print help" action=help builtin=#true
+        example #"""
+mise secrets ls
+KEY                ENV    FILE  SCOPES  TASKS   DESCRIPTION
+DATABASE_URL       true   no    run, exec  deploy  app database
+GCP_SA_JSON        exec   yes   run               service account
+SIGNING_KEY        false  no    -                 release signing key
+"""#
+    }
 }
 cmd self-update help="Update mise itself" effect=write {
     long_help #"""
@@ -6081,6 +6125,18 @@ Read/write directly to stdin/stdout/stderr instead of by line
 Redactions are not applied with this option
 Configure with `raw` config or `MISE_RAW` env var
 """#
+        flag --secrets help=#"""
+Give the tasks named on the command line these secrets (comma-separated)
+Their dependencies and subtasks do not receive them. Put this flag before the task name.
+"""# var=#true conflicts=--affected {
+            arg <SECRET> delimiter=,
+        }
+        flag --secrets-all help=#"""
+Give the tasks named on the command line every secret the project can inject
+(fnox env = true or "exec"; never env = false). Dependencies and subtasks do not receive them.
+"""# {
+            conflicts "--secrets" "--affected"
+        }
         flag "-s --shell" help="Shell to use to run toml tasks" {
             long_help #"""
 Shell to use to run toml tasks
@@ -6181,6 +6237,7 @@ Set `MISE_TASK_TIMINGS=1` to show it by default
         example "mise run lint" help="Run the \"lint\" task, defined either in mise.toml or as a standalone script."
         example "mise run --force build" help="Force the \"build\" task to run even if its sources are up to date."
         example "mise run --raw test" help="Run \"test\" with stdin/stdout/stderr all connected to the current terminal. This forces `--jobs=1` to prevent interleaving of output."
+        example "mise run --secrets DEPLOY_KEY deploy" help="Give the \"deploy\" task the DEPLOY_KEY secret from the project's secrets source. Its dependencies do not receive it."
         example "mise run lint ::: test ::: check" help="Run the \"lint\", \"test\", and \"check\" tasks in parallel."
         example "mise run cmd1 arg1 arg2 ::: cmd2 arg1 arg2" help="Run multiple tasks, each with its own arguments."
         complete cd type=dir

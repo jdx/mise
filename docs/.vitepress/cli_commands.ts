@@ -810,6 +810,14 @@ export const commands: { [key: string]: Command } = {
   search: {
     hide: false,
   },
+  secrets: {
+    hide: false,
+    subcommands: {
+      ls: {
+        hide: false,
+      },
+    },
+  },
   "self-update": {
     hide: false,
   },
