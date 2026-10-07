@@ -46,7 +46,7 @@ impl DotfilesRollback {
             to: self.to,
             all: self.all,
             dry_run: self.dry_run,
-            yes: self.yes,
+            yes: self.yes || crate::config::Settings::get().yes,
             force: self.force,
         })
         .await

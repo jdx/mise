@@ -49,4 +49,4 @@ assert 'cat ~/.config/hypr/bindings.lua' alacritty
 # irreversible: refuse loudly and name --yes, never skip silently
 mkdir -p "$HOME/implode-me"
 assert_fail 'mise implode </dev/null' '--yes'
-assert_succeed 'test -d "$MISE_DATA_DIR" -o -d "$MISE_CONFIG_DIR"'
+assert_succeed "test -d '$MISE_DATA_DIR' -o -d '$MISE_CONFIG_DIR'"

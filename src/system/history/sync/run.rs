@@ -91,6 +91,10 @@ pub struct SyncStatus {
     /// Repository metadata and inactive streams can change without live writes.
     #[serde(default)]
     pub pending_repository: bool,
+    /// Directories here whose incoming permissions differ, which a pull
+    /// changes even when no file does.
+    #[serde(default, skip_serializing_if = "no_directories")]
+    pub pending_directories: usize,
     /// Incoming configuration changed declarations: run `mise bootstrap`.
     #[serde(default)]
     pub declarations_changed: bool,
@@ -122,6 +126,10 @@ pub struct SyncStatus {
     /// in for a declaration.
     #[serde(default)]
     pub disconnected: bool,
+}
+
+fn no_directories(count: &usize) -> bool {
+    *count == 0
 }
 
 fn is_zero(value: &u32) -> bool {
@@ -183,7 +191,14 @@ mod status_read_tests {
 #[derive(Debug, Default)]
 pub struct SyncOutcome {
     pub published: Option<String>,
+    /// Incoming changes waiting for `mise dot pull`, counting the
+    /// repository's own changes as one.
     pub pending: usize,
+    /// Of those, the repository changed in a way that writes no file here:
+    /// another machine's own versions, or enrollment.
+    pub pending_repository: bool,
+    /// Directories whose permissions a pull would change here.
+    pub pending_directories: usize,
     pub conflicts: usize,
     pub fetched_upstream: Option<String>,
 }
@@ -440,6 +455,8 @@ pub(crate) fn sync_locked(
         record_pending(&mut status, &plans, &Roots::current(), &shared.objects());
         outcome.pending =
             status.pending_applications.len() + usize::from(status.pending_repository);
+        outcome.pending_repository = status.pending_repository;
+        outcome.pending_directories = status.pending_directories;
         outcome.conflicts = status.conflicts.len();
         status.last_error = None;
         status.failing_since = None;
@@ -716,9 +733,11 @@ fn prepare(
     let repository_tree = incoming_repository_tree(repo, tracked)
         .inspect_err(|error| repository_conflict(status, error))?;
     status.pending_repository |= repository_tree.is_some();
+    status.pending_directories = 0;
     if let Some(tree) = repository_tree.as_deref().or(heads.remote.as_deref()) {
-        super::directories::plan(repo, tracked, tree)
-            .inspect_err(|error| repository_conflict(status, error))?;
+        status.pending_directories = super::directories::plan(repo, tracked, tree)
+            .inspect_err(|error| repository_conflict(status, error))?
+            .len();
     }
     if heads.remote != upstream.commit {
         bail!("origin changed while planning; reconcile again");

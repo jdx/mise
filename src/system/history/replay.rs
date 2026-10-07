@@ -680,6 +680,20 @@ async fn apply_steps(
                         .collect::<Vec<_>>()
                         .join(", ")
                 );
+                // no checkpoint holds them, so this is not recoverable: ask
+                // (or require --yes) instead of proceeding unattended
+                if !exec.yes
+                    && !crate::config::Settings::get().yes
+                    && !prompt::confirm_destructive(
+                        format!(
+                            "history: remove {} and the files in it that history does not cover?",
+                            display_path(&step.path)
+                        ),
+                        "mise dot rollback --force",
+                    )?
+                {
+                    bail!("declined; nothing more was changed");
+                }
             }
             empty_dirs = inside.empty_dirs;
         }

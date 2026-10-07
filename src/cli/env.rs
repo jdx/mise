@@ -64,6 +64,7 @@ impl Env {
         let mut config = Config::get().await?;
         let mut ts = ToolsetBuilder::new()
             .with_args(&self.tool)
+            .with_deferred_lazy_resolution()
             .build(&config)
             .await?;
         let (_, missing) = ts

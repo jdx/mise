@@ -257,6 +257,11 @@ mise dot origin set git@gitea.example.com:you/setup.git --sync sync
 The URL must not contain credentials, a query string, or a fragment.
 Authenticate with an SSH agent, or with a Git credential helper for HTTPS.
 
+Files that describe one machine, such as a monitor layout, should not be
+applied on the others. Track them with a
+[`machine` variant](/dotfiles.html#machine-variants) so each machine keeps
+its own version.
+
 Review the connection preview before confirming. With `--sync sync`, the
 watcher pushes saved changes and periodically fetches and applies changes
 from other machines. To bring another machine into this workflow, follow

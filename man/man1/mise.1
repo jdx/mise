@@ -2388,6 +2388,8 @@ saved automatically; without it, `mise dot save` saves them.
 `\-\-os` and `\-\-profile` declare a variant: a separate shared stream for
 machines matching that platform or mise environment, so a Mac and a
 Linux box can share the same live path with different contents.
+`\-\-machine` gives every machine its own stream instead, for files such
+as a monitor layout that should never be applied on another machine.
 .PP
 \fBUsage:\fR mise bootstrap dotfiles track [OPTIONS] <PATH> ...
 .PP
@@ -2399,6 +2401,9 @@ Declare a variant for this platform (macos, linux, linux/arm64, …)
 .TP
 \fB\-\-profile\fR \fI<PROFILE>\fR
 Declare a variant for this mise environment
+.TP
+\fB\-\-machine\fR
+Keep a separate stream on every machine, never applied on another
 .TP
 \fB\-\-no\-autosave\fR
 Save only on `mise dot save <path>`, never automatically
@@ -5074,6 +5079,8 @@ saved automatically; without it, `mise dot save` saves them.
 `\-\-os` and `\-\-profile` declare a variant: a separate shared stream for
 machines matching that platform or mise environment, so a Mac and a
 Linux box can share the same live path with different contents.
+`\-\-machine` gives every machine its own stream instead, for files such
+as a monitor layout that should never be applied on another machine.
 .PP
 \fBUsage:\fR mise dotfiles track [OPTIONS] <PATH> ...
 .PP
@@ -5085,6 +5092,9 @@ Declare a variant for this platform (macos, linux, linux/arm64, …)
 .TP
 \fB\-\-profile\fR \fI<PROFILE>\fR
 Declare a variant for this mise environment
+.TP
+\fB\-\-machine\fR
+Keep a separate stream on every machine, never applied on another
 .TP
 \fB\-\-no\-autosave\fR
 Save only on `mise dot save <path>`, never automatically
