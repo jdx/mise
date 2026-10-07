@@ -722,7 +722,7 @@
           "properties": {
             "check_duration": {
               "default": "24h",
-              "description": "Minimum time between background update checks for an opted-in tool.",
+              "description": "How often to check for updates to a global tool with `auto_update = true`.",
               "type": "string"
             }
           }
@@ -3019,6 +3019,17 @@
             },
             {
               "properties": {
+                "auto_update": {
+                  "description": "update this tool in the background after it is used; true, or a check interval such as \"12h\". Only honored in global config",
+                  "oneOf": [
+                    {
+                      "type": "boolean"
+                    },
+                    {
+                      "type": "string"
+                    }
+                  ]
+                },
                 "install_env": {
                   "type": "object",
                   "additionalProperties": {

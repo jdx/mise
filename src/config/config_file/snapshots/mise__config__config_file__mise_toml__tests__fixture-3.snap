@@ -15,6 +15,7 @@ ToolRequestSet {
                         install_env: {},
                         lazy: None,
                         lazy_bins: [],
+                        auto_update: None,
                     },
                     opts: RawBackendOptions {
                         values: {},
@@ -37,6 +38,7 @@ ToolRequestSet {
                         install_env: {},
                         lazy: None,
                         lazy_bins: [],
+                        auto_update: None,
                     },
                     opts: RawBackendOptions {
                         values: {},
@@ -57,6 +59,7 @@ ToolRequestSet {
                         install_env: {},
                         lazy: None,
                         lazy_bins: [],
+                        auto_update: None,
                     },
                     opts: RawBackendOptions {
                         values: {},
@@ -78,6 +81,7 @@ ToolRequestSet {
                         install_env: {},
                         lazy: None,
                         lazy_bins: [],
+                        auto_update: None,
                     },
                     opts: RawBackendOptions {
                         values: {},
@@ -98,6 +102,7 @@ ToolRequestSet {
                         install_env: {},
                         lazy: None,
                         lazy_bins: [],
+                        auto_update: None,
                     },
                     opts: RawBackendOptions {
                         values: {},
@@ -120,6 +125,7 @@ ToolRequestSet {
                         install_env: {},
                         lazy: None,
                         lazy_bins: [],
+                        auto_update: None,
                     },
                     opts: RawBackendOptions {
                         values: {},
@@ -142,6 +148,7 @@ ToolRequestSet {
                         install_env: {},
                         lazy: None,
                         lazy_bins: [],
+                        auto_update: None,
                     },
                     opts: RawBackendOptions {
                         values: {},
@@ -164,6 +171,7 @@ ToolRequestSet {
                         install_env: {},
                         lazy: None,
                         lazy_bins: [],
+                        auto_update: None,
                     },
                     opts: RawBackendOptions {
                         values: {
@@ -188,6 +196,7 @@ ToolRequestSet {
                         install_env: {},
                         lazy: None,
                         lazy_bins: [],
+                        auto_update: None,
                     },
                     opts: RawBackendOptions {
                         values: {},

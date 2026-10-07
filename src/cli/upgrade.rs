@@ -48,7 +48,7 @@ struct ExplicitConfigBump {
 /// rewrite the version in mise.toml.
 ///
 /// This also updates mise.lock if lockfiles are enabled, see https://mise.jdx.dev/configuration/settings.html#lockfile
-#[derive(Debug, usage_rs::Args)]
+#[derive(Debug, Default, usage_rs::Args)]
 #[usage(visible_alias = "up", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP,
     example(r###"mise upgrade node"###, help = r###"Upgrades node to the latest version matching the range in mise.toml"###),
     example(r###"mise upgrade node --bump"###, help = r###"Upgrades node to the latest version and bumps the version in mise.toml"###),
@@ -153,6 +153,10 @@ pub(crate) struct Upgrade {
     /// Implies `--jobs=1`
     #[usage(long, overrides = "jobs")]
     raw: bool,
+
+    /// Read only global config, for the detached background updater.
+    #[usage(skip)]
+    global_only: bool,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -182,28 +186,16 @@ impl Upgrade {
     }
 
     fn scope(&self) -> ConfigScope {
-        if self.local {
+        if self.global_only {
+            ConfigScope::GlobalOnly
+        } else if self.local {
             ConfigScope::LocalOnly
         } else {
             ConfigScope::All
         }
     }
 
-    pub(crate) async fn run(self) -> Result<()> {
-        self.run_with_lockfile_update_mode(
-            crate::lockfile::LockfileUpdateMode::AllowLocked,
-            false,
-            None,
-        )
-        .await
-    }
-
-    async fn run_with_lockfile_update_mode(
-        mut self,
-        lockfile_update_mode: crate::lockfile::LockfileUpdateMode,
-        background_tool_update: bool,
-        background_scheduled_tool: Option<&BackendArg>,
-    ) -> Result<()> {
+    pub(crate) async fn run(mut self) -> Result<()> {
         if self.legacy_bump {
             deprecated_at!(
                 "2026.8.5",
@@ -296,10 +288,7 @@ impl Upgrade {
                     .any(|tool| backend_args_match(tool.ba.as_ref(), bump.request.ba()))
             });
         }
-        if !self.is_dry_run()
-            && !Settings::get().generate_lockfiles()
-            && !lockfile_update_mode.skips_update()
-        {
+        if !self.is_dry_run() && !self.global_only && !Settings::get().generate_lockfiles() {
             crate::lockfile::migrate_monorepo_lockfiles(&config, false)?;
         }
         let ts = ToolsetBuilder::new()
@@ -393,31 +382,6 @@ impl Upgrade {
             )
             .await
         };
-        if background_tool_update {
-            // Filtering by a ToolArg is backend-wide, so a tool with multiple
-            // configured selectors can include a pinned or lockfile-bound
-            // sibling beside the selector that scheduled this child. Runtime
-            // arguments replace those selectors, so retain only this child’s
-            // argument-owned request rather than comparing options that the
-            // builder can legitimately re-layer. Keep the scheduler's
-            // reproducibility exclusions authoritative at the final install
-            // boundary as well. An unreadable lockfile is also conservatively
-            // ineligible.
-            outdated.retain(|outdated| {
-                background_scheduled_tool.is_some_and(|scheduled| {
-                    outdated.tool_version.request.ba().as_ref() == scheduled
-                        && matches!(outdated.tool_version.request.source(), ToolSource::Argument)
-                }) && !outdated.request_pinned_to_current_version()
-                    && !outdated.tool_version.resolved_from_lockfile()
-                    && matches!(
-                        crate::tool_update::request_has_lockfile(
-                            config.as_ref(),
-                            &outdated.tool_version.request,
-                        ),
-                        Ok(false)
-                    )
-            });
-        }
         if Settings::get().pin {
             for bump in &mut explicit_config_bumps {
                 let resolved = outdated
@@ -521,15 +485,8 @@ impl Upgrade {
                 );
             }
         } else {
-            self.upgrade(
-                &mut config,
-                outdated,
-                before_date,
-                &explicit_config_bumps,
-                lockfile_update_mode,
-                background_tool_update,
-            )
-            .await?;
+            self.upgrade(&mut config, outdated, before_date, &explicit_config_bumps)
+                .await?;
         }
 
         Ok(())
@@ -541,8 +498,6 @@ impl Upgrade {
         outdated: Vec<OutdatedInfo>,
         before_date: Option<Timestamp>,
         explicit_config_bumps: &[ExplicitConfigBump],
-        lockfile_update_mode: crate::lockfile::LockfileUpdateMode,
-        background_tool_update: bool,
     ) -> Result<()> {
         let mpr = MultiProgressReport::get();
         let prune_mode = self.prune_mode()?;
@@ -582,25 +537,19 @@ impl Upgrade {
                 }
             }
         }
-        let config_file_updates = if background_tool_update {
-            // The hidden updater may install a newer floating version, but it
-            // must never persist that selection back into any configuration.
-            vec![]
-        } else {
-            outdated_with_config_files
-                .iter()
-                .filter_map(|(o, cf)| {
-                    if let Ok(trs) = cf.to_tool_request_set()
-                        && let Some(versions) = trs.tools.get(o.tool_request.ba())
-                        && versions.len() != 1
-                    {
-                        warn!("upgrading multiple versions with --bump is not yet supported");
-                        return None;
-                    }
-                    Some((*o, Arc::clone(cf)))
-                })
-                .collect::<Vec<_>>()
-        };
+        let config_file_updates = outdated_with_config_files
+            .iter()
+            .filter_map(|(o, cf)| {
+                if let Ok(trs) = cf.to_tool_request_set()
+                    && let Some(versions) = trs.tools.get(o.tool_request.ba())
+                    && versions.len() != 1
+                {
+                    warn!("upgrading multiple versions with --bump is not yet supported");
+                    return None;
+                }
+                Some((*o, Arc::clone(cf)))
+            })
+            .collect::<Vec<_>>();
 
         // Determine which old versions should be uninstalled after upgrade
         // Skip uninstall when current == latest (channel-based versions that update in-place)
@@ -660,7 +609,7 @@ impl Upgrade {
                 }
             }
             print_explicit_config_bumps(&planned_explicit_config_bumps)?;
-            if !background_tool_update && !self.bump {
+            if !self.bump {
                 use crate::toolset::outdated_info::compute_config_bumps;
                 let tool_versions: Vec<(String, String)> = self
                     .tool
@@ -843,7 +792,7 @@ impl Upgrade {
             // When a specific version is provided via CLI (e.g., `mise upgrade tiny@3.0.1`),
             // update the config file prefix if the new version doesn't match the current specifier.
             // Skip if --bump was used since it already handles config updates.
-            if !background_tool_update && !self.bump {
+            if !self.bump {
                 use crate::toolset::outdated_info::{apply_config_bumps, compute_config_bumps};
                 let tool_versions: Vec<(String, String)> = self
                     .tool
@@ -1056,7 +1005,7 @@ impl Upgrade {
             config,
             ts,
             &successful_versions,
-            lockfile_update_mode,
+            crate::lockfile::LockfileUpdateMode::AllowLocked,
         )
         .await?;
 
@@ -1292,95 +1241,16 @@ impl Upgrade {
     }
 }
 
-/// Run a single, already-authorized background update. The hidden caller owns
-/// the per-tool lock; the foreground caller recorded the rate-limit marker
-/// before it detached this process. Keeping this on the ordinary upgrade path
-/// preserves backend/mirror resolution, minimum-release-age handling, atomic
-/// installation, and process-safe deferred pruning.
-pub(crate) async fn run_background_tool_update(
-    config: &Arc<Config>,
-    tool: crate::args::ToolArg,
-    current: &str,
-    request: &str,
-    policy: crate::tool_update::UpdatePolicy,
-) -> Result<()> {
-    // Supply the bounded selector before outdated resolution, rather than
-    // resolving a newest-major candidate and filtering it afterwards. The
-    // configured request still supplies its normal options and release-age
-    // constraints through ToolsetBuilder's runtime-argument option layering.
-    let selector = crate::tool_update::bounded_update_selector(policy, current, request);
-    let tool = background_update_tool_arg(config, tool, &selector, request)?;
-    let scheduled_tool = tool.ba.clone();
+/// Upgrade one tool within its global config request, for `mise __tool-update`.
+/// Only global config is read, so a project's config and lockfile never change.
+pub(crate) async fn upgrade_global_tool(tool: ToolArg) -> Result<()> {
     Upgrade {
         tool: vec![tool],
-        bump: false,
-        interactive: false,
-        jobs: None,
-        legacy_bump: false,
-        dry_run: false,
-        exclude: vec![],
-        dry_run_code: false,
-        inactive: false,
-        local: false,
-        minimum_release_age: None,
-        monorepo: false,
-        no_prune: false,
-        prune: false,
-        raw: false,
+        global_only: true,
+        ..Default::default()
     }
-    .run_with_lockfile_update_mode(
-        crate::lockfile::LockfileUpdateMode::Skip,
-        true,
-        Some(&scheduled_tool),
-    )
+    .run()
     .await
-}
-
-/// Reapply the source request's install options to the internal CLI argument.
-/// The hidden command uses a bounded selector (`1`, `1.2`, or `latest`), which
-/// need not exactly match the configured request (for example a date-prefixed
-/// release). Passing that selector through as an ordinary CLI argument would
-/// otherwise discard local options such as `postinstall`, dependencies, and
-/// mirrors before `mise upgrade` reaches the installer.
-fn background_update_tool_arg(
-    config: &Arc<Config>,
-    tool: crate::args::ToolArg,
-    selector: &str,
-    configured_selector: &str,
-) -> Result<crate::args::ToolArg> {
-    let configured = ToolsetBuilder::new().build_unresolved(config)?;
-    let options = configured
-        .versions
-        .iter()
-        .find(|(candidate, _)| {
-            candidate.full_without_opts() == tool.ba.full_without_opts()
-                || candidate.short == tool.short
-        })
-        .and_then(|(_, versions)| {
-            let supported = versions
-                .requests
-                .iter()
-                .filter(|request| request.is_os_supported());
-            supported
-                .clone()
-                .find(|request| request.version() == configured_selector)
-                .or_else(|| {
-                    let mut supported = supported;
-                    let only = supported.next()?;
-                    supported.next().is_none().then_some(only)
-                })
-        })
-        .map(ToolRequest::options)
-        .unwrap_or_default();
-    let request =
-        ToolRequest::new_with_options(tool.ba.clone(), selector, options, ToolSource::Argument)?;
-    Ok(crate::args::ToolArg {
-        short: request.ba().short.clone(),
-        ba: request.ba().clone(),
-        version: Some(selector.to_string()),
-        version_type: selector.parse()?,
-        tvr: Some(request),
-    })
 }
 
 fn current_satisfies_hidden_release(

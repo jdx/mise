@@ -749,7 +749,7 @@ impl TaskExecutor {
             // particular, previews, declined confirmations, and cache hits
             // must not turn into installs in the background.
             if !self.dry_run {
-                crate::tool_update::schedule(config, &ts);
+                crate::tool_update::schedule(&ts);
             }
             self.exec_file(config, &file, confirm_guard, exec_ctx)
                 .await?;
@@ -776,7 +776,7 @@ impl TaskExecutor {
             // See the file-task branch above: scheduling happens after all
             // non-execution exits and immediately before a real task launch.
             if !self.dry_run && !rendered_run_scripts.is_empty() {
-                crate::tool_update::schedule(config, &ts);
+                crate::tool_update::schedule(&ts);
             }
             self.exec_task_run_entries(
                 rendered_run_scripts,

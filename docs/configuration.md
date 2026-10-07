@@ -309,7 +309,7 @@ See [Tools](/dev-tools/). In addition to specifying versions, each tool entry ca
 - `depends`: Install order relative to other tools in this config only; vfox plugin hook dependencies belong in plugin `metadata.lua` (see [Tool Dependencies](/dev-tools/#tool-dependencies))
 - `install_env`: Environment vars used during download, install, and tool-level `postinstall`
 - `postinstall`: Command to run after installation completes for that specific tool
-- `auto_update`: Opt a global tool entry into background updates (`major`, `minor`, or `patch`)
+- `auto_update`: Update a global tool in the background after it is used (`true`, or a check interval such as `"6h"`); see [Background tool updates](#background-tool-updates)
 
 Examples:
 
@@ -320,34 +320,34 @@ node = { version = "22", postinstall = "corepack enable" }
 
 ### Background tool updates
 
-Set `auto_update` only in your global config (for example `~/.config/mise/config.toml`) to let a
-floating tool update in the background after it is used:
+A tool in your global config (for example `~/.config/mise/config.toml`) can keep itself up to
+date. Set `auto_update` on its entry:
 
 ```toml
 [tools]
-claude = { version = "latest", auto_update = "patch" }
-codex = { version = "latest", auto_update = "minor" }
+claude = { version = "latest", auto_update = true }
+node = { version = "22", auto_update = "6h" }
 ```
 
-`major` keeps the configured selector's normal range. `minor` retains the first numeric version
-component of the installed version; `patch` retains its first two components. An update boundary
-can narrow a floating selector, but never widens the configured request.
-This uses mise's existing version-prefix matching, so date-like and other non-SemVer versions keep
-their visible numeric components rather than being parsed as SemVer. If a version has no numeric
-components, mise falls back to the configured request rather than silently disabling updates.
+When you run the tool through a shim, `mise x`, or a task, mise checks whether it has looked for
+an update within the interval. If not, it starts `mise upgrade` for that tool in the background
+and runs the version you already have. The next run uses the new version. Updates stay within the
+configured version: `node = "22"` gets the newest 22.x, never 23.
 
-The option is read only from global configuration: a project file cannot opt you into background
-network or installation work, and registry entries never enable it. Exact pins and matching
-lockfile entries are skipped. Candidate resolution continues through the configured backend,
-registry or mirror, and `minimum_release_age`; mise derives the policy's `latest` or version-prefix
-query before normal resolution rather than fetching a separate upstream release. The updater never
-rewrites a lockfile.
+`auto_update = true` checks every 24 hours, or every
+[`tool_update.check_duration`](/configuration/settings.html#tool_update.check_duration). A
+duration such as `"6h"` sets that tool's own interval. Intervals under one hour are raised to one
+hour.
 
-The foreground command does not wait for an update. `mise x`, `mise run`, and mise shims perform a
-cheap rate-limit check after selecting their installed tool paths; `mise hook-env` and shell
-activation do not schedule work. There is no installed service or OS scheduler, so direct PATH
-activation that does not pass through mise cannot trigger an update. Set
-`settings.tool_update.check_duration` globally to change the default 24-hour interval.
+- Only global config can turn this on. A project config can't, and when a project sets its own
+  version of the tool, that project's runs don't trigger updates.
+- Exact versions such as `node = "22.11.0"` are never updated. If a global lockfile
+  (`mise lock --global`) pins the tool, the update moves the lock entry to the new version.
+- No updates run offline, in CI, or with `locked = true`. `mise hook-env` and shell activation
+  never start one.
+- The previous version is pruned on the same schedule as `mise upgrade` (see
+  [`upgrade.auto_prune`](/configuration/settings.html#upgrade.auto_prune)).
+- A background update prints nothing. If one fails, `mise doctor` shows the error.
 
 ### `include` - Share config from a remote file {#include}
 

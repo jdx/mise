@@ -474,7 +474,7 @@ impl Exec {
             env_remove,
             &sandbox,
             self.c.is_some(),
-            Some((&config, &ts)),
+            Some(&ts),
         )
         .await
     }
@@ -630,7 +630,7 @@ pub(crate) async fn exec_program<T, U>(
     env_remove: std::collections::BTreeSet<String>,
     sandbox: &SandboxConfig,
     _shell_body_mode: bool,
-    tool_update: Option<(&Arc<Config>, &Toolset)>,
+    tool_update: Option<&Toolset>,
 ) -> Result<()>
 where
     T: IntoExecutablePath,
@@ -754,8 +754,8 @@ where
             program.to_string_lossy()
         ));
     }
-    if let Some((config, toolset)) = tool_update {
-        crate::tool_update::schedule(config, toolset);
+    if let Some(toolset) = tool_update {
+        crate::tool_update::schedule(toolset);
     }
     env::remove_var(env::MISE_SHIM_PATH_ENV);
     // Apply sandbox (Landlock/seccomp on Linux, sandbox-exec on macOS)
@@ -805,7 +805,7 @@ pub(crate) async fn exec_program<T, U>(
     env_remove: std::collections::BTreeSet<String>,
     sandbox: &SandboxConfig,
     shell_body_mode: bool,
-    tool_update: Option<(&Arc<Config>, &Toolset)>,
+    tool_update: Option<&Toolset>,
 ) -> Result<()>
 where
     T: IntoExecutablePath,
@@ -908,8 +908,8 @@ where
     }
     let args: Vec<OsString> = args.into_iter().map(Into::into).collect();
 
-    if let Some((config, toolset)) = tool_update {
-        crate::tool_update::schedule(config, toolset);
+    if let Some(toolset) = tool_update {
+        crate::tool_update::schedule(toolset);
     }
 
     // Windows does not support exec in the same way as Unix,
@@ -988,15 +988,15 @@ pub(crate) async fn exec_program<T, U>(
     env_remove: std::collections::BTreeSet<String>,
     _sandbox: &SandboxConfig,
     _shell_body_mode: bool,
-    tool_update: Option<(&Arc<Config>, &Toolset)>,
+    tool_update: Option<&Toolset>,
 ) -> Result<()>
 where
     T: IntoExecutablePath,
     U: IntoIterator,
     U::Item: Into<OsString>,
 {
-    if let Some((config, toolset)) = tool_update {
-        crate::tool_update::schedule(config, toolset);
+    if let Some(toolset) = tool_update {
+        crate::tool_update::schedule(toolset);
     }
     let mut cmd = cmd::cmd(program, args);
     for (k, v) in env.iter() {

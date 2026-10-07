@@ -1,288 +1,173 @@
 #!/usr/bin/env bash
 
-# Exercise only the bundled dummy backend in the isolated e2e home. Background
-# updater children intentionally inherit these directories, so each case uses a
-# fresh state dir without touching a real installed tool or the host's mise state.
+# Background updates for tools whose global [tools] entry sets auto_update.
+# The dummy backend offers 1.0.0, 1.1.0, and 2.0.0. Each case gets its own
+# state dir, so its first check is always due.
 
 fresh_state() {
   export MISE_STATE_DIR="$PWD/state-$1"
 }
 
-wait_for_dummy() {
-  local version="$1"
-  local attempt
-  for attempt in {1..100}; do
-    if mise ls --installed dummy | grep -Fq "$version"; then
-      # Installation becomes visible before the updater has rebuilt shims and
-      # released its lock. Waiting for that release keeps the next fixture
-      # from racing a still-running updater from this one.
-      for attempt in {1..100}; do
-        if ! grep -q '[0-9]' "$MISE_STATE_DIR/tool-update"/*.lock 2>/dev/null; then
-          return
-        fi
-        sleep 0.1
-      done
-      fail "background updater did not finish after installing dummy@$version"
-    fi
-    sleep 0.1
-  done
-  fail "dummy@$version was not installed by the background updater"
+global_config() {
+  printf '[tools]\n%s\n' "$1" >"$MISE_CONFIG_DIR/config.toml"
 }
 
-wait_for_update_marker() {
-  local attempt
-  for attempt in {1..100}; do
-    if find "$MISE_STATE_DIR/tool-update" -type f ! -name '*.lock' -print -quit 2>/dev/null | grep -q .; then
+reset_dummy() {
+  mise uninstall dummy --all
+  mise install dummy@1.0.0
+}
+
+# The updater holds <key>.lock with its PID written in it; unlocking empties
+# the file but leaves it in place.
+wait_for_updater() {
+  local _
+  for _ in {1..300}; do
+    if compgen -G "$MISE_STATE_DIR/tool-update/*.lock" >/dev/null &&
+      ! grep -q '[0-9]' "$MISE_STATE_DIR"/tool-update/*.lock; then
       return
     fi
     sleep 0.1
   done
-  fail "background updater did not record its check"
+  cat "$MISE_STATE_DIR"/tool-update/*.log >&2 || true
+  fail "the background update did not finish"
 }
 
-# Wait for a child that actually acquired the per-tool lock and then released
-# it. Lock files persist, but their PID is cleared on unlock. This avoids a
-# fixed sleep while still proving the detached child reached completion.
-wait_for_update_completion() {
-  local lock_seen=0
-  local attempt
-  wait_for_update_marker
-  for attempt in {1..100}; do
-    if grep -q '[0-9]' "$MISE_STATE_DIR/tool-update"/*.lock 2>/dev/null; then
-      lock_seen=1
-    elif [ "$lock_seen" = 1 ] && ! grep -q '[0-9]' "$MISE_STATE_DIR/tool-update"/*.lock 2>/dev/null; then
-      return
-    fi
-    sleep 0.1
-  done
-  fail "background updater did not finish"
+assert_no_update_started() {
+  assert_fail "test -e '$MISE_STATE_DIR/tool-update'"
 }
 
-write_global_auto_update() {
-  cat >"$MISE_CONFIG_DIR/config.toml" <<'EOF'
-[settings.tool_update]
-check_duration = "1h"
-
-[tools]
-dummy = { version = "1", auto_update = "minor" }
-EOF
-}
-
-write_floating_dummy() {
-  cat >mise.toml <<'EOF'
-[tools]
-dummy = "1"
-EOF
-}
-
-# A repository cannot opt a user into background network or installation work.
-fresh_state local-option
-cat >"$MISE_CONFIG_DIR/config.toml" <<'EOF'
-# No global auto_update option.
-EOF
-cat >mise.toml <<'EOF'
-[tools]
-dummy = { version = "1", auto_update = "minor" }
-
-[settings.tool_update]
-check_duration = "0s"
-EOF
-mise uninstall dummy --all
-mise install dummy@1.0.0
-assert_contains "mise x -- dummy" "Dummy 1.0.0"
-assert_fail "test -e '$MISE_STATE_DIR/tool-update'"
-assert_not_contains "mise ls --installed dummy" "1.1.0"
-
-write_global_auto_update
-
-# `mise x` keeps its selected installed version, then updates only within the
-# global minor boundary. A project cannot widen that boundary to major.
+# `mise x` runs the installed version and updates within the configured range.
 fresh_state exec
-cat >mise.toml <<'EOF'
-[tools]
-dummy = { version = "1", auto_update = "major" }
-EOF
-mise uninstall dummy --all
-mise install dummy@1.0.0
-assert_contains "mise where dummy" "$MISE_DATA_DIR/installs/dummy/1.0.0"
-local_config_checksum="$(cksum mise.toml)"
+global_config 'dummy = { version = "1", auto_update = true }'
+reset_dummy
+reset_dummy
 assert_contains "mise x -- dummy" "Dummy 1.0.0"
-wait_for_dummy "1.1.0"
+wait_for_updater
+assert_contains "mise ls --installed dummy" "1.1.0"
+assert_not_contains "mise ls --installed dummy" "2.0.0"
 assert_contains "mise x -- dummy" "Dummy 1.1.0"
-assert_not_contains "mise ls --installed dummy" "2.0.0"
-assert_contains "cksum mise.toml" "$local_config_checksum"
 
-# Even the broadest policy is only an additional bound; it can never widen the
-# version range selected by configuration.
-fresh_state major-range
-cat >"$MISE_CONFIG_DIR/config.toml" <<'EOF'
-[settings.tool_update]
-check_duration = "1h"
+# A run within the interval starts nothing: the check marker is not touched.
+marker="$(find "$MISE_STATE_DIR/tool-update" -type f ! -name '*.*')"
+touch -d '1 minute ago' "$marker"
+checked_at="$(stat -c %Y "$marker")"
+assert_contains "mise x -- dummy" "Dummy 1.1.0"
+assert "stat -c %Y '$marker'" "$checked_at"
 
-[tools]
-dummy = { version = "1", auto_update = "major" }
+# `mise x` execs the tool, so the tool's process becomes mise's. The updater
+# must not end up as its child, left unreaped once it exits.
+fresh_state zombie
+reset_dummy
+# Python, unlike a shell, does not reap children it did not start.
+cat >children.py <<'EOF'
+import glob, os, subprocess, time
+for _ in range(300):
+    locks = glob.glob(os.environ["MISE_STATE_DIR"] + "/tool-update/*.lock")
+    if locks and not any(open(lock).read().strip() for lock in locks):
+        break
+    time.sleep(0.1)
+time.sleep(0.5)
+ps = subprocess.run(["ps", "-A", "-o", "ppid=", "-o", "stat="], capture_output=True, text=True)
+rows = [line.split() for line in ps.stdout.splitlines()]
+print(sum(1 for ppid, stat in rows if ppid == str(os.getpid()) and stat.startswith("Z")))
 EOF
-write_floating_dummy
-mise uninstall dummy --all
-mise install dummy@1.0.0
-assert_contains "mise x -- dummy" "Dummy 1.0.0"
-wait_for_dummy "1.1.0"
-assert_not_contains "mise ls --installed dummy" "2.0.0"
+assert "mise x -- python3 children.py" "0"
+rm children.py
 
-write_global_auto_update
+# Shims and tasks schedule it too; a task dry run does not.
+fresh_state shim
+reset_dummy
+mise reshim
+assert_contains "$MISE_DATA_DIR/shims/dummy" "Dummy 1.0.0"
+wait_for_updater
+assert_contains "mise ls --installed dummy" "1.1.0"
 
-# Tasks schedule only after their task environment has fixed its tool paths.
-fresh_state run
 cat >mise.toml <<'EOF'
-[tools]
-dummy = "1"
-
 [tasks.current]
 run = "dummy"
 EOF
-mise uninstall dummy --all
-mise install dummy@1.0.0
-assert_contains "mise run current" "Dummy 1.0.0"
-wait_for_dummy "1.1.0"
-
-# A task preview resolves its environment but never runs its body, so it must
-# not trigger a real background install.
 fresh_state run-dry-run
-mise uninstall dummy --all
-mise install dummy@1.0.0
+reset_dummy
 assert_succeed "mise run --dry-run current"
-assert_fail "test -e '$MISE_STATE_DIR/tool-update'"
+assert_no_update_started
+fresh_state run
+assert_contains "mise run current" "Dummy 1.0.0"
+wait_for_updater
+assert_contains "mise ls --installed dummy" "1.1.0"
+rm mise.toml
 
-# A PATH shim uses the same post-resolution scheduler, without making shell
-# activation or hook-env do foreground update work.
-fresh_state shim
-write_floating_dummy
-mise uninstall dummy --all
-mise install dummy@1.0.0
-mise reshim
-assert_contains '"$MISE_DATA_DIR/shims/dummy"' "Dummy 1.0.0"
-wait_for_dummy "1.1.0"
+# A project config can't turn it on, and a project that sets its own version
+# of the tool doesn't trigger the global entry's updates.
+fresh_state project-option
+global_config '# no tools'
+cat >mise.toml <<'EOF'
+[tools]
+dummy = { version = "1", auto_update = true }
+EOF
+reset_dummy
+assert_contains "mise x -- dummy" "Dummy 1.0.0"
+assert_no_update_started
 
-# Exact pins never schedule background work.
+fresh_state project-version
+global_config 'dummy = { version = "1", auto_update = true }'
+cat >mise.toml <<'EOF'
+[tools]
+dummy = "1"
+EOF
+assert_contains "mise x -- dummy" "Dummy 1.0.0"
+assert_no_update_started
+rm mise.toml
+
+# Exact versions are never updated, and hook-env never schedules.
 fresh_state pin
-cat >mise.toml <<'EOF'
-[tools]
-dummy = "1.0.0"
-EOF
-mise uninstall dummy --all
-mise install dummy@1.0.0
+global_config 'dummy = { version = "1.0.0", auto_update = true }'
 assert_contains "mise x -- dummy" "Dummy 1.0.0"
-assert_fail "test -e '$MISE_STATE_DIR/tool-update'"
-assert_not_contains "mise ls --installed dummy" "1.1.0"
+assert_no_update_started
 
-# A matching lockfile binding is preserved, while an unrelated lock entry does
-# not unnecessarily disable this tool's separately opted-in update.
-fresh_state lockfile
-write_floating_dummy
-cat >mise.lock <<'EOF'
-[[tools.dummy]]
-version = "1.0.0"
-backend = "asdf:dummy"
-EOF
-mise uninstall dummy --all
-mise install dummy@1.0.0
-assert_contains "mise x -- dummy" "Dummy 1.0.0"
-assert_fail "test -e '$MISE_STATE_DIR/tool-update'"
-assert_not_contains "mise ls --installed dummy" "1.1.0"
-rm mise.lock
-
-# The child must also reject a legacy lock discovered only after a version alias
-# is resolved. This covers a config edit between foreground scheduling and the
-# detached child starting.
-fresh_state lockfile-alias
-cat >mise.toml <<'EOF'
-[tools]
-dummy = "floating"
-
-[tool_alias.dummy.versions]
-floating = "1"
-EOF
-cat >mise.lock <<'EOF'
-[[tools.dummy]]
-version = "1.0.0"
-backend = "asdf:dummy"
-EOF
-mise uninstall dummy --all
-mise install dummy@1.0.0
-assert_contains "mise x -- dummy" "Dummy 1.0.0"
-assert_succeed "mise __tool-update dummy --current 1.0.0 --selector floating --policy major"
-assert_not_contains "mise ls --installed dummy" "1.1.0"
-rm mise.lock
-
-# A lockfile for another tool does not freeze this one, and the background
-# updater leaves that unrelated reproducibility state byte-for-byte unchanged.
-fresh_state unrelated-lockfile
-write_floating_dummy
-mise uninstall dummy --all
-# Lockfile mode can make mise's ordinary foreground resolver require the
-# newest matching version even for an unrelated entry. Start with that version
-# already installed: this case verifies the updater is still scheduled (rather
-# than treating every lockfile as a global freeze) and never rewrites it.
-mise install dummy@1.1.0
-cat >mise.lock <<'EOF'
-[[tools.tiny]]
-version = "1.0.0"
-backend = "asdf:tiny"
-EOF
-export unrelated_lock_checksum="$(cksum mise.lock)"
-assert_contains "mise x -- dummy" "Dummy 1.1.0"
-wait_for_update_marker
-assert "cksum mise.lock" "$unrelated_lock_checksum"
-unset unrelated_lock_checksum
-rm mise.lock
-
-# hook-env remains an entirely foreground-free path even when the global tool
-# option enables background updates for the configured tool.
 fresh_state hook-env
-write_floating_dummy
-mise uninstall dummy --all
-mise install dummy@1.0.0
+global_config 'dummy = { version = "1", auto_update = true }'
 assert_succeed "mise hook-env -s bash >/dev/null"
-assert_fail "test -e '$MISE_STATE_DIR/tool-update'"
-assert_not_contains "mise ls --installed dummy" "1.1.0"
+assert_no_update_started
 
-# Failed background installation leaves the working old version untouched.
-fresh_state failed-install
-write_floating_dummy
-mise uninstall dummy --all
-mise install dummy@1.0.0
+# A per-tool interval is accepted; one under an hour is raised with a warning.
+fresh_state interval
+global_config 'dummy = { version = "1", auto_update = "1m" }'
+reset_dummy
+assert_contains "mise x -- dummy 2>&1" "below the 1h minimum"
+wait_for_updater
+assert_contains "mise ls --installed dummy" "1.1.0"
+
+# A failed update leaves the installed version in use and shows in doctor;
+# a later successful one clears it.
+fresh_state failed
+global_config 'dummy = { version = "1", auto_update = true }'
+reset_dummy
+global_config 'dummy = { version = "1", auto_update = true, postinstall = "exit 1" }'
+assert_contains "mise x -- dummy" "Dummy 1.0.0"
+wait_for_updater
+assert_contains "mise x -- dummy" "Dummy 1.0.0"
+assert_contains "mise doctor 2>&1 || true" "the last background update of asdf:dummy failed"
+global_config 'dummy = { version = "1", auto_update = true }'
+assert_succeed "mise __tool-update dummy"
+assert_not_contains "mise doctor 2>&1 || true" "background update of asdf:dummy failed"
+
+# A global lockfile follows the update; a project lockfile is never touched.
+fresh_state lockfile
+global_config 'dummy = { version = "1", auto_update = true }'
+reset_dummy
 cat >mise.toml <<'EOF'
-[tools]
-dummy = { version = "1", postinstall = "sleep 1; false" }
+[env]
+PROJECT = "1"
 EOF
-assert_contains "mise x -- dummy" "Dummy 1.0.0"
-wait_for_update_completion
-# A failed install may retain a repairable partial directory, but it must not
-# replace the executable selected for the next foreground launch.
-assert_contains "mise x -- dummy" "Dummy 1.0.0"
-
-# Simultaneous foreground commands claim the same marker before fork and the
-# child lock still protects the full installation from cross-process races.
-cat >"$MISE_CONFIG_DIR/config.toml" <<'EOF'
-[settings.tool_update]
-check_duration = "0s"
-
-[tools]
-dummy = { version = "1", auto_update = "minor" }
+cat >mise.lock <<'EOF'
+[[tools.dummy]]
+version = "1.0.0"
+backend = "asdf:dummy"
 EOF
-fresh_state concurrent
-write_floating_dummy
-export DUMMY_INSTALL_GATE_DIR="$PWD/background-update-gate"
-mise uninstall dummy --all
-mise install dummy@1.0.0
-mise x -- dummy >first-exec.log 2>&1 &
-first=$!
-mise x -- dummy >second-exec.log 2>&1 &
-second=$!
-wait "$first"
-wait "$second"
-assert_contains "cat first-exec.log" "Dummy 1.0.0"
-assert_contains "cat second-exec.log" "Dummy 1.0.0"
-wait_for_dummy "1.1.0"
-assert_fail "test -e '$DUMMY_INSTALL_GATE_DIR.overlap'"
-unset DUMMY_INSTALL_GATE_DIR
+project_lock="$(cksum mise.lock)"
+mise lock --global dummy
+assert_contains "cat '$MISE_CONFIG_DIR/mise.lock'" '1.0.0'
+mise x -- dummy
+wait_for_updater
+assert_contains "cat '$MISE_CONFIG_DIR/mise.lock'" '1.1.0'
+assert "cksum mise.lock" "$project_lock"

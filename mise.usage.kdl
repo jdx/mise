@@ -435,6 +435,15 @@ mise tool-alias unset node project
 """#
     }
 }
+cmd __tool-update hide=#true help="Upgrade one globally configured tool in the background." effect=write {
+    long_help #"""
+Upgrade one globally configured tool in the background.
+
+Started detached by `mise x`, shims, and tasks for tools whose global `[tools]` entry sets `auto_update`. The per-tool lock keeps a second updater for the same tool from running alongside it.
+"""#
+    flag "-h --help" help="Print help" action=help builtin=#true
+    arg <TOOL>
+}
 cmd asdf hide=#true help="[internal] simulates asdf for plugins that call \"asdf\" internally" {
     flag "-h --help" help="Print help" action=help builtin=#true
     arg "[ARGS]…" help="all arguments" required=#false double_dash=automatic var=#true

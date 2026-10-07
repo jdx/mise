@@ -296,16 +296,13 @@ type = "ListString"
 
 [tool_update.check_duration]
 default = "24h"
-description = "Minimum time between background update checks for an opted-in tool."
+description = "How often to check for updates to a global tool with `auto_update = true`."
 docs = """
-Controls how often mise starts a background update for a tool whose global `[tools]` entry has
-an `auto_update` option. The foreground `mise x`, `mise run`, or shim command continues
-immediately with its installed version; a successful update is used the next time the tool
-resolves.
+The default interval between background update checks for a tool whose global `[tools]` entry
+sets `auto_update = true`. A tool can set its own interval instead, such as
+`auto_update = "6h"`. Intervals under `1h` are raised to `1h`.
 
-The check marker is shared by all projects for the same backend. Failed or offline
-checks still leave the current installation untouched and wait until the next interval before
-trying again.
+See [Background tool updates](/configuration.html#background-tool-updates).
 """
 env = "MISE_TOOL_UPDATE_CHECK_DURATION"
 global_only = true

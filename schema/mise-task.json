@@ -962,6 +962,17 @@
             },
             {
               "properties": {
+                "auto_update": {
+                  "description": "update this tool in the background after it is used; true, or a check interval such as \"12h\". Only honored in global config",
+                  "oneOf": [
+                    {
+                      "type": "boolean"
+                    },
+                    {
+                      "type": "string"
+                    }
+                  ]
+                },
                 "install_env": {
                   "type": "object",
                   "additionalProperties": {

@@ -2453,9 +2453,6 @@ pub(crate) fn extract_env_from_config_path(path: &Path) -> Option<String> {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LockfileUpdateMode {
-    /// Rebuild shims/runtime links without mutating a lockfile. Used by the
-    /// opt-in background updater so it can never change reproducible state.
-    Skip,
     Normal,
     AllowLocked,
 }
@@ -2463,10 +2460,6 @@ pub enum LockfileUpdateMode {
 impl LockfileUpdateMode {
     fn allow_locked(self) -> bool {
         matches!(self, Self::AllowLocked)
-    }
-
-    pub fn skips_update(self) -> bool {
-        matches!(self, Self::Skip)
     }
 }
 

@@ -1,362 +1,239 @@
-//! Opt-in scheduling for background tool upgrades.
+//! Opt-in background updates for tools configured in global config.
 //!
-//! The scheduler runs only after a foreground command has selected its tool
-//! paths. It does one filesystem-only rate-limit check, records a due attempt,
-//! and then detaches an internal command. The detached command owns all
-//! network, resolution, installation, and per-tool exclusion locking.
+//! After a foreground command (`mise x`, a shim, or a task) has selected its
+//! tool versions, [`schedule`] looks for the ones whose global `[tools]` entry
+//! sets `auto_update`. For each whose check interval has elapsed it records the
+//! attempt and starts a detached `mise __tool-update <tool>`, which upgrades the
+//! tool within its configured request. The current launch keeps the version it
+//! selected; later resolutions pick up the new one.
 
 use std::collections::HashSet;
+use std::path::PathBuf;
 use std::process::{Command, Stdio};
-use std::str::FromStr;
-use std::sync::Arc;
+use std::time::Duration;
 
-use eyre::Result;
+use eyre::{Result, bail};
 
-use crate::args::BackendArg;
-use crate::config::{Config, Settings, SettingsExt};
-use crate::toolset::{ConfigScope, ToolRequest, Toolset, ToolsetBuilder};
-use crate::{dirs, env, file, hash, lock_file};
+use crate::config::{Settings, SettingsExt, is_global_config};
+use crate::toolset::{ToolOptionSource, ToolSource, ToolVersion, Toolset};
+use crate::{dirs, duration, env, file, hash, lock_file};
 
-pub const STATE_DIR: &str = "tool-update";
+const STATE_DIR: &str = "tool-update";
 
-/// The largest component boundary a background update may cross.
-///
-/// Boundaries are intentionally based on numeric components, not a SemVer
-/// parser: backends may use dates, vendor prefixes, or other version syntaxes.
-/// `minor` keeps the first numeric component and `patch` keeps the first two.
-/// If there are no numeric components, the configured request stays
-/// authoritative instead of making that tool silently ineligible.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum UpdatePolicy {
-    Major,
-    Minor,
-    Patch,
-}
+/// Shorter intervals are raised to this, so a misconfigured interval cannot
+/// start an updater on every shim call.
+pub const MIN_CHECK_DURATION: Duration = Duration::from_secs(60 * 60);
 
-impl UpdatePolicy {
-    pub const fn as_str(self) -> &'static str {
-        match self {
-            Self::Major => "major",
-            Self::Minor => "minor",
-            Self::Patch => "patch",
-        }
-    }
-
-    /// Return a version selector that constrains candidate lookup before a
-    /// backend chooses its newest match. `None` means an opaque current
-    /// version has no safe numeric boundary, so the normal configured request
-    /// remains authoritative.
-    pub fn candidate_selector(self, current: &str) -> Option<String> {
-        if self == Self::Major {
-            return Some("latest".into());
-        }
-
-        let component_count = match self {
-            Self::Major => unreachable!(),
-            Self::Minor => 1,
-            Self::Patch => 2,
-        };
-        numeric_component_selector(current, component_count)
+/// Parse an `auto_update` value: `false` disables it, `true` uses
+/// `tool_update.check_duration`, and a duration sets the tool's own interval.
+pub fn parse_auto_update(value: &str) -> Result<Option<Duration>> {
+    match value {
+        "false" => Ok(None),
+        "true" => Ok(Some(Settings::get().tool_update_check_duration()?)),
+        _ => match duration::parse_duration(value) {
+            Ok(duration) => Ok(Some(duration)),
+            Err(_) => bail!("expected true, false, or a duration, got {value:?}"),
+        },
     }
 }
 
-/// Apply a policy boundary only when it is a strict refinement of the
-/// configured selector. A background update may narrow a floating request,
-/// but it must never widen it: `node = "20"` stays in 20 even if the trusted
-/// policy is `major`.
-pub fn bounded_update_selector(policy: UpdatePolicy, current: &str, configured: &str) -> String {
-    let Some(candidate) = policy.candidate_selector(current) else {
-        return configured.to_string();
+/// The `auto_update` value of a request written in a global config file.
+/// Options layered on from anywhere else (a runtime argument, an env var, a
+/// project's tool alias, the registry) never count: a project must not be able
+/// to start background network and install work on a user's machine.
+fn global_auto_update(tv: &ToolVersion) -> Option<String> {
+    let ToolSource::MiseToml(path) = tv.request.source() else {
+        return None;
     };
-    // `prefix:` is a parsing hint rather than part of the version prefix. It
-    // must travel with a refined candidate, otherwise `prefix:1` plus a patch
-    // policy would fall back to `prefix:1` and could install 1.3 after 1.2.
-    let (scheme, configured) = configured
-        .strip_prefix("prefix:")
-        .map_or(("", configured), |prefix| ("prefix:", prefix));
-    if candidate == configured
-        // `latest` is mise's explicit unbounded floating selector, so a
-        // version prefix derived from the working installation can only
-        // narrow it.
-        || configured == "latest"
-        || candidate.strip_prefix(configured).is_some_and(|rest| {
-            rest.starts_with('.') || rest.starts_with('-') || rest.starts_with('_')
-        })
-    {
-        format!("{scheme}{candidate}")
-    } else {
-        format!("{scheme}{configured}")
+    // Options in the entry's own table are `InlineBackendArg`, and in its
+    // version spec `Request`; both were written in this file.
+    let from_entry = matches!(
+        tv.request.option_source("auto_update"),
+        Some(ToolOptionSource::Request | ToolOptionSource::InlineBackendArg)
+    );
+    if !from_entry || !is_global_config(path) {
+        return None;
     }
+    tv.request.options().get("auto_update").map(str::to_string)
 }
 
-/// Derive a prefix query from the first `component_count` numeric components.
-/// Separators deliberately include dots, dashes, and underscores: dates such
-/// as `2026-10-06` need the same bounded behavior as `1.2.3`, and names like
-/// `go1.23.4` keep their meaningful nonnumeric prefix.
-fn numeric_component_selector(version: &str, component_count: usize) -> Option<String> {
-    let mut index = version.find(|character: char| character.is_ascii_digit())?;
-    for component in 0..component_count {
-        let start = index;
-        while version
-            .as_bytes()
-            .get(index)
-            .is_some_and(|character| character.is_ascii_digit())
-        {
-            index += 1;
-        }
-        if index == start {
-            return None;
-        }
-        if component + 1 == component_count {
-            return Some(version[..index].to_string());
-        }
-        if !version
-            .as_bytes()
-            .get(index)
-            .is_some_and(|character| matches!(character, b'.' | b'-' | b'_'))
-        {
-            return None;
-        }
-        index += 1;
-        if !version
-            .as_bytes()
-            .get(index)
-            .is_some_and(|character| character.is_ascii_digit())
-        {
-            return None;
-        }
-    }
-    None
-}
-
-impl std::fmt::Display for UpdatePolicy {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter.write_str(self.as_str())
-    }
-}
-
-impl FromStr for UpdatePolicy {
-    type Err = eyre::Error;
-
-    fn from_str(value: &str) -> Result<Self> {
-        match value {
-            "major" => Ok(Self::Major),
-            "minor" => Ok(Self::Minor),
-            "patch" => Ok(Self::Patch),
-            _ => eyre::bail!("expected one of: major, minor, patch"),
-        }
-    }
-}
-
-/// Starts detached, per-tool update attempts after the foreground path has
-/// already selected its current installed versions. This path deliberately
-/// does no network I/O, installation, waiting, or process locking.
-pub fn schedule(config: &Arc<Config>, toolset: &Toolset) {
-    let settings = Settings::get();
-    // `prefer_offline()` also reports the foreground command's fast-path
-    // policy (`mise x`, shims, and hook-env). This scheduler runs only from
-    // paths that have already selected an installed version, then launches a
-    // detached child whose own command is allowed to resolve normally. Honor
-    // only an explicit configured preference here.
-    if settings.offline() || settings.prefer_offline || settings.ci || ci_info::is_ci() {
-        debug!(
-            "skipping background update scheduling in offline or CI mode: offline={}, prefer_offline={}, configured_ci={}, detected_ci={}",
-            settings.offline(),
-            settings.prefer_offline,
-            settings.ci,
-            ci_info::is_ci(),
-        );
+/// Start detached updates for the opted-in tools in `toolset` that are due.
+/// This runs on the shim path, so it returns before any I/O unless some
+/// selected tool came from a global entry with `auto_update` set.
+pub fn schedule(toolset: &Toolset) {
+    let opted_in = toolset
+        .list_current_versions()
+        .into_iter()
+        .filter_map(|(_, tv)| global_auto_update(&tv).map(|value| (tv, value)))
+        .collect::<Vec<_>>();
+    if opted_in.is_empty() {
         return;
     }
-    let check_duration = match settings.tool_update_check_duration() {
-        Ok(duration) => duration,
-        Err(err) => {
-            debug!("invalid tool-update check duration: {err:#}");
-            return;
-        }
-    };
-
-    let mut scheduled = HashSet::new();
-    let mut global_toolset = None;
-    for (_, tool_version) in toolset.list_current_versions() {
-        let tool = tool_version.ba();
-        let tool_id = tool.full_without_opts();
-        if tool_version.request_pinned_this_version() {
-            debug!("skipping background update for {tool_id}: request is an exact pin");
+    let settings = Settings::get();
+    if settings.offline()
+        || settings.prefer_offline
+        || settings.locked
+        || settings.ci
+        || ci_info::is_ci()
+    {
+        debug!("tool-update: skipped in offline, locked, or CI mode");
+        return;
+    }
+    let mut seen = HashSet::new();
+    for (tv, value) in opted_in {
+        let tool_id = tv.ba().full_without_opts();
+        if !seen.insert(tool_id.clone()) || tv.request_pinned_this_version() {
             continue;
         }
-        if !scheduled.insert(tool_id.clone()) {
-            continue;
-        }
-        let Ok(backend) = tool_version.backend() else {
-            debug!("skipping background update for {tool_id}: backend is unavailable");
-            continue;
-        };
-        if !backend.is_version_installed(config, &tool_version, true) {
-            debug!("skipping background update for {tool_id}: selected version is not installed");
-            continue;
-        }
-        let global = global_toolset.get_or_insert_with(|| {
-            ToolsetBuilder::new()
-                .with_scope(ConfigScope::GlobalOnly)
-                .build_unresolved(config)
-                .ok()
-        });
-        let Some(global) = global.as_ref() else {
-            debug!("skipping background update for {tool_id}: could not read global config");
-            continue;
-        };
-        let Some(policy) = global_update_policy(global, tool) else {
-            debug!("skipping background update for {tool_id}: no global auto_update option");
-            continue;
-        };
-        match tool_version.resolved_from_lockfile() {
-            true => {
-                debug!(
-                    "skipping background update for {tool_id}: request resolved from a lockfile"
-                );
-                continue;
-            }
-            false => {}
-        }
-        match request_has_lockfile(config, &tool_version.request) {
-            Ok(true) => {
-                debug!("skipping background update for {tool_id}: request is lockfile-bound");
-                continue;
-            }
-            Ok(false) => {}
-            Err(err) => {
-                debug!(
-                    "skipping background update for {tool_id}: could not inspect lockfile: {err:#}"
-                );
-                continue;
-            }
-        }
-
-        let state_dir = dirs::STATE.join(STATE_DIR);
-        let key = tool_update_key(&tool_id);
-        let marker = state_dir.join(&key);
-        let claim_path = state_dir.join(format!("{key}.lock"));
-        let claim = match lock_file::LockFile::at(&claim_path).with_pid().try_lock() {
-            Ok(Some(claim)) => claim,
+        let interval = match parse_auto_update(&value) {
+            Ok(Some(interval)) => interval,
             Ok(None) => continue,
             Err(err) => {
-                debug!("failed to claim background update for {tool_id}: {err:#}");
+                debug!("tool-update: {tool_id}: {err:#}");
                 continue;
             }
         };
-        if !update_check_due(&marker, check_duration) {
-            continue;
-        }
-
-        // Claim the due interval before forking. The short-lived parent lock
-        // makes check-and-mark atomic across concurrent foreground commands,
-        // so they do not all create children that merely discover the child
-        // lock. A failed spawn is still a failed attempt and is retried at the
-        // next interval without ever delaying the foreground command.
-        if let Err(err) = file::write_atomic(&marker, "") {
-            debug!("failed to record background update attempt for {tool_id}: {err:#}");
-            continue;
-        }
-        // The marker now prevents another foreground process from starting a
-        // child for this interval. Release the short parent claim before the
-        // child is spawned so it cannot observe the handoff lock and give up.
-        drop(claim);
-
-        let mut command = Command::new(&*env::MISE_BIN);
-        command
-            .arg("__tool-update")
-            // `tool_id` is mise's resolved backend identity (for example
-            // `asdf:dummy`). The internal command accepts a normal ToolArg,
-            // so it must receive the spelling from the configuration instead
-            // of feeding that resolved identifier through the parser again.
-            .arg(&tool.short)
-            .arg("--current")
-            .arg(&tool_version.version)
-            .arg("--selector")
-            .arg(tool_version.request.version())
-            .arg("--policy")
-            .arg(policy.as_str())
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null());
-        if let Err(err) = spawn_detached(&mut command) {
-            debug!("failed to start background update for {tool_id}: {err}");
+        if let Err(err) = schedule_one(&tv.ba().short, &tool_id, interval) {
+            debug!("tool-update: {tool_id}: {err:#}");
         }
     }
 }
 
-/// Obtain the option only from the user's global config layer. Local project
-/// config can still select a floating version, but can never turn background
-/// installation on or change its update boundary.
-fn global_update_policy(global: &Toolset, tool: &BackendArg) -> Option<UpdatePolicy> {
-    let exact = global
-        .versions
-        .iter()
-        .filter(|(candidate, _)| candidate.full_without_opts() == tool.full_without_opts());
-    let short = global
-        .versions
-        .iter()
-        .filter(|(candidate, _)| candidate.short == tool.short);
-    exact
-        .chain(short)
-        .flat_map(|(_, versions)| versions.requests.iter())
-        .find_map(|request| request.options().get("auto_update").map(str::to_string))
-        .and_then(|value| match value.parse() {
-            Ok(policy) => Some(policy),
-            Err(err) => {
-                warn!(
-                    "ignoring invalid auto_update option {value:?} for {}: {err:#}",
-                    tool.full_without_opts()
-                );
-                None
-            }
-        })
+fn schedule_one(tool: &str, tool_id: &str, interval: Duration) -> Result<()> {
+    let paths = StatePaths::new(tool_id);
+    // The claim makes check-and-mark atomic across concurrent foreground
+    // commands, so only one of them starts an updater per interval.
+    let Some(claim) = lock_file::LockFile::at(&paths.claim)
+        .with_pid()
+        .try_lock()?
+    else {
+        return Ok(());
+    };
+    if file::modified_duration(&paths.marker)
+        .is_ok_and(|age| age < interval.max(MIN_CHECK_DURATION))
+    {
+        return Ok(());
+    }
+    file::write_atomic(&paths.marker, "")?;
+    drop(claim);
+    // Here rather than on every run, so it shows at most once per interval.
+    if interval < MIN_CHECK_DURATION {
+        warn!("auto_update interval for {tool_id} is below the 1h minimum, using 1h instead");
+    }
+
+    debug!("tool-update: starting background update for {tool_id}");
+    let log = std::fs::File::create(&paths.log)?;
+    let mut command = Command::new(&*env::MISE_BIN);
+    command
+        .args(["__tool-update", tool])
+        // Run outside the project, so the updater never loads its config.
+        .current_dir(*dirs::HOME)
+        .stdin(Stdio::null())
+        .stdout(log.try_clone()?)
+        .stderr(log);
+    spawn_detached(&mut command)?;
+    Ok(())
 }
 
-/// True only when this exact request has a matching lockfile binding. An
-/// unrelated entry in the same lockfile must not disable updates for every
-/// tool, and a matching binding must never be rewritten by the updater.
-pub fn request_has_lockfile(config: &Config, request: &ToolRequest) -> Result<bool> {
-    Ok(request.lockfile_resolve(config)?.is_some())
+/// Files under `$MISE_STATE_DIR/tool-update` for one tool.
+pub struct StatePaths {
+    /// Touched when an update is started; its age is the time since the last check.
+    pub marker: PathBuf,
+    /// Held by a foreground command while it checks and touches the marker.
+    pub claim: PathBuf,
+    /// Held by the updater for the whole upgrade.
+    pub lock: PathBuf,
+    /// The last update's error, removed when an update succeeds.
+    pub failure: PathBuf,
+    /// The last update's output.
+    pub log: PathBuf,
 }
 
-pub async fn tool_has_lockfile(config: &Arc<Config>, tool_id: &str) -> Result<bool> {
-    let requests = config.get_tool_request_set().await?;
-    for (_, requests, _) in requests.iter() {
-        for request in requests {
-            if request.ba().full_without_opts() == tool_id && request_has_lockfile(config, request)?
-            {
-                return Ok(true);
-            }
+impl StatePaths {
+    pub fn new(tool_id: &str) -> Self {
+        let dir = state_dir();
+        let key = hash::hash_to_str(&tool_id);
+        Self {
+            marker: dir.join(&key),
+            claim: dir.join(format!("{key}.claim")),
+            lock: dir.join(format!("{key}.lock")),
+            failure: dir.join(format!("{key}.failed.json")),
+            log: dir.join(format!("{key}.log")),
         }
     }
-    Ok(false)
 }
 
-pub fn update_check_due(path: &std::path::Path, duration: std::time::Duration) -> bool {
-    file::modified_duration(path).map_or(true, |age| age >= duration)
+fn state_dir() -> PathBuf {
+    dirs::STATE.join(STATE_DIR)
 }
 
-/// Stable filename component for a backend's background-update state.
-pub fn tool_update_key(tool_id: &str) -> String {
-    hash::hash_to_str(&tool_id)
+/// The recorded failure of a tool's last background update.
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+pub struct Failure {
+    pub tool: String,
+    pub error: String,
+    pub log: PathBuf,
 }
 
+/// Record how the last update went, for `mise doctor`.
+pub fn record_result(tool_id: &str, result: &Result<()>) {
+    let path = StatePaths::new(tool_id).failure;
+    let recorded = match result {
+        Ok(()) if path.exists() => file::remove_file(&path),
+        Ok(()) => Ok(()),
+        Err(err) => {
+            let failure = Failure {
+                tool: tool_id.to_string(),
+                error: format!("{err:#}"),
+                log: StatePaths::new(tool_id).log,
+            };
+            serde_json::to_string(&failure)
+                .map_err(eyre::Report::from)
+                .and_then(|json| file::write_atomic(&path, json))
+        }
+    };
+    if let Err(err) = recorded {
+        debug!("tool-update: could not record the result for {tool_id}: {err:#}");
+    }
+}
+
+/// Failures recorded by background updates that have not succeeded since.
+pub fn failures() -> Vec<Failure> {
+    let Ok(entries) = std::fs::read_dir(state_dir()) else {
+        return vec![];
+    };
+    entries
+        .filter_map(|entry| entry.ok().map(|entry| entry.path()))
+        .filter(|path| path.to_string_lossy().ends_with(".failed.json"))
+        .filter_map(|path| serde_json::from_str(&file::read_to_string(&path).ok()?).ok())
+        .collect()
+}
+
+/// Start `command` fully detached from the foreground process.
 #[cfg(unix)]
 fn spawn_detached(command: &mut Command) -> std::io::Result<()> {
     use std::os::unix::process::CommandExt;
 
-    // `setsid` is async-signal-safe and releases the updater from the shell's
-    // process group before it reaches exec. Its stdio is already /dev/null.
+    // `mise x` and shims replace themselves with the tool through exec, which
+    // would leave the updater a child of that tool: an unreaped zombie for as
+    // long as it runs. Instead the forked child starts a new session and forks
+    // again; the intermediate exits at once and is reaped below, and the
+    // updater is adopted by init.
     unsafe {
         command.pre_exec(|| {
-            nix::unistd::setsid()
-                .map(|_| ())
-                .map_err(|err| std::io::Error::from_raw_os_error(err as i32))
+            use nix::libc;
+            if libc::setsid() == -1 {
+                return Err(std::io::Error::last_os_error());
+            }
+            match libc::fork() {
+                -1 => Err(std::io::Error::last_os_error()),
+                0 => Ok(()),
+                _ => libc::_exit(0),
+            }
         });
     }
-    reap_detached(command.spawn()?)
+    command.spawn()?.wait()?;
+    Ok(())
 }
 
 #[cfg(windows)]
@@ -364,29 +241,10 @@ fn spawn_detached(command: &mut Command) -> std::io::Result<()> {
     use std::os::windows::process::CommandExt;
     use windows_sys::Win32::System::Threading::{CREATE_NEW_PROCESS_GROUP, DETACHED_PROCESS};
 
-    // A detached console plus a new process group keeps the updater outside
-    // the foreground shim/terminal group. Do not use the kill-on-drop job used
-    // for bounded child commands: this updater is intentionally independent.
+    // No console and its own process group, so Ctrl+C in the foreground does
+    // not reach it. Windows has no zombies, so the handle can just be dropped.
     command.creation_flags(CREATE_NEW_PROCESS_GROUP | DETACHED_PROCESS);
-    reap_detached(command.spawn()?)
-}
-
-#[cfg(not(any(unix, windows)))]
-fn spawn_detached(command: &mut Command) -> std::io::Result<()> {
-    reap_detached(command.spawn()?)
-}
-
-/// Detached children do not inherit the terminal, but they are still children
-/// of mise. Reap each one on a tiny helper thread so repeated launches cannot
-/// accumulate zombies while the foreground process remains alive.
-fn reap_detached(mut child: std::process::Child) -> std::io::Result<()> {
-    std::thread::Builder::new()
-        .name("mise-tool-update-reaper".into())
-        .spawn(move || {
-            if let Err(err) = child.wait() {
-                debug!("failed to reap background tool update: {err}");
-            }
-        })?;
+    command.spawn()?;
     Ok(())
 }
 
@@ -394,93 +252,24 @@ fn reap_detached(mut child: std::process::Child) -> std::io::Result<()> {
 mod tests {
     use std::time::Duration;
 
-    use super::{UpdatePolicy, bounded_update_selector, tool_update_key, update_check_due};
+    use super::{StatePaths, parse_auto_update};
 
     #[test]
-    fn tool_key_is_stable_and_distinct() {
-        assert_eq!(tool_update_key("claude"), tool_update_key("claude"));
-        assert_ne!(tool_update_key("claude"), tool_update_key("codex"));
+    fn parses_auto_update_values() {
+        assert_eq!(parse_auto_update("false").unwrap(), None);
+        assert!(parse_auto_update("true").unwrap().is_some());
+        assert_eq!(
+            parse_auto_update("6h").unwrap(),
+            Some(Duration::from_secs(6 * 60 * 60))
+        );
+        assert!(parse_auto_update("minor").is_err());
     }
 
     #[test]
-    fn policies_create_prefix_queries_without_semver_parsing() {
-        assert_eq!(
-            UpdatePolicy::Major.candidate_selector("1.2.3"),
-            Some("latest".into())
-        );
-        assert_eq!(
-            UpdatePolicy::Minor.candidate_selector("1.2.3"),
-            Some("1".into())
-        );
-        assert_eq!(
-            UpdatePolicy::Patch.candidate_selector("v1.2.3"),
-            Some("v1.2".into())
-        );
-        assert_eq!(
-            UpdatePolicy::Minor.candidate_selector("2026-10-06"),
-            Some("2026".into())
-        );
-        assert_eq!(
-            UpdatePolicy::Patch.candidate_selector("2026-10-06"),
-            Some("2026-10".into())
-        );
-        assert_eq!(
-            UpdatePolicy::Minor.candidate_selector("go1.23.4"),
-            Some("go1".into())
-        );
-        assert_eq!(
-            UpdatePolicy::Patch.candidate_selector("go1.23.4"),
-            Some("go1.23".into())
-        );
-        assert_eq!(
-            UpdatePolicy::Patch.candidate_selector("cpython-3.13.1"),
-            Some("cpython-3.13".into())
-        );
-        assert_eq!(UpdatePolicy::Minor.candidate_selector("nightly"), None);
-    }
-
-    #[test]
-    fn policy_selector_refines_but_never_widens_the_configured_request() {
-        assert_eq!(
-            bounded_update_selector(UpdatePolicy::Major, "1.2.3", "1"),
-            "1"
-        );
-        assert_eq!(
-            bounded_update_selector(UpdatePolicy::Minor, "1.2.3", "1.2"),
-            "1.2"
-        );
-        assert_eq!(
-            bounded_update_selector(UpdatePolicy::Patch, "1.2.3", "1"),
-            "1.2"
-        );
-        assert_eq!(
-            bounded_update_selector(UpdatePolicy::Minor, "1.2.3", "latest"),
-            "1"
-        );
-        assert_eq!(
-            bounded_update_selector(UpdatePolicy::Patch, "1.2.3", "prefix:1"),
-            "prefix:1.2"
-        );
-        assert_eq!(
-            bounded_update_selector(UpdatePolicy::Patch, "1.2.3", "prefix:lts"),
-            "prefix:lts"
-        );
-        assert_eq!(
-            bounded_update_selector(UpdatePolicy::Minor, "go1.23.4", "go1"),
-            "go1"
-        );
-        assert_eq!(
-            bounded_update_selector(UpdatePolicy::Minor, "1.2.3", "lts"),
-            "lts"
-        );
-    }
-
-    #[test]
-    fn missing_check_is_due_and_fresh_check_is_not() {
-        let temp = tempfile::tempdir().unwrap();
-        let marker = temp.path().join("last-check");
-        assert!(update_check_due(&marker, Duration::from_secs(1)));
-        std::fs::write(&marker, "").unwrap();
-        assert!(!update_check_due(&marker, Duration::from_secs(3600)));
+    fn state_paths_are_distinct_per_tool() {
+        let claude = StatePaths::new("claude");
+        assert_eq!(claude.marker, StatePaths::new("claude").marker);
+        assert_ne!(claude.marker, StatePaths::new("codex").marker);
+        assert_ne!(claude.claim, claude.lock);
     }
 }

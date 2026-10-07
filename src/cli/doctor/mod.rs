@@ -220,6 +220,7 @@ impl Doctor {
         self.analyze_backend_mismatches();
         self.analyze_system_deps(ts).await;
         self.analyze_new_version().await;
+        self.analyze_tool_updates();
         #[cfg(all(windows, feature = "self_update"))]
         self.analyze_self_update_leftovers();
         self.check_path_ordering(ts, &config).await;
@@ -376,6 +377,7 @@ impl Doctor {
         self.analyze_settings()?;
 
         self.analyze_new_version().await;
+        self.analyze_tool_updates();
         #[cfg(all(windows, feature = "self_update"))]
         self.analyze_self_update_leftovers();
 
@@ -495,6 +497,19 @@ impl Doctor {
             bytesize::ByteSize::b(total).display().iec(),
             display_path(std::env::temp_dir()),
         ));
+    }
+
+    /// Background updates (a global tool's `auto_update`) have no output of
+    /// their own, so a failing one is only visible here.
+    fn analyze_tool_updates(&mut self) {
+        for failure in crate::tool_update::failures() {
+            self.warnings.push(format!(
+                "the last background update of {} failed: {}\nsee {} for its output",
+                failure.tool,
+                failure.error,
+                display_path(&failure.log),
+            ));
+        }
     }
 
     fn analyze_settings(&mut self) -> eyre::Result<()> {

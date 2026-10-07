@@ -41,12 +41,6 @@ pub struct OutdatedInfo {
 }
 
 impl OutdatedInfo {
-    /// Whether this entry's request selected its currently resolved version
-    /// explicitly rather than through a floating selector.
-    pub fn request_pinned_to_current_version(&self) -> bool {
-        self.tool_version.request_pinned_this_version()
-    }
-
     pub fn new(config: &Arc<Config>, tv: ToolVersion, latest: String) -> Result<Self> {
         let t = tv.backend()?;
         let current = Self::current_version(config, &t, &tv)?;
