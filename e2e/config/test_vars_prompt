@@ -94,6 +94,11 @@ assert_contains "mise vars --no-header" "from-config"
 assert_contains "mise vars --no-header" "color"
 assert_contains "mise vars --no-header" "vars.toml"
 
+# A saved answer for a declared var is attributed to vars.toml, not the config file
+assert_contains "mise vars --no-header | grep git_name" "vars.toml"
+# ...and the process environment still beats it
+assert "env git_name=from-env mise vars git_name" "from-env"
+
 # A saved value is an ordinary var, so a template sees it even with no `prompt`
 cat <<EOF2 >>mise.toml
 

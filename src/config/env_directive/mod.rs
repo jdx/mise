@@ -413,15 +413,6 @@ impl EnvResults {
             .map(|(k, v)| (k.clone(), (v.clone(), None)))
             .collect::<IndexMap<_, _>>();
         let mut r = Self::default();
-        if resolve_opts.vars {
-            // Saved answers sit below every config value and above a `default`,
-            // which keeps a value that is already there.
-            for (key, value) in prompt::saved_all() {
-                if !value.is_empty() {
-                    r.vars.insert(key, (value, prompt::answers_path()));
-                }
-            }
-        }
         let normalize_path = |config_root: &Path, p: PathBuf| {
             let p = p.strip_prefix("./").unwrap_or(&p);
             match p.strip_prefix("~/") {
@@ -488,6 +479,24 @@ impl EnvResults {
         } else {
             initial
         };
+
+        if resolve_opts.vars {
+            // A saved value is an ordinary var, below every config value. Names that
+            // a `default` or `required` directive declares are left to those, which
+            // rank a saved value below the process environment and record its source.
+            let declared: BTreeSet<&str> = filtered_input
+                .iter()
+                .filter_map(|(d, _)| match d {
+                    EnvDirective::Default(k, ..) | EnvDirective::Required(k, _) => Some(k.as_str()),
+                    _ => None,
+                })
+                .collect();
+            for (key, value) in prompt::saved_all() {
+                if !value.is_empty() && !declared.contains(key.as_str()) {
+                    r.vars.insert(key, (value, prompt::answers_path()));
+                }
+            }
+        }
 
         for (directive, source) in filtered_input {
             let mut tera = None;
@@ -582,7 +591,6 @@ impl EnvResults {
                     // A saved answer wins over the default, so render the default only
                     // when there is none.
                     if resolve_opts.vars
-                        && opts.prompt.is_some()
                         && let Some(a) = prompt::saved(&k)
                     {
                         if redact.unwrap_or(false) {
@@ -659,8 +667,10 @@ impl EnvResults {
                     } else if resolve_opts.vars
                         && !vars.contains_key(&k)
                         && !r.vars.contains_key(&k)
-                        && let Some(p) = &opts.prompt
-                        && let Some(a) = prompt::answer(&k, p, None)?
+                        && let Some(a) = match &opts.prompt {
+                            Some(p) => prompt::answer(&k, p, None)?,
+                            None => prompt::saved(&k),
+                        }
                     {
                         r.vars.insert(k, (a, prompt::answers_path()));
                     }
