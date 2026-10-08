@@ -100,7 +100,18 @@ impl Watch {
                 return Err(request_exit(1));
             }
         }
-        let mut args = once(self.task)
+        // watchexec refuses `--manual` alongside a command, and showing its manual page needs no
+        // tasks, so this resolves none and runs nothing but `watchexec --manual`.
+        if self.watchexec.manual {
+            debug!("$ watchexec --manual");
+            let mut cmd = cmd::cmd("watchexec", ["--manual"]);
+            for (k, v) in ts.env_with_path(&config).await? {
+                cmd = cmd.env(k, v);
+            }
+            cmd.run()?;
+            return Ok(());
+        }
+        let mut args = once(self.task.clone())
             .flatten()
             .chain(self.task_flag.iter().cloned())
             .chain(self.args.iter().cloned())
@@ -228,27 +239,7 @@ impl Watch {
                 itertools::intersperse(ignores, "--ignore".to_string()).collect::<Vec<_>>(),
             );
         }
-        args.extend([
-            "--".to_string(),
-            env::MISE_BIN.to_string_lossy().to_string(),
-            "run".to_string(),
-        ]);
-        if self.skip_deps {
-            args.push("--skip-deps".to_string());
-        }
-        let task_args = itertools::intersperse(
-            tasks.iter().map(|t| {
-                let mut args = vec![t.name.to_string()];
-                args.extend(t.args.iter().map(|a| a.to_string()));
-                args
-            }),
-            vec![":::".to_string()],
-        )
-        .flatten()
-        .collect_vec();
-        for arg in task_args {
-            args.push(arg);
-        }
+        args.extend(self.command_args(&tasks));
         debug!("$ watchexec {}", args.join(" "));
         let mut cmd = cmd::cmd("watchexec", &args);
         for (k, v) in ts.env_with_path(&config).await? {
@@ -274,6 +265,36 @@ impl Watch {
 
         cmd.run()?;
         Ok(())
+    }
+
+    /// The command watchexec runs on each change: `-- <mise> run [--skip-deps] <tasks>`.
+    ///
+    /// With `--only-emit-events` there is none, because watchexec refuses that flag alongside a
+    /// command; it then only prints the events that the task sources would have triggered on.
+    fn command_args(&self, tasks: &[Task]) -> Vec<String> {
+        if self.watchexec.only_emit_events {
+            return vec![];
+        }
+        let mut args = vec![
+            "--".to_string(),
+            env::MISE_BIN.to_string_lossy().to_string(),
+            "run".to_string(),
+        ];
+        if self.skip_deps {
+            args.push("--skip-deps".to_string());
+        }
+        args.extend(
+            itertools::intersperse(
+                tasks.iter().map(|t| {
+                    let mut args = vec![t.name.to_string()];
+                    args.extend(t.args.iter().map(|a| a.to_string()));
+                    args
+                }),
+                vec![":::".to_string()],
+            )
+            .flatten(),
+        );
+        args
     }
 }
 
@@ -1197,6 +1218,7 @@ pub(crate) struct WatchexecArgs {
     ///
     /// This may apply filtering at the kernel level when possible, which can be more efficient, but
     /// may be more confusing when reading the logs.
+    // The default must match DEFAULT_FS_EVENTS, which decides whether to forward this flag.
     #[usage(
         long = "fs-events",
         help_heading = "Filtering",
@@ -1280,9 +1302,10 @@ impl WatchexecArgs {
     /// The watchexec flags these arguments ask for, spelled the way watchexec takes them.
     ///
     /// Every flag `mise watch` accepts on watchexec's behalf has to be re-emitted here: one
-    /// that is parsed and not pushed is silently ignored (#7776, #10212). `--project-origin`
-    /// is the exception, because mise also derives an origin from the task sources; `run`
-    /// decides between the two.
+    /// that is parsed and not pushed is silently ignored (#7776, #10212). Two are handled in
+    /// `run` instead: `--project-origin`, because mise also derives an origin from the task
+    /// sources and has to pick one, and `--manual`, because watchexec refuses it alongside the
+    /// command mise always runs.
     ///
     /// `no_vcs_ignore` is forced on when a watched task opted out of VCS ignores.
     fn watchexec_args(&self, no_vcs_ignore: bool) -> Vec<String> {
@@ -1439,14 +1462,12 @@ impl WatchexecArgs {
         if self.filter_fs_meta {
             args.push("--no-meta".to_string());
         }
-        if self.manual {
-            args.push("--manual".to_string());
-        }
         args
     }
 }
 
-/// watchexec's own `--fs-events` default; the same list is the default for the flag above.
+/// watchexec's own `--fs-events` default. It must match the `default` on `filter_fs_events`;
+/// if the two drift apart, mise forwards `--fs-events` when the user did not pass it.
 const DEFAULT_FS_EVENTS: &[FsEvent] = &[
     FsEvent::Create,
     FsEvent::Remove,
@@ -1847,7 +1868,6 @@ mod tests {
             "-n",
             "--emit-events-to",
             "json-stdio",
-            "--only-emit-events",
             "--watchexec-env",
             "FOO=bar",
             "--watchexec-env",
@@ -1876,7 +1896,6 @@ mod tests {
                 "-n",
                 "--emit-events-to",
                 "json-stdio",
-                "--only-emit-events",
                 "--env",
                 "FOO=bar",
                 "--env",
@@ -1899,14 +1918,56 @@ mod tests {
         );
     }
 
-    /// Each of these conflicts with a flag in the test above.
+    /// `--no-meta` conflicts with `--fs-events` in the test above.
     #[test]
-    fn forwards_no_meta_and_manual() {
-        let (_, watch) = parse_watch(&["mise", "watch", "--no-meta", "--manual", "build"]);
+    fn forwards_no_meta() {
+        let (_, watch) = parse_watch(&["mise", "watch", "--no-meta", "build"]);
+        assert_eq!(watch.watchexec.watchexec_args(false), s(&["--no-meta"]));
+    }
+
+    /// `run` handles `--manual` on its own, as `watchexec --manual` with no command, because
+    /// watchexec refuses `--manual` alongside one.
+    #[test]
+    fn manual_is_not_forwarded_with_the_other_flags() {
+        let (_, watch) = parse_watch(&["mise", "watch", "--manual"]);
+        assert!(watch.watchexec.manual);
+        assert!(watch.watchexec.watchexec_args(false).is_empty());
+    }
+
+    fn named_task(name: &str) -> Task {
+        let mut task = Task::default();
+        task.name = name.to_string();
+        task
+    }
+
+    #[test]
+    fn command_runs_the_tasks() {
+        let (_, watch) = parse_watch(&["mise", "watch", "--skip-deps", "build"]);
+        let args = watch.command_args(&[named_task("build"), named_task("test")]);
+        assert_eq!(args[0], "--");
+        assert_eq!(
+            args[2..],
+            s(&["run", "--skip-deps", "build", ":::", "test"])
+        );
+    }
+
+    /// watchexec refuses `--only-emit-events` alongside a command, so mise must not append
+    /// `-- <mise> run ...` after it.
+    #[test]
+    fn only_emit_events_runs_no_command() {
+        let (_, watch) = parse_watch(&[
+            "mise",
+            "watch",
+            "--emit-events-to",
+            "json-stdio",
+            "--only-emit-events",
+            "build",
+        ]);
         assert_eq!(
             watch.watchexec.watchexec_args(false),
-            s(&["--no-meta", "--manual"])
+            s(&["--emit-events-to", "json-stdio", "--only-emit-events"])
         );
+        assert!(watch.command_args(&[named_task("build")]).is_empty());
     }
 
     /// `-E`/`--env` and `-q`/`--quiet` are mise's global flags. watchexec's flags of the same

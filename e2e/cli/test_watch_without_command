@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+
+# watchexec refuses --manual and --only-emit-events alongside a command, so
+# `mise watch` must not append `-- <mise> run <task>` when either is given.
+
+mise use -g watchexec@latest
+mkdir -p src
+cat <<'EOF' >mise.toml
+[tasks.example]
+run = 'echo "task ran"'
+sources = ["src/**/*.txt"]
+EOF
+
+# --manual needs no task (there is no `default` here) and prints watchexec's
+# manual page as ROFF when stdout is not a terminal.
+assert_contains "mise watch --manual" ".TH watchexec 1"
+
+# --only-emit-events prints the events the task sources match instead of
+# running the task.
+output_file=.watch_events_output
+
+MISE_DEBUG=1 mise watch --emit-events-to json-stdio --only-emit-events example >"${output_file}" 2>&1 &
+PID_TO_KILL=$!
+
+for _ in $(seq 1 40); do
+  grep -Fq '$ watchexec ' "${output_file}" && break
+  sleep 0.5
+done
+sleep 1
+
+for _ in $(seq 1 20); do
+  echo change >>src/changed.txt
+  grep -Fq 'changed.txt' "${output_file}" && break
+  sleep 0.5
+done
+
+# Stop watchexec as well as mise; killing mise alone leaves watchexec running.
+pkill -P "$PID_TO_KILL" 2>/dev/null || true
+kill "$PID_TO_KILL" 2>/dev/null || true
+
+assert_contains "grep -F '\$ watchexec ' ${output_file}" "--emit-events-to json-stdio --only-emit-events"
+assert_not_contains "grep -F '\$ watchexec ' ${output_file}" " -- "
+assert_contains "cat ${output_file}" "changed.txt"
+assert_not_contains "cat ${output_file}" "task ran"
+assert_not_contains "cat ${output_file}" "cannot be used with"

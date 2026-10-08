@@ -27,12 +27,14 @@ for _ in $(seq 1 40); do
   sleep 0.5
 done
 
-kill -SIGINT "$PID_TO_KILL" 2>/dev/null || true
+# Stop watchexec as well as mise; killing mise alone leaves watchexec running.
+pkill -P "$PID_TO_KILL" 2>/dev/null || true
+kill "$PID_TO_KILL" 2>/dev/null || true
 
 assert_contains "cat ${output_file}" "--env FOO=bar"
 assert_contains "cat ${output_file}" "--color never --timings --quiet"
 assert_contains "cat ${output_file}" "--fs-events create,modify"
-assert_contains "cat ${output_file}" "--project-origin ${PWD}/src "
+assert_contains "cat ${output_file}" "--project-origin $(pwd -P)/src "
 assert_contains "cat ${output_file}" "-f **/*.txt"
 assert_not_contains "cat ${output_file}" "--env dev"
 assert_contains "cat ${output_file}" "task saw FOO=bar MISE_ENV=dev"
