@@ -225,17 +225,19 @@ pub async fn plan(
         if base_units.contains(&request.name) {
             continue;
         }
-        let name = request.unit.clone();
         if request.is_absent() {
             if opts.verbose {
-                unapply.skipped.push(Skip {
-                    kind: "systemd-unit",
-                    name,
-                    reason: DECLARED_ABSENT.into(),
-                });
+                for unit in systemd::resolve_absent(std::slice::from_ref(&request)) {
+                    unapply.skipped.push(Skip {
+                        kind: "systemd-unit",
+                        name: unit.unit,
+                        reason: DECLARED_ABSENT.into(),
+                    });
+                }
             }
             continue;
         }
+        let name = request.unit.clone();
         if !units_available {
             unapply.skipped.push(Skip {
                 kind: "systemd-unit",

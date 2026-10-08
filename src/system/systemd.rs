@@ -8,7 +8,7 @@ use std::process::Stdio;
 use std::time::Duration;
 
 use eyre::{Result, bail, eyre};
-use indexmap::IndexMap;
+use indexmap::{IndexMap, IndexSet};
 use serde::Deserialize;
 
 const SYSTEMCTL_TIMEOUT: Duration = Duration::from_secs(30);
@@ -367,9 +367,7 @@ impl SystemdRequest {
 impl std::fmt::Display for SystemdRequest {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if self.is_absent() {
-            // Removal covers both units of the name, not the one kind the
-            // declaration's keys would describe.
-            return write!(f, "{} (absent)", self.name);
+            return write!(f, "{} ({}, absent)", self.name, self.unit);
         }
         write!(f, "{} ({})", self.name, self.unit)
     }
@@ -396,26 +394,54 @@ pub fn unavailable_reason() -> String {
     }
 }
 
+/// The units these declarations stand for. A unit declared absent need not
+/// say whether it was a service or a timer, so it becomes one request per
+/// installed `dev.mise.<name>.timer` and `dev.mise.<name>.service`, timer
+/// first, each naming that unit. With neither installed it stays as declared.
+pub fn resolve_absent(requests: &[SystemdRequest]) -> Vec<SystemdRequest> {
+    requests
+        .iter()
+        .flat_map(|req| {
+            if !req.is_absent() {
+                return vec![req.clone()];
+            }
+            let installed = [
+                (SystemdUnitKind::Timer, "timer"),
+                (SystemdUnitKind::Service, "service"),
+            ]
+            .into_iter()
+            .map(|(kind, suffix)| (kind, format!("dev.mise.{}.{suffix}", req.name)))
+            .filter(|(_, unit)| entry_exists(&user_units_dir().join(unit)))
+            .map(|(kind, unit)| SystemdRequest {
+                kind,
+                unit,
+                ..req.clone()
+            })
+            .collect::<Vec<_>>();
+            if installed.is_empty() {
+                vec![req.clone()]
+            } else {
+                installed
+            }
+        })
+        .collect()
+}
+
 pub async fn status(requests: &[SystemdRequest]) -> Result<Vec<SystemdStatus>> {
     let mut out = vec![];
-    for req in requests {
+    for req in &resolve_absent(requests) {
         let path = unit_path(req);
         if req.is_absent() {
-            let installed = [req.unit.clone(), sibling_unit(req)]
-                .into_iter()
-                .find(|unit| entry_exists(&user_units_dir().join(unit)));
-            let (path, active, enabled, state) = match installed {
-                Some(unit) => {
-                    let active = is_active(&unit).await?;
-                    let state = if active {
-                        SystemdState::Active
-                    } else {
-                        SystemdState::Inactive
-                    };
-                    let enabled = is_enabled(&unit).await?;
-                    (user_units_dir().join(unit), active, enabled, state)
-                }
-                None => (path, false, false, SystemdState::Missing),
+            let (active, enabled, state) = if entry_exists(&path) {
+                let active = is_active(&req.unit).await?;
+                let state = if active {
+                    SystemdState::Active
+                } else {
+                    SystemdState::Inactive
+                };
+                (active, is_enabled(&req.unit).await?, state)
+            } else {
+                (false, false, SystemdState::Missing)
             };
             out.push(SystemdStatus {
                 request: req.clone(),
@@ -621,7 +647,8 @@ pub(crate) async fn remove_service(name: &str, dry_run: bool) -> Result<bool> {
 /// Stop, disable, and delete the units mise wrote for these entries, both the
 /// `.timer` and the `.service` of each name, then reload the user manager.
 /// Timers go first so none of them fires a service that is being removed.
-/// Returns whether any unit file existed.
+/// A name listed more than once, as `status` lists an absent name with both
+/// units installed, is removed once. Returns whether any unit file existed.
 pub(crate) async fn remove(requests: &[SystemdRequest], dry_run: bool) -> Result<bool> {
     let units = ["timer", "service"]
         .into_iter()
@@ -630,6 +657,8 @@ pub(crate) async fn remove(requests: &[SystemdRequest], dry_run: bool) -> Result
                 .iter()
                 .map(move |req| format!("dev.mise.{}.{suffix}", req.name))
         })
+        .collect::<IndexSet<_>>()
+        .into_iter()
         .collect::<Vec<_>>();
     remove_units(&units, dry_run).await
 }

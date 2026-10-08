@@ -82,12 +82,28 @@ TOML
 assert_not_contains "mise bootstrap linux systemd-units status 2>&1" "unknown field"
 assert_contains "mise bootstrap linux systemd-units status" "present"
 assert_fail "mise bootstrap linux systemd-units status --missing"
+# The bare declaration reports the timer that is installed, not the service
+# its missing timer keys would default to.
+assert_contains "mise bootstrap linux systemd-units status --json" '"unit": "dev.mise.sync-timer.timer"'
+assert_not_contains "mise bootstrap linux systemd-units status --json" "dev.mise.sync-timer.service"
+assert_contains "mise bootstrap status --json" '"unit": "dev.mise.sync-timer.timer"'
+assert_not_contains "mise bootstrap status --json" "dev.mise.sync-timer.service"
+cat <<'TOML' >mise.backup.toml
+[bootstrap.linux.systemd.units.sync-timer]
+state = "absent"
+TOML
+assert_contains "mise -v bootstrap unapply backup --dry-run 2>&1" "systemd-unit dev.mise.sync-timer.timer: keeping it"
+assert_not_contains "mise -v bootstrap unapply backup --dry-run 2>&1" "dev.mise.sync-timer.service"
+rm mise.backup.toml
 assert_contains "mise bootstrap linux systemd-units apply --dry-run" "rm $UNITS/dev.mise.sync-timer.timer"
 assert_succeed "test -f $UNITS/dev.mise.sync-timer.timer"
 rm -f "$STATE/log"
 assert_succeed "mise bootstrap linux systemd-units apply --yes"
 assert_fail "test -e $UNITS/dev.mise.sync.service"
 assert_fail "test -e $UNITS/dev.mise.sync-timer.timer"
+assert_succeed "grep -qx 'stop dev.mise.sync-timer.timer' $STATE/log"
+assert_succeed "grep -qx 'disable dev.mise.sync-timer.timer' $STATE/log"
+assert_fail "grep -q 'dev.mise.sync-timer.service' $STATE/log"
 assert_fail "test -e $STATE/active/dev.mise.sync-timer.timer"
 assert_fail "test -e $STATE/enabled/dev.mise.sync-timer.timer"
 # The timer stops before the service it triggers, and the manager reloads once
@@ -100,6 +116,23 @@ assert_succeed "mise bootstrap linux systemd-units status --missing"
 rm -f "$STATE/log"
 assert_succeed "mise bootstrap linux systemd-units apply --yes"
 assert_fail "test -e $STATE/log"
+
+# With both a timer and a service installed under the name, status lists each
+# and apply stops, disables, and removes each once.
+echo "[Timer]" >"$UNITS/dev.mise.sync-timer.timer"
+echo "[Service]" >"$UNITS/dev.mise.sync-timer.service"
+assert_contains "mise bootstrap linux systemd-units status --json" '"unit": "dev.mise.sync-timer.timer"'
+assert_contains "mise bootstrap linux systemd-units status --json" '"unit": "dev.mise.sync-timer.service"'
+assert "mise bootstrap linux systemd-units apply --dry-run | grep -c '^rm '" "2"
+rm -f "$STATE/log"
+assert_succeed "mise bootstrap linux systemd-units apply --yes"
+assert_fail "test -e $UNITS/dev.mise.sync-timer.timer"
+assert_fail "test -e $UNITS/dev.mise.sync-timer.service"
+assert "grep -v '^is-' $STATE/log" "stop dev.mise.sync-timer.timer
+disable dev.mise.sync-timer.timer
+stop dev.mise.sync-timer.service
+disable dev.mise.sync-timer.service
+daemon-reload"
 
 # A unit link whose target is gone still counts as installed, and is removed.
 ln -s "$PWD/gone.service" "$UNITS/dev.mise.sync.service"

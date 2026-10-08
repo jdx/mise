@@ -4276,6 +4276,7 @@ impl BootstrapStatus {
         }
         if !system::systemd::is_available() {
             let reason = system::systemd::unavailable_reason();
+            let units = system::systemd::resolve_absent(&units);
             for req in &units {
                 report.row(
                     "systemd",
@@ -5069,7 +5070,7 @@ impl BootstrapSystemdStatus {
                         json!({ "available": false, "reason": reason }),
                     );
                 } else {
-                    for req in &units {
+                    for req in &system::systemd::resolve_absent(&units) {
                         rows.push(vec![
                             req.name.clone(),
                             req.unit.clone(),
