@@ -22,6 +22,6 @@ The config directory is kept unless `--config` is passed.
 
 ## Related documentation
 
-- [Uninstalling mise](/installing-mise.html).
+- [Uninstalling mise](/installing-mise.html#uninstalling).
 - [All commands](/cli/).
 - [Global flags and argument syntax](/cli/#global-flags).

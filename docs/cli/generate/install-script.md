@@ -56,6 +56,6 @@ mise generate install-script --write ./bin/mise --windows
 
 ## Related documentation
 
-- [Project installation scripts](/dev-tools/).
+- [Project installation scripts](/continuous-integration.html#bootstrapping).
 - [`mise generate <SUBCOMMAND>`](/cli/generate.html).
 - [Global flags and argument syntax](/cli/#global-flags).

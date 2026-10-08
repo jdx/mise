@@ -31,6 +31,6 @@ Open an SSH session, optionally borrowing read-only GitHub access
 
 ## Related documentation
 
-- [Git provider authentication](/dev-tools/github-tokens.html).
+- [GitHub relay](/bootstrap/github-relay.html).
 - [All commands](/cli/).
 - [Global flags and argument syntax](/cli/#global-flags).

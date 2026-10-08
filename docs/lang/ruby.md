@@ -1,236 +1,164 @@
 ---
-description: "Like rvm, rbenv, or asdf, mise can manage multiple versions of Ruby on the same system."
+description: "Install Ruby with mise from precompiled binaries or ruby-build, and select it per project."
 ---
 
 # Ruby
 
-Like `rvm`, `rbenv`, or `asdf`, `mise` can manage multiple versions of [Ruby](https://www.ruby-lang.org/) on the same system.
+mise installs [Ruby](https://www.ruby-lang.org/) from precompiled binaries where
+they exist and compiles it with ruby-build otherwise. On Windows it installs
+RubyInstaller2 builds.
 
-## Usage
+## Quick start
 
 Select Ruby for the current project and check its executable:
 
 ```sh
-mise use ruby@3.4
+mise use ruby@4.0
 mise exec -- ruby --version
 ```
 
-Use `mise use -g ruby@3.4` for a personal default. For an existing Bundler project,
-run `mise exec -- bundle install`, then prefix application commands with
-`mise exec -- bundle exec`. See the [Ruby cookbook](/mise-cookbook/ruby.html).
+`mise use` writes `ruby = "4.0"` to `mise.toml`. Use `mise use -g ruby@4.0` for
+a personal default. In an existing Bundler project, run
+`mise exec -- bundle install`, then prefix application commands with
+`mise exec -- bundle exec`. See the [Ruby cookbook](/mise-cookbook/ruby.html)
+for a Rails project.
 
-By default, mise installs a precompiled Ruby binary when one is available and falls back to
-compiling from source with [`ruby-build`](https://github.com/rbenv/ruby-build). Source builds require
-the necessary [dependencies](https://github.com/rbenv/ruby-build/wiki#suggested-build-environment).
-See the ruby-build [README](https://github.com/rbenv/ruby-build/blob/master/README.md) for additional
-settings and troubleshooting.
+## Choosing a version
 
-These instructions use mise's built-in ruby support. An installed external
-plugin with the same name can change the behavior; use `mise plugins ls` to
-check for overrides. See the [core implementation](https://github.com/jdx/mise/blob/main/src/plugins/core/ruby.rs)
-for backend details.
+| Request            | Selects                  |
+| ------------------ | ------------------------ |
+| `ruby@4.0`         | The newest 4.0.x release |
+| `ruby@4.0.7`       | That release             |
+| `ruby@latest`      | The newest CRuby release |
+| `ruby@truffleruby` | The newest TruffleRuby   |
+| `ruby@jruby`       | The newest JRuby         |
 
-## Precompiled Binaries
+Implementations other than CRuby use the names of ruby-build's definitions and
+always install through ruby-build (or ruby-install). List every version with
+`mise ls-remote ruby`.
 
-mise downloads precompiled Ruby binaries by default. This significantly reduces installation time.
+## Version files
 
-Precompiled binaries are sourced from [jdx/ruby](https://github.com/jdx/ruby) and are available
-for the following platforms:
+mise can read `.ruby-version` and the Ruby version in a `Gemfile`. Enable them
+for Ruby:
 
-- macOS (arm64/Apple Silicon only)
-- Linux arm64 (glibc/manylinux2014 only)
-- Linux x86_64 (glibc/manylinux2014 only)
+```sh
+mise settings add idiomatic_version_file_enable_tools ruby
+```
 
-If a precompiled binary is not available for your platform or Ruby version, mise automatically
-falls back to compiling from source using ruby-build.
+This changes your global config. Add `--local` to enable it in the project's
+`mise.toml` instead, so teammates get the same behavior. See
+[idiomatic version files](/dev-tools/versions.html#idiomatic-version-files).
 
-jdx/ruby has no musl builds, so on musl-based distros such as Alpine mise always compiles Ruby
-from source (unless you set `ruby.compile=false`, in which case installs error out). If you host
-your own musl binaries via `ruby.precompiled_url`, set `ruby.precompiled_arch` and
-`ruby.precompiled_os` explicitly to opt back in to precompiled installs.
+mise then reads `.ruby-version` (a leading `ruby-` is ignored), a
+`ruby "4.0.7"` line in `Gemfile`, or Bundler's `ruby file: ".ruby-version"`,
+which is resolved next to the `Gemfile`. To write `.ruby-version` from the
+selected Ruby:
+
+```sh
+mise exec -- ruby -e 'puts RUBY_VERSION' > .ruby-version
+```
+
+## Gems and Bundler
+
+`gem install` installs into the selected Ruby version, and so does
+`bundle install` unless Bundler is configured with a `path`. Installed gems are
+therefore not available after you switch versions. mise adds a RubyGems plugin
+to each Ruby it installs. The plugin runs [`mise reshim`](/cli/reshim.html)
+after gem and Bundler installs, so new executables get
+[shims](/dev-tools/shims.html). While RubyGems runs, the plugin also adds the
+Ruby's `lib/pkgconfig` directory to `PKG_CONFIG_PATH`, so native extensions
+find the libraries bundled with precompiled Rubies. mise sets no Ruby
+environment variables of its own.
+
+To keep a Ruby CLI across Ruby versions, install it as its own tool with the
+[gem backend](/dev-tools/backends/gem.html), for example
+`mise use -g gem:rubocop`.
+
+## How mise installs Ruby
+
+### Precompiled binaries
+
+By default mise downloads a precompiled CRuby from
+[jdx/ruby](https://github.com/jdx/ruby) and verifies its GitHub artifact
+attestation ([`ruby.github_attestations`](/lang/ruby.html#ruby.github_attestations)).
+Precompiled binaries are available for:
+
+- macOS on arm64 (Apple Silicon)
+- Linux on arm64 and x86_64, with glibc (manylinux2014)
+
+If no precompiled binary exists for your platform or Ruby version, mise
+compiles Ruby with ruby-build instead. To always compile, set
+[`ruby.compile`](/lang/ruby.html#ruby.compile) to `true`:
+
+```sh
+mise settings ruby.compile=true
+```
+
+jdx/ruby has no musl builds, so on musl systems such as Alpine mise compiles
+Ruby. On Alpine and NixOS, mise also compiles by default, because
+[`all_compile`](/configuration/settings.html#all_compile) defaults to `true`
+there; this default is deprecated and changes in mise 2027.8.0. If you host
+your own musl binaries with [`ruby.precompiled_url`](/lang/ruby.html#ruby.precompiled_url),
+set [`ruby.precompiled_arch`](/lang/ruby.html#ruby.precompiled_arch) and
+[`ruby.precompiled_os`](/lang/ruby.html#ruby.precompiled_os) to use them.
 
 ### Precompiled binaries only
 
-Set `ruby.compile=false` to opt out of source builds entirely. This is useful on hosts without a
-build toolchain, where a silent fallback to ruby-build would fail late or pull in build
-dependencies you deliberately don't have:
+Set `ruby.compile` to `false` on hosts without a build toolchain, where falling
+back to ruby-build would fail late or pull in build dependencies:
 
 ```sh
 mise settings ruby.compile=false
 ```
 
-With this setting:
+Installs then fail when no precompiled binary exists for the requested version
+and platform. `mise ls-remote ruby` and prefixes such as `ruby = "4.0"` only
+consider versions with a precompiled binary, so a prefix resolves to the newest
+4.0.x that has one. With a custom `ruby.precompiled_url` template, mise cannot
+list the available binaries and leaves version listings unfiltered.
 
-- Installs error out when no precompiled binary exists for the requested version and platform,
-  instead of falling back to ruby-build.
-- `mise ls-remote ruby` and fuzzy versions only consider versions that have a precompiled
-  binary, so `ruby = "4.0"` resolves to the newest 4.0.x that actually has a binary rather than
-  a version that would have to be built from source.
+### Rebuilt binaries {#precompiled-build-revisions}
 
-If you set a custom `ruby.precompiled_url` template, mise cannot enumerate available versions and
-version listings are left unfiltered.
+jdx/ruby sometimes publishes a new build of a Ruby version without changing the
+version, for example to fix packaging. Each build has its own release tag, such
+as `3.3.11-1` or `3.3.11-2`; mise still treats the version as `3.3.11`. Without
+`mise.lock`, an install picks the newest build. With `mise.lock`, the locked URL
+fixes the build:
 
-`ruby.compile` has no effect on Windows, which installs Ruby from
-[RubyInstaller2](https://rubyinstaller.org/) rather than from `jdx/ruby` or ruby-build.
-
-### Precompiled build revisions
-
-Precompiled Ruby binaries are released from `jdx/ruby`. Sometimes the binary for a Ruby version is rebuilt without changing the Ruby version itself. Those rebuilds use build revision release tags like `3.3.11-1` or `3.3.11-2`.
-mise uses these build revision tags for `jdx/ruby` precompiled binaries instead
-of the floating base release tag.
-
-Rebuilds are for changes to the portable binary package, not changes to Ruby's
-own version number. The `jdx/ruby` release history includes rebuilds for
-reasons such as:
-
-- native gem packaging fixes
-- CA certificate lookup fixes
-- RI documentation packaging changes
-- SLSA/provenance workflow fixes
-- mass regeneration of existing releases
-
-This list is not exhaustive.
-
-mise still treats the Ruby version as `3.3.11`. Without a `mise.lock`, mise
-uses the latest available precompiled build revision when resolving the install.
-That means reinstalling the same Ruby version later may pick up a newer rebuild
-if one was published.
-
-With a `mise.lock`, the download URL records which precompiled build revision is
-used:
-
-```toml
+```toml [mise.lock]
 [[tools.ruby]]
 version = "3.3.11"
 
-[tools.ruby.platforms.linux-x64]
+[tools.ruby."platforms.linux-x64"]
 url = "https://github.com/jdx/ruby/releases/download/3.3.11-1/ruby-3.3.11.x86_64_linux.tar.gz"
 ```
 
-To see which precompiled build revision you have, inspect the release tag in the platform `url`:
-
-- `/releases/download/3.3.11-1/` means build revision `1`
-- `/releases/download/3.3.11-2/` means build revision `2`
-
-If the lockfile already points at a build revision such as `3.3.11-1`, mise keeps using that exact revision for reproducibility. To update to the newest precompiled build revision for the same Ruby version, remove the entire Ruby entry from `mise.lock` or remove every Ruby platform `url`, then regenerate the lock entry and reinstall:
+To move to the newest build of the same version, delete the Ruby entry from
+`mise.lock`, or every Ruby platform `url`, then run:
 
 ```sh
 mise lock ruby
 mise install --force ruby
 ```
 
-Commit the updated `mise.lock` so other machines and CI use the same precompiled build revision.
+Commit the updated `mise.lock` so other machines and CI use the same build.
 
-To always compile from source even when precompiled binaries are available:
+### Compiling with ruby-build
 
-```sh
-mise settings ruby.compile=true
-```
+Source builds use [ruby-build](https://github.com/rbenv/ruby-build) and need
+its [build dependencies](https://github.com/rbenv/ruby-build/wiki#suggested-build-environment).
+mise compares its copy of ruby-build with the latest ruby-build release before
+every source build and updates it when they differ. Set
+[`ruby.ruby_install`](/lang/ruby.html#ruby.ruby_install) to `true` to compile with
+[ruby-install](https://github.com/postmodern/ruby-install) instead.
 
-To require precompiled binaries and never compile, see
-[Precompiled binaries only](#precompiled-binaries-only).
+`ruby.ruby_build_cli_opts` passes flags to ruby-build itself, and
+`ruby.ruby_build_opts` passes arguments to Ruby's `configure`. For example,
+`--keep` preserves the source tree after installation, and
+`RUBY_BUILD_BUILD_PATH` chooses where it is kept:
 
-You can also use a custom source for precompiled binaries by setting `ruby.precompiled_url` to
-either a GitHub repo (e.g., `owner/repo`) or a full URL template.
-
-You can also install a specific ruby flavour. To get the latest version of a flavour, use the
-flavour prefix.
-
-```sh
-mise use -g ruby@truffleruby            # latest version of truffleruby
-```
-
-## Default gems
-
-::: warning Planned deprecation
-Default package files are deprecated. They are still supported for now, but mise will start warning
-in `2026.11.0` and support will be removed in `2027.11.0`.
-
-For Ruby CLIs, install the tool directly with the [gem backend](/dev-tools/backends/gem.html):
-
-```toml
-[tools]
-"gem:rubocop" = "latest"
-```
-
-For gems that really should be installed into every Ruby version, use a tool-level `postinstall`
-hook:
-
-```toml
-[tools]
-ruby = { version = "3.4", postinstall = "gem install rubocop" }
-```
-
-:::
-
-mise can automatically install a default set of gems right after installing a new ruby version.
-To use this legacy feature, provide a `$HOME/.default-gems` file that lists one gem per line, for
-example:
-
-```text
-# supports comments
-pry
-bcat ~> 0.6.0 # supports version constraints
-rubocop --pre # install prerelease version
-```
-
-## Tool Options
-
-The following [tool-options](/dev-tools/#tool-options) are available for the `ruby` backend.
-These options go in the `[tools]` section in `mise.toml`.
-
-### `install_env`
-
-Set environment variables for ruby-build or ruby-install and default gem installation:
-
-```toml
-[tools]
-ruby = { version = "latest", install_env = { RUBY_CONFIGURE_OPTS = "--disable-install-doc" } }
-```
-
-## `.ruby-version` and `Gemfile` support
-
-mise uses a `mise.toml` or `.tool-versions` file for auto-switching between software versions.
-However, it can also read the ruby-specific version files `.ruby-version` and `Gemfile`
-(if it specifies a ruby version). A Gemfile may pin ruby with `ruby "3.3.6"` or Bundler's
-`ruby file: ".ruby-version"` (the path is resolved next to the Gemfile).
-
-Create a `.ruby-version` file for the current version of ruby:
-
-```sh
-mise exec -- ruby -e 'puts RUBY_VERSION' > .ruby-version
-```
-
-Write only the version number, not the full `ruby -v` banner. Then enable
-idiomatic version file reading:
-
-```sh
-mise settings add idiomatic_version_file_enable_tools ruby
-```
-
-See [idiomatic version files](/configuration.html#idiomatic-version-files) for more information.
-
-## Manually updating ruby-build
-
-ruby-build should update daily. However, if versions you expect are missing, you can force an
-update:
-
-```bash
-mise cache clean
-mise ls-remote ruby
-```
-
-## Settings
-
-`ruby-build` already has a
-[handful of settings](https://github.com/rbenv/ruby-build?tab=readme-ov-file#custom-build-configuration);
-in addition, mise has a few extra settings:
-
-To pass options to `ruby-build` itself, use `ruby.ruby_build_cli_opts`. For example, `--keep`
-preserves the source tree after installation; set `RUBY_BUILD_BUILD_PATH` to choose where it is
-kept:
-
-```toml
+```toml [mise.toml]
 [settings.ruby]
 ruby_build_cli_opts = "--keep"
 
@@ -238,13 +166,85 @@ ruby_build_cli_opts = "--keep"
 RUBY_BUILD_BUILD_PATH = "{{ config_root }}/.ruby-build"
 ```
 
-Arguments for Ruby's configure script, such as `--enable-yjit`, belong in `ruby.ruby_build_opts`.
-mise passes those after ruby-build's `--` separator:
+Configure arguments, such as `--enable-yjit`, go in `ruby.ruby_build_opts`.
+mise passes them after ruby-build's `--` separator:
 
-```toml
+```toml [mise.toml]
 [settings.ruby]
 ruby_build_opts = "--enable-yjit"
 ```
+
+ruby-build also reads its own
+[environment variables](https://github.com/rbenv/ruby-build#custom-build-configuration),
+such as `RUBY_CONFIGURE_OPTS`, from the environment or from `install_env`.
+
+### Windows
+
+On Windows, mise installs [RubyInstaller2](https://rubyinstaller.org/) builds.
+`ruby.compile` has no effect there.
+
+## Migrating from other Ruby managers
+
+Projects set up for rbenv, rvm or chruby usually have a `.ruby-version`; enable
+it as described in [Version files](#version-files).
+
+To reuse Rubies installed with Homebrew, link Homebrew's versioned `ruby@X.Y`
+formulae into mise with [`mise sync ruby`](/cli/sync/ruby.html), then select
+one with `mise use`:
+
+```sh
+mise sync ruby --brew
+mise ls ruby --installed
+```
+
+## Troubleshooting
+
+An installed plugin named `ruby` takes precedence over the built-in
+installer. If mise behaves differently from this page, check
+[`mise plugins ls`](/cli/plugins/ls.html) and see
+[selecting another implementation](/core-tools.html#selecting-another-implementation).
+
+### Missing Ruby versions {#manually-updating-ruby-build}
+
+Ruby's version list normally comes from mise's versions host and is cached for
+[`fetch_remote_versions_cache`](/configuration/settings.html#fetch_remote_versions_cache).
+If a version you expect is missing, clear the cache and list again:
+
+```sh
+mise cache clear ruby
+mise ls-remote ruby
+```
+
+With [`use_versions_host`](/configuration/settings.html#use_versions_host) set
+to `false`, or with `ruby.compile = false`, mise lists versions with ruby-build
+itself and updates ruby-build first.
+
+## Tool options
+
+Ruby has no Ruby-specific options. `install_env` reaches ruby-build or
+ruby-install, default gem installs and `postinstall` commands. Use it for a
+per-project override; use `ruby.ruby_build_opts` for a default across projects:
+
+```toml [mise.toml]
+[tools]
+ruby = { version = "4.0", install_env = { RUBY_CONFIGURE_OPTS = "--disable-install-doc" } }
+```
+
+Other generic options are described in [tool options](/dev-tools/#tool-options).
+
+## Default gems file <Badge type="danger" text="deprecated" /> {#default-gems}
+
+mise installs the gems listed in `~/.default-gems`
+([`ruby.default_packages_file`](/lang/ruby.html#ruby.default_packages_file)) into each new
+Ruby version. Each line names a gem, optionally followed by a version
+constraint (`bcat ~> 0.6.0`) or `--pre`, and `#` starts a comment. mise warns
+about this file from 2026.11.0 and stops reading it in 2027.11.0. Install Ruby
+CLIs with the [gem backend](/dev-tools/backends/gem.html) instead, for example
+`"gem:rubocop" = "latest"`, or use a
+[`postinstall`](/dev-tools/#tool-postinstall-commands) command for gems every
+Ruby version needs.
+
+## Settings
 
 <script setup>
 import Settings from '/components/settings.vue';

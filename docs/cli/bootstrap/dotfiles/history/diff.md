@@ -32,6 +32,6 @@ against the one before it. With two, compares the two states.
 
 ## Related documentation
 
-- [Dotfile ownership and modes](/dotfiles.html).
+- [Dotfiles history](/dotfiles/history.html).
 - [`mise bootstrap dotfiles history [FLAGS] [SUBCOMMAND]`](/cli/bootstrap/dotfiles/history.html).
 - [Global flags and argument syntax](/cli/#global-flags).

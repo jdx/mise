@@ -1,32 +1,36 @@
 ---
-description: "These recipes combine tools, environment variables, and tasks for specific workflows."
+description: "Start from a working mise.toml for Node.js, Python, Rails, C++, Bazel, Terraform or Docker projects."
 ---
 
-# Cookbook
+# Cookbook overview
 
-These recipes combine tools, environment variables, and tasks for specific
-workflows. Start with the recipe closest to your project, then adapt its paths,
-versions, and application commands. Each recipe states the files or tools it
-expects to exist.
+Each recipe gives the config and commands for one kind of project or workflow.
+Start from the closest one and change its versions, paths and commands to match
+your project.
 
-| Workflow                                                       | Recipe                                                  |
-| -------------------------------------------------------------- | ------------------------------------------------------- |
-| Select Bazel from a project version file                       | [Bazel](/mise-cookbook/bazel.html)                      |
-| Configure and build a CMake project                            | [C++](/mise-cookbook/cpp.html)                          |
-| Install mise and share tools in containers                     | [Docker](/mise-cookbook/docker.html)                    |
-| Run npm scripts or select a package manager                    | [Node.js](/mise-cookbook/nodejs.html)                   |
-| Work with requirements files, uv projects, or inline scripts   | [Python](/mise-cookbook/python.html)                    |
-| Run Rails and Bundler commands                                 | [Ruby](/mise-cookbook/ruby.html)                        |
-| Initialize, validate, plan, and apply infrastructure changes   | [Terraform and OpenTofu](/mise-cookbook/terraform.html) |
-| Highlight task scripts and configure embedded language servers | [Neovim](/mise-cookbook/neovim.html)                    |
-| Create your own project scaffold                               | [Presets](/mise-cookbook/presets.html)                  |
-| Customize prompts and inspect shell integration                | [Shell tricks](/mise-cookbook/shell-tricks.html)        |
+| Recipe                                                  | What it sets up                                                                  |
+| ------------------------------------------------------- | -------------------------------------------------------------------------------- |
+| [Tips and tricks](/tips-and-tricks.html)                | Short recipes for everyday commands, scripts, configuration and the shell prompt |
+| [Bazel](/mise-cookbook/bazel.html)                      | Bazel from a project's `.bazelversion`, or Bazelisk                              |
+| [C++ and CMake](/mise-cookbook/cpp.html)                | CMake with configure, build and clean tasks                                      |
+| [Neovim](/mise-cookbook/neovim.html)                    | Highlighting for task scripts and language servers for embedded code             |
+| [Node.js](/mise-cookbook/nodejs.html)                   | npm scripts as tasks, pnpm or aube, and package managers without Corepack        |
+| [Python](/mise-cookbook/python.html)                    | A `requirements.txt` virtualenv, a uv project, and uv scripts                    |
+| [Ruby on Rails](/mise-cookbook/ruby.html)               | Ruby from `.ruby-version` with Bundler and Rails tasks                           |
+| [Scaffolding tasks](/mise-cookbook/presets.html)        | A global task that adds tools and tasks to a new project                         |
+| [Terraform and OpenTofu](/mise-cookbook/terraform.html) | init, validate, plan and apply tasks for a subdirectory                          |
+| [Docker](/mise-cookbook/docker.html)                    | mise in a container image, with tools installed during the build                 |
 
-For the underlying behavior, see [task configuration](/tasks/task-configuration.html),
-[environment variables](/environments/), and [tool configuration](/dev-tools/).
+Several recipes define an install task for project packages. The experimental
+[`mise deps`](/dev-tools/deps.html) can replace it and run the package manager
+only when the manifest or lockfile changes, or when its outputs go missing.
 
-## Contributing
+For the reference behind the recipes, see [task configuration](/tasks/task-configuration.html),
+[environment variables](/environments/) and [Dev tools](/dev-tools/).
 
-Share a recipe in the [cookbook discussion](https://github.com/jdx/mise/discussions/3645).
-Include prerequisites, a complete config, the command to run, and the expected
-result so another reader can reproduce the workflow.
+## Contribute a recipe {#contributing}
+
+Open a pull request that adds a page under `docs/mise-cookbook/`, or share the
+recipe in the [cookbook discussion](https://github.com/jdx/mise/discussions/3645).
+Include the prerequisites, a complete config, the command to run and the
+expected result.

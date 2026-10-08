@@ -43,6 +43,6 @@ mise bootstrap packages import --manager brew --dry-run
 
 ## Related documentation
 
-- [Host packages](/bootstrap/packages/).
+- [Bootstrap packages](/bootstrap/packages/).
 - [`mise bootstrap packages <SUBCOMMAND>`](/cli/bootstrap/packages.html).
 - [Global flags and argument syntax](/cli/#global-flags).

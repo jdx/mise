@@ -34,6 +34,6 @@ SIGNING_KEY        false  no    -                 release signing key
 
 ## Related documentation
 
-- [Getting started](/getting-started.html).
+- [fnox secrets](/environments/secrets/fnox.html).
 - [`mise secrets [-J --json] [--no-header] [SUBCOMMAND]`](/cli/secrets.html).
 - [Global flags and argument syntax](/cli/#global-flags).

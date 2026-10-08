@@ -1,37 +1,16 @@
 ---
-description: "mise can install Rust/cargo using rustup under the hood."
+description: "Install Rust toolchains with mise through rustup, with components, targets and rust-toolchain.toml."
 ---
 
 # Rust
 
-mise can install Rust/cargo using rustup under the hood. It installs rustup if it is not already installed, then
-installs the requested toolchain, components, and targets. By default, mise respects the `RUSTUP_HOME` and `CARGO_HOME` environment
-variables for the home directories and falls back to their standard locations (`~/.rustup` and `~/.cargo`) if they are
-not set. To isolate mise's rustup/cargo from your other rustup/cargo installations, set the `MISE_RUSTUP_HOME` and
-`MISE_CARGO_HOME` environment variables instead.
+mise installs Rust toolchains through rustup, installing rustup first if
+needed, and sets `RUSTUP_TOOLCHAIN` so `cargo` and `rustc` use the toolchain
+your config selects.
 
-These variables can also be set in mise configuration. They are applied to Rust operations in the same mise invocation:
+## Quick start
 
-```toml
-[env]
-MISE_RUSTUP_HOME = "{{env.HOME}}/.local/share/rustup"
-MISE_CARGO_HOME = "{{env.HOME}}/.local/share/cargo"
-```
-
-Explicit `RUSTUP_HOME` and `CARGO_HOME` values in `[env]` take precedence over their corresponding `MISE_` variables.
-
-When the standard Rust homes have not been initialized and no home override is configured, mise can also reuse a
-package-manager installation of rustup. The original `PATH` must contain a directory with the `rustup`, `cargo`, and
-`rustc` proxies, as provided by package managers such as Homebrew, APT, and pacman. An explicit Rust or Cargo home
-continues to use mise's managed rustup initialization instead of an external proxy directory.
-
-Unlike most tools, Rust toolchains are not stored in `~/.local/share/mise/installs` because rustup manages them.
-mise keeps a symlink there for install tracking, sets the `RUSTUP_TOOLCHAIN` environment variable to the requested
-version, and asks rustup to install any configured components or targets when you run `mise install`.
-
-## Usage
-
-Install the latest stable toolchain for the current project and verify it:
+Install the newest stable Rust for the current project and check it:
 
 ```sh
 mise use rust
@@ -39,54 +18,37 @@ mise exec -- rustc --version
 mise exec -- cargo --version
 ```
 
-In a Cargo project, use `mise exec -- cargo build` or a mise task. Add `-g` to
-`mise use` for a personal default. These examples select the toolchain through
-mise; they do not require shell activation.
+In a Cargo project, run `mise exec -- cargo build` or a mise task. These
+commands select the toolchain through mise and do not need shell activation.
+Add `-g` to `mise use` for a personal default.
 
-Use the latest beta version of Rust:
+## Choosing a version
 
-```sh
-mise use rust@beta
-mise exec -- cargo build
-```
+| Request                   | Selects                                                        |
+| ------------------------- | -------------------------------------------------------------- |
+| `rust` or `rust@latest`   | The newest stable release, such as `1.99.0`                    |
+| `rust@1.99`               | The newest 1.99.x release                                      |
+| `rust@stable`             | rustup's `stable` channel, updated in place by `mise upgrade`  |
+| `rust@beta`               | rustup's `beta` channel, updated in place by `mise upgrade`    |
+| `rust@nightly`            | The current nightly, installed and locked as a dated toolchain |
+| `rust@nightly-2026-08-13` | That nightly                                                   |
 
-Use the rolling nightly channel:
+A `nightly` request stays `nightly` in your config, but mise installs the
+current dated toolchain, such as `nightly-2026-10-07`, and records that in
+`mise.lock`, so locked installs are reproducible.
+[`mise upgrade rust`](/cli/upgrade.html) or `mise lock --bump` moves a locked
+nightly forward. A dated nightly is an exact pin; `--bump`, as in
+`mise upgrade --bump rust`, replaces it with the current nightly.
 
-```sh
-mise use rust@nightly
-mise exec -- cargo build
-```
+mise also keeps rustup's own `nightly` toolchain in step with the dated one, so
+`cargo +nightly` works. It never replaces a `nightly` to which you added
+components or targets with rustup, and after that `rustup update nightly` moves
+it without touching the dated toolchain mise installed.
 
-The configuration remains `nightly`, while mise resolves the current Rust channel manifest to a concrete
-`nightly-YYYY-MM-DD` toolchain for installation and lockfiles. This keeps the configured channel rolling while making
-locked installs reproducible. Run `mise upgrade rust` or `mise lock --bump` to advance the locked nightly.
+## Version files
 
-So that `cargo +nightly` keeps working, mise also gives rustup a `nightly` toolchain matching the dated one when rustup's
-`nightly` is missing, older, or the same nightly without all of its components and targets. Its files are reflinked, or hardlinked on filesystems without copy-on-write clones, so it
-takes almost no extra disk space. A rustup `nightly` with components or targets you added through rustup is never
-replaced, since that would remove them. After that it belongs to rustup: `rustup update nightly` can move it forward without
-changing the dated toolchain mise installed.
-
-To keep a specific nightly instead, configure its date explicitly:
-
-```sh
-mise use rust@nightly-2026-08-13
-```
-
-An explicitly dated nightly is an exact pin. Commands using `--bump`, such as `mise upgrade --bump rust`, can replace
-that pin with the current nightly.
-
-Use a specific version of Rust:
-
-```sh
-mise use rust@1.82
-mise exec -- cargo build
-```
-
-## Existing rustup projects
-
-If the project already uses `rust-toolchain.toml`, enable idiomatic-file discovery
-instead of duplicating a conflicting Rust version in `mise.toml`:
+If the project has a `rust-toolchain.toml`, let mise read it instead of
+repeating the version in `mise.toml`:
 
 ```sh
 mise settings add idiomatic_version_file_enable_tools rust
@@ -94,25 +56,71 @@ mise install
 mise exec -- rustup show active-toolchain
 ```
 
-mise sets `RUSTUP_TOOLCHAIN` for its selected toolchain. Use `mise exec` when
-comparing selection with a standalone rustup invocation, since the environment
-can change which override rustup sees.
+This changes your global config. Add `--local` to enable it in the project's
+`mise.toml` instead, so teammates get the same behavior. mise reads the
+`channel`, `profile`, `components` and `targets` keys of the file's
+`[toolchain]` table. See
+[idiomatic version files](/dev-tools/versions.html#idiomatic-version-files).
 
-## Share Cargo builds with Mr Boxington
+Because mise sets `RUSTUP_TOOLCHAIN`, which rustup ranks above
+`rust-toolchain.toml`, the toolchain mise selects wins inside the mise
+environment. A `rust` entry in your global config therefore overrides a
+project's `rust-toolchain.toml` unless mise reads that file. Check what Cargo
+uses with `mise exec -- rustup show active-toolchain`.
 
-[Mr Boxington](https://mr-boxington.jdx.dev/) (`mbx`) is a Rust build cache and scheduler.
-It reuses matching compilations across projects, worktrees, and CI, so a fresh checkout can benefit from
-work you've already built. Parallel Cargo commands share a CPU and memory budget, and the cache prunes itself.
-You keep using ordinary Cargo commands; no cache server is needed for local use.
-See the [benchmarks](https://mr-boxington.jdx.dev/benchmarks) for examples.
+## Cargo, rustup and installed binaries {#where-rustup-and-cargo-live}
 
-Enable the `mr_boxington` tool option and install mbx as a separate tool:
+rustup and Cargo keep their state in `RUSTUP_HOME` and `CARGO_HOME`, by default
+`~/.rustup` and `~/.cargo`. mise uses those variables from your environment
+when they are set. To keep mise's toolchains apart from another rustup
+installation, set [`rust.rustup_home`](/lang/rust.html#rust.rustup_home) and
+[`rust.cargo_home`](/lang/rust.html#rust.cargo_home), which take precedence over them:
+
+```toml [mise.toml]
+[settings.rust]
+rustup_home = "~/.local/share/rustup"
+cargo_home = "~/.local/share/cargo"
+```
+
+The settings can also come from the `MISE_RUSTUP_HOME` and `MISE_CARGO_HOME`
+environment variables. A `RUSTUP_HOME` or `CARGO_HOME` set in `[env]` takes
+precedence over all of these.
+
+When `~/.rustup` and `~/.cargo` have not been set up and no home is configured,
+mise reuses a rustup installed by a package manager such as Homebrew, APT or
+pacman. Your `PATH` must contain a directory with the `rustup`, `cargo` and
+`rustc` proxies. With an explicit Rust or Cargo home, mise runs its own rustup
+setup instead.
+
+`cargo install` puts binaries in `$CARGO_HOME/bin`, which is on `PATH` and
+shared by every toolchain. To pin a Rust CLI per project, install it with the
+[`cargo:` backend](/dev-tools/backends/cargo.html), such as
+`mise use cargo:ripgrep`.
+
+## Environment variables
+
+| Variable           | Value                                    |
+| ------------------ | ---------------------------------------- |
+| `RUSTUP_TOOLCHAIN` | The selected toolchain, such as `1.99.0` |
+| `RUSTUP_HOME`      | The rustup home described above          |
+| `CARGO_HOME`       | The Cargo home described above           |
+
+mise also puts `$CARGO_HOME/bin`, or the package manager's proxy directory, on
+`PATH`.
+
+## Cache Cargo builds with Mr Boxington {#share-cargo-builds-with-mr-boxington}
+
+[Mr Boxington](https://mr-boxington.jdx.dev/) (`mbx`) caches Rust compilations
+across projects, worktrees and CI, and schedules parallel Cargo commands within
+a shared CPU and memory budget. See its
+[benchmarks](https://mr-boxington.jdx.dev/benchmarks). Turn on the
+`mr_boxington` tool option and add mbx as a separate tool:
 
 ```sh
 mise use --tool-option mr_boxington=true rust mr-boxington
 ```
 
-This writes the equivalent of:
+This writes:
 
 ```toml [mise.toml]
 [tools]
@@ -120,89 +128,98 @@ rust = { version = "latest", mr_boxington = true }
 mr-boxington = "latest"
 ```
 
-Cargo commands run through mbx in `mise exec`, tasks, activated shells, and
-mise shims. No `mbx setup` or postinstall hook is needed. mbx uses its normal
-mise version selection and lockfile entry, independently of Rust.
+Cargo then runs through mbx under `mise exec`, in tasks, in activated shells
+and through mise's shims, with no `mbx setup` or postinstall step. Calls that
+bypass mise, such as rustup's Cargo proxy or a toolchain's `cargo` binary, do
+not use it, so point editors and coding agents at mise's Cargo shim or
+`mise exec`. Having `mbx` on `PATH` is not enough; `mr-boxington` must be in the
+active `[tools]`.
 
-```sh
-mise exec -- cargo build
-```
+The option applies to the first Rust version the configuration selects for this
+platform. mbx keeps its own version and lockfile entry, independent of Rust. In
+[safe mode](/security.html#safe-mode), project config cannot turn the option
+on. To turn off an opt-in inherited from another config, set
+`mr_boxington = false` in the project's Rust entry.
 
-Editors and coding agents must invoke mise's Cargo shim or use `mise exec`.
-Direct calls to rustup's Cargo proxy or a toolchain's Cargo binary bypass mise.
-Safe mode ignores the opt-in from project-scoped Rust entries.
+An explicit [`[wrappers.cargo]`](/dev-tools/shims.html#command-wrappers) takes
+precedence over the option. When Rust is managed outside mise, configure that
+wrapper directly.
 
-An explicit `[wrappers.cargo]` configuration takes precedence over this option.
-The [generic command wrapper configuration](/dev-tools/shims.html#command-wrappers)
-remains available when Rust is managed outside mise.
+## How mise installs Rust
 
-## Tool Options
+mise downloads `rustup-init` from `sh.rustup.rs` (`win.rustup.rs` on Windows)
+when rustup is not set up, then runs `rustup toolchain install` with the
+configured profile, components and targets. The toolchains live in
+`RUSTUP_HOME`, not in mise's installs directory; mise keeps a link there to
+track the version. When the toolchain is already installed, `mise install`
+still adds missing configured components and targets.
+[`rust.default_host`](/lang/rust.html#rust.default_host) sets the host triple passed to
+`rustup-init`.
 
-The following [tool-options](/dev-tools/#tool-options) are available for the `rust` backend—these
-go in `[tools]` in `mise.toml`.
+An installed plugin named `rust` takes precedence over the built-in
+installer. If mise behaves differently from this page, check
+[`mise plugins ls`](/cli/plugins/ls.html) and see
+[selecting another implementation](/core-tools.html#selecting-another-implementation).
 
-### `mr_boxington`
-
-Set `mr_boxington = true` to wrap Cargo with Mr Boxington. Defaults to `false`.
-Requires `mr-boxington` in the active tool configuration; merely having `mbx` on
-PATH is not sufficient. Keep its version in a separate `[tools]` entry.
-
-The option applies to the first platform-supported Rust version in the selected
-configuration. Set it to `false` in a project's Rust entry to disable an inherited
-opt-in. An explicitly configured Cargo wrapper is unaffected.
-
-### `install_env`
-
-Set environment variables for rustup install commands:
-
-```toml
-[tools]
-rust = { version = "latest", install_env = { RUSTUP_DIST_SERVER = "https://static.rust-lang.org" } }
-```
+## Tool options
 
 ### `components`
 
-The `components` option specifies which components to install. Multiple components can be
-given as an array or as a comma-separated string. The set of available components varies between releases and
-toolchains; consult the Rust documentation for the current list.
+Components to install, as an array or a comma-separated string. Run
+`mise exec -- rustup component list` to see what a toolchain offers.
 
-```toml
+```toml [mise.toml]
 [tools]
-"rust" = { version = "1.83.0", components = ["rust-src", "llvm-tools"] }
+rust = { version = "1.99", components = ["rust-src", "llvm-tools"] }
 ```
-
-If the Rust toolchain is already installed, `mise install` will still add any missing configured components.
 
 ### `profile`
 
-The `profile` option specifies the rustup profile to install. The following values
-are supported:
+The rustup profile to install:
 
-- `minimal`: Includes as few components as possible to get a working compiler (`rustc`, `rust-std`, and `cargo`)
-- `default`: Includes all of the components in the minimal profile, and adds `rust-docs`, `rustfmt`, and `clippy`
-- `complete`: Includes all the components available through `rustup`. Avoid this profile: it includes every component ever included in the metadata and will almost always fail.
+- `minimal`: `rustc`, `rust-std` and `cargo`
+- `default`: the minimal profile plus `rust-docs`, `rustfmt` and `clippy`
+- `complete`: every component available through rustup; this profile includes
+  every component ever published in the metadata and almost always fails
 
-If not set, it defaults to the profile configured in `rustup`. You can check your current default by running `rustup show profile`.
+Without it, mise uses rustup's configured profile; check it with
+`rustup show profile`.
 
-```toml
+```toml [mise.toml]
 [tools]
-"rust" = { version = "1.83.0", profile = "minimal" }
+rust = { version = "1.99", profile = "minimal" }
 ```
 
 ### `targets`
 
-The `targets` option specifies platforms to install for cross-compilation. Multiple targets can
-be given as an array or as a comma-separated string.
+Platforms to install for cross-compilation, as an array or a comma-separated
+string:
 
-```toml
+```toml [mise.toml]
 [tools]
 rust = {
-  version = "1.83.0",
+  version = "1.99",
   targets = ["wasm32-unknown-unknown", "thumbv7em-none-eabi"],
 }
 ```
 
-If the Rust toolchain is already installed, `mise install` will still add any missing configured targets.
+### `mr_boxington`
+
+Runs Cargo through Mr Boxington. See
+[Cache Cargo builds with Mr Boxington](#share-cargo-builds-with-mr-boxington).
+
+### `install_env`
+
+Sets environment variables for `rustup-init` and `rustup toolchain install`.
+rustup downloads the toolchain itself, so variables it reads, such as a mirror
+in `RUSTUP_DIST_SERVER`, apply:
+
+```toml [mise.toml]
+[tools]
+rust = { version = "latest", install_env = { RUSTUP_DIST_SERVER = "https://rust-mirror.example.com" } }
+```
+
+Other generic options are described in [tool options](/dev-tools/#tool-options).
 
 ## Settings
 

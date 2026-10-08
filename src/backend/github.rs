@@ -124,10 +124,6 @@ impl<'a> GitBackendOptions<'a> {
         self.values.str("version_prefix")
     }
 
-    fn checksum(&self) -> Option<String> {
-        self.values.platform_string("checksum")
-    }
-
     fn bin_path(&self) -> Option<String> {
         self.values.platform_string("bin_path")
     }
@@ -1676,9 +1672,6 @@ impl UnifiedGitBackend {
         let filename = asset.name.clone();
         let file_path = tv.download_path().join(&filename);
 
-        // Check if we'll verify checksum
-        let has_checksum = opts.checksum().is_some();
-
         // Store the asset URL and digest (if available) in the tool version
         let platform_key = self.get_platform_key();
         let lockfile_has_checksum = tv
@@ -1727,9 +1720,9 @@ impl UnifiedGitBackend {
 
         // Verify and install
         ctx.pr.next_operation();
-        if has_checksum {
-            verify_artifact(tv, &file_path, opts.raw(), Some(ctx.pr.as_ref()))?;
-        }
+        // Keep this unconditional: verify_artifact checks the `checksum` and
+        // `size` options independently, so gating it on one skips the other.
+        verify_artifact(tv, &file_path, opts.raw(), Some(ctx.pr.as_ref()))?;
 
         // Check before verify_checksum, which may generate a new checksum from the
         // downloaded file. Reuse non-SLSA provenance only when the lockfile had

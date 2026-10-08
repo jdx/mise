@@ -63,7 +63,7 @@ pub(crate) struct Outdated {
     pub local: bool,
 
     /// Placeholder for future monorepo outdated checks; `mise outdated --monorepo` is not implemented yet.
-    #[usage(long, verbatim_doc_comment)]
+    #[usage(long, hide = true, verbatim_doc_comment)]
     pub monorepo: bool,
 
     /// Don't show table header
@@ -83,7 +83,7 @@ impl Outdated {
             self.bump = true;
         }
         if self.monorepo {
-            unimplemented!("mise outdated --monorepo is not implemented yet");
+            eyre::bail!("--monorepo is not supported by mise outdated yet");
         }
         let config = Config::get().await?;
         let scope = if self.local {

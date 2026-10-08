@@ -168,10 +168,12 @@ impl TasksDeps {
     ///
     async fn print_deps_tree(&self, config: &Arc<Config>, tasks: Vec<Task>) -> Result<()> {
         let deps = Deps::new_for_inspection(config, tasks.clone()).await?;
-        // filter out nodes that are not selected
+        // filter out nodes that are not selected. A `depends_post` task points
+        // at its parent rather than the other way around, so it is printed as
+        // its own root. The graph only holds what the selected tasks reach.
         let start_indexes = deps.graph.node_indices().filter(|&idx| {
             let task = &deps.graph[idx];
-            tasks.iter().any(|t| t.name == task.name)
+            task.is_post_dependency() || tasks.iter().any(|t| t.name == task.name)
         });
         // iterate over selected graph nodes and print tree
         let mut seen = HashSet::new();

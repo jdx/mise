@@ -22,6 +22,6 @@ Inspect bootstrap secret inputs without revealing their values
 
 ## Related documentation
 
-- [Bootstrap secrets](/bootstrap/secrets.html).
+- [Secret inputs](/bootstrap/secrets.html).
 - [`mise bootstrap [FLAGS] [SUBCOMMAND]`](/cli/bootstrap.html).
 - [Global flags and argument syntax](/cli/#global-flags).

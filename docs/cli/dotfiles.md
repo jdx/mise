@@ -46,6 +46,6 @@ Manage dotfiles from `[dotfiles]`
 
 ## Related documentation
 
-- [Getting started](/getting-started.html).
+- [Dotfiles](/dotfiles.html).
 - [All commands](/cli/).
 - [Global flags and argument syntax](/cli/#global-flags).

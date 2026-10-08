@@ -19,6 +19,6 @@ List configured and previously managed shared servers.
 
 ## Related documentation
 
-- [Getting started](/getting-started.html).
+- [Share daemons across projects](/daemons/sharing.html).
 - [`mise daemons providers [SUBCOMMAND]`](/cli/daemons/providers.html).
 - [Global flags and argument syntax](/cli/#global-flags).

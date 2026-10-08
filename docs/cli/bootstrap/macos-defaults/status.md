@@ -18,10 +18,8 @@ Show whether macOS defaults match `[bootstrap.macos.defaults]`
 
 <!-- generated reference navigation -->
 
-This is a compatibility spelling. Use [`mise bootstrap macos defaults status [-J --json] [--missing]`](/cli/bootstrap/macos/defaults/status.html) in new scripts.
-
 ## Related documentation
 
-- [macOS defaults](/bootstrap/macos-defaults.html).
+- [Bootstrap workflow](/bootstrap.html).
 - [`mise bootstrap [FLAGS] [SUBCOMMAND]`](/cli/bootstrap.html).
 - [Global flags and argument syntax](/cli/#global-flags).

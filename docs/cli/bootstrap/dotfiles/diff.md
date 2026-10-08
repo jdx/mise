@@ -29,6 +29,6 @@ mise dot diff ~/.zshrc
 
 ## Related documentation
 
-- [Dotfile ownership and modes](/dotfiles.html).
+- [Managed dotfiles](/dotfiles/managed.html).
 - [`mise bootstrap dotfiles [--local] <SUBCOMMAND>`](/cli/bootstrap/dotfiles.html).
 - [Global flags and argument syntax](/cli/#global-flags).

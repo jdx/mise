@@ -21,6 +21,6 @@ Show configured privileged file and directory state
 
 ## Related documentation
 
-- [Privileged files and directories](/bootstrap/files.html).
+- [System files and directories](/bootstrap/files.html).
 - [`mise bootstrap files <SUBCOMMAND>`](/cli/bootstrap/files.html).
 - [Global flags and argument syntax](/cli/#global-flags).

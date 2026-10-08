@@ -22,6 +22,6 @@ Set the description of a checkpoint
 
 ## Related documentation
 
-- [Getting started](/getting-started.html).
+- [Dotfiles history](/dotfiles/history.html).
 - [`mise dotfiles history [FLAGS] [SUBCOMMAND]`](/cli/dotfiles/history.html).
 - [Global flags and argument syntax](/cli/#global-flags).

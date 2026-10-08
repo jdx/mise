@@ -101,6 +101,8 @@ Choose a command family below. Its page lists the available subcommands.
 - [`mise unset`](/cli/unset.html) — Remove environment variable(s) from the config file
 - [`mise shell-alias`](/cli/shell-alias.html) — Manage shell aliases
 - [`mise tool-alias`](/cli/tool-alias.html) — Manage tool version aliases
+- [`mise secrets`](/cli/secrets.html) — [experimental] List the secret names this project's secrets source provides, without their values
+- [`mise token`](/cli/token.html) — Display git provider tokens mise will use
 - [`mise ssh`](/cli/ssh.html) — Open an SSH session, optionally borrowing read-only GitHub access
 
 ### Tasks and project automation
@@ -109,11 +111,13 @@ Choose a command family below. Its page lists the available subcommands.
 - [`mise tasks`](/cli/tasks.html) — Manage tasks
 - [`mise watch`](/cli/watch.html) — Run task(s) and rerun them when files change
 - [`mise deps`](/cli/deps.html) — [experimental] Manage project dependencies
+- [`mise daemons`](/cli/daemons.html) — [experimental] Manage project daemons with pitchfork
 - [`mise generate`](/cli/generate.html) — Generate files for various tools/services
 
 ### Machine setup and images
 
 - [`mise bootstrap`](/cli/bootstrap.html) — Set up a machine from the current configuration
+- [`mise dotfiles`](/cli/dotfiles.html) — Manage dotfiles from `[dotfiles]`
 - [`mise oci`](/cli/oci.html) — [experimental] Build OCI container images from a mise.toml
 
 ### Configuration and diagnostics
@@ -130,18 +134,14 @@ Choose a command family below. Its page lists the available subcommands.
 - [`mise self-update`](/cli/self-update.html) — Update mise itself
 - [`mise implode`](/cli/implode.html) — Remove the mise CLI and all related data
 
+### Plugins
+
+- [`mise plugins`](/cli/plugins.html) — Manage plugins
+- [`mise test-tool`](/cli/test-tool.html) — Test that a tool installs and runs
+
 ### Integrations and community
 
 - [`mise mcp`](/cli/mcp.html) — Run the Model Context Protocol server over stdin/stdout
 - [`mise skills`](/cli/skills.html) — Agent skills the active tools ship, from their packslips
 - [`mise patrons`](/cli/patrons.html) — Show the individuals supporting mise as Patron-tier members
 - [`mise sponsors`](/cli/sponsors.html) — Show the companies sponsoring mise and the jdx.dev open source tools
-
-### Other commands
-
-- [`mise daemons`](/cli/daemons.html) — [experimental] Manage project daemons with pitchfork
-- [`mise dotfiles`](/cli/dotfiles.html) — Manage dotfiles from `[dotfiles]`
-- [`mise plugins`](/cli/plugins.html) — Manage plugins
-- [`mise secrets`](/cli/secrets.html) — [experimental] List the secret names this project's secrets source provides, without their values
-- [`mise test-tool`](/cli/test-tool.html) — Test that a tool installs and runs
-- [`mise token`](/cli/token.html) — Display git provider tokens mise will use

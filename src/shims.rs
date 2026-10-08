@@ -1281,7 +1281,10 @@ fn add_shim(mise_bin: &Path, symlink_path: &Path, shim: &str) -> Result<()> {
                 )
             })
         }
-        _ => panic!("Unknown shim mode"),
+        mode => bail!(
+            "invalid windows_shim_mode value {mode:?}; expected one of: {}",
+            mise_settings::setting_choices("windows_shim_mode").join(", ")
+        ),
     }
 }
 
@@ -1614,15 +1617,13 @@ fn platform_shim_names(_mise_bin: &Path, bin: &str) -> Vec<String> {
         // declarations (JQ.EXE) to installed tool names (jq.exe) before diffing,
         // so installing through a hardlink never replaces the executing shim.
         let p = PathBuf::from(bin.to_ascii_lowercase());
+        // Loading settings rejects any other mode, and add_shim errors on one.
         match shim_mode.as_ref() {
-            "hardlink" | "symlink" | "exe" => {
-                vec![p.with_extension("exe").to_string_lossy().to_string()]
-            }
             "file" => vec![
                 p.with_extension("").to_string_lossy().to_string(),
                 p.with_extension("cmd").to_string_lossy().to_string(),
             ],
-            _ => panic!("Unknown shim mode"),
+            _ => vec![p.with_extension("exe").to_string_lossy().to_string()],
         }
     } else if cfg!(macos) {
         vec![bin.to_lowercase()]
