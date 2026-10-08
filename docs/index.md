@@ -94,14 +94,14 @@ import { data as showreel } from "./.vitepress/showreel.data";
           <div><strong>Dotfiles</strong><span>Track · link · template</span></div>
           <div><strong>Services</strong><span>Background processes</span></div>
         </div>
-        <figcaption><code>mise bootstrap plan</code> shows what will change before you apply it.</figcaption>
+        <figcaption><code>mise bootstrap --dry-run</code> shows what will change before you apply it.</figcaption>
       </figure>
       <div>
         <h2>Set up a machine with mise bootstrap</h2>
         <p class="landing-lede">
           Declare the packages, repositories, dotfiles, and services a machine
           needs, then apply them with <code>mise bootstrap</code>. Run
-          <code>mise bootstrap plan</code> first to see what will change. This
+          <code>mise bootstrap --dry-run</code> first to see what will change. This
           setup belongs to the machine, not to a project, so it usually lives
           in your global config or in a repository of your own.
         </p>

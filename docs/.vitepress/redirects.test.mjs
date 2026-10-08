@@ -113,6 +113,7 @@ test("resolves internal link targets", () => {
     internalTarget("/faq.html", "/a.html#caf%C3%A9"),
     "/a.html#café",
   );
+  assert.equal(internalTarget("/faq.html", "/a.html#100%"), "/a.html#100%");
 });
 
 function site(pages) {
