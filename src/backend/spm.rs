@@ -805,10 +805,10 @@ impl GitProvider {
         match self.self_hosted_web_url() {
             Some(url) => url.as_str().trim_end_matches('/').to_string(),
             None => {
+                // api_url may carry credentials, so it is not logged here.
                 debug!(
-                    "spm: api_url {} is not a recognized self-hosted API URL, \
-                     cloning slug packages from {public_web_url}",
-                    self.api_url
+                    "spm: api_url is not a recognized self-hosted API URL, \
+                     cloning slug packages from {public_web_url}"
                 );
                 public_web_url.to_string()
             }
