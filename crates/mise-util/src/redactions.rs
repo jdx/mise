@@ -1,6 +1,7 @@
 use crate::env;
 use aho_corasick::AhoCorasick;
 use indexmap::IndexSet;
+use std::borrow::Cow;
 use std::collections::BTreeSet;
 use std::sync::LazyLock;
 use std::sync::{Arc, Mutex};
@@ -66,6 +67,61 @@ pub(crate) fn inherited_secret_patterns(
 /// long after any config went out of scope.
 pub fn redact_global(input: &str) -> String {
     GLOBAL_REDACTOR.lock().unwrap().redact(input)
+}
+
+/// Replace the userinfo of every `scheme://` URL in `text` with `[redacted]`.
+///
+/// `https://user:token@host/path` becomes `https://[redacted]@host/path`. The
+/// [`Redactor`] only hides values that were registered with it, and a URL that
+/// carries its own credentials (a config value, a CLI argument) never is.
+///
+/// In free text whitespace ends a URL, since `https://host:8080 me@x` cannot be
+/// told apart from userinfo holding a space. A parsed [`url::Url`]
+/// percent-encodes spaces, so its serialization never has one. For a single
+/// command-line argument, which may hold a raw space, use
+/// [`redact_url_userinfo_in_arg`].
+pub fn redact_url_userinfo(text: &str) -> Cow<'_, str> {
+    redact_userinfo(text, true)
+}
+
+/// [`redact_url_userinfo`] for one command-line argument.
+///
+/// URL parsers accept a raw space in userinfo (`https://user:my pass@host`), and
+/// inside one argument it is part of the URL, so only `/`, `?` or `#` ends the
+/// authority. Redact each argument before joining them for display.
+pub fn redact_url_userinfo_in_arg(arg: &str) -> Cow<'_, str> {
+    redact_userinfo(arg, false)
+}
+
+fn redact_userinfo(text: &str, whitespace_ends_url: bool) -> Cow<'_, str> {
+    if !text.contains("://") {
+        return Cow::Borrowed(text);
+    }
+    let mut out = String::with_capacity(text.len());
+    let mut rest = text;
+    let mut redacted = false;
+    while let Some(i) = rest.find("://") {
+        let (head, tail) = rest.split_at(i + 3);
+        out.push_str(head);
+        rest = tail;
+        // The userinfo is everything before the authority's last `@`, so an
+        // unencoded `@` in a password is covered.
+        let end = tail
+            .find(|c: char| {
+                matches!(c, '/' | '?' | '#') || (whitespace_ends_url && c.is_whitespace())
+            })
+            .unwrap_or(tail.len());
+        if let Some(at) = tail[..end].rfind('@').filter(|&at| at > 0) {
+            out.push_str("[redacted]");
+            rest = &tail[at..];
+            redacted = true;
+        }
+    }
+    if !redacted {
+        return Cow::Borrowed(text);
+    }
+    out.push_str(rest);
+    Cow::Owned(out)
 }
 
 #[derive(Default, Clone, Debug, serde::Deserialize)]
@@ -394,5 +450,69 @@ mod tests {
         let r = Redactor::new(["".to_string(), "secret".to_string(), "".to_string()]);
         assert_eq!(r.patterns_arc().len(), 1);
         assert_eq!(r.redact("my secret"), "my [redacted]");
+    }
+
+    #[test]
+    fn test_redact_url_userinfo() {
+        for (input, expected) in [
+            (
+                "GET https://user:TOKEN@git.example.com/api/v1",
+                "GET https://[redacted]@git.example.com/api/v1",
+            ),
+            ("https://TOKEN@host?q=1", "https://[redacted]@host?q=1"),
+            ("https://u:p@host", "https://[redacted]@host"),
+            // An unencoded `@` in the password stays inside the redaction.
+            ("https://u:p@ss@host/x", "https://[redacted]@host/x"),
+            // An `@` after the authority is not userinfo.
+            ("https://host/a@b", "https://host/a@b"),
+            ("https://host?email=a@b", "https://host?email=a@b"),
+            (
+                "ARGS: mise x --url=https://u:p@a.example/x git+ssh://git:k@b.example",
+                "ARGS: mise x --url=https://[redacted]@a.example/x git+ssh://[redacted]@b.example",
+            ),
+            (
+                "error for url (https://u:p@host)",
+                "error for url (https://[redacted]@host)",
+            ),
+            // In free text whitespace ends the URL, so a port is not userinfo.
+            (
+                "ARGS: mise x https://host:8080 --user me@example.com",
+                "ARGS: mise x https://host:8080 --user me@example.com",
+            ),
+            (
+                "see https://host and me@example.com",
+                "see https://host and me@example.com",
+            ),
+            ("no url here", "no url here"),
+            ("https://@host", "https://@host"),
+        ] {
+            let redacted = redact_url_userinfo(input);
+            assert_eq!(redacted, expected, "{input}");
+            assert!(!redacted.contains("TOKEN"));
+        }
+        assert!(matches!(
+            redact_url_userinfo("https://host/path"),
+            Cow::Borrowed(_)
+        ));
+    }
+
+    #[test]
+    fn test_redact_url_userinfo_in_arg() {
+        for (input, expected) in [
+            // A raw space in userinfo is part of the URL inside one argument.
+            ("https://user:my TOKEN@host/x", "https://[redacted]@host/x"),
+            ("https://user:my@TOKEN word@host", "https://[redacted]@host"),
+            ("https://MY TOKEN@host", "https://[redacted]@host"),
+            (
+                "--url=https://u:p@host?q=a@b",
+                "--url=https://[redacted]@host?q=a@b",
+            ),
+            ("https://host:8080", "https://host:8080"),
+            ("me@example.com", "me@example.com"),
+        ] {
+            let redacted = redact_url_userinfo_in_arg(input);
+            assert_eq!(redacted, expected, "{input}");
+            assert!(!redacted.contains("TOKEN"));
+        }
     }
 }

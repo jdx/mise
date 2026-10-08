@@ -1203,7 +1203,7 @@ impl Cli {
             warn!("tool purgatory cleanup failed: {err:#}");
         }
 
-        debug!("ARGS: {}", &args.join(" "));
+        debug!("ARGS: {}", display_args(args));
         trace!("MISE_BIN: {}", crate::env::MISE_BIN.display_user());
         if print_version {
             version::show_latest().await;
@@ -1427,10 +1427,35 @@ fn validate_cd_path(cd: &Option<PathBuf>) -> Result<()> {
     Ok(())
 }
 
+/// `args` joined for the debug log. Each argument is redacted on its own:
+/// once joined, a space inside a URL's userinfo looks like an argument break.
+fn display_args(args: &[String]) -> String {
+    args.iter()
+        .map(|arg| mise_util::redactions::redact_url_userinfo_in_arg(arg))
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use mise_util::args::GLOBAL_FLAGS_WITH_VALUES;
+
+    #[test]
+    fn display_args_redacts_url_userinfo_per_argument() {
+        let args = [
+            "mise",
+            "x",
+            "http:demo[url=https://user:my TOKEN@host/x.tar.gz]@1",
+            "https://host:8080",
+            "me@example.com",
+        ]
+        .map(str::to_string);
+        assert_eq!(
+            display_args(&args),
+            "mise x http:demo[url=https://[redacted]@host/x.tar.gz]@1 https://host:8080 me@example.com"
+        );
+    }
 
     #[test]
     /// A help page follows mise's colour decision, not the terminal's.
