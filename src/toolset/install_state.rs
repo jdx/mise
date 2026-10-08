@@ -823,7 +823,7 @@ pub fn get_plugin_type(short: &str) -> Option<PluginType> {
 /// rebuilding deletes every shim it cannot account for), so an unreadable
 /// installs dir must not be indistinguishable from an empty one. Note a
 /// missing installs dir is not an error — that reads as genuinely empty.
-pub(crate) fn try_list_tools() -> Result<Arc<BTreeMap<String, InstallStateTool>>> {
+pub fn try_list_tools() -> Result<Arc<BTreeMap<String, InstallStateTool>>> {
     full_scan_tools()
 }
 

@@ -1,6 +1,10 @@
+use std::sync::Arc;
+
 use eyre::Result;
 
-use crate::backend::unalias_backend;
+use crate::backend::backend_type::BackendType;
+use crate::backend::{Backend, unalias_backend};
+use crate::plugins::PluginType;
 use crate::toolset::install_state;
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::ui::style;
@@ -48,9 +52,14 @@ impl PluginsUninstall {
             if plugin.is_installed() {
                 let prefix = format!("plugin:{}", style::eblue(&plugin.name()));
                 let pr = mpr.add(&prefix);
+                // Resolve the backends first: once the plugin is gone, its tools
+                // no longer resolve to a backend.
+                let backends = match self.purge {
+                    true => backends_to_purge(plugin_name, plugin.get_plugin_type())?,
+                    false => vec![],
+                };
                 plugin.uninstall(pr.as_ref()).await?;
-                if self.purge {
-                    let backend = backend::get(&plugin_name.into()).unwrap();
+                for backend in backends {
                     backend.purge(pr.as_ref())?;
                 }
                 pr.finish_with_message("uninstalled".into());
@@ -62,4 +71,21 @@ impl PluginsUninstall {
         }
         Ok(())
     }
+}
+
+/// The backends whose installs, downloads, and cache belong to a plugin.
+///
+/// A backend plugin provides any number of `plugin:tool` tools, so every
+/// installed tool it backs is purged. Other plugins provide the tool of the
+/// same name.
+fn backends_to_purge(plugin_name: &str, plugin_type: PluginType) -> Result<Vec<Arc<dyn Backend>>> {
+    if plugin_type != PluginType::VfoxBackend {
+        return Ok(backend::get(&plugin_name.into()).into_iter().collect());
+    }
+    let backend_type = BackendType::VfoxBackend(plugin_name.to_string());
+    Ok(install_state::try_list_tools()?
+        .values()
+        .filter_map(|tool| backend::arg_to_backend(tool.clone().into()))
+        .filter(|backend| backend.get_type() == backend_type)
+        .collect())
 }

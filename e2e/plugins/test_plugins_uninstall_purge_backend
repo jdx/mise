@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+
+# `mise plugins uninstall --purge` removes every tool a backend plugin provides.
+
+PLUGIN_DIR="$PWD/purge-backend"
+mkdir -p "$PLUGIN_DIR/hooks"
+
+cat >"$PLUGIN_DIR/metadata.lua" <<'LUA'
+PLUGIN = {
+	name = "purge-backend",
+	version = "0.1.0",
+	description = "backend plugin purge test plugin",
+}
+LUA
+
+cat >"$PLUGIN_DIR/hooks/backend_list_versions.lua" <<'LUA'
+function PLUGIN:BackendListVersions(ctx)
+	return { versions = { "1.0.0" } }
+end
+LUA
+
+cat >"$PLUGIN_DIR/hooks/backend_install.lua" <<'LUA'
+function PLUGIN:BackendInstall(ctx)
+	local file = io.open(ctx.install_path .. "/manifest", "w")
+	file:write(ctx.tool .. "@" .. ctx.version)
+	file:close()
+	return {}
+end
+LUA
+
+cat >"$PLUGIN_DIR/hooks/backend_exec_env.lua" <<'LUA'
+function PLUGIN:BackendExecEnv(ctx)
+	return { env_vars = {} }
+end
+LUA
+
+mise plugins link purge-backend "$PLUGIN_DIR"
+mise plugins link keep-backend "$PLUGIN_DIR"
+mise install purge-backend:demo@1.0.0 purge-backend:other@1.0.0 keep-backend:demo@1.0.0
+assert "cat '$MISE_DATA_DIR/installs/purge-backend-demo/1.0.0/manifest'" "demo@1.0.0"
+assert "cat '$MISE_DATA_DIR/installs/purge-backend-other/1.0.0/manifest'" "other@1.0.0"
+assert_directory_exists "$MISE_CACHE_DIR/purge-backend-demo"
+assert_directory_exists "$MISE_CACHE_DIR/purge-backend-other"
+
+mise plugins uninstall purge-backend --purge
+assert_not_contains "mise plugins ls" "purge-backend"
+assert_directory_not_exists "$MISE_DATA_DIR/installs/purge-backend-demo"
+assert_directory_not_exists "$MISE_DATA_DIR/installs/purge-backend-other"
+assert_directory_not_exists "$MISE_CACHE_DIR/purge-backend-demo"
+assert_directory_not_exists "$MISE_CACHE_DIR/purge-backend-other"
+
+# Another backend plugin's tools are left alone.
+assert_contains "mise plugins ls" "keep-backend"
+assert "cat '$MISE_DATA_DIR/installs/keep-backend-demo/1.0.0/manifest'" "demo@1.0.0"
