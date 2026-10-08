@@ -374,6 +374,15 @@ fn dry_run_cases() {
         assert!(render(input, &none).contains("hi"), "{input}");
     }
     assert_eq!(render("{{ vars['known'] }}", &pending), "hi");
+    // only a complete `{% endraw %}` tag ends a raw block, and spreading the
+    // map reads all of it
+    for input in [
+        "{% raw %}endraw {% ignored %}{{ ' }}{% endraw %}{{ vars | json_encode }}",
+        "{{ {...vars} | json_encode }}",
+    ] {
+        let out = render(input, &pending);
+        assert!(out.contains("whole vars map"), "{input}: {out}");
+    }
     // `{% raw %}` text is literal, so it is not a read of the map
     assert_eq!(
         render("echo '{% raw %}{{ vars }}{% endraw %}'", &pending),

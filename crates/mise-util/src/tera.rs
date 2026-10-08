@@ -1473,14 +1473,24 @@ fn reads_whole_vars_map(input: &str) -> bool {
                     let tag = input[i + 2..i + 2 + len]
                         .trim_matches(|c: char| c == '-' || c.is_whitespace());
                     if tag == "raw" {
-                        let after = i + 2 + len + 2;
-                        let Some(end) = input[after..].find("endraw") else {
-                            return false;
-                        };
-                        let Some(close_len) = input[after + end..].find("%}") else {
-                            return false;
-                        };
-                        i = after + end + close_len + 2;
+                        // resume after the first complete `{% endraw %}` tag
+                        let mut at = i + 2 + len + 2;
+                        loop {
+                            let Some(open) = input[at..].find("{%") else {
+                                return false;
+                            };
+                            let open = at + open;
+                            let Some(close_len) = input[open + 2..].find("%}") else {
+                                return false;
+                            };
+                            let inner = input[open + 2..open + 2 + close_len]
+                                .trim_matches(|c: char| c == '-' || c.is_whitespace());
+                            at = open + 2 + close_len + 2;
+                            if inner == "endraw" {
+                                break;
+                            }
+                        }
+                        i = at;
                         continue;
                     }
                     close = Some(b"%}".as_slice())
@@ -1515,7 +1525,8 @@ fn reads_whole_vars_map(input: &str) -> bool {
             while i < s.len() && is_ident(s[i]) {
                 i += 1;
             }
-            let attribute = start > 0 && s[start - 1] == b'.';
+            // `x.vars` is an attribute, but `...vars` spreads the whole map
+            let attribute = start > 0 && s[start - 1] == b'.' && !s[..start].ends_with(b"...");
             if &s[start..i] == b"vars" && !attribute {
                 let next = s[i..].iter().find(|b| !b.is_ascii_whitespace());
                 if !matches!(next, Some(b'.' | b'[')) {
