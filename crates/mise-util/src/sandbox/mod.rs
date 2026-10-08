@@ -384,9 +384,15 @@ impl SandboxConfig {
             return self.apply_macos(program, args).await;
         }
 
+        // The caller filters the environment itself (`filter_env`), so an
+        // env-only sandbox is fully applied here.
         #[cfg(not(any(target_os = "linux", target_os = "macos")))]
         {
-            warn!("sandbox is not supported on this platform, running unsandboxed");
+            if self.restricts_more_than_env() {
+                warn!(
+                    "sandbox file, network and process restrictions are not supported on this platform, running without them"
+                );
+            }
             Ok(None)
         }
     }
