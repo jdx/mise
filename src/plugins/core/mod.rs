@@ -103,6 +103,23 @@ where
     }
 }
 
+/// The core plugin for `ba`. Core plugins are shared instances built without options,
+/// so for a plugin that reads its options from its own `BackendArg` (java's
+/// `release_type`), a request with inline options such as `java[release_type=ea]` gets
+/// an instance of its own; the shared one would drop them.
+pub(crate) fn get(ba: &BackendArg) -> Option<Arc<dyn Backend>> {
+    let plugin = CORE_PLUGINS.get(&ba.short).or_else(|| {
+        // this can happen if something like "corenode" is aliased to "core:node"
+        ba.full()
+            .strip_prefix("core:")
+            .and_then(|short| CORE_PLUGINS.get(short))
+    })?;
+    if ba.explicit_opts().is_some() && plugin.id() == "java" && ba.short == "java" {
+        return Some(Arc::new(java::JavaPlugin::from_arg(ba.clone())));
+    }
+    Some(plugin.clone())
+}
+
 pub(crate) fn new_backend_arg(tool_name: &str) -> BackendArg {
     BackendArg::new_raw(
         tool_name.to_string(),
