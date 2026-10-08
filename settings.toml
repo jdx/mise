@@ -430,8 +430,9 @@ is not searched itself: with `MISE_CEILING_PATHS=/home/user`,
 `/home/user/projects/app/mise.toml` loads but `/home/user/mise.toml` does not.
 This matches Git's `GIT_CEILING_DIRECTORIES`.
 
-`mise settings set` and `mise settings add` write this setting to
-`config.toml`, where it has no effect; put it in a `.miserc.toml` file instead.
+`mise settings set` and `mise settings add` refuse this setting, because mise
+reads it before config files load; put it in a `.miserc.toml` file or the
+environment variable instead.
 """
 env = "MISE_CEILING_PATHS"
 parse_env = "list_by_os_path_separator"
@@ -1318,8 +1319,8 @@ docs = """
 Sets the default for [`node.gpg_verify`](#node.gpg_verify) and
 [`swift.gpg_verify`](#swift.gpg_verify); a tool's own setting takes precedence.
 mise checks signatures itself, so no `gpg` binary is needed. When unset, mise
-verifies the signed `SHASUMS256.txt` of Node.js 20 through 29 whenever
-[`node.verify`](#node.verify) checks a download, and Swift downloads on Linux.
+verifies the signed `SHASUMS256.txt` whenever [`node.verify`](#node.verify)
+checks a Node.js download, and Swift downloads on Linux.
 Set to `false` to skip both.
 """
 env = "MISE_GPG_VERIFY"
@@ -1625,8 +1626,9 @@ and the stale-version check in `mise upgrade`) honor only the environment
 variable and the global and system `miserc.toml` files, so a project's
 `.miserc.toml` cannot hide other projects' configs from them.
 
-`mise settings set` and `mise settings add` write this setting to
-`config.toml`, where it has no effect; put it in a `.miserc.toml` file instead.
+`mise settings set` and `mise settings add` refuse this setting, because mise
+reads it before config files load; put it in a `.miserc.toml` file or the
+environment variable instead.
 """
 env = "MISE_IGNORED_CONFIG_PATHS"
 parse_env = "list_by_os_path_separator"
@@ -2092,7 +2094,8 @@ default_docs = "true"
 description = "Check the OpenPGP signature of the `SHASUMS256.txt` file that `node.verify` checks downloads against."
 docs = """
 mise checks the signature itself, so `gpg` does not need to be installed. It
-checks Node.js 20 through 29, and only when [`node.verify`](#node.verify) is on.
+runs only when [`node.verify`](#node.verify) is on, and skips releases that
+never published a signature (the `.sig` download returns 404).
 Set to `false` to skip the check. The global
 [`gpg_verify`](/configuration/settings.html#gpg_verify) setting sets the
 default.
