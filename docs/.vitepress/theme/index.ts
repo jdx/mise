@@ -23,6 +23,10 @@ async function followMovedSection() {
   }
   if (document.getElementById(id)) return;
   const { anchorRedirects } = await import("../anchor-redirects.mjs");
+  // The reader may have navigated while the map loaded.
+  if (window.location.pathname !== pathname || window.location.hash !== hash) {
+    return;
+  }
   const target = anchorRedirectTarget(pathname, hash, anchorRedirects);
   if (target) window.location.replace(target);
 }
