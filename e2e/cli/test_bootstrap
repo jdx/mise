@@ -244,6 +244,15 @@ for read in '{% set v = vars %}{{ v.exec_var }}' '{{ read_file(path=vars.exec_va
   assert_fail "test -e exec_var_hook_ran"
 done
 
+# a hook that uses the whole vars map would render without the var, so it is shown unrendered too
+for read in "'{{ vars | json_encode }}'" '{% for k, v in vars %}{{ k }}={{ v }} {% endfor %}'; do
+  printf '[vars]\nexec_var = "{{ exec(command=%s) }}"\n\n[bootstrap.hooks.post-dotfiles]\nrun = "echo %s > exec_var_hook_ran"\n' "'echo message.txt'" "$read" >dotfiles-exec-var/config.toml
+  # the preview shell-quotes the single quotes, so match the template itself
+  assert_contains "mise bootstrap dotfiles apply --dry-run --force" "${read//\'/}"
+  assert_contains "mise bootstrap dotfiles apply --dry-run --force 2>&1" "whole vars map"
+  assert_fail "test -e exec_var_hook_ran"
+done
+
 # a template that is broken anyway is shown unrendered too, and the note carries its error
 sed -i.bak 's/run = .*/run = "echo {{ vars.exec_var }} {{ nope() }}"/' dotfiles-exec-var/config.toml
 assert_matches "mise bootstrap dotfiles apply --dry-run --force 2>&1" "render error:.*nope"

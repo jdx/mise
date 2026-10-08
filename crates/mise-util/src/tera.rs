@@ -1414,7 +1414,11 @@ pub enum DryRunRender {
 /// the dry run left any var unresolved or the template called exec(), the
 /// hook is shown unrendered with a note that includes the render error, and
 /// the dry run continues. If it fails with nothing unresolved and no exec()
-/// call, it is an error, as in a real run.
+/// call, it is an error, as in a real run. While any var is unresolved, a
+/// template that uses the `vars` map as a whole rather than one entry at a
+/// time (`vars | json_encode`, `{% for k, v in vars %}`, `{% set v = vars %}`)
+/// is also shown unrendered, since it would render without the vars the dry
+/// run could not compute.
 ///
 /// `context` holds the values the dry run computed, and `unresolved` names
 /// the vars it left out. Known limitation: a template that tolerates an
@@ -1426,6 +1430,13 @@ pub fn render_for_dry_run(
     context: &Context,
     unresolved: &IndexSet<String>,
 ) -> DryRunRender {
+    if !unresolved.is_empty() && reads_whole_vars_map(input) {
+        let names = unresolved.iter().map(String::as_str).collect::<Vec<_>>();
+        return DryRunRender::Unrendered(tera_err(format!(
+            "the template reads the whole vars map, which leaves out vars the dry run could not compute: {}",
+            names.join(", ")
+        )));
+    }
     let reached_exec = Arc::new(AtomicBool::new(false));
     let mut tera = dry_run_tera(dir, reached_exec.clone());
     match render_str(&mut tera, input, context) {
@@ -1435,6 +1446,67 @@ pub fn render_for_dry_run(
         }
         Err(err) => DryRunRender::Failed(err),
     }
+}
+
+/// Whether `input` uses the `vars` map as a whole: passes it to a filter or
+/// function, iterates, assigns or tests it, rather than reading one entry
+/// with `vars.NAME` or `vars[...]`. Only the inside of `{{ }}` and `{% %}`
+/// tags counts, outside string literals. Anything this misjudges counts as a
+/// whole-map read, which only shows the template unrendered.
+fn reads_whole_vars_map(input: &str) -> bool {
+    let s = input.as_bytes();
+    let is_ident = |b: u8| b.is_ascii_alphanumeric() || b == b'_';
+    let mut i = 0;
+    // the closing delimiter of the tag being scanned, if inside one
+    let mut close: Option<&[u8]> = None;
+    let mut quote: Option<u8> = None;
+    while i < s.len() {
+        let Some(end) = close else {
+            match s.get(i..i + 2) {
+                Some(b"{{") => close = Some(b"}}".as_slice()),
+                Some(b"{%") => close = Some(b"%}".as_slice()),
+                // skip a comment and its closing `#}`
+                Some(b"{#") => match input[i + 2..].find("#}") {
+                    Some(len) => i += 2 + len,
+                    None => return false,
+                },
+                _ => {
+                    i += 1;
+                    continue;
+                }
+            }
+            i += 2;
+            continue;
+        };
+        let b = s[i];
+        if let Some(q) = quote {
+            if b == q {
+                quote = None;
+            }
+            i += 1;
+        } else if matches!(b, b'"' | b'\'' | b'`') {
+            quote = Some(b);
+            i += 1;
+        } else if s[i..].starts_with(end) {
+            close = None;
+            i += end.len();
+        } else if is_ident(b) {
+            let start = i;
+            while i < s.len() && is_ident(s[i]) {
+                i += 1;
+            }
+            let attribute = start > 0 && s[start - 1] == b'.';
+            if &s[start..i] == b"vars" && !attribute {
+                let next = s[i..].iter().find(|b| !b.is_ascii_whitespace());
+                if !matches!(next, Some(b'.' | b'[')) {
+                    return true;
+                }
+            }
+        } else {
+            i += 1;
+        }
+    }
+    false
 }
 
 /// The messages of `err` and its sources joined with `: `, since a Tera

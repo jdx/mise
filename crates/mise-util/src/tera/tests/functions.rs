@@ -356,6 +356,28 @@ fn dry_run_cases() {
         let out = render(input, &pending);
         assert!(out.starts_with("<unrendered: "), "{input}: {out}");
     }
+    // with a var unresolved, a template that uses the whole vars map would
+    // render without it, so it is left unrendered; one entry at a time, or
+    // with nothing unresolved, it renders
+    for input in [
+        "echo '{{ vars | json_encode }}'",
+        "{% for k, v in vars %}{{ k }}={{ v }} {% endfor %}",
+        "{% set v = vars %}{{ v.known }}",
+    ] {
+        let out = render(input, &pending);
+        assert!(
+            out.starts_with("<unrendered: ")
+                && out.contains("whole vars map")
+                && out.contains("pending"),
+            "{input}: {out}"
+        );
+        assert!(render(input, &none).contains("hi"), "{input}");
+    }
+    assert_eq!(render("{{ vars['known'] }}", &pending), "hi");
+    assert_eq!(
+        render("vars {# vars #}{{ 'vars' ~ vars[\"known\"] }}", &pending),
+        "vars varshi"
+    );
     // with nothing unresolved and no exec() call, a failure is an error
     let out = render("echo {{ nope() }}", &none);
     assert!(
