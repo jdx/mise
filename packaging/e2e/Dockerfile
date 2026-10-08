@@ -24,7 +24,6 @@ apt-get update && apt-get install -y --no-install-recommends \
     cargo \
     curl \
     default-jdk-headless \
-    direnv \
     fish \
     git \
     jq \
