@@ -575,7 +575,8 @@ credential, [encrypt it](/dotfiles/encryption.html).
 
 When you track a file directly and its name looks like a credential store,
 `mise dot track` asks whether to save it in plaintext. The default answer is
-no, and `--yes` does not approve it. For a noninteractive command, pass
+no, and neither `--yes` nor a piped answer approves it. For a noninteractive
+command, including a script that pipes a file list into `mise dot track`, pass
 `--allow-plaintext`, but only after you check that the file is safe to put in
 Git history and on any connected origin:
 
