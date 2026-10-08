@@ -1,17 +1,21 @@
 ---
-description: "Install Ruby command-line applications from RubyGems into separate tool directories."
+description: "Install Ruby command-line applications from RubyGems, each in its own directory and GEM_HOME."
 ---
 
-# gem Backend
+# gem backend
 
-The `gem` backend installs Ruby command-line applications from RubyGems into
-separate tool directories. Keep application gems in your project's `Gemfile` and
-install them with Bundler. The code for this is inside of the mise repository at [`./src/backend/gem.rs`](https://github.com/jdx/mise/blob/main/src/backend/gem.rs).
+The `gem` backend installs Ruby command-line applications from
+[RubyGems](https://rubygems.org/), or another gem registry, with `gem install`.
+Each tool gets its own directory. Keep your application's gems in its `Gemfile`
+and install them with Bundler.
 
-## Dependencies
+## Requirements
 
-This backend needs Ruby and its `gem` command. Gems with native extensions also
-need the compiler and libraries required by that gem.
+<span id="dependencies"></span>
+
+Install Ruby, which provides the `gem` command. When `ruby` is in your config,
+mise installs it before your gems. Gems with native extensions also need a
+compiler and the libraries the gem builds against.
 
 ## Usage
 
@@ -22,7 +26,8 @@ mise use ruby@3.4 gem:rubocop
 mise exec -- rubocop --version
 ```
 
-This writes both entries to `mise.toml`. Add `-g` for global configuration.
+This writes both entries to `mise.toml`. Add `-g` to `mise use` for your global
+config.
 
 ```toml
 [tools]
@@ -30,42 +35,35 @@ ruby = "3.4"
 "gem:rubocop" = "latest"
 ```
 
-mise's wrappers set `GEM_HOME` for the selected tool. A RuboCop configuration
-that uses project-specific plugins may be better run with `bundle exec rubocop`
-from a Gemfile that declares those plugins.
+mise sets `GEM_HOME` to the tool's own directory, so a `gem:` install cannot
+see your bundle's gems. If your `.rubocop.yml` loads plugins such as
+`rubocop-rails`, declare RuboCop and its plugins in your `Gemfile` and run
+`bundle exec rubocop` instead.
 
-## Ruby upgrades
+## After a Ruby upgrade {#ruby-upgrades}
 
-If the Ruby version used by a gem package changes (whether managed by mise or the system), you may need to
-reinstall the gem. This can be done with:
+A gem is installed against one Ruby. After switching to another Ruby minor
+version (for example 3.3 to 3.4), or when the gem has native extensions,
+reinstall it with the new Ruby selected:
 
 ```sh
-mise install -f gem:rubocop
+mise install --force gem:rubocop
 ```
 
-Reinstall under the Ruby version you intend to use. On Unix, mise-managed Ruby
-shebangs follow a minor-version path so patch upgrades can keep working; moving
-to another minor version or changing native-extension compatibility can still
-require a reinstall.
+Patch upgrades of a mise-managed Ruby keep working on Unix, because mise points
+the gem's executables at Ruby's minor-version path (for example
+`.../ruby/3.4/bin/ruby`). Gems installed with a system Ruby run whichever
+`ruby` is first on `PATH`.
 
-## Settings
+## Tool options
 
-Set these with `mise settings set [VARIABLE]=[VALUE]` or by setting the environment variable listed.
-
-<script setup>
-import Settings from '/components/settings.vue';
-</script>
-<Settings child="gem" :level="3" />
-
-## Tool Options
-
-The following [tool-options](/dev-tools/#tool-options) are available for the `gem` backend—these
-go in `[tools]` in `mise.toml`.
+Set these on the tool's entry in `[tools]`. Options every backend accepts are
+described under [tool options](/dev-tools/#tool-options).
 
 ### `install_env`
 
-Set environment variables for the `gem install` command. For gems that build
-native extensions, `MAKEFLAGS` controls parallel make jobs:
+Set environment variables for `gem install`. For gems that build native
+extensions, `MAKEFLAGS` controls parallel make jobs:
 
 ```toml
 [tools]
@@ -74,7 +72,7 @@ native extensions, `MAKEFLAGS` controls parallel make jobs:
 
 ### `source`
 
-Install and resolve versions of one gem from a specific registry, without
+Install one gem, and list its versions, from a specific registry without
 changing the machine's `gem sources`:
 
 ```toml
@@ -83,20 +81,32 @@ changing the machine's `gem sources`:
 ```
 
 Private registries take credentials as basic auth in the URL (`token@host` or
-`user:token@host`, per your registry). mise redacts them from output and install
-metadata. A source with credentials must use `https` unless it is on
+`user:token@host`, depending on the registry). mise redacts them from output and
+install metadata. A source with credentials must use `https` unless it is on
 `localhost`.
 
-An `https` source on `rubygems.pkg.github.com` without credentials uses
-mise's GitHub token (see `mise token github`). It needs `read:packages`, which
-a default `gh auth login` lacks (`gh auth refresh -s read:packages`). GitHub
-Packages can't list versions, so pin one:
+An `https` source on `rubygems.pkg.github.com` without credentials uses mise's
+GitHub token (see [`mise token github`](/cli/token/github.html)). The token
+needs the `read:packages` scope, which a default `gh auth login` lacks
+(`gh auth refresh -s read:packages`). GitHub Packages cannot list versions, so
+pin one:
 
 ```toml
 [tools]
 "gem:internal-cli" = { version = "1.4.2", source = "https://rubygems.pkg.github.com/acme" }
 ```
 
-The source is added to the other sources rather than replacing them, so
-dependencies still resolve from rubygems.org, and so can a public gem with the
-same name. Prefer a registry that proxies rubygems.org, or pin an exact version.
+mise adds this source alongside rubygems.org; it does not replace it.
+Dependencies still come from rubygems.org, and so can a public gem that has the
+same name as your private one. To rule that out, pin an exact version or use a
+registry that proxies rubygems.org.
+
+## Troubleshooting
+
+| Symptom                                          | What to do                                                                            |
+| ------------------------------------------------ | ------------------------------------------------------------------------------------- |
+| A gem stops working after a Ruby upgrade         | Reinstall it with `mise install --force`; see [after a Ruby upgrade](#ruby-upgrades). |
+| A native extension fails to build                | Install the compiler and libraries the gem needs, then install again.                 |
+| RuboCop cannot load a plugin from your `Gemfile` | Run it with `bundle exec` from your project; a `gem:` install has its own `GEM_HOME`. |
+
+Implementation: [`src/backend/gem.rs`](https://github.com/jdx/mise/blob/main/src/backend/gem.rs).

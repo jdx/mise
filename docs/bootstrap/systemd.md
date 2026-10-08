@@ -1,38 +1,55 @@
 ---
-description: "Manage Linux systemd user services and timers from mise.toml."
-socialDescription: "Manage Linux systemd user services and timers from mise.toml."
+description: "Declare systemd user services and timers in mise.toml, then write, enable, and start them with systemctl --user."
+socialDescription: "Declare systemd user services and timers in mise.toml."
 ---
 
-# Linux systemd user units
+# systemd user units
 
-mise can declare Linux systemd user services and timers in
-`[bootstrap.linux.systemd.units]` and apply them with
-`mise bootstrap linux systemd-units apply` or as part of
-[`mise bootstrap`](/bootstrap.html):
+Declare systemd user services and timers in `[bootstrap.linux.systemd.units]`.
+[`mise bootstrap`](/bootstrap.html), or
+[`mise bootstrap linux systemd-units apply`](/cli/bootstrap/linux/systemd-units/apply.html),
+writes each to `~/.config/systemd/user/dev.mise.<name>.service` (or `.timer`)
+and enables and starts it with `systemctl --user`.
 
-Use [system services](/bootstrap/services.html) for units managed by the system
-manager. These user units need a reachable user manager and run with the user's
-permissions. Install your executable before applying the example; `my-sync`
-is a placeholder for a program you provide.
+Units run as you, in your systemd user manager. To run one program in the
+background on Linux, macOS, and Windows from a single declaration, use a
+[user service](/bootstrap/services.html#user-services) instead; a name cannot
+be declared in both places, because both write the same unit file. Use this
+section for systemd features such as timers, unit dependencies, hardening, and
+environment files. For units that the system manager runs, such as a database
+installed by a package, use [system services](/bootstrap/services.html#system-services).
+
+## Example
+
+Install your program first. `my-sync` stands in for it:
 
 ```toml
 [bootstrap.linux.systemd.units.my-sync]
 description = "sync files"
 exec_start = "~/.local/bin/my-sync --watch"
-after = ["network-online.target"]
-wants = ["network-online.target"]
-environment = { PATH = "/usr/local/bin:/usr/bin:/bin" }
-environment_file = ["-%h/.config/my-sync.env"]
-nice = 10
-umask = "0007"
-working_directory = "~"
 restart = "on-failure"
-restart_sec = "5s"
-standard_output = "journal"
-standard_error = "journal"
 ```
 
-Oneshot and hardened services can use additional service directives:
+```sh
+mise bootstrap linux systemd-units apply --dry-run
+mise bootstrap linux systemd-units apply
+```
+
+mise writes `~/.config/systemd/user/dev.mise.my-sync.service`, runs
+`systemctl --user daemon-reload`, enables the unit for `default.target`, and
+restarts it. systemd restarts the program when it fails.
+
+A unit does not get your shell's mise activation, so tools from `[tools]` are
+not on its `PATH`. Use absolute paths, or `~/` paths in the `exec_*` keys, and
+set the environment the program needs. `exec_start` uses systemd's command
+syntax, not a shell: for pipes or redirection, run `/bin/sh -c '...'` or a
+wrapper script.
+
+## Run a command once at login
+
+A `oneshot` service runs a command and finishes. With
+`remain_after_exit = true`, systemd keeps it marked active, so `exec_stop` runs
+when the unit stops, for example when your user manager shuts down:
 
 ```toml
 [bootstrap.linux.systemd.units.daemon-lifecycle]
@@ -46,8 +63,10 @@ no_new_privileges = true
 private_tmp = true
 ```
 
-A service tied to the graphical session can stop with the session and run
-checks before it starts:
+## Tie a service to the desktop session
+
+A service can start and stop with your graphical session and run a check before
+it starts:
 
 ```toml
 [bootstrap.linux.systemd.units.panel]
@@ -64,17 +83,35 @@ restarts it with `graphical-session.target`. If an `exec_start_pre` command
 fails, systemd does not run `exec_start`, and `systemctl --user status` shows
 the check as the command that failed.
 
-An entry containing a timer key is rendered as a `.timer` instead of a
-`.service`. For example:
+## Run on a schedule
+
+An entry that sets any timer key becomes a `.timer` unit. Pair it with a
+service entry for the work, and point the timer at that service with `unit`:
 
 ```toml
-[bootstrap.linux.systemd.units.healthcheck]
-description = "check daemon health"
+[bootstrap.linux.systemd.units.backup]
 type = "oneshot"
-exec_start = "~/.local/bin/daemon healthcheck"
+exec_start = "~/.local/bin/backup"
 start = false
 wanted_by = []
 
+[bootstrap.linux.systemd.units.backup-daily]
+on_calendar = "daily"
+persistent = true
+unit = "backup"
+```
+
+The service sets `start = false` and `wanted_by = []`, so apply leaves it
+stopped and not enabled, and only the timer starts it. `persistent = true` runs
+a job that was missed while the timer was not running, such as while the
+machine was off or you were logged out, as soon as the timer starts again. It
+applies only to `on_calendar`, not to monotonic timers. See the
+[systemd timer reference](https://www.freedesktop.org/software/systemd/man/latest/systemd.timer.html#Persistent=).
+
+A monotonic timer runs relative to boot or to the service's last run. This one
+assumes a `healthcheck` service entry declared like `backup` above:
+
+```toml
 [bootstrap.linux.systemd.units.healthcheck-timer]
 description = "periodically check daemon health"
 on_boot_sec = "2min"
@@ -83,102 +120,44 @@ randomized_delay_sec = "30s"
 unit = "healthcheck"
 ```
 
-The service is left disabled and stopped during apply so the timer controls its
-execution. `persistent` catches up missed calendar events when used with
-`on_calendar`; it does not add catch-up behavior to monotonic timers such as
-`on_unit_inactive_sec`. See the
-[systemd timer reference](https://www.freedesktop.org/software/systemd/man/latest/systemd.timer.html#Persistent=).
-
-A bare `unit` value (no unit-type suffix) is resolved to the mise-owned service
-`dev.mise.<unit>.service` — so `unit = "healthcheck"` targets the `healthcheck`
-service entry above. To point a timer at an unmanaged unit, give the fully
-qualified name (e.g. `unit = "nginx.service"`), which is written verbatim.
+A bare `unit` value names the service that mise writes for that entry, so
+`unit = "backup"` targets `dev.mise.backup.service`. A value with a unit-type
+suffix, such as `unit = "nginx.service"`, is written as is.
 
 A timer must set at least one of `on_boot_sec`, `on_unit_active_sec`,
-`on_unit_inactive_sec`, or `on_calendar`. Service-only keys such as
-`exec_start`, `environment`, and `restart` are rejected on timer entries; use a
-separate service entry for the unit triggered by the timer.
+`on_unit_inactive_sec`, or `on_calendar`. Service keys such as `exec_start`,
+`environment`, and `restart` are rejected on a timer entry.
 
-Each unit is written to `~/.config/systemd/user/dev.mise.<name>.service` or
-`~/.config/systemd/user/dev.mise.<name>.timer` and managed with
-`systemctl --user`. Unit names may contain letters, numbers, `.`, `_`, `-`, and
-`@`. mise owns only the unit files it creates with the `dev.mise.` prefix.
+## Set the environment
 
-## Supported keys
+```toml
+[bootstrap.linux.systemd.units.my-sync]
+exec_start = "~/.local/bin/my-sync --watch"
+environment = { PATH = "/usr/local/bin:/usr/bin:/bin", LOG_LEVEL = "info" }
+environment_file = ["-%h/.config/my-sync.env"]
+working_directory = "~"
+nice = 10
+umask = "0007"
+standard_output = "journal"
+standard_error = "journal"
+```
 
-| TOML key               | systemd key                    |
-| ---------------------- | ------------------------------ |
-| `description`          | `Description`                  |
-| `after`                | `After`                        |
-| `wants`                | `Wants`                        |
-| `requires`             | `Requires`                     |
-| `before`               | `Before`                       |
-| `binds_to`             | `BindsTo`                      |
-| `part_of`              | `PartOf`                       |
-| `conflicts`            | `Conflicts`                    |
-| `exec_start_pre`       | `ExecStartPre`                 |
-| `exec_start`           | `ExecStart`                    |
-| `exec_start_post`      | `ExecStartPost`                |
-| `type`                 | `Type`                         |
-| `remain_after_exit`    | `RemainAfterExit`              |
-| `exec_stop`            | `ExecStop`                     |
-| `exec_stop_post`       | `ExecStopPost`                 |
-| `timeout_start_sec`    | `TimeoutStartSec`              |
-| `timeout_stop_sec`     | `TimeoutStopSec`               |
-| `no_new_privileges`    | `NoNewPrivileges`              |
-| `private_tmp`          | `PrivateTmp`                   |
-| `environment`          | `Environment`                  |
-| `environment_file`     | `EnvironmentFile`              |
-| `nice`                 | `Nice`                         |
-| `umask`                | `UMask`                        |
-| `working_directory`    | `WorkingDirectory`             |
-| `restart`              | `Restart`                      |
-| `restart_sec`          | `RestartSec`                   |
-| `standard_output`      | `StandardOutput`               |
-| `standard_error`       | `StandardError`                |
-| `on_boot_sec`          | `OnBootSec`                    |
-| `on_unit_active_sec`   | `OnUnitActiveSec`              |
-| `on_unit_inactive_sec` | `OnUnitInactiveSec`            |
-| `on_calendar`          | `OnCalendar`                   |
-| `randomized_delay_sec` | `RandomizedDelaySec`           |
-| `accuracy_sec`         | `AccuracySec`                  |
-| `persistent`           | `Persistent`                   |
-| `unit`                 | `Unit`                         |
-| `wanted_by`            | `WantedBy`                     |
-| `start`                | run `systemctl --user restart` |
+`environment_file` takes a list of absolute paths or paths that use systemd
+specifiers such as `%h`. A leading `-` makes a file optional. systemd does not
+expand `~` or `$HOME` in these paths.
 
-`requires` does not imply ordering; add the same unit to `after` when it must
-start first. `environment_file` accepts a list of absolute paths or paths using
-systemd specifiers such as `%h`; prefix a path with `-` to make it optional.
-systemd does not expand `~` or `$HOME` in these paths. Environment variables are
-not appropriate for secrets; use systemd credentials for sensitive values.
+Do not put secret values in `environment`, which writes them into the unit
+file. Put them in an `environment_file` with mode `0600`, for example one
+rendered by a [`[bootstrap.files]`](/bootstrap/files.html) template that uses a
+[secret input](/bootstrap/secrets.html). The service still receives them as
+environment variables; this section has no key for systemd credentials
+(`LoadCredential=`).
 
-Unit commands do not inherit your interactive shell's mise activation. Set an
-explicit executable path and the environment the service needs. `ExecStart`
-uses systemd's command syntax; shell operators need an explicitly invoked shell
-or a wrapper script.
+## Use templates {#templates}
 
-`after`, `before`, `wants`, `requires`, `binds_to`, `part_of`, and `conflicts`
-are lists of unit names written to the `[Unit]` section, so they apply to both
-services and timers. `exec_start_pre`, `exec_start_post`, and `exec_stop_post`
-are lists of commands; each entry becomes its own `ExecStartPre=`,
-`ExecStartPost=`, or `ExecStopPost=` line, in order. They are service-only.
-
-The `exec_*` keys and `working_directory` expand bare `~` and `~/` to the current
-user's home directory before writing the service file. In the `exec_*` keys,
-systemd's command prefixes are kept in front of the expanded path, so
-`exec_start_pre = ["-~/bin/check"]` runs an optional check from your home
-directory. `wanted_by` defaults to
-`["default.target"]` for services and `["timers.target"]` for timers; set
-`wanted_by = []` to write the unit and disable any previous enablement. `start`
-defaults to `true`; set `start = false` to write and enable without keeping the
-unit running.
-
-## Templates
-
-Unit values are rendered as [Tera templates](/templates.html) before the unit
-file is written, using the template context of the config file that declared the
-unit. That makes a unit relocatable with the project that defines it:
+String values are [Tera templates](/templates.html), rendered with the
+declaring config's context. That makes a unit relocatable with the project that
+defines it:
 
 ```toml
 [bootstrap.linux.systemd.units.my-service]
@@ -188,63 +167,158 @@ working_directory = "{{ config_root }}"
 environment_file = ["{{ config_root }}/.env"]
 ```
 
-With that config in `~/src/my-project/mise.toml`, the generated unit contains
+Templates are rendered against the declaring config, not the current
+directory, so <code v-pre>{{ config_root }}</code> does not change with where
+you run `mise bootstrap`. It is that config's root: the project directory for a
+project config, including `.mise/config.toml`, and `MISE_GLOBAL_CONFIG_ROOT`
+(default `$HOME`) for the global config. With the config above in
+`~/src/my-project/mise.toml`, the unit gets
 `WorkingDirectory=/home/you/src/my-project` and
 `EnvironmentFile=/home/you/src/my-project/.env`. This matters most for
-`environment_file`, where systemd expands neither `~` nor `$HOME`; `%h` is the
-only other way to write a home-relative path there.
+`environment_file`, where `%h` is the only other way to write a path in your
+home directory.
 
-Every string value in a unit is rendered, including entries inside
-`environment`, `environment_file`, and the unit and command lists. A value with
-no template syntax skips the renderer unchanged, so systemd specifiers such as
-`%h` and `%i` reach the unit file as written; the `~` expansion described above
-still applies afterwards. A unit whose template fails to render is
-reported and skipped; other units still apply.
+Values without template syntax are written unchanged, so systemd specifiers
+such as `%h` and `%i` reach the unit file, and `~` expansion still applies
+after rendering. `exec()` is not available; see
+[templates in bootstrap](/bootstrap.html#templates).
 
-Templates are rendered against the declaring config, not the current directory,
-so a unit declared in your global config keeps resolving
-<code v-pre>{{ config_root }}</code> to that config's directory no matter where
-you run `mise bootstrap` from.
+## How configs combine
 
-<code v-pre>{{ exec(...) }}</code> is not available in unit values. `status`,
-`plan`, `apply --dry-run`, and `apply` all render the same declaration, so a
-unit that shelled out would either give a read-only command side effects or
-make the preview disagree with the unit file that gets written. Use
-<code v-pre>{{ vars.my_value }}</code> or <code v-pre>{{ env.MY_VALUE }}</code>,
-or compute the value in a [bootstrap hook](/bootstrap.html#hooks).
+Units merge by name across the
+[config hierarchy](/configuration.html#configuration-hierarchy). A more local
+config replaces the whole declaration for that name; mise does not merge keys
+across files. A unit that fails validation or whose template fails to render is
+reported with a warning and skipped, and the other units still apply.
 
-## Semantics
+If an entry changes between a service and a timer, apply stops, disables, and
+deletes the old unit. mise manages only unit files in `~/.config/systemd/user`
+whose names start with `dev.mise.`.
 
-- **Declarative and additive** — unit names merge across the
-  [config hierarchy](/configuration.html) (global → project). A more local
-  config replaces the full declaration for the same unit name. When an entry
-  changes between a service and a timer, mise stops, disables, and removes the
-  stale sibling unit.
-- **Linux-only** — on other platforms the section is inert:
-  `mise bootstrap linux systemd-units status` lists entries as skipped and
-  `mise bootstrap linux systemd-units apply` ignores them.
-- **User units only** — mise writes to `~/.config/systemd/user` and uses
-  `systemctl --user`. To manage system services in `/etc/systemd/system`, use
-  [managed files](/bootstrap/files.html) and [system services](/bootstrap/services.html).
-- **Target user only** — run mise as the user who owns the services, with a
-  reachable systemd user manager. `sudo mise` is skipped because `systemctl --user`
-  would target the wrong user manager.
-- **Manual application only** — mise never writes or starts systemd units
-  implicitly; only `mise bootstrap linux systemd-units apply` and `mise bootstrap` do.
+## Remove a unit
 
-## Commands
+Deleting a declaration leaves the unit installed. To stop, disable, and delete
+a service unit, run
+[`mise bootstrap services remove`](/cli/bootstrap/services/remove.html):
 
 ```sh
-mise bootstrap linux systemd-units status            # shows systemd user service state
-mise bootstrap linux systemd-units status --json     # machine-readable
-mise bootstrap linux systemd-units status --missing  # exit 1 if any unit is missing, changed, or inactive
-
-mise bootstrap linux systemd-units apply           # write and start missing/changed units
-mise bootstrap linux systemd-units apply --dry-run # print the commands without running them
-mise bootstrap linux systemd-units apply --yes     # skip the confirmation prompt
+mise bootstrap services remove my-sync
 ```
 
-`status` reports each unit as `active`, `inactive`, `differs`, or `missing`.
-`apply` rewrites changed unit files, runs `systemctl --user daemon-reload`,
-enables units with `wanted_by`, disables units with `wanted_by = []`, and
-restarts them when `start = true` or stops them when `start = false`.
+If the entry is still declared, the next `mise bootstrap` installs it again.
+The command removes only `.service` units; for a timer, run
+`systemctl --user disable --now dev.mise.<name>.timer`, delete the file, and
+run `systemctl --user daemon-reload`.
+
+## Preview and apply
+
+Check each unit with
+[`mise bootstrap linux systemd-units status`](/cli/bootstrap/linux/systemd-units/status.html),
+and preview the commands before you apply them:
+
+```sh
+mise bootstrap linux systemd-units status            # state of each unit
+mise bootstrap linux systemd-units status --json     # the same, as JSON
+mise bootstrap linux systemd-units status --missing  # exit 1 if any unit is missing, changed, or not in its desired started/stopped state
+mise bootstrap linux systemd-units apply --dry-run   # print the commands
+mise bootstrap linux systemd-units apply             # apply after a confirmation prompt
+mise bootstrap linux systemd-units apply --yes       # apply without prompting
+```
+
+`systemd` is a shorter alias for `systemd-units`.
+
+Status reports each unit as `active`, `inactive`, `differs` (the unit file or
+its enablement does not match the declaration), or `missing`. Apply changes
+every unit that is not in its desired state: it writes the unit file, runs
+`systemctl --user daemon-reload`, enables units that have `wanted_by` and
+disables units with `wanted_by = []`, then restarts each unit with
+`start = true` or stops it with `start = false`.
+
+## Reference
+
+`[Unit]` keys, for services and timers:
+
+| Key           | systemd key   | Notes                                                          |
+| ------------- | ------------- | -------------------------------------------------------------- |
+| `description` | `Description` |                                                                |
+| `after`       | `After`       | List of units                                                  |
+| `before`      | `Before`      | List of units                                                  |
+| `wants`       | `Wants`       | List of units                                                  |
+| `requires`    | `Requires`    | List of units; does not order them, so add them to `after` too |
+| `binds_to`    | `BindsTo`     | List of units                                                  |
+| `part_of`     | `PartOf`      | List of units                                                  |
+| `conflicts`   | `Conflicts`   | List of units                                                  |
+
+`[Service]` keys:
+
+| Key                 | systemd key        | Notes                                        |
+| ------------------- | ------------------ | -------------------------------------------- |
+| `exec_start`        | `ExecStart`        | Required for a service; `~` expanded         |
+| `exec_start_pre`    | `ExecStartPre`     | List; one line per entry, in order           |
+| `exec_start_post`   | `ExecStartPost`    | List; one line per entry, in order           |
+| `exec_stop`         | `ExecStop`         |                                              |
+| `exec_stop_post`    | `ExecStopPost`     | List; one line per entry, in order           |
+| `type`              | `Type`             | Such as `"oneshot"`                          |
+| `remain_after_exit` | `RemainAfterExit`  |                                              |
+| `timeout_start_sec` | `TimeoutStartSec`  |                                              |
+| `timeout_stop_sec`  | `TimeoutStopSec`   |                                              |
+| `restart`           | `Restart`          | Such as `"on-failure"`                       |
+| `restart_sec`       | `RestartSec`       |                                              |
+| `environment`       | `Environment`      | Table of variables                           |
+| `environment_file`  | `EnvironmentFile`  | List of paths; `-` prefix makes one optional |
+| `working_directory` | `WorkingDirectory` | `~` expanded                                 |
+| `nice`              | `Nice`             | -20 to 19                                    |
+| `umask`             | `UMask`            | Octal, `"0000"` to `"0777"`                  |
+| `no_new_privileges` | `NoNewPrivileges`  |                                              |
+| `private_tmp`       | `PrivateTmp`       |                                              |
+| `standard_output`   | `StandardOutput`   | Such as `"journal"`                          |
+| `standard_error`    | `StandardError`    |                                              |
+
+In the `exec_*` keys, a leading `~` or `~/` is expanded to your home directory,
+and systemd's command prefixes stay in front of the path, so
+`exec_start_pre = ["-~/bin/check"]` runs an optional check from your home
+directory.
+
+`[Timer]` keys; setting any of them makes the entry a timer:
+
+| Key                    | systemd key          | Notes                                       |
+| ---------------------- | -------------------- | ------------------------------------------- |
+| `on_boot_sec`          | `OnBootSec`          |                                             |
+| `on_unit_active_sec`   | `OnUnitActiveSec`    |                                             |
+| `on_unit_inactive_sec` | `OnUnitInactiveSec`  |                                             |
+| `on_calendar`          | `OnCalendar`         | Such as `"daily"` or `"Mon *-*-* 09:00"`    |
+| `randomized_delay_sec` | `RandomizedDelaySec` |                                             |
+| `accuracy_sec`         | `AccuracySec`        |                                             |
+| `persistent`           | `Persistent`         | Catch up missed `on_calendar` runs          |
+| `unit`                 | `Unit`               | A bare name means `dev.mise.<name>.service` |
+
+`[Install]` and mise keys:
+
+| Key         | Effect                                                                                                                             |
+| ----------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `wanted_by` | `WantedBy`; defaults to `["default.target"]` for services and `["timers.target"]` for timers. `[]` writes the unit and disables it |
+| `start`     | Defaults to `true`, which restarts the unit after apply; `false` stops it                                                          |
+
+Unit names may contain letters, numbers, `.`, `_`, `-`, and `@`.
+
+## On macOS and Windows
+
+The section is ignored on other platforms, so one config can serve several
+machines. `status` lists each unit as skipped, `apply` does nothing, and the
+full `mise bootstrap` notes the skipped units in its follow-up summary.
+
+## Troubleshooting
+
+| Problem                                                     | What to do                                                                                                               |
+| ----------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| Units are skipped with "cannot target SUDO_USER"            | Run mise as the user who owns the units, not with `sudo mise`                                                            |
+| Units are skipped with "systemd user manager not available" | Log in to a session that starts a user manager; containers often have none                                               |
+| Units stop when you log out of a server                     | Enable lingering once with `sudo loginctl enable-linger $USER`; mise does not enable it for you                          |
+| A unit fails to start                                       | Read its output with `journalctl --user -u dev.mise.<name>` and its state with `systemctl --user status dev.mise.<name>` |
+
+## See also
+
+- [Bootstrap](/bootstrap.html#how-it-runs) for where units fall in the run
+  order.
+- [Services](/bootstrap/services.html) for background programs declared once
+  for every platform, and for system units.

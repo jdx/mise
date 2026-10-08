@@ -31,6 +31,6 @@ mise generate devcontainer
 
 ## Related documentation
 
-- [IDE integration](/ide-integration.html).
+- [Dev containers](/ide-integration.html#dev-containers).
 - [`mise generate <SUBCOMMAND>`](/cli/generate.html).
 - [Global flags and argument syntax](/cli/#global-flags).

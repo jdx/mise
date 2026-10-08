@@ -1,394 +1,314 @@
 ---
-description: "Quick answers about daily commands, shell integration, and configuration."
+description: "Get short answers about mise commands, version requests, shell activation, config trust, and related tools."
+socialDescription: "Short answers about mise commands, version requests, activation, and config trust."
 outline: [2, 3]
 ---
 
-# FAQs
+# FAQ
 
-Quick answers about daily commands, shell integration, and configuration. For a failed
-command, start with [Troubleshooting](/troubleshooting.html) or [Errors](/errors.html).
+If a command fails, see [Troubleshooting](/troubleshooting.html), or look up
+the message in [Error messages](/errors.html).
 
 ## Daily commands
 
 ### What is the difference between `mise install` and `mise use`?
 
-`mise install` installs requested tools without adding tool declarations to configuration.
-`mise use` installs a tool and writes its version request to a config file.
+`mise install` installs tools. `mise use` installs a tool and also writes its
+version request to a config file:
 
 ```sh
-mise use node@24       # select Node 24 for the project and install it
-mise install          # install tools already declared by the project
-mise install node@24  # install Node 24 without adding a declaration
+mise use node@24      # add Node 24 to mise.toml and install it
+mise install          # install every tool the project declares
+mise install node@24  # install Node 24 without changing config
 ```
 
-Installation alone does not change your parent shell's environment. Use activation, shims,
-`mise exec`, or `mise run` to run the selected tools. To record a concrete version, add
-`--pin` to `mise use`; to reproduce a project's lockfile, use `mise install --locked`.
-
-`mise install node` uses the configured request when present, otherwise `latest`.
-`mise install` without tool arguments installs the configured toolset.
+Neither command changes the environment of the shell you run it from. With
+shell activation, the next prompt picks up the change; otherwise, run the tools
+with `mise exec` or `mise run`. Given no version, `mise install node`
+installs the version the project asks for, or `latest` if it asks for none.
+Without arguments, `mise install` skips tools marked `lazy = true`; add
+`--include-lazy` to install those too.
 
 ### Where does `mise use` write to?
 
-By default, mise chooses the lowest-precedence config file in the nearest applicable config
-directory. This can be a parent directory or a `.tool-versions` file, not necessarily a
-`mise.toml` in the current directory. With both `mise.toml` and `mise.local.toml` in that
-directory, shared configuration is preferred. See [write target selection](/configuration.html#target-file-for-write-operations).
+`mise use` writes to the nearest config file that applies to the current
+directory. That can be a `mise.toml` in a parent directory, or a
+`.tool-versions` file. When a directory has both `mise.toml` and
+`mise.local.toml`, mise writes to `mise.toml`. See
+[Which file mise writes to](/configuration.html#target-file-for-write-operations).
 
-Use an explicit target when location matters:
+To choose the file yourself:
 
 ```sh
 mise use --path mise.toml node@24  # this file
-mise use --global node@24          # global configuration
-mise use --env local node@24       # personal local environment
+mise use --global node@24          # your global config
+mise use --env local node@24       # mise.local.toml, for personal versions
 ```
 
-`mise use --dry-run node@24` previews the operation. `mise config` shows the files loaded
-for the current directory.
+`mise use --dry-run node@24` shows what would change, and `mise config ls`
+lists the config files mise loads in the current directory.
 
-### Does a partial version select the newest release? {#does-node20-mean-the-newest-available-version-of-node}
+### Does `node@20` use the newest Node 20 release? {#does-node20-mean-the-newest-available-version-of-node}
 
-A partial request such as `node@20` restricts the matching versions. For normal execution,
-mise can reuse an installed version that satisfies the request. Installation and upgrade
-commands can resolve a newer available match. A lockfile can pin the resolved result.
+Not automatically. When a project asks for `node = "20"`, mise uses the newest
+Node 20 release you already have installed. It picks from the available
+releases only when no 20.x is installed, or when you run
+`mise install node@20` or `mise upgrade node`:
 
 ```sh
-mise latest --installed node@20  # inspect an installed match
-mise latest node@20              # inspect an available match
-mise install node@20             # install a matching release
+mise latest --installed node@20  # the installed 20.x that mise uses
+mise latest node@20              # the newest 20.x available
+mise upgrade node                # install that release and use it
 ```
 
-Use `mise ls --current node` and `mise which node` to inspect what this project actually uses.
-Do not infer the selected version from a directory name or assume that every tool follows
-Node's version scheme. See [version selection](/dev-tools/) and [lockfiles](/dev-tools/mise-lock.html).
+With a [lockfile](/dev-tools/mise-lock.html), mise uses the version recorded
+there. See [How a request resolves](/dev-tools/versions.html#how-requests-resolve).
 
-### Does `latest` mean the newest remote version?
+### Does `latest` mean the newest release? {#does-latest-mean-the-newest-remote-version}
 
-`latest` is resolved by the tool's backend. For normal execution it can reuse an installed
-version, so a newly published release does not automatically change your environment.
-A lockfile can constrain the selection further.
+Not in a config file. `node = "latest"` uses the newest version you have
+installed, so a new upstream release does not change your environment until you
+run `mise upgrade node`. On the command line, `mise install node@latest`,
+`mise exec node@latest -- node -v`, and `mise latest node` ask the backend for
+its newest release.
 
-To query an available release, run `mise latest node`. An explicit request such as
-`mise install node@latest` or `mise exec node@latest -- node --version` asks for an available
-release rather than only reusing the current installed match, subject to lock policy.
-
-To upgrade within your configured requests, use `mise upgrade node`. To also change the
-request in configuration, use `mise upgrade --bump node`. See [upgrading tools](/dev-tools/)
-and [lockfiles](/dev-tools/mise-lock.html). Different backends define “latest” differently;
-it does not universally mean the largest semantic version or include prereleases.
+Each backend decides what `latest` means. It is not always the highest version
+number, and most backends leave out prereleases. See
+[Version requests and version files](/dev-tools/versions.html) and
+[Upgrade tools](/dev-tools/#upgrade-tools).
 
 ### How does `mise exec` work?
 
-`mise exec` reads configuration, resolves and installs missing requested tools as needed,
-computes the environment, and runs the command after `--`:
+[`mise exec`](/cli/exec.html) reads the config for the current directory,
+installs any missing tools, and runs the command after `--` with the project's
+tools and environment variables:
 
 ```sh
-mise exec -- node --version
-mise exec node@24 -- node --version
+mise exec -- node --version          # the Node version the project selects
+mise exec node@24 -- node --version  # Node 24 for this one command
 ```
 
-The first command uses the project's configured Node version. The second supplies an
-override for that invocation. You do not need to repeat `node@24` when that is already the
-request in `mise.toml`. The child receives mise's environment; the parent shell is unchanged.
+The command and its children get the environment; your shell does not change.
 
 ## Shells and editors
 
 ### What does `mise activate` do?
 
-`mise activate` prints a shell script. Evaluating it in your shell installs the mise function
-and hooks that refresh tool paths and environment variables. Prompt hooks notice changes to
-configuration; supported shells also have directory-change hooks.
+`mise activate` prints a script for your shell. When your startup file runs it,
+mise sets `PATH` and your `[env]` variables for the current directory, then
+adds a hook that runs before each prompt and, in most shells, after each `cd`.
+The hook updates the environment for the directory you are in and removes the
+previous project's values. Activation also defines a `mise` shell function so
+that `mise shell` and `mise deactivate` can change the current session.
 
-`mise hook-env` computes the assignments needed for the current directory, including removal
-of values from the previous project. It can exit early when nothing relevant changed. It
-prints shell code; running the executable alone does not modify its parent shell.
-
-The shell function lets commands such as `mise shell` and `mise deactivate` update the current
-session. Put activation in your [shell's startup file](/getting-started.html#activate-mise).
-For a script or CI job, use `mise exec -- command` or `mise run task` so execution does not
-depend on a prompt hook. See [shell integration choices](#how-do-mise-activate-shims-mise-exec-and-mise-env-relate).
+Set it up from [Shell setup](/shell-setup.html). Scripts and CI jobs never show
+a prompt, so use `mise exec` or `mise run` there.
 
 ### How do `mise activate`, shims, `mise exec`, and `mise env` relate?
 
-Each method makes mise tools available at a different boundary:
+They make mise tools available in different places. `mise activate` updates
+your interactive shell, shims serve editors and other programs that find tools
+through `PATH`, `mise exec` and `mise run` set up one command or task, and
+`mise env` prints the variables for another program to load. See
+[Choose how to use mise tools](/dev-tools/shims.html#overview) for a comparison.
 
-| Method                  | Environment applies to                            | Typical use                    |
-| ----------------------- | ------------------------------------------------- | ------------------------------ |
-| `mise activate`         | Current shell, refreshed by hooks                 | Interactive terminals          |
-| `mise activate --shims` | Adds a shim directory to the current shell's PATH | Editors and simple shell setup |
-| A tool shim             | The launched tool and its children                | Commands found through PATH    |
-| `mise exec` / `mise x`  | One command and its children                      | Scripts and CI                 |
-| `mise env`              | Prints assignments for another program to consume | Environment integrations       |
-| `mise run`              | A task and its dependencies                       | Named project commands         |
+### Does mise work on Windows? {#windows-support}
 
-Shims load `[env]` for the tool they launch, but do not export it into the parent shell or
-install prompt hooks there. Use normal activation for shell hooks and automatic shell
-variable updates. See [Shims vs PATH](/dev-tools/shims.html#shims-vs-path).
+Yes. mise runs natively on Windows, with PowerShell activation, shims,
+`mise exec`, and `mise run`. Install it with `winget install jdx.mise`, or see
+[Windows](/installing-mise.html#windows) for Scoop and Chocolatey. To set up
+PowerShell, Git Bash, or `cmd.exe`, see [Shell setup](/shell-setup.html#windows).
 
-### Windows support?
+Tools from asdf plugins do not run on native Windows, because the plugins are
+shell scripts. Core tools and backends such as aqua, github, http, npm, and
+vfox work when the tool itself supports Windows. `mise registry <tool>` lists the
+backends a tool can use. In WSL, install the Linux build of mise and manage
+Linux tools there. For Windows problems, see
+[Troubleshooting](/troubleshooting.html#windows-problems).
 
-mise supports native Windows, including PowerShell activation. Follow the
-[Windows installation instructions](/installing-mise.html#windows-winget) and the
-[shell compatibility table](/getting-started.html#shell-feature-compatibility).
+### How do I turn color output off or force it on? {#how-do-i-disable-force-cli-color-output}
 
-Shims, `mise exec`, and `mise run` are also available. A shim loads the mise environment for
-the tool it launches; it does not update the parent PowerShell session.
-
-Backend and tool support varies by platform. asdf shell plugins require Unix; use a compatible
-core, binary-download, or vfox implementation on Windows. WSL uses Linux tools and should have
-its own Linux mise installation. See [Windows troubleshooting](/troubleshooting.html#windows-problems).
-
-### Why does a Windows editor report `spawn EINVAL`? {#vscode-for-windows-extension-with-error-spawn-einval}
-
-An extension that tries to spawn a `.cmd` shim directly can fail with `spawn EINVAL` after a [Node.js security fix](https://nodejs.org/en/blog/vulnerability/april-2024-security-releases-2#command-injection-via-args-parameter-of-child_processspawn-without-shell-option-enabled-on-windows-cve-2024-27980---high).
-
-Use the default [`windows_shim_mode = "exe"`](/configuration/settings.html#windows_shim_mode),
-run `mise reshim`, and restart the affected extension or language server. See
-[IDE integration](/ide-integration.html) if it still resolves the old shim path.
-
-### How do I disable/force CLI color output?
-
-Use `NO_COLOR=1` or `MISE_COLOR=0` to disable ANSI color, and `CLICOLOR_FORCE=1` to force it,
-including when piping output. `NO_COLOR=1` and `MISE_COLOR=0` take precedence over
-`CLICOLOR_FORCE=1`; unset the disabling overrides when forcing color.
+Set `NO_COLOR=1` or `MISE_COLOR=0` to turn color off, and `CLICOLOR_FORCE=1` to
+keep it on when output goes to a pipe:
 
 ```sh
 NO_COLOR=1 mise ls
-CLICOLOR_FORCE=1 mise ls
+CLICOLOR_FORCE=1 mise ls | less -R
 ```
 
-These settings control mise's output. Child tools may have their own color options.
+`NO_COLOR=1` and `MISE_COLOR=0` win over `CLICOLOR_FORCE=1`. These variables
+control mise's own output; tools that mise runs have their own color options.
 
 ## Configuration and networking
 
 ### How do I keep personal configuration out of Git? {#i-don-t-want-to-put-a-mise-toml-tool-versions-file-into-my-project-since-git-shows-it-as-an-untracked-file}
 
-Use `mise.local.toml` for personal project settings. Add it to `.git/info/exclude` to ignore it
-in just your checkout, or to your global Git ignore file to ignore it across projects.
-Keep shared tool versions and tasks in a committed `mise.toml`.
+Put personal settings in `mise.local.toml` and keep shared tools and tasks in a
+committed `mise.toml`. To ignore `mise.local.toml` in one checkout, add it to
+`.git/info/exclude`; to ignore it in every project, add it to your global Git
+ignore file.
 
-If you need to keep `mise.toml` itself private to a checkout, the same ignore mechanisms
-work. A project's `.gitignore` is another option when the team agrees to the policy.
-Ignore rules only affect untracked files; they do not hide changes to a file already in Git.
+The same works for keeping `mise.toml` itself private, or the team can list it
+in the project's `.gitignore`. Ignore rules apply only to untracked files, so
+they do not hide changes to a file that is already in Git.
 
 ### What is the difference between "nodejs" and "node" (or "golang" and "go")?
 
-These are aliased. For example, `mise install nodejs@24` is the same as `mise install node@24`. This
-means they cannot be different plugins.
+They are the same tool. mise accepts `nodejs` and `golang` as aliases for
+`node` and `go` on the command line, in `mise.toml`, and in `.tool-versions`.
+When `mise use` changes a `mise.toml` entry written as `nodejs`, it renames the
+entry to `node` and keeps its comments. In `.tool-versions`, mise writes
+`nodejs` and `golang`, the names asdf reads.
 
-This is for convenience, so you don't need to remember which one is the "official" name. If
-the aliasing misbehaves, use the canonical names `node` and `go`, and [report the mismatch](/contact.html).
-Under the hood, when mise reads a config file or CLI input, it swaps out "nodejs" and
-"golang".
+### Why does mise ask me to trust a config file? {#my-config-file-is-being-ignored-mise-trust-issues}
 
-When mise _writes_ to a `mise.toml` (`mise use`, `mise unuse`), it writes the canonical name — a
-`nodejs` entry becomes `node`, keeping its comments. `.tool-versions` files are unaffected and still
-use the asdf spellings.
+A project's config file can run code: templates can run commands, `[env]`
+directives and hooks run scripts, and tool options such as `postinstall` run
+during installs. mise loads a file that only lists tool versions,
+`min_version`, and plain tasks without asking. Anything else waits until you
+trust it, so cloning a repository and entering its directory does not run its
+code. Read the file, then run [`mise trust`](/cli/trust.html).
 
-### My config file is being ignored / `mise trust` issues
+`mise run`, `mise install`, `mise exec`, `mise watch`, and
+`mise daemons start`, `restart`, and `register` trust the project's config
+themselves, because running them is already a decision to run its code. In CI,
+mise treats config as trusted. Outside CI, `--yes` or `MISE_YES=1` answers the
+trust prompt with yes, so use them only for configs you have reviewed.
+[Paranoid mode](/paranoid.html) turns off this automatic trust. Your global
+config, `~/.config/mise/config.toml`, never needs trust.
 
-Trust depends on the configuration contents and the command, not file authorship. Safe config files —
-those that only contain `min_version`, `[tools]` entries whose values are plain version
-strings or arrays of strings, and `[tasks]` without templates — load without trust. Tool-option
-tables, inline options in a tool name (`"tool[opt=value]"`, also in `.tool-versions`), and other top-level settings require trust. In normal mode outside CI, `mise run`, naked task
-invocations such as `mise <TASK>`, `mise install`, `mise exec`, and `mise watch` automatically
-trust the active config because they explicitly execute project-defined behavior. Other unsafe
-config requires trust. Common issues:
+If mise seems to ignore a config file:
 
-- **Accidentally denied trust**: If mise prompted you to trust a file and you said no, it is
-  added to the ignore list. Inspect `mise trust --show`, then run
-  `mise trust path/to/mise.toml` to trust the reviewed file again.
-- **Symlinked configs**: If your config is symlinked (e.g., via GNU Stow), mise may track the
-  symlink target path. Try `mise trust` pointing to the actual file path.
-- **CI**: In detected CI, mise assumes configs are trusted unless paranoid mode is enabled.
-- **Non-interactive mode**: In a non-interactive shell, such as an IDE extension or script without
-  a TTY, mise cannot prompt you to trust a config. Outside normal-mode `mise run`, `mise <TASK>`,
-  `mise install`, `mise exec`, and `mise watch`, commands that directly load an untrusted
-  `mise.toml` can fail with an untrusted-config error. Commands that discover previously tracked
-  configs may skip untrusted entries instead. Either run `mise trust` beforehand or set
-  [`trusted_config_paths`](/configuration/settings.html#trusted_config_paths) in your global settings
-  for configs you trust.
-- **Global config** is operator-owned and does not need project trust. Check `mise config`
-  if a file you thought was global is being discovered as project configuration.
+- Run `mise trust --show` to see the trust status of each config directory from
+  the current one up. `mise doctor` reports an untrusted file only as
+  `failed to load config: error parsing config file: <path>`.
+- If you answered No at the trust prompt, mise skips that config without asking
+  again. Run `mise trust path/to/mise.toml` after you review it.
+- Without a terminal, such as in an editor extension, mise cannot ask, and the
+  command fails with
+  [`Config files in <path> are not trusted`](/errors.html#untrusted-config).
+  Trust the file from a terminal first.
+- A `mise.<env>.toml` file loads only when that
+  [config environment](/configuration/environments.html) is selected.
 
-Run `mise doctor` (`mise dr`) to see if any config files are untrusted — it will
-list them under "problems".
+See [Configuration trust](/security.html#configuration-trust) for the full
+rules, including symlinked configs and trusting every project under a
+directory.
 
-Also check your current directory and selected [configuration environment](/configuration/environments.html).
-A profile file that is not selected is not a trust failure.
+### Does mise read `.nvmrc` or `.python-version`? {#how-do-idiomatic-version-files-python-version-node-version-etc-work}
 
-### How do idiomatic version files (`.python-version`, `.node-version`, etc.) work?
-
-Idiomatic version files (`.python-version`, `.node-version`, `.ruby-version`, etc.) are
-**disabled by default** in mise. They are only read if you explicitly opt in per tool using
-[`idiomatic_version_file_enable_tools`](/configuration/settings.html#idiomatic_version_file_enable_tools):
+Only for tools you enable. mise reads other version managers' files, such as
+`.nvmrc`, `.node-version`, `.python-version`, and `.ruby-version`, only after
+you turn them on for a tool:
 
 ```sh
-# Enable reading .node-version files
-mise settings add idiomatic_version_file_enable_tools node
+mise settings add idiomatic_version_file_enable_tools node  # read .nvmrc, .node-version, package.json
+mise settings unset idiomatic_version_file_enable_tools     # stop reading them for every tool
 ```
 
-If you previously enabled idiomatic files and now want to stop mise from reading them
-(e.g., because `uv` manages `.python-version`), remove that tool from the configured list. Unset the setting entirely to restore its empty default.
+To keep one file off while the tool's other files stay on, add a `tool:file`
+pair to
+[`idiomatic_version_file_disable_files`](/configuration/settings.html#idiomatic_version_file_disable_files),
+such as `node:package.json`. See
+[Idiomatic version files](/dev-tools/versions.html#idiomatic-version-files) for
+the files each tool reads.
 
-See [Idiomatic Version Files](/configuration.html#idiomatic-version-files) for more information.
+### How does mise map a short tool name to a source? {#how-do-the-shorthand-plugin-names-map-to-repositories}
 
-### How do the shorthand plugin names map to repositories?
+The [registry](/registry.html), which ships with mise, maps short names such as
+`ripgrep` to backend identifiers such as `aqua:BurntSushi/ripgrep`. Its source
+is the [`registry/`](https://github.com/jdx/mise/tree/main/registry) directory
+of the mise repository. Most tools need no plugin.
 
-The bundled [registry](/registry.html) maps short names to backend specifications, such as
-`aqua:owner/repo` or `vfox:owner/plugin`. It is maintained in the repository's
-[`registry/`](https://github.com/jdx/mise/tree/main/registry) directory and ships with mise.
-
-Most tools do not need an external plugin. Inspect a tool's selected backend with
-`mise tool ripgrep`, or see its available choices with `mise registry ripgrep`.
-For plugin-backed tools, the backend specification identifies the plugin repository.
-See [backend selection](/dev-tools/backend_architecture.html#how-backend-selection-works).
+`mise registry ripgrep` lists the backends a tool can use, and
+`mise tool ripgrep` shows the one mise selected. See
+[How mise picks a backend](/dev-tools/backends/#how-backend-selection-works).
 
 ### How do I use mise with HTTP proxies?
 
-Set `http_proxy` and `https_proxy` in the environment that starts mise. For example, replace
-the proxy host and port below with your organization's proxy:
+mise reads the standard `https_proxy`, `http_proxy`, `all_proxy`, and
+`no_proxy` variables, in lowercase or uppercase:
 
 ```sh
-https_proxy=http://proxy.example.com:8080 mise install
+export https_proxy=http://proxy.example.com:8080
+mise install
 ```
 
-Plugin scripts and package managers may have separate proxy or certificate settings. If a
-single backend fails, identify the subprocess or URL in verbose output and check that tool's
-proxy configuration. See [Errors](/errors.html) for network and authentication failures.
+To route downloads through an internal mirror instead, use
+[URL replacements](/url-replacements.html). Package managers and plugins that
+mise runs, such as npm, pip, cargo, and asdf plugins, read their own proxy and
+certificate settings.
 
-## Migration
+## Coming from asdf {#migration}
 
-### How do I migrate from asdf?
+### How do I switch from asdf? {#how-do-i-migrate-from-asdf}
 
-1. Install mise and [configure shell activation](/getting-started.html#activate-mise).
-2. Remove asdf activation from the shell's startup files, then open a new shell.
-3. Run `mise install` in a project with `.tool-versions`, then verify a configured tool with
-   `mise exec -- node --version` (substitute your project's tool).
+<a id="how-compatible-is-mise-with-asdf"></a>
 
-mise reads `.tool-versions`, but its global configuration normally lives at
-`~/.config/mise/config.toml`. Review your `~/.tool-versions` and add the defaults you want with
-`mise use --global`. For example, after choosing the versions you need:
-
-```sh
-mise use --global node@24 python@3.14
-```
-
-This example chooses new defaults; it is not a lossless conversion of an arbitrary asdf file.
-Keep the old file until you have checked every tool, including entries with multiple versions
-or aliases. Do not share the installation directories between asdf and mise. Once verified,
-you can [uninstall asdf](https://asdf-vm.com/manage/core.html#uninstall).
-
-### How compatible is mise with asdf?
-
-mise supports `.tool-versions` and the asdf shell-plugin interface on Unix. Compatibility
-with every asdf command or plugin is not guaranteed. Prefer the mise syntax shown in each
-command's help, such as `mise install node@24`.
-
-The asdf Go rewrite introduced commands such as `asdf set`. `mise set` has a different
-purpose: it sets environment variables. Use `mise use` to select tool versions.
-
-If a team shares `.tool-versions` between both tools, use concrete versions that asdf accepts.
-`mise use --pin` writes a resolved version instead of a fuzzy request. You can also keep
-`mise.toml` alongside `.tool-versions`; the mise file takes precedence for tools declared in
-both at the same directory level. See [asdf compatibility](/asdf-legacy-plugins.html) and
-[plugin usage](/plugin-usage.html).
+mise reads `.tool-versions` files, so you can try it in one project before you
+change your shell setup, and teammates can keep using asdf.
+[Migrating from asdf](/dev-tools/comparison-to-asdf.html) gives the steps, the
+command equivalents, and how to share `.tool-versions` with asdf users. One
+difference to know up front: `mise set` sets environment variables, while
+`mise use` chooses tool versions.
 
 ## Scope and related tools
 
-### Can mise manage system packages and desktop applications? {#mise-is-for-dev-tools-not-applications-or-system-packages}
+### Can mise install system packages, or tools that work without mise? {#mise-is-for-dev-tools-not-applications-or-system-packages}
 
-`[tools]` manages versioned development tools and runtimes. Host packages, desktop
-applications, and system libraries belong in [`[bootstrap.packages]`](/bootstrap/packages/).
+<a id="how-do-i-install-tools-other-users-can-run-without-mise"></a>
 
-For example, a compiler may need an OS development-library package before a tool can build.
-Declare that package with the appropriate manager and apply it using `mise bootstrap`.
-Most managers delegate to the OS package manager; mise's built-in Homebrew installers can
-handle `brew:` and `brew-cask:` entries without requiring Homebrew itself.
+`[tools]` is for per-project versions that mise switches as you change
+directories. For something installed once for the whole machine, such as a
+system library, a desktop app, or a command other users run without mise, use
+one of these:
 
-Host packages share the machine's package database or prefix. They do not gain per-project
-version switching simply because they are declared in `mise.toml`.
+- [`[bootstrap.packages]`](/bootstrap/packages/) declares packages for apt,
+  dnf, Homebrew, WinGet, and other package managers, and `mise bootstrap`
+  installs them. mise installs `brew:` and `brew-cask:` entries itself, so
+  Homebrew does not need to be installed; see
+  [Homebrew formulae](/bootstrap/packages/brew.html).
+- [`mise install-into`](/cli/install-into.html) installs one version of any
+  tool mise supports into a directory you choose:
 
-### How do I install tools other users can run without mise?
+  ```sh
+  mise install-into node@24 ~/standalone-node
+  ~/standalone-node/bin/node --version
+  ```
 
-Two features install binaries that work on `PATH` with no mise involved at runtime.
+  Use a new or empty directory: `install-into` deletes what is already there
+  after asking, or without asking under `--yes`. Add its `bin` directory to
+  `PATH`, and set variables such as `JAVA_HOME` yourself.
 
-Use [`[bootstrap.packages]`](/bootstrap/packages/) with `brew:` entries for tools that have
-a Homebrew formula:
-
-```toml
-[bootstrap.packages]
-"brew:ffmpeg" = "latest"
-"brew:jq" = "latest"
-```
-
-mise pours bottles into the canonical prefix (`/home/linuxbrew/.linuxbrew` on Linux,
-`/opt/homebrew` on arm64 macOS) with the usual `<prefix>/bin` links, and does not require
-Homebrew itself to be installed. Once `<prefix>/bin` is on `PATH`, the binaries behave like
-any other Homebrew install.
-[Keg-only](https://docs.brew.sh/FAQ#what-does-keg-only-mean) formulae are the exception:
-like brew, mise leaves them out of the prefix, so their binaries stay at
-`<prefix>/opt/<name>/bin`.
-
-On arm64 macOS and x86_64/arm64 Linux, where mise's brew manager runs,
-`mise bootstrap packages import --manager brew` snapshots an existing Homebrew or Linuxbrew
-setup into your config — the formulae you installed on request, or every linked formula
-with `--all`.
-
-Use [`mise install-into`](/cli/install-into.html) for any backend mise supports. It installs
-one tool version into a directory you pick, for use outside of mise:
-
-```sh
-mise install-into node@24 "$HOME/standalone-node"
-"$HOME/standalone-node/bin/node" --version
-```
-
-Point it at a new or empty directory: `install-into` deletes whatever is already at the
-destination, after a confirmation prompt that defaults to no, or without asking under
-`--yes`. The tool installation goes to that directory; backends may also use mise caches and
-install dependencies. Add its `bin` to `PATH` yourself the way you
-would the brew prefix above. Tools that expect environment variables such as `JAVA_HOME`,
-or other configuration mise normally applies at runtime, still need those set up by hand.
-
-Both approaches make the same trade Homebrew makes: one version on `PATH` for everyone,
-with no per-project version selection. When you want that selection, keep the tools in
-`[tools]` and let [`mise bootstrap`](/bootstrap.html) converge each user's activation,
-config, and tools in one command — or across many hosts with
-[`mise bootstrap remote`](/bootstrap/remote.html).
+Both give every user one version, with no switching per project. To give each
+user mise-managed tools instead, keep them in `[tools]` and let
+[`mise bootstrap`](/bootstrap.html) set up each user's activation and tools.
 
 ### Is mise secure?
 
-mise supports download verification, configuration trust, and optional restrictions such
-as safe and paranoid modes. Their guarantees depend on the backend and operation. Start with
-[Security](/security.html) for the threat model and available controls. Report vulnerabilities
-through [SECURITY.md](https://github.com/jdx/mise/blob/main/SECURITY.md).
+mise checks downloads where the backend supports it, asks before it runs code
+from a project's config, and has safe and paranoid modes for stricter limits.
+What each check covers depends on the backend. See [Security](/security.html),
+and report vulnerabilities as described in
+[Reporting a vulnerability](/security.html#reporting-a-vulnerability).
 
 ### What is usage?
 
-[usage](https://usage.jdx.dev/) is a spec and CLI for defining CLI tools.
-
-Arguments, flags, environment variables, and config files can all be defined in a usage spec. A single definition can drive help text, argument parsing, and completions.
-
-mise embeds usage for task argument parsing, help, and autocompletion, so the separate `usage` CLI is not required. See [autocompletion](/installing-mise.html#autocompletion).
-
-You can use usage in file tasks to get autocompletion working; see [file task arguments](/tasks/file-tasks.html#arguments).
+[usage](https://usage.jdx.dev/) is a spec for describing a command's arguments,
+flags, and completions. mise has it built in: task arguments,
+`mise run <task> --help`, and completions for mise and its tasks all come from
+usage specs, so you do not need the separate `usage` CLI. See
+[Task arguments](/tasks/task-arguments.html).
 
 ### What is pitchfork?
 
-[pitchfork](https://pitchfork.jdx.dev/) is a process manager for developers. Mise can manage custom processes and database presets through its experimental [daemon integration](/daemons).
-
-It handles daemon management with features like automatic restarts on failure, smart readiness checks, shell-based auto-start/stop when entering project directories, and cron-style scheduling for periodic tasks.
-
-Use [mise tasks](/tasks/) for commands and dependency ordering; use a process supervisor when
-a service needs to keep running independently of a task invocation.
+[pitchfork](https://pitchfork.jdx.dev/) is a process supervisor for development
+services. mise's experimental [daemons](/daemons.html) feature uses it to run
+the databases and development servers declared in `mise.toml`, check that they
+are ready, and restart them. Use [tasks](/tasks/) for commands that finish, and
+daemons for processes that keep running.
 
 ### How does mise versioning work?
 
-mise uses calendar versions in the form `YYYY.MONTH.RELEASE`, such as `2026.9.1`.
-The final number is a release counter within the month, not a day of the month or a
-compatibility indicator.
-
-New features can be introduced behind settings such as `experimental = true`. Deprecation
-warnings and [release notes](https://github.com/jdx/mise/releases) describe behavior changes;
-do not infer compatibility from a SemVer-style major version. For a team's required mise
-version, use [`min_version`](/configuration.html).
+mise uses calendar versions such as `2026.10.4`, and the numbers say nothing
+about compatibility. See [Version numbers](/releases.html#versioning).

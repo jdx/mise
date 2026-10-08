@@ -26,6 +26,6 @@ recreates it if it is still declared.
 
 ## Related documentation
 
-- [System services](/bootstrap/services.html).
+- [Services](/bootstrap/services.html).
 - [`mise bootstrap services <SUBCOMMAND>`](/cli/bootstrap/services.html).
 - [Global flags and argument syntax](/cli/#global-flags).

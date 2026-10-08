@@ -25,6 +25,6 @@ Install these plugins before applying packages they manage. Installing a plugin 
 
 ## Related documentation
 
-- [Package plugins](/bootstrap/packages/plugins.html).
+- [Package manager plugins](/bootstrap/packages/plugins.html).
 - [`mise bootstrap [FLAGS] [SUBCOMMAND]`](/cli/bootstrap.html).
 - [Global flags and argument syntax](/cli/#global-flags).

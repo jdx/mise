@@ -1,33 +1,44 @@
 ---
-description: "direnv and mise both change the environment when you enter a directory."
+description: "Move .envrc settings into mise.toml and remove direnv from a project that mise now manages."
 ---
 
-# direnv <Badge type="warning" text="deprecated" />
+# Migrating from direnv
 
-[direnv](https://direnv.net) and mise both change the environment when you enter a
-directory. Their shell hooks can disagree about which `PATH` entries to add,
-restore, or remove.
+mise sets environment variables, loads dotenv files and adds `PATH` entries when
+you enter a directory, so a project that uses [direnv](https://direnv.net) for
+those things can drop it. Move the `.envrc` lines into `mise.toml`, then remove
+direnv's hook.
 
-::: warning Unsupported integration
-Using direnv with mise is unsupported. Compatibility issues are not considered
-mise bugs, and PRs for direnv compatibility are not accepted. The `use mise`
-integration is deprecated.
+::: warning Unsupported
+Running direnv and mise together is unsupported. Both change the environment
+when you enter a directory, and their shell hooks can disagree about which
+`PATH` entries to add, restore or remove. Compatibility issues are not
+considered mise bugs, and pull requests for direnv compatibility are not
+accepted.
 :::
 
 ## Do you need direnv? {#do-you-need-direnv}
 
-For a project that uses direnv to set variables, load dotenv files, or activate a
-Python environment, mise has corresponding configuration:
+Each common `.envrc` line has a mise equivalent:
 
-| Existing `.envrc` behavior       | mise configuration                                                                   |
-| -------------------------------- | ------------------------------------------------------------------------------------ |
-| `export NODE_ENV=development`    | `[env]` with `NODE_ENV = "development"`                                              |
-| Load a dotenv file               | [`env._.file`](/environments/#env-file)                                              |
-| Add `bin` to `PATH`              | [`env._.path`](/environments/#env-path)                                              |
-| Export values from a Bash script | [`env._.source`](/environments/#env-source)                                          |
-| Activate a Python virtualenv     | [Python virtualenv configuration](/lang/python.html#automatic-virtualenv-activation) |
+| `.envrc`                            | `mise.toml`                                                             |
+| ----------------------------------- | ----------------------------------------------------------------------- |
+| `export NODE_ENV=development`       | `NODE_ENV = "development"` under `[env]`                                |
+| `dotenv` or `dotenv_if_exists`      | [`_.file = ".env"`](/environments/#env-file); a missing file is skipped |
+| `PATH_add bin`                      | [`_.path = "bin"`](/environments/#env-path)                             |
+| `source script.sh`                  | [`_.source = "script.sh"`](/environments/#env-source)                   |
+| `source_env_if_exists .envrc.local` | A `mise.local.toml` next to `mise.toml`, kept out of version control    |
+| `source_up`                         | Nothing; mise already merges the config files of parent directories     |
+| `layout python`                     | [`_.python.venv`](/lang/python.html#automatic-virtualenv-activation)    |
+| `layout node`                       | `_.path = "node_modules/.bin"`                                          |
 
-For example:
+mise also does what direnv does not: it puts the project's tool versions on
+`PATH`, runs [hooks](/hooks.html) when you enter or leave a project, and sets
+[shell aliases](/shell-aliases.html).
+
+## Move an `.envrc` to `mise.toml` {#move-envrc}
+
+For an `.envrc` that sets a variable, loads `.env` and adds `bin` to `PATH`:
 
 ```toml [mise.toml]
 [env]
@@ -36,43 +47,42 @@ _.file = ".env"
 _.path = "bin"
 ```
 
-This example assumes the project has a `.env` file. Remove that directive if it
-does not. See [Environments](/environments/) for defaults, unsetting values, and
-sourcing scripts.
+If the project has no `.env` file, mise skips the `_.file` directive, so you can
+leave it in place or remove it. See [Environment variables](/environments/) for
+defaults, unsetting values and sourcing scripts.
 
-After moving the required behavior into `mise.toml`, remove the project's direnv
-integration, [activate mise](/getting-started.html#activate-mise), and open a fresh
-shell to verify the environment. `mise exec -- <command>` can check project
-commands without depending on the interactive shell's current state.
+## Remove direnv {#remove-direnv}
 
-## mise inside of direnv (`use mise` in `.envrc`)
+1. Delete the lines you moved from each `.envrc`, or delete the whole file.
+2. If you used the `use mise` integration, delete
+   `~/.config/direnv/lib/use_mise.sh`.
+3. If you no longer use direnv anywhere, remove its hook, such as
+   `eval "$(direnv hook zsh)"`, from your shell startup file.
+4. [Activate mise](/shell-setup.html) if you have not already, and open a new
+   shell.
+5. Run `mise env` in the project to check the result. `mise exec -- <command>`
+   checks a command without depending on the state of your interactive shell.
 
-The following describes the deprecated setup for people maintaining or removing
-an existing integration. It gives direnv control of the exported environment and
-does not provide mise's full activation behavior.
+## `use mise` in `.envrc` <Badge type="danger" text="deprecated" /> {#mise-inside-of-direnv-use-mise-in-envrc}
 
-The integration generates a direnv library function:
+The `use mise` integration let direnv load mise's environment. It is deprecated
+and unsupported; use [`mise activate`](/shell-setup.html) instead. It gives
+direnv control of the exported environment, so it does not run hooks, set shell
+aliases or install missing tools.
 
-```sh
-mkdir -p ~/.config/direnv/lib
-mise direnv activate > ~/.config/direnv/lib/use_mise.sh
-```
+To find it in an existing setup, look for `use mise` in `.envrc` files, for the
+`use_mise` function in `~/.config/direnv/lib/use_mise.sh` (written by
+`mise direnv activate`), and for setups that load it from a parent `.envrc`
+with `source_up` or from `~/.config/direnv/direnvrc`.
 
-An `.envrc` then calls it as:
+If you keep it while you migrate:
 
-```sh
-use mise
-```
+- Do not let both tools manage the same runtime or virtualenv. A common conflict
+  is direnv's `layout python` alongside a Python version that mise selects.
+- The integration adds only the `.tool-versions` file next to `.envrc` to
+  direnv's watch list. direnv does not notice changes to `mise.toml` or to
+  config files in other directories, so run `direnv reload` after you edit
+  them.
 
-Keep the distinction between the shell function `use_mise` and direnv's
-`use mise` syntax. Existing projects may also load it from a parent `.envrc` with
-`source_up`, or from `~/.config/direnv/direnvrc`.
-
-If retaining this integration, avoid having both tools manage the same runtime
-or virtualenv. A common conflict is direnv's `layout python` alongside a Python
-version selected by mise. Changes to a `.tool-versions` file outside the `.envrc`
-directory may also fail to trigger a direnv refresh.
-
-[Shims](/dev-tools/shims.html) provide another way to run mise-managed tools, but
-they do not reproduce all the features of `mise activate` or make mixed shell
-hooks a supported setup.
+[Shims](/dev-tools/shims.html) are another way to run mise-managed tools without
+direnv, but they do not reproduce everything `mise activate` does.

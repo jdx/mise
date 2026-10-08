@@ -58,6 +58,6 @@ mise plugins install --all
 
 ## Related documentation
 
-- [Plugin selection and maintenance](/plugin-usage.html).
+- [Installing plugins](/plugins.html#installing-plugins).
 - [`mise plugins [FLAGS] [SUBCOMMAND]`](/cli/plugins.html).
 - [Global flags and argument syntax](/cli/#global-flags).

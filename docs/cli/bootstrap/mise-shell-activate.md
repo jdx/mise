@@ -27,6 +27,6 @@ current shell is not reactivated by this command; open a new shell afterward.
 
 ## Related documentation
 
-- [Shell setup](/bootstrap/shell.html).
+- [Shell activation and login shell](/bootstrap/shell.html).
 - [`mise bootstrap [FLAGS] [SUBCOMMAND]`](/cli/bootstrap.html).
 - [Global flags and argument syntax](/cli/#global-flags).

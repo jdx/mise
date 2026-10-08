@@ -40,6 +40,6 @@ uv run -p 3.10.0 -- python -V # uses mise-provided python
 
 ## Related documentation
 
-- [Python](/lang/python.html).
+- [Python](/lang/python.html#migrating-from-pyenv-or-uv).
 - [`mise sync <SUBCOMMAND>`](/cli/sync.html).
 - [Global flags and argument syntax](/cli/#global-flags).

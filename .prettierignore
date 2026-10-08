@@ -20,10 +20,8 @@ docs/.vitepress/theme/custom.css
 # showreel-capture/export.py and checked against the rig by captures.test.ts
 docs/.vitepress/theme/showreel/test/captures/
 docs/cli
-docs/environments.md
 docs/public/site.webmanifest
 docs/registry.md
-docs/plugin-usage.md
 docs/plugin-publishing.md
 docs/contributing.md
 docs/backend-plugin-development.md

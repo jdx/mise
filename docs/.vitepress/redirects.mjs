@@ -14,7 +14,164 @@
  *
  * @type {Record<string, { to: string, hashes?: Record<string, string> }>}
  */
-export const pageRedirects = {};
+export const pageRedirects = {
+  "/bootstrap/user.html": {
+    to: "/bootstrap/shell.html#set-your-login-shell",
+    hashes: {
+      semantics: "/bootstrap/shell.html#set-your-login-shell",
+      commands: "/bootstrap/shell.html#set-your-login-shell",
+    },
+  },
+  "/dev-tools/backend_architecture.html": {
+    to: "/dev-tools/backends/",
+    hashes: {
+      "what-are-backends": "/dev-tools/backends/#identifiers",
+      "the-backend-trait-system": "/architecture.html#backend-system",
+      "backend-types": "/dev-tools/backends/#which-backend-to-use",
+      "how-backend-selection-works":
+        "/dev-tools/backends/#how-backend-selection-works",
+      "environment-variable-overrides":
+        "/dev-tools/backends/#environment-variable-overrides",
+      "registry-system": "/dev-tools/backends/#choose-a-backend-yourself",
+      "backend-capabilities-comparison":
+        "/dev-tools/backends/#which-backend-to-use",
+      "when-to-use-each-backend": "/dev-tools/backends/#which-backend-to-use",
+      "backend-dependencies": "/dev-tools/#tool-dependencies",
+      "configuration-and-overrides":
+        "/dev-tools/backends/#choose-a-backend-yourself",
+      "disable-backends": "/dev-tools/backends/#disable-backends",
+      "force-backend-for-tool":
+        "/dev-tools/backends/#choose-a-backend-yourself",
+      "backend-specific-settings": "/dev-tools/backends/#identifiers",
+      "troubleshooting-backend-issues": "/dev-tools/backends/#troubleshooting",
+      "debug-backend-selection": "/dev-tools/backends/#troubleshooting",
+    },
+  },
+  "/dev-tools/backends/pipx.html": {
+    to: "/dev-tools/backends/pypi.html",
+  },
+  "/history.html": {
+    to: "/dotfiles/history.html",
+    hashes: {
+      saving: "/dotfiles/history.html#saving",
+      "automatic-saves": "/dotfiles/history.html#automatic-saves",
+      comparing: "/dotfiles/history.html#comparing",
+      "referring-to-checkpoints":
+        "/dotfiles/history.html#referring-to-checkpoints",
+      "rolling-back": "/dotfiles/history.html#rolling-back",
+      "reload-an-application-after-restoring-files":
+        "/dotfiles/history.html#reload-an-application-after-restoring-files",
+      "sharing-across-machines": "/dotfiles/sync.html#sharing-across-machines",
+      "choose-a-sync-mode": "/dotfiles/sync.html#choose-a-sync-mode",
+      "sync-immediately": "/dotfiles/sync.html#sync-immediately",
+      "resolve-a-conflict": "/dotfiles/sync.html#resolve-a-conflict",
+      "conflict-notifications": "/dotfiles/sync.html#conflict-notifications",
+      "repository-authentication":
+        "/dotfiles/sync.html#repository-authentication",
+      "how-shared-history-is-stored":
+        "/dotfiles/sync.html#how-shared-history-is-stored",
+      "identify-commits-by-machine":
+        "/dotfiles/sync.html#identify-commits-by-machine",
+      "resolve-unrelated-histories":
+        "/dotfiles/sync.html#resolve-unrelated-histories",
+      "capturing-an-external-command":
+        "/dotfiles/history.html#capturing-an-external-command",
+      "explicit-tracking-and-exclusions":
+        "/dotfiles/history.html#explicit-tracking-and-exclusions",
+      "preview-before-tracking":
+        "/dotfiles/history.html#preview-before-tracking",
+      "choose-which-files-a-directory-saves":
+        "/dotfiles/history.html#choose-which-files-a-directory-saves",
+      "capture-warnings": "/dotfiles/history.html#capture-warnings",
+      "exclude-files-from-one-directory":
+        "/dotfiles/history.html#exclude-files-from-one-directory",
+      "exclude-files-across-tracked-entries":
+        "/dotfiles/history.html#exclude-files-across-tracked-entries",
+      "credential-filtering-and-omissions":
+        "/dotfiles/history.html#credential-filtering-and-omissions",
+      "stop-saving-a-path": "/dotfiles/history.html#stop-tracking-a-file",
+      "encrypted-shared-files": "/dotfiles/encryption.html",
+      "choose-recipients": "/dotfiles/encryption.html#choose-recipients",
+      "use-an-existing-ssh-key":
+        "/dotfiles/encryption.html#use-an-existing-ssh-key",
+      "generate-a-dedicated-age-key":
+        "/dotfiles/encryption.html#generate-a-dedicated-age-key",
+      "add-a-recovery-recipient":
+        "/dotfiles/encryption.html#add-a-recovery-recipient",
+      "allow-plaintext-history":
+        "/dotfiles/encryption.html#allow-plaintext-history",
+      "remove-plaintext-from-history":
+        "/dotfiles/encryption.html#remove-plaintext-from-history",
+      health: "/dotfiles/history.html#health",
+      "what-a-checkpoint-records":
+        "/dotfiles/reference.html#what-a-checkpoint-records",
+      "nested-repositories": "/dotfiles/history.html#nested-repositories",
+      "descriptions-from-an-agent":
+        "/dotfiles/history.html#descriptions-from-an-agent",
+      "recovery-details": "/dotfiles/reference.html#recovery-details",
+      "operation-checkpoints": "/dotfiles/reference.html#operation-checkpoints",
+      "watcher-reference": "/dotfiles/reference.html#watcher-reference",
+      "adaptive-scheduling": "/dotfiles/reference.html#adaptive-scheduling",
+      "reconciliation-and-failures":
+        "/dotfiles/reference.html#reconciliation-and-failures",
+      retention: "/dotfiles/reference.html#retention",
+      "requirements-and-settings":
+        "/dotfiles/history.html#requirements-and-settings",
+    },
+  },
+  "/mise-cookbook/shell-tricks.html": {
+    to: "/tips-and-tricks.html#shell-prompt",
+    hashes: {
+      "prompt-colouring":
+        "/tips-and-tricks.html#print-what-changes-when-you-enter-a-project",
+      "current-configuration-environment-in-powerline-go-prompt":
+        "/tips-and-tricks.html#show-the-project-and-environment-in-your-prompt",
+      "inspect-what-changed-after-mise-hook":
+        "/tips-and-tricks.html#see-which-variables-mise-set",
+    },
+  },
+  "/plugin-usage.html": {
+    to: "/plugins.html",
+    hashes: {
+      "what-are-plugins": "/plugins.html#choose-a-plugin-type",
+      "backend-plugins": "/plugins.html#backend-plugins",
+      "tool-plugins": "/plugins.html#tool-plugins",
+      "installing-plugins": "/plugins.html#installing-plugins",
+      "from-a-git-repository": "/plugins.html#from-a-git-repository",
+      "from-zip-file": "/plugins.html#from-zip-file",
+      "from-local-directory": "/plugins.html#from-local-directory",
+      "using-plugins-advanced": "/plugins.html#using-plugins",
+      "plugin-tool-format": "/plugins.html#backend-plugins",
+      "managing-plugins": "/plugins.html#update-plugins",
+      "list-installed-plugins": "/plugins.html#update-plugins",
+      "update-plugins": "/plugins.html#update-plugins",
+      "remove-plugins": "/plugins.html#remove-plugins",
+      configuration: "/plugins.html#tool-options",
+      "finding-plugins": "/plugins.html#when-you-need-a-plugin",
+      "plugin-examples": "/backend-plugin-development.html#complete-example",
+      "vfox-npm-example-plugin":
+        "/backend-plugin-development.html#complete-example",
+      "backend-plugins-advanced": "/backend-plugin-development.html",
+      "tool-plugins-advanced": "/tool-plugin-development.html",
+      "security-considerations": "/plugins.html#security-considerations",
+      troubleshooting: "/plugins.html#troubleshooting",
+      "plugin-installation-fails": "/plugins.html#troubleshooting",
+      "tool-installation-fails": "/plugins.html#troubleshooting",
+      "environment-issues": "/plugins.html#troubleshooting",
+      "next-steps": "/plugins.html#choose-a-plugin-type",
+    },
+  },
+  "/README.html": {
+    to: "https://github.com/jdx/mise/blob/main/docs/README.md",
+  },
+  "/team.html": {
+    to: "/about.html#who-makes-mise",
+    hashes: {
+      "advisory-board": "/about.html#advisory-board",
+      contributors: "/about.html#contributors",
+    },
+  },
+};
 
 /**
  * Normalize a published path so `/a.html`, `/a`, `/dir/`, `/dir/index.html`

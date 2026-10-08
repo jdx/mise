@@ -34,6 +34,6 @@ mise bootstrap packages brew tap acme/tools https://github.com/acme/homebrew-too
 
 ## Related documentation
 
-- [Homebrew packages and taps](/bootstrap/packages/brew.html).
+- [Homebrew formulae and taps](/bootstrap/packages/brew.html#third-party-taps).
 - [`mise bootstrap packages brew <SUBCOMMAND>`](/cli/bootstrap/packages/brew.html).
 - [Global flags and argument syntax](/cli/#global-flags).

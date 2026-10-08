@@ -1,210 +1,189 @@
 ---
-description: "Apply your bootstrap configuration to remote machines over SSH."
-socialDescription: "Apply your bootstrap configuration to remote machines over SSH."
+description: "Apply your bootstrap configuration to other machines over SSH, from an inventory or from ad-hoc hosts."
+socialDescription: "Apply your bootstrap configuration to other machines over SSH."
 ---
 
-# Remote bootstrap over SSH
+# Remote hosts
 
-`mise bootstrap remote` applies a bootstrap project to one or more machines
-through the locally installed OpenSSH client. Targets can live in versioned
-configuration or be supplied ad hoc from the command line.
+`mise bootstrap remote` sends a bootstrap project to other machines over SSH,
+stages mise on each one, and runs `mise bootstrap` there. Hosts come from an
+inventory in your configuration or from `--host` on the command line.
 
-Remote targets must provide a POSIX shell plus `cksum`, `mktemp`, `tar`, and `uname`.
-Minimal images may need these utilities installed first. Native Windows
-SSH/PowerShell targets are not currently supported. The orchestrating machine
-may be Windows, macOS, or Linux and needs local `ssh` and `tar` commands.
+## Requirements
 
-## First remote run
+- The machine you run from (Linux, macOS, or Windows) needs OpenSSH's `ssh` and
+  `tar`.
+- Each host needs a POSIX shell plus `cksum`, `mktemp`, `tar`, and `uname`.
+  Minimal images may need these installed first.
+- Windows hosts, which use native SSH with PowerShell, are not supported.
 
-Use a project containing reviewed bootstrap configuration and an SSH host you
-can already reach. Replace `devbox` with your SSH host or alias:
+## First run
+
+Use a project whose bootstrap configuration you have reviewed, and an SSH host
+you can already reach. Replace `devbox` with your SSH host or alias:
 
 ```sh
 ssh devbox uname -s
-mise bootstrap remote --host devbox --source . --dry-run
-mise bootstrap remote --host devbox --source .
+mise bootstrap remote --host devbox --dry-run
+mise bootstrap remote --host devbox
 ```
 
-A remote dry run still connects over SSH, transfers the project, stages mise,
-and inspects the target. It suppresses bootstrap resource changes; it is not an
-offline plan. Temporary staging is cleaned up unless `--keep-staging` is set.
+`--source <DIR>` picks the project directory to send. It defaults to the current
+directory, or to an inventory host's `source`. A remote dry run still connects,
+sends the project, stages mise, and inspects the host. It skips only the
+bootstrap's changes, so it is not an offline plan.
 
-Use `--install-mise` if the target should keep mise after the run. Review archive
-exclusions before transferring a repository with local secrets or generated data.
+::: warning The host does not keep mise
+By default, mise runs from a temporary staging directory and removes it
+afterwards. The host keeps the tools it installed under `~/.local/share/mise`,
+but not mise itself. Add `--install-mise` if the configuration writes shell
+activation, runs user services, or should run again on the host. See
+[Keep mise on the host](#leaving-mise-installed-on-the-host).
+:::
 
-## Inventory configuration
+Check what the project sends before you send a repository that holds local
+secrets or generated data; see [What gets sent](#what-gets-sent).
+
+## Inventory {#inventory-configuration}
+
+Declare hosts under `[bootstrap.remote.hosts]` so you can select them by name or
+tag:
 
 ```toml
 [bootstrap.remote]
 source = "."
 exclude = [".env.local", "artifacts"]
-copy_link = ["modules/common", "playbooks/shared"]
 mise_env = ["linux", "server"]
 
 [bootstrap.remote.hosts.cache]
 host = "cache.example.com"
 user = "ubuntu"
-port = 22
-identity_file = "~/.ssh/mise-cache"
 tags = ["cache", "production"]
-ssh_options = ["ServerAliveInterval=30"]
 mise_env = ["linux", "cache"]
 ```
 
-`source` is the local project directory sent to the host. Relative `source`,
-`identity_file`, and `mise_bin` paths are resolved from the config file that
-declares them. A host-level `source` overrides `[bootstrap.remote].source`.
-A host-level `mise_env` overrides `[bootstrap.remote].mise_env`; the ordered
-values are passed as `MISE_ENV` to the staged `mise bootstrap` process. Use
-`--remote-env <ENV>` to override the configured list for every selected host.
-Higher-precedence config files win when the same inventory name is declared in
-more than one layer. Top-level `exclude` patterns are unioned across every
-loaded config layer and applied to every host, so a nearer project can add
-secret patterns even when the inventory entry comes from global config.
-This shared set also applies to ad-hoc `--host` targets; inventory host-level
-excludes are additive. Only selected inventory entries are validated. mise
-applies command-line overrides and validates the entire selected set before it
-opens any SSH connection, so a stale unselected entry does not block an
-unrelated target, and a selected invalid entry cannot cause a partial run.
+| Key                 | Set in                         | Meaning                                                                     |
+| ------------------- | ------------------------------ | --------------------------------------------------------------------------- |
+| `host`              | A host                         | SSH host name or alias (required)                                           |
+| `user`              | A host                         | SSH user                                                                    |
+| `port`              | A host                         | SSH port                                                                    |
+| `identity_file`     | A host                         | SSH private key                                                             |
+| `ssh_options`       | A host                         | OpenSSH `-o` options, such as `ServerAliveInterval=30`                      |
+| `tags`              | A host                         | Labels that `--tag` selects                                                 |
+| `source`            | `[bootstrap.remote]` or a host | Local project directory to send                                             |
+| `exclude`           | `[bootstrap.remote]` or a host | Patterns to leave out of what is sent                                       |
+| `copy_link`         | `[bootstrap.remote]` or a host | Symbolic links to send as their targets                                     |
+| `copy_links`        | `[bootstrap.remote]` or a host | Send every symbolic link as its target                                      |
+| `mise_env`          | `[bootstrap.remote]` or a host | [Config environments](/configuration/environments.html) to load on the host |
+| `install_mise`      | `[bootstrap.remote]` or a host | Keep mise on the host: `true`, `false`, or an executable path               |
+| `mise_bin`          | A host                         | Local mise executable to upload                                             |
+| `remote_mise`       | A host                         | A mise already installed on the host                                        |
+| `bootstrap_command` | A host                         | Shell command that installs mise on the host                                |
 
-Remote inventory is orchestration metadata. A `mise bootstrap` process running
-inside the staged project does not recursively execute its
-`[bootstrap.remote]` section.
+These rules decide each host's final settings:
 
-## Selecting hosts
+- Relative `source`, `identity_file`, and `mise_bin` paths resolve from the
+  config file that declares them.
+- Top-level `source`, `mise_env`, `install_mise`, `copy_link`, and `copy_links`
+  are defaults for the hosts declared in the same config file. A host's own
+  value replaces the default, except `copy_link`, which adds to it.
+  `install_mise = false` opts one host out of a default.
+- Top-level `exclude` patterns from every loaded config file apply to every
+  host, including `--host` targets, so a project can add secret patterns to an
+  inventory that lives in global config. A host's `exclude` adds to them.
+- When two config files declare the same host name, the more local one wins.
+- `mise_env` is passed to the host's `mise bootstrap` as `MISE_ENV`.
+  `--remote-env <ENV>` replaces it for every selected host.
+- mise checks only the hosts you select, and it checks all of them, with
+  command-line overrides applied, before it opens any connection. A stale entry
+  you did not select does not block a run, and an invalid selected one cannot
+  cause a partial run.
 
-Target names are explicit by default, so an accidental bare command cannot
-provision every server in an inventory:
+The `mise bootstrap` that runs on a host ignores `[bootstrap.remote]`, so a host
+never bootstraps other hosts.
+
+## Select hosts {#selecting-hosts}
+
+A bare `mise bootstrap remote` selects nothing, so a mistyped command cannot
+reach every server in an inventory. Name the hosts you want:
 
 ```sh
-# one or more named inventory entries
+# one or more inventory hosts by name
 mise bootstrap remote cache
 
-# every inventory host, or hosts matching any repeated tag
+# every inventory host, or the hosts with any of these tags
 mise bootstrap remote --all
 mise bootstrap remote --tag cache --tag canary
 
-# a server that is not in inventory
+# a server that is not in the inventory
 mise bootstrap remote --host ubuntu@cache.example.com \
   --identity-file ~/.ssh/mise-cache \
   --source ./infra/mise-cache
 ```
 
-Named and ad-hoc selectors may be combined. Explicit target names run first in
-command-line order. `--all` and `--tag` then add remaining inventory hosts in
-declaration order, followed by ad-hoc `--host` destinations in command-line
-order. By default, mise continues after a failed target and reports every
-failure at the end; `--fail-fast` stops at the first failure.
+You can combine these. mise bootstraps one host at a time: named hosts first,
+in command-line order, then the other hosts that `--all` or `--tag` select, in
+inventory order, then `--host` destinations in command-line order. After a
+failed host, mise continues and reports every failure at the end;
+`--fail-fast` stops at the first one.
 
-Command-line connection, source, and mise bootstrap options override every
-selected host. `--ssh-option` maps directly to a separate OpenSSH `-o`
-argument, so ProxyJump, custom host-key files, and other native OpenSSH
-features remain available without mise inventing a second SSH configuration
-language.
+Command-line options apply to every selected host. `--port` and `-i` replace
+the host's inventory value. `--ssh-option` adds to the host's `ssh_options` and
+is passed after them; OpenSSH uses the first value it gets for an option, so it
+cannot replace an option the inventory already sets.
 
-## Transport and staging
+| Option                    | Effect                                                                      |
+| ------------------------- | --------------------------------------------------------------------------- |
+| `--port <PORT>`           | SSH port                                                                    |
+| `-i`, `--identity-file`   | SSH private key                                                             |
+| `--ssh-option <OPTION>`   | One OpenSSH `-o` option, such as `ProxyJump=bastion`; repeat for more       |
+| `--connect-timeout <SEC>` | OpenSSH `ConnectTimeout` for every connection, 10 seconds unless you set it |
 
-For each target, mise:
+mise passes its own `ConnectTimeout` before any of these options, so a
+`ConnectTimeout` in `--ssh-option` or `ssh_options` has no effect; use
+`--connect-timeout` instead.
 
-1. opens an OpenSSH connection using the user's normal SSH config and host-key
-   policy;
-2. creates a validated `/tmp/mise-bootstrap.*` directory;
-3. archives the source directory locally and extracts it into the staging
-   directory;
-4. provisions the exact mise executable used for the remote run, staging it
-   unless `install_mise` keeps it on the host;
-5. executes `mise bootstrap` in the staged project; and
-6. removes the staging directory, including after a failed bootstrap.
+mise also reads your normal `~/.ssh/config` and keeps OpenSSH's host-key checks.
 
-On Unix, all commands for one target reuse an OpenSSH control connection. In a
-non-interactive caller, mise sets `BatchMode=yes` so password prompts fail
-instead of hanging. In an attended terminal, the bootstrap command gets a TTY
-so SSH, sudo, confirmation, and `--prompt-secrets` prompts remain usable.
-OpenSSH's existing host-key verification is never weakened automatically.
+## What gets sent
 
-`.git`, `target`, and `node_modules` are excluded from source archives by
-default. Add repeatable `exclude` config entries or `--exclude` flags for
-generated files and local secrets. Use `--keep-staging` only for debugging; it
-prints the retained path instead of deleting the directory.
+mise archives the source directory and sends it to each host, leaving out
+`.git`, `target`, and `node_modules`. Add `exclude` entries or `--exclude`
+flags for local secrets and generated files. `--keep-staging` keeps the staging
+directory on the host for debugging and prints its path.
 
-Symbolic links are archived as links by default. Use repeatable, source-relative
-`copy_link` entries or `--copy-link <PATH>` flags to replace only named links
-with their targets in the staged project. A selected directory link is copied
-as a real directory while links nested inside its target remain links. This is
-the safer choice for sharing selected modules or playbooks without changing
-unrelated links in deep dependency trees. Host-level `copy_link` entries add to
-the top-level list, and command-line entries add to both.
+Symbolic links are sent as links. To send a link's target instead, list the
+link, relative to the source, in `copy_link` or pass `--copy-link <PATH>`. A
+directory link becomes a real directory while links inside it stay links, so
+you can share selected modules or playbooks without changing other links. A
+host's `copy_link` entries add to the top-level list, and command-line entries
+add to both.
 
-Set `copy_links = true` or pass `--copy-links` to dereference every symbolic
-link encountered recursively. This matches tools such as `rsync --copy-links`,
-but can unexpectedly expand small links deep in vendored, generated, or
-dependency trees and can copy content outside the source directory. Explicit
-`copy_link` selections are ignored when this global mode is enabled.
+`copy_links = true` or `--copy-links` replaces every link with its target, like
+`rsync --copy-links`. That can pull in large vendored, generated, or dependency
+trees, and files from outside the source directory. It also makes mise ignore
+`copy_link`.
 
-## Provisioning mise itself
+## Get mise onto the host {#provisioning-mise-itself}
 
-By default, mise detects the remote OS, architecture, and Linux libc family. It
-uploads the current local executable when that executable is compatible with
-the target. This guarantees the remote process supports the same bootstrap
-configuration as its orchestrator rather than silently using an older installed
-version.
+By default, mise gives each host the same mise version you are running, so the
+host reads your configuration the way your machine does. If your executable
+runs on the host, mise uploads it. Otherwise it downloads that version's
+official release for the host's platform (Linux x64, arm64, or armv7 with glibc
+or musl, or macOS x64 or arm64), checks its signature and checksum, and uploads
+it. Hosts on the same platform share one download. Before bootstrapping, mise
+runs `mise version` on the host to check that the executable works.
 
-On Linux, mise also inspects the executable's ELF interpreter. Static binaries
-can run without a target libc check. For dynamically linked binaries, the
-remote host must provide the exact interpreter path and the same libc family.
-For glibc binaries, mise extracts the highest required `GLIBC_*` symbol version
-from the ELF and verifies that the remote loader provides at least that ABI
-before upload. For musl binaries, mise compares the local and remote loader
-versions and requires the remote loader to be at least as new. mise then runs
-`mise version` remotely as the final authority for all other binary and host
-requirements.
+mise substitutes an official release only for an official release. A debug
+build, a source build with local changes, or a mise packaged by a distribution
+cannot be swapped, and neither can a platform outside that list or a Linux host
+whose libc mise cannot identify. For those, choose one of these options:
 
-When the local executable cannot run on the target, mise automatically resolves
-the raw executable for the same mise version from the official GitHub release.
-This covers Linux x64, arm64, and armv7 on both glibc and musl, plus macOS x64
-and arm64. mise downloads `SHASUMS256.txt` and its minisign signature, verifies
-the manifest with mise's embedded release key, then verifies the selected
-artifact's SHA-256 checksum before upload. The verified artifact is cached for
-the duration of the command, so targets with the same platform share one
-download.
-
-Automatic substitution is deliberately limited to official release binaries.
-Before downloading a different target, mise proves that the local executable
-matches one of the signed checksums for the same official release. Debug builds,
-source builds with local changes, and downstream-packaged binaries therefore
-fail closed rather than silently changing code on the remote machine. Use an
-explicit strategy below for those builds or for a platform outside the official
-artifact matrix. Failure to identify a Linux libc family also requires an
-explicit strategy.
-
-Three explicit escape hatches cover other environments:
-
-- `mise_bin` / `--mise-bin` uploads a user-built local executable. This is the
-  primary path for architectures without an official precompiled binary.
-- `remote_mise` / `--remote-mise` runs a known compatible command already on
-  the host without uploading a binary.
-- `bootstrap_command` / `--bootstrap-command` runs an explicit remote shell
-  command in a login shell, then opens a fresh login shell to locate `mise`
-  from the post-install profile, inherited `PATH`, or common user install
-  directories. mise snapshots a content fingerprint and the reported version
-  of each discoverable executable before installation and prefers a newly added
-  or identity-changed path afterward, so an older executable earlier on `PATH`
-  cannot shadow the installed one. Ambiguous
-  unchanged candidates fail with instructions to select an explicit path. This
-  supports source builds, installers that edit shell profiles, and site-specific
-  installers. A dry run never executes this
-  command; it uses an already-installed remote `mise` or fails with
-  instructions to select `remote_mise` or `mise_bin`.
-
-These strategies are mutually exclusive. Supplying one on the command line
-replaces any provisioning strategy declared by the selected inventory host.
-`remote_mise` is an executable name or path, not a shell expression. Bare names
-are resolved to an absolute executable through the remote login `PATH`, `~/`
-paths use the remote login home, absolute paths are used as written, and
-relative paths such as `./bin/mise` resolve inside the staged project. Relative
-paths that escape the staged project are rejected. Paths may contain whitespace
-and are always passed as one executable argument. Use `bootstrap_command` when
-shell evaluation is required.
+| Config key, flag                           | What it does                                                                                      |
+| ------------------------------------------ | ------------------------------------------------------------------------------------------------- |
+| `mise_bin`, `--mise-bin`                   | Upload a mise you built yourself, for example for an architecture with no official release        |
+| `remote_mise`, `--remote-mise`             | Use a mise already installed on the host                                                          |
+| `bootstrap_command`, `--bootstrap-command` | Run a shell command on the host that installs mise, such as a package manager or a site installer |
 
 ```toml
 [bootstrap.remote.hosts.arm-lab]
@@ -216,15 +195,39 @@ host = "builder.example.com"
 bootstrap_command = "nix profile install nixpkgs#mise"
 ```
 
-mise verifies every uploaded or selected remote command by running
-`mise version` before bootstrap.
+You can set only one of these per host, and a command-line option replaces the
+one the inventory sets.
 
-### Leaving mise installed on the host
+`remote_mise` is an executable name or path, not a shell expression. A bare
+name resolves through the host's login `PATH`, a `~/` path uses the host's home
+directory, and an absolute path is used as written. A relative path such as
+`./bin/mise` resolves inside the staged project and cannot point outside it.
 
-By default the provisioned executable lives in the staging directory and is
-removed with it, so a target keeps the tools installed under
-`~/.local/share/mise` but not the mise that installed them. Set `install_mise`
-to keep mise on the machine:
+`bootstrap_command` runs in a login shell. mise then opens a fresh login shell
+to find `mise`, preferring an executable that is new or changed since before
+the command, so an older mise earlier on `PATH` cannot shadow the new one. If
+it cannot tell which executable is new, it stops and asks you to set
+`remote_mise`. A dry run never runs this command: it uses a mise already on the
+host, or stops and asks you to set `remote_mise` or `mise_bin`.
+
+::: details How mise decides whether your executable runs on the host
+mise detects the host's operating system, architecture, and, on Linux, libc
+family. On Linux it also reads your executable's ELF interpreter. A static
+executable needs no libc check. A dynamically linked one needs the same
+interpreter path and libc family on the host. For glibc, the host's loader must
+provide the highest `GLIBC_*` symbol version the executable requires. For musl,
+the host's loader must be at least as new as yours. `mise version` on the host
+has the final say.
+
+Before it downloads a release for another platform, mise checks that your
+executable matches one of the signed checksums for its own official release.
+It verifies the release's `SHASUMS256.txt` with its minisign signature and
+mise's embedded release key, then the downloaded file's SHA-256 checksum.
+:::
+
+### Keep mise on the host {#leaving-mise-installed-on-the-host}
+
+Set `install_mise` to keep the executable mise used on the host after the run:
 
 ```toml
 [bootstrap.remote]
@@ -235,13 +238,10 @@ host = "cache.example.com"
 install_mise = "/usr/local/bin/mise"
 ```
 
-`true` installs to `~/.local/bin/mise`, the same path used by
-[mise.run](https://mise.run). A string installs to that path instead; it must be
-absolute or start with `~/`, and it names the executable rather than a directory
-— a path that already holds a directory is rejected instead of receiving the
-executable as a child entry.
-A host-level value replaces `[bootstrap.remote].install_mise`, so
-`install_mise = false` opts one host out of a project-wide default.
+`true` installs to `~/.local/bin/mise`, where [mise.run](https://mise.run)
+installs it. A string names a different executable path. It must be absolute
+or start with `~/`, and it cannot be an existing directory. The same choices
+work on the command line:
 
 ```sh
 mise bootstrap remote cache --install-mise
@@ -249,229 +249,152 @@ mise bootstrap remote cache --install-mise=/usr/local/bin/mise
 mise bootstrap remote cache --no-install-mise
 ```
 
-`--install-mise` requires `=` before a path so that a bare flag cannot consume a
-target name. Like the other command-line provisioning options, it replaces a
-`remote_mise` or `bootstrap_command` declared by a selected inventory host.
+A path needs the `=`, so a bare `--install-mise` cannot swallow a host name.
+`--install-mise` replaces a `remote_mise` or `bootstrap_command` that the
+inventory sets. In config, `install_mise` works with `mise_bin` but not with
+`remote_mise` or `bootstrap_command`, which already provide a mise on the host;
+use `bootstrap_command` when the host should own the install through its
+package manager.
 
-What gets installed is the same executable the default strategy would have
-staged — the local binary or the checksum-verified official release artifact —
-and it is what runs the bootstrap, so the host converges with the mise version
-that orchestrated it. mise writes a temporary file beside the target and renames
-it into place, so replacing a mise that is currently running cannot truncate it.
-When the target already holds a byte-identical executable, nothing is uploaded.
-A dry run does not write the persistent install path: `--dry-run` reports that
-path and uses a temporary staged executable for inspection.
+mise installs the executable it would otherwise have staged, then runs the
+bootstrap with it, so the host ends on the version you ran. Replacing a mise
+that is running is safe, and an identical executable is not uploaded again. A
+dry run reports the install path but uses a temporary copy.
 
-`install_mise` composes with `mise_bin`, which installs a locally built
-executable. It cannot be combined with `remote_mise` or `bootstrap_command`,
-because both already provide mise on the host. `bootstrap_command` remains the
-right choice when the host should own the install through a system package,
-`nix profile install`, or a site-specific installer.
+::: warning Protect the install directory
+mise does not use sudo to install itself, so the SSH user must be able to write
+the install path; `/usr/local/bin/mise` needs a user who owns that directory.
+Anyone else who can write to the directory can replace `mise` for that user, so
+keep it writable only by that user. mise checks the installed file's digest,
+but only when the host has `sha256sum` or `shasum`, and the check cannot cover
+later changes. Without `install_mise`, mise stages into a private `mktemp -d`
+directory instead.
+:::
 
-The SSH user must be able to write the install path; mise does not elevate for
-it, so a path such as `/usr/local/bin/mise` needs a user who already owns that
-directory. Keep that directory writable only by that user. After installing,
-mise compares the target's digest with what it wrote and fails rather than
-running something else, but that check is best-effort — it is skipped when the
-host provides neither `sha256sum` nor `shasum`, and it cannot cover the window
-between the check and the run. Anyone who can write the install directory
-controls what that account runs as `mise` on every later invocation regardless,
-so the directory's permissions are the real boundary. The staging directory used
-without `install_mise` is created by `mktemp -d` and is private to the SSH
-account.
+Installing mise does not put its directory on the host's `PATH`, and mise warns
+when the login `PATH` lacks it. `~/.local/bin` is on `PATH` by default on many
+Linux distributions, but not on macOS. Add the directory in the host's shell
+startup files, for example with a
+[`[dotfiles]` line entry](/bootstrap/shell.html#put-mise-on-path-first), before
+you rely on [`[bootstrap.mise_shell_activate]`](/bootstrap/shell.html): its
+blocks call `mise` by name.
 
-Installing mise does not put it on the host's `PATH`. mise warns when the
-install directory is missing from the login `PATH`, and the bootstrap project
-can declare [`[bootstrap.mise_shell_activate]`](/bootstrap/shell.html) so the
-same run writes activation or shims into the host's shell startup files.
+## Options and secrets {#bootstrap-controls-and-secrets}
 
-## Bootstrap controls and secrets
-
-Remote execution forwards the important convergence controls directly:
+Remote runs accept the same `--dry-run`, `--yes`, `--update`, `--only`,
+`--skip`, `--force-dotfiles`, and `--prompt-secrets` options as
+[`mise bootstrap`](/bootstrap.html#choose-what-runs), plus `--remote-env` to
+choose config environments on the host:
 
 ```sh
 mise bootstrap remote cache --dry-run
 mise bootstrap remote cache --yes --update
 mise bootstrap remote cache --only packages,files,services,compose
 mise bootstrap remote cache --skip tools,task
+mise bootstrap remote cache --force-dotfiles
 mise bootstrap remote cache --prompt-secrets
 mise bootstrap remote cache --remote-env linux,server
 ```
 
-Local environment variables are deliberately not copied to SSH hosts. An
-explicitly configured `mise_env` is remote orchestration metadata rather than
-an inherited local environment. Use `--prompt-secrets` for an attended run.
-Provider-backed secret environment transport can be layered on separately
-without putting values in config, archives, process arguments, plans, or logs.
+mise does not copy your local environment to the host. A local `-E` only
+changes which local config files mise reads; the host loads the environments in
+`mise_env` or `--remote-env`. [Secret inputs](/bootstrap/secrets.html) set on
+this machine are not available there either. Use `--prompt-secrets` for an
+attended run, or make the values available on the host.
 
-## Private configuration repositories
+## Adopt a configuration repository on a host {#private-configuration-repositories}
 
-Install your configuration repository into the remote user's persistent global
-mise configuration directory:
-
-```sh
-# Authenticate on this machine first (for example, using gh auth login).
-mise bootstrap remote --host devbox --adopt jdx/dotfiles \
-  --github-relay-read-only --github-relay-repo jdx/dotfiles
-```
-
-`OWNER/REPO` expands to `https://github.com/OWNER/REPO.git`. Explicit Git URLs,
-SSH syntax, and local paths on the initiating machine also work. Network repositories must use HTTPS or
-SSH; other transports and custom Git helpers are rejected. Source clones do not
-follow HTTP redirects, so use the repository's canonical URL.
-`--adopt` conflicts with `--source`.
-Targets still come from explicit `--host` or inventory selectors, never from the
-downloaded repository's inventory.
-
-mise fetches the repository once using **local Git authentication**, pins that
-commit for every selected target, and transfers a Git bundle over SSH. It does
-not modify the initiating machine's global configuration or copy its Git
-configuration. The remote checkout retains the original credential-free origin,
-its branch, and its upstream. Temporary staging is removed; the installed global
-configuration is not. Use `--install-mise` to also install mise persistently when
-the target does not already have it.
-
-An existing matching checkout is reused unless `--update` requests a safe
-fast-forward. Dirty checkouts, mismatched origins, conflicting files, and source
-files ending in `.local.toml` require manual resolution. A nonempty non-Git
-directory can be adopted after confirmation: existing files and local overrides
-are preserved. With `--adopt`, `--dry-run` previews the whole operation the
-way `--source . --dry-run` does: the revision is fetched locally, the target is
-connected to, mise and the bundle are staged, and the target runs every check
-(dirty checkout, mismatched origin, adoption conflicts, `.local.toml` files) and
-says what it would do: clone, fast-forward, or adopt with the number of new
-files. When a global configuration already exists on the target, the bootstrap
-that follows is previewed with `--dry-run` too. Live configuration is not changed.
-The private staging directory is normally removed afterward; `--keep-staging`
-retains it for debugging. A setup preview can stage decrypted, explicitly tracked
-configuration and configuration-directory inputs needed to inspect bootstrap.
-Treat retained staging as sensitive; unrelated encrypted tracked files are not
-decrypted for this preview.
-
-`--adopt` uses the repository instead of the inventory's archive source and
-copy-link settings. Explicit `--source`, `--copy-link`, `--copy-links`, and
-`--exclude` flags cannot be combined with it.
-
-A **setup repository** (one connected with `mise dot origin set`,
-carrying `.mise-history/format.toml`) is set up from rather than checked out:
-the remote host fetches the transferred branch into its own history store,
-writes this machine's explicitly enrolled files with a recoverable pull, and
-records the connection. Explicitly track the mise configuration and template
-sources needed by the bootstrap that follows; references do not enroll them.
-If that configuration declares the history watcher, bootstrap installs it like
-any other user service. A conflict pauses the whole setup before bootstrap runs.
-With `--dry-run` the
-target shows that plan (the files it would write, and any held for a decision),
-records no connection, and keeps no fetched branch:
+`--adopt` installs a configuration repository on each host instead of sending a
+project. It accepts the same two kinds of repository as
+[local adoption](/bootstrap/from-repository.html):
 
 ```sh
-mise bootstrap remote --host devbox --install-mise --adopt jdx/dotfiles \
-  --github-relay-read-only --github-relay-repo jdx/dotfiles --dry-run
+mise bootstrap remote --host devbox --install-mise --adopt you/mise-config
 ```
 
-The borrowed GitHub access is read-only and ends with the session: the remote
-host can fetch through it but never publish. When the setup succeeded but the
-host cannot reach the repository on its own afterwards, the bootstrap says
-so; give the host credentials of its own for ongoing synchronization
-(`mise x gh -- gh auth login` and `mise x gh -- gh auth setup-git` there, or
-an SSH url through `mise dot origin set`).
+`OWNER/REPO` expands to `https://github.com/OWNER/REPO.git`. HTTPS and SSH URLs,
+and local paths on this machine, work too. Other transports and custom Git
+helpers are rejected, and clones do not follow HTTP redirects, so use the
+repository's canonical URL. `--adopt` cannot be combined with `--source`,
+`--copy-link`, `--copy-links`, or `--exclude`. Hosts still come from `--host`
+or the inventory, never from the adopted repository's inventory.
 
-The relay is separate from this initial transfer. Enable it when bootstrap needs
-additional private GitHub content, authorizing each required repository with a
-repeated `--github-relay-repo`. Shorthand never enables or expands relay access.
+mise fetches the repository once on this machine, with this machine's Git
+credentials, pins that commit for every selected host, and sends it to each one
+as a Git bundle over SSH. It does not change this machine's global config or
+copy its Git configuration, and a private repository needs no extra flags. Add
+`--install-mise` when the host does not have mise yet.
 
-## Borrowing GitHub access for one session
+You do not need the [GitHub relay](/bootstrap/github-relay.html) for this
+transfer. Add `--github-relay-read-only --github-relay-repo OWNER/REPO` only
+when the bootstrap that follows needs other private GitHub content, such as a
+private `[bootstrap.repos]` entry or a private release, and repeat
+`--github-relay-repo` for each repository.
+
+### Global configuration
+
+A repository of global mise config becomes a checkout in the host's global
+config directory, with the original credential-free origin, branch, and
+upstream. The checkout stays after the run. On the host:
+
+- An existing checkout with the same origin is reused, and `--update`
+  fast-forwards it.
+- Uncommitted changes, a different origin, conflicting files, or repository
+  files ending in `.local.toml` stop the run for you to fix.
+- A non-empty directory that is not a Git checkout can be adopted after you
+  confirm, and its existing files and local overrides are kept.
+
+With `--dry-run`, mise does everything except change the host: it fetches,
+connects, stages, runs every check, and reports whether it would clone,
+fast-forward, or adopt, with the number of new files. If the host already has a
+global config, the bootstrap that follows is previewed too.
+
+### Setup repository
+
+For a setup repository, one connected with `mise dot origin set`, the host
+restores your tracked files instead of checking the repository out, then records
+the origin. Track the mise config and template sources the bootstrap needs on
+your first machine; a file that is only referenced is not included. If that
+config declares the history watcher, bootstrap installs it like any other user
+service. If a file already on the host differs, setup stops before bootstrap
+runs.
 
 ```sh
-mise ssh devbox --github-relay-read-only --github-relay-repo jdx/dotfiles
-mise ssh devbox --github-relay-read-only --github-relay-repo jdx/dotfiles \
-  -- git clone https://github.com/jdx/dotfiles.git
-
-# Deliberately allow every repository your local credential can read:
-mise ssh devbox --github-relay-read-only --github-relay-all-repos
-
-# Ordinary OpenSSH, without provisioning mise or starting a relay:
-mise ssh devbox -i ~/.ssh/devbox -p 2222 -o ServerAliveInterval=30 -- uname -a
+mise bootstrap remote --host devbox --install-mise --adopt you/setup --dry-run
 ```
 
-The same relay flags work with `mise bootstrap remote`. Enabling the relay
-requires either a repository allowlist or explicit all-repository access, not
-both. Credentials are resolved on the initiating machine using mise's existing
-GitHub token resolution; there is no automatic login or new credential store.
+With `--dry-run`, the host shows the files it would write and any held for a
+decision, and records nothing. A setup preview can stage decrypted tracked
+configuration, so treat a directory kept with `--keep-staging` as sensitive.
 
-The owned SSH connection forwards a private Unix socket. Remote mise requests
-and Git's GitHub HTTPS/SSH transports use session-only adapters. The local broker
-authorizes repository metadata, refs, contents, releases, assets, and smart-HTTP
-clone/fetch. Pushes, API mutations, GraphQL, and other endpoints are denied.
-Only approved GitHub asset redirects are followed, without authentication.
-Requests are limited to 8 MiB and 32 accepted connections; responses are streamed.
-The default concurrency is eight requests and the default total request timeout
-is five minutes. Both limits can be configured on the initiating machine.
+If setup succeeds but the host cannot reach the repository on its own
+afterwards, the bootstrap says so. Give the host its own credentials for
+ongoing synchronization, for example by running `gh auth login` and
+`gh auth setup-git` there, or by setting an SSH URL with
+`mise dot origin set`.
 
-Borrowed access ends when the session ends, including failures and disconnects.
-No GitHub token or persistent transport rewrite is installed on the target.
-Future independent private-repository updates need that machine's own
-credentials or another relay-enabled session. Without the relay, existing remote
-authentication works as before.
+## Borrow GitHub access
 
-::: warning Trust the target with the content you authorize
-A compromised target can read authorized private content during the session.
-Keeping credentials local limits credential exposure; it does not make the
-target trustworthy. Use narrowly scoped repository allowlists.
-:::
+`mise bootstrap remote` accepts the same `--github-relay-*` flags as
+[`mise ssh`](/cli/ssh.html), which let Git and mise on the host read private
+GitHub repositories with this machine's credentials for the length of the run.
+See [GitHub relay](/bootstrap/github-relay.html).
 
-Relay support is initially limited to Linux/macOS clients and POSIX Linux/macOS
-targets running a compatible mise. Windows, GitHub Enterprise, remote `gh`, write
-operations, and unattended/persistent relay access are not supported.
+## How a remote run works {#transport-and-staging}
 
-Read-only access includes Git clone/fetch, repository metadata, contents, refs,
-releases, release assets, and tar/zip source archives. Archive and asset redirects
-are restricted to approved GitHub download hosts and never carry your credential.
-Resume requests retain their range headers, and denied downloads fail rather than
-being saved as artifacts.
+For each host, mise:
 
-### Observing and limiting borrowed access
+1. Opens an OpenSSH connection with your normal SSH config and host-key policy.
+2. Creates a private `/tmp/mise-bootstrap.*` staging directory with `mktemp`.
+3. Archives the source directory locally and extracts it into the staging
+   directory, or sends the repository bundle for `--adopt`.
+4. Provides mise, staged or installed as described above.
+5. Runs `mise bootstrap` from the staged project or the adopted configuration.
+6. Removes the staging directory, even after a failed bootstrap, unless you
+   pass `--keep-staging`.
 
-```sh
-mise ssh devbox --github-relay-read-only --github-relay-repo jdx/dotfiles \
-  --github-relay-log-requests --github-relay-max-duration 1h
-
-# Structured relay events for troubleshooting or auditing:
-mise bootstrap remote --host devbox --adopt jdx/dotfiles \
-  --github-relay-read-only --github-relay-repo jdx/dotfiles \
-  --github-relay-log-requests --github-relay-log-format jsonl
-```
-
-Request logs are off by default. Enable them per invocation or save preferences
-in your **local global** mise configuration:
-
-```toml
-[settings.github_relay]
-log_requests = true
-log_format = "text" # or "jsonl"
-max_duration = "1h" # default "0s": until the session ends
-request_timeout = "5m"
-concurrency = 8 # 1-32; excess requests fail closed rather than queue
-```
-
-`--github-relay-no-log-requests` overrides a saved logging preference. The format
-and duration flags also override their respective settings. These preferences
-never enable the relay or authorize repositories: access and scope still require
-explicit flags on every invocation.
-
-Events go to the initiating machine's stderr, not the remote command's stdout.
-They show the method, repository and fixed operation name, status, and time to
-response headers. Approved download redirects are identified by host only. Query
-values, refs, filenames, headers, credentials, bodies, and signed download URLs
-are omitted; rejected paths appear as `unapproved operation`. JSONL applies to
-relay events; other mise diagnostics can still appear on stderr.
-
-Every relay prints a session-end summary, even when request logging is off:
-requests received (excluding heartbeat probes), denied/unavailable requests,
-upstream response bytes received, and up to 128 authorized repositories requested.
-Redirects are separate log events but do not add to the incoming request count.
-
-The duration limit starts when the local relay is created. Expiration immediately
-revokes borrowed access and cancels active transfers; the remote adapter then
-ends its command after detecting failed heartbeat probes. No credentials are
-installed to extend access beyond this limit.
+On Unix, every command for one host shares one OpenSSH control connection. When
+nobody is at the terminal, mise sets `BatchMode=yes`, so a password prompt fails
+instead of hanging. In an attended terminal, the bootstrap gets a TTY, so SSH,
+sudo, confirmation, and `--prompt-secrets` prompts work. mise never relaxes
+OpenSSH's host-key checks.

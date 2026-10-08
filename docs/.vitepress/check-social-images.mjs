@@ -98,7 +98,9 @@ for (const file of walk(root).filter(
   assert.equal(structured[0].description, decode(meta(html, "description")));
   assert.equal(structured[0].name, decode(meta(html, "og:title")));
   assert.equal(structured[0].url, decode(meta(html, "og:url")));
-  const heading = home ? "Dev tools, environments, and tasks" : pageTitle;
+  const heading = home
+    ? "Dev tools, env vars, and tasks in one CLI"
+    : pageTitle;
   const alt = meta(html, "og:image:alt");
   assert.ok(
     typeof alt === "string" && alt.trim(),

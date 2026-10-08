@@ -26,6 +26,6 @@ can be fetched directly by mise without a Homebrew installation.
 
 ## Related documentation
 
-- [Homebrew packages and taps](/bootstrap/packages/brew.html).
+- [Homebrew formulae and taps](/bootstrap/packages/brew.html#third-party-taps).
 - [`mise bootstrap packages <SUBCOMMAND>`](/cli/bootstrap/packages.html).
 - [Global flags and argument syntax](/cli/#global-flags).

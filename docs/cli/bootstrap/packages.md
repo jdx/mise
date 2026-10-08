@@ -30,6 +30,6 @@ Manage bootstrap system packages from `[bootstrap.packages]`
 
 ## Related documentation
 
-- [Host packages](/bootstrap/packages/).
+- [Bootstrap packages](/bootstrap/packages/).
 - [`mise bootstrap [FLAGS] [SUBCOMMAND]`](/cli/bootstrap.html).
 - [Global flags and argument syntax](/cli/#global-flags).
