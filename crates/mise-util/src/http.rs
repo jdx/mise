@@ -75,7 +75,7 @@ static HTTP_CHECKSUM_PINNED: Lazy<Client> = Lazy::new(|| {
 /// during a single operation (e.g., fetching SHASUMS256.txt for multiple platforms).
 /// Each URL gets its own OnceCell to ensure concurrent requests for the same URL
 /// wait for the first fetch to complete rather than all fetching simultaneously.
-type CachedResult = Arc<OnceCell<Result<String, String>>>;
+type CachedResult = Arc<OnceCell<Result<String, CachedFailure>>>;
 static HTTP_CACHE: Lazy<Mutex<HashMap<String, CachedResult>>> =
     Lazy::new(|| Mutex::new(HashMap::new()));
 /// Origins that returned a hard connection failure during a prefer-offline
@@ -84,6 +84,23 @@ static HTTP_CACHE: Lazy<Mutex<HashMap<String, CachedResult>>> =
 static UNAVAILABLE_HTTP_HOSTS: Lazy<Mutex<HashMap<String, String>>> =
     Lazy::new(|| Mutex::new(HashMap::new()));
 type RetryStateHandle = Arc<Mutex<RetryState>>;
+
+/// A failed [`HttpClient::get_text_cached`] request, kept as text so every
+/// caller of the URL can share it, along with whether it ever reached the
+/// server so [`is_unreachable`] still recognizes it.
+#[derive(Clone, Debug)]
+struct CachedFailure {
+    message: String,
+    unreachable: bool,
+}
+
+impl std::fmt::Display for CachedFailure {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.message)
+    }
+}
+
+impl std::error::Error for CachedFailure {}
 
 #[derive(Debug)]
 struct UnavailableHttpHost {
@@ -1063,7 +1080,10 @@ impl Client {
                 async move {
                     match self.get_text_request(url).headers(headers).send().await {
                         Ok(text) => Ok(text),
-                        Err(err) => Err(err.to_string()),
+                        Err(err) => Err(CachedFailure {
+                            message: err.to_string(),
+                            unreachable: is_unreachable(&err),
+                        }),
                     }
                 }
             })
@@ -1071,7 +1091,7 @@ impl Client {
 
         match result {
             Ok(text) => Ok(text.clone()),
-            Err(err) => bail!("{}", err),
+            Err(err) => Err(err.clone().into()),
         }
     }
 
@@ -1711,10 +1731,7 @@ impl Client {
             .await
         {
             Ok(resp) => Ok(resp),
-            Err(err)
-                if url.scheme() == "http"
-                    && (is_connection_error(&err) || is_unavailable_http_host_error(&err)) =>
-            {
+            Err(err) if url.scheme() == "http" && is_unreachable(&err) => {
                 let mut url = url;
                 url.set_scheme("https").unwrap();
                 self.send_once_with_retry_headers(method, url, headers, verb_label, options)
@@ -2695,6 +2712,18 @@ fn is_connection_error(err: &Report) -> bool {
         };
         (reqwest_err.is_connect() || reqwest_err.is_timeout()) && reqwest_err.status().is_none()
     })
+}
+
+/// True if a request failed without reaching the server: a connection failure,
+/// a timeout, or a host already marked unavailable. Unlike [`is_transient`],
+/// HTTP statuses and other errors from the server or the caller never match.
+pub fn is_unreachable(err: &Report) -> bool {
+    is_connection_error(err)
+        || is_unavailable_http_host_error(err)
+        || err.chain().any(|err| {
+            err.downcast_ref::<CachedFailure>()
+                .is_some_and(|failure| failure.unreachable)
+        })
 }
 
 fn http_host_key(url: &Url) -> Option<String> {

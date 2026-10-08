@@ -963,16 +963,50 @@ impl ToolVersion {
         if prefer_offline && !opts.latest_versions && v.matches('.').count() >= 2 {
             return build(v);
         }
+        // A fully-qualified version usually names itself, so prefer-offline
+        // commands install it as written when the remote lookup cannot reach
+        // its server (e.g. `mise x tool@1.2.3` hitting the short prefer-offline
+        // timeout) rather than leaving it unresolved. The installer reports a
+        // missing release. Other errors, such as invalid settings, still fail.
+        let fall_back_to_literal = settings.prefer_offline()
+            && !opts.latest_versions
+            && (v.matches('.').count() >= 2 || backend.is_exact_version(&v));
+        match Self::resolve_remote_version(config, &backend, &v, opts, pin_remote_matches).await {
+            Ok(v) => build(v),
+            Err(err) if fall_back_to_literal && crate::http::is_unreachable(&err) => {
+                // Keyed without the error: a command can resolve more than once,
+                // and a retry fails with different text for the same cause.
+                let key = format!("version list fallback {backend}@{v}");
+                if crate::output::WARNED_ONCE.lock().unwrap().insert(key) {
+                    warn!(
+                        "failed to fetch versions for {backend}, installing {v} as written: {err:#}"
+                    );
+                }
+                build(v)
+            }
+            Err(err) => Err(err),
+        }
+    }
+
+    /// The remote half of [`Self::resolve_version`]: resolves `v` against the
+    /// backend's upstream versions.
+    async fn resolve_remote_version(
+        config: &Arc<Config>,
+        backend: &ABackend,
+        v: &str,
+        opts: &ResolveOptions,
+        pin_remote_matches: Option<Vec<String>>,
+    ) -> Result<String> {
         // Exact pinned versions do not need the full versions list when the
         // backend can validate them directly or defer validation to its
         // installer. This also keeps explicit pins outside release-age
         // filtering. If the backend returns None, fall through to normal
         // prefix resolution so requests like "1.2.3" can still resolve to
         // "1.2.3.4" when that is the latest matching version.
-        if (v.matches('.').count() >= 2 || backend.is_exact_version(&v))
-            && let Some(v) = backend.resolve_exact_version(config, &v).await?
+        if (v.matches('.').count() >= 2 || backend.is_exact_version(v))
+            && let Some(v) = backend.resolve_exact_version(config, v).await?
         {
-            return build(v);
+            return Ok(v);
         }
         // First try with date filter (common case)
         let matches = match pin_remote_matches {
@@ -981,29 +1015,29 @@ impl ToolVersion {
                 backend
                     .list_versions_matching_with_opts(
                         config,
-                        &v,
+                        v,
                         opts.before_date,
                         opts.refresh_remote_versions,
                     )
                     .await?
             }
         };
-        if matches.contains(&v) {
-            return build(v);
+        if matches.iter().any(|m| m == v) {
+            return Ok(v.to_string());
         }
         if let Some(v) = matches.last() {
-            return build(v.clone());
+            return Ok(v.clone());
         }
         // If date filter is active and exact version not found, check without filter.
         // Explicit pinned versions like "22.5.0" should not be filtered by date.
         if opts.before_date.is_some() {
-            let all_versions = backend.list_versions_matching(config, &v).await?;
-            if all_versions.contains(&v) {
+            let all_versions = backend.list_versions_matching(config, v).await?;
+            if all_versions.iter().any(|m| m == v) {
                 // Exact match exists but was filtered by date - use it anyway
-                return build(v);
+                return Ok(v.to_string());
             }
         }
-        build(v)
+        Ok(v.to_string())
     }
 
     /// resolve a version like `sub-1:12.0.0` which becomes `11.0.0`, `sub-0.1:12.1.0` becomes `12.0.0`
