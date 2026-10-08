@@ -1,112 +1,194 @@
 ---
-description: "Install prebuilt tools directly from GitHub release assets."
+description: "Install prebuilt tools from GitHub releases, with the asset options gitlab and forgejo share."
 ---
 
-# GitHub Backend
+# github backend
 
-You may install GitHub release assets directly using the `github` backend. This backend downloads release assets from GitHub repositories and is ideal for tools that distribute pre-built binaries through GitHub releases.
+The `github` backend installs a tool from the files attached to a GitHub
+repository's releases. mise picks the asset for your OS and architecture,
+verifies it, and extracts it. The [gitlab](/dev-tools/backends/gitlab.html) and
+[forgejo](/dev-tools/backends/forgejo.html) backends share this implementation
+and accept the options on this page.
 
-The code for this is inside of the mise repository at [`./src/backend/github.rs`](https://github.com/jdx/mise/blob/main/src/backend/github.rs).
+If the tool has a [registry](/registry.html) shorthand, such as `ripgrep`, prefer
+it: the registry entry already names a backend and the options the tool needs.
+Use `github:owner/repo` for a tool without a shorthand, or to choose this
+backend yourself.
 
 ## Usage
 
-Install ripgrep in the current project, then check the selected executable:
+Install ripgrep in the current project, then run it:
 
 ```sh
 mise use github:BurntSushi/ripgrep
 mise exec -- rg --version
 ```
 
-This records the following in `mise.toml`. Add `-g` to `mise use` for a global tool.
+This writes the following to `mise.toml`. Add `-g` to `mise use` for a global
+tool.
 
 ```toml
 [tools]
 "github:BurntSushi/ripgrep" = "latest"
 ```
 
-Use `mise ls-remote github:BurntSushi/ripgrep` to choose a version, or
-`mise use github:BurntSushi/ripgrep@VERSION` to select it. Replace `VERSION` with
-an entry from that list. For API limits or private releases, see
-[GitHub tokens](/dev-tools/github-tokens.html).
+List the available versions and pin one:
 
-## Version Listing
+```sh
+mise ls-remote github:BurntSushi/ripgrep
+mise use github:BurntSushi/ripgrep@14.1.1
+```
 
-`mise ls-remote` lists a repository's releases. **Releases with no assets attached
-are left out**: mise installs from a release's uploaded assets and never falls
-back to the auto-generated source archive, so such a release has nothing to
-install from and listing it would advertise a version that only fails.
+A version is the release tag without its leading `v`; see
+[`version_prefix`](#version-prefix) for other tag formats.
 
-This is emptiness, not platform fit — a release whose assets do not cover your
-platform is still listed, because the version list has to mean the same thing on
-every host for cross-platform lockfiles to work.
+To pass [tool options](#tool-options) on the command line, append them in
+brackets. Quote the argument so the shell does not expand the brackets:
 
-Tools that set a **platform-scoped** `url` — `platforms.<os>-<arch>.url`, or the
-flat `platform_<os>_<arch>_url` — are exempt: they fetch from that URL instead of
-selecting a release asset, so their releases are listed whether or not anything
-is attached to them. A bare top-level `url` is not an exemption, because this
-backend only reads the option per platform and would still fall through to asset
-selection.
+```sh
+mise use 'github:oxc-project/oxc[matching=oxlint,rename_exe=oxlint]@apps_v1.69.0'
+```
 
-The exemption is all-or-nothing, for the same reason the filter is: one version
-list serves every platform. A `url` set for only some platforms therefore keeps
-asset-less releases listed everywhere, and installing one on a platform the
-`url` does not cover still fails — exactly as it did before this filtering
-existed. Cover every platform you support, or leave `url` unset and let asset
-selection do the work.
+mise writes the options into the tool's entry in `mise.toml`. Public releases
+need no token. For private repositories, GitHub Enterprise Server or rate-limit
+errors, see [GitHub tokens](/dev-tools/github-tokens.html).
 
-mise fetches one page of releases and reads further only until it finds a stable
-release it can offer. Because an asset-less release is not one, a repository
-whose newest stable releases have nothing attached is now read past rather than
-stopped at, up to a small page limit. Set `MISE_LIST_ALL_VERSIONS=1` to read
-every page.
+## How mise picks an asset {#asset-autodetection}
 
-## Tool Options
+For each install, mise downloads one release asset:
 
-The following [tool-options](/dev-tools/#tool-options) are available for the `github` backend—these
-go in `[tools]` in `mise.toml`.
+1. If a [`url`](#platform-specific-urls) is set for the platform, mise downloads
+   that URL and selects no asset.
+2. If [`asset_pattern`](#asset-pattern) is set, mise downloads the asset whose
+   name matches it.
+3. Otherwise mise keeps the assets that pass [`matching`](#matching) and
+   [`matching_regex`](#matching-regex), if set, and scores each one. The score
+   rewards a match for your OS, CPU architecture and C library (glibc or musl on
+   Linux, MSVC on Windows), archive formats it extracts well, and names
+   that start with the repository name. It penalizes debug and test builds,
+   checksum and signature files, and macOS `.app` bundles on other systems or
+   with [`no_app`](#no-app). The highest score wins, and a tie goes to the
+   shortest name.
 
-### Asset Autodetection
-
-When no `asset_pattern` is specified, mise automatically selects the best asset for your platform. It scores assets based on:
-
-- **OS compatibility** (linux, macos, windows)
-- **Architecture compatibility** (x64, arm64, x86, arm)
-- **Libc variant** (gnu or musl for Linux, msvc for Windows)
-- **Archive format preference** (tar.gz, zip, etc.)
-- **Build type** (avoids debug/test builds)
-
-For most tools, you can install without specifying a pattern:
+Most tools install without any option:
 
 ```sh
 mise install github:user/repo
 ```
 
-::: tip
-The autodetection logic is implemented in [`src/backend/asset_matcher.rs`](https://github.com/jdx/mise/blob/main/src/backend/asset_matcher.rs), which is shared by the GitHub, GitLab, and Forgejo backends.
-:::
+If mise picks the wrong asset, narrow the candidates with
+[`matching`](#matching) or name the asset with
+[`asset_pattern`](#asset-pattern). When nothing matches, the error lists the
+release's assets.
 
-### `asset_pattern`
+mise then verifies the download. It checks the digest GitHub reports for the
+asset, or a checksum file published in the same release, and on public GitHub
+it checks [GitHub artifact attestations](#github-attestations) when the release
+has them. See [Verification](#verification).
 
-Specifies the pattern to match against release asset names. This is useful when there are multiple assets for your OS/arch combination or when you need to override autodetection.
+## Tool options
+
+Set these options on the tool's entry in `[tools]`, or inline as
+`github:owner/repo[key=value]`. The `gitlab` and `forgejo` backends accept all
+of them except the GitHub-only verification options; the
+[gitlab](/dev-tools/backends/gitlab.html#differences-from-the-github-backend)
+and [forgejo](/dev-tools/backends/forgejo.html#differences-from-the-github-backend)
+pages list what behaves differently there. Options that every backend accepts,
+such as `postinstall` and `os`, are described in
+[tool options](/dev-tools/#tool-options).
+
+| Option                                                                                       | Use it to                                                          |
+| -------------------------------------------------------------------------------------------- | ------------------------------------------------------------------ |
+| [`asset_pattern`](#asset-pattern)                                                            | Name the asset to download                                         |
+| [`matching`](#matching), [`matching_regex`](#matching-regex)                                 | Narrow the assets that autodetection chooses from                  |
+| [`no_app`](#no-app)                                                                          | Prefer a command-line archive over a macOS `.app` bundle           |
+| [`additional_asset_patterns`](#additional-asset-patterns)                                    | Extract more archives from the same release into the install       |
+| [`version_prefix`](#version-prefix)                                                          | Read versions from tags with a prefix other than `v`               |
+| [`prerelease`](#prerelease)                                                                  | Include prereleases                                                |
+| [`version_order`](#version-order)                                                            | Order versions by semantic version                                 |
+| [`url`](#platform-specific-urls)                                                             | Download a URL instead of a release asset on one platform          |
+| [`format`](#format)                                                                          | Set the archive format                                             |
+| [`strip_components`](#strip-components)                                                      | Remove leading directories when extracting                         |
+| [`bin_path`](#bin-path)                                                                      | Name the directory that holds the executables                      |
+| [`bin`](#bin)                                                                                | Name a single-file download                                        |
+| [`rename_exe`](#rename-exe)                                                                  | Rename executables extracted from an archive                       |
+| [`filter_bins`](#filter-bins)                                                                | Put only some executables on `PATH`                                |
+| [`checksum`](#checksum), [`size`](#size)                                                     | Pin the artifact's digest and size                                 |
+| [`github_attestations`](#github-attestations)                                                | Skip GitHub artifact attestation checks for one tool (GitHub only) |
+| [`slsa_signer_identity`, `slsa_signer_issuer`](#slsa-signer-identity-and-slsa-signer-issuer) | Verify SLSA provenance (GitHub only)                               |
+| [`api_url`](#api-url)                                                                        | Use GitHub Enterprise Server or another forge host                 |
+
+### Selecting assets
+
+#### `asset_pattern` {#asset-pattern}
+
+The name of the asset to download, with `*` matching any run of characters and
+`?` matching one character. The pattern must match the whole name, and when it
+matches several assets, mise picks the shortest name. It replaces
+autodetection, so a pattern that names one platform, as below, works only on
+that platform:
 
 ```toml
 [tools]
 "github:cli/cli" = { version = "latest", asset_pattern = "gh_*_linux_amd64.tar.gz" }
 ```
 
-::: v-pre
-Supports the same templating as [`bin_path`](/dev-tools/backends/github.html#bin-path): `{{ version }}` plus the
-`{{ os() }}` / `{{ arch() }}` functions (with optional remap keyword arguments).
-:::
+For a configuration that works everywhere, set the pattern
+[per platform](#per-platform-options) or use [`matching`](#matching). The
+pattern is a [template](#templates), so it can include the version, OS and
+architecture.
 
-### `additional_asset_patterns`
+#### `matching`
 
-Downloads additional archives from the same release and extracts them into the primary
-asset's install directory, in the order listed. Use this when an upstream distributes one
-installation across a base archive and one or more supplemental archives.
+Keeps only assets whose names contain this text, then lets autodetection pick
+your OS and architecture from what is left. Use it when a release ships several
+tools for each platform, such as `oxlint-*` and `oxfmt-*` archives: one
+configuration then works on every platform.
 
-For example, Ollama publishes its Linux AMD64 ROCm support as an archive that must be
-overlaid on the normal Ollama archive:
+```toml
+[tools]
+"github:oxc-project/oxc" = { version = "apps_v1.69.0", matching = "oxlint", rename_exe = "oxlint" }
+```
+
+The test is a case-sensitive substring, so `matching = "tool"` also keeps
+`tool-extras-*` assets. Use [`matching_regex`](#matching-regex) with an anchor
+for an exact prefix. If no asset for your platform passes the filter, the
+install fails with an error that names the filter. When `asset_pattern` is also
+set, mise uses it and ignores `matching` and `matching_regex` without a warning.
+SLSA provenance lookups use the same filter, so each binary of a multi-binary
+release is verified against its own provenance file.
+
+#### `matching_regex` {#matching-regex}
+
+Like [`matching`](#matching), but the asset name must match a regular
+expression. The match is case-sensitive; start the expression with `(?i)` to
+ignore case. When both options are set, an asset must pass both. An invalid
+expression fails the install.
+
+```toml
+[tools]
+"github:oxc-project/oxc" = { version = "apps_v1.69.0", matching_regex = "^oxlint-", rename_exe = "oxlint" }
+```
+
+#### `no_app` {#no-app}
+
+On macOS, prefers a standalone archive over a `.app` bundle, such as an Xcode
+extension, during autodetection. mise already avoids `.app` bundles on other
+systems. It has no effect when `asset_pattern` is set.
+
+```toml
+[tools."github:nicklockwood/SwiftFormat"]
+version = "latest"
+rename_exe = "swiftformat"
+no_app = true # use swiftformat.zip, not SwiftFormat.for.Xcode.app.zip
+```
+
+#### `additional_asset_patterns` {#additional-asset-patterns}
+
+Downloads more archives from the same release and extracts them into the primary
+asset's install directory, in the order listed. Use it when a project splits one
+installation across a base archive and add-on archives. For example, Ollama's
+ROCm support for Linux on x64 is an archive laid over the normal Ollama archive:
 
 ```toml
 [tools."github:ollama/ollama"]
@@ -118,139 +200,378 @@ linux-x64 = {
 }
 ```
 
-Each pattern must select exactly one archive. Patterns support the same templating as
-[`asset_pattern`](/dev-tools/backends/github.html#asset-pattern). Supplemental assets must be archives; bare binaries
-are not supported. They are extracted without applying the primary asset's
-`strip_components`, `bin`, or `rename_exe` options. If a supplemental archive contains
-the same path as an earlier archive, the later archive's file wins.
+Each pattern uses the same wildcards and [templates](#templates) as
+`asset_pattern`. If a pattern matches several assets, mise picks the shortest
+name, so make each pattern specific to one archive. The value is an array or a
+comma-separated string.
 
-When lockfiles are enabled, mise records the URL and checksum for each supplemental
-artifact, plus any available provenance metadata. Provenance is cryptographically
-verified for the current platform; cross-platform lock entries record detected
-provenance for verification when installed. `--locked` installations use only the
-recorded artifact list and fail if it is incomplete.
+The extra assets must be archives. mise extracts them without the primary
+asset's `strip_components`, `bin` and `rename_exe`, and a file in a later
+archive replaces the same path from an earlier one. `mise lock` records the URL
+and checksum of every extra archive, and `mise install --locked` fails when one
+is missing from the lockfile.
 
-### `matching`
+### Choosing versions
 
-Narrows asset selection to names containing the given substring, **while keeping platform autodetection**. Unlike [`asset_pattern`](/dev-tools/backends/github.html#asset-pattern) (which replaces autodetection entirely), `matching` only refines the candidate set — autodetection still chooses the correct OS/arch from the narrowed list, so a single config stays portable across platforms.
+#### `version_prefix` {#version-prefix}
 
-This is the option to reach for when a repository ships **multiple binaries as separate per-platform assets** and autodetection can't tell which one you want (see [Multiple Assets from the Same Release](#multiple-assets-from-the-same-release)).
-
-```toml
-[tools]
-# oxc-project/oxc ships both oxlint and oxfmt per platform; matching picks oxlint
-# on every OS/arch without hardcoding a platform-specific asset_pattern.
-# `apps_v1.69.0` is the literal release tag; the assets are per-platform
-# archives, and rename_exe renames the extracted `oxlint-<triple>` binary to `oxlint`.
-"github:oxc-project/oxc" = { version = "apps_v1.69.0", matching = "oxlint", rename_exe = "oxlint" }
-```
-
-Tool options can also be passed inline on the command line using `[key=value]` syntax:
-
-```sh
-mise use "github:oxc-project/oxc[matching=oxlint,rename_exe=oxlint]@apps_v1.69.0"
-```
-
-`matching` is a case-sensitive substring test, so a value that is also a substring of another asset's name (e.g. `matching = "tool"` when both `tool-*` and `tool-extras-*` are published) won't uniquely select your binary. Use [`matching_regex`](/dev-tools/backends/github.html#matching-regex) with an anchor when you need a precise match.
-
-If [`asset_pattern`](/dev-tools/backends/github.html#asset-pattern) is also set, it takes precedence and `matching`/`matching_regex` are ignored — `asset_pattern` replaces autodetection entirely, so there is no candidate set left for them to narrow. They are ignored silently: when `asset_pattern` is set, a `matching_regex` is never consulted and an invalid one is not reported, since mise does not error on a superseded option.
-
-The filter also scopes verification: checksums are looked up for the selected asset, and SLSA provenance discovery is narrowed the same way, so a multi-binary release can't verify one binary against another's provenance. A single shared provenance file that attests every artifact in the release (e.g. `multiple.intoto.jsonl`) is still used as a fallback when no per-binary provenance matches.
-
-### `matching_regex`
-
-Like [`matching`](#matching), but the asset name must match the given regular expression. Use this when a substring isn't selective enough. The match is case-sensitive; use an inline `(?i)` flag for case-insensitive matching.
-
-```toml
-[tools]
-"github:oxc-project/oxc" = { version = "apps_v1.69.0", matching_regex = "^oxlint-", rename_exe = "oxlint" }
-```
-
-If both `matching` and `matching_regex` are set, an asset must satisfy **both** (logical AND)
-to remain a candidate.
-
-### `version_prefix`
-
-Specifies a custom version prefix for release tags. By default, mise handles the common `v` prefix (e.g., `v1.0.0`), but some repositories use different prefixes like `release-`, `version-`, or no prefix at all.
-
-When `version_prefix` is configured, mise will:
-
-- Filter available versions with the prefix and strip it
-- Add the prefix when searching for releases
-- Try both prefixed and non-prefixed versions during installation
+The text in front of the version in release tags. Without it, mise removes a
+leading `v` from each tag, and on GitHub it also removes a prefix that repeats
+the repository name, as in the tag `tectonic@0.15.0`. Set it when a repository
+uses another prefix:
 
 ```toml
 [tools]
 "github:user/repo" = { version = "latest", version_prefix = "release-" }
 ```
 
-**Examples:**
+With `version_prefix = "release-"`, mise lists only tags that start with
+`release-`, shows the tag `release-1.0.0` as `1.0.0`, and installs that tag for
+`mise use github:user/repo@1.0.0`. Set `version_prefix = ""` to keep tags
+exactly as published, including a leading `v`.
 
-- With `version_prefix = "release-"`:
-  - User specifies `1.0.0` → mise searches for the `release-1.0.0` tag
-  - Available versions show as `1.0.0` (prefix stripped)
-- With `version_prefix = ""` (empty string):
-  - User specifies `1.0.0` → mise searches for the `1.0.0` tag (no prefix)
-  - Useful for repositories that don't use any prefix
+#### `prerelease`
 
-### Platform-specific Asset Patterns
+By default, mise leaves releases that GitHub marks as prereleases out of
+`mise ls-remote`, `latest` and version prefixes. Set `prerelease = true` to
+include them:
 
-For different asset patterns per platform:
+```toml
+[tools]
+"github:myorg/mytool" = { version = "latest", prerelease = true }
+```
+
+`latest` then resolves to the newest release, prereleases included, instead of
+the release GitHub marks as Latest, and a prefix such as `1.2` also matches
+prerelease tags under it. Use it for a repository whose active releases are all
+prereleases, or to follow release candidates. Draft releases are never listed.
+
+To include prereleases for every tool, set the
+[`prereleases`](/configuration/settings.html#prereleases) setting
+(`MISE_PRERELEASES=1`). For a single listing, run `mise ls-remote --prerelease`.
+
+#### `version_order` {#version-order}
+
+By default, `mise ls-remote` lists releases in the order they were published.
+Set `version_order = "semver"` when a repository publishes backports after
+newer releases, so that the list and prefixes such as `1.2` follow semantic
+version order:
+
+```toml
+[tools]
+"github:owner/tool" = { version = "1.2", version_order = "semver" }
+```
+
+`latest` still resolves to the release GitHub or Forgejo marks as latest when
+there is one. See [version ordering](/dev-tools/versions.html#version-ordering).
+
+### Per-platform options
+
+Set an option under `platforms.<os>-<arch>` to use it on that platform only. A
+platform value overrides the top-level one. The key uses mise's names, `linux`,
+`macos` or `windows` and `x64` or `arm64`; mise also accepts `darwin`, `amd64`,
+`x86_64` and `aarch64`.
 
 ```toml
 [tools."github:cli/cli"]
-version = "latest"
+version = "2.100.0"
 
 [tools."github:cli/cli".platforms]
-linux-x64 = { asset_pattern = "gh_*_linux_amd64.tar.gz" }
-macos-arm64 = { asset_pattern = "gh_*_macOS_arm64.zip" }
+linux-x64 = {
+  asset_pattern = "gh_*_linux_amd64.tar.gz",
+  checksum = "sha256:REPLACE_WITH_THE_64_HEX_DIGIT_DIGEST",
+}
+macos-arm64 = {
+  asset_pattern = "gh_*_macOS_arm64.zip",
+  checksum = "sha256:REPLACE_WITH_THE_64_HEX_DIGIT_DIGEST",
+}
 ```
 
-### Platform-specific URLs
+These options can be set per platform: `asset_pattern`,
+`additional_asset_patterns`, `url`, `no_app`, `format`, `strip_components`,
+`bin_path`, `bin`, `rename_exe`, `filter_bins`, `checksum` and `size`. The other
+options apply to every platform.
+
+#### `url` {#platform-specific-urls}
+
+Set `platforms.<os>-<arch>.url` to download that URL instead of selecting a
+release asset. The URL is a [template](#templates):
 
 ::: v-pre
-Set `platforms.<os>-<arch>.url` to download from an explicit URL instead of
-selecting a release asset. Use `{{ version }}` for the resolved tool version,
-including when the requested version is `latest`.
+`{{ version }}` is the resolved version, even when you request `latest`.
 :::
 
 ```toml
 [tools."github:owner/repo"]
 version = "latest"
-strip_components = 1
-platforms.macos-arm64.url = "https://github.com/owner/repo/archive/refs/tags/v{{ version }}.tar.gz"
+platforms.macos-arm64.url = "https://downloads.example.com/tool/{{ version }}/tool-macos-arm64.tar.gz"
 ```
 
-Include any release-tag prefix explicitly in the URL. A top-level `url` is not
-used by this backend. Direct URLs can be combined with `additional_asset_patterns`
-to overlay release assets on the downloaded archive. mise extracts the archives;
-it does not compile source code automatically.
+Include any tag prefix, such as `v`, in the URL yourself. This backend ignores a
+top-level `url`, so set it under each platform. mise extracts the download but
+never builds it, so the URL must point to a prebuilt archive or binary. You can
+lay release assets over it with
+[`additional_asset_patterns`](#additional-asset-patterns). When every platform
+you support sets `url`, mise lists releases even if they have no assets; see
+[How versions are listed](#version-listing).
 
-Use separate platform entries for different target URLs. As with other GitHub
-tool options, platform functions and conditionals in `mise.toml` are evaluated
-for the host when the configuration is loaded.
+### Extracting and naming executables
 
-### Multiple Assets from the Same Release
+#### `format`
 
-There are two distinct cases:
+The archive format, such as `tar.gz`, `tar.xz` or `zip`. Set it when an asset
+name has no extension or a misleading one; otherwise mise detects the format
+from the name. Use `raw` for a file that is not an archive.
 
-- If the assets are parts of one installation, use
-  [`additional_asset_patterns`](/dev-tools/backends/github.html#additional-asset-patterns). The supplemental archives
-  are overlaid into the same install directory.
-- If the assets are independent tools that should have separate install directories,
-  define one tool alias per binary and point each alias at the same
-  `github:owner/repo` backend.
+```toml
+[tools]
+"github:owner/repo" = { version = "1.0.0", asset_pattern = "tool-linux-x64", format = "tar.gz" }
+```
 
-Prefer [`matching`](#matching) (or [`matching_regex`](/dev-tools/backends/github.html#matching-regex)): it narrows the
-candidate set while **keeping platform autodetection**, so one config works on every
-OS/arch. This is the right choice when the per-platform asset names can't be templated
-portably (e.g. Rust target-triples like `oxlint-aarch64-apple-darwin.tar.gz`).
+#### `strip_components` {#strip-components}
 
-The example below installs both `oxlint` and `oxfmt` from the single
-`oxc-project/oxc` release. Each `matching` value must be specific enough to
-select **only** the intended binary — if one binary's name were a substring of the
-other's, use [`matching_regex`](/dev-tools/backends/github.html#matching-regex) with an anchor (e.g. `"^oxlint-"`)
-instead (see the [`matching`](#matching) caveat).
+The number of leading directories to remove when extracting an archive:
+
+```toml
+[tools]
+"github:cli/cli" = { version = "latest", strip_components = 1 }
+```
+
+When neither `strip_components` nor `bin_path` is set, mise removes one level by
+itself if the archive holds a single top-level directory and no files, as
+ripgrep's archives do (`ripgrep-14.1.1-x86_64-unknown-linux-musl/rg`).
+
+#### `bin_path` {#bin-path}
+
+The directory, relative to the install directory, that holds the executables.
+Set it when mise does not find them. mise applies it after `strip_components`,
+and setting it turns off the automatic stripping.
+
+::: v-pre
+For an archive laid out as `tool-1.0.0/bin/tool`, set `strip_components = 1`
+and `bin_path = "bin"`, as below, or keep the outer directory with
+`bin_path = "tool-{{ version }}/bin"`.
+:::
+
+```toml
+[tools."github:cli/cli"]
+version = "latest"
+strip_components = 1
+bin_path = "bin" # after the archive's outer directory is removed
+```
+
+`bin_path` is a [template](#templates), for when the directory name includes the
+version, OS or architecture:
+
+```toml
+[tools."github:pizlonator/fil-c"]
+version = "latest"
+# such as filc-0.681-linux-x86_64/build/bin
+strip_components = 0
+bin_path = 'filc-{{ version }}-{{ os() }}-{{ arch(x64="x86_64", arm64="aarch64") }}/build/bin'
+```
+
+When `bin_path` is not set, mise puts these directories on `PATH`, using the
+first rule that applies:
+
+1. `bin/` in the install directory, if it exists.
+2. `Contents/MacOS` in the install directory, for a `.app` bundle whose outer
+   directory was stripped.
+3. The install directory, if it directly contains an executable file.
+4. Every immediate subdirectory that qualifies: a `*.app` directory contributes
+   its `Contents/MacOS`, and any other subdirectory contributes its `bin/`, or
+   itself if it directly contains an executable.
+5. The install directory.
+
+When [`filter_bins`](#filter-bins) is set, only its `.mise-bins` directory goes
+on `PATH`.
+
+#### Naming the executable
+
+| Download                            | Option                      | Example                                                     |
+| ----------------------------------- | --------------------------- | ----------------------------------------------------------- |
+| A single binary file                | [`bin`](#bin)               | `bin = "mytool"`                                            |
+| An archive with one executable      | [`rename_exe`](#rename-exe) | `rename_exe = "yt-dlp"`                                     |
+| An archive with several executables | `rename_exe` as a table     | `rename_exe = { "ols-*" = "ols", "odinfmt-*" = "odinfmt" }` |
+
+#### `bin`
+
+The name to give a downloaded single-file binary. It can include a directory,
+such as `bin/mytool`. mise already removes OS and architecture suffixes from
+single-binary downloads, so `docker-compose-linux-x86_64` installs as
+`docker-compose` with no option. Set `bin` only when you want another name:
+
+```toml
+[tools."github:owner/repo"]
+version = "1.0.0"
+bin = "mytool" # install the downloaded file as mytool
+```
+
+#### `rename_exe` {#rename-exe}
+
+Renames an executable after an archive is extracted. The string form renames
+the tool's main executable: the one named after the repository, else one whose
+name contains the repository name, else the first executable mise finds.
+
+```toml
+[tools."github:yt-dlp/yt-dlp"]
+version = "latest"
+asset_pattern = "yt-dlp_linux.zip"
+rename_exe = "yt-dlp"
+```
+
+When an archive ships several executables that you want under plain names, use
+the table form. Each key is an exact file name or a glob, and each value is the
+new name:
+
+```toml
+[tools."github:DanielGavin/ols"]
+version = "latest"
+# the archive holds ols-x86_64-unknown-linux-gnu and odinfmt-x86_64-unknown-linux-gnu
+rename_exe = { "ols-*" = "ols", "odinfmt-*" = "odinfmt" }
+```
+
+mise warns about a key that matches nothing, and restores the executable bit
+that some archives, such as ZIP files, drop.
+
+#### `filter_bins` {#filter-bins}
+
+Puts only the named executables on `PATH`. mise links them into a `.mise-bins`
+directory inside the install and puts only that directory on `PATH`, so other
+executables in the archive, such as `pandoc-lua` and `pandoc-server`, stay
+hidden. The value is an array or a comma-separated string, and mise warns about
+a name it cannot find.
+
+```toml
+[tools]
+"github:jgm/pandoc" = { version = "latest", filter_bins = "pandoc" }
+"github:owner/repo" = { version = "latest", filter_bins = ["tool", "helper"] }
+```
+
+### Verification
+
+When GitHub reports a digest for the asset, or the release publishes a checksum
+file that lists it, mise checks the download against it. When lockfiles are
+enabled, mise records the checksum in [mise.lock](/dev-tools/mise-lock.html)
+and checks later installs against it. On public GitHub mise also checks GitHub
+artifact attestations. The options below pin values by hand, add SLSA
+provenance checks, or turn the attestation check off.
+
+#### `checksum`
+
+Usually you do not need this: [`mise lock`](/dev-tools/mise-lock.html) records
+the URL and checksum for every platform. Set `checksum` to pin one artifact by
+hand, as `<algorithm>:<hash>` with an algorithm such as `sha256`, `sha512` or
+`blake3`. A checksum describes one version and one asset, so pin the version,
+and set it [per platform](#per-platform-options) when you support several:
+
+```toml
+[tools."github:owner/repo"]
+version = "1.0.0"
+asset_pattern = "tool-1.0.0-x64.tar.gz"
+checksum = "sha256:REPLACE_WITH_THE_64_HEX_DIGIT_DIGEST"
+```
+
+#### `size`
+
+The expected size of the asset in bytes. The install fails when the download has
+a different size. On the `github`, `gitlab` and `forgejo` backends, mise checks
+`size` only when `checksum` is also set, so set the two together. A size check
+catches truncated downloads, but it does not replace a checksum.
+
+```toml
+[tools]
+"github:owner/repo" = { version = "1.0.0", checksum = "sha256:REPLACE_WITH_THE_64_HEX_DIGIT_DIGEST", size = "12345678" }
+```
+
+#### `github_attestations` {#github-attestations}
+
+By default, mise checks GitHub artifact attestations when a release asset has
+them. Set `github_attestations = false` to skip that check for one tool while
+keeping it on for the others:
+
+```toml
+[tools]
+"github:myorg/mytool" = { version = "latest", github_attestations = false }
+```
+
+Use it as a temporary workaround when GitHub's attestation service or trusted
+root data makes installs fail. Checksums, and SLSA provenance when it is
+configured, are still checked. If `mise.lock` records `github-attestations`
+provenance for the tool, run `mise lock` again after setting this option:
+otherwise the install fails, because the lockfile requires a check the tool has
+turned off. The [`github.github_attestations`](/configuration/settings.html#github.github_attestations)
+setting turns the check off for every tool. This option is GitHub only.
+
+#### `slsa_signer_identity` and `slsa_signer_issuer` {#slsa-signer-identity-and-slsa-signer-issuer}
+
+To verify SLSA provenance published with a release, set the certificate
+identity and the OIDC issuer that you expect for the release workflow:
+
+```toml
+[tools."github:myorg/mytool"]
+version = "latest"
+slsa_signer_identity = "https://github.com/myorg/mytool/.github/workflows/release.yml@refs/tags/v{{ version }}"
+slsa_signer_issuer = "https://token.actions.githubusercontent.com"
+```
+
+::: v-pre
+The identity must match the workflow ref in the certificate exactly. It is a
+[template](#templates), so `{{ version }}` is the resolved version.
+:::
+
+Without both options, mise skips SLSA provenance and uses the other checks. A
+lockfile entry that records a checksum and SLSA provenance installs without
+verifying again, unless
+[`locked_verify_provenance`](/configuration/settings.html#locked_verify_provenance)
+is set; that setting also makes missing signer options an error. These options
+are GitHub only.
+
+### Templates
+
+`asset_pattern`, `additional_asset_patterns`, `url`, `bin_path` and
+`slsa_signer_identity` are [Tera templates](/templates.html). Write values in
+double braces:
+
+::: v-pre
+
+- `{{ version }}`: the resolved version, without the tag prefix
+- `{{ os() }}`: `linux`, `macos` or `windows`
+- `{{ arch() }}`: `x64` or `arm64`
+
+`os` and `arch` are functions, so include the parentheses. Each takes keyword
+arguments that rename a value, for a project that uses other names:
+`{{ os(macos="darwin") }}` or `{{ arch(x64="x86_64", arm64="aarch64") }}`. Use
+a single-quoted TOML string when the template contains double quotes, as in the
+`bin_path` example above.
+
+:::
+
+#### Single-brace placeholders <Badge type="danger" text="deprecated" />
+
+::: v-pre
+Single-brace placeholders such as `{version}` and `{x86_64_arch}` are
+deprecated. mise has warned about them since 2026.3.0 and will stop accepting
+them in 2027.3.0. Replace them as follows:
+
+| Deprecated      | Replacement                                 |
+| --------------- | ------------------------------------------- |
+| `{version}`     | `{{ version }}`                             |
+| `{os}`          | `{{ os() }}`                                |
+| `{arch}`        | `{{ arch() }}`                              |
+| `{darwin_os}`   | `{{ os(macos="darwin") }}`                  |
+| `{amd64_arch}`  | `{{ arch(x64="amd64") }}`                   |
+| `{x86_64_arch}` | `{{ arch(x64="x86_64", arm64="aarch64") }}` |
+| `{gnu_arch}`    | `{{ arch(x64="x86_64") }}`                  |
+
+:::
+
+## Installing several tools from one release {#multiple-assets-from-the-same-release}
+
+If the assets make up one installation, such as a base archive and an add-on,
+use [`additional_asset_patterns`](#additional-asset-patterns). If they are
+separate tools, give each one a [tool alias](/dev-tools/aliases.html) that
+points at the same repository, and select its asset with `matching`:
 
 ```toml
 [tool_alias]
@@ -268,293 +589,63 @@ matching = "oxfmt"
 rename_exe = "oxfmt"
 ```
 
-::: warning
-Aliases are not an overlay mechanism. Each alias creates a separate install directory.
-Use them for independent binaries such as `oxlint` and `oxfmt`; use
-`additional_asset_patterns` when both archives must compose one runnable tool.
-:::
+Each alias is a separate tool with its own version and install directory. If one
+binary's name is part of another's, use `matching_regex` with an anchor, such as
+`^oxlint-`, instead of `matching`.
 
-If the binary isn't named the way you want to invoke it, add
-[`rename_exe`](/dev-tools/backends/github.html#rename-exe) (renames the executable extracted from an archive) or
-[`bin`](#bin) (selects/renames the binary, including a single bare non-archive binary).
+Two entries for the same `github:owner/repo` with different `matching` values do
+not work: mise treats them as one tool, uses the first entry's options, and
+never installs the other binary.
 
-Use [`asset_pattern`](/dev-tools/backends/github.html#asset-pattern) instead only when you need full manual control and
-can name the asset portably (it replaces autodetection, so any <code v-pre>{{ os() }}</code>/<code v-pre>{{ arch() }}</code>
-templating must cover every platform you target):
+## GitHub Enterprise Server {#self-hosted-github}
 
-```toml
-[tool_alias]
-tool-a = "github:owner/repo"
-tool-b = "github:owner/repo"
+Set `api_url` to your server's API, and provide a token for that host as
+described in [GitHub tokens](/dev-tools/github-tokens.html#github-enterprise).
+mise lists releases, looks up assets and downloads them through that API.
+GitHub artifact attestations are not checked for a custom `api_url`, because
+GitHub Enterprise Server does not serve them.
 
-[tools.tool-a]
-version = "latest"
-asset_pattern = "tool-a-*"
+### `api_url` {#api-url}
 
-[tools.tool-b]
-version = "latest"
-asset_pattern = "tool-b-*"
-```
-
-### `checksum`
-
-Set an expected digest for a **specific version and artifact**. Replace the
-placeholder below with the full SHA-256 digest obtained from a trusted source:
-
-```toml
-[tools."github:owner/repo"]
-version = "1.0.0"
-asset_pattern = "tool-1.0.0-x64.tar.gz"
-checksum = "sha256:REPLACE_WITH_THE_64_HEX_DIGIT_DIGEST"
-```
-
-_Instead of specifying the checksum here, you can use [mise.lock](/dev-tools/mise-lock) to manage checksums._
-
-### Platform-specific Checksums
-
-Each platform needs its own digest. These values are placeholders; fill them
-from the publisher before installing, or generate [mise.lock](/dev-tools/mise-lock.html).
-
-```toml
-[tools."github:cli/cli"]
-version = "2.100.0"
-
-[tools."github:cli/cli".platforms]
-linux-x64 = {
-  asset_pattern = "gh_*_linux_amd64.tar.gz",
-  checksum = "sha256:REPLACE_WITH_THE_64_HEX_DIGIT_DIGEST",
-}
-macos-arm64 = {
-  asset_pattern = "gh_*_macOS_arm64.zip",
-  checksum = "sha256:REPLACE_WITH_THE_64_HEX_DIGIT_DIGEST",
-}
-```
-
-### `size`
-
-Optionally check the expected byte count. The number below is illustrative;
-use the selected artifact's actual size and pin its version. A size check does
-not authenticate the publisher or replace a checksum:
-
-```toml
-[tools]
-"github:owner/repo" = { version = "1.0.0", size = "12345678" }
-```
-
-### `strip_components`
-
-Number of directory components to strip when extracting archives:
-
-```toml
-[tools]
-"github:cli/cli" = { version = "latest", strip_components = 1 }
-```
-
-::: info
-When both `strip_components` and `bin_path` are unset, mise automatically detects when to apply `strip_components = 1`. This happens when the extracted archive contains exactly one directory at the root level and no files. This is common with tools like ripgrep that package their binaries in a versioned directory (e.g., `ripgrep-14.1.0-x86_64-unknown-linux-musl/rg`). The auto-detection ensures the binary is placed directly in the install path where mise expects it.
-:::
-
-### `bin`
-
-Rename the downloaded binary to a specific name. This is useful when downloading single binaries that have platform-specific names:
-
-```toml
-[tools."github:docker/compose"]
-version = "2.29.1"
-bin = "docker-compose"  # Rename the downloaded binary to docker-compose
-```
-
-::: info
-When downloading single binaries (not archives), mise automatically removes OS/arch suffixes from the filename. For example, `docker-compose-linux-x86_64` becomes `docker-compose`. Use the `bin` option only when you need a specific custom name.
-:::
-
-### `rename_exe`
-
-Rename the executable after extraction from an archive. This is useful when the archive contains a binary with a platform-specific name that you want to rename:
-
-```toml
-[tools."github:yt-dlp/yt-dlp"]
-version = "latest"
-asset_pattern = "yt-dlp_linux.zip"
-rename_exe = "yt-dlp"  # Rename the extracted binary to yt-dlp
-```
-
-The string form renames the tool's primary binary (matched against the repo name). When an archive ships **multiple** binaries that you want to expose under clean names, use the table form instead — each key is a source name (an exact file name or a glob), and each value is the new name:
-
-```toml
-[tools."github:DanielGavin/ols"]
-version = "latest"
-# archive contains ols-x86_64-unknown-linux-gnu and odinfmt-x86_64-unknown-linux-gnu
-rename_exe = { "ols-*" = "ols", "odinfmt-*" = "odinfmt" }
-```
-
-Both binaries are renamed and become available on PATH. Missing sources are skipped with a warning, and the executable bit is restored for archives (such as ZIPs) that drop it.
-
-::: tip
-Use `rename_exe` for archives where the binary inside has a different name than desired. Use `bin` for single binary downloads (non-archives).
-:::
-
-### `no_app`
-
-Skip macOS .app bundle assets during autodetection and prefer standalone CLI binaries instead. This is useful when a repository provides both a macOS .app bundle (often an Xcode extension or GUI application) and a standalone command-line tool:
-
-```toml
-[tools."github:nicklockwood/SwiftFormat"]
-version = "latest"
-rename_exe = "swiftformat"
-no_app = true  # Skip SwiftFormat.for.Xcode.app.zip, use swiftformat.zip instead
-```
-
-When `no_app = true`:
-
-- Assets containing `.app.` (e.g., `Tool.app.zip`, `Tool.for.Xcode.app.zip`) are penalized during autodetection
-- Standalone archives (e.g., `tool.zip`, `tool-macos.tar.gz`) are preferred
-- The option is mainly useful for macOS asset selection; non-macOS `.app.` assets are already penalized by platform matching
-- The option only affects autodetection; explicit `asset_pattern` values are used as-is
-
-::: info
-Without this option, mise's autodetection might select .app bundles on macOS, which can be problematic if the bundle contains a GUI application or Xcode extension rather than a standalone CLI tool.
-:::
-
-### `bin_path`
-
-Paths are relative to the install directory **after** `strip_components` is
-applied. Setting `bin_path` disables automatic root stripping. For an archive
-shaped like `tool-VERSION/bin/tool`, either retain the outer directory and use
-`bin_path = "tool-{{ version }}/bin"`, or set both `strip_components = 1` and
-`bin_path = "bin"`.
-
-::: v-pre
-Specify the directory containing binaries within the extracted archive, or where to place the downloaded file. This supports Tera templating with `{{ version }}` and the `{{ os() }}` / `{{ arch() }}` functions:
-:::
-
-```toml
-[tools."github:cli/cli"]
-version = "latest"
-strip_components = 1
-bin_path = "bin" # after the archive's outer directory is stripped
-```
-
-Both take keyword arguments that remap the value mise would emit (`linux`, `macos`,
-`windows` for `os()`; `x64`, `arm64` for `arch()`), for when upstream names the directory
-differently:
-
-```toml
-[tools."github:pizlonator/fil-c"]
-version = "latest"
-# expands to filc-0.681-linux-x86_64/build/bin
-strip_components = 0
-bin_path = 'filc-{{ version }}-{{ os() }}-{{ arch(x64="x86_64", arm64="aarch64") }}/build/bin'
-```
-
-::: tip
-Use a single-quoted TOML string when the template contains double quotes, as above.
-:::
-
-::: v-pre
-There are no bare `{{ os }}` / `{{ arch }}` variables, and no `{{ x86_64_arch }}`-style
-aliases — `{{ arch(x64="x86_64", arm64="aarch64") }}` is how you get those names.
-:::
-
-**Binary path lookup order:**
-
-1. If `bin_path` is specified, use that directory
-2. If `bin_path` is not set, look for a `bin/` directory in the install path
-3. If the install path root contains an executable file, use the install path root
-4. If no `bin/` directory exists, search subdirectories for `bin/` directories
-5. If no `bin/` directories are found, search immediate subdirectories for any executable files. If an executable is found directly within a subdirectory, that subdirectory is used as the binary path.
-6. If no executables are found, use the root of the extracted directory
-
-### `filter_bins`
-
-List of binaries to symlink into a filtered `.mise-bins` directory. This is useful when the tool comes with extra binaries that you do not want to expose on PATH.
-
-```toml
-[tools]
-"github:jgm/pandoc" = { version = "latest", filter_bins = "pandoc" }
-"github:owner/repo" = { version = "latest", filter_bins = ["tool", "helper"] }
-```
-
-When enabled:
-
-- A `.mise-bins` subdirectory is created with symlinks only to the specified binaries
-- Other binaries (like `pandoc-lua` or `pandoc-server`) are not exposed on PATH
-
-### `api_url`
-
-For GitHub Enterprise or self-hosted GitHub instances, specify the API URL. mise uses this URL for release listing and release asset lookup, and may also use it to download assets when browser download URLs are not reachable or when using custom/private instances:
+The base URL of the API. It defaults to `https://api.github.com` here,
+`https://gitlab.com/api/v4` on the `gitlab` backend and
+`https://codeberg.org/api/v1` on the `forgejo` backend.
 
 ```toml
 [tools]
 "github:myorg/mytool" = { version = "latest", api_url = "https://github.mycompany.com/api/v3" }
 ```
 
-### `github_attestations`
+## How versions are listed {#version-listing}
 
-By default, mise checks GitHub Artifact Attestations when they are available for a
-GitHub release asset. Set `github_attestations = false` on a single tool to skip
-that check while keeping GitHub attestation verification enabled globally:
+`mise ls-remote` lists the repository's releases that have at least one asset
+attached. mise installs from release assets and never from GitHub's generated
+source archives, so a release without assets has nothing to install. A release
+whose assets do not cover your platform is still listed, so the version list is
+the same on every machine and cross-platform lockfiles work. Draft releases are
+never listed, and prereleases only with [`prerelease`](#prerelease).
 
-```toml
-[tools]
-"github:myorg/mytool" = { version = "latest", github_attestations = false }
-```
+If every platform you support sets [`url`](#platform-specific-urls), mise lists
+releases whether or not they have assets. A `url` for only some platforms also
+lists asset-less releases everywhere, and installing one of them on a platform
+without a `url` fails.
 
-Use this as a temporary escape hatch for a specific tool if GitHub's attestation
-service or trusted-root data is causing installs to fail. Other verification
-paths, such as checksums and SLSA provenance, still run when they are configured
-and available. If `mise.lock` already records `github-attestations` provenance
-for the tool, re-run `mise lock` after disabling this option so the lockfile no
-longer requires a verifier that the tool config has turned off.
-
-### `slsa_signer_identity` and `slsa_signer_issuer`
-
-To verify SLSA release provenance, set the expected Fulcio certificate URI subject
-and OIDC issuer for the publishing workflow:
-
-```toml
-[tools]
-"github:myorg/mytool" = { version = "latest", slsa_signer_identity = "https://github.com/myorg/mytool/.github/workflows/release.yml@refs/tags/v{{version}}", slsa_signer_issuer = "https://token.actions.githubusercontent.com" }
-```
-
-The identity must match the workflow ref in the certificate exactly. The
-<span v-pre>`{{version}}`</span> template uses the resolved tool version. Without both
-options, mise skips SLSA provenance and can use other available verification.
-A lockfile that records a checksum and SLSA provenance is trusted and installs without
-verifying again. With
-[`locked_verify_provenance`](/configuration/settings.html#locked_verify_provenance),
-missing signer options cause an error and the signer is checked on every installation.
-
-### `prerelease`
-
-By default, releases flagged `prerelease: true` on GitHub are excluded from `mise ls-remote` and from `latest` resolution. Set `prerelease = true` to include them:
-
-```toml
-[tools]
-"github:myorg/mytool" = { version = "latest", prerelease = true }
-```
-
-When set:
-
-- Pre-release tags (e.g. `v1.0.0-rc1`, `v0.1.2-dev.86`) appear in `mise ls-remote`.
-- `latest` resolves to the newest version across stable **and** pre-releases, rather than taking the GitHub `/releases/latest` shortcut (which returns whichever release the repo owner has marked as "Latest" — usually the newest non-prerelease, but it can be any release they've pinned via the API).
-- Fuzzy version queries (e.g. `1.2`) match pre-release tags under that prefix.
-
-This is useful for repositories whose active releases are all pre-releases (e.g. internal tools shipping continuous dev builds), or when you need to track a project's release candidates. Draft releases are always excluded. The option has no effect on GitLab.
-
-## Self-hosted GitHub
-
-If you are using a self-hosted GitHub instance, set the `api_url` tool option. For authentication, see [GitHub Tokens](/dev-tools/github-tokens.html#github-enterprise).
-
-## Supported GitHub Syntax
-
-- **GitHub shorthand for latest release version:** `github:cli/cli`
-- **GitHub shorthand for specific release version:** `github:cli/cli@2.40.1`
+mise reads one page of 100 releases. It reads more, up to three pages, only
+while it has not found a stable release with assets. Set
+`MISE_LIST_ALL_VERSIONS=1` to read every page. For public repositories, mise
+reads release lists from [mise-versions](https://mise-versions.jdx.dev) before
+it calls the GitHub API, unless
+[`use_versions_host`](/configuration/settings.html#use_versions_host) is off.
 
 ## Settings
+
+The other settings in the `github` group choose and create tokens; see
+[GitHub, GitLab, and Forgejo tokens](/dev-tools/github-tokens.html).
 
 <script setup>
 import Settings from '/components/settings.vue';
 </script>
 
-<Settings child="github" :level="3" />
+<Settings child="github" :keys="['github_attestations', 'slsa']" :level="3" />
+
+Implementation: [`src/backend/github.rs`](https://github.com/jdx/mise/blob/main/src/backend/github.rs).

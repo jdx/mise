@@ -20,6 +20,6 @@ List project daemons without starting a supervisor or registering configuration.
 
 ## Related documentation
 
-- [Getting started](/getting-started.html).
+- [Daemons](/daemons.html).
 - [`mise daemons [--json] [SUBCOMMAND]`](/cli/daemons.html).
 - [Global flags and argument syntax](/cli/#global-flags).

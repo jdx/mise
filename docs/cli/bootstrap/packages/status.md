@@ -29,6 +29,6 @@ mise bootstrap packages status --missing # exit 1 if anything is out of sync
 
 ## Related documentation
 
-- [Host packages](/bootstrap/packages/).
+- [Bootstrap packages](/bootstrap/packages/).
 - [`mise bootstrap packages <SUBCOMMAND>`](/cli/bootstrap/packages.html).
 - [Global flags and argument syntax](/cli/#global-flags).

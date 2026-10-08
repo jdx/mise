@@ -20,6 +20,6 @@ Configure shell activation from `[bootstrap.mise_shell_activate]`
 
 ## Related documentation
 
-- [Shell setup](/bootstrap/shell.html).
+- [Shell activation and login shell](/bootstrap/shell.html).
 - [`mise bootstrap mise-shell-activate <SUBCOMMAND>`](/cli/bootstrap/mise-shell-activate.html).
 - [Global flags and argument syntax](/cli/#global-flags).

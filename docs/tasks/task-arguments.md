@@ -1,23 +1,23 @@
 ---
-description: "Define arguments when a task needs named inputs, validation, help, or completions."
+description: "Define task arguments and flags with a usage spec to get parsing, validation, --help, and completions."
+socialDescription: "Define task arguments and flags with a usage spec for validation, --help, and completions."
 ---
 
-# Task Arguments
+# Task arguments
 
-Define arguments when a task needs named inputs, validation, help, or completions.
-Without a usage specification, mise forwards extra command-line arguments to the
-underlying command; see [argument forwarding](./running-tasks.html).
+Define arguments when a task needs named inputs, validation, `--help` output, or
+shell completions. mise parses the command line against the task's
+[usage](https://usage.jdx.dev) spec and passes each value to the script as a
+`usage_*` environment variable. Without a spec, mise
+[forwards extra arguments](/tasks/running-tasks.html#pass-arguments) to the
+command unchanged.
 
-## Recommended Methods
+## Define arguments {#usage-field}
 
-### 1. Usage Field (Preferred) {#usage-field}
+Write the spec in a TOML task's `usage` field or in `#USAGE` comments in a
+[file task](/tasks/file-tasks.html). Both forms define the same spec:
 
-Use `usage` in TOML tasks and `#USAGE` comments in file tasks. Both define the
-same argument specification, which mise uses for parsing, help, and completion.
-
-See [Complete Usage Specification Reference](#complete-usage-specification-reference) for more details.
-
-#### Quick Example
+::: code-group
 
 ```mise-toml [mise.toml]
 [tasks.deploy]
@@ -29,333 +29,116 @@ arg "<environment>" help="Target environment" {
 flag "-v --verbose" help="Enable verbose output"
 flag "--region <region>" help="AWS region" default="us-east-1" env="AWS_REGION"
 '''
-
 run = '''
 #!/usr/bin/env bash
 if [ "${usage_verbose:-false}" = "true" ]; then
   echo "Verbose mode enabled"
 fi
-printf 'Selected environment: %s; region: %s\n' "${usage_environment?}" "${usage_region?}"
+echo "Deploying to ${usage_environment?} in ${usage_region?}"
 '''
 ```
 
-Arguments defined in the usage field are automatically available as environment variables prefixed with `usage_`:
-
-```shell
-# Execute with arguments
-$ mise run deploy staging --verbose --region us-west-2
-
-# Inside the task, these are available as:
-# $usage_environment = "staging"
-# $usage_verbose = "true"
-# $usage_region = "us-west-2"
-```
-
-Inherited `usage_*` values are cleared for normal task execution, including
-tasks without a usage spec. Tasks with `raw_args = true` retain inherited
-`usage_*` values. To intentionally inherit a value in a normally parsed task,
-use a separately named environment variable, optionally with `env=`:
-
-```mise-toml [mise.toml]
-[tasks.deploy]
-usage = 'arg "[environment]" env="DEPLOY_ENV"'
-run = 'echo "Deploying to ${usage_environment:-default}"'
-```
-
-```shell
-DEPLOY_ENV=staging mise run deploy
-```
-
-In addition to environment variables, **usage values are available inside Tera
-templates in task run scripts** via a `usage` map:
-
-```mise-toml [mise.toml]
-[tasks.deploy]
-description = "Deploy application"
-usage = '''
-arg "<environment>" help="Target environment"
-flag "-v --verbose" help="Enable verbose output"
-flag "--region <region>" help="AWS region" default="us-east-1"
-'''
-run = '''
-echo "Deploying to {{ usage.environment }} in {{ usage.region }}"
-{% if usage.verbose %}
-  echo "Verbose mode enabled"
-{% endif %}
-'''
-```
-
-The `usage` map uses **snake_case argument/flag names as keys** (like the
-`usage_` environment variables). Names with `-` are converted to `_`, so a flag
-like `--dry-run` becomes available as <span v-pre>`{{ usage.dry_run }}`</span>
-and `$usage_dry_run`. Variadic arguments/flags are exposed as arrays and can be
-used with Tera's `for` loops and filters like `length`. The `usage` map is
-**separate from** the deprecated Tera template functions (`arg()`, `option()`,
-`flag()`) described later on this page. Do not mix the two approaches in the
-same task.
-
-<span v-pre>`{{usage.*}}`</span> templates can also be used in `depends`, `depends_post`, and
-`wait_for` to forward arguments to dependency tasks. See
-[Passing parent task arguments to dependencies](/tasks/task-configuration#passing-parent-task-arguments-to-dependencies)
-for details.
-
-**Help output example:**
-
-```shellsession
-$ mise run deploy --help
-Deploy application
-
-Usage: deploy <environment> [OPTIONS]
-
-Arguments:
-  <environment>  Target environment [possible values: dev, staging, prod]
-
-Options:
-  -v, --verbose          Enable verbose output
-      --region <region>  AWS region [env: AWS_REGION] [default: us-east-1]
-  -h, --help            Print help
-```
-
-### 2. File Task Headers {#file-task-headers}
-
-For file tasks, put argument declarations in `#USAGE` comments. `#MISE` comments
-configure task properties as TOML. This example assumes Bash and an existing
-`scripts/deploy.sh` in the project:
-
-```bash [.mise/tasks/deploy]
+```bash [mise-tasks/deploy]
 #!/usr/bin/env bash
 #MISE description="Deploy application"
-#USAGE arg "<environment>" help="Deployment environment" {
+#USAGE arg "<environment>" help="Target environment" {
 #USAGE   choices "dev" "staging" "prod"
 #USAGE }
-#USAGE flag "--dry-run" help="Preview changes without deploying"
+#USAGE flag "-v --verbose" help="Enable verbose output"
 #USAGE flag "--region <region>" help="AWS region" default="us-east-1" env="AWS_REGION"
 
-ENVIRONMENT="${usage_environment?}"
-REGION="${usage_region?}"
-DRY_RUN="${usage_dry_run:-false}"
-
-if [[ "$DRY_RUN" == "true" ]]; then
-  echo "DRY RUN: Would deploy to $ENVIRONMENT in $REGION"
-else
-  echo "Deploying to $ENVIRONMENT in $REGION..."
-  ./scripts/deploy.sh "$ENVIRONMENT" "$REGION"
+if [ "${usage_verbose:-false}" = "true" ]; then
+  echo "Verbose mode enabled"
 fi
-```
-
-::: tip Syntax Options
-Use `#MISE key=value` for task properties and `#USAGE` for the usage specification.
-`# [MISE]` and `# [USAGE]` are also accepted as workarounds for formatters.
-:::
-
-#### Mounting Generated Specs
-
-File tasks that wrap another CLI can mount a usage spec generated by that CLI:
-
-```bash [.mise/tasks/run-release]
-#!/usr/bin/env bash
-#USAGE mount "mise run run-release -- --usage-spec"
-
-exec ./target/release/mycli "$@"
-```
-
-The mount command runs when shell completion asks for the task spec, so it must
-work outside the task's final process. Calling the task itself, as shown above,
-lets mise apply task configuration before forwarding `--usage-spec`.
-
-## Complete Usage Specification Reference
-
-### Positional Arguments (`arg`)
-
-Positional arguments are defined with `arg` and must be provided in order.
-
-#### Basic Syntax
-
-```kdl
-arg "<name>" help="Description"               // Required positional arg
-arg "[name]" help="Description"               // Optional positional arg
-arg "<file>"                                  // Completed as filename
-arg "<dir>"                                   // Completed as directory
-```
-
-#### With Defaults
-
-```kdl
-arg "<file>" default="config.toml"            // Default value if not provided
-arg "[output]" default="out.txt"              // Optional with default
-```
-
-#### Variadic Arguments
-
-```kdl
-arg "[files]" var=#true                        // 0 or more files
-arg "<files>" var=#true                        // 1 or more files (required)
-arg "<files>" var=#true var_min=2              // At least 2 files required
-arg "<files>" var=#true var_max=5              // Maximum 5 files allowed
-arg "<files>" var=#true var_min=1 var_max=3    // Between 1 and 3 files
-```
-
-::: tip Handling Variadic Args with Spaces in Bash
-Variadic arguments are passed as a shell-escaped string. To handle arguments containing spaces as a bash array, wrap the variable in parentheses:
-
-```bash
-# Convert to bash array:
-eval "files=($usage_files)"
-
-# Use as array:
-for f in "${files[@]}"; do
-  echo "Processing: $f"
-done
-
-# Or pass to commands:
-touch "${files[@]}"
+echo "Deploying to ${usage_environment?} in ${usage_region?}"
 ```
 
 :::
 
-#### Environment Variable Backing
+Each value reaches the script as a `usage_*` variable:
 
-```kdl
-arg "<token>" env="API_TOKEN"                 // Can be set via $API_TOKEN
-arg "<host>" env="API_HOST" default="localhost"
+```sh
+mise run deploy staging --verbose --region us-west-2
 ```
 
-Priority order: CLI argument > Environment variable > Default value
-
-#### Choices (Enum Values)
-
-```kdl
-arg "<level>" {
-  choices "debug" "info" "warn" "error"
-}
-arg "<shell>" {
-  choices "bash" "zsh" "fish"
-  help "Shell type"
-}
+```text
+Verbose mode enabled
+Deploying to staging in us-west-2
 ```
 
-#### Advanced Features
+`mise run deploy --help` prints help generated from the spec:
 
-```kdl
-arg "<file>" long_help="Extended help text shown with --help"
+```text
+Deploy application
 
-// Hidden from help output
-arg "<file>" hide=#true
+Usage: deploy [-v --verbose] [--region <region>] <environment>
+
+Arguments:
+  <environment>  Target environment
+                 [possible values: dev, staging, prod]
+
+Flags:
+  -v, --verbose          Enable verbose output
+      --region <region>  AWS region
+                         [env: AWS_REGION]
+                         (default: us-east-1)
+  -h, --help             Print help
 ```
 
-#### Double-Dash Behavior
+A missing required argument or a value outside the choices fails before the
+script starts:
 
-```kdl
-// Must use: mycli -- file.txt
-arg "<file>" double_dash="required"
-
-// Both work: mycli file.txt or mycli -- file.txt
-arg "<file>" double_dash="optional"
-
-// After first arg, behaves as if -- was used
-arg "<files>" double_dash="automatic"
-
-// Keep double dashes as values in a variadic argument
-arg "<args>..." double_dash="preserve"
+```sh
+mise run deploy qa
 ```
 
-### Flags (`flag`)
-
-Flags can be boolean or accept values.
-
-#### Boolean Flags
-
-```kdl
-flag "-f --force"
-flag "-v --verbose" help="Enable verbose mode"
-flag "--dry-run" help="Preview without executing"
+```text
+mise ERROR failed to validate task deploy
+mise ERROR Invalid choice for arg environment: qa, expected one of dev, staging, prod
 ```
 
-#### Short-Only or Long-Only
+With mise's [shell completions](/shell-setup.html) enabled,
+`mise run deploy <Tab>` offers the choices. The separate `usage` CLI is not
+needed. [`mise generate task-docs`](/cli/generate/task-docs.html) renders
+Markdown documentation from the same spec.
 
-```kdl
-flag "-f"                                     // Short flag only
-flag "--force"                                // Long flag only
-```
+### Comment syntax in file tasks {#file-task-headers}
 
-#### Flag With Values
+In a file task, `#USAGE` lines hold the usage spec and `#MISE` lines hold task
+properties as TOML. The comment marker can be `#`, `//`, or `::`, and
+whitespace may follow it. The keyword can also be bracketed: `#USAGE`,
+`# USAGE`, `// USAGE`, and `# [USAGE]` all work, so formatters that add a space
+do not break them. [File tasks](/tasks/file-tasks.html#configure-with-mise-comments)
+describes `#MISE` lines.
 
-```kdl
-flag "-o --output <file>" help="Output file"
-flag "--port <port>" help="Server port"
-flag "--color <when>" {
-  choices "auto" "always" "never"
-}
-```
+## Spec quick reference
 
-#### Flag With Defaults
+| Spec                                               | Meaning                                                                                   |
+| -------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| `arg "<file>"`                                     | Required positional argument                                                              |
+| `arg "[file]"`                                     | Optional positional argument                                                              |
+| `default="config.toml"`                            | Value used when the argument or flag is not given                                         |
+| `arg "[files]" var=#true`                          | Zero or more values; `arg "<files>" var=#true` needs at least one                         |
+| `var_min=2`, `var_max=5`                           | Limits on the number of values for a variadic argument                                    |
+| `arg "<level>" { choices "debug" "info" "warn" }`  | Accept only the listed values                                                             |
+| `env="API_TOKEN"`                                  | Take the value from an environment variable; see [backing](#environment-variable-backing) |
+| `flag "-f --force"`                                | Boolean flag; also `flag "-f"` or `flag "--force"` alone                                  |
+| `flag "-o --output <file>"`                        | Flag that takes a value                                                                   |
+| `required=#true`                                   | Fail unless the flag is passed                                                            |
+| `flag "-v --verbose" count=#true`                  | Repeatable flag whose value is the count, such as `3` for `-vvv`                          |
+| `flag "--color" negate="--no-color" default=#true` | Boolean flag that `--no-color` turns off                                                  |
+| `help="…"`                                         | One-line help                                                                             |
+| `long_help="…"`                                    | Longer help that replaces `help` in `--help` output                                       |
+| `hide=#true`                                       | Hide the argument or flag from help                                                       |
+| `double_dash="required"`                           | Accept the argument's values only after `--`                                              |
+| `arg "<file>"`, `arg "<dir>"`                      | An argument named `file` or `path` completes file names; `dir` completes directories      |
+| `complete "user" run="mycli users"`                | Complete the `user` argument or flag from a command's output, one value per line          |
 
-```kdl
-flag "--force" default=#true
-flag "--format <format>" help="Output format" default="json"
-flag "--port <port>" help="Server port" default="8080"
-flag "--color <when>" {
-  choices "auto" "always" "never"
-  default "auto"
-}
-```
+Properties can also go in a block, one per line, as `choices` and `long_help`
+do in the next example. See the [usage spec](https://usage.jdx.dev/spec/) for
+every option.
 
-#### Count Flags
-
-```kdl
-// Can be repeated: -vvv
-// $usage_verbose = number of times used (e.g., 3)
-flag "-v --verbose" count=#true
-```
-
-#### Negation
-
-```kdl
-flag "--color" negate="--no-color" default=#true
-// Default: $usage_color = "true"
-// With --no-color: $usage_color = "false"
-```
-
-#### Global Flags
-
-```kdl
-// Available on all subcommands (if using cmd structure)
-flag "-v --verbose" global=#true
-```
-
-#### Flag Advanced Features
-
-```kdl
-flag "--verbose" long_help="Extended help text"
-flag "--debug" hide=#true                      // Hidden from help
-```
-
-### Completion (`complete`)
-
-Custom completion can be defined for any argument or flag by name:
-
-```kdl
-arg "<plugin>"
-complete "plugin" run="mise plugins ls"       // Complete with command output
-```
-
-#### With Descriptions
-
-```kdl
-complete "plugin" run="mycli plugins list" descriptions=#true
-```
-
-Output format (split on `:` into value and description):
-
-```
-nodejs:JavaScript runtime
-python:Python language
-ruby:Ruby language
-```
-
-### Long Help Text
-
-For detailed help text, use the multi-line format:
+### Long help
 
 ```mise-toml
 [tasks.complex]
@@ -389,102 +172,192 @@ flag "--format <fmt>" {
 run = 'process-data "${usage_input?}" --format "${usage_format?}"'
 ```
 
-### Hide Arguments
+### Double dash
 
-Hide arguments from help output (useful for deprecated or internal options):
+`double_dash` controls how an argument relates to `--`:
 
 ```kdl
-arg "<legacy_arg>" hide=#true
-flag "--internal-debug" hide=#true
+// Values only after --: mycli -- file.txt
+arg "<file>" double_dash="required"
+
+// Both work: mycli file.txt or mycli -- file.txt
+arg "<file>" double_dash="optional"
+
+// After the first value, the rest are treated as if -- was used
+arg "<files>" double_dash="automatic"
+
+// Keep -- as a value in a variadic argument
+arg "<args>..." double_dash="preserve"
 ```
 
-### Combining Features Example
+### Completions with descriptions
 
-This is an application-specific example: it assumes `npm test`, `mycli`, and
-shell functions named `deploy_service` and `deploy_all` are available. The smaller
-[quick example](#quick-example) can be run without those application components.
+With `descriptions=#true`, each line of the command's output is split at the
+first `:` into a value and its description:
+
+```kdl
+arg "<plugin>"
+complete "plugin" run="mycli plugins list" descriptions=#true
+```
+
+```text
+nodejs:JavaScript runtime
+python:Python language
+ruby:Ruby language
+```
+
+## Read argument values
+
+### Environment variables
+
+Each argument and flag becomes a `usage_<name>` variable, with `-` in the name
+replaced by `_`: `--dry-run` becomes `usage_dry_run`, and `<api-key>` becomes
+`usage_api_key`.
+
+- A boolean flag is `true` when passed. Without a `default`, it is unset when
+  not passed.
+- A count flag holds the number of times it was passed, and is unset when not
+  passed.
+- An optional argument without a `default` is unset when not given.
+- A variadic argument arrives as one shell-quoted string, such as `a 'b c'`.
+
+To use a variadic value as a Bash array, `eval` it, then quote each element:
+
+```mise-toml
+[tasks.process]
+usage = 'arg "<files>" var=#true'
+run = '''
+#!/usr/bin/env bash
+eval "files=($usage_files)"
+for f in "${files[@]}"; do
+  echo "Processing: $f"
+done
+'''
+```
+
+### The `usage` map in templates
+
+Run scripts can also read values through the `usage` map in
+[Tera templates](/templates.html). It uses the same snake_case keys, so
+`--dry-run` is <span v-pre>`{{ usage.dry_run }}`</span>. Variadic arguments and
+flags are arrays that work with Tera's `for` loops and filters such as
+`length`:
 
 ```mise-toml [mise.toml]
 [tasks.deploy]
-description = "Deploy application to cloud"
+description = "Deploy application"
 usage = '''
-// Positional arguments
-arg "<environment>" {
-  help "Deployment environment"
-  choices "dev" "staging" "prod"
-}
-
-arg "[services]" {
-  help "Services to deploy (default: all)"
-  var #true
-  var_min 0
-}
-
-// Flags
-flag "-v --verbose" {
-  help "Enable verbose logging"
-  count #true
-  default 0
-}
-
-flag "--dry-run" help="Show what would be deployed without doing it"
-
-flag "--region <region>" {
-  help "Cloud region"
-  env "AWS_REGION"
-  default "us-east-1"
-  choices "us-east-1" "us-west-2" "eu-west-1"
-}
-
-flag "--skip-tests" help="Skip running tests before deploy"
-
-flag "--force" help="Force deployment even with warnings"
-
-// Custom completions
-complete "services" run="mycli list-services"
+arg "<environment>" help="Target environment"
+flag "-v --verbose" help="Enable verbose output"
+flag "--region <region>" help="AWS region" default="us-east-1"
 '''
-
 run = '''
-#!/usr/bin/env bash
-set -euo pipefail
-
-# Handle verbosity
-if [[ "${usage_verbose?}" -ge 2 ]]; then
-  set -x
-elif [[ "${usage_verbose?}" -ge 1 ]]; then
-  export VERBOSE=1
-fi
-
-# Validate environment
-ENVIRONMENT="${usage_environment?}"
-REGION="${usage_region?}"
-DRY_RUN="${usage_dry_run:-false}"
-SKIP_TESTS="${usage_skip_tests:-false}"
-FORCE="${usage_force:-false}"
-
-echo "Deploying to $ENVIRONMENT in $REGION"
-
-# Run tests unless skipped
-if [[ "$SKIP_TESTS" != "true" ]]; then
-  echo "Running tests..."
-  npm test
-fi
-
-# Deploy services
-if [[ -n "${usage_services?}" ]]; then
-  echo "Deploying services: ${usage_services?}"
-  eval "services=(${usage_services?})"
-  for service in "${services[@]}"; do
-    deploy_service "$service" "$ENVIRONMENT" "$REGION" "$DRY_RUN"
-  done
-else
-  echo "Deploying all services"
-  deploy_all "$ENVIRONMENT" "$REGION" "$DRY_RUN"
-fi
+echo "Deploying to {{ usage.environment }} in {{ usage.region }}"
+{% if usage.verbose %}
+  echo "Verbose mode enabled"
+{% endif %}
 '''
 ```
 
-## Sharing Flags Between Tasks {#shared-flags}
+The `usage` map is separate from the deprecated `arg()`, `option()`, and
+`flag()` functions described in [the migration guide](#tera-templates). Do not
+mix the two in one task.
+
+<span v-pre>`{{ usage.* }}`</span> also works in `depends`, `depends_post`, and
+`wait_for`, to pass the task's arguments on to its dependencies. See
+[Passing parent task arguments to dependencies](/tasks/task-configuration.html#passing-parent-task-arguments-to-dependencies).
+
+### Inherited `usage_*` variables
+
+mise clears `usage_*` variables inherited from the calling environment, even for
+tasks without a usage spec. Tasks with [`raw_args = true`](/tasks/task-configuration.html#raw-args)
+keep them. To pass a value in deliberately, use a separately named variable,
+for example through `env=`:
+
+```mise-toml [mise.toml]
+[tasks.deploy]
+usage = 'arg "[environment]" env="DEPLOY_ENV"'
+run = 'echo "Deploying to ${usage_environment:-default}"'
+```
+
+```sh
+DEPLOY_ENV=staging mise run deploy
+# Deploying to staging
+```
+
+## Bash variable expansion {#bash-variable-expansion}
+
+Parameter expansion lets [shellcheck](https://www.shellcheck.net/) see that a
+`usage_*` variable may be unset, and supplies defaults for flags:
+
+| Syntax            | Behavior                              | Use case                                                    | Example                       |
+| ----------------- | ------------------------------------- | ----------------------------------------------------------- | ----------------------------- |
+| `${var?}`         | Error if unset                        | Required arguments, and arguments or flags with a `default` | `${usage_profile?}`           |
+| `${var:?}`        | Error if unset or empty               | Values that must not be empty                               | `${usage_target:?}`           |
+| `${var:-default}` | Use default if unset or empty         | Boolean flags and optional arguments without a `default`    | `${usage_clean:-false}`       |
+| `${var:=default}` | Set and use default if unset or empty | A default you want to reuse later in the script             | `${usage_dir:=.}`             |
+| `${var:+value}`   | Use value if set and non-empty        | Optional string values                                      | `${usage_output:+has-output}` |
+
+Follow three rules:
+
+- Use `${usage_x?}` for an argument that is required or has a `default`; mise
+  has already checked it.
+- Use `${usage_x:-false}` for a boolean flag without a `default`, and
+  `${usage_x:-}` for an optional argument without one.
+- Compare booleans with `= "true"`. `${usage_x:+…}` also expands for the string
+  `false`, so it does not test whether a flag is on.
+
+```bash
+#!/usr/bin/env bash
+# --profile has default="dev"; --clean has no default
+cargo build --profile "${usage_profile?}"
+if [ "${usage_clean:-false}" = "true" ]; then
+  cargo clean
+fi
+```
+
+## Environment variable backing {#environment-variable-backing}
+
+An argument or flag with `env="NAME"` takes its value from that environment
+variable when it is not on the command line. The precedence is the command
+line, then the environment variable, then the `default`:
+
+```mise-toml [mise.toml]
+[tasks.deploy]
+usage = '''
+arg "[environment]" env="DEPLOY_ENV" default="development"
+flag "-p --profile <profile>" env="BUILD_PROFILE" default="dev"
+flag "-v --verbose" env="VERBOSE"
+'''
+run = 'echo "env=${usage_environment?} profile=${usage_profile?} verbose=${usage_verbose:-false}"'
+```
+
+```sh
+mise run deploy
+# env=development profile=dev verbose=false
+
+DEPLOY_ENV=staging BUILD_PROFILE=release VERBOSE=true mise run deploy
+# env=staging profile=release verbose=true
+
+DEPLOY_ENV=staging mise run deploy production
+# env=production profile=dev verbose=false
+```
+
+A boolean flag counts as passed when its variable is `true` or `1`. The
+variable also satisfies a required argument:
+
+```mise-toml [mise.toml]
+[tasks.publish]
+usage = 'arg "<api-key>" env="API_KEY" help="API key for publishing"'
+run = 'publish --api-key "${usage_api_key?}"'
+```
+
+`mise run publish` fails with `Missing required arg: <api-key>` unless `API_KEY`
+is set or the key is passed on the command line. `mise run publish --help`
+shows `[env: API_KEY]` next to the argument. File tasks use the same syntax in
+`#USAGE` lines.
+
+## Share flags between tasks {#shared-flags}
 
 Define shared flags once in a `.usage.kdl` file to keep their names, help text,
 and validation consistent across tasks. An `include` loads the file, and `use`
@@ -503,10 +376,10 @@ flagset "common" {
 }
 ```
 
-### Include Shared Flags in a Task
+### Include shared flags in a task
 
 In a file task, include the file from a `#USAGE` comment. Use
-`$MISE_CONFIG_ROOT` to locate it relative to the task's configuration root:
+`$MISE_CONFIG_ROOT` to locate it relative to the task's config root:
 
 ```bash [mise-tasks/deploy]
 #!/usr/bin/env bash
@@ -519,7 +392,7 @@ echo "env=${usage_env?} replicas=${usage_replicas?}"
 For a TOML task, build the include path with the
 <span v-pre>`{{ config_root }}`</span> template variable instead:
 
-```toml [mise.toml]
+```mise-toml [mise.toml]
 [tasks.deploy]
 usage = """
 include file="{{ config_root }}/shared.usage.kdl"
@@ -529,131 +402,75 @@ flag "--replicas <n>" help="How many to run"
 run = 'echo "env=${usage_env?} replicas=${usage_replicas?}"'
 ```
 
-Choose either task definition. Both accept `--env`, `--dry-run`, and
-`--replicas`, and reject values outside the choices for `--env`:
+Use either definition. Both accept `--env`, `--dry-run`, and `--replicas`, and
+reject values outside the choices for `--env`:
 
-```shell
+```sh
 mise run deploy --env staging --replicas 3
 mise run deploy --help
 ```
 
 Shared flags appear in `--help` where the `use` node is written. Including a
-flag defines its interface; the task's script must implement its behavior. These
-examples only print the selected environment and replica count.
+flag defines its interface; the task's script must implement its behavior.
+These examples only print the selected environment and replica count.
 
-### Include Paths in File Tasks
+### Include paths in file tasks
 
-Relative paths resolve from the directory containing the task file, regardless
-of the directory where you run mise. For `mise-tasks/deploy`, this includes
+Relative paths resolve from the directory that contains the task file, whatever
+directory you run mise from. For `mise-tasks/deploy`, this includes
 `shared.usage.kdl` from the project root:
 
 ```bash
 #USAGE include file="../shared.usage.kdl"
 ```
 
-Include paths also support `$NAME` and `${NAME}` references to environment
-variables, with `$$` for a literal dollar sign. mise makes these variables
-available when parsing a file task's usage specification:
+Include paths also expand `$NAME` and `${NAME}` references to environment
+variables, with `$$` for a literal dollar sign. When mise parses a file task's
+usage spec, these variables are available:
 
 - Variables inherited when mise starts.
-- `MISE_CONFIG_ROOT` and `MISE_PROJECT_ROOT`, when the corresponding roots are available.
+- `MISE_CONFIG_ROOT` and `MISE_PROJECT_ROOT`, when the corresponding roots are
+  available.
 - `MISE_TASK_DIR` and `MISE_TASK_FILE`, for the task's directory and file path.
 
-These paths resolve consistently for execution, help, task listing, and
-validation. File-task `#USAGE` comments are not rendered as Tera templates: use
-`$MISE_CONFIG_ROOT`, for example, rather than
-<span v-pre>`{{ config_root }}`</span>.
+These paths resolve the same way for execution, help, task listing, and
+validation. File-task `#USAGE` comments are not rendered as Tera templates, so
+use `$MISE_CONFIG_ROOT` rather than <span v-pre>`{{ config_root }}`</span>.
 
-::: warning Include variables must be available before the task runs
-Task and project `env` directives are applied after usage parsing, so they cannot
-supply variables for include paths. If an include references an undefined
-variable, mise reports an invalid usage specification. The task remains loadable,
-but its usage-defined argument parsing, help, and validation are unavailable.
-:::
+Task and project `env` directives are applied after mise parses the usage spec,
+so they cannot supply variables for include paths. If an include references an
+undefined variable, mise reports an invalid usage spec. The task still loads,
+but without its argument parsing, help, and validation.
 
-To share tools, environment variables, or dependencies between tasks in the same
-project, see [task templates](/tasks/templates).
+To share tools, environment variables, or dependencies between tasks in the
+same project, use [task templates](/tasks/templates.html).
 
-## Bash Variable Expansion for Usage Variables {#bash-variable-expansion}
+## Mount a spec from another CLI
 
-When accessing usage-defined variables in bash scripts, use parameter expansion syntax to help [shellcheck](https://www.shellcheck.net/) understand these variables and to provide default values for boolean flags.
+A file task that wraps another CLI can mount the usage spec that CLI generates:
 
-### Common Patterns
+```bash [mise-tasks/run-release]
+#!/usr/bin/env bash
+#USAGE mount "mise run run-release -- --usage-spec"
 
-| Syntax            | Behavior                              | Use Case                                           | Example                       |
-| ----------------- | ------------------------------------- | -------------------------------------------------- | ----------------------------- |
-| `${var?}`         | Error if unset                        | Required args or flags with defaults in usage spec | `${usage_profile?}`           |
-| `${var:?}`        | Error if unset or empty               | When you need to ensure non-empty values           | `${usage_target:?}`           |
-| `${var:-default}` | Use default if unset or empty         | Boolean flags without `default=` in usage spec     | `${usage_clean:-false}`       |
-| `${var:=default}` | Set and use default if unset or empty | When you want to set the variable for later use    | `${usage_dir:=.}`             |
-| `${var:+value}`   | Use value if set and non-empty        | Optional string values                             | `${usage_output:+has-output}` |
-
-### Guidelines for Usage Variables
-
-#### Args and Flags with Defaults
-
-Use `${usage_var?}`, since usage guarantees they are set:
-
-```bash
-# --profile has default="dev" in usage spec
-cargo build --profile "${usage_profile?}"
+exec ./target/release/mycli "$@"
 ```
 
-#### Boolean Flags without Defaults
+The mount command runs when shell completion asks for the task's spec, so it
+must work outside the task's own process. Calling the task itself, as shown,
+lets mise apply the task's configuration before it forwards `--usage-spec`.
 
-Use `${usage_var:-false}` to provide a default value:
+## Migrate from Tera argument functions <Badge type="danger" text="deprecated" /> {#tera-templates}
 
-```bash
-# --clean flag has no default in usage spec
-if [ "${usage_clean:-false}" = "true" ]; then
-  cargo clean
-fi
-```
+`arg()`, `option()`, and `flag()` in run scripts are deprecated, and mise warns
+when a task uses them. They will be removed in mise 2027.5.0. They render as
+empty strings while mise collects the spec, and their quoting differs by shell.
+Rewrite them as a `usage` spec, as in the examples below.
 
-#### Required Arguments
-
-Use `${usage_var:?}` to ensure non-empty values:
-
-```bash
-# <target> is a required positional argument
-cargo build --target "${usage_target:?}"
-```
-
-#### Conditional Flags
-
-Compare boolean values explicitly. The non-empty string `"false"` still satisfies
-`${var:+value}`, so that expansion does not test whether a flag is enabled:
-
-```bash
-args=()
-if [ "${usage_verbose:-false}" = "true" ]; then
-  args+=(--verbose)
-fi
-mycli deploy "${args[@]}"
-```
-
-This example requires Bash. `${var:+value}` is useful for optional string values,
-not for interpreting `true` and `false`.
-
-These expansions help [shellcheck](https://www.shellcheck.net/) understand your script and prevent warnings about potentially unset variables, while preserving proper error handling.
-
-## Deprecated Method
-
-### Tera Template Functions <Badge type="danger" text="deprecated" /> {#tera-templates}
-
-::: danger Deprecated - Removal in 2027.5.0
-The Tera template method for defining task arguments is **deprecated** and will be **removed in mise 2027.5.0**.
-
-**Why it's being removed:**
-
-- **Two-pass parsing issues**: Template functions return empty strings during spec collection, causing unexpected behavior when they are used as normal template values
-- **Complex escaping rules**: Shell escaping rules are confusing and error-prone
-- **Inconsistent behavior**: Behaves differently in TOML and file tasks
-- **Poor user experience**: Mixes argument definitions with script logic
-
-**Migration required:** Migrate to the [usage field](#usage-field) method before 2027.5.0.
-
-**Opt-out setting:** To disable the two-pass parsing behavior now, before removal, set:
+To stop mise from reading these functions now, set
+[`task.disable_spec_from_run_scripts`](/configuration/settings.html#task.disable_spec_from_run_scripts)
+(`MISE_TASK_DISABLE_SPEC_FROM_RUN_SCRIPTS=1`). mise then builds the spec only
+from the `usage` field:
 
 ```toml
 # ~/.config/mise/config.toml
@@ -661,57 +478,7 @@ The Tera template method for defining task arguments is **deprecated** and will 
 task.disable_spec_from_run_scripts = true
 ```
 
-Or via environment variable: `MISE_TASK_DISABLE_SPEC_FROM_RUN_SCRIPTS=1`
-
-When enabled, mise uses only the `usage` field for spec generation and ignores any `arg()`, `option()`, or `flag()` functions in run scripts. See [Settings](/configuration/settings) for more details.
-:::
-
-<details>
-<summary>Click to see deprecated Tera template syntax (not recommended)</summary>
-
-Previously, you could define arguments inline in run scripts using Tera template functions:
-
-```mise-toml [mise.toml]
-# ❌ DEPRECATED - Do not use
-[tasks.test]
-run = 'cargo test {{arg(name="file", default="all")}}'
-```
-
-```mise-toml [mise.toml]
-# ❌ DEPRECATED - Do not use
-[tasks.build]
-run = [
-    'cargo build {{option(name="profile", default="dev")}}',
-    './scripts/package.sh {{flag(name="verbose")}}'
-]
-```
-
-**Problems with this approach:**
-
-1. **Empty strings during parsing**: During spec collection (first pass), template functions return empty strings, so you can't use them in templates like:
-
-   ```toml
-   # This doesn't work as expected!
-   run = 'echo "File: {{arg(name="file")}}" > {{arg(name="file")}}.log'
-   # First pass: 'echo "File: " > .log' (invalid!)
-   ```
-
-2. **Escaping complexity**: Different shell types require different escaping:
-
-   ```toml
-   # Escaping behavior varies by shell
-   run = 'cmd {{arg(name="file")}}' # May or may not be properly escaped
-   ```
-
-3. **No help generation**: Does not generate proper `--help` output
-
-</details>
-
-### Migration Guide
-
-Here's how to migrate from Tera templates to the usage field:
-
-#### Example 1: Simple Arguments
+### Example 1: Simple arguments
 
 ::: code-group
 
@@ -734,7 +501,7 @@ cargo test {{arg(
 
 :::
 
-#### Example 2: Multiple Arguments with Flags
+### Example 2: Multiple arguments with flags
 
 ::: code-group
 
@@ -745,6 +512,7 @@ arg "<profile>" default="dev"
 flag "-v --verbose"
 '''
 run = '''
+#!/usr/bin/env bash
 args=()
 if [ "${usage_verbose:-false}" = "true" ]; then
   args+=(--verbose)
@@ -764,14 +532,14 @@ run = [
 
 :::
 
-#### Example 3: Options with Choices
+### Example 3: Options with choices
 
 ::: code-group
 
 ```mise-toml [Usage]
 [tasks.deploy]
 usage = '''
-flag "--env <env>" {
+flag "--env <env>" required=#true {
   choices "dev" "prod"
 }
 flag "--force"
@@ -798,7 +566,7 @@ deploy {{option(
 
 :::
 
-#### Example 4: Variadic Arguments
+### Example 4: Variadic arguments
 
 ::: code-group
 
@@ -818,28 +586,3 @@ run = 'eslint {{arg(name="files", var=true)}}'
 ```
 
 :::
-
-::: tip Handling Arguments with Spaces
-If your variadic arguments may contain spaces, convert the variable to a bash array:
-
-```mise-toml
-[tasks.process]
-usage = 'arg "<files>" var=#true'
-run = '''
-#!/usr/bin/env bash
-eval "files=($usage_files)"
-for f in "${files[@]}"; do
-  process "$f"
-done
-'''
-```
-
-:::
-
-## See Also
-
-- [Task Configuration](/tasks/task-configuration) - Complete task configuration reference
-- [TOML Tasks](/tasks/toml-tasks) - TOML task syntax
-- [File Tasks](/tasks/file-tasks) - File-based task syntax
-- [Running Tasks](/tasks/running-tasks) - How to execute tasks
-- [Usage Spec Documentation](https://usage.jdx.dev/spec/) - Complete usage specification reference

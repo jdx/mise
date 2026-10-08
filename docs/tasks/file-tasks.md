@@ -1,22 +1,14 @@
 ---
-description: "Define project tasks as standalone scripts with mise metadata."
-socialDescription: "Define project tasks as standalone scripts with mise metadata."
+description: "Write tasks as executable scripts in a task directory and configure them with #MISE comments."
 ---
 
-# File Tasks
+# File tasks
 
-In addition to defining tasks in config files, you can define them as standalone script files in one of the following directories:
+A file task is an executable script in a task directory. Its path is the task
+name, and `#MISE` comments at the top hold its configuration. Use one when a
+script is long enough to benefit from your editor's highlighting and linting.
 
-- `mise-tasks/:task_name`
-- `.mise-tasks/:task_name`
-- `mise/tasks/:task_name`
-- `.mise/tasks/:task_name`
-- `.config/mise/tasks/:task_name`
-
-These are the default file-task directories. If [`task_config.includes`](/tasks/task-configuration.html#task_config.includes)
-is set for the current config scope, mise searches only the paths listed there instead.
-
-Here is an example of a file task that builds a Rust CLI:
+Save this as `mise-tasks/build`:
 
 ```bash [mise-tasks/build]
 #!/usr/bin/env bash
@@ -24,52 +16,96 @@ Here is an example of a file task that builds a Rust CLI:
 cargo build
 ```
 
-::: tip Important
-Make sure the file is executable; otherwise mise cannot detect it.
+On Linux and macOS, make the script executable:
 
-```shell
+```sh
 chmod +x mise-tasks/build
 ```
 
-On Windows there is no permission bit to set, and `chmod` is not the answer there — see
-[Windows](#windows) for what makes a file task detectable instead.
-:::
+`mise run build` now runs the script with the tools and environment from your
+config. mise lists only executable scripts as tasks. When you run a script that
+is not executable, mise asks whether to mark it executable, and fails if you
+decline. Windows has no execute bit; see [Windows](#windows).
 
-Keeping the code in a bash file rather than TOML works better in editors,
-which can then apply syntax highlighting and linting more easily.
+You can still run the script without mise, but its `#MISE` and `#USAGE`
+comments then have no effect, so the caller must supply its tools, environment,
+and any `usage_*` variables.
 
-A script can also be run outside mise, but its `#MISE` and `#USAGE` comments then
-have no effect. Direct callers must supply its tools, environment, and any parsed
-`usage_*` variables themselves. Use `mise run <task>` to apply that configuration.
+`mise-tasks/` is one of several
+[default task directories](/tasks/task-discovery.html#default-task-directories).
+Setting [`task_config.includes`](/tasks/task-configuration.html#task_config.includes)
+replaces them with the paths you list.
 
-## Task Configuration
+## Name and group file tasks {#task-grouping}
 
-All configuration options are listed in [task configuration](/tasks/task-configuration).
-You can provide additional configuration for file tasks by adding `#MISE` comments at the top of the file.
+A file's path below the task directory is its task name, with `/` replaced by
+`:`. `mise-tasks/db/migrate.sh` is `db:migrate`, and you can run it as
+`mise run db:migrate` or `mise run db:migrate.sh`. mise shows the name without
+the extension unless another task already has that name. A file named
+`_default` takes its directory's name, so `mise-tasks/test/_default` is `test`.
 
-```bash
+For this layout:
+
+```text
+mise-tasks
+├── build
+├── db
+│   └── migrate.sh
+└── test
+    ├── _default
+    ├── integration
+    └── units
+```
+
+`mise tasks --extended` lists:
+
+```text
+Name              Aliases  Source                         Description
+build                      ./mise-tasks/build
+db:migrate                 ./mise-tasks/db/migrate.sh
+test                       ./mise-tasks/test/_default
+test:integration           ./mise-tasks/test/integration
+test:units                 ./mise-tasks/test/units
+```
+
+`mise run 'test:*'` runs `test:integration` and `test:units`; see
+[Wildcards](/tasks/running-tasks.html#wildcards).
+
+## Configure with `#MISE` comments
+
+Add `#MISE` comments near the top of the script to set
+[task properties](/tasks/task-configuration.html):
+
+```bash [mise-tasks/build]
+#!/usr/bin/env bash
 #MISE description="Build the CLI"
 #MISE alias="b"
 #MISE sources=["Cargo.toml", "src/**/*.rs"]
 #MISE outputs=["target/debug/mycli"]
 #MISE env={RUST_BACKTRACE = "1"}
 #MISE depends=["lint", "test"]
-#MISE tools={rust="1.50.0"}
+#MISE tools={rust="1.90"}
+cargo build
 ```
 
-Assuming that file was located in `mise-tasks/build`, it can then be run with `mise run build` (or with its alias: `mise run b`).
+`mise run build` or its alias `mise run b` runs this file.
 
-You can also configure a script from `mise.toml`. For a script named `build.sh`,
-either `[tasks.build]` or `[tasks."build.sh"]` can add a description,
-environment variables, or dependencies. See
-[configuring file tasks from TOML](/tasks/task-configuration.html#configuring-file-tasks-from-toml)
-for examples and naming rules.
+The comment marker can be `#`, `//` (for JavaScript, TypeScript, or Go) or `::`
+(for batch files), and whitespace may follow it. The keyword can also be
+bracketed. `#MISE`, `# MISE`, `// MISE`, and `# [MISE]` all work, so a
+formatter that adds a space after `#` does not break the header. To disable a
+header line, change the keyword, for example to `# NOMISE`.
+
+Each `#MISE` line holds TOML. Headers accept most task properties, but not
+`timeout`, `vars`, or the sandbox keys (`deny_*` and `allow_*`); mise warns
+about those and ignores them. To set one of them, or to configure a script you
+cannot edit, add a `[tasks.<name>]` block for the script to `mise.toml`; see
+[Configuring file tasks from TOML](/tasks/task-discovery.html#configuring-file-tasks-from-toml).
 
 ### Multi-line values
 
-Each `#MISE` line is TOML. An array or inline table may be split across several
-lines as long as every line keeps the `#MISE` prefix, which keeps long
-`depends`/`sources` lists readable:
+An array or inline table can span several lines as long as every line keeps the
+`#MISE` prefix, which keeps long `depends` and `sources` lists readable:
 
 ```bash [mise-tasks/build]
 #!/usr/bin/env bash
@@ -85,18 +121,17 @@ lines as long as every line keeps the `#MISE` prefix, which keeps long
 cargo build
 ```
 
-A table can also be built up by repeating the prefix with dotted keys, which
-avoids the surrounding braces entirely:
+Dotted keys build a table one line at a time, without braces:
 
 ```bash
-#MISE tools.node="20"
-#MISE tools.python="3.11"
+#MISE tools.node="24"
+#MISE tools.python="3.13"
 ```
 
-### Extending a task template
+### Extend a task template
 
-`extends` names a [task template](/tasks/templates), so several file tasks can
-share one set of tools, env, and arguments:
+`extends` names a [task template](/tasks/templates.html), so several file tasks
+can share one set of tools, environment variables, and arguments:
 
 ```toml [mise.toml]
 [task_templates.rust]
@@ -111,25 +146,15 @@ env = { RUST_BACKTRACE = "1" }
 cargo build
 ```
 
-The script file is the task's command, so a template's `run` is ignored for a
-file task; everything else is inherited by the
-[rules the template docs describe](/tasks/templates#merge-semantics).
-
-mise provides file tasks with project context variables such as
-`MISE_PROJECT_ROOT`, which identifies the project root regardless of the
-directory from which the task is invoked. See [Tasks](/tasks/#environment-variables-passed-to-tasks)
-for the complete list of variables.
-
-:::tip
-Beware of formatters that change `#MISE` to `# MISE`.
-mise intentionally ignores `# MISE` to avoid accidental configuration.
-To work around this, use the alternative form `# [MISE]`.
-:::
+The script is the task's command, so a file task ignores the template's `run`.
+It inherits everything else by the template
+[merge rules](/tasks/templates.html#merge-semantics).
 
 ## Shebang
 
-The shebang line is optional, but if present, mise uses it to determine which shell runs the script.
-You can also use it to run the script with other programming languages.
+The shebang selects the interpreter. It is optional on Linux and macOS, but
+Windows needs it for files without an executable extension (see
+[Windows](#windows)). Use it to write tasks in any language:
 
 ::: code-group
 
@@ -148,10 +173,10 @@ print('Hello, World!')
 ```
 
 ```ts [deno]
-#!/usr/bin/env -S deno run --allow-env
+#!/usr/bin/env -S deno run
 //MISE description="Hello, World in Deno"
 
-console.log(`PATH, ${Deno.env.get("PATH")}`);
+console.log("Hello, World!");
 ```
 
 ```powershell [powershell]
@@ -166,145 +191,88 @@ Write-Host "Hello from PowerShell, current directory is $current_directory"
 
 ## Windows
 
-Windows has no execute permission for mise to look at, so it decides whether a file is a task a
-different way. A file is a task if **either** holds:
-
-- its extension is one of [`windows_executable_extensions`](/configuration/settings.html#windows_executable_extensions)
-  — by default `exe`, `bat`, `cmd`, `com`, `ps1`, `vbs`
-- it starts with a **shebang**
-
-The two answer different questions. The extension means Windows itself can run the file; the shebang
-means mise can work out an interpreter for it. Windows does not implement shebangs — mise reads the
-line and starts the interpreter itself — which is why a `.sh` script, or a file with no extension at
-all, is still a task there as long as it has one.
-
-The practical consequence is that a file with **neither** is invisible on Windows even though it
-works on Linux and macOS:
+Windows has no execute bit. A file there is a task if its extension is listed in
+[`windows_executable_extensions`](/configuration/settings.html#windows_executable_extensions),
+such as `.cmd` or `.ps1`, or if it starts with a shebang. Windows does not
+implement shebangs itself: mise reads the line and starts the interpreter. A
+file with neither is not a task on Windows, even though it works on Linux and
+macOS:
 
 ```bash [mise-tasks/build]
-# no shebang, no extension -> not a task on Windows
+# no shebang and no extension: not a task on Windows
 cargo build
 ```
 
-Adding `#!/usr/bin/env bash` is usually all it takes, and it costs nothing on the other platforms.
+Add `#!/usr/bin/env bash` to scripts you share. It changes nothing on the other
+platforms.
 
-### PowerShell tasks with no `.ps1` extension
+### PowerShell scripts without `.ps1`
 
-Windows PowerShell refuses to open a script whose name does not end in `.ps1` — a rule the Linux
-and macOS builds do not have. So that a `#!/usr/bin/env pwsh` task behaves the same everywhere,
-mise runs it from a `.ps1` copy in the temp directory and removes the copy when the task finishes.
+Windows PowerShell runs only files whose names end in `.ps1`, so mise runs a
+`#!/usr/bin/env pwsh` task from a temporary `.ps1` copy and removes the copy
+when the task finishes. `$PSScriptRoot` and `$PSCommandPath` name the copy;
+the working directory, `$args`, and the environment are unchanged.
 
-Only the script's view of its own location changes: `$PSScriptRoot` and `$PSCommandPath` name the
-copy rather than the task file. The working directory, `$args`, and the environment are untouched.
+To find files next to the task, read `$env:MISE_TASK_DIR`, which names the
+directory of the task file on every platform (see
+[Task environment](/tasks/running-tasks.html#task-environment)). Or give the
+task a `.ps1` extension, which runs in place.
 
-A task that needs to find files next to itself has two ways out, and the first works everywhere:
+### One task, two scripts
 
-- Read [`MISE_TASK_DIR`](/tasks/#environment-variables-passed-to-tasks), which names the directory
-  the task file is in. mise sets it from the task rather than from whatever is executing, so the
-  copy does not move it — and it reads the same on Linux and macOS, where nothing is copied at all.
-- Give the task a `.ps1` extension, which is run in place.
+A file task has no equivalent of a TOML task's
+[`run_windows`](/tasks/task-configuration.html#run-windows). Instead, put a
+POSIX script and a Windows script with the same stem in the same directory:
 
-### Writing one task for both platforms
-
-File tasks have no equivalent of a TOML task's
-[`run_windows`](/tasks/task-configuration.html#run-windows) — the script _is_ the command, so there
-is nowhere to put a second one. Write the two scripts side by side instead, giving the Windows one an
-executable extension:
-
-```
+```text
 mise-tasks/
   build.sh       # #!/usr/bin/env bash
   build.ps1      # the Windows version
 ```
 
-The two have to share a directory and a stem — that pairing is what makes them one task rather than
-two that happen to be named alike.
+On Windows, mise runs `build.ps1` as `build` and drops the POSIX script. On
+Linux and macOS, the `.ps1` has no execute bit, so only `build.sh` is a task.
+`mise run build` picks the right script on each platform. The POSIX script is
+any file without one of the `windows_executable_extensions`, so a script with
+no extension, such as `build`, pairs the same way.
 
-On Windows mise prefers the native script: `build.ps1` answers to `build`, and the POSIX one is
-dropped. On Linux and macOS the `.ps1` has no execute permission, so only `build.sh` is found.
-`mise run build` does the right thing on each.
+Keep the `.ps1` non-executable on Linux and macOS. If it is executable, it is a
+task there too: next to `build.sh` it also answers to `build`, so
+`mise run build` runs both scripts. When there is more than one Windows
+candidate, such as `build.ps1` and `build.cmd`, mise does not choose between
+them on Windows and keeps all three files as tasks; run one by its full name,
+such as `mise run build.cmd`.
 
-The POSIX half is anything _without_ one of the
-[`windows_executable_extensions`](/configuration/settings.html#windows_executable_extensions), so a
-file with no extension at all works the same way:
-
-```
-mise-tasks/
-  build          # #!/usr/bin/env bash
-  build.ps1      # the Windows version
-```
-
-Marking the `.ps1` executable on Linux or macOS does not break that — it simply appears there as a
-separate task called `build.ps1`, since the rename to `build` only happens on Windows.
-
-If you would rather name the two files something unrelated, or say which is which explicitly, use a
+To give the scripts unrelated names, or to choose explicitly, use a
 [TOML task](/tasks/toml-tasks.html) that calls them:
 
-```toml
+```mise-toml [mise.toml]
 [tasks.build]
 run = "./scripts/build.sh"
 run_windows = "pwsh -File ./scripts/windows-build.ps1"
 ```
 
-The command is spelled out rather than written as `./scripts/windows-build.ps1` because
+The Windows command calls `pwsh` explicitly because
 [`windows_default_inline_shell_args`](/configuration/settings.html#windows_default_inline_shell_args)
-defaults to `cmd /c`, and cmd will not start a `.ps1` on its own.
+is `cmd /c` by default, and cmd does not start a `.ps1` file by itself.
 
-If there is more than one Windows candidate — say `build.ps1` _and_ `build.cmd` — mise cannot choose
-between them, so it leaves everything alone: all three files stay, listed as `build.sh`, `build.ps1`
-and `build.cmd`.
+## Create or edit a file task
 
-## Editing tasks
+`mise tasks edit build` opens `build` in `$EDITOR`. If the task does not exist,
+mise first creates an executable script with a Bash shebang in the first task
+directory that exists, or in `mise-tasks/` when there is none.
+[`mise tasks add --file`](/cli/tasks/add.html) creates a file task from a
+command:
 
-Edit a file task by running `mise tasks edit build` (which opens it in `$EDITOR`). If the file doesn't exist, it is created.
-This is convenient for quickly editing or creating scripts.
-
-## Task Grouping
-
-File tasks in `mise-tasks`, `.mise-tasks`, `.mise/tasks`, `mise/tasks`, or `.config/mise/tasks` can be grouped into
-subdirectories, which automatically prefix the task names
-when loaded.
-
-**Example**: Given the folder structure below:
-
-```text
-mise-tasks
-├── build
-└── test
-    ├── _default
-    ├── integration
-    └── units
+```sh
+mise tasks add --file hello -- echo hello
 ```
 
-Running `mise tasks` gives the following output:
+## Arguments {#arguments}
 
-```shellsession
-$ mise tasks
-Name              Description Source
-build                         ./mise-tasks/build
-test                          ./mise-tasks/test/_default
-test:integration              ./mise-tasks/test/integration
-test:units                    ./mise-tasks/test/units
-```
-
-## Arguments
-
-::: tip
-For comprehensive information about task arguments, see the dedicated [Task Arguments](/tasks/task-arguments) page.
-:::
-
-A [usage](https://usage.jdx.dev) spec can be used within these files to provide argument parsing, autocompletion,
-and documentation when running mise, and it can be exported to markdown. This turns tasks into
-fully-fledged CLIs.
-
-:::tip
-The separate `usage` CLI is not required to execute or complete mise tasks with a usage spec.
-Task completions work when mise's shell completion script is installed and enabled.
-:::
-
-### Example file task with arguments
-
-Here is an example of a file task that builds a Rust CLI using some of the features of usage:
+Declare arguments with `#USAGE` comments. mise parses them, passes each value
+to the script as a `usage_*` environment variable, and provides `--help` and
+shell completions:
 
 ```bash [mise-tasks/build]
 #!/usr/bin/env bash
@@ -325,54 +293,33 @@ fi
 cargo build --profile "${usage_profile?}" --target "${usage_target?}"
 ```
 
-::: tip
-For details on bash parameter expansion patterns like `${var?}`, `${var:-default}`, and `${var:+value}`, see [Bash Variable Expansion for Usage Variables](/tasks/task-arguments#bash-variable-expansion).
-:::
+With mise's [shell completions](/shell-setup.html) enabled,
+`mise run build --profile <Tab>` offers `dev` and `release`, and
+`mise run build --user <Tab>` offers the output of `mycli users`. The separate
+`usage` CLI is not needed. `mise run build --help` prints help for the task,
+and [`mise generate task-docs`](/cli/generate/task-docs.html) renders Markdown
+documentation from the same spec.
 
-With mise's shell completions enabled, this example provides the following task completions:
+Put mise's own flags before the task name, as in
+`mise run --dry-run build --profile release x86_64-unknown-linux-gnu`.
+Everything after the task name goes to the task.
 
-- `mise run -- build --profile <tab><tab>`
-  will show `dev` and `release` as options.
-- The `--user` flag will also show completions generated by the output of `mycli users`.
-- Use `--` to separate mise flags from task arguments: `mise run -- build --profile release <target>`
+[Task arguments](/tasks/task-arguments.html) covers the spec syntax,
+[reading values in Bash](/tasks/task-arguments.html#bash-variable-expansion), and
+[environment variable backing](/tasks/task-arguments.html#environment-variable-backing).
 
-The same spec drives `mise run build --help`, which prints CLI help for the task, and [`mise generate task-docs`](/cli/generate/task-docs), which renders markdown documentation for your tasks.
+If completions or `--help` do not reflect your spec, run
+`mise tasks validate` or the task itself. An invalid spec produces a warning
+such as `invalid usage spec in task file mise-tasks/build`, followed by the line
+that failed to parse.
 
-:::tip
-If you don't get any autocomplete suggestions, use the `-v` (verbose) flag to see what's going on.
-For example, if you run `mise run -v build` with an invalid `usage` spec, you will see an error message such as `DEBUG failed to parse task file with usage`.
-:::
+### A Node.js task with arguments
 
-### Environment variable backing
-
-Arguments and flags can be backed by environment variables with `env="..."`.
-The precedence order is CLI argument, environment variable, then default value:
-
-```bash [.mise/tasks/deploy]
-#!/usr/bin/env bash
-#MISE description="Deploy application"
-#USAGE arg "[environment]" env="DEPLOY_ENV" default="development"
-#USAGE flag "--region <region>" env="AWS_REGION" default="us-east-1"
-
-echo "Deploying to ${usage_environment} in ${usage_region}"
-```
-
-This lets the same file task work with either explicit arguments or the
-environment of the calling shell:
-
-```shell
-DEPLOY_ENV=staging AWS_REGION=us-west-2 mise run deploy
-```
-
-See [Environment Variable Backing](https://mise.jdx.dev/tasks/task-arguments.html#environment-variable-backing)
-for more details.
-
-### Example of a NodeJS file task with arguments
-
-Here is how you can use [usage](https://usage.jdx.dev/cli/scripts#usage-scripts) to parse arguments in a Node.js script:
+`//USAGE` comments declare arguments in JavaScript; mise parses them the same
+way as `#USAGE` lines:
 
 ```js [mise-tasks/greet]
-#!/usr/bin/env -S node
+#!/usr/bin/env node
 //MISE description="Write a greeting to a file"
 //USAGE flag "-f --force" help="Overwrite existing <file>"
 //USAGE flag "-u --user <user>" help="User to run as"
@@ -393,52 +340,63 @@ fs.appendFileSync(usage_output_file, `Hello, ${user}\n`);
 console.log(`Greeting written to ${usage_output_file}`);
 ```
 
-Run it with:
-
-```shell
+```sh
 mise run greet greeting.txt --user Alice
 # Greeting written to greeting.txt
 ```
 
-If you pass an invalid argument, you will get an error message:
+mise rejects a value outside the choices before the script starts:
 
-```shell
+```sh
 mise run greet invalid.txt --user Alice
-# [greet] ERROR
-#   0: Invalid choice for arg output_file: invalid.txt, expected one of greeting.txt, file.txt
 ```
 
-Autocomplete will show the available choices for the `output_file` argument when mise's shell completions are enabled.
-
-```shell
-mise run greet <TAB>
-# > greeting.txt
-#   file.txt
+```text
+mise ERROR failed to validate task greet
+mise ERROR Invalid choice for arg output_file: invalid.txt, expected one of greeting.txt, file.txt
 ```
 
-## CWD
+With completions enabled, `mise run greet <Tab>` offers `greeting.txt` and
+`file.txt`.
 
-mise sets the current working directory to the directory of `mise.toml` before running tasks.
-Override this by setting <span v-pre>`dir="{{cwd}}"`</span> in the task header:
+## Working directory
+
+File tasks run from the [config root](/configuration.html#config-root), the
+project directory, such as `~/proj` for both `~/proj/mise.toml` and
+`~/proj/.config/mise.toml`. Add <span v-pre>`#MISE dir="{{cwd}}"`</span> to run
+from the directory where you called mise:
 
 ```bash
 #!/usr/bin/env bash
 #MISE dir="{{cwd}}"
 ```
 
-The original working directory is also available in the `MISE_ORIGINAL_CWD` environment variable:
+The directory where you called mise is also in `MISE_ORIGINAL_CWD`, and
+`MISE_PROJECT_ROOT` and the other [task variables](/tasks/running-tasks.html#task-environment)
+locate the project from any directory:
 
 ```bash
 #!/usr/bin/env bash
 cd "$MISE_ORIGINAL_CWD"
 ```
 
-## Running tasks directly
+## Run a script by path
 
-Tasks don't need to be part of a config; you can run them directly by passing the path to the script:
+`mise run ./scripts/build.sh` runs any executable script as a task, with its
+`#MISE` and `#USAGE` headers, even outside a task directory:
 
-```bash
+```sh
 mise run ./path/to/script.sh
 ```
 
-The path must start with `/` or `./` to be treated as a file path (on Windows, `C:\` or `.\`).
+The path must start with `/`, `./`, or `../` (on Windows, backslash forms such
+as `.\`, `..\`, or `C:\` also work) and the file must exist. Otherwise mise
+looks the argument up as a task name. On Linux and macOS the file must also be
+executable. In a terminal mise offers to mark it executable; otherwise it stops
+with `` `./build.sh` is not executable. Run: chmod +x ./build.sh ``.
+
+Inside a project, mise checks that the file exists relative to the current
+directory, but resolves a relative path from the project's config root when it
+runs the script. Run it from the project root, or pass an absolute path such as
+`"$PWD/build.sh"` from a subdirectory. The script runs in the config root, like
+other tasks.

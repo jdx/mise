@@ -18,10 +18,8 @@ Show the state of LaunchAgents from `[bootstrap.macos.launchd.agents]`
 
 <!-- generated reference navigation -->
 
-This is a compatibility spelling. Use [`mise bootstrap macos launchd-agents status [-J --json] [--missing]`](/cli/bootstrap/macos/launchd-agents/status.html) in new scripts.
-
 ## Related documentation
 
-- [LaunchAgents](/bootstrap/launchd.html).
+- [Bootstrap workflow](/bootstrap.html).
 - [`mise bootstrap [FLAGS] [SUBCOMMAND]`](/cli/bootstrap.html).
 - [Global flags and argument syntax](/cli/#global-flags).

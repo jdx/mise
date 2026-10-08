@@ -1,141 +1,93 @@
 ---
-description: "Run the right tool version through shims, including outside an activated shell."
+description: "Choose between shell activation, shims and mise exec, and run the right tool version from editors and scripts."
 ---
 
 # Shims
 
-There are several ways to load the `mise` context (dev tools, environment variables) into your shell:
+A shim is a small executable named after a tool's command, such as `node`.
+When a program runs it, the shim asks mise which version the current directory
+selects, loads that project's environment, and runs the real executable. Put
+the shim directory on `PATH` for editors and other programs that never see an
+activated shell.
 
-- `mise activate` (also called ["mise PATH activation"](#path-activation)), where `mise` updates your `PATH` and other environment variables every time your prompt is displayed.
-- [`mise activate --shims`](#mise-activate-shims), which uses shims to load dev tools.
-- Using [`mise x|exec`](/cli/exec) or [`mise r|run`](/cli/run) for ad-hoc commands or tasks (see ["neither shims nor PATH"](#neither-shims-nor-path)).
+## Choose how to use mise tools {#overview}
 
-This page explains the differences between these methods and how to use them. In particular, it will help you decide whether to use shims or `mise activate` in your shell.
+| Method                                                    | Environment applies to                              | Updates                                     | Use it for                              |
+| --------------------------------------------------------- | --------------------------------------------------- | ------------------------------------------- | --------------------------------------- |
+| [`mise activate`](/cli/activate.html)                     | Your current shell                                  | At each prompt and, in most shells, on `cd` | Interactive terminals                   |
+| [`mise activate --shims`](#how-to-add-mise-shims-to-path) | Adds the shim directories to the shell's `PATH`     | Each time a shimmed command runs            | Editors, IDEs, GUI apps, login profiles |
+| A shim                                                    | The program it launches and that program's children | Each time it runs                           | Commands found through `PATH`           |
+| [`mise exec`](/cli/exec.html)                             | One command and its children                        | Once per command                            | Scripts and CI                          |
+| [`mise run`](/cli/run.html)                               | A task and its dependencies                         | Once per task                               | Named project commands                  |
+| [`mise env`](/cli/env.html)                               | Prints assignments for another program to apply     | When you run it                             | Other environment tools                 |
 
-## Overview of the `mise` activation methods {#overview}
+Use `mise activate` in the shell you type into, so that `node` and `[env]`
+variables follow you between projects. Use shims where a program needs a
+stable path to a tool, such as an IDE configured with a Python executable;
+[Shims vs PATH activation](#shims-vs-path) lists what they leave out. You can
+do both: put `mise activate --shims` in a login profile and `mise activate` in
+your interactive startup file, as shown in
+[Add shims to PATH](#how-to-add-mise-shims-to-path). Set up activation from
+[Shell setup](/shell-setup.html).
 
-### PATH activation {#path-activation}
+### Without activation or shims {#neither-shims-nor-path}
 
-mise's "PATH" activation method updates environment variables every time the prompt is displayed. In particular, it updates the `PATH` environment variable, which your shell uses to search for the programs it can run.
-
-::: info
-For Bash, add `eval "$(mise activate bash)"` to `~/.bashrc`. Run an
-`echo ... >> ~/.bashrc` setup command in your terminal only once; do not put that
-append command in the startup file itself.
-:::
-
-For example, by default, your `PATH` variable might look like this:
-
-```sh
-echo "$PATH"
-/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
-```
-
-With [`mise activate`](/cli/activate.html), `mise` automatically adds the required tools to `PATH`.
-
-```sh
-PATH="$HOME/.local/share/mise/installs/python/3.14.7/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
-```
-
-In this example, the python `bin` directory was added at the beginning of `PATH`, making it available in the current shell session.
-When a fuzzy version like `python = "3.14"` or `node = "26"` is active, this path may use the requested-version symlink, such as `~/.local/share/mise/installs/python/3.14/bin`, instead of the fully resolved patch version.
-With the experimental [install layout](/dev-tools/install-layout.html), those paths are links to the installation's own directory, such as `installs/python-<hash>`. A tool restored from a lockfile entry puts that directory on `PATH` directly.
-
-Use shims when a program needs a stable path to a tool, such as an IDE configured
-with a Python executable. For scripts, `mise exec -- <command>` loads both tools
-and environment variables explicitly.
-
-### Shims {#mise-activate-shims}
-
-::: warning
-`mise activate --shims` does not support all the features of `mise activate`.<br>
-See [shims vs path](/dev-tools/shims.html#shims-vs-path) for more information.
-:::
-
-When using shims, `mise` places small executables (`shims`) in a directory that is included in your `PATH`. You can think of `shims` as symlinks to the mise binary that intercept commands and load the appropriate context.
+[`mise exec`](/cli/exec.html), [`mise run`](/cli/run.html), and
+[`mise en`](/cli/en.html) load tools and environment variables without
+changing any startup file:
 
 ```sh
-ls -l ~/.local/share/mise/shims/node
-# [...] ~/.local/share/mise/shims/node -> ~/.local/bin/mise
+mise exec -- node --version
+mise run build # runs the task named build
 ```
 
-By default, the shim directory is located at `~/.local/share/mise/shims` (on Windows: `%LOCALAPPDATA%\mise\shims`). When you install a tool (for example, `node`), `mise` adds an entry to the `shims` directory for every binary the tool provides (for example, `~/.local/share/mise/shims/node`).
+This works in CI, scripts, and projects where you do not want to change shell
+startup files. It needs `mise` on `PATH`, but no activation or shim directory.
+
+## How shims work {#mise-activate-shims}
+
+mise keeps two shim directories:
+
+- Your user shim directory, `~/.local/share/mise/shims` (`%LOCALAPPDATA%\mise\shims`
+  on Windows), set by [`shims_dir`](/configuration/settings.html#shims_dir).
+- The system shim directory, `/usr/local/share/mise/shims`, for
+  [system installs](/dev-tools/system-installs.html).
+
+When you install a tool, mise adds a shim to the shim directory for every
+executable the tool provides. On Unix each shim is a symlink to the `mise`
+binary; on Windows it is a small executable by default (see
+[`windows_shim_mode`](/configuration/settings.html#windows_shim_mode)).
 
 ```sh
 mise use node@24 npm:prettier@3
-
-~/.local/share/mise/shims/node --version
+ls -l ~/.local/share/mise/shims/node
+# ~/.local/share/mise/shims/node -> ~/.local/bin/mise
 ~/.local/share/mise/shims/prettier --version
 ```
 
-These commands use the versions selected for the current directory. The paths
-above assume the default Unix data directory. To find shims by command name, add
-their directory to the existing `PATH`:
+A shim covers every installed version of its tool. Each time it runs, it reads
+the config for the current directory, picks the version, sets that project's
+`[env]` variables, and runs the real executable.
 
-```sh
-export PATH="$HOME/.local/share/mise/shims:$PATH"
-```
+When a shim cannot find the configured version, it installs it, as long as
+[`not_found_auto_install`](/configuration/settings.html#not_found_auto_install)
+is on. Otherwise it runs the next executable with the same name on `PATH`. That
+fallback is convenient for tools you also want outside mise, but for a command
+the OS also ships, such as `python3` on Debian or Ubuntu, the shim can silently
+run an unrelated system binary. Set
+[`not_found_system_fallback`](/configuration/settings.html#not_found_system_fallback)
+and `not_found_auto_install` to `false` to make an unresolved shim fail instead.
 
-Child processes inherit this `PATH`. Independently launched applications, CI jobs,
-and other shells need their own environment setup; editing one shell's profile
-does not configure every process on the machine.
+## Add shims to PATH {#how-to-add-mise-shims-to-path}
 
-## Lazy tools
-
-Set `lazy = true` on a tool when it should be installed the first time one of
-its commands is invoked instead of by a bare `mise install`:
-
-```toml
-[tools]
-node = { version = "24", lazy = true }
-```
-
-For registry shorthands, mise creates bootstrap shims from the registry's
-`bins` metadata. Explicit backends and tools that are not in the registry must
-declare their command names with `lazy_bins`:
-
-```toml
-[tools]
-"github:example/acme" = { version = "1.2.3", lazy = true, lazy_bins = ["acme", "acmectl"] }
-```
-
-Run `mise reshim` after editing a lazy declaration directly. Commands such as
-`mise use` that update tool configuration rebuild the shim farm automatically.
-Invoking a lazy shim installs its configured provider, plus any configured tools
-that provider [depends](/dev-tools/#tool-dependencies) on that are not installed
-yet, and then executes it. Nothing else in the toolset is installed. This is
-independent of `not_found_auto_install`; an explicit project tool selection is
-never bypassed by a lower-precedence lazy declaration.
-
-A bare `mise install` skips missing lazy tools. Pass `--include-lazy` to install
-all configured tools, including lazy declarations, or name one explicitly, such
-as `mise install node`, to install only that lazy tool immediately. Once
-installed, normal `mise activate` places the real tool path ahead of the shim
-farms, so later calls have no shim dispatch overhead. `mise activate --shims`
-remains project-aware and dispatches every call through mise by design.
-
-Tasks and `mise x` work the same way. `mise run` does not preinstall lazy tools.
-Instead, whenever the toolset has a lazy declaration, the environment mise
-builds for a task (and for `mise x` and `mise env`) places the shim farms behind
-the tool paths if they are not already on PATH, and any missing bootstrap shims
-are created first. The task installs the tool the first time it runs one of its
-commands. `mise x -- <command>` installs the provider of a lazy command directly.
-
-::: tip
-[`mise activate --shims`](/cli/activate.html#flags) is a shorthand for adding the shims directory to PATH.
-:::
-
-## How to add mise shims to PATH
-
-Use `mise activate --shims` when `mise` itself is already on `PATH`.
-Add the following lines to the indicated files, preserving existing setup.
-Bash and Zsh profiles run for **login shells**; they are not startup files for
-arbitrary non-interactive scripts.
+`mise activate --shims` prints the lines that put the shim directories and the
+[command wrapper](#command-wrappers) directory on `PATH`. Add it to the startup
+file that the program you care about reads, keeping your existing setup:
 
 ::: code-group
 
 ```sh [Bash: ~/.bash_profile]
-# Use ~/.profile instead if that is your existing login startup file.
+# Use ~/.bash_login or ~/.profile instead if that is the file you already have.
 eval "$(mise activate bash --shims)"
 ```
 
@@ -161,282 +113,188 @@ end
 
 :::
 
-Bash login shells read the first available file among `~/.bash_profile`,
-`~/.bash_login`, and `~/.profile`. They read `~/.bashrc` only if the profile sources
-it. Check your existing startup files before adding a new profile that would
-hide the old one. Zsh reads `~/.zprofile` for login shells and `~/.zshrc` for
-interactive shells.
+Login shells read the profile files, and interactive shells read `~/.bashrc`
+and `~/.zshrc`. A login Bash reads only the first file it finds among
+`~/.bash_profile`, `~/.bash_login`, and `~/.profile`, and it reads `~/.bashrc`
+only if that file sources it. On Ubuntu and Debian, `~/.profile` usually
+sources `~/.bashrc` and sets up `PATH`, so creating a new `~/.bash_profile`
+stops `~/.profile` from loading. Add the line to the file you already have, or
+make a new `~/.bash_profile` source `~/.profile`:
 
-For a script or CI command, prefer `mise exec -- <command>`. A script launched
-from an already configured shell inherits its `PATH`, but a scheduler or IDE
-may not inherit that shell's environment. See [IDE integration](/ide-integration.html)
-and [Windows setup](/installing-mise.html#windows-scoop) for those environments.
-
-::: info
-It's fine to call [`mise activate --shims`](/cli/activate.html#flags) in your shell profile file and then
-later call [`mise activate`](/cli/activate.html) in an interactive session. PATH
-activation keeps the user and existing system shim farms behind real tool paths
-when the effective toolset contains a lazy declaration or
-`not_found_auto_install` is enabled. Without either, full activation
-removes the shim farms as before. This makes lazy bootstrap commands available
-without adding dispatch overhead after installation. `not_found_auto_install`
-still controls general missing-tool installation, but does not disable an
-explicit `lazy = true` declaration.
-
-:::
-
-To explicitly keep tool shims out of full shell activation, including when auto-install or
-lazy tools are enabled, run `mise settings set activate_shims false` and restart your shell.
-See [`activate_shims`](/configuration/settings.html#activate_shims) for the tradeoffs.
-Shims serve several purposes: installing missing configured versions, bootstrapping lazy tools,
-and dispatching configured command wrappers. Wrappers such as `cargo` through [mr-boxington](https://github.com/jdx/mr-boxington)
-use their own `command-wrappers/bin` directory, which remains active with this setting disabled.
-Explicit `mise activate --shims` also continues to work.
-
-::: info
-When a shim cannot resolve a mise-managed tool (for example, a version pinned in `mise.toml` that hasn't
-been installed and [`not_found_auto_install`](/configuration/settings.html#not_found_auto_install) is
-disabled), it falls back to the first same-named executable found elsewhere on `PATH` rather than erroring.
-This is convenient for tools you also want available outside of mise, but for a tool the OS also ships
-(`python3` on Debian/Ubuntu, for example) it means the shim can silently run a completely different,
-unrelated binary instead of failing loudly.
-
-Set [`not_found_system_fallback`](/configuration/settings.html#not_found_system_fallback) to `false`,
-alongside `not_found_auto_install = false`, if you'd rather an unresolvable shim fail outright.
-:::
-
-### Excluding command names
-
-Some commands are also provided by the OS, and other software on the machine depends on getting the
-system one. [`shims.exclude`](/configuration/settings.html#shims.exclude) keeps those names out of
-the shim directory — mise still installs and manages the tool, it just never generates a shim for
-that name:
-
-```toml
-[settings.shims]
-exclude = ["python", "python3", "pip", "pip3"]
+```sh [~/.bash_profile]
+[[ -f ~/.profile ]] && source ~/.profile
+eval "$(mise activate bash --shims)"
 ```
 
-On Arch Linux, for example, `/usr/bin/python` is the distro interpreter and its modules live in a
-matching `site-packages` directory. Without this setting, entering a project that pins `python`
-changes which interpreter a `#!/usr/bin/env python` script gets, and a `PKGBUILD` that calls
-`python` during a build picks up the pinned version rather than the system one.
-
-Excluded names are removed from the shim directory on the next `mise reshim`, and are skipped by
-the other shim producers too: lazy-tool bootstrap shims and plugin-provided shims. Version-qualified
-shims are unaffected, so `python3.12` still resolves to whatever version a config selects. Because
-no shim exists, mise is out of that command's execution path and no longer loads configuration on
-each invocation of it.
-
-::: warning
-Excluding `python3` means `python3 -m venv` builds a virtualenv from the system interpreter rather
-than the configured one, silently. Use the version-qualified command (`python3.12 -m venv`) when you
-want the mise-managed version.
-
-This setting only affects generated shims. Under `mise activate` without `--shims`, a tool's `bin`
-directory joins `PATH` as a whole, so excluded names remain visible there.
-:::
-
-- You can also decide to use only `shims` if you prefer, though this comes with some [limitations](/dev-tools/shims.html#shims-vs-path).
-- An alternative to [`mise activate --shims`](/cli/activate.html#flags) is to use `export PATH="$HOME/.local/share/mise/shims:$PATH"`. This can be helpful if `mise` is not yet available at that point.
-
-### mise reshim
-
-To force `mise` to update the contents of the `shims` directory, run `mise reshim`.
-
-Use `mise reshim --system` for the system shim farm. If `shims_dir` and
-`system_shims_dir` resolve to the same physical path, either command reconciles
-one combined farm containing both scopes.
-
-mise rebuilds shims when it installs, updates, or removes a tool. If another
-package manager adds executables inside an existing installation, run
-`mise reshim`. The Node.js core plugin can do this after `npm install -g` through
-its [`node.npm_shim`](/configuration/settings.html#node.npm_shim) wrapper; this
-is not a general hook for every package manager.
-
-`mise reshim` only creates and removes shims. Some users treat it as a
-"fix it" button, but it is only necessary when `~/.local/share/mise/shims` doesn't contain something it should.
-
-For `mise reshim`, the configured shim directory may be a shared executable directory such as
-`~/.local/bin` or `/usr/local/bin`: reshim only replaces or removes entries it recognizes as mise
-shims, and leaves a same-named unmanaged file in place. Other mise features still identify shim
-directories as whole `PATH` entries, however, so a shared directory is not yet supported with
-`mise activate`, hook-env, or internal dependency lookups. Use a dedicated `shims_dir` if you use
-those features.
-
-## Command wrappers
-
-Use `[wrappers]` when a command should always pass through another program while
-keeping its ordinary name. For example, this routes every `cargo` invocation
-through [Mr Boxington](https://github.com/jdx/mr-boxington):
-
-```toml
-[tools]
-mr-boxington = "1.4.1"
-
-[wrappers.cargo]
-command = "mbx"
-env = { MBX_CARGO_SHIM_MODE = "1" }
-```
-
-Run `mise reshim` after adding or removing a wrapper. The wrapper is available
-with both `mise activate` and `mise activate --shims`, and takes precedence over
-an executable with the same name. When it delegates, mise removes its dispatch
-directories from `PATH`, so `mbx` resolves Cargo from mise-managed Rust when
-configured and otherwise falls through to rustup or the system installation.
-If the configured tool that provides the wrapper's command is not installed,
-the wrapper installs it first, as that command's own shim would (subject to
-[`not_found_auto_install`](/configuration/settings.html#not_found_auto_install)
-unless the tool is lazy).
-
-A short form is available when no arguments or environment variables are needed:
-
-```toml
-[wrappers]
-terraform = "tofu"
-```
-
-The detailed form can insert arguments before those supplied by the user:
-
-```toml
-[wrappers.python]
-command = "uv"
-args = ["run", "python"]
-```
-
-## Shims vs PATH {#shims-vs-path}
-
-The following features are affected when shims are used **instead** of [PATH activation](#path-activation):
-
-- [Env vars](/environments/) defined in mise are only available to mise tools
-- Most [hooks](/hooks.html) won't trigger
-- The Unix `which` command points to the shim, obscuring the real executable
-
-In general, PATH activation (`mise activate`) is recommended over shims for _interactive_ situations.
-
-With `activate`, every time the prompt is displayed, mise determines what `PATH` and other
-env vars should be and exports them. This is why it doesn't work well for non-interactive situations like scripts: the prompt is never displayed, so you have to call `mise hook-env` manually to get mise to update
-the env vars (though there are exceptions; see [hook on `cd`](#hook-on-cd)).
-
-### Env vars and shims
-
-A downside of shims is that environment variables are only loaded when a shim is called. This means that if you
-set an [environment variable](/environments/) in `mise.toml`, it is only applied when a shim is called.
-
-The following example only works under `mise activate`:
+If `mise` is not on `PATH` when the profile runs, call it by its full path,
+such as `eval "$($HOME/.local/bin/mise activate zsh --shims)"`, or add the user
+shim directory directly. That line leaves out the system shim directory and
+command wrappers:
 
 ```sh
-$ mise set NODE_ENV=production
-$ echo $NODE_ENV
-production
+export PATH="$HOME/.local/share/mise/shims:$PATH"
 ```
 
-But this works with either:
+Editors and other GUI programs read these files only when they start, and some
+desktop environments read the login profile only when you log in. Restart the
+editor, or log out and back in, after the change. See
+[IDE integration](/ide-integration.html) for editor-specific setup. A program
+started by a scheduler, a service manager, or an IDE that does not read your
+profile needs its own `PATH` setting, or can call `mise exec`.
+
+On Windows, editors and other GUI programs do not read `$PROFILE`. Add
+`%LOCALAPPDATA%\mise\shims` to your user `Path` as shown in
+[Windows shells](/shell-setup.html#windows), and keep `mise activate pwsh` in
+`$PROFILE` for PowerShell itself.
+
+## Shims vs PATH activation {#shims-vs-path}
+
+Shims cover the tools themselves. They do not set
+[`[env]` variables](#env-vars-and-shims) in your shell, they run only the
+install [hooks](#hooks-and-shims), and they make [`which`](#which) print the
+shim. Use [PATH activation](#path-activation) for the shell you type into, and
+shims for programs that do not start from it.
+
+### PATH activation {#path-activation}
+
+With [`mise activate`](/cli/activate.html), mise adds each selected tool's
+`bin` directory to the front of `PATH`:
 
 ```sh
-$ mise set NODE_ENV=production
-$ node -p process.env.NODE_ENV
-production
+echo "$PATH"
+# ~/.local/share/mise/installs/python/3.14.8/bin:/usr/local/bin:/usr/bin:/bin
 ```
 
-You can also use [`mise x|exec`](/cli/exec.html) and [`mise r|run`](/cli/run.html) to load the environment even if you don't need any mise tools:
+mise sets `PATH` and `[env]` variables when the activation script runs, in
+bash, zsh, fish, elvish, and PowerShell. Nushell and xonsh wait for the first
+prompt or directory change. After that, mise refreshes the environment at each
+prompt and, in shells with a [directory-change hook](#hook-on-cd), after each
+`cd`. Child processes inherit the result.
 
-```sh
-$ mise set NODE_ENV=production
-$ mise x -- bash -c "echo \$NODE_ENV"
-production
-$ mise r some_task_that_uses_NODE_ENV
-production
-```
+While shims are needed for [lazy tools](#lazy-tools) or
+`not_found_auto_install`, activation keeps the shim directories on `PATH`
+behind the real tool directories. See
+[Keep shims out of mise activate](#activate-shims) to remove them.
 
-::: tip
-In general, [tasks](/tasks/) are a good way to ensure that the mise environment is always loaded.
-:::
+### Directory changes {#hook-on-cd}
 
-### Hooks and shims
+In most shells, mise also updates the environment when the directory changes,
+not only when the prompt is drawn, so `cd ~/proj && node -v` uses the project's
+version:
 
-The [hooks](/hooks.html) `cd`, `enter`, and `leave` only trigger with `mise activate`. The separate [`watch_files`](/hooks.html#watch-files-hook) configuration also requires `mise activate`. However, `preinstall` and `postinstall` still work with shims because they don't require shell integration.
+| Shell          | Updates on `cd`    | Mechanism                                               |
+| -------------- | ------------------ | ------------------------------------------------------- |
+| bash           | Yes                | Wraps `cd`, `pushd`, and `popd`, plus `PROMPT_COMMAND`  |
+| zsh            | Yes                | `chpwd` hook                                            |
+| fish           | Yes                | `--on-variable PWD` handler                             |
+| elvish         | Yes                | `after-chdir` hook                                      |
+| xonsh          | Yes                | `on_chdir` event                                        |
+| PowerShell 7+  | Yes                | `LocationChangedAction`                                 |
+| PowerShell 5.x | At the next prompt | Prompt hook only                                        |
+| Nushell        | At the next prompt | `env_change.PWD` hook, which Nushell runs at the prompt |
 
-### `which`
+In fish, set `mise_fish_mode` to `eval_after_arrow` to defer the update until
+the next command starts, or to `disable_arrow` to update only at the prompt.
 
-Many users find `which` valuable. Shims effectively "break" `which`, causing it to show the location of the shim. A workaround is `mise which`, which shows the actual location. Some users prefer the "cleanliness" of running `which node` and getting back a real path with a version number in it, e.g.:
+::: details Running several commands on one line
 
-```sh
-$ which node
-~/.local/share/mise/installs/node/24/bin/node
-```
-
-### Performance
-
-PATH activation does its work at prompts and supported directory-change hooks.
-Shims resolve the environment when a command is invoked. Which costs less depends
-on how you run commands.
-
-For example, a script that repeatedly calls a shim resolves the environment on
-each call:
-
-```bash
-for i in {1..500}; do
-    node script.js
-done
-```
-
-Run the enclosing script with `mise exec -- bash benchmark.sh` to prepare the
-environment once. Child processes then inherit the real tool directories ahead
-of the shim directory. Similarly, a process launched by a shim passes the resolved
-environment to its children.
-
-See [slow shell prompts](/troubleshooting.html#slow-shell-prompts) to diagnose
-activation overhead. Hook behavior and parent-shell environment updates also
-differ, so choose an activation method based on those requirements as well as
-performance.
-
-## Neither shims nor PATH {#neither-shims-nor-path}
-
-[`mise exec`](/cli/exec.html), [`mise run`](/cli/run.html), and
-[`mise en`](/cli/en.html) load tools and environment variables explicitly:
-
-```sh
-mise exec -- node --version
-mise run build
-```
-
-The second command requires a task named `build`. This approach works for CI,
-scripts, and projects where you do not want to change shell startup files. It
-requires `mise` on `PATH`, but no shell activation or shim directory.
-
-## Hook on `cd` {#hook-on-cd}
-
-For some shells (`bash`, `zsh`, `fish`, `xonsh`), `mise` hooks into the `cd` command, while in others, it only runs when the prompt is displayed. This relies on `chpwd` in `zsh`, a `chpwd` emulation (wrapping `cd`/`pushd`/`popd`) plus `PROMPT_COMMAND` in `bash`, `fish_prompt` in `fish`, and `on_chdir` in `xonsh`.
-
-Directory-change hooks let those shells apply the new project environment before
-the next command, even if no prompt has appeared yet.
-
-::: details Running several commands in a single line
-
-If you run a set of commands in a single line like the following:
+In PowerShell 5.x and Nushell, a one-line command keeps the tools of the
+directory where the line started:
 
 ```sh
 cd ~
 cd ~/src/proj1 && node -v && cd ~/src/proj2 && node -v
 ```
 
-With `mise activate` in a shell without a `cd` hook, this uses the tools from `~`, not from `~/src/proj1` or `~/src/proj2`, even after the directory changes.
-
-This is because in these shells `mise` runs just before your prompt is displayed, whereas in others it hooks into `cd`. Shims _will_ always work with the inline example above.
+Both `node -v` calls use the tools selected for `~`. Shims always resolve from
+the current directory, so they handle this line correctly in every shell.
 
 :::
 
-## Using mise in rc files
+### Environment variables {#env-vars-and-shims}
 
-rc files like `.zshrc` are unusual: they are scripts, but they run only for interactive sessions. If you need
-to access tools provided by mise inside an rc file, you have two options:
+Reading an `[env]` variable in your shell works only under `mise activate`:
+
+```sh
+mise set NODE_ENV=production
+echo "$NODE_ENV"
+# production
+```
+
+This works with either, because `node` runs through its shim:
+
+```sh
+mise set NODE_ENV=production
+node -p process.env.NODE_ENV
+# production
+```
+
+`mise exec` and `mise run` load the environment even when a command needs no
+mise tool. [Tasks](/tasks/) always run with it:
+
+```sh
+mise exec -- bash -c 'echo $NODE_ENV'
+# production
+```
+
+### Hooks {#hooks-and-shims}
+
+The `cd`, `enter`, and `leave` [hooks](/hooks.html) and
+[`watch_files`](/hooks.html#watch-files-hook) run only with `mise activate`.
+`preinstall` and `postinstall` run with shims too, because they run during
+installation rather than from the shell.
+
+### `which` {#which}
+
+With shims, `which node` prints the shim's path, and `mise which node` prints
+the real executable. With PATH activation, `which node` prints the installed
+path:
+
+```sh
+which node
+# ~/.local/share/mise/installs/node/24/bin/node
+```
+
+The path can go through a link named after the request, such as `node/24`,
+rather than the resolved version. See
+[install layout](/dev-tools/install-layout.html) for the experimental layout's
+paths.
+
+### Performance {#performance}
+
+PATH activation does its work at prompts and directory changes. Shims resolve
+the environment each time a command runs, so a loop that calls a shim pays that
+cost on every call. For example, this script resolves the environment 500
+times:
+
+```sh [benchmark.sh]
+for i in {1..500}; do
+    node script.js
+done
+```
+
+Run it as `mise exec -- bash benchmark.sh` to resolve the environment once.
+Child processes then find the real tool directories ahead of the shim
+directory. A program launched by a shim passes the resolved environment on to
+its children in the same way. See
+[slow shell prompts](/troubleshooting.html#slow-shell-prompts) to diagnose
+activation overhead.
+
+### Scripts and shell startup files {#using-mise-in-rc-files}
+
+A script never shows a prompt. After activation, it sees the environment that
+the activation script applied, plus directory changes in shells with a
+[`cd` hook](#hook-on-cd). It does not see config changes made while it runs.
+Run `eval "$(mise hook-env -s bash)"` to refresh it, or run the command with
+`mise exec`.
+
+A shell startup file such as `~/.zshrc` is a script too. In bash, zsh, and
+fish, a tool is available on the line after activation:
 
 ::: code-group
 
-```sh [hook-env]
+```sh [activate]
 eval "$(mise activate zsh)"
-eval "$(mise hook-env -s zsh)"
 node some_script.js
 ```
 
@@ -447,3 +305,155 @@ node some_script.js
 ```
 
 :::
+
+In Nushell and xonsh, which apply the environment at the first prompt, put the
+shims on `PATH` first or use `mise exec`.
+
+## Rebuild shims with mise reshim {#mise-reshim}
+
+mise adds and removes shims when it installs, upgrades, or removes a tool. Run
+[`mise reshim`](/cli/reshim.html) when another program adds executables to an
+existing installation, for example after a global package install. The Node.js
+core tool does this for `npm install -g` through its
+[`node.npm_shim`](/configuration/settings.html#node.npm_shim) wrapper; other
+package managers have no such hook.
+
+`mise reshim` only adds and removes shims. It does not fix a wrong version or a
+broken installation; run it when a command you expect is missing from the shim
+directory. `mise reshim --system` rebuilds the system shim directory.
+
+The user shim directory can be a shared directory such as `~/.local/bin`:
+`mise reshim` replaces or removes only entries it recognizes as mise shims.
+Activation and hook-env treat the whole directory as a shim directory, though,
+so use a dedicated [`shims_dir`](/configuration/settings.html#shims_dir) with
+activation.
+
+## Exclude commands from shims {#excluding-command-names}
+
+Some commands are also provided by the OS, and other software on the machine
+depends on getting the system one. [`shims.exclude`](/configuration/settings.html#shims.exclude)
+keeps those names out of the shim directory. mise still installs and manages
+the tool; it only skips the shim. This command adds the setting to your global
+config:
+
+```sh
+mise settings shims.exclude=python,python3,pip,pip3
+```
+
+On Arch Linux, for example, `/usr/bin/python` is the distribution's interpreter
+and its modules live in a matching `site-packages` directory. Without the
+exclusion, entering a project that pins `python` changes which interpreter a
+`#!/usr/bin/env python` script gets, and a `PKGBUILD` that calls `python`
+during a build picks up the pinned version.
+
+The next `mise reshim` removes excluded names, and lazy-tool bootstrap shims
+and plugin-provided shims skip them too. Version-qualified shims stay, so
+`python3.12` still resolves to the version a config selects. With no shim,
+mise is out of that command's path and no longer loads config each time it
+runs.
+
+::: warning
+Excluding `python3` means `python3 -m venv` silently builds a virtualenv from
+the system interpreter. Use the version-qualified command, such as
+`python3.12 -m venv`, to get the mise-managed version. The setting affects only
+shims: under `mise activate` without `--shims`, a tool's whole `bin` directory
+joins `PATH`, so excluded names are still found there.
+:::
+
+## Keep shims out of mise activate {#activate-shims}
+
+PATH activation puts real tool directories first. When the toolset has a
+[lazy tool](#lazy-tools) or `not_found_auto_install` is on, it also keeps the
+user and system shim directories on `PATH` behind them, so running a missing
+tool's command can still install it. To remove the shim directories from
+activation entirely, run `mise settings set activate_shims false` and restart
+your shell. See [`activate_shims`](/configuration/settings.html#activate_shims)
+for what stops working. [Command wrappers](#command-wrappers) keep working,
+because they use their own directory, and an explicit `mise activate --shims`
+still adds the shims.
+
+## Lazy tools {#lazy-tools}
+
+Set `lazy = true` on a tool to install it the first time one of its commands
+runs instead of during `mise install`:
+
+```toml [mise.toml]
+[tools]
+node = { version = "24", lazy = true }
+```
+
+For registry tools, mise creates bootstrap shims from the registry's command
+list. A tool with an explicit backend, or one that is not in the registry,
+names its commands with `lazy_bins`:
+
+```toml [mise.toml]
+[tools]
+"github:example/acme" = { version = "1.2.3", lazy = true, lazy_bins = ["acme", "acmectl"] }
+```
+
+Running one of a lazy tool's commands installs it, plus any configured tools it
+[depends](/dev-tools/#tool-dependencies) on that are missing, and then runs the
+command. Nothing else is installed. This works even when
+`not_found_auto_install` is off. A lazy declaration never overrides a
+higher-precedence config that selects the same tool without `lazy`.
+
+A bare `mise install` skips lazy tools. `mise install --include-lazy` installs
+them all now, and `mise install node` installs one. After installation,
+`mise activate` puts the real tool ahead of its shim, so later calls cost
+nothing extra. `mise activate --shims` keeps dispatching every call through
+mise.
+
+Tasks, `mise exec`, and `mise env` add the bootstrap shims behind the tool
+directories whenever the toolset has a lazy tool, so a task installs a lazy
+tool the first time it runs one of its commands. `mise run` does not install
+lazy tools ahead of time. `mise use` rebuilds shims when it changes a lazy
+declaration; run `mise reshim` after editing one by hand.
+
+## Command wrappers {#command-wrappers}
+
+A command wrapper keeps a command's name but runs another program. For example,
+to have `terraform` run OpenTofu:
+
+```toml [mise.toml]
+[tools]
+opentofu = "1"
+
+[wrappers]
+terraform = "tofu"
+```
+
+Run `mise reshim` after adding or removing a wrapper. Wrappers work with both
+`mise activate` and `mise activate --shims` and take precedence over an
+executable with the same name. If the configured tool that provides the
+wrapper's command is missing, the wrapper installs it first, as that command's
+own shim would, subject to `not_found_auto_install` unless the tool is lazy.
+
+The table form inserts arguments before the user's own, and can set
+environment variables:
+
+```toml [mise.toml]
+[tools]
+uv = "latest"
+
+[wrappers.python]
+command = "uv"
+args = ["run", "python"]
+```
+
+When Rust comes from rustup or the system rather than mise, this routes every
+`cargo` call through [Mr Boxington](https://mr-boxington.jdx.dev/):
+
+```toml [mise.toml]
+[tools]
+mr-boxington = "latest"
+
+[wrappers.cargo]
+command = "mbx"
+env = { MBX_CARGO_SHIM_MODE = "1" }
+```
+
+When a wrapper runs its command, mise removes the shim and wrapper directories
+from `PATH`, so `mbx` finds the real Cargo: mise-managed Rust when configured,
+otherwise rustup or the system installation. For mise-managed Rust, the
+[Rust guide](/lang/rust.html#share-cargo-builds-with-mr-boxington) sets this up
+with the `mr_boxington` tool option and the `mr-boxington` tool.

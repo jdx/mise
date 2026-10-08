@@ -20,6 +20,6 @@ Apply configured Docker Compose project state
 
 ## Related documentation
 
-- [Compose projects](/bootstrap/compose.html).
+- [Docker Compose projects](/bootstrap/compose.html).
 - [`mise bootstrap compose <SUBCOMMAND>`](/cli/bootstrap/compose.html).
 - [Global flags and argument syntax](/cli/#global-flags).

@@ -370,7 +370,10 @@ impl NodePlugin {
             Some(ctx.pr.as_ref()),
         )
         .await?;
-        if Settings::get().node.gpg_verify != Some(false) && version.starts_with("2") {
+        // Node publishes SHASUMS256.txt.sig for releases on every line, not only 20 and later.
+        // Older releases that never published one are skipped by the 404 check in
+        // verify_with_gpg.
+        if Settings::get().node.gpg_verify != Some(false) {
             self.verify_with_gpg(ctx, tv, &shasums_file, version, &tarball_name)
                 .await?;
         }
@@ -615,7 +618,7 @@ impl Backend for NodePlugin {
             algorithm: Some("sha256".to_string()),
         }];
 
-        // GPG verification is available for Node.js v20+ (built-in, no external gpg required)
+        // GPG verification is built in (no external gpg required)
         if Settings::get().node.gpg_verify != Some(false) {
             features.push(SecurityFeature::Gpg);
         }

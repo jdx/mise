@@ -37,6 +37,6 @@ mise plugins update my-tool#main # select an upstream ref
 
 ## Related documentation
 
-- [Plugin selection and maintenance](/plugin-usage.html).
+- [Updating plugins](/plugins.html#update-plugins).
 - [`mise plugins [FLAGS] [SUBCOMMAND]`](/cli/plugins.html).
 - [Global flags and argument syntax](/cli/#global-flags).

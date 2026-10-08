@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+# A tracked config whose tool version no longer parses used to stop `mise prune`
+# with that error, even though a tracked config that no longer parses at all is
+# skipped with a warning. It is now skipped the same way.
+
+mkdir good broken other
+
+cd good || exit 1
+assert "mise use dummy@2.0.0"
+cd ../broken || exit 1
+assert "mise use dummy@1.0.0"
+# Still valid TOML, so the file loads; only the version fails, and only later.
+cat <<'EOF' >mise.toml
+[tools]
+dummy = "-bad"
+EOF
+cd ../other || exit 1
+assert "mise install dummy@3.0.0"
+
+output="$(mise prune --dry-run 2>&1)"
+assert_contains_text "$output" "error loading tracked config file"
+assert_contains_text "$output" "broken/mise.toml"
+assert_contains_text "$output" "must not start with '-'"
+# The other tracked project is still protected, and the rest is still pruned.
+assert_not_contains_text "$output" "dummy@2.0.0"
+assert_contains_text "$output" "dummy@3.0.0"

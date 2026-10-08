@@ -24,6 +24,6 @@ description: "[experimental] List the secret names this project's secrets source
 
 ## Related documentation
 
-- [Getting started](/getting-started.html).
+- [fnox secrets](/environments/secrets/fnox.html).
 - [All commands](/cli/).
 - [Global flags and argument syntax](/cli/#global-flags).

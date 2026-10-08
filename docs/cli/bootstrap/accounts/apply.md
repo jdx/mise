@@ -20,6 +20,6 @@ Apply configured Linux users and groups
 
 ## Related documentation
 
-- [Users and groups](/bootstrap/accounts.html).
+- [Linux users and groups](/bootstrap/accounts.html).
 - [`mise bootstrap accounts <SUBCOMMAND>`](/cli/bootstrap/accounts.html).
 - [Global flags and argument syntax](/cli/#global-flags).

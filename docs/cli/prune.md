@@ -33,7 +33,6 @@ You can list prunable tools with `mise ls --prunable`
 - **`--dry-run-code`** — Like --dry-run but exits with code 1 if there are tools to prune
 
   This is useful for scripts to check if tools need to be pruned.
-- **`--monorepo`** — Placeholder for future monorepo pruning; `mise prune --monorepo` is not implemented yet.
 - **`--tools`** — Prune only unused versions of tools
 - **`-h --help`** — Print help
 
@@ -49,6 +48,6 @@ mise prune --dry-run
 
 ## Related documentation
 
-- [Development tools](/dev-tools/).
+- [Removing tools](/dev-tools/#remove-tools).
 - [All commands](/cli/).
 - [Global flags and argument syntax](/cli/#global-flags).

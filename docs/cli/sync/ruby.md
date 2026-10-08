@@ -27,6 +27,6 @@ mise ls ruby --installed # inspect linked versions, then select one with mise us
 
 ## Related documentation
 
-- [Ruby](/lang/ruby.html).
+- [Ruby](/lang/ruby.html#migrating-from-other-ruby-managers).
 - [`mise sync <SUBCOMMAND>`](/cli/sync.html).
 - [Global flags and argument syntax](/cli/#global-flags).

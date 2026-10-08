@@ -33,6 +33,6 @@ mise use -g node@20 # uses Homebrew-provided node
 
 ## Related documentation
 
-- [Node.js](/lang/node.html).
+- [Node.js](/lang/node.html#migrating-from-nvm-nodenv-or-homebrew).
 - [`mise sync <SUBCOMMAND>`](/cli/sync.html).
 - [Global flags and argument syntax](/cli/#global-flags).

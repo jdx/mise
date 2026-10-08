@@ -1,179 +1,89 @@
 ---
-description: "mise can automatically execute scripts during a mise activate session."
+description: "Run commands when an activated shell changes directory or sees a watched file change, or when mise installs tools."
 ---
 
 # Hooks
 
-mise can automatically execute scripts during a `mise activate` session. Except for the `preinstall`
-and `postinstall` hooks, these require the `mise activate` shell hook to be installed in your shell.
-Hooks are configured in `mise.toml`.
+Hooks run commands when something happens: a shell with `mise activate` changes
+directory (including entering or leaving a project) or detects a change to a
+watched file, or mise installs tools. Define them under `[hooks]` in
+`mise.toml`; file-change hooks use a separate `[[watch_files]]` table.
 
-| Event                        | Runs when                                             | Requires shell activation |
-| ---------------------------- | ----------------------------------------------------- | ------------------------- |
-| `cd`                         | The working directory changes                         | Yes                       |
-| `enter` / `leave`            | The shell enters or leaves a project's directory tree | Yes                       |
-| `preinstall` / `postinstall` | mise installs the selected tools                      | No                        |
-| `watch_files`                | Activation detects a change to a matching file        | Yes                       |
-
-Use [tasks](/tasks/) for commands you want to invoke explicitly. Use
-[`mise watch`](/cli/watch.html) for a running file watcher; `watch_files` hooks
-are checked by shell activation, rather than by a background watcher.
-
-When the same hook type is defined in multiple loaded config files, mise runs every matching hook
-rather than overriding hooks from lower-precedence files. Hooks run from the highest-precedence
-config file to the lowest-precedence config file. Within a single config file, hooks defined as an
-array run in the order listed. For example, hooks in `conf.d/a.toml`, `conf.d/b.toml`, and
-`conf.d/c.toml` run as `c`, `b`, then `a` because later alphabetical fragments have higher
-precedence. Put order-dependent hooks in one array when they need to run in alphabetical order.
-
-## CD hook
-
-This hook runs whenever the directory changes.
-
-```toml
+```toml [mise.toml]
 [hooks]
-cd = "echo 'I changed directories'"
+enter = "echo 'entered the project'"
+postinstall = "npm install"
 ```
 
-## Enter hook
+| Event             | Runs when                                                | Needs `mise activate` |
+| ----------------- | -------------------------------------------------------- | --------------------- |
+| `enter`           | The shell moves into the project from outside it         | Yes                   |
+| `leave`           | The shell moves out of the project                       | Yes                   |
+| `cd`              | The shell changes to a directory inside the project      | Yes                   |
+| `preinstall`      | mise is about to install tools                           | No                    |
+| `postinstall`     | mise has installed tools                                 | No                    |
+| `[[watch_files]]` | The shell sees a change to a file that matches a pattern | Yes                   |
 
-This hook runs when the project is entered. Changing directories within the project does not trigger it again.
+Use [tasks](/tasks/) for commands you run on demand, and
+[`mise watch`](/cli/watch.html) to rerun a task while you edit. `watch_files`
+hooks are checked when the activated shell shows a prompt, not by a background
+watcher.
 
-```toml
+## Define a hook {#define-a-hook}
+
+A hook is a command string, a table, a task reference, or an array of these:
+
+```mise-toml [mise.toml]
 [hooks]
-enter = "echo 'I entered the project'"
+enter = "echo hi"                                 # short for { run = "echo hi" }
+leave = { run = "echo bye", shell = "bash -c" }
+cd = { task = "check-tools" }
+postinstall = ["npm install", { task = "codegen" }]
 ```
 
-## Leave hook
+- `run` runs the command in a new process with your default inline shell,
+  [`unix_default_inline_shell_args`](/configuration/settings.html#unix_default_inline_shell_args)
+  or
+  [`windows_default_inline_shell_args`](/configuration/settings.html#windows_default_inline_shell_args).
+  Set `shell` to use another program, giving both the program and the argument
+  that runs an inline command, such as `bash -c`, `zsh -c` or `pwsh -Command`.
+- `run_windows` replaces `run` on Windows. On other platforms, a hook with only
+  `run_windows` is skipped.
+- `task` runs a mise task; see [Run a task](#task-hooks).
 
-This hook runs when the project is left. Changing directories within the project does not trigger it.
+Hook commands are [Tera templates](/templates.html), so
+<span v-pre>`enter = "echo {{config_root}}"`</span> prints the project
+directory. A spawned hook runs with the project's environment, `[env]` values
+and tools on `PATH`, and its output goes to stderr. When a hook fails, mise
+prints a warning and runs the remaining hooks.
 
-```toml
-[hooks]
-leave = "echo 'I left the project'"
+`run` must be a single string. To run several lines in one process, use a
+multiline string:
+
+```mise-toml [mise.toml]
+[hooks.enter]
+run = """
+echo one
+echo two
+"""
 ```
 
-## Preinstall/postinstall hook
+To run them as separate processes, define several hooks with an array or an
+array of tables:
 
-These hooks run before and after tools are installed, respectively. Unlike other hooks, they do not require `mise activate`.
-They run with the project root as their working directory, even when `mise install` is invoked from
-a subdirectory. The invocation directory remains available in `MISE_ORIGINAL_CWD`.
+```mise-toml [mise.toml]
+[[hooks.cd]]
+run = "echo 'I changed directories'"
 
-```toml
-[hooks]
-preinstall = "echo 'I am about to install tools'"
-postinstall = "echo 'I just installed tools'"
+[[hooks.cd]]
+run = "echo 'I also changed directories'"
 ```
 
-String hooks are shorthand for `run` hooks. Use a hook table when you need to select the inline shell command:
+### Run a task {#task-hooks}
 
-```toml
-[hooks]
-postinstall = { run = "echo 'installed'", shell = "bash -c" }
-```
+A hook can run a mise task instead of an inline command:
 
-Like tasks, inline hook tables may define a Windows-specific command with `run_windows`.
-On Windows, mise uses `run_windows` when it is set; otherwise it uses `run`. On other
-platforms, a hook with only `run_windows` is skipped.
-
-```toml
-[hooks]
-postinstall = { run = "pwd", run_windows = "cd" }
-```
-
-For `preinstall` and `postinstall`, `script = ...` and `scripts = ...` are legacy aliases for `run = ...`. If a `shell` is also set on a `script`/`scripts` hook, mise warns that the shell is ignored and still runs the script with the default inline shell. Use `run = ...` with `shell = "bash -c"` to choose the inline shell command. The `script` and `scripts` aliases for install hooks are deprecated.
-
-A `mise install` that finds nothing to install (all configured tools are already present) still runs the `postinstall` hook — it is not skipped on a no-op install.
-
-The `postinstall` hook receives a `MISE_INSTALLED_TOOLS` environment variable containing a JSON array of the tools that were just installed, or `[]` when nothing was installed (e.g. a no-op install). Hooks that should only act on real installs can guard on `MISE_INSTALLED_TOOLS != "[]"`:
-
-```toml
-[hooks]
-postinstall = '''
-echo "Installed: $MISE_INSTALLED_TOOLS"
-# Example output: [{"name":"node","version":"20.10.0","requested_version":"20","backend":"core:node","install_path":"/home/user/.local/share/mise/installs/node/20.10.0"}]
-'''
-```
-
-Each entry has five fields:
-
-- `name`: the tool's short name, e.g. `node`.
-- `version`: the concrete version that was installed, e.g. `20.10.0`.
-- `requested_version`: the canonical form of the selector the tool was requested
-  with, before resolution — `latest`, a version prefix such as `20`, an alias such
-  as `lts`, or a ref request such as `ref:main`. For a fully-pinned request it is
-  the same as `version`. This is normally the string as written in the config or on
-  the command line, but ref selectors are normalized to their `:` form, so a request
-  written as `ref-main` is reported as `ref:main`.
-- `backend`: the canonical backend identifier that performed the installation, such as
-  `core:node` or `npm:prettier`. Backend options are omitted because they may contain
-  registry credentials. URL user information is omitted except for SSH usernames such as
-  `git`, while passwords, query parameters, and fragments are omitted for all URL backends.
-- `install_path`: the exact directory of the completed installation. This names the
-  concrete version directory, not a floating link such as `latest` or `20`. Like other
-  environment variables, paths that are not valid Unicode use the platform's lossy
-  Unicode representation. With the experimental
-  [install layout](/dev-tools/install-layout.html), this is the installation's own
-  directory, such as `~/.local/share/mise/installs/node-<hash>`, rather than a
-  path under `installs/node/`.
-
-`requested_version` lets a hook branch on how the tool was selected without re-reading
-config files, which a `postinstall` hook cannot reliably do for the install that just
-finished:
-
-```toml
-[hooks]
-postinstall = '''
-echo "$MISE_INSTALLED_TOOLS" | jq -r '
-  .[] | select(.requested_version == "latest") | "\(.name) floats on latest, got \(.version)"'
-'''
-```
-
-The payload describes installation completion. It does not report that a later config write
-selected the installation, that floating version links have moved, or that an already-running
-application has adopted it. Tool-level hooks can run before floating links are refreshed, and a
-batch postinstall hook can run before a command finishes its final configuration changes. A
-no-op install still runs the batch hook with `[]`; after a partial failure, the array retains the
-tools that did install successfully before mise returns the failure.
-
-Service refresh belongs after a successful explicit upgrade workflow: run the upgrade, resolve
-the service launcher again in the configuration context that owns it, then ask the service to
-refresh. A postinstall hook is not an application-activation notification.
-
-## Tool-level postinstall
-
-Use a tool's `postinstall` option for work specific to that installation. It runs
-after that tool installs; independent tool installations can still run in
-parallel. Use the project-level `postinstall` hook for work that needs the whole
-selected toolset:
-
-```toml
-[tools]
-node = { version = "24", postinstall = "node --version" }
-python = { version = "3.12", postinstall = "python --version" }
-```
-
-Use `postinstall = { run = "...", when = "always" }` to run the command on every
-explicit `mise install` for the selected tool, including when that tool is
-already installed. The string form runs only when mise installs or repairs it.
-
-Tool-level postinstall scripts receive the following environment variables:
-
-- `MISE_TOOL_NAME`: The short name of the tool (e.g., "node", "python")
-- `MISE_TOOL_VERSION`: The version that was installed (e.g., "20.10.0", "3.12.0")
-- `MISE_TOOL_INSTALL_PATH`: The path where the tool was installed
-- Variables from that tool's `install_env` option
-- `MISE_CONFIG_FILE`: The exact config file that declared the tool
-- `MISE_CONFIG_ROOT`: The root directory of that config
-- `MISE_PROJECT_ROOT`: The active project root (or the config root when no project is active)
-
-## Task hooks
-
-Instead of inline scripts, hooks can reference mise tasks. The task is executed as a subprocess
-via `mise run`, so it reuses the full task system including dependencies, environment variables,
-and file-based task definitions.
-
-```toml
+```mise-toml [mise.toml]
 [tasks.install-deps]
 run = "echo 'install project dependencies here'"
 
@@ -185,117 +95,69 @@ depends = ["install-deps"]
 enter = { task = "setup" }
 ```
 
-You can mix task references with inline scripts in arrays:
+mise runs the task with `mise run` in a subprocess, so dependencies, the task's
+environment and file tasks work as usual. Task hooks work with every event.
 
-```toml
+As a `preinstall` hook, a task runs without installing its missing tools first,
+because the install it prepares has not happened yet. The commands it needs must
+already be available from the system or an earlier installation.
+
+A task that lists `secrets` does not run from a hook; see
+[fnox](/environments/secrets/fnox.html#launchers-that-refuse-grants).
+
+## Directory hooks {#directory-hooks}
+
+With [mise activated](/shell-setup.html), mise runs these hooks when the shell's
+directory changes, including at the first prompt after activation:
+
+```toml [mise.toml]
 [hooks]
-enter = ["echo 'entering project'", { task = "setup" }]
+enter = "echo 'I entered the project'"
+leave = "echo 'I left the project'"
+cd = "echo 'I changed directories'"
 ```
 
-Task hooks work with all hook types (`enter`, `leave`, `cd`, `preinstall`, `postinstall`).
+- `enter` runs when you move into the project from outside it. Moving between
+  directories inside the project does not run it again.
+- `leave` runs when you move out of the project.
+- `cd` runs on every directory change that ends inside the project, including
+  the one that enters it.
 
-Task references used as `preinstall` hooks do not automatically install missing project- or
-task-level tools. This keeps the hook ahead of the installation it is preparing. Commands needed
-by a preinstall task must already be available from the system or an existing installation. Other
-task-backed hook types retain normal task tool installation behavior.
+The project is the root of the config file that defines the hook: the
+directory that holds `mise.toml`, or the parent of `.config/mise/` or `.mise/`.
+When one directory change triggers several of these hooks, `leave` runs first,
+then `cd`, then `enter`. `enter` also runs when a project config is loaded for
+the first time without a directory change, for example after you create or
+trust `mise.toml` in the current directory.
 
-## Watch files hook
+Hooks in the global config (`~/.config/mise/config.toml`) have no project, so
+global `enter`, `leave` and `cd` hooks run on every directory change.
 
-While using `mise activate`, mise can watch files for changes and execute a script or task when one changes.
+## Run in the current shell {#shell-hooks}
 
-```toml
-[[watch_files]]
-patterns = ["src/**/*.rs"]
-run = "cargo fmt"
-```
+`enter`, `leave` and `cd` hooks can run in your current shell instead of a new
+process, for example to load completions or set a shell option. `shell` means a
+different thing in each form:
 
-By default, `run` uses the configured inline shell:
-[`unix_default_inline_shell_args`](/configuration/settings.html#unix_default_inline_shell_args)
-or [`windows_default_inline_shell_args`](/configuration/settings.html#windows_default_inline_shell_args).
-Add `shell = "bash -c"` to choose a different inline shell command for a watch file hook:
+| Form                                 | Where it runs                                        |
+| ------------------------------------ | ---------------------------------------------------- |
+| `{ run = "...", shell = "bash -c" }` | A new process started with `bash -c`                 |
+| `{ script = "...", shell = "bash" }` | Your current shell, and only when that shell is bash |
 
-```toml
-[[watch_files]]
-patterns = ["*.js"]
-run = "eslint --fix ."
-shell = "bash -c"
-```
+With `script`, `shell` names a shell, such as `bash`, `zsh` or `fish`. mise adds
+the script to the code the activated shell evaluates at the prompt, and skips
+the hook when the active shell is a different one:
 
-`shell` only applies to `run` hooks. You can also reference a mise task instead of an inline script:
-
-```toml
-[[watch_files]]
-patterns = ["uv.lock"]
-task = "sync-deps"
-```
-
-Each `[[watch_files]]` entry should have either `run` or `task`, but not both.
-
-This hook has the following environment variables set:
-
-- `MISE_WATCH_FILES_MODIFIED`: A colon-separated list of the files that have been modified. Colons are escaped with a backslash.
-
-## Hook execution
-
-Hooks are executed with the following environment variables set:
-
-- `MISE_ORIGINAL_CWD`: The directory that the user is in.
-- `MISE_PROJECT_ROOT`: The root directory of the project.
-- `MISE_CONFIG_ROOT`: The root directory of the config that defines the hook.
-- `MISE_PREVIOUS_DIR`: The directory that the user was in before the directory change (only if a directory change occurred).
-- `MISE_INSTALLED_TOOLS`: A JSON array of tools that were installed, each with `name`, `version`, `requested_version`, `backend`, and `install_path` (only for `postinstall` hooks).
-
-Global hooks use the active project's root for `MISE_PROJECT_ROOT` and the global config root for
-`MISE_CONFIG_ROOT`. For global-only operations such as `mise use --global`, both variables use the
-global config root and project hooks do not run.
-
-Inline `run` hooks can be written as `{ run = "..." }` for any hook type. The string shorthand
-(`enter = "echo hi"`) is equivalent to `{ run = "echo hi" }`.
-
-`run` and `run_windows` must be strings. `run = ["echo one", "echo two"]` is not supported.
-
-To run separate spawned inline commands, define multiple hooks. Each hook entry is a separate
-execution, so mise starts one subprocess per `run` entry:
-
-```toml
-[hooks]
-enter = [
-  { run = "echo one" },
-  { run = "echo two" },
-]
-```
-
-To run multiple shell lines in one spawned command, use one multiline `run` string. This is one hook
-execution and one subprocess:
-
-```toml
-[hooks.enter]
-run = """
-echo one
-echo two
-"""
-```
-
-`run` hooks execute in a subprocess using the default inline shell:
-[`unix_default_inline_shell_args`](/configuration/settings.html#unix_default_inline_shell_args)
-or [`windows_default_inline_shell_args`](/configuration/settings.html#windows_default_inline_shell_args).
-Add `shell = "bash -c"` to a `run` hook table to choose a different inline shell command. Like task
-`shell`, the value should include both the program and the argument that evaluates the inline command
-such as `bash -c`, `zsh -c`, or `pwsh -Command`.
-
-## Shell hooks
-
-`enter`, `leave`, and `cd` hooks can be executed in the current shell, for example if you'd like to add bash completions when entering a directory:
-
-```toml
+```toml [mise.toml]
 [hooks.enter]
 shell = "bash"
 script = "source completions.sh"
 ```
 
-Current-shell hooks may use `script`/`scripts` arrays:
+`script` takes a string or an array of lines. `scripts` takes only the array
+form:
 
-```toml
+```toml [mise.toml]
 [hooks.enter]
 shell = "bash"
 script = [
@@ -305,39 +167,160 @@ script = [
 
 [hooks.leave]
 shell = "bash"
-scripts = [
-  "unset PROJECT_READY",
-]
+scripts = ["unset PROJECT_READY"]
 ```
 
-`script` with `shell` is for current-shell hooks. Here, `shell` is a shell-name selector such as
-`bash`, `zsh`, or `fish`, not an inline shell command like `bash -c`. mise only prints the script
-when the active `mise activate` shell matches.
+mise does not track or undo what a script changes. An `enter` script that
+exports a variable needs a `leave` script that unsets it. To let mise manage a
+value's lifetime, use [`[env]`](/environments/) instead.
 
-Use `run` when the hook should execute as an inline command in a subprocess. `preinstall` and
-`postinstall` do not have a current shell, so `script`/`scripts` are only kept there as legacy aliases for `run`;
-if `shell` is set with `script`/`scripts` on those hooks, it is ignored.
+## Install hooks {#preinstall-postinstall-hook}
 
-::: warning
-mise does not track or undo changes made by shell scripts. For example, an
-`enter` script that exports a variable needs a corresponding `leave` script to
-unset it. Prefer `[env]` when you want mise to manage the value's lifetime.
+`preinstall` and `postinstall` run when mise installs tools, for example during
+`mise install`, `mise use`, or an automatic install before `mise exec`. They do
+not need `mise activate`:
 
-:::
-
-## Multiple hooks syntax
-
-You can use arrays to define multiple hooks in the same file:
-
-```toml
+```toml [mise.toml]
 [hooks]
-enter = [
-  "echo 'I entered the project'",
-  { run = "echo 'I am in the project'" }
-]
-
-[[hooks.cd]]
-run = "echo 'I changed directories'"
-[[hooks.cd]]
-run = "echo 'I also changed directories'"
+preinstall = "echo 'about to install tools'"
+postinstall = "echo 'installed tools'"
 ```
+
+- They run with the project root as the working directory, even when you run
+  `mise install` from a subdirectory. `MISE_ORIGINAL_CWD` holds the directory
+  you ran it from.
+- A project's install hooks run only when the current directory is inside that
+  project.
+- `mise install` runs `postinstall` even when every tool is already installed;
+  [`MISE_INSTALLED_TOOLS`](#mise-installed-tools) is then `[]`.
+- `preinstall` sees the environment without `[env]` entries that set
+  [`tools = true`](/environments/#lazy-eval), because those tools are not
+  installed yet.
+- `mise install --dry-run` prints the install hooks it would run without running
+  them.
+- `postinstall` can run before the command that started the install finishes
+  its own work, such as writing config. Do not use it to restart services after
+  `mise upgrade`; run that step after the upgrade command instead.
+
+To run a command after one specific tool installs, use that tool's
+[`postinstall` option](/dev-tools/#tool-postinstall-commands). It runs as soon
+as that tool finishes, while `[hooks].postinstall` runs once for the whole
+install.
+
+## Watch files {#watch-files-hook}
+
+With mise activated, a `[[watch_files]]` entry runs a command or task when a
+file that matches one of its patterns changes:
+
+```mise-toml [mise.toml]
+[[watch_files]]
+patterns = ["src/**/*.rs"]
+run = "cargo fmt"
+```
+
+- Patterns are globs relative to the project root. `*` does not match `/`; use
+  `**` to cross directories.
+- `run` uses your default inline shell. Add `shell = "bash -c"` to choose
+  another one; `shell` applies only to `run`.
+- `task = "sync-deps"` runs a mise task instead. Set either `run` or `task`;
+  when both are set, mise warns and runs the task.
+- mise reads `[[watch_files]]` from project config only. Entries in the global
+  config are ignored.
+
+```toml [mise.toml]
+[[watch_files]]
+patterns = ["uv.lock"]
+task = "sync-deps"
+```
+
+## Environment variables {#hook-execution}
+
+| Variable                    | Set for                                                     | Value                                                                       |
+| --------------------------- | ----------------------------------------------------------- | --------------------------------------------------------------------------- |
+| `MISE_PROJECT_ROOT`         | All hooks and `watch_files`                                 | The project root                                                            |
+| `MISE_CONFIG_ROOT`          | `[hooks]`                                                   | The root of the config file that defines the hook                           |
+| `MISE_ORIGINAL_CWD`         | All hooks and `watch_files`                                 | The directory you were in when mise ran                                     |
+| `MISE_PREVIOUS_DIR`         | `enter`, `leave`, `cd`                                      | The directory before the change                                             |
+| `MISE_INSTALLED_TOOLS`      | `postinstall`                                               | A JSON array of the installed tools; see [below](#mise-installed-tools)     |
+| `MISE_WATCH_FILES_MODIFIED` | `watch_files`                                               | The changed files, separated by `:`, with any `:` in a name escaped as `\:` |
+| `MISE_NO_HOOKS`             | Spawned `[hooks]` commands, task hooks, `watch_files` tasks | `1`, so a `mise` command run from the hook does not run hooks again         |
+
+Global hooks get the active project's root as `MISE_PROJECT_ROOT`, or the global
+config root when no project is active, and the global config root as
+`MISE_CONFIG_ROOT`. For operations on the global config only, such as
+`mise use --global`, both variables are the global config root and project
+hooks do not run.
+
+## Hooks from several config files {#several-config-files}
+
+When the same event is defined in several loaded config files, mise runs every
+matching hook rather than letting one file override another. Hooks run from the
+highest-precedence config file to the lowest. Within one file, an array of hooks
+runs in the order listed.
+
+For example, hooks in `conf.d/a.toml`, `conf.d/b.toml` and `conf.d/c.toml` run
+as `c`, `b`, then `a`, because later fragments in alphabetical order have higher
+precedence. Put hooks that depend on each other's order in one array.
+
+## Turn hooks off {#disable-hooks}
+
+Pass `--no-hooks`, set `MISE_NO_HOOKS=1`, or set
+[`no_hooks = true`](/configuration/settings.html#no_hooks) to skip the
+`[hooks]` entries: `enter`, `leave`, `cd`, `preinstall` and `postinstall`.
+[Safe mode](/security.html#safe-mode) (`MISE_SAFE=1`) skips them too.
+
+The flag, the variable and the setting do not affect `[[watch_files]]` entries
+or a tool's own `postinstall` option.
+
+## `MISE_INSTALLED_TOOLS` {#mise-installed-tools}
+
+`postinstall` hooks receive `MISE_INSTALLED_TOOLS`, a JSON array with one entry
+per tool that mise installed:
+
+```toml [mise.toml]
+[hooks]
+postinstall = '''
+echo "Installed: $MISE_INSTALLED_TOOLS"
+'''
+```
+
+```text
+Installed: [{"name":"node","version":"24.4.1","requested_version":"24","backend":"core:node","install_path":"/home/user/.local/share/mise/installs/node/24.4.1"}]
+```
+
+| Field               | Meaning                                                                                 | Example                                    |
+| ------------------- | --------------------------------------------------------------------------------------- | ------------------------------------------ |
+| `name`              | The tool's short name                                                                   | `node`                                     |
+| `version`           | The version that was installed                                                          | `24.4.1`                                   |
+| `requested_version` | What was asked for, before resolution; the same as `version` for a fully pinned request | `latest`, `24`, `lts`, `ref:main`          |
+| `backend`           | The backend that installed it, without options or URL credentials                       | `core:node`, `npm:prettier`                |
+| `install_path`      | The directory of this installation, never a floating link such as `latest`              | `~/.local/share/mise/installs/node/24.4.1` |
+
+`requested_version` is normally the string from the config or the command line.
+Ref selectors are normalized to their `:` form, so `ref-main` is reported as
+`ref:main`. A hook can branch on it without reading config files, which a
+`postinstall` hook cannot reliably do for the install that just finished:
+
+```toml [mise.toml]
+[hooks]
+postinstall = '''
+echo "$MISE_INSTALLED_TOOLS" | jq -r '
+  .[] | select(.requested_version == "latest") | "\(.name) floats on latest, got \(.version)"'
+'''
+```
+
+To act only on real installs, check for `[]` first. When some installs fail,
+the array lists the tools that did install, and mise reports the failure after
+the hook runs.
+
+## Deprecated syntax {#deprecated-syntax}
+
+A `script` or `scripts` table runs as a spawned command, the same as `run`, on
+`preinstall` and `postinstall`, and on `enter`, `leave` or `cd` when no `shell`
+is set. That form is deprecated: use `run`. It will be removed in mise
+2027.3.0.
+
+On `preinstall` and `postinstall`, a `shell` set next to `script` or `scripts`
+is ignored, and mise warns. `script` or `scripts` with `shell` (for example
+`shell = "bash"`) on `enter`, `leave` or `cd` is the
+[current-shell form](#shell-hooks) and is not deprecated.

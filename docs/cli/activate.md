@@ -83,6 +83,6 @@ Activate mise in PowerShell.
 
 ## Related documentation
 
-- [Shell activation](/getting-started.html#activate-mise).
+- [Shell setup](/shell-setup.html).
 - [All commands](/cli/).
 - [Global flags and argument syntax](/cli/#global-flags).

@@ -26,6 +26,6 @@ shell affects future sessions, not the shell running this command.
 
 ## Related documentation
 
-- [Current-user settings](/bootstrap/user.html).
+- [Login shell](/bootstrap/shell.html#set-your-login-shell).
 - [`mise bootstrap [FLAGS] [SUBCOMMAND]`](/cli/bootstrap.html).
 - [Global flags and argument syntax](/cli/#global-flags).
