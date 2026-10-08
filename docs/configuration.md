@@ -452,7 +452,7 @@ _.source = "scripts/env.sh"
 | `[[watch_files]]`                   | Commands run when files change                                          | [Hooks](/hooks.html)                                               |
 | `[shell_alias]`                     | Shell aliases defined while you are in the directory; needs activation  | [Shell aliases](/shell-aliases.html)                               |
 | `[wrappers]`                        | Commands that intercept a binary name                                   | [Command wrappers](/dev-tools/shims.html#command-wrappers)         |
-| `include`                           | Remote config files merged into this one                                | [`include`](#include)                                              |
+| `include`                           | Config files merged into this one                                       | [`include`](#include)                                              |
 | `min_version`                       | Oldest mise release that can use this file                              | [`min_version`](#minimum-mise-version)                             |
 | `monorepo_root`, `[monorepo]`       | `//path:task` addressing; trusting the root trusts the configs below it | [Monorepo tasks](/tasks/monorepo.html)                             |
 | `[doctor]`                          | Project checks for `mise doctor project`                                | [Project diagnostics](/configuration/project-diagnostics.html)     |
@@ -543,11 +543,13 @@ are available immediately. `file://` URLs are Git repositories and are cloned.
 
 ### `include` {#include}
 
-`include` merges remote config files into this one, so an organization can
-publish a baseline that every repository uses:
+`include` merges other config files into this one, so an organization can
+publish a baseline that every repository uses, or a repository can split a
+large config into parts:
 
 ```toml
 include = [
+  "./config/tools.toml",
   "git::https://github.com/myorg/platform.git//mise.toml?ref=main",
   "oci::ghcr.io/myorg/platform-config@sha256:0f1e2d3c4b5a69788796a5b4c3d2e1f00f1e2d3c4b5a69788796a5b4c3d2e1f0",
 ]
@@ -556,8 +558,9 @@ include = [
 node = "24" # this file's own entries override the included ones
 ```
 
-A `git::` include points at a `.toml` file. An `oci::` include points at an
-artifact with a `mise.toml` at its root.
+A local include is a path to a `.toml` file, relative to the including file or
+absolute. A `git::` include points at a `.toml` file. An `oci::` include points
+at an artifact with a `mise.toml` at its root.
 
 An included file ranks directly below the file that includes it, and a later entry
 in `include` overrides an earlier one. Its relative paths, such as `_.file`,
@@ -581,9 +584,10 @@ mise fetch a URL when you `cd` into it, and
 Once you trust the file, the included content runs with that trust, as a
 `mise.toml` that changes on `git pull` does. In
 [paranoid mode](/paranoid.html#remote-includes), an include must be pinned to a
-commit SHA or an OCI digest.
+commit SHA or an OCI digest, and a local include is an error because its content
+is not covered by the file's trust hash.
 
-mise caches each included file under `MISE_CACHE_DIR` and never refetches a
+A local include is read on every load and is never cached. mise caches each included file under `MISE_CACHE_DIR` and never refetches a
 commit SHA or an OCI digest. Commands such as `mise install`, `mise use`, and
 `mise upgrade` refresh a branch, tag, or OCI tag once the cached copy is older
 than

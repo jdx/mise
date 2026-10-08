@@ -1,0 +1,62 @@
+#!/usr/bin/env bash
+# `include` also accepts a local path, relative to the including file.
+
+mkdir -p sub shared
+cat >shared/base.toml <<'TOML'
+[env]
+FROM_LOCAL = "1"
+OVERRIDDEN = "fragment"
+ROOT = "{{ config_root }}"
+TOML
+cat >shared/other.toml <<'TOML'
+[env]
+FROM_OTHER = "1"
+OVERRIDDEN = "other"
+TOML
+
+cat >mise.toml <<'TOML'
+include = ["shared/base.toml", "./shared/other.toml"]
+
+[env]
+OWN = "yes"
+TOML
+assert "mise env --json | jq -r .FROM_LOCAL" "1"
+assert "mise env --json | jq -r .FROM_OTHER" "1"
+assert "mise env --json | jq -r .OWN" "yes"
+# a later include overrides an earlier one
+assert "mise env --json | jq -r .OVERRIDDEN" "other"
+# config_root resolves against the including file
+assert "mise env --json | jq -r .ROOT" "$PWD"
+
+# the including file's own entries win
+cat >mise.toml <<'TOML'
+include = ["shared/base.toml"]
+
+[env]
+OVERRIDDEN = "local"
+TOML
+assert "mise env --json | jq -r .OVERRIDDEN" "local"
+
+# edits are picked up without a refresh, and an absolute path works
+cat >mise.toml <<TOML
+include = ["$PWD/shared/base.toml"]
+TOML
+echo 'FROM_EDIT = "1"' >>shared/base.toml
+assert "mise env --json | jq -r .FROM_EDIT" "1"
+
+# a missing file is an error, and so is a key a fragment cannot hold
+cat >mise.toml <<'TOML'
+include = ["shared/missing.toml"]
+TOML
+assert_fail_contains "mise env" "must be a file"
+printf '[settings]\nexperimental = true\n' >shared/bad.toml
+cat >mise.toml <<'TOML'
+include = ["shared/bad.toml"]
+TOML
+assert_fail_contains "mise env" "not supported in a config include"
+
+# paranoid mode refuses a file its trust hash does not cover
+cat >mise.toml <<'TOML'
+include = ["shared/base.toml"]
+TOML
+assert_fail_contains "MISE_PARANOID=1 mise env" "local config include is not allowed"
