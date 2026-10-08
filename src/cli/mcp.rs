@@ -138,11 +138,16 @@ fn mise_child<S: AsRef<std::ffi::OsStr>>(
 }
 
 async fn run_mise(args: &[&str]) -> std::result::Result<std::process::Output, ErrorData> {
-    mise_child(args)?.output().await.map_err(|e| ErrorData {
+    let error = |e: std::io::Error| ErrorData {
         code: ErrorCode::INTERNAL_ERROR,
         message: Cow::Owned(format!("Failed to execute mise {}: {e}", args.join(" "))),
         data: None,
-    })
+    };
+    let child = mise_child(args)?.spawn().map_err(error)?;
+    // The child runs in its own process group; registering it lets Ctrl-C
+    // stop an install's compilers and plugins, not just the child.
+    let _running_pid = RunningPidGuard::new(child.id());
+    child.wait_with_output().await.map_err(error)
 }
 
 /// The version `mise ls` reports for the installation at `install_path`. An

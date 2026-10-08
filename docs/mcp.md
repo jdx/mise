@@ -60,7 +60,10 @@ read-only query is not a sandbox for untrusted project configuration.
 `run_task` executes the project's commands with your account's access. It runs without
 interactive stdin and sets `MISE_YES=1`, so use your client's tool approval controls to decide
 which tasks may run. Review task definitions before allowing an assistant to execute them.
-See [security](/security.html) for mise's configuration trust model.
+`run_task` and `install_tool` refuse to act on a project whose config files are not
+trusted, and the command they start trusts nothing on its own, including config it reaches
+in a subdirectory. The refusal lists the `mise trust` commands to run after you review the
+files. See [security](/security.html) for mise's configuration trust model.
 
 ## Available Resources
 
@@ -76,8 +79,9 @@ Restart the server after editing configuration if the client continues to show c
 | `mise://config`                      | Active configuration file paths and the project root.                                                                              |
 
 `mise://config` does not return a full settings dump. In `mise://tasks`, the `env` field is
-currently an empty object; it does not expose task-specific environment values. Use the
-source configuration when you need details that a resource does not provide.
+an array of the task's environment directives as written, such as `"NODE_ENV=test"`; they
+are not evaluated. Use the source configuration when you need details that a resource does
+not provide.
 
 ## Available Tools
 
@@ -123,9 +127,22 @@ that require terminal input cannot prompt through this tool. The
 
 ### `install_tool`
 
-The server advertises `install_tool`, but calling it currently returns a “not yet implemented”
-error. Install required tools with `mise install` outside this MCP tool before running tasks,
-or use a client's separate command execution facility if it provides one.
+Installs a tool version, as `mise install` does:
+
+| Parameter | Type   | Required | Meaning                                                                                  |
+| --------- | ------ | -------- | ---------------------------------------------------------------------------------------- |
+| `tool`    | string | Yes      | Tool name, such as `node` or `aqua:cli/cli`.                                             |
+| `version` | string | No       | Version request, such as `22`. Defaults to the configured version, or latest if none is. |
+
+```json
+{
+  "tool": "node",
+  "version": "22"
+}
+```
+
+The response is JSON with the requested `tool`, the installed `version` and its
+`install_path`. A failed install produces a tool error with mise's output.
 
 ## Examples
 
