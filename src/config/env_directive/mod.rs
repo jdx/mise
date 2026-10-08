@@ -23,6 +23,7 @@ pub(crate) use mise_util::env_value::EnvValue;
 
 mod file;
 mod module;
+pub use module::skipped_env_modules;
 mod path;
 mod source;
 pub(crate) mod venv;

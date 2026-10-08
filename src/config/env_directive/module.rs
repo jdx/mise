@@ -1,6 +1,6 @@
 use crate::Result;
 use crate::config::Config;
-use crate::config::env_directive::EnvResults;
+use crate::config::env_directive::{EnvDirective, EnvResults};
 use crate::dirs;
 use crate::plugins::Plugin;
 use crate::plugins::vfox_plugin::VfoxPlugin;
@@ -22,25 +22,26 @@ impl EnvResults {
         env: IndexMap<String, String>,
     ) -> Result<()> {
         let config_root = crate::config::config_file::config_root::config_root(&source);
-        let path = dirs::PLUGINS.join(name.to_kebab_case());
-        let plugin = VfoxPlugin::new(name.clone(), path.clone());
-        if let Err(err) = plugin
-            .ensure_installed(config, &MultiProgressReport::get(), false, false)
-            .await
-        {
-            if plugin.is_installed() {
-                return Err(err);
-            }
+        let (plugin, path) = env_plugin(&name);
+        if let Some(err) = plugin.missing_source(config) {
             // Config loading resolves [env], so failing here would break every
             // command, including the `mise plugins install` that fixes it.
+            // Only a plugin with no source at all is skipped: a known source
+            // that fails to install (network, 404, paranoid, safe mode) still
+            // errors, so a command never runs without an env it expects.
+            debug!("env plugin {name}: {err:#}");
             warn_once!(
-                "skipping env plugin {name}, it is not installed: {err:#}\n\
+                "skipping env plugin {name}: it is not installed and has no source \
+                 (a registry name, owner/repo, or URL)\n\
                  Install it with `mise plugins install {name} <git-url>`, \
                  or set its URL in [plugins]"
             );
             r.has_uncacheable = true;
             return Ok(());
         }
+        plugin
+            .ensure_installed(config, &MultiProgressReport::get(), false, false)
+            .await?;
         if let Some(response) = plugin.mise_env(value, &env, Some(&config_root)).await? {
             // Track cacheability
             if !response.cacheable {
@@ -79,4 +80,28 @@ impl EnvResults {
         }
         Ok(())
     }
+}
+
+fn env_plugin(name: &str) -> (VfoxPlugin, PathBuf) {
+    let path = dirs::PLUGINS.join(name.to_kebab_case());
+    (VfoxPlugin::new(name.to_string(), path.clone()), path)
+}
+
+/// `[env] _.<name>` modules that are skipped because their plugin is not
+/// installed and has no source, with the config file that declares each.
+pub fn skipped_env_modules(config: &Config) -> Vec<(String, PathBuf)> {
+    config
+        .config_files
+        .iter()
+        .flat_map(|(source, cf)| {
+            cf.env_entries()
+                .unwrap_or_default()
+                .into_iter()
+                .filter_map(move |directive| match directive {
+                    EnvDirective::Module(name, ..) => Some((name, source.clone())),
+                    _ => None,
+                })
+        })
+        .filter(|(name, _)| env_plugin(name).0.missing_source(config).is_some())
+        .collect()
 }
