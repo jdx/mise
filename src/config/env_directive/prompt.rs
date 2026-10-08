@@ -59,6 +59,12 @@ pub fn declared() -> BTreeSet<String> {
     DECLARED.lock().map(|d| d.clone()).unwrap_or_default()
 }
 
+/// Stop asking. Called once the config has loaded, so later var resolution
+/// (per task, possibly in parallel) uses saved answers and never touches the terminal.
+pub fn disable() {
+    ENABLED.store(false, Ordering::Relaxed);
+}
+
 /// Limit prompting to `names`. An empty list leaves it unrestricted.
 pub fn only(names: &[String]) {
     if let Ok(mut only) = ONLY.lock() {

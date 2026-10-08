@@ -157,3 +157,11 @@ EOF2
 assert "mise vars shared" "from-toml"
 assert_contains "mise vars --no-header | grep shared" "mise.toml"
 rm mise.local.toml
+
+# `prompt` on a plain value would never ask, so it is an error
+cat <<EOF2 >mise.toml
+[vars.x]
+value = "1"
+prompt = "X"
+EOF2
+assert_fail_contains "mise vars" "on the same var"

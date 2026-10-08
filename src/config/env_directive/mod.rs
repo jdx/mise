@@ -521,6 +521,15 @@ impl EnvResults {
             if !resolve_opts.vars && directive.options().prompt.is_some() {
                 eyre::bail!("`prompt` is only supported in [vars], not [env]");
             }
+            if resolve_opts.vars
+                && directive.options().prompt.is_some()
+                && !matches!(
+                    directive,
+                    EnvDirective::Default(..) | EnvDirective::Required(..)
+                )
+            {
+                eyre::bail!("`prompt` needs a `default` or `required` on the same var");
+            }
             // trace!("resolve: ctx.get('env'): {:#?}", &ctx.get("env"));
             match directive {
                 EnvDirective::Val(k, v, _opts) => {

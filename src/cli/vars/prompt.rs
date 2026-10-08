@@ -56,6 +56,7 @@ impl VarsPrompt {
         }
         // Prompting happens while the vars resolve, so (re)load the config now.
         Config::reset().await?;
+        prompt::disable();
         let declared = prompt::declared();
         if let Some(unknown) = names.iter().find(|name| !declared.contains(*name)) {
             bail!("no [vars] entry named '{unknown}' declares a `prompt` here");
