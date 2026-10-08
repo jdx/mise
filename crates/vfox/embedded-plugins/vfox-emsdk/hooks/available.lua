@@ -1,6 +1,8 @@
 local http = require("http")
 local json = require("json")
 
+local get = http.try_get or http.get
+
 local available_result = nil
 
 function PLUGIN:Available(ctx)
@@ -8,7 +10,7 @@ function PLUGIN:Available(ctx)
         return available_result
     end
 
-    local resp, err = http.get({
+    local resp, err = get({
         url = "https://raw.githubusercontent.com/emscripten-core/emsdk/main/emscripten-releases-tags.json"
     })
 
@@ -31,7 +33,7 @@ function PLUGIN:Available(ctx)
         end
     end
 
-    resp, err = http.get({
+    resp, err = get({
         url = "https://api.github.com/repos/emscripten-core/emsdk/releases?per_page=100"
     })
 

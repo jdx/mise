@@ -61,15 +61,37 @@ local function target_arch()
   return "amd64"
 end
 
+-- http.get can yield while waiting on the network, and Lua 5.1 cannot yield
+-- through pcall, so requests use http.try_get, which reports failures as a
+-- second return value instead of raising.
+-- Official vfox only has http.get (which also returns resp, err); mise adds try_get.
+local function http_get(request)
+  return (http.try_get or http.get)(request)
+end
+
+local function normalize_arch(arch)
+  if arch == "arm64" or arch == "aarch64" then
+    return "arm64"
+  end
+  if arch == "amd64" or arch == "x86_64" then
+    return "amd64"
+  end
+  return arch
+end
+
 local function fetch_records()
-  local resp, err = http.get({ url = metadata_url })
-  if err ~= nil then
-    error("failed to fetch MySQL tarball metadata: " .. err)
+  local resp, err = http_get({ url = metadata_url })
+  if resp == nil then
+    return nil, "failed to fetch MySQL tarball metadata: " .. tostring(err)
   end
   if resp.status_code ~= 200 then
-    error("failed to fetch MySQL tarball metadata: status " .. resp.status_code)
+    return nil, "failed to fetch MySQL tarball metadata: status " .. resp.status_code
   end
-  return json.decode(resp.body).Tarballs
+  local ok, decoded = pcall(json.decode, resp.body)
+  if not ok or type(decoded) ~= "table" or type(decoded.Tarballs) ~= "table" then
+    return nil, "failed to parse MySQL tarball metadata"
+  end
+  return decoded.Tarballs
 end
 
 local function fetch_downloads(series)
@@ -79,16 +101,16 @@ local function fetch_downloads(series)
     url = url .. "?version=" .. series .. "&os=" .. os
   end
   -- MySQL's download page rejects generic HTTP client user agents.
-  local ok, resp = pcall(http.get, {
+  local resp, err = http_get({
     url = url,
     headers = { ["User-Agent"] = "curl/8.5.0" },
   })
-  if ok and resp.status_code == 200 then
+  if resp and resp.status_code == 200 then
     return resp.body
   end
 
   -- Akamai intermittently rejects mise's native HTTP client while accepting curl.
-  if not ok or resp.status_code == 403 then
+  if resp and resp.status_code == 403 then
     local handle = io.popen("curl --fail --silent --show-error --location " .. shell_quote(url))
     local body = handle:read("*a")
     local curl_ok = handle:close()
@@ -97,14 +119,18 @@ local function fetch_downloads(series)
     end
   end
 
-  local reason = ok and ("status " .. resp.status_code) or tostring(resp)
-  error("failed to fetch MySQL downloads: " .. reason)
+  local reason = resp and ("status " .. resp.status_code) or tostring(err)
+  return nil, "failed to fetch MySQL downloads: " .. reason
 end
 
 local function current_versions()
   local versions = {}
   local seen = {}
-  for version in fetch_downloads():gmatch(">%s*(%d+%.%d+%.%d+)%s*[^<]*</option>") do
+  local body = fetch_downloads()
+  if not body then
+    return versions
+  end
+  for version in body:gmatch(">%s*(%d+%.%d+%.%d+)%s*[^<]*</option>") do
     if not seen[version] then
       seen[version] = true
       table.insert(versions, version)
@@ -113,21 +139,16 @@ local function current_versions()
   return versions
 end
 
-local function current_versions_or_empty()
-  local ok, versions = pcall(current_versions)
-  if ok then
-    return versions
-  end
-  return {}
-end
-
 local function current_record(version)
   local series = version:match("^(%d+%.%d+)")
   if not series then
     return nil
   end
 
-  local body = fetch_downloads(series)
+  local body, err = fetch_downloads(series)
+  if not body then
+    error(err)
+  end
   local arch = target_arch() == "arm64" and (target_os() == "Darwin" and "arm64" or "aarch64") or "x86_64"
   local prefix = "mysql-" .. version .. "-"
   local filename
@@ -156,20 +177,16 @@ end
 local function mysql_records()
   local records = {}
   local os_name = target_os()
-  for _, record in ipairs(fetch_records()) do
+  local fetched = fetch_records()
+  if not fetched then
+    return records
+  end
+  for _, record in ipairs(fetched) do
     if record.flavor == "mysql" and record.minimal == false and record.OS == os_name then
       table.insert(records, record)
     end
   end
   return records
-end
-
-local function mysql_records_or_empty()
-  local ok, records = pcall(mysql_records)
-  if ok then
-    return records
-  end
-  return {}
 end
 
 local function link_libaio_t64(root)
@@ -189,11 +206,11 @@ end
 function util.get_versions()
   local seen = {}
   local versions = {}
-  for _, version in ipairs(current_versions_or_empty()) do
+  for _, version in ipairs(current_versions()) do
     seen[version] = true
     table.insert(versions, { version = version })
   end
-  for _, record in ipairs(mysql_records_or_empty()) do
+  for _, record in ipairs(mysql_records()) do
     if not seen[record.version] then
       seen[record.version] = true
       table.insert(versions, { version = record.version })
@@ -204,8 +221,11 @@ function util.get_versions()
 end
 
 function util.record_for_version(version)
+  if OS_TYPE == "windows" then
+    error("The mysql plugin does not support Windows")
+  end
   local records = {}
-  for _, record in ipairs(mysql_records_or_empty()) do
+  for _, record in ipairs(mysql_records()) do
     if record.version == version then
       table.insert(records, record)
     end
@@ -213,11 +233,11 @@ function util.record_for_version(version)
   if #records > 0 then
     local arch = target_arch()
     for _, record in ipairs(records) do
-      if record.arch == arch then
+      if normalize_arch(record.arch) == arch then
         return record
       end
     end
-    return records[1]
+    -- No archive for this architecture: do not hand back one that cannot run.
   end
 
   local record = current_record(version)

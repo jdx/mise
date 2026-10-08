@@ -1,3 +1,52 @@
+--- Returns true when an os.execute result signals success (Lua 5.1 returns a number, 5.2+ a boolean)
+local function succeeded(status)
+    return status == 0 or status == true
+end
+
+--- Builds Lua with MinGW (gcc plus mingw32-make or make on PATH) and lays out bin/ and include/
+--- @param sdkPath string Source directory, which becomes the install directory
+local function install_windows(sdkPath)
+    local src = sdkPath .. "\\src"
+
+    local make
+    for _, candidate in ipairs({ "mingw32-make", "make" }) do
+        if succeeded(os.execute(candidate .. " --version >nul 2>&1")) then
+            make = candidate
+            break
+        end
+    end
+    if make == nil then
+        error("Building Lua on Windows needs MinGW: put gcc and mingw32-make (or make) on PATH")
+    end
+
+    if not succeeded(os.execute(string.format('cd /d "%s" && %s mingw', src, make))) then
+        error("Failed to build Lua: " .. make .. " mingw failed")
+    end
+
+    local layout = string.format(
+        'mkdir "%s\\bin" "%s\\include" && cd /d "%s"'
+            .. ' && copy /Y lua.exe "%s\\bin" && copy /Y luac.exe "%s\\bin" && copy /Y *.dll "%s\\bin"'
+            .. ' && copy /Y lua.h "%s\\include" && copy /Y luaconf.h "%s\\include"'
+            .. ' && copy /Y lualib.h "%s\\include" && copy /Y lauxlib.h "%s\\include"'
+            .. ' && if exist lua.hpp copy /Y lua.hpp "%s\\include"',
+        sdkPath,
+        sdkPath,
+        src,
+        sdkPath,
+        sdkPath,
+        sdkPath,
+        sdkPath,
+        sdkPath,
+        sdkPath,
+        sdkPath,
+        sdkPath
+    )
+    if not succeeded(os.execute(layout .. " >nul")) then
+        error("Failed to install Lua files")
+    end
+    os.execute(string.format('cd /d "%s" && rmdir /s /q src doc >nul 2>&1', sdkPath))
+end
+
 --- Compiles and installs Lua from source
 --- @param ctx table Context provided by vfox
 --- @field ctx.sdkInfo table SDK information with version and path
@@ -10,6 +59,10 @@ function PLUGIN:PostInstall(ctx)
     local sdkPath = sdkInfo.path
 
     -- mise extracts tarball and strips top-level directory, so sdkPath IS the source directory
+
+    if RUNTIME.osType == "windows" then
+        return install_windows(sdkPath)
+    end
 
     -- Determine OS-specific make target
     local os_type = RUNTIME.osType

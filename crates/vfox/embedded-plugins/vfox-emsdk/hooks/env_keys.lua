@@ -4,7 +4,8 @@ end
 
 local function dir_exists(path)
     if RUNTIME.osType == "windows" then
-        return os.execute('if exist "' .. path .. '\\*" exit /b 0 else exit /b 1') == true
+        local ret = os.execute('if exist "' .. path .. '\\*" exit /b 0 else exit /b 1')
+        return ret == true or ret == 0
     end
     local ret = os.execute("test -d " .. shell_quote(path))
     return ret == true or ret == 0

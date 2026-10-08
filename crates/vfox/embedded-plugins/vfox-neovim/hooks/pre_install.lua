@@ -71,7 +71,28 @@ function PLUGIN:PreInstall(ctx)
     local release = json.decode(resp.body)
 
     -- Find the right asset and its checksum file
-    local asset_name = "nvim-" .. platform .. ext
+    -- Releases up to 0.10.3 used older asset names (nvim-linux64, and a universal
+    -- nvim-macos on 0.9.x), so fall back to those when the current name is absent.
+    local candidates = { "nvim-" .. platform .. ext }
+    if platform == "linux-x86_64" then
+        table.insert(candidates, "nvim-linux64" .. ext)
+    elseif platform == "macos-arm64" or platform == "macos-x86_64" then
+        table.insert(candidates, "nvim-macos" .. ext)
+    end
+
+    local available = {}
+    for _, asset in ipairs(release.assets) do
+        available[asset.name] = true
+    end
+
+    local asset_name = candidates[1]
+    for _, candidate in ipairs(candidates) do
+        if available[candidate] then
+            asset_name = candidate
+            break
+        end
+    end
+
     local checksum_name = asset_name .. ".sha256sum"
     local download_url = nil
     local checksum_url = nil

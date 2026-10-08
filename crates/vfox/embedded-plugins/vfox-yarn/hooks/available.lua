@@ -111,14 +111,28 @@ local function semver_compare(a, b)
     return false
 end
 
+-- Hosts Yarn 6+ publishes binaries for (keep in sync with ZPM_TARGETS in
+-- pre_install.lua). Listing 6+ elsewhere would make `latest` uninstallable.
+local ZPM_HOSTS = {
+    ["darwin/arm64"] = true,
+    ["linux/arm64"] = true,
+    ["linux/x86"] = true,
+    ["linux/amd64"] = true,
+}
+
 function PLUGIN:Available(ctx)
     local versions = {}
 
     -- Get Yarn ZPM versions (v6+). Only versions published to npm are
     -- installable (some git tags never were), so list the npm package. Every
     -- platform package carries the same versions, so any one will do.
-    local resp, err = http.try_get({ url = "https://registry.npmjs.org/@yarnpkg/yarn-x86_64-unknown-linux-musl" })
-    if err == nil and resp.status_code == 200 then
+    -- Skip them on hosts without a published binary.
+    local zpm_supported = ZPM_HOSTS[RUNTIME.osType .. "/" .. RUNTIME.archType]
+    local resp, err
+    if zpm_supported then
+        resp, err = http.try_get({ url = "https://registry.npmjs.org/@yarnpkg/yarn-x86_64-unknown-linux-musl" })
+    end
+    if zpm_supported and err == nil and resp.status_code == 200 then
         local zpm_versions = {}
         for version in pairs(json.decode(resp.body).versions or {}) do
             local major = tonumber(version:match("^(%d+)%.%d+%.%d+"))
