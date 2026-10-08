@@ -6,14 +6,13 @@
 
 use std::fmt;
 use std::path::PathBuf;
-use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
 
 use eyre::{Result, bail};
 use serde::Serialize;
 use strum::{EnumIter, IntoEnumIterator};
 
 use crate::config::{Config, Settings, SettingsExt};
+use crate::tera::DryRunRender;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, EnumIter, Serialize)]
 #[serde(rename_all = "kebab-case")]
@@ -147,52 +146,41 @@ pub async fn run_phase(
     };
     for hook in phase_hooks {
         let run = if crate::tera::contains_template_syntax(&hook.run) {
-            let reached_exec = Arc::new(AtomicBool::new(false));
-            let mut tera = if dry_run {
-                crate::tera::get_tera_for_dry_run_tracking_exec(
-                    hook.config_path.parent(),
-                    reached_exec.clone(),
-                )
-            } else {
-                crate::tera::get_tera(hook.config_path.parent())
-            };
             let mut context = config.bootstrap_tera_ctx(&hook.config_path).clone();
             if context.get("config_root").is_none() {
                 let config_root =
                     crate::config::config_file::config_root::config_root(&hook.config_path);
                 context.insert("config_root", &config_root);
             }
-            match crate::tera::render_str(&mut tera, &hook.run, &context) {
-                Ok(run) => run,
-                // a dry run must not execute anything, so a command that
-                // needs exec() output is shown as written instead
-                Err(_) if reached_exec.load(Ordering::Relaxed) => {
-                    info!(
-                        "[bootstrap.hooks.{phase}] in {}: exec() does not run during a dry run; showing the command unrendered",
-                        hook.config_path.display()
-                    );
-                    hook.run.clone()
+            let rendered = if dry_run {
+                match crate::tera::render_for_dry_run(
+                    hook.config_path.parent(),
+                    &hook.run,
+                    &context,
+                    config.bootstrap_dry_run_unresolved_vars(&hook.config_path),
+                ) {
+                    DryRunRender::Rendered(run) => Ok(run),
+                    // a dry run must not execute anything, so a command that
+                    // depends on exec() output is shown as written instead
+                    DryRunRender::NeedsRun => {
+                        info!(
+                            "[bootstrap.hooks.{phase}] in {}: depends on values a dry run does not compute, such as exec() output; showing the command unrendered",
+                            hook.config_path.display()
+                        );
+                        Ok(hook.run.clone())
+                    }
+                    DryRunRender::Failed(err) => Err(err),
                 }
-                // the same goes for a command that reads vars the dry run
-                // could not resolve, such as ones computed with exec()
-                Err(_)
-                    if dry_run
-                        && crate::config::references_any_var(
-                            &hook.run,
-                            config.bootstrap_dry_run_unresolved_vars(&hook.config_path),
-                        ) =>
-                {
-                    info!(
-                        "[bootstrap.hooks.{phase}] in {}: uses vars that are not resolved during a dry run; showing the command unrendered",
-                        hook.config_path.display()
-                    );
-                    hook.run.clone()
-                }
-                Err(err) => bail!(
+            } else {
+                let mut tera = crate::tera::get_tera(hook.config_path.parent());
+                crate::tera::render_str(&mut tera, &hook.run, &context)
+            };
+            rendered.map_err(|err| {
+                eyre::eyre!(
                     "[bootstrap.hooks.{phase}] in {}: failed to render template: {err}",
                     hook.config_path.display()
-                ),
-            }
+                )
+            })?
         } else {
             hook.run.clone()
         };
@@ -214,42 +202,6 @@ pub async fn run_phase(
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn dry_run_renderer_reports_exec_without_running_it() {
-        let dir = tempfile::tempdir().unwrap();
-        let marker = dir.path().join("ran");
-        // the command goes through the context: a Windows path in a template
-        // string literal would contain backslash escapes Tera rejects
-        let mut context = crate::tera::BASE_CONTEXT.clone();
-        context.insert("cmd", &format!("touch {}", marker.display()));
-        let render = |input: &str| {
-            let reached_exec = Arc::new(AtomicBool::new(false));
-            let mut tera = crate::tera::get_tera_for_dry_run_tracking_exec(
-                Some(dir.path()),
-                reached_exec.clone(),
-            );
-            let rendered = crate::tera::render_str(&mut tera, input, &context);
-            (rendered.is_ok(), reached_exec.load(Ordering::Relaxed))
-        };
-
-        assert_eq!(render("echo {{ exec(command=cmd) }}"), (false, true));
-        assert!(!marker.exists());
-        assert_eq!(render("echo {{ 1 + 1 }}"), (true, false));
-        assert_eq!(render("echo {{ nope() }}"), (false, false));
-    }
-
-    #[test]
-    fn finds_hooks_that_read_unresolved_vars() {
-        let unresolved = indexmap::IndexSet::from(["file".to_string()]);
-        let reads = |template| crate::config::references_any_var(template, &unresolved);
-        assert!(reads("cat {{ read_file(path=vars.file) }}"));
-        assert!(reads(r#"echo {{ vars["file"] }}"#));
-        assert!(reads("echo {{ vars [ 'file' ] }}"));
-        assert!(!reads("echo {{ vars.file_name }}"));
-        assert!(!reads("echo {{ file }}"));
-        assert!(!reads("echo {{ myvars.file }}"));
-    }
 
     #[test]
     fn parses_known_phases_with_hyphen_or_underscore() {

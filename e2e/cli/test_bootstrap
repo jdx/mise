@@ -235,8 +235,15 @@ assert_contains "mise bootstrap dotfiles apply --dry-run --force" "echo {{ vars.
 assert_fail "test -e bootstrap-var-template-effect"
 assert_fail "test -e exec_var_hook_ran"
 
-# vars that no config declares still fail the dry run
-sed -i.bak 's/vars.exec_var/vars.undeclared_var/' dotfiles-exec-var/config.toml
+# reads of an exec()-computed var count however they are spelled
+sed -i.bak 's/{{ vars.exec_var }}/{% set v = vars %}{{ v.exec_var }}/' dotfiles-exec-var/config.toml
+assert_contains "mise bootstrap dotfiles apply --dry-run --force" "{% set v = vars %}{{ v.exec_var }}"
+assert_fail "test -e exec_var_hook_ran"
+
+# vars that no config declares still fail the dry run, even next to an exec()-computed one
+sed -i.bak 's/run = .*/run = "echo vars.exec_var {{ vars.undeclared_var }}"/' dotfiles-exec-var/config.toml
+assert_fail "mise bootstrap dotfiles apply --dry-run --force" "failed to render template"
+sed -i.bak 's/run = .*/run = "echo {{ vars.exec_var }} {{ nope() }}"/' dotfiles-exec-var/config.toml
 assert_fail "mise bootstrap dotfiles apply --dry-run --force" "failed to render template"
 
 # so do vars whose template is broken rather than waiting on exec()

@@ -37,7 +37,9 @@ use crate::task::{
     RunEntry, Task, TaskCacheConfig, TaskRustCacheConfig, TaskTemplate, monorepo_scope,
     strip_extension,
 };
-use crate::tera::{contains_template_syntax, get_empty_tera, render_str, take_tera_accessed_files};
+use crate::tera::{
+    DryRunRender, contains_template_syntax, get_empty_tera, render_str, take_tera_accessed_files,
+};
 use crate::toolset::env_cache::{CachedNonToolEnv, compute_settings_hash, get_file_mtime};
 use crate::toolset::{
     ResolveOptions, ResolvedToolOptions, ToolOptions, ToolRequestSet, ToolRequestSetBuilder,
@@ -4142,35 +4144,23 @@ fn bootstrap_dry_run_var(
         "config_source",
         &config_file::config_root::config_source(source),
     );
-    let reached_exec = Arc::new(AtomicBool::new(false));
-    let mut tera =
-        crate::tera::get_tera_for_dry_run_tracking_exec(source.parent(), reached_exec.clone());
-    match render_str(&mut tera, value, &context) {
-        Ok(value) => DryRunVar::Resolved(value),
-        Err(err) => {
+    match crate::tera::render_for_dry_run(source.parent(), value, &context, unresolved) {
+        DryRunRender::Rendered(value) => DryRunVar::Resolved(value),
+        DryRunRender::NeedsRun => {
+            debug!(
+                "bootstrap: var template from {} needs a real run; omitted from dry-run context",
+                source.display()
+            );
+            DryRunVar::NeedsRun
+        }
+        DryRunRender::Failed(err) => {
             debug!(
                 "bootstrap: var template from {} omitted from dry-run context: {err}",
                 source.display()
             );
-            if reached_exec.load(Ordering::Relaxed) || references_any_var(value, unresolved) {
-                DryRunVar::NeedsRun
-            } else {
-                DryRunVar::Broken
-            }
+            DryRunVar::Broken
         }
     }
-}
-
-/// Whether `template` reads any of `names` as `vars.NAME`, `vars["NAME"]`, or
-/// `vars['NAME']`.
-pub(crate) fn references_any_var(template: &str, names: &IndexSet<String>) -> bool {
-    names.iter().any(|name| {
-        let name = regex::escape(name);
-        regex::Regex::new(&format!(
-            r#"\bvars\s*(?:\.\s*{name}\b|\[\s*(?:"{name}"|'{name}')\s*\])"#
-        ))
-        .is_ok_and(|re| re.is_match(template))
-    })
 }
 
 async fn load_vars(config: &Arc<Config>) -> Result<EnvResults> {

@@ -8,6 +8,7 @@ use heck::{
     ToKebabCase, ToLowerCamelCase, ToShoutyKebabCase, ToShoutySnakeCase, ToSnakeCase,
     ToUpperCamelCase,
 };
+use indexmap::IndexSet;
 use path_absolutize::Absolutize;
 use rand::prelude::*;
 use regex::Regex;
@@ -65,8 +66,10 @@ impl TeraEngine {
             Self::V2(tera) => tera.render_str(input, context, false),
             Self::V1(tera) => {
                 let context = tera1_context(input, context)?;
+                // keep the cause (such as a function's own error) as the
+                // source, which the message alone leaves out
                 tera.render_str(input, &context)
-                    .map_err(|e| tera_err(e.to_string()))
+                    .map_err(|e| tera::Error::chain(e.to_string(), e))
             }
         }
     }
@@ -1388,22 +1391,93 @@ fn quote_for_cmd(mut engine: TeraEngine) -> TeraEngine {
     engine
 }
 
-/// Returns the normal mise renderer with command execution disabled.
-pub fn get_tera_for_dry_run(dir: Option<&Path>) -> TeraEngine {
-    dry_run_tera(dir, None)
+/// What a dry run makes of a template. See [`render_for_dry_run`].
+#[derive(Debug)]
+pub enum DryRunRender {
+    /// The template renders as a real run would render it.
+    Rendered(String),
+    /// The result depends on something a dry run does not compute.
+    NeedsRun,
+    /// The template fails the way a real run would fail.
+    Failed(tera::Error),
 }
 
-/// Like [`get_tera_for_dry_run`], but sets `reached_exec` when a template calls
-/// `exec()`, so a caller can tell a template that needs command output apart
-/// from a broken one.
-pub fn get_tera_for_dry_run_tracking_exec(
+/// Renders `input` without running anything.
+///
+/// A dry run computes neither `exec()` output nor the vars named in
+/// `unresolved`, which `context` leaves out of `vars` because resolving them
+/// needs a real run. The rule: a template whose result depends on any of them
+/// is [`DryRunRender::NeedsRun`]; any other template is rendered or fails as
+/// in a real run.
+///
+/// The result depends on them when rendering calls `exec()`, or when giving
+/// the unresolved vars two different placeholder values changes the output or
+/// the error. That counts every read however it is spelled (an alias, a loop
+/// over `vars`, an argument to a function), ignores a name that only appears
+/// in the text, and still reports an error that a template raises whatever
+/// those values are.
+pub fn render_for_dry_run(
     dir: Option<&Path>,
-    reached_exec: Arc<AtomicBool>,
-) -> TeraEngine {
-    dry_run_tera(dir, Some(reached_exec))
+    input: &str,
+    context: &Context,
+    unresolved: &IndexSet<String>,
+) -> DryRunRender {
+    let reached_exec = Arc::new(AtomicBool::new(false));
+    let render = |placeholder: usize| {
+        let mut context = context.clone();
+        if !unresolved.is_empty() {
+            let mut vars = context
+                .get("vars")
+                .and_then(Value::as_map)
+                .cloned()
+                .unwrap_or_default();
+            for name in unresolved {
+                vars.insert(
+                    tera::value::Key::from(name.clone()),
+                    Value::from(format!("mise-dry-run-placeholder-{placeholder}-{name}")),
+                );
+            }
+            context.insert_value("vars", Value::from(vars));
+        }
+        let mut tera = dry_run_tera(dir, reached_exec.clone());
+        render_str(&mut tera, input, &context)
+    };
+    let first = render(1);
+    // with nothing unresolved, a second render would see the same context
+    let second = if unresolved.is_empty() {
+        None
+    } else {
+        Some(render(2))
+    };
+    if reached_exec.load(Ordering::Relaxed) {
+        return DryRunRender::NeedsRun;
+    }
+    match (first, second) {
+        (Ok(out), None) => DryRunRender::Rendered(out),
+        (Err(err), None) => DryRunRender::Failed(err),
+        (Ok(out), Some(Ok(other))) if out == other => DryRunRender::Rendered(out),
+        (Err(err), Some(Err(other))) if error_chain(&err) == error_chain(&other) => {
+            DryRunRender::Failed(err)
+        }
+        _ => DryRunRender::NeedsRun,
+    }
 }
 
-fn dry_run_tera(dir: Option<&Path>, reached_exec: Option<Arc<AtomicBool>>) -> TeraEngine {
+/// The messages of `err` and its sources, which a Tera error's `Display`
+/// leaves out.
+fn error_chain(err: &tera::Error) -> Vec<String> {
+    let mut chain = vec![err.to_string()];
+    let mut source = std::error::Error::source(err);
+    while let Some(err) = source {
+        chain.push(err.to_string());
+        source = err.source();
+    }
+    chain
+}
+
+/// The normal mise renderer with command execution disabled. A call to
+/// `exec()` fails and sets `reached_exec`.
+fn dry_run_tera(dir: Option<&Path>, reached_exec: Arc<AtomicBool>) -> TeraEngine {
     if use_tera_v1() {
         let mut tera = get_tera_v1(dir);
         tera.register_function("exec", dry_run_disabled_fn_v1("exec", reached_exec));
@@ -1417,24 +1491,20 @@ fn dry_run_tera(dir: Option<&Path>, reached_exec: Option<Arc<AtomicBool>>) -> Te
 
 fn dry_run_disabled_fn(
     name: &'static str,
-    reached: Option<Arc<AtomicBool>>,
+    reached: Arc<AtomicBool>,
 ) -> impl Fn(Kwargs, &State) -> TeraResult<Value> {
     move |_args: Kwargs, _: &State| -> TeraResult<Value> {
-        if let Some(reached) = &reached {
-            reached.store(true, Ordering::Relaxed);
-        }
+        reached.store(true, Ordering::Relaxed);
         Err(tera_err(format!("{name}() is disabled during dry run")))
     }
 }
 
 fn dry_run_disabled_fn_v1(
     name: &'static str,
-    reached: Option<Arc<AtomicBool>>,
+    reached: Arc<AtomicBool>,
 ) -> impl Fn(&HashMap<String, JsonValue>) -> tera1::Result<JsonValue> {
     move |_args: &HashMap<String, JsonValue>| -> tera1::Result<JsonValue> {
-        if let Some(reached) = &reached {
-            reached.store(true, Ordering::Relaxed);
-        }
+        reached.store(true, Ordering::Relaxed);
         Err(tera1_err(format!("{name}() is disabled during dry run")))
     }
 }

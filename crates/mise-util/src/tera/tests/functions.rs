@@ -303,3 +303,46 @@ async fn test_read_file() {
     .unwrap();
     assert_eq!(s, "test content\nwith multiple lines");
 }
+
+#[test]
+fn test_render_for_dry_run() {
+    {
+        let _lock = crate::testing::lock_ignoring_poison(&crate::testing::SETTINGS_LOCK);
+        dry_run_cases();
+    }
+    let _v1 = SettingsGuard::tera_v1();
+    dry_run_cases();
+}
+
+fn dry_run_cases() {
+    let dir = tempfile::tempdir().unwrap();
+    let marker = dir.path().join("ran");
+    // the command goes through the context: a Windows path in a template
+    // string literal would contain backslash escapes Tera rejects
+    let mut context = BASE_CONTEXT.clone();
+    context.insert("cmd", &format!("touch {}", marker.display()));
+    context.insert("vars", &indexmap::IndexMap::from([("known", "hi")]));
+    let unresolved = IndexSet::from(["pending".to_string()]);
+    let render =
+        |input: &str| match render_for_dry_run(Some(dir.path()), input, &context, &unresolved) {
+            DryRunRender::Rendered(out) => out,
+            DryRunRender::NeedsRun => "<needs run>".to_string(),
+            DryRunRender::Failed(_) => "<failed>".to_string(),
+        };
+
+    assert_eq!(render("echo {{ vars.known }}"), "echo hi");
+    assert_eq!(render("echo {{ exec(command=cmd) }}"), "<needs run>");
+    assert!(!marker.exists());
+    // reads of an unresolved var count however they are spelled
+    assert_eq!(render("echo {{ vars.pending }}"), "<needs run>");
+    assert_eq!(render("{% set v = vars %}{{ v.pending }}"), "<needs run>");
+    assert_eq!(render("{{ read_file(path=vars.pending) }}"), "<needs run>");
+    // errors that do not depend on unresolved vars still fail
+    assert_eq!(render("echo {{ nope() }}"), "<failed>");
+    assert_eq!(render("echo {{ vars.undeclared }}"), "<failed>");
+    assert_eq!(
+        render("echo vars.pending {{ vars.undeclared }}"),
+        "<failed>"
+    );
+    assert_eq!(render("echo {{ vars.pending }} {{ nope() }}"), "<failed>");
+}
