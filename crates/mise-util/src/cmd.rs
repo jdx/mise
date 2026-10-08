@@ -2080,7 +2080,7 @@ impl<'a> CmdLineRunner<'a> {
     }
 
     /// Prepare sandbox restrictions on the command. Must be called before execute()
-    /// when sandbox is configured. This is async because macOS DNS resolution is async.
+    /// when sandbox is configured.
     pub async fn apply_sandbox(&mut self) -> eyre::Result<()> {
         let Some(sandbox) = self.sandbox.take() else {
             return Ok(());
@@ -2089,32 +2089,35 @@ impl<'a> CmdLineRunner<'a> {
             return Ok(());
         }
 
-        // Fail early on Linux if per-host network filtering is requested
-        #[cfg(target_os = "linux")]
-        if !sandbox.allow_net.is_empty() {
-            eyre::bail!(
-                "per-host network filtering (--allow-net=<host>) is not supported on Linux. \
-                 Use --deny-net to block all network, or remove --allow-net."
-            );
+        // Fail early if per-host network filtering is requested
+        #[cfg(any(target_os = "linux", target_os = "macos"))]
+        sandbox.reject_allow_net()?;
+
+        // Clear the inherited env so the child only sees the filtered vars, which carry the
+        // essentials `SandboxConfig::filter_env` keeps (on Windows, `SystemRoot` and the rest
+        // of its list). env_clear() also wipes envs explicitly set via .envs(), so save and
+        // restore them. macOS does the same when it rebuilds the command for sandbox-exec.
+        // `inherit_env` records the clear for whatever rebuilds the command later: on Windows a
+        // command with a timeout is started through a Ctrl+C group leader, which would otherwise
+        // inherit mise's whole environment and hand it on.
+        #[cfg(not(target_os = "macos"))]
+        if sandbox.effective_deny_env() {
+            let saved: Vec<(std::ffi::OsString, std::ffi::OsString)> = self
+                .cmd
+                .as_std()
+                .get_envs()
+                .filter_map(|(k, v)| v.map(|v| (k.to_os_string(), v.to_os_string())))
+                .collect();
+            self.cmd.env_clear();
+            self.inherit_env = false;
+            for (k, v) in saved {
+                self.cmd.env(k, v);
+            }
         }
 
         #[cfg(target_os = "linux")]
         {
             let initial_program = std::path::PathBuf::from(self.cmd.as_std().get_program());
-            // On Linux, clear inherited env before pre_exec so child only sees filtered vars.
-            // env_clear() also wipes envs explicitly set via .envs(), so save and restore them.
-            if sandbox.effective_deny_env() {
-                let saved: Vec<(std::ffi::OsString, std::ffi::OsString)> = self
-                    .cmd
-                    .as_std()
-                    .get_envs()
-                    .filter_map(|(k, v)| v.map(|v| (k.to_os_string(), v.to_os_string())))
-                    .collect();
-                self.cmd.env_clear();
-                for (k, v) in saved {
-                    self.cmd.env(k, v);
-                }
-            }
             // Rules naming a path that does not exist yet get dropped, and the
             // task is then denied. Say so here: pre_exec runs post-fork, where
             // the logger is not available.
@@ -2158,8 +2161,7 @@ impl<'a> CmdLineRunner<'a> {
                 .map(|a| a.to_string_lossy().into_owned())
                 .collect();
             let profile =
-                crate::sandbox::macos_generate_profile(&sandbox, std::path::Path::new(&program))
-                    .await;
+                crate::sandbox::macos_generate_profile(&sandbox, std::path::Path::new(&program));
 
             let mut new_cmd = Command::new("sandbox-exec");
             new_cmd.arg("-p").arg(&profile).arg("--").arg(&program);
@@ -2177,6 +2179,7 @@ impl<'a> CmdLineRunner<'a> {
             }
             if sandbox.effective_deny_env() {
                 new_cmd.env_clear();
+                self.inherit_env = false;
             }
             for (k, v) in self.cmd.as_std().get_envs() {
                 match v {
@@ -2188,9 +2191,10 @@ impl<'a> CmdLineRunner<'a> {
         }
 
         #[cfg(not(any(target_os = "linux", target_os = "macos")))]
-        {
-            let _ = sandbox;
-            warn!("sandbox is not supported on this platform, running unsandboxed");
+        if sandbox.restricts_more_than_env() {
+            warn!(
+                "sandbox file, network and process restrictions are not supported on this platform, running without them"
+            );
         }
         Ok(())
     }

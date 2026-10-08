@@ -1,71 +1,101 @@
 ---
-description: "mise can be used to install and manage multiple versions of bun on the same system."
+description: "Install Bun with mise and select its version from mise.toml, .bun-version, or package.json."
 ---
 
 # Bun
 
-`mise` can be used to install and manage multiple versions of [bun](https://bun.sh/) on the same system.
+mise installs [Bun](https://bun.sh/) release binaries, including `bunx`, and
+selects a version per project.
 
-## Usage
+## Quick start
 
 Install Bun for the current project and check the selected executable:
 
 ```sh
-mise use bun@latest
+mise use bun@1
 mise exec -- bun --version
 ```
 
-Use `mise use -g bun@latest` for a personal default outside projects. Commit the
-project's `mise.toml` so teammates select the same version request.
+`mise use` writes `bun = "1"` to `mise.toml`. Commit that file so teammates get
+the same version request, and use `mise use -g bun@1` for a personal default
+outside projects.
 
-See available versions with `mise ls-remote bun`.
+Update Bun with [`mise upgrade bun`](/cli/upgrade.html). `bun upgrade` replaces
+the binary inside mise's install directory without changing the version mise
+recorded.
 
-> [!NOTE]
-> Update with `mise upgrade bun`. Running `bun upgrade` changes the installed
-> binary without updating mise's recorded version.
+## Choosing a version
 
-These instructions use mise's built-in bun support. An installed external
-plugin with the same name can change the behavior; use `mise plugins ls` to
-check for overrides. See the [core implementation](https://github.com/jdx/mise/blob/main/src/plugins/core/bun.rs)
-for backend details.
+`bun@1` selects the newest 1.x release, `bun@1.3.14` selects that release, and
+`bun@latest` selects the newest release. List the available versions with
+`mise ls-remote bun`. See [version requests](/dev-tools/versions.html) for the
+full syntax.
 
 ## Version files
 
-Enable [idiomatic version files](/configuration.html#idiomatic-version-files) to read
-`.bun-version` or a version declaration in `package.json`:
+mise can read `.bun-version` and the version declarations in `package.json`.
+Enable them for Bun:
 
 ```sh
 mise settings add idiomatic_version_file_enable_tools bun
 ```
 
-For example, this `package.json` selects Bun 1.2.0:
+This changes your global config. Add `--local` to enable it in the project's
+`mise.toml` instead, so teammates get the same behavior. See
+[idiomatic version files](/dev-tools/versions.html#idiomatic-version-files).
+
+For example, this `package.json` selects Bun 1.3.14:
 
 ```json [package.json]
 {
   "devEngines": {
-    "runtime": { "name": "bun", "version": "1.2.0" }
+    "runtime": { "name": "bun", "version": "1.3.14" }
   }
 }
 ```
 
-mise checks `devEngines.runtime` first, then falls back to `devEngines.packageManager` and
-the top-level `packageManager` field (for example, `"packageManager": "bun@1.2.0"`).
+mise reads `devEngines.runtime` first, then `devEngines.packageManager`, then
+the top-level `packageManager` field (for example,
+`"packageManager": "bun@1.3.14"`). Each `devEngines` entry can be an object or
+an array; mise reads the first entry of an array. The `engines` compatibility
+field is not used to select a version.
 
-`devEngines` runtime and package-manager declarations can be objects or arrays; mise reads
-the first entry in an array. The `engines` compatibility fields are not used to select a version.
-See [package-manager versions](/lang/node.html#package-manager-versions-in-package-json)
-for the package-manager declaration formats.
+When a `packageManager` declaration for the same version carries a
+Corepack-style checksum, such as `bun@1.3.14+sha224.…`, mise installs Bun from
+the npm registry and verifies the package against that checksum. See
+[package-manager versions](/lang/node.html#package-manager-versions-in-package-json)
+for the declaration formats.
 
-## Tool Options
+## Global packages
 
-The following [tool-options](/dev-tools/#tool-options) are available for the `bun` backend.
-These options go in the `[tools]` section in `mise.toml`.
+mise sets no Bun environment variables. `bun add -g` installs packages under
+Bun's own global directory (`~/.bun`, or `$BUN_INSTALL`) and their executables
+in `~/.bun/bin`. mise does not add that `bin` directory to `PATH`. To install a CLI that every project can use, add it
+as a tool with the [npm backend](/dev-tools/backends/npm.html), for example
+`mise use -g npm:prettier`.
 
-### `install_env`
+## How mise installs Bun
 
-Set environment variables for install-time commands run by the core `bun` backend:
+mise downloads the release archive for your platform from
+[Bun's GitHub releases](https://github.com/oven-sh/bun/releases) and runs
+`bun -v` to check it. On x64 CPUs without AVX2, mise picks Bun's `baseline`
+build. On musl systems such as Alpine, or with the [`libc`](/configuration/settings.html#libc)
+setting set to `musl`, it picks the `musl` build. Windows on arm64 gets the
+native build from Bun 1.3.10 on, and the x64 baseline build for older versions.
 
-```toml
-[tools]
-bun = { version = "latest", install_env = { HTTPS_PROXY = "http://proxy.example" } }
-```
+[`mise lock`](/cli/lock.html) records the checksum Bun publishes in
+`SHASUMS256.txt` for each platform.
+
+An installed plugin named `bun` takes precedence over the built-in
+installer. If mise behaves differently from this page, check
+[`mise plugins ls`](/cli/plugins/ls.html) and see
+[selecting another implementation](/core-tools.html#selecting-another-implementation).
+
+## Tool options
+
+Bun has no Bun-specific options. Generic options such as `install_env`,
+`postinstall` and `os` work as described in
+[tool options](/dev-tools/#tool-options). `install_env` reaches the `bun -v`
+check and `postinstall` commands, not the download. To download through a
+proxy, set `https_proxy` in the environment that runs mise (see the
+[FAQ](/faq.html#how-do-i-use-mise-with-http-proxies)).

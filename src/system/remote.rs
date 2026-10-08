@@ -1197,8 +1197,9 @@ esac"#,
     );
     match session.output_async(&["sh", "-lc", &script]).await {
         Ok(output) if output.trim() == "no" => warn!(
-            "{target} is not on {}'s login PATH; add its directory to PATH or declare [bootstrap.mise_shell_activate] in the bootstrap project",
-            session.host.name
+            "{target} is not on {}'s login PATH; add {} to PATH",
+            session.host.name,
+            remote_parent_directory(target)
         ),
         Ok(_) => {}
         Err(error) => debug!(

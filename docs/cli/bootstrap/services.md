@@ -29,6 +29,6 @@ macOS, a Scheduled Task on Windows.
 
 ## Related documentation
 
-- [System services](/bootstrap/services.html).
+- [Services](/bootstrap/services.html).
 - [`mise bootstrap [FLAGS] [SUBCOMMAND]`](/cli/bootstrap.html).
 - [Global flags and argument syntax](/cli/#global-flags).

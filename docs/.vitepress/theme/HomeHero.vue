@@ -10,12 +10,9 @@ const examples = [
   {
     name: "Tools",
     section: "[tools]",
-    lines: ['node = "24"', 'python = "3.13"', 'terraform = "1.13"'],
+    lines: ['node = "24"', 'python = "3.14"'],
     command: "mise install",
-    output: [
-      "✓ node, python, terraform installed",
-      "Tool versions ready for this project.",
-    ],
+    output: ["✓ installed 2 tools in 6.2s: node@24.21.0, python@3.14.8"],
     caption: "Tool versions for this project",
     link: "/dev-tools/",
   },
@@ -26,34 +23,42 @@ const examples = [
       'DATABASE_URL = "postgres://localhost/app"',
       '_.file = ".env.local"',
     ],
-    command: "mise env",
-    output: ["export DATABASE_URL=postgres://localhost/app"],
+    command: "mise set",
+    output: [
+      "key           value                    source",
+      "DATABASE_URL  postgres://localhost/app ~/my-project/mise.toml",
+      "API_KEY       dev-key                  ~/my-project/.env.local",
+    ],
     caption: "Project environment variables",
     link: "/environments/",
   },
   {
     name: "Tasks",
-    section: "[tasks.test]",
-    lines: ['run = "python -m unittest"'],
-    command: "mise run test",
-    output: ["[test] $ python -m unittest", "Ran 42 tests", "OK"],
-    caption: "A named command to run tests",
+    section: "[tasks.lint]",
+    lines: ['run = "ruff check"'],
+    command: "mise run lint",
+    output: ["[lint] $ ruff check", "All checks passed!"],
+    caption: "A named command to lint the project",
     link: "/tasks/",
   },
   {
     name: "Bootstrap",
     section: "[bootstrap.packages]",
-    lines: ['"brew:jq" = "latest"', '"apt:build-essential" = "latest"'],
-    command: "mise bootstrap",
-    output: ["✓ System packages installed", "✓ Dev tools ready"],
-    caption: "System packages to install",
-    link: "/bootstrap",
+    lines: ['"apt:tmux" = "latest"', '"apt:tree" = "latest"'],
+    command: "mise bootstrap status",
+    output: [
+      "Part      Item      Current  State",
+      "packages  apt:tmux           missing",
+      "packages  apt:tree           missing",
+    ],
+    caption: "System packages for this machine",
+    link: "/bootstrap.html",
   },
 ];
 const selected = ref(0);
 const active = computed(() => examples[selected.value]);
 const copyState = ref("Copy");
-const installCommand = "curl https://mise.run | sh";
+const installCommand = "curl -fsSL https://mise.run | sh";
 const installCode = ref<HTMLElement | null>(null);
 let copyTimeout: ReturnType<typeof setTimeout> | undefined;
 
@@ -106,10 +111,10 @@ onUnmounted(() => clearTimeout(copyTimeout));
 <template>
   <section class="home-hero" aria-labelledby="home-title">
     <div class="hero-copy">
-      <a class="hero-song" href="/mise-en-place">
+      <a class="hero-song" href="/mise-en-place.html">
         <span class="hero-song-play" aria-hidden="true">▶</span>
         <span
-          >New: <strong>mise run</strong>, the theme song<span
+          ><strong>mise run</strong>, the theme song<span
             class="hero-song-extra"
           >
             and music video</span
@@ -118,17 +123,18 @@ onUnmounted(() => clearTimeout(copyTimeout));
         <span class="hero-song-arrow" aria-hidden="true">→</span>
       </a>
       <h1 id="home-title" class="hero-title">mise-en-place</h1>
-      <p class="hero-meaning">Development tools, environments, and tasks</p>
+      <p class="hero-meaning">Dev tools, env vars, and tasks in one CLI</p>
       <p class="hero-pronunciation">
         mise is pronounced <strong>“meez”</strong>
       </p>
       <p class="hero-lede">
-        Define your tool versions, environment variables, and project commands
-        in <code>mise.toml</code>. mise installs the tools and makes the
-        configuration available in your shell, editor, and CI.
+        mise installs a project's tools, sets its environment variables, and
+        runs its tasks from one <code>mise.toml</code> that works in your shell,
+        editor, and CI. With <code>mise bootstrap</code>, it can also set up a
+        whole machine: packages, dotfiles, and services.
       </p>
       <div class="hero-actions">
-        <a class="action-btn action-btn-brand" href="/getting-started">
+        <a class="action-btn action-btn-brand" href="/getting-started.html">
           Get started <span aria-hidden="true">→</span>
         </a>
         <a class="action-btn action-btn-alt" :href="demoLink">Watch the demo</a>
@@ -146,9 +152,7 @@ onUnmounted(() => clearTimeout(copyTimeout));
       </div>
       <p class="hero-install-note">
         macOS &amp; Linux <span aria-hidden="true">·</span>
-        <a href="/getting-started#installing-mise-cli"
-          >Installing on Windows?</a
-        >
+        <a href="/installing-mise.html#windows">Installing on Windows?</a>
       </p>
     </div>
     <div class="hero-workbench">
@@ -185,7 +189,7 @@ onUnmounted(() => clearTimeout(copyTimeout));
         </div>
         <div class="workbench-terminal">
           <p class="workbench-terminal-label">
-            Illustrative output <span>~/my-project</span>
+            Example output <span>~/my-project</span>
           </p>
           <pre><code><span class="workbench-prompt">$</span> {{ active.command }}
 <span v-for="line in active.output" :key="line" class="workbench-output">{{ line }}
@@ -194,16 +198,16 @@ onUnmounted(() => clearTimeout(copyTimeout));
       </div>
       <a class="workbench-guide" :href="active.link"
         >Explore {{ active.name.toLowerCase() }}
-        <span aria-hidden="true">↗</span></a
+        <span aria-hidden="true">→</span></a
       >
     </div>
   </section>
   <div class="hero-footnote">
-    <span>Project configuration in mise.toml</span>
+    <span>Open source, MIT licensed</span>
     <ul aria-label="About mise">
-      <li>Open source &amp; MIT licensed</li>
       <li>macOS, Linux &amp; Windows</li>
-      <li>Single CLI</li>
+      <li>Written in Rust</li>
+      <li>Releases several times a week</li>
     </ul>
   </div>
 </template>

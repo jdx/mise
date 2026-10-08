@@ -1,131 +1,144 @@
 ---
-description: "Encrypt individual environment variable values directly in mise.toml using age encryption."
+description: "Encrypt individual environment variables in mise.toml with age, and decrypt them when mise loads the environment."
 ---
 
-# Direct age Encryption <Badge type="warning" text="experimental" />
+# age values <Badge type="warning" text="experimental" />
 
-Encrypt individual environment variable values directly in `mise.toml` using [age](https://github.com/FiloSottile/age) encryption. Encryption and decryption are built into mise. The optional `age-keygen` command below comes from the separate age CLI.
+Store individual secrets in `mise.toml` as [age](https://age-encryption.org)
+encrypted values. mise encrypts and decrypts them itself, so you need only an
+age identity or an SSH key. Commit the encrypted values and share identities
+outside the repository.
 
-This is a simple way to store encrypted environment variables directly in `mise.toml`. Run `mise set --age-encrypt <key>=<value>` to use it. By default, mise uses your SSH key (`~/.ssh/id_ed25519` or `~/.ssh/id_rsa`) if one exists.
+::: warning Experimental
+age values are experimental. Enable them with `experimental = true` under
+`[settings]`, or run `mise settings experimental=true`.
+:::
 
-- **Inline storage**: values live alongside other env vars in `mise.toml`
-- **Multiple recipients**: x25519 age keys and SSH recipients
-- **Automatic decryption**: at runtime when identities are available
+Decrypted values behave like other `[env]` values: your activated shell, tasks
+and `mise env` see the plaintext. mise redacts them in task output by default.
 
-## Quick start
+## Quick start {#quick-start}
 
-1. Enable experimental features:
+### 1. Get an identity
 
-```bash
-mise settings set experimental=true
-```
+An existing SSH key works: `~/.ssh/id_ed25519` or `~/.ssh/id_rsa`, with its
+`.pub` file beside it. To use a dedicated age identity instead, create one. Skip
+`age-keygen` if `age.txt` already holds an identity you want to keep:
 
-2. Use an existing SSH identity, or install age and generate a dedicated identity.
-   Skip key generation if `age.txt` already contains an identity you want to keep:
-
-```bash
+```sh
 mise use -g age
 mkdir -p ~/.config/mise
 mise exec -- age-keygen -o ~/.config/mise/age.txt
 # Public key: age1...
 ```
 
-The public key is a **recipient**: share it with people who need to encrypt for
-you. `age.txt` contains the private **identity** needed to decrypt; keep it outside
-the repository.
+The public key is a recipient: share it with people who encrypt values for you.
+`age.txt` holds the private identity that decrypts them; keep it outside the
+repository.
 
-3. Encrypt a value:
+### 2. Encrypt a value
 
-```bash
+```sh
 mise set --age-encrypt --prompt DB_PASSWORD
 # Enter value for DB_PASSWORD: [hidden input]
 ```
 
-::: warning
-Use `--prompt` so the plaintext does not become part of the command or shell history.
-:::
+`--prompt` reads the value without echoing it, so the plaintext stays out of
+your shell history. mise writes the ciphertext to `mise.toml`:
 
-4. Values are stored encrypted in `mise.toml` as an age directive:
-
-```toml
+```toml [mise.toml]
 [env]
-DB_PASSWORD = { age = { value = "<base64>" } }
+DB_PASSWORD = { age = "<base64>" }
 ```
 
-5. Run a command or task that needs the value. mise decrypts it before starting the process:
+### 3. Use it
 
-```bash
-# Bash example: checks availability without printing the password
-mise exec -- bash -c 'test -n "$DB_PASSWORD" && echo "DB_PASSWORD is available"'
+mise decrypts the value before it starts a command or task:
+
+```sh
+mise exec -- sh -c 'test -n "$DB_PASSWORD" && echo "DB_PASSWORD is available"'
 ```
 
-`mise env` and `mise set DB_PASSWORD` print the decrypted value. Use them only when
-that plaintext output is intended; see [redaction](/environments/#redactions).
+`mise env` and `mise set DB_PASSWORD` print the decrypted value; `mise set`
+with no arguments shows `[redacted]`.
 
-## CLI flags
+## Who can decrypt {#defaults-for-recipients-encryption}
 
-- `--age-encrypt` — enable age encryption for the value
-- `--age-recipient <KEY>` — x25519 recipient (can be set multiple times)
-- `--age-ssh-recipient <PATH|KEY>` — SSH public key or path to `.pub`/private key (can be set multiple times)
-- `--age-key-file <PATH>` — use recipients derived from an age identity file
-- `--prompt` — prompt for the value to avoid accidentally exposing it to your shell history
+Without recipient flags, `mise set --age-encrypt` encrypts to:
 
-If no recipients are provided explicitly, mise tries the defaults (see below).
+- the public keys of the identities in `~/.config/mise/age.txt`, or in the file
+  named by
+  [`age.key_file`](/configuration/settings.html#age.key_file) when that setting
+  is set
+- `~/.ssh/id_ed25519` and `~/.ssh/id_rsa`, when their `.pub` files exist
 
-## Storage format
+If none of these exist, the command fails and asks for recipients.
 
-The stored payload is base64-encoded ciphertext, not an encoded plaintext secret.
-The `format` field identifies the payload representation:
+### Share with a team {#share-with-a-team}
 
-- `format = "raw"` — uncompressed ciphertext (typically for small values)
-- `format = "zstd"` — zstd-compressed ciphertext (used when ciphertext > 1KB)
+Pass `--age-recipient` once for each teammate's age public key, or
+`--age-ssh-recipient` with an SSH public key or the path to one.
+`--age-key-file` adds the public keys of the identities in another key file as
+recipients. When you pass any of these flags, mise encrypts only to the
+recipients you name:
 
-## Decryption identities
-
-mise looks for identities in this order:
-
-1. `MISE_AGE_KEY` environment variable
-   - Can contain one or more raw `AGE-SECRET-KEY-...` lines, or an age identity file payload
-2. `settings.age.identity_files` (list of paths)
-3. `settings.age.key_file` (single path)
-4. Default `~/.config/mise/age.txt` if it exists
-5. SSH identities from `settings.age.ssh_identity_files` and common defaults (`~/.ssh/id_ed25519`, `~/.ssh/id_rsa`)
-
-Paths configured in `settings.age.key_file`, `settings.age.identity_files`, and
-`settings.age.ssh_identity_files` are resolved relative to the config root of
-the file that declares them. They also support Tera templates, including
-<span v-pre>`{{ config_root }}`</span> and values from `env`. Absolute paths and paths beginning
-with `~` keep their existing meaning.
-
-Decrypted values are always marked as redacted.
-
-Age decryption is strict by default. If no identities are found, no available identity can decrypt the value, or the age payload is invalid, mise fails instead of continuing with a partially resolved environment.
-
-To allow commands and tasks to continue when an age value cannot be decrypted, disable strict mode:
-
-```bash
-mise settings set age.strict=false
+```sh
+mise set --age-encrypt --prompt \
+  --age-recipient age1... \
+  --age-ssh-recipient ~/.ssh/teammate.pub \
+  DB_PASSWORD
 ```
 
-In non-strict mode, mise skips values that cannot be decrypted and continues resolving the rest of the environment.
+To change a value or add a recipient, run `mise set --age-encrypt` again with
+the full recipient list. See [`mise set`](/cli/set.html) for every flag.
 
-## Defaults for recipients (encryption)
+## Decryption identities {#decryption-identities}
 
-When `--age-encrypt` is used without explicit recipients, mise attempts to derive recipients from:
+mise tries identities from these sources, in order:
 
-- The public keys corresponding to identities in the default key file `~/.config/mise/age.txt`
-- Public keys inferred from SSH private keys if a corresponding `.pub` file exists
+1. The `MISE_AGE_KEY` environment variable, which can hold one or more raw
+   `AGE-SECRET-KEY-...` lines or the contents of an age identity file
+2. The files in [`age.identity_files`](/configuration/settings.html#age.identity_files)
+3. The file in [`age.key_file`](/configuration/settings.html#age.key_file)
+4. `~/.config/mise/age.txt`, if it exists
+5. The SSH keys in
+   [`age.ssh_identity_files`](/configuration/settings.html#age.ssh_identity_files),
+   then `~/.ssh/id_ed25519` and `~/.ssh/id_rsa`
 
-If none are found, the command fails with an error asking you to provide recipients or configure `settings.age.key_file`.
+Paths in `age.key_file`, `age.identity_files` and `age.ssh_identity_files`
+resolve against the config root of the file that sets them. They support
+templates, including <span v-pre>`{{ config_root }}`</span> and values from
+`env`. Absolute paths and paths that start with `~` keep their meaning.
+
+Decryption is strict by default: when no identity is found, no identity can
+decrypt a value, or the payload is invalid, mise fails instead of continuing
+with a partial environment. To skip values it cannot decrypt and resolve the
+rest, set [`age.strict`](/configuration/settings.html#age.strict) to `false`:
+
+```sh
+mise settings age.strict=false
+```
+
+Decrypted values are redacted by default. Set `redact = false` on the variable
+to opt out:
+
+```toml [mise.toml]
+[env]
+DB_PASSWORD = { age = "<base64>", redact = false }
+```
+
+## Storage format {#storage-format}
+
+The stored payload is base64-encoded age ciphertext, not encoded plaintext.
+mise writes small values as `KEY = { age = "<base64>" }`. When the ciphertext is
+larger than 1 KiB, mise compresses it with zstd and writes
+`KEY = { age = { value = "<base64>", format = "zstd" } }`. When reading, mise
+also accepts the table form without `format` or with `format = "raw"`, which
+both mean uncompressed.
 
 ## Settings
 
 <script setup>
 import Settings from '/components/settings.vue';
 </script>
-<Settings child="age" :level="2" />
-
-## Notes
-
-- This feature is experimental; flags and behavior may change.
-- `mise set KEY` prints the decrypted value.
+<Settings child="age" :level="3" />

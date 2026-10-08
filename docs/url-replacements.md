@@ -1,53 +1,36 @@
 ---
-description: "Use url_replacements to route requests made by mise's HTTP client through an internal mirror or proxy."
+description: "Rewrite the URLs mise requests with url_replacements to send downloads and release metadata through a mirror or proxy."
+socialDescription: "Rewrite the URLs mise requests to send downloads and metadata through a mirror or proxy."
 ---
 
-# URL Replacements
+# URL replacements
 
-Use `url_replacements` to route requests made by mise's HTTP client through an internal
-mirror or proxy. This can cover release metadata and artifact downloads, including Conda
-channel metadata. It does not rewrite requests made independently by a plugin script,
-Git, or an external package manager; configure those clients separately.
+The [`url_replacements`](/configuration/settings.html#url_replacements) setting
+rewrites the URLs that mise's HTTP client requests, so release metadata and
+artifact downloads can go through an internal mirror or proxy. It also covers
+Conda channel metadata and the HTTP requests that vfox plugins make through
+their `http` module. It does not rewrite requests made by asdf plugin scripts,
+commands a plugin runs (such as `curl`), Git, or an external package manager;
+configure those clients separately.
 
-A replacement changes where a request is sent. It does not change which asset a backend
-selects, create a mirror, or generate a new checksum. For Conda, lockfiles retain the logical
-upstream URLs and the replacement is applied when the request is sent.
+A replacement changes where a request is sent. It does not change which asset a
+backend selects, create a mirror, or produce new checksums. For Conda,
+lockfiles keep the upstream URLs, and the replacement applies when the request
+is sent.
 
-## Configuration Examples
-
-Put machine-specific mirror settings in global configuration, or share them in `mise.toml`
-when every user of the project has access to the mirror. For an exact URL prefix:
-
-```toml
-[settings]
-url_replacements = { "https://example.com/" = "https://mirror.example.com/" }
-```
-
-The table form is convenient for several rules:
-
-```toml
+```toml [~/.config/mise/config.toml]
 [settings.url_replacements]
-"https://example.com/" = "https://mirror.example.com/"
-"https://releases.hashicorp.com/" = "https://hashicorp.example.com/"
+"https://releases.hashicorp.com/" = "https://hashicorp-mirror.example.com/"
 ```
 
-Replace the example mirror hosts with servers you operate or trust. They must serve the
-paths and metadata expected by the original backend. Inspect `mise settings ls` to confirm
-the settings in effect; use debug logging on the failing command to inspect its request URL.
+Put machine-specific mirrors in global config, or in `mise.toml` when everyone
+on the project can reach the mirror. Replace the example hosts with servers you
+operate or trust; they must serve the same paths and metadata as the original.
 
-## Simple Hostname Replacement
+## Route GitHub through a proxy
 
-Despite often being used for hostnames, a plain key is a **substring match on the full URL**.
-It can match a path or query string as well as a hostname. A key such as `github.com` also
-matches `api.github.com` and `github.com.example.org`.
-
-Including the scheme and trailing `/`, such as `https://github.com/`, avoids matching those
-hostnames. For a rule that must match only at the start of a URL, use an anchored regex.
-
-### Routing GitHub through a Package Proxy
-
-A plain prefix key keeps the rest of the URL, so a proxy that mirrors GitHub under a path
-prefix needs no regex or capture groups:
+A plain key keeps the rest of the URL, so a proxy that mirrors GitHub under a
+path prefix needs no regular expression:
 
 ```toml
 [settings.url_replacements]
@@ -55,136 +38,129 @@ prefix needs no regex or capture groups:
 "https://api.github.com/" = "http://pkgproxy.internal:8080/generic/github-api/"
 ```
 
-The first rule sends `https://github.com/owner/repo/releases/download/v1.0.0/file.tar.gz`
-to `http://pkgproxy.internal:8080/generic/github/owner/repo/releases/download/v1.0.0/file.tar.gz`.
-The second sends GitHub API requests, such as release lookups, to the proxy's API path.
-`https://github.com/` does not match `https://api.github.com/`, so the two rules do not
-overlap.
+| Original request                                                       | Sent to                                                                                  |
+| ---------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| `https://github.com/owner/repo/releases/download/v1.0.0/file.tar.gz`   | `http://pkgproxy.internal:8080/generic/github/owner/repo/releases/download/v1.0.0/file.tar.gz` |
+| `https://api.github.com/repos/owner/repo/releases`                     | `http://pkgproxy.internal:8080/generic/github-api/repos/owner/repo/releases`             |
 
-Reroute the API only if the proxy serves it: doing so stops mise from using
-[mise-versions](/configuration/settings.html#use_versions_host) for GitHub release and
-attestation metadata. If the proxy only mirrors release downloads, keep just the first
-rule. Use a regex rule only when the proxy's path layout cannot be expressed as a prefix.
+`https://github.com/` does not match `https://api.github.com/`, so the two rules
+do not overlap. Reroute the API only if the proxy serves it: doing so also stops
+mise from using [mise-versions](/configuration/settings.html#use_versions_host)
+for GitHub release and attestation metadata. If the proxy mirrors only release
+downloads, keep only the first rule.
 
-## Advanced Regex Replacement
+## How rules match
 
-Prefix a key with `regex:` to use the Rust regex engine. Capture groups in replacement
-values use `$1`, `$2`, or named captures. The examples below use TOML literal strings for
-regex keys, so backslashes do not need doubling.
+A plain key matches anywhere in the URL, including the path and query, and every
+occurrence is replaced. `github.com` also matches `api.github.com` and
+`github.com.example.org`. Include the scheme and a trailing slash, such as
+`https://github.com/`, to match one host.
 
-### Regex Examples
+A key that starts with `regex:` is a regular expression; see
+[Regex rules](#regex-rules).
 
-#### 1. Protocol Conversion (HTTP to HTTPS)
+Rules run in the order they appear. mise uses the first rule that turns the URL
+into a different valid URL, then stops, so replacements do not chain. A rule
+that leaves the URL unchanged or produces an invalid URL is skipped, and an
+invalid regular expression produces a warning and is skipped. When no rule
+changes the URL, mise sends the original request. Put specific rules before
+broad ones.
 
-```toml
-[settings]
-url_replacements = {
-  'regex:^http://(.+)' = "https://$1",
-}
-```
+URL replacements are routing rules, not an allow list. Use network policy
+outside mise when traffic must never reach an upstream host.
 
-Use this only when the destination supports HTTPS. A scheme change does not make an
-untrusted server trustworthy.
+## Regex rules
 
-#### 2. GitHub Release Mirroring with Path Restructuring
+The examples below use TOML literal strings (single quotes) for regex keys, so
+backslashes do not need doubling. In a double-quoted TOML string, write `\\.`
+instead of `\.`.
 
-```toml
-[settings]
-url_replacements = {
-  'regex:^https://github\.com/([^/]+)/([^/]+)/releases/download/(.+)' = "https://hub.example.com/artifactory/github/$1/$2/$3",
-}
-```
+Use `^` to anchor the start, `(.+)` to capture, and `[^/]+` for one path
+component. Refer to captures in the replacement as `$1`, `$2`, or by name. When
+a capture is followed by letters or digits, add braces, as in `${1}suffix`. The
+[Rust regex documentation](https://docs.rs/regex/latest/regex/#syntax) describes
+the syntax; backreferences inside the pattern and lookaround are not supported.
 
-This maps `https://github.com/owner/repo/releases/download/v1.0.0/file.tar.gz` to
-`https://hub.example.com/artifactory/github/owner/repo/v1.0.0/file.tar.gz`.
-It does not rewrite `api.github.com` requests; add a separate rule if release metadata must
-also pass through a mirror.
-
-#### 3. Subdomain to Path Conversion
-
-```toml
-[settings]
-url_replacements = {
-  'regex:^https://([^./]+)\.cdn\.example\.com/(.+)' = "https://unified-cdn.example.com/$1/$2",
-}
-```
-
-For example, `https://eu.cdn.example.com/tool.tar.gz` becomes
-`https://unified-cdn.example.com/eu/tool.tar.gz`.
-
-#### 4. Multiple Replacement Patterns (processed in order)
-
-```toml
-[settings]
-url_replacements = {
-  # Put the specific rule before the general GitHub rule.
-  'regex:^https://github\.com/microsoft/(.+)' = "https://internal.example.org/microsoft/$1",
-  'regex:^https://github\.com/(.+)' = "https://public.example.org/github/$1",
-  "https://releases.hashicorp.com/" = "https://hashicorp.example.net/",
-}
-```
-
-These examples use TOML 1.1 multiline inline tables, including comments and trailing commas.
-The first rule handles Microsoft repositories, the second handles other GitHub paths, and
-the last handles HashiCorp downloads.
-
-## Regex Syntax
-
-Use `^` to anchor the beginning, `(.+)` for a capture, and `[^/]+` for a path component.
-Escape a literal dot with `\.` in a TOML literal string. In a double-quoted TOML string,
-write `\\.` instead because TOML also processes backslash escapes.
-
-The [Rust regex documentation](https://docs.rs/regex/latest/regex/#syntax) describes the
-supported syntax. Backreferences inside the pattern and lookaround are not supported.
-When a capture is followed by letters or digits, use braces to separate its name, such as
-`${1}suffix`.
-
-## Precedence and Matching
-
-Rules run in configuration insertion order. mise uses the first rule that changes the URL
-into another valid URL, then stops; replacements do not chain. Put specific rules before
-broad ones. If a matching rule leaves the URL unchanged or produces an invalid URL, mise
-continues to later rules. Invalid regex patterns produce a warning and are skipped.
-
-If no rule produces a valid changed URL, the original request is used. URL replacements are
-therefore routing rules, not an outbound-host allow list. Use network policy outside mise
-when traffic must never reach an upstream host.
-
-## Security Considerations
-
-Authentication headers prepared for the original URL can be sent to the replacement server.
-Only route requests to servers trusted to receive both the artifacts and those credentials.
-A host-changing rewrite removes credentials scoped to the original host — an authorization header,
-cookie, API key, other recognized credential header, or userinfo carried over from the original URL
-— and can then add mirror credentials from netrc as described below. Same-host rewrites retain the
-existing credentials.
-
-When an HTTPS-to-HTTP rewrite would still send credentials after that scoping, mise refuses the
-request rather than exposing them without transport encryption. This covers a same-host downgrade
-and credentials written into the replacement rule itself. An unauthenticated downgrade is still
-allowed, as is a downgrade whose credentials come from a netrc entry for the replacement host:
-mise sends those to a plain `http://` URL with no rewrite involved, so a rewrite is not stricter.
-
-Both rules apply to mise's HTTP client, GitHub attestation requests, and Conda channel traffic.
-For Sigstore TUF metadata, an insecure credential-bearing downgrade is ignored and the secure
-default TUF URL remains in use.
-
-Use both a start anchor and a hostname boundary for an exact host:
+To match exactly one host, anchor the start and end the host with a slash:
 
 ```toml
 [settings.url_replacements]
 'regex:^https://github\.com/' = "https://mirror.example.com/"
 ```
 
-The trailing slash matters: `^https://github\.com` by itself also matches
-`https://github.com.example.org/`. Avoid placing credentials directly in replacement URLs,
-which can appear in logs.
+Without the trailing slash, `^https://github\.com` also matches
+`https://github.com.example.org/`.
 
-## Authentication
+### Restructure GitHub release paths
 
-mise looks up netrc credentials **after** rewriting the URL. Use the replacement hostname
-in `~/.netrc`, or `~/_netrc` on Windows (`~/.netrc` is a fallback there). The
-[`netrc_file`](/configuration/settings.html#netrc_file) setting can select another file.
+This rule sends `https://github.com/owner/repo/releases/download/v1.0.0/file.tar.gz`
+to `https://hub.example.com/artifactory/github/owner/repo/v1.0.0/file.tar.gz`:
+
+```toml
+[settings.url_replacements]
+'regex:^https://github\.com/([^/]+)/([^/]+)/releases/download/(.+)' = "https://hub.example.com/artifactory/github/$1/$2/$3"
+```
+
+It does not rewrite `api.github.com` requests; add a separate rule if release
+metadata must also go through the mirror.
+
+### Subdomain to path
+
+This rule sends `https://eu.cdn.example.com/tool.tar.gz` to
+`https://unified-cdn.example.com/eu/tool.tar.gz`:
+
+```toml
+[settings.url_replacements]
+'regex:^https://([^./]+)\.cdn\.example\.com/(.+)' = "https://unified-cdn.example.com/$1/$2"
+```
+
+### Specific rule before a general one
+
+The first rule handles Microsoft repositories, the second handles every other
+GitHub path, and the third handles HashiCorp downloads:
+
+```toml
+[settings.url_replacements]
+'regex:^https://github\.com/microsoft/(.+)' = "https://internal.example.org/microsoft/$1"
+'regex:^https://github\.com/(.+)' = "https://public.example.org/github/$1"
+"https://releases.hashicorp.com/" = "https://hashicorp.example.net/"
+```
+
+### HTTP to HTTPS
+
+```toml
+[settings.url_replacements]
+'regex:^http://(.+)' = "https://$1"
+```
+
+Use this only when the destination supports HTTPS. Changing the scheme does not
+make an untrusted server trustworthy.
+
+## Credentials
+
+When a rule sends a request to a different host, mise drops the credentials
+meant for the original host: the `Authorization` header, cookies, API key
+headers, and any `user:password` in the URL. It then adds
+[netrc](#netrc) credentials for the new host, if there are any. A rule that
+keeps the host keeps the credentials.
+
+mise refuses to send credentials over plain HTTP after an HTTPS-to-HTTP rewrite,
+whether they came from the original request or are written into the rule. A
+downgrade without credentials is allowed, and so is one whose credentials come
+from a netrc entry for the new host. These rules also cover GitHub attestation
+requests and Conda channels. For Sigstore TUF metadata, mise ignores such a
+rewrite and keeps the default HTTPS URL.
+
+Avoid writing credentials into replacement URLs, where they can appear in logs.
+Only route requests to servers you trust with both the artifacts and the
+credentials.
+
+### netrc {#netrc}
+
+mise looks up netrc credentials after it rewrites the URL, so use the
+replacement host in `~/.netrc` (`~/_netrc` on Windows, with `~/.netrc` as a
+fallback). The [`netrc_file`](/configuration/settings.html#netrc_file) setting
+selects another file.
 
 ```netrc
 machine mirror.example.com
@@ -192,10 +168,37 @@ machine mirror.example.com
   password mypassword
 ```
 
-Use your mirror credentials and restrict the file's permissions on Unix, for example
-`chmod 600 ~/.netrc`.
+On Unix, restrict the file's permissions with `chmod 600 ~/.netrc`.
 
-Netrc is normally a fallback: an existing Authorization header takes precedence. When a
-replacement changes the hostname, matching netrc credentials for the new host can override
-that header. A rewrite that only changes a path or query on the same host keeps existing
-Authorization. See [GitHub Tokens](/dev-tools/github-tokens.html) for upstream token sources.
+netrc credentials are a fallback: an existing `Authorization` header wins. When
+a rule changes the host, netrc credentials for the new host replace that header.
+A rule that changes only the path or query keeps the existing `Authorization`.
+See [GitHub, GitLab, and Forgejo tokens](/dev-tools/github-tokens.html) for
+where upstream tokens come from.
+
+## Set rules from the environment
+
+`MISE_URL_REPLACEMENTS` takes the same rules as a JSON object, which suits a
+single command or a CI job:
+
+```sh
+MISE_URL_REPLACEMENTS='{"https://github.com/":"https://mirror.example.com/github/"}' mise install
+```
+
+## Check a rule
+
+Set `MISE_LOG_HTTP=1` to print each request mise sends, after rewriting, with its
+response status. With the rule from the previous example, installing jq prints
+lines such as:
+
+```sh
+export MISE_URL_REPLACEMENTS='{"https://github.com/":"https://mirror.example.com/github/"}'
+MISE_LOG_HTTP=1 mise install jq@1.8.1
+```
+
+```text
+GET https://mirror.example.com/github/jqlang/jq/releases/download/jq-1.8.1/jq-linux-amd64 200 OK
+```
+
+Version lists are cached, so run `mise cache clear <tool>` first when you test a
+rule for metadata requests.

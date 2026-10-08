@@ -548,6 +548,9 @@ a:hover > div + .card-link::after {
   transition: border-color 0.2s ease;
 }
 
+.landing-special.landing-related {
+  margin-bottom: 64px;
+}
 .landing-special:hover {
   border-color: var(--pillar-tasks);
 }
@@ -1122,7 +1125,7 @@ a:hover > div + .card-link::after {
 .landing-page .landing-stations h2 {
   max-width: 24ch;
 }
-.landing-page .migration-note {
+.landing-page .version-files-note {
   margin-top: 32px;
   padding-top: 20px;
   border-top: 1px solid var(--vp-c-divider);

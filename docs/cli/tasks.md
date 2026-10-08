@@ -48,6 +48,6 @@ Manage tasks
 
 ## Related documentation
 
-- [Task configuration](/tasks/task-configuration.html).
+- [Task configuration reference](/tasks/task-configuration.html).
 - [All commands](/cli/).
 - [Global flags and argument syntax](/cli/#global-flags).

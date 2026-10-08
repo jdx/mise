@@ -18,6 +18,6 @@ Show the companies sponsoring mise and the jdx.dev open source tools
 
 ## Related documentation
 
-- [Supporting mise](/about.html).
+- [Supporting mise](/about.html#supporting-mise).
 - [All commands](/cli/).
 - [Global flags and argument syntax](/cli/#global-flags).

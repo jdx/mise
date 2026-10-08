@@ -1,34 +1,31 @@
 ---
-description: "The experimental install layout names each installation by what it is, so shorthands share installs and variants of one version coexist."
+description: Name each tool installation by what it is, so shorthands share one install and variants of one version coexist.
+socialDescription: Name each installation by what it is, so variants of one version coexist.
 ---
 
-# Install layout <Badge type="warning" text="experimental" />
+# Identity install layout <Badge type="warning" text="experimental" />
 
-By default, mise installs a tool into `installs/<tool>/<version>`. That path
-cannot say which backend produced the files, which platform build they are, or
-which install options were used. So `age` and `aqua:FiloSottile/age` are two
-separate downloads, and two variants of one version overwrite each other.
+By default, mise installs a tool into `installs/<tool>/<version>`, the legacy
+layout. That path cannot say which backend produced the files, which platform
+build they are, or which install options were used. So `age` and
+`aqua:FiloSottile/age` are two separate downloads, and two variants of one
+version overwrite each other.
 
-The install layout gives each installation its own directory,
+The identity layout gives each installation its own directory,
 `installs/<label>-<hash>/`, named by what was installed. The familiar
 `installs/<tool>/<version>` path stays, as a link to that directory.
 
 ::: warning Experimental
-The install layout is opt-in even with `experimental = true`: it needs both
-`experimental = true` and `install_layout = "identity"`. A later release will turn
-it on with `experimental`. Directory names, receipts, and the catalog format may
-change in any release while it is experimental. Files that
-tools generate while installing, such as virtual environments and shebangs,
-record the hashed path. Try it where reinstalling is cheap, and read
-[Downgrading and compatibility](#downgrading-and-compatibility) before relying
-on it.
+The identity layout needs `experimental = true` and
+`install_layout = "identity"`; `experimental` alone does not turn it on.
+Directory names, receipts, and the catalog format can change between releases
+while the layout is experimental. Try it where reinstalling tools is cheap, and
+read [Turn it off or downgrade](#downgrading-and-compatibility) first.
 :::
 
 ## Quick start
 
-Enable the layout in `mise.toml`, or for every project with
-`mise settings set experimental=true` and
-`mise settings set install_layout=identity` (or `MISE_INSTALL_LAYOUT=identity`):
+Turn the layout on for a project in `mise.toml`:
 
 ```toml [mise.toml]
 [settings]
@@ -38,6 +35,11 @@ install_layout = "identity"
 [tools]
 age = "1.2.1"
 ```
+
+To turn it on everywhere, run `mise settings set experimental=true` and
+`mise settings set install_layout=identity`, or export `MISE_EXPERIMENTAL=1` and
+`MISE_INSTALL_LAYOUT=identity`. See
+[`install_layout`](/configuration/settings.html#install_layout).
 
 Install the tool and see where it went:
 
@@ -55,7 +57,7 @@ platform, so yours differs from the example on another OS or architecture.
 
 ## What changes
 
-With the layout enabled, a new installation looks like this:
+With the identity layout, a new installation looks like this:
 
 ```text
 installs/
@@ -70,19 +72,17 @@ installs/
   .mise/                        catalog
 ```
 
-**Installation directories.** Each installation lives in
-`installs/<label>-<hash>/`. The directory that holds them is the install store.
-It is the installs directory itself, except on Windows, where it is a shorter
-sibling directory (see [Windows](#windows)). The label comes from the backend, not from the
-registry shorthand, so a registry change never moves an existing install.
-`aqua:FiloSottile/age` gives `age`, `aqua:yarnpkg/berry` gives `berry`, and
-`go:github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen` gives
-`oapi-codegen`. To derive it, mise drops the backend prefix, options, and a
-trailing `@version` or `.git`, takes the last path segment (skipping Go
-major-version segments such as `v2`), lowercases it, replaces characters outside
-`a-z0-9._-` with `-`, and caps it at 24 characters. The rule is the same on every
-platform and is fixed once the layout ships, because changing it would change
-every path.
+### Installation directories
+
+Each installation lives in `installs/<label>-<hash>/`. The directory that holds
+them is the install store: the installs directory itself, except on Windows,
+where it is a shorter sibling directory (see [Windows](#windows)).
+
+The label is the last part of the backend's project name, lowercased and cut to
+24 characters: `aqua:FiloSottile/age` gives `age`, `aqua:yarnpkg/berry` gives
+`berry`, and `go:github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen` gives
+`oapi-codegen`. It comes from the backend, not the registry shorthand, so a
+registry change never moves an install.
 
 The hash is the first eight characters of a base32 digest of the installation's
 identity. If that name is already taken by a different identity, or by a
@@ -90,8 +90,10 @@ directory mise did not create, the new installation extends its hash by two
 characters (ten, then twelve, and so on). mise never renames an existing
 installation to make room.
 
-**Receipts.** Each installation directory holds a `.mise-install.toml` receipt
-that records what the installation answers to. This one is trimmed:
+### Receipts
+
+Each installation directory holds a `.mise-install.toml` receipt that records
+what the installation answers to. This one is trimmed:
 
 ```toml
 digest = "hlencrstldyjkqnpak2zyr453avqxfjf6so4vopt7au5nsxvzska"
@@ -105,12 +107,13 @@ version = "1.2.1"
 platform = "linux-x64"
 ```
 
-Alongside the identity, the receipt keeps the digest of the artifact mise acquired
-when the backend reports one, the spelling the tool was requested with, and the
-mise version that wrote it. mise writes the receipt last, so a directory without
-one is an incomplete installation. A receipt describes how the installation was
-requested. It does not prove the files are still the original bytes, and a
-receipt copied next to a cached tool does not make that tool trustworthy.
+Alongside the identity, the receipt keeps the digest of the artifact mise
+acquired when the backend reports one, the spelling the tool was requested with,
+and the mise version that wrote it. mise writes the receipt last, so a directory
+without one is an incomplete installation. A receipt describes how the
+installation was requested. It does not prove the files are still the original
+bytes, and a receipt copied next to a cached tool does not make that tool
+trustworthy.
 
 The `mode` says how much the identity pins down. `fallback` identifies the
 request: backend, version, platform, and options. `resolved` also names a pinned
@@ -119,50 +122,47 @@ artifact checksum from a lockfile (see
 installation cannot promise that installing the same request again produces the
 same bytes.
 
-**The catalog.** `installs/.mise/` records which directory each identity was
-assigned and which installation each unlocked request selected. It is durable
-metadata, not a cache. Keep it with the installs it describes when you copy or
-cache the installs directory, together with the install store when that is a
-separate directory (on Windows, `i` beside `installs`; see [Windows](#windows)).
+### The catalog
 
-**Version links.** `installs/<tool>/<version>` links to the installation, so
-paths you wrote down, such as an IDE SDK entry, keep working. A link can point at
-only one variant: when two variants of one version exist, the link names the one
-installed most recently. mise never uses the link to decide which variant a
-request means. On Linux and macOS the link is relative (`../age-hlencrst`).
+`installs/.mise/` records which directory each identity was assigned and which
+installation each unlocked request selected. It is durable metadata, not a
+cache. When you copy or cache the installs directory, keep the catalog with it,
+together with the install store when that is a separate directory (on Windows,
+`i` beside `installs`).
 
-**Runtime aliases.** Aliases such as `latest`, `1`, or `1.2` keep their current
-format in the tool directory (`1 -> ./1.2.1`). They chain to the version link and
-from there to the installation.
+### Version links and aliases
 
-mise still writes the tool directory's `.mise.backend.toml` sidecar and
-`installs/.mise-installs.toml`.
+`installs/<tool>/<version>` links to the installation, so paths you wrote down,
+such as an IDE SDK entry, keep working. A link can point at only one variant:
+when two variants of one version exist, the link names the one installed most
+recently. mise never uses the link to decide which variant a request means, so
+a hardcoded `installs/<tool>/<version>` path sees only the most recent variant.
+On Linux and macOS the link is relative (`../age-hlencrst`).
 
-## What does not change
+Runtime aliases such as `latest`, `1`, or `1.2` keep their current format in
+the tool directory (`1 -> ./1.2.1`). They chain to the version link and from
+there to the installation.
 
-- **Existing installations stay where they are.** mise does not move or migrate
-  `installs/<tool>/<version>` directories that exist when you enable the layout.
-  Relocating them would break paths embedded in shebangs, virtual environments,
-  and package-manager installs. mise keeps using a legacy installation in place
-  when the backend recorded for it matches the request. Otherwise it installs
-  the version again in the new layout instead of reinterpreting another
-  backend's files. To move them yourself, see
+## What stays the same {#what-does-not-change}
+
+- mise does not move or migrate `installs/<tool>/<version>` directories that
+  exist when you turn the layout on. Relocating them would break paths embedded
+  in shebangs, virtual environments, and package-manager installs. mise keeps
+  using a legacy installation in place when the backend recorded for it matches
+  the request; otherwise it installs the version again in the identity layout
+  instead of reinterpreting another backend's files. To move them yourself, see
   [Moving legacy installations](#moving-legacy-installations).
-- **Both layouts can share one installs directory.** mise tells hashed
-  directories from tool directories by their receipts and reservations, not by
-  their names.
-- **mise does not reclaim legacy installations on its own.** Nothing removes or
+- Both layouts can share one installs directory. mise tells hashed directories
+  from tool directories by their receipts and catalog reservations, not by their
+  names.
+- mise does not reclaim legacy installations on its own. Nothing removes or
   relocates a legacy directory because a hashed counterpart exists, and `prune`
   treats legacy installations as before. Only `mise installs migrate` moves them.
-- **PATH for an unlocked request still uses `installs/<tool>/<alias>`.** With
-  `node = "20"`, activation puts `installs/node/20/bin` on `PATH`, as before. See
-  [Finding an installation](#finding-an-installation-mise-where-and-mise-which)
-  for when mise uses the installation directory instead.
-- **Tool options, backends, and the registry work as before.** Only where files
-  land and how installations are found changes. `mise backends switch` installs
-  the new backend's installation of each switched version (it is a different
-  installation from the old backend's, which stays until it is pruned) and
-  points the version link at it.
+- Tool options, backends, and the registry work as before; only where files land
+  and how installations are found changes. `mise backends switch` installs the
+  new backend's installation of each switched version, which is a different
+  installation from the old backend's, and points the version link at it. The
+  old installation stays until it is pruned.
 
 ## How identity is decided
 
@@ -171,38 +171,38 @@ on disk. Installed tools can modify themselves, add packages, or generate files,
 and none of that renames the directory or invalidates the installation. The
 identity covers:
 
-- **The canonical backend**, never the shorthand. `age` and
-  `aqua:FiloSottile/age` resolve to the same backend, so they share one
-  installation, whichever you ask for first.
-- **The concrete version**, treated as an opaque string.
-- **The platform**, such as `linux-x64` or `linux-x64-musl`, so glibc and musl
+- The canonical backend, never the shorthand. `age` and `aqua:FiloSottile/age`
+  resolve to the same backend, so they share one installation, whichever you ask
+  for first.
+- The concrete version, treated as an opaque string.
+- The platform, such as `linux-x64` or `linux-x64-musl`, so glibc and musl
   builds of one version coexist.
-- **Options that change what gets installed.** The backend decides which of a
+- Options that change what gets installed. The backend decides which of a
   request's options these are. For example, `matching` on a `github:` tool picks
   which release asset to install, so different values give different
   installations. Options that only affect how versions are listed or verified,
-  or that apply only while installing (`depends`, `install_before`,
-  `minimum_release_age`, `version_order`), do not split installs. `install_env`
-  can change what a build produces, so mise hashes it into the identity and
-  never records its values. A `postinstall` hook runs after the install and does
-  not split installs, so editing it never reinstalls a tool.
-- **Pinned inputs**: the artifact checksum, when the request comes from a
-  lockfile that pins one for this platform, and the dependency graph a lockfile
-  records for npm and pipx installs that have one.
+  or that apply only while installing, such as `prerelease`, `depends`,
+  `minimum_release_age`, `version_order`, and `auto_update`, do not split
+  installs. `install_env` can change what a build produces, so mise hashes it
+  into the identity and never records its values. A `postinstall` hook runs
+  after the install and does not split installs, so editing it never reinstalls
+  a tool.
+- Pinned inputs: the artifact checksum, when the request comes from a lockfile
+  that pins one for this platform, and the dependency graph a lockfile records
+  for `npm:` and `pypi:` installs that have one.
 
 Because options are part of the identity, tools that share a backend and a
 version but select different release assets get separate installations. The
 registry entries `restate-server` and `restatectl` both use
 `github:restatedev/restate` and differ only in their `matching` option. With
+this configuration, mise creates two directories that share a label, and each
+tool directory links to its own:
 
 ```toml [mise.toml]
 [tools]
 restate-server = "1.4.0"
 restatectl = "1.4.0"
 ```
-
-mise creates two directories that share a label, and each tool directory links to
-its own:
 
 ```text
 installs/
@@ -222,58 +222,58 @@ option.
   such as `~/.local/share/mise/installs/age-hlencrst`. It is the real directory,
   never a version link, so it is correct even when a link points at another
   variant.
-- `mise which age` prints the executable. For an unlocked request it goes through
-  the version link, such as `~/.local/share/mise/installs/age/1.2.1/age/age`,
-  when that link names the selected installation, and through the installation
-  directory otherwise.
+- `mise which age` prints the executable. For an unlocked request it goes
+  through the version link, such as
+  `~/.local/share/mise/installs/age/1.2.1/age/age`, when that link names the
+  selected installation, and through the installation directory otherwise.
 
 `mise activate`, `mise env`, and `mise exec` follow the same rule for `PATH`. An
 unlocked request puts the link on `PATH` (a version link such as
 `installs/age/1.2.1`, or an alias such as `installs/node/20`) when that link
-resolves to the installation the request selects. If another variant of the
-version was installed later and the link now points at it, they use the selected
-installation's own directory. A request that comes from a lockfile entry always
-uses the installation directory.
+resolves to the installation the request selects, so with `node = "20"`,
+activation puts `installs/node/20/bin` on `PATH` as before. If another variant
+of the version was installed later and the link now points at it, they use the
+selected installation's own directory. A request that comes from a lockfile
+entry always uses the installation directory.
 
 Use these commands, or `mise exec`, instead of building a path by hand. A hashed
-name does not contain the version, and a version link is shared state that can
-point at only one variant.
+name does not contain the version; read the version from the version link, the
+receipt, or `mise ls`.
 
 ## Lockfiles and selections
 
-**Unlocked requests.** Without a lockfile entry, `node = "20"` or
-`age = "latest"` first resolves to a concrete version. mise then remembers which
-installation satisfied that concrete request. That selection is shared by every
-project on the machine that asks for the same backend, version, platform, and
-options. It is not tied to a project directory or to the shorthand spelling.
+Without a lockfile entry, `node = "20"` or `age = "latest"` first resolves to a
+concrete version. mise then remembers which installation satisfied that
+concrete request. That selection is shared by every project on the machine that
+asks for the same backend, version, platform, and options. It is not tied to a
+project directory or to the shorthand spelling.
 
-The selection is sticky. Running tools, activating, and installing again reuse the
-remembered installation, and mise does not look upstream for a re-released
+The selection is sticky. Running tools, activating, and installing again reuse
+the remembered installation, and mise does not look upstream for a re-released
 artifact. `mise install --force`, or updating a rolling version such as a
 `nightly` tag, reinstalls into the same directory, so every project that makes
 the same request sees the refreshed files. A different version or different
 options is a different request: upgrading one project to a new version does not
 change what other projects pinned to the old version select.
 
-**Locked requests.** When a [lockfile](/dev-tools/mise-lock.html) pins an
-artifact checksum for your platform, the checksum becomes part of the identity.
-mise looks for an installation with that identity. It also adopts an unlocked
-installation of the same version when the checksum recorded for the artifact it
-acquired is the pinned one, without downloading or reinstalling anything. So
-running `mise install --locked` after an unlocked install of the same artifact
-reuses it. Otherwise mise creates a separate installation, and different pinned
+When a [lockfile](/dev-tools/mise-lock.html) pins an artifact checksum for your
+platform, the checksum becomes part of the identity. mise looks for an
+installation with that identity. It also adopts an unlocked installation of the
+same version when the checksum recorded for the artifact it acquired is the
+pinned one, without downloading or reinstalling anything, so running
+`mise install --locked` after an unlocked install of the same artifact reuses
+it. Otherwise mise creates a separate installation, and different pinned
 artifacts of one version coexist.
 
 A pin that adopted an unlocked installation keeps it. If you later force a
 refresh of the unlocked request (`mise install --force age@1.2.1`, run outside
-that lockfile's project), mise installs into a new directory and moves the shared
-selection to it instead of replacing the files the lockfile adopted.
+that lockfile's project), mise installs into a new directory and moves the
+shared selection to it instead of replacing the files the lockfile adopted.
 
-A lockfile entry with no checksum for your platform does not pin anything. Its
-request uses the same installation an unlocked request would.
-
-A locked install never changes an unlocked selection, so installing or updating
-one project does not retarget what another project's unlocked request selects.
+A lockfile entry with no checksum for your platform does not pin anything; its
+request uses the same installation an unlocked request would. A locked install
+never changes an unlocked selection, so installing or updating one project does
+not retarget what another project's unlocked request selects.
 
 Unlocked selections are local to your machine. To carry a particular choice to
 other machines or teammates, commit a lockfile.
@@ -282,8 +282,8 @@ other machines or teammates, commit a lockfile.
 
 Several installations can answer one unlocked request: a forced refresh that
 could not replace a lockfile's installation in place, or installations that
-lockfiles in other projects made. `mise installs ls` lists every installation
-and says which one each request uses:
+lockfiles in other projects made. [`mise installs ls`](/cli/installs/ls.html)
+lists every installation and says which one each request uses:
 
 ```sh
 mise installs ls jq
@@ -292,29 +292,29 @@ mise installs ls jq
 # jq-ezjqmxa4   jq    1.7.1    linux-x64  pinned
 ```
 
-`selected` is the installation requests without a lockfile use, `pinned` means a
-lockfile adopted it, and `shared` means it is in a read-only shared installs
-directory. Add `--json` for the full identity, including options and the
-artifact checksum.
+`selected` is the installation that requests without a lockfile use, `pinned`
+means a lockfile adopted it, and `shared` means it is in a read-only shared
+installs directory. Add `--json` for the full identity, including options and
+the artifact checksum.
 
-`mise installs select` makes another installation the selected one, and points
-the version link (`installs/jq/1.7.1`) at it:
+[`mise installs select`](/cli/installs/select.html) makes another installation
+the selected one and points the version link (`installs/jq/1.7.1`) at it:
 
 ```sh
 mise installs select jq-ezjqmxa4
 ```
 
 The selection applies to every project on the machine that asks for the same
-tool, version, platform and options without a lockfile. Projects whose lockfile
+tool, version, platform, and options without a lockfile. Projects whose lockfile
 pins an artifact keep that artifact's installation. To select an installation in
 a shared installs directory, pass its path; the selection is kept in your own
 installs directory, and nothing is written to the shared one.
 
-**When nothing is selected.** The first unlocked install of a request selects
-the installation it made. If the selection is lost (the catalog was rebuilt from
-receipts, for example), or the request was only ever installed by lockfiles,
-mise looks at the installations that answer it. With exactly one, mise uses and
-selects it. With several, mise stops instead of guessing, and lists them:
+The first unlocked install of a request selects the installation it made. If
+the selection is lost (the catalog was rebuilt from receipts, for example), or
+the request was only ever installed by lockfiles, mise looks at the
+installations that answer it. With exactly one, mise uses and selects it. With
+several, mise stops instead of guessing, and lists them:
 
 ```text
 mise ERROR jq@1.7.1 matches several installations and none is selected:
@@ -324,17 +324,17 @@ Choose one with `mise installs select <dir>`, or install a fresh one with `mise 
 ```
 
 If the selected installation has since been pruned, installing restores it in
-the same directory rather than choosing another one.
+the same directory instead of choosing another one.
 
 ## Moving legacy installations
 
-`mise installs migrate` moves installations made before the layout was turned
-on into it. It does not copy files: it reinstalls each version from its backend
-into its own `<label>-<hash>` directory, so paths the tool records about itself
-are written for the new location. Then it removes the old
-`installs/<tool>/<version>` directory and puts the version link in its place,
-so a path that pointed into the old directory, such as a virtual environment's
-interpreter, still resolves.
+[`mise installs migrate`](/cli/installs/migrate.html) moves installations made
+before the layout was turned on into it. It does not copy files: it reinstalls
+each version from its backend into its own `<label>-<hash>` directory, so paths
+the tool records about itself are written for the new location. Then it removes
+the old `installs/<tool>/<version>` directory and puts the version link in its
+place, so a path that pointed into the old directory, such as a virtual
+environment's interpreter, still resolves.
 
 ```sh
 mise installs migrate --dry-run   # list what would move
@@ -345,17 +345,17 @@ mise installs migrate node python@3.12.1
 The old directory is moved aside while its replacement installs, and put back
 if the install fails.
 
-A version that cannot be reinstalled is not an error. It happens when its
+A version that cannot be reinstalled is not an error. That happens when its
 release was withdrawn or is signed by a different identity than mise accepted
 before, when the network is unavailable, or when its installer fails. mise then
-moves the existing directory, as it is, into its own `<label>-<hash>` directory,
-writes the same receipt an install would, and leaves the version link at the old
-path. Paths the tool recorded about itself (virtual environment shebangs,
-`node_modules/.bin` links) keep resolving through that link. Nothing in it is
-rewritten, and the identity only holds what the old directory can say: the
-backend, version, platform and the options of the request. A digest that comes
-from a lockfile, such as an artifact checksum or the dependency graph of an
-`npm:` or `pipx:` install, is not reconstructed.
+moves the existing directory, as it is, into its own `<label>-<hash>`
+directory, writes the same receipt an install would, and leaves the version
+link at the old path. Paths the tool recorded about itself, such as virtual
+environment shebangs and `node_modules/.bin` links, keep resolving through that
+link. Nothing in the directory is rewritten, and the identity holds only what
+the old directory can say: the backend, version, platform and the options of
+the request. A digest that comes from a lockfile, such as an artifact checksum
+or the dependency graph of an `npm:` or `pipx:` install, is not reconstructed.
 
 ```text
 relocated aube@2.2.4 to ~/.local/share/mise/installs/aube-4h2kfq7a
@@ -363,8 +363,9 @@ relocated aube@2.2.4 to ~/.local/share/mise/installs/aube-4h2kfq7a
 170 migrated, 12 relocated, 0 kept legacy, 0 failed
 ```
 
-If it cannot be moved either (it is on another file system than the install
-store, say), it stays in the legacy layout, untouched, and still works:
+If it cannot be moved either, for example because it is on a different file
+system than the install store, it stays in the legacy layout, untouched, and
+still works:
 
 ```text
 skipped aube@2.2.4 (kept legacy layout): <why it was not reinstalled>; not moved either: <why>
@@ -372,89 +373,100 @@ skipped aube@2.2.4 (kept legacy layout): <why it was not reinstalled>; not moved
 
 A later `mise installs migrate` tries it again. The command exits non-zero only
 when a migration itself broke, for example when the old directory could not be
-put back. A move is recorded like a reinstall, so an interrupted one is put back
-by the next run.
+put back. A move is recorded like a reinstall, so the next run puts back an
+interrupted one.
 
-Each migration is recorded in `installs/.mise/migrations/` before anything moves, so if a run is interrupted, the next
+Each migration is recorded in `installs/.mise/migrations/` before anything
+moves, so if a run is interrupted, the next
 `mise installs migrate` either removes the old directory (the replacement had
 finished) or puts it back and withdraws the unfinished replacement. Run it while
 nothing is using the tools being moved.
+
 Versions whose recorded backend is not the one their tool resolves to now are
-left alone (mise is not using them; `mise uninstall` them if nothing needs
-them), as are tools that keep the legacy layout (`http:`, `rust`, `dotnet`).
+left alone; mise is not using them, so `mise uninstall` them if nothing needs
+them. Tools that keep the legacy layout are also left alone (see
+[Known limits](#known-limits)).
 
 ## Pruning and uninstalling
 
 Both work on one installation directory at a time.
 
 - `mise uninstall age@1.2.1` removes the installation directory, and the version
-  links that name it from every tool directory that has one. It does not follow a
-  link to decide what to delete, and it refuses to remove a path directly under
-  the install store that has neither a receipt nor a reservation in the
-  catalog. Removing one variant leaves the others in place.
+  links that name it from every tool directory that has one. It does not follow
+  a link to decide what to delete, and it refuses to remove a path directly under
+  the install store that has neither a receipt nor a reservation in the catalog.
+  Removing one variant leaves the others in place. When more than one
+  installation of that version exists, it stops and asks for `--all`.
 - Removing an installation keeps its catalog record, so installing the same
   identity again lands in the same directory. `mise uninstall` also forgets the
   selection that named it, so the requests it answered choose again; a pruned
   installation keeps its selection and is restored in place.
-- `mise prune` keeps an installation while a tracked config needs it. An unlocked
-  request needs the installation it selects. A tracked lockfile entry needs the
-  installations of its backend and version, narrowed to the pinned artifact when
-  the entry has a checksum for your platform. Legacy installations are pruned as
-  before.
-- A tool version that is a template, such as `node = "{{ vars.node }}"`, depends
-  on the vars, env, `MISE_ENV`, `--no-env`, settings and dotenv files in effect
-  where the project is used, which `mise prune` cannot reproduce from another
-  directory. So the catalog keeps a snapshot, under `installs/.mise/snapshots/`,
-  of what a config's templated versions rendered to, taken by a command that
-  resolves the config's tools, and `mise prune` reads it instead of rendering. A
-  command that resolves fewer tools than the config sets (`mise exec node@22`)
-  records nothing, and prune, `mise ls --prunable` and the automatic removal after
-  an upgrade only read snapshots. A snapshot covers one context, the `MISE_ENV`
-  plus the set of loaded config files, and a new snapshot of that context
-  replaces the old one, so a version a project stopped using becomes prunable. If
-  a config file a snapshot loaded has changed, or a config has no snapshot,
-  `mise prune` keeps every installation of that config's templated tools until a
-  command is run in the project again. A snapshot whose config file is gone is
-  ignored, and `mise prune --configs` removes it. A change that is not in a config file, such as a shell variable, is
-  noticed at the next such command, not before. A template in a tool's options
-  makes the tool templated too. A snapshot stores the requested version and the
-  version the command settled on, so project aliases are followed, and it is
-  written with owner-only permissions. A tool with backend options or an
-  `install_env`, which can hold a credential under any name, is not stored, and
-  prune keeps every installation of it instead. To keep a version that
-  a snapshot no longer lists, reference it in a tracked config or lockfile. Without the new
-  layout, `mise prune` renders these versions from where it runs and can fail.
+- `mise prune` keeps an installation while a tracked config needs it. An
+  unlocked request needs the installation it selects. A tracked lockfile entry
+  needs the installations of its backend and version, narrowed to the pinned
+  artifact when the entry has a checksum for your platform. Legacy installations
+  are pruned as before.
 - `mise plugins uninstall --purge` also removes the plugin's installations in
-  the new layout.
+  the identity layout.
 - `mise ls` and `mise prune` list each installation separately. When several
   installations share a version, `mise ls` shows the directory of each one
   (`1.2.1 [age-hlencrst]`), and `mise prune` removes only the ones nothing
-  needs. `mise uninstall age@1.2.1` stops and asks for `--all` when more than
-  one installation of that version exists.
-- A directory with a receipt, and `.mise`, are not tools: `mise ls` and
-  `mise prune` never treat them as installed tools.
+  needs. Directories with a receipt, and `.mise`, are never treated as installed
+  tools.
+
+### Templated versions and `mise prune`
+
+A tool version written as a template, such as
+<span v-pre>`node = "{{ vars.node }}"`</span>, depends on the vars, env,
+`MISE_ENV`, `--no-env`, settings, and dotenv files where the project runs.
+`mise prune` cannot reproduce that from another directory, so whenever a command
+resolves all of a config's tools, mise saves what its templated versions
+rendered to under `installs/.mise/snapshots/`. A template in a tool's options
+makes the tool templated too.
+
+- `mise prune`, `mise ls --prunable`, and the cleanup after `mise upgrade` read
+  the snapshot instead of rendering templates. A command that resolves fewer
+  tools than the config sets, such as `mise exec node@22`, records nothing.
+- A config with no snapshot, or whose files changed since the snapshot, keeps
+  every installation of its templated tools until you run a mise command in that
+  project again. A change outside the config files, such as a shell variable, is
+  noticed at the next such command, not before.
+- A snapshot covers one context: the `MISE_ENV` and the set of loaded config
+  files. A newer snapshot of the same context replaces it, so a version the
+  project stopped using becomes prunable. A snapshot stores the requested
+  version and the version the command settled on, so project aliases are
+  followed.
+- Snapshots are written with owner-only permissions. Tools with backend options
+  or `install_env` are not snapshotted, because those can hold credentials under
+  any name; prune keeps every installation of them.
+- A snapshot whose config file is gone is ignored, and `mise prune --configs`
+  removes it.
+
+To keep a version that a snapshot no longer lists, reference it in a tracked
+config or lockfile. With the legacy layout, `mise prune` renders these versions
+from where it runs and can fail.
 
 ## Windows
 
-The layout works the same way on Windows, with these differences:
+The identity layout works the same way on Windows, with these differences:
 
-- **Real junctions.** The version link is a directory junction with an absolute
-  target, which IDE SDK selectors and other programs can follow. mise never
-  substitutes a text file for a link. Junctions do not need administrator rights.
-  A directory on a UNC path gets a symlink, which may need administrator rights
-  or Developer Mode.
-- **A link that cannot be created is a warning.** If mise cannot create the link,
-  the installation still succeeds and works through mise, and mise warns that the
-  link is unavailable. Run `mise where` to get the real directory.
-- **Junction targets are absolute.** An installs directory copied to another
+- The version link is a directory junction with an absolute target, which IDE
+  SDK selectors and other programs can follow. mise never substitutes a text
+  file for a link. Junctions do not need administrator rights. A directory on a
+  UNC path gets a symlink, which can need administrator rights or Developer
+  Mode.
+- If mise cannot create the link, the installation still succeeds and works
+  through mise, and mise warns that the link is unavailable. Run `mise where` to
+  get the real directory.
+- Because junction targets are absolute, an installs directory copied to another
   location keeps pointing at the old one. mise finds installations through the
   catalog, relative to the installs directory it is using, so this affects
   programs that follow the link, not mise.
-- **A shorter real path.** Installations go into `%LOCALAPPDATA%\mise\i\`
-  instead of `installs\`, seven characters shorter, because the real path is
-  where installers extract files and what counts toward the 260-character limit.
-  The version links, runtime aliases and catalog stay in `installs\`, so
-  `installs\java\21` keeps working in an IDE:
+- Installations go into `%LOCALAPPDATA%\mise\i\` instead of `installs\`, seven
+  characters shorter, because the real path is where installers extract files
+  and what counts toward the 260-character limit. The version links, runtime
+  aliases, and catalog stay in `installs\`, so `installs\java\21` keeps working
+  in an IDE:
 
   ```text
   %LOCALAPPDATA%\mise\
@@ -469,18 +481,18 @@ The layout works the same way on Windows, with these differences:
   platforms. `MISE_INSTALL_STORE_DIR` chooses where installations go, on any
   platform, without moving the links.
 
-- **Path length.** The installation's directory name has a bounded length: a label
-  of at most 24 characters, a dash, and eight hash characters, longer only after a
-  collision. It sits directly under the install store, whatever the version
-  string looks like. The data directory and the paths inside tools still count
-  toward the limit, so a short `MISE_INSTALL_STORE_DIR` (such as `C:\m`) is the
-  main lever left.
+- An installation's directory name has a bounded length: a label of at most 24
+  characters, a dash, and eight hash characters, longer only after a collision.
+  It sits directly under the install store, whatever the version string looks
+  like. The data directory and the paths inside tools still count toward the
+  limit, so a short `MISE_INSTALL_STORE_DIR` (such as `C:\m`) is the main lever
+  left.
 
-## Downgrading and compatibility
+## Turn it off or downgrade {#downgrading-and-compatibility}
 
-To turn the layout off, remove `install_layout = "identity"`. mise then installs new
-versions into `installs/<tool>/<version>` again and leaves hashed directories
-where they are. While it is off:
+To turn the identity layout off, remove `install_layout = "identity"`. mise then
+installs new versions into `installs/<tool>/<version>` again and leaves hashed
+directories where they are. While it is off:
 
 - `mise where` and `mise exec` still reach a hashed installation through its
   version link, and `mise ls` shows it as a symlinked version.
@@ -496,33 +508,25 @@ tools that have more than one variant of a version.
 
 ## Known limits
 
-- **Some installs keep the legacy layout.** `http:` installs (which link into a
+- Some installs keep the legacy layout. `http:` installs (which link into a
   shared extraction cache), `rust`, and `dotnet` are not given hashed
   directories. Neither are `mise install --system`, `--shared`, and
   `mise install-into`, whose destinations are explicit, nor versions you
   `mise link` or reference with `path:`. mise still finds legacy installs in
   system and shared installs directories and never writes to them as part of
   this layout.
-- **Hashed paths appear in generated files.** Virtual environments, shebangs, and
-  package-manager installs record the real installation path, which now contains
-  the hash. They stay valid for that installation but are not portable to
-  another one. Installing the same identity again lands in the same directory.
-- **A version named on the command line carries only the options a
-  configuration gives it.** In a project, `mise where tool@1.0`, `mise x
-tool@1.0` and the other commands use the install options the configuration
-  sets for that tool (`symlink_bins`, a `matching` pattern). Outside one, a
-  version named without options uses the installation of that version when
-  there is only one, whatever options it was made with, as before this layout.
-  With several, `mise where` lists them and other commands treat the version as
-  not installed; name the options to pick one, as in
-  `mise where 'tool[matching=server]@1.0'`, or install the plain version with
+- Files that tools generate while installing, such as virtual environments,
+  shebangs, and package-manager installs, record the real installation path,
+  which contains the hash. They stay valid for that installation but do not
+  carry over to another one. Installing the same identity again lands in the
+  same directory.
+- Versions named on the command line carry only the options a config gives
+  them. In a project, `mise where tool@1.0`, `mise exec tool@1.0`, and similar
+  commands use the install options the project config sets for that tool, such
+  as `matching`. Outside a project, a bare version uses its only installation
+  regardless of options. If there are several, `mise where` lists them and other
+  commands treat the version as not installed. Name the options, as in
+  `mise where 'tool[matching=server]@1.0'`, or run
   `mise install --force tool@1.0`.
-- **A version link is not authority.** Hardcoded `installs/<tool>/<version>`
-  paths see only the most recently installed variant.
-- **Directory names are less descriptive.** A label such as `berry` for yarn or
-  `cli-dist` is less helpful than the registry shorthand. The shorthand stays as
-  the name of the tool directory that holds the version links.
-- **The version is not in the real path.** Read it from the version link, the
-  receipt, or `mise ls`.
-- **Variants cost disk space.** Legacy installs, hashed installs, and multiple
-  variants of one version each take their own space until you uninstall them.
+- Legacy installs, hashed installs, and multiple variants of one version each
+  take their own disk space until you uninstall them.

@@ -1,102 +1,120 @@
 ---
-description: "Paranoid mode disables automatic and CI trust, binds direct file approvals to configuration content, and rechecks supported provenance during installation."
+description: "Require content-bound trust for every project config, turn off automatic trust, and re-verify provenance on each install."
+socialDescription: "Require content-bound trust for project config and re-verify provenance on every install."
 ---
 
-# Paranoid
+# Paranoid mode
 
-Paranoid mode disables automatic and CI trust, binds direct file approvals to configuration content,
-and rechecks supported provenance during installation. Configurations accepted through
-`trusted_config_paths` or inherited monorepo-root trust remain path-based exceptions. It does not
-sandbox a command after you approve it; see [Security](/security.html) for the scope of each control.
+Paranoid mode requires your approval before mise loads any project config file,
+and again whenever that file changes. It also turns off automatic trust, including
+in CI, and re-verifies provenance on every install. It does not sandbox the
+commands you approve; see [Sandboxing](/sandboxing.html).
 
-Enable it for one invocation with `MISE_PARANOID=1`, or persist it globally:
+Turn it on for one command with `MISE_PARANOID=1`, or for every command:
 
 ```sh
 mise settings set paranoid true
 ```
 
-To restore normal mode, run `mise settings set paranoid false`. The setting is global-only;
-a project cannot enable or disable it for itself.
+`mise settings set paranoid false` turns it off. The
+[`paranoid`](/configuration/settings.html#paranoid) setting is global-only, so a
+project cannot change it.
 
 ## Config files
 
-In normal mode, simple configuration can load without trust, and execution commands such
-as `mise run`, `mise install`, and `mise exec` automatically trust their active configuration.
-Other commands may prompt, fail, or skip an untrusted file depending on how they discover it.
-See [`mise trust`](/cli/trust.html) for normal-mode rules.
+Paranoid mode changes the [normal trust rules](/security.html#configuration-trust)
+in these ways:
 
-Paranoid mode requires explicit trust for non-global config files, including formats that normally
-do not need it. Direct file approval hashes the contents, so editing the file requires renewed trust.
-Automatic trust for execution commands and the usual CI trust exemption are disabled. Trust is not
-shared between Git worktrees in this mode.
+- Every config file outside global and system config needs trust, including
+  files that normally load without it: `.tool-versions`, idiomatic version files
+  such as `.nvmrc`, task files, and a `mise.toml` that only lists tools. The
+  exception is `.miserc.toml`, which still loads without trust: it can only
+  choose which config files load, and those files need trust.
+- Trust is bound to content. `mise trust` stores a hash of the file, and any edit
+  makes it untrusted again.
+- Each file is trusted on its own. Trusting `mise.toml` does not trust
+  `mise.local.toml` beside it.
+- `mise run`, `mise install`, `mise exec`, `mise watch` and the `mise daemons`
+  start, restart and register commands do not trust the config they load.
+- CI does not make config trusted, and `--yes`, `MISE_YES=1` and `CI` do not
+  answer the trust prompt. In a terminal, mise still asks.
+- Trust is not shared between git worktrees.
+- Trusting a monorepo root trusts only that file. Trust each subproject's config
+  separately.
 
-`--yes`, `MISE_YES=1`, and CI auto-confirmation do not approve configuration trust in paranoid mode.
-For unattended runs, review the configuration and run `mise trust` explicitly before loading it.
-
-Inspect the file before accepting it:
+Read each file, then approve it. `mise trust --show` lists the config files from
+the current directory up and whether each is trusted:
 
 ```sh
 mise trust --show
 mise trust path/to/mise.toml
 ```
 
-Replace the path with the configuration you reviewed. Paths allowed by the global
-`trusted_config_paths` setting and descendants covered by trusted monorepo roots bypass the
-content-hash check, so changes there do not require renewed approval. Global and system
-configuration is operator-owned and remains exempt, allowing paranoid mode itself to be set globally.
+For unattended runs, review the config and run `mise trust` before the job loads
+it.
 
-[Safe mode](/security.html#safe-mode) takes precedence if both modes are enabled. It suppresses
-project execution and environment injection, so the configuration can load without a trust
-prompt; syntax errors and refused operations still fail. Loading in safe mode does not grant
-trust for a later normal or paranoid-mode invocation.
+These stay trusted by path, without a hash, so editing them needs no new
+approval:
+
+- configs under [`trusted_config_paths`](/configuration/settings.html#trusted_config_paths)
+- global and system config, which is where you turn paranoid mode on
+
+A monorepo root that you trusted in normal mode, before you turned paranoid mode
+on, still trusts every config below it without a hash. To remove that record,
+run `MISE_PARANOID=0 mise trust --untrust` in the root, then trust the files you
+reviewed.
+
+If [safe mode](/security.html#safe-mode) is also on, it takes precedence: project
+config loads without a trust prompt because it cannot run code, and nothing is
+marked trusted.
+
+### Remote includes
+
+A remote [`include`](/configuration.html#include) must be pinned to a full
+lowercase commit sha (`?ref=` followed by 40 or 64 hex digits) or to an OCI
+digest (`@sha256:` followed by 64 lowercase hex digits), so that the hash of the
+trusted file covers what it pulls in. A branch, a tag or a missing ref fails to
+load:
+
+```toml
+include = [
+  "git::https://github.com/myorg/platform.git//mise.toml?ref=0f1e2d3c4b5a69788796a5b4c3d2e1f00f1e2d3c",
+]
+```
 
 ## Community plugins
 
-Paranoid mode refuses to install an untrusted community plugin by short name
-unless automatic confirmation is enabled with `--yes` or `MISE_YES=1`, mise is
-running in CI, or the installation uses `--force`. A short-name plugin is trusted
-when its resolved URL matches an asdf or vfox remote in mise's built-in registry,
-or when it is maintained under the `mise-plugins` GitHub organization.
+In normal mode, installing a community plugin by short name asks for
+confirmation. Paranoid mode refuses instead. Unlike config trust, `--yes`,
+`MISE_YES=1`, CI and `--force` still allow the install.
 
-To install any other community plugin, specify its full Git repository URL on the
-command line or in `[plugins]` configuration. Explicitly providing the URL bypasses
-the registry trust check because you are choosing and trusting that source:
+A short name counts as trusted when its URL matches an asdf or vfox plugin in
+mise's registry, or when the plugin is in the `mise-plugins` GitHub
+organization. To install any other plugin, give its full Git URL on the command
+line or in `[plugins]`. Naming the URL is your decision to trust that source:
 
 ```sh
-mise plugin install example https://github.com/example/asdf-example
+mise plugins install example https://github.com/example/asdf-example
 ```
-
-In normal mode, mise may instead warn and ask for confirmation before installing
-an untrusted community plugin by short name.
 
 ## Provenance re-verification
 
-A supported backend can reuse a lockfile's recorded provenance when installing an artifact
-whose checksum matches. This avoids repeating checks and API calls, and relies on the
-lockfile having been generated correctly.
-
-In paranoid mode, supported and enabled provenance methods (such as SLSA, Cosign, Minisign,
-and GitHub attestations) run again during installation instead of being skipped because a
-provenance entry exists. This can require network access. It does not add verification that
-the backend does not support, or rescan an already-installed tool that mise skips.
-
-This behavior can also be enabled independently via the
-[`locked_verify_provenance`](/configuration/settings.html#locked_verify_provenance) setting.
+Paranoid mode turns on
+[`locked_verify_provenance`](/configuration/settings.html#locked_verify_provenance).
+Each install runs the backend's provenance checks again, such as SLSA, Cosign,
+Minisign and GitHub attestations, instead of reusing the result recorded in
+[`mise.lock`](/dev-tools/mise-lock.html#provenance-and-security). This can need
+network access. It adds no check the backend does not support, and it does not
+re-check a tool that is already installed.
 
 ## Attestations from mise-versions
 
-mise asks [mise-versions](/configuration/settings.html#use_versions_host) whether a public GitHub release artifact has
-GitHub attestations, so installs don't spend your GitHub API rate limit. The attestations it returns are
-verified cryptographically and must name the artifact's repository, so mise-versions cannot vouch
-for an artifact on its own. It can, however, answer that an artifact has no attestations. That
-answer is trusted in normal mode, and a lockfile written afterwards records no provenance.
+mise asks [mise-versions](/configuration/settings.html#use_versions_host)
+whether a public GitHub release artifact has GitHub attestations, so installs do
+not spend your GitHub API rate limit. mise verifies any attestation it returns
+and requires it to name the artifact's repository, so mise-versions cannot vouch
+for an artifact. It can, however, answer that an artifact has none. Normal mode
+accepts that answer, and a lockfile written afterwards records no provenance.
 
-In paranoid mode, mise confirms that answer with GitHub before skipping verification. This costs
-one GitHub API request per artifact without attestations.
-
-## See also
-
-- [Safe mode](/security.html#safe-mode) for processing untrusted project metadata.
-- [Sandboxing](/sandboxing.html) for restrictions on executed commands.
-- [Lockfiles](/dev-tools/mise-lock.html) for checksums, provenance, and backend coverage.
-- [Contact](/contact.html) to suggest improvements or report unexpected behavior.
+Paranoid mode confirms a "none" answer with GitHub before it skips verification.
+This costs one GitHub API request per artifact without attestations.

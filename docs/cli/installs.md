@@ -31,6 +31,6 @@ was turned on into it.
 
 ## Related documentation
 
-- [Install layout](/dev-tools/install-layout.html).
+- [Identity install layout](/dev-tools/install-layout.html).
 - [All commands](/cli/).
 - [Global flags and argument syntax](/cli/#global-flags).

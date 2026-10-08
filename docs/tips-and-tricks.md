@@ -1,223 +1,135 @@
 ---
-description: "Short recipes for common workflows."
+description: "Apply short recipes for everyday mise commands, scripts, configuration, shell prompts, and Intel tools on Apple silicon."
+socialDescription: "Apply short mise recipes for everyday commands, scripts, configuration and shell prompts."
 ---
 
-# Tips & Tricks
+# Tips and tricks
 
-Short recipes for common workflows. Each section links to the full guide when setup or
-platform details matter. Start with [Getting Started](/getting-started.html) if you have not
-yet configured a project.
+Short recipes for everyday mise use. Each one links to the full guide.
 
-## macOS Rosetta
+## Everyday commands
 
-For precompiled Intel tools on Apple Silicon, set [`MISE_ARCH`](/configuration/settings.html#arch)
-to `x64`. Keep those installations separate from native arm64 tools, and use the same
-directory and architecture overrides for installation and execution:
+For running tasks, including the `mise <task>` shorthand and rerunning a task
+when files change, see [Running tasks](/tasks/running-tasks.html).
 
-```sh
-export MISE_DATA_DIR="$HOME/.local/share/mise-x64"
-export MISE_ARCH=x64
-mise install node@24
-mise exec node@24 -- node --version
-```
+### Open a shell with the project environment {#mise-en}
 
-Run this in a dedicated shell session. The overrides remain active until you unset them or
-close that shell. Rosetta must be installed to execute an Intel binary on Apple Silicon;
-source builds may also require an Intel toolchain and dependencies.
-
-If a backend needs the mise process itself to run as Intel, install a separate binary:
+[`mise en`](/cli/en.html) starts a new shell with the project's tools and
+environment variables loaded, without shell activation. Exit that shell to
+return to your session. Changing directories inside it does not update the
+environment, and the new shell's startup files can still activate mise. To skip
+Bash's startup file:
 
 ```sh
-curl -fsSL https://mise.run -o /tmp/install-mise.sh
-MISE_INSTALL_PATH="$HOME/.local/bin/mise-x64" MISE_INSTALL_ARCH=x64 sh /tmp/install-mise.sh
-"$HOME/.local/bin/mise-x64" --version
+mise en -s "bash --norc"
 ```
 
-Keep the separate `MISE_DATA_DIR` when using that executable too. See the relevant
-[language guide](/core-tools.html) for compilation requirements.
+### Find where a tool or setting comes from {#mise-tool-tool}
 
-## Shebang
+<a id="mise-cfg"></a>
 
-You can specify a tool and its version in a shebang without first setting up
-a `mise.toml`/`.tool-versions` config:
+```sh
+mise tool ripgrep      # backend, requested and active versions, config source
+mise registry ripgrep  # the backends the short name can resolve to
+mise which rg          # the executable this project runs
+mise config ls         # config files in use and the tools each one sets
+mise settings ls       # settings set in config files, and the file that set each
+```
 
-```javascript [script.js]
-#!/usr/bin/env -S mise x node@24 -- node
-// "env -S" allows multiple arguments in a shebang
+See [`mise tool`](/cli/tool.html), [`mise registry`](/cli/registry.html),
+[`mise which`](/cli/which.html), [`mise config ls`](/cli/config/ls.html) and
+[`mise settings ls`](/cli/settings/ls.html). For the order in which config files
+apply, see [config file locations](/configuration.html#mise-toml). To trace an
+environment variable, see [See which variables mise set](#see-which-variables-mise-set).
+
+## Scripts and wrappers
+
+### Pin a tool in a shebang {#shebang}
+
+A script can name the tool and version it runs with, without a `mise.toml`:
+
+```js [script.js]
+#!/usr/bin/env -S mise exec node@24 -- node
 console.log(`Running node: ${process.version}`);
 ```
 
-Save this as `script.js`, run `chmod +x script.js`, then execute `./script.js`.
-This requires mise on `PATH` and an `env` implementation supporting `-S`; native Windows
-does not execute Unix shebangs. Shell activation is unnecessary. For a committed wrapper
-with additional installation options, see [tool stubs](/dev-tools/tool-stubs.html).
+`env -S` splits the rest of the line into separate arguments. Run
+`chmod +x script.js`, then `./script.js`; [`mise exec`](/cli/exec.html)
+installs Node.js 24 the first time if it is missing. This needs mise on `PATH`
+and an `env` that supports `-S`, but not shell activation. Windows does not run
+shebang lines. To commit one wrapper per tool with more install options, use
+[tool stubs](/dev-tools/tool-stubs.html).
 
-## Bootstrap script
+### Let contributors run tasks without installing mise {#bootstrap-script}
 
-Generate and commit a wrapper that downloads mise on first use:
+<a id="project-local-task-entrypoints"></a>
 
-```sh
-mise generate install-script --localize --write bin/mise
-./bin/mise install
-```
-
-Commit `bin/mise` and ignore `.mise/`, where the localized wrapper stores its binary, tools,
-and cache. The generated wrapper records a default mise version; regenerate it to update
-that default. See [CI bootstrapping](/continuous-integration.html#bootstrapping) for version
-overrides, cache layout, and an example pipeline.
-
-## Project-local task entrypoints
-
-If you want contributors to run project tasks without installing mise first, pair
-[`mise generate install-script`](/cli/generate/install-script.html) with
-[`mise generate task-stubs`](/cli/generate/task-stubs.html):
+Commit a `bin/mise` wrapper that downloads a pinned mise on first use, plus one
+script per task:
 
 ```sh
-mkdir -p bin
 mise generate install-script --localize --write bin/mise --windows
 mise generate task-stubs --mise-bin ./bin/mise
-./bin/test
 ```
 
-Define a `test` task before running the example. Commit the generated entrypoints and ignore
-`.mise/`. The task stubs behave like small project commands, while `bin/mise`
-downloads and runs the pinned mise binary for the project.
+Commit `bin/` and add `.mise/` to `.gitignore`; the localized wrapper keeps
+mise, its tools and its cache there. Contributors then run `./bin/test` from
+the project root, or `.\bin\test.cmd` on Windows. `--windows` also writes
+`bin/mise.cmd`, which checks the downloaded `mise.exe` against a checksum
+recorded when you generated it. Regenerate the wrapper to move to a newer mise.
 
-The example includes `--windows` for contributors on Windows. Windows cannot execute a shebang script, so
-`mise generate install-script --write ./bin/mise --windows` writes `bin/mise.cmd` alongside it, and Windows contributors
-run `.\bin\mise.cmd`. The launcher downloads the standalone `mise.exe` for the release and checks it
-against a checksum embedded when the script was generated, so it needs nothing beyond what Windows
-already ships.
+[`mise generate task-stubs`](/cli/generate/task-stubs.html) writes a stub for
+every task mise loads, including hidden tasks and tasks from your global config,
+so delete any stubs you do not want to commit. On Windows the default `.cmd`
+launchers can alter arguments that contain `& ^ | " %`; generate with
+`--windows-launcher exe` on Windows when arguments must arrive unchanged. For
+the wrapper's version pinning and directories, see
+[CI bootstrapping](/continuous-integration.html#bootstrapping).
 
-Task stubs get a `.cmd` launcher beside each stub for the same reason, so the Windows form of the
-example above is `.\bin\test.cmd`. The default `.cmd` task launcher can be generated on any platform, but `cmd.exe` can alter
-shell metacharacters in arguments. Generate `--windows-launcher exe` on Windows when exact
-argument forwarding is required; see [task stubs](/cli/generate/task-stubs.html).
+## Configuration
 
-## Machine bootstrapping
+### Install tools when you enter a project {#auto-install-when-entering-a-project}
 
-Use [`mise bootstrap`](/bootstrap.html) to apply machine setup declared in configuration.
-Start with a preview:
+In a shell with [`mise activate`](/cli/activate.html), an
+[`enter` hook](/hooks.html) can install missing tools when you `cd` into the
+project:
 
-```sh
-mise bootstrap --dry-run
-mise bootstrap
-mise bootstrap status
+```toml [mise.toml]
+[hooks]
+enter = "mise install --quiet"
 ```
 
-Choose the parts your machine needs: [packages](/bootstrap/packages/),
-[repositories](/bootstrap/repos.html), [dotfiles](/dotfiles.html),
-[shell activation](/bootstrap/shell.html), [macOS defaults](/bootstrap/macos-defaults.html),
-[launchd](/bootstrap/launchd.html), or [systemd](/bootstrap/systemd.html).
-The full guide explains phase ordering and host selection; do not copy declarations for
-unrelated platforms into a workstation config just to try the command.
+The tools are on `PATH` from the next prompt. The hook downloads tools and runs
+their install scripts whenever you enter the directory with something missing;
+run `mise install` yourself if you prefer to choose when that happens.
 
-Hooks and a `bootstrap` task are ordinary commands and need their own idempotent behavior.
-When adopting existing Homebrew casks, see [ownership and macOS privacy permissions](/bootstrap/packages/brew.html#macos-privacy-security-tcc)
-before replacing application bundles.
+### Read a version from another tool's file {#using-tera-to-read-unsupported-version-files}
 
-## Zsh with Zinit {#installation-via-zsh-zinit}
+mise reads many version files directly once you enable them as
+[idiomatic version files](/dev-tools/versions.html#idiomatic-version-files). For
+another format, read the file with a [template](/templates.html). For example,
+the Hugo Version Manager writes `.hvm` with a version tag and an optional
+edition, such as `v0.152.2/extended`:
 
-If you use [Zinit](https://github.com/zdharma-continuum/zinit), install mise using a supported
-[installation method](/installing-mise.html), then activate it after plugins that modify PATH:
-
-```zsh
-# ~/.zshrc, after your Zinit setup
-eval "$(mise activate zsh)"
-```
-
-This keeps mise updates under its installer or package manager. Follow the
-[Zsh completion instructions](/installing-mise.html#autocompletion) to add completions,
-and avoid initializing `compinit` repeatedly across your plugin and completion setup.
-
-## CI/CD
-
-Commit the project tool configuration and use `mise exec` or `mise run` in CI.
-See [Continuous integration](/continuous-integration.html) for provider examples,
-locked installs, and caching.
-
-### GitHub Actions
-
-For a repository that declares Node in `mise.toml`:
-
-```yaml
-name: tools
-on: [push, pull_request]
-jobs:
-  check:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-      - uses: jdx/mise-action@v4
-      - run: mise exec -- node --version
-```
-
-## `mise set`
-
-Instead of manually editing `mise.toml` to add env vars, you can use [`mise set`](/cli/set.html):
-
-```sh
-mise set NODE_ENV=production
-```
-
-## Using Tera to read unsupported version files
-
-Some project-local version files are already supported as [idiomatic version files](https://mise.jdx.dev/configuration.html#idiomatic-version-files). For other version files, you can use Tera templates in `mise.toml` to read the file and assign the version to the appropriate tool.
-
-For example, to use a `.hvm` file with a plain Hugo version:
-
-```toml
+```toml [mise.toml]
 [tools]
-hugo = "{{ read_file(path=config_root ~ '/.hvm') | trim }}"
+hugo-extended = "{{ read_file(path=config_root ~ '/.hvm') | trim | split(pat='/') | first | trim_start(pat='v') }}"
 ```
 
-HVM also supports versions with an `/extended` suffix. In mise, Hugo and Hugo Extended are separate tools, so strip the suffix and use `hugo-extended` instead:
+This keeps `0.152.2`. mise installs Hugo's editions as separate tools (`hugo`,
+`hugo-extended` and `hugo-extended-withdeploy`), so use the one that matches the
+project's edition. `config_root` keeps the path relative to the config file
+when you run mise from a subdirectory.
 
-```toml
-[tools]
-hugo-extended = "{{ read_file(path=config_root ~ '/.hvm') | trim | replace(from='/extended', to='') }}"
-```
+### Share tasks across repositories {#share-task-catalogs}
 
-Create `.hvm` with a version string before evaluating either example. `config_root` keeps
-the path tied to the configuration when you invoke mise from a subdirectory. Choose one
-Hugo variant for the project. See [Templates](/templates.html) for functions and filters.
+[`task_config.includes`](/tasks/task-discovery.html#include-task-files-and-directories)
+chooses where tasks are loaded from: directories, `tasks.toml` files, or remote
+git repositories. Setting it replaces the default task directories, so list any
+default directory (such as `.mise/tasks`) you still use. Remote includes run
+code from that repository, so pin a tag or commit you trust:
 
-## [`mise run`](/cli/run.html) shorthand
-
-As long as the task name doesn't conflict with a mise-provided command, you can skip the `run` part:
-
-```sh
-mise test
-```
-
-::: warning
-Don't do this inside scripts: mise may add a command in a future version that conflicts with your task.
-:::
-
-## Watch tasks while editing
-
-[`mise watch`](/cli/watch.html) reruns tasks when files change. It uses
-`watchexec`, which you can install globally with mise:
-
-```sh
-mise use -g watchexec@latest
-mise watch test
-```
-
-Use `--restart` for long-running processes that should restart on changes:
-
-```sh
-mise watch --restart dev
-```
-
-## Share task catalogs
-
-For projects with a lot of tasks,
-[`task_config.includes`](/tasks/task-configuration.html#task_config.includes)
-can load task definitions from additional directories, `tasks.toml` files, or
-remote git repositories. Replace the example URL with a repository and ref you trust:
-
-```toml
+```toml [mise.toml]
 [task_config]
 includes = [
   "mise-tasks",
@@ -226,145 +138,165 @@ includes = [
 ]
 ```
 
-Included `tasks.toml` files use the same shape as the `[tasks]` table without
-the `[tasks.]` prefix.
+An included `tasks.toml` holds tasks written as under `[tasks]`, without the
+`tasks.` prefix. See [remote git includes](/tasks/task-discovery.html#remote-git-includes)
+for the URL syntax and caching.
 
-## Reuse task definitions with templates
+### Reuse task settings with templates {#reuse-task-definitions-with-templates}
 
-Experimental [task templates](/tasks/templates.html) let multiple tasks share
-common tools, environment variables, and command defaults:
+A [task template](/tasks/templates.html) holds tools, environment variables and
+commands that several tasks share:
 
-```toml
-[settings]
-experimental = true
-
+```toml [mise.toml]
 [task_templates."node:test"]
 tools = { node = "24", pnpm = "latest" }
 run = "pnpm test"
 
 [tasks.test]
 extends = "node:test"
-run = "pnpm test -- --watch=false"
+
+[tasks."test:watch"]
+extends = "node:test"
+run = "pnpm test --watch"
 ```
 
-This assumes `pnpm test -- --watch=false` is accepted by your project's test script.
-Use a template when packages share defaults, then override commands or paths locally.
+Tasks inherit the template's fields and override the ones they set.
 
-## Redact secrets from task output
+### Redact secrets from task output {#redact-secrets-from-task-output}
 
-If a task may echo secrets in CI logs, add `redactions` to the task or config.
-Values of the listed environment variables are replaced with `[redacted]` in processed task output:
+To mask values in task output, list their variables in the top-level
+`redactions` array, or mark one variable with `redact = true`, which also works
+in a task's `env`:
 
-```toml
-redactions = ["API_KEY", "PASSWORD"]
+```toml [mise.toml]
+redactions = ["API_KEY", "SECRETS_*"]
+
+[tasks.deploy]
+env = { TOKEN = { value = "{{ env.DEPLOY_TOKEN }}", redact = true } }
+run = "./deploy.sh"
 ```
 
-Glob patterns are also supported:
+mise prints `[redacted]` in place of matching values. Raw and interactive tasks
+bypass redaction, and the commands still receive the real values. See
+[redaction](/environments/secrets/#redaction) for what it covers.
 
-```toml
-redactions = ["SECRETS_*"]
-```
+### Use prebuilt binaries for `cargo:` tools {#cargo-binstall}
 
-Raw or interactive output bypasses redaction, and child programs still receive the original
-values. See [redaction](/environments/#redactions) for supported output and logging boundaries.
-
-## Software verification
-
-See [Security](/security.html#software-verification) for mise's software verification controls,
-including aqua signatures, SLSA provenance, and GitHub artifact attestations.
-
-## Minimum release age
-
-See [Security](/security.html#minimum-release-age) for supply-chain delay controls, backend support,
-and transitive dependency filtering behavior.
-
-## [`mise up --bump`](/cli/upgrade.html)
-
-Use `mise up --bump` to upgrade all software to the latest version and update `mise.toml` files. This keeps the same precision as before,
-so if you had `node = "24"` and node 26 is the latest, `mise up --bump node` will change `mise.toml` to `node = "26"`.
-
-## cargo-binstall
-
-[cargo-binstall](https://github.com/cargo-bins/cargo-binstall) can download prebuilt Rust CLI
-binaries instead of compiling them. With `cargo.binstall` enabled (the default), mise uses
-it for `cargo:` tools when available. Not every crate has a compatible prebuilt release;
-see the [Cargo backend](/dev-tools/backends/cargo.html) for fallback behavior.
+Install [cargo-binstall](https://github.com/cargo-bins/cargo-binstall), and mise
+uses it for [`cargo:` tools](/dev-tools/backends/cargo.html), which downloads a
+prebuilt binary when the crate publishes one instead of compiling it:
 
 ```sh
 mise use -g cargo-binstall
 ```
 
-## [`mise cache clear`](/cli/cache.html)
+When no prebuilt binary exists, mise falls back to `cargo install`. The
+[`cargo.binstall`](/configuration/settings.html#cargo.binstall) setting turns
+this off.
 
-Clear a tool's cached metadata when checking for a new release, for example
-`mise cache clear node`. `mise cache path` shows the active cache directory. A full
-`mise cache clear` also affects environment and task caches; see [Cache Behavior](/cache-behavior.html).
+## Shell prompt {#shell-prompt}
 
-## [`mise en`](/cli/en.html)
+mise has no prompt segment of its own. In a shell with
+[`mise activate`](/cli/activate.html), it can print what it loads when you
+change directories, and it exports `[env]` variables that your prompt can read.
 
-`mise en` starts a **new shell** with the current project environment. Exit that shell to
-return to your original session. It does not add directory-change updates by itself; your
-new shell's startup files may still activate mise. Use `mise en -s "bash --norc"` when you
-want to skip Bash's rc file.
-
-## Auto-install when entering a project
-
-In a normally activated shell, run installation when entering a trusted project:
-
-```toml
-[hooks]
-enter = "mise i -q"
-```
-
-The hook can download tools and run installation scripts when you enter the directory.
-Use explicit `mise install` instead if you prefer to choose when that work runs.
-
-## [`mise tool [TOOL]`](/cli/tool.html)
-
-Inspect a tool's selected backend, version requests, and installation information:
+### Print what changes when you enter a project {#print-what-changes-when-you-enter-a-project}
 
 ```sh
-mise tool ripgrep
+mise settings set status.show_tools true
+mise settings set status.show_env true
 ```
 
-Use `mise registry ripgrep` to inspect registry choices and `mise which rg` to find the
-executable selected for the current project.
+These commands write to your global config. Entering a project then prints
+lines such as:
 
-## [`mise cfg`](/cli/config.html)
+```text
+mise +node@24.21.0
+mise +API_KEY +NODE_ENV
+```
 
-List loaded configuration files and their tools:
+[`status.show_tools`](/configuration/settings.html#status.show_tools) lists the
+tools that became active (`+`) or inactive (`-`).
+[`status.show_env`](/configuration/settings.html#status.show_env) lists the
+names of variables that mise added (`+`), changed (`~`) or removed (`-`), without
+their values.
+
+### Show the project and environment in your prompt {#show-the-project-and-environment-in-your-prompt}
+
+Set variables for the prompt in the project's `mise.toml`. mise exports them
+while you are in the project and removes them when you leave:
+
+```toml [mise.toml]
+[env]
+PROMPT_PROJECT = "{{ config_root | basename }}"
+PROMPT_MISE_ENV = "{{ mise_env | default(value=[]) | join(sep=',') }}"
+```
+
+`config_root` is the directory that holds the config file. `mise_env` lists the
+active [config environments](/configuration/environments.html), whether they
+come from `MISE_ENV` or `.miserc.toml`. Then read the variables in your shell
+startup file. For Zsh, in `~/.zshrc`:
+
+```zsh
+setopt PROMPT_SUBST
+PROMPT='${PROMPT_PROJECT:+[$PROMPT_PROJECT${PROMPT_MISE_ENV:+:$PROMPT_MISE_ENV}] }%~ %# '
+```
+
+For Bash, in `~/.bashrc`:
 
 ```sh
-mise config
+PS1='${PROMPT_PROJECT:+[$PROMPT_PROJECT${PROMPT_MISE_ENV:+:$PROMPT_MISE_ENV}] }\w \$ '
 ```
 
-Use this when a value comes from an unexpected file. For precedence and the file commands
-write to, see [configuration](/configuration.html). `mise cfg` is an alias.
+In a project named `web` with the `staging` environment, the prompt starts with
+`[web:staging]`. Prompt themes that show an environment variable work the same
+way. For [powerline-go](https://github.com/justjanne/powerline-go), add
+`shell-var` to `-modules` and pass
+`-shell-var PROMPT_MISE_ENV -shell-var-no-warn-empty`.
 
-## `mise.lock`
+Read `PROMPT_MISE_ENV` rather than `MISE_ENV`. An environment selected in
+`.miserc.toml` does not set the shell's `MISE_ENV`, and exporting `MISE_ENV`
+yourself overrides the `.miserc.toml` selection in every project.
 
-Resolve configured requests into a committed lockfile:
+### See which variables mise set {#see-which-variables-mise-set}
 
 ```sh
-mise lock
-mise install --locked
+mise env --json-extended
 ```
 
-Locking records concrete versions and, where the backend supports it, artifact URLs and
-checksums. `mise install --locked` checks that the lockfile can satisfy the configuration.
-Use `mise lock --bump --dry-run` to preview a version refresh before applying it.
+[`mise env --json-extended`](/cli/env.html) lists every variable mise sets in
+the current directory with its value and the config file that set it as
+`source`. Variables that a tool sets, such as Java's `JAVA_HOME`, also name the
+`tool`. The output contains real values, including values marked for
+redaction, so redact it before you share it. For other problems, start with
+[`mise doctor`](/cli/doctor.html).
 
-Backends differ in the metadata they can lock. For a custom HTTP download, configure a
-[checksum source](/dev-tools/backends/http.html#checksum-url) when available. See
-[lockfiles](/dev-tools/mise-lock.html) for platform coverage and strict validation; do not
-uninstall every tool just to regenerate metadata.
+## Platforms
 
-## Lockfile URL Tracking (Avoiding Rate Limits)
+### Run Intel tools on Apple silicon {#macos-rosetta}
 
-For backends that record artifact URLs, a lockfile can avoid repeated release-asset lookups
-on later installs. It does not contain the artifacts themselves and does not eliminate all
-network or authentication requirements. Downloads, verification, private repositories, and
-backend-specific operations can still require access.
+To install the Intel build of a tool on an Apple silicon Mac, set
+[`arch`](/configuration/settings.html#arch) to `x64` with `MISE_ARCH`. Give those
+installs their own data directory so they do not replace the native ones, and
+use the same two variables when you run the tools:
 
-See [GitHub Tokens](/dev-tools/github-tokens.html) for credentials and
-[lockfile behavior](/dev-tools/mise-lock.html) for each backend's guarantees.
+```sh
+export MISE_DATA_DIR="$HOME/.local/share/mise-x64"
+export MISE_ARCH=x64
+mise install node@24
+mise exec node@24 -- node --version
+```
+
+Rosetta must be installed to run Intel binaries. Tools that mise compiles from
+source also need an Intel toolchain and libraries; see the tool's
+[language guide](/core-tools.html).
+
+If a backend needs mise itself to run as an Intel process, install the Intel
+build of mise next to the native one with the installer's
+[`MISE_INSTALL_ARCH`](/installing-mise.html#installer-options) variable, and use
+the same `MISE_DATA_DIR` with it:
+
+```sh
+curl -fsSL https://mise.run | MISE_INSTALL_PATH="$HOME/.local/bin/mise-x64" MISE_INSTALL_ARCH=x64 sh
+"$HOME/.local/bin/mise-x64" --version
+```

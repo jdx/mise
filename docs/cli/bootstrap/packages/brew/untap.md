@@ -33,6 +33,6 @@ mise bootstrap packages brew untap railwaycat/emacsmacport
 
 ## Related documentation
 
-- [Homebrew packages and taps](/bootstrap/packages/brew.html).
+- [Homebrew formulae and taps](/bootstrap/packages/brew.html#third-party-taps).
 - [`mise bootstrap packages brew <SUBCOMMAND>`](/cli/bootstrap/packages/brew.html).
 - [Global flags and argument syntax](/cli/#global-flags).

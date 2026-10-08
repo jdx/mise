@@ -34,6 +34,6 @@ package manager instead. See
 
 ## Related documentation
 
-- [Installing and updating mise](/installing-mise.html).
+- [Updating mise](/installing-mise.html#updating).
 - [All commands](/cli/).
 - [Global flags and argument syntax](/cli/#global-flags).

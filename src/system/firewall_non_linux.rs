@@ -13,12 +13,22 @@ pub struct FirewallTomlConfig {
 #[derive(Clone, Debug)]
 pub struct FirewallRequest;
 
+/// `mise bootstrap` and `mise bootstrap plan` skip the Linux-only firewall
+/// section, so one config can be shared across hosts. Status commands still
+/// report it as unsupported.
 pub fn prepare_request_from_config(config: &Config) -> Result<Option<FirewallRequest>> {
-    reject_configured(config)
+    if configured(config) {
+        warn_once!("ignoring [bootstrap.linux.firewall] on non-Linux host");
+    }
+    Ok(None)
 }
 
+/// The explicit `mise bootstrap firewall apply` still refuses to run here.
 pub fn request_from_config(config: &Config) -> Result<Option<FirewallRequest>> {
-    reject_configured(config)
+    if configured(config) {
+        bail!("bootstrap firewall management is only supported on Linux");
+    }
+    Ok(None)
 }
 
 pub fn status_request_from_config(config: &Config) -> Result<Option<FirewallRequest>> {
@@ -27,6 +37,10 @@ pub fn status_request_from_config(config: &Config) -> Result<Option<FirewallRequ
     } else {
         Ok(None)
     }
+}
+
+pub fn validate_request(_request: &FirewallRequest) -> Result<()> {
+    Ok(())
 }
 
 pub fn inspect_request(_request: &mut FirewallRequest) -> Result<()> {
@@ -65,11 +79,4 @@ fn configured(config: &Config) -> bool {
                 true
             })
     })
-}
-
-fn reject_configured(config: &Config) -> Result<Option<FirewallRequest>> {
-    if configured(config) {
-        bail!("bootstrap firewall management is only supported on Linux");
-    }
-    Ok(None)
 }
