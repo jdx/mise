@@ -155,7 +155,10 @@ describe_command = "claude -p --output-format text --no-session-persistence 'Des
 
 This sends change details, including the diffs of unencrypted files, to the
 command you configure. Excluded files are not named, and the contents of
-encrypted files are not sent.
+files encrypted in either checkpoint are not sent.
+
+For variant files, the diff compares the variant saved in each checkpoint.
+This also applies to added and removed files inside a tracked variant directory.
 
 The command receives one JSON object on stdin with the fields `uuid`,
 `trigger`, the computed `description`, the `added`, `modified`, and `removed`
