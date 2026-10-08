@@ -633,6 +633,31 @@ fn test_env_values_treats_false_as_removal() {
     );
 }
 
+/// A deny_env sandbox clears the inherited environment, and says so through `inherit_env`: on
+/// Windows a command with a timeout is rebuilt under a Ctrl+C group leader, which copies the
+/// environment only by that flag and would otherwise hand mise's whole environment on.
+#[tokio::test]
+async fn test_deny_env_sandbox_marks_env_cleared() {
+    use std::ffi::OsStr;
+
+    let mut runner = super::CmdLineRunner::new("true")
+        .env("KEEP", "value")
+        .with_sandbox(crate::sandbox::SandboxConfig {
+            deny_env: true,
+            ..Default::default()
+        });
+    assert!(runner.inherit_env);
+
+    runner.apply_sandbox().await.unwrap();
+
+    assert!(!runner.inherit_env);
+    assert!(
+        runner.cmd.as_std().get_envs().any(|(key, value)| {
+            key == OsStr::new("KEEP") && value == Some(OsStr::new("value"))
+        })
+    );
+}
+
 #[cfg(target_os = "macos")]
 #[tokio::test]
 async fn test_macos_sandbox_preserves_env_removals() {
