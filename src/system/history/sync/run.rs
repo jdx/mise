@@ -91,6 +91,10 @@ pub struct SyncStatus {
     /// Repository metadata and inactive streams can change without live writes.
     #[serde(default)]
     pub pending_repository: bool,
+    /// Directories here whose incoming permissions differ, which a pull
+    /// changes even when no file does.
+    #[serde(default, skip_serializing_if = "no_directories")]
+    pub pending_directories: usize,
     /// Incoming configuration changed declarations: run `mise bootstrap`.
     #[serde(default)]
     pub declarations_changed: bool,
@@ -122,6 +126,10 @@ pub struct SyncStatus {
     /// in for a declaration.
     #[serde(default)]
     pub disconnected: bool,
+}
+
+fn no_directories(count: &usize) -> bool {
+    *count == 0
 }
 
 fn is_zero(value: &u32) -> bool {
@@ -183,7 +191,14 @@ mod status_read_tests {
 #[derive(Debug, Default)]
 pub struct SyncOutcome {
     pub published: Option<String>,
+    /// Incoming changes waiting for `mise dot pull`, counting the
+    /// repository's own changes as one.
     pub pending: usize,
+    /// Of those, the repository changed in a way that writes no file here:
+    /// another machine's own versions, or enrollment.
+    pub pending_repository: bool,
+    /// Directories whose permissions a pull would change here.
+    pub pending_directories: usize,
     pub conflicts: usize,
     pub fetched_upstream: Option<String>,
 }
@@ -223,12 +238,15 @@ impl SyncRequest {
 
 /// The connected origin, or why there is none.
 pub fn origin() -> Result<OriginTomlConfig> {
+    if crate::system::history::local::active() {
+        bail!("local-only history is never shared with a setup repository");
+    }
     if let Some((_, origin)) = crate::system::history::config::origin()? {
         return Ok(origin);
     }
     // recorded when it was connected: a fresh machine's declaration may
     // still be on its way in the configuration being pulled
-    let status = read_status(&crate::dirs::STATE)?;
+    let status = read_status(&super::super::local::root())?;
     if let (Some(url), Some(branch), false) =
         (status.origin_url, status.origin_branch, status.disconnected)
     {
@@ -440,6 +458,8 @@ pub(crate) fn sync_locked(
         record_pending(&mut status, &plans, &Roots::current(), &shared.objects());
         outcome.pending =
             status.pending_applications.len() + usize::from(status.pending_repository);
+        outcome.pending_repository = status.pending_repository;
+        outcome.pending_directories = status.pending_directories;
         outcome.conflicts = status.conflicts.len();
         status.last_error = None;
         status.failing_since = None;
@@ -716,9 +736,11 @@ fn prepare(
     let repository_tree = incoming_repository_tree(repo, tracked)
         .inspect_err(|error| repository_conflict(status, error))?;
     status.pending_repository |= repository_tree.is_some();
+    status.pending_directories = 0;
     if let Some(tree) = repository_tree.as_deref().or(heads.remote.as_deref()) {
-        super::directories::plan(repo, tracked, tree)
-            .inspect_err(|error| repository_conflict(status, error))?;
+        status.pending_directories = super::directories::plan(repo, tracked, tree)
+            .inspect_err(|error| repository_conflict(status, error))?
+            .len();
     }
     if heads.remote != upstream.commit {
         bail!("origin changed while planning; reconcile again");
@@ -1081,6 +1103,10 @@ pub(super) fn incoming_tracking(
     let mut incoming = manifest.tracking()?;
     incoming.required_sources = tracked.required_sources.clone();
     incoming.invalid = tracked.invalid.clone();
+    // a path kept local here is never written from the repository, even
+    // when another machine shares it
+    incoming.local = tracked.local.clone();
+    incoming.keep_local_out();
     Ok(incoming)
 }
 
@@ -1123,7 +1149,7 @@ pub(super) fn incoming_repository_tree(
 /// A bootstrap finished: the declarations that arrived through sync are
 /// applied now, so `status` stops asking for one.
 pub fn bootstrap_completed() {
-    let state_dir: &Path = &crate::dirs::STATE;
+    let state_dir: &Path = &super::super::local::root();
     let status = match read_status(state_dir) {
         Ok(status) => status,
         Err(err) => {

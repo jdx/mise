@@ -38,5 +38,5 @@ mise dot conflicts --difftool --tool meld ~/.zshrc
 ## Related documentation
 
 - [Getting started](/getting-started.html).
-- [`mise dotfiles <SUBCOMMAND>`](/cli/dotfiles.html).
+- [`mise dotfiles [--local] <SUBCOMMAND>`](/cli/dotfiles.html).
 - [Global flags and argument syntax](/cli/#global-flags).

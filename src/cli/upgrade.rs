@@ -331,6 +331,7 @@ impl Upgrade {
             refresh_remote_versions: false,
             inactive: self.inactive,
             warn_not_in_lockfile: true,
+            defer_missing_lazy_tools: false,
         };
         // Filter tools to check before doing expensive version lookups
         let filter_tools = if !self.interactive && !self.tool.is_empty() {
@@ -703,6 +704,7 @@ impl Upgrade {
                 refresh_remote_versions: false,
                 inactive: self.inactive,
                 warn_not_in_lockfile: true,
+                defer_missing_lazy_tools: false,
             },
             locked: false,
             ..Default::default()
@@ -1114,6 +1116,10 @@ impl Upgrade {
     }
 
     fn get_interactive_tool_set(&self, outdated: &Vec<OutdatedInfo>) -> Result<Vec<OutdatedInfo>> {
+        if !console::user_attended_stderr() || !std::io::IsTerminal::is_terminal(&std::io::stdin())
+        {
+            eyre::bail!("--interactive requires an interactive terminal");
+        }
         ui::ctrlc::show_cursor_after_ctrl_c();
         let theme = crate::ui::theme::get_theme();
         let mut ms = demand::MultiSelect::new("mise upgrade")

@@ -24,7 +24,6 @@ pub struct SetOptions {
     /// The branch asked for; `None` takes the repository's own default branch.
     pub branch: Option<String>,
     pub mode: SyncMode,
-    pub yes: bool,
 }
 
 /// Only for a repository that lists no branches at all.
@@ -193,9 +192,6 @@ async fn set_inner(
         );
     }
     let mut status = run::read_status(state_dir)?;
-    if !confirmed(opts.yes, "Connect this setup repository?")? {
-        bail!("not connected");
-    }
     *accepted = true;
 
     // the mode is recorded only when it differs from what the settings
@@ -296,10 +292,19 @@ pub fn report(outcome: &run::SyncOutcome) {
         ),
         None => info!("history: nothing new to publish"),
     }
-    if outcome.pending > 0 {
+    // a directory whose permissions change is a change here, though no
+    // file is written
+    let here = outcome
+        .pending
+        .saturating_sub(usize::from(outcome.pending_repository))
+        + outcome.pending_directories;
+    if here > 0 {
+        info!("history: {here} incoming change(s) pending; `mise dot pull` applies them");
+    } else if outcome.pending_repository {
+        // another machine's own versions, or enrollment: nothing to write
+        // here, but this machine publishes only on top of it
         info!(
-            "history: {} incoming change(s) pending; `mise dot pull` applies them",
-            outcome.pending
+            "history: incoming history changes no files here; `mise dot pull` records it before this machine publishes again"
         );
     }
     if outcome.conflicts > 0 {
@@ -310,16 +315,13 @@ pub fn report(outcome: &run::SyncOutcome) {
     }
 }
 
-/// `--yes`, `MISE_YES`, or an interactive confirmation; unattended without
-/// either is a refusal.
-pub(crate) fn confirmed(yes: bool, question: &str) -> Result<bool> {
+/// Confirmation for an operation that cannot be undone: with nobody to
+/// ask it fails and names `--yes`.
+pub(crate) fn confirmed_destructive(yes: bool, question: &str, command: &str) -> Result<bool> {
     if yes || crate::config::Settings::get().yes {
         return Ok(true);
     }
-    if !console::user_attended_stderr() {
-        return Ok(false);
-    }
-    Ok(prompt::confirm(question)?.is_yes())
+    prompt::confirm_destructive(question, command)
 }
 
 /// Where the connection is declared: `config.local.toml` next to the
@@ -431,7 +433,7 @@ fn reset_sync_state(repo: &crate::system::history::shadow::HistoryRepo) -> Resul
 /// Disconnects: the declaration is removed; local refs, state, and
 /// checkpoints stay.
 pub fn remove() -> Result<()> {
-    let state_dir: &std::path::Path = &crate::dirs::STATE;
+    let state_dir: &std::path::Path = &super::super::local::root();
     let _sync_lock = run::lock_wait(state_dir, run::STATUS_LOCK_WAIT)?;
     let mut status = run::read_status(state_dir)?;
     remove_locked(state_dir, &mut status)

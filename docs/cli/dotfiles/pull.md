@@ -35,7 +35,7 @@ their shared versions follow in the same run.
 
 ## Flags
 - **`-n --dry-run`** — Show the plan without changing anything
-- **`-y --yes`** — Pull without prompting
+- **`-y --yes`** — Accepted for compatibility; pull skips the apply confirmation
 - **`--take-remote <PATH>`** — Resolve a conflict with the repository's version
 - **`--keep-local <PATH>`** — Resolve a conflict by keeping this machine's version (published next)
 - **`--take-remote-all`** — Resolve every remaining conflict with the repository's version
@@ -62,5 +62,5 @@ mise dot pull --take-remote-all --keep-local ~/.zshrc
 ## Related documentation
 
 - [Getting started](/getting-started.html).
-- [`mise dotfiles <SUBCOMMAND>`](/cli/dotfiles.html).
+- [`mise dotfiles [--local] <SUBCOMMAND>`](/cli/dotfiles.html).
 - [Global flags and argument syntax](/cli/#global-flags).

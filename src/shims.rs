@@ -568,14 +568,17 @@ fn publish_staged_shim_farm(
     desired.extend(
         entries
             .iter()
-            .filter_map(|entry| entry.file_name().into_string().ok()),
+            .filter_map(|entry| entry.file_name().into_string().ok())
+            .map(shim_filename_key),
     );
     for entry in entries {
         let source = entry.path();
         let destination = shims_dir.join(entry.file_name());
         let destination_exists = destination.exists() || destination.is_symlink();
         let destination_owned = is_hidden_shim_name(&entry.file_name())
-            || known_owned.contains(&entry.file_name().to_string_lossy().into_owned())
+            || known_owned.contains(&shim_filename_key(
+                entry.file_name().to_string_lossy().into_owned(),
+            ))
             || (destination_exists
                 && (is_mise_shim(&destination, mise_bin)?
                     || symlink_target_names_mise(&destination)?));
@@ -696,13 +699,22 @@ fn symlink_target_names_mise(path: &Path) -> Result<bool> {
 }
 
 fn is_mise_shim(path: &Path, mise_bin: &Path) -> Result<bool> {
-    if path
-        .file_name()
-        .and_then(|name| name.to_str())
-        .is_some_and(is_mise_dispatcher_name)
+    let dedicated = path.parent().is_some_and(is_dedicated_shims_dir);
+    is_mise_shim_in(path, mise_bin, dedicated)
+}
+
+fn is_mise_shim_in(path: &Path, mise_bin: &Path, dedicated: bool) -> Result<bool> {
+    if !dedicated
+        && path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .is_some_and(is_mise_dispatcher_name)
     {
-        // A package manager may install mise itself as a symlink in the shared
-        // directory. It is the dispatcher, not one of its shims.
+        // A package manager may install mise itself as a symlink in a shared
+        // directory. It is the dispatcher, not one of its shims. In mise's own
+        // dedicated shims dir nothing else can live there, so a `mise` entry
+        // is a shim (a tool may legitimately provide a `mise` binary) and must
+        // be recognized or doctor reports it as missing forever.
         return Ok(false);
     }
     if path.is_symlink() {
@@ -1433,6 +1445,14 @@ fn list_executables_in_dir(dir: &Path) -> Result<HashSet<String>> {
         .collect())
 }
 
+fn shim_filename_key(name: String) -> String {
+    if cfg!(windows) {
+        name.to_ascii_lowercase()
+    } else {
+        name
+    }
+}
+
 fn list_shims_in(dir: &Path) -> Result<HashSet<String>> {
     Ok(dir
         .read_dir()?
@@ -1447,7 +1467,7 @@ fn list_shims_in(dir: &Path) -> Result<HashSet<String>> {
             if (file::is_executable(&bin.path()) || bin.path().extension().is_none())
                 && (bin.file_type()?.is_file() || bin.file_type()?.is_symlink())
             {
-                Ok(name.into_string().ok())
+                Ok(name.into_string().ok().map(shim_filename_key))
             } else {
                 Ok(None)
             }
@@ -1590,7 +1610,10 @@ fn platform_shim_names(_mise_bin: &Path, bin: &str) -> Vec<String> {
         let shim_mode = effective_shim_mode(_mise_bin);
         #[cfg(not(windows))]
         let shim_mode = String::new();
-        let p = PathBuf::from(bin);
+        // Windows resolves ASCII case variants to the same file. Match lazy
+        // declarations (JQ.EXE) to installed tool names (jq.exe) before diffing,
+        // so installing through a hardlink never replaces the executing shim.
+        let p = PathBuf::from(bin.to_ascii_lowercase());
         match shim_mode.as_ref() {
             "hardlink" | "symlink" | "exe" => {
                 vec![p.with_extension("exe").to_string_lossy().to_string()]
@@ -1841,6 +1864,47 @@ mod tests {
     use super::*;
     use crate::args::BackendArg;
     use crate::toolset::{ToolRequest, ToolSource, ToolVersionList};
+
+    #[cfg(windows)]
+    #[test]
+    fn publishing_uppercase_plugin_shim_keeps_it_in_the_farm() {
+        let dir = tempfile::tempdir().unwrap();
+        let staging = tempfile::tempdir_in(dir.path()).unwrap();
+        std::fs::write(staging.path().join("PLUGIN.EXE"), b"fixture").unwrap();
+        publish_staged_shim_farm(
+            dir.path(),
+            Path::new("mise.exe"),
+            staging,
+            HashSet::new(),
+            HashSet::new(),
+            HashSet::new(),
+            true,
+        )
+        .unwrap();
+        assert!(dir.path().join("PLUGIN.EXE").is_file());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn existing_uppercase_shim_satisfies_lowercase_installed_tool() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("JQ.EXE"), b"fixture").unwrap();
+        let present = list_shims_in(dir.path()).unwrap();
+        assert_eq!(present, HashSet::from(["jq.exe".to_string()]));
+        let desired = platform_shim_names(Path::new("mise.exe"), "JQ.EXE");
+        assert!(desired.iter().all(|name| name.starts_with("jq")));
+        let actual = ActualShims {
+            current: present.clone(),
+            dedicated_present: present.clone(),
+            owned: present.clone(),
+            occupied: present,
+            repairable: HashSet::new(),
+        };
+        let (missing, extra) =
+            calculate_shim_diffs(&actual, &HashSet::from(["jq.exe".to_string()]), true);
+        assert!(missing.is_empty());
+        assert!(extra.is_empty());
+    }
 
     #[test]
     fn shims_exclude_matches_regardless_of_exe_suffix() {
@@ -2542,7 +2606,8 @@ mod tests {
     #[test]
     fn mise_shim_detection_distinguishes_symlink_targets() {
         let dir = tempfile::tempdir().unwrap();
-        let mise_bin = dir.path().join("mise");
+        let mise_bin = dir.path().join("bin/mise");
+        fs::create_dir_all(mise_bin.parent().unwrap()).unwrap();
         let other_bin = dir.path().join("other");
         fs::write(&mise_bin, "mise").unwrap();
         fs::write(&other_bin, "other").unwrap();
@@ -2572,9 +2637,16 @@ mod tests {
         // The real mise dispatcher may itself be installed as a symlink in a
         // shared bin directory; its own name keeps it out of shim pruning.
         let dispatcher = dir.path().join("mise");
-        fs::remove_file(&dispatcher).unwrap();
         std::os::unix::fs::symlink(&other_bin, &dispatcher).unwrap();
         assert!(!is_mise_shim(&dispatcher, &mise_bin).unwrap());
+        assert!(!is_mise_shim_in(&dispatcher, &mise_bin, false).unwrap());
+
+        // In mise's dedicated shims dir a `mise` entry is a real shim (a tool
+        // can provide a `mise` binary) and must not be reported missing.
+        fs::remove_file(&dispatcher).unwrap();
+        std::os::unix::fs::symlink(&mise_bin, &dispatcher).unwrap();
+        assert!(is_mise_shim_in(&dispatcher, &mise_bin, true).unwrap());
+        assert!(is_current_owned_mise_shim(&dispatcher, &mise_bin).unwrap());
     }
 
     #[cfg(unix)]

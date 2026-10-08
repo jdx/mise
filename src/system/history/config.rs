@@ -30,6 +30,26 @@ pub(crate) struct HistoryTomlConfig {
     /// Email on history commits, with an optional `{hostname}` placeholder.
     #[serde(default)]
     pub git_email: Option<String>,
+    /// This machine's name in per-machine streams, instead of the one
+    /// generated with the store.
+    #[serde(default)]
+    pub machine: Option<String>,
+}
+
+/// The configured `[history] machine`, if any layer sets one.
+pub(crate) fn machine_name() -> Result<Option<String>> {
+    let Some(name) = layers()?
+        .into_iter()
+        .filter_map(|(_, layer)| layer.machine)
+        .next_back()
+    else {
+        return Ok(None);
+    };
+    eyre::ensure!(
+        super::store::is_valid_machine_name(&name),
+        "[history].machine must be 1-63 letters, digits, dots, dashes, or underscores, starting with a letter or digit: {name:?}"
+    );
+    Ok(Some(name))
 }
 
 /// Resolve the history commit identity when the commit is created. A shared
@@ -153,6 +173,10 @@ fn nonempty_command(command: String) -> Option<String> {
 
 /// The effective `[history.origin]`: the last layer that declares one.
 pub fn origin() -> Result<Option<(PathBuf, OriginTomlConfig)>> {
+    // local-only history is never shared
+    if super::local::active() {
+        return Ok(None);
+    }
     let mut found = None;
     for (path, layer) in layers()? {
         if let Some(origin) = layer.origin {

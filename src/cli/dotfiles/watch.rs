@@ -1,3 +1,8 @@
+use std::process::Child;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
+
 use eyre::Result;
 
 use crate::system::history::watch::runtime::{self, WatchOptions};
@@ -44,6 +49,9 @@ pub(crate) struct DotfilesWatch {
 
 impl DotfilesWatch {
     pub(crate) async fn run(self) -> Result<()> {
+        // local-only history is watched by the same command in the local
+        // scope, for as long as this one runs
+        let _local = LocalWatcher::start(self.once, self.json).await?;
         let code = runtime::run(WatchOptions {
             once: self.once,
             json: self.json,
@@ -53,6 +61,126 @@ impl DotfilesWatch {
             return Err(crate::request_exit(code));
         }
         Ok(())
+    }
+}
+
+/// The watcher of this machine's local-only history, stopped with this one.
+/// One that fails is reported and started again, backing off while it
+/// keeps failing; one that exits successfully (history disabled, or another
+/// watcher already running) has nothing to do and stays stopped.
+struct LocalWatcher(Option<Supervised>);
+
+struct Supervised {
+    child: Arc<Mutex<Option<Child>>>,
+    stop: Arc<AtomicBool>,
+}
+
+impl LocalWatcher {
+    async fn start(once: bool, json: bool) -> Result<Self> {
+        if crate::system::history::local::active() {
+            return Ok(Self(None));
+        }
+        let config = crate::config::Config::get().await?;
+        if crate::system::history::tracked::TrackedSet::from_config(&config)?
+            .local
+            .is_empty()
+        {
+            return Ok(Self(None));
+        }
+        let mut args = vec!["dot", "watch"];
+        if once {
+            args.push("--once");
+        }
+        if json {
+            args.push("--json");
+        }
+        if once {
+            // one pass each; the local one first, so its output is not
+            // interleaved with this one's
+            let status = crate::system::history::local::command(&args)?.status()?;
+            if !status.success() {
+                warn!("history: the local-only history watcher failed: {status}");
+            }
+            return Ok(Self(None));
+        }
+        let child = Arc::new(Mutex::new(Some(
+            crate::system::history::local::command(&args)?.spawn()?,
+        )));
+        let stop = Arc::new(AtomicBool::new(false));
+        let supervised = Supervised {
+            child: child.clone(),
+            stop: stop.clone(),
+        };
+        std::thread::spawn(move || supervise(&args, &child, &stop));
+        Ok(Self(Some(supervised)))
+    }
+}
+
+fn supervise(args: &[&str], child: &Mutex<Option<Child>>, stop: &AtomicBool) {
+    const MAX_DELAY: Duration = Duration::from_secs(300);
+    let mut delay = Duration::from_secs(5);
+    let mut started = Instant::now();
+    let mut restart_at: Option<Instant> = None;
+    while !stop.load(Ordering::Relaxed) {
+        std::thread::sleep(Duration::from_secs(1));
+        let mut guard = child.lock().unwrap_or_else(|err| err.into_inner());
+        if stop.load(Ordering::Relaxed) {
+            return;
+        }
+        if let Some(running) = guard.as_mut()
+            && let Ok(Some(status)) = running.try_wait()
+        {
+            *guard = None;
+            if status.success() {
+                return;
+            }
+            // one that ran a while failed afresh: start over from the
+            // shortest delay
+            if started.elapsed() > MAX_DELAY {
+                delay = Duration::from_secs(5);
+            }
+            warn!(
+                "history: the local-only history watcher exited ({status}); local-only files are not saved until it restarts in {}s",
+                delay.as_secs()
+            );
+            restart_at = Some(Instant::now() + delay);
+            delay = (delay * 2).min(MAX_DELAY);
+        }
+        if guard.is_none()
+            && let Some(at) = restart_at
+            && Instant::now() >= at
+        {
+            restart_at = None;
+            match crate::system::history::local::command(args)
+                .and_then(|mut command| command.spawn().map_err(Into::into))
+            {
+                Ok(spawned) => {
+                    started = Instant::now();
+                    *guard = Some(spawned);
+                }
+                Err(err) => {
+                    warn!("history: could not restart the local-only history watcher: {err:#}");
+                    restart_at = Some(Instant::now() + delay);
+                    delay = (delay * 2).min(MAX_DELAY);
+                }
+            }
+        }
+    }
+}
+
+impl Drop for LocalWatcher {
+    fn drop(&mut self) {
+        if let Some(supervised) = &self.0 {
+            supervised.stop.store(true, Ordering::Relaxed);
+            let mut guard = supervised
+                .child
+                .lock()
+                .unwrap_or_else(|err| err.into_inner());
+            if let Some(child) = guard.as_mut() {
+                let _ = child.kill();
+                let _ = child.wait();
+            }
+        }
     }
 }
 

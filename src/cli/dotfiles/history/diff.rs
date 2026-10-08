@@ -43,6 +43,12 @@ pub(crate) struct HistoryDiff {
 
 impl HistoryDiff {
     pub(crate) async fn run(self) -> Result<()> {
+        // a local-only path's checkpoints are in this machine's own history
+        if let Some(path) = &self.path
+            && crate::cli::dotfiles::route_local(&[std::path::PathBuf::from(path)]).await?
+        {
+            return Ok(());
+        }
         let (store, tracked, entries) = super::open().await?;
         let Some(repo) = store.repo() else {
             bail!("comparing checkpoints requires git");

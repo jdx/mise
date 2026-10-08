@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+# A cargo-binstall that is only reachable through a mise shim (installed but active in no
+# config) must not be used as the installer: the shim fails with "No version is set".
+# The backend has to ignore it and fall back to `cargo install`.
+
+mkdir -p "$MISE_DATA_DIR/shims"
+cat >"$MISE_DATA_DIR/shims/cargo-binstall" <<'SHIM'
+#!/usr/bin/env bash
+echo "No version is set for shim: cargo-binstall" >&2
+exit 1
+SHIM
+chmod u+x "$MISE_DATA_DIR/shims/cargo-binstall"
+
+# absolute interpreter and mkdir: the install PATH has no system dirs
+printf '#!%s\nMKDIR=%s\n' "$BASH" "$(command -v mkdir)" >~/bin/cargo
+cat >>~/bin/cargo <<'EOF2'
+printf '%s\n' "$*" >>"$MISE_DATA_DIR/cargo-install.log"
+while (($#)); do
+  if [[ $1 == "--root" ]]; then
+    "$MKDIR" -p "$2/bin"
+    exit 0
+  fi
+  shift
+done
+EOF2
+chmod u+x ~/bin/cargo
+# PATH for the install has no host system dirs, so a host cargo-binstall (CARGO_HOME/bin, Homebrew) can not be picked up
+MISE_BIN_DIR="$(dirname "$(command -v mise)")"
+ISOLATED_PATH="$MISE_DATA_DIR/shims:$HOME/bin:$MISE_BIN_DIR"
+export MISE_CARGO_BINSTALL=1
+export MISE_CARGO_BINSTALL_NATIVE=0
+
+PATH="$ISOLATED_PATH" mise install cargo:shim-test@1.0.0
+assert_contains "cat '$MISE_DATA_DIR/cargo-install.log'" "install shim-test@1.0.0"
+INSTALL_DIR="$(mise where cargo:shim-test@1.0.0)"
+assert_succeed "test -d '$INSTALL_DIR/bin'"

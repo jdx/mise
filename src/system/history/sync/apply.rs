@@ -30,7 +30,6 @@ pub struct ApplyRequest {
     /// Only these local paths (empty: everything pending).
     pub paths: Vec<PathBuf>,
     pub dry_run: bool,
-    pub yes: bool,
     /// Resolve these conflicts with the upstream version.
     pub take_remote: Vec<PathBuf>,
     /// Resolve these conflicts by publishing the local version next.
@@ -52,7 +51,6 @@ impl ApplyRequest {
         Self {
             paths: vec![],
             dry_run: false,
-            yes: true,
             take_remote: vec![],
             keep_local: vec![],
             take_remote_all: false,
@@ -578,12 +576,6 @@ pub(crate) async fn apply_locked_with_scope(
         }
         bail!("nothing can be applied until the held paths are decided");
     }
-    if !req.automatic
-        && !super::origin::confirmed(req.yes, "history: apply these incoming changes?")?
-    {
-        info!("history: skipped");
-        return Ok(ApplyOutcome::default());
-    }
 
     // the transaction
     let reload = crate::system::history::config::reload_commands()?;
@@ -600,6 +592,10 @@ pub(crate) async fn apply_locked_with_scope(
     let application_head =
         repo.ref_oid(crate::system::history::shadow::HistoryRepo::HISTORY_REF)?;
     let mut touched = vec![];
+    // set when a fresh adoption saved the files it replaces (see below)
+    let mut protected_head: Option<String> = None;
+    // the repository's head, once a fresh adoption made it this machine's
+    let mut adopted_head: Option<String> = None;
     let result = (|| -> Result<()> {
         scope.validate_starting_head(planned_head.as_deref())?;
         if let (Some(tree), Some(local)) = (&inventory_tree, &planned_head) {
@@ -657,6 +653,66 @@ pub(crate) async fn apply_locked_with_scope(
                 );
             }
         }
+        // A fresh adoption has no history of its own, so its operation took
+        // no protective checkpoint, and taking the repository's version of
+        // a file that exists here would leave the replaced contents nowhere.
+        // Adopt the repository's history first and save those files on top
+        // of it, so `mise dot undo` restores them.
+        let replaced: Vec<&Step> = ready
+            .iter()
+            .copied()
+            .filter(|step| step.before.is_some() && step.before != step.pending.object)
+            .collect();
+        if fresh_adoption && !replaced.is_empty() {
+            // Refuse a file history cannot save before anything changes,
+            // so a retry plans from the same state.
+            for step in &replaced {
+                if let Err(reason) = std::fs::symlink_metadata(&step.path)
+                    .map_err(|err| err.to_string())
+                    .and_then(|meta| crate::system::history::tracked::classify_file(&meta))
+                {
+                    bail!(
+                        "could not save this machine's version of {} before replacing it ({reason}); nothing was written. Move it aside and pull again",
+                        display_path(&step.path)
+                    );
+                }
+            }
+            let heads = super::graph::Heads::read(repo)?;
+            if heads.local != application_head || heads.remote != status.upstream_commit {
+                bail!("setup history changed during adoption; retry pull");
+            }
+            let remote = heads
+                .remote
+                .as_deref()
+                .ok_or_else(|| eyre::eyre!("setup branch disappeared during adoption"))?;
+            audit_incoming_history(repo, remote)?;
+            repo.update_history_head(remote, None)?;
+            adopted_head = Some(remote.to_owned());
+            // every path this pull writes, the ones it creates included,
+            // and manual-save ones as they are now: undo puts back exactly
+            // what was here
+            let written: Vec<PathBuf> = ready.iter().map(|step| step.path.clone()).collect();
+            scope.recapture_before(&written)?;
+            protected_head =
+                repo.ref_oid(crate::system::history::shadow::HistoryRepo::HISTORY_REF)?;
+            // **A file is replaced only once that checkpoint holds it as it
+            // is now.** History does not save every file (one larger than it
+            // captures, for one), and a checkpoint that kept another version
+            // in its place would leave `undo` nothing to restore.
+            let Some((_, protective)) = scope.before() else {
+                bail!(
+                    "could not save this machine's files before replacing them; nothing was written"
+                );
+            };
+            for step in &replaced {
+                if repo.restored_object_at(&protective, &step.pending.branch_path)? != step.before {
+                    bail!(
+                        "could not save this machine's version of {} before replacing it (history does not save it, for example because it is too large); nothing was written. Move it aside and pull again",
+                        display_path(&step.path)
+                    );
+                }
+            }
+        }
         for directory in &mut directories {
             directory.apply()?;
         }
@@ -707,6 +763,16 @@ pub(crate) async fn apply_locked_with_scope(
                 directory.verify_written()?;
             }
             let heads = super::graph::Heads::read(repo)?;
+            if let Some(protected) = &protected_head {
+                // the repository's history is already this machine's, with
+                // the replaced files saved on top: the outcome checkpoint
+                // records the applied ones after them
+                if heads.local.as_ref() != Some(protected) || heads.remote != status.upstream_commit
+                {
+                    bail!("setup history changed during adoption; retry pull");
+                }
+                return Ok(());
+            }
             if heads.local != application_head || heads.remote != status.upstream_commit {
                 bail!("setup history changed during adoption; retry pull");
             }
@@ -751,10 +817,54 @@ pub(crate) async fn apply_locked_with_scope(
         let summary = Some(Summary {
             message: Some("apply failed; recovery attempted".into()),
         });
+        let mut operation_id = None;
+        scope.with_operation(|op| operation_id = Some(op.id.clone()));
         if recovery_errors.is_empty() {
             scope.finish(status.application_failure.clone(), summary);
         } else {
             scope.finish_incomplete(status.application_failure.clone(), summary);
+        }
+        // **A fresh adoption that wrote nothing leaves nothing behind.** Its
+        // failure would otherwise be recorded on top of the repository's
+        // history, which this machine then holds as its own: a retry would
+        // plan from that, with the repository's version of a file it never
+        // wrote standing in for this machine's.
+        if fresh_adoption
+            && application_head.is_none()
+            && touched.is_empty()
+            && recovery_errors.is_empty()
+        {
+            // Only a head this operation recorded: the repository's head it
+            // adopted or its own protective checkpoint on that, or its
+            // failure checkpoint written straight on top of either (or as a
+            // root, when there was none). The operation lock is released by
+            // now, and a save that landed since is the user's to keep. The
+            // deletion is a compare-and-swap on `head`.
+            let base = protected_head.as_ref().or(adopted_head.as_ref());
+            let recorded_by_this_operation = |head: &String| -> Result<bool> {
+                if Some(head) == base {
+                    return Ok(true);
+                }
+                let Some(id) = &operation_id else {
+                    return Ok(false);
+                };
+                let recorded = repo
+                    .read_meta(head)
+                    .ok()
+                    .and_then(|checkpoint| checkpoint.operation)
+                    .is_some_and(|operation| &operation.id == id);
+                Ok(recorded
+                    && repo.parents_of(head)? == base.into_iter().cloned().collect::<Vec<_>>())
+            };
+            if let Some(head) =
+                repo.ref_oid(crate::system::history::shadow::HistoryRepo::HISTORY_REF)?
+                && recorded_by_this_operation(&head)?
+                && repo.delete_history_head(&head).is_ok()
+            {
+                store.rebuild_index()?;
+            }
+            status.application_failure = None;
+            run::write_status(state_dir, &status)?;
         }
         return result.map(|()| ApplyOutcome::default());
     }
@@ -799,7 +909,11 @@ pub(crate) async fn apply_locked_with_scope(
         );
     }
     if !req.automatic {
-        info!("history: applied {written} incoming change(s)");
+        if written == 0 {
+            info!("history: recorded incoming history; no files here changed");
+        } else {
+            info!("history: applied {written} incoming change(s)");
+        }
     }
     let outcome = ApplyOutcome {
         written,

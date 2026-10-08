@@ -181,6 +181,7 @@ impl Exec {
                 .with_args(tool_args)
                 .with_default_to_latest(true)
                 .with_resolve_options(resolve_options.clone())
+                .with_deferred_lazy_resolution()
                 .build(config)
                 .await
         };

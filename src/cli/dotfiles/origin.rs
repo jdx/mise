@@ -118,7 +118,6 @@ impl DotfilesOriginSet {
                 url: self.url.clone(),
                 branch: self.branch.clone(),
                 mode,
-                yes: self.yes,
             },
         )
         .await

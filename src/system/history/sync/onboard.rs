@@ -34,6 +34,10 @@ pub struct Onboarding {
     pub yes: bool,
     pub dry_run: bool,
     pub replace_history: bool,
+    /// Take the repository's version of every existing file that differs,
+    /// saving the replaced version first, as `mise dot pull
+    /// --take-remote-all` does.
+    pub take_remote_all: bool,
 }
 
 pub struct Outcome {
@@ -148,6 +152,7 @@ pub async fn from_git(
     yes: bool,
     dry_run: bool,
     replace_history: bool,
+    take_remote_all: bool,
 ) -> Result<Option<Outcome>> {
     // Detect marked repositories without creating persistent tracking state
     // for users of the released, ordinary --adopt workflow.
@@ -179,6 +184,7 @@ pub async fn from_git(
             yes,
             dry_run,
             replace_history,
+            take_remote_all,
         },
     )
     .await?;
@@ -236,6 +242,16 @@ fn probe(store: &Store, fetch_from: &str, branch: &str) -> Result<RepoState> {
         repo.delete_ref(UPSTREAM_REF)?;
     }
     Ok(state)
+}
+
+/// Fetches the complete branch into the store, with its ancestry, and
+/// checks that this mise understands its format.
+fn fetch_complete(store: &Store, fetch_from: &str, branch: &str) -> Result<()> {
+    let repo = store
+        .repo()
+        .ok_or_else(|| eyre::eyre!("fetching a setup repository requires git"))?;
+    Remote::new(repo, fetch_from).fetch(branch)?;
+    format::detect(repo, repo.ref_oid(UPSTREAM_REF)?.as_deref())?.check()
 }
 
 /// How to clear the paths an adoption left undecided.
@@ -300,7 +316,10 @@ pub async fn run(store: &Store, onboarding: &Onboarding) -> Result<Outcome> {
     let (_preview_dir, planning_store) = preview_store(store)?;
     let tracked = TrackedSet::effective().await?;
     let preview_replacement = if onboarding.replace_history {
-        probe(&planning_store, &onboarding.fetch_from, &onboarding.branch)?;
+        // a complete fetch, not the disposable shallow probe: the confirmed
+        // run seeds the real store from this one, and git refuses to copy
+        // a branch out of a shallow repository
+        fetch_complete(&planning_store, &onboarding.fetch_from, &onboarding.branch)?;
         detach_local_history(&planning_store)?
     } else {
         None
@@ -321,7 +340,10 @@ pub async fn run(store: &Store, onboarding: &Onboarding) -> Result<Outcome> {
     request.dry_run = true;
     // Pending decisions belong only to this preview store.
     run::sync(&planning_store, &tracked, &request)?;
-    let mut preview = ApplyRequest::automatic();
+    // the decision the confirmed run makes for files that exist and differ
+    let mut decided = ApplyRequest::automatic();
+    decided.take_remote_all = onboarding.take_remote_all;
+    let mut preview = decided.clone();
     preview.automatic = false;
     preview.dry_run = true;
     preview.plan_only = true;
@@ -335,7 +357,16 @@ pub async fn run(store: &Store, onboarding: &Onboarding) -> Result<Outcome> {
             setup_held: false,
         });
     }
-    if !super::origin::confirmed(onboarding.yes, "Set this machine up from the repository?")? {
+    // everything else here is journaled and undoable, so the plan above is
+    // the only confirmation; replacing local history cannot be undone from
+    // the checkpoint
+    if onboarding.replace_history
+        && !super::origin::confirmed_destructive(
+            onboarding.yes,
+            "Set this machine up from the repository?",
+            "mise bootstrap --adopt --replace-history",
+        )?
+    {
         bail!("not set up");
     }
 
@@ -365,16 +396,19 @@ pub async fn run(store: &Store, onboarding: &Onboarding) -> Result<Outcome> {
         request.dry_run = false;
         let result = async {
             run::sync_locked(store, &tracked, &request)?;
-            let applied = apply::apply_locked_with_scope(
-                store,
-                &tracked,
-                &ApplyRequest::automatic(),
-                Some(operation),
-            )
-            .await?;
+            // With `--take-remote-all`, the application saves the files it
+            // replaces on top of the adopted history before writing them.
+            let applied =
+                apply::apply_locked_with_scope(store, &tracked, &decided, Some(operation)).await?;
+            if applied.held > 0 && onboarding.take_remote_all {
+                bail!(
+                    "cannot replace local history while {} path(s) are held for a reason `--take-remote-all` cannot decide, such as staged Git changes; `mise dot status` lists them and why. Fix those paths and retry",
+                    applied.held
+                );
+            }
             if applied.held > 0 {
                 bail!(
-                    "cannot replace local history while {} path(s) need a decision; move the conflicting files aside and retry",
+                    "cannot replace local history while {} path(s) need a decision; retry with `--take-remote-all` to take the repository's version of each (the replaced versions are saved first, so `mise dot undo` restores them), or move the conflicting files aside",
                     applied.held
                 );
             }
@@ -407,7 +441,7 @@ pub async fn run(store: &Store, onboarding: &Onboarding) -> Result<Outcome> {
             .is_some();
         request.dry_run = false;
         run::sync(store, &tracked, &request)?;
-        apply::apply(store, &tracked, &ApplyRequest::automatic()).await?
+        apply::apply(store, &tracked, &decided).await?
     };
 
     // the connection: declared machine-locally, recorded for the watcher
@@ -468,8 +502,15 @@ fn seed_confirmed_fetch_locked(store: &Store, preview: &Store) -> Result<()> {
         .map_err(|_| eyre::eyre!("cannot address the preview repository"))?;
     let refspec = format!("+{UPSTREAM_REF}:{UPSTREAM_REF}");
     let copied = destination.network(["fetch", "--no-tags", "--", url.as_str(), &refspec])?;
-    if !copied.status.success() {
-        bail!("could not reuse the fetched setup preview");
+    // git reports success while refusing some updates (from a shallow
+    // repository, for one), so check that the branch actually arrived
+    if !copied.status.success()
+        || destination.ref_oid(UPSTREAM_REF)? != source.ref_oid(UPSTREAM_REF)?
+    {
+        bail!(
+            "could not reuse the fetched setup preview: {}",
+            String::from_utf8_lossy(&copied.stderr).trim()
+        );
     }
     Ok(())
 }
@@ -515,6 +556,9 @@ fn restore_after_failed_replacement(
         _ => {}
     }
     run::write_status(store.state_dir(), previous_status)?;
+    // the failed application may have rebuilt the index for the history it
+    // replaced; it must describe the history restored here
+    store.rebuild_index()?;
     super::state::save(repo, previous_sync_state, "history replacement rolled back")
 }
 

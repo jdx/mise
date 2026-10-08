@@ -1,0 +1,102 @@
+#!/usr/bin/env bash
+
+# A system wrapper can exec the bare name again and land back on the shim.
+# Bound the fixture itself so a broken guard fails without leaving a busy loop.
+mise_bin="$(command -v mise)"
+shimdir="$MISE_DATA_DIR/shims"
+foreign_shimdir="$TMPDIR/foreign-shims"
+wrapperdir="$TMPDIR/wrapper-bin"
+original_path="$PATH"
+
+assert_completes() {
+  local expected="$1"
+  shift
+  local status=0 output
+  output="$(run_with_timeout 15 "$@")" || status=$?
+  [[ $status -eq 0 ]] || fail "command exited with status $status: $output"
+  assert_contains_text "$output" "$expected"
+}
+# Templated early settings initialize the pristine environment before dispatch.
+# The guard must survive environment reconstruction and still clear on resolution.
+cat >.miserc.toml <<'EOF'
+ceiling_paths = ["{{ env.HOME }}"]
+EOF
+export MISE_NOT_FOUND_AUTO_INSTALL=0
+mkdir -p "$shimdir" "$foreign_shimdir" "$wrapperdir"
+ln -s "$mise_bin" "$shimdir/cycle-tool"
+ln -s "$mise_bin" "$foreign_shimdir/cycle-tool"
+cat >"$wrapperdir/cycle-tool" <<'WRAPPER'
+#!/usr/bin/env bash
+export PROBE_HOPS=$(( ${PROBE_HOPS:-0} + 1 ))
+if [[ $PROBE_HOPS -ge 20 ]]; then
+  echo fixture-hop-limit
+  exit 77
+fi
+exec "$(command -v cycle-tool)" "$@"
+WRAPPER
+chmod +x "$wrapperdir/cycle-tool"
+
+for current_shimdir in "$shimdir" "$foreign_shimdir"; do
+  export PATH="$current_shimdir:$wrapperdir:$original_path"
+  status=0
+  output="$(run_with_timeout 15 cycle-tool)" || status=$?
+  [[ $status -ne 0 && $status -ne 124 ]] || fail "cycle was not rejected: $output"
+  assert_contains_text "$output" "shim fallback recursion detected for cycle-tool"
+  assert_contains_text "$output" "Set a version for cycle-tool"
+  assert_not_contains_text "$output" "fixture-hop-limit"
+done
+
+# Distinct wrappers may form a finite exec chain in one PID.
+for tool in {1..12}; do
+  ln -s "$mise_bin" "$shimdir/chain-tool$tool"
+done
+for tool in {1..11}; do
+  next_tool=$((tool + 1))
+  cat >"$wrapperdir/chain-tool$tool" <<WRAPPER
+#!/usr/bin/env bash
+exec chain-tool$next_tool "\$@"
+WRAPPER
+  chmod +x "$wrapperdir/chain-tool$tool"
+done
+cat >"$wrapperdir/chain-tool12" <<'WRAPPER'
+#!/usr/bin/env bash
+echo finite-chain-complete
+WRAPPER
+chmod +x "$wrapperdir/chain-tool12"
+export PATH="$shimdir:$wrapperdir:$original_path"
+assert_completes "finite-chain-complete" chain-tool1
+
+# A fallback that calls itself in a child is legitimate (like bun run -> bun).
+ln -s "$mise_bin" "$shimdir/nested-tool"
+cat >"$wrapperdir/nested-tool" <<'WRAPPER'
+#!/usr/bin/env bash
+if [[ ${1:-} == inner ]]; then
+  echo nested-call-complete
+else
+  nested-tool inner
+fi
+WRAPPER
+chmod +x "$wrapperdir/nested-tool"
+assert_completes "nested-call-complete" nested-tool
+
+# Resolving a configured command wrapper ends the inherited fallback chain.
+ln -s "$mise_bin" "$shimdir/reset-tool"
+ln -s "$mise_bin" "$shimdir/reset-wrapper"
+cat >"$wrapperdir/reset-tool" <<'WRAPPER'
+#!/usr/bin/env bash
+exec reset-wrapper
+WRAPPER
+cat >"$wrapperdir/real-reset" <<'WRAPPER'
+#!/usr/bin/env bash
+if [[ -n ${__MISE_SHIM_FALLBACK_CHAIN:-} ]]; then
+  echo fallback-chain-leaked
+  exit 1
+fi
+echo chain-reset-complete
+WRAPPER
+chmod +x "$wrapperdir/reset-tool" "$wrapperdir/real-reset"
+cat >mise.toml <<EOF
+[wrappers.reset-wrapper]
+command = "$wrapperdir/real-reset"
+EOF
+assert_completes "chain-reset-complete" reset-tool

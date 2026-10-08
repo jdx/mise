@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+# A graph-locked npm install lives in `<version>~aube~<digest>`. Migrating it
+# reinstalls the npm version that name stands for (never the private directory
+# name), leaves exactly one version link, under the directory's own name, and
+# leaves no migration journal or moved-aside directory behind.
+export MISE_EXPERIMENTAL=1
+installs="$MISE_DATA_DIR/installs"
+cat >mise.toml <<'MISE_TOML'
+[tools]
+node = "20.11.1"
+"npm:inflight" = "1.0.6"
+MISE_TOML
+
+echo "=== a legacy install with a graph digest in its name ==="
+export MISE_INSTALL_LAYOUT=legacy
+assert "MISE_LOCKFILE=1 mise install"
+dir=""
+for d in "$installs/npm-inflight"/1.0.6~aube~*; do dir="$(basename "$d")"; done
+[[ -n $dir ]] || fail "no ~aube~ install directory for npm:inflight"
+assert "test -d '$installs/npm-inflight/$dir' && test ! -L '$installs/npm-inflight/$dir'"
+
+export MISE_INSTALL_LAYOUT=identity
+assert_contains "mise installs migrate --dry-run npm:inflight 2>&1" "would migrate npm:inflight@1.0.6"
+
+echo "=== it migrates as the real version; the old name becomes the version link ==="
+assert_contains "mise installs migrate npm:inflight 2>&1" "migrated npm:inflight@1.0.6"
+assert_contains "mise installs migrate npm:inflight 2>&1" "no legacy installations to migrate"
+assert "test -L '$installs/npm-inflight/$dir'"
+new="$(readlink "$installs/npm-inflight/$dir")"
+assert_matches "echo '$new'" "^\.\./inflight-[a-z2-7]{8}\$"
+assert "test -f '$installs/$(basename "$new")/.mise-install.toml'"
+# no second name for the same install
+assert_empty "find '$installs/npm-inflight' -maxdepth 1 -type l -name '1.0.6'"
+assert_empty "find '$installs/npm-inflight' -maxdepth 1 -name '.*mise-migrating'"
+assert_empty "ls '$installs/.mise/migrations'"
+# the old path still reaches the package
+assert "test -f '$installs/npm-inflight/$dir/node_modules/inflight/package.json'"

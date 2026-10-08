@@ -19,6 +19,8 @@ saved automatically; without it, `mise dot save` saves them.
 `--os` and `--profile` declare a variant: a separate shared stream for
 machines matching that platform or mise environment, so a Mac and a
 Linux box can share the same live path with different contents.
+`--machine` gives every machine its own stream instead, for files such
+as a monitor layout that should never be applied on another machine.
 
 ## Arguments
 - **`<PATH>…`** — Paths to track (absolute or starting with ~/)
@@ -26,10 +28,12 @@ Linux box can share the same live path with different contents.
 ## Flags
 - **`--os <OS>`** — Declare a variant for this platform (macos, linux, linux/arm64, …)
 - **`--profile <PROFILE>`** — Declare a variant for this mise environment
+- **`--local`** — Keep this file's history on this machine only; it is never shared
+- **`--machine`** — Keep a separate stream on every machine, never applied on another
 - **`--no-autosave`** — Save only on `mise dot save <path>`, never automatically
 - **`--encrypt`** — Encrypt contents before saving them to history (requires `[history.encryption].recipients`)
 - **`--allow-plaintext`** — Save an explicitly tracked credential-named file in plaintext
-- **`-y --yes`** — Accept without prompting
+- **`-y --yes`** — Accepted for compatibility; track no longer asks to confirm the paths
 - **`-n --dry-run`** — Show what each path expands to (files, size, what is left out) without tracking it
 - **`-h --help`** — Print help
 
@@ -39,6 +43,7 @@ Examples:
 mise dot track ~/.zshrc ~/.config/hypr
 mise dot track --dry-run ~/.codex
 mise dot track ~/.zshrc --os macos
+mise dot track ~/.config/hypr/monitors.lua --machine
 mise dot track ~/.config/app/credentials --encrypt
 mise dot track ~/.config/app/state.json --no-autosave
 ```
@@ -48,5 +53,5 @@ mise dot track ~/.config/app/state.json --no-autosave
 ## Related documentation
 
 - [Getting started](/getting-started.html).
-- [`mise dotfiles <SUBCOMMAND>`](/cli/dotfiles.html).
+- [`mise dotfiles [--local] <SUBCOMMAND>`](/cli/dotfiles.html).
 - [Global flags and argument syntax](/cli/#global-flags).

@@ -115,7 +115,7 @@ impl DotfilesAdd {
             bail!("--source can only be used with one target");
         }
         match self.mode.as_deref() {
-            Some("track") => bail!(
+            Some("track" | "track-local") => bail!(
                 "`--mode track` tracks a file where it is and takes no source; use `mise dot track <path>`"
             ),
             Some("absent") => bail!(

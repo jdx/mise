@@ -504,6 +504,7 @@ impl Install {
                 refresh_remote_versions: false,
                 inactive: false,
                 warn_not_in_lockfile: true,
+                defer_missing_lazy_tools: false,
             },
             dry_run: self.is_dry_run(),
             locked: Settings::get().locked,

@@ -104,6 +104,7 @@ impl Ssh {
                         yes: self.repository_yes,
                         dry_run: self.repository_dry_run,
                         replace_history: false,
+                        take_remote_all: false,
                     },
                 )
                 .await?;

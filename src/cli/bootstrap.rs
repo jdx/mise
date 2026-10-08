@@ -96,6 +96,11 @@ pub(crate) struct Bootstrap {
     #[usage(long, requires = "adopt")]
     replace_history: bool,
 
+    /// While adopting a setup repository, take its version of every existing file that differs;
+    /// the replaced versions are saved first, so `mise dot undo` restores them
+    #[usage(long, requires = "adopt")]
+    take_remote_all: bool,
+
     /// Directory used for the repository cloned by --from
     #[usage(long, value_name = "DIR", requires = "from")]
     from_dir: Option<PathBuf>,
@@ -1953,6 +1958,7 @@ impl Bootstrap {
                 self.yes,
                 self.dry_run,
                 self.replace_history,
+                self.take_remote_all,
             )
             .await?
         {
@@ -2223,7 +2229,7 @@ fn bootstrap_from_child_args(checkout: &Path, args: &[String]) -> Vec<OsString> 
     let mut args = args.iter().skip(1);
     while let Some(arg) = args.next() {
         match arg.as_str() {
-            "--replace-history" => {}
+            "--replace-history" | "--take-remote-all" => {}
             "--from" | "--adopt" | "--from-dir" | "--cd" | "-C" => {
                 args.next();
             }

@@ -4547,6 +4547,10 @@
           "description": "keyless signer certificate identity prefix",
           "type": "string"
         },
+        "workflow": {
+          "description": "repository workflow file that signs releases on a tag; github.com projects only, not valid with pubkey, identity, identity_prefix, or issuer",
+          "type": "string"
+        },
         "list_identity_prefix": {
           "description": "separate identity prefix for the vendor release list; needs an issuer, not valid with pubkey",
           "type": "string"
@@ -6291,7 +6295,7 @@
               },
               "mode": {
                 "type": "string",
-                "description": "how to apply a whole-file source to the target; omitted uses dotfiles.default_mode. \"absent\" removes a file or symlink at the target and takes no source",
+                "description": "how to apply a whole-file source to the target; omitted uses dotfiles.default_mode. \"absent\" removes a file or symlink at the target and takes no source. \"track\" saves the file's history where it is, and \"track-local\" saves it in this machine's local-only history, which is never shared",
                 "anyOf": [
                   {
                     "enum": [
@@ -6299,7 +6303,9 @@
                       "symlink-each",
                       "copy",
                       "template",
-                      "absent"
+                      "absent",
+                      "track",
+                      "track-local"
                     ]
                   },
                   {
@@ -6383,8 +6389,15 @@
                 "description": "comment prefix for edit marker lines; inferred from the file extension when omitted"
               },
               "merge": {
-                "type": "boolean",
-                "description": "edit entry: set the keys of source on a JSON, TOML, or YAML target and leave the target's other keys to the application that also writes it; the format comes from the target's extension"
+                "oneOf": [
+                  {
+                    "type": "boolean"
+                  },
+                  {
+                    "const": "missing"
+                  }
+                ],
+                "description": "edit entry: true sets the keys of source (default: the target's path under dotfiles.root) on a JSON, TOML, or YAML target and leaves the target's other keys to the application that also writes it; \"missing\" sets only the keys the target has no value for; the format comes from the target's extension"
               },
               "variants": {
                 "type": "array",
@@ -6413,6 +6426,10 @@
                     "default": {
                       "type": "boolean"
                     },
+                    "machine": {
+                      "type": "boolean",
+                      "description": "track mode only: a separate stream on every machine, never applied on another machine; must be the only variant and cannot be combined with encrypt"
+                    },
                     "target": {
                       "type": "string",
                       "description": "deployment destination override; requires either an explicit source or a safe relative entry key when every variant has a target, and is not supported in track mode"
@@ -6427,12 +6444,11 @@
                   "required": ["merge"],
                   "properties": {
                     "merge": {
-                      "const": true
+                      "enum": [true, "missing"]
                     }
                   }
                 },
                 "then": {
-                  "required": ["source"],
                   "properties": {
                     "mode": false,
                     "content": false,
@@ -6690,7 +6706,7 @@
                     "required": ["include", "mode"],
                     "properties": {
                       "mode": {
-                        "const": "track"
+                        "enum": ["track", "track-local"]
                       }
                     }
                   },
@@ -6707,7 +6723,7 @@
                     "required": ["allow_plaintext", "mode"],
                     "properties": {
                       "mode": {
-                        "const": "track"
+                        "enum": ["track", "track-local"]
                       }
                     }
                   },
@@ -8414,6 +8430,11 @@
         "git_email": {
           "type": "string",
           "description": "email used for history commit authors and committers; {hostname} expands to this machine's hostname"
+        },
+        "machine": {
+          "type": "string",
+          "description": "this machine's name in per-machine streams (variants = [{ machine = true }]) instead of the name generated with the history store",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,62}$"
         },
         "reload": {
           "type": "object",

@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+# rollback and undo are recoverable, so they never prompt: they proceed with or
+# without MISE_YES, and a script must not need --yes to restore. stderr is
+# redirected so the result does not depend on a terminal.
+echo first >~/.zshrc
+assert_succeed "mise dot track ~/.zshrc --yes"
+echo second >~/.zshrc
+assert_succeed "mise dot save ~/.zshrc"
+
+assert_succeed "MISE_YES=0 mise dot rollback ~/.zshrc </dev/null 2>/dev/null"
+assert "cat ~/.zshrc" "first"
+assert_succeed "MISE_YES=1 mise dot undo </dev/null 2>/dev/null"
+assert "cat ~/.zshrc" "second"
+assert_succeed "MISE_YES=1 mise dot rollback ~/.zshrc </dev/null 2>/dev/null"
+assert "cat ~/.zshrc" "first"

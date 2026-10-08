@@ -905,8 +905,40 @@ the application wrote. A missing target is created from the source.
   filter. mise does not compare a merge with a
   `block` or `line` edit of the same file, so don't have both own one key.
 - `template = "tera"` renders the source first, like other edit entries.
+- Like a `symlink` entry, a merge entry without `source` uses the target's path
+  under [`dotfiles.root`](/configuration/settings.html#dotfiles.root), so
+  `"~/.codex/config.toml/shared" = { merge = true }` reads
+  `<dotfiles.root>/.codex/config.toml`.
+- To switch an entry from `symlink` to `merge`, point the merge at the same
+  source. If the target is a link to that source, `mise dot apply` replaces the
+  link with a regular copy before merging, so the application's keys survive
+  when you later trim the source down to the keys you own. A target that links
+  anywhere else is refused.
 - `mise dot unapply` leaves merged keys in place, because the application may
   have changed them since.
+
+#### Defaults the application may change {#merge-missing}
+
+Some keys are worth shipping as a default but belong to the application once
+it has picked a value, such as the model a `/model` command writes. Use
+`merge = "missing"` for those. It sets only the keys the target has no value
+for, next to a regular `merge = true` entry for the keys you enforce:
+
+```toml
+[dotfiles]
+"~/.codex/config.toml/shared" = { merge = true }
+"~/.codex/config.toml/defaults" = { source = "codex/defaults.toml", merge = "missing" }
+```
+
+- A key the target already has keeps its value, even a different one. A key
+  the application removes is filled in again on the next apply.
+- A table that exists on both sides is compared key by key, so a default
+  inside it is added without touching its siblings. A value that is not a
+  table counts as present, so a source table under it is skipped.
+- `mise dot status` and `mise dot diff` report only missing keys, never a
+  differing value.
+- A `missing` entry never conflicts with another entry for the same key: the
+  other entry's value wins whichever applies first.
 
 ## How configuration is applied {#semantics}
 
@@ -1249,6 +1281,92 @@ skips the path until you fix it.
 When nothing matches, mise uses the variant marked `default = true`.
 Without a default, it skips saving and applying the path on that machine.
 Checkpoints preserve the versions saved by other machines.
+
+#### One version per machine {#machine-variants}
+
+Some files describe the machine itself, such as a monitor layout or a
+trackpad setting. Give every machine its own version with a `machine`
+variant:
+
+```toml
+[dotfiles]
+"~/.config/hypr/monitors.lua" = { mode = "track", variants = [{ machine = true }] }
+```
+
+Or run `mise dot track ~/.config/hypr/monitors.lua --machine`.
+
+Each machine saves, rolls back, and restores its own version. Sync
+shares the other tracked files as usual, but never applies one machine's
+version on another. Each version is still pushed to the origin with the
+rest of the history, so it is kept off the machine and can be restored on
+it later.
+
+The stream is named after the machine, for example
+`machine-omarchy-3f2a9c1b`: its hostname and a random suffix, chosen the
+first time and kept in `$MISE_STATE_DIR/history/machine`. Renaming the
+host does not change it, and two machines with the same hostname still
+get separate versions. To choose the name yourself, set it in the
+machine's global configuration, for example in
+`~/.config/mise/config.local.toml`:
+
+```toml
+[history]
+machine = "desk"
+```
+
+After reinstalling a machine, set its earlier name to continue that
+machine's history. A `machine` variant must be the entry's only variant,
+and cannot be combined with `encrypt`. Upgrade every machine sharing the
+setup before using it: older versions of mise refuse the setup rather
+than apply one machine's version on the others.
+
+### Local-only history {#local-only}
+
+Some files are worth keeping a history of but should never leave this
+machine: application state, a work-only configuration, a credential you
+want to roll back. Track them with `mode = "track-local"`:
+
+```toml
+[dotfiles]
+"~/.config/app/state.json" = { mode = "track-local" }
+```
+
+Or run `mise dot track --local ~/.config/app/state.json`.
+
+Their versions are saved in this machine's own history, under
+`$MISE_STATE_DIR/history-local`, which no origin ever reaches: neither their
+contents nor their enrollment metadata enter shared history or a push.
+A declaration written in a separately shared configuration file is still
+shared as part of that file's text. Local files are saved, browsed, and
+restored like any tracked file:
+
+```sh
+mise dot save                          # saves both histories
+mise dot history --path ~/.config/app/state.json
+mise dot rollback ~/.config/app/state.json
+mise dot --local history               # list the local-only checkpoints
+mise dot --local undo                  # undo the latest local-only rollback
+```
+
+Commands that name a path go to the history that keeps it; one command
+cannot name paths of both. `mise dot --local` selects the local-only history
+for commands without a path. `mise dot capture` saves a labeled checkpoint
+there before and after the command, and the history watcher watches both.
+
+A local-only path may lie inside a tracked directory, such as
+`~/.config/app/state.json` inside a shared `~/.config/app`: the shared
+history then leaves that file out. Versions already saved in the shared
+history before the path became local stay there, as with
+[untracking](#stop-tracking-a-file). If another machine shares the same
+path, this machine neither applies its versions nor publishes its own.
+Everything inside a local-only directory is local-only too: a shared
+declaration of a path in it is refused.
+
+`track-local` takes no `encrypt` or `variants`, since its history never
+leaves the machine. Credential-named files are still left out unless the
+entry sets `allow_plaintext = true`. Older versions of mise skip a
+`track-local` entry as an unknown mode, so it never falls back to shared
+tracking.
 
 ### Tracking files that mise also manages {#ownership}
 
