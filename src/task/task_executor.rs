@@ -650,9 +650,12 @@ impl TaskExecutor {
         }
         // A task that receives secrets is never cached as an artifact, so the plain
         // fresh-sources skip below still applies, and no value is resolved for a skipped task.
+        // Raw and interactive tasks inherit stdio, so there is no output to capture or
+        // replay and the artifact cache below bypasses them too; they keep the same skip.
         let artifact_cache_enabled = self.task_cache.enabled()
             && task.cache.as_ref().is_some_and(|cache| cache.enabled)
-            && grant.is_empty();
+            && grant.is_empty()
+            && !self.raw(Some(task));
         if !artifact_cache_enabled
             && !self.force
             && !dependency_state.any_did_work
