@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+
+# `mise direnv` was deprecated in #3464; it still runs, with a warning
+assert_contains "mise direnv 2>&1" "deprecated [cli.direnv]"
+assert_contains "mise direnv activate 2>&1" "deprecated [cli.direnv]"
+assert_contains "mise direnv activate 2>/dev/null" "use_mise()"
+
+# The internal commands the generated `use_mise` hook runs on every direnv
+# reload stay quiet. `exec` needs direnv itself, so its exit status is ignored;
+# the warning would print before it reaches direnv.
+assert_not_contains "mise direnv envrc 2>&1" "deprecated [cli.direnv]"
+exec_output="$(mise direnv exec 2>&1 || true)"
+assert_not_contains_text "$exec_output" "deprecated [cli.direnv]"

@@ -1,10 +1,12 @@
 ---
-description: "System packages for Debian-family Linux (Debian, Ubuntu, Mint, ...)."
+description: "Install Debian and Ubuntu packages with apt-get from mise.toml, including version pins."
 ---
 
 # Debian and Ubuntu packages (apt)
 
-System packages for Debian-family Linux (Debian, Ubuntu, Mint, ...).
+The `apt` manager installs packages on Debian, Ubuntu, and other Debian-based
+distributions with `apt-get`. It checks installed state with `dpkg-query` and
+uses [sudo](/bootstrap/packages/#sudo) when mise is not running as root.
 
 ```toml
 [bootstrap.packages]
@@ -13,60 +15,62 @@ System packages for Debian-family Linux (Debian, Ubuntu, Mint, ...).
 "apt:gcc:arm64" = "latest"     # architecture qualifier
 ```
 
-## Preview and apply
-
 ```sh
-mise bootstrap packages status
 mise bootstrap packages apply --manager apt --dry-run
 mise bootstrap packages apply --manager apt
 ```
 
-These commands use the active `[bootstrap.packages]` declarations. To add and
-install a package together, use `mise bootstrap packages use apt:libssl-dev`.
-The manager must be available on the host; an explicit `--manager apt` fails
-when it is unavailable.
+## Prerequisites
 
-## Behavior
+The manager is available on Linux when `apt-get` is on `PATH`. On other
+machines, its entries show as
+[`skipped`](/bootstrap/packages/#choose-platforms).
 
-- Package state is checked with `dpkg-query` (read-only, never elevates).
-- Missing packages are installed with `apt-get install -y`, elevated with
-  sudo when necessary (see [sudo](/bootstrap/packages/#sudo)).
-- Version pins are passed to apt as its native `name=version` syntax;
-  `name:arch` qualifiers pass through in the package name.
-- `DEBIAN_FRONTEND=noninteractive` is set so installs never block on
-  debconf configuration prompts. This does not supply sudo credentials or
-  guarantee that every maintainer script is non-interactive.
-- `mise bootstrap packages upgrade` runs `apt-get update` and then
-  `apt-get install --only-upgrade` for the configured packages, so nothing
-  requested package that is not already installed becomes an install target.
-  apt still resolves dependencies required by those upgrades.
+mise sets `DEBIAN_FRONTEND=noninteractive`, so debconf questions take their
+defaults. A maintainer script that reads from the terminal directly can still
+prompt.
 
-## Metadata refresh
+## Package names
 
-If `/var/lib/apt/lists` contains no package lists (fresh containers), mise
-runs `apt-get update` automatically before installing. Otherwise, it does not
-touch apt metadata — if an install fails with "Unable to locate package",
-refresh explicitly:
+Use the package name as `apt-get install` takes it. Append `:<arch>` to select
+an architecture, as in `gcc:arm64`. The machine's dpkg architectures and apt
+sources must already provide that architecture; the declaration does not enable
+multiarch or add a repository.
+
+## Version pins
+
+mise passes a pin to apt as `name=version`. Versions are specific to a
+distribution release, so the `8.5.0-2ubuntu10` pin above is only an example.
+Run `apt-cache policy curl` on the target to see the candidates, and pin one
+that its sources offer. mise cannot install a version your apt sources no
+longer carry.
+
+## Package lists {#metadata-refresh}
+
+mise runs `apt-get update` before installing when `/var/lib/apt/lists` holds
+no package lists (fresh containers), or when a simulated install
+(`apt-get --simulate`, which needs no root) fails against the current lists,
+for example because of a package or pinned version the lists do not contain. If
+the simulation succeeds, mise installs without refreshing. To force a refresh
+anyway:
 
 ```sh
 mise bootstrap packages apply --update
 ```
 
-## Architecture-qualified packages
+## What mise runs
 
-`gcc:arm64` is a package name with an architecture qualifier. The target's dpkg
-architecture configuration and apt repositories must supply that architecture;
-this declaration does not enable multiarch or add a repository.
+| Operation                       | Command                                                                  |
+| ------------------------------- | ------------------------------------------------------------------------ |
+| Check installed state (no sudo) | `dpkg-query -W <packages>`                                               |
+| Install                         | `apt-get install -y -- <packages>`, after `apt-get update` when needed   |
+| `apply --update`                | `apt-get update` first                                                   |
+| Upgrade                         | `apt-get update`, then `apt-get install -y --only-upgrade -- <packages>` |
 
-## Version pins
+`upgrade` acts only on configured packages that are installed. apt still
+installs any new dependencies the upgrades need.
 
-The version above is illustrative and specific to a distribution release. Use
-`apt-cache policy curl` to inspect candidates on the target before pinning it.
-An exact pin must remain available in the configured repositories; mise does
-not turn apt into a historical package archive.
+## Remove packages
 
-A pinned entry (`"apt:curl" = "8.5.0-2ubuntu10"`) shows as `version mismatch`
-in `mise bootstrap packages status` when a different version is installed, and
-`mise bootstrap packages apply` passes the pin to apt to correct it. `"latest"` entries
-are satisfied by any installed version — use `mise bootstrap packages upgrade` to move
-them to the newest available version.
+mise does not remove apt packages. Deleting an entry leaves the package
+installed; run `apt-get remove` yourself.

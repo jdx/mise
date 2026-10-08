@@ -23,6 +23,14 @@ two (post)
     └── three
 one (post)
 └── three"
+# A selected task's tree includes its depends_post tasks.
+assert "mise tasks deps three" "three
+two (post)
+├── three
+└── one (post)
+    └── three
+one (post)
+└── three"
 assert "mise run three"
 
 # A task referenced in both phases runs once before and once after its parent.

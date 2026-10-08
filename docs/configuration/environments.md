@@ -1,18 +1,22 @@
 ---
-description: "Config environments select additional files such as mise.development.toml and mise.production.toml."
+description: "Load extra config files such as mise.production.toml by selecting a config environment with -E or MISE_ENV."
+socialDescription: "Load extra config files such as mise.production.toml with -E or MISE_ENV."
 ---
 
-# Config Environments
+# Config environments
 
-Config environments select additional files such as `mise.development.toml` and
-`mise.production.toml`. The base `mise.toml` still loads, and the selected file
-overrides values at the same directory level.
+A config environment loads extra config files, such as `mise.development.toml`
+or `mise.production.toml`, on top of `mise.toml`. Select one with `-E` or
+`MISE_ENV`; the base `mise.toml` still loads, and the environment file overrides
+it in the same directory.
 
-For variables passed to your application, use [`[env]`](/environments/). Selecting
-a mise config environment does not set application variables such as `NODE_ENV`
-unless you define them.
+Selecting a config environment does not set variables such as `NODE_ENV` for
+your application. Define those in [`[env]`](/environments/) in the environment
+file.
 
 ## Try an environment
+
+::: code-group
 
 ```toml [mise.toml]
 [env]
@@ -24,203 +28,191 @@ APP_MODE = "development"
 APP_MODE = "production"
 ```
 
+:::
+
 ```sh
-mise exec -- sh -c 'echo "$APP_MODE"'                # development
-mise -E production exec -- sh -c 'echo "$APP_MODE"'  # production
-mise -E production config                          # inspect loaded files
+mise exec -- sh -c 'echo "$APP_MODE"'               # development
+mise -E production exec -- sh -c 'echo "$APP_MODE"' # production
+mise -E production config                           # list the loaded files
 ```
 
 ## Select environments
 
-Select an environment using one of these methods:
+You cannot select an environment in `mise.toml`, because the selection decides
+which config files load. Use one of these instead, listed from highest to
+lowest precedence:
 
-- CLI flag: `-E development` or `--env development`
-- Environment variable: `MISE_ENV=development`
-- `.miserc.toml` file: `env = ["development"]`
+| Method               | Example                                                               |
+| -------------------- | --------------------------------------------------------------------- |
+| CLI flag             | `mise -E production run deploy` or `--env production`                 |
+| Environment variable | `MISE_ENV=production`                                                 |
+| `.miserc.toml`       | `env = ["production"]`; see [below](#setting-mise-env-in-miserc-toml) |
 
-mise looks for matching files throughout the configuration hierarchy. Project
-files use names such as `mise.production.toml`; the global config uses
-`config.production.toml` in `MISE_CONFIG_DIR`.
+To select several environments, separate them with commas:
+`mise -E ci,test run build` or `MISE_ENV=ci,test`. When two selected
+environments set the same value in one directory, the last one wins among files
+of the same kind, but a local file still overrides every shared one (see
+[File names and precedence](#file-names-and-precedence)): with `ci,test`,
+`mise.ci.local.toml` overrides `mise.test.toml`. Run `mise -E ci,test config` to
+see the combined selection.
 
-Multiple environments can be specified, for example `mise -E ci,test run build`.
-Within the same directory, the last environment takes precedence among files of the same kind,
-but any `mise.<env>.local.toml` still overrides every `mise.<env>.toml` (see
-[Local overrides](#local-overrides)): with `ci,test`, `mise.ci.local.toml` overrides
-`mise.test.toml`. Use
-`mise -E ci,test config` to inspect the combined selection.
+### Set a default in .miserc.toml {#setting-mise-env-in-miserc-toml}
 
-For machine setup, group an application's packages, dotfiles, and services in
-one environment file, then select the modules each machine needs. See
-[bootstrap modules](/bootstrap.html#modules) for an example and cleanup guidance.
+Commit a default selection in `.miserc.toml`, which mise reads before any other
+config file:
 
-## Setting MISE_ENV in .miserc.toml
-
-You can set `MISE_ENV` in a `.miserc.toml` file, which is loaded early, before
-other config files are discovered. This lets you commit your environment
-configuration to version control:
-
-```toml
-# .miserc.toml
+```toml [.miserc.toml]
 env = ["development"]
 ```
 
-### Personal environment selection
+Use `.miserc.local.toml` (not committed) for a personal choice, and
+`~/.config/mise/miserc.local.toml` for one machine. See
+[`.miserc.toml`](/configuration.html#miserc) for every location and how the
+files combine.
 
-Use `.miserc.local.toml` for an environment selection that belongs to your
-checkout rather than the whole project:
+## File names and precedence {#file-names-and-precedence}
 
-```toml
-# .miserc.local.toml
-env = ["native"]
+In a project directory, a file higher in this table overrides one lower down:
+
+| File                    | Use                                                   |
+| ----------------------- | ----------------------------------------------------- |
+| `mise.<env>.local.toml` | Personal overrides for one environment, not committed |
+| `mise.local.toml`       | Personal overrides, not committed                     |
+| `mise.<env>.toml`       | Shared config for one environment                     |
+| `mise.toml`             | Shared config                                         |
+
+So your `mise.local.toml` overrides a committed `mise.production.toml` when the
+`production` environment is selected. To override a value for one environment
+only, put it in `mise.production.local.toml`. Add `mise.local.toml` and
+`mise.*.local.toml` to `.gitignore`.
+
+The other project locations take environment names the same way, such as
+`mise/config.<env>.toml`, `.mise/config.<env>.toml`, and
+`.config/mise.<env>.toml`; see [Config file locations](/configuration.html#mise-toml).
+In the same directory, environment files such as `mise/config.<env>.toml`
+override every shared file without an environment, local files such as
+`mise/config.local.toml` override both, and environment local files such as
+`mise/config.<env>.local.toml` override all of them.
+
+The global config directory (`~/.config/mise`) uses `config.<env>.toml` and
+`config.<env>.local.toml` in the same order, so `config.local.toml` overrides
+`config.<env>.toml`.
+
+If [`override_config_filenames`](/configuration/settings.html#override_config_filenames)
+is set, its filenames replace `mise.toml`, `mise.local.toml`, and the other
+default names. Environment files such as `mise.<env>.toml` and
+`mise.<env>.local.toml` are still loaded.
+
+## Write to an environment file
+
+`mise use` and `mise set` write to the shared file unless you name an
+environment with the subcommand's own `--env` flag:
+
+```sh
+mise use --env staging node@24                             # writes mise.staging.toml
+mise set --env staging API_URL=https://staging.example.com # writes mise.staging.toml
 ```
 
-Ordinary commands such as `mise install` and `mise run dev` then load
-`mise.native.toml`. Add `.miserc.local.toml` to your global Git ignore file
-(`core.excludesFile`) so this preference stays untracked across repositories.
-Create the file separately in each worktree where you want the selection.
+The global `-E` placed before the subcommand, as in
+`mise -E staging set ...`, only selects which files load; the write still goes
+to the shared `mise.toml`. Both commands create the environment file if it does
+not exist. See
+[which file mise writes to](/configuration.html#target-file-for-write-operations)
+for the full rules.
 
-To select an environment for the whole machine while keeping the shared global
-`miserc.toml` unchanged, use `miserc.local.toml` in `MISE_CONFIG_DIR` (normally
-`~/.config/mise`):
+## Use the environment in tasks and templates
 
-```toml
-# ~/.config/mise/miserc.local.toml
-env = ["work"]
+mise exports the selected environments to tasks and other commands it runs as
+`MISE_ENV`, separated by commas. Templates read the same list as
+<code v-pre>{{ mise_env }}</code>:
+
+```mise-toml [mise.toml]
+[tasks.deploy]
+run = """
+{% if mise_env is not defined %}echo "select an environment with -E" >&2; exit 1{% endif %}
+echo deploying to {{ mise_env | first }}
+"""
 ```
 
-This file is loaded regardless of the current directory. It overrides fields
-in the global `miserc.toml`; project `.miserc.toml` and `.miserc.local.toml`
-files can still override it.
-
-Both local file locations support the same settings and templates as `miserc.toml`.
-Explicitly set fields override the shared file at the same level;
-omitted fields retain their inherited values. `env` replaces the inherited
-list, and `env = []` clears it. CLI environment flags and `MISE_ENV` still take
-precedence over both files.
-
-### Templates in .miserc.toml
-
-`.miserc.toml` supports [Tera templates](/templates#miserc-template-support),
-which is useful for settings like `ceiling_paths` that reference home or XDG directories:
-
-<div v-pre>
-
-```toml
-# .miserc.toml
-
-# Stop config search at $HOME
-ceiling_paths = ["{{ env.HOME }}"]
-
-# Or use the XDG config home variable
-ignored_config_paths = ["{{ xdg_config_home }}/mise/shared.toml"]
-```
-
-</div>
-
-Only OS-level context is available (environment variables, `cwd`, `arch()`, `os()`,
-etc.); settings from `mise.toml` are not yet loaded at this stage.
-
-File locations searched (in order of precedence):
-
-1. Current directory, then each parent: `.miserc.local.toml`, `.miserc.toml`, `.config/miserc.toml` (in that order within each directory)
-2. `~/.config/mise/miserc.local.toml`, then `~/.config/mise/miserc.toml` (global)
-3. `/etc/mise/miserc.toml` (system)
-
-`MISE_ENV` cannot be set in `mise.toml` because it determines which config
-files are loaded in the first place.
-
-## Local overrides
-
-mise also looks for "local" files like `mise.local.toml` and `mise.{MISE_ENV}.local.toml`
-in the current directory and parent directories.
-These are not intended to be committed to version control
-(add `mise.local.toml` and `mise.*.local.toml` to your `.gitignore` file).
-
-These files take priority in this order (top overrides bottom):
-
-- `mise.{MISE_ENV}.local.toml`
-- `mise.local.toml`
-- `mise.{MISE_ENV}.toml`
-- `mise.toml`
-
-If `MISE_OVERRIDE_CONFIG_FILENAMES` is set, it is used instead of all of the above.
-
-You can also use paths like `mise/config.{MISE_ENV}.toml` or `.config/mise.{MISE_ENV}.toml`. These
-follow the order described in [Configuration](/configuration).
+`mise -E staging run deploy` prints `deploying to staging`, and `mise run deploy`
+fails with `select an environment with -E`. When no environment is selected,
+`mise_env` is undefined. A bare <code v-pre>{{ mise_env }}</code> then fails to
+render, and so do filters such as `join`, but `first` returns an empty value
+without an error. Check `mise_env is defined` before you use it.
+[Platform environments](#platform-environments) are not included in `MISE_ENV`
+or `mise_env`.
 
 ## conf.d environments
 
 ::: warning Migration in progress
-Environment-specific `conf.d` filenames are opt-in until mise 2027.8.10. By default, all non-hidden
-TOML fragments still load unconditionally, including names such as `node.tools.toml`.
+Environment-specific `conf.d` filenames are opt-in until mise 2027.8.10. By
+default, every non-hidden TOML fragment still loads, including names such as
+`node.tools.toml`.
 
-Dots in unconditional fragment names are deprecated. Rename them to use hyphens (for example,
-`node-tools.toml`) before mise 2027.8.10. At that point, the suffix after the first dot will select
-an environment.
+Dots in fragment names are deprecated. Rename them to use hyphens, such as
+`node-tools.toml`, before mise 2027.8.10. From that release, the suffix after
+the first dot selects an environment.
 :::
 
-To opt into the new behavior now, set `env_conf_d = true` in any `miserc.toml` file (see the
-locations listed above) or set `MISE_ENV_CONF_D=true`. Files in `mise/conf.d`, `.mise/conf.d`, and
-`.config/mise/conf.d` then use the same environment suffixes as other config files:
+To opt in now, set `env_conf_d = true` in a `miserc.toml` file or set
+`MISE_ENV_CONF_D=true`. Fragments in `mise/conf.d`, `.mise/conf.d`, and
+`.config/mise/conf.d` then use the same environment suffixes as other config
+files:
 
 ```text
 mise/conf.d/tools.toml                    # always loaded
 mise/conf.d/tools.local.toml              # always loaded, usually gitignored
 mise/conf.d/tools.development.toml        # MISE_ENV=development
 mise/conf.d/tools.development.local.toml  # MISE_ENV=development, usually gitignored
-.mise/conf.d/tools.toml                   # always loaded
-.mise/conf.d/tools.local.toml             # always loaded, usually gitignored
-.mise/conf.d/tools.development.toml       # MISE_ENV=development
-.mise/conf.d/tools.development.local.toml # MISE_ENV=development, usually gitignored
 ```
 
-Because this setting controls config discovery, it must be set in a `miserc.toml` file or the
-environment; setting it in `mise.toml` is too late. To keep the old behavior without the
-deprecation warning during the migration window, set `env_conf_d = false` explicitly.
-
-Use `mise config` to see which files are being used.
-
-The rules for which file is written to are different, because one file ultimately has to be chosen. See
-the docs for [`mise use`](/cli/use.html) for more information.
+Because this setting controls config discovery, set it in `miserc.toml` or the
+environment; in `mise.toml` it is too late. To keep the old behavior without the
+deprecation warning during the migration, set `env_conf_d = false` explicitly.
 
 ## Platform environments
 
-With the [`auto_env` setting](/configuration/settings.html#auto_env) enabled, mise automatically
-treats the following as active config environments, based on the current platform:
+With the [`auto_env`](/configuration/settings.html#auto_env) setting enabled,
+mise also treats these as active config environments, based on the current
+platform:
 
-| Environment   | Values                                         |
-| ------------- | ---------------------------------------------- |
-| `{os_family}` | `unix` (not defined on Windows—use `windows`)  |
-| `{os}`        | `linux`, `macos`, `windows`                    |
-| `{os}-{arch}` | e.g. `linux-x64`, `macos-arm64`, `windows-x64` |
+| Environment   | Values                                               |
+| ------------- | ---------------------------------------------------- |
+| `{os_family}` | `unix` (not defined on Windows; use `windows`)       |
+| `{os}`        | `linux`, `macos`, `windows`                          |
+| `{os}-{arch}` | such as `linux-x64`, `macos-arm64`, or `windows-x64` |
 
-Architectures use mise's remapped names: `x86_64` → `x64` and `aarch64` → `arm64`.
+Architectures use mise's names: `x86_64` becomes `x64` and `aarch64` becomes
+`arm64`.
 
-This makes config files like `mise.windows.toml`, `mise.macos-arm64.toml`, or `mise.unix.toml`
-load automatically and selects matching lockfiles like `mise.windows.lock`. All of the
-usual config file locations and `.local.toml` variants work.
+Files such as `mise.windows.toml`, `mise.macos-arm64.toml`, and
+`mise.unix.toml` then load automatically, in every config location and with
+their `.local.toml` variants, and mise selects matching lockfiles such as
+`mise.windows.lock`.
 
-Platform environments have lower precedence than explicit `MISE_ENV` entries. The full order is
-(later overrides earlier): `unix` < `{os}` < `{os}-{arch}` < explicit `MISE_ENV` entries. As with
-multiple explicit environments, this order applies among files of the same kind:
-`mise.linux.local.toml` still overrides `mise.ci.toml`.
-
-Platform environments only affect config file discovery and lockfile selection. They are not
-added to `MISE_ENV` itself: the `{{ mise_env }}` template variable and the `MISE_ENV` variable
-passed to subprocesses and tasks only reflect explicit environments.
+Platform environments have lower precedence than environments you select. From
+lowest to highest: `unix`, `{os}`, `{os}-{arch}`, then your `-E` or `MISE_ENV`
+entries. As with several selected environments, this order applies among files
+of the same kind, so `mise.linux.local.toml` still overrides `mise.ci.toml`.
+They affect only config file discovery and lockfile selection, so
+<code v-pre>{{ mise_env }}</code> and the `MISE_ENV` variable passed to tasks
+list only the environments you selected.
 
 ### Rollout
 
-`auto_env` is currently **disabled by default**. Starting with mise `2027.6.0`, it will be enabled
-by default; from `2026.12.0` until then, mise warns when it finds a platform-specific config file
-that would be newly loaded. To control the behavior explicitly:
+`auto_env` is off by default. mise 2027.6.0 turns it on by default, and from
+2026.12.0 until then mise warns when it finds a platform config file that the
+new default would load. To choose now, set it in `.miserc.toml`:
 
-```toml
-# .miserc.toml
+```toml [.miserc.toml]
 auto_env = false # keep the old behavior and silence the warning
 ```
 
-Set `auto_env = true` instead to adopt the new behavior now. Alternatively, set
-`MISE_AUTO_ENV=true` / `MISE_AUTO_ENV=false`. Like `MISE_ENV`, this is an early-init setting: it must
-be set in `.miserc.toml` or via the environment variable — setting it in `mise.toml` has no effect
-because config file discovery has already happened by the time `mise.toml` is read.
+Set `auto_env = true` to adopt the new behavior, or use `MISE_AUTO_ENV=true` or
+`MISE_AUTO_ENV=false`. Like `env`, this setting controls config discovery, so it
+has no effect in `mise.toml`.
+
+## Related
+
+- [Bootstrap modules](/bootstrap/modules.html): one environment file per machine
+  role, selected on each machine

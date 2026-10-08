@@ -62,6 +62,6 @@ mise trust
 
 ## Related documentation
 
-- [Configuration trust](/security.html).
+- [Configuration trust](/security.html#configuration-trust).
 - [All commands](/cli/).
 - [Global flags and argument syntax](/cli/#global-flags).

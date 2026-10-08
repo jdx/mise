@@ -61,6 +61,6 @@ mise dot pull --take-remote-all --keep-local ~/.zshrc
 
 ## Related documentation
 
-- [Getting started](/getting-started.html).
+- [Sync across machines](/dotfiles/sync.html).
 - [`mise dotfiles [--local] <SUBCOMMAND>`](/cli/dotfiles.html).
 - [Global flags and argument syntax](/cli/#global-flags).

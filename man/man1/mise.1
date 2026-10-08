@@ -5460,8 +5460,7 @@ Supports wildcards, e.g. \-\-allow\-env='MYAPP_*'
 .TP
 \fB\-\-allow\-net\fR \fI<HOST>\fR
 Allow network to specific host (implies \-\-deny\-net for everything else)
-Per\-host filtering is unsupported on Linux and returns an error.
-See the sandboxing guide for current macOS host\-filter limitations.
+Per\-host filtering is unsupported on Linux and macOS and returns an error.
 On Windows, sandboxing is unavailable: mise warns and runs without host filtering.
 .TP
 \fB\-\-allow\-read\fR \fI<PATH>\fR
@@ -5862,6 +5861,8 @@ Generate shims to run mise tasks
 By default, this will build shims like ./bin/<task>. These can be paired with `mise generate install\-script`
 so contributors to a project can execute mise tasks without installing mise into their system.
 When a parent and nested task both exist, the parent stub is written to `<parent>/_default`.
+Hidden tasks and global tasks are skipped: the stubs are committed to the project, and global
+tasks come from the user's own config.
 .PP
 \fBUsage:\fR mise generate task\-stubs [OPTIONS]
 .PP
@@ -6815,7 +6816,9 @@ Resources use `mise://tools`, `mise://tasks`, `mise://env`, and `mise://config`.
 
 The `list_commands` tool describes commands and their declared effects. `run_task`
 executes project tasks with the user's permissions and can change files or invoke
-external services. `install_tool` is advertised but currently returns an error.
+external services. `install_tool` installs a tool version as `mise install` does.
+Both refuse to act on a project whose config files are not trusted; run
+`mise trust` to allow them.
 Environment resources contain real values, including secrets.
 
 Resources available:
@@ -6826,7 +6829,7 @@ Resources available:
 
 Tools available:
 \- list_commands \- Every mise command, with its declared effect on the world
-\- install_tool \- Install a tool with an optional version (not yet implemented)
+\- install_tool \- Install a tool with an optional version
 \- run_task \- Execute a mise task with optional arguments
 
 Note: This is primarily intended for integration with AI assistants like Claude,
@@ -7944,8 +7947,7 @@ Supports wildcards, e.g. \-\-allow\-env='MYAPP_*'
 .TP
 \fB\-\-allow\-net\fR \fI<HOST>\fR
 Allow network to specific host (implies \-\-deny\-net for everything else)
-Per\-host filtering is unsupported on Linux and returns an error.
-See the sandboxing guide for current macOS host\-filter limitations.
+Per\-host filtering is unsupported on Linux and macOS and returns an error.
 On Windows, sandboxing is unavailable: mise warns and runs without host filtering.
 .TP
 \fB\-\-allow\-read\fR \fI<PATH>\fR
@@ -9451,8 +9453,7 @@ Supports wildcards, e.g. \-\-allow\-env='MYAPP_*'
 .TP
 \fB\-\-allow\-net\fR \fI<HOST>\fR
 Allow network to specific host (implies \-\-deny\-net for everything else)
-Per\-host filtering is unsupported on Linux and returns an error.
-See the sandboxing guide for current macOS host\-filter limitations.
+Per\-host filtering is unsupported on Linux and macOS and returns an error.
 On Windows, sandboxing is unavailable: mise warns and runs without host filtering.
 .TP
 \fB\-\-allow\-read\fR \fI<PATH>\fR
@@ -10861,12 +10862,14 @@ This is a convenience option for using Watchexec as a file watcher, without runn
 
 This option requires `\-\-emit\-events\-to` to be set, and restricts the available modes to `stdio` and `json\-stdio`, modifying their behaviour to write to stdout instead of the stdin of the command.
 .TP
-\fB\-E, \-\-env\fR \fI<KEY=VALUE>\fR
+\fB\-\-watchexec\-env\fR \fI<KEY=VALUE>\fR
 Add env vars to the command
 
 This is a convenience option for setting environment variables for the command, without setting them for the Watchexec process itself.
 
 Use key=value syntax. Multiple variables can be set by repeating the option.
+
+This is watchexec's '\-\-env'. In mise, '\-E'/'\-\-env' selects the mise environment (`mise.<ENV>.toml`), as it does for every other command.
 .TP
 \fB\-\-wrap\-process\fR \fI<MODE>\fR
 Configure how the process is wrapped
@@ -10895,10 +10898,12 @@ Print how long the command took to run
 
 This may not be exactly accurate, as it includes some overhead from Watchexec itself. Use the `time` utility, high\-precision timers, or benchmarking tools for more accurate results.
 .TP
-\fB\-q, \-\-quiet\fR
+\fB\-\-watchexec\-quiet\fR
 Don't print starting and stopping messages
 
 By default Watchexec will print a message when the command starts and stops. This option disables this behaviour, so only the command's output, warnings, and errors will be printed.
+
+This is watchexec's '\-\-quiet'. In mise, '\-q'/'\-\-quiet' quiets mise's own messages, as it does for every other command.
 .TP
 \fB\-\-bell\fR
 Ring the terminal bell on command completion
@@ -10911,11 +10916,13 @@ Watchexec will attempt to discover the project's "origin" (or "root") by searchi
 The project origin is used to determine the path of certain ignore files, which VCS is being used, the meaning of a leading '/' in filtering patterns, and maybe more in the future.
 
 When set, Watchexec will also not bother searching, which can be significantly faster.
+
+The directory must contain every watched task's sources, which mise makes relative to it.
 .TP
 \fB\-\-workdir\fR \fI<DIRECTORY>\fR
-Set the working directory
+Has no effect: mise runs each task from its own `dir`
 
-By default, the working directory of the command is the working directory of Watchexec. You can change that with this option. Note that paths may be less intuitive to use with this.
+Accepted so scripts that pass it keep working. Forwarding it would make the nested `mise run` look for tasks in that directory instead of this project.
 .TP
 \fB\-e, \-\-exts\fR \fI<EXTENSIONS>\fR
 Filename extensions to filter to

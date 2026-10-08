@@ -37,6 +37,6 @@ mise dot conflicts --difftool --tool meld ~/.zshrc
 
 ## Related documentation
 
-- [Dotfile ownership and modes](/dotfiles.html).
+- [Sync across machines](/dotfiles/sync.html).
 - [`mise bootstrap dotfiles [--local] <SUBCOMMAND>`](/cli/bootstrap/dotfiles.html).
 - [Global flags and argument syntax](/cli/#global-flags).

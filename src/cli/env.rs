@@ -1,5 +1,8 @@
 use eyre::Result;
-use std::{collections::BTreeMap, sync::Arc};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    sync::Arc,
+};
 
 use crate::args::ToolArg;
 use crate::config::Config;
@@ -92,13 +95,25 @@ impl Env {
 
         let redacted_keys = if self.redacted {
             let env_results = config.env_results().await?;
-            let mut keys = IndexSet::new();
-            keys.extend(env_results.redactions.clone());
+            let mut patterns = IndexSet::new();
+            patterns.extend(env_results.redactions.clone());
+            // `redact = false` exempts a key from `redactions` patterns everywhere else
+            // (task output, CI masking), so it must not be selected here either.
+            let mut exclusions = env_results.redaction_exclusions.clone();
             if let Some((_, ref tools_env_results)) = final_env {
-                keys.extend(tools_env_results.redactions.clone());
+                patterns.extend(tools_env_results.redactions.clone());
+                // A tools-aware assignment overrides a config-level exclusion, as a task
+                // assignment does in the task context builder.
+                for key in tools_env_results.env.keys() {
+                    exclusions.remove(key);
+                }
+                exclusions.extend(tools_env_results.redaction_exclusions.iter().cloned());
             }
-            keys.extend(config.redaction_keys());
-            Some(keys)
+            patterns.extend(config.redaction_keys());
+            Some(RedactedKeys {
+                patterns,
+                exclusions,
+            })
         } else {
             None
         };
@@ -120,12 +135,12 @@ impl Env {
         &self,
         config: &Arc<Config>,
         ts: Toolset,
-        redacted_keys: &Option<IndexSet<String>>,
+        redacted_keys: &Option<RedactedKeys>,
     ) -> Result<()> {
         let mut env = ts.env_with_path(config).await?;
 
         if let Some(keys) = redacted_keys {
-            env.retain(|k, _| self.should_include_key(k, keys));
+            env.retain(|k, _| keys.matches(k));
         }
 
         miseprintln!("{}", serde_json::to_string_pretty(&env)?);
@@ -136,7 +151,7 @@ impl Env {
         &self,
         config: &Arc<Config>,
         ts: Toolset,
-        redacted_keys: &Option<IndexSet<String>>,
+        redacted_keys: &Option<RedactedKeys>,
     ) -> Result<()> {
         let mut res = BTreeMap::new();
 
@@ -191,7 +206,7 @@ impl Env {
             });
 
         if let Some(keys) = redacted_keys {
-            res.retain(|k, _| self.should_include_key(k, keys));
+            res.retain(|k, _| keys.matches(k));
         }
 
         miseprintln!("{}", serde_json::to_string_pretty(&res)?);
@@ -202,15 +217,15 @@ impl Env {
         &self,
         config: &Arc<Config>,
         ts: Toolset,
-        redacted_keys: &Option<IndexSet<String>>,
+        redacted_keys: &Option<RedactedKeys>,
     ) -> Result<()> {
         let default_shell = get_shell(Some(fallback_shell())).unwrap();
         let shell = get_shell(self.shell).unwrap_or(default_shell);
         let (mut env, mut env_remove) = ts.env_with_path_and_removals(config).await?;
 
         if let Some(keys) = redacted_keys {
-            env.retain(|k, _| self.should_include_key(k, keys));
-            env_remove.retain(|k| self.should_include_key(k, keys));
+            env.retain(|k, _| keys.matches(k));
+            env_remove.retain(|k| keys.matches(k));
         }
 
         for k in env_remove {
@@ -224,13 +239,9 @@ impl Env {
         Ok(())
     }
 
-    fn output_dotenv(
-        &self,
-        mut env: EnvMap,
-        redacted_keys: &Option<IndexSet<String>>,
-    ) -> Result<()> {
+    fn output_dotenv(&self, mut env: EnvMap, redacted_keys: &Option<RedactedKeys>) -> Result<()> {
         if let Some(keys) = redacted_keys {
-            env.retain(|k, _| self.should_include_key(k, keys));
+            env.retain(|k, _| keys.matches(k));
         }
 
         for (k, v) in env {
@@ -245,12 +256,12 @@ impl Env {
         &self,
         config: &Arc<Config>,
         ts: Toolset,
-        redacted_keys: &Option<IndexSet<String>>,
+        redacted_keys: &Option<RedactedKeys>,
     ) -> Result<()> {
         let mut env = ts.env_with_path(config).await?;
 
         if let Some(keys) = redacted_keys {
-            env.retain(|k, _| self.should_include_key(k, keys));
+            env.retain(|k, _| keys.matches(k));
         }
 
         for (_, v) in env {
@@ -258,11 +269,22 @@ impl Env {
         }
         Ok(())
     }
+}
 
-    fn should_include_key(&self, key: &str, redacted_keys: &IndexSet<String>) -> bool {
-        redacted_keys
-            .iter()
-            .any(|pattern| wildcard_match(key, pattern))
+/// The keys `--redacted` selects: those matching a redaction pattern, minus the ones a
+/// `redact = false` directive exempts.
+struct RedactedKeys {
+    patterns: IndexSet<String>,
+    exclusions: BTreeSet<String>,
+}
+
+impl RedactedKeys {
+    fn matches(&self, key: &str) -> bool {
+        !self.exclusions.contains(key)
+            && self
+                .patterns
+                .iter()
+                .any(|pattern| wildcard_match(key, pattern))
     }
 }
 

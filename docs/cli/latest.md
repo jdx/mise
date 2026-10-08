@@ -51,6 +51,6 @@ mise latest node --minimum-release-age 30d
 
 ## Related documentation
 
-- [Version requests](/dev-tools/).
+- [Version requests](/dev-tools/versions.html).
 - [All commands](/cli/).
 - [Global flags and argument syntax](/cli/#global-flags).

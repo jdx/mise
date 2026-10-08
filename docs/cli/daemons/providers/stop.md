@@ -20,6 +20,6 @@ Stop the named shared servers without deleting their data.
 
 ## Related documentation
 
-- [Getting started](/getting-started.html).
+- [Share daemons across projects](/daemons/sharing.html).
 - [`mise daemons providers [SUBCOMMAND]`](/cli/daemons/providers.html).
 - [Global flags and argument syntax](/cli/#global-flags).

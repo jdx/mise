@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+
+# The github backend checks the `size` option even when no `checksum` is set.
+# The hello-world asset in jdx/mise-test-fixtures v1.0.0 is 27 bytes.
+cat <<EOF >mise.toml
+[tools]
+"github:jdx/mise-test-fixtures" = { version = "1.0.0", asset_pattern = "hello-world", size = "26" }
+EOF
+
+assert_fail_contains "mise install" "Size mismatch: expected 26, got 27"
+assert_fail "mise x -- hello-world"
+
+cat <<EOF >mise.toml
+[tools]
+"github:jdx/mise-test-fixtures" = { version = "1.0.0", asset_pattern = "hello-world", size = "big" }
+EOF
+
+assert_fail_contains "mise install" "invalid size option: big"
+
+cat <<EOF >mise.toml
+[tools]
+"github:jdx/mise-test-fixtures" = { version = "1.0.0", asset_pattern = "hello-world", size = "27", postinstall = "chmod +x \$MISE_TOOL_INSTALL_PATH/hello-world" }
+EOF
+
+mise install
+assert_contains "mise x -- hello-world" "hello world"

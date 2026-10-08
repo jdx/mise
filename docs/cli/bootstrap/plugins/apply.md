@@ -19,6 +19,6 @@ Install package manager plugins declared in `[bootstrap.plugins]`
 
 ## Related documentation
 
-- [Package plugins](/bootstrap/packages/plugins.html).
+- [Package manager plugins](/bootstrap/packages/plugins.html).
 - [`mise bootstrap plugins <SUBCOMMAND>`](/cli/bootstrap/plugins.html).
 - [Global flags and argument syntax](/cli/#global-flags).

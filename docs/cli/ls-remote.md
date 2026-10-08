@@ -53,6 +53,6 @@ mise ls-remote github:cli/cli --json
 
 ## Related documentation
 
-- [Version requests](/dev-tools/).
+- [Version requests](/dev-tools/versions.html).
 - [All commands](/cli/).
 - [Global flags and argument syntax](/cli/#global-flags).

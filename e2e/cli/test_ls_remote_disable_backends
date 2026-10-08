@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+
+# ls-remote must refuse a backend disabled by disable_backends, like install does, instead
+# of querying it (or cloning its plugin) anyway.
+assert_fail "MISE_DISABLE_BACKENDS=ubi mise ls-remote ubi:jqlang/jq" "backend ubi is disabled by disable_backends"
+assert_fail "MISE_DISABLE_BACKENDS=aqua mise ls-remote aqua:jqlang/jq" "backend aqua is disabled by disable_backends"
+assert_fail "MISE_DISABLE_BACKENDS=asdf mise ls-remote asdf:mise-plugins/mise-tiny" "backend asdf is disabled by disable_backends"
+assert_fail "ls $MISE_DATA_DIR/plugins/asdf-mise-plugins-mise-tiny"
+
+# a registry shorthand still resolves past a disabled backend to an enabled one: pastel lists
+# aqua first, so this only succeeds if shorthand resolution skips aqua for github
+assert_contains "MISE_DISABLE_BACKENDS=aqua mise ls-remote pastel" "0.10.0"

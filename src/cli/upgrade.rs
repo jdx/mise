@@ -130,7 +130,7 @@ pub(crate) struct Upgrade {
     minimum_release_age: Option<String>,
 
     /// Placeholder for future monorepo upgrades; `mise upgrade --monorepo` is not implemented yet.
-    #[usage(long, verbatim_doc_comment)]
+    #[usage(long, hide = true, verbatim_doc_comment)]
     monorepo: bool,
 
     /// Do not uninstall the versions that were upgraded away from
@@ -224,7 +224,7 @@ impl Upgrade {
             self.bump = true;
         }
         if self.monorepo {
-            unimplemented!("mise upgrade --monorepo is not implemented yet");
+            eyre::bail!("--monorepo is not supported by mise upgrade yet");
         }
         let mut config = Config::get().await?;
         let mut explicit_config_bumps = Vec::new();

@@ -34,6 +34,6 @@ mise patrons --refresh
 
 ## Related documentation
 
-- [Supporting mise](/about.html).
+- [Supporting mise](/about.html#supporting-mise).
 - [All commands](/cli/).
 - [Global flags and argument syntax](/cli/#global-flags).
