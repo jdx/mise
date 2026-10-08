@@ -73,18 +73,33 @@ EOF
 assert_fail_contains "mise watch --project-origin src example" "does not contain the watched source"
 
 # An exclusion outside the origin excludes nothing inside it, so it is not
-# rejected: the check fails only on the positive source.
+# rejected: the check fails only on the positive source. A gitignore-style
+# exclusion such as `!**/*.tmp` starts above the origin but still matches
+# files inside it, so it is rebased onto the origin and keeps working.
 cat <<'EOF' >mise.toml
 [tasks.example]
 run = 'echo ran'
-sources = ["src/**/*.txt", "!shared/**"]
+sources = ["src/**", "!shared/**", "!**/*.tmp"]
 EOF
-MISE_DEBUG=1 mise watch --project-origin src example >.watch_exclusion_output 2>&1 &
+# The `src/**` filter matches any file watchexec sees, so the log goes outside
+# the watched directory or every write to it would retrigger the task.
+output_file="$HOME/.watch_exclusion_output"
+MISE_DEBUG=1 mise watch --project-origin src example >"${output_file}" 2>&1 &
 PID_TO_KILL=$!
-for _ in $(seq 1 40); do
-  grep -Fq '$ watchexec' .watch_exclusion_output && break
-  sleep 0.5
-done
+runs() { tr -d '\0' <"${output_file}" | grep -c '^ran$' || true; }
+# `mise run` skips the task when its own sources are unchanged, so count the
+# times watchexec starts it rather than the times the task prints.
+triggers() { tr -d '\0' <"${output_file}" | grep -c '^\[Running: ' || true; }
+wait_for_runs 1
+[ "$(runs)" = 1 ] || fail "the task did not run on start: $(tr -d '\0' <"${output_file}")"
+sleep 1
+touch src/excluded.tmp
+sleep 2
+[ "$(triggers)" = 1 ] || fail "src/excluded.tmp retriggered the task: $(tr -d '\0' <"${output_file}")"
+touch src/included.txt
+wait_for_runs 2
+[ "$(triggers)" = 2 ] || fail "src/included.txt did not rerun the task: $(tr -d '\0' <"${output_file}")"
 stop_watch
-assert_contains "cat .watch_exclusion_output" '$ watchexec'
-assert_not_contains "cat .watch_exclusion_output" "does not contain the watched source"
+assert_not_contains "cat ${output_file}" "does not contain the watched source"
+assert_contains "grep -F '\$ watchexec' ${output_file}" "--ignore **/*.tmp"
+assert_not_contains "grep -F '\$ watchexec' ${output_file}" "shared"

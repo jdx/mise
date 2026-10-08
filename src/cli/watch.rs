@@ -157,7 +157,7 @@ impl Watch {
             // Pre-resolve sources to absolute paths so the anchor can be
             // widened to cover any source that escapes its task's cwd via
             // `..` or an absolute path.
-            let parsed: Vec<Vec<(SourceKind, PathBuf)>> = task_cwds
+            let mut parsed: Vec<Vec<(SourceKind, PathBuf)>> = task_cwds
                 .iter()
                 .map(|(t, cwd)| t.sources.iter().map(|s| parse_source(s, cwd)).collect())
                 .collect();
@@ -178,9 +178,7 @@ impl Watch {
                 let anchor: PathBuf = match (project_origin.clone(), configured, common) {
                     (Some(origin), _, _) => {
                         // watchexec drops a filter outside the origin, so a
-                        // source there would never trigger the task. An
-                        // exclusion there excludes nothing inside it, so
-                        // dropping it is harmless.
+                        // source there would never trigger the task.
                         if let Some((_, outside)) = parsed.iter().flatten().find(|(kind, p)| {
                             !matches!(kind, SourceKind::Negation) && !p.starts_with(&origin)
                         }) {
@@ -190,6 +188,32 @@ impl Watch {
                                 origin.display(),
                                 outside.display()
                             );
+                        }
+                        // An exclusion such as `!**/*.tmp` starts above the
+                        // origin but still matches inside it, so it is
+                        // rebased onto the origin; one that cannot match
+                        // inside the origin excludes nothing there and is
+                        // dropped.
+                        for sources in &mut parsed {
+                            sources.retain_mut(|(kind, p)| {
+                                if !matches!(kind, SourceKind::Negation) {
+                                    return true;
+                                }
+                                match negation_within_origin(p, &origin) {
+                                    Some(rebased) => {
+                                        *p = rebased;
+                                        true
+                                    }
+                                    None => {
+                                        debug!(
+                                            "dropping exclusion {} outside --project-origin {}",
+                                            p.display(),
+                                            origin.display()
+                                        );
+                                        false
+                                    }
+                                }
+                            });
                         }
                         origin
                     }
@@ -409,6 +433,34 @@ fn source_watch_dir(absolute: &Path) -> PathBuf {
     } else {
         dir.parent().map(|p| p.to_path_buf()).unwrap_or(dir)
     }
+}
+
+/// Express an absolute exclusion pattern as one under `origin` that excludes the same files
+/// inside it, or `None` when it cannot match anything inside `origin`.
+///
+/// A pattern under `origin` is kept as is. One whose literal (glob-free) prefix is an ancestor of
+/// `origin` and whose next component is `**`, such as `<task cwd>/**/*.tmp`, matches at any depth
+/// below that prefix, so `<origin>/**/*.tmp` excludes the same files inside `origin`.
+fn negation_within_origin(absolute: &Path, origin: &Path) -> Option<PathBuf> {
+    use std::path::Component;
+    if absolute.starts_with(origin) {
+        return Some(absolute.to_path_buf());
+    }
+    let is_glob = |s: &std::ffi::OsStr| s.to_string_lossy().contains(['*', '?', '[', '{']);
+    let mut prefix = PathBuf::new();
+    let mut components = absolute.components();
+    for c in components.by_ref() {
+        match c {
+            Component::Normal(part) if is_glob(part) => {
+                if part != "**" || !origin.starts_with(&prefix) {
+                    return None;
+                }
+                return Some(origin.join(part).join(components.as_path()));
+            }
+            _ => prefix.push(c.as_os_str()),
+        }
+    }
+    None
 }
 
 /// Express an already-absolute source path relative to the filter anchor,
@@ -1821,8 +1873,9 @@ mod terminal_state_tests {
 #[cfg(test)]
 mod tests {
     use super::{
-        WrapMode, common_ancestor, merge_watch_patterns, normalize_path, parse_source,
-        relativize_source, source_watch_dir, tasks_disable_vcs_ignores, wrap_process_args,
+        WrapMode, common_ancestor, merge_watch_patterns, negation_within_origin, normalize_path,
+        parse_source, relativize_source, source_watch_dir, tasks_disable_vcs_ignores,
+        wrap_process_args,
     };
     use crate::cli::{Cli, Commands};
     use crate::task::{Task, TaskWatchOptions};
@@ -2161,6 +2214,45 @@ mod tests {
         assert_eq!(common, Some(pb("/repo")));
         let rel = relativize_source(super::SourceKind::Plain, &abs, &common.unwrap());
         assert_eq!(rel, "shared/src/*.ts");
+    }
+
+    #[test]
+    fn negation_within_origin_keeps_one_inside() {
+        assert_eq!(
+            negation_within_origin(Path::new("/repo/src/gen/**"), Path::new("/repo/src")),
+            Some(pb("/repo/src/gen/**")),
+        );
+    }
+
+    #[test]
+    fn negation_within_origin_rebases_double_star_above() {
+        assert_eq!(
+            negation_within_origin(Path::new("/repo/**/*.tmp"), Path::new("/repo/src")),
+            Some(pb("/repo/src/**/*.tmp")),
+        );
+        assert_eq!(
+            negation_within_origin(Path::new("/repo/**"), Path::new("/repo/src/a")),
+            Some(pb("/repo/src/a/**")),
+        );
+    }
+
+    #[test]
+    fn negation_within_origin_drops_one_that_cannot_match() {
+        // A sibling of the origin.
+        assert_eq!(
+            negation_within_origin(Path::new("/repo/shared/**"), Path::new("/repo/src")),
+            None,
+        );
+        // A single-level glob above the origin matches only files there.
+        assert_eq!(
+            negation_within_origin(Path::new("/repo/*.log"), Path::new("/repo/src")),
+            None,
+        );
+        // A literal file above the origin.
+        assert_eq!(
+            negation_within_origin(Path::new("/repo/notes.txt"), Path::new("/repo/src")),
+            None,
+        );
     }
 
     #[test]

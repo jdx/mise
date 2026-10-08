@@ -21,6 +21,12 @@ output_file=.watch_events_output
 
 MISE_DEBUG=1 mise watch --emit-events-to json-stdio --only-emit-events example >"${output_file}" 2>&1 &
 PID_TO_KILL=$!
+# Stop watchexec as well as mise, also when an assertion below fails.
+stop_watch() {
+  pkill -P "$PID_TO_KILL" 2>/dev/null || true
+  kill "$PID_TO_KILL" 2>/dev/null || true
+}
+trap stop_watch EXIT
 
 for _ in $(seq 1 40); do
   grep -Fq '$ watchexec ' "${output_file}" && break
@@ -35,8 +41,7 @@ for _ in $(seq 1 20); do
 done
 
 # Stop watchexec as well as mise; killing mise alone leaves watchexec running.
-pkill -P "$PID_TO_KILL" 2>/dev/null || true
-kill "$PID_TO_KILL" 2>/dev/null || true
+stop_watch
 
 assert_contains "grep -F '\$ watchexec ' ${output_file}" "--emit-events-to json-stdio --only-emit-events"
 assert_not_contains "grep -F '\$ watchexec ' ${output_file}" " -- "
