@@ -2520,11 +2520,11 @@ and `mise settings set` are shorter, but they choose their file differently:
 `mise set` writes the nearest `mise.toml`, and `mise settings set` writes the
 global config unless you pass `--local`.
 
-Known settings use their declared type; boolean settings accept only `true` and
-`false`. Other values are stored as strings, except `true` and `false`, which
-become booleans; `1`, `0`, `yes`, and `no` are rejected, even with
-`--type bool`. Use `--type string` to store such a value, or a value such as
-`true`, as literal text, and `--type integer` for `1` or `0`.
+Known settings use their declared type; boolean settings accept `true`,
+`false`, `yes`, `no`, `1`, and `0`. For other keys, `true` and `false` become
+booleans and every other value is stored as a string. Use `--type bool` to
+store `yes`, `no`, `1` or `0` as a boolean, `--type string` to store `true`
+or `false` as text, and `--type integer` for a number.
 """#
         flag "-f --file --path" help="Config file to edit, or a directory whose config file to edit" {
             long_help #"""
