@@ -52,7 +52,8 @@ assert "cd project/child && mise x dummy -- dummy --version" "This is Dummy 1.1.
 
 cp project/mise.toml project/mise.ci.toml
 cp project/mise.lock project/mise.ci.lock
-assert "cd project && MISE_ENV=ci mise x dummy -- dummy --version" "This is Dummy 1.1.0! --version"
+# mise.local.toml outranks mise.ci.toml, so its lockfile still owns the pin
+assert "cd project && MISE_ENV=ci mise x dummy -- dummy --version" "This is Dummy 1.0.0! --version"
 cp project/mise.toml project/mise.ci.local.toml
 cp "$MISE_CONFIG_DIR/mise.lock" project/mise.ci.local.lock
 assert "cd project && MISE_ENV=ci mise x dummy -- dummy --version" "This is Dummy 2.0.0! --version"

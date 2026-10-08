@@ -62,8 +62,11 @@ one lower down.
   `.config/mise/config.local.toml`, and `.config/mise.toml` can have
   `.config/mise.local.toml`. Every local file overrides every shared file in
   the same directory.
-- Environment files such as `mise.production.toml` override all of these when
-  their environment is selected. See
+- Environment files such as `mise.production.toml` override the shared files
+  when their environment is selected, and the local files override them in
+  turn. Environment local files such as `mise.production.local.toml` override
+  all of these. With several environments selected, a later environment's file
+  overrides an earlier one's of the same kind. See
   [Config environments](/configuration/environments.html#file-names-and-precedence).
 - The [`override_config_filenames`](/configuration/settings.html#override_config_filenames)
   setting replaces the TOML names in this list with your own (environment files
@@ -110,8 +113,8 @@ override an ordinary file in a child directory.
         ├── mise.toml                 # shared by every project in work/
         └── myproject/
             ├── mise.toml             # project config
-            ├── mise.local.toml       # personal overrides, not committed
             ├── mise.<env>.toml       # environment config
+            ├── mise.local.toml       # personal overrides, not committed
             ├── mise.<env>.local.toml
             └── backend/
                 └── mise.toml         # nearest file (highest precedence)
@@ -205,9 +208,13 @@ and are not affected by the `env_conf_d` migration.
 
 Folder fragments load after single-file fragments in the same `conf.d`
 directory, in alphabetical order by folder name, and before the directory's own
-config such as `config.toml`. Their environment and local files take the same
-place as `conf.d/<name>.<env>.toml` and `conf.d/<name>.local.toml` would. Tools
-declared in a project folder fragment share the project's lockfile.
+config such as `config.toml`. Their environment files take the same place as
+`conf.d/<name>.<env>.toml` and `conf.d/<name>.<env>.local.toml` would. A
+folder's `mise.local.toml` loads just before the directory's own
+`config.local.toml`: it overrides the `.<env>.toml` files in the folder and the
+directory, but not their `.<env>.local.toml` files, following the
+[environment file order](/configuration/environments.html#file-names-and-precedence).
+Tools declared in a project folder fragment share the project's lockfile.
 
 For tasks, a folder is its own root. Its `[task_config]` applies only to the
 tasks it defines, and `task_config.includes = ["tasks"]` loads file tasks from
@@ -243,8 +250,6 @@ show_tools = false
 
 Global config differs from project config in a few ways:
 
-- In the global directory, `config.local.toml` overrides `config.<env>.toml`.
-  In a project directory, the environment file wins.
 - Its [config root](#config-root) is your home directory, or
   [`global_config_root`](/configuration/settings.html#global_config_root).
 - `[secrets.*]` and `[daemons_settings]` are ignored there, and

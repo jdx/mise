@@ -201,8 +201,8 @@ tools and does not accept the option.
 When several config files set the same variable, the more specific file wins:
 
 - `mise.local.toml` wins over `mise.toml`.
-- With `MISE_ENV=dev`, `mise.dev.toml` and then `mise.dev.local.toml` win over
-  both.
+- With `MISE_ENV=dev`, `mise.dev.toml` wins over `mise.toml`, `mise.local.toml`
+  wins over `mise.dev.toml`, and `mise.dev.local.toml` wins over all three.
 - A project's config wins over a parent directory's config.
 - Any project config wins over the global config
   (`~/.config/mise/config.toml`).
