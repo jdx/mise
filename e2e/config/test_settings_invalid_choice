@@ -9,3 +9,33 @@ assert_fail_contains "MISE_STATUS_MESSAGE_MISSING_TOOLS=sometimes mise hook-env 
   'invalid status.missing_tools value "sometimes"; expected one of: never, if_other_versions_installed, always'
 assert_fail_contains "MISE_WINDOWS_SHIM_MODE=copy mise ls" \
   'invalid windows_shim_mode value "copy"; expected one of: exe, file, hardlink, symlink'
+
+# mise settings set refuses to write a value that loading would reject.
+assert_fail_contains "mise settings set windows_shim_mode copy" \
+  'invalid windows_shim_mode value "copy"; expected one of: exe, file, hardlink, symlink'
+assert_fail_contains "mise settings status.missing_tools=sometimes" \
+  'invalid status.missing_tools value "sometimes"'
+assert_fail_contains "mise settings set --local lockfile_mode bogus" \
+  'invalid lockfile_mode value "bogus"; expected one of: merge, generate'
+assert_fail "test -e ~/.config/mise/config.toml"
+assert "cat mise.toml" '[tools]
+dummy = "1"'
+
+# A bad value already in a config file can still be fixed with mise settings.
+mkdir -p ~/.config/mise
+cat >~/.config/mise/config.toml <<'TOML'
+[settings]
+windows_shim_mode = "file"
+lockfile_mode = "bogus"
+TOML
+assert_fail_contains "mise settings get lockfile_mode" 'invalid lockfile_mode value "bogus"'
+assert "mise settings set lockfile_mode merge"
+assert "mise settings get lockfile_mode" "merge"
+
+cat >>mise.toml <<'TOML'
+[settings]
+windows_shim_mode = "copy"
+TOML
+assert_fail_contains "mise ls" 'invalid windows_shim_mode value "copy"'
+assert "mise settings unset --local windows_shim_mode"
+assert "mise settings get windows_shim_mode" "file"

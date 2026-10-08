@@ -30,27 +30,22 @@ impl Settings {
         self.lockfile_mode.as_deref() == Some("generate")
     }
 
-    pub fn validate_lockfile_mode(&self) -> Result<()> {
-        validate_setting_enum_values(
-            "lockfile_mode",
-            self.lockfile_mode.as_deref(),
-            &["merge", "generate"],
-        )
-    }
-
-    /// Reject unknown values of string settings that mise matches against a
-    /// fixed set of choices, so a typo fails here instead of panicking later.
+    /// Reject unknown values of the [`STRICT_CHOICE_SETTINGS`], so a typo fails
+    /// here instead of panicking later.
     pub fn validate_string_choices(&self) -> Result<()> {
-        validate_setting_enum_values(
-            "status.missing_tools",
-            [self.status.missing_tools.as_str()],
-            STATUS_MISSING_TOOLS,
-        )?;
-        validate_setting_enum_values(
-            "windows_shim_mode",
-            [self.windows_shim_mode.as_str()],
-            WINDOWS_SHIM_MODES,
-        )
+        for (key, value) in [
+            ("lockfile_mode", self.lockfile_mode.as_deref()),
+            (
+                "status.missing_tools",
+                Some(self.status.missing_tools.as_str()),
+            ),
+            ("windows_shim_mode", Some(self.windows_shim_mode.as_str())),
+        ] {
+            if let Some(value) = value {
+                validate_setting_choice(key, value)?;
+            }
+        }
+        Ok(())
     }
 
     pub fn lockfile_creation_enabled(&self) -> bool {

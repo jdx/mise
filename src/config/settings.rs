@@ -1402,7 +1402,6 @@ impl SettingsInternal for Settings {
         settings.normalize_pypi_aliases()?;
         normalize_storage_dirs(&mut settings)?;
         validate_settings_enum_values(&settings)?;
-        settings.validate_lockfile_mode()?;
         settings.validate_string_choices()?;
         Ok(settings)
     }
@@ -1841,9 +1840,13 @@ mod tests {
         assert!(settings.generate_lockfiles());
         settings.lockfile_mode = Some("merge".into());
         assert!(!settings.generate_lockfiles());
-        assert!(settings.validate_lockfile_mode().is_ok());
-        settings.lockfile_mode = Some("invalid".into());
-        assert!(settings.validate_lockfile_mode().is_err());
+        assert!(validate_setting_choice("lockfile_mode", "merge").is_ok());
+        assert_eq!(
+            validate_setting_choice("lockfile_mode", "invalid")
+                .unwrap_err()
+                .to_string(),
+            "invalid lockfile_mode value \"invalid\"; expected one of: merge, generate"
+        );
     }
 
     #[test]

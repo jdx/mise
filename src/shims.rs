@@ -1283,7 +1283,7 @@ fn add_shim(mise_bin: &Path, symlink_path: &Path, shim: &str) -> Result<()> {
         }
         mode => bail!(
             "invalid windows_shim_mode value {mode:?}; expected one of: {}",
-            mise_settings::WINDOWS_SHIM_MODES.join(", ")
+            mise_settings::setting_choices("windows_shim_mode").join(", ")
         ),
     }
 }

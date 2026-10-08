@@ -1,7 +1,9 @@
 use eyre::{Result, bail, eyre};
 use toml_edit::DocumentMut;
 
-use crate::config::settings::{SETTINGS_META, SettingsFile, SettingsType, parse_url_replacements};
+use crate::config::settings::{
+    SETTINGS_META, SettingsFile, SettingsType, parse_url_replacements, validate_setting_choice,
+};
 use crate::toml::dedup_toml_array;
 use crate::{config, duration, file};
 
@@ -58,6 +60,9 @@ pub(super) fn set(mut key: &str, value: &str, add: bool, local: bool) -> Result<
             meta.env.unwrap_or("matching MISE_*")
         );
     }
+
+    // Loading settings rejects any other value, so writing one would break every command.
+    validate_setting_choice(key, value)?;
 
     let value = match meta.type_ {
         SettingsType::Bool => parse_bool(value)?,

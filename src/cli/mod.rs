@@ -1107,9 +1107,9 @@ impl Cli {
         measure!("add_cli_matches", {
             Settings::add_cli_matches(cli.settings_layer(command_local))
         });
-        if matches!(&cli.command, Some(Commands::Settings(cmd)) if cmd.is_pypi_repair()) {
-            // These file-only edits must remain available when alias values conflict.
-            // Honor directory selection without loading the conflicting settings.
+        if matches!(&cli.command, Some(Commands::Settings(cmd)) if cmd.is_repair()) {
+            // These file-only edits must remain available when the values they fix would fail
+            // settings loading. Honor directory selection without loading those settings.
             if let Some(cd) = cli
                 .cd
                 .clone()
