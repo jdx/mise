@@ -93,6 +93,7 @@ Every key takes one of these values:
 | `true`                               | Enable with the default mode                          |
 | `false`                              | Disable, even when a broader config enables it        |
 | `"activate"` or `"shims"`            | Enable with that mode; on a shell key, for every file |
+| `"auto"`                             | fish only: activation interactively, shims otherwise  |
 | `{ enabled = true, mode = "shims" }` | The same settings as a table; `enabled` is required   |
 
 For example, this puts shims in both zsh files:
@@ -120,6 +121,30 @@ set `ZDOTDIR`, set `zsh = false` and add the blocks with
 Only bash, zsh, and fish are supported here. For PowerShell, Nushell, or another
 shell, add its `mise activate` line from [Shell setup](/shell-setup.html) with a
 `[dotfiles]` edit.
+
+### fish: activation interactively, shims otherwise
+
+fish reads `config.fish` for interactive shells and for scripts alike. To get
+full activation at the prompt and shims everywhere else, use the `auto` mode,
+which only fish accepts:
+
+```toml
+[bootstrap.mise_shell_activate]
+fish = "auto"
+```
+
+It writes this block:
+
+```fish
+if status is-interactive
+    mise activate fish | source
+else
+    mise activate fish --shims | source
+end
+```
+
+bash and zsh already split the two cases across their login and interactive
+files, so `auto` on those shells is ignored with a warning.
 
 ## Existing startup files
 

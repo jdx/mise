@@ -69,6 +69,30 @@ assert_succeed "mise bootstrap mise-shell-activate apply --yes"
 assert_contains "cat ~/.zprofile" 'eval "$(mise activate zsh)"'
 assert_contains "cat ~/.zshrc" 'eval "$(mise activate zsh --shims)"'
 
+# fish "auto" mode picks activation or shims at startup
+rm -rf ~/.config/fish
+cat <<'EOF' >mise.toml
+[bootstrap.mise_shell_activate]
+fish = "auto"
+EOF
+status_json="$(mise bootstrap mise-shell-activate status --json)"
+assert_contains_text "$status_json" '"mode": "auto"'
+assert_succeed "mise bootstrap mise-shell-activate apply --yes"
+assert_contains "cat ~/.config/fish/config.fish" "if status is-interactive"
+assert_contains "cat ~/.config/fish/config.fish" "    mise activate fish | source"
+assert_contains "cat ~/.config/fish/config.fish" "    mise activate fish --shims | source"
+assert_succeed "mise bootstrap mise-shell-activate status --missing"
+
+# auto is fish-only: other shells ignore the entry with a warning
+rm -f ~/.zprofile ~/.zshrc
+cat <<'EOF' >mise.toml
+[bootstrap.mise_shell_activate]
+zsh = "auto"
+zshrc = {enabled = true, mode = "auto"}
+EOF
+assert_contains "mise bootstrap mise-shell-activate apply --dry-run --yes 2>&1" "only supported for fish"
+assert_fail "test -e ~/.zshrc"
+
 # dry-run through top-level bootstrap does not write files
 rm -f ~/.zprofile ~/.zshrc ~/.bash_profile ~/.bashrc
 rm -rf ~/.config/fish

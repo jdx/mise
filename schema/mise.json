@@ -5829,7 +5829,7 @@
         },
         {
           "type": "string",
-          "enum": ["activate", "shims"],
+          "enum": ["activate", "shims", "auto"],
           "description": "enable the target with the selected activation mode"
         },
         {
@@ -5842,7 +5842,7 @@
             },
             "mode": {
               "type": "string",
-              "enum": ["activate", "shims"],
+              "enum": ["activate", "shims", "auto"],
               "description": "activation mode; defaults according to the target"
             }
           },
