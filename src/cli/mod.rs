@@ -1328,11 +1328,28 @@ async fn run_with_exit_signal<T>(
     }
 }
 
+/// The help page for the command a parse error is about, by the words the user typed.
+///
+/// A `Subcommands` type mounted under two parents is one address, so finding the command by
+/// address alone answers with whichever mount comes first: `mise dot add --help` printed the
+/// page for `mise bootstrap dotfiles add`. Rebuilding the route from `argv` (without argv0)
+/// tells the mounts apart, and falls back to the address lookup where it cannot.
+fn invoked_page(
+    argv: &[&std::ffi::OsStr],
+    cmd: &usage_rs::Command<'_>,
+    page: usage_rs::help::Page,
+    style: usage_rs::help::Style,
+) -> Option<String> {
+    usage_rs::help::page(Cli::spec(), Cli::command(), argv, cmd, page, style)
+}
+
 fn usage_error(argv: &[&std::ffi::OsStr], err: usage_rs::Error<'_, '_>) -> Report {
+    use usage_rs::help::Page;
     let spec = Cli::spec();
     match err {
         usage_rs::Error::Help { cmd, long } => {
-            if let Some(page) = render_page(spec, cmd, long)
+            let page = if long { Page::Long } else { Page::Short };
+            if let Some(page) = invoked_page(argv, cmd, page, help_style())
                 && let Err(err) = miseprint!("{page}")
             {
                 return err.into();
@@ -1340,7 +1357,7 @@ fn usage_error(argv: &[&std::ffi::OsStr], err: usage_rs::Error<'_, '_>) -> Repor
             request_exit(0)
         }
         usage_rs::Error::HelpAll { cmd } => {
-            if let Some(page) = usage_rs::help::render_all_styled(spec, cmd, help_style())
+            if let Some(page) = invoked_page(argv, cmd, Page::All, help_style())
                 && let Err(err) = miseprint!("{page}")
             {
                 return err.into();
@@ -1349,8 +1366,7 @@ fn usage_error(argv: &[&std::ffi::OsStr], err: usage_rs::Error<'_, '_>) -> Repor
         }
         usage_rs::Error::MissingArgsHelp { cmd } => {
             // stderr, which `console` tracks separately from stdout.
-            if let Some(page) = usage_rs::help::render_styled(spec, cmd, false, help_style_stderr())
-            {
+            if let Some(page) = invoked_page(argv, cmd, Page::Short, help_style_stderr()) {
                 let _ = calm_io::stderr!("{page}");
             }
             request_exit(2)
