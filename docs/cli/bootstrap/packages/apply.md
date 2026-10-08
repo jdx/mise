@@ -15,7 +15,9 @@ Install or remove packages to match `[bootstrap.packages]`
 Installs each configured package that is missing or does not match its
 declared version, and removes packages declared `state = "absent"` on the
 managers that support removal (pacman, scoop, and zypper). On other
-managers, an installed package declared absent makes `apply` fail.
+managers, an installed package declared absent is left in place with a
+warning; `apply` fails for it only when you pass `--manager` or name the
+package.
 Built-in managers may use sudo when not running as root (see the
 `system_packages.sudo` setting); package plugins never do. Managers that
 are not available on this machine are skipped.
