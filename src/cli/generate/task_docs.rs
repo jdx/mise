@@ -1,4 +1,5 @@
 use crate::config::{self, Config};
+use crate::task::task_fetcher::TaskFetcher;
 use crate::{dirs, file};
 use color_eyre::eyre::bail;
 use std::path::{Path, PathBuf};
@@ -61,7 +62,16 @@ impl TaskDocs {
     pub(super) async fn run(self) -> eyre::Result<()> {
         let config = Config::get().await?;
         let dir = dirs::CWD.as_ref().unwrap();
-        let tasks = config::load_tasks_in_dir(&config, dir, &config.config_files).await?;
+        let mut tasks = config::load_tasks_in_dir(&config, dir, &config.config_files).await?;
+        // Generating docs only inspects tasks, so a gated `git::` file is not fetched and the
+        // task is documented from its TOML metadata (see `TaskFetcher`).
+        TaskFetcher::for_inspection(false)
+            .fetch_tasks(&config, &mut tasks)
+            .await?;
+        let tasks: Vec<_> = tasks
+            .into_iter()
+            .map(|task| TaskFetcher::toml_only(&task).unwrap_or(task))
+            .collect();
         let visible_tasks: Vec<_> = tasks.iter().filter(|t| !t.hide).collect();
         if let Some(output) = &self.output {
             if self.multi {

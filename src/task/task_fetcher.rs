@@ -5,7 +5,10 @@ use dashmap::DashMap;
 use eyre::Result;
 use std::{
     path::PathBuf,
-    sync::{Arc, LazyLock, Mutex},
+    sync::{
+        Arc, LazyLock, Mutex,
+        atomic::{AtomicBool, Ordering},
+    },
 };
 use tokio::sync::OnceCell;
 
@@ -68,28 +71,50 @@ fn take_remote_task_artifacts() -> Vec<Arc<OnceCell<TaskFileArtifact>>> {
         .collect()
 }
 
+/// Set once a command has warned that it left a gated `git::` task file unfetched.
+static WARNED_UNFETCHED_GIT_TASK: AtomicBool = AtomicBool::new(false);
+
 /// Handles fetching remote task files and converting them to local paths
+///
+/// # The experimental gate on remote task files
+///
+/// Remote `git::` task files are experimental. Only running a task enforces that gate:
+/// [`TaskFetcher::new`] refuses a gated `git::` file. Commands that only inspect tasks (list,
+/// show, validate, dependency trees, completion, docs generation, and similar) never fetch a
+/// gated remote file; they use [`TaskFetcher::for_inspection`], which leaves the task with its
+/// TOML metadata and warns once that its remote file is experimental and was not fetched.
+/// `mise run --dry-run` plans an execution, so it counts as running and stays strict.
 pub struct TaskFetcher {
     no_cache: bool,
-    listing: bool,
+    inspecting: bool,
+    warn_unfetched: bool,
 }
 
 impl TaskFetcher {
+    /// For commands that run tasks. A `git::` task file fails unless experimental is on.
     pub fn new(no_cache: bool) -> Self {
         Self {
             no_cache,
-            listing: false,
+            inspecting: false,
+            warn_unfetched: false,
         }
     }
 
-    /// For commands that only list tasks, such as `mise tasks ls` and its completion modes.
-    /// With experimental features off, a task with a `git::` file is left unfetched, keeping
-    /// only its TOML metadata, rather than failing the whole list.
-    pub fn for_listing(no_cache: bool) -> Self {
+    /// For commands that only inspect tasks. With experimental off, a task with a `git::` file
+    /// is left unfetched, keeping only its TOML metadata, and a one-time warning says so.
+    pub fn for_inspection(no_cache: bool) -> Self {
         Self {
             no_cache,
-            listing: true,
+            inspecting: true,
+            warn_unfetched: true,
         }
+    }
+
+    /// Skips the one-time warning, for output a shell or another program reads, such as
+    /// completion and usage specs.
+    pub fn without_warning(mut self) -> Self {
+        self.warn_unfetched = false;
+        self
     }
 
     /// True for a task whose `file` is a `git::` source that has not been fetched.
@@ -97,6 +122,16 @@ impl TaskFetcher {
         task.file
             .as_ref()
             .is_some_and(|f| f.to_string_lossy().starts_with("git::"))
+    }
+
+    /// For an unfetched `git::` task, a copy without its file, so its usage spec comes from
+    /// its TOML metadata alone; `None` for any other task.
+    pub fn toml_only(task: &Task) -> Option<Task> {
+        Self::is_unfetched_git_task(task).then(|| {
+            let mut task = task.clone();
+            task.file = None;
+            task
+        })
     }
 
     /// Fetch remote task files, converting remote paths to local cached paths
@@ -115,7 +150,15 @@ impl TaskFetcher {
                     continue;
                 }
                 if source.starts_with("git::") {
-                    if self.listing && !Settings::get().experimental {
+                    if self.inspecting && !Settings::get().experimental {
+                        if self.warn_unfetched
+                            && !WARNED_UNFETCHED_GIT_TASK.swap(true, Ordering::Relaxed)
+                        {
+                            warn!(
+                                "task `{}` has a `git::` file, which is experimental and was not fetched. Enable it with `mise settings experimental=true`",
+                                t.name
+                            );
+                        }
                         continue;
                     }
                     Settings::get().ensure_experimental(&format!(

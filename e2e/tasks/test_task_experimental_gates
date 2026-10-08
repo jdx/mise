@@ -14,16 +14,32 @@ run = "echo local-ok"
 [tasks.remote]
 description = "a remote task"
 file = "git::https://127.0.0.1:9/org/repo.git//tasks/hello"
+
+[tasks.uses-remote]
+depends = ["remote"]
+run = "echo uses-remote"
 TOML
 
+# Only running a task enforces the gate, dry runs and dependencies included.
 assert "mise run local" "local-ok"
 assert_fail_matches "mise run remote" "loading task .remote. from a .git::. file is experimental"
+assert_fail_matches "mise run uses-remote" "loading task .remote. from a .git::. file is experimental"
+assert_fail_matches "mise run --dry-run remote" "loading task .remote. from a .git::. file is experimental"
 
-# Listing and completion do not fetch the remote file, so they keep working and
-# still offer the remote task from its TOML metadata.
+# Commands that only inspect tasks never fetch the remote file: they show the
+# task from its TOML metadata and warn that its file was not fetched.
 assert_contains "mise tasks ls" "local"
 assert_contains "mise tasks ls" "a remote task"
-assert_contains "mise tasks ls 2>&1" "listing it without fetching"
+assert_matches "mise tasks ls 2>&1" "task .remote. has a .git::. file, which is experimental and was not fetched"
+assert_contains "mise tasks info remote" "a remote task"
+assert_contains "mise tasks info remote 2>&1" "was not fetched"
+assert_contains "mise tasks info remote --json" '"description": "a remote task"'
+assert_contains "mise tasks deps uses-remote" "remote"
+assert_contains "mise tasks deps uses-remote 2>&1" "was not fetched"
+assert_contains "mise tasks deps --dot" "uses-remote"
+assert_contains "mise generate task-docs" "a remote task"
+assert_contains "mise generate task-docs 2>&1" "was not fetched"
+assert_not_contains "mise generate task-docs 2>&1" "could not read task file"
 assert_contains "mise tasks ls --complete" "local:"
 assert_contains "mise tasks ls --complete" "remote:a remote task"
 assert_not_contains "mise tasks ls --complete 2>&1" "experimental"

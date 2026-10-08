@@ -131,10 +131,17 @@ impl Deps {
         Self::new_with_cycle_limit(config, tasks, Some(1), TaskFetcher::new).await
     }
 
-    /// Builds the graph without running it, so a `git::` task file that experimental gates
-    /// is left unfetched instead of failing the graph; `mise tasks validate` reports it.
+    /// Builds the graph for a command that inspects it without running it, such as
+    /// `mise tasks deps`. A `git::` task file that experimental gates is left unfetched (see
+    /// [`TaskFetcher`]) instead of failing the graph.
+    pub async fn new_for_inspection(config: &Arc<Config>, tasks: Vec<Task>) -> eyre::Result<Self> {
+        Self::new_with_cycle_limit(config, tasks, Some(1), TaskFetcher::for_inspection).await
+    }
+
+    /// Like [`Self::new_for_inspection`], but reports every cycle rather than the first, for
+    /// `mise tasks validate`.
     pub async fn new_for_validation(config: &Arc<Config>, tasks: Vec<Task>) -> eyre::Result<Self> {
-        Self::new_with_cycle_limit(config, tasks, None, TaskFetcher::for_listing).await
+        Self::new_with_cycle_limit(config, tasks, None, TaskFetcher::for_inspection).await
     }
 
     async fn new_with_cycle_limit(

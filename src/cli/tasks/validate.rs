@@ -76,7 +76,7 @@ impl TasksValidate {
         // always no_cache=false as the command doesn't take no-cache argument
         // MISE_TASK_REMOTE_NO_CACHE env var is still respected if set.
         // With experimental off, `git::` task files stay unfetched and are reported per task.
-        TaskFetcher::for_listing(false)
+        TaskFetcher::for_inspection(false)
             .fetch_tasks(&config, &mut resolved_tasks)
             .await?;
         let all_tasks: BTreeMap<String, Task> = resolved_tasks
@@ -278,12 +278,9 @@ impl TasksValidate {
         issues.extend(Self::validate_daemon_references(task, config).await);
 
         // 2. Validate usage spec parsing
-        if unfetched {
-            let mut toml_only = task.clone();
-            toml_only.file = None;
-            issues.extend(self.validate_usage_spec(&toml_only, config).await);
-        } else {
-            issues.extend(self.validate_usage_spec(task, config).await);
+        match TaskFetcher::toml_only(task) {
+            Some(toml_only) => issues.extend(self.validate_usage_spec(&toml_only, config).await),
+            None => issues.extend(self.validate_usage_spec(task, config).await),
         }
 
         // 3. Validate timeout format
