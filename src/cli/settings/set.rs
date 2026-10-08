@@ -10,8 +10,11 @@ use crate::{config, dirs, duration, file};
 /// Set a setting
 ///
 /// Writes ~/.config/mise/config.toml, or the nearest project config with
-/// `--local`. Settings that mise reads before loading config files, such as
-/// `global_config_file`, cannot be set here; set their environment variables.
+/// `--local`. Settings that mise reads before loading config files cannot be set
+/// here: set `global_config_file` and similar through their environment
+/// variables, and `ceiling_paths` and similar in a `miserc.toml` file or their
+/// environment variables. `--local` refuses settings that only the global config
+/// can set, such as `yes`.
 /// See https://mise.jdx.dev/configuration/settings.html
 #[derive(Debug, usage_rs::Args)]
 #[usage(

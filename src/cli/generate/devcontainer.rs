@@ -7,7 +7,7 @@ use crate::{
 };
 use serde::Serialize;
 
-/// Generate a devcontainer configuration that installs mise
+/// Generate a devcontainer configuration that installs mise and the project's tools
 ///
 /// Prints JSON by default. `--write` saves .devcontainer/devcontainer.json in the
 /// repository root (or the current directory outside a git repository), replacing

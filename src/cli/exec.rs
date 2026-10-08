@@ -102,6 +102,9 @@ pub(crate) struct Exec {
     pub deny_all: bool,
 
     /// Block env var inheritance except PATH, HOME, USER, SHELL, TERM, COLORTERM, LANG
+    ///
+    /// On Windows it also keeps the variables programs need to start, such as
+    /// SystemRoot and TEMP.
     #[usage(long, verbatim_doc_comment)]
     pub deny_env: bool,
 

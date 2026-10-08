@@ -254,6 +254,9 @@ pub(crate) struct Run {
 
     /// Block env var inheritance except PATH, HOME, USER, SHELL, TERM, COLORTERM,
     /// and LANG
+    ///
+    /// On Windows it also keeps the variables programs need to start, such as
+    /// `SystemRoot` and `TEMP`.
     #[usage(long)]
     pub deny_env: bool,
 

@@ -3575,7 +3575,14 @@ https://mise.jdx.dev/sandboxing.html#access-to-particular-hosts
         arg <PATH>
     }
     flag --deny-all help="Block reads, writes, network, and env vars"
-    flag --deny-env help="Block env var inheritance except PATH, HOME, USER, SHELL, TERM, COLORTERM, LANG"
+    flag --deny-env help="Block env var inheritance except PATH, HOME, USER, SHELL, TERM, COLORTERM, LANG" {
+        long_help #"""
+Block env var inheritance except PATH, HOME, USER, SHELL, TERM, COLORTERM, LANG
+
+On Windows it also keeps the variables programs need to start, such as
+SystemRoot and TEMP.
+"""#
+    }
     flag --deny-net help="Block all network access"
     flag --deny-read help="Block filesystem reads (system libs and tool dirs still accessible)"
     flag --deny-write help="Block filesystem writes except temporary and device paths (/tmp, /dev)"
@@ -3690,9 +3697,9 @@ template. That template replaces PATH if the file already exists.
         complete path type=path
         complete file type=path
     }
-    cmd devcontainer help="Generate a devcontainer configuration that installs mise" effect=write {
+    cmd devcontainer help="Generate a devcontainer configuration that installs mise and the project's tools" effect=write {
         long_help #"""
-Generate a devcontainer configuration that installs mise
+Generate a devcontainer configuration that installs mise and the project's tools
 
 Prints JSON by default. `--write` saves .devcontainer/devcontainer.json in the
 repository root (or the current directory outside a git repository), replacing
@@ -5706,7 +5713,13 @@ Per-host filtering does not work: Linux and macOS exit with an error, and Window
         arg <PATH>
     }
     flag --deny-all help="Block reads, writes, network, and env vars"
-    flag --deny-env help="Block env var inheritance except PATH, HOME, USER, SHELL, TERM, COLORTERM, and LANG"
+    flag --deny-env help="Block env var inheritance except PATH, HOME, USER, SHELL, TERM, COLORTERM, and LANG" {
+        long_help #"""
+Block env var inheritance except PATH, HOME, USER, SHELL, TERM, COLORTERM, and LANG
+
+On Windows it also keeps the variables programs need to start, such as `SystemRoot` and `TEMP`.
+"""#
+    }
     flag --deny-net help="Block all network access"
     flag --deny-read help="Block filesystem reads (system libraries and tool directories stay readable)"
     flag --deny-write help="Block filesystem writes except temporary and device paths (/tmp, /dev)"
@@ -6093,8 +6106,11 @@ Reads only its explicit settings, or writes to it instead of the global config.
 Set a setting
 
 Writes ~/.config/mise/config.toml, or the nearest project config with
-`--local`. Settings that mise reads before loading config files, such as
-`global_config_file`, cannot be set here; set their environment variables.
+`--local`. Settings that mise reads before loading config files cannot be set
+here: set `global_config_file` and similar through their environment
+variables, and `ceiling_paths` and similar in a `miserc.toml` file or their
+environment variables. `--local` refuses settings that only the global config
+can set, such as `yes`.
 See https://mise.jdx.dev/configuration/settings.html
 """#
         flag "-l --local" help="Write to the nearest project config instead of the global config" {
@@ -6747,7 +6763,13 @@ Per-host filtering does not work: Linux and macOS exit with an error, and Window
             arg <PATH>
         }
         flag --deny-all help="Block reads, writes, network, and env vars"
-        flag --deny-env help="Block env var inheritance except PATH, HOME, USER, SHELL, TERM, COLORTERM, and LANG"
+        flag --deny-env help="Block env var inheritance except PATH, HOME, USER, SHELL, TERM, COLORTERM, and LANG" {
+            long_help #"""
+Block env var inheritance except PATH, HOME, USER, SHELL, TERM, COLORTERM, and LANG
+
+On Windows it also keeps the variables programs need to start, such as `SystemRoot` and `TEMP`.
+"""#
+        }
         flag --deny-net help="Block all network access"
         flag --deny-read help="Block filesystem reads (system libraries and tool directories stay readable)"
         flag --deny-write help="Block filesystem writes except temporary and device paths (/tmp, /dev)"

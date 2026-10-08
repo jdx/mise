@@ -358,7 +358,7 @@
 - [mise fmt](https://mise.jdx.dev/cli/fmt.html): Format mise TOML configuration
 - [mise generate](https://mise.jdx.dev/cli/generate.html): Generate project files such as CI workflows, git hooks, and scripts
 - [mise generate config](https://mise.jdx.dev/cli/generate/config.html): Generate a mise.toml file
-- [mise generate devcontainer](https://mise.jdx.dev/cli/generate/devcontainer.html): Generate a devcontainer configuration that installs mise
+- [mise generate devcontainer](https://mise.jdx.dev/cli/generate/devcontainer.html): Generate a devcontainer configuration that installs mise and the project's tools
 - [mise generate git-pre-commit](https://mise.jdx.dev/cli/generate/git-pre-commit.html): Generate a git hook that runs a mise task
 - [mise generate github-action](https://mise.jdx.dev/cli/generate/github-action.html): Generate a GitHub Actions workflow that runs a mise task
 - [mise generate install-script](https://mise.jdx.dev/cli/generate/install-script.html): Generate a script that downloads and runs a pinned mise
