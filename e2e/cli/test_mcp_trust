@@ -1,0 +1,61 @@
+#!/usr/bin/env bash
+
+# The MCP server must not trust a project on a client's behalf: run_task and
+# install_tool refuse until the user runs `mise trust`.
+
+export MISE_TRUSTED_CONFIG_PATHS=""
+unset CI GITHUB_ACTIONS GITHUB_ACTION 2>/dev/null || true
+
+marker="$PWD/task-ran"
+# Tasks only, so the config loads without trust and only the MCP check stands
+# between a client and the task.
+cat >mise.toml <<EOF
+[tasks.touch]
+run = "touch '$marker'"
+EOF
+
+cat >mcp_call.py <<'EOF'
+import json
+import subprocess
+import sys
+
+proc = subprocess.Popen(["mise", "mcp"], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                        stderr=subprocess.DEVNULL)
+
+
+def send(msg):
+    proc.stdin.write((json.dumps(msg) + "\n").encode())
+    proc.stdin.flush()
+
+
+send({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {
+    "protocolVersion": "2025-03-26", "capabilities": {},
+    "clientInfo": {"name": "test-client", "version": "1.0.0"}}})
+proc.stdout.readline()
+send({"jsonrpc": "2.0", "method": "notifications/initialized"})
+send({"jsonrpc": "2.0", "id": 2, "method": "tools/call",
+      "params": {"name": sys.argv[1], "arguments": json.loads(sys.argv[2])}})
+result = json.loads(proc.stdout.readline())["result"]
+proc.terminate()
+print("status=error" if result.get("isError") else "status=ok")
+print(result["content"][0]["text"])
+EOF
+
+run_touch="python3 mcp_call.py run_task '{\"task\": \"touch\"}'"
+install_dummy="python3 mcp_call.py install_tool '{\"tool\": \"dummy\", \"version\": \"1.0.0\"}'"
+
+assert_contains "$run_touch" "status=error"
+assert_contains "$run_touch" "Ask the user to review it and run:
+  mise trust "
+assert_fail "test -e '$marker'"
+# Refusing must not trust the project as a side effect.
+assert_contains "mise trust --show" "untrusted"
+
+assert_contains "$install_dummy" "status=error
+Refusing to act on untrusted config."
+assert_fail "mise where dummy@1.0.0"
+
+mise trust
+assert_contains "$run_touch" "status=ok"
+assert "test -e '$marker' && echo ran" "ran"
+assert_contains "$install_dummy" '"version": "1.0.0"'
