@@ -524,6 +524,21 @@ impl TaskArtifactCache {
         Some(manifest.output)
     }
 
+    /// Whether the outputs in the working tree were last produced or restored under this key.
+    /// Raw and interactive tasks store no artifact, so this marker is all they skip on.
+    pub(crate) fn is_current(&self) -> bool {
+        file::read_to_string(&self.state_path).is_ok_and(|key| key.trim() == self.key)
+    }
+
+    /// Forget which key produced the working tree outputs, before a run that may
+    /// change them and fail before marking its own key current.
+    pub(crate) fn clear_current(&self) -> Result<()> {
+        if !self.state_path.exists() {
+            return Ok(());
+        }
+        file::remove_file(&self.state_path)
+    }
+
     pub(crate) fn mark_current(&self) -> Result<()> {
         if let Some(parent) = self.state_path.parent() {
             file::create_dir_all(parent)?;

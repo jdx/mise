@@ -650,12 +650,9 @@ impl TaskExecutor {
         }
         // A task that receives secrets is never cached as an artifact, so the plain
         // fresh-sources skip below still applies, and no value is resolved for a skipped task.
-        // Raw and interactive tasks inherit stdio, so there is no output to capture or
-        // replay and the artifact cache below bypasses them too; they keep the same skip.
         let artifact_cache_enabled = self.task_cache.enabled()
             && task.cache.as_ref().is_some_and(|cache| cache.enabled)
-            && grant.is_empty()
-            && !self.raw(Some(task));
+            && grant.is_empty();
         if !artifact_cache_enabled
             && !self.force
             && !dependency_state.any_did_work
@@ -692,6 +689,9 @@ impl TaskExecutor {
         };
         self.check_confirmation(config, task, &env).await?;
 
+        // Set for a raw or interactive task that runs with a cache key, so the key can be
+        // marked current once the run succeeds.
+        let mut raw_cache_state = None;
         let artifact_cache = if !grant.is_empty()
             && self.task_cache.enabled()
             && task.cache.as_ref().is_some_and(|cache| cache.enabled)
@@ -710,17 +710,6 @@ impl TaskExecutor {
                         && !self.task_cache_explain
                         && !self.task_cache_explain_json =>
                 {
-                    None
-                }
-                Some(_)
-                    if self.raw(Some(task))
-                        && !self.task_cache_explain
-                        && !self.task_cache_explain_json =>
-                {
-                    warn!(
-                        "task {} artifact caching disabled for raw or interactive execution",
-                        task.name
-                    );
                     None
                 }
                 Some(prepared) => {
@@ -750,6 +739,32 @@ impl TaskExecutor {
                         }
                     }
                     let raw = self.raw(Some(task));
+                    if raw && !self.dry_run {
+                        // Raw and interactive tasks inherit stdio, so there is no output to
+                        // capture or replay and no artifact is stored or restored. They are
+                        // still skipped, but only when their sources are fresh and the
+                        // outputs in the working tree were produced under this same key, so
+                        // a change to `cache.env`, a command input, a tool or a dependency
+                        // key runs them again.
+                        if self.task_cache.reads()
+                            && !self.force
+                            && !dependency_state.any_unkeyed_did_work
+                            && cache.is_current()
+                            && sources_are_fresh(task, config).await?
+                        {
+                            if !self.quiet(Some(task)) {
+                                self.eprint(task, &prefix, "sources up-to-date, skipping");
+                            }
+                            return Ok(TaskRunOutcome::default());
+                        }
+                        // The run may change the outputs and fail before it marks its key.
+                        if let Err(err) = cache.clear_current() {
+                            warn!(
+                                "task {} artifact cache state update failed: {err}",
+                                task.name
+                            );
+                        }
+                    }
                     if raw {
                         warn!(
                             "task {} artifact caching disabled for raw or interactive execution",
@@ -779,6 +794,9 @@ impl TaskExecutor {
                         });
                     }
                     if bypass_cache {
+                        if raw && !self.dry_run {
+                            raw_cache_state = Some(cache);
+                        }
                         None
                     } else {
                         let miss_reason = if !self.task_cache.reads() {
@@ -986,6 +1004,15 @@ impl TaskExecutor {
         }
 
         save_checksum(task, config).await?;
+        if self.task_cache.writes()
+            && let Some(cache) = raw_cache_state
+            && let Err(err) = cache.mark_current()
+        {
+            warn!(
+                "task {} artifact cache state update failed: {err}",
+                task.name
+            );
+        }
         let cache_key = if self.task_cache.writes()
             && let Some(cache) = artifact_cache
         {

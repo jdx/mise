@@ -124,8 +124,12 @@ outputs = []
 cache = { enabled = true, command_inputs = ["touch command-input-ran"] }
 EOF
 
-mise run raw
+# A raw task stores no artifact, but its cache key decides whether it is
+# skipped, so its command inputs run. A dry run still does not run them.
+mise run --dry-run raw
 assert "test ! -e command-input-ran && echo clean" "clean"
+mise run raw
+assert "test -e command-input-ran && echo ran" "ran"
 
 cat <<'EOF' >mise.toml
 [settings]
