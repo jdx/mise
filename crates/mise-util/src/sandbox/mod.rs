@@ -237,6 +237,29 @@ impl SandboxConfig {
         self.deny_env || !self.allow_env.is_empty()
     }
 
+    /// Refuse per-host network exceptions, which no supported sandbox can enforce.
+    ///
+    /// seccomp sees sockets, not destinations, and Seatbelt's `remote ip` filter
+    /// accepts only `*` or `localhost` as the host: `sandbox-exec` rejects a
+    /// profile naming any other address with `host must be * or localhost in
+    /// network address`. Fail before building anything rather than run a
+    /// command whose sandbox cannot start.
+    #[cfg_attr(not(any(target_os = "linux", target_os = "macos")), allow(dead_code))]
+    pub fn reject_allow_net(&self) -> eyre::Result<()> {
+        if !self.allow_net.is_empty() {
+            let platform = if cfg!(target_os = "macos") {
+                "macOS"
+            } else {
+                "Linux"
+            };
+            eyre::bail!(
+                "per-host network filtering (--allow-net=<host>) is not supported on {platform}. \
+                 Use --deny-net to block all network, or remove --allow-net."
+            );
+        }
+        Ok(())
+    }
+
     /// Allow-list paths that do not exist, in declaration order and listed once
     /// even when named by both `allow_read` and `allow_write`.
     ///
@@ -381,7 +404,7 @@ impl SandboxConfig {
 
         #[cfg(target_os = "macos")]
         {
-            return self.apply_macos(program, args).await;
+            return self.apply_macos(program, args);
         }
 
         // The caller filters the environment itself (`filter_env`), so an
@@ -403,25 +426,20 @@ impl SandboxConfig {
             landlock::apply_landlock(self, Some(std::path::Path::new(program)))?;
         }
         if self.effective_deny_net() || self.deny_process {
-            if !self.allow_net.is_empty() {
-                eyre::bail!(
-                    "per-host network filtering (--allow-net=<host>) is not supported on Linux. \
-                     Use --deny-net to block all network, or remove --allow-net."
-                );
-            }
+            self.reject_allow_net()?;
             seccomp::apply_seccomp_filter(self.effective_deny_net(), self.deny_process)?;
         }
         Ok(())
     }
 
     #[cfg(target_os = "macos")]
-    async fn apply_macos(
+    fn apply_macos(
         &self,
         program: &str,
         args: &[String],
     ) -> eyre::Result<Option<SandboxedCommand>> {
-        let profile =
-            macos::generate_seatbelt_profile(self, Some(std::path::Path::new(program))).await;
+        self.reject_allow_net()?;
+        let profile = macos::generate_seatbelt_profile(self, Some(std::path::Path::new(program)));
         let mut sandbox_args = vec![
             "-p".to_string(),
             profile,
@@ -462,8 +480,8 @@ pub fn seccomp_apply(deny_net: bool, deny_process: bool) -> eyre::Result<()> {
 
 /// Generate a macOS Seatbelt profile string (macOS only).
 #[cfg(target_os = "macos")]
-pub async fn macos_generate_profile(config: &SandboxConfig, program: &std::path::Path) -> String {
-    macos::generate_seatbelt_profile(config, Some(program)).await
+pub fn macos_generate_profile(config: &SandboxConfig, program: &std::path::Path) -> String {
+    macos::generate_seatbelt_profile(config, Some(program))
 }
 
 #[cfg(test)]
@@ -871,5 +889,49 @@ mod tests {
         assert!(config.deny_write);
         assert!(config.deny_net);
         assert!(config.deny_env);
+    }
+
+    #[test]
+    fn test_reject_allow_net() {
+        assert!(SandboxConfig::default().reject_allow_net().is_ok());
+        assert!(
+            SandboxConfig {
+                deny_net: true,
+                ..Default::default()
+            }
+            .reject_allow_net()
+            .is_ok()
+        );
+
+        // Neither Linux nor macOS can enforce a per-host exception, so the
+        // request fails instead of producing a sandbox that cannot start.
+        let err = SandboxConfig {
+            allow_net: vec!["registry.npmjs.org".to_string()],
+            ..Default::default()
+        }
+        .reject_allow_net()
+        .unwrap_err();
+        assert!(
+            err.to_string()
+                .starts_with("per-host network filtering (--allow-net=<host>) is not supported"),
+            "{err}"
+        );
+    }
+
+    /// `mise x` goes through `apply`, which must reject the host before it
+    /// builds the `sandbox-exec` command. macOS only: on Linux `apply`
+    /// sandboxes the calling process, so a regression would sandbox the test.
+    #[cfg(target_os = "macos")]
+    #[tokio::test]
+    async fn test_apply_rejects_allow_net() {
+        let config = SandboxConfig {
+            allow_net: vec!["registry.npmjs.org".to_string()],
+            ..Default::default()
+        };
+        let err = match config.apply("true", &[]).await {
+            Ok(_) => panic!("apply accepted --allow-net"),
+            Err(err) => err,
+        };
+        assert!(err.to_string().contains("--allow-net=<host>"), "{err}");
     }
 }

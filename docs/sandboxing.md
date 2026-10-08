@@ -46,7 +46,7 @@ allowed paths for the files and caches your build actually uses. `--deny-all` re
 | `--deny-env`           | Block env var inheritance (essential variables and explicit exceptions still pass through)                             |
 | `--allow-read=<path>`  | Allow reads from specific path (implies `--deny-read` for everything else)                                             |
 | `--allow-write=<path>` | Allow writes to specific path (implies `--deny-write` for everything else)                                             |
-| `--allow-net=<host>`   | Request host exceptions on macOS (see platform limitations); rejected on Linux                                         |
+| `--allow-net=<host>`   | Not supported: Linux and macOS reject it before the command runs                                                       |
 | `--allow-env=<var>`    | Allow specific env var through (implies `--deny-env` for everything else). Supports wildcards: `--allow-env='MYAPP_*'` |
 
 These flags work with both `mise exec` (`mise x`) and `mise run`.
@@ -90,16 +90,10 @@ are combined too; CLI flags add exceptions rather than replacing the task policy
 are relative to the task's working directory, while CLI paths are relative to the directory
 where you invoke mise.
 
-The host-exception flag is intended for macOS tasks that need network access:
-
-```sh
-mise run --allow-net=registry.npmjs.org build
-```
-
-A package manager may contact additional hosts and write a cache or lockfile outside the
-output directory. Allow only the resources required by the actual command. Linux rejects
-`--allow-net`; macOS can also reject the generated profile as described below. Use
-`--deny-net` for a command that needs no internet sockets.
+Neither platform can limit network access to particular hosts, so mise rejects
+`--allow-net` (and `allow_net` in a task) with an error before the command runs. Use
+`--deny-net` for a command that needs no internet sockets, leave the network unrestricted
+for one that does, or use an external network control to limit which hosts it reaches.
 
 ## Implicit Access
 
@@ -132,7 +126,7 @@ pass-through/cache environment inputs. Unix sockets remain available even with `
 | Deny/allow reads                        | Landlock | Seatbelt |
 | Deny/allow writes                       | Landlock | Seatbelt |
 | Deny all network                        | seccomp  | Seatbelt |
-| Per-host network (`--allow-net=<host>`) | Rejected | Seatbelt |
+| Per-host network (`--allow-net=<host>`) | Rejected | Rejected |
 | Env filtering                           | Built-in | Built-in |
 | Docker support                          | Yes      | N/A      |
 
@@ -160,15 +154,12 @@ Landlock cannot restrict creation to a single name, so allowing the containing d
 
 ### macOS
 
-Sandboxing uses Apple's `sandbox-exec` (Seatbelt) with a generated profile. Network host
-exceptions resolve hostnames to IP addresses when the profile is built. The intended policy allows those IPs,
-not a particular HTTP hostname or URL path; services sharing an IP may also be reachable.
+Sandboxing uses Apple's `sandbox-exec` (Seatbelt) with a generated profile.
 
-**Limitation**: `sandbox-exec` can reject the generated host-exception profile with
-`host must be * or localhost in network address`. This prevents the child command from
-starting; it does not fall back to unrestricted network access. If you need network access
-to selected hosts, verify the policy on your macOS version and use an external network
-control when `--allow-net` cannot express it.
+**Limitation**: Per-host network filtering (`--allow-net=<host>`) is not supported on macOS.
+Seatbelt rejects a network rule that names a remote host (`host must be * or localhost in
+network address`), so mise returns an error before executing the command. Use `--deny-net`
+to block internet sockets, or omit network restrictions when needed.
 
 When reads are restricted, Seatbelt requires data access to the root directory for process startup.
 Sandboxed processes can enumerate names directly under `/`, but cannot read unallowed entries or

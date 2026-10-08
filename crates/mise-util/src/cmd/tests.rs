@@ -761,3 +761,17 @@ fn alive_process_trees_drops_a_tree_once_it_is_gone() {
     child.wait().unwrap();
     assert!(super::alive_process_trees(&pids).is_empty());
 }
+
+/// Tasks go through `apply_sandbox`, which must reject a per-host network
+/// exception before it builds the sandboxed command.
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+#[tokio::test]
+async fn test_apply_sandbox_rejects_allow_net() {
+    let mut runner =
+        super::CmdLineRunner::new("true").with_sandbox(crate::sandbox::SandboxConfig {
+            allow_net: vec!["registry.npmjs.org".to_string()],
+            ..Default::default()
+        });
+    let err = runner.apply_sandbox().await.unwrap_err();
+    assert!(err.to_string().contains("--allow-net=<host>"), "{err}");
+}

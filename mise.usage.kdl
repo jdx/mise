@@ -3270,8 +3270,7 @@ Supports wildcards, e.g. --allow-env='MYAPP_*'
     }
     flag --allow-net help=#"""
 Allow network to specific host (implies --deny-net for everything else)
-Per-host filtering is unsupported on Linux and returns an error.
-See the sandboxing guide for current macOS host-filter limitations.
+Per-host filtering is unsupported on Linux and macOS and returns an error.
 On Windows, sandboxing is unavailable: mise warns and runs without host filtering.
 """# var=#true {
         arg <HOST>
@@ -5289,8 +5288,7 @@ Supports wildcards, e.g. --allow-env='MYAPP_*'
     }
     flag --allow-net help=#"""
 Allow network to specific host (implies --deny-net for everything else)
-Per-host filtering is unsupported on Linux and returns an error.
-See the sandboxing guide for current macOS host-filter limitations.
+Per-host filtering is unsupported on Linux and macOS and returns an error.
 On Windows, sandboxing is unavailable: mise warns and runs without host filtering.
 """# var=#true {
         arg <HOST>
@@ -6206,8 +6204,7 @@ Supports wildcards, e.g. --allow-env='MYAPP_*'
         }
         flag --allow-net help=#"""
 Allow network to specific host (implies --deny-net for everything else)
-Per-host filtering is unsupported on Linux and returns an error.
-See the sandboxing guide for current macOS host-filter limitations.
+Per-host filtering is unsupported on Linux and macOS and returns an error.
 On Windows, sandboxing is unavailable: mise warns and runs without host filtering.
 """# var=#true {
             arg <HOST>

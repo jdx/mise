@@ -880,8 +880,7 @@ directory. Use `allow_write` to add task-specific exceptions.
 - **Type**: `bool`
 - **Default**: `false`
 
-Block network access for this task. Use `allow_net` for host-specific exceptions on platforms that
-support them.
+Block network access for this task.
 
 ### `deny_env`
 
@@ -913,8 +912,8 @@ readable. Relative paths are resolved from the task's effective working director
 - **Type**: `string[]`
 - **Default**: `[]`
 
-Allow network access to the listed hosts and block other network access. Per-host network filtering
-is platform-dependent; see [Platform Support](/sandboxing.html#platform-support).
+Not supported: Linux and macOS cannot limit network access to particular hosts, so a task that
+sets `allow_net` fails before it runs. See [Platform Support](/sandboxing.html#platform-support).
 
 ### `allow_env`
 

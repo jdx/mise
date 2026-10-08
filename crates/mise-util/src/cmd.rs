@@ -2080,7 +2080,7 @@ impl<'a> CmdLineRunner<'a> {
     }
 
     /// Prepare sandbox restrictions on the command. Must be called before execute()
-    /// when sandbox is configured. This is async because macOS DNS resolution is async.
+    /// when sandbox is configured.
     pub async fn apply_sandbox(&mut self) -> eyre::Result<()> {
         let Some(sandbox) = self.sandbox.take() else {
             return Ok(());
@@ -2089,14 +2089,9 @@ impl<'a> CmdLineRunner<'a> {
             return Ok(());
         }
 
-        // Fail early on Linux if per-host network filtering is requested
-        #[cfg(target_os = "linux")]
-        if !sandbox.allow_net.is_empty() {
-            eyre::bail!(
-                "per-host network filtering (--allow-net=<host>) is not supported on Linux. \
-                 Use --deny-net to block all network, or remove --allow-net."
-            );
-        }
+        // Fail early if per-host network filtering is requested
+        #[cfg(any(target_os = "linux", target_os = "macos"))]
+        sandbox.reject_allow_net()?;
 
         // Clear the inherited env so the child only sees the filtered vars, which carry the
         // essentials `SandboxConfig::filter_env` keeps (on Windows, `SystemRoot` and the rest
@@ -2166,8 +2161,7 @@ impl<'a> CmdLineRunner<'a> {
                 .map(|a| a.to_string_lossy().into_owned())
                 .collect();
             let profile =
-                crate::sandbox::macos_generate_profile(&sandbox, std::path::Path::new(&program))
-                    .await;
+                crate::sandbox::macos_generate_profile(&sandbox, std::path::Path::new(&program));
 
             let mut new_cmd = Command::new("sandbox-exec");
             new_cmd.arg("-p").arg(&profile).arg("--").arg(&program);
