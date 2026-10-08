@@ -221,6 +221,20 @@ impl BootstrapTomlConfig {
         fill(&mut self.remote.hosts, remote.hosts);
 
         let macos = lower.macos;
+        // keys this file sets itself, taken before the shared ones are merged in
+        let mut own_keys = IndexMap::new();
+        merge_friendly_macos_defaults(&mut own_keys, &self.macos);
+        for (domain, entries) in &self.macos.defaults {
+            if let toml::Value::Table(entries) = entries {
+                for key in entries.keys() {
+                    own_keys.insert((domain.clone(), key.clone()), toml::Value::Boolean(true));
+                }
+            }
+        }
+        let own_keys: std::collections::HashSet<_> = own_keys
+            .into_keys()
+            .map(|(domain, key)| (canonical_domain(&domain).to_string(), key))
+            .collect();
         fill(&mut self.macos.dock, macos.dock);
         fill(&mut self.macos.finder, macos.finder);
         fill(&mut self.macos.keyboard, macos.keyboard);
@@ -242,19 +256,6 @@ impl BootstrapTomlConfig {
                 _ => {}
             }
         }
-        let mut own_keys = IndexMap::new();
-        merge_friendly_macos_defaults(&mut own_keys, &self.macos);
-        for (domain, entries) in &self.macos.defaults {
-            if let toml::Value::Table(entries) = entries {
-                for key in entries.keys() {
-                    own_keys.insert((domain.clone(), key.clone()), toml::Value::Boolean(true));
-                }
-            }
-        }
-        let own_keys: std::collections::HashSet<_> = own_keys
-            .into_keys()
-            .map(|(domain, key)| (canonical_domain(&domain).to_string(), key))
-            .collect();
         let mut shared_entries = macos.defaults_entries;
         shared_entries.retain(|entry| {
             !(entry.host == HostScope::Any
