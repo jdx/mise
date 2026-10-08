@@ -1,8 +1,9 @@
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use eyre::{Result, bail, eyre};
+use eyre::{Result, WrapErr, bail, eyre};
 use indoc::formatdoc;
 use mise_interactive_config::{
     BackendInfo, BackendProvider, ConfigResult, InteractiveConfig, ToolInfo, ToolProvider,
@@ -214,25 +215,15 @@ impl Edit {
             // Non-interactive: output default template
             let doc = self.default();
 
-            // The template is a fresh file, not an edit of the one already there, so writing
-            // it over an existing config would throw that config away. The interactive editor
-            // opens an existing file and `--tool-versions` merges into it; only this branch
-            // replaces it, and it is the one reached by `-y` or by running without a terminal
-            // (a script, CI, an editor's task runner), where nobody is watching to notice.
-            if !self.dry_run && !self.force && path.exists() {
-                bail!(
-                    "{} already exists; to edit it, run `mise edit` in a terminal without --yes, \
-                     or pass --force to replace it with the default template",
-                    display_path(&path)
-                );
-            }
-
             if self.dry_run {
                 info!("would write to {}", display_path(&path));
                 miseprintln!("{doc}");
-            } else {
+            } else if self.force {
                 info!("writing to {}", display_path(&path));
                 write_config(&path, doc)?;
+            } else {
+                info!("writing to {}", display_path(&path));
+                write_new_config(&path, &doc)?;
             }
         }
 
@@ -364,6 +355,37 @@ fn write_config(path: &Path, doc: String) -> Result<()> {
     file::write(path, doc)
 }
 
+/// Write the default template to a config that must not exist yet.
+///
+/// The template is a fresh file, not an edit of the one already there, so writing it over an
+/// existing config would throw that config away. The interactive editor opens an existing file
+/// and `--tool-versions` merges into it; only the template branch replaces it, and it is the
+/// one reached by `-y` or by running without a terminal (a script, CI, an editor's task
+/// runner), where nobody is watching to notice. `create_new` makes the "does it exist" check
+/// and the creation one step, so a config another process writes in between is not replaced.
+fn write_new_config(path: &Path, doc: &str) -> Result<()> {
+    if let Some(parent) = path.parent() {
+        file::create_dir_all(parent)?;
+    }
+    let mut f = match std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(path)
+    {
+        Ok(f) => f,
+        Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => bail!(
+            "{} already exists; to edit it, run `mise edit` in a terminal without --yes, \
+             or pass --force to replace it with the default template",
+            display_path(path)
+        ),
+        Err(e) => {
+            return Err(e).wrap_err_with(|| format!("failed create: {}", display_path(path)));
+        }
+    };
+    f.write_all(doc.as_bytes())
+        .wrap_err_with(|| format!("failed write: {}", display_path(path)))
+}
+
 // ============================================================================
 // Tool detection
 // ============================================================================
@@ -437,5 +459,35 @@ fn extract_version(tool: &str, path: &Path) -> Option<String> {
             if v.is_empty() { None } else { Some(v) }
         }
         _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn write_new_config_keeps_a_file_created_after_the_command_started() {
+        // There is no existence check before the write to race with: whatever is at the path
+        // when the file is opened, even a config another process has just written, is kept.
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("mise.toml");
+        std::fs::write(&path, "[tools]\nnode = \"22\"\n").unwrap();
+
+        let err = write_new_config(&path, "# template\n").unwrap_err();
+        assert!(err.to_string().contains("already exists"), "{err}");
+        assert_eq!(
+            std::fs::read_to_string(&path).unwrap(),
+            "[tools]\nnode = \"22\"\n"
+        );
+    }
+
+    #[test]
+    fn write_new_config_creates_a_missing_file_and_its_directory() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("fresh/mise/config.toml");
+
+        write_new_config(&path, "# template\n").unwrap();
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "# template\n");
     }
 }

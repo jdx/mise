@@ -3,7 +3,10 @@
 # Without a terminal, or with -y, `mise edit` and `mise generate config` skip the interactive
 # editor and write the default template. That template is a fresh file rather than an edit of
 # the one already there, so it used to replace an existing config wholesale and report success.
-# e2e runs without a terminal, so every command here takes that non-interactive path.
+# e2e runs without a terminal, so every command here takes that non-interactive path. The
+# harness sets MISE_YES=1, which would reach the same path on its own; turn it off so the
+# commands without -y exercise the missing terminal, and pass -y where the yes path is meant.
+export MISE_YES=0
 
 cat >mise.toml <<EOF
 [tools]
