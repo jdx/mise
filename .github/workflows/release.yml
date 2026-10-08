@@ -567,8 +567,6 @@ jobs:
           mv /tmp/release-notes-trimmed.txt /tmp/release-notes.txt
           cat >> /tmp/release-notes.txt <<'EOF'
 
-          See the [CHANGELOG](https://github.com/jdx/mise/blob/main/CHANGELOG.md) for the full list of commits in this release.
-
           ## 💚 Sponsor mise
 
           mise is built and maintained by [@jdx](https://github.com/jdx), an open source developer at [**entire.io**](https://entire.io/), the title sponsor of his open source work.
