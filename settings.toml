@@ -3349,6 +3349,7 @@ Show a warning if tools are not installed when entering a directory with a `mise
 
 Disable tools with [`disable_tools`](#disable_tools).
 """
+enum = ["never", "if_other_versions_installed", "always"]
 env = "MISE_STATUS_MESSAGE_MISSING_TOOLS"
 type = "String"
 
@@ -4261,6 +4262,7 @@ docs = """
   * `hardlink`: Uses Windows NTFS Hardlink, required on same filesystems. Need run `mise reshim --force` after upgrade mise.
   * `symlink`: Uses Windows NTFS SymbolicLink. Requires Windows Vista or later with admin privileges or enabling "Developer Mode" in Windows 10/11.
 """
+enum = ["exe", "file", "hardlink", "symlink"]
 env = "MISE_WINDOWS_SHIM_MODE"
 type = "String"
 

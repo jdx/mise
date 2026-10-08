@@ -66,6 +66,7 @@ pub struct SettingsMeta {
     Default,
     strum::EnumString,
     strum::Display,
+    strum::VariantNames,
     PartialEq,
     Eq,
 )]
@@ -295,9 +296,28 @@ impl Display for Settings {
     }
 }
 
+/// String settings that accept only the choices their settings.toml `enum` lists.
+///
+/// mise matches these against fixed values, so an unknown one is rejected when
+/// settings load ([`Settings::validate_string_choices`]) and before
+/// `mise settings set` writes it ([`validate_setting_choice`]).
+pub const STRICT_CHOICE_SETTINGS: &[&str] =
+    &["lockfile_mode", "status.missing_tools", "windows_shim_mode"];
+
+/// Reject `value` for `key` when `key` is one of [`STRICT_CHOICE_SETTINGS`] and
+/// `value` is not one of its [`setting_choices`].
+pub fn validate_setting_choice(key: &str, value: &str) -> Result<()> {
+    if STRICT_CHOICE_SETTINGS.contains(&key) {
+        validate_setting_enum_values(key, [value], setting_choices(key))?;
+    }
+    Ok(())
+}
+
 impl SettingsStatus {
+    /// Loaded settings are checked by [`Settings::validate_string_choices`], so the
+    /// default only covers settings that were built without loading.
     pub fn missing_tools(&self) -> SettingsStatusMissingTools {
-        SettingsStatusMissingTools::from_str(&self.missing_tools).unwrap()
+        SettingsStatusMissingTools::from_str(&self.missing_tools).unwrap_or_default()
     }
 }
 

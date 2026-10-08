@@ -2101,7 +2101,8 @@
             "missing_tools": {
               "default": "if_other_versions_installed",
               "description": "Show a warning if tools are not installed when entering a directory with a mise.toml file.",
-              "type": "string"
+              "type": "string",
+              "enum": ["never", "if_other_versions_installed", "always"]
             },
             "show_deps_stale": {
               "default": true,
@@ -2530,7 +2531,8 @@
         "windows_shim_mode": {
           "default": "exe",
           "description": "Shim file mode for Windows. Options: `exe`, `file`, `hardlink`, `symlink`.",
-          "type": "string"
+          "type": "string",
+          "enum": ["exe", "file", "hardlink", "symlink"]
         },
         "write_targets": {
           "type": "object",
