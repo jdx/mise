@@ -1524,8 +1524,6 @@ export const anchorRedirects = {
     "/configuration/settings.html#task.cache.remote_token_file",
   "/tasks/task-configuration.html#task.cache.remote_url":
     "/configuration/settings.html#task.cache.remote_url",
-  "/tasks/task-configuration.html#task.cache.stats_report":
-    "/configuration/settings.html#task.cache.stats_report",
   "/tasks/task-configuration.html#task.disable_paths":
     "/configuration/settings.html#task.disable_paths",
   "/tasks/task-configuration.html#task.disable_spec_from_run_scripts":

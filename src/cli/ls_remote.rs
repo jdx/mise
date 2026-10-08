@@ -216,6 +216,7 @@ impl LsRemote {
                     .and_then(|prefix| tool_arg.ba.with_registry_version(prefix));
                 let ba = ba.as_ref().unwrap_or(&tool_arg.ba);
                 let mut backend = ba.backend()?;
+                backend::ensure_backend_enabled(&backend.get_type())?;
                 let mpr = MultiProgressReport::get();
                 if let Some(plugin) = backend.plugin() {
                     plugin.ensure_installed(config, &mpr, false, false).await?;

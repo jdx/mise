@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+
+# With no MISE_TMP_DIR, temporary files default to `$TMPDIR/mise`. When the cache
+# directory is that same path, as it is by default on Windows (`%TEMP%\mise`),
+# temporary files move aside so `mise cache clear` does not delete them.
+unset MISE_TMP_DIR
+export MISE_CACHE_DIR="$TMPDIR/mise"
+
+mise direnv envrc >/dev/null
+assert_directory_exists "$TMPDIR/mise-tmp/direnv"
+assert_directory_not_exists "$TMPDIR/mise/direnv"
+
+assert "mise cache clear"
+assert_directory_exists "$TMPDIR/mise-tmp/direnv"

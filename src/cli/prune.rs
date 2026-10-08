@@ -61,7 +61,7 @@ pub(crate) struct Prune {
     pub dry_run_code: bool,
 
     /// Placeholder for future monorepo pruning; `mise prune --monorepo` is not implemented yet.
-    #[usage(long, verbatim_doc_comment)]
+    #[usage(long, hide = true, verbatim_doc_comment)]
     pub monorepo: bool,
 
     /// Prune only unused versions of tools
@@ -76,7 +76,7 @@ impl Prune {
 
     pub(crate) async fn run(self) -> Result<()> {
         if self.monorepo {
-            unimplemented!("mise prune --monorepo is not implemented yet");
+            eyre::bail!("--monorepo is not supported by mise prune yet");
         }
         // Prune inspects the project it runs in from whatever environment it was
         // started in, including when it rebuilds shims afterwards; none of that is
