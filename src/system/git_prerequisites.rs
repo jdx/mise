@@ -62,6 +62,28 @@ fn uses_ssh(origin: &str) -> bool {
     host_part.contains(':')
 }
 
+/// Whether `binary` is on PATH and usable.
+///
+/// Looked up fresh each time, since `ensure` checks again after installing and
+/// `file::which` would serve the earlier miss from its cache. On macOS,
+/// `/usr/bin/git` is a stub that opens the Xcode Command Line Tools installer
+/// until they are installed, so it does not count.
+fn is_installed(binary: &str) -> bool {
+    let Some(path) = crate::file::which_spawnable(binary) else {
+        return false;
+    };
+    if cfg!(target_os = "macos") && binary == "git" && path == std::path::Path::new("/usr/bin/git")
+    {
+        return std::process::Command::new("xcode-select")
+            .arg("-p")
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+            .is_ok_and(|status| status.success());
+    }
+    true
+}
+
 fn missing_for(origin: &str) -> Vec<&'static Prerequisite> {
     let mut needed = vec![&GIT];
     if uses_ssh(origin) {
@@ -69,15 +91,24 @@ fn missing_for(origin: &str) -> Vec<&'static Prerequisite> {
     }
     needed
         .into_iter()
-        .filter(|p| crate::file::which(p.binary).is_none())
+        .filter(|p| !is_installed(p.binary))
         .collect()
 }
+
+/// Managers in the order to try them. A distribution's own manager comes
+/// before Homebrew, which also runs on Linux, and before the Windows ones.
+const MANAGER_ORDER: &[&str] = &[
+    "apt", "dnf", "pacman", "zypper", "apk", "brew", "winget", "scoop",
+];
 
 /// The first available package manager that can supply every missing binary.
 fn pick_manager(
     missing: &[&'static Prerequisite],
 ) -> Option<(Arc<dyn SystemPackageManager>, Vec<PackageRequest>)> {
-    for manager in builtin_managers() {
+    let mut managers = builtin_managers();
+    managers.retain(|manager| MANAGER_ORDER.contains(&manager.name()));
+    managers.sort_by_key(|manager| MANAGER_ORDER.iter().position(|n| *n == manager.name()));
+    for manager in managers {
         if !manager.is_available() {
             continue;
         }
@@ -108,7 +139,8 @@ fn pick_manager(
 /// Make sure the binaries cloning `origin` needs are installed, offering to
 /// install them with the host package manager when they are not.
 ///
-/// `yes` accepts the offer without asking. A dry run changes nothing, so it
+/// `yes`, or the global `yes` setting (`MISE_YES`), accepts the offer without
+/// asking. A dry run changes nothing, so it
 /// reports the missing binaries instead.
 pub async fn ensure(origin: &str, yes: bool, dry_run: bool) -> Result<()> {
     let missing = missing_for(origin);
@@ -136,7 +168,7 @@ pub async fn ensure(origin: &str, yes: bool, dry_run: bool) -> Result<()> {
             manager.name()
         );
     }
-    if !yes {
+    if !yes && !crate::config::Settings::get().yes {
         let answer = prompt::confirm(format!(
             "{binaries} must be installed to clone {origin}. Install {packages} with {}?",
             manager.name()
