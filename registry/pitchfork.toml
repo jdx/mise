@@ -1,5 +1,5 @@
 backends = [
-  { full = "packslip:github.com/jdx/pitchfork", min_version = "2.24.2", options = { identity = "https://github.com/jdx/pitchfork/.github/workflows/release.yml@refs/heads/main", issuer = "https://token.actions.githubusercontent.com" } },
+  { full = "packslip:github.com/jdx/pitchfork", min_version = "2.24.2", options = { workflow = "release.yml@refs/heads/main" } },
   "aqua:jdx/pitchfork",
 ]
 bins = ["pitchfork"]
