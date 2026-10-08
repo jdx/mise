@@ -66,7 +66,7 @@ resource-level changes.
 - **`--prompt-secrets`** — Prompt securely for missing bootstrap secret inputs
 - **`--prompt-vars`** — Ask for `[vars]` entries that declare a `prompt` and have no saved answer
 
-  mise saves each answer under `$MISE_STATE_DIR`, not in any config file, and never asks for it again. Without a terminal, a var keeps its default.
+  mise saves each answer under `$MISE_STATE_DIR`, not in any config file, and never asks for it again. Without a terminal, a var keeps its default. A `--dry-run` still saves the answers it asks for.
 - **`--skip <PART>`** — Skip these parts
 
   Repeat the flag or separate parts with commas. Cannot be combined with `--only`.

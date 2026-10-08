@@ -180,7 +180,8 @@ pub(crate) struct Bootstrap {
     /// Ask for `[vars]` entries that declare a `prompt` and have no saved answer
     ///
     /// mise saves each answer under `$MISE_STATE_DIR`, not in any config file,
-    /// and never asks for it again. Without a terminal, a var keeps its default.
+    /// and never asks for it again. Without a terminal, a var keeps its default. A
+    /// `--dry-run` still saves the answers it asks for.
     #[usage(long)]
     prompt_vars: bool,
 

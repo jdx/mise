@@ -97,6 +97,7 @@ yet. Enter accepts the default. mise saves every answer, including an accepted
 default, in `$MISE_STATE_DIR/vars.toml`, so it is never asked again, never lands
 in your config or dotfiles history, and is available to templates in the same
 run. Delete a line from that file to be asked again.
+A `--dry-run` still saves the answers it asks for.
 
 Only a command given `--prompt-vars` ever asks. Everything else, including
 shell activation, tasks, and runs without a terminal, uses the saved answer and
