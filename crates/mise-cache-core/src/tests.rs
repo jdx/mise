@@ -104,7 +104,7 @@ async fn downloads_negotiated_blob_packs_and_omits_missing_objects() {
     let missing = CacheDigest::blake3(b"missing packed blob");
     let capabilities = server
         .mock("GET", "/v1/capabilities")
-        .match_header(PROTOCOL_HEADER, "1")
+        .match_header("mbx-cache-protocol", "1")
         .match_header(AUTHORIZATION.as_str(), "Bearer test-token")
         .with_status(200)
         .with_header("content-type", "application/json")
@@ -128,14 +128,14 @@ async fn downloads_negotiated_blob_packs_and_omits_missing_objects() {
     let packed_payload_bytes = (first.size + second.size).to_string();
     let request = server
         .mock("POST", "/v1/blobs:pack")
-        .match_header(PROTOCOL_HEADER, "1")
-        .match_header(NAMESPACE_HEADER, "test")
+        .match_header("mbx-cache-protocol", "1")
+        .match_header("mbx-cache-namespace", "test")
         .match_header("content-type", DIGEST_LIST_MEDIA_TYPE)
         .with_status(200)
         .with_header("content-type", BLOB_PACK_MEDIA_TYPE)
         .with_header("content-length", &packed_len)
-        .with_header(BLOB_PACK_BLOBS_HEADER, &packed_blobs)
-        .with_header(BLOB_PACK_BYTES_HEADER, &packed_payload_bytes)
+        .with_header("mbx-cache-pack-blobs", &packed_blobs)
+        .with_header("mbx-cache-pack-bytes", &packed_payload_bytes)
         .with_body(packed)
         .expect(1)
         .create_async()
@@ -176,7 +176,7 @@ async fn rejects_mismatched_blob_pack_metadata() {
         .mock("POST", "/v1/blobs:pack")
         .with_status(200)
         .with_header("content-type", BLOB_PACK_MEDIA_TYPE)
-        .with_header(BLOB_PACK_BLOBS_HEADER, "2")
+        .with_header("mbx-cache-pack-blobs", "2")
         .with_body(encode_blob_pack(&[(&digest, contents.as_slice())]))
         .create_async()
         .await;
@@ -202,7 +202,7 @@ async fn rejects_malformed_blob_pack_metadata() {
         .mock("POST", "/v1/blobs:pack")
         .with_status(200)
         .with_header("content-type", BLOB_PACK_MEDIA_TYPE)
-        .with_header(BLOB_PACK_BYTES_HEADER, "not-a-number")
+        .with_header("mbx-cache-pack-bytes", "not-a-number")
         .with_body(encode_blob_pack(&[(&digest, contents.as_slice())]))
         .create_async()
         .await;

@@ -19,17 +19,20 @@ The remote cache is part of the artifact cache and requires `experimental = true
 mise speaks version 1 of the [remote cache protocol](/tasks/remote-cache-protocol.html)
 over HTTPS. Any server that implements it works.
 
-The reference server is `mise-cache` 0.1, which you can install with
-`cargo install mise-cache`. Its source is the
-[`v0.1.1` tag of `jdx/mr-boxington-cache`](https://github.com/jdx/mr-boxington-cache/tree/v0.1.1),
-the repository formerly named `jdx/mise-cache`. It stores blobs on the
-filesystem or in S3-compatible storage, keeps metadata in memory or in
-PostgreSQL, grants per-namespace read and write access to static tokens and
-OIDC identities, and ships a Docker Compose file and a Helm chart.
+The reference server is `mbx-cache`, the cache server for Mr Boxington. Its
+source is [`jdx/mr-boxington-cache`](https://github.com/jdx/mr-boxington-cache).
+It stores blobs on the filesystem or in S3-compatible storage, keeps metadata in
+memory or in PostgreSQL, grants per-namespace read and write access to static
+tokens and OIDC identities, and ships a Docker Compose file and a Helm chart.
+It has no release yet, so install it from the repository:
 
-Later releases from that repository are `mbx-cache`, the cache server for Mr
-Boxington. It expects `mbx-cache-*` request headers instead of the
-`mise-cache-*` headers that mise sends, so it rejects mise's requests.
+```sh
+cargo install --git https://github.com/jdx/mr-boxington-cache
+```
+
+The `mise-cache` 0.1 releases from the same repository, published when it was
+named `jdx/mise-cache`, expect `mise-cache-*` request headers instead of the
+`mbx-cache-*` headers that mise sends, so they reject mise's requests.
 
 ## Configure mise
 

@@ -7,9 +7,9 @@ description: "Implement a server or client for version 1 of the protocol behind 
 This page specifies version 1 of the protocol between mise and a remote task
 cache. It is for people who implement a cache server or client. To use a remote
 cache, see [Remote task cache](/tasks/remote-cache.html). The reference server
-is `mise-cache` 0.1, published from the
-[`v0.1.1` tag of `jdx/mr-boxington-cache`](https://github.com/jdx/mr-boxington-cache/tree/v0.1.1).
-It is released separately from mise; this page is the authoritative protocol
+is `mbx-cache`, from
+[`jdx/mr-boxington-cache`](https://github.com/jdx/mr-boxington-cache).
+It is developed separately from mise; this page is the authoritative protocol
 definition.
 
 ::: warning Experimental
@@ -55,11 +55,11 @@ use HTTP/1.1, HTTP/2, or HTTP/3.
 
 Requests carry these headers:
 
-| Header                 | Value                                                                                                       |
-| ---------------------- | ----------------------------------------------------------------------------------------------------------- |
-| `mise-cache-protocol`  | `1`                                                                                                         |
-| `mise-cache-namespace` | The namespace for the operation. Servers must not require it on `GET /v1/capabilities` and `GET /v1/status` |
-| `Authorization`        | `Bearer <token>` when the deployment uses bearer or OIDC tokens                                             |
+| Header                | Value                                                                                                       |
+| --------------------- | ----------------------------------------------------------------------------------------------------------- |
+| `mbx-cache-protocol`  | `1`                                                                                                         |
+| `mbx-cache-namespace` | The namespace for the operation. Servers must not require it on `GET /v1/capabilities` and `GET /v1/status` |
+| `Authorization`       | `Bearer <token>` when the deployment uses bearer or OIDC tokens                                             |
 
 The URL prefix `/v1` is the protocol's major version. Compatible additions are
 advertised as capabilities and do not need a new URL prefix. An incompatible
@@ -146,7 +146,7 @@ schema versions without changing the major version.
 Clients must honor advertised limits and fall back when an optional feature is
 absent. Servers return
 `426 Upgrade Required` for unsupported major versions and include their
-supported major version in `mise-cache-protocol`.
+supported major version in `mbx-cache-protocol`.
 
 `GET /v1/status` is an operational health endpoint. A successful response means
 the API process is live; it does not replace capability negotiation or an
@@ -368,8 +368,8 @@ request order:
 | Size      | unsigned big-endian 64-bit byte length      |
 | Content   | exactly `size` bytes                        |
 
-A server may also send `mise-cache-pack-blobs` (the number of frames) and
-`mise-cache-pack-bytes` (the sum of the frame content sizes). When they are
+A server may also send `mbx-cache-pack-blobs` (the number of frames) and
+`mbx-cache-pack-bytes` (the sum of the frame content sizes). When they are
 present, they and `Content-Length` must match the decoded stream; clients reject
 a pack whose metadata disagrees.
 
