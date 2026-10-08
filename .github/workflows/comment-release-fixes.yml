@@ -1,11 +1,8 @@
 name: comment-release-fixes
 
-# Issues close when their PR merges, days before the release ships. Comment
-# "Fixed in vX.Y.Z" on each issue and discussion the release resolved so the
-# reporter knows which version to upgrade to.
 on:
   release:
-    types: [released]
+    types: [published]
   workflow_dispatch:
     inputs:
       tag:
@@ -27,24 +24,14 @@ concurrency:
 jobs:
   comment:
     if: github.repository == 'jdx/mise' && (github.event_name == 'workflow_dispatch' || startsWith(github.event.release.tag_name, 'v'))
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
     permissions:
       contents: read
+      pull-requests: read
       issues: write
       discussions: write
-      pull-requests: read
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          # Always run the trusted default-branch script, so a manual run can
-          # also cover a tag cut before this workflow existed.
-          ref: ${{ github.event.repository.default_branch }}
-          persist-credentials: false
-
-      - name: Comment on resolved issues and discussions
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG: ${{ github.event.release.tag_name || inputs.tag }}
-          DRY_RUN: ${{ inputs.dry_run && '1' || '0' }}
-        run: python3 scripts/comment-release-fixes.py "$TAG"
+    uses: jdx/workflows/.github/workflows/comment-release-fixes.yml@652dd92c36927734924fcfe25d7a6bae33c06efc
+    with:
+      tag: ${{ inputs.tag || github.event.release.tag_name }}
+      marker_prefix: mise-fixed-in
+      upgrade_text: Update with `mise self-update` or see the [install docs](https://mise.jdx.dev/installing-mise.html).
+      dry_run: ${{ inputs.dry_run || false }}
