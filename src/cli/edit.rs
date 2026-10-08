@@ -385,10 +385,16 @@ fn write_new_config(path: &Path, doc: &str) -> Result<()> {
     if let Some(parent) = path.parent() {
         file::create_dir_all(parent)?;
     }
+    // Create the directory of the file a dangling link names, too: the link may point into a
+    // directory that does not exist yet.
+    let target = symlink_target(path);
+    if let Some(parent) = target.parent() {
+        file::create_dir_all(parent)?;
+    }
     let mut f = match std::fs::OpenOptions::new()
         .write(true)
         .create_new(true)
-        .open(symlink_target(path))
+        .open(&target)
     {
         Ok(f) => f,
         Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => bail!(
@@ -527,6 +533,19 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let target = dir.path().join("dotfiles/mise.toml");
         std::fs::create_dir_all(target.parent().unwrap()).unwrap();
+        let path = dir.path().join("mise.toml");
+        std::os::unix::fs::symlink("dotfiles/mise.toml", &path).unwrap();
+
+        write_new_config(&path, "# template\n").unwrap();
+        assert!(std::fs::symlink_metadata(&path).unwrap().is_symlink());
+        assert_eq!(std::fs::read_to_string(&target).unwrap(), "# template\n");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn write_new_config_creates_the_directory_a_dangling_symlink_points_into() {
+        let dir = tempfile::tempdir().unwrap();
+        let target = dir.path().join("dotfiles/mise.toml");
         let path = dir.path().join("mise.toml");
         std::os::unix::fs::symlink("dotfiles/mise.toml", &path).unwrap();
 
