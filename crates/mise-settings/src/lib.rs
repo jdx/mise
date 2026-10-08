@@ -52,6 +52,9 @@ pub struct SettingsMeta {
     pub global_only: bool,
     /// Consumed before config files are read, so a value in one can never apply.
     pub env_only: bool,
+    /// Early-init: read only from `miserc.toml` files and the environment, never from a config
+    /// file, because it decides which config files load.
+    pub rc: bool,
 }
 
 #[derive(

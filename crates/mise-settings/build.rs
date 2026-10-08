@@ -375,6 +375,10 @@ pub static SETTINGS_META: Lazy<IndexMap<&'static str, SettingsMeta>> = Lazy::new
             "        env_only: {},",
             props.get("env_only").is_some_and(|v| v.as_bool().unwrap())
         ));
+        lines.push(format!(
+            "        rc: {},",
+            props.get("rc").is_some_and(|v| v.as_bool().unwrap())
+        ));
     }
     /// Emit flattened runtime metadata for settings and nested settings tables.
     fn emit_settings_meta(lines: &mut Vec<String>, table: &toml::Table, prefix: &str) {
