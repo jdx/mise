@@ -124,10 +124,6 @@ impl<'a> GitBackendOptions<'a> {
         self.values.str("version_prefix")
     }
 
-    fn checksum(&self) -> Option<String> {
-        self.values.platform_string("checksum")
-    }
-
     fn bin_path(&self) -> Option<String> {
         self.values.platform_string("bin_path")
     }
@@ -327,6 +323,17 @@ impl<'a> GitBackendOptions<'a> {
         }
         result
     }
+}
+
+/// Checks a downloaded asset against the `checksum` and `size` tool options.
+/// Each is checked on its own, so a `size` with no `checksum` still applies.
+fn verify_asset_options(
+    tv: &ToolVersion,
+    file_path: &Path,
+    opts: &GitBackendOptions<'_>,
+    pr: Option<&dyn crate::ui::progress_report::SingleReport>,
+) -> Result<()> {
+    verify_artifact(tv, file_path, opts.raw(), pr)
 }
 
 /// GitHub artifact attestations are only served by https://api.github.com. GHE
@@ -1676,9 +1683,6 @@ impl UnifiedGitBackend {
         let filename = asset.name.clone();
         let file_path = tv.download_path().join(&filename);
 
-        // Check if we'll verify checksum
-        let has_checksum = opts.checksum().is_some();
-
         // Store the asset URL and digest (if available) in the tool version
         let platform_key = self.get_platform_key();
         let lockfile_has_checksum = tv
@@ -1727,9 +1731,7 @@ impl UnifiedGitBackend {
 
         // Verify and install
         ctx.pr.next_operation();
-        if has_checksum {
-            verify_artifact(tv, &file_path, opts.raw(), Some(ctx.pr.as_ref()))?;
-        }
+        verify_asset_options(tv, &file_path, opts, Some(ctx.pr.as_ref()))?;
 
         // Check before verify_checksum, which may generate a new checksum from the
         // downloaded file. Reuse non-SLSA provenance only when the lockfile had
@@ -3380,6 +3382,35 @@ platforms.macos-arm64.url = 'https://example.com/{{ version }}/tool-darwin-arm64
                 assert!(asset.digest.is_none());
             }
         }
+    }
+
+    #[test]
+    fn test_size_option_is_checked_without_a_checksum() {
+        let backend = create_test_backend();
+        let backend_arg = Arc::new(BackendArg::new(
+            "github:test/repo".to_string(),
+            Some("github:test/repo".to_string()),
+        ));
+        let request =
+            ToolRequest::new(backend_arg, "1.0.0", crate::toolset::ToolSource::Unknown).unwrap();
+        let tv = ToolVersion::new(request, "1.0.0".to_string());
+        let tmp = tempfile::tempdir().unwrap();
+        let file_path = tmp.path().join("tool.tar.gz");
+        std::fs::write(&file_path, b"12345").unwrap();
+
+        let mut opts = ToolVersionOptions::default();
+        opts.opts
+            .insert("size".to_string(), toml::Value::String("4".to_string()));
+        let err = verify_asset_options(&tv, &file_path, &backend.options(&opts), None)
+            .expect_err("a size mismatch must fail even without a checksum");
+        assert!(
+            err.to_string().contains("Size mismatch"),
+            "unexpected error: {err}"
+        );
+
+        opts.opts
+            .insert("size".to_string(), toml::Value::String("5".to_string()));
+        verify_asset_options(&tv, &file_path, &backend.options(&opts), None).unwrap();
     }
 
     #[test]
