@@ -225,6 +225,16 @@ impl PluginType {
         }
     }
 
+    /// The type a `[plugins]` entry installs as. A signed packslip archive is
+    /// always a vfox plugin, so an unprefixed key that names one does not fall
+    /// back to asdf before the plugin is installed.
+    pub(crate) fn from_plugin_entry<'a>(key: &'a str, url: &str) -> (Self, &'a str) {
+        match Self::from_plugin_config(key) {
+            (Self::Asdf, name) if name == key && url.starts_with("packslip:") => (Self::Vfox, name),
+            entry => entry,
+        }
+    }
+
     pub(crate) fn from_plugin_path(path: &Path) -> Option<Self> {
         if path.join("metadata.lua").exists() {
             let hooks = path.join("hooks");
@@ -1030,6 +1040,30 @@ mod tests {
         assert_eq!(
             PluginType::from_plugin_config("missing-test-plugin"),
             (PluginType::Asdf, "missing-test-plugin")
+        );
+    }
+
+    #[test]
+    fn test_plugin_type_from_plugin_entry() {
+        let packslip = "packslip:mise-plugins/vfox-bfs#0.1.0-dev.2";
+        assert_eq!(
+            PluginType::from_plugin_entry("missing-test-plugin", packslip),
+            (PluginType::Vfox, "missing-test-plugin")
+        );
+        assert_eq!(
+            PluginType::from_plugin_entry(
+                "missing-test-plugin",
+                "https://github.com/mise-plugins/missing-test-plugin"
+            ),
+            (PluginType::Asdf, "missing-test-plugin")
+        );
+        assert_eq!(
+            PluginType::from_plugin_entry("asdf:missing-test-plugin", packslip),
+            (PluginType::Asdf, "missing-test-plugin")
+        );
+        assert_eq!(
+            PluginType::from_plugin_entry("vfox-backend:missing-test-plugin", packslip),
+            (PluginType::VfoxBackend, "missing-test-plugin")
         );
     }
 
