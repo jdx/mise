@@ -26,60 +26,68 @@ use jiff::Timestamp;
 use path_absolutize::Absolutize;
 use std::path::PathBuf;
 
-/// Install a tool version
+/// Install the tools in your config, or specific tool versions
 ///
-/// Installs a tool version under the mise data directory, by default
-/// `~/.local/share/mise/installs/<TOOL>/<VERSION>`.
-/// Installing alone does not add the tool to your config, so a tool that is not
-/// already configured will not be on PATH.
-/// To install and activate in one command, use `mise use`, which also writes the version to
-/// the selected project config so the tool is active in that configuration scope.
-/// To run a tool once without touching any config, use `mise exec <TOOL>@<VERSION> -- <COMMAND>`.
+/// With no arguments, installs every tool version your config requests that is not
+/// installed yet. With TOOL@VERSION arguments, installs those versions; a bare tool
+/// name installs the version your config requests for it.
 ///
-/// Tools are installed in parallel. To disable, set `--jobs=1` or `MISE_JOBS=1`.
+/// Installing does not add a tool to your config, so a tool you have not configured
+/// is not on PATH. Use `mise use` to install a tool and add it to mise.toml, or
+/// `mise exec <TOOL>@<VERSION> -- <COMMAND>` to run it once.
+///
+/// Versions install in parallel (see --jobs) under the mise data directory, by
+/// default `~/.local/share/mise/installs/<TOOL>/<VERSION>`.
 #[derive(Debug, Default, usage_rs::Args)]
 #[usage(
     visible_alias = "i",
     verbatim_doc_comment,
+    example("mise install", help = "Install every tool the config requests"),
     example(
-        r###"mise install node@20.0.0  # install a specific node version
-mise install node@20      # install the latest node 20.x
-mise install node         # install the version specified in mise.toml
-mise install              # install everything specified in mise.toml
-mise install --include-lazy # also install tools configured for lazy installation
-mise install --include-task-tools # also install tools required by tasks"###
+        "mise install node",
+        help = "Install the node version the config requests"
+    ),
+    example("mise install node@24", help = "Install the latest node 24.x release"),
+    example("mise install node@24.11.0", help = "Install an exact version"),
+    example(
+        "mise install --include-lazy",
+        help = "Also install tools marked lazy = true"
+    ),
+    example(
+        "mise install --include-task-tools",
+        help = "Also install the tools your tasks need"
     )
 )]
 pub(crate) struct Install {
-    /// Tool(s) to install
-    /// e.g.: node@20
+    /// Tools to install, such as `node@24`; defaults to every tool in the config
     #[usage(value_name = "TOOL@VERSION")]
     tool: Option<Vec<ToolArg>>,
 
-    /// Force reinstall even if already installed
-    /// With no tools specified, reinstall all configured tools
+    /// Reinstall even if already installed
+    ///
+    /// With no TOOL arguments, reinstalls every configured tool.
     #[usage(long, short, verbatim_doc_comment)]
     force: bool,
 
-    /// Number of jobs to run in parallel
-    /// Values below 1 are treated as 1
-    /// Defaults to the `jobs` setting
+    /// How many tools to install in parallel; defaults to the `jobs` setting
+    ///
+    /// Values below 1 are treated as 1.
     #[usage(long, short, env = "MISE_JOBS", verbatim_doc_comment)]
     jobs: Option<usize>,
 
-    /// Show what would be installed without actually installing
+    /// Show what would be installed, without installing anything
     #[usage(long, short = 'n', verbatim_doc_comment)]
     dry_run: bool,
 
-    /// Show installation output
+    /// Show installer output
     ///
-    /// This argument will print backend output such as download, configuration, and compilation output.
+    /// Prints each backend's download, configure, and compile output.
     #[usage(long, short, action = usage_rs::ArgAction::Count)]
     verbose: u8,
 
-    /// Like --dry-run but exits with code 1 if there are tools to install
+    /// Like --dry-run, but exit with status 1 when anything needs installing
     ///
-    /// This is useful for scripts to check if tools need to be installed.
+    /// Use it in scripts to check whether `mise install` has work to do.
     #[usage(long, verbatim_doc_comment)]
     dry_run_code: bool,
 
@@ -92,36 +100,36 @@ pub(crate) struct Install {
 
     /// Also install tools configured with `lazy = true`
     ///
-    /// By default, a bare `mise install` leaves lazy tools for first-command installation.
+    /// By default, a bare `mise install` leaves lazy tools to be installed the first
+    /// time you run one of their commands.
     #[usage(long, verbatim_doc_comment)]
     include_lazy: bool,
 
-    /// Only install versions released before this date or older than this duration
+    /// Only install versions released before a date or at least a duration ago
     ///
-    /// Supports absolute dates like "2024-06-01" and relative durations like "90d" or "1y".
-    #[usage(long, alias = "before", verbatim_doc_comment)]
+    /// Takes a date such as `2024-06-01` or a duration such as `90d` or `1y`.
+    /// Overrides the `minimum_release_age` setting and tool option.
+    #[usage(long, alias = "before", value_name = "AGE", verbatim_doc_comment)]
     minimum_release_age: Option<String>,
 
-    /// Install tools from every [monorepo].config_roots config root
+    /// Also install tools from every config root in `[monorepo].config_roots`
     ///
-    /// Uses the active MISE_ENV and requires monorepo_root = true plus explicit
-    /// [monorepo].config_roots in the monorepo root config.
+    /// Requires `monorepo_root = true` and an explicit `config_roots` list in the
+    /// monorepo root's config. Uses the active MISE_ENV.
     #[usage(long, env = "MISE_MONOREPO", verbatim_doc_comment)]
     monorepo: bool,
 
-    /// Connect backend install command stdin/stdout/stderr directly to the terminal.
-    /// Implies `--jobs=1`
+    /// Connect install commands directly to the terminal; implies --jobs=1
     #[usage(long, overrides = "jobs")]
     raw: bool,
 
-    /// Install tool(s) to a shared directory
+    /// Install into DIR instead of the mise data directory
     ///
-    /// Installs to the specified directory instead of the default install location.
-    /// May require elevated permissions depending on the path.
-    #[usage(long, verbatim_doc_comment, value_hint = ValueHint::DirPath, conflicts = "system")]
+    /// May require elevated permissions, depending on the path.
+    #[usage(long, value_name = "DIR", verbatim_doc_comment, value_hint = ValueHint::DirPath, conflicts = "system")]
     shared: Option<PathBuf>,
 
-    /// Install tool(s) to the system-wide shared directory
+    /// Install into the system-wide shared directory
     ///
     /// Installs to /usr/local/share/mise/installs (or MISE_SYSTEM_DATA_DIR/installs).
     /// On Unix, binary-download backends invoke sudo to publish into protected

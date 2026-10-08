@@ -12,57 +12,63 @@ description: "List installed and active tool versions"
 
 List installed and active tool versions
 
-Lists the tools mise knows about: versions that are installed, and versions requested
-by a config file (active) whether or not they are installed.
+Lists the tools mise knows about: versions that are installed, and versions
+requested by a config file (active) whether or not they are installed. Each row
+shows the tool, the version (marked `(missing)` when it is not installed), the
+config file that requests it, and the request as written.
 
 ## Arguments
-- **`[INSTALLED_TOOL]…`** — Only show tool versions from [TOOL]
+- **`[INSTALLED_TOOL]…`** — Only show these tools
 
 ## Flags
 - **`--truncate`** — Truncate long terminal output to fit the available width
 
   **Default:** `true`
-- **`-b --backend <BACKEND>`** — Only show tools from this backend, e.g. aqua, cargo, core, go
+- **`-b --backend <BACKEND>`** — Only show tools from this backend, such as aqua, cargo, core, or go
 
   Registry shorthands count as the backend they resolve to, so `jq` is listed
   under aqua. Repeat the flag to show several backends.
-- **`-c --current`** — Only show tool versions currently specified in a mise.toml
-- **`-g --global`** — Only show tool versions currently specified in the global mise.toml
-- **`-i --installed`** — Only show tool versions that are installed (Hides tools defined in mise.toml but not installed)
+- **`-c --current`** — Only show versions the loaded config files request
+- **`-g --global`** — Only show versions the global config requests
+- **`-i --installed`** — Only show installed versions
+
+  Hides requested versions that are not installed.
 - **`--grouped`** — List tools in a separate section for each backend
 
   Cannot be combined with --json; use --backend to filter JSON output.
 - **`-J --json`** — Output in JSON format
-- **`-l --local`** — Only show tool versions currently specified in the local mise.toml
-- **`-m --missing`** — Display missing tool versions
-- **`--all-sources`** — Display all tracked config sources for tools
-- **`--monorepo`** — List tools from every [monorepo].config_roots config root
+- **`-l --local`** — Only show versions the local config requests
+- **`-m --missing`** — Only show requested versions that are not installed
+- **`--all-sources`** — Show requests from every config file mise has seen, not only loaded ones
 
-  Uses the active MISE_ENV and requires monorepo_root = true plus explicit
-  [monorepo].config_roots in the monorepo root config.
+  mise tracks the config files it loads so `mise prune` keeps the versions they use.
+- **`--monorepo`** — Also list tools from every config root in `[monorepo].config_roots`
+
+  Requires `monorepo_root = true` and an explicit `config_roots` list in the
+  monorepo root's config. Uses the active MISE_ENV.
 
   **Environment Variable:** `MISE_MONOREPO`
-- **`--no-header`** — Don't display headers
-- **`--outdated`** — Display whether a version is outdated
-- **`--prefix <PREFIX>`** — Display versions matching this prefix
+- **`--no-header`** — Do not print the header row
+- **`--outdated`** — Show whether each version is outdated
+- **`--prefix <PREFIX>`** — Only show versions starting with PREFIX (requires a tool argument)
 - **`--prunable`** — List only tools that can be pruned with `mise prune`
 - **`-h --help`** — Print help
 
 ## Examples
 
-Show installed versions and requests from active configuration
+Show installed versions and the requests from the loaded config files
 
 ```
 mise ls
 ```
 
-Show only versions requested by the current configuration
+Show only versions the loaded config files request
 
 ```
 mise ls --current
 ```
 
-Find configured versions that need installation
+Find requested versions that are not installed
 
 ```
 mise ls --missing
@@ -80,7 +86,7 @@ With a tool argument, JSON output is an array of its version records
 mise ls node --json
 ```
 
-Include references from every tracked configuration file
+Include requests from every config file mise has seen
 
 ```
 mise ls --all-sources

@@ -18,26 +18,38 @@ use crate::system::history::OperationScope;
 use crate::system::history::journal;
 use crate::ui::prompt;
 
-/// Add or update dotfiles in `[dotfiles]`
+/// Start deploying a file, or copy its edits back to the source
 ///
-/// If the target is already managed, this updates its source from the live
-/// target. Otherwise it creates a `[dotfiles]` entry and seeds the source
-/// under `dotfiles.root` unless `--source` is provided. Captured entries are
-/// applied unless `--no-apply` is passed. Use `--dry-run` to preview both the
-/// source capture and config write without making those changes.
+/// For a target that is not managed yet, saves its contents as a source under
+/// `dotfiles.root` (or at the path given with `--source`), adds a `[dotfiles]`
+/// entry, and applies it unless you pass `--no-apply`. For a target that is
+/// already managed, updates its source from the live file. `--dry-run` previews
+/// the source and config changes without writing them.
 ///
 /// A target inside the tree of a dotfile group is captured into that group's
 /// source instead, without a new `[dotfiles]` entry: the deepest group whose
 /// target contains it, or the one named with `--group`.
 #[derive(Debug, usage_rs::Args)]
 #[usage(
-    verbatim_doc_comment,
     example(
-        r###"mise dot add ~/.zshrc
-mise dot add --mode copy ~/.config/starship.toml
-mise dot add --source dotfiles/gitconfig ~/.gitconfig
-mise dot add --group home ~/.config/starship.toml
-mise dot add --changed"###
+        "mise dot add ~/.zshrc",
+        help = "Start managing ~/.zshrc from your dotfiles directory"
+    ),
+    example(
+        "mise dot add --mode copy ~/.config/starship.toml",
+        help = "Copy the file into place instead of symlinking it"
+    ),
+    example(
+        "mise dot add --source dotfiles/gitconfig ~/.gitconfig",
+        help = "Choose where the source is stored"
+    ),
+    example(
+        "mise dot add --group home ~/.config/starship.toml",
+        help = "Capture the file into a dotfile group's tree"
+    ),
+    example(
+        "mise dot add --changed",
+        help = "Copy edits of every changed copy-mode file back to its source"
     )
 )]
 pub(crate) struct DotfilesAdd {
@@ -53,19 +65,25 @@ pub(crate) struct DotfilesAdd {
     #[usage(long, short)]
     pub(super) force: bool,
 
-    /// Write to the global config
+    /// Write to the global config (the default)
+    ///
+    /// New entries go to the `write_targets.dotfiles` file when that setting is
+    /// set.
     #[usage(long, short, conflicts = ["local", "path"])]
     pub(super) global: bool,
 
-    /// Write to the local config instead of the global config
+    /// Write to the project config instead of the global config
     #[usage(long, short, conflicts = ["global", "path"])]
     pub(super) local: bool,
 
-    /// Dotfile mode to write
+    /// Mode for a target that is not managed yet: symlink, symlink-each, copy, or
+    /// template (default: the `dotfiles.default_mode` setting)
+    ///
+    /// A target that is already managed keeps its mode.
     #[usage(long, short)]
     pub(super) mode: Option<String>,
 
-    /// Print the config/source updates without writing anything
+    /// Print the config and source changes without writing anything
     #[usage(long, short = 'n')]
     pub(super) dry_run: bool,
 
@@ -88,7 +106,8 @@ pub(crate) struct DotfilesAdd {
     #[usage(long, short)]
     pub(super) yes: bool,
 
-    /// Prompt securely for missing bootstrap secret inputs
+    /// Prompt for `[bootstrap.secrets]` values that templates need and the
+    /// environment does not set
     #[usage(long)]
     pub(super) prompt_secrets: bool,
 

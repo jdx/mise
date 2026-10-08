@@ -11,24 +11,23 @@ description: "Mark a config file as trusted"
 
 Mark a config file as trusted
 
-This means mise is allowed to parse the file when it needs to read config
-that may execute code or affect the environment. Without trust, mise may
-prompt, skip the config in some discovery paths, or fail with an
+Trust lets mise load the parts of a config file that can run code or change
+your environment. Without it, mise prompts, skips the file, or fails with an
 untrusted-config error when it cannot prompt.
 
-In normal mode, commands that execute project-defined behavior (`mise run`,
-naked task invocations such as `mise <TASK>`, `mise install`, `mise exec`,
-and `mise watch`) automatically trust their active config. Paranoid mode
-requires explicit, content-bound trust for every non-global config.
+A file with no template syntax that contains only `min_version`, `[tools]`
+entries with plain version strings (or arrays of them), and `[tasks]` in
+which no task lists `secrets` does not need trust unless paranoid mode is on.
+Commands that run project code (`mise run`, task shorthand such as
+`mise build`, `mise install`, `mise exec`, `mise watch`, and
+`mise daemons start|restart|register`) trust their active config
+automatically.
 
-In normal mode, safe config files do not require trust: files that only contain
-`min_version`, `[tools]` entries with plain version strings (or arrays of
-them), and `[tasks]` without templates or tool options.
-
-Trust is shared across git worktrees: a config file inside a linked
-worktree is trusted when the equivalent path in the repository's main
-checkout has been trusted. Paranoid mode disables this sharing since
-worktrees can check out branches with different config contents.
+Trusting a config file in a repository's main checkout also trusts the same
+path in its git worktrees. Paranoid mode (<https://mise.jdx.dev/paranoid.html>)
+turns off automatic and worktree trust and requires trust, tied to the
+file's contents, for every config outside the global and system config.
+See <https://mise.jdx.dev/security.html#configuration-trust>
 
 ## Arguments
 - **`[CONFIG_FILE]`** — The config file whose trust status to change
@@ -36,26 +35,32 @@ worktrees can check out branches with different config contents.
 ## Flags
 - **`-a --all`** — Trust all config files in the current directory, its parents, and its subdirectories
 
-  Subdirectories are walked respecting .gitignore, skipping hidden directories
-  and common build/dependency directories (node_modules, vendor, target, dist, build).
+  Subdirectories are walked respecting .gitignore, skipping hidden directories and common build and dependency directories (node_modules, vendor, target, dist, build).
 - **`--ignore`** — Do not trust this config and ignore it in the future
-- **`--show`** — Show the trusted status of config files from the current directory and its parents.
+- **`--show`** — Show the trust status of config files in the current directory and its parents
+
   Does not trust or untrust any files.
 - **`--untrust`** — Remove explicit trust for this config
 - **`-h --help`** — Print help
 
 ## Examples
 
-trusts ~/some_dir/mise.toml
-
-```
-mise trust ~/some_dir/mise.toml
-```
-
-trusts mise.toml in the current or parent directory
+Trust the nearest untrusted config in this directory or a parent
 
 ```
 mise trust
+```
+
+Trust a specific file
+
+```
+mise trust ~/src/app/mise.toml
+```
+
+List configs here and above with their trust status
+
+```
+mise trust --show
 ```
 
 <!-- generated reference navigation -->

@@ -7,30 +7,28 @@ use crate::install_before::resolve_cli_minimum_release_age;
 use crate::toolset::{ToolRequest, resolve_sub_base};
 use crate::ui::multi_progress_report::MultiProgressReport;
 
-/// Resolve the latest matching version request for a tool
+/// Print the latest version that matches a version request
 ///
-/// Supports prefixes such as `node@20`. The selected backend decides how channels,
-/// refs, and non-SemVer versions resolve; "latest" is not a generic sort of strings.
-/// This prints a version without installing it or changing configuration.
+/// `mise latest node` prints the latest release, and `mise latest node@22` the
+/// latest 22.x release. Each backend decides what "latest" means, for example
+/// whether prereleases count and how channels and refs resolve. Nothing is
+/// installed and no config changes.
 #[derive(Debug, usage_rs::Args)]
 #[usage(
     verbatim_doc_comment,
+    example("mise latest node", help = "Print the latest node release"),
+    example("mise latest node@22", help = "Print the latest node 22.x release"),
     example(
-        r###"mise latest node@20
-mise latest node"###,
-        help = r###"Resolve a Node 20 release, or the backend's latest stable release"###
+        "mise latest node@22 --installed",
+        help = "Print the latest installed node 22.x version"
     ),
     example(
-        r###"mise latest node@20 --installed"###,
-        help = r###"Restrict resolution to installed versions"###
-    ),
-    example(
-        r###"mise latest node --minimum-release-age 30d"###,
-        help = r###"Exclude releases newer than the requested age"###
+        "mise latest node --minimum-release-age 30d",
+        help = "Skip releases from the last 30 days"
     )
 )]
 pub(crate) struct Latest {
-    /// Tool to get the latest version of
+    /// Tool, optionally with a version prefix, such as `node` or `node@22`
     #[usage(value_name = "TOOL@VERSION")]
     tool: ToolArg,
 
@@ -40,15 +38,21 @@ pub(crate) struct Latest {
     #[usage(hide = true)]
     asdf_version: Option<String>,
 
-    /// Show latest installed instead of available version
+    /// Print the latest installed version instead of the latest available one
     #[usage(short, long)]
     installed: bool,
 
-    /// Only consider versions released before this date or older than this duration
+    /// Only consider versions released before a date or at least a duration ago
     ///
-    /// Supports absolute dates like "2024-06-01" and relative durations like "90d" or "1y".
-    /// Overrides per-tool `minimum_release_age` options and the global `minimum_release_age` setting.
-    #[usage(long, alias = "before", verbatim_doc_comment, conflicts = "installed")]
+    /// Takes a date such as `2024-06-01` or a duration such as `90d` or `1y`.
+    /// Overrides the `minimum_release_age` setting and tool option.
+    #[usage(
+        long,
+        alias = "before",
+        value_name = "AGE",
+        verbatim_doc_comment,
+        conflicts = "installed"
+    )]
     minimum_release_age: Option<String>,
 }
 

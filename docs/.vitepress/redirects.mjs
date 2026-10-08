@@ -22,6 +22,114 @@ export const pageRedirects = {
       commands: "/bootstrap/shell.html#set-your-login-shell",
     },
   },
+  "/cli/bootstrap/dotfiles.html": {
+    to: "/cli/dotfiles.html",
+  },
+  "/cli/bootstrap/dotfiles/add.html": {
+    to: "/cli/dotfiles/add.html",
+  },
+  "/cli/bootstrap/dotfiles/apply.html": {
+    to: "/cli/dotfiles/apply.html",
+  },
+  "/cli/bootstrap/dotfiles/capture.html": {
+    to: "/cli/dotfiles/capture.html",
+  },
+  "/cli/bootstrap/dotfiles/conflicts.html": {
+    to: "/cli/dotfiles/conflicts.html",
+  },
+  "/cli/bootstrap/dotfiles/diff.html": {
+    to: "/cli/dotfiles/diff.html",
+  },
+  "/cli/bootstrap/dotfiles/edit.html": {
+    to: "/cli/dotfiles/edit.html",
+  },
+  "/cli/bootstrap/dotfiles/exclude.html": {
+    to: "/cli/dotfiles/exclude.html",
+  },
+  "/cli/bootstrap/dotfiles/history.html": {
+    to: "/cli/dotfiles/history.html",
+  },
+  "/cli/bootstrap/dotfiles/history/describe.html": {
+    to: "/cli/dotfiles/history/describe.html",
+  },
+  "/cli/bootstrap/dotfiles/history/diff.html": {
+    to: "/cli/dotfiles/history/diff.html",
+  },
+  "/cli/bootstrap/dotfiles/history/ls.html": {
+    to: "/cli/dotfiles/history/ls.html",
+  },
+  "/cli/bootstrap/dotfiles/history/show.html": {
+    to: "/cli/dotfiles/history/show.html",
+  },
+  "/cli/bootstrap/dotfiles/include.html": {
+    to: "/cli/dotfiles/include.html",
+  },
+  "/cli/bootstrap/dotfiles/notify.html": {
+    to: "/cli/dotfiles/notify.html",
+  },
+  "/cli/bootstrap/dotfiles/origin.html": {
+    to: "/cli/dotfiles/origin.html",
+  },
+  "/cli/bootstrap/dotfiles/origin/set.html": {
+    to: "/cli/dotfiles/origin/set.html",
+  },
+  "/cli/bootstrap/dotfiles/paths.html": {
+    to: "/cli/dotfiles/paths.html",
+  },
+  "/cli/bootstrap/dotfiles/pull.html": {
+    to: "/cli/dotfiles/pull.html",
+  },
+  "/cli/bootstrap/dotfiles/recover.html": {
+    to: "/cli/dotfiles/recover.html",
+  },
+  "/cli/bootstrap/dotfiles/rollback.html": {
+    to: "/cli/dotfiles/rollback.html",
+  },
+  "/cli/bootstrap/dotfiles/save.html": {
+    to: "/cli/dotfiles/save.html",
+  },
+  "/cli/bootstrap/dotfiles/status.html": {
+    to: "/cli/dotfiles/status.html",
+  },
+  "/cli/bootstrap/dotfiles/sync.html": {
+    to: "/cli/dotfiles/sync.html",
+  },
+  "/cli/bootstrap/dotfiles/track.html": {
+    to: "/cli/dotfiles/track.html",
+  },
+  "/cli/bootstrap/dotfiles/unapply.html": {
+    to: "/cli/dotfiles/unapply.html",
+  },
+  "/cli/bootstrap/dotfiles/undo.html": {
+    to: "/cli/dotfiles/undo.html",
+  },
+  "/cli/bootstrap/dotfiles/untrack.html": {
+    to: "/cli/dotfiles/untrack.html",
+  },
+  "/cli/bootstrap/dotfiles/watch.html": {
+    to: "/cli/dotfiles/watch.html",
+  },
+  "/cli/bootstrap/launchd/apply.html": {
+    to: "/cli/bootstrap/macos/launchd-agents/apply.html",
+  },
+  "/cli/bootstrap/launchd/status.html": {
+    to: "/cli/bootstrap/macos/launchd-agents/status.html",
+  },
+  "/cli/bootstrap/macos-defaults/apply.html": {
+    to: "/cli/bootstrap/macos/defaults/apply.html",
+  },
+  "/cli/bootstrap/macos-defaults/status.html": {
+    to: "/cli/bootstrap/macos/defaults/status.html",
+  },
+  "/cli/bootstrap/systemd/apply.html": {
+    to: "/cli/bootstrap/linux/systemd-units/apply.html",
+  },
+  "/cli/bootstrap/systemd/status.html": {
+    to: "/cli/bootstrap/linux/systemd-units/status.html",
+  },
+  "/cli/tasks/run.html": {
+    to: "/cli/run.html",
+  },
   "/dev-tools/backend_architecture.html": {
     to: "/dev-tools/backends/",
     hashes: {

@@ -15,9 +15,9 @@ Square brackets mark optional input, angle brackets mark required input, and `�
 means the argument can repeat. Do not type those notation characters.
 
 ## Arguments
-- **`[TASK]`** — Task to run.
+- **`[TASK]`** — Task to run
 
-  Shorthand for `mise tasks run <TASK>`.
+  Shorthand for `mise run <TASK>`.
 
 ## Global Flags
 
@@ -26,9 +26,13 @@ name, so consult that command's page for placement and meaning. Effect labels de
 the command's intended operation; configuration evaluation, caches, and required tool
 installation can still have side effects. They are not sandbox guarantees.
 
-- **`-C --cd <DIR>`** — Change directory before running command
-- **`-E --env <ENV>`** — Set the environment for loading `mise.<ENV>.toml`
-- **`-j --jobs <JOBS>`** — How many jobs to run in parallel; values below 1 are treated as 1 [default: 8]
+- **`-C --cd <DIR>`** — Run as if mise were started in DIR
+- **`-E --env <ENV>`** — Load the `mise.<ENV>.toml` config files (same as MISE_ENV)
+
+  Repeat the flag or separate names with commas to load several environments.
+- **`-j --jobs <JOBS>`** — How many jobs to run in parallel; defaults to the `jobs` setting
+
+  Values below 1 are treated as 1.
 
   **Environment Variable:** `MISE_JOBS`
 - **`-q --quiet`** — Suppress non-error messages
@@ -36,24 +40,24 @@ installation can still have side effects. They are not sandbox guarantees.
   **Environment Variable:** `MISE_QUIET`
 - **`-v --verbose`** — Show extra output (use -vv for even more)
 - **`-y --yes`** — Answer yes to all confirmation prompts
-- **`--raw`** — Read/write directly to stdin/stdout/stderr instead of by line
-- **`--locked`** — Require lockfile URLs to be present during installation
+- **`--raw`** — Connect tasks and install commands directly to the terminal
 
-  Fails if tools don't have pre-resolved URLs in the lockfile for the current platform.
-  This prevents API calls to GitHub, aqua registry, etc.
-  Can also be enabled via MISE_LOCKED=1 or settings.locked=true
+  Commands then run one at a time. Same as `MISE_RAW=1` or the `raw` setting.
+- **`--locked`** — Require download URLs from the lockfile when installing
+
+  Installing fails when the lockfile has no pre-resolved URL for a tool on the current platform, so mise does not call the GitHub or aqua registry APIs to find one. Same as `MISE_LOCKED=1` or the `locked` setting.
 - **`--silent`** — Suppress all task output and mise non-error messages
 
 ## Flags
 - **`--no-config`** — Do not load any config files
 
-  Can also use `MISE_NO_CONFIG=1`
+  Same as `MISE_NO_CONFIG=1`.
 - **`--no-env`** — Do not load environment variables from config files
 
-  Can also use `MISE_NO_ENV=1`
-- **`--no-hooks`** — Do not execute hooks from config files
+  Same as `MISE_NO_ENV=1`.
+- **`--no-hooks`** — Do not run hooks from config files
 
-  Can also use `MISE_NO_HOOKS=1`
+  Same as `MISE_NO_HOOKS=1`.
 - **`-h --help`** — Print help
 
 ## Subcommands
@@ -63,62 +67,62 @@ Choose a command family below. Its page lists the available subcommands.
 ### Install and inspect tools
 
 - [`mise use`](/cli/use.html) — Install a tool and add it to configuration
-- [`mise install`](/cli/install.html) — Install a tool version
-- [`mise install-into`](/cli/install-into.html) — Install a tool version to a specific path
-- [`mise installs`](/cli/installs.html) — [experimental] Inspect and choose installations of the identity install layout
+- [`mise install`](/cli/install.html) — Install the tools in your config, or specific tool versions
+- [`mise install-into`](/cli/install-into.html) — Install a tool version into a directory outside mise
+- [`mise installs`](/cli/installs.html) — [experimental] Inspect and choose identity-layout installations
 - [`mise uninstall`](/cli/uninstall.html) — Remove installed tool versions
-- [`mise unuse`](/cli/unuse.html) — Remove tool requests from configuration and prune unused installations
+- [`mise unuse`](/cli/unuse.html) — Remove tool requests from config files and prune unused installations
 - [`mise upgrade`](/cli/upgrade.html) — Upgrade outdated tools
 - [`mise outdated`](/cli/outdated.html) — Show outdated tool versions
 - [`mise lock`](/cli/lock.html) — Create or refresh lockfile versions, checksums, and download URLs
-- [`mise latest`](/cli/latest.html) — Resolve the latest matching version request for a tool
+- [`mise latest`](/cli/latest.html) — Print the latest version that matches a version request
 - [`mise ls`](/cli/ls.html) — List installed and active tool versions
 - [`mise ls-remote`](/cli/ls-remote.html) — List tool versions available to install
 - [`mise tool`](/cli/tool.html) — Show information about a tool
-- [`mise where`](/cli/where.html) — Display the installation path for a tool
+- [`mise where`](/cli/where.html) — Show the install directory of a tool version
 - [`mise which`](/cli/which.html) — Show the path a tool's executable resolves to
-- [`mise bin-paths`](/cli/bin-paths.html) — List all the active runtime bin paths
+- [`mise bin-paths`](/cli/bin-paths.html) — List the bin directories of the active tools
 - [`mise registry`](/cli/registry.html) — List registry shorthand names and their backends
 - [`mise search`](/cli/search.html) — Search for available tools
 - [`mise backends`](/cli/backends.html) — Manage backends
 - [`mise link`](/cli/link.html) — Symlink a tool version into mise
-- [`mise sync`](/cli/sync.html) — Synchronize tools from other version managers with mise
-- [`mise prune`](/cli/prune.html) — Delete unused versions of tools
+- [`mise sync`](/cli/sync.html) — Use tool versions installed by other version managers
+- [`mise prune`](/cli/prune.html) — Delete tool versions that nothing uses
 - [`mise reshim`](/cli/reshim.html) — Create shims for executables provided by installed tools
-- [`mise tool-stub`](/cli/tool-stub.html) — Execute a tool stub
-- [`mise packslip`](/cli/packslip.html) — The signers mise accepts packslips from
+- [`mise tool-stub`](/cli/tool-stub.html) — Run a tool stub file
+- [`mise packslip`](/cli/packslip.html) — Inspect and reset the signers mise has pinned for packslip tools
 
 ### Shell and environment
 
 - [`mise activate`](/cli/activate.html) — Print the script to activate mise in an interactive shell
 - [`mise deactivate`](/cli/deactivate.html) — Print the script to disable mise in the current shell session
 - [`mise completion`](/cli/completion.html) — Generate shell completions
-- [`mise en`](/cli/en.html) — Start a new shell with the mise environment built from the current configuration
+- [`mise en`](/cli/en.html) — Start a subshell with mise's tools and environment
 - [`mise env`](/cli/env.html) — Print the environment for the current configuration
-- [`mise exec`](/cli/exec.html) — Execute a command with tool(s) set
+- [`mise exec`](/cli/exec.html) — Run a command with mise's tools and environment
 - [`mise shell`](/cli/shell.html) — Set a tool version for the current shell session
-- [`mise set`](/cli/set.html) — Set environment variables in mise.toml
-- [`mise unset`](/cli/unset.html) — Remove environment variable(s) from the config file
+- [`mise set`](/cli/set.html) — Set, show, or list environment variables in mise.toml
+- [`mise unset`](/cli/unset.html) — Remove environment variables from mise.toml
 - [`mise shell-alias`](/cli/shell-alias.html) — Manage shell aliases
-- [`mise tool-alias`](/cli/tool-alias.html) — Manage tool version aliases
-- [`mise secrets`](/cli/secrets.html) — [experimental] List the secret names this project's secrets source provides, without their values
-- [`mise token`](/cli/token.html) — Display git provider tokens mise will use
+- [`mise tool-alias`](/cli/tool-alias.html) — Manage tool backend and version aliases
+- [`mise secrets`](/cli/secrets.html) — [experimental] Inspect the project's secrets source
+- [`mise token`](/cli/token.html) — Show which Git provider token mise uses
 - [`mise ssh`](/cli/ssh.html) — Open an SSH session, optionally borrowing read-only GitHub access
 
 ### Tasks and project automation
 
 - [`mise run`](/cli/run.html) — Run tasks and their dependencies
 - [`mise tasks`](/cli/tasks.html) — Manage tasks
-- [`mise watch`](/cli/watch.html) — Run task(s) and rerun them when files change
+- [`mise watch`](/cli/watch.html) — Run tasks and rerun them when files change
 - [`mise deps`](/cli/deps.html) — [experimental] Manage project dependencies
 - [`mise daemons`](/cli/daemons.html) — [experimental] Manage project daemons with pitchfork
-- [`mise generate`](/cli/generate.html) — Generate files for various tools/services
+- [`mise generate`](/cli/generate.html) — Generate project files such as CI workflows, git hooks, and scripts
 
 ### Machine setup and images
 
-- [`mise bootstrap`](/cli/bootstrap.html) — Set up a machine from the current configuration
-- [`mise dotfiles`](/cli/dotfiles.html) — Manage dotfiles from `[dotfiles]`
-- [`mise oci`](/cli/oci.html) — [experimental] Build OCI container images from a mise.toml
+- [`mise bootstrap`](/cli/bootstrap.html) — Set up this machine from your mise config
+- [`mise dotfiles`](/cli/dotfiles.html) — Deploy, track, and sync dotfiles
+- [`mise oci`](/cli/oci.html) — [experimental] Build, push, and run OCI images of a project's tools
 
 ### Configuration and diagnostics
 
@@ -128,9 +132,9 @@ Choose a command family below. Its page lists the available subcommands.
 - [`mise settings`](/cli/settings.html) — Manage settings
 - [`mise trust`](/cli/trust.html) — Mark a config file as trusted
 - [`mise untrust`](/cli/untrust.html) — Remove explicit trust for a config
-- [`mise doctor`](/cli/doctor.html) — Check mise installation for possible problems
+- [`mise doctor`](/cli/doctor.html) — Check your mise setup for problems
 - [`mise cache`](/cli/cache.html) — Manage the mise cache
-- [`mise version`](/cli/version.html) — Display the version of mise
+- [`mise version`](/cli/version.html) — Show the version of mise
 - [`mise self-update`](/cli/self-update.html) — Update mise itself
 - [`mise implode`](/cli/implode.html) — Remove the mise CLI and all related data
 
@@ -142,6 +146,6 @@ Choose a command family below. Its page lists the available subcommands.
 ### Integrations and community
 
 - [`mise mcp`](/cli/mcp.html) — Run the Model Context Protocol server over stdin/stdout
-- [`mise skills`](/cli/skills.html) — Agent skills the active tools ship, from their packslips
+- [`mise skills`](/cli/skills.html) — List and link the agent skills that active tools ship
 - [`mise patrons`](/cli/patrons.html) — Show the individuals supporting mise as Patron-tier members
 - [`mise sponsors`](/cli/sponsors.html) — Show the companies sponsoring mise and the jdx.dev open source tools

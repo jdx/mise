@@ -3,21 +3,24 @@ use eyre::Result;
 use crate::config::Config;
 use crate::system;
 
-/// Show the changes needed to apply dotfiles from `[dotfiles]`
+/// Show what `mise dot apply` would change
+///
+/// Prints a unified diff for every whole-file entry and edit that
+/// `mise dot apply` would change. Templates are rendered first, so trusted
+/// template functions may run. Tracked entries have nothing to apply; use
+/// `mise dot history diff` to see their unsaved changes.
 #[derive(Debug, usage_rs::Args)]
 #[usage(
-    verbatim_doc_comment,
-    example(
-        r###"mise dot diff
-mise dot diff ~/.zshrc"###
-    )
+    example("mise dot diff", help = "Show every pending change"),
+    example("mise dot diff ~/.zshrc", help = "Show the change for one target")
 )]
 pub(crate) struct DotfilesDiff {
     /// Only show these targets
     #[usage(value_name = "TARGET")]
     targets: Vec<String>,
 
-    /// Prompt securely for missing bootstrap secret inputs
+    /// Prompt for `[bootstrap.secrets]` values that templates need and the
+    /// environment does not set
     #[usage(long)]
     prompt_secrets: bool,
 }

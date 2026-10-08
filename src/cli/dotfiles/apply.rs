@@ -6,23 +6,33 @@ use crate::config::{Config, Settings};
 use crate::path::PathExt;
 use crate::system;
 
-/// Apply dotfiles from `[dotfiles]`
+/// Deploy `[dotfiles]` entries to their targets
 ///
-/// Applies configured whole-file entries and edits that aren't in their
-/// desired state. Whole-file entries may symlink, copy, or render templates.
-/// Edit entries manage a marker-delimited block or a single line in a file
-/// mise doesn't otherwise own.
+/// Applies the whole-file entries and edits that are not in their desired
+/// state. Whole-file entries symlink, copy, render templates, write inline
+/// `content`, set `permissions`, or remove targets declared `mode = "absent"`.
+/// Edit entries manage a marker-delimited block, a single line, or merged keys
+/// in a file mise does not otherwise own.
 ///
-/// With `--prune`, files deployed by dotfile groups that are no longer
-/// selected or declared are removed too.
+/// The `pre-dotfiles` and `post-dotfiles` bootstrap hooks run before and after
+/// the apply (with `--dry-run` they are printed, not run), and the matching
+/// `[history.reload]` commands run for the targets it wrote.
+///
+/// With `--prune`, also removes files that dotfile groups deployed but no
+/// active entry deploys now: files of a group that is no longer selected or
+/// declared, and files a group stopped deploying because of a new `exclude` or
+/// a deleted source.
 #[derive(Debug, usage_rs::Args)]
 #[usage(
-    verbatim_doc_comment,
+    example("mise dot apply", help = "Deploy every entry that is out of date"),
+    example("mise dot apply --dry-run", help = "Print what would change"),
     example(
-        r###"mise dot apply
-mise dot apply --dry-run
-mise dot apply --prune
-mise dot apply --force --yes"###
+        "mise dot apply --prune",
+        help = "Also remove files left by dotfile groups"
+    ),
+    example(
+        "mise dot apply --force --yes",
+        help = "Overwrite conflicting files without prompting"
     )
 )]
 pub(crate) struct DotfilesApply {
@@ -42,12 +52,13 @@ pub(crate) struct DotfilesApply {
     #[usage(long, short)]
     yes: bool,
 
-    /// Also remove files deployed by dotfile groups that are no longer
-    /// selected or declared
+    /// Also remove files that dotfile groups deployed but no active entry deploys
+    /// now
     #[usage(long)]
     prune: bool,
 
-    /// Prompt securely for missing bootstrap secret inputs
+    /// Prompt for `[bootstrap.secrets]` values that templates need and the
+    /// environment does not set
     #[usage(long)]
     prompt_secrets: bool,
 }

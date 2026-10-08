@@ -12,14 +12,22 @@ description: "[experimental] Build an OCI image from the current mise.toml"
 [experimental] Build an OCI image from the current mise.toml
 
 Each tool version becomes its own content-addressable OCI layer. Bumping a
-tool version only invalidates that tool's layer — other tools, the base
-image, and config are reused unchanged. The output directory conforms to
-the OCI image-layout spec. Use `skopeo inspect oci:./mise-oci` to inspect it
-or `mise oci run --image-dir ./mise-oci -- command` to load and run it.
+tool version invalidates that tool's layer (a Python bump also invalidates
+pypi tool layers, which are relocated against it); other tool layers and the
+base image layers are reused, while the generated /etc/mise/config.toml
+layer, image config, and manifest are regenerated. The output directory
+follows the OCI image-layout spec.
 
-Build on Linux with the target architecture: this packages host tool installs
-and, by default, the running mise binary. `--no-mise` omits that binary but does
-not cross-compile tools installed for another OS. asdf tools are unsupported.
+Only tools from project config files are packaged, including a monorepo
+root's config. The global and system configs and a config directly in your
+home directory, such as ~/mise.toml, are left out unless you pass
+`--include-global`.
+
+Build on a Linux host with the image's architecture. Tools are packaged as
+installed on the host, and so is the running mise binary, at
+/usr/local/bin/mise, unless you pass `--no-mise`. asdf plugins are not
+supported; use a vfox plugin or any other backend for each tool. vfox
+plugins are copied into the image next to the tools they install.
 
 Requires `mise settings experimental=true` (or `MISE_EXPERIMENTAL=1`).
 
@@ -29,41 +37,44 @@ Requires `mise settings experimental=true` (or `MISE_EXPERIMENTAL=1`).
 
   **Default:** `./mise-oci`
 - **`--from <FROM>`** — Base image reference (overrides [oci].from and the oci.default_from setting)
-- **`--include-global`** — Also include tools from the global / system config (default: project-only)
+- **`--include-global`** — Also package tools from the global and system configs
 
-  By default `mise oci build` only packages tools declared in the project's mise config (and any parent configs at-or-below the project root, e.g. a monorepo root config). Personal dev tools in `~/.config/mise/config.toml` are excluded so they don't bake into a project image. Pass `--include-global` to revert to the old "merge all loaded configs" behavior.
+  By default `mise oci build` packages only project config files, including a monorepo root's config. With this flag it also includes the tools, `[oci]`, `[bootstrap.packages]`, and `[dotfiles]` of the global and system configs and of a config directly in your home directory, so personal tools from ~/.config/mise/config.toml end up in the image.
 - **`-t --tag <TAG>`** — Tag to record in the image index (the org.opencontainers.image.ref.name annotation)
-- **`--mount-point <MOUNT_POINT>`** — Where to place tool installs inside the image (default: /mise)
+- **`--mount-point <MOUNT_POINT>`** — Where tools install inside the image
+
+  Overrides [oci].mount_point and the oci.default_mount_point setting.
 - **`--no-mise`** — Do not embed the currently-running mise binary at /usr/local/bin/mise
 - **`--no-cache`** — Rebuild tool layers without reading or writing the local layer cache
 - **`--owner <UID[:GID]>`** — UID[:GID] to assign to every tar entry in generated layers
 
-  Overrides [oci].user_id / [oci].group_id. Defaults to 0:0. If GID is omitted, it defaults to UID. This affects file ownership only; [oci].user controls the image USER directive.
+  Overrides [oci].user_id and [oci].group_id. Defaults to 0:0. If GID is omitted, it defaults to UID. This affects file ownership only; [oci].user controls the image USER directive.
 - **`-h --help`** — Print help
 
 ## Examples
 
-Run on a Linux host with the target architecture
+Build the project's image into ./mise-oci
 
 ```
 mise oci build
+```
+
+Use another base image and record a tag
+
+```
 mise oci build --from ubuntu:24.04 --tag myorg/dev:latest -o ./img
+```
+
+Inspect the result
+
+```
 skopeo inspect oci:./img
+```
+
+Open a shell in it
+
+```
 mise oci run --image-dir ./img -- /bin/sh
-```
-
-Notes:
-
-```
-- The image only contains tools from the project's mise config (and
-  any configs at-or-below the project root). Tools from
-  `~/.config/mise/config.toml` are not included; pass --include-global
-  to package them too.
-- asdf plugins are not supported; use a vfox plugin or another backend
-  (core, aqua, github, cargo, npm, go, pipx, spm, http) for each tool.
-  vfox plugins are copied into the image next to the tools they install.
-- The host mise binary is embedded at /usr/local/bin/mise by default;
-  build on the same OS/arch as your target image (or pass --no-mise).
 ```
 
 <!-- generated reference navigation -->

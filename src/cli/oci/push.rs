@@ -9,56 +9,71 @@ use crate::oci::{BuildOptions, LayerOwner, registry};
 
 /// [experimental] Build an OCI image and push it to a registry
 ///
-/// Pushes with mise's built-in registry client — no skopeo/crane/docker
-/// required. If `--image-dir` is not passed, builds fresh from the current
-/// mise.toml first. Only blobs the registry doesn't already have are
-/// uploaded, so repeat pushes of mostly-unchanged toolsets are cheap.
+/// Builds from the project's config, as `mise oci build` does, unless
+/// `--image-dir` names an image layout built earlier. Then uploads only the
+/// blobs the registry does not already have. mise pushes with its own registry
+/// client, so skopeo, crane, and docker are not needed.
 ///
 /// Tool layers whose tool, version, mount point, and file owner match the
 /// previously pushed image (or `--cache-from`) are reused without being
-/// rebuilt — those tools don't even need to be installed locally. Pass
-/// `--no-cache` to rebuild tool layers without using the remote or local layer cache.
+/// rebuilt, so those tools need not be installed locally. Pass `--no-cache` to
+/// rebuild every tool layer.
 ///
-/// Credentials are read from the same places docker and podman use:
-/// `$REGISTRY_AUTH_FILE`, `$XDG_RUNTIME_DIR/containers/auth.json`,
-/// `~/.config/containers/auth.json`, and `~/.docker/config.json`
-/// (including credential helpers) — so `docker login` / `podman login`
-/// is all the setup needed.
+/// Credentials come from the files docker and podman use: `$REGISTRY_AUTH_FILE`,
+/// `$XDG_RUNTIME_DIR/containers/auth.json`, `~/.config/containers/auth.json`,
+/// then `~/.docker/config.json`, including inline auths and credential helpers.
+/// Log in with `docker login` or `podman login`.
 ///
 /// Requires `mise settings experimental=true` (or `MISE_EXPERIMENTAL=1`).
 #[derive(Debug, usage_rs::Args)]
-#[usage(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP,
-    example(r###"mise oci push ghcr.io/me/devenv:latest"###, help = r###"Build and push to GHCR:"###),
-    example(r###"mise oci build -o ./img
-mise oci push --image-dir ./img ghcr.io/me/devenv:v1"###, help = r###"Push an image built earlier:"###))]
+#[usage(
+    verbatim_doc_comment,
+    example(
+        r###"mise oci push ghcr.io/me/devenv:latest"###,
+        help = r###"Build and push to GHCR"###
+    ),
+    example(
+        r###"mise oci build -o ./img
+mise oci push --image-dir ./img ghcr.io/me/devenv:v1"###,
+        help = r###"Push an image built earlier"###
+    )
+)]
 pub(super) struct Push {
     /// Destination registry reference (e.g. `ghcr.io/me/devenv:latest`)
     #[usage(value_name = "REF")]
     reference: String,
 
-    /// Reuse unchanged tool layers from this image instead of the destination ref
+    /// Reuse unchanged tool layers from this image instead of the destination's current tag
     ///
-    /// Must live in the same repository as the destination. Useful when each
-    /// push gets a unique tag (e.g. per-commit tags in CI):
-    /// `--cache-from ghcr.io/me/dev:latest ghcr.io/me/dev:$SHA`.
+    /// Must be in the same repository as the destination. Useful when every push
+    /// gets a new tag, as with per-commit tags in CI:
+    /// `mise oci push --cache-from ghcr.io/me/dev:latest ghcr.io/me/dev:$SHA`.
+    /// Cannot be combined with --no-cache.
     #[usage(long, value_name = "REF", conflicts = &["no_cache", "image_dir"])]
     cache_from: Option<String>,
 
-    /// Base image for the build (ignored with --image-dir)
+    /// Base image for the build
+    ///
+    /// Overrides [oci].from and the oci.default_from setting.
     #[usage(long)]
     from: Option<String>,
 
-    /// Push an already-built OCI image layout (skip the build step)
+    /// Push an existing OCI image layout instead of building one
+    ///
+    /// Cannot be combined with --cache-from, --from, --include-global,
+    /// --mount-point, --no-mise, or --owner.
     #[usage(long, value_hint = ValueHint::DirPath, conflicts = &["from", "mount_point", "no_mise", "owner", "include_global"])]
     image_dir: Option<PathBuf>,
 
-    /// Also include tools from the global / system config (default: project-only)
+    /// Also package tools from the global and system configs
     ///
     /// See `mise oci build --help` for details.
     #[usage(long)]
     include_global: bool,
 
-    /// Override in-image mount point (ignored with --image-dir)
+    /// Where tools install inside the image
+    ///
+    /// Overrides [oci].mount_point and the oci.default_mount_point setting.
     #[usage(long)]
     mount_point: Option<String>,
 
@@ -66,13 +81,13 @@ pub(super) struct Push {
     #[usage(long)]
     no_cache: bool,
 
-    /// Don't embed the mise binary (ignored with --image-dir)
+    /// Do not embed the running mise binary at /usr/local/bin/mise
     #[usage(long)]
     no_mise: bool,
 
-    /// UID[:GID] to assign to every tar entry when building (conflicts with --image-dir)
+    /// UID[:GID] to assign to every tar entry when building
     ///
-    /// Overrides [oci].user_id / [oci].group_id. Defaults to 0:0. If GID is
+    /// Overrides [oci].user_id and [oci].group_id. Defaults to 0:0. If GID is
     /// omitted, it defaults to UID. This affects file ownership only; [oci].user
     /// controls the image USER directive.
     #[usage(long, value_name = "UID[:GID]")]
@@ -198,14 +213,3 @@ impl Push {
         }
     }
 }
-
-static AFTER_LONG_HELP: &str = color_print::cstr!(
-    r###"<bold><underline>Auth:</underline></bold>
-
-    Credentials are resolved the same way docker/podman resolve them:
-    <bold>$REGISTRY_AUTH_FILE</bold>, <bold>$XDG_RUNTIME_DIR/containers/auth.json</bold>,
-    <bold>~/.config/containers/auth.json</bold>, then <bold>~/.docker/config.json</bold>
-    (inline auths and credential helpers). Log in with either:
-    $ <bold>docker login ghcr.io</bold>
-    $ <bold>podman login ghcr.io</bold>"###
-);

@@ -8,12 +8,25 @@ use crate::{backend, plugins};
 
 /// Remove an installed plugin
 ///
-/// Tool installations are retained by default. Pass `--purge` to also remove
-/// installs, downloads, and cache associated with the selected plugins.
+/// Installed tool versions are kept unless you pass `--purge`, which also
+/// removes a tool plugin's installs, downloads, and cache. `--purge` does not
+/// remove the tools of a backend plugin (`<plugin>:<tool>`); uninstall those
+/// first with `mise uninstall --all <plugin>:<tool>`.
 #[derive(Debug, usage_rs::Args)]
-#[usage(verbatim_doc_comment, visible_aliases = ["remove", "rm"], example(r###"mise plugins uninstall my-tool"###))]
+#[usage(
+    verbatim_doc_comment,
+    visible_aliases = ["remove", "rm"],
+    example(
+        r###"mise plugins uninstall my-tool"###,
+        help = "Remove the plugin and keep the versions it installed"
+    ),
+    example(
+        r###"mise plugins uninstall --purge my-tool"###,
+        help = "Also delete the versions it installed"
+    )
+)]
 pub(super) struct PluginsUninstall {
-    /// Plugin(s) to remove
+    /// Plugins to remove
     #[usage(verbatim_doc_comment)]
     plugin: Vec<String>,
 
@@ -21,7 +34,7 @@ pub(super) struct PluginsUninstall {
     #[usage(long, short, verbatim_doc_comment, conflicts = "plugin")]
     all: bool,
 
-    /// Also remove the plugin's installs, downloads, and cache
+    /// Also remove a tool plugin's installs, downloads, and cache
     #[usage(long, short, verbatim_doc_comment)]
     purge: bool,
 }

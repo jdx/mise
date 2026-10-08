@@ -12,43 +12,51 @@ description: "[experimental] Manage project dependencies"
 
 [experimental] Manage project dependencies
 
-With no subcommand, runs dependency installation for the current project, the same
-as `mise deps install`. Providers detect their inputs and installed outputs to
-decide whether work is needed; use `--explain PROVIDER` to inspect that decision.
+Installs project dependencies such as node_modules, separately from the tools
+`mise install` manages. Each provider is one package-manager step: a built-in
+one such as npm or uv, or a custom `[deps.<name>]` command. A provider runs only
+when its inputs changed or its outputs are missing; `--explain` shows why.
 
-Providers with `auto = true` run before `mise exec` and `mise run` unless `--no-deps`
-is passed. These install project dependencies, such as node_modules, separately
-from versioned tools managed by `mise install`.
+With no subcommand, runs `mise deps install`. Providers with `auto = true` also
+run before `mise exec` and `mise run` unless you pass --no-deps.
 
 ## Arguments
-- **`[PROVIDER]`** — Provider to operate on (runs only this provider, or use with --explain)
+- **`[PROVIDER]`** — Run only this provider, or explain it with --explain
 
 ## Flags
-- **`--explain`** — Show why a provider is fresh or stale (requires a provider argument)
-- **`-f --force`** — Force run all deps steps even if outputs are fresh
-- **`-n --dry-run`** — Only check if deps install is needed, don't run commands
-- **`--list`** — Show what deps providers are available
-- **`--monorepo`** — Install dependencies from every [monorepo].config_roots config root
+- **`--explain`** — Show why a provider is fresh or stale, and exit non-zero unless it is fresh (requires a PROVIDER argument)
+- **`-f --force`** — Run providers even when their outputs are up to date
+- **`-n --dry-run`** — Show which providers would run, without running them
+- **`--list`** — List configured providers with their status, sources, and outputs
+- **`--monorepo`** — Also run providers from every config root in `[monorepo].config_roots`
 
-  Requires monorepo_root = true plus explicit [monorepo].config_roots in
-  the monorepo root config. Providers are named like //apps/api:uv.
+  Requires `monorepo_root = true` and an explicit `config_roots` list in the
+  monorepo root's config. Provider names then include their root, such as
+  `//apps/api:uv`.
 
   **Environment Variable:** `MISE_MONOREPO`
-- **`--only <ONLY>`** — Run specific deps rule(s) only
-- **`--skip <SKIP>`** — Skip specific deps rule(s)
+- **`--only <PROVIDER>`** — Run only these providers
+- **`--skip <PROVIDER>`** — Skip these providers
 - **`-h --help`** — Print help
 
 ## Examples
 
+Run every provider that is out of date
+
 ```
-mise deps                    # Install all project dependencies
-mise deps install            # Same as bare `mise deps`
-mise deps install --force    # Force reinstall even if fresh
-mise deps install --dry-run  # Show what would run
-mise deps --monorepo         # Install deps from explicit monorepo config roots
-mise deps add npm:react      # Add a dependency
-mise deps add -D npm:vitest  # Add a dev dependency
-mise deps remove npm:lodash  # Remove a dependency
+mise deps
+```
+
+Show why the npm provider would or would not run
+
+```
+mise deps install npm --explain
+```
+
+Include providers from every monorepo config root
+
+```
+mise deps --monorepo
 ```
 
 ## Subcommands
@@ -60,9 +68,9 @@ mise deps remove npm:lodash  # Remove a dependency
 Configuration:
 
 ```toml
-# Built-in npm provider (auto-detects lockfile)
+# Built-in npm provider; needs package.json and package-lock.json
 [deps.npm]
-auto = true              # Auto-run before mise x/run
+auto = true              # run before mise exec and mise run
 
 # Custom provider
 [deps.codegen]
@@ -70,9 +78,9 @@ auto = true
 sources = ["schema/*.graphql"]
 outputs = ["src/generated/"]
 run = "npm run codegen"
-
-# To disable npm instead, add `disable = ["npm"]` under [deps].
 ```
+
+See <https://mise.jdx.dev/dev-tools/deps.html>.
 
 <!-- generated reference navigation -->
 

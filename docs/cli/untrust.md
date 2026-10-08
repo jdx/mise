@@ -11,11 +11,23 @@ description: "Remove explicit trust for a config"
 
 Remove explicit trust for a config
 
+mise asks again before loading the parts of the file that can run code. With
+no file, untrusts the nearest config in this directory or a parent. Same as
+`mise trust --untrust`.
+
 ## Arguments
 - **`[CONFIG_FILE]`** — The config file to untrust
 
 ## Flags
 - **`-h --help`** — Print help
+
+## Examples
+
+Stop trusting a specific file
+
+```
+mise untrust ~/src/app/mise.toml
+```
 
 <!-- generated reference navigation -->
 

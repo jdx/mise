@@ -4,9 +4,20 @@ use super::{display_arg, local_time, short};
 use crate::system::history::journal;
 use crate::ui::table::MiseTable;
 
-/// Show one checkpoint: what triggered it, what changed, and its journal
+/// Show a checkpoint: its trigger, changes, and operation journal
+///
+/// Prints the checkpoint's trigger, description, time, and machine, the files
+/// that changed since the previous checkpoint, and the tracked entries it
+/// covers. For a checkpoint that an operation recorded, also prints the
+/// operation's journal of the files it wrote.
 #[derive(Debug, usage_rs::Args)]
-#[usage(verbatim_doc_comment)]
+#[usage(
+    example("mise dot history show", help = "Show the newest checkpoint"),
+    example(
+        "mise dot history show latest~2 --files",
+        help = "List every file in an older checkpoint"
+    )
+)]
 pub(crate) struct HistoryShow {
     /// Numeric checkpoint ID, `latest` (the default), `latest~N`, or `commit:<sha>`
     #[usage(value_name = "REF")]

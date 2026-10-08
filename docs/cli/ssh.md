@@ -10,8 +10,19 @@ description: "Open an SSH session, optionally borrowing read-only GitHub access"
 
 Open an SSH session, optionally borrowing read-only GitHub access
 
+Without relay flags, runs OpenSSH to DESTINATION and passes -i, -p, and -o
+through. With `--github-relay-read-only`, Git and mise on the remote host can
+clone, fetch, and download releases from the GitHub repositories you allow,
+using this machine's GitHub credentials, until the session ends. The token
+is not copied to the host, and pushes and API writes are refused.
+
+`--github-relay-read-only` needs exactly one of `--github-relay-repo`,
+repeated for each repository, or `--github-relay-all-repos`. A compromised
+host can read what you allow while the session lasts.
+See <https://mise.jdx.dev/bootstrap/github-relay.html>
+
 ## Arguments
-- **`[DESTINATION]`** — OpenSSH destination or SSH-config alias
+- **`[DESTINATION]`** — OpenSSH destination or SSH config alias (required)
 - **`[COMMAND]…`** — Command to execute after --; omit for an interactive shell
 
 ## Flags
@@ -19,13 +30,33 @@ Open an SSH session, optionally borrowing read-only GitHub access
 - **`-p --port <PORT>`** — SSH port
 - **`-o --ssh-option <SSH_OPTION>`** — OpenSSH option; repeat for multiple options
 - **`--github-relay-read-only`** — Borrow read-only GitHub access for this session only
-- **`--github-relay-repo <OWNER/REPO>`** — Approved GitHub repository; repeat to authorize more repositories
-- **`--github-relay-all-repos`** — Explicitly authorize reads of all repositories accessible locally
+- **`--github-relay-repo <OWNER/REPO>`** — GitHub repository the host may read; repeat for more repositories
+- **`--github-relay-all-repos`** — Allow reads of every repository your local GitHub credentials can access
 - **`--github-relay-log-requests`** — Log sanitized relay requests on local stderr
-- **`--github-relay-no-log-requests`** — Disable request logging, overriding the saved preference
-- **`--github-relay-log-format <FORMAT>`** — Relay log and summary format: text or jsonl
-- **`--github-relay-max-duration <DURATION>`** — Expire borrowed access after a duration such as 1h (0s: session lifetime)
+- **`--github-relay-no-log-requests`** — Turn off request logging even if the github_relay.log_requests setting is on
+- **`--github-relay-log-format <FORMAT>`** — Relay log and summary format: text or jsonl (default: the github_relay.log_format setting)
+- **`--github-relay-max-duration <DURATION>`** — End borrowed access after a duration such as 1h; 0s lasts the whole session
 - **`-h --help`** — Print help
+
+## Examples
+
+Let devbox clone one private repository
+
+```
+mise ssh devbox --github-relay-read-only --github-relay-repo you/setup -- git clone https://github.com/you/setup.git
+```
+
+Open a shell that can read every repository your credentials can read
+
+```
+mise ssh devbox --github-relay-read-only --github-relay-all-repos
+```
+
+Run a command over plain SSH with an identity file, port, and option
+
+```
+mise ssh devbox -i ~/.ssh/devbox -p 2222 -o ServerAliveInterval=30 -- uname -a
+```
 
 <!-- generated reference navigation -->
 

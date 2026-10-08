@@ -11,35 +11,51 @@ description: "List available tasks"
 
 List available tasks
 
-Tasks come from config files and from task directories such as `.mise/tasks`.
-Tasks from all parent directories are merged into this list.
+Lists tasks from `[tasks]` in your config files and from task directories such as `mise-tasks/`, `.mise-tasks/`, and `.mise/tasks/`, including global tasks in `~/.config/mise/tasks/`. Tasks from parent directories and the global config are included; a project task overrides a global task with the same name. In a monorepo, `--all` also lists tasks from sibling projects.
 
-So if you have global tasks in `~/.config/mise/tasks/*` and project-specific tasks in
-~/myproject/.mise/tasks/*, then they'll both be available but the project-specific
-tasks will override the global ones if they have the same name.
+See <https://mise.jdx.dev/tasks/task-discovery.html>
 
 ## Flags
 - **`-g --global`** — Only show global tasks
 - **`-J --json`** — Output in JSON format
 - **`-l --local`** — Only show non-global tasks
 - **`-x --extended`** — Show all columns
-- **`--all`** — Load all tasks from the entire monorepo, including sibling directories.
-  By default, only tasks from the current directory hierarchy are loaded.
+- **`--all`** — Include tasks from every project in the monorepo, not only the current directory's hierarchy
 - **`--hidden`** — Show hidden tasks
-- **`--name-only`** — Only show task names, one per line. Useful for piping to fzf and similar tools.
-- **`--no-header`** — Do not print table header
-- **`--sort <COLUMN>`** — Sort by column. Default is name.
+- **`--name-only`** — Print only task names, one per line (for fzf and similar tools)
+- **`--no-header`** — Do not print the table header
+- **`--sort <COLUMN>`** — Column to sort by (default: name)
 
   **Choices:** `name`, `alias`, `description`, `source`
-- **`--sort-order <SORT_ORDER>`** — Sort order. Default is asc.
+- **`--sort-order <SORT_ORDER>`** — Sort direction (default: asc)
 
   **Choices:** `asc`, `desc`
 - **`-h --help`** — Print help
 
 ## Examples
 
+List tasks
+
 ```
 mise tasks ls
+```
+
+Include hidden tasks
+
+```
+mise tasks ls --hidden
+```
+
+List tasks from every monorepo project
+
+```
+mise tasks ls --all
+```
+
+Pick a task name interactively
+
+```
+mise tasks ls --name-only | fzf
 ```
 
 <!-- generated reference navigation -->

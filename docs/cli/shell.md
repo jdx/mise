@@ -12,30 +12,39 @@ description: "Set a tool version for the current shell session"
 
 Set a tool version for the current shell session
 
-Only works in a session where mise is already activated.
-
-This works by setting environment variables for the current shell session
-such as `MISE_NODE_VERSION=20` which is "eval"ed as a shell function created by `mise activate`.
+Installs the version if needed, then sets `MISE_<TOOL>_VERSION`, such as
+`MISE_NODE_VERSION`, to the resolved version in the current shell. That
+overrides config files until you close the shell or run
+`mise shell --unset <TOOL>`. Requires `mise activate`: the shell function it
+defines applies the variable that this command prints.
 
 ## Arguments
-- **`<TOOL@VERSION>…`** — Tool(s) to use
+- **`<TOOL@VERSION>…`** — Tools to set, such as node@20
 
 ## Flags
-- **`-j --jobs <JOBS>`** — Number of jobs to run in parallel
-  Values below 1 are treated as 1
-  Defaults to the `jobs` setting
+- **`-j --jobs <JOBS>`** — Number of jobs to run in parallel (default: the `jobs` setting)
 
   **Environment Variable:** `MISE_JOBS`
-- **`-u --unset`** — Remove a previously set version
-- **`--raw`** — Connect backend install command stdin/stdout/stderr directly to the terminal. Implies `--jobs=1`
+- **`-u --unset`** — Remove a version set earlier with `mise shell`
+- **`--raw`** — Connect the install commands' stdin, stdout, and stderr to the terminal
+
+  Implies `--jobs=1`.
 - **`-h --help`** — Print help
 
 ## Examples
 
+Use node 20 in this shell
+
 ```
 mise shell node@20
 node -v
-v20.0.0
+v20.19.5
+```
+
+Go back to the version the config requests
+
+```
+mise shell --unset node
 ```
 
 <!-- generated reference navigation -->

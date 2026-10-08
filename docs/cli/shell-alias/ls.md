@@ -12,14 +12,16 @@ description: "List shell aliases"
 
 List shell aliases
 
-Shows the shell aliases that are set in the current directory.
-These are defined in `mise.toml` under the `[shell_alias]` section.
+Lists the shell aliases configured for the current directory: the
+`[shell_alias]` entries of every config file mise loads here.
 
 ## Flags
-- **`--no-header`** — Don't show table header
+- **`--no-header`** — Do not print the table header
 - **`-h --help`** — Print help
 
 ## Examples
+
+List the aliases set in this directory
 
 ```
 mise shell-alias ls

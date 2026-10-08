@@ -64,9 +64,39 @@ fn select_requests(
     Ok((files, edits))
 }
 
-/// Manage dotfiles from `[dotfiles]`
+/// Deploy, track, and sync dotfiles
+///
+/// A `[dotfiles]` entry deploys a file (from a source with `symlink`,
+/// `symlink-each`, `copy`, or `template`, or from inline `content`), removes
+/// one (`mode = "absent"`), sets an existing path's `permissions`, edits part
+/// of a file, or tracks a live file where it is (`mode = "track"`). mise saves
+/// tracked files to a local Git history that you can browse and roll back, and
+/// syncs it with other machines through an origin repository. `mise dot` is a
+/// shorter alias.
+///
+/// Deploy files with `add`, `apply`, `diff`, `status`, and `unapply`. Track and
+/// restore files with `track`, `save`, `history`, `rollback`, and `undo`. Sync
+/// them with `origin`, `sync`, and `pull`.
+///
+/// See https://mise.jdx.dev/dotfiles.html and
+/// https://mise.jdx.dev/dotfiles/history.html
 #[derive(Debug, usage_rs::Args)]
-#[usage(verbatim_doc_comment)]
+#[usage(
+    example(
+        "mise dot add ~/.zshrc",
+        help = "Start managing ~/.zshrc from your dotfiles directory"
+    ),
+    example("mise dot apply", help = "Deploy every [dotfiles] entry"),
+    example(
+        "mise dot status",
+        help = "Show the state of your dotfiles and their history"
+    ),
+    example(
+        "mise dot track ~/.config/nvim",
+        help = "Save the history of a directory in place"
+    ),
+    example("mise dot history", help = "List saved checkpoints")
+)]
 pub(crate) struct Dotfiles {
     /// Work on this machine's local-only history (`mode = "track-local"`), which is never shared
     #[usage(long)]

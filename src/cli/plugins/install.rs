@@ -18,46 +18,52 @@ use crate::{backend::unalias_backend, config::Settings};
 
 use super::{PluginTaskNames, PluginTaskResult, join_plugin_tasks, spawn_plugin_task};
 
-/// Install a plugin from a configured source, Git URL, or supported archive
+/// Install plugins from a configured source, Git URL, or archive
 ///
-/// Most registry tools use built-in backends and need no plugin. When a selected
-/// backend does require a plugin, mise normally installs it with the tool.
-/// Use this command to install it ahead of time or choose a custom source.
+/// Most registry tools use built-in backends and need no plugin. When a tool's
+/// backend requires a plugin, mise installs it with the tool. Use this command
+/// to install one ahead of time or from a custom source.
 ///
-/// A Git URL may end in `#ref` to select a plugin commit, tag, or branch. This selects
-/// the plugin implementation, separately from the tool version installed by `mise use`.
+/// Pass a name that the registry or a `[plugins]` entry knows, a name and a
+/// URL, or only a URL. With only a URL, the plugin is named after the
+/// repository without an `asdf-`, `mise-`, or `vfox-` prefix. Pass several names
+/// to install several plugins. Prefix a name with `vfox:`, `vfox-backend:`,
+/// `package:`, or `asdf:` to choose the plugin type.
+///
+/// A Git URL may end in `#ref` to select a plugin commit, tag, or branch. This
+/// selects the plugin code, separately from the tool version `mise use` installs.
 #[derive(Debug, usage_rs::Args)]
-#[usage(visible_aliases = ["i", "a", "add"], verbatim_doc_comment, example(r###"mise plugins install postgres https://github.com/smashedtoatoms/asdf-postgres.git"###, help = r###"Install an asdf-compatible plugin from its upstream repository"###),
+#[usage(visible_aliases = ["i", "a", "add"], verbatim_doc_comment,
+    example(r###"mise plugins install my-tool https://github.com/your-org/mise-my-tool"###, help = r###"Install a plugin from a Git repository"###),
+    example(r###"mise plugins install my-tool 'https://github.com/your-org/mise-my-tool#v1.2.0'"###, help = r###"Pin the plugin to a tag"###),
+    example(r###"mise plugins install https://github.com/your-org/vfox-my-tool"###, help = r###"Name the plugin after its repository (my-tool)"###),
     example(r###"mise plugins install my-tool file:///path/to/mise-my-tool#v1.0.0"###, help = r###"Use a local plugin repository at a tag you created"###),
-    example(r###"mise plugins install --all"###, help = r###"Install missing plugins that have configured shorthands"###)
+    example(r###"mise plugins install --all"###, help = r###"Install the plugins that the current config needs"###)
 )]
 pub(crate) struct PluginsInstall {
-    /// The name of the plugin to install
-    /// Use a configured plugin name, or supply a source URL below
+    /// The plugin to install, or a URL to infer its name from
     #[usage(required_unless = "all", verbatim_doc_comment)]
     new_plugin: Option<String>,
 
-    /// The git url of the plugin
-    /// e.g.: https://github.com/jdx/vfox-cmake.git
-    #[usage(help = "The git url of the plugin", value_hint = usage_rs::ValueHint::Url, verbatim_doc_comment
-    )]
+    /// Where to install from: a Git URL (optionally ending in #ref) or an archive URL
+    #[usage(value_hint = usage_rs::ValueHint::Url, verbatim_doc_comment)]
     git_url: Option<String>,
 
     #[usage(hide = true)]
     rest: Vec<String>,
 
-    /// Install all missing plugins
-    /// This will only install plugins that have matching shorthands.
-    /// i.e.: they don't need the full git repo url
-    #[usage(short, long, conflicts = ["new_plugin", "force"], verbatim_doc_comment)]
+    /// Install every plugin the current config needs that is not installed yet
+    ///
+    /// Only plugins with a registry shorthand or a `[plugins]` entry can be
+    /// installed this way.
+    #[usage(short, long, conflicts = ["new_plugin", "force"])]
     all: bool,
 
-    /// Reinstall even if plugin exists
+    /// Reinstall even if the plugin is already installed
     #[usage(short, long, verbatim_doc_comment)]
     force: bool,
 
-    /// Number of jobs to run in parallel
-    /// Values below 1 are treated as 1
+    /// Number of plugins to install in parallel (default: the `jobs` setting)
     #[usage(long, short, verbatim_doc_comment)]
     jobs: Option<usize>,
 

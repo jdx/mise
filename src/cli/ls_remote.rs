@@ -30,58 +30,63 @@ struct VersionOutputAll {
 /// Results may be cached; run `mise cache clear TOOL` to refresh one tool
 /// before querying it again. Version formats and ordering are backend-specific.
 #[derive(Debug, usage_rs::Args)]
-#[usage(verbatim_doc_comment, example(r###"mise ls-remote node
-mise ls-remote node@20
-mise ls-remote node 20
-mise ls-remote node --minimum-release-age 30d
-mise ls-remote github:cli/cli --json"###), aliases = ["list-all", "list-remote"]
+#[usage(
+    verbatim_doc_comment,
+    example("mise ls-remote node", help = "List every node version"),
+    example("mise ls-remote node@24", help = "List node 24.x versions"),
+    example(
+        "mise ls-remote node --minimum-release-age 30d",
+        help = "Skip versions released in the last 30 days"
+    ),
+    example(
+        "mise ls-remote github:cli/cli --json",
+        help = "Include release dates, as JSON"
+    ),
+    aliases = ["list-all", "list-remote"]
 )]
 pub(crate) struct LsRemote {
     /// Tool to get versions for
     #[usage(value_name = "TOOL@VERSION", required_unless = "all")]
     pub plugin: Option<ToolArg>,
 
-    /// Filter the available versions by this prefix
-    /// Equivalent to the version selector after `@` in the first argument
+    /// Version prefix to filter by; same as `TOOL@PREFIX`
     #[usage(verbatim_doc_comment)]
     pub prefix: Option<String>,
 
-    /// List available versions for every backend/tool currently known to mise
+    /// List available versions for every tool mise currently knows about
     #[usage(long, verbatim_doc_comment, conflicts = ["plugin", "prefix"])]
     pub all: bool,
 
-    /// Only show versions released before this age or date
+    /// Only show versions released before a date or at least a duration ago
     ///
-    /// Supports absolute dates like "2024-06-01" and relative durations like "90d" or "1y".
-    #[usage(
-        long,
-        alias = "before",
-        value_name = "MINIMUM_RELEASE_AGE",
-        verbatim_doc_comment
-    )]
+    /// Takes a date such as `2024-06-01` or a duration such as `90d` or `1y`.
+    /// Overrides the `minimum_release_age` setting and tool option.
+    #[usage(long, alias = "before", value_name = "AGE", verbatim_doc_comment)]
     pub minimum_release_age: Option<String>,
 
-    /// Output in JSON format (includes version metadata like created_at timestamps when available)
+    /// Output in JSON format, with metadata such as `created_at` when available
     #[usage(short = 'J', long, verbatim_doc_comment)]
     pub json: bool,
 
-    /// Disable checking the mise-versions host
+    /// Fetch versions from the tool's upstream instead of mise's version mirror
+    ///
+    /// Same as `use_versions_host = false` for this command.
     #[usage(long, verbatim_doc_comment)]
     pub no_versions_host: bool,
 
-    /// Include pre-release versions in the output for backends that report
-    /// upstream prerelease metadata or opt in to regex-based prerelease
-    /// detection. Equivalent to setting `MISE_PRERELEASES=1` or the
-    /// `prereleases` setting for the duration of this command.
+    /// Include prerelease versions
+    ///
+    /// Works for backends that report prerelease metadata or detect prereleases by
+    /// pattern. Same as MISE_PRERELEASES=1 or the `prereleases` setting, for this
+    /// command only.
     #[usage(long, verbatim_doc_comment)]
     pub prerelease: bool,
 
-    /// Fail if release metadata fetches fail
+    /// Exit with an error when release metadata cannot be fetched
     ///
-    /// Requires --json and --no-versions-host.
-    ///
-    /// This prevents metadata consumers from accepting empty fallback results
-    /// when a backend's metadata-producing upstream request fails.
+    /// Without it, backends such as aqua and ruby fall back to a version list
+    /// without release dates, or an empty one. Requires --json and
+    /// --no-versions-host.
     #[usage(long, verbatim_doc_comment, requires = ["json", "no_versions_host"])]
     pub strict_metadata: bool,
 }

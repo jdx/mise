@@ -10,13 +10,29 @@ description: "Run the project's diagnostic checks"
 
 Run the project's diagnostic checks
 
-Checks are declared in [doctor.checks.&lt;name>] in mise.toml. Each command runs
-with the project's installed tools and environment. Checks should inspect
-state; mise does not sandbox them or run their suggested remedies.
+Checks are declared in `[doctor.checks.<name>]` tables in mise.toml. Each command
+runs with the project's installed tools and environment. Checks should inspect
+state; mise does not sandbox them or run their suggested remedies. Exits with
+status 1 when a check fails. See
+<https://mise.jdx.dev/configuration/project-diagnostics.html>.
 
 ## Flags
 - **`-J --json`** — Output the complete report as JSON
 - **`-h --help`** — Print help
+
+## Examples
+
+Run every check and report pass or fail
+
+```
+mise doctor project
+```
+
+Print the report as JSON
+
+```
+mise doctor project --json
+```
 
 <!-- generated reference navigation -->
 

@@ -10,6 +10,9 @@ mod ls;
 mod set;
 
 /// Manage config files
+///
+/// With no subcommand, lists the config files mise loads, from lowest to highest
+/// precedence, like `mise config ls`; the flags below apply to that listing.
 #[derive(Debug, usage_rs::Args)]
 #[usage(visible_alias = "cfg", alias = "toml")]
 pub(crate) struct Config {

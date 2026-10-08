@@ -3,6 +3,7 @@ import { test } from "node:test";
 import {
   commandIndex,
   replaceCommandIndex,
+  underHiddenCommand,
   withCommandDescription,
   type Command,
 } from "./cli-reference.ts";
@@ -74,4 +75,17 @@ test("replacing the command index preserves preceding and following sections", (
     () => replaceCommandIndex(before, index),
     /Missing Subcommands/,
   );
+});
+
+test("pages under a hidden command are left out", () => {
+  const commands = new Map([
+    ["bootstrap", { hide: false }],
+    ["bootstrap dotfiles", { hide: true }],
+    ["bootstrap dotfiles add", { hide: false }],
+    ["dotfiles add", { hide: false }],
+  ]);
+  assert.ok(underHiddenCommand("bootstrap dotfiles add", commands));
+  assert.ok(!underHiddenCommand("bootstrap dotfiles", commands));
+  assert.ok(!underHiddenCommand("dotfiles add", commands));
+  assert.ok(!underHiddenCommand("", commands));
 });

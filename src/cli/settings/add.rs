@@ -4,20 +4,27 @@ use crate::cli::settings::set::set;
 
 /// Append a value to an array setting
 ///
-/// Adds the value to an array setting such as `disable_hints`, keeping existing entries.
-/// This modifies ~/.config/mise/config.toml by default, or the local config with `--local`.
+/// Adds the value to an array setting such as `disable_hints`, keeping existing
+/// entries. Writes ~/.config/mise/config.toml, or the nearest project config
+/// with `--local`.
 #[derive(Debug, usage_rs::Args)]
 #[usage(
-    example(r###"mise settings add disable_hints python_multi"###),
+    example(
+        r###"mise settings add disable_hints python_multi"###,
+        help = "Stop showing the python_multi hint"
+    ),
     verbatim_doc_comment
 )]
 pub(super) struct SettingsAdd {
-    /// The setting to set
+    /// The array setting to append to
     #[usage()]
     pub setting: String,
-    /// The value to set (optional if provided as KEY=VALUE)
+    /// The value to append (or pass SETTING=VALUE)
     pub value: Option<String>,
-    /// Use the local config file instead of the global one
+    /// Write to the nearest project config instead of the global config
+    ///
+    /// The nearest project config is the lowest-precedence TOML file in the
+    /// nearest directory that has one, or ./mise.toml.
     #[usage(long, short)]
     pub local: bool,
 }

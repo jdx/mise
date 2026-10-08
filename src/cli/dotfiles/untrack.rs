@@ -10,11 +10,22 @@ use crate::system::history::tracked::{TrackedSet, normalize_target};
 
 /// Stop tracking a file or directory
 ///
-/// Removes the `[dotfiles]` track entry (or switches an inherited one off in
-/// config.local.toml) and stops future captures. The file itself and its
-/// existing checkpoints are left exactly as they are.
+/// Removes the path's `mode = "track"` entry from your global config. When a
+/// project or system config declares the entry, mise turns it off on this
+/// machine in `config.local.toml` next to your global config instead.
+///
+/// A path inside a tracked directory has no entry of its own: mise adds a rule
+/// for it to `[history] exclude` in the global config, and
+/// `mise dot include <path>` removes that rule. The file itself and its
+/// existing checkpoints are not changed.
 #[derive(Debug, usage_rs::Args)]
-#[usage(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+#[usage(
+    example("mise dot untrack ~/.zshrc", help = "Stop saving ~/.zshrc"),
+    example(
+        "mise dot untrack ~/.config/hypr/plugins",
+        help = "Exclude one directory inside a tracked directory"
+    )
+)]
 pub(crate) struct DotfilesUntrack {
     /// Paths to stop tracking
     #[usage(value_name = "PATH", required = true)]
@@ -289,10 +300,3 @@ impl DotfilesUntrack {
         Ok(())
     }
 }
-
-static AFTER_LONG_HELP: &str = color_print::cstr!(
-    r#"<bold><underline>Examples:</underline></bold>
-
-    $ <bold>mise dot untrack ~/.zshrc</bold>
-"#
-);

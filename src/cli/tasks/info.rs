@@ -11,13 +11,16 @@ use crate::task::task_fetcher::TaskFetcher;
 use crate::task::task_source_checker::task_cwd;
 use crate::ui::info;
 
-/// Get information about a task
+/// Show a task's definition
+///
+/// Prints the task's description, source file, dependencies, sources, outputs,
+/// run commands, environment, and usage spec. `--json` prints the full
+/// definition.
 #[derive(Debug, usage_rs::Args)]
 #[usage(
-    verbatim_doc_comment,
     example(
         r###"mise tasks info test"###,
-        help = r###"Inspect the selected definition and its source file"###
+        help = r###"Show the test task and the file that defines it"###
     ),
     example(
         r###"mise tasks info test --json"###,

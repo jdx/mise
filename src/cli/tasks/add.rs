@@ -5,15 +5,28 @@ use eyre::Result;
 use std::path::MAIN_SEPARATOR_STR;
 use toml_edit::Item;
 
-/// Create a new task
+/// Add a task
 ///
-/// Adds a task to the local mise.toml file.
-/// See https://mise.jdx.dev/configuration.html#target-file-for-write-operations
+/// Writes a `[tasks.<name>]` table to the nearest project config file and marks
+/// that file as trusted. See
+/// https://mise.jdx.dev/configuration.html#target-file-for-write-operations for
+/// how the file is chosen.
+///
+/// With `--file`, creates an executable script in the project's task directory
+/// (for example `mise-tasks/`) instead, and does not change any config file.
 #[derive(Debug, usage_rs::Args)]
 #[usage(
-    verbatim_doc_comment,
     example(
-        r###"mise tasks add pre-commit --depends "test" --depends "render" -- echo pre-commit"###
+        "mise tasks add build --description \"Build the app\" --sources 'src/**/*.ts' --outputs 'dist/**' -- npm run build",
+        help = "Add a TOML task that is skipped while its outputs are up to date"
+    ),
+    example(
+        "mise tasks add --file lint -- eslint .",
+        help = "Create an executable lint script in the task directory"
+    ),
+    example(
+        "mise tasks add ci --depends lint --depends test -- echo done",
+        help = "Add a task that runs after lint and test"
     )
 )]
 pub(super) struct TasksAdd {
@@ -28,13 +41,13 @@ pub(super) struct TasksAdd {
     /// Other names for the task
     #[usage(long, short)]
     alias: Vec<String>,
-    /// Add dependencies to the task
-    #[usage(long, short)]
+    /// Tasks to run before this one
+    #[usage(long, short, value_name = "TASK")]
     depends: Vec<String>,
     /// Run the task in a specific directory
     #[usage(long, short = 'D')]
     dir: Option<String>,
-    /// Create a file task instead of a toml task
+    /// Create a file task instead of a TOML task
     #[usage(long, short)]
     file: bool,
     /// Hide the task from `mise tasks` and completions
@@ -43,27 +56,27 @@ pub(super) struct TasksAdd {
     /// Do not print the command before running
     #[usage(long, short)]
     quiet: bool,
-    /// Directly connect stdin/stdout/stderr
+    /// Connect the task directly to the terminal's stdin, stdout, and stderr
     #[usage(long, short)]
     raw: bool,
     /// Glob patterns of files this task uses as input
-    #[usage(long, short)]
+    #[usage(long, short, value_name = "GLOB")]
     sources: Vec<String>,
     /// Wait for these tasks to finish if they are also being run
-    #[usage(long, short)]
+    #[usage(long, short, value_name = "TASK")]
     wait_for: Vec<String>,
 
-    /// Dependencies to run after the task runs
-    #[usage(long)]
+    /// Tasks to run after this one
+    #[usage(long, value_name = "TASK")]
     depends_post: Vec<String>,
     /// Description of the task
     #[usage(long)]
     description: Option<String>,
     /// Glob patterns of files this task creates, used to skip it when they are up to date
-    #[usage(long)]
+    #[usage(long, value_name = "GLOB")]
     outputs: Vec<String>,
-    /// Command to run on Windows
-    #[usage(long)]
+    /// Command to run on Windows (TOML tasks only; ignored with `--file`)
+    #[usage(long, value_name = "COMMAND")]
     run_windows: Option<String>,
     /// Run the task in a specific shell
     #[usage(long)]

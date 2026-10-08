@@ -5,25 +5,30 @@ use crate::system;
 use crate::system::history::OperationScope;
 use crate::ui::prompt;
 
-/// Remove dotfiles applied from `[dotfiles]`
+/// Remove files that `mise dot apply` deployed
 ///
-/// Removes configured whole-file entries and edits while preserving files
-/// mise cannot identify as managed. Modified copies, templates, and plain-line
-/// edits require `--force`. Source files and configuration entries are retained.
-/// Run this before deleting a declaration so mise can still identify its targets.
+/// Removes the targets of whole-file entries and the blocks and lines that edit
+/// entries added, but only what mise can identify as its own. Modified copies,
+/// modified templates, and plain-line edits need `--force`. Merged keys,
+/// `absent` entries, and permissions-only targets are left alone. Sources and
+/// config entries are kept, so run this before you delete a declaration, while
+/// mise can still identify its targets.
 ///
-/// With `--group`, only that dotfile group's files are removed, using what
-/// mise recorded when it applied them, so this works even after the group
-/// is deselected or deleted from the config.
+/// With `--group`, removes only that dotfile group's files, using what mise
+/// recorded when it applied them, so it works even after the group is
+/// deselected or deleted from the config.
 #[derive(Debug, usage_rs::Args)]
 #[usage(
-    verbatim_doc_comment,
+    example("mise dot unapply", help = "Remove every target mise can identify"),
+    example("mise dot unapply ~/.zshrc", help = "Remove one target"),
     example(
-        r###"mise dot unapply
-mise dot unapply ~/.zshrc
-mise dot unapply --group work
-mise dot unapply --dry-run
-mise dot unapply --force --yes"###
+        "mise dot unapply --group work",
+        help = "Remove one dotfile group's files"
+    ),
+    example("mise dot unapply --dry-run", help = "Preview what would be removed"),
+    example(
+        "mise dot unapply --force --yes",
+        help = "Also remove modified targets, without prompting"
     )
 )]
 pub(crate) struct DotfilesUnapply {
@@ -48,7 +53,8 @@ pub(crate) struct DotfilesUnapply {
     #[usage(long, value_name = "NAME")]
     group: Vec<String>,
 
-    /// Prompt securely for missing bootstrap secret inputs
+    /// Prompt for `[bootstrap.secrets]` values that templates need and the
+    /// environment does not set
     #[usage(long)]
     prompt_secrets: bool,
 }

@@ -10,15 +10,27 @@ use std::collections::BTreeSet;
 
 /// Remove the mise CLI and all related data
 ///
-/// The config directory is kept unless `--config` is passed.
+/// Deletes the mise executable and the data (including installed tools), state,
+/// and cache directories. It also deletes the system-wide shared directory used by
+/// `mise install --system` (MISE_SYSTEM_DATA_DIR, default /usr/local/share/mise),
+/// which other users on the machine may rely on. It asks before each removal;
+/// --yes skips the prompts. The config directory stays unless you pass --config.
+///
+/// If a package manager such as Homebrew or apt installed mise, uninstall it with
+/// that package manager instead. Remove the `mise activate` line from your shell
+/// startup file yourself. See
+/// https://mise.jdx.dev/installing-mise.html#uninstalling.
 #[derive(Debug, usage_rs::Args)]
-#[usage(verbatim_doc_comment)]
+#[usage(
+    verbatim_doc_comment,
+    example("mise implode --dry-run", help = "List what would be removed")
+)]
 pub(crate) struct Implode {
-    /// List directories that would be removed without actually removing them
+    /// Print what would be removed, without removing anything
     #[usage(long, short = 'n', verbatim_doc_comment)]
     dry_run: bool,
 
-    /// Also remove config directory
+    /// Also remove the config directory
     #[usage(long, verbatim_doc_comment)]
     config: bool,
 }
