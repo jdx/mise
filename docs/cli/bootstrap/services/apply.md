@@ -20,6 +20,6 @@ Apply configured service state (system and user scope)
 
 ## Related documentation
 
-- [System services](/bootstrap/services.html).
+- [Services](/bootstrap/services.html).
 - [`mise bootstrap services <SUBCOMMAND>`](/cli/bootstrap/services.html).
 - [Global flags and argument syntax](/cli/#global-flags).

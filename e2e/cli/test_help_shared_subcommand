@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+
+# `dotfiles` is mounted both at the top level and under `bootstrap`. Help for a
+# subcommand must name the path the user took, not whichever mount comes first.
+
+assert_contains "mise dot add --help" "Usage: mise dotfiles add "
+assert_not_contains "mise dot add --help" "mise bootstrap dotfiles add"
+assert_contains "mise dot add -h" "Usage: mise dotfiles add "
+assert_contains "mise help dot add" "Usage: mise dotfiles add "
+
+assert_contains "mise dotfiles add --help" "Usage: mise dotfiles add "
+assert_not_contains "mise dotfiles add --help" "mise bootstrap dotfiles add"
+
+assert_contains "mise bootstrap dotfiles add --help" "Usage: mise bootstrap dotfiles add "

@@ -37,6 +37,6 @@ command mise deactivate | source
 
 ## Related documentation
 
-- [Shell activation](/getting-started.html#activate-mise).
+- [Shell setup](/shell-setup.html).
 - [All commands](/cli/).
 - [Global flags and argument syntax](/cli/#global-flags).

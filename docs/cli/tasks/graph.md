@@ -41,6 +41,6 @@ mise tasks graph --explain
 
 ## Related documentation
 
-- [Monorepo projects](/tasks/monorepo.html).
+- [Workspace project graph](/tasks/workspace-graph.html).
 - [`mise tasks [FLAGS] [TASK] [SUBCOMMAND]`](/cli/tasks.html).
 - [Global flags and argument syntax](/cli/#global-flags).

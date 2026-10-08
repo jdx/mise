@@ -21,6 +21,6 @@ Clone and converge git repos from `[bootstrap.repos]`
 
 ## Related documentation
 
-- [Repository checkouts](/bootstrap/repos.html).
+- [Git repositories](/bootstrap/repos.html).
 - [`mise bootstrap repos <SUBCOMMAND>`](/cli/bootstrap/repos.html).
 - [Global flags and argument syntax](/cli/#global-flags).

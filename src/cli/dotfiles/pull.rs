@@ -35,7 +35,7 @@ pub(crate) struct DotfilesPull {
     #[usage(long, short = 'n')]
     dry_run: bool,
 
-    /// Pull without prompting
+    /// Accepted for compatibility; pull skips the apply confirmation
     #[usage(long, short = 'y')]
     yes: bool,
 
@@ -79,7 +79,6 @@ impl DotfilesPull {
             &ApplyRequest {
                 paths: self.paths.clone(),
                 dry_run: self.dry_run,
-                yes: self.yes,
                 take_remote: self.take_remote.clone(),
                 keep_local: self.keep_local.clone(),
                 take_remote_all: self.take_remote_all,

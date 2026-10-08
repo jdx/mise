@@ -32,6 +32,6 @@ in future releases.
 
 ## Related documentation
 
-- [Building and running OCI images](/dev-tools/mise-oci.html).
+- [OCI images](/dev-tools/mise-oci.html).
 - [All commands](/cli/).
 - [Global flags and argument syntax](/cli/#global-flags).

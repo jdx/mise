@@ -28,6 +28,6 @@ Missing or invalid installations produce empty stdout and a nonzero exit status.
 
 ## Related documentation
 
-- [Host packages](/bootstrap/packages/).
+- [Bootstrap packages](/bootstrap/packages/).
 - [`mise bootstrap packages <SUBCOMMAND>`](/cli/bootstrap/packages.html).
 - [Global flags and argument syntax](/cli/#global-flags).

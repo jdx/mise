@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+
+# Sources that match no file are reported, even though the task's own config
+# file is always one of its sources.
+cat <<'EOF' >mise.toml
+[tasks.build]
+sources = ["src/**/*.rs"]
+outputs = ["out.txt"]
+run = "touch out.txt"
+
+[tasks.matched]
+sources = ["input.txt"]
+outputs = ["matched.txt"]
+run = "touch matched.txt"
+EOF
+touch input.txt
+
+assert_contains "mise run build 2>&1" "task build has sources defined but no matching files found"
+# Freshness still follows the config file, so the second run is skipped.
+assert_contains "mise run build 2>&1" "sources up-to-date, skipping"
+assert_not_contains "mise run matched 2>&1" "no matching files found"

@@ -29,6 +29,6 @@ block convergence; `--skip-dirty` skips those repositories without discarding ed
 
 ## Related documentation
 
-- [Repository checkouts](/bootstrap/repos.html).
+- [Git repositories](/bootstrap/repos.html).
 - [`mise bootstrap [FLAGS] [SUBCOMMAND]`](/cli/bootstrap.html).
 - [Global flags and argument syntax](/cli/#global-flags).

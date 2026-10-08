@@ -1,87 +1,104 @@
 ---
-description: "mise can be used to install and manage multiple versions of zig on the same system."
+description: "Install Zig with mise from ziglang.org or its mirrors, including nightly and Mach versions."
 ---
 
 # Zig
 
-`mise` can be used to install and manage multiple versions of [zig](https://ziglang.org/) on the same system.
+mise installs [Zig](https://ziglang.org/) from ziglang.org or its community
+mirrors and verifies each download against the Zig Software Foundation's
+signing key.
 
-## Usage
+## Quick start
 
-Install the latest stable Zig for the current project:
+Install Zig for the current project and check the selected compiler:
 
 ```sh
-mise use zig@latest
+mise use zig@0.17
 mise exec -- zig version
 ```
 
-Choose one request for the release stream your project needs:
+Use `mise use -g zig@0.17` for a personal default.
 
-| Request           | Selects                           |
-| ----------------- | --------------------------------- |
-| `zig@0.14`        | A release in the 0.14 series      |
-| `zig@latest`      | The latest stable release         |
-| `zig@master`      | The moving nightly channel        |
-| `zig@mach-latest` | The latest Mach-nominated version |
+## Choosing a version
 
-Use `mise use -g <request>` for a personal default. A later `mise use zig@...`
-replaces the project's previous Zig request.
+| Request           | Selects                                         |
+| ----------------- | ----------------------------------------------- |
+| `zig@0.17`        | The newest release in the 0.17 series           |
+| `zig@latest`      | The newest stable release                       |
+| `zig@master`      | The current nightly build                       |
+| `zig@mach-latest` | The newest version nominated by the Mach engine |
 
-See available stable versions with `mise ls-remote zig`.
+`mise ls-remote zig` lists the ziglang.org releases.
 
-[Mach](https://machengine.org/) versions
-don't appear in `mise ls-remote zig` because of a workaround for a
-[version ordering bug](https://github.com/jdx/mise/discussions/5232).
-You can still install the Mach versions listed in the
-[Mach version index](https://machengine.org/zig/index.json). The following
-command lists available Mach versions and requires `curl` and `jq`:
+### Nightly builds (`master`)
+
+`zig@master` follows Zig's nightly builds. mise installs the nightly that is
+current at install time under its dev version (an `X.Y.0-dev.N+commit` build).
+[`mise outdated`](/cli/outdated.html) reports newer nightlies, and
+[`mise upgrade zig`](/cli/upgrade.html) installs the current one.
+
+### Mach versions
+
+[Mach](https://machengine.org/) nominates its own Zig versions, which
+`mise ls-remote zig` does not list. List them from Mach's version index (this
+needs `curl` and `jq`), then install one by name, such as `zig@mach-latest`:
 
 ```sh
 curl --fail --show-error --silent --location https://machengine.org/zig/index.json | jq 'keys'
 ```
 
-### `master` (nightly channel)
+## Version files
 
-`zig@master` tracks a moving nightly. mise resolves it to the concrete dev version
-it currently points at (e.g. `0.17.0-dev.836+...`) at install time, so the install
-lands in a versioned directory and `mise upgrade zig` / `mise outdated` pick up
-newer nightlies — instead of the channel staying pinned to the build it was first
-installed from. Run `mise upgrade zig` (or `mise install -f zig@master`) to move to
-the current nightly.
-
-These instructions use mise's built-in zig support. An installed external
-plugin with the same name can change the behavior; use `mise plugins ls` to
-check for overrides. See the [core implementation](https://github.com/jdx/mise/blob/main/src/plugins/core/zig.rs)
-for backend details.
-
-## zig Language Server
-
-The `zig` language server ([zls](https://github.com/zigtools/zls)) needs to be installed separately.
-You can install it with `mise`:
+mise can read `.zig-version`. Enable it for Zig:
 
 ```sh
-mise use zig@0.14 zls@0.14
+mise settings add idiomatic_version_file_enable_tools zig
+```
+
+This changes your global config. Add `--local` to enable it in the project's
+`mise.toml` instead. See
+[idiomatic version files](/dev-tools/versions.html#idiomatic-version-files).
+
+## Zig language server (ZLS) {#zig-language-server}
+
+The Zig language server, [ZLS](https://github.com/zigtools/zls), is a separate
+tool. Install it with a version that matches your Zig:
+
+```sh
+mise use zig@0.16 zls@0.16
 mise exec -- zls --version
 ```
 
-Choose a ZLS version compatible with your Zig version; see the
-[ZLS installation guide](https://zigtools.org/zls/install/). Installing both at
-`latest` independently is not a compatibility check. There is currently no
+ZLS releases can trail Zig's, so the newest Zig may have no matching ZLS yet.
+Check `mise ls-remote zls` and use a Zig version that has one.
+
+Installing both at `latest` does not check that they are compatible; see the
+[ZLS installation guide](https://zigtools.org/zls/install/). There is no
 Mach-specific ZLS release.
 
-## Tool Options
+## How mise installs Zig
 
-The following [tool-options](/dev-tools/#tool-options) are available for the `zig` backend.
-These options go in the `[tools]` section in `mise.toml`.
+mise reads the release index at `ziglang.org/download/index.json`, or Mach's
+index for Mach versions. With [`zig.use_community_mirrors`](/lang/zig.html#zig.use_community_mirrors)
+on, it tries the community mirrors listed by ziglang.org, in random order,
+before ziglang.org itself; the mirror list is cached for a day. Whichever
+server it downloads from, mise checks the archive's minisign
+signature against the Zig Software Foundation's key, then runs `zig version`.
+mise sets no Zig environment variables.
 
-### `install_env`
+An installed plugin named `zig` takes precedence over the built-in
+installer. If mise behaves differently from this page, check
+[`mise plugins ls`](/cli/plugins/ls.html) and see
+[selecting another implementation](/core-tools.html#selecting-another-implementation).
 
-Set environment variables for install-time commands run by the core `zig` backend:
+## Tool options
 
-```toml
-[tools]
-zig = { version = "latest", install_env = { HTTPS_PROXY = "http://proxy.example" } }
-```
+Zig has no Zig-specific options. Generic options such as `install_env`,
+`postinstall` and `os` work as described in
+[tool options](/dev-tools/#tool-options). `install_env` reaches the
+`zig version` check and `postinstall` commands, not the download. To download
+through a proxy, set `https_proxy` in the environment that runs mise (see the
+[FAQ](/faq.html#how-do-i-use-mise-with-http-proxies)).
 
 ## Settings
 

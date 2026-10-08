@@ -26,6 +26,6 @@ reconciles declared project state; `status` inspects the existing projects.
 
 ## Related documentation
 
-- [Compose projects](/bootstrap/compose.html).
+- [Docker Compose projects](/bootstrap/compose.html).
 - [`mise bootstrap [FLAGS] [SUBCOMMAND]`](/cli/bootstrap.html).
 - [Global flags and argument syntax](/cli/#global-flags).

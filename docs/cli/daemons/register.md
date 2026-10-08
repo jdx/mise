@@ -26,6 +26,6 @@ registered HTTP daemon when a request reaches its hostname.
 
 ## Related documentation
 
-- [Getting started](/getting-started.html).
+- [Daemons](/daemons.html).
 - [`mise daemons [--json] [SUBCOMMAND]`](/cli/daemons.html).
 - [Global flags and argument syntax](/cli/#global-flags).

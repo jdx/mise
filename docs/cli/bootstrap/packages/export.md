@@ -32,6 +32,6 @@ mise bootstrap packages export --format nix > packages.nix
 
 ## Related documentation
 
-- [Host packages](/bootstrap/packages/).
+- [Bootstrap packages](/bootstrap/packages/).
 - [`mise bootstrap packages <SUBCOMMAND>`](/cli/bootstrap/packages.html).
 - [Global flags and argument syntax](/cli/#global-flags).

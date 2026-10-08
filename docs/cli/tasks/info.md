@@ -36,6 +36,6 @@ mise tasks info test --json
 
 ## Related documentation
 
-- [Task configuration](/tasks/task-configuration.html).
+- [Task configuration reference](/tasks/task-configuration.html).
 - [`mise tasks [FLAGS] [TASK] [SUBCOMMAND]`](/cli/tasks.html).
 - [Global flags and argument syntax](/cli/#global-flags).

@@ -1,15 +1,16 @@
 ---
 description: "Watch the mise run music video, the mise theme song, and read the lyrics. Download the video in 1080p or 4K, or the MP3."
+socialDescription: "Watch the mise run music video, read the lyrics, and download the video or the MP3."
 ---
 
-# mise run: The Song
+# mise run: the song
 
 **mise run** is the mise theme song, and this is its music video. Captions are
 available from the player. You can also download the video in
 [1080p](https://mise.jdx.dev/mise-run.mp4) or
 [4K (HEVC)](https://mise.jdx.dev/mise-run-4k.mp4), both at 120 fps, or
 [download the MP3](/mise-run.mp3). The [lyrics](#lyrics) are also available as
-text. For setup instructions, start with [Getting Started](/getting-started.html).
+text. To set up mise, start with [Getting started](/getting-started.html).
 
 <video controls preload="metadata" playsinline poster="/mise-run.jpg" width="1920" height="1080" style="width: 100%; height: auto; border-radius: 8px;">
   <source src="https://mise.jdx.dev/mise-run.mp4" type="video/mp4">

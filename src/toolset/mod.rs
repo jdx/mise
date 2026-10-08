@@ -1021,25 +1021,39 @@ pub async fn get_versions_needed_by_tracked_configs_excluding_locks(
         // to where the project is used; a global prune cannot render them the way
         // the project does, so it reads the snapshot. With no current snapshot it
         // keeps every installation of those tools until the project is used again.
-        let mut requests =
-            if crate::install_layout::resolver::enabled() && cf.has_templated_tool_versions() {
-                let mut requests = cf.to_tool_request_set_skipping_templated()?;
-                let current = crate::install_layout::snapshots::current(&path, &cf.source());
-                for request in current.requests {
-                    requests.add_version(request, &cf.source());
+        let templated =
+            crate::install_layout::resolver::enabled() && cf.has_templated_tool_versions();
+        let requests = if templated {
+            cf.to_tool_request_set_skipping_templated()
+        } else {
+            cf.to_tool_request_set()
+        };
+        // A tool version that no longer parses is skipped like a config that no
+        // longer parses, so one broken project does not stop the whole prune.
+        let mut requests = match requests {
+            Ok(requests) => requests,
+            Err(err) => {
+                warn!(
+                    "error loading tracked config file {}: {err:#}",
+                    display_path(&path)
+                );
+                continue;
+            }
+        };
+        if templated {
+            let current = crate::install_layout::snapshots::current(&path, &cf.source());
+            for request in current.requests {
+                requests.add_version(request, &cf.source());
+            }
+            if current.keep_all {
+                for short in cf.templated_tool_backends() {
+                    keep_every_installation(&short, &path, &mut needed);
                 }
-                if current.keep_all {
-                    for short in cf.templated_tool_backends() {
-                        keep_every_installation(&short, &path, &mut needed);
-                    }
-                }
-                for short in &current.keep_tools {
-                    keep_every_installation(short, &path, &mut needed);
-                }
-                requests
-            } else {
-                cf.to_tool_request_set()?
-            };
+            }
+            for short in &current.keep_tools {
+                keep_every_installation(short, &path, &mut needed);
+            }
+        }
         let files = [(path.clone(), cf.clone())].into_iter().collect();
         crate::daemons::load(&files)?.add_tool_requests(&mut requests)?;
         let mut ts = Toolset::from(requests);

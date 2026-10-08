@@ -45,6 +45,6 @@ Manage dotfiles from `[dotfiles]`
 
 ## Related documentation
 
-- [Dotfile ownership and modes](/dotfiles.html).
+- [Managed dotfiles](/dotfiles/managed.html).
 - [`mise bootstrap [FLAGS] [SUBCOMMAND]`](/cli/bootstrap.html).
 - [Global flags and argument syntax](/cli/#global-flags).

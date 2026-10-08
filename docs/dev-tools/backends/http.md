@@ -1,14 +1,13 @@
 ---
-description: "Install binaries, scripts, and archives from direct download URLs."
+description: "Install a binary, script or archive from a URL, with URL templates, version lists and checksums."
 ---
 
-# HTTP Backend
+# http backend
 
-The `http` backend installs a binary, script, or archive from a direct download
-URL. Use it when the publisher has no supported release backend or when you host
-your own artifacts. Prefer HTTPS URLs and record an expected checksum.
-
-The code for this is inside the mise repository at [`./src/backend/http.rs`](https://github.com/jdx/mise/blob/main/src/backend/http.rs).
+The `http` backend installs a binary, script or archive from a download URL. Use
+it when a tool has no release backend, or for artifacts you host yourself. The
+[s3 backend](/dev-tools/backends/s3.html) shares its download, verification and
+extraction options.
 
 ## Usage
 
@@ -20,86 +19,89 @@ mise use 'http:my-tool[url=https://example.com/releases/my-tool-v1.0.0.tar.gz]@1
 mise exec -- my-tool --version
 ```
 
-This records the URL and version in `mise.toml`. Add `-g` for a global tool:
+Quote the argument so the shell does not expand the brackets. This writes the
+URL and version to `mise.toml`. Add `-g` for a global tool.
 
 ```toml
 [tools]
 "http:my-tool" = { version = "1.0.0", url = "https://example.com/releases/my-tool-v1.0.0.tar.gz" }
 ```
 
-A fixed URL needs a concrete version label. `latest` does not discover releases
-from a download URL: add [`version_list_url`](/dev-tools/backends/http.html#version-list-url) to enable
-`mise ls-remote` and automatic version selection. Updating the version alone does
-not change a static URL; use a URL template for versioned artifacts.
+The name after `http:` is your choice; it names the tool and its install
+directory. Use `https://` URLs, and pin the artifact with a lockfile or a
+[checksum](#verification).
 
-## Supported HTTP Syntax
+::: v-pre
+With a fixed URL, the version is only a label: changing it does not change what
+is downloaded. To follow releases, put `{{ version }}` in the URL (see
+[URL templates](#template-variables)). mise cannot find versions from a download
+URL, so `latest` and `mise ls-remote` work only when you also set
+[`version_list_url`](#version-list-url).
+:::
 
-- **HTTP with URL parameter:** `http:my-tool[url=https://example.com/releases/my-tool-v1.0.0.tar.gz]@1.0.0`
+## URL templates {#template-variables}
 
-## Tool Options
+### `url` {#url-required}
 
-The following [tool-options](/dev-tools/#tool-options) are available for the `http` backend—these
-go in `[tools]` in `mise.toml`.
-
-### `url` (Required)
-
-Specifies the HTTP URL to download the tool from. The URL supports templating with variables like `version`, `os()`, and `arch()`:
+The download URL: `https://`, `http://` or `file://`. Set it at the top level, or
+per platform under `platforms.<os>-<arch>.url`; a tool needs one or the other.
+The URL is a [Tera template](/templates.html). Write values in double braces:
 
 ```toml
 [tools]
-"http:my-tool" = { version = "1.0.0", url = "https://example.com/releases/my-tool-v{{version}}.tar.gz" }
+"http:my-tool" = { version = "1.0.0", url = "https://example.com/releases/my-tool-v{{ version }}.tar.gz" }
 ```
 
-You can also use static URLs without templating:
+::: v-pre
+
+- `{{ version }}`: the version being installed
+- `{{ os() }}`: `linux`, `macos` or `windows`
+- `{{ arch() }}`: `x64` or `arm64`
+- `{{ os_family() }}`: `unix` or `windows`
+
+:::
+
+`os()` and `arch()` take keyword arguments that rename a value, for a project
+that uses other names. HashiCorp uses `darwin` for macOS and `amd64` for x64:
 
 ```toml
 [tools]
-"http:my-tool" = { version = "1.0.0", url = "https://example.com/releases/my-tool-v1.0.0.tar.gz" }
-```
-
-#### Local files
-
-A `file://` URL installs an archive that is already on disk, such as one downloaded by hand on a
-restricted network. mise copies it instead of downloading it, then extracts, verifies, and links it
-the same way. Add a `checksum` so a local file is verified too:
-
-```toml
-[tools]
-"http:my-tool" = { version = "1.0.0", url = "file:///opt/archives/my-tool-v1.0.0-linux-x64.tar.gz", checksum = "sha256:..." }
-```
-
-The URL is recorded in `mise.lock` as written, so a lockfile that names a local path only works on
-machines that have the file at that path.
-
-#### Template Variables
-
-The following template functions are available in URLs (use double curly braces, e.g., `version` becomes <code v-pre>{{version}}</code>):
-
-- `version` - The tool version
-- `os()` - Operating system: `macos`, `linux`, or `windows`
-- `arch()` - Architecture: `x64` or `arm64`
-- `os_family()` - OS family: `unix` or `windows`
-
-The `os()` and `arch()` functions support remapping for tools that use different naming conventions:
-
-```toml
-[tools]
-# HashiCorp tools use "darwin" instead of "macos" and "amd64" instead of "x64"
 "http:sentinel" = {
   version = "0.26.3",
-  url = 'https://releases.hashicorp.com/sentinel/{{version}}/sentinel_{{version}}_{{os(macos="darwin")}}_{{arch(x64="amd64")}}.zip',
+  url = 'https://releases.hashicorp.com/sentinel/{{ version }}/sentinel_{{ version }}_{{ os(macos="darwin") }}_{{ arch(x64="amd64") }}.zip',
 }
 ```
 
-This produces URLs like:
+This downloads `sentinel_0.26.3_darwin_arm64.zip` on macOS arm64,
+`sentinel_0.26.3_darwin_amd64.zip` on macOS x64 and
+`sentinel_0.26.3_linux_amd64.zip` on Linux x64. Use a single-quoted TOML string
+when the template contains double quotes, as here.
 
-- macOS arm64: `sentinel_0.26.3_darwin_arm64.zip`
-- macOS x64: `sentinel_0.26.3_darwin_amd64.zip`
-- Linux x64: `sentinel_0.26.3_linux_amd64.zip`
+::: v-pre
+The single-brace placeholder `{version}` is deprecated: mise has warned about it
+since 2026.3.0 and will stop accepting it in 2027.3.0. Write `{{ version }}`
+instead.
+:::
 
-### Platform-specific URLs
+### Local files
 
-For tools that need different downloads per platform, use the table format:
+A `file://` URL installs an archive that is already on disk, such as one
+downloaded by hand on a restricted network. mise copies it instead of
+downloading it, then verifies, extracts and links it the same way. Add a
+`checksum` so a local file is verified too:
+
+```toml
+[tools]
+"http:my-tool" = { version = "1.0.0", url = "file:///opt/archives/my-tool-v1.0.0-linux-x64.tar.gz", checksum = "sha256:REPLACE_WITH_THE_64_HEX_DIGIT_DIGEST" }
+```
+
+`mise.lock` records the URL as written, so a lockfile that names a local path
+works only on machines that have the file at that path.
+
+## Per-platform downloads {#platform-specific-urls}
+
+When each platform needs a different download, set the URL under
+`platforms.<os>-<arch>`:
 
 ```toml
 [tools."http:my-tool"]
@@ -111,19 +113,167 @@ macos-arm64 = { url = "https://example.com/releases/my-tool-v1.0.0-macos-arm64.t
 linux-x64 = { url = "https://example.com/releases/my-tool-v1.0.0-linux-x64.tar.gz" }
 ```
 
-::: tip
-You can use either `macos` or `darwin`, and `x64` or `amd64` for platform keys. `macos` and `x64` are preferred in documentation and examples, but all variants are accepted.
+Platform keys are `<os>-<arch>` with mise's names, `linux`, `macos` or `windows`
+and `x64` or `arm64`. mise also accepts `darwin`, `amd64`, `x86_64` and
+`aarch64`, so `darwin-aarch64` means `macos-arm64`. On a platform with no URL,
+the install fails with an error that lists the platforms that have one.
 
-OS/architecture values use mise's conventions: `linux`, `macos`, `windows` for operating systems and `x64`, `arm64` for architectures. For platform-specific URLs, use the appropriate platform key (e.g., `macos-x64`, `linux-arm64`) and specify the full URL for each platform.
+Other download options can be set per platform the same way: `checksum`,
+`checksum_url`, `size`, `headers`, `format`, `strip_components`, `bin_path`,
+`bin`, `rename_exe` and `windows_script_interpreter`. A platform value overrides
+the top-level one:
 
-If you slip and use something like `darwin-aarch64`, mise will try to figure out what
-you meant and do the right thing anyway.
-:::
+```toml
+[tools."http:my-tool".platforms]
+macos-arm64 = {
+  url = "https://example.com/releases/my-tool-v1.0.0-macos-arm64",
+  checksum = "sha256:REPLACE_WITH_THE_64_HEX_DIGIT_DIGEST",
+  format = "tar.xz",
+}
+```
+
+## Version discovery
+
+Set `version_list_url` so that `mise ls-remote`, `latest` and version prefixes
+can find versions. mise keeps the order of the list and treats the last entry as
+the newest. Versions that look like prereleases, such as `2.0.0-rc1`, are left
+out unless the tool sets `prerelease = true`.
+
+### `version_list_url` {#version-list-url}
+
+A URL that returns the list of versions. It is fetched with the tool's
+[`headers`](#headers).
+
+```toml
+[tools."http:my-tool"]
+version = "latest"
+url = "https://example.com/releases/my-tool-v{{ version }}.tar.gz"
+version_list_url = "https://example.com/releases/versions.txt"
+```
+
+Without [`version_regex`](#version-regex) or
+[`version_json_path`](#version-json-path), mise reads these formats and removes
+a leading `v` from each version:
+
+- Plain text with one version per line; blank lines and lines that start with
+  `#` are skipped
+- A JSON array of strings: `["1.0.0", "1.1.0", "2.0.0"]`
+- A JSON array of objects with a `version`, `tag_name`, `name`, `tag` or `v`
+  field: `[{"version": "1.0.0"}, {"tag_name": "v2.0.0"}]`
+- A JSON object with a `versions`, `releases` or `tags` array:
+  `{"versions": ["1.0.0", "2.0.0"]}`
+
+For releases hosted on GitHub, use the
+[github backend](/dev-tools/backends/github.html) instead.
+
+### `version_regex` {#version-regex}
+
+A regular expression that extracts versions from the response, such as an HTML
+index. mise uses the first capture group, or the whole match when there is
+none:
+
+```toml
+[tools."http:my-tool"]
+version = "latest"
+url = "https://example.com/releases/my-tool-v{{ version }}.tar.gz"
+version_list_url = "https://example.com/releases/"
+version_regex = 'my-tool-v(\d+\.\d+\.\d+)\.tar\.gz'
+```
+
+When `version_json_path` is also set, mise uses the JSON path and ignores the
+regex.
+
+### `version_json_path` {#version-json-path}
+
+A jq-like path that extracts versions from a JSON response:
+
+```toml
+[tools."http:my-tool"]
+version = "latest"
+url = "https://example.com/releases/my-tool-v{{ version }}.tar.gz"
+version_list_url = "https://example.com/api/releases"
+version_json_path = ".[].tag_name"
+```
+
+| Path              | Selects                                       |
+| ----------------- | --------------------------------------------- |
+| `.`               | The root value                                |
+| `.[]`             | Each element of an array                      |
+| `.[].field`       | A field of each array element                 |
+| `.field`          | A field of an object                          |
+| `.field[]`        | Each element of an array in a field           |
+| `.field.subfield` | A nested field, such as `.data.versions[]`    |
+| `.[?field=value]` | The array elements whose field equals a value |
+
+A filter keeps one channel of an API that returns several, such as Flutter's
+stable releases:
+
+```toml
+version_json_path = ".releases[?channel=stable].version"
+```
+
+### `version_expr` {#version-expr}
+
+An [expr-lang](https://expr-lang.org/) expression for a rule that a regex or a
+JSON path cannot express. It receives the response as `body` and the values that
+`version_regex` or `version_json_path` extracted as `versions`, and returns an
+array of version strings. Its result becomes the version list.
+
+```toml
+[tools."http:my-tool"]
+version = "latest"
+url = "https://example.com/releases/my-tool-v{{ version }}.tar.gz"
+version_list_url = "https://example.com/versions.txt"
+version_expr = 'filter(split(body, "\n"), # != "")'
+```
+
+Other examples:
+
+```toml
+# keys of a JSON object, as in {"versions": {"1.0.0": {}, "2.0.0": {}}}
+version_expr = 'keys(fromJSON(body).versions)'
+```
+
+```toml
+# sort with mise's version-aware comparator
+version_expr = 'fromJSON(body) | map({ trimPrefix(#.tag_name, "v") }) | sortVersions()'
+```
+
+All [expr-lang built-in functions](https://expr-lang.org/docs/language-definition)
+are available, such as `fromJSON`, `keys`, `filter`, `map` and `split`. mise adds
+`sortVersions(array)` for version-aware ordering. Prefer
+[`version_order = "semver"`](#version-order) when the versions follow semantic
+versioning, and use `sortVersions()` when the expression needs a sorted value
+along the way.
+
+### `version_order` {#version-order}
+
+Many JSON indexes list versions newest first, which makes the last entry, and so
+`latest`, the oldest. Set `version_order = "semver"` to order versions that
+follow semantic versioning by precedence instead:
+
+```toml
+[tools."http:my-tool"]
+version = "latest"
+version_order = "semver"
+url = "https://example.com/my-tool-{{ version }}.tar.gz"
+version_list_url = "https://example.com/my-tool/releases.json"
+version_json_path = ".[].version"
+```
+
+See [version ordering](/dev-tools/versions.html#version-ordering).
+
+## Verification
+
+With [lockfiles](/dev-tools/mise-lock.html) enabled, mise records a checksum and
+size on the first install and checks them on every later one. `checksum` and
+`size` pin values without a lockfile, and `checksum_url` lets `mise lock` record
+published checksums for every platform.
 
 ### `checksum`
 
-Provide the full expected digest from a trusted source. The following value
-is a placeholder and must be replaced before installation:
+The expected digest of the download, as `<algorithm>:<hash>` with an algorithm
+such as `sha256`, `sha512` or `blake3`. Take it from a source you trust:
 
 ```toml
 [tools."http:my-tool"]
@@ -132,53 +282,29 @@ url = "https://example.com/releases/my-tool-v1.0.0.tar.gz"
 checksum = "sha256:REPLACE_WITH_THE_64_HEX_DIGIT_DIGEST"
 ```
 
-_Instead of specifying the checksum here, you can use [mise.lock](/dev-tools/mise-lock) to manage checksums._
+A checksum describes one artifact, so set it [per platform](#platform-specific-urls)
+when each platform downloads a different file.
 
-### Platform-specific Checksums
+### `checksum_url` {#checksum-url}
 
-Replace each placeholder with the digest for that platform's artifact:
+The URL of a published checksum source. With it,
+[`mise lock`](/dev-tools/mise-lock.html) records checksums for every target
+platform, including platforms other than the one you run it on, without
+downloading the artifacts. One machine can then write a complete cross-platform
+lockfile.
 
-```toml
-[tools."http:my-tool"]
-version = "1.0.0"
-
-[tools."http:my-tool".platforms]
-macos-x64 = {
-  url = "https://example.com/releases/my-tool-v1.0.0-macos-x64.tar.gz",
-  checksum = "sha256:REPLACE_WITH_THE_64_HEX_DIGIT_DIGEST",
-}
-macos-arm64 = {
-  url = "https://example.com/releases/my-tool-v1.0.0-macos-arm64.tar.gz",
-  checksum = "sha256:REPLACE_WITH_THE_64_HEX_DIGIT_DIGEST",
-}
-linux-x64 = {
-  url = "https://example.com/releases/my-tool-v1.0.0-linux-x64.tar.gz",
-  checksum = "sha256:REPLACE_WITH_THE_64_HEX_DIGIT_DIGEST",
-}
-```
-
-### `checksum_url`
-
-URL of a published checksum source. When set, [`mise lock`](/dev-tools/mise-lock)
-resolves checksums for every target platform — including platforms other than
-the one you are running on — **without downloading the artifacts**. This lets a
-single machine produce a complete, cross-platform lockfile.
-
-`checksum_url` is a template (it supports <code v-pre>{{ version }}</code>, <code v-pre>{{ os() }}</code>, and <code v-pre>{{ arch() }}</code>,
-and can be set per platform via `platforms.<key>.checksum_url`). It may point at any
-of:
-
-- an **individual checksum file** (e.g. `<artifact>.sha256`), which may contain
-  just the hash or `<hash>  <filename>`;
-- a **SHASUMS**-style file listing `<hash>  <filename>` for many platforms (the row
-  is matched by the artifact's filename);
-- a **manifest** (e.g. JSON), combined with `checksum_expr` below.
-
-For individual and SHASUMS checksum files, the algorithm is detected from the
-file's name (`*.sha512`, `SHA512SUMS`, `*.md5`, `*.b3`, defaulting to sha256).
+::: v-pre
+`checksum_url` is a template, like `url`, and can be set per platform. It can
+point at an individual checksum file such as `<artifact>.sha256`, holding only
+the hash or `<hash>  <filename>`; at a `SHASUMS` file with one
+`<hash>  <filename>` line per platform, where mise finds the artifact's file
+name; or at a manifest such as JSON, read with [`checksum_expr`](#checksum-expr).
+For checksum files, mise takes the algorithm from the file name (`*.sha512`,
+`SHA512SUMS`, `*.md5`, `*.b3`) and uses sha256 otherwise.
+:::
 
 ```toml
-# Individual checksum file (one per artifact)
+# individual checksum file (one per artifact)
 [tools."http:my-tool"]
 version = "1.0.0"
 url = "https://example.com/releases/my-tool-{{ version }}-{{ os() }}-{{ arch() }}.tar.gz"
@@ -191,24 +317,21 @@ url = 'https://example.com/{{ version }}/other_{{ version }}_{{ os(macos="darwin
 checksum_url = 'https://example.com/{{ version }}/other_{{ version }}_SHASUMS'
 ```
 
-### `checksum_expr`
+### `checksum_expr` {#checksum-expr}
 
-When the checksum lives in a manifest (rather than a plain checksum file), use
-`checksum_expr` to extract it. The manifest body fetched from `checksum_url` is
-evaluated with [expr-lang](https://expr-lang.org). The following variables are
-available: `body` (the raw manifest), `version`, `os`, `arch`, `url` (the
-resolved artifact URL for the target), and `filename`.
-
-The expression must evaluate to a qualified `algo:hash` **string** (e.g.
-`sha256:<hash>`, `sha512:<hash>`). Build the prefix in the expression: prepend a
-literal when the algorithm is fixed (`"sha256:" + entry.hash`), or read it from
-the manifest when it varies (`entry.algo + ":" + entry.hash`).
+An [expr-lang](https://expr-lang.org) expression that extracts the checksum from
+a manifest fetched from `checksum_url`. It receives `body` (the manifest),
+`version`, `os`, `arch`, `url` (the artifact URL for the target platform) and
+`filename`. It must return an `<algorithm>:<hash>` string, so build the prefix
+in the expression: prepend a literal when the algorithm is fixed
+(`"sha256:" + entry.hash`), or read it from the manifest when it varies
+(`entry.algo + ":" + entry.hash`).
 
 ```toml
 [tools."http:my-tool"]
 version = "1.10.0"
 checksum_url = "https://example.com/versions.json"
-# Match the file whose url equals the resolved artifact url, return sha256:<hash>
+# find the file whose url equals the artifact url, return sha256:<hash>
 checksum_expr = '"sha256:" + filter(fromJSON(body)[version + ""].files, { #.url == url })[0].sha256'
 
 [tools."http:my-tool".platforms]
@@ -217,22 +340,42 @@ macos-arm64 = { url = "https://example.com/my-tool-{{ version }}-macos-arm64.tar
 ```
 
 ::: tip expr-lang gotchas
-The predicate placeholder must be written as `{ #... }` **with a space** after
-`{`, because `{#` is the Tera comment delimiter. To index a map by a runtime
-value, force evaluation with `[version + ""]` — a bare `[version]` is treated as
-the literal key `"version"`.
+Write the predicate as `{ #... }` with a space after `{`, because `{#` starts a
+Tera comment. To index a map by a value known only at run time, force
+evaluation with `[version + ""]`: a bare `[version]` is read as the literal key
+`"version"`.
 :::
+
+### `size`
+
+The expected size of the download in bytes. The install fails when the size
+differs. It catches truncated downloads, but it does not replace a checksum.
+
+```toml
+[tools."http:my-tool"]
+version = "1.0.0"
+url = "https://example.com/releases/my-tool-v1.0.0.tar.gz"
+size = "12345678"
+```
+
+## Authentication
+
+For HTTP Basic auth, add the host to your netrc file; see the
+[`netrc`](/configuration/settings.html#netrc) setting. Use `headers` for a token
+or an API key.
 
 ### `headers`
 
-Extra request headers for the artifact download, [`version_list_url`](#version_list_url),
-and [`checksum_url`](#checksum_url) requests. Use it for servers that need a token other than
-Basic auth, such as a bearer token for an OCI blob on `ghcr.io` or an API key header for
-Artifactory. Values are templates, so the secret can come from the environment:
+Extra request headers for the download and for the
+[`version_list_url`](#version-list-url) and [`checksum_url`](#checksum-url)
+requests. Use it for a server that needs a bearer token, such as an OCI blob on
+`ghcr.io`, or an API key header, such as Artifactory's. Values are templates,
+so a secret can come from the environment:
 
 ```toml
 [tools."http:polaris"]
 version = "0.9.2"
+# ghcr.io accepts a base64-encoded GitHub token as a bearer token
 headers = { Authorization = "Bearer {{ env.GHCR_TOKEN | b64_encode }}" }
 
 [tools."http:polaris".platforms]
@@ -240,18 +383,21 @@ linux-x64 = { url = "https://ghcr.io/v2/acme/polaris/blobs/sha256:...", format =
 macos-arm64 = { url = "https://ghcr.io/v2/acme/polaris/blobs/sha256:...", format = "tar.gz" }
 ```
 
-Header values are redacted from debug output and do not change where a tool is installed.
-A `headers` entry replaces any automatic token mise would otherwise send to the same host.
+mise redacts header values from debug output, and headers do not change where a
+tool is installed. A `headers` entry replaces any token mise would otherwise
+send to the same host.
 
-Headers are sent to the host in `url` only. If the server redirects to a different host, port,
-or scheme, every `headers` entry is dropped for the rest of the redirect chain, which is what
-GHCR's signed blob URLs need. Headers survive a redirect within the same origin.
+mise sends headers only to the host in `url`. When the server redirects to a
+different host, port or scheme, mise drops every header for the rest of the
+redirect chain, which is what GHCR's signed blob URLs need. Headers survive a
+redirect within the same origin.
 
-### `headers_forward`
+### `headers_forward` {#headers-forward}
 
-Names the extra hosts each header may follow a redirect to. Use it when a server hands off to
-another host that also needs the credential, such as a CDN. A header with no entry is never
-forwarded, so each secret reaches only the hosts you list for it:
+Names the other hosts each header may follow a redirect to. Use it when a server
+hands off to another host that also needs the credential, such as a CDN. A
+header with no entry is never forwarded, so each secret reaches only the hosts
+you list for it:
 
 ```toml
 [tools."http:my-tool"]
@@ -261,55 +407,39 @@ headers = { X-Api-Key = "{{ env.RELEASES_KEY }}", Authorization = "Bearer {{ env
 headers_forward = { X-Api-Key = ["cdn.example.com", "*.assets.example.com"] }
 ```
 
-Here `X-Api-Key` also goes to `cdn.example.com` and any subdomain of `assets.example.com`, while
-`Authorization` stays with `releases.example.com`.
+Here `X-Api-Key` also goes to `cdn.example.com` and to any subdomain of
+`assets.example.com`, while `Authorization` stays with `releases.example.com`.
 
-- Each value is a host or a list of hosts: an exact hostname, or `*.` plus a suffix for its
-  subdomains (`*.example.com` matches `a.example.com` but not `example.com`). A bare `*` and
-  ports are not accepted.
-- Forwarding never steps down to plain HTTP. A chain that is already plain HTTP, because `url`
-  is an `http://` URL, may stay that way.
-- A header dropped at one hop is not restored by a later hop, even if that host is listed.
-- Every name must also appear in `headers`, so a typo is an error instead of a silent no-op.
+- Each value is a host or a list of hosts: an exact host name, or `*.` and a
+  suffix for its subdomains (`*.example.com` matches `a.example.com` but not
+  `example.com`). A bare `*` and ports are not accepted.
+- Forwarding never steps down to plain HTTP. A chain that is already plain HTTP,
+  because `url` is an `http://` URL, may stay that way.
+- A header dropped at one hop is not restored by a later hop, even when that
+  host is listed.
+- Every name must also appear in `headers`, so a typo is an error instead of a
+  silent no-op.
 
-### `size`
+## Extracting and naming executables
 
-Check the expected byte count. These numbers illustrate the syntax; use the
-actual artifact sizes. A size check does not replace a checksum:
+### `format`
 
-```toml
-[tools."http:my-tool"]
-version = "1.0.0"
-url = "https://example.com/releases/my-tool-v1.0.0.tar.gz"
-size = "12345678"
-```
-
-### Platform-specific Size
-
-You can specify different sizes for different platforms:
+The archive format, such as `tar.gz`, `tar.xz` or `zip`. Without it, mise
+detects the format from the final URL after redirects, then from the configured
+URL, so an extensionless download endpoint that redirects to a `.tar.gz` file
+still works. Set it when neither URL has a useful extension, or to override the
+detected format:
 
 ```toml
 [tools."http:my-tool"]
 version = "1.0.0"
-
-[tools."http:my-tool".platforms]
-macos-x64 = {
-  url = "https://example.com/releases/my-tool-v1.0.0-macos-x64.tar.gz",
-  size = "12345678",
-}
-macos-arm64 = {
-  url = "https://example.com/releases/my-tool-v1.0.0-macos-arm64.tar.gz",
-  size = "9876543",
-}
-linux-x64 = {
-  url = "https://example.com/releases/my-tool-v1.0.0-linux-x64.tar.gz",
-  size = "11111111",
-}
+url = "https://example.com/releases/my-tool-v1.0.0"
+format = "tar.xz"
 ```
 
-### `strip_components`
+### `strip_components` {#strip-components}
 
-Number of directory components to strip when extracting archives:
+The number of leading directories to remove when extracting an archive:
 
 ```toml
 [tools."http:my-tool"]
@@ -318,261 +448,20 @@ url = "https://example.com/releases/my-tool-v1.0.0.tar.gz"
 strip_components = 1
 ```
 
-::: info
-When both `strip_components` and `bin_path` are unset, mise automatically applies `strip_components = 1` when the extracted archive contains exactly one directory at the root level and no files. This is common with tools like ripgrep that package their binaries in a versioned directory (e.g., `ripgrep-14.1.0-x86_64-unknown-linux-musl/rg`). Auto-detection ensures the binary is placed directly in the install path where mise expects it.
+When neither `strip_components` nor `bin_path` is set, mise removes one level by
+itself if the archive holds a single top-level directory and no files, as
+ripgrep's archives do (`ripgrep-14.1.1-x86_64-unknown-linux-musl/rg`).
+
+### `bin_path` {#bin-path}
+
+The directory, relative to the install directory, that holds the executables,
+or where mise places a single downloaded file. It is a template, and setting it
+turns off the automatic stripping.
+
+::: v-pre
+For an archive laid out as `my-tool-1.0.0/bin/my-tool`, remove the outer
+directory as below, or keep it with `bin_path = "my-tool-{{ version }}/bin"`.
 :::
-
-### `bin`
-
-Rename the downloaded binary to a specific name. This is useful when downloading single binaries that have platform-specific names:
-
-```toml
-[tools."http:docker-compose"]
-version = "2.29.1"
-url = "https://github.com/docker/compose/releases/download/v{{ version }}/docker-compose-linux-x86_64"
-bin = "docker-compose"  # Rename from docker-compose-linux-x86_64 to docker-compose
-```
-
-::: info
-When downloading single binaries (not archives), mise automatically removes OS/arch suffixes from the filename. For example, `docker-compose-linux-x86_64` becomes `docker-compose`. Use the `bin` option only when you need a specific custom name.
-:::
-
-### `rename_exe`
-
-Rename the executable inside an extracted archive to a specific name. This is useful when archives contain binaries with platform-specific names or when installing kubectl plugins that need specific naming:
-
-```toml
-[tools."http:openunison-cli"]
-version = "1.0.0"
-url = "https://nexus.tremolo.io/repository/openunison-cli/openunison-cli-v{{version}}-linux.zip"
-rename_exe = "kubectl-openunison-cli"  # Rename extracted binary for kubectl plugin
-```
-
-mise searches for the first executable in the extracted directory (or in `bin_path` if specified) and renames it to the given name.
-
-To rename **multiple** binaries from one archive, use the table form — each key is a source name (an exact file name or a glob) and each value is the new name:
-
-```toml
-[tools."http:mytool"]
-version = "1.0.0"
-url = "https://example.com/mytool-v{{version}}-linux.zip"
-rename_exe = { "mytool-*" = "mytool", "myhelper-*" = "myhelper" }
-```
-
-::: tip
-Use `bin` for renaming single binary downloads, and `rename_exe` for renaming executables inside archives.
-:::
-
-### `format`
-
-Explicitly specify the archive format when the URL lacks a file extension or has an incorrect extension:
-
-```toml
-[tools."http:my-tool"]
-version = "1.0.0"
-url = "https://example.com/releases/my-tool-v1.0.0"
-format = "tar.xz"  # Explicitly specify the format
-```
-
-::: info
-If `format` is not specified, mise automatically detects the format from the final URL after HTTP redirects, falling back to the configured URL. This allows an extensionless download endpoint to redirect to an archive such as `.tar.gz`. An explicit `format` always takes precedence, so use it when neither URL has a useful extension or when you need to override the detected format.
-:::
-
-### Platform-specific Format
-
-You can specify different formats for different platforms:
-
-```toml
-[tools."http:my-tool"]
-version = "1.0.0"
-
-[tools."http:my-tool".platforms]
-macos-x64 = {
-  url = "https://example.com/releases/my-tool-v1.0.0-macos-x64",
-  format = "tar.xz",
-}
-linux-x64 = {
-  url = "https://example.com/releases/my-tool-v1.0.0-linux-x64",
-  format = "tar.gz",
-}
-windows-x64 = {
-  url = "https://example.com/releases/my-tool-v1.0.0-windows-x64",
-  format = "zip",
-}
-```
-
-### `version_list_url`
-
-Fetch available versions from a remote URL. This lets `mise ls-remote` list versions for HTTP-based tools:
-
-```toml
-[tools."http:my-tool"]
-version = "1.0.0"
-url = "https://example.com/releases/my-tool-v{{version}}.tar.gz"
-version_list_url = "https://example.com/releases/versions.txt"
-```
-
-The version list URL can return data in any of these formats:
-
-- **Plain text**: A single version number (e.g., `2.0.53`)
-- **Line-separated**: One version per line
-- **JSON array of strings**: `["1.0.0", "1.1.0", "2.0.0"]`
-- **JSON array of objects**: `[{"version": "1.0.0"}, {"tag_name": "v2.0.0"}]`
-- **JSON object with versions array**: `{"versions": ["1.0.0", "2.0.0"]}`
-
-Version prefixes like `v` are automatically stripped.
-
-mise preserves the order returned by the version source. By default, version
-resolution treats the last matching entry as the latest one. If the source
-returns semantic versions in another order, set `version_order = "semver"` to
-order `mise ls-remote` and select versions by semantic precedence. See
-[Version ordering](/dev-tools/#version-ordering) for the complete ordering
-contract.
-
-GitHub's releases API, for example, returns releases newest first. Opt into
-semantic ordering when using it as an HTTP version source:
-
-```toml
-[tools."http:my-tool"]
-version = "latest"
-version_order = "semver"
-url = "https://example.com/my-tool-{{ version }}.tar.gz"
-version_list_url = "https://api.github.com/repos/owner/my-tool/releases"
-version_json_path = ".[].tag_name"
-```
-
-### `version_regex`
-
-Extract versions from the version list URL response using a regular expression:
-
-```toml
-[tools."http:my-tool"]
-version = "1.0.0"
-url = "https://example.com/releases/my-tool-v{{version}}.tar.gz"
-version_list_url = "https://example.com/releases/"
-version_regex = 'my-tool-v(\d+\.\d+\.\d+)\.tar\.gz'
-```
-
-The first capturing group is used as the version. If no capturing group is present, the entire match is used.
-
-### `version_json_path`
-
-Extract versions from JSON responses using a jq-like path expression:
-
-```toml
-[tools."http:my-tool"]
-version = "1.0.0"
-url = "https://example.com/releases/my-tool-v{{version}}.tar.gz"
-version_list_url = "https://api.example.com/releases"
-version_json_path = ".[].tag_name"
-```
-
-Supported path expressions:
-
-- `.` - root value
-- `.[]` - iterate over array elements
-- `.[].field` - extract field from each array element
-- `.field` - extract field from object
-- `.field[]` - iterate over array in field
-- `.field.subfield` - nested field access
-- `.data.versions[]` - complex nested paths
-- `.[?field=value]` - filter array elements where field equals value
-
-Examples:
-
-```toml
-# GitHub releases API format
-version_json_path = ".[].tag_name"
-```
-
-```toml
-# Nested versions array
-version_json_path = ".data.versions[]"
-```
-
-```toml
-# Release info objects
-version_json_path = ".releases[].info.version"
-```
-
-```toml
-# Filter for stable releases only (e.g., Flutter)
-version_json_path = ".releases[?channel=stable].version"
-```
-
-The filter syntax `[?field=value]` filters JSON arrays before extraction. This is useful for APIs that return multiple release channels (stable, beta, dev) when you only want one of them.
-
-### `version_expr`
-
-Extract versions using an [expr-lang](https://expr-lang.org/) expression. This is the most flexible option for complex version extraction:
-
-```toml
-[tools."http:my-tool"]
-version = "latest"
-url = "https://example.com/releases/my-tool-v{{ version }}.tar.gz"
-version_list_url = "https://example.com/versions.txt"
-version_expr = 'split(body, "\n")'
-```
-
-The expression receives the HTTP response body as the `body` variable and
-should return an array of version strings. It also receives `versions`, which
-contains values already extracted by `version_regex` or `version_json_path` and
-is empty when no earlier extractor produced values.
-
-Example expressions:
-
-```toml
-# Split newline-separated versions
-version_expr = 'split(body, "\n")'
-```
-
-```toml
-# Split and filter empty lines
-version_expr = 'filter(split(body, "\n"), # != "")'
-```
-
-```toml
-# Parse JSON and extract object keys (useful for HashiCorp-style JSON)
-# e.g., {"versions": {"1.0.0": {}, "2.0.0": {}}}
-version_expr = 'keys(fromJSON(body).versions)'
-```
-
-```toml
-# Sort versions with mise's version-aware comparator
-version_expr = 'fromJSON(body) | map({ trimPrefix(#.tag_name, "v") }) | sortVersions()'
-```
-
-The [expr-lang](https://expr-lang.org/) library provides built-in functions
-including:
-
-- **`fromJSON(string)`**: Parse a JSON string into a value
-- **`toJSON(value)`**: Convert a value to a JSON string
-- **`keys(map)`**: Get the keys of an object/map as an array
-- **`values(map)`**: Get the values of an object/map as an array
-- **`len(value)`**: Get the length of a string, array, or map
-- **`filter(array, predicate)`** and **`map(array, predicate)`**: Filter or transform array values
-- **`sort(array)`** and **`reverse(array)`**: Reorder values lexically
-- **`int(value)`**, **`float(value)`**, and **`string(value)`**: Convert compatible values
-
-mise adds **`sortVersions(array)`** for version-aware ordering. Prefer
-`version_order = "semver"` when the discovered versions follow semantic
-versioning; use `sortVersions()` when the expression itself needs a sorted
-intermediate value.
-
-::: tip
-`version_expr` is the final extraction step, so its result becomes the version
-list. Use the `versions` variable to post-process values produced by
-`version_regex` or `version_json_path`.
-:::
-
-### `bin_path`
-
-Use paths relative to the extracted install root. Setting `bin_path` disables
-automatic root stripping. For an archive shaped like
-`my-tool-1.0.0/bin/my-tool`, explicitly strip the outer directory as below, or
-leave it in place and use `bin_path = "my-tool-{{ version }}/bin"`.
-
-Specify the directory containing binaries within the extracted archive, or where to place the downloaded file. This supports templating with <code v-pre>{{version}}</code>:
 
 ```toml
 [tools."http:my-tool"]
@@ -582,18 +471,73 @@ strip_components = 1
 bin_path = "bin"
 ```
 
-**Binary path lookup order:**
+When `bin_path` is not set, mise puts `bin/` in the install directory on `PATH`
+if it exists, otherwise the `bin/` directory of every immediate subdirectory
+that has one, and otherwise the install directory.
 
-1. If `bin_path` is specified, use that directory
-2. If `bin_path` is not set, look for a `bin/` directory in the install path
-3. If no `bin/` directory exists, search subdirectories for `bin/` directories
-4. If no `bin/` directories are found, use the root of the extracted directory
+### `bin`
 
-### `shared_extraction`
+The name for a downloaded single file, raw or compressed such as `.gz` or
+`.xz`. It can include a directory, such as `bin/my-tool`. mise already removes OS
+and architecture suffixes from single-file downloads, so
+`docker-compose-linux-x86_64` installs as `docker-compose` with no option. The
+http backend ignores `bin` for archives; use [`rename_exe`](#rename-exe) there.
 
-By default, each HTTP installation contains its own extracted files. Set
-`shared_extraction = true` to share extracted content between normal user
-installations with identical artifacts and extraction options:
+```toml
+[tools."http:my-tool"]
+version = "1.0.0"
+url = "https://example.com/releases/{{ version }}/my-tool-linux-x86_64"
+bin = "mt" # install the file as mt instead of my-tool
+```
+
+### `rename_exe` {#rename-exe}
+
+Renames an executable after an archive is extracted, for example to give a
+kubectl plugin the name kubectl expects. The string form renames the tool's main
+executable: the one named after the tool, else one whose name contains it, else
+the first executable mise finds in `bin_path`, `bin/` or the install
+directory.
+
+```toml
+[tools."http:openunison-cli"]
+version = "1.0.0"
+url = "https://nexus.tremolo.io/repository/openunison-cli/openunison-cli-v{{ version }}-linux.zip"
+rename_exe = "kubectl-openunison-cli"
+```
+
+To rename several executables from one archive, use the table form. Each key is
+an exact file name or a glob, and each value is the new name:
+
+```toml
+[tools."http:mytool"]
+version = "1.0.0"
+url = "https://example.com/mytool-v{{ version }}-linux.zip"
+rename_exe = { "mytool-*" = "mytool", "myhelper-*" = "myhelper" }
+```
+
+### `windows_script_interpreter` {#windows-script-interpreter}
+
+On Windows, for a raw download such as a script, writes `<file>.cmd` next to it.
+The launcher runs the script with this interpreter, so you can call the script
+by name. The value must be a plain executable name on `PATH`, such as `node` or
+`python`. It has no effect on other platforms, where the script needs its own
+shebang line, or on archives and compressed files.
+
+```toml
+[tools."http:my-script"]
+version = "1.0.0"
+url = "https://example.com/my-script-{{ version }}.js"
+bin = "my-script"
+windows_script_interpreter = "node" # Windows gets my-script.cmd
+```
+
+## Sharing extracted files {#shared-extraction}
+
+By default, each install holds its own copy of the extracted files, and
+`mise uninstall` and `mise prune` remove them with the version. Set
+`shared_extraction = true` to extract each distinct artifact once into
+`$MISE_DATA_DIR/http-tarballs/` (by default `~/.local/share/mise/http-tarballs/`)
+and link installs to it:
 
 ```toml
 [tools."http:my-tool"]
@@ -602,94 +546,26 @@ url = "https://example.com/releases/my-tool-v1.0.0.tar.gz"
 shared_extraction = true
 ```
 
-Sharing saves disk space when several tools use the same artifact and avoids
-repeated extraction. A download may still be needed to identify its content.
-Changes made to shared files, including by a `postinstall` hook, affect every
-installation using that entry.
+Sharing saves disk space and extraction time when several tools or versions use
+the same artifact; mise still downloads the artifact to identify its content.
+Changes to shared files, including changes made by a `postinstall` hook, affect
+every install that uses them. `mise install --system`, `mise install --shared`
+and `mise install-into` destinations always get their own copy.
 
-Explicit `mise install --system`, `mise install --shared`, and `mise
-install-into` destinations always contain their own files, even with this
-option enabled.
+`mise prune`, `mise cache prune` and `mise cache clear` leave `http-tarballs`
+alone, because installs may still link to it. Installs made by older mise
+versions may also link into it. To give an install its own copy, remove
+`shared_extraction` and run `mise install --force <tool>@<version>`. Changing the
+option alone does not change an installed version.
 
-## Installation and Cleanup
+To reclaim the space, give every such install its own copy or uninstall it,
+check that nothing links into the directory, then delete it:
 
-New HTTP installations contain their files directly in the installation
-directory, like other tools. `mise uninstall` and `mise prune` remove those
-files when they remove the version. Multiple installations of the same artifact
-have separate copies.
-
-Existing installations that link into `http-tarballs` continue to work. To
-replace one with an independent installation, reinstall it with `mise install
---force <tool>` without `shared_extraction = true`. Changing the option alone
-does not replace an already installed version.
-
-::: warning Shared extraction storage
-Legacy installations and tools using `shared_extraction = true` depend on files
-in `$MISE_DATA_DIR/http-tarballs/`. Neither `mise prune` nor `mise cache prune`
-automatically reclaims these entries after uninstalling a tool. Reinstalling
-also leaves existing entries intact because other installations may use them.
-Do not delete this directory while any installation still depends on it.
-:::
-
-## Caching Behavior
-
-### Cache Location
-
-With `shared_extraction = true`, extracted files are stored in
-`$MISE_DATA_DIR/http-tarballs/` instead of separately in each installation:
-
-- **Linux**: `~/.local/share/mise/http-tarballs/`
-- **macOS**: `~/.local/share/mise/http-tarballs/`
-
-### Cache Key Generation
-
-Cache keys are derived from the file content so that identical downloads are shared across tools:
-
-1. **File content**: mise calculates a Blake3 hash of the downloaded file, independently of its expected verification checksum.
-2. **Extraction options**: options that change the extracted result, including the effective filename for raw and compressed binaries, root stripping, renaming, and relevant format or launcher choices, also affect the key.
-
-Example cache directory structure:
-
-```
-~/.local/share/mise/http-tarballs/
-├── 71f774faa03daf1a58cc3339f8c73e6557348c8e0a2f3fb8148cc26e26bad83f/
-│   ├── bin/my-tool
-│   └── metadata.json
-└── 1c2af379bdf1fed266bc44b49271e2df5b0dafae09f1cc744b3505ec50c84719_strip_1/
-    ├── my-tool
-    └── metadata.json
+```sh
+find ~/.local/share/mise/installs -lname '*http-tarballs*' # should print nothing
+rm -rf ~/.local/share/mise/http-tarballs
 ```
 
-### Symlinked Installations
+Use your [data directory](/directories.html) if it is not the default.
 
-Installations opting into sharing link to the cached extracted content:
-
-```bash
-~/.local/share/mise/installs/http-my-tool/1.0.0 → ~/.local/share/mise/http-tarballs/71f774...
-```
-
-For a raw file with `bin_path`, the link is inside the installation directory.
-For this layout, Windows copies the file instead of symlinking it.
-
-### Cache Metadata
-
-Each cache entry includes a `metadata.json` file with information about the cached content:
-
-```json
-{
-  "url": "https://example.com/releases/my-tool-v1.0.0.tar.gz",
-  "checksum": "sha256:REPLACE_WITH_THE_64_HEX_DIGIT_DIGEST",
-  "size": 1024000,
-  "extracted_at": 1703001234,
-  "platform": "macos-arm64"
-}
-```
-
-### Cache Management
-
-Shared extraction storage is intentionally outside `MISE_CACHE_DIR`,
-so `mise cache clear` does not remove content that installed symlinks still
-reference.
-
-Default installations and explicit system, shared, and install-into destinations
-do not create persistent HTTP extraction entries.
+Implementation: [`src/backend/http.rs`](https://github.com/jdx/mise/blob/main/src/backend/http.rs).

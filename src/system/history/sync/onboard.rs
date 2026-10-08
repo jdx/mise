@@ -357,7 +357,16 @@ pub async fn run(store: &Store, onboarding: &Onboarding) -> Result<Outcome> {
             setup_held: false,
         });
     }
-    if !super::origin::confirmed(onboarding.yes, "Set this machine up from the repository?")? {
+    // everything else here is journaled and undoable, so the plan above is
+    // the only confirmation; replacing local history cannot be undone from
+    // the checkpoint
+    if onboarding.replace_history
+        && !super::origin::confirmed_destructive(
+            onboarding.yes,
+            "Set this machine up from the repository?",
+            "mise bootstrap --adopt --replace-history",
+        )?
+    {
         bail!("not set up");
     }
 

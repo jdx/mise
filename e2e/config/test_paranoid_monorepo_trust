@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+
+# Paranoid mode binds trust to file content. A monorepo root trusted in normal
+# mode leaves a marker that trusts descendants by path; paranoid mode must not
+# honor it, so each descendant config still needs its own content-bound trust.
+export MISE_EXPERIMENTAL=1
+export MISE_TRUSTED_CONFIG_PATHS=""
+
+cat <<'EOF' >mise.toml
+monorepo_root = true
+
+[monorepo]
+config_roots = ["sub"]
+EOF
+
+mkdir -p sub
+cat <<'EOF' >sub/mise.toml
+[env]
+PARANOID_MONOREPO_CHILD = "original"
+EOF
+
+# Normal mode: trusting the root trusts the descendant through the marker.
+assert "mise trust"
+assert_contains "mise -C sub env" "PARANOID_MONOREPO_CHILD=original"
+
+# Paranoid mode: the root needs a content-bound trust record of its own, and the
+# marker must not stand in for one on the descendant.
+assert "MISE_PARANOID=1 mise trust"
+assert_contains "MISE_PARANOID=1 mise -C sub trust --show" "sub/mise.toml: untrusted"
+assert_fail_contains "MISE_PARANOID=1 MISE_YES=0 mise -C sub env 2>&1" "not trusted"
+
+# Trusting the descendant directly binds it to its content.
+assert "MISE_PARANOID=1 mise -C sub trust"
+assert_contains "MISE_PARANOID=1 mise -C sub env" "PARANOID_MONOREPO_CHILD=original"
+
+# Editing it needs renewed approval, even though the marker is still present.
+cat <<'EOF' >sub/mise.toml
+[env]
+PARANOID_MONOREPO_CHILD = "edited"
+EOF
+assert_fail_contains "MISE_PARANOID=1 MISE_YES=0 mise -C sub env 2>&1" "not trusted"
+
+# Normal mode still trusts the descendant through the marker.
+assert_contains "mise -C sub env" "PARANOID_MONOREPO_CHILD=edited"

@@ -640,7 +640,7 @@ pub fn is_disabled_backend_type(backend_type: &BackendType) -> bool {
         .is_some_and(is_disabled_backend_name)
 }
 
-pub(crate) fn ensure_backend_enabled(backend_type: &BackendType) -> Result<()> {
+pub fn ensure_backend_enabled(backend_type: &BackendType) -> Result<()> {
     if is_disabled_backend_type(backend_type) {
         bail!("backend {backend_type} is disabled by disable_backends");
     }
@@ -656,17 +656,7 @@ fn is_disabled_backend_name(backend: &str) -> bool {
 
 pub fn arg_to_backend(ba: BackendArg) -> Option<ABackend> {
     match ba.backend_type() {
-        BackendType::Core => {
-            CORE_PLUGINS
-                .get(&ba.short)
-                .or_else(|| {
-                    // this can happen if something like "corenode" is aliased to "core:node"
-                    ba.full()
-                        .strip_prefix("core:")
-                        .and_then(|short| CORE_PLUGINS.get(short))
-                })
-                .cloned()
-        }
+        BackendType::Core => crate::plugins::core::get(&ba),
         BackendType::Aqua => Some(Arc::new(aqua::AquaBackend::from_arg(ba))),
         BackendType::Asdf => Some(Arc::new(asdf::AsdfBackend::from_arg(ba))),
         BackendType::Cargo => Some(Arc::new(cargo::CargoBackend::from_arg(ba))),

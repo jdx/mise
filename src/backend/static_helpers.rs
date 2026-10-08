@@ -6,7 +6,7 @@ use crate::http::HTTP;
 use crate::toolset::ToolVersion;
 use crate::toolset::ToolVersionOptions;
 use crate::ui::progress_report::SingleReport;
-use eyre::{Result, bail};
+use eyre::{Result, WrapErr, bail};
 use indexmap::IndexSet;
 use reqwest::header::HeaderMap;
 use std::path::Path;
@@ -949,7 +949,9 @@ pub(crate) fn verify_artifact(
     let size_str = lookup_with_fallback(opts, "size");
 
     if let Some(size_str) = size_str {
-        let expected_size: u64 = size_str.parse()?;
+        let expected_size: u64 = size_str
+            .parse()
+            .wrap_err_with(|| format!("invalid size option: {size_str}"))?;
         let actual_size = file_path.metadata()?.len();
         if actual_size != expected_size {
             bail!(
@@ -2622,6 +2624,37 @@ size = "5120"
         // since the function should handle missing platform-specific values gracefully
         assert!(checksum.is_some());
         assert!(size.is_some());
+    }
+
+    #[test]
+    fn test_verify_artifact_checks_size_without_a_checksum() {
+        let backend = crate::backend::gem::GemBackend::from_arg("gem:rubocop".into());
+        let tv = test_tool_version(&backend, "1.0.0", &[]);
+        let tmp = tempfile::tempdir().unwrap();
+        let file_path = tmp.path().join("tool.tar.gz");
+        std::fs::write(&file_path, b"12345").unwrap();
+        let size_opts = |size: &str| {
+            let mut opts = ToolVersionOptions::default();
+            opts.opts
+                .insert("size".to_string(), toml::Value::String(size.to_string()));
+            opts
+        };
+
+        let err = verify_artifact(&tv, &file_path, &size_opts("4"), None)
+            .expect_err("a size mismatch must fail even without a checksum");
+        assert!(
+            err.to_string().contains("Size mismatch"),
+            "unexpected error: {err}"
+        );
+
+        let err = verify_artifact(&tv, &file_path, &size_opts("big"), None)
+            .expect_err("a non-numeric size must fail");
+        assert!(
+            err.to_string().contains("invalid size option: big"),
+            "unexpected error: {err}"
+        );
+
+        verify_artifact(&tv, &file_path, &size_opts("5"), None).unwrap();
     }
 
     #[test]

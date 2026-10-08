@@ -33,6 +33,6 @@ mise plugins uninstall my-tool
 
 ## Related documentation
 
-- [Plugin selection and maintenance](/plugin-usage.html).
+- [Removing plugins](/plugins.html#remove-plugins).
 - [`mise plugins [FLAGS] [SUBCOMMAND]`](/cli/plugins.html).
 - [Global flags and argument syntax](/cli/#global-flags).
