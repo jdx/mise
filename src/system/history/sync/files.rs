@@ -243,6 +243,21 @@ fn validate(path: &str, outer: &Envelope, inner: &Plaintext) -> Result<()> {
     Ok(())
 }
 
+/// The context of a decryption that failed because no identity this machine
+/// holds unlocks the file, so a caller can tell it from a damaged envelope.
+#[derive(Debug)]
+pub(crate) struct Locked(pub String);
+
+impl std::fmt::Display for Locked {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "cannot unlock {}; run mise dot pull interactively with a matching age identity",
+            self.0
+        )
+    }
+}
+
 pub(crate) fn decrypt(
     repo: &HistoryRepo,
     path: &str,
@@ -260,11 +275,8 @@ pub(crate) fn decrypt(
     if let Some(decrypted) = repo.decrypted_object(&object.1) {
         return Ok(decrypted);
     }
-    let bytes = agecrypt::decrypt_sync(&outer.ciphertext.0, interactive).wrap_err_with(|| {
-        format!(
-            "cannot unlock {path}; run mise dot pull interactively with a matching age identity"
-        )
-    })?;
+    let bytes = agecrypt::decrypt_sync(&outer.ciphertext.0, interactive)
+        .wrap_err_with(|| Locked(path.to_string()))?;
     let inner: Plaintext =
         rmp_serde::from_slice(&bytes).wrap_err("invalid encrypted file payload")?;
     validate(path, &outer, &inner)?;
