@@ -1766,6 +1766,9 @@ impl Bootstrap {
     async fn run_with_notices(mut self) -> Result<()> {
         if self.prompt_vars {
             crate::config::env_directive::prompt::enable();
+            // Anything that ran before this point (such as tool purgatory cleanup)
+            // may have cached config whose vars never had the chance to prompt.
+            Config::reset().await?;
         }
         // Every subcommand, not just the full run, applies less than project
         // config declares in safe mode; say so up front.

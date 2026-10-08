@@ -42,3 +42,27 @@ GIT_NAME = { default = "x", prompt = "Name" }
 EOF2
 rm mise.local.toml
 assert_fail_contains "mise env" "only supported in [vars]"
+
+# `prompt` is rejected on every [env] form, including a plain value
+cat <<EOF2 >mise.toml
+[env]
+GIT_NAME = { value = "x", prompt = "Name" }
+EOF2
+assert_fail_contains "mise env" "only supported in [vars]"
+
+# A saved answer wins even when the default cannot render, and a blank one counts as unanswered
+cat <<EOF2 >mise.toml
+[vars.git_name]
+default = "{{ vars.missing_var }}"
+prompt = "Git author name"
+
+[vars.git_email]
+required = "Set git_email"
+prompt = "Git email"
+EOF2
+cat <<EOF2 >"$MISE_STATE_DIR/vars.toml"
+[vars]
+git_name = "saved-name"
+git_email = ""
+EOF2
+assert_fail_contains "mise vars" "Required variable 'git_email' is not defined"

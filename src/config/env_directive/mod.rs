@@ -507,6 +507,9 @@ impl EnvResults {
 
             ctx.insert("vars", &vars);
             let redact = directive.options().redact;
+            if !resolve_opts.vars && directive.options().prompt.is_some() {
+                eyre::bail!("`prompt` is only supported in [vars], not [env]");
+            }
             // trace!("resolve: ctx.get('env'): {:#?}", &ctx.get("env"));
             match directive {
                 EnvDirective::Val(k, v, _opts) => {
@@ -535,9 +538,6 @@ impl EnvResults {
                     }
                 }
                 EnvDirective::Default(k, v, opts) => {
-                    if !resolve_opts.vars && opts.prompt.is_some() {
-                        eyre::bail!("`prompt` on '{k}' is only supported in [vars]");
-                    }
                     // Same fold as `Val` above, and for the same reason.
                     let k = if resolve_opts.vars {
                         k
@@ -564,6 +564,20 @@ impl EnvResults {
                             r.redactions.push(k.clone());
                         }
                         r.caller_env_keys.insert(k.clone());
+                        continue;
+                    }
+
+                    // A saved answer wins over the default, so render the default only
+                    // when there is none.
+                    if resolve_opts.vars
+                        && opts.prompt.is_some()
+                        && let Some(a) = prompt::saved(&k)
+                    {
+                        if redact.unwrap_or(false) {
+                            r.redactions.push(k.clone());
+                        }
+                        r.track_redaction_override(&k, redact);
+                        r.vars.insert(k, (a, prompt::answers_path()));
                         continue;
                     }
 
@@ -608,9 +622,6 @@ impl EnvResults {
                     r.env_remove.insert(k);
                 }
                 EnvDirective::Required(k, opts) => {
-                    if !resolve_opts.vars && opts.prompt.is_some() {
-                        eyre::bail!("`prompt` on '{k}' is only supported in [vars]");
-                    }
                     // Required directives only validate; they never assign. Record the key so
                     // redaction can resolve it against the caller environment.
                     r.caller_env_keys.insert(k.clone());

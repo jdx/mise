@@ -41,7 +41,8 @@ fn read_answers() -> toml::Table {
 /// The answer saved for `key` on this machine, if any.
 pub(crate) fn saved(key: &str) -> Option<String> {
     match read_answers().get("vars")?.as_table()?.get(key)? {
-        toml::Value::String(s) => Some(s.clone()),
+        // An empty answer counts as none, so a blank line never satisfies `required`.
+        toml::Value::String(s) if !s.is_empty() => Some(s.clone()),
         _ => None,
     }
 }
@@ -58,8 +59,35 @@ fn save(key: &str, value: &str) -> Result<()> {
     if let Some(parent) = path.parent() {
         crate::file::create_dir_all(parent)?;
     }
-    crate::file::write_atomic(&path, toml::to_string(&table)?)
+    write_private(&path, toml::to_string(&table)?.as_bytes())
         .wrap_err_with(|| format!("failed to save the answer for var '{key}'"))
+}
+
+/// Write `contents` to `path` through a sibling file that is owner-only from
+/// creation, so the answers are never readable by others, even briefly.
+#[cfg(unix)]
+fn write_private(path: &std::path::Path, contents: &[u8]) -> Result<()> {
+    use std::io::Write;
+    use std::os::unix::fs::OpenOptionsExt;
+
+    let tmp = path.with_extension(format!("toml.{}.tmp", std::process::id()));
+    let mut file = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .mode(0o600)
+        .open(&tmp)?;
+    let written = file.write_all(contents).and_then(|()| file.sync_all());
+    drop(file);
+    let renamed = written.and_then(|()| std::fs::rename(&tmp, path));
+    if renamed.is_err() {
+        let _ = std::fs::remove_file(&tmp);
+    }
+    Ok(renamed?)
+}
+
+#[cfg(not(unix))]
+fn write_private(path: &std::path::Path, contents: &[u8]) -> Result<()> {
+    crate::file::write_atomic(path, contents)
 }
 
 /// The saved answer for `key`, or one asked for and saved now.
@@ -84,6 +112,11 @@ pub(crate) fn answer(key: &str, prompt: &str, default: Option<&str>) -> Result<O
         && let Some(default) = default
     {
         value = default.to_string();
+    }
+    // Nothing to offer and nothing typed: leave the var unanswered rather than
+    // saving a blank that `required` would accept.
+    if value.is_empty() {
+        return Ok(None);
     }
     save(key, &value)?;
     Ok(Some(value))
