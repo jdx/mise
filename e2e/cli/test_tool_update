@@ -214,3 +214,22 @@ assert_contains "cat '$MISE_CONFIG_DIR/mise.lock'" '1.0.0'
 assert "mise x -- dummy" "This is Dummy 1.1.0!"
 assert_contains "cat '$MISE_CONFIG_DIR/mise.lock'" '1.1.0'
 assert "cksum mise.lock" "$project_lock"
+
+# System config counts as global, so a system-wide default (such as a distro's
+# /etc/mise/conf.d) can opt a tool in, lazy tools included.
+export MISE_SYSTEM_CONFIG_DIR="$HOME/system-mise"
+mkdir -p "$MISE_SYSTEM_CONFIG_DIR/conf.d"
+global_config '# no tools'
+cat >"$MISE_SYSTEM_CONFIG_DIR/conf.d/defaults.toml" <<'EOF2'
+[tools]
+dummy = { version = "1", lazy_bins = ["dummy"], auto_update = true }
+EOF2
+fresh_state system-exec
+reset_dummy
+assert "mise x -- dummy" "This is Dummy 1.1.0!"
+assert_not_contains "mise ls --installed dummy" "2.0.0"
+
+fresh_state system-shim
+reset_dummy
+mise reshim
+assert "$MISE_DATA_DIR/shims/dummy" "This is Dummy 1.1.0!"
