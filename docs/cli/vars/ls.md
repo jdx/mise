@@ -23,5 +23,5 @@ Reads `$MISE_STATE_DIR/vars.toml`; no config is loaded.
 ## Related documentation
 
 - [Config variables](/configuration/vars.html).
-- [`mise vars [--no-header] [NAME=VALUE]… [SUBCOMMAND]`](/cli/vars.html).
+- [`mise vars [--no-header] [SUBCOMMAND]`](/cli/vars.html).
 - [Global flags and argument syntax](/cli/#global-flags).

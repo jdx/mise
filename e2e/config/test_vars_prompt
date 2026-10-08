@@ -85,10 +85,11 @@ mise vars unset git_name
 assert "mise vars ls --no-header" "git_email me@example.com"
 assert_fail_contains "mise vars unset" "name at least one var"
 
-# `mise vars NAME=VALUE` sets an answer without asking, and bare `mise vars` lists them
-mise vars git_name="Ada Lovelace" other=x
+# `mise vars prompt NAME=VALUE` sets an answer without asking, and bare `mise vars` lists them
+mise vars prompt git_name="Ada Lovelace" other=x
 assert "mise vars --no-header" "git_email me@example.com
 git_name  Ada Lovelace
 other     x"
-assert_fail_contains "mise vars oops" "expected NAME=VALUE"
-assert_fail_contains "mise vars empty=" "would count as unanswered"
+assert_fail_contains "mise vars prompt =x" "expected NAME or NAME=VALUE"
+assert_fail_contains "mise vars prompt empty=" "would count as unanswered"
+assert_fail_contains "mise vars git_name=x" "unrecognized subcommand"

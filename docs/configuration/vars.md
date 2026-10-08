@@ -100,7 +100,7 @@ config or dotfiles history, and is available to every command that reads vars fr
 
 ```sh
 mise vars prompt          # ask for every unanswered prompt var
-mise vars git_name=Ada    # set an answer without asking
+mise vars prompt git_name=Ada  # set an answer without asking
 mise vars ls              # show the saved answers
 mise vars unset git_name  # forget one, to be asked again
 ```

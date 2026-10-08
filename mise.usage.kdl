@@ -7459,20 +7459,19 @@ Tool options can also be set inline:
     example "mise use --env staging node@24" help="Write mise.staging.toml, which mise loads when MISE_ENV=staging"
     complete path type=path
 }
-cmd vars help="Ask for, set, and list the per-machine answers to `[vars]` that declare a `prompt`" effect=write {
+cmd vars help="Ask for and list the per-machine answers to `[vars]` that declare a `prompt`" effect=write {
     long_help #"""
-Ask for, set, and list the per-machine answers to `[vars]` that declare a `prompt`
+Ask for and list the per-machine answers to `[vars]` that declare a `prompt`
 
 A `[vars]` entry with a `prompt` is asked for once per machine and the
 answer is remembered in `$MISE_STATE_DIR/vars.toml`, outside every config
-file. `mise vars NAME=VALUE` sets an answer without asking; with no
-arguments, lists the saved answers (same as `mise vars ls`). Only
-`mise vars prompt` and `mise bootstrap --prompt-vars` ask. See
+file. With no subcommand, lists the saved answers (same as `mise vars ls`).
+`mise vars prompt` asks for them or, as `NAME=VALUE`, sets them directly;
+only it and `mise bootstrap --prompt-vars` ever ask. See
 https://mise.jdx.dev/configuration/vars.html#prompt
 """#
     flag --no-header help="Do not print the table header"
     flag "-h --help" help="Print help" action=help builtin=#true
-    arg "[NAME=VALUE]…" help="Answers to save, as NAME=VALUE" required=#false var=#true
     cmd ls help="List the saved answers" effect=read {
         alias list
         long_help #"""
@@ -7483,19 +7482,22 @@ Reads `$MISE_STATE_DIR/vars.toml`; no config is loaded.
         flag --no-header help="Do not print the table header"
         flag "-h --help" help="Print help" action=help builtin=#true
     }
-    cmd prompt help="Ask for the prompt vars that have no saved answer" effect=write {
+    cmd prompt help="Ask for the prompt vars that have no saved answer, or set answers directly" effect=write {
         long_help #"""
-Ask for the prompt vars that have no saved answer
+Ask for the prompt vars that have no saved answer, or set answers directly
 
 Enter accepts the suggested default. Each answer, accepted defaults
 included, is saved and never asked for again; use `mise vars unset` to be
-asked again. Needs a terminal. Asks about every unanswered `prompt` var in
-the config files that apply here, or only the ones you name.
+asked again. With no arguments, asks about every unanswered `prompt` var in
+the config files that apply here. `NAME` asks for only that var;
+`NAME=VALUE` saves the answer without asking, as `mise set` does for an
+env var, so it needs no terminal.
 """#
         flag "-h --help" help="Print help" action=help builtin=#true
-        arg "[NAME]…" help="Only ask for these vars" required=#false var=#true
+        arg "[NAME[=VALUE]]…" help="Vars to ask for (`NAME`) or answers to save (`NAME=VALUE`)" required=#false var=#true
         example "mise vars prompt" help="Ask for every unanswered prompt var"
         example "mise vars prompt git_name" help="Ask for git_name only"
+        example "mise vars prompt git_name=\"Ada Lovelace\"" help="Set the answer for git_name without asking"
     }
     cmd unset help="Forget saved answers so they are asked for again" effect=write {
         alias rm remove
@@ -7509,7 +7511,6 @@ Edits `$MISE_STATE_DIR/vars.toml`; no config is loaded. The next
         arg "[NAME]…" help="The vars whose answers to forget" required=#false var=#true
         example "mise vars unset git_name" help="Be asked for git_name again"
     }
-    example "mise vars git_name=\"Ada Lovelace\"" help="Set an answer without asking"
     example "mise vars" help="List the saved answers"
 }
 cmd version help="Show the version of mise" effect=read {
