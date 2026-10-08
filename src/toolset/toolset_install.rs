@@ -127,6 +127,9 @@ impl Toolset {
             scoped_install_dirs: true,
             after_install_resolve: ResolveOptions {
                 defer_missing_lazy_tools: true,
+                // Nothing shows what resolves after the install, so this doesn't wait for
+                // `prefer_offline`: a command wrapper can reach here without it.
+                defer_missing_lazy_online: true,
                 ..Default::default()
             },
             ..Default::default()
