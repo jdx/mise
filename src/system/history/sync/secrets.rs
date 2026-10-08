@@ -26,10 +26,11 @@ static TOKEN_FORMATS: LazyLock<Regex> = LazyLock::new(|| {
 
 /// `NAME_KEY=value`, `api-token: "value"`, `password = value`. The name has to
 /// end in the keyword, so `keybind = ...` is not one, and a value that only
-/// refers to another variable is not a secret. A quoted value may hold spaces.
+/// refers to another variable is not a secret. A quoted value may hold spaces, and a path or command
+/// substitution is not a secret.
 static ASSIGNMENT: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(
-        r#"(?i)\b(?:[a-z0-9_.-]*[_.-](?:key|token|secret|password|passwd)|token|secret|password|passwd|apikey)["']?\s*[:=]\s*(?:"[^"$\s][^"]{7,}|'[^'$\s][^']{7,}|[^\s"'$#{(<\[][^\s"']{7,})"#,
+        r#"(?i)\b(?:[a-z0-9_.-]*[_.-](?:key|token|secret|password|passwd)|token|secret|password|passwd|apikey)["']?\s*[:=]\s*(?:"[^"$`~/\s][^"]{7,}|'[^'$`~/\s][^']{7,}|[^\s"'$`~/#{(<\[][^\s"']{7,})"#,
     )
     .unwrap()
 });
@@ -117,6 +118,9 @@ mod tests {
             "bind = SUPER, K, exec, toggle-key",
             "alias tokens='wc -w'",
             "export DB_PASSWORD=\"$(pass show db)\"",
+            "export DB_PASSWORD=`pass show db`",
+            "password_file = ~/.config/app/password.txt",
+            "secret = \"/run/secrets/app-secret\"",
             "export DB_PASSWORD=\"$DB_PASSWORD_FILE contents\"",
         ] {
             assert!(!suspicious(line), "{line}");
