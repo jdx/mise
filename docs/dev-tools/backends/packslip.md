@@ -324,6 +324,14 @@ use those to pin another ref or forge. When the registry supplies a
 replaces the default. Like those options, it pins the
 signer by name, so a renamed repository needs the new name here.
 
+A project whose signing workflow changed across the releases you install can
+name several; a release signed by any one of them is accepted:
+
+```toml
+[tools]
+"packslip:github.com/example/tool" = { version = "latest", workflow = ["release-plz.yml", "release.yml"] }
+```
+
 The same prefix also applies to the project's signed release list. If the
 vendor signs that list from another workflow or ref, pin it with
 [`list_identity_prefix`](#list-identity-prefix).

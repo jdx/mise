@@ -4548,8 +4548,19 @@
           "type": "string"
         },
         "workflow": {
-          "description": "repository workflow file that signs releases on a tag; github.com projects only, not valid with pubkey, identity, identity_prefix, or issuer",
-          "type": "string"
+          "description": "repository workflow file, or a list of them, that signs releases on a tag; github.com projects only, not valid with pubkey, identity, identity_prefix, or issuer",
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "minItems": 1
+            }
+          ]
         },
         "list_identity_prefix": {
           "description": "separate identity prefix for the vendor release list; needs an issuer, not valid with pubkey",
