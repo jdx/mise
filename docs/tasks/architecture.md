@@ -172,8 +172,8 @@ mise run --dry-run deploy          # each command, in execution order, without r
 
 [`mise tasks deps`](/cli/tasks/deps.html) shows `depends`, `depends_post`, and
 `wait_for` edges, but not run steps. A `wait_for` edge appears only when both
-tasks are selected. A post-dependency appears as `<name> (post)` in `--dot`
-output and when you list every task, but not in the tree for a single task.
+tasks are selected. A post-dependency appears as `<name> (post)`, including
+in the tree for a single task.
 
 ### Why a task ran or was skipped
 

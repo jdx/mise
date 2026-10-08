@@ -89,9 +89,10 @@ mise manages only the current user's Scoop apps. Apps installed with
 `scoop install --global` need administrator rights and are handled like this:
 
 - A global-only app counts as installed. mise never upgrades or reinstalls it.
-- `state = "absent"` on a global-only app fails and tells you to run
+- `state = "absent"` on a global-only app fails the run and tells you to run
   `scoop uninstall --global <app>` from an elevated shell. Other Scoop entries
-  in the same run are still removed.
+  in the same run are still installed or removed, and the managers after Scoop
+  still run.
 - With `state = "absent"`, an app installed in both scopes loses its user
   copy, and the global copy is reported the same way.
 - A pinned entry whose only install is global gets the pinned version installed

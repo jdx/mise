@@ -92,8 +92,9 @@ project config, mise ignores them and prints a warning:
 mise WARN  yes in non-global config /home/me/app/mise.toml is ignored for security reasons
 ```
 
-`mise settings set --local` still writes these settings to the project file,
-where they have no effect.
+`mise settings set --local` and `mise settings add --local` refuse these
+settings. Drop `--local` to write them to the global config, or use the
+environment variable.
 
 ### Settings read before config files {#early-initialization}
 
@@ -113,7 +114,8 @@ env = ["development"]
 ```
 
 Under `[settings]` in `mise.toml` or the global config they have no effect.
-`mise settings set` writes them there, so edit `.miserc.toml` yourself.
+`mise settings set` refuses them and names the `miserc.toml` file or variable to
+use, so edit `.miserc.toml` yourself.
 
 ### Environment-only settings
 

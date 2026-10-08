@@ -254,9 +254,10 @@ feature and the mise-vscode extension:
 mise generate devcontainer --write
 ```
 
-`--mount-mise-data` adds a named volume for mise's data directory, so installed
-tools survive rebuilds of the container. Review the image and mounts, then run
-`mise install` inside the container. To pre-install tools in an image whose home
+The file sets `postCreateCommand` to `mise install`, so a new container installs
+the project's tools. `--mount-mise-data` adds a named volume for mise's data
+directory, so installed tools survive rebuilds of the container. Review the
+image and mounts before you build it. To pre-install tools in an image whose home
 directory is mounted from the host, see
 [Docker](/mise-cookbook/docker.html#devcontainers-with-home-directory-mounts).
 

@@ -110,11 +110,11 @@ lists over the network when no installed version matches. A trimmed example:
 
 ## Tools {#available-tools}
 
-| Tool            | Arguments                                   | What it does                                                                                                                                                            |
-| --------------- | ------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `list_commands` | `include_hidden` (boolean, default `false`) | Lists mise commands with their help and declared effect: `read`, `write` or `destructive`. A command with no effect is unclassified, not safe. It runs nothing.         |
-| `run_task`      | `task` (string), `args` (array of strings)  | Runs a task with its dependencies and environment, and returns its output when it finishes.                                                                             |
-| `install_tool`  | `tool` (string), `version` (string)         | Installs a tool, as `mise install` does. `version` defaults to the configured version, or latest. Returns JSON with `tool`, the installed `version` and `install_path`. |
+| Tool            | Arguments                                   | What it does                                                                                                                                                                                         |
+| --------------- | ------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `list_commands` | `include_hidden` (boolean, default `false`) | Lists mise commands with their help and declared effect: `read`, `write` or `destructive`. A command with no effect is unclassified, not safe. It runs nothing.                                      |
+| `run_task`      | `task` (string), `args` (array of strings)  | Runs a task with its dependencies and environment, and returns its output when it finishes.                                                                                                          |
+| `install_tool`  | `tool` (string), `version` (string)         | Installs a tool, as `mise install` does. `version` defaults to the configured version, or latest. Returns JSON with `tool`, the installed `version`, `install_path` and the install log as `output`. |
 
 `list_commands` returns entries like:
 

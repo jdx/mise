@@ -475,9 +475,8 @@ checksum = "sha256:REPLACE_WITH_THE_64_HEX_DIGIT_DIGEST"
 #### `size`
 
 The expected size of the asset in bytes. The install fails when the download has
-a different size. On the `github`, `gitlab` and `forgejo` backends, mise checks
-`size` only when `checksum` is also set, so set the two together. A size check
-catches truncated downloads, but it does not replace a checksum.
+a different size. A size check catches truncated downloads, but it does not
+replace a checksum.
 
 ```toml
 [tools]

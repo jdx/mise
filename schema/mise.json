@@ -5689,7 +5689,7 @@
           "type": "array"
         },
         "allow_net": {
-          "description": "allow network to specific hosts",
+          "description": "allow network to specific hosts; not supported yet, so Linux and macOS reject it",
           "items": {
             "type": "string"
           },

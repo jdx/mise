@@ -123,7 +123,8 @@ before the first change.
 
 `mise bootstrap` then runs these steps in order. The part name in the second
 column works with `--only` and `--skip`, and a part's hooks run only when the
-part runs.
+part runs. The older names in parentheses still work but print a deprecation
+warning. They will be removed in mise 2027.10.4.
 
 | Step | Part (`--only`, `--skip`)          | Applies                                                                                                 | Hooks                           |
 | ---- | ---------------------------------- | ------------------------------------------------------------------------------------------------------- | ------------------------------- |
@@ -299,7 +300,9 @@ Each command runs with the shell from
 (or
 [`windows_default_inline_shell_args`](/configuration/settings.html#windows_default_inline_shell_args)),
 as inline tasks do. A failing hook stops the run, and a dry run prints each
-command instead of running it. Hooks run in mise's own environment, not a task
+command instead of running it. A dry run never calls `exec()`, so it prints a
+hook whose template calls `exec()`, or reads a var computed with it, as written,
+with a note that gives the render error. Hooks run in mise's own environment, not a task
 environment, so a command that needs tools from `[tools]` should go through
 `mise exec --`, as above, or move to the [`bootstrap` task](#the-bootstrap-task).
 
@@ -374,11 +377,11 @@ anything. File content templates do not have that protection: mise renders them
 to compare their output with the file on disk, and their `exec()` calls run
 then:
 
-| Template                     | Read-only commands that render it                                              |
-| ---------------------------- | ------------------------------------------------------------------------------ |
-| `[bootstrap.files]` content  | `mise bootstrap status`, `mise bootstrap plan`, and `mise bootstrap --dry-run` |
-| `[dotfiles]` content         | `mise bootstrap status` and `mise dot status`, but not a dry run               |
-| `[bootstrap.hooks]` commands | A dry run, with `exec()` disabled, so a hook that calls it fails the dry run   |
+| Template                     | Read-only commands that render it                                                                                        |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| `[bootstrap.files]` content  | `mise bootstrap status`, `mise bootstrap plan`, and `mise bootstrap --dry-run`                                           |
+| `[dotfiles]` content         | `mise bootstrap status` and `mise dot status`, but not a dry run                                                         |
+| `[bootstrap.hooks]` commands | A dry run, with `exec()` disabled; a hook that calls it, or reads a var that needs it, is printed unrendered with a note |
 
 ## Next steps
 

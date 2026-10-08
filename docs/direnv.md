@@ -66,7 +66,9 @@ defaults, unsetting values and sourcing scripts.
 ## `use mise` in `.envrc` <Badge type="danger" text="deprecated" /> {#mise-inside-of-direnv-use-mise-in-envrc}
 
 The `use mise` integration let direnv load mise's environment. It is deprecated
-and unsupported; use [`mise activate`](/shell-setup.html) instead. It gives
+and unsupported; use [`mise activate`](/shell-setup.html) instead.
+`mise direnv` and `mise direnv activate` print a deprecation warning and will be
+removed in mise 2027.10.4. The integration gives
 direnv control of the exported environment, so it does not run hooks, set shell
 aliases or install missing tools.
 

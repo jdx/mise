@@ -59,11 +59,6 @@ approval:
 - configs under [`trusted_config_paths`](/configuration/settings.html#trusted_config_paths)
 - global and system config, which is where you turn paranoid mode on
 
-A monorepo root that you trusted in normal mode, before you turned paranoid mode
-on, still trusts every config below it without a hash. To remove that record,
-run `MISE_PARANOID=0 mise trust --untrust` in the root, then trust the files you
-reviewed.
-
 If [safe mode](/security.html#safe-mode) is also on, it takes precedence: project
 config loads without a trust prompt because it cannot run code, and nothing is
 marked trusted.

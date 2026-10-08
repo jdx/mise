@@ -58,10 +58,13 @@ TCP `allow` or `limit` rule covers your client address, the server address, and
 the SSH port, without an `interface`. The rule in the example above does that
 for a client at `203.0.113.10` connecting to port 22.
 
-The check runs whenever mise reads the firewall configuration, before any
-elevation. Until a covering rule exists, `mise bootstrap firewall status`,
-`apply --dry-run`, `mise bootstrap status`, `mise bootstrap plan`, and
-`mise bootstrap` all fail with the lockout error. mise also refuses when:
+Until a covering rule exists, `mise bootstrap firewall apply` and
+`mise bootstrap` refuse before they change anything. The read-only commands,
+`mise bootstrap firewall status`, `apply --dry-run`, `mise bootstrap status`,
+`mise bootstrap plan`, and `mise bootstrap --dry-run`, report the firewall as
+`unknown` with the reason instead. A dry run then warns that the change needs
+manual action and still exits 0, so a CI check on `mise bootstrap --dry-run`
+does not catch the lockout. mise also refuses when:
 
 - `SSH_CONNECTION` is missing, for example because `sudo` removed it, and mise
   finds an `sshd` parent process or cannot inspect its process ancestry.
@@ -170,8 +173,9 @@ so several config files can each add rules without removing each other's.
 Status shows `coexisting` or `exclusive` for the last choice. Disabling or
 deleting the firewall, removing a rule, and exclusive mode are flagged as
 destructive changes in the confirmation prompt. `--yes` and non-interactive
-runs skip that prompt, and the `apply --dry-run` preview does not list the
-`ufw reset` command, so check `exclusive` before you apply.
+runs skip that prompt, so check `exclusive` before you apply. With UFW, the
+`apply --dry-run` preview lists the `ufw --force reset` that exclusive mode
+runs and the `ufw default` policy commands.
 
 ## Preview and apply
 
@@ -215,30 +219,27 @@ to forbid elevation. mise records what it applied in
 
 ## On macOS and Windows
 
-Firewall management is Linux-only. Unlike the systemd and launchd sections, the
-firewall section is not skipped on other platforms: on macOS or Windows,
-`mise bootstrap`, `mise bootstrap plan`, and `mise bootstrap firewall apply`
-fail when it is declared, while `mise bootstrap firewall status` reports it as
-an unsupported platform.
+Firewall management is Linux-only. On macOS and Windows, `mise bootstrap` and
+`mise bootstrap plan` skip the section with the warning
+`ignoring [bootstrap.linux.firewall] on non-Linux host`.
+`mise bootstrap firewall apply` fails there, and
+`mise bootstrap firewall status` reports an unsupported platform.
 
-Keep the section in a config that only Linux machines load, such as a
-[machine module](/bootstrap/modules.html) that only Linux machines select, or a
-`mise.linux.toml` file with
+To avoid the warning, keep the section in a config that only Linux machines
+load, such as a [machine module](/bootstrap/modules.html) that only Linux
+machines select, or a `mise.linux.toml` file with
 [platform environments](/configuration/environments.html#platform-environments)
-turned on. `mise bootstrap --skip firewall` avoids the error for one run,
-except a `--dry-run` in a config that also declares
-[Compose projects](/bootstrap/compose.html). `mise bootstrap plan` has no
-`--skip` flag and fails while the section is loaded.
+turned on.
 
 ## Troubleshooting
 
-| Problem                                                     | What to do                                                                                                                      |
-| ----------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
-| "refusing firewall default incoming deny over SSH"          | Add an incoming TCP rule that covers your address and SSH port, or see [lockout](#ssh-lockout-protection)                       |
-| "firewall backend 'ufw' requires command 'ufw'"             | Install that backend, or use `backend = "auto"`                                                                                 |
-| A rule fails with "select backend"                          | The rule uses `limit`, `interface`, or a protocol the backend lacks; change the rule or backend                                 |
-| A container port is reachable although the policy denies it | Docker forwards published ports past these rules; publish the port on `127.0.0.1` in the Compose file, or restrict it in Docker |
-| "only supported on Linux" on a Mac                          | Move the section to a [Linux-only config](#on-macos-and-windows); `--skip firewall` works only for `mise bootstrap`             |
+| Problem                                                     | What to do                                                                                                                                   |
+| ----------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| "refusing firewall default incoming deny over SSH"          | Add an incoming TCP rule that covers your address and SSH port, or see [lockout](#ssh-lockout-protection)                                    |
+| "firewall backend 'ufw' requires command 'ufw'"             | Install that backend, or use `backend = "auto"`                                                                                              |
+| A rule fails with "select backend"                          | The rule uses `limit`, `interface`, or a protocol the backend lacks; change the rule or backend                                              |
+| A container port is reachable although the policy denies it | Docker forwards published ports past these rules; publish the port on `127.0.0.1` in the Compose file, or restrict it in Docker              |
+| "only supported on Linux" on a Mac                          | `mise bootstrap firewall apply` runs only on Linux; `mise bootstrap` skips the section there. See [macOS and Windows](#on-macos-and-windows) |
 
 ## See also
 

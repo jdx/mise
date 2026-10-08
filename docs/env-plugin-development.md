@@ -51,9 +51,11 @@ function PLUGIN:MiseEnv(ctx)
 end
 ```
 
-Link the plugin before you add its directive. mise cannot load a config whose
-directive names a plugin that is not installed, so every command in that
-project, `mise plugins link` included, fails until it is:
+Link the plugin before you add its directive. When a directive names a plugin
+that is not installed and mise has no source to install it from (a registry
+entry, a `[plugins]` URL, or a name in `owner/repo` or URL form), mise warns,
+skips that directive and loads the rest of `[env]`, and `mise doctor` reports
+it. Once the plugin is linked or installed, the next command uses it:
 
 ```sh
 mise plugins link my-env-plugin ./mise-my-env-plugin
@@ -282,13 +284,13 @@ secrets, so do not paste it into issues.
 
 ## Common mistakes {#common-mistakes}
 
-| Symptom                                                   | Cause and fix                                                                                                                    |
-| --------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| Every command fails with `Invalid version: my-env-plugin` | The plugin is not installed under the directive's name. Link or install it from another directory, or list it under `[plugins]`. |
-| The hook does not run                                     | [Safe mode](/security.html#safe-mode) skips project `[env]` directives, and a cached environment can skip the hook.              |
-| A program the hook runs is not found                      | Install it, or add `tools = true` if it is a configured tool.                                                                    |
-| A relative path resolves differently in a subdirectory    | Join it with `ctx.config_root`.                                                                                                  |
-| Old values after a change in the service                  | The result was cached. Return `cacheable = false`, or tell users to set `MISE_ENV_CACHE=0`.                                      |
+| Symptom                                                                    | Cause and fix                                                                                                                                                  |
+| -------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `skipping env plugin my-env-plugin: it is not installed and has no source` | The plugin is not installed under the directive's name. Link it, install it with `mise plugins install my-env-plugin <git-url>`, or list it under `[plugins]`. |
+| The hook does not run                                                      | [Safe mode](/security.html#safe-mode) skips project `[env]` directives, and a cached environment can skip the hook.                                            |
+| A program the hook runs is not found                                       | Install it, or add `tools = true` if it is a configured tool.                                                                                                  |
+| A relative path resolves differently in a subdirectory                     | Join it with `ctx.config_root`.                                                                                                                                |
+| Old values after a change in the service                                   | The result was cached. Return `cacheable = false`, or tell users to set `MISE_ENV_CACHE=0`.                                                                    |
 
 Say in your README which mise version the plugin needs; `MiseEnv` and
 `MisePath` are mise hooks that the vfox CLI does not run, and mise reads no

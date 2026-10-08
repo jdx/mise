@@ -132,10 +132,12 @@ A publisher can release a Lua plugin as a signed
 mise plugins install vfox:my-plugin 'packslip:your-org/my-plugin#1.0.0'
 ```
 
-A packslip source always installs a vfox plugin, so on the command line the
-`vfox:` prefix is optional; another type prefix such as `asdf:` is rejected. In
-`[plugins]`, write the key with the prefix, as in
-`"vfox:my-plugin" = "packslip:your-org/my-plugin#1.0.0"`. Omit `#1.0.0` to use
+A packslip source always installs a vfox plugin, so the `vfox:` prefix is
+optional, on the command line and in `[plugins]`, where
+`my-plugin = "packslip:your-org/my-plugin#1.0.0"` works as well as
+`"vfox:my-plugin" = ...`. On the command line, another type prefix such as
+`asdf:` is rejected. A plugin that is already installed keeps the type it was
+installed with. Omit `#1.0.0` to use
 the latest eligible release. mise verifies the archive's signature, digest and
 signer, and `mise plugins update` keeps an explicit version pin. Only GitHub
 repositories that publish `packslip.sigstore.json` are supported; see
@@ -273,11 +275,12 @@ mise plugins uninstall my-tool
 [`mise plugins uninstall`](/cli/plugins/uninstall.html) removes the plugin's
 code. The tool versions it installed stay, but mise needs the plugin to set up
 their environment, so remove them first with
-[`mise uninstall`](/cli/uninstall.html). For a tool plugin, `--purge` also
-deletes the tool's installs, downloads and cache. `--purge` does not reach the
-tools of a backend plugin: run `mise uninstall --all my-backend:some-tool` for
-each of them before you remove the plugin. Remove the `[plugins]` and `[tools]`
-entries too, or mise installs the plugin again.
+[`mise uninstall`](/cli/uninstall.html), or pass `--purge`. For a tool plugin,
+`--purge` also deletes the tool's installs, downloads and cache; for a backend
+plugin, it does the same for each `my-backend:<tool>` that is installed or in
+config. It skips a tool whose directory another tool also uses, with a warning,
+and leaves installs in shared and system install directories in place. Remove
+the `[plugins]` and `[tools]` entries too, or mise installs the plugin again.
 
 ## Migrate an asdf plugin {#hook-migration}
 

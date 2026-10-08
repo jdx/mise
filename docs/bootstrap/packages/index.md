@@ -202,8 +202,10 @@ manager with `--manager` is an error.
 
 When an absent package is installed, `status` reports it as
 `unexpectedly installed`, and `apply` removes it. Each manager's page describes
-the command it runs. Other managers report the same drift, but `apply` fails
-instead of removing the package.
+the command it runs. Other managers report the same drift, but `apply` does not
+remove the package: a whole-config apply skips the entry with a warning, and an
+apply scoped with `--manager` or named packages fails after it installs the
+other packages.
 
 Deleting an entry from `mise.toml` never uninstalls anything. Use
 [`prune`](#import-and-prune) for explicit cleanup where the manager supports it.
@@ -259,7 +261,9 @@ mise bootstrap packages apply apt:curl
 ```
 
 `--dry-run` prints the commands without running them. `--manager` limits the
-run to one manager and fails if that manager is unavailable. In an interactive
+run to one manager and fails if that manager is unavailable. When one manager
+fails to install or remove a package, the others still run, and the apply
+exits non-zero at the end with one line per failed manager. In an interactive
 terminal, mise asks before it installs or removes anything; `--yes` skips that
 prompt but does not supply a sudo password.
 

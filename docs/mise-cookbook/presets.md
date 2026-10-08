@@ -11,17 +11,15 @@ task definitions between existing projects without generating files, use
 
 ## Scaffold a Python project {#example-python-preset}
 
-Create the task directory, and an empty global config file if you do not have
-one yet:
+Create the task directory:
 
 ```sh
 mkdir -p ~/.config/mise/tasks/scaffold
-touch ~/.config/mise/config.toml
 ```
 
-mise loads [global tasks](/tasks/task-discovery.html#global-tasks) only when a
-global config file such as `~/.config/mise/config.toml` exists. Save this script
-as `~/.config/mise/tasks/scaffold/python`:
+File tasks in `~/.config/mise/tasks` are
+[global tasks](/tasks/task-discovery.html#global-tasks), available in every
+directory. Save this script as `~/.config/mise/tasks/scaffold/python`:
 
 ```bash [~/.config/mise/tasks/scaffold/python]
 #!/usr/bin/env bash

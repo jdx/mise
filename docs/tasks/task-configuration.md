@@ -642,6 +642,8 @@ such as `src/**/*.{js,ts}` work in freshness checks, in
 [`mise watch`](/cli/watch.html), which uses `sources` to decide what to watch,
 and in [`task_source_files()`](/templates.html#task-source-files). mise checks
 the timestamp of every matched file, so very broad globs slow down every run.
+When the patterns match no files, mise warns that the task has sources defined
+but no matching files were found. This usually means a pattern has a typo.
 
 Relative entries resolve from the task's directory (its [`dir`](#dir), or the
 project root when it has none) and may use `..` to reach files above it, such

@@ -105,9 +105,9 @@ Each part does one job:
 
 For interactive shells, add `eval "$(mise activate zsh)"` to your tracked
 `~/.zshrc` if it is not there yet. The tracked file carries the line to your
-other machines. mise does not add its own activation block to a file you track,
-which is why this config sets only `zprofile`; see
-[Shell activation](/bootstrap/shell.html) for both modes.
+other machines. This config sets only `zprofile`, so mise leaves `~/.zshrc` to
+you; with `zsh = true`, mise would add its own activation block to the tracked
+file as well. See [Shell activation](/bootstrap/shell.html) for both modes.
 
 Preview the changes, then apply them:
 

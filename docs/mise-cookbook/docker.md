@@ -351,8 +351,9 @@ other shared directories, see
 ### Pre-install tools for devcontainers {#devcontainers-with-home-directory-mounts}
 
 To start from a generated configuration, run `mise generate devcontainer --write`.
-It writes `.devcontainer/devcontainer.json` with the mise dev container feature;
-`--mount-mise-data` adds a volume for mise's data directory. See
+It writes `.devcontainer/devcontainer.json` with the mise dev container feature
+and a `postCreateCommand` that runs `mise install`; `--mount-mise-data` adds a
+volume for mise's data directory. See
 [`mise generate devcontainer`](/cli/generate/devcontainer.html).
 
 Dev containers often mount the user's home directory, so

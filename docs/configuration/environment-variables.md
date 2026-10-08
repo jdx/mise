@@ -102,7 +102,7 @@ when you report a problem.
 Sets the log level: `trace`, `debug`, `info` (the default), `warn`, or `error`.
 [`MISE_QUIET=1`](/configuration/settings.html#quiet) also sets the level to
 `error`, and it hides task headers and progress as well. The hidden
-`--log-level` flag takes the same levels but spells `warn` as `warning`.
+`--log-level` flag takes the same levels.
 
 ### `MISE_LOG_FILE` {#mise-log-file}
 
