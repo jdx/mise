@@ -310,7 +310,7 @@ async fn err_no_task(
                     .collect::<Vec<_>>()
                     .join(", ");
                 bail!(
-                    "Config file(s) in {} are not trusted: {}\nTrust them with `mise trust`. See https://mise.jdx.dev/cli/trust.html for more information.",
+                    "Config file(s) in {} are not trusted: {}\nTrust them with `mise trust`. See https://mise.jdx.dev/security.html#configuration-trust for more information.",
                     display_path(cwd),
                     paths
                 );

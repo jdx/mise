@@ -34,7 +34,7 @@ pub enum Error {
     #[error("{0}@{1} not installed")]
     VersionNotInstalled(Box<BackendArg>, String),
     #[error(
-        "Config files in {} are not trusted.\nTrust them with `mise trust`. See https://mise.jdx.dev/cli/trust.html for more information.",
+        "Config files in {} are not trusted.\nTrust them with `mise trust`. See https://mise.jdx.dev/security.html#configuration-trust for more information.",
         display_path(.0)
     )]
     UntrustedConfig(PathBuf),

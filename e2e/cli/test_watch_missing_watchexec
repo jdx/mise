@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+
+# Without watchexec on PATH or in the toolset, `mise watch` stops with an
+# install hint that matches the `mise watch` help.
+mise tasks add example -- echo 'running example'
+assert_fail_contains "mise watch example" "Install watchexec with:"
+assert_contains "mise watch example 2>&1 || true" "  mise use -g watchexec"
+assert_not_contains "mise watch example 2>&1 || true" "watchexec@latest"
