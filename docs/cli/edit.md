@@ -17,6 +17,7 @@ Edit mise.toml interactively
 ## Flags
 - **`-g --global`** — Edit the global config file (~/.config/mise/config.toml)
 - **`-n --dry-run`** — Show what would be generated without writing to file
+- **`-f --force`** — Overwrite an existing file with the default template when not editing interactively
 - **`-t --tool-versions <TOOL_VERSIONS>`** — Path to a .tool-versions file to import tools from
 - **`-h --help`** — Print help
 
@@ -27,6 +28,7 @@ mise edit             # edit mise.toml interactively
 mise edit .mise.toml  # edit a specific file
 mise edit -g          # edit the global config file
 mise edit -y          # skip interactive editor
+mise edit -y --force  # replace an existing file with the default template
 mise edit -n          # preview without writing
 ```
 

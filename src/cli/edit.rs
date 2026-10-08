@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use eyre::{Result, eyre};
+use eyre::{Result, bail, eyre};
 use indoc::formatdoc;
 use mise_interactive_config::{
     BackendInfo, BackendProvider, ConfigResult, InteractiveConfig, ToolInfo, ToolProvider,
@@ -130,6 +130,7 @@ impl BackendProvider for MiseBackendProvider {
 mise edit .mise.toml  # edit a specific file
 mise edit -g          # edit the global config file
 mise edit -y          # skip interactive editor
+mise edit -y --force  # replace an existing file with the default template
 mise edit -n          # preview without writing"###
     )
 )]
@@ -145,6 +146,9 @@ pub(crate) struct Edit {
     /// Show what would be generated without writing to file
     #[usage(long, short = 'n')]
     dry_run: bool,
+    /// Overwrite an existing file with the default template when not editing interactively
+    #[usage(long, short)]
+    force: bool,
     /// Path to the config file to create
     #[usage(verbatim_doc_comment, value_hint = ValueHint::FilePath)]
     path: Option<PathBuf>,
@@ -170,12 +174,14 @@ impl Edit {
     pub(crate) fn new(
         global: bool,
         dry_run: bool,
+        force: bool,
         path: Option<PathBuf>,
         tool_versions: Option<PathBuf>,
     ) -> Self {
         Self {
             global,
             dry_run,
+            force,
             path,
             tool_versions,
         }
@@ -207,6 +213,19 @@ impl Edit {
         } else {
             // Non-interactive: output default template
             let doc = self.default();
+
+            // The template is a fresh file, not an edit of the one already there, so writing
+            // it over an existing config would throw that config away. The interactive editor
+            // opens an existing file and `--tool-versions` merges into it; only this branch
+            // replaces it, and it is the one reached by `-y` or by running without a terminal
+            // (a script, CI, an editor's task runner), where nobody is watching to notice.
+            if !self.dry_run && !self.force && path.exists() {
+                bail!(
+                    "{} already exists; to edit it, run `mise edit` in a terminal without --yes, \
+                     or pass --force to replace it with the default template",
+                    display_path(&path)
+                );
+            }
 
             if self.dry_run {
                 info!("would write to {}", display_path(&path));

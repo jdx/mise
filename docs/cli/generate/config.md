@@ -17,6 +17,7 @@ Generate a mise.toml file
 ## Flags
 - **`-g --global`** — Generate the global config file (~/.config/mise/config.toml)
 - **`-n --dry-run`** — Show what would be generated without writing to file
+- **`-f --force`** — Overwrite an existing file with the default template when not editing interactively
 - **`-t --tool-versions <TOOL_VERSIONS>`** — Path to a .tool-versions file to import tools from
 - **`-h --help`** — Print help
 
@@ -27,6 +28,7 @@ mise generate config             # generate mise.toml interactively
 mise generate config .mise.toml  # generate a specific file
 mise generate config -g          # generate the global config file
 mise generate config -y          # skip interactive editor
+mise generate config -y --force  # replace an existing file with the default template
 mise generate config -n          # preview without writing
 ```
 

@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+
+# Without a terminal, or with -y, `mise edit` and `mise generate config` skip the interactive
+# editor and write the default template. That template is a fresh file rather than an edit of
+# the one already there, so it used to replace an existing config wholesale and report success.
+# e2e runs without a terminal, so every command here takes that non-interactive path.
+
+cat >mise.toml <<EOF
+[tools]
+node = "22"
+EOF
+
+assert_fail_contains "mise edit" "mise.toml already exists"
+assert_fail_contains "mise edit -y" "pass --force"
+assert_fail_contains "mise generate config" "mise.toml already exists"
+assert_fail_contains "mise generate config -y" "pass --force"
+assert_contains "cat mise.toml" 'node = "22"'
+assert_not_contains "cat mise.toml" "mise config files are hierarchical"
+
+# The same for an explicit path and for the global config.
+cp mise.toml custom.toml
+assert_fail_contains "mise edit custom.toml" "custom.toml already exists"
+assert_contains "cat custom.toml" 'node = "22"'
+export MISE_GLOBAL_CONFIG_FILE="$PWD/global-config.toml"
+cp mise.toml global-config.toml
+assert_fail_contains "mise edit --global" "global-config.toml already exists"
+assert_fail_contains "mise generate config --global" "global-config.toml already exists"
+assert_contains "cat global-config.toml" 'node = "22"'
+
+# --dry-run writes nothing, so it still prints the template.
+assert_contains "mise edit --dry-run" "mise config files are hierarchical"
+assert_contains "cat mise.toml" 'node = "22"'
+
+# --tool-versions merges into the existing file instead of replacing it, so it is unaffected.
+cat >.tool-versions <<EOF
+python 3.12
+EOF
+assert_succeed "mise edit custom.toml --tool-versions .tool-versions"
+assert_contains "cat custom.toml" 'node = "22"'
+assert_contains "cat custom.toml" 'python = "3.12"'
+
+# --force asks for the replacement explicitly.
+assert_succeed "mise edit --force"
+assert_contains "cat mise.toml" "mise config files are hierarchical"
+assert_succeed "mise generate config -y -f --global"
+assert_contains "cat global-config.toml" "mise config files are hierarchical"

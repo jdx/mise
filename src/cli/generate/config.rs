@@ -12,6 +12,7 @@ use crate::cli::edit::Edit;
 mise generate config .mise.toml  # generate a specific file
 mise generate config -g          # generate the global config file
 mise generate config -y          # skip interactive editor
+mise generate config -y --force  # replace an existing file with the default template
 mise generate config -n          # preview without writing"###
     )
 )]
@@ -24,6 +25,9 @@ pub(super) struct Config {
     /// Show what would be generated without writing to file
     #[usage(long, short = 'n')]
     dry_run: bool,
+    /// Overwrite an existing file with the default template when not editing interactively
+    #[usage(long, short)]
+    force: bool,
     /// Path to the config file to create
     #[usage(verbatim_doc_comment, value_hint = ValueHint::FilePath)]
     path: Option<PathBuf>,
@@ -34,8 +38,14 @@ pub(super) struct Config {
 
 impl Config {
     pub(super) async fn run(self) -> Result<()> {
-        Edit::new(self.global, self.dry_run, self.path, self.tool_versions)
-            .run()
-            .await
+        Edit::new(
+            self.global,
+            self.dry_run,
+            self.force,
+            self.path,
+            self.tool_versions,
+        )
+        .run()
+        .await
     }
 }
