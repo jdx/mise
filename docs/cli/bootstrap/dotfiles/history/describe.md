@@ -18,6 +18,14 @@ Set the description of a checkpoint
 ## Flags
 - **`-h --help`** — Print help
 
+## Examples
+
+Describe the newest checkpoint
+
+```
+mise dot history describe latest "before the theme change"
+```
+
 <!-- generated reference navigation -->
 
 ## Related documentation

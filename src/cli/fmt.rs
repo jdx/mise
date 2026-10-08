@@ -8,25 +8,36 @@ use toml_edit::{Array, DocumentMut, RawString, TableLike, Value};
 
 /// Format mise TOML configuration
 ///
-/// Sorts keys and normalizes whitespace using TOML 1.1 syntax, including multiline
-/// inline tables. Lists whose order carries no meaning are sorted as well: task
-/// `sources` and `outputs`, `task_config.global_inputs` and `input_groups`, and
-/// `redactions`. File pattern lists sort by reach — `@group:` references, then
-/// globs, then literal paths — and a list is left as written when an entry
-/// excludes with `!` or carries a comment. By default, formats config files in
-/// the current directory; `--all` includes every loaded config. Use `--check`
-/// in CI or `--stdin` to format a supplied document without rewriting a file.
+/// Formats the config files in the current directory in place; --all formats every
+/// config file mise loads. Use --check in CI to fail when a file is not formatted,
+/// or --stdin to format a document from stdin to stdout.
+///
+/// Formatting normalizes whitespace and writes TOML 1.1 syntax, including multiline
+/// inline tables. Top-level entries written as plain, dotted, or inline-table keys
+/// go in a standard order: min_version, env_file, env_path, _, env, vars, hooks,
+/// watch_files, tools, other keys, tasks, task_config, redactions, alias, plugins,
+/// settings. `[table]` sections and the keys inside any table keep the order they
+/// were written in.
+///
+/// Lists whose order has no effect are sorted: task `sources` and `outputs`,
+/// `task_config.global_inputs` and `input_groups`, and `redactions`. File pattern
+/// lists put `@group:` references first, then globs, then literal paths. A list
+/// with a `!` exclusion or a comment is left as written.
 #[derive(Debug, usage_rs::Args)]
 #[usage(
     verbatim_doc_comment,
+    example("mise fmt", help = "Format the config files in the current directory"),
     example(
-        r###"mise fmt
-mise fmt --check
-cat mise.toml | mise fmt --stdin"###
+        "mise fmt --check",
+        help = "Exit 1 if any config file needs formatting"
+    ),
+    example(
+        "mise fmt --stdin < mise.toml",
+        help = "Print a formatted copy without changing the file"
     )
 )]
 pub(crate) struct Fmt {
-    /// Format every config file mise currently loads, not just those in the current directory
+    /// Format every config file mise loads, not only those in the current directory
     #[usage(short, long)]
     pub all: bool,
 
@@ -34,8 +45,7 @@ pub(crate) struct Fmt {
     #[usage(short, long)]
     pub check: bool,
 
-    /// Read config from stdin and write its formatted version into
-    /// stdout
+    /// Format TOML from stdin and print it to stdout, without touching any file
     #[usage(short, long)]
     pub stdin: bool,
 }

@@ -22,6 +22,24 @@ export const pageRedirects = {
       commands: "/bootstrap/shell.html#set-your-login-shell",
     },
   },
+  "/cli/bootstrap/launchd/apply.html": {
+    to: "/cli/bootstrap/macos/launchd-agents/apply.html",
+  },
+  "/cli/bootstrap/launchd/status.html": {
+    to: "/cli/bootstrap/macos/launchd-agents/status.html",
+  },
+  "/cli/bootstrap/macos-defaults/apply.html": {
+    to: "/cli/bootstrap/macos/defaults/apply.html",
+  },
+  "/cli/bootstrap/macos-defaults/status.html": {
+    to: "/cli/bootstrap/macos/defaults/status.html",
+  },
+  "/cli/bootstrap/systemd/apply.html": {
+    to: "/cli/bootstrap/linux/systemd-units/apply.html",
+  },
+  "/cli/bootstrap/systemd/status.html": {
+    to: "/cli/bootstrap/linux/systemd-units/status.html",
+  },
   "/dev-tools/backend_architecture.html": {
     to: "/dev-tools/backends/",
     hashes: {

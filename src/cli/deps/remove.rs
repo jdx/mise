@@ -8,14 +8,21 @@ use crate::toolset::{InstallOptions, ToolsetBuilder};
 
 use super::parse_package_spec;
 
-/// Remove a dependency
+/// Remove packages from the project's dependencies
 ///
-/// Removes one or more packages from the project using the appropriate package manager.
-/// Package specs use the format `ecosystem:package`, e.g., `npm:lodash`.
+/// Runs the package manager's remove command, which updates the project's manifest
+/// and its lockfile, not mise.toml. Name each package as `<ecosystem>:<package>`,
+/// such as `npm:lodash`.
 #[derive(Debug, usage_rs::Args)]
-#[usage(verbatim_doc_comment)]
+#[usage(
+    verbatim_doc_comment,
+    example(
+        "mise deps remove npm:lodash",
+        help = "Remove lodash from package.json"
+    )
+)]
 pub(super) struct DepsRemove {
-    /// Package(s) to remove (e.g., npm:lodash)
+    /// Packages to remove, such as `npm:lodash`
     #[usage(required = true)]
     pub packages: Vec<String>,
 }

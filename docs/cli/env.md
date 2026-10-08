@@ -18,10 +18,11 @@ Use `mise exec -- command` to apply it to one child process instead.
 
 JSON, dotenv, and shell output contain actual variable values, including secrets.
 `--redacted` selects variables marked for redaction; it does not mask their values.
-Environment construction may install missing tools according to mise's settings.
+Tools you pass as TOOL@VERSION arguments are installed first if they are missing;
+missing tools from the config are reported, not installed.
 
 ## Arguments
-- **`[TOOL@VERSION]…`** — Tool(s) to include in addition to those in config, e.g. node@20
+- **`[TOOL@VERSION]…`** — Tools to include in addition to those in the config, such as `node@24`
 
 ## Flags
 - **`-D --dotenv`** — Output in dotenv format
@@ -36,11 +37,40 @@ Environment construction may install missing tools according to mise's settings.
 
 ## Examples
 
+Load the environment once into the current bash session
+
 ```
 eval "$(mise env -s bash)"
+```
+
+Same, for zsh
+
+```
 eval "$(mise env -s zsh)"
+```
+
+Same, for fish
+
+```
 mise env -s fish | source
+```
+
+Same, for xonsh
+
+```
 execx($(mise env -s xonsh))
+```
+
+Print the variables as JSON
+
+```
+mise env --json
+```
+
+Write a dotenv file; it contains secret values
+
+```
+mise env --dotenv > .env
 ```
 
 <!-- generated reference navigation -->

@@ -50,7 +50,7 @@ List the legacy installations that would move
 mise installs migrate --dry-run
 ```
 
-Move every installed node, and one python
+Move every installed node and one python version
 
 ```
 mise installs migrate node python@3.12.1

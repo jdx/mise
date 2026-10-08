@@ -14,19 +14,20 @@ use crate::dirs;
 /// a version and the links follow, or set `skills.auto_sync` to have mise do
 /// that after every install and `mise use`.
 ///
-/// Only links mise made, which point into its installs directory, are ever
-/// replaced or, with --prune or the `skills.prune` setting, removed. A real
-/// directory or a link of your own at a skill's name is left alone and reported.
+/// mise replaces only the links it made, which point into its installs
+/// directory, and removes them only with --prune or the `skills.prune` setting.
+/// A real directory or a link of your own at a skill's name is left alone and
+/// reported.
 #[derive(Debug, usage_rs::Args)]
 #[usage(
     verbatim_doc_comment,
     example(
         r###"mise skills sync"###,
-        help = r###"into the project's .claude/skills, or wherever skills.dir says"###
+        help = r###"Link skills into the project's skills.dir (default .claude/skills)"###
     ),
     example(
         r###"mise skills sync --dir .agents/skills --prune"###,
-        help = r###"somewhere else, and drop links for skills that are no longer active"###
+        help = r###"Link into .agents/skills and remove links for skills that are no longer active"###
     ),
     effect = "write"
 )]
@@ -35,7 +36,9 @@ pub(super) struct SkillsSync {
     #[usage(long, value_hint = usage_rs::ValueHint::DirPath)]
     dir: Option<PathBuf>,
 
-    /// Link into ~/.claude/skills instead of the project's directory
+    /// Link into the skills.dir directory under your home directory instead of the project's
+    ///
+    /// With the default skills.dir, that is ~/.claude/skills.
     #[usage(long, short, conflicts = "dir")]
     global: bool,
 

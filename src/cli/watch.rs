@@ -16,62 +16,58 @@ use std::cmp::PartialEq;
 use std::iter::once;
 use std::path::{Path, PathBuf};
 
-/// Run task(s) and rerun them when files change
+/// Run tasks and rerun them when files change
 ///
-/// Uses `watchexec` to watch task sources and rerun the selected tasks.
-/// Sources from dependencies are included unless `--skip-deps` is set. With no
-/// sources, watchexec watches the current directory. Use `--watch` and `--exts`
-/// for explicit watched paths and filters, and `--print-events` to diagnose them.
-/// The default task is `default`; define it or pass a task name.
-/// watchexec must be installed; `mise use -g watchexec@latest` installs it.
+/// Runs the tasks with `mise run` under watchexec, then reruns them whenever
+/// one of their `sources` changes, including the sources of their dependencies
+/// unless you pass `--skip-deps`. When no selected task declares `sources`,
+/// watchexec watches the current directory. With no task, runs the `default`
+/// task.
 ///
-/// For more advanced process management (daemon management, auto-restart, readiness checks,
-/// cron scheduling), see mise's sister project: https://pitchfork.jdx.dev
+/// Choose what to watch with `--watch`, `--exts`, and `--filter`, and use
+/// `--print-events` to see what triggered a run. Arguments for the task go
+/// after `--`. Requires watchexec, which `mise use -g watchexec` installs.
+///
+/// To keep a server or database running alongside your tasks, with readiness
+/// checks and automatic restarts, see `mise daemons` (experimental):
+/// https://mise.jdx.dev/daemons.html. For cron scheduling and standalone
+/// process management, see pitchfork: https://pitchfork.jdx.dev
 #[derive(Debug, usage_rs::Args)]
 #[usage(
     visible_alias = "w",
-    verbatim_doc_comment,
     example(
         "mise watch build",
-        help = "Run the build task and rerun it whenever its sources change."
+        help = "Run build and rerun it whenever its sources change"
     ),
-    example(
-        "mise watch build --glob 'src/**/*.rs'",
-        help = "Watch the glob instead of the task's sources."
-    ),
-    example(
-        "mise watch build --clear",
-        help = "Extra arguments go to watchexec; see `watchexec --help`."
-    ),
+    example("mise watch build --clear", help = "Clear the screen before each run"),
     example(
         "mise watch serve --watch src --exts rs --restart",
-        help = "Start an API server and restart it when Rust files in ./src change."
+        help = "Start an API server and restart it when Rust files in ./src change"
+    ),
+    example(
+        "mise watch test -- --verbose",
+        help = "Pass arguments after -- to the task"
     ),
     unknown_flags = "value"
 )]
 pub(crate) struct Watch {
-    /// Tasks to run
-    /// Can specify multiple tasks by separating with `:::`
-    /// e.g.: `mise watch task1 arg1 arg2 ::: task2 arg1 arg2`
-    /// Defaults to `default`
-    #[usage(verbatim_doc_comment)]
+    /// Task to watch (default: `default`); separate several tasks with `:::`
     task: Option<String>,
 
     /// Tasks to run
-    #[usage(short, long, verbatim_doc_comment, hide = true)]
+    #[usage(short, long, hide = true)]
     task_flag: Vec<String>,
 
-    /// Task and arguments to run
+    /// Arguments for the task; `:::` starts the next task
     #[usage(allow_hyphen_values = true, trailing_var_arg = true)]
     args: Vec<String>,
 
-    /// Files to watch
-    /// Defaults to sources from the task(s)
-    #[usage(short, long, verbatim_doc_comment)]
+    /// Globs to watch instead of the tasks' sources
+    #[usage(short, long)]
     glob: Vec<String>,
 
-    /// Run only the specified tasks skipping all dependencies
-    #[usage(long, verbatim_doc_comment)]
+    /// Run and watch only the named tasks, not the tasks they depend on
+    #[usage(long)]
     pub skip_deps: bool,
 
     #[usage(flatten)]
@@ -533,87 +529,81 @@ where
 }
 
 //region watchexec
+// The watchexec flags `mise watch` accepts. The ones it forwards are documented;
+// the ones it parses but does not forward are hidden.
 #[derive(Debug, usage_rs::Args)]
 pub(crate) struct WatchexecArgs {
-    /// Watch a specific file or directory
+    /// Watch a file or directory
     ///
-    /// By default, Watchexec watches the current directory.
+    /// By default, mise watches each task's directory and any source directory
+    /// outside it, and filters events to the tasks' `sources`. When no task
+    /// declares sources, watchexec watches the current directory. Paths given
+    /// here are added to the task directories, or replace the current-directory
+    /// default when there are no sources. Events are still filtered to the
+    /// sources, so use `--filter` to widen what triggers a rerun.
     ///
-    /// When watching a single file, it's often better to watch the containing directory instead,
-    /// and filter on the filename. Some editors may replace the file with a new one when saving,
-    /// and some platforms may not detect that or further changes.
-    ///
-    /// Upon starting, Watchexec resolves a "project origin" from the watched paths. See the help
-    /// for '--project-origin' for more information.
-    ///
-    /// This option can be specified multiple times to watch multiple files or directories.
-    ///
-    /// The special value '/dev/null', provided as the only path watched, will cause Watchexec to
-    /// not watch any paths. Other event sources (like signals or key events) may still be used.
+    /// To watch a single file, watch its directory and filter on the file name
+    /// instead: some editors replace a file when they save it, and some
+    /// platforms do not report changes to the replacement. Repeat the flag to
+    /// watch several paths.
     #[usage(
-		short = 'w',
-		long = "watch",
-		help_heading = "Filtering",
-		value_hint = usage_rs::ValueHint::AnyPath,
-		value_name = "PATH",
+        short = 'w',
+        long = "watch",
+        help_heading = "Filtering",
+        value_hint = usage_rs::ValueHint::AnyPath,
+        value_name = "PATH",
     )]
     pub recursive_paths: Vec<PathBuf>,
 
-    /// Watch a specific directory, non-recursively
+    /// Watch a directory without recursing into it
     ///
-    /// Unlike '-w', folders watched with this option are not recursed into.
-    ///
-    /// This option can be specified multiple times to watch multiple directories non-recursively.
+    /// Repeat the flag to watch several directories.
     #[usage(
-		short = 'W',
-		long = "watch-non-recursive",
-		help_heading = "Filtering",
-		value_hint = usage_rs::ValueHint::AnyPath,
-		value_name = "PATH",
+        short = 'W',
+        long = "watch-non-recursive",
+        help_heading = "Filtering",
+        value_hint = usage_rs::ValueHint::AnyPath,
+        value_name = "PATH",
     )]
     pub non_recursive_paths: Vec<PathBuf>,
 
-    /// Watch files and directories from a file
+    /// Read paths to watch from a file, one per line
     ///
-    /// Each line in the file will be interpreted as if given to '-w'.
-    ///
-    /// For more complex uses (like watching non-recursively), use the argfile capability: build a
-    /// file containing command-line options and pass it to watchexec with `@path/to/argfile`.
-    ///
-    /// The special value '-' will read from STDIN; this is incompatible with '--stdin-quit'.
+    /// Each line is treated like a `--watch` value. The value `-` reads from
+    /// stdin and cannot be combined with `--stdin-quit`.
     #[usage(
-		short = 'F',
-		long,
-		help_heading = "Filtering",
-		value_hint = usage_rs::ValueHint::AnyPath,
-		value_name = "PATH",
+        short = 'F',
+        long,
+        help_heading = "Filtering",
+        value_hint = usage_rs::ValueHint::AnyPath,
+        value_name = "PATH",
     )]
     pub watch_file: Option<PathBuf>,
 
-    /// Clear screen before running command
+    /// Clear the screen before each run
     ///
-    /// If this doesn't completely clear the screen, try '--clear=reset'.
+    /// If the default `clear` mode leaves output behind, use `--clear=reset`.
+    /// Because the mode is optional, `mise watch --clear build` reads `build`
+    /// as the mode: put `--clear` after the task name, as in
+    /// `mise watch build --clear`, or write the mode with `=`.
     #[usage(
-		short = 'c',
-		long = "clear",
-		help_heading = "Output",
-		num_args = 0..=1,
-		default_missing = "clear",
-		value_enum,
-		value_name = "MODE",
+        short = 'c',
+        long = "clear",
+        help_heading = "Output",
+        num_args = 0..=1,
+        default_missing = "clear",
+        value_enum,
+        value_name = "MODE",
     )]
     pub screen_clear: Option<ClearMode>,
 
-    /// What to do when receiving events while the command is running
+    /// What to do when files change while the tasks are running
     ///
-    /// Default is to 'do-nothing', which ignores events while the command is running, so that
-    /// changes that occur due to the command are ignored, like compilation outputs. You can also
-    /// use 'queue' which will run the command once again when the current run has finished if any
-    /// events occur while it's running, or 'restart', which terminates the running command and starts
-    /// a new one. Finally, there's 'signal', which only sends a signal; this can be useful with
-    /// programs that can reload their configuration without a full restart.
-    ///
-    /// The signal can be specified with the '--signal' option.
+    /// `do-nothing` (the default) ignores the change, so files the tasks
+    /// write do not trigger another run. `queue` runs the tasks again when the
+    /// current run finishes. `restart` stops the running tasks and starts them
+    /// again. `signal` sends the `--signal` signal and keeps the tasks running,
+    /// for programs that reload their configuration on a signal.
     #[usage(
         short,
         long,
@@ -624,66 +614,44 @@ pub(crate) struct WatchexecArgs {
     )]
     pub on_busy_update: OnBusyUpdate,
 
-    /// Restart the process if it's still running
+    /// Restart the tasks if they are still running when files change
     ///
-    /// This is a shorthand for '--on-busy-update=restart'.
+    /// Same as `--on-busy-update=restart`.
     #[usage(
-		short,
-		long,
-		conflicts = ["on_busy_update"],
+        short,
+        long,
+        conflicts = ["on_busy_update"],
     )]
     pub restart: bool,
 
-    /// Send a signal to the process when it's still running
+    /// Signal to send to the running tasks when files change
     ///
-    /// Specify a signal to send to the process when it's still running. This implies
-    /// '--on-busy-update=signal'; otherwise the signal used when that mode is 'restart' is
-    /// controlled by '--stop-signal'.
-    ///
-    /// See the long documentation for '--stop-signal' for syntax.
-    ///
-    /// Signals are not supported on Windows at the moment, and will always be overridden to 'kill'.
-    /// See '--stop-signal' for more on Windows "signals".
+    /// Implies `--on-busy-update=signal`. Accepts the same forms as
+    /// `--stop-signal`. Signals are not supported on Windows, where the tasks
+    /// are always killed.
     #[usage(
-		short,
-		long,
-		conflicts = ["restart"],
-		value_name = "SIGNAL"
+        short,
+        long,
+        conflicts = ["restart"],
+        value_name = "SIGNAL"
     )]
     pub signal: Option<String>,
 
-    /// Signal to send to stop the command
+    /// Signal that stops the tasks before a restart (default on Unix: SIGTERM)
     ///
-    /// This is used by 'restart' and 'signal' modes of '--on-busy-update' (unless '--signal' is
-    /// provided). The restart behaviour is to send the signal, wait for the command to exit, and if
-    /// it hasn't exited after some time (see '--stop-timeout'), forcefully terminate it.
-    ///
-    /// The default on unix is "SIGTERM".
-    ///
-    /// Input is parsed as a full signal name (like "SIGTERM"), a short signal name (like "TERM"),
-    /// or a signal number (like "15"). All input is case-insensitive.
-    ///
-    /// On Windows this option is technically supported but only supports the "KILL" event, as
-    /// Watchexec cannot yet deliver other events. Windows doesn't have signals as such; instead it
-    /// has termination (here called "KILL" or "STOP") and "CTRL+C", "CTRL+BREAK", and "CTRL+CLOSE"
-    /// events. For portability the unix signals "SIGKILL", "SIGINT", "SIGTERM", and "SIGHUP" are
-    /// respectively mapped to these.
+    /// Used by the `restart` and `signal` modes of `--on-busy-update` unless
+    /// `--signal` is given. Accepts a full name (`SIGTERM`), a short name
+    /// (`TERM`), or a number (`15`), in any case. If the tasks have not exited
+    /// after `--stop-timeout`, they are killed. On Windows the tasks are always
+    /// killed.
     #[usage(long, value_name = "SIGNAL")]
     pub stop_signal: Option<String>,
 
-    /// Time to wait for the command to exit gracefully
+    /// How long to wait for the tasks to stop before killing them (default: 10s)
     ///
-    /// This is used by the 'restart' mode of '--on-busy-update'. After the graceful stop signal
-    /// is sent, Watchexec will wait for the command to exit. If it hasn't exited after this time,
-    /// it is forcefully terminated.
-    ///
-    /// Takes a unit-less value in seconds, or a time span value such as "5min 20s".
-    /// Providing a unit-less value is deprecated and will warn; it will be an error in the future.
-    ///
-    /// The default is 10 seconds. Set to 0 to immediately force-kill the command.
-    ///
-    /// This has no practical effect on Windows as the command is always forcefully terminated; see
-    /// '--stop-signal' for why.
+    /// Takes a duration such as `5s` or `1min 20s`. Set it to 0 to kill the
+    /// tasks right away. Has no effect on Windows, where the tasks are always
+    /// killed.
     #[usage(
         long,
         default = "10s",
@@ -692,43 +660,21 @@ pub(crate) struct WatchexecArgs {
     )]
     pub stop_timeout: String,
 
-    /// Translate signals from the OS to signals to send to the command
+    /// Translate a signal that watchexec receives into one it sends to the tasks
     ///
-    /// Takes a pair of signal names, separated by a colon, such as "TERM:INT" to map SIGTERM to
-    /// SIGINT. The first signal is the one received by watchexec, and the second is the one sent to
-    /// the command. The second can be omitted to discard the first signal, such as "TERM:" to
-    /// not do anything on SIGTERM.
-    ///
-    /// If SIGINT or SIGTERM are mapped, then they no longer quit Watchexec. Besides making it hard
-    /// to quit Watchexec itself, this is useful to send pass a Ctrl-C to the command without also
-    /// terminating Watchexec and the underlying program with it, e.g. with "INT:INT".
-    ///
-    /// This option can be specified multiple times to map multiple signals.
-    ///
-    /// Signal syntax is case-insensitive for short names (like "TERM", "USR2") and long names (like
-    /// "SIGKILL", "SIGHUP"). Signal numbers are also supported (like "15", "31"). On Windows, the
-    /// forms "STOP", "CTRL+C", and "CTRL+BREAK" are also supported to receive, but Watchexec cannot
-    /// yet deliver other "signals" than a STOP.
+    /// Takes two signal names separated by a colon, such as `TERM:INT`. Leave
+    /// out the second name to discard the first signal (`TERM:`). A mapped
+    /// SIGINT or SIGTERM no longer stops watching; `INT:INT` passes Ctrl-C to
+    /// the tasks without stopping watchexec. Repeat the flag to map several
+    /// signals.
     #[usage(long = "map-signal", value_name = "SIGNAL:SIGNAL")]
     pub signal_map: Vec<String>,
 
-    /// Time to wait for new events before taking action
+    /// How long to wait for more changes before running (default: 50ms)
     ///
-    /// When an event is received, Watchexec will wait for up to this amount of time before handling
-    /// it (such as running the command). This is essential as what you might perceive as a single
-    /// change may actually emit many events, and without this behaviour, Watchexec would run much
-    /// too often. Additionally, it's not infrequent that file writes are not atomic, and each write
-    /// may emit an event, so this is a good way to avoid running a command while a file is
-    /// partially written.
-    ///
-    /// An alternative use is to set a high value (like "30min" or longer), to save power or
-    /// bandwidth on intensive tasks, like an ad-hoc backup script. In those use cases, note that
-    /// every accumulated event will build up in memory.
-    ///
-    /// Takes a unit-less value in milliseconds, or a time span value such as "5sec 20ms".
-    /// Providing a unit-less value is deprecated and will warn; it will be an error in the future.
-    ///
-    /// The default is 50 milliseconds. Setting to 0 is highly discouraged.
+    /// One save can produce several events, and a file can be written in
+    /// pieces, so watchexec waits this long after an event before running the
+    /// tasks. Takes a duration such as `500ms` or `2s`.
     #[usage(
         long,
         short,
@@ -739,124 +685,66 @@ pub(crate) struct WatchexecArgs {
     pub debounce: String,
 
     /// Exit when stdin closes
-    ///
-    /// This watches the stdin file descriptor for EOF, and exits Watchexec gracefully when it is
-    /// closed. This is used by some process managers to avoid leaving zombie processes around.
     #[usage(long)]
     pub stdin_quit: bool,
 
-    /// Don't load gitignores
+    /// Do not apply Git and other version control ignore files
     ///
-    /// Among other VCS exclude files, like for Mercurial, Subversion, Bazaar, DARCS, Fossil. Note
-    /// that Watchexec will detect which of these is in use, if any, and only load the relevant
-    /// files. Both global (like '~/.gitignore') and local (like '.gitignore') files are considered.
-    ///
-    /// This option is useful if you want to watch files that are ignored by Git.
+    /// Use it to watch files that Git ignores. A task can turn this on for
+    /// itself with `watch = { no_vcs_ignore = true }`.
     #[usage(long, help_heading = "Filtering")]
     pub no_vcs_ignore: bool,
 
-    /// Don't load project-local ignores
-    ///
-    /// This disables loading of project-local ignore files, like '.gitignore' or '.ignore' in the
-    /// watched project. This is contrasted with '--no-vcs-ignore', which disables loading of Git
-    /// and other VCS ignore files, and with '--no-global-ignore', which disables loading of global
-    /// or user ignore files, like '~/.gitignore' or '~/.config/watchexec/ignore'.
-    ///
-    /// Supported project ignore files:
-    ///
-    ///   - Git: .gitignore at project root and child directories, .git/info/exclude, and the file pointed to by `core.excludesFile` in .git/config.
-    ///   - Mercurial: .hgignore at project root and child directories.
-    ///   - Bazaar: .bzrignore at project root.
-    ///   - Darcs: _darcs/prefs/boring
-    ///   - Fossil: .fossil-settings/ignore-glob
-    ///   - Ripgrep/Watchexec/generic: .ignore at project root and child directories.
-    ///
-    /// VCS ignore files (Git, Mercurial, Bazaar, Darcs, Fossil) are only used if the corresponding
-    /// VCS is discovered to be in use for the project/origin. For example, a .bzrignore in a Git
-    /// repository will be discarded.
-    #[usage(long, help_heading = "Filtering", verbatim_doc_comment)]
+    /// Do not apply ignore files in the project, such as `.gitignore` and
+    /// `.ignore`
+    #[usage(long, help_heading = "Filtering")]
     pub no_project_ignore: bool,
 
-    /// Don't load global ignores
-    ///
-    /// This disables loading of global or user ignore files, like '~/.gitignore',
-    /// '~/.config/watchexec/ignore', or '%APPDATA%\Bazaar\2.0\ignore'. Contrast with
-    /// '--no-vcs-ignore' and '--no-project-ignore'.
-    ///
-    /// Supported global ignore files
-    ///
-    ///   - Git (if core.excludesFile is set): the file at that path
-    ///   - Git (otherwise): the first found of $XDG_CONFIG_HOME/git/ignore, %APPDATA%/.gitignore, %USERPROFILE%/.gitignore, $HOME/.config/git/ignore, $HOME/.gitignore.
-    ///   - Bazaar: the first found of %APPDATA%/Bazaar/2.0/ignore, $HOME/.bazaar/ignore.
-    ///   - Watchexec: the first found of $XDG_CONFIG_HOME/watchexec/ignore, %APPDATA%/watchexec/ignore, %USERPROFILE%/.watchexec/ignore, $HOME/.watchexec/ignore.
-    ///
-    /// Like for project files, Git and Bazaar global files will only be used for the corresponding
-    /// VCS as used in the project.
-    #[usage(long, help_heading = "Filtering", verbatim_doc_comment)]
+    /// Do not apply global ignore files, such as `~/.gitignore` and
+    /// `~/.config/watchexec/ignore`
+    #[usage(long, help_heading = "Filtering")]
     pub no_global_ignore: bool,
 
-    /// Don't use internal default ignores
+    /// Do not apply watchexec's built-in ignores
     ///
-    /// Watchexec has a set of default ignore patterns, such as editor swap files, `*.pyc`, `*.pyo`,
-    /// `.DS_Store`, `.bzr`, `_darcs`, `.fossil-settings`, `.git`, `.hg`, `.pijul`, `.svn`, and
-    /// Watchexec log files.
+    /// They cover editor swap files, `*.pyc`, `.DS_Store`, and version control
+    /// directories such as `.git`.
     #[usage(long, help_heading = "Filtering")]
     pub no_default_ignore: bool,
 
-    /// Don't discover ignore files at all
+    /// Do not look for ignore files at all
     ///
-    /// This is a shorthand for '--no-global-ignore', '--no-vcs-ignore', '--no-project-ignore', but
-    /// even more efficient as it will skip all the ignore discovery mechanisms from the get go.
-    ///
-    /// Note that default ignores are still loaded, see '--no-default-ignore'.
+    /// Same as `--no-global-ignore --no-vcs-ignore --no-project-ignore`, but
+    /// faster. Built-in ignores still apply.
     #[usage(long, help_heading = "Filtering")]
     pub no_discover_ignore: bool,
 
-    /// Don't ignore anything at all
+    /// Ignore nothing
     ///
-    /// This is a shorthand for '--no-discover-ignore', '--no-default-ignore'.
-    ///
-    /// Note that ignores explicitly loaded via other command line options, such as '--ignore' or
-    /// '--ignore-file', will still be used.
+    /// Same as `--no-discover-ignore --no-default-ignore`. Patterns from
+    /// `--ignore` and `--ignore-file` still apply.
     #[usage(long, help_heading = "Filtering")]
     pub ignore_nothing: bool,
 
-    /// Wait until first change before running command
-    ///
-    /// By default, Watchexec will run the command once immediately. With this option, it will
-    /// instead wait until an event is detected before running the command as normal.
+    /// Wait for the first change before running the tasks
     #[usage(long, short)]
     pub postpone: bool,
 
-    /// Sleep before running the command
-    ///
-    /// This option will cause Watchexec to sleep for the specified amount of time before running
-    /// the command, after an event is detected. This is like using "sleep 5 && command" in a shell,
-    /// but portable and slightly more efficient.
-    ///
-    /// Takes a unit-less value in seconds, or a time span value such as "2min 5s".
-    /// Providing a unit-less value is deprecated and will warn; it will be an error in the future.
+    /// Wait this long after a change before running the tasks, e.g. 5s
     #[usage(long, value_name = "DURATION")]
     pub delay_run: Option<String>,
 
-    /// Poll for filesystem changes
+    /// Poll for changes instead of using native file watching
     ///
-    /// By default, and where available, Watchexec uses the operating system's native file system
-    /// watching capabilities. This option disables that and instead uses a polling mechanism, which
-    /// is less efficient but can work around issues with some file systems (like network shares) or
-    /// edge cases.
-    ///
-    /// Optionally takes a unit-less value in milliseconds, or a time span value such as "2s 500ms",
-    /// to use as the polling interval. If not specified, the default is 30 seconds.
-    /// Providing a unit-less value is deprecated and will warn; it will be an error in the future.
-    ///
-    /// Aliased as '--force-poll'.
+    /// Use it on file systems where native events do not work, such as network
+    /// shares. Takes an optional interval such as `2s` (default: 30s). Also
+    /// accepted as `--force-poll`.
     #[usage(
-		long,
-		alias = "force-poll",
-		num_args = 0..=1,
-		default_missing = "30s",
-		value_name = "INTERVAL",
+        long,
+        alias = "force-poll",
+        num_args = 0..=1,
+        default_missing = "30s",
+        value_name = "INTERVAL",
     )]
     pub poll: Option<String>,
 
@@ -1055,15 +943,12 @@ pub(crate) struct WatchexecArgs {
     )]
     pub command_env: Vec<String>,
 
-    /// Configure how the process is wrapped
+    /// How to wrap the task process: group, session, or none
     ///
-    /// By default, Watchexec will run the command in a session on macOS, in a process group on
-    /// other Unix platforms, and in a Job Object in Windows.
-    ///
-    /// Some Unix programs prefer running in a session, while others do not work in a process group.
-    ///
-    /// Use 'group' to use a process group, 'session' to use a process session, and 'none' to run
-    /// the command directly. On Windows, either of 'group' or 'session' will use a Job Object.
+    /// By default watchexec uses a session on macOS, a process group on other
+    /// Unix systems, and a Job Object on Windows. Some programs need a session,
+    /// and some do not work in a process group; `none` runs the command
+    /// directly. On Windows, `group` and `session` both use a Job Object.
     #[usage(long, help_heading = "Command", value_name = "MODE", value_enum)]
     pub wrap_process: Option<WrapMode>,
 
@@ -1139,11 +1024,10 @@ pub(crate) struct WatchexecArgs {
     )]
     pub workdir: Option<PathBuf>,
 
-    /// Filename extensions to filter to
+    /// Only react to files with these extensions, e.g. js,ts
     ///
-    /// This is a quick filter to only emit events for files with the given extensions. Extensions
-    /// can be given with or without the leading dot (e.g. 'js' or '.js'). Multiple extensions can
-    /// be given by repeating the option or by separating them with commas.
+    /// Give extensions with or without the leading dot. Repeat the flag or
+    /// separate extensions with commas.
     #[usage(
         long = "exts",
         short = 'e',
@@ -1153,11 +1037,11 @@ pub(crate) struct WatchexecArgs {
     )]
     pub filter_extensions: Vec<String>,
 
-    /// Filename patterns to filter to
+    /// Only react to files that match this glob
     ///
-    /// Provide a glob-like filter pattern, and only events for files matching the pattern will be
-    /// emitted. Multiple patterns can be given by repeating the option. Events that are not from
-    /// files (e.g. signals, keyboard events) will pass through untouched.
+    /// Combined with the patterns mise derives from the tasks' `sources`.
+    /// Repeat the flag for more patterns. Events that do not come from files,
+    /// such as signals, pass through.
     #[usage(
         long = "filter",
         short = 'f',
@@ -1253,11 +1137,10 @@ pub(crate) struct WatchexecArgs {
     )]
     pub filter_programs: Vec<String>,
 
-    /// Filename patterns to filter out
+    /// Ignore files that match this glob
     ///
-    /// Provide a glob-like filter pattern, and events for files matching the pattern will be
-    /// excluded. Multiple patterns can be given by repeating the option. Events that are not from
-    /// files (e.g. signals, keyboard events) will pass through untouched.
+    /// Repeat the flag for more patterns. Events that do not come from files,
+    /// such as signals, pass through.
     #[usage(
         long = "ignore",
         short = 'i',
@@ -1266,19 +1149,17 @@ pub(crate) struct WatchexecArgs {
     )]
     pub ignore_patterns: Vec<String>,
 
-    /// Files to load ignores from
+    /// Read ignore patterns from a file, one per line
     ///
-    /// Provide a path to a file containing ignores, one per line. Empty lines and lines starting
-    /// with '#' are ignored. Uses the same pattern format as the '--ignore' option.
-    ///
-    /// This can also be used via the $WATCHEXEC_IGNORE_FILES environment variable.
+    /// Empty lines and lines that start with `#` are skipped. The patterns use
+    /// the same format as `--ignore`. Also read from `$WATCHEXEC_IGNORE_FILES`.
     #[usage(
-		long = "ignore-file",
-		help_heading = "Filtering",
-		value_hint = usage_rs::ValueHint::FilePath,
-		value_name = "PATH",
-		env = "WATCHEXEC_IGNORE_FILES",
-		hide_env = true,
+        long = "ignore-file",
+        help_heading = "Filtering",
+        value_hint = usage_rs::ValueHint::FilePath,
+        value_name = "PATH",
+        env = "WATCHEXEC_IGNORE_FILES",
+        hide_env = true,
     )]
     #[cfg_attr(windows, usage(delimiter = ';'))]
     #[cfg_attr(not(windows), usage(delimiter = ':'))]
@@ -1316,12 +1197,10 @@ pub(crate) struct WatchexecArgs {
     )]
     pub filter_fs_meta: bool,
 
-    /// Print events that trigger actions
+    /// Print the events that trigger each run
     ///
-    /// This prints the events that triggered the action when handling it (after debouncing), in a
-    /// human readable form. This is useful for debugging filters.
-    ///
-    /// Use '-vvv' instead when you need more diagnostic information.
+    /// Use it to check which files `--watch`, `--filter`, and the tasks'
+    /// `sources` are reacting to.
     #[usage(long, help_heading = "Debugging")]
     pub print_events: bool,
 

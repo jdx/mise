@@ -7,20 +7,35 @@ use crate::config::settings::{
 use crate::toml::dedup_toml_array;
 use crate::{config, dirs, duration, file};
 
-/// Add/update a setting
+/// Set a setting
 ///
-/// This modifies the contents of ~/.config/mise/config.toml by default.
-/// With `--local`, modifies the local config file instead.
-/// See https://mise.jdx.dev/configuration.html#target-file-for-write-operations
+/// Writes ~/.config/mise/config.toml, or the nearest project config with
+/// `--local`. Settings that mise reads before loading config files cannot be set
+/// here: set `global_config_file` and similar through their environment
+/// variables, and `ceiling_paths` and similar in a `miserc.toml` file or their
+/// environment variables. `--local` refuses settings that only the global config
+/// can set, such as `yes`.
+/// See https://mise.jdx.dev/configuration/settings.html
 #[derive(Debug, usage_rs::Args)]
-#[usage(visible_aliases = ["create"], example(r###"mise settings set jobs 4"###), verbatim_doc_comment)]
+#[usage(
+    visible_aliases = ["create"],
+    example(r###"mise settings set jobs 4"###, help = "Run up to 4 jobs in parallel"),
+    example(
+        r###"mise settings set --local experimental=true"###,
+        help = "Enable experimental features in the project config"
+    ),
+    verbatim_doc_comment
+)]
 pub(super) struct SettingsSet {
     /// The setting to set
     #[usage()]
     pub setting: String,
-    /// The value to set (optional if provided as KEY=VALUE)
+    /// The value to set (or pass SETTING=VALUE)
     pub value: Option<String>,
-    /// Use the local config file instead of the global one
+    /// Write to the nearest project config instead of the global config
+    ///
+    /// The nearest project config is the lowest-precedence TOML file in the
+    /// nearest directory that has one, or ./mise.toml.
     #[usage(long, short)]
     pub local: bool,
 }

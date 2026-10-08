@@ -11,8 +11,10 @@ description: "Install package manager plugins declared in `[bootstrap.plugins]`"
 
 Install package manager plugins declared in `[bootstrap.plugins]`
 
+It does not ask for confirmation.
+
 ## Flags
-- **`-n --dry-run`** — Print what would happen without installing plugins
+- **`-n --dry-run`** — Show which plugins would be installed without installing them
 - **`-h --help`** — Print help
 
 <!-- generated reference navigation -->

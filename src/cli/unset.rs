@@ -6,34 +6,35 @@ use crate::cli::set::get_mise_toml;
 use crate::config::config_file::ConfigFile;
 use crate::config::{ConfigPathOptions, resolve_target_config_path};
 
-/// Remove environment variable(s) from the config file
+/// Remove environment variables from mise.toml
 ///
-/// By default, this command selects the nearest configuration directory and
-/// modifies its lowest-precedence TOML file, creating `mise.toml` here if none exists.
+/// Edits the same file `mise set` writes: the lowest-precedence TOML file in the
+/// nearest config directory, or the global config when run in your home
+/// directory. Use `--global` or `--file` to pick another file.
 #[derive(Debug, usage_rs::Args)]
 #[usage(
     verbatim_doc_comment,
     example(
         r###"mise unset NODE_ENV"###,
-        help = r###"Remove NODE_ENV from the selected project config"###
+        help = r###"Remove NODE_ENV from the project config"###
     ),
     example(
-        r###"mise unset NODE_ENV -g"###,
+        r###"mise unset -g NODE_ENV"###,
         help = r###"Remove NODE_ENV from the global config"###
     )
 )]
 pub(crate) struct Unset {
-    /// Environment variable(s) to remove
-    /// e.g.: NODE_ENV
+    /// Environment variables to remove, such as NODE_ENV
     #[usage(verbatim_doc_comment, value_name = "ENV_KEY")]
     keys: Vec<String>,
 
-    /// Specify a file to use instead of `mise.toml`
+    /// The TOML file to edit instead of the default target
     ///
-    /// Can be a file path or directory. If a directory is provided, will create/use mise.toml in that directory.
-    ///
-    /// Defaults to [`MISE_DEFAULT_CONFIG_FILENAME`](https://mise.jdx.dev/configuration.html#mise_default_config_filename) environment variable, or `mise.toml`.
-    /// Use [`MISE_GLOBAL_CONFIG_FILE`](https://mise.jdx.dev/configuration.html#mise_global_config_file) to choose a different global config path.
+    /// Can be a file or a directory. For a directory, mise uses the config file
+    /// in it, or one named by MISE_DEFAULT_CONFIG_FILENAME (default `mise.toml`):
+    /// https://mise.jdx.dev/configuration/settings.html#default_config_filename
+    /// To move the global config file, set MISE_GLOBAL_CONFIG_FILE:
+    /// https://mise.jdx.dev/configuration/settings.html#global_config_file
     #[usage(short, long, visible_alias = "path", value_hint = usage_rs::ValueHint::FilePath)]
     file: Option<PathBuf>,
 

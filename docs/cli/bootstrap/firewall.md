@@ -11,11 +11,28 @@ description: "Manage the Linux host firewall from `[bootstrap.linux.firewall]`"
 
 Manage the Linux host firewall from `[bootstrap.linux.firewall]`
 
-This manages host firewall policy and rules. Review `apply --dry-run` before applying
-a policy to a remote machine, including the rule that permits your SSH connection.
+Works with nftables, firewalld, or UFW, and keeps mise's rules separate from
+other host rules. Over SSH, mise refuses a default incoming policy of deny
+or reject unless a rule allows the current connection or the config sets
+`allow_lockout = true`. Check `apply --dry-run` before applying a policy to
+a remote machine.
 
 ## Flags
 - **`-h --help`** — Print help
+
+## Examples
+
+Show the firewall's state
+
+```
+mise bootstrap firewall status
+```
+
+Show the policy and rules that would change
+
+```
+mise bootstrap firewall apply --dry-run
+```
 
 ## Subcommands
 

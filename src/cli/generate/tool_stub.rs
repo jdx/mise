@@ -25,22 +25,41 @@ use std::path::{Path, PathBuf};
 use std::sync::LazyLock;
 use toml_edit::DocumentMut;
 
-/// Generate a tool stub for HTTP-based tools
+/// Generate or update a tool stub
 ///
-/// This command generates tool stubs that can automatically download and execute
-/// tools from HTTP URLs. It can detect checksums, file sizes, and binary paths
-/// automatically by downloading and analyzing the tool.
+/// A tool stub is an executable file that names a tool and where to get it;
+/// running it installs the tool if needed and runs it. See
+/// https://mise.jdx.dev/dev-tools/tool-stubs.html.
 ///
-/// When generating stubs with platform-specific URLs, the command will append new
-/// platforms to existing stub files rather than overwriting them. This allows you
-/// to incrementally build cross-platform tool stubs.
+/// Pass --url or --platform-url to create or extend a stub. mise downloads each
+/// artifact to record its checksum, size, and binary path unless you pass
+/// --skip-download. On an existing stub, new platforms are added and URLs you pass
+/// again are replaced. --fetch fills in missing checksums and sizes, and --lock
+/// records lock data for an existing stub, including one that uses a registry tool.
 #[derive(Debug, usage_rs::Args)]
-#[usage(verbatim_doc_comment, example(r###"mise generate tool-stub ./bin/node --platform-url https://nodejs.org/dist/v22.17.1/node-v22.17.1-darwin-arm64.tar.gz"###, help = r###"Download and inspect a real archive to detect its binary and checksum"###),
-    example(r###"mise generate tool-stub ./bin/node --platform-url linux-x64:https://nodejs.org/dist/v22.17.1/node-v22.17.1-linux-x64.tar.gz"###, help = r###"Add a Linux artifact to the same stub"###),
-    example(r###"mise generate tool-stub ./bin/my-tool --url https://example.com/my-tool.tar.gz --skip-download
-# Replace the URL with a real artifact before fetching metadata or executing it"###, help = r###"Create a draft for your own artifact without fetching the placeholder URL"###),
-    example(r###"mise generate tool-stub ./bin/node --fetch"###, help = r###"Fill missing checksums and sizes in an existing stub"###),
-    example(r###"mise generate tool-stub ./bin/registry-node --lock --version 22"###, help = r###"For an existing registry-backed stub, resolve and record version/platform lock data"###))]
+#[usage(
+    verbatim_doc_comment,
+    example(
+        r###"mise generate tool-stub ./bin/node --platform-url https://nodejs.org/dist/v24.11.0/node-v24.11.0-darwin-arm64.tar.gz"###,
+        help = r###"Download and inspect a real archive to detect its binary and checksum"###
+    ),
+    example(
+        r###"mise generate tool-stub ./bin/node --platform-url linux-x64:https://nodejs.org/dist/v24.11.0/node-v24.11.0-linux-x64.tar.gz"###,
+        help = r###"Add a Linux artifact to the same stub"###
+    ),
+    example(
+        r###"mise generate tool-stub ./bin/my-tool --url https://example.com/my-tool.tar.gz --skip-download"###,
+        help = r###"Draft a stub without downloading; replace the placeholder URL before running it"###
+    ),
+    example(
+        r###"mise generate tool-stub ./bin/node --fetch"###,
+        help = r###"Fill missing checksums and sizes in an existing stub"###
+    ),
+    example(
+        r###"mise generate tool-stub ./bin/registry-node --lock --version 24"###,
+        help = r###"Resolve and record the version and platform lock data of an existing registry-backed stub"###
+    )
+)]
 pub(super) struct ToolStub {
     /// Output file path for the tool stub
     #[usage(value_hint = ValueHint::FilePath)]
@@ -48,34 +67,32 @@ pub(super) struct ToolStub {
 
     /// Binary path within the extracted archive
     ///
-    /// If not specified and the archive is downloaded, will auto-detect the most likely binary
+    /// If not specified and the archive is downloaded, mise detects the most likely binary.
     #[usage(long, short)]
     pub bin: Option<String>,
 
-    /// Wrap stub in a bootstrap script that installs mise if not already present
+    /// Make the stub install mise when it is missing
     ///
-    /// When enabled, generates a bash script that:
-    /// 1. Checks if mise is installed at the expected path
-    /// 2. If not, downloads and installs mise using the embedded installer
-    /// 3. Executes the tool stub using mise
+    /// The stub becomes a bash script that:
+    /// 1. Uses mise from PATH, or ~/.local/bin/mise
+    /// 2. Otherwise installs mise to ~/.local/bin with the embedded installer
+    /// 3. Runs the tool stub with mise
     #[usage(long, verbatim_doc_comment)]
     pub bootstrap: bool,
 
-    /// Specify mise version for the bootstrap script
+    /// mise version the --bootstrap script installs; defaults to the latest release
     ///
-    /// By default, uses the latest version from the install script.
-    /// Use this to pin to a specific version (e.g., "2025.1.0").
+    /// Pin a version such as `2026.10.0` to keep the installer reproducible.
     #[usage(long, verbatim_doc_comment, requires = "bootstrap")]
     pub bootstrap_version: Option<String>,
 
-    /// Checksum algorithm to use when downloading artifacts
+    /// Checksum algorithm for downloaded artifacts
     ///
-    /// Accepts `blake3` or `sha256` and defaults to `blake3`.
-    /// Cannot be used with `--lock` or `--skip-download` because those modes do not
-    /// calculate checksums.
+    /// Not available with --lock or --skip-download, which do not compute checksums.
     #[usage(
         long,
         value_enum,
+        value_name = "ALGORITHM",
         default = "blake3",
         conflicts = &["lock", "skip_download"]
     )]
@@ -83,13 +100,13 @@ pub(super) struct ToolStub {
 
     /// Fetch checksums and sizes for an existing tool stub file
     ///
-    /// This reads an existing stub file and fills in any missing checksum/size fields
-    /// by downloading the files. URLs must already be present in the stub.
+    /// Reads an existing stub file and fills in missing checksum and size fields by
+    /// downloading the files. URLs must already be present in the stub.
     #[usage(long, conflicts = &["url", "platform_url", "version", "bin", "platform_bin", "skip_download", "lock"])]
     pub fetch: bool,
 
-    /// HTTP backend type to use
-    #[usage(long, default = "http")]
+    /// Has no effect; kept so existing scripts that pass it keep working
+    #[usage(long, hide = true, default = "http")]
     pub http: String,
 
     /// Resolve and record lock data (exact version, platform URLs and checksums) for an existing stub
@@ -100,33 +117,24 @@ pub(super) struct ToolStub {
     #[usage(long, conflicts = &["url", "platform_url", "bin", "platform_bin", "fetch", "skip_download"], verbatim_doc_comment)]
     pub lock: bool,
 
-    /// Platform-specific binary paths in the format platform:path
-    ///
-    /// Examples: --platform-bin windows-x64:tool.exe --platform-bin linux-x64:bin/tool
+    /// Binary path inside the archive for one platform, such as `linux-x64:bin/tool`; repeatable
     #[usage(long)]
     pub platform_bin: Vec<String>,
 
-    /// Platform-specific URLs in the format platform:url or just url (auto-detect platform)
+    /// Download URL for one platform, as `PLATFORM:URL` or a bare URL; repeatable
     ///
-    /// When the output file already exists, new platforms will be appended to the existing
-    /// platforms table. Existing platform URLs will be updated if specified again.
-    ///
-    /// If only a URL is provided (without platform:), the platform will be automatically
-    /// detected from the URL filename.
-    ///
-    /// Examples:
-    /// --platform-url linux-x64:https://...
-    /// --platform-url https://nodejs.org/dist/v22.17.1/node-v22.17.1-darwin-arm64.tar.gz
+    /// With a bare URL, mise detects the platform from the file name, such as
+    /// `--platform-url https://nodejs.org/dist/v24.11.0/node-v24.11.0-darwin-arm64.tar.gz`.
+    /// When the output file already exists, new platforms are added to its platforms
+    /// table, and a platform you pass again gets the new URL.
     #[usage(long)]
     pub platform_url: Vec<String>,
 
-    /// Skip downloading for checksum and binary path detection (faster but less informative)
+    /// Do not download artifacts, so checksums, sizes, and the detected binary path are left out
     #[usage(long)]
     pub skip_download: bool,
 
-    /// URL for downloading the tool
-    ///
-    /// Example: https://github.com/owner/repo/releases/download/v2.0.0/tool-linux-x64.tar.gz
+    /// URL to download the tool from
     #[usage(long, short)]
     pub url: Option<String>,
 

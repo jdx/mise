@@ -3,13 +3,13 @@ use eyre::Result;
 use crate::file::display_path;
 use crate::install_layout::resolver;
 
-/// Choose the installation that requests without a lockfile use
+/// Choose which installation mise uses when no lockfile pins one
 ///
-/// Several installations can answer the same request: a refresh that could not
-/// replace a lockfile's installation in place, or installations made for
-/// different lockfiles. Requests without a lockfile entry use the one selected
-/// for their tool, version, platform and options, and when none is selected and
-/// several match, mise stops and asks for this command.
+/// Several installations can match the same request, such as a refreshed copy next
+/// to one a lockfile pinned, or installations made for different lockfiles. For a
+/// request with no lockfile entry, mise uses the installation selected for that
+/// tool, version, platform, and options. If none is selected and several match,
+/// mise stops and tells you to run this command.
 ///
 /// The selection is shared by every project on this machine that makes the same
 /// request without a lockfile. Projects whose lockfile pins an artifact keep the
@@ -17,10 +17,10 @@ use crate::install_layout::resolver;
 /// is pointed at the selected installation.
 #[derive(Debug, usage_rs::Args)]
 #[usage(
+    example("mise installs ls jq", help = "Find jq's installations"),
     example(
-        r###"mise installs ls jq
-mise installs select jq-hm3qa4vb"###,
-        help = r###"Find jq's installations, then choose one"###
+        "mise installs select jq-hm3qa4vb",
+        help = "Use this one for requests with no lockfile entry"
     ),
     verbatim_doc_comment
 )]

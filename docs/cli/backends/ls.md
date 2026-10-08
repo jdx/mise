@@ -12,16 +12,17 @@ description: "List built-in backends"
 
 List built-in backends
 
+Backends that plugins add are listed by `mise plugins ls`.
+
 ## Flags
 - **`-h --help`** — Print help
 
 ## Examples
 
-Installed plugin availability and built-in backends are separate lists
+List the backends built into mise
 
 ```
 mise backends ls
-mise plugins ls
 ```
 
 <!-- generated reference navigation -->

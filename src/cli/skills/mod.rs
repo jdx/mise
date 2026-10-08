@@ -3,12 +3,15 @@ use eyre::Result;
 mod ls;
 mod sync;
 
-/// Agent skills the active tools ship, from their packslips
+/// List and link the agent skills that active tools ship
 ///
 /// A tool installed with the `packslip:` backend may declare an agent skill: a
 /// directory holding `SKILL.md` and whatever it references, in the Agent Skills
 /// format. mise knows which version of each tool is active here, so it can hand
 /// an agent the skill for exactly that version.
+///
+/// With no subcommand, lists the skills (same as `mise skills ls`).
+/// See https://mise.jdx.dev/dev-tools/packslip-resources.html#skills
 #[derive(Debug, usage_rs::Args)]
 #[usage(alias = "skill", verbatim_doc_comment)]
 pub(crate) struct Skills {

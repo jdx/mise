@@ -9,12 +9,26 @@ use crate::system::history::tracked::{display_to_tree_path, normalize_target};
 
 /// Save a checkpoint of the tracked files now
 ///
-/// Fails when history cannot save or a requested path is not tracked, so a
-/// script or an agent gets a trustworthy result; a save that finds nothing
-/// changed succeeds as a no-op. `--best-effort` turns save errors into a
-/// warning for `set -e` update scripts.
+/// Exits non-zero when history cannot save or a named path is not tracked.
+/// With no changes since the latest checkpoint, nothing is saved unless you
+/// pass `--description`, `--label`, `--task`, or a `--trigger` other than
+/// `save`.
+///
+/// `--best-effort` turns a failure to write the checkpoint, such as missing
+/// Git, into a warning for update scripts that run under `set -e`. A disabled
+/// history or an untracked path still fails.
 #[derive(Debug, usage_rs::Args)]
-#[usage(verbatim_doc_comment)]
+#[usage(
+    example("mise dot save", help = "Save every tracked file that changed"),
+    example(
+        "mise dot save ~/.zshrc -d \"before the theme change\"",
+        help = "Save one file with a description"
+    ),
+    example(
+        "mise dot save --best-effort",
+        help = "Warn instead of failing in a script"
+    )
+)]
 pub(crate) struct DotfilesSave {
     /// Paths to save; every one must be tracked
     #[usage(value_name = "PATH")]
@@ -24,11 +38,11 @@ pub(crate) struct DotfilesSave {
     #[usage(long, short, value_name = "TEXT")]
     description: Option<String>,
 
-    /// What is saving: save (the default), agent, or update
+    /// Record the checkpoint as a save, agent, or update checkpoint
     #[usage(long, value_name = "TRIGGER", default = "save")]
     trigger: String,
 
-    /// The task an agent is working on
+    /// The ID of the task an agent is working on, recorded with the checkpoint
     #[usage(long, value_name = "ID")]
     task: Option<String>,
 
@@ -36,7 +50,7 @@ pub(crate) struct DotfilesSave {
     #[usage(long, value_name = "LABEL")]
     label: Vec<String>,
 
-    /// Warn instead of failing when history cannot save
+    /// Warn instead of failing when the checkpoint cannot be written
     #[usage(long)]
     best_effort: bool,
 }

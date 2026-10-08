@@ -3,7 +3,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "mise-task-schema",
   "type": "object",
-  "description": "Config file for included mise tasks (https://mise.jdx.dev/tasks/#task-configuration)",
+  "description": "Config file for included mise tasks (https://mise.jdx.dev/tasks/task-configuration.html)",
   "additionalProperties": {
     "$ref": "#/$defs/task"
   },

@@ -28,24 +28,32 @@ fn remove_legacy_pypi_setting(settings: &mut dyn toml_edit::TableLike, key: &str
         .is_some_and(|legacy| legacy.remove(leaf).is_some())
 }
 
+/// Manage settings
+///
+/// With no arguments, lists the settings set in config files (same as
+/// `mise settings ls`). With SETTING, prints its effective value. With
+/// SETTING=VALUE or SETTING VALUE, writes it to the global config
+/// (~/.config/mise/config.toml), or to the nearest project config with
+/// `--local`. Every setting is described at
+/// https://mise.jdx.dev/configuration/settings.html
 #[derive(Debug, usage_rs::Args)]
 #[usage(
-    about = "Manage settings",
+    verbatim_doc_comment,
     example(
         r###"mise settings"###,
-        help = r###"list explicitly configured settings"###
+        help = r###"List settings set in config files"###
     ),
     example(
-        r###"mise settings always_keep_download"###,
-        help = r###"get the value of the setting "always_keep_download""###
+        r###"mise settings jobs"###,
+        help = r###"Show the effective value of one setting"###
     ),
     example(
-        r###"mise settings always_keep_download=true"###,
-        help = r###"set the value of the setting "always_keep_download" to "true""###
+        r###"mise settings jobs=4"###,
+        help = r###"Set jobs in the global config"###
     ),
     example(
-        r###"mise settings node.mirror_url https://npmmirror.com/mirrors/node/"###,
-        help = r###"set the value of the setting "node.mirror_url" to "https://npmmirror.com/mirrors/node/""###
+        r###"mise settings --local node.mirror_url https://npmmirror.com/mirrors/node/"###,
+        help = r###"Set a setting in the project config"###
     )
 )]
 pub(crate) struct Settings {
@@ -55,7 +63,7 @@ pub(crate) struct Settings {
     #[usage(flatten)]
     ls: ls::SettingsLs,
 
-    /// Setting value to set
+    /// The value to set
     #[usage(conflicts = "all")]
     value: Option<String>,
 }
