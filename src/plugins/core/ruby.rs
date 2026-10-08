@@ -511,10 +511,19 @@ impl RubyPlugin {
 
     /// Render URL template with version and platform variables
     fn render_precompiled_url(&self, template: &str, version: &str, platform: &str) -> String {
-        // Platforms are "{arch}_{os}" and the arch can itself contain an
-        // underscore (x86_64), so split on the last one. The arm64-only macOS
-        // build is named plain "macos".
-        let (arch, os) = platform.rsplit_once('_').unwrap_or(("arm64", platform));
+        let settings = Settings::get();
+        let (arch, os) = match (
+            settings.ruby.precompiled_arch.as_deref(),
+            settings.ruby.precompiled_os.as_deref(),
+        ) {
+            // The overrides form the platform verbatim and either one can
+            // contain an underscore, so use them as given.
+            (Some(arch), Some(os)) => (arch, os),
+            // Built-in platforms are "{arch}_{os}" and the arch can itself
+            // contain an underscore (x86_64), so split on the last one. The
+            // arm64-only macOS build is named plain "macos".
+            _ => platform.rsplit_once('_').unwrap_or(("arm64", platform)),
+        };
         template
             .replace("{version}", version)
             .replace("{platform}", platform)
@@ -1416,19 +1425,42 @@ mod tests {
 
     #[test]
     fn test_ruby_render_precompiled_url_splits_arch_and_os() {
-        let plugin = RubyPlugin::new();
         let template = "https://example.com/{version}/ruby-{arch}-{os}-{platform}.tar.gz";
-        assert_eq!(
-            plugin.render_precompiled_url(template, "3.3.0", "x86_64_linux"),
-            "https://example.com/3.3.0/ruby-x86_64-linux-x86_64_linux.tar.gz"
+        with_ruby_settings(
+            |_| {},
+            |plugin| {
+                assert_eq!(
+                    plugin.render_precompiled_url(template, "3.3.0", "x86_64_linux"),
+                    "https://example.com/3.3.0/ruby-x86_64-linux-x86_64_linux.tar.gz"
+                );
+                assert_eq!(
+                    plugin.render_precompiled_url(template, "3.3.0", "arm64_linux"),
+                    "https://example.com/3.3.0/ruby-arm64-linux-arm64_linux.tar.gz"
+                );
+                assert_eq!(
+                    plugin.render_precompiled_url(template, "3.3.0", "macos"),
+                    "https://example.com/3.3.0/ruby-arm64-macos-macos.tar.gz"
+                );
+            },
+        );
+    }
+
+    #[test]
+    fn test_ruby_render_precompiled_url_keeps_override_arch_and_os() {
+        let template = "https://example.com/{version}/ruby-{arch}-{os}-{platform}.tar.gz";
+        let url = with_ruby_settings(
+            |settings| {
+                settings.ruby.precompiled_arch = Some("arm64".to_string());
+                settings.ruby.precompiled_os = Some("linux_musl".to_string());
+            },
+            |plugin| {
+                let platform = plugin.precompiled_platform().unwrap();
+                plugin.render_precompiled_url(template, "3.3.0", &platform)
+            },
         );
         assert_eq!(
-            plugin.render_precompiled_url(template, "3.3.0", "arm64_linux"),
-            "https://example.com/3.3.0/ruby-arm64-linux-arm64_linux.tar.gz"
-        );
-        assert_eq!(
-            plugin.render_precompiled_url(template, "3.3.0", "macos"),
-            "https://example.com/3.3.0/ruby-arm64-macos-macos.tar.gz"
+            url,
+            "https://example.com/3.3.0/ruby-arm64-linux_musl-arm64_linux_musl.tar.gz"
         );
     }
 
