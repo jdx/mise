@@ -1,24 +1,28 @@
 ---
-description: "See mise switch tool versions, load environment variables, and run project tasks."
+description: "Watch mise run one-off commands with mise exec, install global tools, and switch Node.js versions between a global default and a project."
+socialDescription: "Watch mise run one-off commands, install global tools, and switch Node.js versions per project."
 ---
 
 # Demo
 
-The following demo shows:
-
-- how to use `mise exec` to run a command with a specific version of a tool
-- how to use `mise` to install many other tools, such as `jq`, `terraform`, or `go`
-- how to use `mise` to manage multiple versions of `node` on the same system
+This recording runs one-off commands with `mise exec`, installs global tools
+with `mise use --global`, and switches Node.js versions between a global default
+and a project. It was recorded in March 2025 with Node.js 22 and 23; the
+transcript below uses current versions.
 
 <video style="max-width: 100%; height: auto;" controls="controls" src="./tapes/demo.mp4" />
 
 ## Guided transcript {#transcript}
 
-This follows the recording's workflow. Commands and release requests below are
-kept usable for current mise; exact versions, paths, and output in the recording
-may differ. To follow along, [install mise](/installing-mise.html) and use a Bash
-shell. The demo changes global tool defaults; use a scratch environment if you
-do not want those selections in your normal config.
+The commands follow the recording with current versions, so the versions and
+output you see differ from the video. To follow along,
+[install mise](/installing-mise.html) and open a Bash shell. The demo writes
+global defaults, so to keep them out of your normal global config, point mise
+at a temporary one first:
+
+```sh
+export MISE_GLOBAL_CONFIG_FILE="$(mktemp -d)/config.toml"
+```
 
 ### Run one command
 
@@ -27,24 +31,25 @@ mise exec node@26 -- node --version
 mise exec terraform -- terraform version
 ```
 
-`mise exec` installs a missing tool and makes it available to that child command.
-It does not select the tool for the calling shell or save it in `mise.toml`.
-A subsequent plain `node --version` uses whatever Node.js was already on the
-shell's PATH, if any.
+`mise exec` installs a missing tool and makes it available to that one command.
+It does not add the tool to the calling shell or save it in `mise.toml`, so a
+plain `node --version` afterward runs whatever Node.js was already on `PATH`, if
+any.
 
 ### Activate and choose global defaults
 
-```bash
+```sh
 eval "$(mise activate bash)"
 mise use --global node@lts
 node --version
 which node
 ```
 
-After the prompt updates, activation puts the selected Node.js installation on
-PATH. `lts` is a release request resolved by the Node.js backend, so its exact
-version changes over time. `which node` shows the executable chosen by this
-shell; with PATH activation, that is normally the real installed binary.
+Activation updates `PATH` each time the prompt appears, so the selected Node.js
+is on `PATH` for the next command. `lts` is a version request that the Node.js
+backend resolves to the current long-term support release, so the version it
+selects changes over time. `which node` prints the installed Node.js binary
+itself, not a shim.
 
 Add other global tools and inspect their selection:
 
@@ -76,7 +81,8 @@ pnpm = "10"
 ```
 
 Within this project, Node.js 26 overrides the global `lts` request. Leave the
-project and wait for the next shell prompt to restore the global selection:
+project, and mise restores the global selection; most shells update on `cd`
+([directory changes](/dev-tools/shims.html#hook-on-cd)):
 
 ```sh
 cd ..
@@ -85,5 +91,5 @@ mise ls --current
 ```
 
 For a first project with tools, environment variables, and tasks, continue with
-[getting started](/getting-started.html). For configuration overrides and
-upgrades, use the [walkthrough](/walkthrough.html).
+[Getting started](/getting-started.html). To bring mise into a project that
+already exists, see [Use mise in an existing project](/walkthrough.html).

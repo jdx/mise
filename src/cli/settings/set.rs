@@ -1,24 +1,41 @@
 use eyre::{Result, bail, eyre};
 use toml_edit::DocumentMut;
 
-use crate::config::settings::{SETTINGS_META, SettingsFile, SettingsType, parse_url_replacements};
+use crate::config::settings::{
+    SETTINGS_META, SettingsFile, SettingsType, parse_url_replacements, validate_setting_choice,
+};
 use crate::toml::dedup_toml_array;
-use crate::{config, duration, file};
+use crate::{config, dirs, duration, file};
 
-/// Add/update a setting
+/// Set a setting
 ///
-/// This modifies the contents of ~/.config/mise/config.toml by default.
-/// With `--local`, modifies the local config file instead.
-/// See https://mise.jdx.dev/configuration.html#target-file-for-write-operations
+/// Writes ~/.config/mise/config.toml, or the nearest project config with
+/// `--local`. Settings that mise reads before loading config files cannot be set
+/// here: set `global_config_file` and similar through their environment
+/// variables, and `ceiling_paths` and similar in a `miserc.toml` file or their
+/// environment variables. `--local` refuses settings that only the global config
+/// can set, such as `yes`.
+/// See https://mise.jdx.dev/configuration/settings.html
 #[derive(Debug, usage_rs::Args)]
-#[usage(visible_aliases = ["create"], example(r###"mise settings set jobs 4"###), verbatim_doc_comment)]
+#[usage(
+    visible_aliases = ["create"],
+    example(r###"mise settings set jobs 4"###, help = "Run up to 4 jobs in parallel"),
+    example(
+        r###"mise settings set --local experimental=true"###,
+        help = "Enable experimental features in the project config"
+    ),
+    verbatim_doc_comment
+)]
 pub(super) struct SettingsSet {
     /// The setting to set
     #[usage()]
     pub setting: String,
-    /// The value to set (optional if provided as KEY=VALUE)
+    /// The value to set (or pass SETTING=VALUE)
     pub value: Option<String>,
-    /// Use the local config file instead of the global one
+    /// Write to the nearest project config instead of the global config
+    ///
+    /// The nearest project config is the lowest-precedence TOML file in the
+    /// nearest directory that has one, or ./mise.toml.
     #[usage(long, short)]
     pub local: bool,
 }
@@ -58,6 +75,22 @@ pub(super) fn set(mut key: &str, value: &str, add: bool, local: bool) -> Result<
             meta.env.unwrap_or("matching MISE_*")
         );
     }
+    // Early-init settings decide which config files load, so mise reads them only from
+    // `miserc.toml` files and the environment.
+    if meta.rc {
+        let miserc = if local {
+            ".miserc.toml".to_string()
+        } else {
+            file::display_path(dirs::CONFIG.join("miserc.toml"))
+        };
+        bail!(
+            "{key} cannot be set in a config file: mise reads it before config files load. Set it in {miserc} or the {} environment variable instead.",
+            meta.env.unwrap_or("matching MISE_*")
+        );
+    }
+
+    // Loading settings rejects any other value, so writing one would break every command.
+    validate_setting_choice(key, value)?;
 
     let value = match meta.type_ {
         SettingsType::Bool => parse_bool(value)?,
@@ -78,6 +111,17 @@ pub(super) fn set(mut key: &str, value: &str, add: bool, local: bool) -> Result<
     } else {
         config::global_config_path()
     };
+    // The loader strips these from every non-global config, so writing one there is a no-op.
+    if meta.global_only && local && !config::is_global_config(&path) {
+        let env = meta
+            .env
+            .map(|env| format!(", or use the {env} environment variable"))
+            .unwrap_or_default();
+        bail!(
+            "{key} cannot be set in {}: mise ignores it outside the global config for security reasons. Drop --local to set it in the global config{env}.",
+            file::display_path(&path)
+        );
+    }
     file::create_dir_all(path.parent().unwrap())?;
     let raw = file::read_to_string(&path).unwrap_or_default();
     let mut config: DocumentMut = raw.parse()?;

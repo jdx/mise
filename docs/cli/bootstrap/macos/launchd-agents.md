@@ -12,8 +12,11 @@ description: "Manage macOS LaunchAgents from `[bootstrap.macos.launchd.agents]`"
 
 Manage macOS LaunchAgents from `[bootstrap.macos.launchd.agents]`
 
-Installs plist files and reconciles agents in the current GUI login domain. Run
-from the intended user session; an SSH-only session may not have that domain.
+Writes each agent to ~/Library/LaunchAgents/dev.mise.&lt;name>.plist and loads
+it into your GUI login session. Run it as the user who owns the agents; an
+SSH session without a GUI login may not be able to load them. For a user
+service that also works on Linux and Windows, use `[bootstrap.services]`
+with `scope = "user"`.
 
 ## Flags
 - **`-h --help`** — Print help

@@ -1,65 +1,19 @@
 ---
-description: "Use mise to select Node.js and your package manager, then run the scripts and dependencies declared by the project."
+description: "Pin Node.js and a package manager per project, run package scripts as tasks, and replace Corepack."
 ---
 
-# Node.js Cookbook
+# Node.js
 
-Use mise to select [Node.js](/lang/node.html) and your package manager, then run
-the scripts and dependencies declared by the project.
+Pin Node.js and your package manager for a project, and run its package scripts
+as mise tasks. For installing and selecting Node.js itself, see
+[Node.js](/lang/node.html).
 
-## Getting started with Node.js
+## Wrap npm scripts in tasks {#example-node-js-project}
 
-To install Node.js in a directory, run:
-
-```shell
-mise use node
-```
-
-This installs the latest version of Node.js and creates a `mise.toml` file with the following content:
-
-```toml
-[tools]
-node = "latest"
-```
-
-To install Node.js globally instead (for example, node v26), run:
-
-```shell
-mise use -g node@26
-```
-
-## Add node modules binaries to the PATH
-
-When you install Node.js packages listed in `package.json`, you typically need `npx` or the full path to run their binaries. For example:
-
-```shell
-mise exec -- npm install --save-dev eslint
-eslint --version # doesn't work
-npx eslint --version # works
-```
-
-With `mise`, you can add the node modules binaries to the `PATH`, which makes CLIs installed with npm available without `npx`.
-
-```toml [mise.toml]
-[env]
-_.path = ['{{config_root}}/node_modules/.bin']
-```
-
-Example:
-
-```shell
-mise exec -- npm install --save-dev eslint
-mise exec -- eslint --version # works without shell activation
-```
-
-With shell activation, `eslint --version` also works directly.
-
-## Example Node.js Project
-
-This recipe expects a `package.json` with `start`, `lint`, `test`, and `build`
-scripts, plus a committed `package-lock.json`. Keep ESLint, TypeScript, and test
-runners in the project's `devDependencies`, so npm's lockfile controls their
-versions alongside the packages they use.
+This recipe expects a `package.json` with `start`, `lint`, `test` and `build`
+scripts, plus a committed `package-lock.json`. Keep ESLint, TypeScript and test
+runners in the project's `devDependencies`, so the lockfile controls their
+versions along with the packages they use.
 
 ```toml [mise.toml]
 [tools]
@@ -94,112 +48,132 @@ alias = "b"
 run = "npm run build"
 ```
 
+The tasks always run with the pinned Node.js, behave the same in CI, and show up
+next to other languages' tasks in `mise tasks`.
+[`NODE_ENV = { default = "development" }`](/environments/#defaults) sets the
+variable only when it is not already set, so CI can still export
+`NODE_ENV=production`.
+
 Run `mise run install` after cloning the repository, then `mise run test` or
-`mise run start`. npm scripts already put `node_modules/.bin` on `PATH`, so these
-tasks do not need a separate path directive. For a new project without a lockfile,
-run `mise exec -- npm install` once and commit the resulting lockfile.
+`mise run start`. npm scripts put `node_modules/.bin` on `PATH` themselves, so
+these tasks need no path directive. For a new project without a lockfile, run
+`mise exec -- npm install` once and commit `package-lock.json`.
 
-## Example with `pnpm`
+## Run package binaries without npx {#add-node-modules-binaries-to-the-path}
 
-This example uses `pnpm` as the package manager. Merge the following field into
-your existing `package.json`, which must also define a `dev` script:
+Binaries from `devDependencies` live in `node_modules/.bin`, which is not on
+`PATH`, so you normally call them through `npx`:
+
+```sh
+mise exec -- npm install --save-dev eslint
+mise exec -- npx eslint --version
+```
+
+Add that directory to `PATH` with [`_.path`](/environments/#env-path):
+
+```toml [mise.toml]
+[env]
+_.path = ["{{config_root}}/node_modules/.bin"]
+```
+
+Now `mise exec -- eslint --version` works, and so does `eslint --version` in a
+shell with mise activated.
+
+## Install pnpm dependencies before a task {#example-with-pnpm}
+
+This example uses pnpm, with its version declared in `package.json`. Merge this
+field into a `package.json` that also defines a `dev` script:
 
 ```json [package.json]
 {
   "devEngines": {
     "packageManager": {
       "name": "pnpm",
-      "version": "10.15.0"
+      "version": "12.9.1"
     }
   }
 }
 ```
 
-The install task is skipped when `package.json`, `pnpm-lock.yaml`, and
-`mise.toml` have not changed and `node_modules/.pnpm/lock.yaml` exists and is up
-to date.
-
 ```toml [mise.toml]
 [tools]
-node = '24'
+node = "24"
 
 [settings]
 # Read the pnpm version from package.json
-idiomatic_version_file_enable_tools = ['pnpm']
-
-[env]
-_.path = ['{{config_root}}/node_modules/.bin']
+idiomatic_version_file_enable_tools = ["pnpm"]
 
 [tasks.pnpm-install]
-description = 'Installs dependencies with pnpm'
-run = 'pnpm install'
-sources = ['package.json', 'pnpm-lock.yaml', 'mise.toml']
-outputs = ['node_modules/.pnpm/lock.yaml']
+description = "Install dependencies with pnpm"
+run = "pnpm install"
+sources = ["package.json", "pnpm-lock.yaml", "mise.toml"]
+outputs = ["node_modules/.pnpm/lock.yaml"]
 
 [tasks.dev]
-description = 'Calls your dev script in `package.json`'
-run = 'node --run dev'
-depends = ['pnpm-install']
+description = "Run the dev script from package.json"
+run = "node --run dev"
+depends = ["pnpm-install"]
 ```
 
-Run `mise run dev` to install the selected tools and prepare dependencies before
-starting the existing application:
+`mise run dev` installs the pinned Node.js and the pnpm version from
+`package.json`, runs `pnpm install` if `package.json`, `pnpm-lock.yaml` or
+`mise.toml` changed since `node_modules/.pnpm/lock.yaml` was last written, then
+runs `node --run dev`. `node --run` puts `node_modules/.bin` on `PATH` for the
+script, so the project needs no `_.path` entry.
 
-- `mise` will install the correct version of Node.js
-- `mise` will install the `pnpm` version declared in `package.json`
-- `pnpm install` runs when its sources or outputs are stale, before `node --run dev`
+This [freshness check](/tasks/caching.html) compares modification times and does
+not inspect the rest of `node_modules`. If dependencies are missing or damaged,
+run `mise run --force pnpm-install`.
 
-The timestamp check does not verify every file in `node_modules`. If dependencies
-are missing or damaged, run `mise run --force pnpm-install`.
+Two alternatives handle the freshness check for you: the experimental
+[`[deps.pnpm]`](/dev-tools/deps.html) provider, or aube, described next.
 
-## Replacing Corepack
+## Run projects with aube {#run-projects-with-aube}
 
-mise can install and select npm, pnpm, and Yarn without Corepack. The simplest
-setup is to declare both Node.js and the package manager in `mise.toml`:
+[aube](https://aube.sh/) is a Node.js package manager that reads and writes
+existing npm, pnpm, Yarn and Bun lockfiles in place, so you can try it in a
+project without migrating the lockfile. Its `aubr` command runs a package
+script and first installs dependencies when they are missing or stale; when
+they are current, it skips the install.
+
+Install it with mise, then run an existing package script:
+
+```sh
+mise use aube
+mise exec -- aubr test
+```
+
+With aube, the pnpm example above needs no install task: a task with
+`run = "aubr dev"` replaces both tasks. See
+[aube's security overview](https://aube.sh/security) for its release-age,
+trust-policy, malicious-package and lifecycle-script protections.
+
+## Replace Corepack {#replacing-corepack}
+
+Node.js 25 and later no longer include Corepack, and earlier versions ship it
+disabled. mise installs and selects npm, pnpm and Yarn as tools, so a project
+does not need Corepack to get the package manager it declares. The simplest
+setup declares both Node.js and the package manager in `mise.toml`:
 
 ```toml [mise.toml]
 [tools]
-node = '24'
-pnpm = '10.15.0'
+node = "24"
+pnpm = "12"
 ```
 
-To keep `package.json` as the package-manager version source, enable its
-[idiomatic version file](/configuration.html#idiomatic-version-files) support:
+To keep `package.json` as the source of the version, enable it as an
+[idiomatic version file](/dev-tools/versions.html#idiomatic-version-files) for
+that package manager with
+[`idiomatic_version_file_enable_tools`](/configuration/settings.html#idiomatic_version_file_enable_tools).
+[Package-manager versions](/lang/node.html#package-manager-versions-in-package-json)
+lists the fields mise reads, how it verifies a checksum, and what happens when a
+repository declares no version.
 
-```json [package.json]
-{
-  "packageManager": "pnpm@10.15.0+sha224.88208eb7c2e7de6ed534fa298248dee656723116995eda4b508fd0c9"
-}
-```
+Run `mise install` to install the declared versions. In a shell with
+`mise activate`, mise's command-not-found handler (and an existing shim, if an
+earlier version is installed) also installs a missing configured package
+manager the first time you run it. This uses the
+[`not_found_auto_install`](/configuration/settings.html#not_found_auto_install)
+setting.
 
-```toml [mise.toml]
-[tools]
-node = '24'
-
-[settings]
-idiomatic_version_file_enable_tools = ['pnpm']
-```
-
-Run `mise install` to install the declared versions. With shell activation,
-mise's shims can also install a missing configured package manager when it is
-first invoked. This uses
-[`not_found_auto_install`](/configuration/settings.html#not_found_auto_install),
-which is enabled by default.
-
-Corepack-style `+sha1`, `+sha224`, `+sha256`, `+sha384`, and `+sha512` suffixes
-are verified against the exact package-manager artifact before installation.
-For npm, pnpm, and Yarn Classic this is the registry tarball; for modern Yarn it
-is Yarn's published CLI file. Without a checksum, mise uses the package
-manager's preferred registry backend (usually Aqua) and that backend's normal
-verification.
-
-Enable each package manager that a repository may declare:
-
-```toml [mise.toml]
-[settings]
-idiomatic_version_file_enable_tools = ['npm', 'pnpm', 'yarn']
-```
-
-Unlike Corepack, mise does not supply a built-in "known good" package-manager
-version when a project declares none. Configure the version in `mise.toml`,
-`package.json`, or your global mise config instead.
+To keep using Corepack's own shims, see [Corepack](/lang/node.html#corepack).

@@ -15,30 +15,54 @@ use tokio::task::JoinSet;
 
 /// Test that a tool installs and runs
 ///
-/// Includes newly published releases by disabling the global minimum release age
-/// for this command.
+/// Installs each tool and runs the `test` command from its registry entry
+/// (registry/<tool>.toml), checking the output. Use it when adding or changing
+/// a registry entry. The minimum release age is ignored so that new releases
+/// can be tested right away.
+///
+/// Warning: before testing, this deletes every installed version of each tested
+/// tool, along with its cache and downloads directories, so the test installs
+/// from scratch. To keep your installs and caches, run it with throwaway
+/// MISE_DATA_DIR and MISE_CACHE_DIR directories.
+///
+/// Registry tools with no `test` entry, or that registry/ marks as unsupported
+/// on this OS, are skipped without output, and the command still exits 0. Pass
+/// --include-non-defined to run `<tool> --version` for tools with no `test`
+/// entry.
 #[derive(Debug, Clone, usage_rs::Args)]
-#[usage(verbatim_doc_comment, example(r###"mise test-tool ripgrep"###))]
+#[usage(
+    verbatim_doc_comment,
+    example(
+        r###"mise test-tool ripgrep"###,
+        help = "Reinstall ripgrep and run its registry test"
+    ),
+    example(
+        r###"MISE_DATA_DIR=$(mktemp -d) MISE_CACHE_DIR=$(mktemp -d) mise test-tool --all-config"###,
+        help = "Test every tool in the config without touching your installs"
+    )
+)]
 pub(crate) struct TestTool {
-    /// Tool(s) to test
+    /// Tools to test
     #[usage(required_unless = ["all", "all_config"])]
     pub tools: Option<Vec<ToolArg>>,
-    /// Test every tool specified in registry/
+    /// Test every registry tool that defines a `test` and supports this OS
     #[usage(long, short, conflicts = "tools", conflicts = "all_config")]
     pub all: bool,
-    /// Number of tool tests to run in parallel
-    /// Values below 1 are treated as 1
-    /// [default: 4]
+    /// Number of tools to test in parallel (default 4)
     #[usage(long, short, env = "MISE_TEST_TOOL_JOBS", verbatim_doc_comment)]
     pub jobs: Option<usize>,
     /// Test all tools specified in config files
     #[usage(long, conflicts = "tools", conflicts = "all")]
     pub all_config: bool,
-    /// Also test tools not defined in registry/, guessing how to test them
+    /// Also test registry tools that have no `test` entry by running `<tool> --version`
+    ///
+    /// These always report a failure that shows the output, for use when writing
+    /// a test.
     #[usage(long)]
     pub include_non_defined: bool,
-    /// Connect backend install command stdin/stdout/stderr directly to the terminal.
-    /// Implies `--jobs=1`
+    /// Connect the install commands' stdin, stdout, and stderr to the terminal
+    ///
+    /// Implies `--jobs=1`.
     #[usage(long, overrides = "jobs")]
     pub raw: bool,
 }

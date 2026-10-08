@@ -11,18 +11,23 @@ description: "Append a value to an array setting"
 
 Append a value to an array setting
 
-Adds the value to an array setting such as `disable_hints`, keeping existing entries.
-This modifies ~/.config/mise/config.toml by default, or the local config with `--local`.
+Adds the value to an array setting such as `disable_hints`, keeping existing
+entries. Writes ~/.config/mise/config.toml, or the nearest project config
+with `--local`.
 
 ## Arguments
-- **`<SETTING>`** — The setting to set
-- **`[VALUE]`** — The value to set (optional if provided as KEY=VALUE)
+- **`<SETTING>`** — The array setting to append to
+- **`[VALUE]`** — The value to append (or pass SETTING=VALUE)
 
 ## Flags
-- **`-l --local`** — Use the local config file instead of the global one
+- **`-l --local`** — Write to the nearest project config instead of the global config
+
+  The nearest project config is the lowest-precedence TOML file in the nearest directory that has one, or ./mise.toml.
 - **`-h --help`** — Print help
 
 ## Examples
+
+Stop showing the python_multi hint
 
 ```
 mise settings add disable_hints python_multi

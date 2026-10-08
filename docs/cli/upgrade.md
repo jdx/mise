@@ -12,120 +12,91 @@ description: "Upgrade outdated tools"
 
 Upgrade outdated tools
 
-By default, this keeps the range specified in mise.toml: with node@20 set, it upgrades to
-the latest 20.x.x available. Use `--bump` to upgrade to the latest version overall and
-rewrite the version in mise.toml.
+By default, keeps the range in mise.toml: with `node = "20"`, it installs the
+newest 20.x release. Use `--bump` to upgrade to the newest release overall
+and update the version in mise.toml. Also updates mise.lock when lockfiles
+are enabled; see <https://mise.jdx.dev/dev-tools/mise-lock.html>
 
-This also updates mise.lock if lockfiles are enabled, see <https://mise.jdx.dev/configuration/settings.html#lockfile>
+The version you upgraded from is removed after the `upgrade.prune_after`
+setting's grace period unless a tracked config or tool stub still uses it.
+Pass `--prune` to remove it now or `--no-prune` to keep it.
 
 ## Arguments
-- **`[INSTALLED_TOOL@VERSION]…`** — Tool(s) to upgrade
-  e.g.: node@20 python@3.10
-  If not specified, all current tools will be upgraded
+- **`[INSTALLED_TOOL@VERSION]…`** — Tools to upgrade, such as node@20 python@3.10
+
+  Upgrades every configured tool when omitted.
 
 ## Flags
-- **`-b --bump`** — Upgrade to the latest version available, bumping the version in mise.toml
+- **`-b --bump`** — Upgrade past the configured range to the newest release, and update the config to match
 
-  For example, if you have `node = "20.0.0"` in your mise.toml but 22.1.0 is the latest available,
-  this will install 22.1.0 and set `node = "22.1.0"` in your config.
-
-  With a bare tool, it keeps the same precision as what was there before, so if you instead had
-  `node = "20"`, it would change your config to `node = "22"`. When an explicit selector is
-  provided (`node@latest`, `node@3`, or `node@prefix:3`), that selector is persisted instead.
-  For version selectors, `settings.pin` persists the resolved concrete version. Requests from non-writable
-  sources are not persisted. For example, `mise upgrade node@latest --bump` writes `latest`.
+  The config keeps its precision: `node = "20"` becomes `node = "22"`, and `node = "20.0.0"` becomes `node = "22.1.0"`. If you name a version on the command line (`node@latest`, `node@3`, or `node@prefix:3`), that request is written instead; `mise upgrade node@latest --bump` writes `latest`. With the `pin` setting on, a version request such as `node@3` is written as the version it resolved to. Requests that do not come from a config file mise can write, such as `MISE_NODE_VERSION`, are upgraded but not written.
 - **`-i --interactive`** — Choose which tools to upgrade from a multiselect menu
-- **`-j --jobs <JOBS>`** — Number of jobs to run in parallel
-  Values below 1 are treated as 1
-  Defaults to the `jobs` setting
+- **`-j --jobs <JOBS>`** — Number of jobs to run in parallel (default: the `jobs` setting)
 
   **Environment Variable:** `MISE_JOBS`
-- **`-n --dry-run`** — Print what would be done without doing it
-- **`-x --exclude <INSTALLED_TOOL>`** — Tool(s) to exclude from upgrading
-  e.g.: go python
-- **`--dry-run-code`** — Like --dry-run but exits with code 1 if there are outdated tools
+- **`-n --dry-run`** — Show what would change without changing anything
+- **`-x --exclude <INSTALLED_TOOL>`** — Tools to exclude from upgrading, such as go python
+- **`--dry-run-code`** — Like --dry-run, but exit with code 1 if there are outdated tools
 
-  This is useful for scripts to check if tools need to be upgraded.
-- **`--inactive`** — Upgrade all tools, including installed-but-inactive tools not present in the current config
-- **`--local`** — Only upgrade tools defined in local config files
+  Use it in scripts that check whether tools need upgrading.
+- **`--inactive`** — Also upgrade installed tools that the current config does not request
+- **`--local`** — Only upgrade tools defined in project config files
 
-  This will only upgrade tools that are defined in project-local mise.toml and
-  will skip tools defined in the global config (~/.config/mise/config.toml).
+  Skips tools defined in the global config (~/.config/mise/config.toml) and tools set through `MISE_<TOOL>_VERSION` environment variables.
 - **`--minimum-release-age <MINIMUM_RELEASE_AGE>`** — Only upgrade to versions released before this date or older than this duration
 
-  Supports absolute dates like "2024-06-01" and relative durations like "90d" or "1y".
-  This can be useful for reproducibility or security purposes.
+  Supports absolute dates such as "2024-06-01" and relative durations such as "90d" or "1y".
 
-  This only affects fuzzy version matches like "20" or "latest".
-  Explicitly pinned versions like "22.5.0" are not filtered.
-- **`--monorepo`** — Placeholder for future monorepo upgrades; `mise upgrade --monorepo` is not implemented yet.
+  Applies only to requests that can match several versions, such as "20" or "latest". Exact versions such as "22.5.0" are not filtered.
 - **`--no-prune`** — Do not uninstall the versions that were upgraded away from
 
-  The old version is left in place and is not scheduled for removal. Use this when something
-  outside mise points at the install directory.
+  The old version is left in place and is not scheduled for removal. Use this when something outside mise points at the install directory.
 
   Set `upgrade.auto_prune = false` to make this the default.
 - **`--prune`** — Immediately uninstall the versions that were upgraded away from
 
-  Use this to bypass `upgrade.prune_after`, or to override
-  `upgrade.auto_prune = false` for a single run.
-- **`--raw`** — Connect backend install command stdin/stdout/stderr directly to the terminal. Implies `--jobs=1`
+  Use this to bypass `upgrade.prune_after`, or to override `upgrade.auto_prune = false` for a single run.
+- **`--raw`** — Connect the install commands' stdin, stdout, and stderr to the terminal
+
+  Implies `--jobs=1`.
 - **`-h --help`** — Print help
 
 ## Examples
 
-Upgrades node to the latest version matching the range in mise.toml
-
-```
-mise upgrade node
-```
-
-Upgrades node to the latest version and bumps the version in mise.toml
-
-```
-mise upgrade node --bump
-```
-
-Upgrades all configured tools within their current requests
+Upgrade every configured tool within its range
 
 ```
 mise upgrade
 ```
 
-Upgrades all tools to the latest versions and bumps the version in mise.toml
+Upgrade only node
+
+```
+mise upgrade node
+```
+
+Upgrade every tool to its newest release and update mise.toml
 
 ```
 mise upgrade --bump
 ```
 
-Just print what would be done, don't actually do it
+Show what would be upgraded
 
 ```
 mise upgrade --dry-run
 ```
 
-Upgrades node and python within their current requests
-
-```
-mise upgrade node python
-```
-
-Upgrade all tools except go
+Upgrade everything except go
 
 ```
 mise upgrade --exclude go
 ```
 
-Show a multiselect menu to choose which tools to upgrade
+Choose tools from a menu
 
 ```
 mise upgrade --interactive
-```
-
-Only upgrade tools defined in local mise.toml, not global ones
-
-```
-mise upgrade --local
 ```
 
 Deprecation:
@@ -137,6 +108,6 @@ After removal, `-l` will become shorthand for `--local`. Use `-b` or `--bump` in
 
 ## Related documentation
 
-- [Development tools](/dev-tools/).
+- [Upgrading tools](/dev-tools/#upgrade-tools).
 - [All commands](/cli/).
 - [Global flags and argument syntax](/cli/#global-flags).

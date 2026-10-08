@@ -16,26 +16,31 @@ environment-specific override. Use `--file` to select an existing project file,
 or `--global`/`--system` to edit or create those config files.
 
 This edits configuration without installing tools. Use `mise use` to install and
-select a version together. Known settings use their declared type; other values
-are strings or booleans unless `--type` is given. Use `--type string` when a value
-such as `true` should remain literal text.
+select a version together. For environment variables and settings, `mise set`
+and `mise settings set` are shorter, but they choose their file differently:
+`mise set` writes the nearest `mise.toml`, and `mise settings set` writes the
+global config unless you pass `--local`.
+
+Known settings use their declared type; boolean settings accept `true`,
+`false`, `yes`, `no`, `1`, and `0`. For other keys, `true` and `false` become
+booleans and every other value is stored as a string. Use `--type bool` to
+store `yes`, `no`, `1` or `0` as a boolean, `--type string` to store `true`
+or `false` as text, and `--type integer` for a number.
 
 ## Arguments
-- **`<KEY>`** — Dotted key path to set, e.g. `tools.python`
+- **`<KEY>`** — Dotted key path to set, such as `tools.python`
 - **`[VALUE]`** — The value to set the key to (optional if provided as KEY=VALUE)
 
 ## Flags
-- **`-f --file <FILE>`** — The path to the mise.toml file to edit
+- **`-f --file <FILE>`** — Config file to edit, or a directory whose config file to edit
 
-  Can be a file path or directory. If a directory is provided, the config file in that directory is used.
-
-  If not provided, the highest-precedence loaded TOML file is used
+  For a directory, mise edits the TOML config file already there, such as `.mise.toml`, or `mise.toml` when there is none. Defaults to the highest-precedence loaded TOML file.
 
   **Aliases:** `--path`
-- **`-g --global`** — Edit the global config file.
-- **`--system`** — Edit the system config file.
-- **`--append`** — Append the value without duplicating an existing entry.
-- **`--remove`** — Remove the value from an existing collection.
+- **`-g --global`** — Edit the global config file
+- **`--system`** — Edit the system config file
+- **`--append`** — Append the value to a list without duplicating an existing entry
+- **`--remove`** — Remove the value from an existing list
 - **`-t --type <TYPE>`** — TOML type to store the value as; inferred from the value by default
 
   **Choices:** `infer`, `string`, `integer`, `float`, `bool`, `list`, `set`
@@ -45,19 +50,46 @@ such as `true` should remain literal text.
 
 ## Examples
 
+Request python 3.13
+
 ```
-mise config set tools.python 3.12
-mise config set settings.always_keep_download true
-mise config set env.TEST_ENV_VAR ABC
-mise config set settings.disable_tools node,rust
-mise config set --append env._.path ~/.local/bin
-mise config set --remove env._.path ~/.local/bin
+mise config set tools.python 3.13
 ```
 
-Type for `settings` is inferred
+Set an environment variable
+
+```
+mise config set env.NODE_ENV production
+```
+
+Settings get their declared type, here an integer
 
 ```
 mise config set settings.jobs 4
+```
+
+List settings take comma-separated values
+
+```
+mise config set settings.disable_tools node,rust
+```
+
+Add a PATH entry unless it is already there
+
+```
+mise config set --append env._.path ~/.local/bin
+```
+
+Remove that PATH entry
+
+```
+mise config set --remove env._.path ~/.local/bin
+```
+
+Edit the global config
+
+```
+mise config set -g settings.experimental true
 ```
 
 <!-- generated reference navigation -->

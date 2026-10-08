@@ -622,18 +622,21 @@ pub(crate) fn in_tool_env(command: &str) -> String {
 
 /// Probes are separate processes: wrapping the daemon does not give them its
 /// project environment. Preserve structured probe options while wrapping `run`.
+/// An argv probe, which pitchfork starts without a shell, stays an argv.
 pub(crate) fn wrap_probe_commands(table: &mut toml::Table) {
     for key in ["ready_cmd", "health_cmd"] {
         let command = match table.get_mut(key) {
-            Some(toml::Value::String(command)) => Some(command),
-            Some(toml::Value::Table(fields)) => match fields.get_mut("run") {
-                Some(toml::Value::String(command)) => Some(command),
-                _ => None,
-            },
-            _ => None,
+            Some(toml::Value::Table(fields)) => fields.get_mut("run"),
+            command => command,
         };
-        if let Some(command) = command {
-            *command = in_tool_env(command);
+        match command {
+            Some(toml::Value::String(command)) => *command = in_tool_env(command),
+            Some(toml::Value::Array(argv)) => {
+                let mise = crate::env::MISE_BIN.to_string_lossy().into_owned();
+                let wrapper = [mise, "x".into(), "--".into()].map(toml::Value::String);
+                argv.splice(0..0, wrapper);
+            }
+            _ => {}
         }
     }
 }

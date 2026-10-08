@@ -5,15 +5,19 @@ use eyre::Result;
 use indoc::formatdoc;
 use std::path::MAIN_SEPARATOR_STR;
 
-/// Edit a task with $EDITOR
+/// Open a task in your editor
 ///
-/// The task will be created as a standalone script if it does not already exist.
+/// Opens the file that defines the task in `$VISUAL` or `$EDITOR`: the script
+/// for a file task, or the config file for a TOML task. If no task has that
+/// name, mise creates an executable bash script for it in the project's task
+/// directory (for example `mise-tasks/`) and opens that. `--path` prints the
+/// file's path instead of opening it; a missing task is still created.
 #[derive(Debug, usage_rs::Args)]
 #[usage(
-    verbatim_doc_comment,
+    example("mise tasks edit build", help = "Edit the build task"),
     example(
-        r###"mise tasks edit build
-mise tasks edit test"###
+        "mise tasks edit --path build",
+        help = "Print the build task's file path"
     )
 )]
 pub(super) struct TasksEdit {
@@ -21,8 +25,8 @@ pub(super) struct TasksEdit {
     #[usage()]
     task: String,
 
-    /// Display the path to the task instead of editing it
-    #[usage(long, short, verbatim_doc_comment)]
+    /// Print the task's file path instead of opening it
+    #[usage(long, short)]
     path: bool,
 }
 

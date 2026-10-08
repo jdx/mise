@@ -2,7 +2,7 @@ use crate::file::display_path;
 use eyre::bail;
 use std::path::PathBuf;
 
-/// Display a value from one mise TOML file
+/// Print a value from one mise TOML file
 ///
 /// Reads the highest-precedence loaded TOML file by default. Select another with
 /// `--file`, `--global`, or `--system`. This reads stored values, not the merged or
@@ -11,28 +11,30 @@ use std::path::PathBuf;
 #[usage(
     example(
         r###"mise config get tools.python
-3.12"###
+3.13"###,
+        help = "Print the python request"
     ),
+    example("mise config get", help = "Print the whole file"),
     verbatim_doc_comment
 )]
 pub(super) struct ConfigGet {
-    /// Dotted key path to display, e.g. `tools.python`; omit to print the whole file
+    /// Dotted key path to print, such as `tools.python`; omit to print the whole file
     #[usage(complete = complete_key)]
     pub key: Option<String>,
 
-    /// The path to the mise.toml file to read
+    /// Config file to read, or a directory whose config file to read
     ///
-    /// Can be a file path or directory. If a directory is provided, the config file in that directory is used.
-    ///
-    /// If not provided, the highest-precedence loaded TOML file is used
+    /// For a directory, mise reads the TOML config file already there, such as
+    /// `.mise.toml`, or `mise.toml` when there is none. Defaults to the
+    /// highest-precedence loaded TOML file.
     #[usage(short, long, visible_alias = "path", value_hint = usage_rs::ValueHint::AnyPath)]
     pub file: Option<PathBuf>,
 
-    /// Read the global config file.
+    /// Read the global config file
     #[usage(long, short = 'g', conflicts = ["file", "system"])]
     pub global: bool,
 
-    /// Read the system config file.
+    /// Read the system config file
     #[usage(long, conflicts = ["file", "global"])]
     pub system: bool,
 }

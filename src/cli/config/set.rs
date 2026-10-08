@@ -12,54 +12,74 @@ use std::path::PathBuf;
 /// or `--global`/`--system` to edit or create those config files.
 ///
 /// This edits configuration without installing tools. Use `mise use` to install and
-/// select a version together. Known settings use their declared type; other values
-/// are strings or booleans unless `--type` is given. Use `--type string` when a value
-/// such as `true` should remain literal text.
+/// select a version together. For environment variables and settings, `mise set`
+/// and `mise settings set` are shorter, but they choose their file differently:
+/// `mise set` writes the nearest `mise.toml`, and `mise settings set` writes the
+/// global config unless you pass `--local`.
+///
+/// Known settings use their declared type; boolean settings accept `true`,
+/// `false`, `yes`, `no`, `1`, and `0`. For other keys, `true` and `false` become
+/// booleans and every other value is stored as a string. Use `--type bool` to
+/// store `yes`, `no`, `1` or `0` as a boolean, `--type string` to store `true`
+/// or `false` as text, and `--type integer` for a number.
 #[derive(Debug, usage_rs::Args)]
 #[usage(
+    example("mise config set tools.python 3.13", help = "Request python 3.13"),
     example(
-        r###"mise config set tools.python 3.12
-mise config set settings.always_keep_download true
-mise config set env.TEST_ENV_VAR ABC
-mise config set settings.disable_tools node,rust
-mise config set --append env._.path ~/.local/bin
-mise config set --remove env._.path ~/.local/bin"###
+        "mise config set env.NODE_ENV production",
+        help = "Set an environment variable"
     ),
     example(
-        r###"mise config set settings.jobs 4"###,
-        help = r###"Type for `settings` is inferred"###
+        "mise config set settings.jobs 4",
+        help = "Settings get their declared type, here an integer"
+    ),
+    example(
+        "mise config set settings.disable_tools node,rust",
+        help = "List settings take comma-separated values"
+    ),
+    example(
+        "mise config set --append env._.path ~/.local/bin",
+        help = "Add a PATH entry unless it is already there"
+    ),
+    example(
+        "mise config set --remove env._.path ~/.local/bin",
+        help = "Remove that PATH entry"
+    ),
+    example(
+        "mise config set -g settings.experimental true",
+        help = "Edit the global config"
     ),
     verbatim_doc_comment
 )]
 pub(super) struct ConfigSet {
-    /// Dotted key path to set, e.g. `tools.python`
+    /// Dotted key path to set, such as `tools.python`
     #[usage(complete = complete_key)]
     pub key: String,
 
     /// The value to set the key to (optional if provided as KEY=VALUE)
     pub value: Option<String>,
 
-    /// The path to the mise.toml file to edit
+    /// Config file to edit, or a directory whose config file to edit
     ///
-    /// Can be a file path or directory. If a directory is provided, the config file in that directory is used.
-    ///
-    /// If not provided, the highest-precedence loaded TOML file is used
+    /// For a directory, mise edits the TOML config file already there, such as
+    /// `.mise.toml`, or `mise.toml` when there is none. Defaults to the
+    /// highest-precedence loaded TOML file.
     #[usage(short, long, visible_alias = "path", value_hint = usage_rs::ValueHint::AnyPath)]
     pub file: Option<PathBuf>,
 
-    /// Edit the global config file.
+    /// Edit the global config file
     #[usage(long, short = 'g', conflicts = ["file", "system"])]
     pub global: bool,
 
-    /// Edit the system config file.
+    /// Edit the system config file
     #[usage(long, conflicts = ["file", "global"])]
     pub system: bool,
 
-    /// Append the value without duplicating an existing entry.
+    /// Append the value to a list without duplicating an existing entry
     #[usage(long, conflicts = "remove")]
     pub append: bool,
 
-    /// Remove the value from an existing collection.
+    /// Remove the value from an existing list
     #[usage(long, conflicts = "append")]
     pub remove: bool,
 
@@ -157,6 +177,8 @@ impl ConfigSet {
             }
         }
 
+        // A setting that takes a bool or a string reads yes/no/1/0 as booleans itself, so
+        // storing them as booleans keeps their meaning.
         let infer_bool_or_string = |value: &str| match value {
             "true" | "yes" | "1" => TomlValueTypes::Bool,
             "false" | "no" | "0" => TomlValueTypes::Bool,
@@ -181,7 +203,7 @@ impl ConfigSet {
                         SettingsType::SetString => TomlValueTypes::Set,
                         SettingsType::IndexMap => TomlValueTypes::String,
                     },
-                    None => infer_bool_or_string(&value),
+                    None => infer_unknown_key(&value),
                 }
             }
             _ => self.type_,
@@ -191,7 +213,7 @@ impl ConfigSet {
             TomlValueTypes::String => toml_edit::value(value),
             TomlValueTypes::Integer => toml_edit::value(value.parse::<i64>()?),
             TomlValueTypes::Float => toml_edit::value(value.parse::<f64>()?),
-            TomlValueTypes::Bool => toml_edit::value(value.parse::<bool>()?),
+            TomlValueTypes::Bool => toml_edit::value(parse_bool(&value)?),
             TomlValueTypes::List => {
                 let mut list = toml_edit::Array::new();
                 for item in value.split(',').map(|s| s.trim()) {
@@ -233,6 +255,28 @@ impl ConfigSet {
         }
         std::fs::write(&file, raw)?;
         Ok(())
+    }
+}
+
+/// Infer the type of a key that is not a setting, such as `env.PORT` or a task's env.
+///
+/// Only the TOML literals `true` and `false` become booleans. Anything else, including `yes`,
+/// `no`, `1`, and `0`, stays a string: `env.DEBUG = false` unsets `DEBUG` and `env.PORT = true`
+/// exports `PORT=true`, so reading those spellings as booleans would change what they mean.
+fn infer_unknown_key(value: &str) -> TomlValueTypes {
+    match value {
+        "true" | "false" => TomlValueTypes::Bool,
+        _ => TomlValueTypes::String,
+    }
+}
+
+/// Parse a boolean the way settings read one from the environment: `true`/`yes`/`1` and
+/// `false`/`no`/`0`, ignoring case and surrounding whitespace.
+fn parse_bool(value: &str) -> eyre::Result<bool> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "true" | "yes" | "1" => Ok(true),
+        "false" | "no" | "0" => Ok(false),
+        _ => bail!("invalid boolean '{value}': expected true, false, yes, no, 1, or 0"),
     }
 }
 
@@ -318,4 +362,38 @@ fn remove_value(
         table.remove(key);
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{TomlValueTypes, infer_unknown_key, parse_bool};
+
+    #[test]
+    fn parse_bool_accepts_the_spellings_settings_accept() {
+        for value in ["true", "yes", "1", "TRUE", " Yes "] {
+            assert!(parse_bool(value).unwrap(), "{value}");
+        }
+        for value in ["false", "no", "0", "False", "NO "] {
+            assert!(!parse_bool(value).unwrap(), "{value}");
+        }
+        for value in ["", "on", "2", "maybe"] {
+            assert!(parse_bool(value).is_err(), "{value}");
+        }
+    }
+
+    #[test]
+    fn unknown_keys_only_infer_literal_booleans() {
+        for value in ["true", "false"] {
+            assert!(
+                matches!(infer_unknown_key(value), TomlValueTypes::Bool),
+                "{value}"
+            );
+        }
+        for value in ["yes", "no", "1", "0", "TRUE", "False"] {
+            assert!(
+                matches!(infer_unknown_key(value), TomlValueTypes::String),
+                "{value}"
+            );
+        }
+    }
 }

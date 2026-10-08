@@ -9,19 +9,32 @@ use crate::secrets::{
 };
 use crate::ui::table;
 
-/// List the secret names this project's secrets source provides, without their values
+/// [experimental] List secret names from the project's secrets source
 ///
-/// Shows names and metadata only; values are never shown. The source is declared in the
-/// project's `mise.toml` with `[secrets.fnox]`.
+/// Shows names and metadata, never values. The source is declared in the
+/// project's `mise.toml` with `[secrets.fnox]`. A line describing the source
+/// goes to stderr and the table to stdout.
+///
+/// Columns:
+/// - ENV: the key's `env` setting in the source: true, exec, false, or - if unset
+/// - FILE: whether the value is handed over as a file
+/// - SCOPES: where mise can grant the key: run (tasks) and exec (`mise exec`)
+/// - TASKS: the tasks that request the key
+///
+/// A SCOPES value of - means the key cannot be granted. A file secret can be
+/// granted to tasks only, because `mise exec` cannot clean up the file after it
+/// hands the process over.
 #[derive(Debug, usage_rs::Args)]
 #[usage(
     visible_alias = "list",
     example(
         r###"mise secrets ls
-KEY                ENV    FILE  SCOPES  TASKS   DESCRIPTION
+KEY                ENV    FILE  SCOPES     TASKS   DESCRIPTION
+AWS_ACCESS_KEY_ID  -      no    run, exec          (lease aws)
 DATABASE_URL       true   no    run, exec  deploy  app database
-GCP_SA_JSON        exec   yes   run               service account
-SIGNING_KEY        false  no    -                 release signing key"###
+GCP_SA_JSON        exec   yes   run                service account
+SIGNING_KEY        false  no    -                  release signing key"###,
+        help = "List the secret names and how each can be granted"
     ),
     verbatim_doc_comment
 )]
@@ -30,7 +43,7 @@ pub(super) struct SecretsLs {
     #[usage(long, short = 'J')]
     pub json: bool,
 
-    /// Don't show table header
+    /// Do not print the table header
     #[usage(long)]
     pub no_header: bool,
 

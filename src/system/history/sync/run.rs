@@ -238,12 +238,15 @@ impl SyncRequest {
 
 /// The connected origin, or why there is none.
 pub fn origin() -> Result<OriginTomlConfig> {
+    if crate::system::history::local::active() {
+        bail!("local-only history is never shared with a setup repository");
+    }
     if let Some((_, origin)) = crate::system::history::config::origin()? {
         return Ok(origin);
     }
     // recorded when it was connected: a fresh machine's declaration may
     // still be on its way in the configuration being pulled
-    let status = read_status(&crate::dirs::STATE)?;
+    let status = read_status(&super::super::local::root())?;
     if let (Some(url), Some(branch), false) =
         (status.origin_url, status.origin_branch, status.disconnected)
     {
@@ -1100,6 +1103,10 @@ pub(super) fn incoming_tracking(
     let mut incoming = manifest.tracking()?;
     incoming.required_sources = tracked.required_sources.clone();
     incoming.invalid = tracked.invalid.clone();
+    // a path kept local here is never written from the repository, even
+    // when another machine shares it
+    incoming.local = tracked.local.clone();
+    incoming.keep_local_out();
     Ok(incoming)
 }
 
@@ -1142,7 +1149,7 @@ pub(super) fn incoming_repository_tree(
 /// A bootstrap finished: the declarations that arrived through sync are
 /// applied now, so `status` stops asking for one.
 pub fn bootstrap_completed() {
-    let state_dir: &Path = &crate::dirs::STATE;
+    let state_dir: &Path = &super::super::local::root();
     let status = match read_status(state_dir) {
         Ok(status) => status,
         Err(err) => {

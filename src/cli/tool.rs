@@ -10,21 +10,33 @@ use crate::toolset::{ToolSource, ToolVersionOptions, ToolsetBuilder};
 use crate::ui::table;
 
 /// Show information about a tool
+///
+/// Shows the tool's backend, its description and project URL when known, the
+/// installed, active, and requested versions, the config file that requests it,
+/// its tool options, and the backend's security features. Pass a field flag
+/// such as `--backend` to print one field, or `--json` for all of them.
 #[derive(Debug, usage_rs::Args)]
 #[usage(
     verbatim_doc_comment,
     example(
         r###"mise tool node
-Backend:            core
-Installed Versions: 20.0.0 22.0.0
-Active Version:     20.0.0
-Requested Version:  20
-Config Source:      ~/.config/mise/mise.toml
-Tool Options:       [none]"###
+Backend:            core:node
+Installed Versions: 22.0.0 24.0.0
+Active Version:     24.0.0
+Requested Version:  24
+Config Source:      ~/.config/mise/config.toml
+Tool Options:       [none]
+Security:           checksum (sha256), gpg"###,
+        help = "Show everything mise knows about node"
+    ),
+    example(
+        r###"mise tool node --backend
+core:node"###,
+        help = "Print only the backend"
     )
 )]
 pub(crate) struct Tool {
-    /// Tool name to get information about
+    /// The tool, such as `node` or `aqua:jqlang/jq`
     tool: BackendArg,
     /// Output in JSON format
     #[usage(long, short = 'J')]

@@ -14,7 +14,7 @@ pub async fn run() {
 
 async fn task(job: impl FnOnce() -> Result<()> + Send + 'static) {
     if let Err(err) = job() {
-        eprintln!("[WARN] migrate: {err}");
+        safe_eprintln!("[WARN] migrate: {err}");
     }
 }
 
@@ -51,7 +51,7 @@ fn migrate_incomplete_markers() -> Result<()> {
 
 fn move_dirs(from: &Path, to: &Path) -> Result<bool> {
     if from.exists() && !to.exists() {
-        eprintln!(
+        safe_eprintln!(
             "migrating {} to {}",
             file::display_path(from),
             file::display_path(to)

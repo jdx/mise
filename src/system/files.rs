@@ -80,6 +80,17 @@ impl FileManifest {
     }
 }
 
+/// The mode of a track entry saved only in this machine's own history.
+pub const TRACK_LOCAL: &str = "track-local";
+
+/// Whether a raw `[dotfiles]` value declares tracking, shared or local.
+fn is_track_value(value: &toml::Value) -> bool {
+    matches!(
+        value.get("mode").and_then(toml::Value::as_str),
+        Some("track" | TRACK_LOCAL)
+    )
+}
+
 impl FileMode {
     pub fn parse(s: &str) -> Option<Self> {
         match s {
@@ -163,6 +174,10 @@ pub struct FilePolicy {
     pub encrypt: bool,
     #[serde(default)]
     pub allow_plaintext: bool,
+    /// `mode = "track-local"`: saved in this machine's own history, which
+    /// is never shared, instead of the history a setup repository shares.
+    #[serde(default)]
+    pub local: bool,
     /// Which fields the declaration wrote, so a later layer repeating it
     /// overrides only what it says and inherits the rest.
     pub explicit: ExplicitFields,
@@ -189,6 +204,7 @@ impl FilePolicy {
             autosave: true,
             encrypt: false,
             allow_plaintext: false,
+            local: false,
             explicit: ExplicitFields::default(),
         }
     }
@@ -204,6 +220,9 @@ pub struct InvalidDeclaration {
     pub reason: String,
     /// Why the declaration is not in force.
     pub cause: Ignored,
+    /// An unreadable local declaration must never expose its path to shared capture.
+    #[serde(skip)]
+    pub local: bool,
 }
 
 /// **Two reasons to ignore a declaration, and only one of them is a
@@ -226,11 +245,17 @@ pub enum Ignored {
 static INVALID_DECLARATIONS: std::sync::Mutex<Vec<InvalidDeclaration>> =
     std::sync::Mutex::new(Vec::new());
 
-fn record_invalid(target: &str, config: &Path, reason: impl Into<String>) {
-    record_ignored(target, config, reason, Ignored::Unreadable);
+fn record_invalid(target: &str, config: &Path, reason: impl Into<String>, local: bool) {
+    record_ignored(target, config, reason, Ignored::Unreadable, local);
 }
 
-fn record_ignored(target: &str, config: &Path, reason: impl Into<String>, cause: Ignored) {
+fn record_ignored(
+    target: &str,
+    config: &Path,
+    reason: impl Into<String>,
+    cause: Ignored,
+    local: bool,
+) {
     let reason = reason.into();
     warn!("[dotfiles].\"{target}\": {reason}, ignoring entry");
     let mut invalid = INVALID_DECLARATIONS
@@ -245,6 +270,7 @@ fn record_ignored(target: &str, config: &Path, reason: impl Into<String>, cause:
             config: config.to_path_buf(),
             reason,
             cause,
+            local,
         });
     }
 }
@@ -459,6 +485,11 @@ impl FileRequest {
         if explicit.variants {
             self.variants = later.variants;
         }
+        // **Local stays local.** A layer that declares the path shared again
+        // must say so by removing the local declaration, never by repeating
+        // the entry: a file someone kept out of shared history is not
+        // published because another layer mentions it.
+        self.policy.local |= later.policy.local;
         if explicit.exclude {
             self.exclude = later.exclude;
         }
@@ -1030,6 +1061,10 @@ pub(crate) fn validate_incoming_files(config_files: &ConfigMap) -> Result<()> {
                 if group.is_some() {
                     bail!("dotfile {target}: {GROUP_KEY_IN_DOTFILES}");
                 }
+                if mode.as_deref() == Some(TRACK_LOCAL) && (encrypt.is_some() || variants.is_some())
+                {
+                    bail!("dotfile {target}: mode = \"track-local\" takes no encrypt or variants");
+                }
                 let permissions_only = permissions.is_some()
                     && source.is_none()
                     && content.is_none()
@@ -1049,6 +1084,7 @@ pub(crate) fn validate_incoming_files(config_files: &ConfigMap) -> Result<()> {
                     );
                 }
                 let mode = match mode.as_deref() {
+                    Some(TRACK_LOCAL) => FileMode::Track,
                     Some(value) => FileMode::parse(value).ok_or_else(|| {
                         eyre::eyre!("unknown dotfile mode {value:?} for {target}")
                     })?,
@@ -1237,7 +1273,7 @@ fn files_from_config_files_with_tracking_roots(
         };
         if let Some(dotfiles) = cf.dotfiles_config() {
             for (key, value) in dotfiles.0 {
-                if value.get("mode").and_then(toml::Value::as_str) == Some("track") {
+                if is_track_value(&value) {
                     continue;
                 }
                 let mut requests = IndexMap::new();
@@ -1272,7 +1308,7 @@ fn files_from_config_files_with_tracking_roots(
             continue;
         };
         for (target_raw, value) in dotfiles.0 {
-            if value.get("mode").and_then(toml::Value::as_str) != Some("track")
+            if !is_track_value(&value)
                 && destination_declarations
                     .get(&resolve_target_arg(&target_raw))
                     .is_some_and(|(winner, has_override)| *has_override && *winner != path)
@@ -1280,13 +1316,14 @@ fn files_from_config_files_with_tracking_roots(
                 continue;
             }
             if tracking_roots.is_some_and(|roots| !track_layer_allowed(&origin, roots))
-                && value.get("mode").and_then(toml::Value::as_str) == Some("track")
+                && is_track_value(&value)
             {
                 record_ignored(
                     &target_raw,
                     &origin.config,
                     "tracking is enrolled from the global configuration only (ignored: project config)",
                     Ignored::ByPolicy,
+                    false,
                 );
                 continue;
             }
@@ -1300,12 +1337,19 @@ fn files_from_config_files_with_tracking_roots(
     merged.into_values().collect()
 }
 
+fn is_track_local_value(value: &toml::Value) -> bool {
+    value
+        .as_table()
+        .is_some_and(|table| table.get("mode").and_then(toml::Value::as_str) == Some(TRACK_LOCAL))
+}
+
 /// Parse a `[dotfiles]` whole-file declaration. A group's entries are
 /// declared under `[dotfile_groups.<name>.entries]`, which sets their group;
 /// `[dotfiles]` itself takes no `group`.
 fn parse_dotfiles_entry(target: &str, value: toml::Value, config: &Path) -> Option<FileTomlEntry> {
+    let local = is_track_local_value(&value);
     if value.as_table().is_some_and(|t| t.contains_key("group")) {
-        record_invalid(target, config, GROUP_KEY_IN_DOTFILES);
+        record_invalid(target, config, GROUP_KEY_IN_DOTFILES, local);
         return None;
     }
     parse_file_entry(target, value, config)
@@ -1316,6 +1360,7 @@ const GROUP_KEY_IN_DOTFILES: &str =
 
 /// Parse a whole-file declaration and reject unsupported encryption combinations.
 fn parse_file_entry(target: &str, value: toml::Value, config: &Path) -> Option<FileTomlEntry> {
+    let local = is_track_local_value(&value);
     if value.as_table().is_some_and(|t| {
         t.get("encrypt").and_then(toml::Value::as_bool) == Some(true)
             && ["content", "block", "line", "template", "merge"]
@@ -1326,6 +1371,7 @@ fn parse_file_entry(target: &str, value: toml::Value, config: &Path) -> Option<F
             target,
             config,
             "encrypted dotfiles require an external source, not inline content or edits",
+            local,
         );
         return None;
     }
@@ -1342,6 +1388,7 @@ fn parse_file_entry(target: &str, value: toml::Value, config: &Path) -> Option<F
             target,
             config,
             "mode = \"absent\" removes the whole file and cannot be combined with block or line edits",
+            local,
         );
         return None;
     }
@@ -1349,11 +1396,19 @@ fn parse_file_entry(target: &str, value: toml::Value, config: &Path) -> Option<F
         .as_table()
         .is_some_and(|table| table.contains_key("encrypt"));
     let entry = file_entry_from_toml(target, value);
-    if entry.is_none() && encryption_declared {
+    if entry.is_none() && local {
+        record_invalid(
+            target,
+            config,
+            "invalid local-only whole-file declaration",
+            true,
+        );
+    } else if entry.is_none() && encryption_declared {
         record_invalid(
             target,
             config,
             "invalid encryption declaration; encrypt must be a boolean on a whole-file entry",
+            local,
         );
     }
     entry
@@ -1511,6 +1566,25 @@ fn merge_file_entry(
             group,
         ),
     };
+    // `mode = "track-local"` is `track` saved in this machine's own history.
+    // It is a mode rather than a flag so that a mise that predates it skips
+    // the entry as an unknown mode instead of tracking the file as shared.
+    let local = mode.as_deref() == Some(TRACK_LOCAL);
+    let mode = if local {
+        Some("track".to_string())
+    } else {
+        mode
+    };
+    if local && (encrypt.is_some() || variants.is_some()) {
+        record_ignored(
+            &target_raw,
+            &origin.config,
+            "mode = \"track-local\" never leaves this machine and takes no encrypt or variants",
+            Ignored::Unreadable,
+            true,
+        );
+        return;
+    }
     // `{ permissions = "0600" }` alone manages only an existing target's
     // permissions; it never implies a source under dotfiles.root
     let permissions_only =
@@ -1518,7 +1592,7 @@ fn merge_file_entry(
     let permissions = match permissions.as_deref().map(parse_permissions).transpose() {
         Ok(permissions) => permissions,
         Err(err) => {
-            warn!("[dotfiles].\"{target_raw}\": {err}, ignoring entry");
+            record_invalid(&target_raw, &origin.config, err.to_string(), local);
             return;
         }
     };
@@ -1527,7 +1601,7 @@ fn merge_file_entry(
     if let Some(group) = &group
         && let Err(err) = crate::system::dotfile_groups::validate_group_name(group)
     {
-        record_invalid(&target_raw, &origin.config, err.to_string());
+        record_invalid(&target_raw, &origin.config, err.to_string(), local);
         return;
     }
     if encrypt == Some(true) && content.is_some() {
@@ -1535,6 +1609,7 @@ fn merge_file_entry(
             &target_raw,
             &origin.config,
             "encrypted dotfiles require an external source; inline content is shared in configuration",
+            local,
         );
         return;
     }
@@ -1560,7 +1635,7 @@ fn merge_file_entry(
         Ok(Some(relative)) => Some(dotfiles_root().join(relative)),
         Ok(None) => None,
         Err(err) => {
-            record_invalid(&target_raw, &origin.config, err.to_string());
+            record_invalid(&target_raw, &origin.config, err.to_string(), local);
             return;
         }
     };
@@ -1571,6 +1646,7 @@ fn merge_file_entry(
             autosave: autosave.unwrap_or(defaults.autosave),
             encrypt: encrypt.unwrap_or(false),
             allow_plaintext: allow_plaintext.unwrap_or(false),
+            local,
             explicit,
         }
     };
@@ -1579,6 +1655,7 @@ fn merge_file_entry(
             &target_raw,
             &origin.config,
             "allow_plaintext applies only to mode = \"track\"",
+            local,
         );
         return;
     }
@@ -1587,6 +1664,7 @@ fn merge_file_entry(
             &target_raw,
             &origin.config,
             "include selects what a tracked directory saves and applies only to mode = \"track\"",
+            local,
         );
         return;
     }
@@ -1603,13 +1681,14 @@ fn merge_file_entry(
                 &target_raw,
                 &origin.config,
                 "mode = \"track\" leaves the file where it is and takes no source, content, manifest, remove_empty, relative, dot_prefix, or group",
+                local,
             );
             return;
         }
         if permissions.is_some()
             && let Some(reason) = permissions_conflict(Some(FileMode::Track), false, false, false)
         {
-            record_invalid(&target_raw, &origin.config, reason);
+            record_invalid(&target_raw, &origin.config, reason, local);
             return;
         }
         let target = resolve_target_arg(&target_raw);
@@ -1618,6 +1697,7 @@ fn merge_file_entry(
                 &target_raw,
                 &origin.config,
                 "target must be absolute or start with ~/",
+                local,
             );
             return;
         }
@@ -1636,6 +1716,7 @@ fn merge_file_entry(
                 &target_raw,
                 &origin.config,
                 "include selects paths inside a tracked directory and does nothing on a file: remove it, or track the parent directory and name this file in its include list",
+                local,
             );
             return;
         }
@@ -1654,7 +1735,7 @@ fn merge_file_entry(
                     .flatten()
                     .collect::<Vec<_>>()
                     .join("; ");
-                record_invalid(&target_raw, &origin.config, &reasons);
+                record_invalid(&target_raw, &origin.config, &reasons, local);
                 return;
             }
         };
@@ -1699,7 +1780,12 @@ fn merge_file_entry(
             .unwrap_or(target_raw),
         Selection::NoMatch => return,
         Selection::Ambiguous(_) => {
-            record_invalid(&target_raw, &origin.config, "ambiguous dotfile variants");
+            record_invalid(
+                &target_raw,
+                &origin.config,
+                "ambiguous dotfile variants",
+                local,
+            );
             return;
         }
     };
@@ -6193,7 +6279,12 @@ variants = [{{ {field} = "linux" }}]"#
     #[test]
     fn configuration_reload_discards_old_declaration_diagnostics() {
         let target = "~/.mise-diagnostic-reset-test";
-        record_invalid(target, Path::new("diagnostic-reset.toml"), "invalid mode");
+        record_invalid(
+            target,
+            Path::new("diagnostic-reset.toml"),
+            "invalid mode",
+            false,
+        );
         assert!(
             invalid_declarations()
                 .iter()
@@ -7836,11 +7927,22 @@ source = "oldrc""#,
         for entry in [
             r#"{ source = "s.json", merge = true, exclude = [] }"#,
             r#"{ source = "s.json", merge = true, mode = "copy" }"#,
-            r#"{ merge = true }"#,
         ] {
             let body = format!("[dotfiles]\n\"~/a/settings.json/shared\" = {entry}\n");
             assert!(incoming(&body).is_err(), "{entry}");
         }
+        // an omitted source is inferred, which only works under $HOME
+        assert!(
+            incoming(&format!(
+                "[dotfiles]\n\"{}/settings.json/shared\" = {{ merge = true }}\n",
+                if cfg!(windows) {
+                    "C:/outside"
+                } else {
+                    "/outside"
+                }
+            ))
+            .is_err()
+        );
         assert!(
             incoming("[dotfiles]\n\"~/a/notes.txt/shared\" = { source = \"s\", merge = true }\n")
                 .is_err()
@@ -8324,6 +8426,75 @@ source = "oldrc""#,
         assert!(merge("content = \"x\"\nremove_empty = true").is_empty());
         assert!(merge("permissions = \"0600\"\nremove_empty = true").is_empty());
         assert!(merge("mode = \"absent\"\nremove_empty = true").is_empty());
+        Ok(())
+    }
+
+    #[test]
+    fn track_local_is_tracking_kept_on_this_machine() -> Result<()> {
+        use crate::config::config_file::mise_toml::MiseToml;
+        use std::sync::Arc;
+
+        let origin = ResourceOrigin {
+            config: PathBuf::from("/mise.toml"),
+            config_root: PathBuf::from("/"),
+            environment: vec![],
+            source: None,
+        };
+        let merge = |entry: &str| {
+            let entry: FileTomlEntry = toml::from_str(entry).unwrap();
+            let mut merged = IndexMap::new();
+            merge_file_entry(
+                "~/.track-local-test".into(),
+                entry,
+                Path::new("/"),
+                &origin,
+                &mut merged,
+            );
+            merged.into_values().collect::<Vec<_>>()
+        };
+        let local = merge("mode = \"track-local\"");
+        assert_eq!(local[0].mode, FileMode::Track);
+        assert!(local[0].policy.local);
+        assert!(!merge("mode = \"track\"")[0].policy.local);
+        assert!(
+            merge("mode = \"track-local\"\nallow_plaintext = true")[0]
+                .policy
+                .local
+        );
+        // it never leaves this machine, so it takes nothing about sharing
+        assert!(merge("mode = \"track-local\"\nencrypt = true").is_empty());
+        assert!(merge("mode = \"track-local\"\nencrypt = false").is_empty());
+        assert!(merge("mode = \"track-local\"\nvariants = [{ machine = true }]").is_empty());
+
+        // a later layer repeating the entry keeps it local
+        let mut earlier = local[0].clone();
+        earlier.override_from(merge("mode = \"track\"\nautosave = false").remove(0));
+        assert!(earlier.policy.local);
+        assert!(!earlier.policy.autosave);
+
+        // and incoming configuration accepts it
+        let path = dirs::HOME.join(".config/mise/config.toml");
+        let body = "[dotfiles]\n\"~/.track-local-test\" = { mode = \"track-local\" }\n";
+        let mut configs = ConfigMap::new();
+        configs.insert(
+            path.clone(),
+            Arc::new(MiseToml::for_history_preflight(body, &path)?),
+        );
+        validate_incoming_files(&configs)?;
+        for extra in [
+            "encrypt = false",
+            "encrypt = true",
+            "variants = [{ machine = true }]",
+        ] {
+            let body = format!(
+                "[dotfiles]\n\"~/.track-local-test\" = {{ mode = \"track-local\", {extra} }}\n"
+            );
+            configs.insert(
+                path.clone(),
+                Arc::new(MiseToml::for_history_preflight(&body, &path)?),
+            );
+            assert!(validate_incoming_files(&configs).is_err(), "{extra}");
+        }
         Ok(())
     }
 

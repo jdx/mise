@@ -130,7 +130,10 @@ pub(crate) enum LevelFilter {
     Trace,
     Debug,
     Info,
-    Warning,
+    // `warn` is the spelling the `log_level` setting documents and the `log` crate parses;
+    // `warning` stays for old scripts.
+    #[usage(alias = "warning")]
+    Warn,
     Error,
 }
 
@@ -142,23 +145,16 @@ pub(crate) enum LevelFilter {
     // this list would not be what prints.
     logo = include_str!("../assets/logo.txt"),
     logo_style = "green",
-    example("mise install node@20.0.0", help = "Install a specific node version"),
-    example("mise install node@20", help = "Install a version matching a prefix"),
-    example("mise install node", help = "Install the node version defined in config"),
-    example("mise install", help = "Install all plugins/tools defined in config"),
-    example("mise install cargo:ripgrep", help = "Install something via cargo"),
-    example("mise install npm:prettier", help = "Install something via npm"),
-    example("mise use node@20", help = "Use node-20.x in current project"),
-    example("mise use -g node@20", help = "Use node-20.x as default"),
-    example("mise use node@latest", help = "Use latest node in current directory"),
-    example("mise up --interactive", help = "Show a menu to upgrade tools"),
-    example("mise x -- npm install", help = "Run npm install with config loaded into PATH"),
-    example("mise x node@20 -- node app.js", help = "Run node app.js with config and node-20.x on PATH"),
-    example("mise set NODE_ENV=production", help = "Set NODE_ENV=production in config"),
-    example("mise run build", help = "Run build tasks"),
-    example("mise watch build", help = "Run build tasks repeatedly when files change"),
-    example("mise settings", help = "Show settings in use"),
-    example("mise settings color=0", help = "Disable color by modifying global config file"),
+    example("mise use node@24", help = "Install node 24 and add it to the project's mise.toml"),
+    example("mise use -g node@24", help = "Make node 24 your global default"),
+    example("mise install", help = "Install every tool the config requests"),
+    example("mise x -- npm install", help = "Run a command with the project's tools on PATH"),
+    example("mise x python@3.13 -- python app.py", help = "Run a command with a tool that is not in the config"),
+    example("mise set NODE_ENV=production", help = "Add an environment variable to mise.toml"),
+    example("mise run build", help = "Run the build task"),
+    example("mise watch build", help = "Rerun the build task when its sources change"),
+    example("mise upgrade --interactive", help = "Choose tools to upgrade from a menu"),
+    example("mise settings color=0", help = "Turn off color in the global config"),
     author = "Jeff Dickey <@jdx>", arg_required_else_help = true, completion = true, unknown_flags = "error"
 )]
 pub(crate) struct Cli {
@@ -168,9 +164,9 @@ pub(crate) struct Cli {
     #[usage(
         name = "TASK",
         double_dash = "automatic",
-        long_help = r#"Task to run.
+        long_help = r#"Task to run
 
-Shorthand for `mise tasks run <TASK>`."#
+Shorthand for `mise run <TASK>`."#
     )]
     pub task: Option<String>,
     /// Task arguments
@@ -181,16 +177,20 @@ Shorthand for `mise tasks run <TASK>`."#
     /// Continue running tasks even if one fails
     #[usage(long, short = 'c', hide = true, verbatim_doc_comment)]
     pub continue_on_error: bool,
-    /// Change directory before running command
+    /// Run as if mise were started in DIR
     #[usage(short='C', long, global=true, value_name="DIR", value_hint=usage_rs::ValueHint::DirPath)]
     pub cd: Option<PathBuf>,
-    /// Set the environment for loading `mise.<ENV>.toml`
+    /// Load the `mise.<ENV>.toml` config files (same as MISE_ENV)
+    ///
+    /// Repeat the flag or separate names with commas to load several environments.
     #[usage(short = 'E', long, global = true)]
     pub env: Option<Vec<String>>,
     /// Force the operation
     #[usage(long, short, hide = true)]
     pub force: bool,
-    /// How many jobs to run in parallel; values below 1 are treated as 1 [default: 8]
+    /// How many jobs to run in parallel; defaults to the `jobs` setting
+    ///
+    /// Values below 1 are treated as 1.
     #[usage(long, short, global = true, env = "MISE_JOBS")]
     pub jobs: Option<usize>,
     /// Dry run, don't actually do anything
@@ -204,8 +204,7 @@ Shorthand for `mise tasks run <TASK>`."#
     pub quiet: bool,
     #[usage(long, short, hide = true)]
     pub shell: Option<String>,
-    /// Tool(s) to run in addition to what is in mise.toml files
-    /// e.g.: node@20 python@3.10
+    /// Tools to load in addition to those in mise.toml, such as `node@24 python@3.13`
     #[usage(short, long, hide = true, value_name = "TOOL@VERSION")]
     pub tool: Vec<ToolArg>,
     /// Show extra output (use -vv for even more)
@@ -223,17 +222,17 @@ Shorthand for `mise tasks run <TASK>`."#
     pub log_level: Option<LevelFilter>,
     /// Do not load any config files
     ///
-    /// Can also use `MISE_NO_CONFIG=1`
+    /// Same as `MISE_NO_CONFIG=1`.
     #[usage(long)]
     pub no_config: bool,
     /// Do not load environment variables from config files
     ///
-    /// Can also use `MISE_NO_ENV=1`
+    /// Same as `MISE_NO_ENV=1`.
     #[usage(long)]
     pub no_env: bool,
-    /// Do not execute hooks from config files
+    /// Do not run hooks from config files
     ///
-    /// Can also use `MISE_NO_HOOKS=1`
+    /// Same as `MISE_NO_HOOKS=1`.
     #[usage(long)]
     pub no_hooks: bool,
     /// Hide the elapsed time printed after each task completes
@@ -244,15 +243,17 @@ Shorthand for `mise tasks run <TASK>`."#
     /// How task output is displayed when running a task (same as `mise run --output`)
     #[usage(long, hide = true)]
     pub output: Option<TaskOutput>,
-    /// Read/write directly to stdin/stdout/stderr instead of by line
+    /// Connect tasks and install commands directly to the terminal
+    ///
+    /// Commands then run one at a time. Same as `MISE_RAW=1` or the `raw` setting.
     #[usage(long, global = true)]
     pub raw: bool,
-    /// Require lockfile URLs to be present during installation
+    /// Require download URLs from the lockfile when installing
     ///
-    /// Fails if tools don't have pre-resolved URLs in the lockfile for the current platform.
-    /// This prevents API calls to GitHub, aqua registry, etc.
-    /// Can also be enabled via MISE_LOCKED=1 or settings.locked=true
-    #[usage(long, global = true, verbatim_doc_comment)]
+    /// Installing fails when the lockfile has no pre-resolved URL for a tool on the
+    /// current platform, so mise does not call the GitHub or aqua registry APIs to find
+    /// one. Same as `MISE_LOCKED=1` or the `locked` setting.
+    #[usage(long, global = true)]
     pub locked: bool,
     /// Suppress all task output and mise non-error messages
     #[usage(long, global = true, overrides = &["quiet", "trace", "verbose", "debug", "log_level"])]
@@ -1107,9 +1108,9 @@ impl Cli {
         measure!("add_cli_matches", {
             Settings::add_cli_matches(cli.settings_layer(command_local))
         });
-        if matches!(&cli.command, Some(Commands::Settings(cmd)) if cmd.is_pypi_repair()) {
-            // These file-only edits must remain available when alias values conflict.
-            // Honor directory selection without loading the conflicting settings.
+        if matches!(&cli.command, Some(Commands::Settings(cmd)) if cmd.is_repair()) {
+            // These file-only edits must remain available when the values they fix would fail
+            // settings loading. Honor directory selection without loading those settings.
             if let Some(cd) = cli
                 .cd
                 .clone()
@@ -1202,7 +1203,7 @@ impl Cli {
             warn!("tool purgatory cleanup failed: {err:#}");
         }
 
-        debug!("ARGS: {}", &args.join(" "));
+        debug!("ARGS: {}", display_args(args));
         trace!("MISE_BIN: {}", crate::env::MISE_BIN.display_user());
         if print_version {
             version::show_latest().await;
@@ -1325,11 +1326,28 @@ async fn run_with_exit_signal<T>(
     }
 }
 
+/// The help page for the command a parse error is about, by the words the user typed.
+///
+/// A `Subcommands` type mounted under two parents is one address, so finding the command by
+/// address alone answers with whichever mount comes first: `mise dot add --help` printed the
+/// page for `mise bootstrap dotfiles add`. Rebuilding the route from `argv` (without argv0)
+/// tells the mounts apart, and falls back to the address lookup where it cannot.
+fn invoked_page(
+    argv: &[&std::ffi::OsStr],
+    cmd: &usage_rs::Command<'_>,
+    page: usage_rs::help::Page,
+    style: usage_rs::help::Style,
+) -> Option<String> {
+    usage_rs::help::page(Cli::spec(), Cli::command(), argv, cmd, page, style)
+}
+
 fn usage_error(argv: &[&std::ffi::OsStr], err: usage_rs::Error<'_, '_>) -> Report {
+    use usage_rs::help::Page;
     let spec = Cli::spec();
     match err {
         usage_rs::Error::Help { cmd, long } => {
-            if let Some(page) = render_page(spec, cmd, long)
+            let page = if long { Page::Long } else { Page::Short };
+            if let Some(page) = invoked_page(argv, cmd, page, help_style())
                 && let Err(err) = miseprint!("{page}")
             {
                 return err.into();
@@ -1337,7 +1355,7 @@ fn usage_error(argv: &[&std::ffi::OsStr], err: usage_rs::Error<'_, '_>) -> Repor
             request_exit(0)
         }
         usage_rs::Error::HelpAll { cmd } => {
-            if let Some(page) = usage_rs::help::render_all_styled(spec, cmd, help_style())
+            if let Some(page) = invoked_page(argv, cmd, Page::All, help_style())
                 && let Err(err) = miseprint!("{page}")
             {
                 return err.into();
@@ -1346,8 +1364,7 @@ fn usage_error(argv: &[&std::ffi::OsStr], err: usage_rs::Error<'_, '_>) -> Repor
         }
         usage_rs::Error::MissingArgsHelp { cmd } => {
             // stderr, which `console` tracks separately from stdout.
-            if let Some(page) = usage_rs::help::render_styled(spec, cmd, false, help_style_stderr())
-            {
+            if let Some(page) = invoked_page(argv, cmd, Page::Short, help_style_stderr()) {
                 let _ = calm_io::stderr!("{page}");
             }
             request_exit(2)
@@ -1371,9 +1388,9 @@ fn usage_error(argv: &[&std::ffi::OsStr], err: usage_rs::Error<'_, '_>) -> Repor
     }
 }
 
-const LONG_ABOUT: &str = "mise installs the dev tools your projects need, sets their environment variables, and runs their tasks.
+const LONG_ABOUT: &str = "mise installs the development tools your projects need, sets their environment variables, and runs their tasks.
 
-Tools, env vars, and tasks are declared in mise.toml. `mise use <TOOL>` adds a tool to the project in the current directory, `mise install` installs everything the config asks for, and `mise run <TASK>` runs a task. Docs: https://mise.jdx.dev";
+You declare tools, environment variables, and tasks in mise.toml. `mise use <TOOL>` installs a tool and adds it to the project's mise.toml, `mise install` installs everything the config requests, and `mise run <TASK>` runs a task. Docs: https://mise.jdx.dev";
 
 /// Check if the current working directory exists and warn if not
 fn check_working_directory() {
@@ -1410,10 +1427,35 @@ fn validate_cd_path(cd: &Option<PathBuf>) -> Result<()> {
     Ok(())
 }
 
+/// `args` joined for the debug log. Each argument is redacted on its own:
+/// once joined, a space inside a URL's userinfo looks like an argument break.
+fn display_args(args: &[String]) -> String {
+    args.iter()
+        .map(|arg| mise_util::redactions::redact_url_userinfo_in_arg(arg))
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use mise_util::args::GLOBAL_FLAGS_WITH_VALUES;
+
+    #[test]
+    fn display_args_redacts_url_userinfo_per_argument() {
+        let args = [
+            "mise",
+            "x",
+            "http:demo[url=https://user:my TOKEN@host/x.tar.gz]@1",
+            "https://host:8080",
+            "me@example.com",
+        ]
+        .map(str::to_string);
+        assert_eq!(
+            display_args(&args),
+            "mise x http:demo[url=https://[redacted]@host/x.tar.gz]@1 https://host:8080 me@example.com"
+        );
+    }
 
     #[test]
     /// A help page follows mise's colour decision, not the terminal's.
@@ -1777,6 +1819,25 @@ mod tests {
         let argv: Vec<&std::ffi::OsStr> = args.iter().map(std::ffi::OsStr::new).collect();
         let (_, layer) = Cli::parse_from_argv_with_settings(&argv).unwrap();
         command_local_settings(&layer).unwrap()
+    }
+
+    #[test]
+    /// The flag takes the names the `log_level` setting lists in settings.toml (`off`, which the
+    /// `log` crate also parses, is not one of them).
+    fn log_level_flag_accepts_the_documented_log_level_names() {
+        let parse = |level: &str| {
+            parse_cli(&["mise", "--log-level", level, "version"])
+                .unwrap()
+                .settings_layer(SettingsPartial::empty())
+                .log_level
+                .unwrap()
+        };
+        for level in ["trace", "debug", "info", "warn", "error"] {
+            assert_eq!(parse(level), level);
+            assert!(level.parse::<log::LevelFilter>().is_ok(), "{level}");
+        }
+        // `warning` was the only spelling the flag took, and it meant `info` to the logger
+        assert_eq!(parse("warning"), "warn");
     }
 
     fn parse_truncate(args: &[&str]) -> Option<bool> {

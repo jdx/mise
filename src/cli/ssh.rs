@@ -2,9 +2,35 @@ use eyre::{Result, bail};
 use std::path::PathBuf;
 
 /// Open an SSH session, optionally borrowing read-only GitHub access
+///
+/// Without relay flags, runs OpenSSH to DESTINATION and passes -i, -p, and -o
+/// through. With `--github-relay-read-only`, Git and mise on the remote host can
+/// clone, fetch, and download releases from the GitHub repositories you allow,
+/// using this machine's GitHub credentials, until the session ends. The token
+/// is not copied to the host, and pushes and API writes are refused.
+///
+/// `--github-relay-read-only` needs exactly one of `--github-relay-repo`,
+/// repeated for each repository, or `--github-relay-all-repos`. A compromised
+/// host can read what you allow while the session lasts.
+/// See https://mise.jdx.dev/bootstrap/github-relay.html
 #[derive(Debug, usage_rs::Args)]
+#[usage(
+    verbatim_doc_comment,
+    example(
+        r###"mise ssh devbox --github-relay-read-only --github-relay-repo you/setup -- git clone https://github.com/you/setup.git"###,
+        help = "Let devbox clone one private repository"
+    ),
+    example(
+        r###"mise ssh devbox --github-relay-read-only --github-relay-all-repos"###,
+        help = "Open a shell that can read every repository your credentials can read"
+    ),
+    example(
+        r###"mise ssh devbox -i ~/.ssh/devbox -p 2222 -o ServerAliveInterval=30 -- uname -a"###,
+        help = "Run a command over plain SSH with an identity file, port, and option"
+    )
+)]
 pub(crate) struct Ssh {
-    /// OpenSSH destination or SSH-config alias
+    /// OpenSSH destination or SSH config alias (required)
     destination: Option<String>,
     /// SSH identity file
     #[usage(long, short = 'i')]
@@ -18,22 +44,22 @@ pub(crate) struct Ssh {
     /// Borrow read-only GitHub access for this session only
     #[usage(long)]
     github_relay_read_only: bool,
-    /// Approved GitHub repository; repeat to authorize more repositories
+    /// GitHub repository the host may read; repeat for more repositories
     #[usage(long, value_name = "OWNER/REPO")]
     github_relay_repo: Vec<String>,
-    /// Explicitly authorize reads of all repositories accessible locally
+    /// Allow reads of every repository your local GitHub credentials can access
     #[usage(long)]
     github_relay_all_repos: bool,
     /// Log sanitized relay requests on local stderr
     #[usage(long, conflicts = "github_relay_no_log_requests")]
     github_relay_log_requests: bool,
-    /// Disable request logging, overriding the saved preference
+    /// Turn off request logging even if the github_relay.log_requests setting is on
     #[usage(long)]
     github_relay_no_log_requests: bool,
-    /// Relay log and summary format: text or jsonl
+    /// Relay log and summary format: text or jsonl (default: the github_relay.log_format setting)
     #[usage(long, value_name = "FORMAT")]
     github_relay_log_format: Option<String>,
-    /// Expire borrowed access after a duration such as 1h (0s: session lifetime)
+    /// End borrowed access after a duration such as 1h; 0s lasts the whole session
     #[usage(long, value_name = "DURATION")]
     github_relay_max_duration: Option<String>,
     /// Internal session adapter
@@ -104,6 +130,7 @@ impl Ssh {
                         yes: self.repository_yes,
                         dry_run: self.repository_dry_run,
                         replace_history: false,
+                        take_remote_all: false,
                     },
                 )
                 .await?;

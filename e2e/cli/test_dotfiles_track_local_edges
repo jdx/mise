@@ -1,0 +1,121 @@
+#!/usr/bin/env bash
+# `mode = "track-local"` edge cases: a file shared before it became local,
+# the commands a local-only scope runs, and declarations it cannot take.
+require_cmd git
+export MISE_HISTORY_NOTIFY=false
+mkdir -p ~/.config/app
+echo shared-v1 >~/.config/app/settings.toml
+echo app-v1 >~/.config/app/cache.json
+assert_succeed "mise dot track ~/.config/app --yes"
+before_local=$(mise dot history --json | jq -r '.[0].id')
+
+# a file shared before it became local keeps that version in shared
+# history, but a shared rollback never writes it back, present or deleted
+echo app-v2 >~/.config/app/cache.json
+assert_succeed "mise dot save"
+assert_succeed "mise dot track --local ~/.config/app/cache.json --yes"
+echo app-v3 >~/.config/app/cache.json
+assert_succeed "mise dot rollback ~/.config/app --to $before_local --yes"
+assert "cat ~/.config/app/cache.json" "app-v3"
+rm ~/.config/app/cache.json
+assert_succeed "mise dot rollback ~/.config/app --to $before_local --yes"
+assert_fail "test -e ~/.config/app/cache.json"
+echo app-v3 >~/.config/app/cache.json
+
+# local content in older shared trees does not select an unchanged checkpoint
+echo shared-v2 >~/.config/app/settings.toml
+assert_succeed "mise dot save"
+echo app-v4 >~/.config/app/cache.json
+assert_succeed "mise dot save"
+assert_succeed "mise dot rollback ~/.config/app --yes"
+assert "cat ~/.config/app/settings.toml" "shared-v1"
+assert "cat ~/.config/app/cache.json" "app-v4"
+
+# previously shared variants survive when their parent becomes local
+mkdir ~/.variant-dir
+echo shared-variant >~/.variant-dir/state.json
+assert_succeed "mise dot track --machine ~/.variant-dir/state.json --yes"
+shared_repo="$HOME/.local/state/mise/history/repo.git"
+variant_path=$(git --git-dir="$shared_repo" ls-tree -r --name-only main | grep '/.variant-dir/state.json$')
+assert_succeed "mise dot track --local ~/.variant-dir --yes"
+echo private-variant >~/.variant-dir/state.json
+assert_succeed "mise dot save"
+assert "git --git-dir=$shared_repo show main:$variant_path" "shared-variant"
+
+# a command run by a local-only capture is outside the local scope
+assert_not_contains "mise dot --local capture -- env 2>&1" "__MISE_HISTORY_LOCAL"
+assert_not_contains "mise dot --local capture -- env 2>&1" "__MISE_HISTORY_OPERATION"
+assert_contains "mise dot --local capture -- printf '%s' --local" "--local"
+
+echo enrolled >~/.local-capture-enrollment
+assert_succeed "mise dot --local capture -- mise dot track --local ~/.local-capture-enrollment --yes"
+assert_contains "mise dot --local history --json" "capture"
+echo shared-capture >~/.shared-capture-enrollment
+assert_succeed "mise dot capture -- mise dot track --local ~/.shared-capture-enrollment --yes"
+assert_contains "mise dot --local history --json" "shared-capture-enrollment"
+
+# automatic routing preserves a literal target named --local
+echo literal >~/--local
+assert_succeed "mise dot track --local ~/--local --yes"
+assert_succeed "cd ~ && mise dot save -- --local"
+
+# the local scope keeps the state directory's trust decisions
+mkdir -p ~/project
+echo '[env]
+PROJECT = "1"' >~/project/mise.toml
+assert_succeed "cd ~/project && MISE_TRUSTED_CONFIG_PATHS= mise trust"
+assert_succeed "cd ~/project && MISE_TRUSTED_CONFIG_PATHS= MISE_YES=0 mise dot --local status"
+
+# a declaration local-only history cannot take is refused, not dropped
+echo variant >~/.vrc
+assert_succeed "mise dot track --machine ~/.vrc --yes"
+assert_fail "mise dot track --local ~/.vrc --yes 2>&1" "variants, which local-only history does not take"
+assert_succeed "mise dot untrack ~/.vrc"
+
+# replacing an old file's current directory cannot remove a local child,
+# even with --force and --yes
+echo old-file >~/.former-file
+assert_succeed "mise dot track ~/.former-file --yes"
+file_checkpoint=$(mise dot history --json | jq -r '.[0].id')
+rm ~/.former-file
+mkdir ~/.former-file
+echo private >~/.former-file/private
+assert_succeed "mise dot track --local ~/.former-file/private --yes"
+assert_fail "mise dot rollback ~/.former-file --to $file_checkpoint --force --yes 2>&1" "local-only"
+assert "cat ~/.former-file/private" "private"
+
+# Git pattern characters in a local path must not delete other saved files.
+mkdir ~/.literal-paths
+echo saved-one >~/.literal-paths/cache1.json
+echo saved-brackets >~/.literal-paths/'cache[12].json'
+assert_succeed "mise dot track ~/.literal-paths --yes"
+assert_succeed "mise dot track --local ~/.literal-paths --yes"
+echo private-one >~/.literal-paths/cache1.json
+echo private-brackets >~/.literal-paths/'cache[12].json'
+assert_succeed "mise dot save"
+assert "git --git-dir=$shared_repo show main:home/.literal-paths/cache1.json" "saved-one"
+assert "git --git-dir=$shared_repo show 'main:home/.literal-paths/cache[12].json'" "saved-brackets"
+
+# malformed local declarations cannot fall back into a shared parent's walk
+cp ~/.config/mise/config.toml ~/valid-local-config.toml
+sed -i.bak 's/mode = "track-local"/mode = "track-local", encrypt = false/' ~/.config/mise/config.toml
+assert_fail "mise dot save 2>&1" "local-only"
+assert_succeed "mise dot --local status"
+assert_succeed "mise bootstrap packages status"
+# The walker still excludes the malformed private path from shared capture.
+assert_succeed "mise dot capture -- sh -c 'echo invalid-private >~/.config/app/cache.json; echo shared-$RANDOM >>~/.config/app/settings.toml'"
+assert_not_contains "git --git-dir=$shared_repo show main:home/.config/app/cache.json" "invalid-private"
+assert_not_contains "git --git-dir=$shared_repo log -1 --format=%B main" "cache.json"
+echo unrelated-shared >~/.config/app/settings.toml
+assert_succeed "mise dot save ~/.config/app/settings.toml"
+assert "git --git-dir=$shared_repo show main:home/.config/app/settings.toml" "unrelated-shared"
+
+# Every validation failure retains the local boundary, including fields
+# rejected before or during whole-file decoding.
+for invalid_field in 'source = "ignored"' 'permissions = "bad"' 'group = "unknown"' 'include = ["["]' 'autosave = "bad"'; do
+  sed "s/mode = \"track-local\"/mode = \"track-local\", $invalid_field/" ~/valid-local-config.toml >~/.config/mise/config.toml
+  assert_fail "mise dot save ~/.config/app/cache.json 2>&1" "local-only"
+  assert_succeed "mise dot capture -- sh -c 'echo invalid-private >~/.config/app/cache.json; echo shared-$RANDOM >>~/.config/app/settings.toml'"
+  assert_not_contains "git --git-dir=$shared_repo show main:home/.config/app/cache.json" "invalid-private"
+  assert_not_contains "git --git-dir=$shared_repo log -1 --format=%B main" "cache.json"
+done

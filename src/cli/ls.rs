@@ -23,23 +23,25 @@ use crate::ui::table::MiseTable;
 
 /// List installed and active tool versions
 ///
-/// Lists the tools mise knows about: versions that are installed, and versions requested
-/// by a config file (active) whether or not they are installed.
+/// Lists the tools mise knows about: versions that are installed, and versions
+/// requested by a config file (active) whether or not they are installed. Each row
+/// shows the tool, the version (marked `(missing)` when it is not installed), the
+/// config file that requests it, and the request as written.
 #[derive(Debug, usage_rs::Args)]
 #[usage(
     visible_alias = "list",
     verbatim_doc_comment,
     example(
         r###"mise ls"###,
-        help = r###"Show installed versions and requests from active configuration"###
+        help = r###"Show installed versions and the requests from the loaded config files"###
     ),
     example(
         r###"mise ls --current"###,
-        help = r###"Show only versions requested by the current configuration"###
+        help = r###"Show only versions the loaded config files request"###
     ),
     example(
         r###"mise ls --missing"###,
-        help = r###"Find configured versions that need installation"###
+        help = r###"Find requested versions that are not installed"###
     ),
     example(
         r###"mise ls --json"###,
@@ -51,7 +53,7 @@ use crate::ui::table::MiseTable;
     ),
     example(
         r###"mise ls --all-sources"###,
-        help = r###"Include references from every tracked configuration file"###
+        help = r###"Include requests from every config file mise has seen"###
     ),
     example(
         r###"mise ls --backend go --backend cargo"###,
@@ -66,27 +68,28 @@ pub(crate) struct Ls {
     #[usage(flatten)]
     truncate: TruncateOptions,
 
-    /// Only show tool versions from [TOOL]
+    /// Only show these tools
     #[usage(conflicts = "tool_flag")]
     installed_tool: Option<Vec<BackendArg>>,
 
-    /// Only show tools from this backend, e.g. aqua, cargo, core, go
+    /// Only show tools from this backend, such as aqua, cargo, core, or go
     ///
     /// Registry shorthands count as the backend they resolve to, so `jq` is listed
     /// under aqua. Repeat the flag to show several backends.
     #[usage(long, short, value_name = "BACKEND", verbatim_doc_comment)]
     backend: Vec<BackendType>,
 
-    /// Only show tool versions currently specified in a mise.toml
+    /// Only show versions the loaded config files request
     #[usage(long, short)]
     current: bool,
 
-    /// Only show tool versions currently specified in the global mise.toml
+    /// Only show versions the global config requests
     #[usage(long, short, conflicts = "local")]
     global: bool,
 
-    /// Only show tool versions that are installed
-    /// (Hides tools defined in mise.toml but not installed)
+    /// Only show installed versions
+    ///
+    /// Hides requested versions that are not installed.
     #[usage(long, short)]
     installed: bool,
 
@@ -100,11 +103,11 @@ pub(crate) struct Ls {
     #[usage(long, short = 'J')]
     json: bool,
 
-    /// Only show tool versions currently specified in the local mise.toml
+    /// Only show versions the local config requests
     #[usage(long, short, conflicts = "global")]
     local: bool,
 
-    /// Display missing tool versions
+    /// Only show requested versions that are not installed
     #[usage(long, short, conflicts = "installed")]
     missing: bool,
 
@@ -115,14 +118,17 @@ pub(crate) struct Ls {
     #[usage(long = "plugin", short = 'p', hide = true)]
     tool_flag: Option<BackendArg>,
 
-    /// Display all tracked config sources for tools
+    /// Show requests from every config file mise has seen, not only loaded ones
+    ///
+    /// mise tracks the config files it loads so `mise prune` keeps the versions
+    /// they use.
     #[usage(long, conflicts = &["current", "global", "local", "prunable"])]
     all_sources: bool,
 
-    /// List tools from every [monorepo].config_roots config root
+    /// Also list tools from every config root in `[monorepo].config_roots`
     ///
-    /// Uses the active MISE_ENV and requires monorepo_root = true plus explicit
-    /// [monorepo].config_roots in the monorepo root config.
+    /// Requires `monorepo_root = true` and an explicit `config_roots` list in the
+    /// monorepo root's config. Uses the active MISE_ENV.
     #[usage(
         long,
         env = "MISE_MONOREPO",
@@ -131,15 +137,15 @@ pub(crate) struct Ls {
     )]
     monorepo: bool,
 
-    /// Don't display headers
+    /// Do not print the header row
     #[usage(long, alias = "no-headers", verbatim_doc_comment, conflicts = &["json"])]
     no_header: bool,
 
-    /// Display whether a version is outdated
+    /// Show whether each version is outdated
     #[usage(long)]
     outdated: bool,
 
-    /// Display versions matching this prefix
+    /// Only show versions starting with PREFIX (requires a tool argument)
     #[usage(long, requires = "installed_tool")]
     prefix: Option<String>,
 

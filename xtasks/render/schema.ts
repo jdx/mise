@@ -116,7 +116,7 @@ function buildTaskSchema(schema: JsonObject) {
     title: "mise-task-schema",
     type: "object",
     description:
-      "Config file for included mise tasks (https://mise.jdx.dev/tasks/#task-configuration)",
+      "Config file for included mise tasks (https://mise.jdx.dev/tasks/task-configuration.html)",
     additionalProperties: {
       $ref: "#/$defs/task",
     },

@@ -1,184 +1,108 @@
 ---
-description: "Connect your editor, language server, and debugger to mise-managed tools."
-socialDescription: "Connect your editor, language server, and debugger to mise-managed tools."
+description: "Connect your editor, language servers, debugger, and dev containers to the tools mise manages."
 ---
 
-# IDE Integration
+# Editors and IDEs
 
-An editor's terminal, language server, debugger, and extension host can use different
-environments. First identify which process needs a tool or variable, then choose an integration:
+An editor's integrated terminal, language servers, debugger and extensions can
+each run with a different environment. Find out which process needs the tool or
+variable, then pick an integration:
 
 | Need                                              | Integration                            | What to expect                                                                                                            |
 | ------------------------------------------------- | -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
 | A fixed executable or SDK directory               | `mise which node` or `mise where java` | Selects an installed path; update the IDE setting after changing versions.                                                |
 | A tool that follows the current project           | [Shims](/dev-tools/shims.html)         | Resolves the tool and loads mise environment variables when the shim runs. The process must run in the project directory. |
 | A command with the project environment            | `mise exec -- command`                 | Loads tools and variables for that command and its children.                                                              |
-| Editor features that follow configuration changes | A [mise plugin](#ide-plugins)          | Support depends on the editor, extension, and language.                                                                   |
+| Editor features that follow configuration changes | An [editor plugin](#ide-plugins)       | Support depends on the editor, extension and language.                                                                    |
 
-Run `mise install` in the project first. Selecting an SDK path alone does not load `[env]`.
-Shims also do not change the environment of the already-running editor. Restart affected
-language servers or the editor after changing an inherited environment or a fixed SDK path.
+Run `mise install` in the project first. Selecting an SDK path alone does not
+load `[env]`. Shims also do not change the environment of an editor that is
+already running, so restart affected language servers or the editor after
+changing an inherited environment or a fixed SDK path.
 
-## Adding shims to PATH in your default shell profile {#adding-shims-to-path-default-shell}
+## Put shims on PATH for GUI editors {#adding-shims-to-path-default-shell}
 
-Add the [shim directory](/dev-tools/shims.html) to the environment used to launch the editor.
-This lets processes find mise-managed tools without requiring an interactive prompt hook.
-
-For IntelliJ and VSCode—and likely others—you can modify your default shell's login (or "profile")
-script. Find your default shell with:
+Editors started from the desktop, including VS Code and JetBrains IDEs, read the
+environment of your login shell. Add mise's [shims](/dev-tools/shims.html) to
+that shell's login profile so that these editors find mise tools without a
+prompt hook. Find your login shell with:
 
 ::: code-group
 
-```shell [macos]
+```sh [macOS]
 dscl . -read /Users/$USER UserShell
 ```
 
-```shell [linux]
+```sh [Linux]
 getent passwd $USER | cut -d: -f7
 ```
 
 :::
 
-Edit the startup file for the shell your editor actually loads. For Bash, use the first
-existing file among `~/.bash_profile`, `~/.bash_login`, and `~/.profile`; creating a new
-`~/.bash_profile` can prevent an existing `~/.profile` from being read.
+Then add `mise activate --shims` to that shell's login profile as shown in
+[How to add mise shims to PATH](/dev-tools/shims.html#how-to-add-mise-shims-to-path),
+which also explains which file Bash reads. If `mise` is not on `PATH` when the
+profile runs, use its absolute path, for example
+`eval "$($HOME/.local/bin/mise activate zsh --shims)"`.
+
+Restart the editor after editing the profile. Some desktop environments read a
+login profile only when you log in, so you may need to log out and back in. If
+the editor does not read your shell profile at all, check its environment
+settings. VS Code's
+[environment resolution](https://code.visualstudio.com/docs/terminal/advanced#_environment-inheritance)
+and its [task terminal profile](#vscode-automation-profile-for-macos) are
+separate mechanisms.
+
+VS Code and IntelliJ using the `node` that mise provides through shims:
+
+::: tabs
+== VS Code
+
+![VS Code using shims](./shims-vscode.png)
+
+== IntelliJ
+![IntelliJ using shims](./shims-intellij.png)
+:::
+
+Shims set `[env]` variables only for the tool process they start. The editor
+itself, and features that read the environment directly, do not see them; use
+an [editor plugin](#ide-plugins) for those.
+
+## Editor plugins {#ide-plugins}
+
+These community plugins integrate with mise:
+
+| Editor         | Plugin                                                                                 | What it does                                                                                                                        |
+| -------------- | -------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| VS Code        | [mise-vscode](https://marketplace.visualstudio.com/items?itemName=hverlin.mise-vscode) | Manages tools and tasks, loads the project environment, helps edit config, and can configure language extensions to use mise tools. |
+| JetBrains IDEs | [intellij-mise](https://github.com/134130/intellij-mise)                               | Configures the IDE's SDKs from mise, runs mise tasks, and loads environment variables in run configurations.                        |
+| Neovim         | [miser.nvim](https://github.com/carldaws/miser.nvim)                                   | Starts language servers and formatters for the tools in `mise.toml`, and runs mise tasks from Neovim.                               |
+| Emacs          | [mise.el](https://github.com/eki3z/mise.el)                                            | Loads the mise environment for each buffer.                                                                                         |
+
+## VS Code {#vscode}
+
+The [mise-vscode extension](https://hverlin.github.io/mise-vscode/) can
+configure
+[supported language extensions](https://hverlin.github.io/mise-vscode/reference/supported-extensions/)
+to use mise tools. That is off by default; enable
+[`mise.configureExtensionsAutomatically`](https://hverlin.github.io/mise-vscode/reference/settings/#miseconfigureextensionsautomatically)
+to turn it on. See the extension's documentation for its environment and task
+settings.
+
+Install mise on the machine that runs the extension. A local installation does
+not provide tools inside an SSH host, a WSL distribution or a
+[dev container](#dev-containers).
+
+### Task and debug terminals {#vscode-automation-profile-for-macos}
+
+VS Code runs tasks and debug sessions in an automation terminal. To make it
+start a login shell that reads your profile, and with it the shims, add an
+[automation profile](https://code.visualstudio.com/docs/terminal/profiles#_configuring-the-taskdebug-profile)
+to `settings.json`:
 
 ::: code-group
 
-```zsh
-# ~/.zprofile
-eval "$(mise activate zsh --shims)"
-```
-
-```bash
-# ~/.bash_profile or ~/.bash_login or ~/.profile
-eval "$(mise activate bash --shims)"
-```
-
-```fish
-# ~/.config/fish/config.fish
-if status is-interactive
-  mise activate fish | source
-else
-  mise activate fish --shims | source
-end
-```
-
-:::
-
-Restart the editor after editing the profile. Some desktop environments read a login profile
-only when you log in, so a logout/login may also be needed. Check the editor's environment
-settings if it does not read your shell profile. VS Code's
-[environment resolution](https://code.visualstudio.com/docs/terminal/advanced#_environment-inheritance)
-and its [task terminal profile](#vscode-automation-profile-for-macos) are separate mechanisms.
-
-This assumes that `mise` is on `PATH`. If it is not, use the absolute path
-(e.g. `eval "$($HOME/.local/bin/mise activate zsh --shims)"`).
-
-Here are examples showing VSCode and IntelliJ using the `node` provided by `mise`:
-
-::: tabs
-=== VSCode
-
-![vscode using shims](./shims-vscode.png)
-
-=== IntelliJ
-![intellij using shims](./shims-intellij.png)
-:::
-
-As mentioned above, using `shims` doesn't work with all mise features. For example, arbitrary [env vars](./environments/) in `[env]` are
-only set when a shim is executed. Supporting them requires tighter integration with the IDE or a custom plugin.
-
-## IDE Plugins
-
-Here are some community plugins that have been developed to work with `mise`:
-
-- Emacs: [mise.el](https://github.com/eki3z/mise.el)
-- IntelliJ: [intellij-mise](https://github.com/134130/intellij-mise)
-- Neovim: [miser.nvim](https://github.com/carldaws/miser.nvim)
-- VSCode: [mise-vscode](https://github.com/hverlin/mise-vscode)
-
-## Vim
-
-```vim
-" Prepend mise shims to PATH
-let $PATH = $HOME . '/.local/share/mise/shims:' . $PATH
-```
-
-## Neovim
-
-```lua
--- Prepend mise shims to PATH
-vim.env.PATH = vim.env.HOME .. "/.local/share/mise/shims:" .. vim.env.PATH
-```
-
-For better Treesitter and LSP integration, see the [neovim cookbook](./mise-cookbook/neovim.md).
-
-Or use [miser.nvim](https://github.com/carldaws/miser.nvim), which starts LSP servers and runs
-formatters on save for the tools declared in your `mise.toml`, and launches your mise tasks —
-no separate installer needed.
-
-## Emacs
-
-### Shims
-
-```lisp
-(let ((mise-shims (expand-file-name "~/.local/share/mise/shims")))
-  (setenv "PATH" (concat mise-shims (char-to-string path-separator) (getenv "PATH")))
-  (add-to-list 'exec-path mise-shims))
-```
-
-### Use with package mise.el
-
-[mise.el](https://github.com/eki3z/mise.el) loads mise environments per buffer. Install the
-package following its README, then enable it:
-
-```lisp
-(require 'mise)
-(add-hook 'after-init-hook #'global-mise-mode)
-```
-
-## JetBrains Editors (IntelliJ, RustRover, PyCharm, WebStorm, RubyMine, GoLand, etc)
-
-### IntelliJ Plugin
-
-<https://github.com/134130/intellij-mise>
-
-This plugin can automatically configure the IDE to use the tools provided by mise. It also has some support for running mise tasks and loading environment variables in run configurations.
-
-### Direct SDK selection
-
-Some JetBrains IDEs (or language plugins) support `mise` directly, allowing you to select the SDK version from the IDE settings.
-Example for Java:
-
-![SDK settings](./intellij-sdk-selection.png)
-
-### SDK selection using asdf layout
-
-Some plugins cannot yet find SDKs installed by `mise` but do support asdf.
-Prefer direct SDK selection when available. If a plugin requires an asdf directory, a symlink
-can expose the mise layout. Only use this workaround if `~/.asdf` does not already exist;
-do not replace an existing asdf installation or use asdf to modify mise-managed installs:
-
-```sh
-ln -s ~/.local/share/mise ~/.asdf
-```
-
-They should then show up in Project Settings:
-
-![project settings](https://github.com/jdx/mise-docs/assets/216188/b34a0e3f-7af8-45c9-85b8-2c72bd1dc226)
-
-For node (and possibly other languages), the setting is under "Languages & Frameworks":
-
-![languages & frameworks](https://github.com/jdx/mise-docs/assets/216188/9926be1c-ab88-451a-8ace-edf2dac564b5)
-
-## VSCode
-
-### VSCode Automation Profile for macOS
-
-To load `~/.zprofile` for task and debug terminals, add this to `settings.json`:
-
-```json
+```json [macOS]
 {
   "terminal.integrated.automationProfile.osx": {
     "path": "/bin/zsh",
@@ -187,31 +111,28 @@ To load `~/.zprofile` for task and debug terminals, add this to `settings.json`:
 }
 ```
 
-This [automation profile](https://code.visualstudio.com/docs/terminal/profiles#_configuring-the-taskdebug-profile)
-applies to terminals used by tasks and debugging. It does not configure the extension host
-or every language server. Keep shim setup in `~/.zprofile`; adding `--interactive` also loads
-`~/.zshrc`, including prompt customization that a build process usually does not need.
+```json [Linux]
+{
+  "terminal.integrated.automationProfile.linux": {
+    "path": "/bin/bash",
+    "args": ["--login"]
+  }
+}
+```
 
-### VSCode Plugin
+:::
 
-The [VSCode plugin](https://marketplace.visualstudio.com/items?itemName=hverlin.mise-vscode)
-provides tool and task management, environment loading, and configuration assistance.
-It can configure [supported language extensions](https://hverlin.github.io/mise-vscode/reference/supported-extensions/)
-to use mise tools. Automatic extension configuration is disabled by default; enable
-[`mise.configureExtensionsAutomatically`](https://hverlin.github.io/mise-vscode/reference/settings/#miseconfigureextensionsautomatically)
-if you want that behavior.
+The automation profile does not configure the extension host or every language
+server. Keep the shims in your login profile; adding `--interactive` also loads
+your interactive startup file, including prompt customization that a build does
+not need.
 
-See the [plugin documentation](https://hverlin.github.io/mise-vscode/) for its environment
-and task settings. Configure mise on the machine running the extension: a local installation
-does not provide tools inside an SSH host, WSL distribution, or development container.
+### Debug with mise exec in launch.json {#use-mise-exec-in-launch-configuration}
 
-### Use [`mise exec`](./cli/exec) in launch Configuration
-
-For Node.js debugging, run the runtime through mise in `launch.json`. Set `cwd` to the project
-containing `mise.toml`. The editor must be able to find `mise`; otherwise replace
-`runtimeExecutable` with its absolute path. This example targets macOS and Linux:
-
-::: details mise exec launch.json example
+To debug Node.js with the project's tools, run the runtime through
+[`mise exec`](/cli/exec.html) in `launch.json`. Set `cwd` to the directory that
+holds `mise.toml`. If the editor cannot find `mise`, set `runtimeExecutable` to
+its absolute path. This example is for macOS and Linux:
 
 ```json
 {
@@ -230,36 +151,142 @@ containing `mise.toml`. The editor must be able to find `mise`; otherwise replac
 }
 ```
 
-:::
+## JetBrains IDEs {#jetbrains-editors-intellij-rustrover-pycharm-webstorm-rubymine-goland-etc}
 
-## Xcode
+These apply to IntelliJ IDEA, PyCharm, WebStorm, GoLand, RubyMine, RustRover and
+other JetBrains IDEs. The [intellij-mise plugin](https://github.com/134130/intellij-mise)
+configures SDKs from mise automatically.
 
-Xcode build phases do not run your interactive shell startup files. Use an absolute mise
-path and select the project directory explicitly. For a project that declares SwiftLint:
+### Direct SDK selection
+
+IntelliJ IDEA's Java SDK picker detects JDKs that mise installed:
+
+![SDK settings](./intellij-sdk-selection.png)
+
+### SDK selection using asdf layout
+
+Some language plugins cannot find SDKs that mise installed but can find asdf's.
+Prefer direct SDK selection when it is available. If a plugin needs an asdf
+directory and `~/.asdf` does not exist, a symlink exposes mise's layout. Do not
+replace an existing asdf installation, and do not use asdf to change installs
+that mise manages:
+
+```sh
+ln -s ~/.local/share/mise ~/.asdf
+```
+
+The SDKs then appear in Project Settings:
+
+![project settings](https://github.com/jdx/mise-docs/assets/216188/b34a0e3f-7af8-45c9-85b8-2c72bd1dc226)
+
+For Node.js and some other languages, the setting is under "Languages &
+Frameworks":
+
+![languages & frameworks](https://github.com/jdx/mise-docs/assets/216188/9926be1c-ab88-451a-8ace-edf2dac564b5)
+
+## Neovim {#neovim}
+
+The Vim, Neovim and Emacs snippets below use the default data directory. If you
+set `MISE_DATA_DIR`, use `$MISE_DATA_DIR/shims` instead.
+
+```lua
+-- Prepend mise shims to PATH
+vim.env.PATH = vim.env.HOME .. "/.local/share/mise/shims:" .. vim.env.PATH
+```
+
+For Treesitter and language server setup, see the
+[Neovim cookbook](/mise-cookbook/neovim.html), or use
+[miser.nvim](https://github.com/carldaws/miser.nvim).
+
+## Vim {#vim}
+
+```vim
+" Prepend mise shims to PATH
+let $PATH = $HOME . '/.local/share/mise/shims:' . $PATH
+```
+
+## Emacs {#emacs}
+
+To use shims:
+
+```lisp
+(let ((mise-shims (expand-file-name "~/.local/share/mise/shims")))
+  (setenv "PATH" (concat mise-shims (char-to-string path-separator) (getenv "PATH")))
+  (add-to-list 'exec-path mise-shims))
+```
+
+To load each buffer's mise environment instead, install
+[mise.el](https://github.com/eki3z/mise.el) following its README, then enable
+it:
+
+```lisp
+(require 'mise)
+(add-hook 'after-init-hook #'global-mise-mode)
+```
+
+## Xcode {#xcode}
+
+Xcode build phases do not run your interactive shell startup files. Use an
+absolute mise path and select the project directory explicitly. For a project
+that declares SwiftLint:
 
 ```sh
 "$HOME/.local/bin/mise" --cd "$SRCROOT" exec -- swiftlint lint
 ```
 
-Install the project's tools before building. Adjust the mise path if it was installed with
-a package manager.
+Install the project's tools before building. Adjust the mise path if a package
+manager installed it.
 
-When **User Script Sandboxing** is enabled, declare the script's inputs and outputs in the
-build phase. `$(SRCROOT)/mise.toml` is one input, but mise and the tool may also need access
-to other configuration files, installed executables, and data directories. Use the sandbox
-denial in the build log to identify missing access; allowing just `mise.toml` is not enough
-for every tool. Xcode Cloud setup is covered in [continuous integration](/continuous-integration.html#xcode-cloud).
+When User Script Sandboxing is on, declare the script's inputs and outputs in the
+build phase. `$(SRCROOT)/mise.toml` is one input, but mise and the tool may also
+read other config files, installed executables and data directories, so
+allowing only `mise.toml` is not enough for every tool. Use the sandbox denial in
+the build log to find what is missing. For Xcode Cloud, see
+[Continuous integration](/continuous-integration.html#xcode-cloud).
+
+## Dev containers {#dev-containers}
+
+[`mise generate devcontainer`](/cli/generate/devcontainer.html) creates a
+starting `.devcontainer/devcontainer.json` that adds the mise dev container
+feature and the mise-vscode extension:
+
+```sh
+mise generate devcontainer --write
+```
+
+`--mount-mise-data` adds a named volume for mise's data directory, so installed
+tools survive rebuilds of the container. Review the image and mounts, then run
+`mise install` inside the container. To pre-install tools in an image whose home
+directory is mounted from the host, see
+[Docker](/mise-cookbook/docker.html#devcontainers-with-home-directory-mounts).
+
+## Windows {#windows}
+
+Add `%LOCALAPPDATA%\mise\shims` to your user `Path` so that editors find mise
+tools, as shown in [Windows shells](/shell-setup.html#windows), then restart the
+editor. If an extension reports `spawn EINVAL`, see the
+[troubleshooting guide](/troubleshooting.html#vscode-for-windows-extension-with-error-spawn-einval).
+
+## AI coding assistants {#ai-coding-assistants}
+
+Assistants that run commands in a terminal get mise tools the same way as other
+processes: through activation, shims or `mise exec`. To let an assistant read
+the project's tools, tasks and environment and run its tasks, connect it to the
+[mise MCP server](/mcp.html). Tools installed through packslip can also provide
+agent skills; see [Man pages, completions, and skills](/dev-tools/packslip-resources.html).
 
 ## Diagnose an editor mismatch
 
-From the project directory, compare the selected executable with what the editor uses:
+From the project directory, compare the selected executable with what the editor
+uses:
 
 ```sh
 mise which node
 mise exec -- node --version
 ```
 
-Check the language server or debugger log for its executable path and working directory.
-If the commands above work but the editor selects another version, correct that process's
-SDK setting, `PATH`, or working directory. A working integrated terminal does not by itself
-confirm that a language extension uses the same environment.
+Check the language server or debugger log for its executable path and working
+directory. If these commands work but the editor selects another version,
+correct that process's SDK setting, `PATH` or working directory. A working
+integrated terminal does not show that a language extension uses the same
+environment.

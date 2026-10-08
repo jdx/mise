@@ -18,15 +18,31 @@ List checkpoints, newest first
 
   **Default:** `20`
 - **`--path <PATH>`** — Only checkpoints where this path (or something under it) changed
-- **`--trigger <TRIGGER>`** — Only checkpoints with this trigger (edit, save, bootstrap, …)
+- **`--trigger <TRIGGER>`** — Only checkpoints with this trigger, such as edit, save, agent, bootstrap, apply, rollback, or undo
+
+  `bootstrap` covers `mise bootstrap`, its `packages` commands, and `mise dot add`, `apply`, `edit`, and `unapply`. `apply` covers incoming changes written by `mise dot pull` or the watcher.
 - **`--label <LABEL>`** — Only checkpoints with this label
 - **`--pending`** — Only checkpoints recorded by operations that did not finish
 - **`-h --help`** — Print help
+
+## Examples
+
+List every checkpoint
+
+```
+mise dot history ls -n 0
+```
+
+List operations that did not finish
+
+```
+mise dot history ls --pending
+```
 
 <!-- generated reference navigation -->
 
 ## Related documentation
 
-- [Getting started](/getting-started.html).
+- [Dotfiles history](/dotfiles/history.html).
 - [`mise dotfiles history [FLAGS] [SUBCOMMAND]`](/cli/dotfiles/history.html).
 - [Global flags and argument syntax](/cli/#global-flags).

@@ -8,28 +8,33 @@ use crate::system;
 use crate::system::files::FileState;
 use crate::ui::table::MiseTable;
 
-/// Show the status of dotfiles from `[dotfiles]`
+/// Show the state of your dotfiles and their history
 ///
-/// Template entries are rendered to compare their output; trusted template
-/// functions may execute. JSON includes each entry's origin and uses the states
-/// `applied`, `missing`, `differs`, `source_missing`, and `tracked`.
+/// Lists each `[dotfiles]` entry with its state: `applied`, `missing`,
+/// `differs`, `source missing`, `tracked`, or `absent` for a removal that is
+/// done. Then shows the history state: what is tracked, the latest checkpoint,
+/// unfinished operations, and whether edits are saved automatically.
 ///
-/// Files deployed by a dotfile group that is no longer selected or declared
-/// are listed as `orphaned`; `mise dot apply --prune` removes them.
+/// Files a dotfile group deployed that no active entry deploys now are listed
+/// as `orphaned`: the group was deselected or removed, or a new `exclude` or a
+/// deleted source dropped them. `mise dot apply --prune` removes them.
 ///
-/// The management state of every declaration (applied, missing, differs,
-/// tracked) followed by the history state: what is tracked, the latest
-/// checkpoint, unfinished operations, and whether edits are saved
-/// automatically.
+/// Template entries are rendered to compare their output, so trusted template
+/// functions may run. `--json` prints `files`, `edits`, and `history`, with
+/// each entry's origin and a state of `applied`, `missing`, `differs`,
+/// `source_missing`, or `tracked`. Orphaned files appear in a separate
+/// `orphaned` array with the state `orphaned`, or `orphaned_changed` when the
+/// file was modified after it was deployed. See
+/// https://mise.jdx.dev/dotfiles/reference.html#status-states for every state.
 #[derive(Debug, usage_rs::Args)]
 #[usage(
     visible_alias = "ls",
-    verbatim_doc_comment,
+    example("mise dot status", help = "Show every dotfile"),
+    example("mise dot status ~/.zshrc", help = "Show one target"),
+    example("mise dot status --json", help = "Print the state as JSON"),
     example(
-        r###"mise dot status
-mise dot status ~/.zshrc
-mise dot status --json
-mise dot status --missing # exit 1 if anything is out of sync"###
+        "mise dot status --missing",
+        help = "Exit 1 if anything is out of date, for scripts and CI"
     )
 )]
 pub(crate) struct DotfilesStatus {
@@ -44,12 +49,13 @@ pub(crate) struct DotfilesStatus {
     #[usage(long, short = 'J')]
     json: bool,
 
-    /// Exit with code 1 if any configured dotfiles are not in their desired
-    /// state (missing, source missing, differs)
-    #[usage(long, verbatim_doc_comment)]
+    /// Exit with code 1 if any dotfile is not in its desired state (missing,
+    /// source missing, or differs)
+    #[usage(long)]
     missing: bool,
 
-    /// Prompt securely for missing bootstrap secret inputs
+    /// Prompt for `[bootstrap.secrets]` values that templates need and the
+    /// environment does not set
     #[usage(long)]
     prompt_secrets: bool,
 }
@@ -227,7 +233,7 @@ impl DotfilesStatus {
         let mut edit_rows: Vec<Vec<String>> = vec![];
         let mut json_edits = vec![];
         for req in &edits {
-            let state = match system::edits::check(&config, req) {
+            let state = match system::edits::check_selected(&config, req, &edits) {
                 Ok(state) => state,
                 Err(err) => FileState::Differs(format!("{err}")),
             };

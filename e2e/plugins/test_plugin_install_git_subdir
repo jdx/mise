@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+
+# A git:: source with a //subdir clones the whole repository into
+# plugin-repos/ and links the plugin from the subdirectory.
+
+repo="$PWD/sources/monorepo"
+mkdir -p "$repo/plugins/tiny/bin"
+cat >"$repo/plugins/tiny/bin/list-all" <<'EOF'
+#!/usr/bin/env bash
+echo 1.0.0 2.0.0
+EOF
+chmod +x "$repo/plugins/tiny/bin/list-all"
+git -C "$repo" -c init.defaultBranch=main init -q
+git -C "$repo" add .
+git -C "$repo" commit -qm "initial plugin"
+git clone -q --bare "$repo" "$PWD/sources/monorepo.git"
+
+# git:: subdirectory sources only accept https/ssh URLs, so point one at the
+# local fixture.
+git config --global \
+  url."file://$PWD/sources/monorepo.git".insteadOf \
+  "https://example.invalid/org/monorepo.git"
+
+# Start from an empty data directory (the harness pre-creates plugins/), so
+# this is the first plugin installed and the plugins directory does not exist.
+export MISE_DATA_DIR="$PWD/data"
+
+output="$(mise plugins install tiny "git::https://example.invalid/org/monorepo.git//plugins/tiny" 2>&1)" ||
+  fail "plugin install failed: $output"
+assert_not_contains_text "$output" "WARN"
+
+[[ -L $MISE_DATA_DIR/plugins/tiny ]] || fail "expected plugins/tiny to be a symlink"
+assert "readlink $MISE_DATA_DIR/plugins/tiny" "$MISE_DATA_DIR/plugin-repos/tiny/plugins/tiny"
+assert "mise ls-remote tiny" "1.0.0
+2.0.0"

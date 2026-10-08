@@ -11,23 +11,28 @@ use crate::ui::multi_progress_report::MultiProgressReport;
 
 use super::{PluginTaskNames, PluginTaskResult, join_plugin_tasks, spawn_plugin_task};
 
-/// Update a plugin to the latest version
+/// Update installed plugins
 ///
-/// With no names, updates every installed plugin. This updates plugin source,
-/// not the tool versions it manages. Linked local plugins are skipped; archive
-/// installations cannot be updated with Git.
+/// With no names, updates every installed plugin. This updates the plugin code,
+/// not the tool versions it manages. Linked local plugins are skipped; plugins
+/// installed from an archive cannot be updated with Git.
 #[derive(Debug, usage_rs::Args)]
-#[usage(verbatim_doc_comment, visible_aliases = ["up", "upgrade"], example(r###"mise plugins update              # update all installed plugins
-mise plugins update my-tool      # update one Git plugin
-mise plugins update my-tool#main # select an upstream ref"###))]
+#[usage(
+    verbatim_doc_comment,
+    visible_aliases = ["up", "upgrade"],
+    example(r###"mise plugins update"###, help = "Update every installed plugin"),
+    example(r###"mise plugins update my-tool"###, help = "Update one plugin"),
+    example(
+        r###"mise plugins update my-tool#main"###,
+        help = "Switch a plugin to its main branch"
+    )
+)]
 pub(super) struct Update {
-    /// Plugin(s) to update
+    /// Plugins to update; append #ref to switch to a branch, tag, or commit
     #[usage()]
     plugin: Option<Vec<String>>,
 
-    /// Number of jobs to run in parallel
-    /// Values below 1 are treated as 1
-    /// Defaults to the `jobs` setting
+    /// Number of plugins to update in parallel (default: the `jobs` setting)
     #[usage(long, short, verbatim_doc_comment)]
     jobs: Option<usize>,
 }

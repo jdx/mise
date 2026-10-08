@@ -13,119 +13,117 @@ description: "Install a tool and add it to configuration"
 Install a tool and add it to configuration
 
 Installs missing tool versions and records the requests in a config file.
-By default, mise selects the nearest directory with a supported config and writes
-to its lowest-precedence file, such as `mise.toml` rather than `mise.local.toml`.
-If no project config exists, it creates one in the current directory. Running from
-your home directory targets global configuration.
+By default, mise selects the nearest directory with a supported config and
+writes to its lowest-precedence file, such as `mise.toml` rather than
+`mise.local.toml`. If no project config exists, it creates one in the current
+directory. Run from your home directory, it writes to the global config.
 
-Use `--path` for an explicit file/directory, `--global` for personal defaults, or
-`--env` to write `mise.ENV.toml` in the current directory (preserving an existing
-`.mise.ENV.toml`). These selectors override one another; use one per command.
+Use `--path` for an explicit file or directory, `--global` for personal
+defaults, or `--env` to write `mise.ENV.toml` in the current directory (an
+existing `.mise.ENV.toml` is used instead). If you pass more than one, the
+last one wins.
 
 See <https://mise.jdx.dev/configuration.html#target-file-for-write-operations>
-for filename overrides and configuration precedence. Selection takes effect in
-an activated shell on its next prompt, or immediately in `mise exec` commands.
+for filename overrides and config precedence. The change takes effect in an
+activated shell at its next prompt, and immediately in `mise exec` commands.
 
 ## Arguments
-- **`<TOOL@VERSION>`** — Tool to add to config file
+- **`<TOOL@VERSION>`** — Tool to add to the config file, such as node@24, cargo:ripgrep@latest, or npm:prettier@3
 
-  e.g.: node@20, cargo:ripgrep@latest, npm:prettier@3
-  If no version is specified, it defaults to @latest
-
-  Tool options can be set with this syntax:
+  Without a version, mise requests `latest`; with --pin it writes the resolved version.
+  Tool options can also be set inline:
 
   ```
   mise use "cargo:ripgrep[features=pcre2]"
   ```
 
 ## Flags
-- **`-e --env <ENV>`** — Create/modify an environment-specific config file like .mise.&lt;env>.toml
-- **`-f --force`** — Force reinstall even if already installed
-- **`-g --global`** — Use the global config file (`~/.config/mise/config.toml`) instead of the local one
-- **`-j --jobs <JOBS>`** — Number of jobs to run in parallel
-  Values below 1 are treated as 1
-  Defaults to the `jobs` setting
+- **`-e --env <ENV>`** — Write mise.&lt;ENV>.toml in the current directory, or .mise.&lt;ENV>.toml if that exists
+
+  Not the same as the global -E, which only chooses which config files are loaded.
+- **`-f --force`** — Reinstall even if already installed
+- **`-g --global`** — Write to the global config instead of the project config
+
+  Updates the global config file that already declares the tool, otherwise the file set by the `write_targets.tools` setting, otherwise ~/.config/mise/config.toml.
+- **`-j --jobs <JOBS>`** — Number of jobs to run in parallel (default: the `jobs` setting)
 
   **Environment Variable:** `MISE_JOBS`
-- **`-n --dry-run`** — Perform a dry run, showing what would be installed and modified without making changes
-- **`-p --path <PATH>`** — Specify a path to a config file or directory
+- **`-n --dry-run`** — Show what would change without changing anything
+- **`-p --path <PATH>`** — Write to this config file, or to the config file in this directory
 
-  If a directory is specified, it will look for a config file in that directory following the target-file selection rules.
-- **`--dry-run-code`** — Like --dry-run but exits with code 1 if there are changes to make
+  For a directory, mise picks the file by the usual write-target rules.
+- **`--dry-run-code`** — Like --dry-run, but exit with code 1 if there are changes to make
 
-  This is useful for scripts to check if tools need to be added or removed.
-- **`--fuzzy`** — Save fuzzy version to config file
+  Use it in scripts that check whether tools need to be added or removed.
+- **`--fuzzy`** — Write the version as requested, such as `20` for node@20
 
-  e.g.: `mise use --fuzzy node@20` will save `20` as the version.
-  This is the default behavior unless `MISE_PIN=1`
+  This is the default unless the `pin` setting is on.
 - **`--minimum-release-age <MINIMUM_RELEASE_AGE>`** — Only install versions released before this date or older than this duration
 
-  Supports absolute dates like "2024-06-01" and relative durations like "90d" or "1y".
-- **`--pin`** — Save the resolved concrete version to the config file
+  Supports absolute dates such as "2024-06-01" and relative durations such as "90d" or "1y".
+- **`--pin`** — Write the resolved version, such as `20.19.5` for node@20
 
-  If the request exactly matches an available release, that release is preferred over
-  installed fuzzy matches. Use `prefix:` to explicitly request recursive prefix matching.
-  e.g.: `mise use --pin node@20` will save the resolved `20.x.y` version
-  Set `MISE_PIN=1` to make this the default behavior
+  If the request exactly matches an available release, mise uses that release rather than an installed version that only matches it as a prefix. Write `prefix:` before the version, as in `node@prefix:20`, to force prefix matching. Make this the default with the `pin` setting (`MISE_PIN=1`).
 
-  Consider using mise.lock as a better alternative to pinning in mise.toml:
-  <https://mise.jdx.dev/configuration/settings.html#lockfile>
-- **`--raw`** — Connect backend install command stdin/stdout/stderr directly to the terminal. Implies `--jobs=1`
-- **`--remove <TOOL>`** — Remove the tool(s) from config file
+  To record exact versions without editing mise.toml, use a lockfile: <https://mise.jdx.dev/dev-tools/mise-lock.html>
+- **`--raw`** — Connect the install commands' stdin, stdout, and stderr to the terminal
+
+  Implies `--jobs=1`.
+- **`--remove <TOOL>`** — Remove these tools from the config file
 - **`-h --help`** — Print help
 - **`--postinstall <COMMAND>`** — Command to run after installing this tool
-- **`--tool-option <KEY=VALUE>`** — Set an option for this tool (repeat for multiple options).
-  Values use inline tool-option types; unquoted text is treated as a string.
-  Place these flags before the tool they apply to.
+- **`--tool-option <KEY=VALUE>`** — Set an option for the tool that follows; repeat for several options
+
+  Values use inline tool-option types; unquoted text is a string. Put these flags before the tool they apply to.
 
 ## Examples
 
-run with no arguments to use the interactive selector
+Choose tools from an interactive selector
 
 ```
 mise use
 ```
 
-set the current version of node to 20.x in the selected project config will write the fuzzy version (e.g.: 20)
+Use node 24.x in the project config and record the request `24`
 
 ```
-mise use node@20
+mise use node@24
 ```
 
-run a command after installing a tool
+Run a command after installing a tool
 
 ```
 mise use --postinstall "mbx setup --defaults" mr-boxington
 ```
 
-associate a different postinstall command with each tool
+Give each tool its own postinstall command
 
 ```
-mise use --postinstall "setup-a" tool-a --postinstall "setup-b" tool-b
+mise use --postinstall "corepack enable" node@24 --postinstall "python -m pip install -U pip" python@3.13
 ```
 
-enable a Rust tool option while installing Rust and mbx
+Enable a Rust tool option while installing Rust and mbx
 
 ```
 mise use --tool-option mr_boxington=true rust mr-boxington
 ```
 
-set the current version of node to 20.x in ~/.config/mise/config.toml will write the precise version (e.g.: 20.0.0)
+Use node 24.x globally and record the exact version it resolves to
 
 ```
-mise use -g --pin node@20
+mise use -g --pin node@24
 ```
 
-writes mise.local.toml (preserving .mise.local.toml if it already exists)
+Write mise.local.toml (an existing .mise.local.toml is used instead)
 
 ```
-mise use --env local node@20
+mise use --env local node@24
 ```
 
-writes mise.staging.toml (loaded with MISE_ENV=staging)
+Write mise.staging.toml, which mise loads when MISE_ENV=staging
 
 ```
-mise use --env staging node@20
+mise use --env staging node@24
 ```
 
 <!-- generated reference navigation -->

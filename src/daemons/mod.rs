@@ -837,7 +837,7 @@ fn build(
             );
         // Preserve an explicit opt-out before inserting the task's own `mise =
         // false` default: probes still need the project environment by default.
-        if cfg!(unix) && table.get("mise").and_then(toml::Value::as_bool) != Some(false) {
+        if table.get("mise").and_then(toml::Value::as_bool) != Some(false) {
             presets::wrap_probe_commands(&mut table);
         }
         // mise is already the entry point, so pitchfork does not need
@@ -1968,7 +1968,32 @@ mod tests {
     }
 
     #[test]
-    #[cfg(unix)]
+    fn argv_probes_stay_argv_inside_the_tool_environment() {
+        let config = files(&[(
+            "/project/mise.toml",
+            "[daemons.api]\ntask = 'dev'\nready_cmd = ['pg_isready', '-d', 'my db']\nhealth_cmd = { run = ['curl', '-f', 'http://127.0.0.1'], interval = '2s' }\n",
+        )]);
+        let set = load(&config).unwrap();
+        let table = &set.daemons["api"].table;
+        let mise = crate::env::MISE_BIN.to_string_lossy().into_owned();
+        let argv = |args: &[&str]| {
+            toml::Value::Array(
+                [mise.as_str(), "x", "--"]
+                    .into_iter()
+                    .chain(args.iter().copied())
+                    .map(|arg| toml::Value::String(arg.into()))
+                    .collect(),
+            )
+        };
+        assert_eq!(table["ready_cmd"], argv(&["pg_isready", "-d", "my db"]));
+        assert_eq!(
+            table["health_cmd"]["run"],
+            argv(&["curl", "-f", "http://127.0.0.1"])
+        );
+        assert_eq!(table["health_cmd"]["interval"].as_str(), Some("2s"));
+    }
+
+    #[test]
     fn task_probe_environment_respects_explicit_opt_out() {
         for opt_out in [false, true] {
             let source = format!(

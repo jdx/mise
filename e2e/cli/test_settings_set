@@ -10,8 +10,8 @@ mise settings set disable_tools "node,, rust,node"
 assert "mise settings get disable_tools" '["node", "rust"]'
 mise settings set disable_tools " [] "
 assert "mise settings get disable_tools" "[]"
-mise settings set plugin_autoupdate_last_check_duration 1
-assert "mise settings get plugin_autoupdate_last_check_duration" '1'
+mise settings set go.download_mirror 1
+assert "mise settings get go.download_mirror" '1'
 mise settings set all_compile 1
 assert_contains "mise settings -T" "all_compile = true"
 mise settings unset all_compile

@@ -18,18 +18,50 @@ use crate::system::history::tracked::{
 
 /// Track a file or directory in place
 ///
-/// Adds a `[dotfiles]` entry with `mode = "track"`: the file stays where it
-/// is, nothing is copied or linked, and history saves a checkpoint of it
-/// right away. With the history watcher service running, later edits are
-/// saved automatically; without it, `mise dot save` saves them.
+/// Adds a `[dotfiles]` entry with `mode = "track"` to your global config: the
+/// file stays where it is, nothing is copied or linked, and mise saves a
+/// checkpoint of it right away. While the watcher service runs, later edits are
+/// saved automatically; without it, `mise dot save` saves them. Use
+/// `--dry-run` to see what a large directory would add before tracking it.
 ///
-/// `--os` and `--profile` declare a variant: a separate shared stream for
-/// machines matching that platform or mise environment, so a Mac and a
-/// Linux box can share the same live path with different contents.
-/// `--machine` gives every machine its own stream instead, for files such
-/// as a monitor layout that should never be applied on another machine.
+/// `--os` and `--profile` declare a variant: machines that match the platform
+/// or config environment keep their own version of the file, so a Mac and a
+/// Linux machine can have different contents at the same path. `--machine`
+/// gives every machine its own version instead, for files such as a monitor
+/// layout that should never be applied on another machine.
+///
+/// See https://mise.jdx.dev/dotfiles/history.html
 #[derive(Debug, usage_rs::Args)]
-#[usage(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+#[usage(
+    example(
+        "mise dot track ~/.zshrc ~/.config/hypr",
+        help = "Track a file and a directory"
+    ),
+    example(
+        "mise dot track --dry-run ~/.codex",
+        help = "Show what tracking a directory would save"
+    ),
+    example(
+        "mise dot track ~/.zshrc --os macos",
+        help = "Keep a separate version for macOS machines"
+    ),
+    example(
+        "mise dot track ~/.config/hypr/monitors.lua --machine",
+        help = "Keep a separate version on every machine"
+    ),
+    example(
+        "mise dot track ~/.config/app/state.json --local",
+        help = "Keep the file's history on this machine only"
+    ),
+    example(
+        "mise dot track ~/.config/app/credentials --encrypt",
+        help = "Encrypt the file before saving it"
+    ),
+    example(
+        "mise dot track ~/.config/app/state.json --no-autosave",
+        help = "Save the file only when you run mise dot save"
+    )
+)]
 pub(crate) struct DotfilesTrack {
     /// Paths to track (absolute or starting with ~/)
     #[usage(value_name = "PATH", required = true)]
@@ -39,9 +71,13 @@ pub(crate) struct DotfilesTrack {
     #[usage(long, value_name = "OS")]
     os: Option<String>,
 
-    /// Declare a variant for this mise environment
+    /// Declare a variant for this config environment (`MISE_ENV` or `-E`)
     #[usage(long, value_name = "PROFILE")]
     profile: Option<String>,
+
+    /// Keep this file's history on this machine only; it is never shared
+    #[usage(long)]
+    local: bool,
 
     /// Keep a separate stream on every machine, never applied on another
     #[usage(long)]
@@ -51,7 +87,8 @@ pub(crate) struct DotfilesTrack {
     #[usage(long)]
     no_autosave: bool,
 
-    /// Encrypt contents before saving them to history (requires `[history.encryption].recipients`)
+    /// Encrypt contents before saving them to history (requires
+    /// `[history.encryption] recipients`)
     #[usage(long)]
     encrypt: bool,
 
@@ -59,7 +96,7 @@ pub(crate) struct DotfilesTrack {
     #[usage(long)]
     allow_plaintext: bool,
 
-    /// Accept without prompting
+    /// Accepted for compatibility; track no longer asks to confirm the paths
     #[usage(long, short)]
     yes: bool,
 
@@ -85,6 +122,13 @@ impl DotfilesTrack {
         let config = Config::get().await?;
         if self.encrypt && self.allow_plaintext {
             bail!("dotfiles: --encrypt and --allow-plaintext cannot be used together");
+        }
+        if self.local
+            && (self.encrypt || self.machine || self.os.is_some() || self.profile.is_some())
+        {
+            bail!(
+                "dotfiles: --local history never leaves this machine and takes no --encrypt, --machine, --os, or --profile"
+            );
         }
         if self.machine && (self.os.is_some() || self.profile.is_some()) {
             bail!("dotfiles: --machine cannot be combined with --os or --profile");
@@ -131,17 +175,18 @@ impl DotfilesTrack {
         // needs only configuration when the repository is damaged. So it
         // asks only when there is something to read, and falls back to
         // the declarations when reading fails.
-        let effective =
-            match crate::system::history::shadow::HistoryRepo::path_in(&crate::dirs::STATE)
-                .join("HEAD")
-                .is_file()
-            {
-                true => TrackedSet::effective().await.unwrap_or_else(|err| {
-                    debug!("dotfiles: previewing from declarations alone: {err:#}");
-                    TrackedSet::default()
-                }),
-                false => TrackedSet::default(),
-            };
+        let effective = match crate::system::history::shadow::HistoryRepo::path_in(
+            &crate::system::history::local::root(),
+        )
+        .join("HEAD")
+        .is_file()
+        {
+            true => TrackedSet::effective().await.unwrap_or_else(|err| {
+                debug!("dotfiles: previewing from declarations alone: {err:#}");
+                TrackedSet::default()
+            }),
+            false => TrackedSet::default(),
+        };
         let mut preview_set = TrackedSet {
             exclude: exclude.clone(),
             ..Default::default()
@@ -193,6 +238,24 @@ impl DotfilesTrack {
             let existing = managed
                 .iter()
                 .find(|req| req.target == target && req.mode == FileMode::Track);
+            // local-only history takes neither; dropping one would quietly
+            // change how the file is kept
+            if self.local
+                && let Some(existing) = existing
+            {
+                if existing.policy.encrypt {
+                    bail!(
+                        "{target_raw} is declared with encrypt = true, which local-only history does not take. Remove it from the declaration in {} first",
+                        display_path(&existing.origin.config)
+                    );
+                }
+                if !existing.variants.is_empty() {
+                    bail!(
+                        "{target_raw} is declared with variants, which local-only history does not take. Remove them from the declaration in {} first",
+                        display_path(&existing.origin.config)
+                    );
+                }
+            }
             let normalized = normalize_target(&target);
             if self.allow_plaintext && target.is_dir() {
                 bail!("{target_raw}: --allow-plaintext applies to a file, not a directory");
@@ -487,26 +550,13 @@ impl DotfilesTrack {
             return Ok(());
         }
         let only_retracks = retracked.len() == declared.len();
-        if !only_retracks && !self.yes && !Settings::get().yes && console::user_attended_stderr() {
-            let list = declared
-                .iter()
-                .zip(&previews)
-                .filter(|((key, _), _)| !retracked.contains(key))
-                .map(|((key, _), summary)| format!("{key} ({summary})"))
-                .collect::<Vec<_>>()
-                .join(", ");
-            if !crate::ui::prompt::confirm(format!("dotfiles: track {list}?"))?.is_yes() {
-                info!("dotfiles: skipped");
-                return Ok(());
-            }
-        }
         let result = async {
             for (path, edit) in &mut edits {
                 if edit.changed {
                     edit.write(path)?;
                 }
             }
-            activate_and_baseline(&declared, only_retracks).await
+            activate_and_baseline(&declared, only_retracks, self.local).await
         }
         .await;
         if let Err(error) = result {
@@ -583,7 +633,14 @@ impl DotfilesTrack {
         allow_plaintext: bool,
     ) -> InlineTable {
         let mut table = InlineTable::new();
-        table.insert("mode", string("track"));
+        table.insert(
+            "mode",
+            string(if self.local {
+                crate::system::files::TRACK_LOCAL
+            } else {
+                "track"
+            }),
+        );
         let policy = self.policy(existing, allow_plaintext);
         // a policy is written when this command sets it or this file wrote
         // it before; one inherited from another layer stays unwritten so
@@ -803,7 +860,11 @@ fn commit_declaration(
 /// Checks that every declared entry is active and saves their baseline.
 /// When every entry was already tracked, the baseline is recorded only if
 /// something changed since the newest checkpoint.
-async fn activate_and_baseline(declared: &[(String, PathBuf)], only_retracks: bool) -> Result<()> {
+async fn activate_and_baseline(
+    declared: &[(String, PathBuf)],
+    only_retracks: bool,
+    local: bool,
+) -> Result<()> {
     let config = Config::reset().await?;
     // The capture resolves this set again through `enrollment::resolve`,
     // so the declaration is what this function needs: it is checking
@@ -811,18 +872,62 @@ async fn activate_and_baseline(declared: &[(String, PathBuf)], only_retracks: bo
     let tracked = TrackedSet::from_config(&config)?;
     for (key, target) in declared {
         let path = normalize_target(target);
-        let active = tracked
-            .entry_for(&path)
-            .is_some_and(|entry| entry.path == path);
+        let active = if local {
+            tracked.local.contains(&path)
+        } else {
+            tracked
+                .entry_for(&path)
+                .is_some_and(|entry| entry.path == path)
+        };
         if !active {
-            let reason = tracked
-                .invalid
-                .iter()
-                .find(|invalid| invalid.path == display_path(&path))
-                .map(|invalid| invalid.reason.clone())
-                .unwrap_or_else(|| "the declaration was not loaded".into());
+            let inside_local = (!local)
+                .then(|| tracked.local.iter().find(|dir| path.starts_with(dir)))
+                .flatten();
+            let reason = if let Some(dir) = inside_local {
+                format!(
+                    "it is inside {}, which is kept in local-only history",
+                    display_path(dir)
+                )
+            } else {
+                tracked
+                    .invalid
+                    .iter()
+                    .find(|invalid| invalid.path == display_path(&path))
+                    .map(|invalid| invalid.reason.clone())
+                    .unwrap_or_else(|| "the declaration was not loaded".into())
+            };
             bail!("dotfiles: {key} could not be tracked: {reason}");
         }
+    }
+    if local {
+        if !crate::config::Settings::get().history.enabled {
+            warn!("dotfiles: history is disabled (history.enabled = false); no baseline saved");
+            return Ok(());
+        }
+        if inside_local_capture()? {
+            info!(
+                "dotfiles: enrolled; the enclosing capture will save the baseline when the command finishes"
+            );
+            return Ok(());
+        }
+        // the baseline belongs to this machine's own history
+        let names = declared
+            .iter()
+            .map(|(key, _)| key.as_str())
+            .collect::<Vec<_>>()
+            .join(", ");
+        let mut args: Vec<std::ffi::OsString> = vec![
+            "dot".into(),
+            "save".into(),
+            "--description".into(),
+            format!("tracked {names}").into(),
+        ];
+        args.extend(
+            declared
+                .iter()
+                .map(|(_, path)| path.clone().into_os_string()),
+        );
+        return crate::system::history::local::run(args);
     }
     baseline(&tracked, declared, only_retracks).await?;
     for (key, target) in declared {
@@ -913,11 +1018,30 @@ fn inside_capture() -> Result<bool> {
         return Ok(false);
     };
     Ok(
-        crate::system::history::store::read_marker_in(&crate::dirs::STATE)?.is_some_and(|marker| {
-            marker.kind == crate::system::history::store::OperationKind::Capture
-                && parent == std::ffi::OsStr::new(&marker.uuid)
-        }),
+        crate::system::history::store::read_marker_in(&crate::system::history::local::root())?
+            .is_some_and(|marker| {
+                marker.kind == crate::system::history::store::OperationKind::Capture
+                    && parent == std::ffi::OsStr::new(&marker.uuid)
+            }),
     )
+}
+
+fn inside_local_capture() -> Result<bool> {
+    let parent = std::env::var_os(crate::system::history::local::OPERATION_ENV).or_else(|| {
+        crate::system::history::local::active()
+            .then(|| std::env::var_os(crate::system::history::scope::ENV_VAR))
+            .flatten()
+    });
+    let Some(parent) = parent else {
+        return Ok(false);
+    };
+    Ok(crate::system::history::store::read_marker_in(
+        &crate::system::history::local::local_root(),
+    )?
+    .is_some_and(|marker| {
+        marker.kind == crate::system::history::store::OperationKind::Capture
+            && parent == std::ffi::OsStr::new(&marker.uuid)
+    }))
 }
 
 /// The `[dotfiles]` key of a path: `~/…` with forward slashes on every
@@ -961,18 +1085,6 @@ fn same_declaration(previous: &Item, entry: &InlineTable) -> bool {
 fn string(text: &str) -> Value {
     Value::String(toml_edit::Formatted::new(text.to_string()))
 }
-
-static AFTER_LONG_HELP: &str = color_print::cstr!(
-    r#"<bold><underline>Examples:</underline></bold>
-
-    $ <bold>mise dot track ~/.zshrc ~/.config/hypr</bold>
-    $ <bold>mise dot track --dry-run ~/.codex</bold>
-    $ <bold>mise dot track ~/.zshrc --os macos</bold>
-    $ <bold>mise dot track ~/.config/hypr/monitors.lua --machine</bold>
-    $ <bold>mise dot track ~/.config/app/credentials --encrypt</bold>
-    $ <bold>mise dot track ~/.config/app/state.json --no-autosave</bold>
-"#
-);
 
 /// Adds (or removes) a glob in `[history] exclude` of the global config.
 /// Returns whether the file changed.
@@ -1341,6 +1453,7 @@ mod declaration_tests {
             os: None,
             profile: None,
             machine: false,
+            local: false,
             no_autosave: false,
             encrypt: false,
             allow_plaintext: false,

@@ -4,62 +4,76 @@ use eyre::{Result, bail};
 
 use crate::system::history::sync::apply::{self, ApplyRequest};
 
-/// Pull incoming shared changes into the live files
+/// Apply incoming changes from the origin to your files
 ///
-/// Writes the changes the last `mise dot sync` recorded as pending
-/// (`apply` keeps deploying your own `[dotfiles]` declarations; `pull` writes
-/// what other machines shared),
-/// as one recoverable transaction: a protective checkpoint first, every
-/// file written and journaled one at a time, reload hooks only afterwards,
-/// and `mise dot undo` to reverse it. Configuration and the sources it
-/// references apply together; an incoming configuration file that does not
-/// parse, a path with unsaved local edits, staged git changes in your own
-/// checkout, or a genuine local edit pauses the complete application.
-/// Conflicts pause both publication and application for the whole setup;
-/// local history and fetching continue. Decisions are recorded per path
-/// with `--take-remote` or `--keep-local`; sharing resumes only after all
-/// conflicts are resolved and the plan has been recomputed.
+/// Writes the changes that the last `mise dot sync` fetched from your other
+/// machines. (`mise dot apply` deploys your own `[dotfiles]` entries; `pull`
+/// writes what other machines pushed.) mise saves a checkpoint first, so
+/// `mise dot undo` reverses the whole pull, and runs the matching
+/// `[history.reload]` commands after writing.
 ///
-/// In `sync` mode the watcher pulls conflict-free setups on its
-/// own; this command writes what is pending right now and decides
-/// conflicts. When an incoming configuration declares more tracked files,
-/// their shared versions follow in the same run.
+/// A pull applies every incoming change together, including config files and
+/// the files they reference; it does not take paths. Nothing is written if an
+/// incoming config file does not parse, a file has unsaved local edits, your
+/// own checkout has staged Git changes, or a file changed on both sides. A file
+/// that changed on both sides is a conflict: compare the two versions with
+/// `mise dot conflicts`, then resolve it with `--take-remote` or `--keep-local`,
+/// or resolve every conflict with `--take-remote-all` or `--keep-local-all`.
+/// While any conflict remains, pushing and applying stop for all tracked files;
+/// local history and fetching continue.
+///
+/// In `sync` mode the watcher pulls on its own when there are no conflicts.
+/// When incoming config declares more tracked files, their versions from the
+/// origin are written in the same pull.
 #[derive(Debug, usage_rs::Args)]
-#[usage(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+#[usage(
+    example("mise dot pull --dry-run", help = "Show what would be written"),
+    example(
+        "mise dot pull --take-remote ~/.zshrc",
+        help = "Resolve a conflict with the origin's version"
+    ),
+    example(
+        "mise dot pull --keep-local ~/.zshrc",
+        help = "Resolve a conflict by keeping this machine's version"
+    ),
+    example(
+        "mise dot pull --take-remote-all --keep-local ~/.zshrc",
+        help = "Take the origin's version of every conflict except one"
+    )
+)]
 pub(crate) struct DotfilesPull {
-    /// Partial pulls are unsupported; omit PATH and apply the complete setup
-    #[usage(value_name = "PATH")]
+    /// Not supported; a pull always applies every incoming change
+    #[usage(value_name = "PATH", hide = true)]
     paths: Vec<PathBuf>,
 
     /// Show the plan without changing anything
     #[usage(long, short = 'n')]
     dry_run: bool,
 
-    /// Pull without prompting
+    /// Accepted for compatibility; pull skips the apply confirmation
     #[usage(long, short = 'y')]
     yes: bool,
 
-    /// Resolve a conflict with the repository's version
+    /// Resolve a conflict with the origin's version
     #[usage(long, value_name = "PATH")]
     take_remote: Vec<PathBuf>,
 
-    /// Resolve a conflict by keeping this machine's version (published next)
+    /// Resolve a conflict by keeping this machine's version; the next sync pushes it
     #[usage(long, value_name = "PATH")]
     keep_local: Vec<PathBuf>,
 
-    /// Resolve every remaining conflict with the repository's version
+    /// Resolve every remaining conflict with the origin's version
     ///
-    /// Paths named by --keep-local keep this machine's version; every other
-    /// conflict takes the repository's. Useful on a newly adopted machine,
-    /// where each pre-existing file that differs is a separate conflict.
+    /// Paths named by `--keep-local` keep this machine's version; every other
+    /// conflict takes the origin's. Use it on a newly connected machine, where
+    /// each existing file that differs is a separate conflict.
     #[usage(long, conflicts = "keep_local_all")]
     take_remote_all: bool,
 
     /// Resolve every remaining conflict by keeping this machine's version
     ///
-    /// Paths named by --take-remote take the repository's version; every
-    /// other conflict keeps this machine's. Each kept path must already be
-    /// saved.
+    /// Paths named by `--take-remote` take the origin's version; every other
+    /// conflict keeps this machine's. Each kept path must already be saved.
     #[usage(long, conflicts = "take_remote_all")]
     keep_local_all: bool,
 }
@@ -79,7 +93,6 @@ impl DotfilesPull {
             &ApplyRequest {
                 paths: self.paths.clone(),
                 dry_run: self.dry_run,
-                yes: self.yes,
                 take_remote: self.take_remote.clone(),
                 keep_local: self.keep_local.clone(),
                 take_remote_all: self.take_remote_all,
@@ -92,15 +105,3 @@ impl DotfilesPull {
         Ok(())
     }
 }
-
-static AFTER_LONG_HELP: &str = color_print::cstr!(
-    r#"<bold><underline>Examples:</underline></bold>
-
-    $ <bold>mise dot pull --dry-run</bold>
-    $ <bold>mise dot pull --yes</bold>
-    $ <bold>mise dot pull --take-remote ~/.zshrc</bold>
-    $ <bold>mise dot pull --keep-local ~/.zshrc</bold>
-    $ <bold>mise dot pull --take-remote-all</bold>
-    $ <bold>mise dot pull --take-remote-all --keep-local ~/.zshrc</bold>
-"#
-);

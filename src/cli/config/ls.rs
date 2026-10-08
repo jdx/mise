@@ -7,15 +7,18 @@ use comfy_table::{Attribute, Cell};
 use eyre::Result;
 use itertools::Itertools;
 
-/// List config files currently in use
+/// List config files currently in use, from lowest to highest precedence
+///
+/// Later files override earlier ones.
 #[derive(Debug, usage_rs::Args)]
 #[usage(
     verbatim_doc_comment,
     example(
         r###"mise config ls
 Path                        Tools
-~/.config/mise/config.toml  pitchfork
-~/src/mise/mise.toml        bun, cargo-binstall, cargo:cargo-insta"###
+~/.config/mise/config.toml  node, python
+~/work/api/mise.toml        node, terraform"###,
+        help = "List the loaded config files and the tools each one requests"
     )
 )]
 pub(crate) struct ConfigLs {
@@ -26,11 +29,14 @@ pub(crate) struct ConfigLs {
     #[usage(short = 'J', long, verbatim_doc_comment)]
     pub json: bool,
 
-    /// Do not print table header
+    /// Do not print the table header
     #[usage(long, alias = "no-headers", verbatim_doc_comment)]
     pub no_header: bool,
 
-    /// List all tracked config files
+    /// List every config file mise has loaded, in any project
+    ///
+    /// mise remembers the config files it loads so `mise prune` keeps the versions
+    /// they use.
     #[usage(long, verbatim_doc_comment)]
     pub tracked_configs: bool,
 }
@@ -59,7 +65,7 @@ impl ConfigLs {
         let mut table = MiseTable::new(self.no_header, &["Path", "Tools"]);
         table.truncate(self.truncate.truncate);
         for cfg in configs {
-            let ts = cfg.to_tool_request_set().unwrap();
+            let ts = cfg.to_tool_request_set()?;
             let tools = ts.list_tools().into_iter().join(", ");
             let tools = if tools.is_empty() {
                 Cell::new("(none)")
@@ -100,26 +106,25 @@ impl ConfigLs {
         let array_items: Vec<serde_json::Value> = config
             .config_files
             .values()
-            .map(|cf| {
+            .map(|cf| -> Result<serde_json::Value> {
                 let tools: Vec<String> = cf
-                    .to_tool_request_set()
-                    .unwrap()
+                    .to_tool_request_set()?
                     .list_tools()
                     .into_iter()
                     .map(|s| s.to_string())
                     .collect();
-                serde_json::json!({
+                Ok(serde_json::json!({
                     "path": cf.get_path().to_string_lossy(),
                     "tools": tools,
-                })
+                }))
             })
             .chain(env_results.env_files.iter().map(|f| {
-                serde_json::json!({
+                Ok(serde_json::json!({
                     "path": f.to_string_lossy(),
                     "tools": [],
-                })
+                }))
             }))
-            .collect();
+            .collect::<Result<_>>()?;
         miseprintln!("{}", serde_json::to_string_pretty(&array_items)?);
         Ok(())
     }

@@ -5,7 +5,10 @@ use crate::system::history::store::{Annotation, DescriptionSource};
 
 /// Set the description of a checkpoint
 #[derive(Debug, usage_rs::Args)]
-#[usage(verbatim_doc_comment)]
+#[usage(example(
+    "mise dot history describe latest \"before the theme change\"",
+    help = "Describe the newest checkpoint"
+))]
 pub(crate) struct HistoryDescribe {
     /// Numeric checkpoint ID, `latest`, `latest~N`, or `commit:<sha>`
     #[usage(value_name = "REF")]

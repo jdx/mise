@@ -10,11 +10,22 @@ use crate::system::history::tracked::{TrackedSet, normalize_target};
 
 /// Stop tracking a file or directory
 ///
-/// Removes the `[dotfiles]` track entry (or switches an inherited one off in
-/// config.local.toml) and stops future captures. The file itself and its
-/// existing checkpoints are left exactly as they are.
+/// Removes the path's `mode = "track"` entry from your global config. When a
+/// project or system config declares the entry, mise turns it off on this
+/// machine in `config.local.toml` next to your global config instead.
+///
+/// A path inside a tracked directory has no entry of its own: mise adds a rule
+/// for it to `[history] exclude` in the global config, and
+/// `mise dot include <path>` removes that rule. The file itself and its
+/// existing checkpoints are not changed.
 #[derive(Debug, usage_rs::Args)]
-#[usage(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+#[usage(
+    example("mise dot untrack ~/.zshrc", help = "Stop saving ~/.zshrc"),
+    example(
+        "mise dot untrack ~/.config/hypr/plugins",
+        help = "Exclude one directory inside a tracked directory"
+    )
+)]
 pub(crate) struct DotfilesUntrack {
     /// Paths to stop tracking
     #[usage(value_name = "PATH", required = true)]
@@ -58,6 +69,23 @@ impl DotfilesUntrack {
                 }
             }
         }
+        // a local-only path's history is this machine's own: untracking it
+        // records nothing in the shared history, whose enrollment of the
+        // same path (another machine may share it) is not this one's to drop
+        let local_targets: Vec<PathBuf> = self
+            .targets
+            .iter()
+            .map(|target| {
+                crate::system::files::resolve_target_arg(target)
+                    .components()
+                    .collect::<PathBuf>()
+            })
+            .filter(|target| {
+                managed.iter().any(|req| {
+                    &req.target == target && req.mode == FileMode::Track && req.policy.local
+                })
+            })
+            .collect();
         let mut touched: Vec<PathBuf> = vec![];
         for target_raw in &self.targets {
             let target = crate::system::files::resolve_target_arg(target_raw)
@@ -80,9 +108,14 @@ impl DotfilesUntrack {
                         // inherited: switch it off on this machine
                         let mut doc = super::track::read_document(&local)?;
                         let mut table = toml_edit::InlineTable::new();
+                        let mode = if req.policy.local {
+                            crate::system::files::TRACK_LOCAL
+                        } else {
+                            "track"
+                        };
                         table.insert(
                             "mode",
-                            Value::String(toml_edit::Formatted::new("track".into())),
+                            Value::String(toml_edit::Formatted::new(mode.into())),
                         );
                         table.insert("enabled", Value::Boolean(toml_edit::Formatted::new(false)));
                         doc["dotfiles"][&key] = Item::Value(Value::InlineTable(table));
@@ -239,8 +272,18 @@ impl DotfilesUntrack {
         draft.untrack = self
             .targets
             .iter()
-            .map(|path| normalize_target(&crate::system::files::resolve_target_arg(path)))
+            .map(|path| {
+                crate::system::files::resolve_target_arg(path)
+                    .components()
+                    .collect::<PathBuf>()
+            })
+            .filter(|target| !local_targets.contains(target))
+            .map(|target| normalize_target(&target))
             .collect();
+        if draft.untrack.is_empty() {
+            info!("dotfiles: live files were left in place; their local-only history remains");
+            return Ok(());
+        }
         tokio::task::spawn_blocking(move || -> Result<()> {
             let _operation = crate::system::history::scope::take_operation_lock(&store, &tracked)?;
             if let crate::system::history::checkpoint::Outcome::Unavailable(reason) =
@@ -257,10 +300,3 @@ impl DotfilesUntrack {
         Ok(())
     }
 }
-
-static AFTER_LONG_HELP: &str = color_print::cstr!(
-    r#"<bold><underline>Examples:</underline></bold>
-
-    $ <bold>mise dot untrack ~/.zshrc</bold>
-"#
-);

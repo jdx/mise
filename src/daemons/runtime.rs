@@ -1157,8 +1157,7 @@ pub(crate) fn render(set: &DaemonSet, state: &State) -> Result<String> {
         // directly. Resolve custom probes in this checkout too: the supervisor
         // may have inherited another worktree's tools and endpoint variables.
         // Preset and task probes already carry their own environment wrapper.
-        if cfg!(unix)
-            && daemon.preset.is_none()
+        if daemon.preset.is_none()
             && daemon.task.is_none()
             && table.get("mise").and_then(toml::Value::as_bool) != Some(false)
         {

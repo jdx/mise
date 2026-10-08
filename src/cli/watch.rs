@@ -10,67 +10,64 @@ use crate::task::task_source_checker::task_cwd;
 use crate::task::{Deps, Task};
 use crate::toolset::ToolsetBuilder;
 use console::style;
+use eyre::bail;
 use itertools::Itertools;
 use std::cmp::PartialEq;
 use std::iter::once;
 use std::path::{Path, PathBuf};
 
-/// Run task(s) and rerun them when files change
+/// Run tasks and rerun them when files change
 ///
-/// Uses `watchexec` to watch task sources and rerun the selected tasks.
-/// Sources from dependencies are included unless `--skip-deps` is set. With no
-/// sources, watchexec watches the current directory. Use `--watch` and `--exts`
-/// for explicit watched paths and filters, and `--print-events` to diagnose them.
-/// The default task is `default`; define it or pass a task name.
-/// watchexec must be installed; `mise use -g watchexec@latest` installs it.
+/// Runs the tasks with `mise run` under watchexec, then reruns them whenever
+/// one of their `sources` changes, including the sources of their dependencies
+/// unless you pass `--skip-deps`. When no selected task declares `sources`,
+/// watchexec watches the current directory. With no task, runs the `default`
+/// task.
 ///
-/// For more advanced process management (daemon management, auto-restart, readiness checks,
-/// cron scheduling), see mise's sister project: https://pitchfork.jdx.dev
+/// Choose what to watch with `--watch`, `--exts`, and `--filter`, and use
+/// `--print-events` to see what triggered a run. Arguments for the task go
+/// after `--`. Requires watchexec, which `mise use -g watchexec` installs.
+///
+/// To keep a server or database running alongside your tasks, with readiness
+/// checks and automatic restarts, see `mise daemons` (experimental):
+/// https://mise.jdx.dev/daemons.html. For cron scheduling and standalone
+/// process management, see pitchfork: https://pitchfork.jdx.dev
 #[derive(Debug, usage_rs::Args)]
 #[usage(
     visible_alias = "w",
-    verbatim_doc_comment,
     example(
         "mise watch build",
-        help = "Run the build task and rerun it whenever its sources change."
+        help = "Run build and rerun it whenever its sources change"
     ),
-    example(
-        "mise watch build --glob 'src/**/*.rs'",
-        help = "Watch the glob instead of the task's sources."
-    ),
-    example(
-        "mise watch build --clear",
-        help = "Extra arguments go to watchexec; see `watchexec --help`."
-    ),
+    example("mise watch build --clear", help = "Clear the screen before each run"),
     example(
         "mise watch serve --watch src --exts rs --restart",
-        help = "Start an API server and restart it when Rust files in ./src change."
+        help = "Start an API server and restart it when Rust files in ./src change"
+    ),
+    example(
+        "mise watch test -- --verbose",
+        help = "Pass arguments after -- to the task"
     ),
     unknown_flags = "value"
 )]
 pub(crate) struct Watch {
-    /// Tasks to run
-    /// Can specify multiple tasks by separating with `:::`
-    /// e.g.: `mise watch task1 arg1 arg2 ::: task2 arg1 arg2`
-    /// Defaults to `default`
-    #[usage(verbatim_doc_comment)]
+    /// Task to watch (default: `default`); separate several tasks with `:::`
     task: Option<String>,
 
     /// Tasks to run
-    #[usage(short, long, verbatim_doc_comment, hide = true)]
+    #[usage(short, long, hide = true)]
     task_flag: Vec<String>,
 
-    /// Task and arguments to run
+    /// Arguments for the task; `:::` starts the next task
     #[usage(allow_hyphen_values = true, trailing_var_arg = true)]
     args: Vec<String>,
 
-    /// Files to watch
-    /// Defaults to sources from the task(s)
-    #[usage(short, long, verbatim_doc_comment, hide = true)]
+    /// Globs to watch instead of the tasks' sources
+    #[usage(short, long)]
     glob: Vec<String>,
 
-    /// Run only the specified tasks skipping all dependencies
-    #[usage(long, verbatim_doc_comment)]
+    /// Run and watch only the named tasks, not the tasks they depend on
+    #[usage(long)]
     pub skip_deps: bool,
 
     #[usage(flatten)]
@@ -89,6 +86,9 @@ impl Watch {
                 return Ok(());
             }
         }
+        if self.watchexec.workdir.is_some() {
+            warn!("--workdir has no effect: mise runs each task from its own dir");
+        }
         let config = Config::get().await?;
         let ts = ToolsetBuilder::new().build(&config).await?;
         if let Err(err) = which::which("watchexec") {
@@ -96,11 +96,22 @@ impl Watch {
             if !ts.versions.contains_key(&watchexec) {
                 eprintln!("{}: {}", style("Error").red().bold(), err);
                 eprintln!("{}: Install watchexec with:", style("Hint").bold());
-                eprintln!("  mise use -g watchexec@latest");
+                eprintln!("  mise use -g watchexec");
                 return Err(request_exit(1));
             }
         }
-        let mut args = once(self.task)
+        // watchexec refuses `--manual` alongside a command, and showing its manual page needs no
+        // tasks, so this resolves none and runs nothing but `watchexec --manual`.
+        if self.watchexec.manual {
+            debug!("$ watchexec --manual");
+            let mut cmd = cmd::cmd("watchexec", ["--manual"]);
+            for (k, v) in ts.env_with_path(&config).await? {
+                cmd = cmd.env(k, v);
+            }
+            cmd.run()?;
+            return Ok(());
+        }
+        let mut args = once(self.task.clone())
             .flatten()
             .chain(self.task_flag.iter().cloned())
             .chain(self.args.iter().cloned())
@@ -116,123 +127,17 @@ impl Watch {
             let deps = Deps::new(&config, tasks.clone()).await?;
             deps.all().cloned().collect()
         };
-        let mut args = vec![];
-        if let Some(delay_run) = self.watchexec.delay_run {
-            args.push("--delay-run".to_string());
-            args.push(delay_run);
-        }
-        if let Some(poll) = self.watchexec.poll {
-            args.push("--poll".to_string());
-            args.push(poll);
-        }
-        if let Some(signal) = self.watchexec.signal {
-            args.push("--signal".to_string());
-            args.push(signal);
-        }
-        if let Some(stop_signal) = self.watchexec.stop_signal {
-            args.push("--stop-signal".to_string());
-            args.push(stop_signal);
-        }
-        if self.watchexec.stop_timeout != "10s" {
-            args.push("--stop-timeout".to_string());
-            args.push(self.watchexec.stop_timeout);
-        }
-        if self.watchexec.debounce != "50ms" {
-            args.push("--debounce".to_string());
-            args.push(self.watchexec.debounce);
-        }
-        if self.watchexec.stdin_quit {
-            args.push("--stdin-quit".to_string());
-        }
-        if self.watchexec.no_vcs_ignore || tasks_disable_vcs_ignores(&watched_tasks) {
-            args.push("--no-vcs-ignore".to_string());
-        }
-        if self.watchexec.no_project_ignore {
-            args.push("--no-project-ignore".to_string());
-        }
-        if self.watchexec.no_global_ignore {
-            args.push("--no-global-ignore".to_string());
-        }
-        if self.watchexec.no_default_ignore {
-            args.push("--no-default-ignore".to_string());
-        }
-        if self.watchexec.no_discover_ignore {
-            args.push("--no-discover-ignore".to_string());
-        }
-        if self.watchexec.ignore_nothing {
-            args.push("--ignore-nothing".to_string());
-        }
-        if self.watchexec.postpone {
-            args.push("--postpone".to_string());
-        }
-        if let Some(screen_clear) = self.watchexec.screen_clear {
-            args.push("--clear".to_string());
-            if let ClearMode::Reset = screen_clear {
-                args.push("reset".to_string());
-            }
-        }
-        if self.watchexec.restart {
-            args.push("--restart".to_string());
-        }
-        if self.watchexec.on_busy_update != OnBusyUpdate::DoNothing {
-            args.push("--on-busy-update".to_string());
-            args.push(self.watchexec.on_busy_update.to_string());
-        }
-        args.extend(wrap_process_args(self.watchexec.wrap_process));
-        if !self.watchexec.signal_map.is_empty() {
-            for signal_map in &self.watchexec.signal_map {
-                args.push("--map-signal".to_string());
-                args.push(signal_map.to_string());
-            }
-        }
-        if !self.watchexec.recursive_paths.is_empty() {
-            for path in &self.watchexec.recursive_paths {
-                args.push("--watch".to_string());
-                args.push(path.to_string_lossy().to_string());
-            }
-        }
-        if !self.watchexec.non_recursive_paths.is_empty() {
-            for path in &self.watchexec.non_recursive_paths {
-                args.push("--watch-non-recursive".to_string());
-                args.push(path.to_string_lossy().to_string());
-            }
-        }
-        if !self.watchexec.filter_extensions.is_empty() {
-            for ext in &self.watchexec.filter_extensions {
-                args.push("--exts".to_string());
-                args.push(ext.to_string());
-            }
-        }
-        if !self.watchexec.filter_patterns.is_empty() {
-            for pattern in &self.watchexec.filter_patterns {
-                args.push("--filter".to_string());
-                args.push(pattern.to_string());
-            }
-        }
-        if let Some(watch_file) = &self.watchexec.watch_file {
-            args.push("--watch-file".to_string());
-            args.push(watch_file.to_string_lossy().to_string());
-        }
-        // Forward user-supplied filtering/debug flags that are parsed into
-        // WatchexecArgs but were never re-emitted onto the watchexec command
-        // line (#7776). watchexec unions repeated --ignore flags, so these
-        // combine with the source-derived ignores pushed below rather than
-        // clobbering them.
-        if !self.watchexec.ignore_patterns.is_empty() {
-            for pattern in &self.watchexec.ignore_patterns {
-                args.push("--ignore".to_string());
-                args.push(pattern.to_string());
-            }
-        }
-        if !self.watchexec.ignore_files.is_empty() {
-            for path in &self.watchexec.ignore_files {
-                args.push("--ignore-file".to_string());
-                args.push(path.to_string_lossy().to_string());
-            }
-        }
-        if self.watchexec.print_events {
-            args.push("--print-events".to_string());
-        }
+        let mut args = self
+            .watchexec
+            .watchexec_args(tasks_disable_vcs_ignores(&watched_tasks));
+        // A --project-origin the user gave wins over the one mise derives
+        // below. It is made absolute here, against the directory watchexec
+        // will run in, so the task sources can be made relative to it.
+        let project_origin = self.watchexec.project_origin.as_ref().map(|p| {
+            env::current_dir()
+                .map(|cwd| normalize_path(&cwd.join(p)))
+                .unwrap_or_else(|_| p.clone())
+        });
         // Filter anchor: the path that --project-origin is set to and that
         // every glob filter is made relative to. watchexec interprets -f
         // patterns relative to the origin and silently rejects absolute
@@ -248,7 +153,7 @@ impl Watch {
             // Pre-resolve sources to absolute paths so the anchor can be
             // widened to cover any source that escapes its task's cwd via
             // `..` or an absolute path.
-            let parsed: Vec<Vec<(SourceKind, PathBuf)>> = task_cwds
+            let mut parsed: Vec<Vec<(SourceKind, PathBuf)>> = task_cwds
                 .iter()
                 .map(|(t, cwd)| t.sources.iter().map(|s| parse_source(s, cwd)).collect())
                 .collect();
@@ -266,8 +171,49 @@ impl Watch {
                         .map(|(_, c)| c.as_path())
                         .chain(parsed.iter().flatten().map(|(_, p)| p.as_path())),
                 );
-                let anchor: PathBuf = match (configured, common) {
-                    (Some(mut cfg), Some(common)) => {
+                let anchor: PathBuf = match (project_origin.clone(), configured, common) {
+                    (Some(origin), _, _) => {
+                        // watchexec drops a filter outside the origin, so a
+                        // source there would never trigger the task.
+                        if let Some((_, outside)) = parsed.iter().flatten().find(|(kind, p)| {
+                            !matches!(kind, SourceKind::Negation) && !p.starts_with(&origin)
+                        }) {
+                            bail!(
+                                "--project-origin {} does not contain the watched source {}; \
+                                 use a directory that contains every task's sources",
+                                origin.display(),
+                                outside.display()
+                            );
+                        }
+                        // An exclusion such as `!**/*.tmp` starts above the
+                        // origin but still matches inside it, so it is
+                        // rebased onto the origin; one that cannot match
+                        // inside the origin excludes nothing there and is
+                        // dropped.
+                        for sources in &mut parsed {
+                            sources.retain_mut(|(kind, p)| {
+                                if !matches!(kind, SourceKind::Negation) {
+                                    return true;
+                                }
+                                match negation_within_origin(p, &origin) {
+                                    Some(rebased) => {
+                                        *p = rebased;
+                                        true
+                                    }
+                                    None => {
+                                        debug!(
+                                            "dropping exclusion {} outside --project-origin {}",
+                                            p.display(),
+                                            origin.display()
+                                        );
+                                        false
+                                    }
+                                }
+                            });
+                        }
+                        origin
+                    }
+                    (None, Some(mut cfg), Some(common)) => {
                         while !common.starts_with(&cfg) {
                             if !cfg.pop() {
                                 break;
@@ -279,9 +225,9 @@ impl Watch {
                             cfg
                         }
                     }
-                    (Some(cfg), None) => cfg,
-                    (None, Some(common)) => common,
-                    (None, None) => dirs::CWD.clone().unwrap_or_default(),
+                    (None, Some(cfg), None) => cfg,
+                    (None, None, Some(common)) => common,
+                    (None, None, None) => dirs::CWD.clone().unwrap_or_default(),
                 };
                 let resolved: Vec<Vec<String>> = parsed
                     .iter()
@@ -311,7 +257,7 @@ impl Watch {
                 (i, e, watch_dirs, Some(anchor))
             }
         };
-        if let Some(anchor) = &filter_anchor {
+        if let Some(anchor) = filter_anchor.as_ref().or(project_origin.as_ref()) {
             args.push("--project-origin".to_string());
             args.push(anchor.to_string_lossy().to_string());
         }
@@ -333,27 +279,7 @@ impl Watch {
                 itertools::intersperse(ignores, "--ignore".to_string()).collect::<Vec<_>>(),
             );
         }
-        args.extend([
-            "--".to_string(),
-            env::MISE_BIN.to_string_lossy().to_string(),
-            "run".to_string(),
-        ]);
-        if self.skip_deps {
-            args.push("--skip-deps".to_string());
-        }
-        let task_args = itertools::intersperse(
-            tasks.iter().map(|t| {
-                let mut args = vec![t.name.to_string()];
-                args.extend(t.args.iter().map(|a| a.to_string()));
-                args
-            }),
-            vec![":::".to_string()],
-        )
-        .flatten()
-        .collect_vec();
-        for arg in task_args {
-            args.push(arg);
-        }
+        args.extend(self.command_args(&tasks));
         debug!("$ watchexec {}", args.join(" "));
         let mut cmd = cmd::cmd("watchexec", &args);
         for (k, v) in ts.env_with_path(&config).await? {
@@ -379,6 +305,36 @@ impl Watch {
 
         cmd.run()?;
         Ok(())
+    }
+
+    /// The command watchexec runs on each change: `-- <mise> run [--skip-deps] <tasks>`.
+    ///
+    /// With `--only-emit-events` there is none, because watchexec refuses that flag alongside a
+    /// command; it then only prints the events that the task sources would have triggered on.
+    fn command_args(&self, tasks: &[Task]) -> Vec<String> {
+        if self.watchexec.only_emit_events {
+            return vec![];
+        }
+        let mut args = vec![
+            "--".to_string(),
+            env::MISE_BIN.to_string_lossy().to_string(),
+            "run".to_string(),
+        ];
+        if self.skip_deps {
+            args.push("--skip-deps".to_string());
+        }
+        args.extend(
+            itertools::intersperse(
+                tasks.iter().map(|t| {
+                    let mut args = vec![t.name.to_string()];
+                    args.extend(t.args.iter().map(|a| a.to_string()));
+                    args
+                }),
+                vec![":::".to_string()],
+            )
+            .flatten(),
+        );
+        args
     }
 }
 
@@ -475,6 +431,34 @@ fn source_watch_dir(absolute: &Path) -> PathBuf {
     }
 }
 
+/// Express an absolute exclusion pattern as one under `origin` that excludes the same files
+/// inside it, or `None` when it cannot match anything inside `origin`.
+///
+/// A pattern under `origin` is kept as is. One whose literal (glob-free) prefix is an ancestor of
+/// `origin` and whose next component is `**`, such as `<task cwd>/**/*.tmp`, matches at any depth
+/// below that prefix, so `<origin>/**/*.tmp` excludes the same files inside `origin`.
+fn negation_within_origin(absolute: &Path, origin: &Path) -> Option<PathBuf> {
+    use std::path::Component;
+    if absolute.starts_with(origin) {
+        return Some(absolute.to_path_buf());
+    }
+    let is_glob = |s: &std::ffi::OsStr| s.to_string_lossy().contains(['*', '?', '[', '{']);
+    let mut prefix = PathBuf::new();
+    let mut components = absolute.components();
+    for c in components.by_ref() {
+        match c {
+            Component::Normal(part) if is_glob(part) => {
+                if part != "**" || !origin.starts_with(&prefix) {
+                    return None;
+                }
+                return Some(origin.join(part).join(components.as_path()));
+            }
+            _ => prefix.push(c.as_os_str()),
+        }
+    }
+    None
+}
+
 /// Express an already-absolute source path relative to the filter anchor,
 /// re-applying the original negation/literal-bang prefix.
 fn relativize_source(kind: SourceKind, absolute: &Path, anchor: &Path) -> String {
@@ -545,87 +529,81 @@ where
 }
 
 //region watchexec
+// The watchexec flags `mise watch` accepts. The ones it forwards are documented;
+// the ones it parses but does not forward are hidden.
 #[derive(Debug, usage_rs::Args)]
 pub(crate) struct WatchexecArgs {
-    /// Watch a specific file or directory
+    /// Watch a file or directory
     ///
-    /// By default, Watchexec watches the current directory.
+    /// By default, mise watches each task's directory and any source directory
+    /// outside it, and filters events to the tasks' `sources`. When no task
+    /// declares sources, watchexec watches the current directory. Paths given
+    /// here are added to the task directories, or replace the current-directory
+    /// default when there are no sources. Events are still filtered to the
+    /// sources, so use `--filter` to widen what triggers a rerun.
     ///
-    /// When watching a single file, it's often better to watch the containing directory instead,
-    /// and filter on the filename. Some editors may replace the file with a new one when saving,
-    /// and some platforms may not detect that or further changes.
-    ///
-    /// Upon starting, Watchexec resolves a "project origin" from the watched paths. See the help
-    /// for '--project-origin' for more information.
-    ///
-    /// This option can be specified multiple times to watch multiple files or directories.
-    ///
-    /// The special value '/dev/null', provided as the only path watched, will cause Watchexec to
-    /// not watch any paths. Other event sources (like signals or key events) may still be used.
+    /// To watch a single file, watch its directory and filter on the file name
+    /// instead: some editors replace a file when they save it, and some
+    /// platforms do not report changes to the replacement. Repeat the flag to
+    /// watch several paths.
     #[usage(
-		short = 'w',
-		long = "watch",
-		help_heading = "Filtering",
-		value_hint = usage_rs::ValueHint::AnyPath,
-		value_name = "PATH",
+        short = 'w',
+        long = "watch",
+        help_heading = "Filtering",
+        value_hint = usage_rs::ValueHint::AnyPath,
+        value_name = "PATH",
     )]
     pub recursive_paths: Vec<PathBuf>,
 
-    /// Watch a specific directory, non-recursively
+    /// Watch a directory without recursing into it
     ///
-    /// Unlike '-w', folders watched with this option are not recursed into.
-    ///
-    /// This option can be specified multiple times to watch multiple directories non-recursively.
+    /// Repeat the flag to watch several directories.
     #[usage(
-		short = 'W',
-		long = "watch-non-recursive",
-		help_heading = "Filtering",
-		value_hint = usage_rs::ValueHint::AnyPath,
-		value_name = "PATH",
+        short = 'W',
+        long = "watch-non-recursive",
+        help_heading = "Filtering",
+        value_hint = usage_rs::ValueHint::AnyPath,
+        value_name = "PATH",
     )]
     pub non_recursive_paths: Vec<PathBuf>,
 
-    /// Watch files and directories from a file
+    /// Read paths to watch from a file, one per line
     ///
-    /// Each line in the file will be interpreted as if given to '-w'.
-    ///
-    /// For more complex uses (like watching non-recursively), use the argfile capability: build a
-    /// file containing command-line options and pass it to watchexec with `@path/to/argfile`.
-    ///
-    /// The special value '-' will read from STDIN; this is incompatible with '--stdin-quit'.
+    /// Each line is treated like a `--watch` value. The value `-` reads from
+    /// stdin and cannot be combined with `--stdin-quit`.
     #[usage(
-		short = 'F',
-		long,
-		help_heading = "Filtering",
-		value_hint = usage_rs::ValueHint::AnyPath,
-		value_name = "PATH",
+        short = 'F',
+        long,
+        help_heading = "Filtering",
+        value_hint = usage_rs::ValueHint::AnyPath,
+        value_name = "PATH",
     )]
     pub watch_file: Option<PathBuf>,
 
-    /// Clear screen before running command
+    /// Clear the screen before each run
     ///
-    /// If this doesn't completely clear the screen, try '--clear=reset'.
+    /// If the default `clear` mode leaves output behind, use `--clear=reset`.
+    /// Because the mode is optional, `mise watch --clear build` reads `build`
+    /// as the mode: put `--clear` after the task name, as in
+    /// `mise watch build --clear`, or write the mode with `=`.
     #[usage(
-		short = 'c',
-		long = "clear",
-		help_heading = "Output",
-		num_args = 0..=1,
-		default_missing = "clear",
-		value_enum,
-		value_name = "MODE",
+        short = 'c',
+        long = "clear",
+        help_heading = "Output",
+        num_args = 0..=1,
+        default_missing = "clear",
+        value_enum,
+        value_name = "MODE",
     )]
     pub screen_clear: Option<ClearMode>,
 
-    /// What to do when receiving events while the command is running
+    /// What to do when files change while the tasks are running
     ///
-    /// Default is to 'do-nothing', which ignores events while the command is running, so that
-    /// changes that occur due to the command are ignored, like compilation outputs. You can also
-    /// use 'queue' which will run the command once again when the current run has finished if any
-    /// events occur while it's running, or 'restart', which terminates the running command and starts
-    /// a new one. Finally, there's 'signal', which only sends a signal; this can be useful with
-    /// programs that can reload their configuration without a full restart.
-    ///
-    /// The signal can be specified with the '--signal' option.
+    /// `do-nothing` (the default) ignores the change, so files the tasks
+    /// write do not trigger another run. `queue` runs the tasks again when the
+    /// current run finishes. `restart` stops the running tasks and starts them
+    /// again. `signal` sends the `--signal` signal and keeps the tasks running,
+    /// for programs that reload their configuration on a signal.
     #[usage(
         short,
         long,
@@ -636,66 +614,44 @@ pub(crate) struct WatchexecArgs {
     )]
     pub on_busy_update: OnBusyUpdate,
 
-    /// Restart the process if it's still running
+    /// Restart the tasks if they are still running when files change
     ///
-    /// This is a shorthand for '--on-busy-update=restart'.
+    /// Same as `--on-busy-update=restart`.
     #[usage(
-		short,
-		long,
-		conflicts = ["on_busy_update"],
+        short,
+        long,
+        conflicts = ["on_busy_update"],
     )]
     pub restart: bool,
 
-    /// Send a signal to the process when it's still running
+    /// Signal to send to the running tasks when files change
     ///
-    /// Specify a signal to send to the process when it's still running. This implies
-    /// '--on-busy-update=signal'; otherwise the signal used when that mode is 'restart' is
-    /// controlled by '--stop-signal'.
-    ///
-    /// See the long documentation for '--stop-signal' for syntax.
-    ///
-    /// Signals are not supported on Windows at the moment, and will always be overridden to 'kill'.
-    /// See '--stop-signal' for more on Windows "signals".
+    /// Implies `--on-busy-update=signal`. Accepts the same forms as
+    /// `--stop-signal`. Signals are not supported on Windows, where the tasks
+    /// are always killed.
     #[usage(
-		short,
-		long,
-		conflicts = ["restart"],
-		value_name = "SIGNAL"
+        short,
+        long,
+        conflicts = ["restart"],
+        value_name = "SIGNAL"
     )]
     pub signal: Option<String>,
 
-    /// Signal to send to stop the command
+    /// Signal that stops the tasks before a restart (default on Unix: SIGTERM)
     ///
-    /// This is used by 'restart' and 'signal' modes of '--on-busy-update' (unless '--signal' is
-    /// provided). The restart behaviour is to send the signal, wait for the command to exit, and if
-    /// it hasn't exited after some time (see '--stop-timeout'), forcefully terminate it.
-    ///
-    /// The default on unix is "SIGTERM".
-    ///
-    /// Input is parsed as a full signal name (like "SIGTERM"), a short signal name (like "TERM"),
-    /// or a signal number (like "15"). All input is case-insensitive.
-    ///
-    /// On Windows this option is technically supported but only supports the "KILL" event, as
-    /// Watchexec cannot yet deliver other events. Windows doesn't have signals as such; instead it
-    /// has termination (here called "KILL" or "STOP") and "CTRL+C", "CTRL+BREAK", and "CTRL+CLOSE"
-    /// events. For portability the unix signals "SIGKILL", "SIGINT", "SIGTERM", and "SIGHUP" are
-    /// respectively mapped to these.
+    /// Used by the `restart` and `signal` modes of `--on-busy-update` unless
+    /// `--signal` is given. Accepts a full name (`SIGTERM`), a short name
+    /// (`TERM`), or a number (`15`), in any case. If the tasks have not exited
+    /// after `--stop-timeout`, they are killed. On Windows the tasks are always
+    /// killed.
     #[usage(long, value_name = "SIGNAL")]
     pub stop_signal: Option<String>,
 
-    /// Time to wait for the command to exit gracefully
+    /// How long to wait for the tasks to stop before killing them (default: 10s)
     ///
-    /// This is used by the 'restart' mode of '--on-busy-update'. After the graceful stop signal
-    /// is sent, Watchexec will wait for the command to exit. If it hasn't exited after this time,
-    /// it is forcefully terminated.
-    ///
-    /// Takes a unit-less value in seconds, or a time span value such as "5min 20s".
-    /// Providing a unit-less value is deprecated and will warn; it will be an error in the future.
-    ///
-    /// The default is 10 seconds. Set to 0 to immediately force-kill the command.
-    ///
-    /// This has no practical effect on Windows as the command is always forcefully terminated; see
-    /// '--stop-signal' for why.
+    /// Takes a duration such as `5s` or `1min 20s`. Set it to 0 to kill the
+    /// tasks right away. Has no effect on Windows, where the tasks are always
+    /// killed.
     #[usage(
         long,
         default = "10s",
@@ -704,43 +660,21 @@ pub(crate) struct WatchexecArgs {
     )]
     pub stop_timeout: String,
 
-    /// Translate signals from the OS to signals to send to the command
+    /// Translate a signal that watchexec receives into one it sends to the tasks
     ///
-    /// Takes a pair of signal names, separated by a colon, such as "TERM:INT" to map SIGTERM to
-    /// SIGINT. The first signal is the one received by watchexec, and the second is the one sent to
-    /// the command. The second can be omitted to discard the first signal, such as "TERM:" to
-    /// not do anything on SIGTERM.
-    ///
-    /// If SIGINT or SIGTERM are mapped, then they no longer quit Watchexec. Besides making it hard
-    /// to quit Watchexec itself, this is useful to send pass a Ctrl-C to the command without also
-    /// terminating Watchexec and the underlying program with it, e.g. with "INT:INT".
-    ///
-    /// This option can be specified multiple times to map multiple signals.
-    ///
-    /// Signal syntax is case-insensitive for short names (like "TERM", "USR2") and long names (like
-    /// "SIGKILL", "SIGHUP"). Signal numbers are also supported (like "15", "31"). On Windows, the
-    /// forms "STOP", "CTRL+C", and "CTRL+BREAK" are also supported to receive, but Watchexec cannot
-    /// yet deliver other "signals" than a STOP.
+    /// Takes two signal names separated by a colon, such as `TERM:INT`. Leave
+    /// out the second name to discard the first signal (`TERM:`). A mapped
+    /// SIGINT or SIGTERM no longer stops watching; `INT:INT` passes Ctrl-C to
+    /// the tasks without stopping watchexec. Repeat the flag to map several
+    /// signals.
     #[usage(long = "map-signal", value_name = "SIGNAL:SIGNAL")]
     pub signal_map: Vec<String>,
 
-    /// Time to wait for new events before taking action
+    /// How long to wait for more changes before running (default: 50ms)
     ///
-    /// When an event is received, Watchexec will wait for up to this amount of time before handling
-    /// it (such as running the command). This is essential as what you might perceive as a single
-    /// change may actually emit many events, and without this behaviour, Watchexec would run much
-    /// too often. Additionally, it's not infrequent that file writes are not atomic, and each write
-    /// may emit an event, so this is a good way to avoid running a command while a file is
-    /// partially written.
-    ///
-    /// An alternative use is to set a high value (like "30min" or longer), to save power or
-    /// bandwidth on intensive tasks, like an ad-hoc backup script. In those use cases, note that
-    /// every accumulated event will build up in memory.
-    ///
-    /// Takes a unit-less value in milliseconds, or a time span value such as "5sec 20ms".
-    /// Providing a unit-less value is deprecated and will warn; it will be an error in the future.
-    ///
-    /// The default is 50 milliseconds. Setting to 0 is highly discouraged.
+    /// One save can produce several events, and a file can be written in
+    /// pieces, so watchexec waits this long after an event before running the
+    /// tasks. Takes a duration such as `500ms` or `2s`.
     #[usage(
         long,
         short,
@@ -751,124 +685,66 @@ pub(crate) struct WatchexecArgs {
     pub debounce: String,
 
     /// Exit when stdin closes
-    ///
-    /// This watches the stdin file descriptor for EOF, and exits Watchexec gracefully when it is
-    /// closed. This is used by some process managers to avoid leaving zombie processes around.
     #[usage(long)]
     pub stdin_quit: bool,
 
-    /// Don't load gitignores
+    /// Do not apply Git and other version control ignore files
     ///
-    /// Among other VCS exclude files, like for Mercurial, Subversion, Bazaar, DARCS, Fossil. Note
-    /// that Watchexec will detect which of these is in use, if any, and only load the relevant
-    /// files. Both global (like '~/.gitignore') and local (like '.gitignore') files are considered.
-    ///
-    /// This option is useful if you want to watch files that are ignored by Git.
+    /// Use it to watch files that Git ignores. A task can turn this on for
+    /// itself with `watch = { no_vcs_ignore = true }`.
     #[usage(long, help_heading = "Filtering")]
     pub no_vcs_ignore: bool,
 
-    /// Don't load project-local ignores
-    ///
-    /// This disables loading of project-local ignore files, like '.gitignore' or '.ignore' in the
-    /// watched project. This is contrasted with '--no-vcs-ignore', which disables loading of Git
-    /// and other VCS ignore files, and with '--no-global-ignore', which disables loading of global
-    /// or user ignore files, like '~/.gitignore' or '~/.config/watchexec/ignore'.
-    ///
-    /// Supported project ignore files:
-    ///
-    ///   - Git: .gitignore at project root and child directories, .git/info/exclude, and the file pointed to by `core.excludesFile` in .git/config.
-    ///   - Mercurial: .hgignore at project root and child directories.
-    ///   - Bazaar: .bzrignore at project root.
-    ///   - Darcs: _darcs/prefs/boring
-    ///   - Fossil: .fossil-settings/ignore-glob
-    ///   - Ripgrep/Watchexec/generic: .ignore at project root and child directories.
-    ///
-    /// VCS ignore files (Git, Mercurial, Bazaar, Darcs, Fossil) are only used if the corresponding
-    /// VCS is discovered to be in use for the project/origin. For example, a .bzrignore in a Git
-    /// repository will be discarded.
-    #[usage(long, help_heading = "Filtering", verbatim_doc_comment)]
+    /// Do not apply ignore files in the project, such as `.gitignore` and
+    /// `.ignore`
+    #[usage(long, help_heading = "Filtering")]
     pub no_project_ignore: bool,
 
-    /// Don't load global ignores
-    ///
-    /// This disables loading of global or user ignore files, like '~/.gitignore',
-    /// '~/.config/watchexec/ignore', or '%APPDATA%\Bazaar\2.0\ignore'. Contrast with
-    /// '--no-vcs-ignore' and '--no-project-ignore'.
-    ///
-    /// Supported global ignore files
-    ///
-    ///   - Git (if core.excludesFile is set): the file at that path
-    ///   - Git (otherwise): the first found of $XDG_CONFIG_HOME/git/ignore, %APPDATA%/.gitignore, %USERPROFILE%/.gitignore, $HOME/.config/git/ignore, $HOME/.gitignore.
-    ///   - Bazaar: the first found of %APPDATA%/Bazaar/2.0/ignore, $HOME/.bazaar/ignore.
-    ///   - Watchexec: the first found of $XDG_CONFIG_HOME/watchexec/ignore, %APPDATA%/watchexec/ignore, %USERPROFILE%/.watchexec/ignore, $HOME/.watchexec/ignore.
-    ///
-    /// Like for project files, Git and Bazaar global files will only be used for the corresponding
-    /// VCS as used in the project.
-    #[usage(long, help_heading = "Filtering", verbatim_doc_comment)]
+    /// Do not apply global ignore files, such as `~/.gitignore` and
+    /// `~/.config/watchexec/ignore`
+    #[usage(long, help_heading = "Filtering")]
     pub no_global_ignore: bool,
 
-    /// Don't use internal default ignores
+    /// Do not apply watchexec's built-in ignores
     ///
-    /// Watchexec has a set of default ignore patterns, such as editor swap files, `*.pyc`, `*.pyo`,
-    /// `.DS_Store`, `.bzr`, `_darcs`, `.fossil-settings`, `.git`, `.hg`, `.pijul`, `.svn`, and
-    /// Watchexec log files.
+    /// They cover editor swap files, `*.pyc`, `.DS_Store`, and version control
+    /// directories such as `.git`.
     #[usage(long, help_heading = "Filtering")]
     pub no_default_ignore: bool,
 
-    /// Don't discover ignore files at all
+    /// Do not look for ignore files at all
     ///
-    /// This is a shorthand for '--no-global-ignore', '--no-vcs-ignore', '--no-project-ignore', but
-    /// even more efficient as it will skip all the ignore discovery mechanisms from the get go.
-    ///
-    /// Note that default ignores are still loaded, see '--no-default-ignore'.
+    /// Same as `--no-global-ignore --no-vcs-ignore --no-project-ignore`, but
+    /// faster. Built-in ignores still apply.
     #[usage(long, help_heading = "Filtering")]
     pub no_discover_ignore: bool,
 
-    /// Don't ignore anything at all
+    /// Ignore nothing
     ///
-    /// This is a shorthand for '--no-discover-ignore', '--no-default-ignore'.
-    ///
-    /// Note that ignores explicitly loaded via other command line options, such as '--ignore' or
-    /// '--ignore-file', will still be used.
+    /// Same as `--no-discover-ignore --no-default-ignore`. Patterns from
+    /// `--ignore` and `--ignore-file` still apply.
     #[usage(long, help_heading = "Filtering")]
     pub ignore_nothing: bool,
 
-    /// Wait until first change before running command
-    ///
-    /// By default, Watchexec will run the command once immediately. With this option, it will
-    /// instead wait until an event is detected before running the command as normal.
+    /// Wait for the first change before running the tasks
     #[usage(long, short)]
     pub postpone: bool,
 
-    /// Sleep before running the command
-    ///
-    /// This option will cause Watchexec to sleep for the specified amount of time before running
-    /// the command, after an event is detected. This is like using "sleep 5 && command" in a shell,
-    /// but portable and slightly more efficient.
-    ///
-    /// Takes a unit-less value in seconds, or a time span value such as "2min 5s".
-    /// Providing a unit-less value is deprecated and will warn; it will be an error in the future.
+    /// Wait this long after a change before running the tasks, e.g. 5s
     #[usage(long, value_name = "DURATION")]
     pub delay_run: Option<String>,
 
-    /// Poll for filesystem changes
+    /// Poll for changes instead of using native file watching
     ///
-    /// By default, and where available, Watchexec uses the operating system's native file system
-    /// watching capabilities. This option disables that and instead uses a polling mechanism, which
-    /// is less efficient but can work around issues with some file systems (like network shares) or
-    /// edge cases.
-    ///
-    /// Optionally takes a unit-less value in milliseconds, or a time span value such as "2s 500ms",
-    /// to use as the polling interval. If not specified, the default is 30 seconds.
-    /// Providing a unit-less value is deprecated and will warn; it will be an error in the future.
-    ///
-    /// Aliased as '--force-poll'.
+    /// Use it on file systems where native events do not work, such as network
+    /// shares. Takes an optional interval such as `2s` (default: 30s). Also
+    /// accepted as `--force-poll`.
     #[usage(
-		long,
-		alias = "force-poll",
-		num_args = 0..=1,
-		default_missing = "30s",
-		value_name = "INTERVAL",
+        long,
+        alias = "force-poll",
+        num_args = 0..=1,
+        default_missing = "30s",
+        value_name = "INTERVAL",
     )]
     pub poll: Option<String>,
 
@@ -1057,18 +933,22 @@ pub(crate) struct WatchexecArgs {
     /// setting them for the Watchexec process itself.
     ///
     /// Use key=value syntax. Multiple variables can be set by repeating the option.
-    #[usage(long, short = 'E', help_heading = "Command", value_name = "KEY=VALUE")]
-    pub env: Vec<String>,
+    ///
+    /// This is watchexec's '--env'. In mise, '-E'/'--env' selects the mise environment
+    /// (`mise.<ENV>.toml`), as it does for every other command.
+    #[usage(
+        long = "watchexec-env",
+        help_heading = "Command",
+        value_name = "KEY=VALUE"
+    )]
+    pub command_env: Vec<String>,
 
-    /// Configure how the process is wrapped
+    /// How to wrap the task process: group, session, or none
     ///
-    /// By default, Watchexec will run the command in a session on macOS, in a process group on
-    /// other Unix platforms, and in a Job Object in Windows.
-    ///
-    /// Some Unix programs prefer running in a session, while others do not work in a process group.
-    ///
-    /// Use 'group' to use a process group, 'session' to use a process session, and 'none' to run
-    /// the command directly. On Windows, either of 'group' or 'session' will use a Job Object.
+    /// By default watchexec uses a session on macOS, a process group on other
+    /// Unix systems, and a Job Object on Windows. Some programs need a session,
+    /// and some do not work in a process group; `none` runs the command
+    /// directly. On Windows, `group` and `session` both use a Job Object.
     #[usage(long, help_heading = "Command", value_name = "MODE", value_enum)]
     pub wrap_process: Option<WrapMode>,
 
@@ -1103,8 +983,11 @@ pub(crate) struct WatchexecArgs {
     ///
     /// By default Watchexec will print a message when the command starts and stops. This option
     /// disables this behaviour, so only the command's output, warnings, and errors will be printed.
-    #[usage(short, long, help_heading = "Output")]
-    pub quiet: bool,
+    ///
+    /// This is watchexec's '--quiet'. In mise, '-q'/'--quiet' quiets mise's own messages, as it
+    /// does for every other command.
+    #[usage(long = "watchexec-quiet", help_heading = "Output")]
+    pub watchexec_quiet: bool,
 
     /// Ring the terminal bell on command completion
     #[usage(long, help_heading = "Output")]
@@ -1120,6 +1003,8 @@ pub(crate) struct WatchexecArgs {
     /// used, the meaning of a leading '/' in filtering patterns, and maybe more in the future.
     ///
     /// When set, Watchexec will also not bother searching, which can be significantly faster.
+    ///
+    /// The directory must contain every watched task's sources, which mise makes relative to it.
     #[usage(
 		long,
 		value_hint = usage_rs::ValueHint::DirPath,
@@ -1127,22 +1012,22 @@ pub(crate) struct WatchexecArgs {
     )]
     pub project_origin: Option<PathBuf>,
 
-    /// Set the working directory
+    /// Has no effect: mise runs each task from its own `dir`
     ///
-    /// By default, the working directory of the command is the working directory of Watchexec. You
-    /// can change that with this option. Note that paths may be less intuitive to use with this.
+    /// Accepted so scripts that pass it keep working. Forwarding it would make the nested
+    /// `mise run` look for tasks in that directory instead of this project.
     #[usage(
 		long,
 		value_hint = usage_rs::ValueHint::DirPath,
 		value_name = "DIRECTORY",
+		hide = true,
     )]
     pub workdir: Option<PathBuf>,
 
-    /// Filename extensions to filter to
+    /// Only react to files with these extensions, e.g. js,ts
     ///
-    /// This is a quick filter to only emit events for files with the given extensions. Extensions
-    /// can be given with or without the leading dot (e.g. 'js' or '.js'). Multiple extensions can
-    /// be given by repeating the option or by separating them with commas.
+    /// Give extensions with or without the leading dot. Repeat the flag or
+    /// separate extensions with commas.
     #[usage(
         long = "exts",
         short = 'e',
@@ -1152,11 +1037,11 @@ pub(crate) struct WatchexecArgs {
     )]
     pub filter_extensions: Vec<String>,
 
-    /// Filename patterns to filter to
+    /// Only react to files that match this glob
     ///
-    /// Provide a glob-like filter pattern, and only events for files matching the pattern will be
-    /// emitted. Multiple patterns can be given by repeating the option. Events that are not from
-    /// files (e.g. signals, keyboard events) will pass through untouched.
+    /// Combined with the patterns mise derives from the tasks' `sources`.
+    /// Repeat the flag for more patterns. Events that do not come from files,
+    /// such as signals, pass through.
     #[usage(
         long = "filter",
         short = 'f',
@@ -1252,11 +1137,10 @@ pub(crate) struct WatchexecArgs {
     )]
     pub filter_programs: Vec<String>,
 
-    /// Filename patterns to filter out
+    /// Ignore files that match this glob
     ///
-    /// Provide a glob-like filter pattern, and events for files matching the pattern will be
-    /// excluded. Multiple patterns can be given by repeating the option. Events that are not from
-    /// files (e.g. signals, keyboard events) will pass through untouched.
+    /// Repeat the flag for more patterns. Events that do not come from files,
+    /// such as signals, pass through.
     #[usage(
         long = "ignore",
         short = 'i',
@@ -1265,19 +1149,17 @@ pub(crate) struct WatchexecArgs {
     )]
     pub ignore_patterns: Vec<String>,
 
-    /// Files to load ignores from
+    /// Read ignore patterns from a file, one per line
     ///
-    /// Provide a path to a file containing ignores, one per line. Empty lines and lines starting
-    /// with '#' are ignored. Uses the same pattern format as the '--ignore' option.
-    ///
-    /// This can also be used via the $WATCHEXEC_IGNORE_FILES environment variable.
+    /// Empty lines and lines that start with `#` are skipped. The patterns use
+    /// the same format as `--ignore`. Also read from `$WATCHEXEC_IGNORE_FILES`.
     #[usage(
-		long = "ignore-file",
-		help_heading = "Filtering",
-		value_hint = usage_rs::ValueHint::FilePath,
-		value_name = "PATH",
-		env = "WATCHEXEC_IGNORE_FILES",
-		hide_env = true,
+        long = "ignore-file",
+        help_heading = "Filtering",
+        value_hint = usage_rs::ValueHint::FilePath,
+        value_name = "PATH",
+        env = "WATCHEXEC_IGNORE_FILES",
+        hide_env = true,
     )]
     #[cfg_attr(windows, usage(delimiter = ';'))]
     #[cfg_attr(not(windows), usage(delimiter = ':'))]
@@ -1292,6 +1174,7 @@ pub(crate) struct WatchexecArgs {
     ///
     /// This may apply filtering at the kernel level when possible, which can be more efficient, but
     /// may be more confusing when reading the logs.
+    // The default must match DEFAULT_FS_EVENTS, which decides whether to forward this flag.
     #[usage(
         long = "fs-events",
         help_heading = "Filtering",
@@ -1314,12 +1197,10 @@ pub(crate) struct WatchexecArgs {
     )]
     pub filter_fs_meta: bool,
 
-    /// Print events that trigger actions
+    /// Print the events that trigger each run
     ///
-    /// This prints the events that triggered the action when handling it (after debouncing), in a
-    /// human readable form. This is useful for debugging filters.
-    ///
-    /// Use '-vvv' instead when you need more diagnostic information.
+    /// Use it to check which files `--watch`, `--filter`, and the tasks'
+    /// `sources` are reacting to.
     #[usage(long, help_heading = "Debugging")]
     pub print_events: bool,
 
@@ -1371,7 +1252,182 @@ pub(crate) struct WatchexecArgs {
     // pub raw: bool,
 }
 
-#[derive(Clone, Copy, Debug, Default, usage_rs::ValueEnum)]
+impl WatchexecArgs {
+    /// The watchexec flags these arguments ask for, spelled the way watchexec takes them.
+    ///
+    /// Every flag `mise watch` accepts on watchexec's behalf has to be re-emitted here: one
+    /// that is parsed and not pushed is silently ignored (#7776, #10212). Two are handled in
+    /// `run` instead: `--project-origin`, because mise also derives an origin from the task
+    /// sources and has to pick one, and `--manual`, because watchexec refuses it alongside the
+    /// command mise always runs.
+    ///
+    /// `no_vcs_ignore` is forced on when a watched task opted out of VCS ignores.
+    fn watchexec_args(&self, no_vcs_ignore: bool) -> Vec<String> {
+        let mut args = vec![];
+        if let Some(delay_run) = &self.delay_run {
+            args.push("--delay-run".to_string());
+            args.push(delay_run.clone());
+        }
+        if let Some(poll) = &self.poll {
+            args.push("--poll".to_string());
+            args.push(poll.clone());
+        }
+        if let Some(signal) = &self.signal {
+            args.push("--signal".to_string());
+            args.push(signal.clone());
+        }
+        if let Some(stop_signal) = &self.stop_signal {
+            args.push("--stop-signal".to_string());
+            args.push(stop_signal.clone());
+        }
+        if self.stop_timeout != "10s" {
+            args.push("--stop-timeout".to_string());
+            args.push(self.stop_timeout.clone());
+        }
+        if self.debounce != "50ms" {
+            args.push("--debounce".to_string());
+            args.push(self.debounce.clone());
+        }
+        if self.stdin_quit {
+            args.push("--stdin-quit".to_string());
+        }
+        if self.no_vcs_ignore || no_vcs_ignore {
+            args.push("--no-vcs-ignore".to_string());
+        }
+        if self.no_project_ignore {
+            args.push("--no-project-ignore".to_string());
+        }
+        if self.no_global_ignore {
+            args.push("--no-global-ignore".to_string());
+        }
+        if self.no_default_ignore {
+            args.push("--no-default-ignore".to_string());
+        }
+        if self.no_discover_ignore {
+            args.push("--no-discover-ignore".to_string());
+        }
+        if self.ignore_nothing {
+            args.push("--ignore-nothing".to_string());
+        }
+        if self.postpone {
+            args.push("--postpone".to_string());
+        }
+        if let Some(screen_clear) = self.screen_clear {
+            args.push("--clear".to_string());
+            if let ClearMode::Reset = screen_clear {
+                args.push("reset".to_string());
+            }
+        }
+        if self.restart {
+            args.push("--restart".to_string());
+        }
+        if self.on_busy_update != OnBusyUpdate::DoNothing {
+            args.push("--on-busy-update".to_string());
+            args.push(self.on_busy_update.to_string());
+        }
+        args.extend(wrap_process_args(self.wrap_process));
+        for signal_map in &self.signal_map {
+            args.push("--map-signal".to_string());
+            args.push(signal_map.to_string());
+        }
+        for path in &self.recursive_paths {
+            args.push("--watch".to_string());
+            args.push(path.to_string_lossy().to_string());
+        }
+        for path in &self.non_recursive_paths {
+            args.push("--watch-non-recursive".to_string());
+            args.push(path.to_string_lossy().to_string());
+        }
+        for ext in &self.filter_extensions {
+            args.push("--exts".to_string());
+            args.push(ext.to_string());
+        }
+        for pattern in &self.filter_patterns {
+            args.push("--filter".to_string());
+            args.push(pattern.to_string());
+        }
+        if let Some(watch_file) = &self.watch_file {
+            args.push("--watch-file".to_string());
+            args.push(watch_file.to_string_lossy().to_string());
+        }
+        // watchexec unions repeated --ignore flags, so these combine with the
+        // source-derived ignores `run` pushes rather than clobbering them (#7776).
+        for pattern in &self.ignore_patterns {
+            args.push("--ignore".to_string());
+            args.push(pattern.to_string());
+        }
+        for path in &self.ignore_files {
+            args.push("--ignore-file".to_string());
+            args.push(path.to_string_lossy().to_string());
+        }
+        if self.print_events {
+            args.push("--print-events".to_string());
+        }
+        if let Some(shell) = &self.shell {
+            args.push("--shell".to_string());
+            args.push(shell.clone());
+        }
+        if self.no_shell {
+            args.push("-n".to_string());
+        }
+        if self.emit_events_to != EmitEvents::None {
+            args.push("--emit-events-to".to_string());
+            args.push(self.emit_events_to.to_string());
+        }
+        if self.only_emit_events {
+            args.push("--only-emit-events".to_string());
+        }
+        for env in &self.command_env {
+            args.push("--env".to_string());
+            args.push(env.clone());
+        }
+        if self.notify {
+            args.push("--notify".to_string());
+        }
+        if self.color != ColourMode::Auto {
+            args.push("--color".to_string());
+            args.push(self.color.to_string());
+        }
+        if self.timings {
+            args.push("--timings".to_string());
+        }
+        if self.watchexec_quiet {
+            args.push("--quiet".to_string());
+        }
+        if self.bell {
+            args.push("--bell".to_string());
+        }
+        for path in &self.filter_files {
+            args.push("--filter-file".to_string());
+            args.push(path.to_string_lossy().to_string());
+        }
+        for program in &self.filter_programs {
+            args.push("--filter-prog".to_string());
+            args.push(program.clone());
+        }
+        if self.filter_fs_events != DEFAULT_FS_EVENTS {
+            args.push("--fs-events".to_string());
+            args.push(self.filter_fs_events.iter().join(","));
+        }
+        if self.filter_fs_meta {
+            args.push("--no-meta".to_string());
+        }
+        args
+    }
+}
+
+/// watchexec's own `--fs-events` default. It must match the `default` on `filter_fs_events`;
+/// if the two drift apart, mise forwards `--fs-events` when the user did not pass it.
+const DEFAULT_FS_EVENTS: &[FsEvent] = &[
+    FsEvent::Create,
+    FsEvent::Remove,
+    FsEvent::Rename,
+    FsEvent::Modify,
+    FsEvent::Metadata,
+];
+
+#[derive(Clone, Copy, Debug, Default, usage_rs::ValueEnum, PartialEq, strum::Display)]
+#[strum(serialize_all = "kebab-case")]
 pub(crate) enum EmitEvents {
     #[default]
     Environment,
@@ -1423,7 +1479,8 @@ pub(crate) enum ClearMode {
     Reset,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, usage_rs::ValueEnum)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, usage_rs::ValueEnum, strum::Display)]
+#[strum(serialize_all = "kebab-case")]
 pub(crate) enum FsEvent {
     Access,
     Create,
@@ -1433,7 +1490,8 @@ pub(crate) enum FsEvent {
     Metadata,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, usage_rs::ValueEnum)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, usage_rs::ValueEnum, strum::Display)]
+#[strum(serialize_all = "kebab-case")]
 pub(crate) enum ColourMode {
     Auto,
     Always,
@@ -1694,8 +1752,9 @@ mod terminal_state_tests {
 #[cfg(test)]
 mod tests {
     use super::{
-        WrapMode, common_ancestor, merge_watch_patterns, normalize_path, parse_source,
-        relativize_source, source_watch_dir, tasks_disable_vcs_ignores, wrap_process_args,
+        WrapMode, common_ancestor, merge_watch_patterns, negation_within_origin, normalize_path,
+        parse_source, relativize_source, source_watch_dir, tasks_disable_vcs_ignores,
+        wrap_process_args,
     };
     use crate::cli::{Cli, Commands};
     use crate::task::{Task, TaskWatchOptions};
@@ -1732,6 +1791,154 @@ mod tests {
         assert!(watch.args.is_empty());
         assert!(watch.watchexec.postpone);
         assert_eq!(watch.watchexec.poll.as_deref(), Some("100ms"));
+    }
+
+    fn parse_watch(argv: &[&str]) -> (Cli, super::Watch) {
+        let argv = argv.iter().map(std::ffi::OsStr::new).collect::<Vec<_>>();
+        let mut cli = Cli::parse_from_argv(&argv).unwrap();
+        let Some(Commands::Watch(watch)) = cli.command.take() else {
+            panic!("expected the watch command");
+        };
+        (cli, *watch)
+    }
+
+    #[test]
+    fn defaults_forward_no_watchexec_flags() {
+        let (_, watch) = parse_watch(&["mise", "watch", "build"]);
+        assert!(watch.watchexec.watchexec_args(false).is_empty());
+    }
+
+    /// These flags used to be parsed and then dropped, so watchexec never saw them.
+    #[test]
+    fn forwards_previously_dropped_watchexec_flags() {
+        let (_, watch) = parse_watch(&[
+            "mise",
+            "watch",
+            "--shell",
+            "bash",
+            "-n",
+            "--emit-events-to",
+            "json-stdio",
+            "--watchexec-env",
+            "FOO=bar",
+            "--watchexec-env",
+            "BAZ=qux",
+            "--notify",
+            "--color",
+            "never",
+            "--timings",
+            "--watchexec-quiet",
+            "--bell",
+            "--workdir",
+            "sub",
+            "--filter-file",
+            "filters.txt",
+            "-J",
+            "true",
+            "--fs-events",
+            "create,modify",
+            "build",
+        ]);
+        assert_eq!(
+            watch.watchexec.watchexec_args(false),
+            s(&[
+                "--shell",
+                "bash",
+                "-n",
+                "--emit-events-to",
+                "json-stdio",
+                "--env",
+                "FOO=bar",
+                "--env",
+                "BAZ=qux",
+                "--notify",
+                "--color",
+                "never",
+                "--timings",
+                "--quiet",
+                "--bell",
+                "--filter-file",
+                "filters.txt",
+                "--filter-prog",
+                "true",
+                "--fs-events",
+                "create,modify",
+            ])
+        );
+    }
+
+    /// `--no-meta` conflicts with `--fs-events` in the test above.
+    #[test]
+    fn forwards_no_meta() {
+        let (_, watch) = parse_watch(&["mise", "watch", "--no-meta", "build"]);
+        assert_eq!(watch.watchexec.watchexec_args(false), s(&["--no-meta"]));
+    }
+
+    /// `run` handles `--manual` on its own, as `watchexec --manual` with no command, because
+    /// watchexec refuses `--manual` alongside one.
+    #[test]
+    fn manual_is_not_forwarded_with_the_other_flags() {
+        let (_, watch) = parse_watch(&["mise", "watch", "--manual"]);
+        assert!(watch.watchexec.manual);
+        assert!(watch.watchexec.watchexec_args(false).is_empty());
+    }
+
+    fn named_task(name: &str) -> Task {
+        let mut task = Task::default();
+        task.name = name.to_string();
+        task
+    }
+
+    #[test]
+    fn command_runs_the_tasks() {
+        let (_, watch) = parse_watch(&["mise", "watch", "--skip-deps", "build"]);
+        let args = watch.command_args(&[named_task("build"), named_task("test")]);
+        assert_eq!(args[0], "--");
+        assert_eq!(
+            args[2..],
+            s(&["run", "--skip-deps", "build", ":::", "test"])
+        );
+    }
+
+    /// watchexec refuses `--only-emit-events` alongside a command, so mise must not append
+    /// `-- <mise> run ...` after it.
+    #[test]
+    fn only_emit_events_runs_no_command() {
+        let (_, watch) = parse_watch(&[
+            "mise",
+            "watch",
+            "--emit-events-to",
+            "json-stdio",
+            "--only-emit-events",
+            "build",
+        ]);
+        assert_eq!(
+            watch.watchexec.watchexec_args(false),
+            s(&["--emit-events-to", "json-stdio", "--only-emit-events"])
+        );
+        assert!(watch.command_args(&[named_task("build")]).is_empty());
+    }
+
+    /// `-E`/`--env` and `-q`/`--quiet` are mise's global flags. watchexec's flags of the same
+    /// name used to shadow them after `watch`, and are now spelled `--watchexec-env` and
+    /// `--watchexec-quiet`, so `mise watch -E dev` must not turn into `watchexec --env dev`.
+    #[test]
+    fn env_and_quiet_after_watch_are_mises_own() {
+        let (cli, watch) = parse_watch(&["mise", "watch", "-E", "dev", "-q", "build"]);
+        assert_eq!(cli.env, Some(vec!["dev".to_string()]));
+        assert!(cli.quiet);
+        assert!(watch.watchexec.watchexec_args(false).is_empty());
+
+        let (cli, watch) = parse_watch(&["mise", "watch", "--env", "dev", "--quiet", "build"]);
+        assert_eq!(cli.env, Some(vec!["dev".to_string()]));
+        assert!(cli.quiet);
+        assert!(watch.watchexec.watchexec_args(false).is_empty());
+    }
+
+    #[test]
+    fn glob_is_parsed() {
+        let (_, watch) = parse_watch(&["mise", "watch", "--glob", "src/**/*.rs", "build"]);
+        assert_eq!(watch.glob, s(&["src/**/*.rs"]));
     }
 
     #[test]
@@ -1886,6 +2093,45 @@ mod tests {
         assert_eq!(common, Some(pb("/repo")));
         let rel = relativize_source(super::SourceKind::Plain, &abs, &common.unwrap());
         assert_eq!(rel, "shared/src/*.ts");
+    }
+
+    #[test]
+    fn negation_within_origin_keeps_one_inside() {
+        assert_eq!(
+            negation_within_origin(Path::new("/repo/src/gen/**"), Path::new("/repo/src")),
+            Some(pb("/repo/src/gen/**")),
+        );
+    }
+
+    #[test]
+    fn negation_within_origin_rebases_double_star_above() {
+        assert_eq!(
+            negation_within_origin(Path::new("/repo/**/*.tmp"), Path::new("/repo/src")),
+            Some(pb("/repo/src/**/*.tmp")),
+        );
+        assert_eq!(
+            negation_within_origin(Path::new("/repo/**"), Path::new("/repo/src/a")),
+            Some(pb("/repo/src/a/**")),
+        );
+    }
+
+    #[test]
+    fn negation_within_origin_drops_one_that_cannot_match() {
+        // A sibling of the origin.
+        assert_eq!(
+            negation_within_origin(Path::new("/repo/shared/**"), Path::new("/repo/src")),
+            None,
+        );
+        // A single-level glob above the origin matches only files there.
+        assert_eq!(
+            negation_within_origin(Path::new("/repo/*.log"), Path::new("/repo/src")),
+            None,
+        );
+        // A literal file above the origin.
+        assert_eq!(
+            negation_within_origin(Path::new("/repo/notes.txt"), Path::new("/repo/src")),
+            None,
+        );
     }
 
     #[test]

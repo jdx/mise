@@ -132,7 +132,7 @@ impl Store {
     }
 
     pub fn open() -> Result<Self> {
-        Self::open_in(&crate::dirs::STATE)
+        Self::open_in(&super::local::root())
     }
 
     pub fn state_dir(&self) -> &Path {

@@ -33,7 +33,7 @@ pub(crate) const SCHEMA_VERSION: u32 = 2;
 
 /// The state directory the store lives under.
 pub fn state_dir() -> PathBuf {
-    crate::dirs::STATE.to_path_buf()
+    super::local::root()
 }
 
 pub fn store_dir_in(state_dir: &Path) -> PathBuf {

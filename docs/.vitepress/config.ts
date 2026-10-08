@@ -1,11 +1,18 @@
 import { socialCard, writeSocialCard } from "./social-images.mjs";
 import { pageDescription } from "./social-descriptions.mjs";
 import { showreelFiles } from "./showreel.data";
-import { readdirSync, readFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  writeFileSync,
+} from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { defineConfig } from "vitepress";
 import { sidebar } from "./sidebar";
+import { pageRedirects, redirectStub, stubFile } from "./redirects.mjs";
 import { releaseNotesPlugin } from "@jdxcode/docs-releases/vitepress";
 import {
   groupIconMdPlugin,
@@ -30,7 +37,7 @@ const siteUrl = "https://mise.jdx.dev";
 // public/site.webmanifest so browser chrome matches the installed-app chrome.
 const brandColor = "#8B2252";
 const siteDescription =
-  "mise manages developer tools, environment variables, tasks, packages, and dotfiles in one project configuration for macOS, Linux, and Windows.";
+  "mise installs a project's tools, sets its environment variables, and runs its tasks from one mise.toml, and can set up whole machines with packages and dotfiles.";
 
 // `foo/index.md` publishes as `foo/`, everything else as `foo/bar.html`. Anchor
 // the index match on the leading slash so `guide/myindex.md` keeps its name.
@@ -113,12 +120,26 @@ function assertNoEmptyDocPages(outDir: string) {
   }
 }
 
+/** Write a stub at each removed page's URL that sends readers to its new home. */
+function writeRedirectStubs(outDir: string) {
+  for (const [from, redirect] of Object.entries(pageRedirects)) {
+    const file = join(outDir, stubFile(from));
+    if (existsSync(file)) {
+      throw new Error(`${from} is both a documentation page and a redirect`);
+    }
+    mkdirSync(dirname(file), { recursive: true });
+    writeFileSync(file, redirectStub(redirect, siteUrl));
+  }
+}
+
 // https://vitepress.dev/reference/site-config
 export default withMermaid(
   defineConfig({
     title: "mise-en-place",
     description: siteDescription,
     lang: "en-US",
+    // The contributor guide in docs/README.md is for GitHub, not the site.
+    srcExclude: ["README.md"],
     lastUpdated: true,
     appearance: true,
     mermaid: {},
@@ -130,10 +151,51 @@ export default withMermaid(
       logo: { light: "/logo-light.svg", dark: "/logo-dark.svg" },
       outline: "deep",
       nav: [
+        {
+          text: "Dev tools",
+          link: "/dev-tools/",
+          activeMatch: "^/(dev-tools|lang|core-tools|registry)",
+        },
+        {
+          text: "Environments",
+          link: "/environments/",
+          activeMatch: "^/(environments|shell-aliases|hooks|direnv)",
+        },
+        { text: "Tasks", link: "/tasks/", activeMatch: "^/(tasks|daemons)" },
+        {
+          text: "Bootstrap",
+          link: "/bootstrap",
+          activeMatch: "^/(bootstrap|dotfiles)",
+        },
+        {
+          text: "Reference",
+          items: [
+            {
+              items: [
+                { text: "CLI commands", link: "/cli/" },
+                { text: "mise.toml", link: "/configuration" },
+                { text: "Settings", link: "/configuration/settings" },
+                {
+                  text: "MISE_* variables",
+                  link: "/configuration/environment-variables",
+                },
+                {
+                  text: "Task configuration",
+                  link: "/tasks/task-configuration",
+                },
+                { text: "Tool registry", link: "/registry" },
+              ],
+            },
+            {
+              items: [
+                { text: "Troubleshooting", link: "/troubleshooting" },
+                { text: "Error messages", link: "/errors" },
+                { text: "Glossary", link: "/glossary" },
+              ],
+            },
+          ],
+        },
         { text: "mise-versions", link: "https://mise-versions.jdx.dev/" },
-        { text: "Dev Tools", link: "/dev-tools/" },
-        { text: "Environments", link: "/environments/" },
-        { text: "Tasks", link: "/tasks/" },
         {
           text: `v${latestVersion}`,
           // The releases page opens the release named in the hash.
@@ -144,7 +206,7 @@ export default withMermaid(
 
       socialLinks: [
         { icon: "github", link: "https://github.com/jdx/mise" },
-        { icon: "discord", link: "https://discord.gg/UBa7pJUN7Z" },
+        { icon: "discord", link: "https://discord.gg/mABnUDvP57" },
       ],
 
       editLink: {
@@ -353,7 +415,7 @@ export default withMermaid(
     transformHead({ pageData, title, description, siteConfig }) {
       const heading =
         pageData.relativePath === "index.md"
-          ? "Dev tools, environments, and tasks"
+          ? "Dev tools, env vars, and tasks in one CLI"
           : pageData.title || "mise";
       const card = socialCard(
         heading,
@@ -437,6 +499,7 @@ export default withMermaid(
     },
     buildEnd(siteConfig) {
       assertNoEmptyDocPages(siteConfig.outDir);
+      writeRedirectStubs(siteConfig.outDir);
     },
   }),
 );

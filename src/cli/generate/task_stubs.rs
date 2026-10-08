@@ -5,25 +5,32 @@ use crate::file::display_path;
 use crate::shims::find_mise_shim_bin;
 use crate::task::Task;
 use eyre::{WrapErr, bail};
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{HashMap, HashSet};
 use std::env;
 use std::fs;
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 
-/// Generate shims to run mise tasks
+/// Generate scripts that run mise tasks
 ///
-/// By default, this will build shims like ./bin/<task>. These can be paired with `mise generate install-script`
-/// so contributors to a project can execute mise tasks without installing mise into their system.
-/// When a parent and nested task both exist, the parent stub is written to `<parent>/_default`.
+/// Writes one executable stub per task into a directory, such as `bin/test` for
+/// the `test` task, that runs the task with mise. Pair them with
+/// `mise generate install-script` so contributors can run tasks without installing
+/// mise. When a task has subtasks, the parent's stub is written to
+/// `<parent>/_default`.
+///
+/// Hidden tasks and global tasks are skipped: the stubs are committed to the
+/// project, and global tasks come from each user's own config.
 #[derive(Debug, usage_rs::Args)]
 #[usage(
     verbatim_doc_comment,
     example(
-        r###"mise tasks add test -- echo 'running tests'
-mise generate task-stubs
-./bin/test
-running tests"###
+        "mise generate task-stubs",
+        help = "Write a stub for each task into ./bin"
+    ),
+    example(
+        "mise generate task-stubs --mise-bin ./bin/mise",
+        help = "Make the stubs run the mise that `mise generate install-script` wrote"
     )
 )]
 pub(super) struct TaskStubs {
@@ -31,14 +38,20 @@ pub(super) struct TaskStubs {
     #[usage(long, short, verbatim_doc_comment, default="bin", value_hint=ValueHint::DirPath)]
     dir: PathBuf,
 
-    /// Path to a mise bin to use when running the task stub.
+    /// mise executable the stubs run; defaults to mise from PATH
     ///
-    /// Use `--mise-bin=./bin/mise` to use a mise bin generated from `mise generate install-script`
-    ///
-    /// On Windows a path is run as written, so that script needs its own launcher beside it:
-    /// generate it with `mise generate install-script --write ./bin/mise --windows`. The default
-    /// `mise` is a bare name and resolves off PATH, which needs nothing extra.
-    #[usage(long, short, verbatim_doc_comment, default = "mise")]
+    /// Use `--mise-bin ./bin/mise` with a script from `mise generate install-script`.
+    /// On Windows a path runs as written, so that script needs its `.cmd` launcher
+    /// beside it; generate it with
+    /// `mise generate install-script --write ./bin/mise --windows`. The default,
+    /// `mise`, is a bare name that resolves from PATH and needs nothing extra.
+    #[usage(
+        long,
+        short,
+        value_name = "PATH",
+        verbatim_doc_comment,
+        default = "mise"
+    )]
     mise_bin: PathBuf,
 
     /// What to write beside each stub for Windows to launch
@@ -51,7 +64,13 @@ pub(super) struct TaskStubs {
     /// every shell. It is a copy of the mise-shim.exe that ships with the Windows build, so it
     /// can only be generated on Windows, and it adds ~220KB per task to a directory that is
     /// normally committed.
-    #[usage(long, verbatim_doc_comment, value_enum, default = "cmd")]
+    #[usage(
+        long,
+        value_name = "KIND",
+        verbatim_doc_comment,
+        value_enum,
+        default = "cmd"
+    )]
     windows_launcher: WindowsLauncher,
 }
 
@@ -68,15 +87,25 @@ impl TaskStubs {
     pub(super) async fn run(self) -> eyre::Result<()> {
         let config = Config::get().await?;
         let launchers = Launchers::resolve(self.windows_launcher)?;
-        let tasks = config.tasks().await?;
+        let all_tasks = config.tasks().await?;
+        // Stubs are committed to the project, so they cover the project's own tasks only. A hidden
+        // task is not meant to be invoked directly, and a global task comes from the user's own
+        // config, which nobody else who checks the project out has.
+        let tasks = all_tasks
+            .values()
+            .filter(|task| !task.hide && !task.global)
+            .collect::<Vec<_>>();
         // Two paths per task, and they differ only for a task that came from a file: `name` keeps
         // the file's extension, `display_name` does not. The stub is named after the task, and the
         // file-named path is kept so a stub written under the old spelling can be migrated away.
-        let task_paths = tasks.values().map(Task::name_to_path).collect::<Vec<_>>();
+        let task_paths = tasks
+            .iter()
+            .map(|task| task.name_to_path())
+            .collect::<Vec<_>>();
         let base_paths = stub_base_paths(&tasks, &task_paths);
         let paths = resolve_stub_paths(&self.dir, &base_paths)?;
         let stubs = tasks
-            .values()
+            .into_iter()
             .zip(task_paths)
             .zip(paths)
             .map(|((task, legacy_path), path)| {
@@ -442,10 +471,10 @@ enum StubMigration {
 /// only there. Those keep their file-named paths, because renaming both onto one path would take a
 /// working project and fail its `task-stubs` run. Windows never reaches that branch, so the case
 /// this exists to fix is always unambiguous.
-fn stub_base_paths(tasks: &BTreeMap<String, Task>, task_paths: &[PathBuf]) -> Vec<PathBuf> {
+fn stub_base_paths(tasks: &[&Task], task_paths: &[PathBuf]) -> Vec<PathBuf> {
     let display_paths = tasks
-        .values()
-        .map(Task::display_name_to_path)
+        .iter()
+        .map(|task| task.display_name_to_path())
         .collect::<Vec<_>>();
     let mut counts: HashMap<&PathBuf, usize> = HashMap::new();
     for path in &display_paths {

@@ -11,29 +11,35 @@ description: "Show the individuals supporting mise as Patron-tier members"
 
 Show the individuals supporting mise as Patron-tier members
 
-Lists the individuals on the Patron tier from <https://jdx.dev/patrons.json>.
-The list refreshes daily; supporting terminals will render each patron's
-name as a clickable link via OSC 8 hyperlinks.
+Fetches the list from <https://jdx.dev/patrons.json> and caches it for a day;
+pass `--refresh` to fetch it now. If the fetch fails, the cached list is used.
+Terminals that support OSC 8 hyperlinks show each name as a link.
 
 To appear here, become a patron at <https://jdx.dev/sponsors.html>.
 
 ## Flags
 - **`-J --json`** — Output in JSON format
-- **`--refresh`** — Bypass the local cache and re-fetch
+- **`--refresh`** — Fetch the list now instead of using the cached copy
 - **`-h --help`** — Print help
 
 ## Examples
 
+List the patrons
+
 ```
 mise patrons
-mise patrons -J
-mise patrons --refresh
+```
+
+Fetch the list now and print it as JSON
+
+```
+mise patrons --refresh -J
 ```
 
 <!-- generated reference navigation -->
 
 ## Related documentation
 
-- [Supporting mise](/about.html).
+- [Supporting mise](/about.html#supporting-mise).
 - [All commands](/cli/).
 - [Global flags and argument syntax](/cli/#global-flags).

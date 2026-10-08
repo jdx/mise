@@ -1,0 +1,96 @@
+#!/usr/bin/env bash
+# Recoverable operations (journaled, with a protective checkpoint) never
+# prompt, with or without a terminal. Irreversible ones fail with an error
+# that names --yes when nobody can answer. e2e runs with stderr
+# and stdin detached from any tty.
+require_cmd git
+export MISE_HISTORY_NOTIFY=false
+export MISE_YES=0
+
+origin="$PWD/origin.git"
+git init -q --bare -b main "$origin"
+echo base >~/.native
+assert_succeed 'mise bootstrap dotfiles track ~/.native --yes'
+assert_succeed "mise bootstrap dotfiles origin set file://$origin --sync manual --yes"
+assert_succeed 'mise bootstrap dotfiles sync'
+
+second="$(dirname "$HOME")/nontty-b"
+mkdir -p "$second"
+b() {
+  (
+    cd "$second" || exit
+    env HOME="$second" XDG_CONFIG_HOME="$second/.config" MISE_CONFIG_DIR="$second/.config/mise" \
+      MISE_STATE_DIR="$second/.local/state/mise" MISE_DATA_DIR="$second/.local/share/mise" \
+      MISE_CACHE_DIR="$second/.cache/mise" MISE_TRUSTED_CONFIG_PATHS="$second" mise "$@"
+  )
+}
+export second
+export -f b
+assert_succeed "b bootstrap --adopt file://$origin --yes </dev/null"
+
+# pull applies without --yes, even with MISE_YES=0
+echo incoming >~/.native
+assert_succeed 'mise bootstrap dotfiles sync'
+assert_succeed 'b bootstrap dotfiles sync --fetch-only'
+assert_not_contains 'b bootstrap dotfiles pull </dev/null 2>&1' 'skipped'
+assert "cat $second/.native" incoming
+
+# rollback and undo (journaled, undoable) apply without --yes too
+mkdir -p ~/.config/hypr
+echo kitty >~/.config/hypr/bindings.lua
+assert_succeed 'mise bootstrap dotfiles track ~/.config/hypr --yes'
+echo alacritty >~/.config/hypr/bindings.lua
+assert_succeed 'mise bootstrap dotfiles save'
+assert_succeed 'mise bootstrap dotfiles rollback ~/.config/hypr/bindings.lua </dev/null'
+assert 'cat ~/.config/hypr/bindings.lua' kitty
+assert_succeed 'mise bootstrap dotfiles undo </dev/null'
+assert 'cat ~/.config/hypr/bindings.lua' alacritty
+
+# replacing local history cannot be undone: refuse loudly too
+assert_fail "b bootstrap --adopt file://$origin --replace-history </dev/null" '--yes'
+
+# irreversible: refuse loudly and name --yes, never skip silently
+mkdir -p "$HOME/implode-me"
+assert_fail 'mise implode </dev/null' '--yes'
+assert_succeed "test -d '$MISE_DATA_DIR' -o -d '$MISE_CONFIG_DIR'"
+
+# with a terminal attached it must not prompt either: track finishes without
+# an answer (stdin at EOF) and without --yes
+require_cmd python3
+echo extra >~/.pty-tracked
+python3 - <<'PY'
+import errno
+import os
+import pty
+import subprocess
+from pathlib import Path
+
+master, slave = pty.openpty()
+try:
+    result = subprocess.run(
+        ["mise", "bootstrap", "dotfiles", "track", str(Path.home() / ".pty-tracked")],
+        env={**os.environ, "MISE_YES": "0"},
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.PIPE,
+        stderr=slave,
+        timeout=60,
+    )
+finally:
+    os.close(slave)
+chunks = []
+while True:
+    try:
+        chunk = os.read(master, 4096)
+    except OSError as error:
+        if error.errno != errno.EIO:
+            raise
+        break
+    if not chunk:
+        break
+    chunks.append(chunk)
+os.close(master)
+output = result.stdout + b"".join(chunks)
+assert result.returncode == 0, output
+assert b"dotfiles: track " not in output, output
+PY
+assert_contains 'mise bootstrap dotfiles paths --json' '.pty-tracked'
