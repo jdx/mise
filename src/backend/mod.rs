@@ -268,12 +268,13 @@ fn listing_option_digest(opts: &ToolVersionOptions, version_listing_opt_keys: &[
         .iter()
         .filter_map(|key| {
             // A table such as `headers` has no scalar form but still shapes the list, and its
-            // values can be credentials, so only the digest of it is kept.
+            // values can be credentials, so only the digest of it is kept. An array, such as
+            // packslip's `workflow` list, shapes the list the same way.
             opts.get_string(key)
                 .or_else(|| {
                     opts.opts
                         .get(*key)
-                        .filter(|value| value.is_table())
+                        .filter(|value| value.is_table() || value.is_array())
                         .map(ToString::to_string)
                 })
                 .map(|value| (*key, value))
@@ -1449,6 +1450,34 @@ mod tests {
         assert_eq!(
             listing_option_digest(&forward, keys),
             listing_option_digest(&forward, keys),
+        );
+    }
+
+    #[test]
+    fn test_listing_option_digest_tracks_array_values() {
+        use crate::toolset::ToolVersionOptions;
+
+        let with = |names: &[&str]| {
+            let mut opts = ToolVersionOptions::default();
+            opts.opts.insert(
+                "workflow".to_string(),
+                toml::Value::Array(
+                    names
+                        .iter()
+                        .map(|n| toml::Value::String(n.to_string()))
+                        .collect(),
+                ),
+            );
+            opts
+        };
+        let keys = &["workflow"];
+        assert_ne!(
+            listing_option_digest(&with(&["a.yml", "b.yml"]), keys),
+            listing_option_digest(&with(&["a.yml"]), keys),
+        );
+        assert_ne!(
+            listing_option_digest(&with(&["a.yml"]), keys),
+            listing_option_digest(&ToolVersionOptions::default(), keys),
         );
     }
 

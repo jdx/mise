@@ -41,7 +41,7 @@ use crate::lockfile::PlatformInfo;
 use crate::packslip_forge::{self, ForgeExpect};
 use crate::packslip_pins::{self, Observed};
 use crate::platform::Platform;
-use crate::toolset::{ToolRequest, ToolVersion, ToolVersionOptions};
+use crate::toolset::{ToolRequest, ToolVersion, ToolVersionOptions, scalar_value_to_string};
 
 /// The backend installs only from a signed manifest, which is a property of
 /// the format rather than a rough edge, so nothing is held back by a setting.
@@ -95,9 +95,25 @@ impl<'a> PackslipOptions<'a> {
         self.raw.get_string("issuer")
     }
 
-    /// The file name of the repository workflow that signs releases.
-    fn workflow(&self) -> Option<String> {
-        self.raw.get_string("workflow")
+    /// The file names of the repository workflows that may sign releases:
+    /// one name, or a list of them when the signing workflow changed.
+    fn workflows(&self, project: &str) -> Result<Option<Vec<String>>> {
+        let Some(value) = self.raw.opts.get("workflow") else {
+            return Ok(None);
+        };
+        let names: Option<Vec<String>> = match value {
+            toml::Value::Array(items) => items
+                .iter()
+                .map(|item| item.as_str().map(str::to_string))
+                .collect(),
+            other => scalar_value_to_string(other).map(|name| vec![name]),
+        };
+        match names {
+            Some(names) if !names.is_empty() => Ok(Some(names)),
+            _ => bail!(
+                "packslip:{project}: `workflow` must be a workflow file name or a list of them"
+            ),
+        }
     }
 
     /// Accept a key-signed bundle with no transparency log entry.
@@ -587,14 +603,21 @@ pub(crate) enum Pin {
     /// this policy for the name it is requested under.
     Forge(Policy),
     Identity(Policy),
+    /// Several identities, any one of which may have signed: a project whose
+    /// signing workflow changed across the releases the registry covers.
+    Identities(Vec<Policy>),
     Key(packslip::minisign::PublicKey),
 }
 
 fn pin(project: &str, opts: &PackslipOptions<'_>) -> Result<Pin> {
     // An identity pin, not a forge one: forge verification derives its own
     // repository-wide policy from the bundle and would ignore the workflow.
-    if let Some(workflow) = opts.workflow() {
-        return Ok(Pin::Identity(workflow_policy(project, opts, &workflow)?));
+    if let Some(workflows) = opts.workflows(project)? {
+        let mut policies = workflow_policies(project, opts, &workflows)?;
+        return Ok(match policies.len() {
+            1 => Pin::Identity(policies.remove(0)),
+            _ => Pin::Identities(policies),
+        });
     }
     if let Some(pubkey) = opts.pubkey() {
         let text = if Path::new(&pubkey).is_file() {
@@ -622,9 +645,14 @@ fn pin(project: &str, opts: &PackslipOptions<'_>) -> Result<Pin> {
     }
 }
 
-/// The forge policy narrowed to one workflow file run on a tag, so a
-/// workflow on a branch of the same repository cannot sign a release.
-fn workflow_policy(project: &str, opts: &PackslipOptions<'_>, workflow: &str) -> Result<Policy> {
+/// The forge policy narrowed to each named workflow file run on a tag, so a
+/// workflow on a branch of the same repository cannot sign a release. An
+/// entry may name another ref, for a project that signs from a branch.
+fn workflow_policies(
+    project: &str,
+    opts: &PackslipOptions<'_>,
+    workflows: &[String],
+) -> Result<Vec<Policy>> {
     if opts.pubkey().is_some()
         || opts.identity().is_some()
         || opts.identity_prefix().is_some()
@@ -634,19 +662,44 @@ fn workflow_policy(project: &str, opts: &PackslipOptions<'_>, workflow: &str) ->
             "packslip:{project}: `workflow` cannot be combined with `pubkey`, `identity`, `identity_prefix`, or `issuer`"
         );
     }
-    let workflow = workflow.trim();
-    if workflow.is_empty() || workflow.contains(['/', '@']) {
-        bail!("packslip:{project}: `workflow` must be a workflow file name such as `release.yaml`");
-    }
-    let mut policy = Policy::for_project(project)
+    let base = Policy::for_project(project)
         .filter(|policy| policy.issuer.as_deref() == Some(GITHUB_ISSUER))
         .ok_or_else(|| eyre!("packslip:{project}: `workflow` needs a github.com project"))?;
-    let repo = policy
+    let repo = base
         .identity_prefix
-        .take()
+        .as_deref()
         .ok_or_else(|| eyre!("packslip:{project}: no repository to pin `workflow` under"))?;
-    policy.identity_prefix = Some(format!("{repo}.github/workflows/{workflow}@refs/tags/"));
-    Ok(policy)
+    let mut policies = Vec::new();
+    for entry in workflows {
+        let (file, ref_) = match entry.trim().split_once('@') {
+            Some((file, ref_)) => (file, Some(ref_)),
+            None => (entry.trim(), None),
+        };
+        let bad_ref = ref_.is_some_and(|r| {
+            !(r.starts_with("refs/tags/") || r.starts_with("refs/heads/")) || r == "refs/heads/"
+        });
+        if file.is_empty() || file.contains(['/', '@']) || bad_ref {
+            bail!(
+                "packslip:{project}: `workflow` must be a workflow file name such as `release.yaml`, optionally followed by `@refs/heads/<branch>` or `@refs/tags/`"
+            );
+        }
+        let mut policy = base.clone();
+        let path = format!("{repo}.github/workflows/{file}@");
+        match ref_ {
+            // A ref ending in `/` is a namespace, as in `@refs/tags/`.
+            None => policy.identity_prefix = Some(format!("{path}refs/tags/")),
+            Some(r) if r.ends_with('/') => policy.identity_prefix = Some(format!("{path}{r}")),
+            // Any other ref is that one ref, matched whole.
+            Some(r) => {
+                policy.identity_prefix = None;
+                policy.identity = Some(format!("{path}{r}"));
+            }
+        }
+        if !policies.contains(&policy) {
+            policies.push(policy);
+        }
+    }
+    Ok(policies)
 }
 
 impl Pin {
@@ -659,7 +712,7 @@ impl Pin {
         let Some(prefix) = value.as_str().filter(|prefix| !prefix.trim().is_empty()) else {
             bail!("packslip: list_identity_prefix must be a non-empty string");
         };
-        let (Self::Identity(policy) | Self::Forge(policy)) = self else {
+        let Some(policy) = self.first_policy() else {
             bail!("packslip: list_identity_prefix cannot be combined with pubkey");
         };
         if policy.issuer.as_deref().is_none_or(str::is_empty) {
@@ -672,10 +725,38 @@ impl Pin {
         }))
     }
 
-    fn trust(&self) -> Trust<'_> {
+    /// The identity policy, or for several the first, which carries the issuer
+    /// they all share.
+    fn first_policy(&self) -> Option<&Policy> {
         match self {
-            Pin::Forge(policy) | Pin::Identity(policy) => Trust::Identity(policy),
-            Pin::Key(key) => Trust::Key(key),
+            Pin::Forge(policy) | Pin::Identity(policy) => Some(policy),
+            Pin::Identities(policies) => policies.first(),
+            Pin::Key(_) => None,
+        }
+    }
+
+    /// What may have signed: one trust, or one per accepted identity.
+    fn trusts(&self) -> Vec<Trust<'_>> {
+        match self {
+            Pin::Forge(policy) | Pin::Identity(policy) => vec![Trust::Identity(policy)],
+            Pin::Identities(policies) => policies.iter().map(Trust::Identity).collect(),
+            Pin::Key(key) => vec![Trust::Key(key)],
+        }
+    }
+
+    /// Run `verify` against each accepted signer and keep the first success;
+    /// when none match, report every refusal.
+    fn verify_any<T>(&self, mut verify: impl FnMut(&Trust<'_>) -> Result<T>) -> Result<T> {
+        let mut refusals = Vec::new();
+        for trust in self.trusts() {
+            match verify(&trust) {
+                Ok(verified) => return Ok(verified),
+                Err(err) => refusals.push(err.to_string()),
+            }
+        }
+        match refusals.len() {
+            1 => bail!("{}", refusals[0]),
+            _ => bail!("no accepted signer matched:\n  {}", refusals.join("\n  ")),
         }
     }
 
@@ -690,7 +771,7 @@ impl Pin {
     ) -> Result<Option<ForgeExpect>> {
         match self {
             Pin::Forge(_) => Ok(Some(ForgeExpect::new(project, lock, bundle).await?)),
-            Pin::Identity(_) | Pin::Key(_) => Ok(None),
+            Pin::Identity(_) | Pin::Identities(_) | Pin::Key(_) => Ok(None),
         }
     }
 }
@@ -739,8 +820,9 @@ fn verify_bundle(
                 check: Some(verified.check),
             });
         }
-        let verified =
-            packslip::verify(bundle, &pin.trust(), options, artifacts).map_err(|e| eyre!("{e}"))?;
+        let verified = pin.verify_any(|trust| {
+            packslip::verify(bundle, trust, options, artifacts).map_err(|e| eyre!("{e}"))
+        })?;
         Ok(Accepted {
             verified,
             check: None,
@@ -794,8 +876,9 @@ pub(crate) fn verify_release_list(
             require_log,
             trusted_root: &root,
         };
-        let verified = packslip::verify_release_list(bundle, &pin.trust(), options)
-            .map_err(|e| eyre!("{e}"))?;
+        let verified = pin.verify_any(|trust| {
+            packslip::verify_release_list(bundle, trust, options).map_err(|e| eyre!("{e}"))
+        })?;
         check_list_current(&verified.list)?;
         Ok(verified.list)
     })
@@ -2605,7 +2688,7 @@ mod tests {
         }
         for bad in [
             r#"workflow = "a/b.yaml""#,
-            r#"workflow = "b.yaml@refs/heads/main""#,
+            r#"workflow = "b.yaml@main""#,
             r#"workflow = " ""#,
         ] {
             let raw: ToolVersionOptions = toml::from_str(bad).unwrap();
@@ -2625,6 +2708,118 @@ mod tests {
             let raw: ToolVersionOptions = toml::from_str(r#"workflow = "release.yml""#).unwrap();
             pin(project, &PackslipOptions::new(&raw))
         }
+    }
+
+    #[test]
+    fn workflow_list_accepts_each_named_workflow_on_tags() {
+        let pin_for = |toml: &str| {
+            let raw: ToolVersionOptions = toml::from_str(toml).unwrap();
+            pin("github.com/o/r", &PackslipOptions::new(&raw))
+        };
+        let Pin::Identities(policies) =
+            pin_for(r#"workflow = ["release-plz.yml", "release.yml", "release.yml"]"#).unwrap()
+        else {
+            panic!("expected several identities");
+        };
+        let prefixes: Vec<_> = policies
+            .iter()
+            .map(|policy| policy.identity_prefix.as_deref().unwrap())
+            .collect();
+        assert_eq!(
+            prefixes,
+            [
+                "https://github.com/o/r/.github/workflows/release-plz.yml@refs/tags/",
+                "https://github.com/o/r/.github/workflows/release.yml@refs/tags/",
+            ]
+        );
+        assert!(
+            policies
+                .iter()
+                .all(|p| p.issuer.as_deref() == Some(GITHUB_ISSUER))
+        );
+        // A one-item list is the same pin as the bare name.
+        assert!(matches!(
+            pin_for(r#"workflow = ["release.yml"]"#).unwrap(),
+            Pin::Identity(_)
+        ));
+        for bad in [
+            "workflow = []",
+            r#"workflow = [1]"#,
+            r#"workflow = ["a/b.yml"]"#,
+            r#"workflow = ["release.yml", " "]"#,
+        ] {
+            assert!(pin_for(bad).is_err(), "{bad}");
+        }
+    }
+
+    #[test]
+    fn workflow_entry_may_name_a_ref() {
+        let pin_for = |toml: &str| {
+            let raw: ToolVersionOptions = toml::from_str(toml).unwrap();
+            pin("github.com/o/r", &PackslipOptions::new(&raw))
+        };
+        let Pin::Identity(policy) = pin_for(r#"workflow = "release.yml@refs/heads/main""#).unwrap()
+        else {
+            panic!("expected an identity policy");
+        };
+        assert_eq!(
+            policy.identity.as_deref(),
+            Some("https://github.com/o/r/.github/workflows/release.yml@refs/heads/main")
+        );
+        assert_eq!(policy.identity_prefix, None);
+        let Pin::Identity(policy) = pin_for(r#"workflow = "release.yml@refs/tags/""#).unwrap()
+        else {
+            panic!("expected an identity policy");
+        };
+        assert_eq!(
+            policy.identity_prefix.as_deref(),
+            Some("https://github.com/o/r/.github/workflows/release.yml@refs/tags/")
+        );
+        let Pin::Identities(policies) =
+            pin_for(r#"workflow = ["a.yml@refs/heads/main", "b.yml"]"#).unwrap()
+        else {
+            panic!("expected several identities");
+        };
+        assert_eq!(policies.len(), 2);
+        for bad in [
+            r#"workflow = "release.yml@main""#,
+            r#"workflow = "release.yml@""#,
+            r#"workflow = "release.yml@refs/pull/1/merge""#,
+            r#"workflow = "release.yml@refs/heads/""#,
+        ] {
+            assert!(pin_for(bad).is_err(), "{bad}");
+        }
+    }
+
+    #[test]
+    fn several_signers_pass_when_any_one_verifies() {
+        let policy = |name: &str| Policy {
+            issuer: Some(GITHUB_ISSUER.to_string()),
+            identity: None,
+            identity_prefix: Some(name.to_string()),
+        };
+        let pin = Pin::Identities(vec![policy("a"), policy("b")]);
+        let accepted = pin
+            .verify_any(|trust| match trust {
+                Trust::Identity(p) if p.identity_prefix.as_deref() == Some("b") => Ok("b"),
+                _ => bail!("not me"),
+            })
+            .unwrap();
+        assert_eq!(accepted, "b");
+        let err = pin.verify_any::<()>(|_| bail!("nope")).unwrap_err();
+        assert_eq!(
+            err.to_string(),
+            "no accepted signer matched:\n  nope\n  nope"
+        );
+        // One signer reports its own refusal unchanged.
+        let single = Pin::Identity(policy("a"));
+        assert_eq!(
+            single
+                .verify_any::<()>(|_| bail!("nope"))
+                .unwrap_err()
+                .to_string(),
+            "nope"
+        );
     }
 
     #[test]
