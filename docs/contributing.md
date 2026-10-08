@@ -587,12 +587,13 @@ alternative. To remove a feature, backend, or behavior, deprecate it first:
    ```
 
    From `warn_at` on, mise prints the warning once per id and adds the version
-   that removes the feature. From `remove_at`, 12 months later, a
-   `debug_assert!` fires as a reminder to remove the code.
+   that removes the feature. From `remove_at`, normally 12 months later, a
+   `debug_assert!` fires as a reminder to remove the code. Some deprecations
+   use a shorter window on purpose; do not lengthen an existing one.
 
 2. Delay the warning by up to 6 months only when the replacement needs a
    setting or syntax that older supported mise versions reject. Removal is
-   still 12 months after the warning starts.
+   still counted from when the warning starts.
 3. Document the migration path.
 
 Temporary code with no user-facing deprecation, such as a migration or a
