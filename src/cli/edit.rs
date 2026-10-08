@@ -370,7 +370,7 @@ fn write_new_config(path: &Path, doc: &str) -> Result<()> {
     let mut f = match std::fs::OpenOptions::new()
         .write(true)
         .create_new(true)
-        .open(path)
+        .open(symlink_target(path))
     {
         Ok(f) => f,
         Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => bail!(
@@ -384,6 +384,27 @@ fn write_new_config(path: &Path, doc: &str) -> Result<()> {
     };
     f.write_all(doc.as_bytes())
         .wrap_err_with(|| format!("failed write: {}", display_path(path)))
+}
+
+/// Follow `path` through any symlinks to the file they finally name, which need not exist.
+///
+/// `create_new` does not follow a symlink in the last component: a link whose target is not
+/// there yet, as a dotfile manager lays down before it writes the file, counts as existing.
+/// Opening the target instead keeps such a link writable, while a link to a real config still
+/// fails because its target exists. A chain longer than the kernel's own limit is left as is,
+/// and `create_new` then reports it as existing.
+fn symlink_target(path: &Path) -> PathBuf {
+    let mut target = path.to_path_buf();
+    for _ in 0..40 {
+        let Ok(link) = std::fs::read_link(&target) else {
+            break;
+        };
+        target = match target.parent() {
+            Some(dir) => dir.join(link),
+            None => link,
+        };
+    }
+    target
 }
 
 // ============================================================================
@@ -478,6 +499,37 @@ mod tests {
         assert!(err.to_string().contains("already exists"), "{err}");
         assert_eq!(
             std::fs::read_to_string(&path).unwrap(),
+            "[tools]\nnode = \"22\"\n"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn write_new_config_writes_through_a_dangling_symlink() {
+        let dir = tempfile::tempdir().unwrap();
+        let target = dir.path().join("dotfiles/mise.toml");
+        std::fs::create_dir_all(target.parent().unwrap()).unwrap();
+        let path = dir.path().join("mise.toml");
+        std::os::unix::fs::symlink("dotfiles/mise.toml", &path).unwrap();
+
+        write_new_config(&path, "# template\n").unwrap();
+        assert!(std::fs::symlink_metadata(&path).unwrap().is_symlink());
+        assert_eq!(std::fs::read_to_string(&target).unwrap(), "# template\n");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn write_new_config_keeps_the_target_of_a_symlink() {
+        let dir = tempfile::tempdir().unwrap();
+        let target = dir.path().join("real.toml");
+        std::fs::write(&target, "[tools]\nnode = \"22\"\n").unwrap();
+        let path = dir.path().join("mise.toml");
+        std::os::unix::fs::symlink(&target, &path).unwrap();
+
+        let err = write_new_config(&path, "# template\n").unwrap_err();
+        assert!(err.to_string().contains("already exists"), "{err}");
+        assert_eq!(
+            std::fs::read_to_string(&target).unwrap(),
             "[tools]\nnode = \"22\"\n"
         );
     }
