@@ -16,6 +16,9 @@ mod tests {
                 && !generated.contains(&manifest_dir.replace('\\', "/")),
             "embedded_plugins.rs must not contain {manifest_dir}"
         );
-        assert!(generated.contains("env!(\"CARGO_MANIFEST_DIR\")"));
+        // Without an `embedded-plugins` directory build.rs generates an empty implementation.
+        if !super::list_embedded_plugins().is_empty() {
+            assert!(generated.contains("env!(\"CARGO_MANIFEST_DIR\")"));
+        }
     }
 }
