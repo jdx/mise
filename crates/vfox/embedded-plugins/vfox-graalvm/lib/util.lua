@@ -44,8 +44,19 @@ local function version_gt(a, b)
   return false
 end
 
+-- Modern GraalVM Community releases follow the JDK version scheme (17.0.7,
+-- 21.0.2, ...), so their minor component is always 0. Older GraalVM releases
+-- from oracle/graal (1.0.0-rc*, 19.3.0, 20.1.0, 22.0.0.2, ...) are either
+-- pre-17 or have a non-zero minor or a fourth numeric component.
 local function version_is_new_jdk_format(version)
-  return version:match("^%d+%.%d+%.%d+[%w+._-]*$") ~= nil and not version:match("%-java%d+$")
+  if version:match("^%d+%.%d+%.%d+[%w+._-]*$") == nil or version:match("%-java%d+$") then
+    return false
+  end
+  local maj, min = version:match("^(%d+)%.(%d+)")
+  if tonumber(maj) < 17 or tonumber(min) ~= 0 then
+    return false
+  end
+  return version:match("^%d+%.%d+%.%d+%.%d") == nil
 end
 
 local function version_is_ce_build(version)
@@ -56,31 +67,40 @@ local function major(version)
   return tonumber(version:match("^(%d+)"))
 end
 
-local function os_arch_new_format()
+local function host_os()
   if OS_TYPE == "darwin" or OS_TYPE == "macos" then
-    if ARCH_TYPE == "arm64" or ARCH_TYPE == "aarch64" then
-      return "macos-aarch64"
-    end
-    return "macos-x64"
+    return "macos"
   end
+  if OS_TYPE == "linux" then
+    return "linux"
+  end
+  error("GraalVM is not available for OS " .. tostring(OS_TYPE))
+end
+
+local function host_arch()
   if ARCH_TYPE == "arm64" or ARCH_TYPE == "aarch64" then
-    return "linux-aarch64"
+    return "aarch64"
   end
-  return "linux-x64"
+  if ARCH_TYPE == "amd64" or ARCH_TYPE == "x86_64" or ARCH_TYPE == "x64" then
+    return "x64"
+  end
+  error("GraalVM is not available for architecture " .. tostring(ARCH_TYPE))
+end
+
+local function os_arch_new_format()
+  return host_os() .. "-" .. host_arch()
 end
 
 local function old_variant(version)
-  if OS_TYPE == "darwin" or OS_TYPE == "macos" then
-    if ARCH_TYPE == "arm64" or ARCH_TYPE == "aarch64" then
-      error("old GraalVM archive format is not available for macOS arm64")
-    end
+  local os_name = host_os()
+  if host_arch() ~= "x64" then
+    error("old GraalVM archive format is not available for " .. os_name .. " " .. tostring(ARCH_TYPE))
+  end
+  if os_name == "macos" then
     if major(version) == 1 then
       return "macos-amd64"
     end
     return "darwin-amd64"
-  end
-  if ARCH_TYPE == "arm64" or ARCH_TYPE == "aarch64" then
-    error("old GraalVM archive format is not available for linux arm64")
   end
   return "linux-amd64"
 end
@@ -169,8 +189,12 @@ function util.download_url(version)
 end
 
 function util.sha256(url)
-  local resp, err = http.get({ url = url .. ".sha256" })
-  if err ~= nil or resp.status_code ~= 200 then
+  -- mise's http.get raises on connection errors (try_get returns them);
+  -- official vfox's http.get already returns (resp, err). The checksum is
+  -- optional, so fall back to no checksum instead of aborting the install.
+  local get = http.try_get or http.get
+  local resp, err = get({ url = url .. ".sha256" })
+  if err ~= nil or resp == nil or resp.status_code ~= 200 then
     return nil
   end
   return resp.body:match("^%s*([0-9a-fA-F]+)")

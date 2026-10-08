@@ -123,7 +123,10 @@ function PLUGIN:EnvKeys(ctx)
     -- Set virtualenv environment variables
     table.insert(env_keys, { key = "POETRY_ACTIVE", value = "1" })
     table.insert(env_keys, { key = "VIRTUAL_ENV", value = venv_path })
-    table.insert(env_keys, { key = "MISE_ADD_PATH", value = venv_path .. "/bin" })
+    table.insert(
+        env_keys,
+        { key = "MISE_ADD_PATH", value = venv_path .. (RUNTIME.osType == "windows" and "\\Scripts" or "/bin") }
+    )
 
     return env_keys
 end
