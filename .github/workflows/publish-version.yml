@@ -19,8 +19,7 @@ concurrency:
   group: publish-version
   # One group also means one pending slot, and the default `queue: single` lets
   # an arriving run cancel whatever is pending — which could drop a release run
-  # that nothing else will retry. Queue them instead. (actionlint 1.7.12 does
-  # not know this key yet; GitHub documents it and accepts it.)
+  # that nothing else will retry. Queue them instead.
   queue: max
 
 jobs:

@@ -242,7 +242,7 @@ impl ToolVersion {
         opts.defer_missing_lazy_tools
             && !opts.latest_versions
             && request.options().lazy == Some(true)
-            && Settings::get().prefer_offline()
+            && (opts.defer_missing_lazy_online || Settings::get().prefer_offline())
             && !matches!(request.source(), ToolSource::Argument)
     }
 
@@ -563,6 +563,7 @@ impl ToolVersion {
             inactive: base_opts.inactive,
             warn_not_in_lockfile: base_opts.warn_not_in_lockfile,
             defer_missing_lazy_tools: false,
+            defer_missing_lazy_online: false,
         };
         let tv = self.request.resolve(config, &opts).await?;
         Ok(tv.version)
@@ -1283,6 +1284,9 @@ pub struct ResolveOptions {
     /// requested version instead of listing remote versions. Installing it through its
     /// shim resolves the request then.
     pub defer_missing_lazy_tools: bool,
+    /// Defer those lazy tools even when not under `prefer_offline`. For a command that
+    /// manages one tool's versions and so resolves the others only to look them up.
+    pub defer_missing_lazy_online: bool,
 }
 
 impl Default for ResolveOptions {
@@ -1302,6 +1306,7 @@ impl Default for ResolveOptions {
             inactive: false,
             warn_not_in_lockfile: true,
             defer_missing_lazy_tools: false,
+            defer_missing_lazy_online: false,
         }
     }
 }

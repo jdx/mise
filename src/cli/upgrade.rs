@@ -194,7 +194,9 @@ impl Upgrade {
     fn toolset_builder(&self) -> ToolsetBuilder {
         let builder = ToolsetBuilder::new().with_scope(self.scope());
         if self.for_auto_update {
-            builder.without_runtime_env()
+            builder
+                .without_runtime_env()
+                .with_deferred_lazy_resolution_online()
         } else {
             builder
         }
@@ -329,6 +331,7 @@ impl Upgrade {
             inactive: self.inactive,
             warn_not_in_lockfile: true,
             defer_missing_lazy_tools: false,
+            defer_missing_lazy_online: false,
         };
         // Filter tools to check before doing expensive version lookups
         let filter_tools = if !self.interactive && !self.tool.is_empty() {
@@ -702,6 +705,7 @@ impl Upgrade {
                 inactive: self.inactive,
                 warn_not_in_lockfile: true,
                 defer_missing_lazy_tools: false,
+                defer_missing_lazy_online: false,
             },
             locked: false,
             ..Default::default()

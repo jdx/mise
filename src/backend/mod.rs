@@ -865,11 +865,14 @@ where
     let names = file::executable_names(bin);
     dirs.into_iter().find_map(|dir| {
         names.iter().map(|name| dir.join(name)).find(|candidate| {
-            if spawnable {
-                file::is_spawnable(candidate)
-            } else {
-                candidate.exists() && file::is_executable(candidate)
-            }
+            // is_file() first: a directory has the x bit set, so a tool that ships a
+            // `skills/` dir would otherwise shadow another tool's `skills` binary.
+            candidate.is_file()
+                && if spawnable {
+                    file::is_spawnable(candidate)
+                } else {
+                    file::is_executable(candidate)
+                }
         })
     })
 }
@@ -1166,6 +1169,34 @@ mod tests {
             which_in_dirs(vec![dir.path().to_path_buf()], "tool", false),
             None
         );
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn which_in_dirs_skips_directory_in_earlier_dir() {
+        // A tool's bin dir can hold a mode-0755 directory named like another tool's
+        // binary (hunk ships `skills/`). It passes the x-bit check, so the lookup must
+        // reject it and keep walking instead of resolving to something unspawnable.
+        use std::os::unix::fs::PermissionsExt;
+
+        let first = tempfile::tempdir().unwrap();
+        let second = tempfile::tempdir().unwrap();
+        fs::create_dir(first.path().join("skills")).unwrap();
+        let bin = second.path().join("skills");
+        fs::write(&bin, "#!/bin/sh\nexit 0\n").unwrap();
+        fs::set_permissions(&bin, fs::Permissions::from_mode(0o755)).unwrap();
+
+        for spawnable in [false, true] {
+            assert_eq!(
+                which_in_dirs(
+                    vec![first.path().to_path_buf(), second.path().to_path_buf()],
+                    "skills",
+                    spawnable
+                ),
+                Some(bin.clone()),
+                "spawnable={spawnable}"
+            );
+        }
     }
 
     #[test]
