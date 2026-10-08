@@ -73,12 +73,18 @@ impl DotnetPlugin {
             return Ok(());
         }
         ctx.pr.set_message("dotnet --list-sdks".into());
-        let sdks = CmdLineRunner::new(DOTNET_BIN)
+        // Run the binary by absolute path: with activate_aggressive=false an already-active SDK
+        // ahead of the shims on PATH would otherwise shadow the one being validated.
+        let bin_paths = self.list_bin_paths(&ctx.config, tv).await?;
+        let dotnet = bin_paths
+            .first()
+            .map_or_else(|| PathBuf::from(DOTNET_BIN), |p| p.join(DOTNET_BIN));
+        let sdks = CmdLineRunner::new(dotnet)
             .with_pr(ctx.pr.as_ref())
             .arg("--list-sdks")
             .env_values(tv.install_env())
             .envs(self.exec_env(&ctx.config, &ctx.ts, tv).await?)
-            .prepend_path(self.list_bin_paths(&ctx.config, tv).await?)?
+            .prepend_path(bin_paths)?
             .read()
             .await?
             .lines()
