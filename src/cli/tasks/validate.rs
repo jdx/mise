@@ -74,8 +74,9 @@ impl TasksValidate {
         // so we can properly validate remote tasks and circular dependencies
         let mut resolved_tasks: Vec<Task> = config.tasks().await?.values().cloned().collect();
         // always no_cache=false as the command doesn't take no-cache argument
-        // MISE_TASK_REMOTE_NO_CACHE env var is still respected if set
-        TaskFetcher::new(false)
+        // MISE_TASK_REMOTE_NO_CACHE env var is still respected if set.
+        // With experimental off, `git::` task files stay unfetched and are reported per task.
+        TaskFetcher::for_listing(false)
             .fetch_tasks(&config, &mut resolved_tasks)
             .await?;
         let all_tasks: BTreeMap<String, Task> = resolved_tasks
@@ -253,6 +254,23 @@ impl TasksValidate {
     ) -> Vec<ValidationIssue> {
         let mut issues = Vec::new();
 
+        // A `git::` file left unfetched (experimental is off) can't be read, so its usage
+        // header and file are not checked; the rest of the task's TOML still is.
+        let unfetched = TaskFetcher::is_unfetched_git_task(task);
+        if unfetched {
+            issues.push(ValidationIssue {
+                task: task.name.clone(),
+                severity: Severity::Warning,
+                category: "experimental".to_string(),
+                message: "Task file is a `git::` source, which is experimental; not fetched"
+                    .to_string(),
+                details: Some(
+                    "Enable it with `mise settings experimental=true` to validate the file"
+                        .to_string(),
+                ),
+            });
+        }
+
         // 1. Validate missing task references
         issues.extend(self.validate_missing_references(task, all_tasks, reference_tasks));
 
@@ -260,7 +278,13 @@ impl TasksValidate {
         issues.extend(Self::validate_daemon_references(task, config).await);
 
         // 2. Validate usage spec parsing
-        issues.extend(self.validate_usage_spec(task, config).await);
+        if unfetched {
+            let mut toml_only = task.clone();
+            toml_only.file = None;
+            issues.extend(self.validate_usage_spec(&toml_only, config).await);
+        } else {
+            issues.extend(self.validate_usage_spec(task, config).await);
+        }
 
         // 3. Validate timeout format
         issues.extend(self.validate_timeout(task));
@@ -269,7 +293,9 @@ impl TasksValidate {
         issues.extend(self.validate_aliases(task, all_tasks));
 
         // 5. Validate file existence
-        issues.extend(self.validate_file_existence(task));
+        if !unfetched {
+            issues.extend(self.validate_file_existence(task));
+        }
 
         // 6. Validate directory template
         issues.extend(self.validate_directory(task, config).await);

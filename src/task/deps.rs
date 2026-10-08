@@ -128,17 +128,20 @@ fn same_task_without_phase(task: &Task, other: &Task) -> bool {
 /// manages a dependency graph of tasks so `mise run` knows what to run next
 impl Deps {
     pub async fn new(config: &Arc<Config>, tasks: Vec<Task>) -> eyre::Result<Self> {
-        Self::new_with_cycle_limit(config, tasks, Some(1)).await
+        Self::new_with_cycle_limit(config, tasks, Some(1), TaskFetcher::new).await
     }
 
+    /// Builds the graph without running it, so a `git::` task file that experimental gates
+    /// is left unfetched instead of failing the graph; `mise tasks validate` reports it.
     pub async fn new_for_validation(config: &Arc<Config>, tasks: Vec<Task>) -> eyre::Result<Self> {
-        Self::new_with_cycle_limit(config, tasks, None).await
+        Self::new_with_cycle_limit(config, tasks, None, TaskFetcher::for_listing).await
     }
 
     async fn new_with_cycle_limit(
         config: &Arc<Config>,
         tasks: Vec<Task>,
         cycle_limit: Option<usize>,
+        new_fetcher: fn(bool) -> TaskFetcher,
     ) -> eyre::Result<Self> {
         let mut graph = DiGraph::new();
         let mut indexes = HashMap::new();
@@ -163,7 +166,7 @@ impl Deps {
         }
         let all_tasks_to_run = resolve_depends(config, tasks).await?;
         let no_cache = Settings::get().task.remote_no_cache.unwrap_or(false);
-        let fetcher = TaskFetcher::new(no_cache);
+        let fetcher = new_fetcher(no_cache);
         while let Some(mut a) = stack.pop() {
             if seen.contains(&a) {
                 // prevent infinite loop

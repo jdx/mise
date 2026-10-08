@@ -31,6 +31,13 @@ assert_contains "mise tasks --usage" 'cmd local'
 assert_contains "mise tasks --usage" 'cmd remote'
 assert_not_contains "mise tasks --usage 2>&1" "experimental"
 
+# Validation does not fetch the remote file either: it reports it as a warning
+# and still validates the other tasks.
+assert_succeed "mise tasks validate local"
+assert_succeed "mise tasks validate"
+assert_contains "mise tasks validate 2>&1" "is experimental; not fetched"
+assert_not_contains "mise tasks validate 2>&1" "not found"
+
 cat <<'TOML' >mise.toml
 [task_config]
 includes = ["git::https://127.0.0.1:9/org/repo.git//tasks"]
