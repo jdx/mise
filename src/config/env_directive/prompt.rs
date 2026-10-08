@@ -48,16 +48,20 @@ pub(crate) fn saved(key: &str) -> Option<String> {
 }
 
 fn save(key: &str, value: &str) -> Result<()> {
+    let path = answers_path();
+    if let Some(parent) = path.parent() {
+        crate::file::create_dir_all(parent)?;
+    }
+    // Hold the lock across read, update and rename, so a concurrent save of
+    // another var is not overwritten by a stale copy of the table.
+    let mut lock = fslock::LockFile::open(&path.with_extension("toml.lock"))?;
+    lock.lock()?;
     let mut table = read_answers();
     let vars = table
         .entry("vars")
         .or_insert_with(|| toml::Value::Table(toml::Table::new()));
     if let Some(vars) = vars.as_table_mut() {
         vars.insert(key.to_string(), toml::Value::String(value.to_string()));
-    }
-    let path = answers_path();
-    if let Some(parent) = path.parent() {
-        crate::file::create_dir_all(parent)?;
     }
     write_private(&path, toml::to_string(&table)?.as_bytes())
         .wrap_err_with(|| format!("failed to save the answer for var '{key}'"))
@@ -70,7 +74,12 @@ fn write_private(path: &std::path::Path, contents: &[u8]) -> Result<()> {
     use std::io::Write;
     use std::os::unix::fs::OpenOptionsExt;
 
-    let tmp = path.with_extension(format!("toml.{}.tmp", std::process::id()));
+    static SEQ: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+    let tmp = path.with_extension(format!(
+        "toml.{}.{}.tmp",
+        std::process::id(),
+        SEQ.fetch_add(1, Ordering::Relaxed)
+    ));
     let mut file = std::fs::OpenOptions::new()
         .write(true)
         .create_new(true)

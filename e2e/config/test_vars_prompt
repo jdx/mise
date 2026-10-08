@@ -66,3 +66,6 @@ git_name = "saved-name"
 git_email = ""
 EOF2
 assert_fail_contains "mise vars" "Required variable 'git_email' is not defined"
+
+# --prompt-vars is for the full run only
+assert_fail_contains "mise bootstrap --prompt-vars status" "only applies to a full"

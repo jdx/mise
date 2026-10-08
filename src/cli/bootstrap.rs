@@ -1764,11 +1764,12 @@ impl Bootstrap {
     }
 
     async fn run_with_notices(mut self) -> Result<()> {
-        if self.prompt_vars {
-            crate::config::env_directive::prompt::enable();
-            // Anything that ran before this point (such as tool purgatory cleanup)
-            // may have cached config whose vars never had the chance to prompt.
-            Config::reset().await?;
+        if self.prompt_vars
+            && (self.command.is_some() || self.from.is_some() || self.adopt.is_some())
+        {
+            bail!(
+                "--prompt-vars only applies to a full `mise bootstrap` run, not a subcommand, --from, or --adopt"
+            );
         }
         // Every subcommand, not just the full run, applies less than project
         // config declares in safe mode; say so up front.
@@ -1791,6 +1792,12 @@ impl Bootstrap {
         }
         if let Some(command) = self.command.take() {
             return command.run().await;
+        }
+        if self.prompt_vars {
+            crate::config::env_directive::prompt::enable();
+            // Anything that ran before this point (such as tool purgatory cleanup)
+            // may have cached config whose vars never had the chance to prompt.
+            Config::reset().await?;
         }
         let generation = OperationScope::begin("bootstrap", self.dry_run).await?;
         let result = self.run_phases().await;
