@@ -80,15 +80,17 @@ impl PluginsUninstall {
 
 /// The backends whose installs, downloads, and cache belong to a plugin.
 ///
-/// A backend plugin provides any number of `plugin:tool` tools, so every
-/// installed tool it backs is purged, and every tool config declares with it.
-/// The second covers a tool whose last version was uninstalled: its tool-level
-/// cache and kept downloads remain, but it is no longer an installed tool.
-/// Directories are never matched by name, since `<plugin>-<tool>` can also
-/// be another tool's directory. For the same reason a configured tool that is
-/// not installed is skipped when its directory name is also another backend's
-/// tool's, installed or configured: `acme:extra` and an asdf `acme-extra` both
-/// use `acme-extra`. Other plugins provide the tool of the same name.
+/// A plugin owns the tool of the same name. A backend plugin instead
+/// provides any number of `plugin:tool` tools, so it owns every installed
+/// tool it backs and every tool config declares with it. The second covers a
+/// tool whose last version was uninstalled: its tool-level cache and kept
+/// downloads remain, but it is no longer an installed tool.
+///
+/// Purging removes whole directories, and names can collide: `acme:extra`
+/// and a plugin `acme-extra` both use `acme-extra`. So a tool is purged only
+/// when no other tool, installed or configured, uses one of its directories;
+/// otherwise it is skipped with a warning. Directories are never matched by
+/// name alone.
 ///
 /// Only the user's own installs dir is purged. The installed-tool scan also
 /// reports tools found in shared and system install dirs, which other users
@@ -98,10 +100,6 @@ async fn backends_to_purge(
     plugin_name: &str,
     plugin_type: PluginType,
 ) -> Result<Vec<Arc<dyn Backend>>> {
-    if plugin_type != PluginType::VfoxBackend {
-        return Ok(backend::get(&plugin_name.into()).into_iter().collect());
-    }
-    let backend_type = BackendType::VfoxBackend(plugin_name.to_string());
     let config = Config::get().await?;
     let configured = config
         .get_tool_request_set()
@@ -111,8 +109,9 @@ async fn backends_to_purge(
         .map(|ba| (**ba).clone())
         .collect::<Vec<_>>();
     let installed = install_state::try_list_tools()?;
-    let installed =
-        installed.values().map(|tool| {
+    let installed = installed
+        .values()
+        .map(|tool| {
             let mut tool = tool.clone();
             if tool.installs_path.as_deref().is_some_and(|path| {
                 env::install_path_category(path) != env::InstallPathCategory::Local
@@ -120,38 +119,47 @@ async fn backends_to_purge(
                 tool.installs_path = None;
             }
             BackendArg::from(tool)
-        });
-    let (installed, installed_others): (Vec<_>, Vec<_>) =
-        installed.partition(|ba| ba.backend_type() == backend_type);
-    let (configured, configured_others): (Vec<_>, Vec<_>) = configured
-        .into_iter()
-        .partition(|ba| ba.backend_type() == backend_type);
-    let claimed = installed_others
+        })
+        .collect::<Vec<_>>();
+    let backend_type = BackendType::VfoxBackend(plugin_name.to_string());
+    let owns = |ba: &BackendArg| match plugin_type {
+        PluginType::VfoxBackend => ba.backend_type() == backend_type,
+        _ => ba.short == plugin_name,
+    };
+    let claimed = installed
         .iter()
-        .chain(&configured_others)
+        .chain(&configured)
+        .filter(|ba| !owns(ba))
         .flat_map(dir_names)
         .collect::<HashSet<_>>();
-    // Another tool's directory may share a name with one of ours, for
-    // example `acme:extra` and `acme-extra`. Purging removes whole
-    // directories, so a tool that shares one is left alone, installed or not.
-    let unshared = |ba: &BackendArg| {
-        let shared = dir_names(ba).any(|name| claimed.contains(&name));
-        if shared {
-            warn!(
-                "not purging {}: another tool uses its directory",
-                style::eblue(&ba.short)
-            );
-        }
-        !shared
-    };
     // Installed first, so a tool both installed and configured keeps its
     // installed paths.
-    Ok(installed
+    let targets = match plugin_type {
+        PluginType::VfoxBackend => installed
+            .iter()
+            .chain(&configured)
+            .filter(|ba| owns(ba))
+            .cloned()
+            .collect::<Vec<_>>(),
+        _ => vec![BackendArg::from(plugin_name)],
+    };
+    Ok(targets
         .into_iter()
-        .chain(configured)
         .unique_by(|ba| ba.short.clone())
-        .filter(|ba| unshared(ba))
-        .filter_map(backend::arg_to_backend)
+        .filter(|ba| {
+            let shared = dir_names(ba).any(|name| claimed.contains(&name));
+            if shared {
+                warn!(
+                    "not purging {}: another tool uses its directory",
+                    style::eblue(&ba.short)
+                );
+            }
+            !shared
+        })
+        .filter_map(|ba| match plugin_type {
+            PluginType::VfoxBackend => backend::arg_to_backend(ba),
+            _ => backend::get(&ba),
+        })
         .collect())
 }
 

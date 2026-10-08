@@ -108,3 +108,27 @@ assert_directory_not_exists "$MISE_CACHE_DIR/purge-backend-shared"
 # Another backend plugin's tools are left alone.
 assert_contains "mise plugins ls" "keep-backend"
 assert "cat '$MISE_DATA_DIR/installs/keep-backend-demo/1.0.0/manifest'" "demo@1.0.0"
+
+# A single-tool plugin is skipped the same way when another tool uses its
+# directory: plugin keep-backend-tool and keep-backend:tool both use
+# keep-backend-tool.
+SOLO_DIR="$PWD/solo-plugin"
+mkdir -p "$SOLO_DIR/bin"
+cat >"$SOLO_DIR/bin/list-all" <<'SCRIPT'
+#!/usr/bin/env bash
+echo 1.0.0
+SCRIPT
+cat >"$SOLO_DIR/bin/install" <<'SCRIPT'
+#!/usr/bin/env bash
+mkdir -p "$ASDF_INSTALL_PATH/bin"
+echo solo >"$ASDF_INSTALL_PATH/manifest"
+SCRIPT
+chmod +x "$SOLO_DIR/bin/list-all" "$SOLO_DIR/bin/install"
+mise plugins link keep-backend-tool "$SOLO_DIR"
+mise install keep-backend-tool@1.0.0
+cat >mise.toml <<'TOML'
+[tools]
+"keep-backend:tool" = "1.0.0"
+TOML
+assert_contains "mise plugins uninstall keep-backend-tool --purge 2>&1" "not purging keep-backend-tool"
+assert "cat '$MISE_DATA_DIR/installs/keep-backend-tool/1.0.0/manifest'" "solo"
