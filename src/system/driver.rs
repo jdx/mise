@@ -116,7 +116,7 @@ pub async fn run(mgrs: Vec<ManagerPackages>, action: Action, d: &DriverOpts) -> 
         if let Some(reason) = unavailable_package_reason(d, &statuses) {
             bail!("{reason}");
         }
-        let remove_targets = if action == Action::Install {
+        let mut remove_targets = if action == Action::Install {
             statuses
                 .iter()
                 .filter(|status| {
@@ -185,10 +185,21 @@ pub async fn run(mgrs: Vec<ManagerPackages>, action: Action, d: &DriverOpts) -> 
         if action == Action::Install && already_absent > 0 {
             info!("{name}: {already_absent} package(s) already absent");
         }
+        // like an unsatisfiable pin, a removal this manager can never perform
+        // must not block its installs or the managers after it — the entry
+        // stays visible in `status`
+        if !remove_targets.is_empty() && !mp.manager.supports_remove() {
+            let list = remove_targets
+                .iter()
+                .map(|status| status.request.to_string())
+                .collect::<Vec<_>>();
+            warn!(
+                "{name}: cannot remove {}, skipping (declarative removal is not supported)",
+                list.join(", ")
+            );
+            remove_targets.clear();
+        }
         if !remove_targets.is_empty() {
-            if !mp.manager.supports_remove() {
-                bail!("{name} does not support declarative package removal");
-            }
             let remove = remove_targets
                 .iter()
                 .map(|status| status.request.clone())
@@ -341,5 +352,103 @@ mod tests {
         };
         assert!(unavailable_manager_is_error(&manager_opts));
         assert_eq!(unavailable_package_reason(&manager_opts, &statuses), None);
+    }
+
+    /// A manager without declarative removal that records its installs.
+    struct RecordingManager {
+        name: &'static str,
+        installed: Vec<&'static str>,
+        installs: std::sync::Mutex<Vec<String>>,
+    }
+
+    #[async_trait::async_trait(?Send)]
+    impl crate::system::packages::SystemPackageManager for RecordingManager {
+        fn name(&self) -> &str {
+            self.name
+        }
+
+        fn is_available(&self) -> bool {
+            true
+        }
+
+        fn unavailable_reason(&self) -> String {
+            unreachable!()
+        }
+
+        async fn installed(&self, pkgs: &[PackageRequest]) -> Result<Vec<PackageStatus>> {
+            Ok(pkgs
+                .iter()
+                .map(|request| PackageStatus {
+                    request: request.clone(),
+                    state: if self.installed.contains(&request.name.as_str()) {
+                        PackageState::Installed {
+                            version: "1.0".to_string(),
+                        }
+                    } else {
+                        PackageState::Missing
+                    },
+                    display_name: None,
+                })
+                .collect())
+        }
+
+        async fn install(&self, pkgs: &[PackageRequest], _opts: &InstallOpts) -> Result<()> {
+            let mut installs = self.installs.lock().unwrap();
+            installs.extend(pkgs.iter().map(|pkg| pkg.name.clone()));
+            Ok(())
+        }
+    }
+
+    fn request(name: &str, desired: PackageDesiredState) -> PackageRequest {
+        PackageRequest {
+            name: name.to_string(),
+            version: None,
+            tap_url: None,
+            desired,
+        }
+    }
+
+    #[tokio::test]
+    async fn unsupported_removal_does_not_block_installs() {
+        let first = std::sync::Arc::new(RecordingManager {
+            name: "first",
+            installed: vec!["git"],
+            installs: Default::default(),
+        });
+        let second = std::sync::Arc::new(RecordingManager {
+            name: "second",
+            installed: vec![],
+            installs: Default::default(),
+        });
+        let mgrs = vec![
+            ManagerPackages {
+                manager: first.clone(),
+                requests: vec![
+                    request("git", PackageDesiredState::Absent),
+                    request("curl", PackageDesiredState::Present),
+                ],
+                options: Default::default(),
+                disabled: false,
+            },
+            ManagerPackages {
+                manager: second.clone(),
+                requests: vec![request("ripgrep", PackageDesiredState::Present)],
+                options: Default::default(),
+                disabled: false,
+            },
+        ];
+        let opts = DriverOpts {
+            manager: None,
+            explicit: false,
+            allow_unavailable_manager: false,
+            dry_run: false,
+            update: false,
+            yes: true,
+        };
+
+        run(mgrs, Action::Install, &opts).await.unwrap();
+
+        assert_eq!(*first.installs.lock().unwrap(), ["curl"]);
+        assert_eq!(*second.installs.lock().unwrap(), ["ripgrep"]);
     }
 }
