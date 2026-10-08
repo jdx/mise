@@ -8,7 +8,7 @@ if [[ "$(uname)" != "Linux" ]]; then
   exit 0
 fi
 
-mkdir -p fakebin runtime/systemd/private fake-systemd/active fake-systemd/enabled fake-systemd/edit-on-check
+mkdir -p fakebin runtime/systemd/private fake-systemd/active fake-systemd/enabled fake-systemd/edit-on-check fake-systemd/break-on-check
 export XDG_RUNTIME_DIR="$PWD/runtime"
 export PATH="$PWD/fakebin:$PATH"
 STATE="$PWD/fake-systemd"
@@ -29,6 +29,11 @@ is-enabled)
   if [[ -e "$STATE/edit-on-check/\$2" ]]; then
     rm "$STATE/edit-on-check/\$2"
     echo "# edited while waiting" >>"$UNITS/\$2"
+  fi
+  # Or one that becomes unreadable: a directory in place of the unit file.
+  if [[ -e "$STATE/break-on-check/\$2" ]]; then
+    rm "$STATE/break-on-check/\$2" "$UNITS/\$2"
+    mkdir "$UNITS/\$2"
   fi
   if [[ -e "$STATE/enabled/\$2" ]]; then
     echo enabled
@@ -136,6 +141,16 @@ assert_contains "mise bootstrap unapply backup --yes 2>&1" "changed since the pl
 assert_fail "test -e $STATE/edit-on-check/dev.mise.backup.service"
 assert_fail "test -e $UNITS/dev.mise.backup-timer.timer"
 assert_succeed "test -f $UNITS/dev.mise.backup.service"
+assert_succeed "mise -E backup bootstrap linux systemd-units apply --yes"
+
+# A unit that cannot be inspected after the plan is kept, and the other
+# planned units are still removed.
+touch "$STATE/break-on-check/dev.mise.backup.service"
+assert_contains "mise bootstrap unapply backup --yes 2>&1" "systemd unit dev.mise.backup.service: kept"
+assert_fail "test -e $STATE/break-on-check/dev.mise.backup.service"
+assert_fail "test -e $UNITS/dev.mise.backup-timer.timer"
+assert_succeed "test -d $UNITS/dev.mise.backup.service"
+rmdir "$UNITS/dev.mise.backup.service"
 assert_succeed "mise -E backup bootstrap linux systemd-units apply --yes"
 
 # A unit edited since it was written is kept unless --force is given.
