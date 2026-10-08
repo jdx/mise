@@ -60,3 +60,17 @@ cat >mise.toml <<'TOML'
 include = ["shared/base.toml"]
 TOML
 assert_fail_contains "MISE_PARANOID=1 mise env" "local config include is not allowed"
+
+# the env cache is keyed by the included file too: editing only the include
+# must not leave the old value in use
+export MISE_ENV_CACHE=1
+export __MISE_ENV_CACHE_KEY="dGVzdGtleXRlc3RrZXl0ZXN0a2V5dGVzdGtleXRlc3Q="
+printf '[env]\nCACHED = "old"\n' >shared/cached.toml
+cat >mise.toml <<'TOML'
+include = ["shared/cached.toml"]
+TOML
+assert "mise env --json | jq -r .CACHED" "old"
+assert "mise env --json | jq -r .CACHED" "old"
+printf '[env]\nCACHED = "new"\n' >shared/cached.toml
+touch -d "2030-01-01 00:00:00" shared/cached.toml
+assert "mise env --json | jq -r .CACHED" "new"

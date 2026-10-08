@@ -1570,10 +1570,16 @@ impl Config {
             && !vars_uncacheable
             && !env_directive::is_oci_env_satisfying_required();
         let cache_key = if cache_enabled {
+            // Included fragments are inputs too: editing one changes the env
+            // without touching the file that includes it.
             let config_files: Vec<(PathBuf, u64)> = self
                 .config_files
-                .keys()
-                .map(|p| (p.clone(), get_file_mtime(p).unwrap_or(0)))
+                .iter()
+                .flat_map(|(p, cf)| std::iter::once(p.clone()).chain(cf.included_paths()))
+                .map(|p| {
+                    let mtime = get_file_mtime(&p).unwrap_or(0);
+                    (p, mtime)
+                })
                 .collect();
             let settings_hash = compute_settings_hash();
             let base_path = join_paths(env::PATH.iter())

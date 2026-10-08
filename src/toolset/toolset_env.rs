@@ -380,10 +380,16 @@ impl Toolset {
     /// Compute the cache key for the current configuration
     fn compute_env_cache_key(&self, config: &Arc<Config>) -> Result<String> {
         // Collect config files with their mtimes
+        // Included fragments are inputs too: editing one changes the env without
+        // touching the file that includes it.
         let config_files: Vec<(PathBuf, u64)> = config
             .config_files
-            .keys()
-            .map(|p| (p.clone(), get_file_mtime(p).unwrap_or(0)))
+            .iter()
+            .flat_map(|(p, cf)| std::iter::once(p.clone()).chain(cf.included_paths()))
+            .map(|p| {
+                let mtime = get_file_mtime(&p).unwrap_or(0);
+                (p, mtime)
+            })
             .collect();
 
         // Treat sibling mise.lock files as config inputs for cache invalidation
