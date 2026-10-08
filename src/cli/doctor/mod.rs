@@ -799,10 +799,9 @@ impl Doctor {
         .map(|d| d.as_secs())
         .unwrap_or(600);
         let stale = running && age.is_some_and(|age| reconcile > 0 && age > reconcile * 2);
-        let origin = crate::system::history::config::origin()
+        let origin = crate::system::history::sync::run::origin()
             .ok()
-            .flatten()
-            .map(|(_, origin)| DotfilesOriginDiagnosis {
+            .map(|origin| DotfilesOriginDiagnosis {
                 url: origin.url,
                 branch: origin.branch,
                 sync: crate::system::history::sync::SyncMode::current()
