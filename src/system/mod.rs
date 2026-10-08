@@ -148,6 +148,67 @@ pub struct BootstrapTomlConfig {
     pub hooks: IndexMap<String, toml::Value>,
 }
 
+impl BootstrapTomlConfig {
+    /// Add the entries of `lower`, the `[bootstrap]` of an included file, below
+    /// this one's own: a key this file declares keeps its own value, a list gets
+    /// the shared entries first, and an unset option takes the shared one.
+    pub(crate) fn merge_below(&mut self, lower: Self) {
+        fn fill<K: std::hash::Hash + Eq, V>(own: &mut IndexMap<K, V>, lower: IndexMap<K, V>) {
+            for (key, value) in lower {
+                own.entry(key).or_insert(value);
+            }
+        }
+        fn below<T>(own: &mut Vec<T>, mut lower: Vec<T>) {
+            lower.append(own);
+            *own = lower;
+        }
+        fn or<T>(own: &mut Option<T>, lower: Option<T>) {
+            if own.is_none() {
+                *own = lower;
+            }
+        }
+        or(&mut self.config_roots, lower.config_roots);
+        or(&mut self.dotfile_groups, lower.dotfile_groups);
+        fill(&mut self.secrets, lower.secrets);
+        fill(&mut self.groups, lower.groups);
+        fill(&mut self.users, lower.users);
+        fill(&mut self.services, lower.services);
+        fill(&mut self.compose, lower.compose);
+        fill(&mut self.plugins, lower.plugins);
+        fill(&mut self.packages, lower.packages);
+        fill(&mut self.files, lower.files);
+        fill(&mut self.directories, lower.directories);
+        fill(&mut self.repos, lower.repos);
+        fill(&mut self.mise_shell_activate, lower.mise_shell_activate);
+        fill(&mut self.hooks, lower.hooks);
+
+        let remote = lower.remote;
+        or(&mut self.remote.source, remote.source);
+        or(&mut self.remote.mise_env, remote.mise_env);
+        or(&mut self.remote.install_mise, remote.install_mise);
+        self.remote.copy_links |= remote.copy_links;
+        below(&mut self.remote.copy_link, remote.copy_link);
+        below(&mut self.remote.exclude, remote.exclude);
+        fill(&mut self.remote.hosts, remote.hosts);
+
+        let macos = lower.macos;
+        fill(&mut self.macos.dock, macos.dock);
+        fill(&mut self.macos.finder, macos.finder);
+        fill(&mut self.macos.keyboard, macos.keyboard);
+        fill(&mut self.macos.trackpad, macos.trackpad);
+        fill(&mut self.macos.defaults, macos.defaults);
+        below(&mut self.macos.defaults_entries, macos.defaults_entries);
+        fill(&mut self.macos.launchd.agents, macos.launchd.agents);
+
+        or(&mut self.linux.firewall, lower.linux.firewall);
+        fill(&mut self.linux.systemd.units, lower.linux.systemd.units);
+        or(&mut self.user.login_shell, lower.user.login_shell);
+        #[cfg(unix)]
+        or(&mut self.brew.adopt, lower.brew.adopt);
+        fill(&mut self.brew.taps, lower.brew.taps);
+    }
+}
+
 /// A `[bootstrap.packages]` value. The string form remains the concise default;
 /// the table form adds platform selection without changing package keys.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
