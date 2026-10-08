@@ -1,0 +1,122 @@
+#!/usr/bin/env bash
+# `[bootstrap.linux.systemd.units]` entries can be declared absent, and
+# `mise bootstrap unapply` removes the units a module wrote, timers included.
+# A fake `systemctl` stands in for the user manager and keeps unit state in
+# files so the test can see what was stopped, disabled, and removed.
+
+if [[ "$(uname)" != "Linux" ]]; then
+  exit 0
+fi
+
+mkdir -p fakebin runtime/systemd/private fake-systemd/active fake-systemd/enabled
+export XDG_RUNTIME_DIR="$PWD/runtime"
+export PATH="$PWD/fakebin:$PATH"
+STATE="$PWD/fake-systemd"
+UNITS="$HOME/.config/systemd/user"
+
+cat <<SH >fakebin/systemctl
+#!/usr/bin/env bash
+[[ \$1 == --user ]] && shift
+echo "\$*" >>"$STATE/log"
+case "\$1" in
+is-active) [[ -e "$STATE/active/\$3" ]] ;;
+is-enabled)
+  if [[ -e "$STATE/enabled/\$2" ]]; then
+    echo enabled
+  else
+    echo disabled
+    exit 1
+  fi
+  ;;
+enable) touch "$STATE/enabled/\$2" ;;
+disable) rm -f "$STATE/enabled/\$2" ;;
+restart) touch "$STATE/active/\$2" ;;
+stop) rm -f "$STATE/active/\$2" ;;
+esac
+exit 0
+SH
+chmod +x fakebin/systemctl
+
+cat <<'TOML' >mise.toml
+[bootstrap.linux.systemd.units.sync]
+exec_start = "/bin/true"
+type = "oneshot"
+start = false
+wanted_by = []
+
+[bootstrap.linux.systemd.units.sync-timer]
+on_boot_sec = "5min"
+unit = "sync"
+TOML
+assert_succeed "mise bootstrap linux systemd-units apply --yes"
+assert_succeed "test -f $UNITS/dev.mise.sync.service"
+assert_succeed "test -f $UNITS/dev.mise.sync-timer.timer"
+assert_succeed "test -e $STATE/active/dev.mise.sync-timer.timer"
+assert_succeed "test -e $STATE/enabled/dev.mise.sync-timer.timer"
+
+# `state = "absent"` needs no other key and removes whichever unit is installed
+# for the name, so the timer does not have to be described again.
+cat <<'TOML' >mise.toml
+[bootstrap.linux.systemd.units.sync]
+state = "absent"
+
+[bootstrap.linux.systemd.units.sync-timer]
+state = "absent"
+TOML
+assert_not_contains "mise bootstrap linux systemd-units status 2>&1" "unknown field"
+assert_contains "mise bootstrap linux systemd-units status" "present"
+assert_fail "mise bootstrap linux systemd-units status --missing"
+assert_contains "mise bootstrap linux systemd-units apply --dry-run" "rm $UNITS/dev.mise.sync-timer.timer"
+assert_succeed "test -f $UNITS/dev.mise.sync-timer.timer"
+rm -f "$STATE/log"
+assert_succeed "mise bootstrap linux systemd-units apply --yes"
+assert_fail "test -e $UNITS/dev.mise.sync.service"
+assert_fail "test -e $UNITS/dev.mise.sync-timer.timer"
+assert_fail "test -e $STATE/active/dev.mise.sync-timer.timer"
+assert_fail "test -e $STATE/enabled/dev.mise.sync-timer.timer"
+# The timer stops before the service it triggers, and the manager reloads once
+# the files are gone.
+assert "grep -v '^is-' $STATE/log | head -n 1" "stop dev.mise.sync-timer.timer"
+assert "tail -n 1 $STATE/log" "daemon-reload"
+assert_contains "mise bootstrap linux systemd-units status" "absent"
+assert_succeed "mise bootstrap linux systemd-units status --missing"
+# Converged: a second apply has nothing to do.
+rm -f "$STATE/log"
+assert_succeed "mise bootstrap linux systemd-units apply --yes"
+assert_fail "test -e $STATE/log"
+
+# `mise bootstrap unapply` removes the units a module wrote and keeps the ones
+# the rest of the configuration still declares.
+cat <<'TOML' >mise.toml
+[bootstrap.linux.systemd.units.base]
+exec_start = "/bin/true"
+TOML
+cat <<'TOML' >mise.backup.toml
+[bootstrap.linux.systemd.units.base]
+exec_start = "/bin/true"
+
+[bootstrap.linux.systemd.units.backup]
+exec_start = "/bin/true"
+type = "oneshot"
+start = false
+wanted_by = []
+
+[bootstrap.linux.systemd.units.backup-timer]
+on_calendar = "daily"
+unit = "backup"
+TOML
+assert_succeed "mise -E backup bootstrap linux systemd-units apply --yes"
+assert_succeed "test -f $UNITS/dev.mise.backup-timer.timer"
+assert_contains "mise bootstrap unapply backup --dry-run" "systemd-unit:dev.mise.backup-timer.timer"
+assert_contains "mise bootstrap unapply backup --dry-run" "systemd-unit:dev.mise.backup.service"
+assert_not_contains "mise bootstrap unapply backup --dry-run" "dev.mise.base.service"
+assert_succeed "test -f $UNITS/dev.mise.backup-timer.timer"
+
+# A unit edited since it was written is kept unless --force is given.
+echo "# edited by hand" >>"$UNITS/dev.mise.backup.service"
+assert_contains "mise bootstrap unapply backup --yes 2>&1" "use --force to remove it"
+assert_fail "test -e $UNITS/dev.mise.backup-timer.timer"
+assert_succeed "test -f $UNITS/dev.mise.backup.service"
+assert_succeed "mise bootstrap unapply backup --force --yes"
+assert_fail "test -e $UNITS/dev.mise.backup.service"
+assert_succeed "test -f $UNITS/dev.mise.base.service"

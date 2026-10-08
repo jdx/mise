@@ -91,6 +91,20 @@ pub struct SystemdTomlConfig {
     pub start: bool,
     #[serde(default)]
     pub wanted_by: Option<Vec<String>>,
+    #[serde(default)]
+    pub state: SystemdUnitState,
+}
+
+/// Whether mise keeps a unit installed or removes it.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SystemdUnitState {
+    #[default]
+    Present,
+    /// Stop, disable, and delete both `dev.mise.<name>.service` and
+    /// `dev.mise.<name>.timer`, so the declaration does not need to say which
+    /// one was installed.
+    Absent,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -145,6 +159,7 @@ pub struct SystemdRequest {
     pub timer_unit: Option<String>,
     pub start: bool,
     pub wanted_by: Vec<String>,
+    pub state: SystemdUnitState,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -166,15 +181,40 @@ pub struct SystemdStatus {
 
 impl SystemdStatus {
     pub fn is_desired(&self) -> bool {
+        if self.request.is_absent() {
+            return self.state == SystemdState::Missing;
+        }
         match self.state {
             SystemdState::Active => self.request.start,
             SystemdState::Inactive => !self.request.start,
             SystemdState::Differs | SystemdState::Missing => false,
         }
     }
+
+    /// The state shown by `status`. A unit declared absent is `absent` once
+    /// nothing is installed for it and `present` until then.
+    pub fn label(&self) -> &'static str {
+        if self.request.is_absent() {
+            return if self.state == SystemdState::Missing {
+                "absent"
+            } else {
+                "present"
+            };
+        }
+        match self.state {
+            SystemdState::Active => "active",
+            SystemdState::Inactive => "inactive",
+            SystemdState::Differs => "differs",
+            SystemdState::Missing => "missing",
+        }
+    }
 }
 
 impl SystemdRequest {
+    pub fn is_absent(&self) -> bool {
+        self.state == SystemdUnitState::Absent
+    }
+
     pub(crate) fn from_toml(name: String, config: SystemdTomlConfig) -> Result<Self> {
         if !valid_name(&name) {
             bail!("unit name '{name}' must contain only letters, numbers, '.', '_', '-', or '@'");
@@ -192,8 +232,14 @@ impl SystemdRequest {
         } else {
             SystemdUnitKind::Service
         };
+        let absent = config.state == SystemdUnitState::Absent;
         let exec_start = config.exec_start.map(|s| s.trim().to_string());
-        if kind == SystemdUnitKind::Service && exec_start.as_deref().is_none_or(str::is_empty) {
+        // An absent entry only names the units to remove: neither the keys a
+        // unit file needs nor the split between service and timer keys apply.
+        if kind == SystemdUnitKind::Service
+            && !absent
+            && exec_start.as_deref().is_none_or(str::is_empty)
+        {
             bail!("service unit '{name}' must set a non-empty `exec_start`");
         }
         for (field, commands) in [
@@ -205,7 +251,7 @@ impl SystemdRequest {
                 bail!("unit '{name}' has an empty `{field}` entry");
             }
         }
-        if kind == SystemdUnitKind::Timer {
+        if kind == SystemdUnitKind::Timer && !absent {
             let service_only_fields = [
                 (!config.exec_start_pre.is_empty(), "exec_start_pre"),
                 (exec_start.is_some(), "exec_start"),
@@ -313,12 +359,18 @@ impl SystemdRequest {
             timer_unit: config.unit,
             start: config.start,
             wanted_by,
+            state: config.state,
         })
     }
 }
 
 impl std::fmt::Display for SystemdRequest {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if self.is_absent() {
+            // Removal covers both units of the name, not the one kind the
+            // declaration's keys would describe.
+            return write!(f, "{} (absent)", self.name);
+        }
         write!(f, "{} ({})", self.name, self.unit)
     }
 }
@@ -348,6 +400,32 @@ pub async fn status(requests: &[SystemdRequest]) -> Result<Vec<SystemdStatus>> {
     let mut out = vec![];
     for req in requests {
         let path = unit_path(req);
+        if req.is_absent() {
+            let installed = [req.unit.clone(), sibling_unit(req)]
+                .into_iter()
+                .find(|unit| user_units_dir().join(unit).exists());
+            let (path, active, enabled, state) = match installed {
+                Some(unit) => {
+                    let active = is_active(&unit).await?;
+                    let state = if active {
+                        SystemdState::Active
+                    } else {
+                        SystemdState::Inactive
+                    };
+                    let enabled = is_enabled(&unit).await?;
+                    (user_units_dir().join(unit), active, enabled, state)
+                }
+                None => (path, false, false, SystemdState::Missing),
+            };
+            out.push(SystemdStatus {
+                request: req.clone(),
+                path,
+                active,
+                enabled,
+                state,
+            });
+            continue;
+        }
         let current = match std::fs::read_to_string(&path) {
             Ok(current) => current,
             Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
@@ -398,6 +476,15 @@ pub async fn status(requests: &[SystemdRequest]) -> Result<Vec<SystemdStatus>> {
 }
 
 pub async fn apply(requests: &[SystemdRequest], dry_run: bool) -> Result<()> {
+    let (absent, present): (Vec<_>, Vec<_>) = requests
+        .iter()
+        .cloned()
+        .partition(SystemdRequest::is_absent);
+    remove(&absent, dry_run).await?;
+    let requests = present.as_slice();
+    if requests.is_empty() {
+        return Ok(());
+    }
     if dry_run {
         for req in requests {
             miseprintln!(
@@ -528,27 +615,52 @@ fn activation_commands(request: &SystemdRequest) -> Vec<Vec<String>> {
 /// (`dev.mise.<name>.service`), then reload the user manager. Returns whether
 /// a unit file existed.
 pub(crate) async fn remove_service(name: &str, dry_run: bool) -> Result<bool> {
-    let unit = format!("dev.mise.{name}.service");
-    let path = user_units_dir().join(&unit);
-    if !path.exists() {
+    remove_units(&[format!("dev.mise.{name}.service")], dry_run).await
+}
+
+/// Stop, disable, and delete the units mise wrote for these entries, both the
+/// `.timer` and the `.service` of each name, then reload the user manager.
+/// Timers go first so none of them fires a service that is being removed.
+/// Returns whether any unit file existed.
+pub(crate) async fn remove(requests: &[SystemdRequest], dry_run: bool) -> Result<bool> {
+    let units = ["timer", "service"]
+        .into_iter()
+        .flat_map(|suffix| {
+            requests
+                .iter()
+                .map(move |req| format!("dev.mise.{}.{suffix}", req.name))
+        })
+        .collect::<Vec<_>>();
+    remove_units(&units, dry_run).await
+}
+
+async fn remove_units(units: &[String], dry_run: bool) -> Result<bool> {
+    let installed = units
+        .iter()
+        .map(|unit| (unit, user_units_dir().join(unit)))
+        .filter(|(_, path)| path.exists())
+        .collect::<Vec<_>>();
+    if installed.is_empty() {
         return Ok(false);
     }
     if dry_run {
-        for verb in ["stop", "disable"] {
+        for (unit, path) in &installed {
+            for verb in ["stop", "disable"] {
+                miseprintln!(
+                    "{}",
+                    shell_words::join([
+                        "systemctl".to_string(),
+                        "--user".to_string(),
+                        verb.to_string(),
+                        unit.to_string(),
+                    ])
+                );
+            }
             miseprintln!(
                 "{}",
-                shell_words::join([
-                    "systemctl".to_string(),
-                    "--user".to_string(),
-                    verb.to_string(),
-                    unit.clone(),
-                ])
+                shell_words::join(["rm".to_string(), path.display().to_string()])
             );
         }
-        miseprintln!(
-            "{}",
-            shell_words::join(["rm".to_string(), path.display().to_string()])
-        );
         miseprintln!(
             "{}",
             shell_words::join([
@@ -559,9 +671,11 @@ pub(crate) async fn remove_service(name: &str, dry_run: bool) -> Result<bool> {
         );
         return Ok(true);
     }
-    stop_unit(&unit).await?;
-    disable_unit(&unit).await?;
-    std::fs::remove_file(&path)?;
+    for (unit, path) in &installed {
+        stop_unit(unit).await?;
+        disable_unit(unit).await?;
+        std::fs::remove_file(path)?;
+    }
     systemctl(&["daemon-reload".to_string()]).await?;
     Ok(true)
 }
@@ -1409,6 +1523,66 @@ mod tests {
             state: SystemdState::Inactive,
         };
         assert!(inactive_stopped.is_desired());
+    }
+
+    #[test]
+    fn test_absent_unit_needs_no_unit_keys() {
+        let request = SystemdRequest::from_toml(
+            "sync".to_string(),
+            SystemdTomlConfig {
+                state: SystemdUnitState::Absent,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        assert!(request.is_absent());
+
+        // Flipping an existing declaration to absent keeps its other keys,
+        // including ones that would conflict in a unit that is written.
+        let request = SystemdRequest::from_toml(
+            "sync".to_string(),
+            SystemdTomlConfig {
+                exec_start: Some("true".to_string()),
+                on_boot_sec: Some("1min".to_string()),
+                state: SystemdUnitState::Absent,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        assert!(request.is_absent());
+
+        let config: SystemdTomlConfig = toml::from_str("state = \"absent\"").unwrap();
+        assert_eq!(config.state, SystemdUnitState::Absent);
+        assert!(toml::from_str::<SystemdTomlConfig>("state = \"removed\"").is_err());
+    }
+
+    #[test]
+    fn test_absent_unit_is_desired_only_when_nothing_is_installed() {
+        let request = SystemdRequest::from_toml(
+            "sync".to_string(),
+            SystemdTomlConfig {
+                state: SystemdUnitState::Absent,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let status = |state| SystemdStatus {
+            request: request.clone(),
+            path: PathBuf::new(),
+            active: false,
+            enabled: false,
+            state,
+        };
+        assert!(status(SystemdState::Missing).is_desired());
+        assert_eq!(status(SystemdState::Missing).label(), "absent");
+        for state in [
+            SystemdState::Active,
+            SystemdState::Inactive,
+            SystemdState::Differs,
+        ] {
+            assert!(!status(state.clone()).is_desired(), "{state:?}");
+            assert_eq!(status(state).label(), "present");
+        }
     }
 
     #[test]

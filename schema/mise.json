@@ -8107,6 +8107,12 @@
                         "items": {
                           "type": "string"
                         }
+                      },
+                      "state": {
+                        "type": "string",
+                        "enum": ["present", "absent"],
+                        "default": "present",
+                        "description": "present writes and manages the unit; absent stops, disables, and removes both dev.mise.<name>.service and dev.mise.<name>.timer"
                       }
                     },
                     "oneOf": [
@@ -8140,6 +8146,11 @@
                               "required": ["unit"]
                             }
                           ]
+                        },
+                        "properties": {
+                          "state": {
+                            "const": "present"
+                          }
                         }
                       },
                       {
@@ -8251,6 +8262,20 @@
                               "required": ["standard_error"]
                             }
                           ]
+                        },
+                        "properties": {
+                          "state": {
+                            "const": "present"
+                          }
+                        }
+                      },
+                      {
+                        "title": "absent systemd unit",
+                        "required": ["state"],
+                        "properties": {
+                          "state": {
+                            "const": "absent"
+                          }
                         }
                       }
                     ]

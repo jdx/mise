@@ -21,6 +21,7 @@ use crate::path::PathExt;
 use crate::system::managed_files::{ManagedDirectoryRequest, ManagedFileRequest, ManagedState};
 use crate::system::resources::ResourceAction;
 use crate::system::services_common::ServiceState;
+use crate::system::systemd::{self, SystemdRequest, SystemdState};
 use crate::system::{edits, files, managed_files, secrets, user_services};
 
 #[derive(Debug, Default)]
@@ -59,6 +60,7 @@ pub struct Unapply {
     files: Vec<ManagedFileRequest>,
     directories: Vec<ManagedDirectoryRequest>,
     user_services: Vec<String>,
+    systemd_units: Vec<SystemdRequest>,
     dotfiles: Vec<files::FileRequest>,
     edits: Vec<edits::EditRequest>,
     pub removals: Vec<Removal>,
@@ -211,6 +213,77 @@ pub async fn plan(
             name: status.name.clone(),
         });
         unapply.user_services.push(status.name);
+    }
+
+    let base_units = crate::system::systemd_from_config(&base)
+        .into_iter()
+        .filter(|request| !request.is_absent())
+        .map(|request| request.name)
+        .collect::<HashSet<_>>();
+    let units_available = systemd::is_available();
+    for request in crate::system::systemd_from_config(config) {
+        if base_units.contains(&request.name) {
+            continue;
+        }
+        let name = request.unit.clone();
+        if request.is_absent() {
+            if opts.verbose {
+                unapply.skipped.push(Skip {
+                    kind: "systemd-unit",
+                    name,
+                    reason: DECLARED_ABSENT.into(),
+                });
+            }
+            continue;
+        }
+        if !units_available {
+            unapply.skipped.push(Skip {
+                kind: "systemd-unit",
+                name,
+                reason: systemd::unavailable_reason(),
+            });
+            continue;
+        }
+        let status = match systemd::status(std::slice::from_ref(&request)).await {
+            Ok(mut statuses) => statuses.pop(),
+            Err(error) => {
+                unapply.skipped.push(Skip {
+                    kind: "systemd-unit",
+                    name,
+                    reason: format!("{error}"),
+                });
+                continue;
+            }
+        };
+        let Some(status) = status else {
+            continue;
+        };
+        match status.state {
+            SystemdState::Missing => {
+                if opts.verbose {
+                    unapply.skipped.push(Skip {
+                        kind: "systemd-unit",
+                        name,
+                        reason: "already absent".into(),
+                    });
+                }
+                continue;
+            }
+            SystemdState::Differs if !opts.force => {
+                unapply.skipped.push(Skip {
+                    kind: "systemd-unit",
+                    name,
+                    reason: "installed, differs; use --force to remove it".into(),
+                });
+                continue;
+            }
+            _ => {}
+        }
+        unapply.removals.push(Removal {
+            kind: "systemd-unit",
+            name,
+        });
+        unapply.systemd_units.push(request);
     }
 
     let base_dotfiles = paths(
@@ -594,5 +667,6 @@ pub async fn execute(
             info!("user service {name}: removed its {manager}");
         }
     }
+    systemd::remove(&unapply.systemd_units, opts.dry_run).await?;
     Ok(())
 }

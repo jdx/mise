@@ -30,7 +30,6 @@ use crate::system::login_shell::LoginShellState;
 use crate::system::packages::{PackageDesiredState, PackageState};
 use crate::system::repos::RepoState;
 use crate::system::resources::{ResourceAction, ResourceId};
-use crate::system::systemd::SystemdState;
 use crate::toolset::ResolveOptions;
 use crate::ui::prompt::Confirmation;
 use crate::ui::table::MiseTable;
@@ -375,9 +374,10 @@ struct BootstrapPlan {
 
 /// Remove the resources a config environment contributes
 ///
-/// Remove managed files, directories, user services, and dotfile entries and
-/// edits contributed by the named environments. Environments are selected for
-/// this command even if they are no longer in your normal selection.
+/// Remove managed files, directories, user services, systemd user units, and
+/// dotfile entries and edits contributed by the named environments.
+/// Environments are selected for this command even if they are no longer in
+/// your normal selection.
 ///
 /// Removal uses the current configuration, not a history of bootstrap runs.
 /// Keep the environment files on disk until cleanup is complete. Resources
@@ -4305,12 +4305,7 @@ impl BootstrapStatus {
         let mut json_entries = vec![];
         for s in system::systemd::status(&units).await? {
             let desired = s.is_desired();
-            let state = match &s.state {
-                SystemdState::Active => "active",
-                SystemdState::Inactive => "inactive",
-                SystemdState::Differs => "differs",
-                SystemdState::Missing => "missing",
-            };
+            let state = s.label();
             let missing = !desired;
             report.row(
                 "systemd",
@@ -5088,18 +5083,7 @@ impl BootstrapSystemdStatus {
                 let mut json_entries = vec![];
                 for s in statuses {
                     let desired = s.is_desired();
-                    let state = match &s.state {
-                        SystemdState::Active => "active",
-                        SystemdState::Inactive => "inactive",
-                        SystemdState::Differs => {
-                            any_missing = true;
-                            "differs"
-                        }
-                        SystemdState::Missing => {
-                            any_missing = true;
-                            "missing"
-                        }
-                    };
+                    let state = s.label();
                     if !desired {
                         any_missing = true;
                     }

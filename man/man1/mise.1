@@ -3659,9 +3659,10 @@ Print help
 .SH "MISE BOOTSTRAP UNAPPLY"
 Remove the resources a config environment contributes
 
-Remove managed files, directories, user services, and dotfile entries and
-edits contributed by the named environments. Environments are selected for
-this command even if they are no longer in your normal selection.
+Remove managed files, directories, user services, systemd user units, and
+dotfile entries and edits contributed by the named environments.
+Environments are selected for this command even if they are no longer in
+your normal selection.
 
 Removal uses the current configuration, not a history of bootstrap runs.
 Keep the environment files on disk until cleanup is complete. Resources
