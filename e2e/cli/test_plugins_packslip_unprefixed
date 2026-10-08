@@ -45,3 +45,12 @@ assert "test -f '$plugin/metadata.lua'"
 assert_contains "cat '$plugin/.mise-packslip-plugin.json'" '"version": "0.1.0-dev.2"'
 assert_contains "mise plugins ls --urls" "packslip:github.com/mise-plugins/vfox-bfs#0.1.0-dev.2"
 assert "test ! -e git-invoked"
+
+# An explicit non-vfox prefix cannot install a packslip archive, and says so
+# instead of handing the archive to Git.
+cat >mise.toml <<'EOF'
+[plugins]
+"asdf:asdf-bfs" = "packslip:mise-plugins/vfox-bfs#0.1.0-dev.2"
+EOF
+assert_fail_contains "mise install" "packslip plugin sources require the vfox plugin type"
+assert "test ! -e git-invoked"

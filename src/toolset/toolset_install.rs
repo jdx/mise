@@ -1029,6 +1029,13 @@ impl Toolset {
             plugin.set_remote_url(url.clone());
 
             if !plugin.is_installed() {
+                // An unprefixed packslip entry already resolved to vfox, so
+                // only an explicit non-vfox prefix can reach this.
+                if url.starts_with("packslip:") && plugin_type != PluginType::Vfox {
+                    eyre::bail!(
+                        "plugin {plugin_key}: packslip plugin sources require the vfox plugin type"
+                    );
+                }
                 plugin
                     .ensure_installed(config, &mpr, false, dry_run)
                     .await?;
