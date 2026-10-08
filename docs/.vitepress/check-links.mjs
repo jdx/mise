@@ -140,12 +140,21 @@ export function internalTarget(pagePath, href) {
   }
   const url = new URL(href, `https://docs.invalid${pagePath}`);
   if (url.host !== "docs.invalid") return null;
-  const path = decodeURIComponent(url.pathname);
+  const path = safeDecode(url.pathname);
   // Assets (schemas, images, llms.txt) are not pages.
   const last = path.split("/").pop();
   if (last.includes(".") && !last.endsWith(".html")) return null;
-  const id = url.hash ? decodeURIComponent(url.hash.slice(1)) : "";
+  const id = url.hash ? safeDecode(url.hash.slice(1)) : "";
   return id ? `${path}#${id}` : path;
+}
+
+// A malformed percent-escape is checked as written instead of crashing.
+function safeDecode(text) {
+  try {
+    return decodeURIComponent(text);
+  } catch {
+    return text;
+  }
 }
 
 function isInternal(url) {
