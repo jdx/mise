@@ -526,6 +526,25 @@ impl BackendArg {
         REGISTRY.get(&self.registry_short())
     }
 
+    /// Whether `recorded`, a backend a lock entry names, is not the backend the
+    /// registry picks for `version`. A tool the user bound to a backend by name
+    /// has no registry choice to differ from.
+    pub(crate) fn registry_backend_differs_from(&self, recorded: &str, version: &str) -> bool {
+        let Some(registry) = self.registry_tool().and_then(|tool| {
+            tool.backends_for_version(Some(version))
+                .first()
+                .map(ToString::to_string)
+        }) else {
+            return false;
+        };
+        let name = |full: &str| {
+            split_bracketed_opts(full)
+                .map_or(full, |(name, _)| name)
+                .to_string()
+        };
+        name(&registry) != name(recorded)
+    }
+
     fn has_explicit_backend_identifier(&self) -> bool {
         self.resolution.explicit && self.short.contains(':')
     }

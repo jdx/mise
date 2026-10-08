@@ -268,7 +268,10 @@ impl ToolVersion {
             ));
             // The registry's options are for the backend it chose; the lock's
             // backend would read them as its own settings and record them.
-            if backend.backend_type() != request.ba().backend_type() {
+            if request
+                .ba()
+                .registry_backend_differs_from(backend_full, &lt.version)
+            {
                 request = request.without_registry_options();
             }
             match &mut request {
@@ -1587,6 +1590,12 @@ mod tests {
         assert!(!restore("aqua:jdx/hk").opts.contains_key("workflow"));
         assert!(
             restore("packslip:github.com/jdx/hk")
+                .opts
+                .contains_key("workflow")
+        );
+        // Another project of the same backend type is not the registry's choice.
+        assert!(
+            !restore("packslip:github.com/other/hk")
                 .opts
                 .contains_key("workflow")
         );
