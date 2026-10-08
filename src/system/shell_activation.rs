@@ -49,6 +49,9 @@ impl ShellActivationRequest {
 pub enum ShellActivationMode {
     Activate,
     Shims,
+    /// Full activation in interactive shells, shims otherwise. Only for shells
+    /// whose single startup file serves both, which is fish.
+    Auto,
 }
 
 impl ShellActivationMode {
@@ -56,14 +59,20 @@ impl ShellActivationMode {
         match value {
             "activate" => Some(Self::Activate),
             "shims" => Some(Self::Shims),
+            "auto" => Some(Self::Auto),
             _ => None,
         }
+    }
+
+    pub(crate) fn supported_by(self, shell: ShellActivationShell) -> bool {
+        self != Self::Auto || shell == ShellActivationShell::Fish
     }
 
     pub fn name(self) -> &'static str {
         match self {
             Self::Activate => "activate",
             Self::Shims => "shims",
+            Self::Auto => "auto",
         }
     }
 }
@@ -192,6 +201,12 @@ impl ShellActivationTarget {
             (ShellActivationShell::Fish, ShellActivationMode::Shims) => {
                 "mise activate fish --shims | source"
             }
+            (ShellActivationShell::Fish, ShellActivationMode::Auto) => {
+                "if status is-interactive\n    mise activate fish | source\nelse\n    mise activate fish --shims | source\nend"
+            }
+            (_, ShellActivationMode::Auto) => {
+                unreachable!("auto mode is rejected for shells other than fish")
+            }
         }
     }
 }
@@ -282,5 +297,29 @@ mod tests {
             } => assert_eq!(block, "mise activate fish --shims | source"),
             _ => panic!("expected block edit"),
         }
+    }
+
+    #[test]
+    fn request_for_fish_auto() {
+        let request =
+            ShellActivationRequest::new(ShellActivationTarget::Fish, ShellActivationMode::Auto);
+        match request.edit.op {
+            EditOp::Block {
+                source: BlockSource::Inline(block),
+                ..
+            } => assert_eq!(
+                block,
+                "if status is-interactive\n    mise activate fish | source\nelse\n    mise activate fish --shims | source\nend"
+            ),
+            _ => panic!("expected block edit"),
+        }
+    }
+
+    #[test]
+    fn auto_mode_is_only_supported_for_fish() {
+        assert!(ShellActivationMode::Auto.supported_by(ShellActivationShell::Fish));
+        assert!(!ShellActivationMode::Auto.supported_by(ShellActivationShell::Bash));
+        assert!(!ShellActivationMode::Auto.supported_by(ShellActivationShell::Zsh));
+        assert!(ShellActivationMode::Shims.supported_by(ShellActivationShell::Zsh));
     }
 }

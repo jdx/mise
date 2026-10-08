@@ -1882,7 +1882,9 @@ pub fn shell_activation_from_config_files(config_files: &ConfigMap) -> Vec<Shell
                 };
             }
             for (key, shell, value) in shell_entries {
-                match shell_activation_setting(&key, value) {
+                match shell_activation_setting(&key, value)
+                    .filter(|setting| shell_activation_mode_supported(&key, shell, setting))
+                {
                     Some(setting) => {
                         for &target in shell.default_targets() {
                             merge_shell_activation_target(&mut merged, target, setting);
@@ -1894,7 +1896,9 @@ pub fn shell_activation_from_config_files(config_files: &ConfigMap) -> Vec<Shell
                 }
             }
             for (key, target, value) in target_entries {
-                match shell_activation_setting(&key, value) {
+                match shell_activation_setting(&key, value).filter(|setting| {
+                    shell_activation_mode_supported(&key, target.shell(), setting)
+                }) {
                     Some(setting) => {
                         merge_shell_activation_target(&mut merged, target, setting);
                     }
@@ -1958,6 +1962,22 @@ fn merge_shell_activation_target(
     merged.insert(target, mode);
 }
 
+fn shell_activation_mode_supported(
+    key: &str,
+    shell: ShellActivationShell,
+    setting: &ShellActivationSetting,
+) -> bool {
+    let Some(mode) = setting.mode.filter(|mode| !mode.supported_by(shell)) else {
+        return true;
+    };
+    warn!(
+        "[bootstrap.mise_shell_activate.{key}]: mode \"{}\" is only supported for fish, \
+         ignoring entry",
+        mode.name()
+    );
+    false
+}
+
 fn shell_activation_setting(key: &str, value: toml::Value) -> Option<ShellActivationSetting> {
     match value {
         toml::Value::Boolean(enabled) => Some(ShellActivationSetting {
@@ -1967,7 +1987,7 @@ fn shell_activation_setting(key: &str, value: toml::Value) -> Option<ShellActiva
         toml::Value::String(mode) => {
             let Some(mode) = ShellActivationMode::parse(&mode) else {
                 warn!(
-                    "[bootstrap.mise_shell_activate.{key}]: expected \"activate\" or \"shims\", \
+                    "[bootstrap.mise_shell_activate.{key}]: expected \"activate\", \"shims\", or \"auto\", \
                      ignoring entry"
                 );
                 return None;
@@ -2008,8 +2028,8 @@ fn shell_activation_setting(key: &str, value: toml::Value) -> Option<ShellActiva
                 Some(toml::Value::String(mode)) => {
                     let Some(mode) = ShellActivationMode::parse(mode) else {
                         warn!(
-                            "[bootstrap.mise_shell_activate.{key}].mode: expected \"activate\" or \
-                             \"shims\", ignoring entry"
+                            "[bootstrap.mise_shell_activate.{key}].mode: expected \"activate\", \
+                             \"shims\", or \"auto\", ignoring entry"
                         );
                         return None;
                     };
@@ -2028,7 +2048,7 @@ fn shell_activation_setting(key: &str, value: toml::Value) -> Option<ShellActiva
         _ => {
             warn!(
                 "[bootstrap.mise_shell_activate.{key}]: expected bool, \"activate\", \"shims\", \
-                 or table, ignoring entry"
+                 \"auto\", or table, ignoring entry"
             );
             None
         }
@@ -2080,6 +2100,7 @@ fn shell_activation_setting_display(setting: Option<ShellActivationMode>) -> &'s
     match setting {
         Some(ShellActivationMode::Activate) => "activate",
         Some(ShellActivationMode::Shims) => "shims",
+        Some(ShellActivationMode::Auto) => "auto",
         None => "disabled",
     }
 }
@@ -4116,6 +4137,13 @@ value = []"#;
             Some(ShellActivationSetting {
                 enabled: true,
                 mode: Some(ShellActivationMode::Activate)
+            })
+        );
+        assert_eq!(
+            shell_activation_setting("fish", tv(r#""auto""#)),
+            Some(ShellActivationSetting {
+                enabled: true,
+                mode: Some(ShellActivationMode::Auto)
             })
         );
         assert_eq!(
