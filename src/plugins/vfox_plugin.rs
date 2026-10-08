@@ -92,6 +92,24 @@ impl VfoxPlugin {
         Ok(vfox_to_url(url)?.to_string())
     }
 
+    /// Why this plugin cannot be installed, when it is not installed and mise
+    /// has nowhere to install it from: no registry entry, `[plugins]` entry,
+    /// owner/repo, or URL. `None` when it is installed or has a source, even
+    /// one that may fail to install. A `[plugins]` entry counts even when its
+    /// URL is malformed, so installing it reports the mistake.
+    pub(crate) fn missing_source(&self, config: &Config) -> Option<eyre::Report> {
+        let suffix = format!(":{}", self.name);
+        if self.is_installed()
+            || config
+                .repo_urls
+                .keys()
+                .any(|k| *k == self.name || k.ends_with(&suffix))
+        {
+            return None;
+        }
+        self.get_repo_url(config).err()
+    }
+
     pub(crate) async fn mise_env(
         &self,
         opts: &toml::Value,
@@ -522,5 +540,7 @@ fn vfox_to_url(name: &str) -> eyre::Result<Url> {
     } else {
         name.to_string().parse()
     };
-    res.wrap_err_with(|| format!("Invalid version: {name}"))
+    res.wrap_err_with(|| {
+        format!("no plugin source for {name}: expected a registry name, owner/repo, or URL")
+    })
 }
