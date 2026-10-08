@@ -1,0 +1,14 @@
+self-hosted-runner:
+  labels:
+    - namespace-profile-*
+    - jdx-*
+
+paths:
+  .github/workflows/**/*.{yml,yaml}:
+    ignore:
+      # Style-only shellcheck notes about grouping `>> "$GITHUB_OUTPUT"` redirects
+      - "shellcheck reported issue in this script: SC2129:.+"
+  # `sh -c '...'` is intentional where the inner shell must expand the expression
+  .github/workflows/test-impl.yml:
+    ignore:
+      - "shellcheck reported issue in this script: SC2016:.+"

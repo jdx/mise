@@ -117,6 +117,15 @@ fi
           effect = "write"
         }
     }
+    // lints GitHub Actions workflows (jdx/jactionlint, a maintained actionlint fork)
+    ["jactionlint"] {
+        glob = List(".github/workflows/*.yml", ".github/workflows/*.yaml")
+        batch = true
+        check = new CommandSpec {
+          command = "jactionlint {{ files }}"
+          effect = "read"
+        }
+    }
     ["markdownlint"] {
         glob = List("**/*.md")
         check = new CommandSpec {
