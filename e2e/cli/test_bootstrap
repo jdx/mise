@@ -202,14 +202,74 @@ assert_succeed "mise bootstrap --yes --only packages"
 assert "test -f '$MISE_CONFIG_DIR/bootstrap-hook-rendered'"
 assert "test -f '$PWD/bootstrap-hook-root-rendered'"
 
-# dry-run renders hooks without allowing effectful template functions
+# dry-run shows hooks that use exec() unrendered, with the render error, without running exec()
 rm -f bootstrap-hook-template-effect
 cat <<'EOF' >mise.toml
 [bootstrap.hooks.post-packages]
-run = "{{ exec(command='touch bootstrap-hook-template-effect') }}"
+run = "echo {{ exec(command='touch bootstrap-hook-template-effect') }}"
 EOF
-assert_fail "mise bootstrap --dry-run --only packages" "exec() is disabled during dry run"
+assert_contains "mise bootstrap --dry-run --only packages" "exec(command="
+assert_contains "mise bootstrap --dry-run --only packages 2>&1" "exec() is disabled during dry run"
 assert_fail "test -e bootstrap-hook-template-effect"
+
+# with nothing unresolved and no exec() call, a hook template that cannot render fails the dry run
+cat <<'EOF' >mise.toml
+[bootstrap.hooks.post-packages]
+run = "echo {{ nope() }}"
+EOF
+assert_fail "mise bootstrap --dry-run --only packages" "failed to render template"
+
+# dry-run shows hooks that read vars computed with exec() in config the dotfiles add
+mkdir -p dotfiles-exec-var
+cat <<'EOF' >dotfiles-exec-var/config.toml
+[vars]
+exec_var = "{{ exec(command='touch bootstrap-var-template-effect && echo message.txt') }}"
+
+[bootstrap.hooks.post-dotfiles]
+run = "echo {{ vars.exec_var }} > exec_var_hook_ran"
+EOF
+cat <<'EOF' >mise.toml
+[dotfiles]
+"~/.config/mise/config.toml" = "dotfiles-exec-var/config.toml"
+EOF
+assert_contains "mise bootstrap dotfiles apply --dry-run --force" "echo {{ vars.exec_var }} > exec_var_hook_ran"
+assert_contains "mise bootstrap dotfiles apply --dry-run --force 2>&1" "render error:"
+assert_fail "test -e bootstrap-var-template-effect"
+assert_fail "test -e exec_var_hook_ran"
+
+# however the hook reads the var, it is shown unrendered and does not run
+for read in '{% set v = vars %}{{ v.exec_var }}' '{{ read_file(path=vars.exec_var) }}' '{{ vars.exec_var | hash_file }}' '{{ vars.exec_var | extname }}'; do
+  printf '[vars]\nexec_var = "{{ exec(command=%s) }}"\n\n[bootstrap.hooks.post-dotfiles]\nrun = "echo %s > exec_var_hook_ran"\n' "'echo message.txt'" "$read" >dotfiles-exec-var/config.toml
+  assert_contains "mise bootstrap dotfiles apply --dry-run --force" "echo $read > exec_var_hook_ran"
+  assert_fail "test -e exec_var_hook_ran"
+done
+
+# a hook that uses the whole vars map would render without the var, so it is shown unrendered too
+for read in "'{{ vars | json_encode }}'" '{% for k, v in vars %}{{ k }}={{ v }} {% endfor %}'; do
+  printf '[vars]\nexec_var = "{{ exec(command=%s) }}"\n\n[bootstrap.hooks.post-dotfiles]\nrun = "echo %s > exec_var_hook_ran"\n' "'echo message.txt'" "$read" >dotfiles-exec-var/config.toml
+  # the preview shell-quotes the single quotes, so match the template itself
+  assert_contains "mise bootstrap dotfiles apply --dry-run --force" "${read//\'/}"
+  assert_contains "mise bootstrap dotfiles apply --dry-run --force 2>&1" "whole vars map"
+  assert_fail "test -e exec_var_hook_ran"
+done
+
+# a template that is broken anyway is shown unrendered too, and the note carries its error
+sed -i.bak 's/run = .*/run = "echo {{ vars.exec_var }} {{ nope() }}"/' dotfiles-exec-var/config.toml
+assert_matches "mise bootstrap dotfiles apply --dry-run --force 2>&1" "render error:.*nope"
+
+# a hook that reads no unresolved var renders, even with random output
+sed -i.bak "s/run = .*/run = \"echo {{ choice(n=8, alphabet='ab') }}\"/" dotfiles-exec-var/config.toml
+assert_matches "mise bootstrap dotfiles apply --dry-run --force" "echo [ab]{8}"
+
+# vars whose template is broken with nothing unresolved fail the dry run where a hook reads them
+cat <<'EOF' >dotfiles-exec-var/config.toml
+[vars]
+bad_var = "{{ nope() }}"
+
+[bootstrap.hooks.post-dotfiles]
+run = "echo {{ vars.bad_var }}"
+EOF
+assert_fail "mise bootstrap dotfiles apply --dry-run --force" "failed to render template"
 
 # macOS LaunchAgents in shared configs are inert when launchd is unavailable
 cat <<EOF >mise.toml

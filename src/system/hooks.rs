@@ -12,6 +12,7 @@ use serde::Serialize;
 use strum::{EnumIter, IntoEnumIterator};
 
 use crate::config::{Config, Settings, SettingsExt};
+use crate::tera::DryRunRender;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, EnumIter, Serialize)]
 #[serde(rename_all = "kebab-case")]
@@ -145,18 +146,38 @@ pub async fn run_phase(
     };
     for hook in phase_hooks {
         let run = if crate::tera::contains_template_syntax(&hook.run) {
-            let mut tera = if dry_run {
-                crate::tera::get_tera_for_dry_run(hook.config_path.parent())
-            } else {
-                crate::tera::get_tera(hook.config_path.parent())
-            };
             let mut context = config.bootstrap_tera_ctx(&hook.config_path).clone();
             if context.get("config_root").is_none() {
                 let config_root =
                     crate::config::config_file::config_root::config_root(&hook.config_path);
                 context.insert("config_root", &config_root);
             }
-            crate::tera::render_str(&mut tera, &hook.run, &context).map_err(|err| {
+            let rendered = if dry_run {
+                match crate::tera::render_for_dry_run(
+                    hook.config_path.parent(),
+                    &hook.run,
+                    &context,
+                    config.bootstrap_dry_run_unresolved_vars(&hook.config_path),
+                ) {
+                    DryRunRender::Rendered(run) => Ok(run),
+                    // the failure may come from exec() output or a var the
+                    // dry run did not compute, so only a real run can tell;
+                    // show the command as written with the error
+                    DryRunRender::Unrendered(err) => {
+                        info!(
+                            "[bootstrap.hooks.{phase}] in {}: showing the command unrendered because a dry run does not run exec() or compute the vars that need it; render error: {}",
+                            hook.config_path.display(),
+                            crate::tera::error_chain(&err)
+                        );
+                        Ok(hook.run.clone())
+                    }
+                    DryRunRender::Failed(err) => Err(err),
+                }
+            } else {
+                let mut tera = crate::tera::get_tera(hook.config_path.parent());
+                crate::tera::render_str(&mut tera, &hook.run, &context)
+            };
+            rendered.map_err(|err| {
                 eyre::eyre!(
                     "[bootstrap.hooks.{phase}] in {}: failed to render template: {err}",
                     hook.config_path.display()

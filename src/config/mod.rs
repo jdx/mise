@@ -37,7 +37,9 @@ use crate::task::{
     RunEntry, Task, TaskCacheConfig, TaskRustCacheConfig, TaskTemplate, monorepo_scope,
     strip_extension,
 };
-use crate::tera::{contains_template_syntax, get_empty_tera, render_str, take_tera_accessed_files};
+use crate::tera::{
+    DryRunRender, contains_template_syntax, get_empty_tera, render_str, take_tera_accessed_files,
+};
 use crate::toolset::env_cache::{CachedNonToolEnv, compute_settings_hash, get_file_mtime};
 use crate::toolset::{
     ResolveOptions, ResolvedToolOptions, ToolOptions, ToolRequestSet, ToolRequestSetBuilder,
@@ -138,11 +140,15 @@ struct BootstrapConfigMap {
     tera_ctx: tera::Context,
     config_root: Option<PathBuf>,
     vars_results: EnvResults,
+    dry_run_unresolved_vars: IndexSet<String>,
 }
 
 pub struct Config {
     pub config_files: ConfigMap,
     bootstrap_config_maps: Vec<BootstrapConfigMap>,
+    /// Vars a bootstrap dry run leaves out of `tera_ctx` because resolving them
+    /// needs something a dry run must not do, such as running `exec()`.
+    bootstrap_dry_run_unresolved_vars: IndexSet<String>,
     pub project_root: Option<PathBuf>,
     pub all_aliases: AliasMap,
     pub repo_urls: HashMap<String, String>,
@@ -290,6 +296,7 @@ impl Config {
             tera_ctx: self.tera_ctx.clone(),
             config_files,
             bootstrap_config_maps: self.bootstrap_config_maps.clone(),
+            bootstrap_dry_run_unresolved_vars: self.bootstrap_dry_run_unresolved_vars.clone(),
             env: OnceCell::new(),
             env_with_sources: OnceCell::new(),
             shorthands: self.shorthands.clone(),
@@ -360,6 +367,7 @@ impl Config {
             tera_ctx: BASE_CONTEXT.clone(),
             config_files,
             bootstrap_config_maps: vec![],
+            bootstrap_dry_run_unresolved_vars: Default::default(),
             env: OnceCell::new(),
             env_with_sources: OnceCell::new(),
             shorthands: get_shorthands(&Settings::get()),
@@ -383,6 +391,7 @@ impl Config {
             tera_ctx: config.tera_ctx.clone(),
             config_files: config.config_files.clone(),
             bootstrap_config_maps: vec![],
+            bootstrap_dry_run_unresolved_vars: Default::default(),
             env: OnceCell::new(),
             env_with_sources: OnceCell::new(),
             shorthands: config.shorthands.clone(),
@@ -522,17 +531,18 @@ impl Config {
         let mut main_config_files = config.config_files.clone();
         main_config_files
             .retain(|path, _| !bootstrap_roots.iter().any(|root| path.starts_with(root)));
-        let vars = bootstrap_dry_run_vars(
+        let (vars, unresolved) = bootstrap_dry_run_vars(
             Some(&self.config_files),
             self.vars_results_cached(),
             &main_config_files,
-            IndexMap::new(),
+            DryRunVars::default(),
             false,
         )?;
         let main_vars_changed = vars != self.vars;
         let config_mut = Arc::get_mut(&mut config).expect("new config Arc is uniquely owned");
         config_mut.vars = vars.clone();
         config_mut.tera_ctx.insert("vars", &vars);
+        config_mut.bootstrap_dry_run_unresolved_vars = unresolved.clone();
         for map in &mut config_mut.bootstrap_config_maps {
             let original_config_files = map.config_files.clone();
             for (path, simulated) in &config_mut.config_files {
@@ -549,18 +559,20 @@ impl Config {
                 }
             }
             if map.config_root.is_some() {
-                let map_vars = bootstrap_dry_run_vars(
+                let (map_vars, map_unresolved) = bootstrap_dry_run_vars(
                     Some(&original_config_files),
                     Some(&map.vars_results),
                     &map.config_files,
-                    vars.clone(),
+                    (vars.clone(), unresolved.clone()),
                     main_vars_changed,
                 )?;
                 map.tera_ctx.insert("vars", &map_vars);
+                map.dry_run_unresolved_vars = map_unresolved;
             } else {
                 // The base map's context is the main config context. Re-folding its files
                 // would lose cached dynamic vars that the normal loader already resolved.
                 map.tera_ctx.insert("vars", &vars);
+                map.dry_run_unresolved_vars = unresolved.clone();
             }
         }
         Ok(config)
@@ -603,6 +615,19 @@ impl Config {
             .find(|config| config.config_files.contains_key(config_path))
             .map(|config| &config.tera_ctx)
             .unwrap_or(&self.tera_ctx)
+    }
+
+    /// Returns the vars a bootstrap dry run could not resolve without running
+    /// anything, for the hierarchy that declares `config_path`.
+    pub(crate) fn bootstrap_dry_run_unresolved_vars(
+        &self,
+        config_path: &Path,
+    ) -> &IndexSet<String> {
+        self.bootstrap_config_maps
+            .iter()
+            .find(|config| config.config_files.contains_key(config_path))
+            .map(|config| &config.dry_run_unresolved_vars)
+            .unwrap_or(&self.bootstrap_dry_run_unresolved_vars)
     }
     pub async fn env(self: &Arc<Self>) -> eyre::Result<IndexMap<String, String>> {
         Ok(self
@@ -2180,6 +2205,7 @@ async fn load_bootstrap_config_maps(config: &Config) -> Result<Vec<BootstrapConf
         tera_ctx: config.tera_ctx.clone(),
         config_root: None,
         vars_results: config.vars_results_cached().cloned().unwrap_or_default(),
+        dry_run_unresolved_vars: Default::default(),
     }];
     let idiomatic_filenames = BTreeMap::new();
     for root in roots {
@@ -2202,6 +2228,7 @@ async fn load_bootstrap_config_maps(config: &Config) -> Result<Vec<BootstrapConf
             tera_ctx,
             config_root: Some(root),
             vars_results,
+            dry_run_unresolved_vars: Default::default(),
         });
     }
     Ok(maps)
@@ -3980,13 +4007,17 @@ pub(crate) async fn resolve_vars_from_config_files(
     .await
 }
 
+/// The vars a bootstrap dry run resolved, and the names of those it left out
+/// because resolving them needs something a dry run must not do.
+type DryRunVars = (IndexMap<String, String>, IndexSet<String>);
+
 fn bootstrap_dry_run_vars(
     original_config_files: Option<&ConfigMap>,
     existing_results: Option<&EnvResults>,
     config_files: &ConfigMap,
-    mut vars: IndexMap<String, String>,
+    (mut vars, mut unresolved): DryRunVars,
     mut preceding_layer_changed: bool,
-) -> Result<IndexMap<String, String>> {
+) -> Result<DryRunVars> {
     for (source, config_file) in config_files.iter().rev() {
         let unchanged = original_config_files
             .and_then(|files| files.get(source))
@@ -4004,16 +4035,27 @@ fn bootstrap_dry_run_vars(
             };
             match directive {
                 EnvDirective::Val(key, value, _) => {
-                    if let Some(value) = bootstrap_dry_run_var(source, &value, &vars) {
-                        vars.insert(key, value);
-                    } else if let Some(value) = existing(&key) {
-                        vars.insert(key, value);
-                    } else {
-                        vars.shift_remove(&key);
+                    match bootstrap_dry_run_var(source, &value, &vars, &unresolved)
+                        .or_existing(|| existing(&key))
+                    {
+                        DryRunVar::Resolved(value) => {
+                            unresolved.shift_remove(&key);
+                            vars.insert(key, value);
+                        }
+                        DryRunVar::NeedsRun => {
+                            vars.shift_remove(&key);
+                            unresolved.insert(key);
+                        }
+                        DryRunVar::Broken => {
+                            vars.shift_remove(&key);
+                            unresolved.shift_remove(&key);
+                        }
                     }
                 }
                 EnvDirective::Default(key, value, _) => {
-                    if vars.get(&key).is_some_and(|value| !value.is_empty()) {
+                    if unresolved.contains(&key)
+                        || vars.get(&key).is_some_and(|value| !value.is_empty())
+                    {
                         continue;
                     }
                     if let Some(value) = env::PRISTINE_ENV
@@ -4021,20 +4063,33 @@ fn bootstrap_dry_run_vars(
                         .filter(|value| !value.is_empty())
                     {
                         vars.insert(key, value.clone());
-                    } else if let Some(value) = bootstrap_dry_run_var(source, &value, &vars) {
-                        vars.insert(key, value);
-                    } else if let Some(value) = existing(&key) {
-                        vars.insert(key, value);
+                        continue;
+                    }
+                    match bootstrap_dry_run_var(source, &value, &vars, &unresolved)
+                        .or_existing(|| existing(&key))
+                    {
+                        DryRunVar::Resolved(value) => {
+                            vars.insert(key, value);
+                        }
+                        DryRunVar::NeedsRun => {
+                            vars.shift_remove(&key);
+                            unresolved.insert(key);
+                        }
+                        DryRunVar::Broken => {}
                     }
                 }
                 EnvDirective::Rm(key, _) => {
                     vars.shift_remove(&key);
+                    unresolved.shift_remove(&key);
                 }
                 EnvDirective::Age { key, .. } => {
                     if let Some(value) = existing(&key) {
+                        unresolved.shift_remove(&key);
                         vars.insert(key, value);
                     } else {
+                        // decrypting is left to a real run
                         vars.shift_remove(&key);
+                        unresolved.insert(key);
                     }
                 }
                 EnvDirective::Required(..)
@@ -4047,16 +4102,37 @@ fn bootstrap_dry_run_vars(
         }
         preceding_layer_changed |= !unchanged;
     }
-    Ok(vars)
+    Ok((vars, unresolved))
+}
+
+/// How a bootstrap dry run resolves a var. See [`crate::tera::render_for_dry_run`].
+enum DryRunVar {
+    Resolved(String),
+    /// The template failed after calling `exec()` or while other vars were
+    /// unresolved, so it is left undefined for a real run to resolve.
+    NeedsRun,
+    /// The template failed with nothing unresolved and no `exec()` call.
+    Broken,
+}
+
+impl DryRunVar {
+    /// Falls back to the value an earlier full load resolved, when there is one.
+    fn or_existing(self, existing: impl FnOnce() -> Option<String>) -> Self {
+        match self {
+            Self::Resolved(_) => self,
+            _ => existing().map_or(self, Self::Resolved),
+        }
+    }
 }
 
 fn bootstrap_dry_run_var(
     source: &Path,
     value: &str,
     vars: &IndexMap<String, String>,
-) -> Option<String> {
+    unresolved: &IndexSet<String>,
+) -> DryRunVar {
     if !contains_template_syntax(value) {
-        return Some(value.to_string());
+        return DryRunVar::Resolved(value.to_string());
     }
     let mut context = BASE_CONTEXT.clone();
     context.insert("vars", vars);
@@ -4068,15 +4144,23 @@ fn bootstrap_dry_run_var(
         "config_source",
         &config_file::config_root::config_source(source),
     );
-    let mut tera = crate::tera::get_tera_for_dry_run(source.parent());
-    match render_str(&mut tera, value, &context) {
-        Ok(value) => Some(value),
-        Err(err) => {
+    match crate::tera::render_for_dry_run(source.parent(), value, &context, unresolved) {
+        DryRunRender::Rendered(value) => DryRunVar::Resolved(value),
+        DryRunRender::Unrendered(err) => {
             debug!(
-                "bootstrap: var template from {} omitted from dry-run context: {err}",
-                source.display()
+                "bootstrap: var template from {} needs a real run; omitted from dry-run context: {}",
+                source.display(),
+                crate::tera::error_chain(&err)
             );
-            None
+            DryRunVar::NeedsRun
+        }
+        DryRunRender::Failed(err) => {
+            debug!(
+                "bootstrap: var template from {} omitted from dry-run context: {}",
+                source.display(),
+                crate::tera::error_chain(&err)
+            );
+            DryRunVar::Broken
         }
     }
 }
@@ -8925,6 +9009,7 @@ mod tests {
             tera_ctx: BASE_CONTEXT.clone(),
             config_files: Default::default(),
             bootstrap_config_maps: vec![],
+            bootstrap_dry_run_unresolved_vars: Default::default(),
             env: OnceCell::new(),
             env_with_sources: OnceCell::new(),
             shorthands: get_shorthands(&Settings::get()),
@@ -9005,6 +9090,7 @@ backend = "pipx:black"
             tera_ctx: BASE_CONTEXT.clone(),
             config_files: Default::default(),
             bootstrap_config_maps: vec![],
+            bootstrap_dry_run_unresolved_vars: Default::default(),
             env: OnceCell::new(),
             env_with_sources: OnceCell::new(),
             shorthands: get_shorthands(&Settings::get()),
@@ -9065,6 +9151,7 @@ backend = "pipx:black"
             tera_ctx: BASE_CONTEXT.clone(),
             config_files: Default::default(),
             bootstrap_config_maps: vec![],
+            bootstrap_dry_run_unresolved_vars: Default::default(),
             env: OnceCell::new(),
             env_with_sources: OnceCell::new(),
             shorthands: get_shorthands(&Settings::get()),
@@ -9155,6 +9242,7 @@ backend = "pipx:black"
             tera_ctx: BASE_CONTEXT.clone(),
             config_files: Default::default(),
             bootstrap_config_maps: vec![],
+            bootstrap_dry_run_unresolved_vars: Default::default(),
             env: OnceCell::new(),
             env_with_sources: OnceCell::new(),
             shorthands: get_shorthands(&Settings::get()),
@@ -9247,6 +9335,7 @@ backend = "pipx:black"
             tera_ctx: BASE_CONTEXT.clone(),
             config_files: Default::default(),
             bootstrap_config_maps: vec![],
+            bootstrap_dry_run_unresolved_vars: Default::default(),
             env: OnceCell::new(),
             env_with_sources: OnceCell::new(),
             shorthands: get_shorthands(&Settings::get()),
@@ -9309,6 +9398,7 @@ backend = "pipx:black"
                 tera_ctx: BASE_CONTEXT.clone(),
                 config_files: Default::default(),
                 bootstrap_config_maps: vec![],
+                bootstrap_dry_run_unresolved_vars: Default::default(),
                 env: OnceCell::new(),
                 env_with_sources: OnceCell::new(),
                 shorthands: get_shorthands(&Settings::get()),
@@ -9396,6 +9486,7 @@ config_roots = ["apps/api", "apps/web"]
             tera_ctx: BASE_CONTEXT.clone(),
             config_files,
             bootstrap_config_maps: vec![],
+            bootstrap_dry_run_unresolved_vars: Default::default(),
             env: OnceCell::new(),
             env_with_sources: OnceCell::new(),
             shorthands: get_shorthands(&Settings::get()),
@@ -9571,6 +9662,7 @@ config_roots = ["apps/api", "apps/web"]
             tera_ctx: BASE_CONTEXT.clone(),
             config_files: Default::default(),
             bootstrap_config_maps: vec![],
+            bootstrap_dry_run_unresolved_vars: Default::default(),
             env: OnceCell::new(),
             env_with_sources: OnceCell::new(),
             shorthands: get_shorthands(&Settings::get()),
