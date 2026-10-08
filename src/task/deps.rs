@@ -139,9 +139,13 @@ impl Deps {
     }
 
     /// Like [`Self::new_for_inspection`], but reports every cycle rather than the first, for
-    /// `mise tasks validate`.
+    /// `mise tasks validate`. It does not warn about an unfetched `git::` file, since validate
+    /// reports each validated one as an issue.
     pub async fn new_for_validation(config: &Arc<Config>, tasks: Vec<Task>) -> eyre::Result<Self> {
-        Self::new_with_cycle_limit(config, tasks, None, TaskFetcher::for_inspection).await
+        Self::new_with_cycle_limit(config, tasks, None, |no_cache| {
+            TaskFetcher::for_inspection(no_cache).without_warning()
+        })
+        .await
     }
 
     async fn new_with_cycle_limit(
@@ -192,7 +196,12 @@ impl Deps {
             // Re-render runtime templates with usage values (including defaults)
             // so {{usage.*}} resolves before graph construction and freshness checks.
             if a.has_usage_runtime_templates() {
-                let usage_values = parse_usage_values_from_task(config, &a).await?;
+                // A `git::` file left unfetched (experimental is off) can't be read, so its usage
+                // defaults come from the task's TOML alone.
+                let usage_values = match TaskFetcher::toml_only(&a) {
+                    Some(toml_only) => parse_usage_values_from_task(config, &toml_only).await?,
+                    None => parse_usage_values_from_task(config, &a).await?,
+                };
                 if !usage_values.is_empty() {
                     a.render_runtime_templates_with_usage(config, &usage_values)
                         .await?;

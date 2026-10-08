@@ -75,8 +75,12 @@ impl TasksValidate {
         let mut resolved_tasks: Vec<Task> = config.tasks().await?.values().cloned().collect();
         // always no_cache=false as the command doesn't take no-cache argument
         // MISE_TASK_REMOTE_NO_CACHE env var is still respected if set.
-        // With experimental off, `git::` task files stay unfetched and are reported per task.
+        // Every task is fetched because selection, aliases and references can come from a
+        // fetched file's `#MISE` header. With experimental off, `git::` task files stay
+        // unfetched; a validated one gets a ValidationIssue instead of a warning, and an
+        // unselected one is not mentioned.
         TaskFetcher::for_inspection(false)
+            .without_warning()
             .fetch_tasks(&config, &mut resolved_tasks)
             .await?;
         let all_tasks: BTreeMap<String, Task> = resolved_tasks

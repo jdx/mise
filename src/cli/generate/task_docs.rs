@@ -62,9 +62,14 @@ impl TaskDocs {
     pub(super) async fn run(self) -> eyre::Result<()> {
         let config = Config::get().await?;
         let dir = dirs::CWD.as_ref().unwrap();
-        let mut tasks = config::load_tasks_in_dir(&config, dir, &config.config_files).await?;
+        let mut tasks: Vec<_> = config::load_tasks_in_dir(&config, dir, &config.config_files)
+            .await?
+            .into_iter()
+            .filter(|t| !t.hide)
+            .collect();
         // Generating docs only inspects tasks, so a gated `git::` file is not fetched and the
-        // task is documented from its TOML metadata (see `TaskFetcher`).
+        // task is documented from its TOML metadata (see `TaskFetcher`). Hidden tasks are
+        // dropped first so a remote file that is never documented can't fail the command.
         TaskFetcher::for_inspection(false)
             .fetch_tasks(&config, &mut tasks)
             .await?;
@@ -72,6 +77,7 @@ impl TaskDocs {
             .into_iter()
             .map(|task| TaskFetcher::toml_only(&task).unwrap_or(task))
             .collect();
+        // A fetched file's `#MISE hide=true` header can hide a task too.
         let visible_tasks: Vec<_> = tasks.iter().filter(|t| !t.hide).collect();
         if let Some(output) = &self.output {
             if self.multi {

@@ -53,6 +53,38 @@ assert_succeed "mise tasks validate local"
 assert_succeed "mise tasks validate"
 assert_contains "mise tasks validate 2>&1" "is experimental; not fetched"
 assert_not_contains "mise tasks validate 2>&1" "not found"
+# Validate reports a validated remote task as an issue, not also as a warning,
+# and says nothing about a remote task it was not asked to validate.
+assert_not_contains "mise tasks validate 2>&1" "was not fetched"
+assert_not_contains "mise tasks validate local 2>&1" "remote"
+
+# A remote task's TOML usage defaults still resolve its dependencies.
+cat <<'TOML' >mise.toml
+[tasks.child]
+run = "echo child"
+
+[tasks.remote-usage]
+usage = 'arg "[target]" default="child"'
+depends = ["{{usage.target}}"]
+file = "git::https://127.0.0.1:9/org/repo.git//tasks/hello"
+TOML
+
+assert_contains "mise tasks deps remote-usage" "child"
+assert_not_contains "mise tasks deps remote-usage 2>&1" "could not read task file"
+
+# Hidden tasks are never documented, so an unreachable remote file on one does
+# not stop docs for the others.
+cat <<'TOML' >mise.toml
+[tasks.local]
+description = "a local task"
+run = "echo local-ok"
+
+[tasks.hidden-http]
+hide = true
+file = "http://127.0.0.1:9/hidden.sh"
+TOML
+
+assert_contains "mise generate task-docs" "a local task"
 
 cat <<'TOML' >mise.toml
 [task_config]
