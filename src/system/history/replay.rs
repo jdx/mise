@@ -213,12 +213,14 @@ pub async fn rollback(req: RollbackRequest) -> Result<()> {
     let mut versions: BTreeMap<u64, Vec<String>> = BTreeMap::new();
     for target in &targets {
         for path in &target.paths {
-            let path = display_path(path);
+            // spelled the way checkpoints record their changes (the portable
+            // root, not this machine's HOME), as `history --path` matches them
+            let portable = tree_path_to_display(&repository_path(repo, &live, path)?);
             let id = match req.to {
                 Some(_) => target.entry.id,
-                None => saved_in(&entries, target.entry.id, &path),
+                None => saved_in(&entries, target.entry.id, &portable),
             };
-            versions.entry(id).or_default().push(path);
+            versions.entry(id).or_default().push(portable);
         }
     }
     let message = format!(
@@ -498,14 +500,15 @@ async fn execute(
     };
     let outcome = scope.outcome_id();
     let before = scope.before().map(|(id, _)| id);
-    scope.finish(error, Some(summary));
+    let recorded = scope.finish_recorded(error, Some(summary));
     let touched = result?;
     run_reload(&reload, &touched);
     config_hint(&touched);
     // an operation takes two checkpoints, and only the ones that change a
     // path show up under `mise dot history --path`; naming both accounts
-    // for the numbers a listing skips
-    let recorded = match (outcome, before) {
+    // for the numbers a listing skips. An outcome that failed to record
+    // has no checkpoint to name.
+    let recorded = match (outcome.filter(|_| recorded), before) {
         (Some(outcome), Some(before)) => format!(
             "; recorded as checkpoint {outcome}, with checkpoint {before} holding the state before it"
         ),
