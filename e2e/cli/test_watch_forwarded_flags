@@ -66,4 +66,3 @@ run = 'echo ran'
 sources = ["src/**/*.txt", "shared/**/*.txt"]
 EOF
 assert_fail_contains "mise watch --project-origin src example" "does not contain the watched source"
-
