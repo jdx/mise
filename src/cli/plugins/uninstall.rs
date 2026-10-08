@@ -1,3 +1,4 @@
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use eyre::Result;
@@ -9,7 +10,7 @@ use crate::plugins::PluginType;
 use crate::toolset::install_state;
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::ui::style;
-use crate::{backend, env, plugins};
+use crate::{backend, dirs, env, file, plugins};
 
 /// Remove an installed plugin
 ///
@@ -55,13 +56,19 @@ impl PluginsUninstall {
                 let pr = mpr.add(&prefix);
                 // Resolve the backends first: once the plugin is gone, its tools
                 // no longer resolve to a backend.
-                let backends = match self.purge {
-                    true => backends_to_purge(plugin_name, plugin.get_plugin_type())?,
-                    false => vec![],
+                let (backends, leftovers) = match self.purge {
+                    true => (
+                        backends_to_purge(plugin_name, plugin.get_plugin_type())?,
+                        leftover_tool_dirs(plugin_name, plugin.get_plugin_type())?,
+                    ),
+                    false => (vec![], vec![]),
                 };
                 plugin.uninstall(pr.as_ref()).await?;
                 for backend in backends {
                     backend.purge(pr.as_ref())?;
+                }
+                for dir in leftovers {
+                    file::remove_all_with_progress(dir, pr.as_ref())?;
                 }
                 pr.finish_with_message("uninstalled".into());
             } else {
@@ -103,4 +110,42 @@ fn backends_to_purge(plugin_name: &str, plugin_type: PluginType) -> Result<Vec<A
         .filter(|ba| ba.backend_type() == backend_type)
         .filter_map(backend::arg_to_backend)
         .collect())
+}
+
+/// Install, cache and download dirs of a backend plugin's tools that are no
+/// longer installed. Uninstalling a tool's last version keeps its tool-level
+/// cache, its version symlinks, and its downloads with `always_keep_download`,
+/// but the tool drops out of the installed-tool scan, so only the
+/// `<plugin>-<tool>` dir names are left to find them by.
+///
+/// A dir is left alone when it belongs to an installed tool of another
+/// backend, or to a plugin whose name extends this one (`<plugin>-x-<tool>`).
+fn leftover_tool_dirs(plugin_name: &str, plugin_type: PluginType) -> Result<Vec<PathBuf>> {
+    if plugin_type != PluginType::VfoxBackend {
+        return Ok(vec![]);
+    }
+    let prefix = format!("{}-", backend::tool_directory_name(plugin_name));
+    let longer_plugins = file::dir_subdirs(&dirs::PLUGINS)?
+        .into_iter()
+        .map(|name| format!("{}-", backend::tool_directory_name(&name)))
+        .filter(|other| other.len() > prefix.len() && other.starts_with(&prefix))
+        .collect::<Vec<_>>();
+    let backend_type = BackendType::VfoxBackend(plugin_name.to_string());
+    let other_tools = install_state::try_list_tools()?
+        .values()
+        .filter(|tool| BackendArg::from((*tool).clone()).backend_type() != backend_type)
+        .map(|tool| backend::tool_directory_name(&tool.short))
+        .collect::<Vec<_>>();
+    let mut leftovers = vec![];
+    for base in [*dirs::INSTALLS, *dirs::CACHE, *dirs::DOWNLOADS] {
+        for name in file::dir_subdirs(base)? {
+            if name.starts_with(&prefix)
+                && !longer_plugins.iter().any(|other| name.starts_with(other))
+                && !other_tools.contains(&name)
+            {
+                leftovers.push(base.join(name));
+            }
+        }
+    }
+    Ok(leftovers)
 }

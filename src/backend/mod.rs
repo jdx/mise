@@ -6794,7 +6794,7 @@ fn fuzzy_version_matches(query: &str, version: &str) -> bool {
 }
 
 /// Derive the directory namespace from the configured tool spelling.
-pub(crate) fn tool_directory_name(short: &str) -> String {
+pub fn tool_directory_name(short: &str) -> String {
     use heck::ToKebabCase;
     short.to_kebab_case()
 }
