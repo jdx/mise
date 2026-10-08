@@ -7075,6 +7075,23 @@ async fn load_task_sources_from_configs(
         None
     };
     for include in &includes {
+        // A remote include is experimental. Without it, skip just that include so
+        // the config's other tasks still list, complete and run.
+        let remote_source = if include.starts_with("git::") {
+            Some("a `git::` source")
+        } else if include.starts_with(OCI_INCLUDE_PREFIX) {
+            Some("an `oci::` source")
+        } else {
+            None
+        };
+        if let Some(source) = remote_source
+            && !Settings::get().experimental
+        {
+            warn_once!(
+                "skipping task include `{include}`: including tasks from {source} is experimental. Enable it with `mise settings experimental=true`"
+            );
+            continue;
+        }
         let artifacts = if include.starts_with("git::") {
             vec![resolve_git_url_to_path(include).await?]
         } else if include.starts_with(OCI_INCLUDE_PREFIX) {

@@ -168,9 +168,14 @@ impl TasksLs {
         let mut tasks = tasks;
         // always pass no_cache=false as the command doesn't take no-cache argument
         // MISE_TASK_REMOTE_NO_CACHE env var is still respected if set
-        TaskFetcher::new(false)
-            .fetch_tasks(&config, &mut tasks)
-            .await?;
+        let fetcher = TaskFetcher::for_inspection(false);
+        // Completion output goes to the shell, so only the human-facing modes warn.
+        let fetcher = if self.complete || self.usage {
+            fetcher.without_warning()
+        } else {
+            fetcher
+        };
+        fetcher.fetch_tasks(&config, &mut tasks).await?;
 
         // Warn about non-executable files only when there are truly no tasks at all
         // (not just filtered out by --hidden/--local/--global)
@@ -244,7 +249,12 @@ impl TasksLs {
         let mut usage = usage::Spec::default();
         let current_root = current_root_prefix(config);
         for task in tasks {
-            let mut task_spec = task.parse_usage_spec_for_display(config).await?;
+            // Without experimental a `git::` file was not fetched, so its `#USAGE` header is
+            // unknown; complete the task from its TOML metadata alone.
+            let mut task_spec = match TaskFetcher::toml_only(&task) {
+                Some(toml_only) => toml_only.parse_usage_spec_for_display(config).await?,
+                None => task.parse_usage_spec_for_display(config).await?,
+            };
             for (name, complete) in task_spec.complete {
                 task_spec.cmd.complete.insert(name, complete);
             }
