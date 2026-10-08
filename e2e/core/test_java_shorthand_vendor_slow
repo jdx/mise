@@ -25,6 +25,13 @@ mise lock
 assert_contains "cat mise.lock" 'shorthand_vendor = "openjdk"'
 mise settings unset java.shorthand_vendor
 assert_fail "mise install --locked" "java@17 is not in the lockfile"
+# Plain mise lock locks the installed OpenJDK build for the new vendor setting
+mise lock
+assert_contains "cat mise.lock" 'version = "17.0.2"'
+assert_contains "cat mise.lock" 'shorthand_vendor = "temurin"'
+assert_contains "cat mise.lock" 'download.java.net'
+mise install --locked
 mise lock --bump java
 assert_contains "cat mise.lock" 'shorthand_vendor = "temurin"'
 assert_matches "cat mise.lock" 'version = "17\.[0-9.]+\+[0-9]'
+assert_not_contains "cat mise.lock" 'download.java.net'

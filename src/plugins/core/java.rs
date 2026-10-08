@@ -349,19 +349,14 @@ impl JavaPlugin {
         JavaOptions::new(&raw_opts).release_type().to_string()
     }
 
-    fn tv_to_java_version(&self, tv: &ToolVersion) -> String {
-        if regex!(r"^\d").is_match(&tv.version) {
-            // undo the java.shorthand_vendor shorthand
-            format!("{}-{}", Settings::get().java.shorthand_vendor, tv.version)
-        } else {
-            tv.version.clone()
-        }
-    }
-
     async fn tv_to_metadata(&self, tv: &ToolVersion) -> Result<&JavaMetadata> {
-        let v: String = self.tv_to_java_version(tv);
         let release_type = self.tv_release_type(tv);
         let metadata = self.fetch_java_metadata(&release_type).await?;
+        let v = java_metadata_key(
+            metadata,
+            &tv.version,
+            &Settings::get().java.shorthand_vendor,
+        );
         find_java_metadata(metadata, &v, &tv.version, &current_java_platform())
     }
 
@@ -526,11 +521,15 @@ impl Backend for JavaPlugin {
         tv: &ToolVersion,
         target: &PlatformTarget,
     ) -> Result<PlatformInfo> {
-        let version = self.tv_to_java_version(tv);
         let release_type = self.tv_release_type(tv);
         let metadata = self
             .fetch_java_metadata_for_target(&release_type, target)
             .await?;
+        let version = java_metadata_key(
+            &metadata,
+            &tv.version,
+            &Settings::get().java.shorthand_vendor,
+        );
         let m = find_java_metadata(&metadata, &version, &tv.version, &target.platform)?;
 
         Ok(PlatformInfo {
@@ -698,7 +697,7 @@ impl Backend for JavaPlugin {
 }
 
 /// Every metadata entry under its full version string, plus a shorthand entry like
-/// "17.0.2" for each release from `shorthand_vendor`, which `tv_to_java_version` turns
+/// "17.0.2" for each release from `shorthand_vendor`, which `java_metadata_key` turns
 /// back into "<vendor>-17.0.2" on install. Entries are visited in key order so the
 /// shorthand points at the canonical "<vendor>-<version>" entry when one exists: digits
 /// sort before the letters of a feature or image type such as "-jre-".
@@ -719,6 +718,28 @@ fn with_shorthand_versions<'a>(
         .map(|(k, m)| (k.as_str(), m))
         .chain(shorthand)
         .collect()
+}
+
+/// The metadata key for `version`: a vendor-prefixed version as is, and a shorthand
+/// version such as "21.0.4+7" with the `shorthand_vendor` prefix. Shorthand versions
+/// meant OpenJDK builds before the default vendor became Temurin, so a shorthand
+/// version that `shorthand_vendor` does not publish but OpenJDK does, such as an
+/// installed or locked "21.0.2" (Temurin calls it "21.0.2+13"), keeps resolving to
+/// the OpenJDK build.
+fn java_metadata_key(
+    metadata: &HashMap<String, JavaMetadata>,
+    version: &str,
+    shorthand_vendor: &str,
+) -> String {
+    if !regex!(r"^\d").is_match(version) {
+        return version.to_string();
+    }
+    let key = format!("{shorthand_vendor}-{version}");
+    let openjdk_key = format!("openjdk-{version}");
+    if !metadata.contains_key(&key) && metadata.contains_key(&openjdk_key) {
+        return openjdk_key;
+    }
+    key
 }
 
 fn find_java_metadata<'a>(
@@ -901,6 +922,29 @@ mod tests {
         let metadata = HashMap::from([("openjdk-8".to_string(), JavaMetadata::default())]);
         let found = find_java_metadata(&metadata, "openjdk-8", "8", &platform).unwrap();
         assert!(std::ptr::eq(found, &metadata["openjdk-8"]));
+    }
+
+    #[test]
+    fn java_metadata_key_falls_back_to_openjdk_shorthand_versions() {
+        let metadata = HashMap::from([
+            ("openjdk-21.0.2".to_string(), JavaMetadata::default()),
+            ("temurin-21.0.2+13".to_string(), JavaMetadata::default()),
+            ("openjdk-25".to_string(), JavaMetadata::default()),
+            ("temurin-25".to_string(), JavaMetadata::default()),
+        ]);
+        let key = |version| java_metadata_key(&metadata, version, "temurin");
+        // an OpenJDK shorthand version installed before the default became Temurin
+        assert_eq!(key("21.0.2"), "openjdk-21.0.2");
+        assert_eq!(key("21.0.2+13"), "temurin-21.0.2+13");
+        // the shorthand vendor wins when both vendors publish the version
+        assert_eq!(key("25"), "temurin-25");
+        // with neither, look up the shorthand vendor's key
+        assert_eq!(key("21.0.3"), "temurin-21.0.3");
+        assert_eq!(key("zulu-21.0.2"), "zulu-21.0.2");
+        assert_eq!(
+            java_metadata_key(&metadata, "21.0.2", "openjdk"),
+            "openjdk-21.0.2"
+        );
     }
 
     fn opts_with_release_type(release_type: &str) -> ToolVersionOptions {
