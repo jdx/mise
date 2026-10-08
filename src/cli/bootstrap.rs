@@ -31,7 +31,6 @@ use crate::system::login_shell::LoginShellState;
 use crate::system::packages::{PackageDesiredState, PackageState};
 use crate::system::repos::RepoState;
 use crate::system::resources::{ResourceAction, ResourceId};
-use crate::system::systemd::SystemdState;
 use crate::toolset::ResolveOptions;
 use crate::ui::prompt::Confirmation;
 use crate::ui::table::MiseTable;
@@ -522,9 +521,10 @@ struct BootstrapPlan {
 
 /// Remove what a config environment's bootstrap sections created
 ///
-/// Removes the files, directories, user services, and dotfile entries and edits
-/// that the named environments declare. Each named environment's config is
-/// loaded for this command even when `-E` or `MISE_ENV` does not select it.
+/// Removes the files, directories, user services, systemd user units, and
+/// dotfile entries and edits that the named environments declare. Each named
+/// environment's config is loaded for this command even when `-E` or
+/// `MISE_ENV` does not select it.
 ///
 /// mise plans the removal from the current config, not from a record of past
 /// runs, so keep the environment's config files until cleanup is done. Anything
@@ -1574,9 +1574,10 @@ struct BootstrapLaunchdStatus {
 /// Manage systemd user units from `[bootstrap.linux.systemd.units]`
 ///
 /// Writes unit files to ~/.config/systemd/user, then enables and starts them
-/// as configured. They run with your permissions and need a reachable systemd
-/// user manager. For system units, or a user service that also works on macOS
-/// and Windows, use `[bootstrap.services]`.
+/// as configured. An entry with `state = "absent"` is stopped, disabled, and
+/// deleted instead. Units run with your permissions and need a reachable
+/// systemd user manager. For system units, or a user service that also works
+/// on macOS and Windows, use `[bootstrap.services]`.
 #[derive(Debug, usage_rs::Args)]
 #[usage(verbatim_doc_comment)]
 struct BootstrapSystemd {
@@ -4727,6 +4728,7 @@ impl BootstrapStatus {
         }
         if !system::systemd::is_available() {
             let reason = system::systemd::unavailable_reason();
+            let units = system::systemd::resolve_absent(&units);
             for req in &units {
                 report.row(
                     "systemd",
@@ -4756,12 +4758,7 @@ impl BootstrapStatus {
         let mut json_entries = vec![];
         for s in system::systemd::status(&units).await? {
             let desired = s.is_desired();
-            let state = match &s.state {
-                SystemdState::Active => "active",
-                SystemdState::Inactive => "inactive",
-                SystemdState::Differs => "differs",
-                SystemdState::Missing => "missing",
-            };
+            let state = s.label();
             let missing = !desired;
             report.row(
                 "systemd",
@@ -5552,7 +5549,7 @@ impl BootstrapSystemdStatus {
                         json!({ "available": false, "reason": reason }),
                     );
                 } else {
-                    for req in &units {
+                    for req in &system::systemd::resolve_absent(&units) {
                         rows.push(vec![
                             req.name.clone(),
                             req.unit.clone(),
@@ -5566,18 +5563,7 @@ impl BootstrapSystemdStatus {
                 let mut json_entries = vec![];
                 for s in statuses {
                     let desired = s.is_desired();
-                    let state = match &s.state {
-                        SystemdState::Active => "active",
-                        SystemdState::Inactive => "inactive",
-                        SystemdState::Differs => {
-                            any_missing = true;
-                            "differs"
-                        }
-                        SystemdState::Missing => {
-                            any_missing = true;
-                            "missing"
-                        }
-                    };
+                    let state = s.label();
                     if !desired {
                         any_missing = true;
                     }

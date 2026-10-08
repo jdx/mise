@@ -11,9 +11,10 @@ description: "Remove what a config environment's bootstrap sections created"
 
 Remove what a config environment's bootstrap sections created
 
-Removes the files, directories, user services, and dotfile entries and edits
-that the named environments declare. Each named environment's config is
-loaded for this command even when `-E` or `MISE_ENV` does not select it.
+Removes the files, directories, user services, systemd user units, and
+dotfile entries and edits that the named environments declare. Each named
+environment's config is loaded for this command even when `-E` or
+`MISE_ENV` does not select it.
 
 mise plans the removal from the current config, not from a record of past
 runs, so keep the environment's config files until cleanup is done. Anything

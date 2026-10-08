@@ -13,9 +13,10 @@ description: "Manage systemd user units from `[bootstrap.linux.systemd.units]`"
 Manage systemd user units from `[bootstrap.linux.systemd.units]`
 
 Writes unit files to ~/.config/systemd/user, then enables and starts them
-as configured. They run with your permissions and need a reachable systemd
-user manager. For system units, or a user service that also works on macOS
-and Windows, use `[bootstrap.services]`.
+as configured. An entry with `state = "absent"` is stopped, disabled, and
+deleted instead. Units run with your permissions and need a reachable
+systemd user manager. For system units, or a user service that also works
+on macOS and Windows, use `[bootstrap.services]`.
 
 ## Flags
 - **`-h --help`** — Print help

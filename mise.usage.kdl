@@ -1459,9 +1459,10 @@ The host firewall in `[bootstrap.linux.firewall]` is managed by
 Manage systemd user units from `[bootstrap.linux.systemd.units]`
 
 Writes unit files to ~/.config/systemd/user, then enables and starts them
-as configured. They run with your permissions and need a reachable systemd
-user manager. For system units, or a user service that also works on macOS
-and Windows, use `[bootstrap.services]`.
+as configured. An entry with `state = "absent"` is stopped, disabled, and
+deleted instead. Units run with your permissions and need a reachable
+systemd user manager. For system units, or a user service that also works
+on macOS and Windows, use `[bootstrap.services]`.
 """#
             flag "-h --help" help="Print help" action=help builtin=#true
             cmd apply help="Install and start the configured systemd user units" effect=write {
@@ -2240,9 +2241,10 @@ This older spelling keeps working.
         long_help #"""
 Remove what a config environment's bootstrap sections created
 
-Removes the files, directories, user services, and dotfile entries and edits
-that the named environments declare. Each named environment's config is
-loaded for this command even when `-E` or `MISE_ENV` does not select it.
+Removes the files, directories, user services, systemd user units, and
+dotfile entries and edits that the named environments declare. Each named
+environment's config is loaded for this command even when `-E` or
+`MISE_ENV` does not select it.
 
 mise plans the removal from the current config, not from a record of past
 runs, so keep the environment's config files until cleanup is done. Anything

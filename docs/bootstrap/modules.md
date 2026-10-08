@@ -94,7 +94,8 @@ load only for that environment:
 
 Removing a module from `env` stops loading its declarations, but leaves its
 resources on the machine. `mise bootstrap unapply` removes the module's managed
-files, directories, user services, and dotfile entries and edits.
+files, directories, user services, systemd user units, and dotfile entries and
+edits.
 
 First, remove the module from `env` in `miserc.local.toml` (or wherever you
 selected it), so the next bootstrap does not apply it again. Keep the module's

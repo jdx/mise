@@ -122,6 +122,9 @@ persistent = true
 unit = "dev.mise.sync.service"
 wanted_by = ["timers.target"]
 
+[bootstrap.linux.systemd.units.old-sync]
+state = "absent"
+
 [bootstrap.mise_shell_activate]
 bash = true
 zsh = false
@@ -516,7 +519,8 @@ for unit in \
   '{ exec_start = "/bin/true", on_boot_sec = "1min" }' \
   '{ exec_start = "/bin/true", nice = 20 }' \
   '{ exec_start = "/bin/true", umask = "0888" }' \
-  '{ exec_start = "/bin/true", type = "daemon" }'; do
+  '{ exec_start = "/bin/true", type = "daemon" }' \
+  '{ exec_start = "/bin/true", state = "removed" }'; do
   cat >"$HOME/workdir/mise-bad-systemd.toml" <<TOML
 [bootstrap.linux.systemd.units]
 invalid = $unit

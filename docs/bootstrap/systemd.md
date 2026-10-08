@@ -197,8 +197,21 @@ whose names start with `dev.mise.`.
 
 ## Remove a unit
 
-Deleting a declaration leaves the unit installed. To stop, disable, and delete
-a service unit, run
+Set `state = "absent"` to stop, disable, and delete a unit, and keep it removed
+while the entry says so:
+
+```toml
+[bootstrap.linux.systemd.units.backup]
+state = "absent"
+```
+
+An absent entry removes both `dev.mise.<name>.timer` and
+`dev.mise.<name>.service`, so you do not have to say which kind it was, and its
+other keys can stay in place. Apply stops and disables the timer before the
+service, deletes the unit files, and runs `systemctl --user daemon-reload`.
+
+Deleting a declaration instead leaves the unit installed. To remove a service
+unit once, run
 [`mise bootstrap services remove`](/cli/bootstrap/services/remove.html):
 
 ```sh
@@ -206,9 +219,9 @@ mise bootstrap services remove my-sync
 ```
 
 If the entry is still declared, the next `mise bootstrap` installs it again.
-The command removes only `.service` units; for a timer, run
-`systemctl --user disable --now dev.mise.<name>.timer`, delete the file, and
-run `systemctl --user daemon-reload`.
+The command removes only `.service` units.
+[`mise bootstrap unapply`](/bootstrap/modules.html#remove-a-module-s-resources)
+removes the services and timers that a machine module declared.
 
 ## Preview and apply
 
@@ -228,7 +241,8 @@ mise bootstrap linux systemd-units apply --yes       # apply without prompting
 `systemd` is a shorter alias for `systemd-units`.
 
 Status reports each unit as `active`, `inactive`, `differs` (the unit file or
-its enablement does not match the declaration), or `missing`. Apply changes
+its enablement does not match the declaration), or `missing`. An absent entry
+is `present` while any of its unit files exist and `absent` once they are gone. Apply changes
 every unit that is not in its desired state: it writes the unit file, runs
 `systemctl --user daemon-reload`, enables units that have `wanted_by` and
 disables units with `wanted_by = []`, then restarts each unit with
@@ -298,6 +312,7 @@ directory.
 | ----------- | ---------------------------------------------------------------------------------------------------------------------------------- |
 | `wanted_by` | `WantedBy`; defaults to `["default.target"]` for services and `["timers.target"]` for timers. `[]` writes the unit and disables it |
 | `start`     | Defaults to `true`, which restarts the unit after apply; `false` stops it                                                          |
+| `state`     | `"present"` (the default) or `"absent"`, which removes the unit; see [Remove a unit](#remove-a-unit)                               |
 
 Unit names may contain letters, numbers, `.`, `_`, `-`, and `@`.
 
