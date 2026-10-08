@@ -1,5 +1,5 @@
 backends = [
-  { full = "packslip:github.com/jdx/hk", min_version = "1.58.1" },
+  { full = "packslip:github.com/jdx/hk", min_version = "1.58.1", options = { workflow = "release.yml" } },
   "aqua:jdx/hk",
 ]
 bins = ["hk"]

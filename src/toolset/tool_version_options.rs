@@ -158,6 +158,9 @@ pub enum ToolOptionSource {
 pub struct ResolvedToolOptions {
     options: ToolVersionOptions,
     sources: IndexMap<String, ToolOptionSource>,
+    /// The backend whose registry entry supplied the `Registry` options. They
+    /// are that backend's settings, and no other backend should read them.
+    registry_backend: Option<String>,
 }
 
 impl std::fmt::Debug for ResolvedToolOptions {
@@ -183,6 +186,32 @@ impl Hash for ResolvedToolOptions {
 }
 
 impl ResolvedToolOptions {
+    /// Apply the registry options of `backend`, remembering whose they are.
+    pub(crate) fn apply_registry(&mut self, options: &ToolVersionOptions, backend: &str) {
+        self.registry_backend = Some(backend.to_string());
+        self.apply_overrides(options, ToolOptionSource::Registry);
+    }
+
+    /// The backend whose registry options these carry, as a name without
+    /// inline options.
+    pub(crate) fn registry_backend(&self) -> Option<&str> {
+        self.registry_backend.as_deref()
+    }
+
+    /// Copy every option that did not come from the registry into `target`,
+    /// keeping each one's source.
+    pub(crate) fn extend_without_registry(&self, target: &mut Self) {
+        for source in [
+            ToolOptionSource::InstallManifest,
+            ToolOptionSource::BackendAlias,
+            ToolOptionSource::Config,
+            ToolOptionSource::Request,
+            ToolOptionSource::InlineBackendArg,
+        ] {
+            target.apply_overrides(&self.options_from_sources(&[source]), source);
+        }
+    }
+
     pub(crate) fn effective(&self) -> &ToolVersionOptions {
         &self.options
     }
@@ -1002,6 +1031,34 @@ mod tests {
         assert_eq!(
             user.opts.keys().collect::<Vec<_>>(),
             vec!["list_identity_prefix", "issuer", "identity_prefix"]
+        );
+    }
+
+    #[test]
+    fn registry_options_remember_the_backend_that_supplied_them() {
+        let mut resolved = ResolvedToolOptions::default();
+        assert_eq!(resolved.registry_backend(), None);
+        resolved.apply_registry(&opts(&[("workflow", "x")]), "packslip:github.com/o/r");
+        assert_eq!(resolved.registry_backend(), Some("packslip:github.com/o/r"));
+    }
+
+    #[test]
+    fn extend_without_registry_keeps_only_user_sourced_options() {
+        let mut resolved = ResolvedToolOptions::default();
+        resolved.apply_overrides(
+            &opts(&[("workflow", "release.yml")]),
+            ToolOptionSource::Registry,
+        );
+        resolved.apply_overrides(&opts(&[("variant", "musl")]), ToolOptionSource::Config);
+        let mut kept = ResolvedToolOptions::default();
+        resolved.extend_without_registry(&mut kept);
+        assert_eq!(
+            kept.effective().opts.keys().collect::<Vec<_>>(),
+            vec!["variant"]
+        );
+        assert_eq!(
+            kept.source_for_key("variant"),
+            Some(ToolOptionSource::Config)
         );
     }
 

@@ -242,18 +242,10 @@ impl ToolRequest {
         let Some(backend) = self.ba().with_registry_version(version) else {
             return self;
         };
-        let previous = self.resolved_options().clone();
         let mut options = ResolvedToolOptions::default();
-        options.apply_overrides(&backend.registry_opts(), ToolOptionSource::Registry);
-        for source in [
-            ToolOptionSource::InstallManifest,
-            ToolOptionSource::BackendAlias,
-            ToolOptionSource::Config,
-            ToolOptionSource::Request,
-            ToolOptionSource::InlineBackendArg,
-        ] {
-            options.apply_overrides(&previous.options_from_sources(&[source]), source);
-        }
+        options.apply_registry(&backend.registry_opts(), &backend.full_without_opts());
+        self.resolved_options()
+            .extend_without_registry(&mut options);
         *self.resolved_options_mut() = options;
         match &mut self {
             Self::Version { backend: b, .. }
@@ -386,6 +378,32 @@ impl ToolRequest {
             "lazy tool {} has no registry bin metadata; set lazy_bins explicitly",
             self.ba().short
         )
+    }
+
+    /// Whether the registry options this request carries were supplied by a
+    /// backend other than `recorded`, which a lock entry names. A request that
+    /// carries none has nothing to differ.
+    pub(crate) fn registry_options_are_not_for(&self, recorded: &str) -> bool {
+        let name = |full: &str| {
+            crate::args::split_bracketed_opts(full)
+                .map_or(full, |(name, _)| name)
+                .to_string()
+        };
+        self.resolved_options()
+            .registry_backend()
+            .is_some_and(|supplier| name(supplier) != name(recorded))
+    }
+
+    /// This request without the registry's defaults, for a lock entry bound to
+    /// another backend than the one the registry chose: those defaults belong
+    /// to the registry's backend, which may read them as its own settings.
+    pub(crate) fn without_registry_options(&self) -> Self {
+        let mut request = self.clone();
+        let mut options = ResolvedToolOptions::default();
+        self.resolved_options()
+            .extend_without_registry(&mut options);
+        *request.resolved_options_mut() = options;
+        request
     }
 
     pub(crate) fn explicit_options(&self) -> ToolVersionOptions {
