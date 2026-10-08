@@ -41,6 +41,12 @@ impl Commands {
 
 impl Direnv {
     pub(crate) async fn run(self) -> Result<()> {
+        deprecated_at!(
+            "2026.10.4",
+            "2027.10.4",
+            "cli.direnv",
+            "`mise direnv` and the `use mise` direnv integration are deprecated. Use `mise activate`, and move .envrc settings into mise.toml `[env]` (see https://mise.jdx.dev/direnv.html)."
+        );
         let config = Config::get().await?;
         let cmd = self
             .command

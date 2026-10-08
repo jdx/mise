@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+
+# `mise direnv` was deprecated in #3464; it still runs, with a warning
+assert_contains "mise direnv 2>&1" "deprecated [cli.direnv]"
+assert_contains "mise direnv activate 2>&1" "deprecated [cli.direnv]"
+assert_contains "mise direnv activate 2>/dev/null" "use_mise()"
