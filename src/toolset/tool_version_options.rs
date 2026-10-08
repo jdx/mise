@@ -316,6 +316,17 @@ const SIGNER_OPTION_KEYS: [&str; 5] = [
     "issuer",
 ];
 
+/// The registry options that go with its signer: the release list's signer is
+/// judged by the bundle signer's issuer, so it cannot outlive the issuer.
+const REGISTRY_SIGNER_POLICY_KEYS: [&str; 6] = [
+    "workflow",
+    "pubkey",
+    "identity",
+    "identity_prefix",
+    "issuer",
+    "list_identity_prefix",
+];
+
 /// Whether `user` sets a signer option, which retires the registry's.
 fn sets_signer_option(user: &ToolVersionOptions) -> bool {
     SIGNER_OPTION_KEYS
@@ -328,7 +339,7 @@ fn sets_signer_option(user: &ToolVersionOptions) -> bool {
 pub(crate) fn fill_registry_defaults(user: &mut ToolVersionOptions, registry: ToolVersionOptions) {
     let user_signer = sets_signer_option(user);
     for (key, value) in registry.opts {
-        if user_signer && SIGNER_OPTION_KEYS.contains(&key.as_str()) {
+        if user_signer && REGISTRY_SIGNER_POLICY_KEYS.contains(&key.as_str()) {
             continue;
         }
         user.opts.entry(key).or_insert(value);
@@ -344,7 +355,7 @@ impl ResolvedToolOptions {
         if source == ToolOptionSource::Registry || !sets_signer_option(options) {
             return;
         }
-        for key in SIGNER_OPTION_KEYS {
+        for key in REGISTRY_SIGNER_POLICY_KEYS {
             if self.sources.get(key) == Some(&ToolOptionSource::Registry) {
                 self.options.opts.shift_remove(key);
                 self.sources.shift_remove(key);
@@ -963,6 +974,34 @@ mod tests {
         assert_eq!(
             user.opts.keys().collect::<Vec<_>>(),
             vec!["variant", "workflow"]
+        );
+    }
+
+    #[test]
+    fn user_signer_drops_the_registry_release_list_signer_too() {
+        let registry = || {
+            opts(&[
+                ("issuer", "x"),
+                ("identity_prefix", "p"),
+                ("list_identity_prefix", "l"),
+            ])
+        };
+        let mut resolved = ResolvedToolOptions::default();
+        resolved.apply_overrides(&registry(), ToolOptionSource::Registry);
+        resolved.apply_overrides(&opts(&[("identity", "mine")]), ToolOptionSource::Config);
+        assert_eq!(
+            resolved.effective().opts.keys().collect::<Vec<_>>(),
+            vec!["identity"]
+        );
+        let mut user = opts(&[("identity", "mine")]);
+        fill_registry_defaults(&mut user, registry());
+        assert_eq!(user.opts.keys().collect::<Vec<_>>(), vec!["identity"]);
+        // A user's own release-list signer does not retire the bundle signer.
+        let mut user = opts(&[("list_identity_prefix", "mine")]);
+        fill_registry_defaults(&mut user, registry());
+        assert_eq!(
+            user.opts.keys().collect::<Vec<_>>(),
+            vec!["list_identity_prefix", "issuer", "identity_prefix"]
         );
     }
 
