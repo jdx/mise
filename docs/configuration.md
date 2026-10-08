@@ -543,13 +543,15 @@ are available immediately. `file://` URLs are Git repositories and are cloned.
 
 ### `include` {#include}
 
-`include` merges remote config files into this one, so an organization can
-publish a baseline that every repository uses:
+`include` merges other config files into this one, so an organization can
+publish a baseline that every repository uses, or a repository can split its
+config across files:
 
 ```toml
 include = [
   "git::https://github.com/myorg/platform.git//mise.toml?ref=main",
   "oci::ghcr.io/myorg/platform-config@sha256:0f1e2d3c4b5a69788796a5b4c3d2e1f00f1e2d3c4b5a69788796a5b4c3d2e1f0",
+  "./shared/tools.toml",
 ]
 
 [tools]
@@ -557,7 +559,8 @@ node = "24" # this file's own entries override the included ones
 ```
 
 A `git::` include points at a `.toml` file. An `oci::` include points at an
-artifact with a `mise.toml` at its root.
+artifact with a `mise.toml` at its root. Any other entry is a local path,
+absolute or relative to the directory of the including file.
 
 An included file ranks directly below the file that includes it, and a later entry
 in `include` overrides an earlier one. Its relative paths, such as `_.file`,
@@ -585,7 +588,11 @@ Once you trust the file, the included content runs with that trust, as a
 [paranoid mode](/paranoid.html#remote-includes), an include must be pinned to a
 commit SHA or an OCI digest.
 
-mise caches each included file under `MISE_CACHE_DIR` and never refetches a
+A local include is read from disk every time, and a change to it takes effect
+like a change to the including file. It cannot be a symlink, and paranoid mode
+refuses it, since the including file's hash does not cover it.
+
+mise caches each remote included file under `MISE_CACHE_DIR` and never refetches a
 commit SHA or an OCI digest. Commands such as `mise install`, `mise use`, and
 `mise upgrade` refresh a branch, tag, or OCI tag once the cached copy is older
 than

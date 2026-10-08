@@ -77,6 +77,9 @@ include = [
 ]
 ```
 
+Paranoid mode refuses a local `include` path, since the hash of the trusted
+file does not cover the file it names.
+
 ## Community plugins
 
 In normal mode, installing a community plugin by short name asks for

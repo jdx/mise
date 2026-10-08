@@ -59,6 +59,9 @@ pub(crate) async fn apply(cf: Arc<dyn ConfigFile>) -> Result<Arc<dyn ConfigFile>
 
 /// The cached copy of a fragment, refreshed first when it is due.
 async fn load(parent: &Path, reference: &str) -> Result<(PathBuf, String)> {
+    if is_local(reference) {
+        return load_local(parent, reference);
+    }
     let pin = classify(reference)?;
     if pin == Pin::Mutable && Settings::try_get().is_ok_and(|s| s.paranoid) {
         bail!(
@@ -103,6 +106,34 @@ async fn load(parent: &Path, reference: &str) -> Result<(PathBuf, String)> {
         Err(err) => return Err(err),
     };
     Ok((cache, body))
+}
+
+/// A local include is read straight from disk on every load, so there is no
+/// cache to refresh. Its path is what hook-env watches for changes.
+fn load_local(parent: &Path, reference: &str) -> Result<(PathBuf, String)> {
+    if Settings::try_get().is_ok_and(|s| s.paranoid) {
+        bail!(
+            "paranoid mode binds trust to content, and a local config include is not covered \
+             by the including file's hash: {reference}"
+        );
+    }
+    let path = parent
+        .parent()
+        .unwrap_or_else(|| Path::new("."))
+        .join(reference);
+    debug!("config include {reference}: local file {}", path.display());
+    let body = read_fragment(&path)?;
+    MiseToml::parse_remote_fragment(&body, parent)
+        .wrap_err_with(|| format!("invalid config include {reference}"))?;
+    Ok((path, body))
+}
+
+/// Anything that is not a `git::` or `oci::` reference names a file, relative
+/// to the including file's directory unless it is absolute.
+fn is_local(reference: &str) -> bool {
+    !reference.starts_with("git::")
+        && !reference.starts_with(OCI_INCLUDE_PREFIX)
+        && !reference.contains("://")
 }
 
 /// `None` is offline mode, where a cached fragment is always used.
@@ -173,7 +204,7 @@ fn classify(reference: &str) -> Result<Pin> {
         let is_sha = git.git_ref.as_deref().is_some_and(|r| is_hex(r, &[40, 64]));
         return Ok(if is_sha { Pin::Immutable } else { Pin::Mutable });
     }
-    bail!("a config include must be a git:: URL or an oci:: reference: {reference}")
+    bail!("a config include must be a git:: URL, an oci:: reference or a local path: {reference}")
 }
 
 fn is_hex(s: &str, lens: &[usize]) -> bool {
@@ -218,7 +249,8 @@ mod tests {
     #[test]
     fn rejects_other_sources_and_directories() {
         assert!(classify("https://example.com/mise.toml").is_err());
-        assert!(classify("./local.toml").is_err());
+        assert!(is_local("./local.toml") && is_local("/etc/mise/base.toml"));
+        assert!(!is_local("https://example.com/mise.toml"));
         let dir = format!("git::https://github.com/org/repo.git//base?ref={SHA}");
         assert!(classify(&dir).is_err());
     }

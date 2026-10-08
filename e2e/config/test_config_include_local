@@ -1,0 +1,80 @@
+#!/usr/bin/env bash
+# `include` also takes a local path, relative to the including file or absolute.
+
+version_of() {
+  mise ls --json | jq -r --arg t "$1" '.[$t][0].requested_version // empty'
+}
+export -f version_of
+
+mkdir -p shared sub
+cat >shared/tools.toml <<'TOML'
+[tools]
+tiny = "1"
+shellcheck = "0.9"
+
+[env]
+FROM_LOCAL = "yes"
+ROOT = "{{ config_root }}"
+TOML
+
+# relative to the including file; its own entries win
+cat >mise.toml <<'TOML'
+include = ["shared/tools.toml"]
+
+[tools]
+shellcheck = "0.10"
+TOML
+assert "version_of tiny" "1"
+assert "version_of shellcheck" "0.10"
+assert "mise env --json | jq -r .FROM_LOCAL" "yes"
+assert "mise env --json | jq -r .ROOT" "$PWD"
+
+# absolute and templated paths
+cat >mise.toml <<TOML
+include = ["$PWD/shared/tools.toml"]
+TOML
+assert "version_of tiny" "1"
+cat >mise.toml <<'TOML'
+include = ["{{ config_root }}/shared/tools.toml"]
+TOML
+assert "version_of tiny" "1"
+
+# a change is picked up without any cache refresh
+cat >shared/tools.toml <<'TOML'
+[tools]
+tiny = "2"
+TOML
+cat >mise.toml <<'TOML'
+include = ["shared/tools.toml"]
+TOML
+assert "version_of tiny" "2"
+
+# unsupported sections are refused, as in a remote include
+cat >shared/bad.toml <<'TOML'
+[settings]
+experimental = true
+TOML
+cat >mise.toml <<'TOML'
+include = ["shared/bad.toml"]
+TOML
+assert_fail_contains "mise ls" "is not supported in a config include"
+
+# a missing file is an error
+cat >mise.toml <<'TOML'
+include = ["shared/missing.toml"]
+TOML
+assert_fail_contains "mise ls" "failed to load config include"
+
+# plain http(s) URLs are still not accepted
+cat >mise.toml <<'TOML'
+include = ["https://example.com/mise.toml"]
+TOML
+assert_fail_contains "mise ls" "must be a git:: URL"
+
+# paranoid mode refuses a local include
+cat >mise.toml <<'TOML'
+include = ["shared/tools.toml"]
+TOML
+export MISE_PARANOID=1
+assert_succeed "mise trust"
+assert_fail_contains "mise ls" "paranoid mode"
