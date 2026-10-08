@@ -2531,7 +2531,11 @@ pub fn un_dmg(archive: &Path, dest: &Path) -> Result<()> {
     run_blocking(|| {
         // Hold a lock on the archive so another live extraction of the same image is never
         // mistaken for an interrupted one by `detach_stale_dmg`.
-        let _lock = crate::lock_file::LockFile::new(archive).lock()?;
+        // The lock sits next to the archive, not in the cache dir, so processes with different
+        // MISE_CACHE_DIRs still coordinate on the same image.
+        let mut lock_path = archive.as_os_str().to_owned();
+        lock_path.push(".lock");
+        let _lock = crate::lock_file::LockFile::at(Path::new(&lock_path)).lock()?;
         detach_stale_dmg(archive);
         let tmp = tempfile::TempDir::new()?;
         cmd!(
