@@ -4606,6 +4606,28 @@ fn default_task_includes() -> Vec<String> {
     ]
 }
 
+/// The default task directories of the user-global scope.
+///
+/// With a global config file, these are the default task directories at
+/// `MISE_GLOBAL_CONFIG_ROOT` plus `$MISE_CONFIG_DIR/tasks`, which
+/// `.config/mise/tasks` covers only when the config directory is the default
+/// `~/.config/mise`. Without one, only `$MISE_CONFIG_DIR/tasks` is global: the
+/// other directories at that root belong to the local walk, which applies the
+/// `task_config` of a config there such as `~/mise.toml`.
+fn user_global_task_includes(has_config: bool) -> Vec<String> {
+    let global_tasks = dirs::CONFIG.join("tasks");
+    // The path is a literal directory, so escape any glob metacharacters in it.
+    let global_include = glob::Pattern::escape(&global_tasks.to_string_lossy());
+    if !has_config {
+        return vec![global_include];
+    }
+    let mut includes = default_task_includes();
+    if global_tasks != env::MISE_GLOBAL_CONFIG_ROOT.join(".config/mise/tasks") {
+        includes.push(global_include);
+    }
+    includes
+}
+
 fn is_global_task_include_path(path: &Path) -> bool {
     [
         dirs::CONFIG.join("tasks"),
@@ -5417,7 +5439,10 @@ async fn load_global_tasks(config: &Arc<Config>, templates: &TaskDefinitions) ->
     // inheriting metadata from it.
     let mut seen_configs = BTreeSet::new();
     let mut config_groups = vec![];
-    for config_paths in [global_config_files(), system_config_files()] {
+    for (user_scope, config_paths) in [
+        (true, global_config_files()),
+        (false, system_config_files()),
+    ] {
         let configs = config_paths
             .iter()
             .rev()
@@ -5433,8 +5458,13 @@ async fn load_global_tasks(config: &Arc<Config>, templates: &TaskDefinitions) ->
             })
             .filter(|cf| seen_configs.insert(file::desymlink_path(cf.get_path())))
             .collect::<Vec<_>>();
-        if !configs.is_empty() {
-            config_groups.push(configs);
+        // `$MISE_CONFIG_DIR/tasks` holds global tasks even when no global
+        // config file exists.
+        if user_scope {
+            let default_includes = user_global_task_includes(!configs.is_empty());
+            config_groups.push((configs, Some(default_includes)));
+        } else if !configs.is_empty() {
+            config_groups.push((configs, None));
         }
     }
 
@@ -5443,18 +5473,23 @@ async fn load_global_tasks(config: &Arc<Config>, templates: &TaskDefinitions) ->
     // simple first-wins replacement by task name.
     let mut tasks: IndexMap<String, Task> = IndexMap::new();
     let mut rendered_file_tasks = RenderedTaskCache::default();
-    for configs in config_groups {
-        let scope_tasks = load_tasks_from_configs_and_folders(
+    for (configs, default_includes) in config_groups {
+        let mut scope_tasks = load_tasks_from_configs_and_folders(
             config,
             &env::MISE_GLOBAL_CONFIG_ROOT,
             configs,
             templates,
-            false,
-            None,
-            Some(&mut rendered_file_tasks),
+            TaskSourceOptions {
+                rendered_file_tasks: Some(&mut rendered_file_tasks),
+                default_includes,
+                ..Default::default()
+            },
         )
         .await?;
         rendered_file_tasks.finish_config();
+        // A global config marks its tasks global. Without one, the scope's
+        // task directory still holds global tasks.
+        mark_tasks_as_global(&mut scope_tasks);
         for task in scope_tasks {
             tasks.entry(task.name.clone()).or_insert(task);
         }
@@ -6653,11 +6688,28 @@ async fn load_tasks_from_configs(
         dir,
         configs,
         templates,
-        monorepo_context,
-        cascaded_task_config,
-        None,
+        TaskSourceOptions {
+            monorepo_context,
+            cascaded_task_config,
+            ..Default::default()
+        },
     )
     .await
+}
+
+/// How a task root loads, beyond its configs.
+#[derive(Default)]
+struct TaskSourceOptions<'a> {
+    monorepo_context: bool,
+    cascaded_task_config: Option<&'a CascadedTaskConfig>,
+    /// Shared by the global user and system scopes, see
+    /// [`load_task_sources_from_configs`].
+    rendered_file_tasks: Option<&'a mut RenderedTaskCache>,
+    /// The task directories searched when no config sets
+    /// `task_config.includes`, in place of [`default_task_includes`]. For
+    /// [`load_tasks_from_configs_and_folders`], this applies to `dir` and not
+    /// to its conf.d folders.
+    default_includes: Option<Vec<String>>,
 }
 
 /// The configs of one task root, with each config's precedence among all the
@@ -6689,10 +6741,14 @@ async fn load_tasks_from_configs_and_folders(
     dir: &Path,
     configs: Vec<&Arc<dyn ConfigFile>>,
     templates: &TaskDefinitions,
-    monorepo_context: bool,
-    cascaded_task_config: Option<&CascadedTaskConfig>,
-    mut rendered_file_tasks: Option<&mut RenderedTaskCache>,
+    options: TaskSourceOptions<'_>,
 ) -> Result<Vec<Task>> {
+    let TaskSourceOptions {
+        monorepo_context,
+        cascaded_task_config,
+        mut rendered_file_tasks,
+        mut default_includes,
+    } = options;
     let mut roots: IndexMap<PathBuf, TaskRootConfigs> = IndexMap::new();
     roots.insert(dir.to_path_buf(), TaskRootConfigs::default());
     for (precedence, cf) in configs.into_iter().enumerate() {
@@ -6750,9 +6806,13 @@ async fn load_tasks_from_configs_and_folders(
             &root,
             configs,
             templates,
-            monorepo_context,
-            root_cascaded_task_config,
-            rendered_file_tasks.as_deref_mut(),
+            TaskSourceOptions {
+                monorepo_context,
+                cascaded_task_config: root_cascaded_task_config,
+                rendered_file_tasks: rendered_file_tasks.as_deref_mut(),
+                // `dir` is the first root, so only it takes these.
+                default_includes: default_includes.take(),
+            },
         )
         .await?;
         let global_precedence = |task: &Task| {
@@ -6808,10 +6868,14 @@ async fn load_task_sources_from_configs(
     dir: &Path,
     configs: Vec<&Arc<dyn ConfigFile>>,
     templates: &TaskDefinitions,
-    monorepo_context: bool,
-    cascaded_task_config: Option<&CascadedTaskConfig>,
-    mut rendered_file_tasks: Option<&mut RenderedTaskCache>,
+    options: TaskSourceOptions<'_>,
 ) -> Result<TaskSources> {
+    let TaskSourceOptions {
+        monorepo_context,
+        cascaded_task_config,
+        mut rendered_file_tasks,
+        default_includes,
+    } = options;
     let cascaded_task_config =
         if configs.iter().find_map(|cf| cf.task_config().cascade) == Some(false) {
             None
@@ -6839,7 +6903,13 @@ async fn load_task_sources_from_configs(
                     .map(|includes| (includes, tc.includes_root.clone(), configs.len()))
             })
         })
-        .unwrap_or_else(|| (default_task_includes(), dir.to_path_buf(), configs.len()));
+        .unwrap_or_else(|| {
+            (
+                default_includes.unwrap_or_else(default_task_includes),
+                dir.to_path_buf(),
+                configs.len(),
+            )
+        });
     let (excludes, excludes_root) = configs
         .iter()
         .find_map(|cf| match cf.task_config_excludes() {
