@@ -154,7 +154,7 @@ run = "cargo insta test --all-features --accept --unreferenced delete"
 [test]
 description = "run all tests"
 alias = 't'
-run = ["mise tasks run test:unit", "mise tasks run test:e2e"]
+run = ["mise tasks run test:unit", "mise tasks run test:e2e --all"]
 
 ["test:unit"]
 description = "run unit tests"
@@ -170,11 +170,6 @@ run = [
   "cargo nextest run --profile ${NEXTEST_PROFILE:-ci} --workspace --exclude mise --ignore-rust-version --no-fail-fast",
   "cargo test --doc --workspace --exclude mise --ignore-rust-version",
 ]
-
-["test:e2e"]
-description = "run end-to-end tests"
-depends = ["build"]
-run = "e2e/run_all_tests"
 
 ["test:shuffle"]
 description = 'Run tests with shuffling enabled'

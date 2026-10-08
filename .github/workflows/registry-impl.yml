@@ -163,7 +163,7 @@ jobs:
             echo "::error::New tools missing required 'test' field:$missing_tests"
             echo ""
             echo "All new tools must include a test field, e.g.:"
-            echo '  test = ["mytool --version", "v{{version}}"]'
+            echo '  test = { cmd = "mytool --version", expected = "{{version}}" }'
             exit 1
           fi
           echo "All new tools have tests"
