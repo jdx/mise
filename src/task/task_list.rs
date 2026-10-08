@@ -2,7 +2,7 @@ use crate::config::{self, Config, SettingsExt};
 use crate::file::display_path;
 use crate::task::{
     GetMatchingExt, Task, TaskLoadContext, extract_monorepo_path, is_workspace_project_task,
-    resolve_task_pattern,
+    name_from_path, resolve_task_pattern,
 };
 use crate::ui::ctrlc;
 use crate::ui::{prompt, style};
@@ -11,6 +11,7 @@ use console::Term;
 use demand::{DemandOption, Select};
 use eyre::{Result, bail, ensure, eyre};
 use itertools::Itertools;
+use path_absolutize::Absolutize;
 use std::collections::{BTreeMap, HashSet};
 use std::iter::once;
 use std::path::PathBuf;
@@ -515,7 +516,13 @@ pub async fn get_task_lists(
                     .clone()
                     .or_else(|| dirs::CWD.clone())
                     .unwrap_or_default();
-                let task = Task::from_path(config, &path, &PathBuf::new(), &config_root).await?;
+                // A task resolves a relative file against its config root, but this path is
+                // relative to where mise was run, so make it absolute. The name still comes
+                // from the path as typed.
+                let abs_path = path.absolutize()?;
+                let mut task =
+                    Task::from_path(config, &abs_path, &PathBuf::new(), &config_root).await?;
+                task.name = name_from_path(PathBuf::new(), &path)?;
                 return Ok(vec![task.with_args(args)]);
             }
         }
