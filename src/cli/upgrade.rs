@@ -704,8 +704,10 @@ impl Upgrade {
                 refresh_remote_versions: false,
                 inactive: self.inactive,
                 warn_not_in_lockfile: true,
-                defer_missing_lazy_tools: false,
-                defer_missing_lazy_online: false,
+                // What resolves after the install leaves missing lazy tools alone, as the
+                // toolset builder did before it.
+                defer_missing_lazy_tools: self.for_auto_update,
+                defer_missing_lazy_online: self.for_auto_update,
             },
             locked: false,
             ..Default::default()
@@ -867,7 +869,13 @@ impl Upgrade {
 
             // Rebuild symlinks BEFORE getting versions needed by tracked configs
             // This ensures "latest" symlinks point to the new versions, not the old ones
-            let ts = config.get_toolset().await?;
+            let ts = config
+                .get_toolset_with_opts(&ResolveOptions {
+                    defer_missing_lazy_tools: self.for_auto_update,
+                    defer_missing_lazy_online: self.for_auto_update,
+                    ..Default::default()
+                })
+                .await?;
             runtime_symlinks::rebuild_for_toolset(config, ts)
                 .await
                 .wrap_err("failed to rebuild runtime symlinks")?;
@@ -921,6 +929,7 @@ impl Upgrade {
                     true,
                     false,
                     &upgraded_config_paths,
+                    self.for_auto_update,
                 )
                 .await?;
                 needed.extend(get_versions_needed_by_tracked_stubs(config).await?);
