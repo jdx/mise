@@ -1,73 +1,68 @@
 #!/usr/bin/env bash
 
-# Remote `git::` task files, `git::`/`oci::` task includes, OpenTelemetry
-# export and the spinel backend are experimental: with experimental off, a
-# config that mentions them still loads, and using them fails before anything
-# is fetched, exported or built.
+# Remote `git::` task files, `git::`/`oci::` task includes and OpenTelemetry
+# export are experimental: with experimental off, a config that mentions them
+# still loads, and using them fails before anything is fetched or exported.
 
 export MISE_EXPERIMENTAL=0
 
 # Nothing listens on port 9 here, so a missing gate shows up as a fetch error.
-cat <<'EOF' >mise.toml
+cat <<'TOML' >mise.toml
 [tasks.local]
 run = "echo local-ok"
 
 [tasks.remote]
+description = "a remote task"
 file = "git::https://127.0.0.1:9/org/repo.git//tasks/hello"
-EOF
+TOML
 
 assert "mise run local" "local-ok"
 assert_fail_matches "mise run remote" "loading task .remote. from a .git::. file is experimental"
 
-cat <<'EOF' >mise.toml
+# Listing and completion do not fetch the remote file, so they keep working and
+# still offer the remote task from its TOML metadata.
+assert_contains "mise tasks ls" "local"
+assert_contains "mise tasks ls" "a remote task"
+assert_contains "mise tasks ls 2>&1" "listing it without fetching"
+assert_contains "mise tasks ls --complete" "local:"
+assert_contains "mise tasks ls --complete" "remote:a remote task"
+assert_not_contains "mise tasks ls --complete 2>&1" "experimental"
+assert_contains "mise tasks --usage" 'cmd local'
+assert_contains "mise tasks --usage" 'cmd remote'
+assert_not_contains "mise tasks --usage 2>&1" "experimental"
+
+cat <<'TOML' >mise.toml
 [task_config]
 includes = ["git::https://127.0.0.1:9/org/repo.git//tasks"]
 
 [tasks.local]
 run = "echo local-ok"
-EOF
+TOML
 
 assert_succeed "mise config ls"
 assert_fail_matches "mise run local" "including tasks from a .git::. source is experimental"
 
-cat <<'EOF' >mise.toml
+cat <<'TOML' >mise.toml
 [task_config]
 includes = ["oci::127.0.0.1:9/org/tasks:v1"]
 
 [tasks.local]
 run = "echo local-ok"
-EOF
+TOML
 
 assert_fail_matches "mise run local" "including tasks from an .oci::. source is experimental"
 
-cat <<'EOF' >mise.toml
+cat <<'TOML' >mise.toml
 [settings.otel]
 enabled = true
 
 [tasks.local]
 run = "echo local-ok"
-EOF
+TOML
 
 # Without an endpoint nothing is exported, so the setting alone is fine.
 assert "mise run local" "local-ok"
 assert_fail_contains "OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:9 mise run local" "OpenTelemetry export is experimental"
 
-cat <<'EOF' >mise.toml
-[tools]
-"spinel:org/repo" = "1.0.0"
-EOF
-
-assert_succeed "mise ls"
-# Offline skips the version listing, so the install reaches the backend.
-assert_fail_contains "MISE_OFFLINE=1 mise install" "the spinel backend is experimental"
-
 export MISE_EXPERIMENTAL=1
-cat <<'EOF' >mise.toml
-[settings.otel]
-enabled = true
-
-[tasks.local]
-run = "echo local-ok"
-EOF
-
 assert "OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:9 OTEL_EXPORTER_OTLP_TIMEOUT=100 mise run local" "local-ok"

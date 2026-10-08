@@ -71,11 +71,32 @@ fn take_remote_task_artifacts() -> Vec<Arc<OnceCell<TaskFileArtifact>>> {
 /// Handles fetching remote task files and converting them to local paths
 pub struct TaskFetcher {
     no_cache: bool,
+    listing: bool,
 }
 
 impl TaskFetcher {
     pub fn new(no_cache: bool) -> Self {
-        Self { no_cache }
+        Self {
+            no_cache,
+            listing: false,
+        }
+    }
+
+    /// For commands that only list tasks, such as `mise tasks ls` and its completion modes.
+    /// With experimental features off, a task with a `git::` file is left unfetched, keeping
+    /// only its TOML metadata, rather than failing the whole list.
+    pub fn for_listing(no_cache: bool) -> Self {
+        Self {
+            no_cache,
+            listing: true,
+        }
+    }
+
+    /// True for a task whose `file` is a `git::` source that has not been fetched.
+    pub fn is_unfetched_git_task(task: &Task) -> bool {
+        task.file
+            .as_ref()
+            .is_some_and(|f| f.to_string_lossy().starts_with("git::"))
     }
 
     /// Fetch remote task files, converting remote paths to local cached paths
@@ -94,6 +115,9 @@ impl TaskFetcher {
                     continue;
                 }
                 if source.starts_with("git::") {
+                    if self.listing && !Settings::get().experimental {
+                        continue;
+                    }
                     Settings::get().ensure_experimental(&format!(
                         "loading task `{}` from a `git::` file",
                         t.name

@@ -159,9 +159,19 @@ impl TasksLs {
         let mut tasks = tasks;
         // always pass no_cache=false as the command doesn't take no-cache argument
         // MISE_TASK_REMOTE_NO_CACHE env var is still respected if set
-        TaskFetcher::new(false)
+        TaskFetcher::for_listing(false)
             .fetch_tasks(&config, &mut tasks)
             .await?;
+        // Completion output goes to the shell, so only the human-facing modes warn.
+        if !self.complete
+            && !self.usage
+            && let Some(task) = tasks.iter().find(|t| TaskFetcher::is_unfetched_git_task(t))
+        {
+            warn!(
+                "task `{}` has a `git::` file, which is experimental; listing it without fetching. Enable it with `mise settings experimental=true`",
+                task.display_name
+            );
+        }
 
         // Warn about non-executable files only when there are truly no tasks at all
         // (not just filtered out by --hidden/--local/--global)
@@ -235,7 +245,15 @@ impl TasksLs {
         let mut usage = usage::Spec::default();
         let current_root = current_root_prefix(config);
         for task in tasks {
-            let mut task_spec = task.parse_usage_spec_for_display(config).await?;
+            let mut task_spec = if TaskFetcher::is_unfetched_git_task(&task) {
+                // Without experimental the remote file was not fetched, so its `#USAGE`
+                // header is unknown; complete the task from its TOML metadata alone.
+                let mut toml_only = task.clone();
+                toml_only.file = None;
+                toml_only.parse_usage_spec_for_display(config).await?
+            } else {
+                task.parse_usage_spec_for_display(config).await?
+            };
             for (name, complete) in task_spec.complete {
                 task_spec.cmd.complete.insert(name, complete);
             }
