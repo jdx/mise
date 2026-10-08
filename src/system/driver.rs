@@ -6,7 +6,9 @@ use eyre::{Result, bail};
 
 use crate::config::Settings;
 use crate::system::ManagerPackages;
-use crate::system::packages::{InstallOpts, PackageDesiredState, PackageState, PackageStatus};
+use crate::system::packages::{
+    InstallOpts, PackageDesiredState, PackageRequest, PackageState, PackageStatus,
+};
 use crate::ui::prompt;
 
 #[derive(Clone, Copy, PartialEq)]
@@ -83,224 +85,287 @@ pub async fn run(mgrs: Vec<ManagerPackages>, action: Action, d: &DriverOpts) -> 
         dry_run: d.dry_run,
         update: d.update,
     };
+    // Each manager runs on its own: one that fails (a removal it refuses, a
+    // package that does not exist, a broken repository) must not skip the
+    // managers queued after it. Every failure is still reported, and still
+    // fails the run, once all of them have had their turn.
+    let mut failures = vec![];
     for mp in mgrs {
         if let Some(only) = &d.manager
             && mp.manager.name() != only
         {
             continue;
         }
+        let mut errors = vec![];
+        if let Err(err) = run_manager(&mp, action, d, &opts, &mut errors).await {
+            errors.push(err);
+        }
         let name = mp.manager.name();
-        if mp.disabled {
-            if d.manager.is_some() {
-                bail!("manager '{name}' is excluded by the system_packages.managers setting");
-            }
-            debug!("{name}: skipping, excluded by system_packages.managers");
-            continue;
-        }
-        if let Some(reason) = mp.manager.unavailable_reason_async().await {
-            if unavailable_manager_is_error(d) {
-                // explicitly requested (via --manager or manager:package
-                // specs) — failing silently would be a lie
-                bail!("{name} is not available: {}", reason);
-            }
-            debug!("{name}: skipping, {reason}");
-            continue;
-        }
-        if !d.dry_run {
-            mp.manager.prepare_mutation(&mp.requests).await?;
-        }
-        let statuses = mp
-            .manager
-            .installed_with_options(&mp.requests, &mp.options)
-            .await?;
-        if let Some(reason) = unavailable_package_reason(d, &statuses) {
-            bail!("{reason}");
-        }
-        let mut remove_targets = if action == Action::Install {
-            statuses
-                .iter()
-                .filter(|status| {
-                    status.request.desired == PackageDesiredState::Absent
-                        && !matches!(status.state, PackageState::Missing)
-                        && !status.state.is_unavailable()
-                })
-                .collect::<Vec<_>>()
-        } else {
-            vec![]
-        };
-        let mut targets: Vec<_> = statuses
-            .iter()
-            .filter(|status| status.request.desired == PackageDesiredState::Present)
-            .filter(|s| match action {
-                Action::Install => !s.state.is_installed() && !s.state.is_unavailable(),
-                // upgrade acts on whatever is present (the manager no-ops
-                // already-current packages); missing packages are skipped
-                // below with a pointer at `install`
-                Action::Upgrade => {
-                    !matches!(s.state, PackageState::Missing) && !s.state.is_unavailable()
-                }
-            })
-            .collect();
-        let missing = statuses
-            .iter()
-            .filter(|status| status.request.desired == PackageDesiredState::Present)
-            .filter(|status| matches!(status.state, PackageState::Missing))
-            .count();
-        if action == Action::Upgrade && missing > 0 {
-            warn!(
-                "{name}: {missing} package(s) not installed — run `mise bootstrap packages apply` first"
-            );
-        }
-        // a pin this manager can never satisfy must not block the rest
-        // of the batch — it stays visible in `status` as a mismatch
-        if !mp.manager.supports_version_pins() {
-            targets.retain(|status| {
-                if status.request.version.is_some()
-                    && !matches!(status.state, PackageState::NeedsRepair { .. })
-                {
-                    warn!(
-                        "{name}: cannot {} pinned version '{}', skipping",
-                        action.verb(),
-                        status.request
-                    );
-                    false
-                } else {
-                    true
-                }
-            });
-        }
-        let installed = statuses
-            .iter()
-            .filter(|status| status.request.desired == PackageDesiredState::Present)
-            .filter(|status| status.state.is_installed())
-            .count();
-        if action == Action::Install && installed > 0 {
-            info!("{name}: {installed} package(s) already installed");
-        }
-        let already_absent = statuses
-            .iter()
-            .filter(|status| status.request.desired == PackageDesiredState::Absent)
-            .filter(|status| matches!(status.state, PackageState::Missing))
-            .count();
-        if action == Action::Install && already_absent > 0 {
-            info!("{name}: {already_absent} package(s) already absent");
-        }
-        // like an unsatisfiable pin, a removal this manager can never perform
-        // must not block its installs or the managers after it — the entry
-        // stays visible in `status`
-        if !remove_targets.is_empty() && !mp.manager.supports_remove() {
-            let list = remove_targets
-                .iter()
-                .map(|status| status.request.to_string())
-                .collect::<Vec<_>>();
-            warn!(
-                "{name}: cannot remove {}, skipping (declarative removal is not supported)",
+        failures.extend(errors.into_iter().map(|err| (name.to_string(), err)));
+    }
+    combine_failures(failures)
+}
+
+/// Fold the per-manager failures of a run into its result. A single failure
+/// is returned untouched, so its message reads as it always has.
+fn combine_failures(mut failures: Vec<(String, eyre::Report)>) -> Result<()> {
+    if failures.len() <= 1 {
+        return failures.pop().map_or(Ok(()), |(_, err)| Err(err));
+    }
+    let details = failures
+        .iter()
+        .map(|(name, err)| format!("  {name}: {err:#}"))
+        .collect::<Vec<_>>();
+    bail!(
+        "{} package manager operations failed:\n{}",
+        failures.len(),
+        details.join("\n")
+    )
+}
+
+/// Whether a removal the manager cannot perform fails the run. When the run
+/// was scoped to this manager or to named packages, it does, as an unavailable
+/// manager does; a whole-config apply warns and skips it, the same way it
+/// treats a version pin the manager cannot satisfy.
+fn unsupported_removal_is_error(d: &DriverOpts) -> bool {
+    d.manager.is_some() || d.explicit
+}
+
+/// Remove `remove` (the installed `state = "absent"` entries of one manager),
+/// asking first when the run is attended.
+async fn remove_packages(
+    mp: &ManagerPackages,
+    remove: &[PackageRequest],
+    d: &DriverOpts,
+    opts: &InstallOpts,
+) -> Result<()> {
+    let name = mp.manager.name();
+    let list = remove
+        .iter()
+        .map(|request| request.to_string())
+        .collect::<Vec<_>>();
+    if !mp.manager.supports_remove() {
+        // the entry stays visible in `status` either way
+        if unsupported_removal_is_error(d) {
+            bail!(
+                "{name} does not support declarative package removal (cannot remove {})",
                 list.join(", ")
             );
-            remove_targets.clear();
         }
-        if !remove_targets.is_empty() {
-            let remove = remove_targets
-                .iter()
-                .map(|status| status.request.clone())
-                .collect::<Vec<_>>();
-            let list = remove
-                .iter()
-                .map(|request| request.to_string())
-                .collect::<Vec<_>>();
-            if !d.dry_run && !d.yes && console::user_attended_stderr() {
-                let msg = format!("{name}: remove {}?", list.join(", "));
-                if !prompt::confirm(msg)?.is_yes() {
-                    info!("{name}: removal skipped");
-                } else {
-                    mp.manager.remove(&remove, &opts).await?;
-                    info!("{name}: removed {}", list.join(", "));
-                }
-            } else {
-                mp.manager.remove(&remove, &opts).await?;
-                if !d.dry_run {
-                    info!("{name}: removed {}", list.join(", "));
-                }
+        warn!(
+            "{name}: cannot remove {}, skipping (declarative removal is not supported)",
+            list.join(", ")
+        );
+        return Ok(());
+    }
+    if !d.dry_run && !d.yes && console::user_attended_stderr() {
+        let msg = format!("{name}: remove {}?", list.join(", "));
+        if !prompt::confirm(msg)?.is_yes() {
+            info!("{name}: removal skipped");
+            return Ok(());
+        }
+    }
+    mp.manager.remove(remove, opts).await?;
+    if !d.dry_run {
+        info!("{name}: removed {}", list.join(", "));
+    }
+    Ok(())
+}
+
+/// Bring one manager's packages to the requested state. A failed removal is
+/// pushed onto `failures` so the installs after it still run; anything else
+/// that fails is returned.
+async fn run_manager(
+    mp: &ManagerPackages,
+    action: Action,
+    d: &DriverOpts,
+    opts: &InstallOpts,
+    failures: &mut Vec<eyre::Report>,
+) -> Result<()> {
+    let name = mp.manager.name();
+    if mp.disabled {
+        if d.manager.is_some() {
+            bail!("manager '{name}' is excluded by the system_packages.managers setting");
+        }
+        debug!("{name}: skipping, excluded by system_packages.managers");
+        return Ok(());
+    }
+    if let Some(reason) = mp.manager.unavailable_reason_async().await {
+        if unavailable_manager_is_error(d) {
+            // explicitly requested (via --manager or manager:package
+            // specs) — failing silently would be a lie
+            bail!("{name} is not available: {}", reason);
+        }
+        debug!("{name}: skipping, {reason}");
+        return Ok(());
+    }
+    if !d.dry_run {
+        mp.manager.prepare_mutation(&mp.requests).await?;
+    }
+    let statuses = mp
+        .manager
+        .installed_with_options(&mp.requests, &mp.options)
+        .await?;
+    if let Some(reason) = unavailable_package_reason(d, &statuses) {
+        bail!("{reason}");
+    }
+    let remove_targets = if action == Action::Install {
+        statuses
+            .iter()
+            .filter(|status| {
+                status.request.desired == PackageDesiredState::Absent
+                    && !matches!(status.state, PackageState::Missing)
+                    && !status.state.is_unavailable()
+            })
+            .collect::<Vec<_>>()
+    } else {
+        vec![]
+    };
+    let mut targets: Vec<_> = statuses
+        .iter()
+        .filter(|status| status.request.desired == PackageDesiredState::Present)
+        .filter(|s| match action {
+            Action::Install => !s.state.is_installed() && !s.state.is_unavailable(),
+            // upgrade acts on whatever is present (the manager no-ops
+            // already-current packages); missing packages are skipped
+            // below with a pointer at `install`
+            Action::Upgrade => {
+                !matches!(s.state, PackageState::Missing) && !s.state.is_unavailable()
             }
-        }
-        if targets.is_empty() {
-            continue;
-        }
-        let targets = targets
-            .into_iter()
+        })
+        .collect();
+    let missing = statuses
+        .iter()
+        .filter(|status| status.request.desired == PackageDesiredState::Present)
+        .filter(|status| matches!(status.state, PackageState::Missing))
+        .count();
+    if action == Action::Upgrade && missing > 0 {
+        warn!(
+            "{name}: {missing} package(s) not installed — run `mise bootstrap packages apply` first"
+        );
+    }
+    // a pin this manager can never satisfy must not block the rest
+    // of the batch — it stays visible in `status` as a mismatch
+    if !mp.manager.supports_version_pins() {
+        targets.retain(|status| {
+            if status.request.version.is_some()
+                && !matches!(status.state, PackageState::NeedsRepair { .. })
+            {
+                warn!(
+                    "{name}: cannot {} pinned version '{}', skipping",
+                    action.verb(),
+                    status.request
+                );
+                false
+            } else {
+                true
+            }
+        });
+    }
+    let installed = statuses
+        .iter()
+        .filter(|status| status.request.desired == PackageDesiredState::Present)
+        .filter(|status| status.state.is_installed())
+        .count();
+    if action == Action::Install && installed > 0 {
+        info!("{name}: {installed} package(s) already installed");
+    }
+    let already_absent = statuses
+        .iter()
+        .filter(|status| status.request.desired == PackageDesiredState::Absent)
+        .filter(|status| matches!(status.state, PackageState::Missing))
+        .count();
+    if action == Action::Install && already_absent > 0 {
+        info!("{name}: {already_absent} package(s) already absent");
+    }
+    if !remove_targets.is_empty() {
+        let remove = remove_targets
+            .iter()
             .map(|status| status.request.clone())
             .collect::<Vec<_>>();
-        let list = targets.iter().map(|r| r.to_string()).collect::<Vec<_>>();
-        if !d.dry_run && !d.yes && console::user_attended_stderr() {
-            let msg = format!("{name}: {} {}?", action.verb(), list.join(", "));
-            if !prompt::confirm(msg)?.is_yes() {
-                info!("{name}: skipped");
-                continue;
+        // a removal that fails, or that this manager can never perform, must
+        // not hold back its own installs either: record it and carry on
+        if let Err(err) = remove_packages(mp, &remove, d, opts).await {
+            failures.push(err);
+        }
+    }
+    if targets.is_empty() {
+        return Ok(());
+    }
+    let targets = targets
+        .into_iter()
+        .map(|status| status.request.clone())
+        .collect::<Vec<_>>();
+    let list = targets.iter().map(|r| r.to_string()).collect::<Vec<_>>();
+    if !d.dry_run && !d.yes && console::user_attended_stderr() {
+        let msg = format!("{name}: {} {}?", action.verb(), list.join(", "));
+        if !prompt::confirm(msg)?.is_yes() {
+            info!("{name}: skipped");
+            return Ok(());
+        }
+    }
+    match action {
+        Action::Install => {
+            mp.manager
+                .install_with_options(&targets, opts, &mp.options)
+                .await?;
+            if !d.dry_run {
+                info!("{name}: installed {}", list.join(", "));
             }
         }
-        match action {
-            Action::Install => {
-                mp.manager
-                    .install_with_options(&targets, &opts, &mp.options)
+        Action::Upgrade => {
+            // managers no-op packages that are already current, so
+            // re-query afterwards and report only what actually changed
+            let prior: HashMap<String, String> = statuses
+                .iter()
+                .filter_map(|s| match &s.state {
+                    PackageState::Installed { version }
+                    | PackageState::NeedsRepair { installed: version }
+                    | PackageState::VersionMismatch { installed: version } => {
+                        Some((s.request.name.clone(), version.clone()))
+                    }
+                    #[cfg(unix)]
+                    PackageState::InstalledAutoUpdates { version } => {
+                        Some((s.request.name.clone(), version.clone()))
+                    }
+                    PackageState::Missing => None,
+                    #[cfg(unix)]
+                    PackageState::Unavailable { .. } => None,
+                })
+                .collect();
+            mp.manager
+                .upgrade_with_options(&targets, opts, &mp.options)
+                .await?;
+            if !d.dry_run {
+                let after = mp
+                    .manager
+                    .installed_with_options(&targets, &mp.options)
                     .await?;
-                if !d.dry_run {
-                    info!("{name}: installed {}", list.join(", "));
-                }
-            }
-            Action::Upgrade => {
-                // managers no-op packages that are already current, so
-                // re-query afterwards and report only what actually changed
-                let prior: HashMap<String, String> = statuses
+                let changed: Vec<String> = after
                     .iter()
                     .filter_map(|s| match &s.state {
                         PackageState::Installed { version }
                         | PackageState::NeedsRepair { installed: version }
                         | PackageState::VersionMismatch { installed: version } => {
-                            Some((s.request.name.clone(), version.clone()))
+                            let old = prior.get(&s.request.name)?;
+                            (old != version)
+                                .then(|| format!("{} {old} -> {version}", s.request.name))
                         }
                         #[cfg(unix)]
                         PackageState::InstalledAutoUpdates { version } => {
-                            Some((s.request.name.clone(), version.clone()))
+                            let old = prior.get(&s.request.name)?;
+                            (old != version)
+                                .then(|| format!("{} {old} -> {version}", s.request.name))
                         }
                         PackageState::Missing => None,
                         #[cfg(unix)]
                         PackageState::Unavailable { .. } => None,
                     })
                     .collect();
-                mp.manager
-                    .upgrade_with_options(&targets, &opts, &mp.options)
-                    .await?;
-                if !d.dry_run {
-                    let after = mp
-                        .manager
-                        .installed_with_options(&targets, &mp.options)
-                        .await?;
-                    let changed: Vec<String> = after
-                        .iter()
-                        .filter_map(|s| match &s.state {
-                            PackageState::Installed { version }
-                            | PackageState::NeedsRepair { installed: version }
-                            | PackageState::VersionMismatch { installed: version } => {
-                                let old = prior.get(&s.request.name)?;
-                                (old != version)
-                                    .then(|| format!("{} {old} -> {version}", s.request.name))
-                            }
-                            #[cfg(unix)]
-                            PackageState::InstalledAutoUpdates { version } => {
-                                let old = prior.get(&s.request.name)?;
-                                (old != version)
-                                    .then(|| format!("{} {old} -> {version}", s.request.name))
-                            }
-                            PackageState::Missing => None,
-                            #[cfg(unix)]
-                            PackageState::Unavailable { .. } => None,
-                        })
-                        .collect();
-                    if changed.is_empty() {
-                        info!("{name}: already up to date");
-                    } else {
-                        info!("{name}: upgraded {}", changed.join(", "));
-                    }
+                if changed.is_empty() {
+                    info!("{name}: already up to date");
+                } else {
+                    info!("{name}: upgraded {}", changed.join(", "));
                 }
             }
         }
@@ -311,7 +376,6 @@ pub async fn run(mgrs: Vec<ManagerPackages>, action: Action, d: &DriverOpts) -> 
 #[cfg(all(test, unix))]
 mod tests {
     use super::*;
-    use crate::system::packages::PackageRequest;
 
     #[test]
     fn explicit_packages_reject_unavailable_entries_but_manager_filters_skip_them() {
@@ -353,12 +417,24 @@ mod tests {
         assert!(unavailable_manager_is_error(&manager_opts));
         assert_eq!(unavailable_package_reason(&manager_opts, &statuses), None);
     }
+}
 
-    /// A manager without declarative removal that records its installs.
+#[cfg(test)]
+mod run_tests {
+    use std::sync::{Arc, Mutex};
+
+    use super::*;
+
+    /// A fake manager that records what the driver asks of it.
+    #[derive(Default)]
     struct RecordingManager {
         name: &'static str,
         installed: Vec<&'static str>,
-        installs: std::sync::Mutex<Vec<String>>,
+        supports_remove: bool,
+        fail_remove: bool,
+        fail_install: bool,
+        installs: Mutex<Vec<String>>,
+        removes: Mutex<Vec<String>>,
     }
 
     #[async_trait::async_trait(?Send)]
@@ -393,8 +469,25 @@ mod tests {
         }
 
         async fn install(&self, pkgs: &[PackageRequest], _opts: &InstallOpts) -> Result<()> {
+            if self.fail_install {
+                bail!("{} install exploded", self.name);
+            }
             let mut installs = self.installs.lock().unwrap();
             installs.extend(pkgs.iter().map(|pkg| pkg.name.clone()));
+            Ok(())
+        }
+
+        fn supports_remove(&self) -> bool {
+            self.supports_remove
+        }
+
+        async fn remove(&self, pkgs: &[PackageRequest], _opts: &InstallOpts) -> Result<()> {
+            assert!(self.supports_remove, "remove called on {}", self.name);
+            let mut removes = self.removes.lock().unwrap();
+            removes.extend(pkgs.iter().map(|pkg| pkg.name.clone()));
+            if self.fail_remove {
+                bail!("{} remove exploded", self.name);
+            }
             Ok(())
         }
     }
@@ -408,17 +501,35 @@ mod tests {
         }
     }
 
-    #[tokio::test]
-    async fn unsupported_removal_does_not_block_installs() {
-        let first = std::sync::Arc::new(RecordingManager {
+    fn opts(manager: Option<&str>) -> DriverOpts {
+        DriverOpts {
+            manager: manager.map(str::to_string),
+            explicit: false,
+            allow_unavailable_manager: false,
+            dry_run: false,
+            update: false,
+            yes: true,
+        }
+    }
+
+    /// `first` holds an installed `git` declared absent plus a missing `curl`;
+    /// `second` holds a missing `ripgrep`.
+    fn two_managers(
+        first: RecordingManager,
+        second: RecordingManager,
+    ) -> (
+        Arc<RecordingManager>,
+        Arc<RecordingManager>,
+        Vec<ManagerPackages>,
+    ) {
+        let first = Arc::new(RecordingManager {
             name: "first",
             installed: vec!["git"],
-            installs: Default::default(),
+            ..first
         });
-        let second = std::sync::Arc::new(RecordingManager {
+        let second = Arc::new(RecordingManager {
             name: "second",
-            installed: vec![],
-            installs: Default::default(),
+            ..second
         });
         let mgrs = vec![
             ManagerPackages {
@@ -437,18 +548,99 @@ mod tests {
                 disabled: false,
             },
         ];
-        let opts = DriverOpts {
-            manager: None,
-            explicit: false,
-            allow_unavailable_manager: false,
-            dry_run: false,
-            update: false,
-            yes: true,
-        };
+        (first, second, mgrs)
+    }
 
-        run(mgrs, Action::Install, &opts).await.unwrap();
+    #[tokio::test]
+    async fn unsupported_removal_does_not_block_installs() {
+        let (first, second, mgrs) = two_managers(Default::default(), Default::default());
 
+        run(mgrs, Action::Install, &opts(None)).await.unwrap();
+
+        assert!(first.removes.lock().unwrap().is_empty());
         assert_eq!(*first.installs.lock().unwrap(), ["curl"]);
         assert_eq!(*second.installs.lock().unwrap(), ["ripgrep"]);
+    }
+
+    #[tokio::test]
+    async fn unsupported_removal_fails_a_scoped_run_after_installing() {
+        let (first, second, mgrs) = two_managers(Default::default(), Default::default());
+
+        let err = run(mgrs, Action::Install, &opts(Some("first")))
+            .await
+            .unwrap_err();
+
+        assert!(
+            format!("{err:#}").contains("first does not support declarative package removal"),
+            "{err:#}"
+        );
+        assert!(first.removes.lock().unwrap().is_empty());
+        assert_eq!(*first.installs.lock().unwrap(), ["curl"]);
+        assert!(second.installs.lock().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn failed_removal_does_not_block_installs() {
+        let (first, second, mgrs) = two_managers(
+            RecordingManager {
+                supports_remove: true,
+                fail_remove: true,
+                ..Default::default()
+            },
+            Default::default(),
+        );
+
+        let err = run(mgrs, Action::Install, &opts(None)).await.unwrap_err();
+
+        assert_eq!(format!("{err:#}"), "first remove exploded");
+        assert_eq!(*first.removes.lock().unwrap(), ["git"]);
+        assert_eq!(*first.installs.lock().unwrap(), ["curl"]);
+        assert_eq!(*second.installs.lock().unwrap(), ["ripgrep"]);
+    }
+
+    #[tokio::test]
+    async fn failed_install_does_not_block_later_managers() {
+        let (first, second, mgrs) = two_managers(
+            RecordingManager {
+                supports_remove: true,
+                fail_install: true,
+                ..Default::default()
+            },
+            Default::default(),
+        );
+
+        let err = run(mgrs, Action::Install, &opts(None)).await.unwrap_err();
+
+        assert_eq!(format!("{err:#}"), "first install exploded");
+        assert_eq!(*first.removes.lock().unwrap(), ["git"]);
+        assert_eq!(*second.installs.lock().unwrap(), ["ripgrep"]);
+    }
+
+    #[tokio::test]
+    async fn every_failure_is_reported() {
+        let (first, second, mgrs) = two_managers(
+            RecordingManager {
+                supports_remove: true,
+                fail_remove: true,
+                fail_install: true,
+                ..Default::default()
+            },
+            RecordingManager {
+                fail_install: true,
+                ..Default::default()
+            },
+        );
+
+        let err = run(mgrs, Action::Install, &opts(None)).await.unwrap_err();
+
+        assert_eq!(
+            format!("{err:#}"),
+            "3 package manager operations failed:\n  \
+             first: first remove exploded\n  \
+             first: first install exploded\n  \
+             second: second install exploded"
+        );
+        assert_eq!(*first.removes.lock().unwrap(), ["git"]);
+        assert!(second.installs.lock().unwrap().is_empty());
     }
 }
