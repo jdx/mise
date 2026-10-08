@@ -15,8 +15,39 @@ fn un_dmg_extracts_app_without_license() -> Result<()> {
     check_dmg_extraction("ordinary.dmg")
 }
 
+#[test]
+fn dmg_attached_devices_finds_only_the_matching_image() {
+    let info = "\
+================================================
+image-path      : /cache/other.dmg
+image-alias     : /cache/other.dmg
+/dev/disk6\tGUID_partition_scheme\t
+/dev/disk6s1\t48465300-0000-11AA-AA11-00306543ECAC\t/Volumes/Other
+================================================
+image-path      : /cache/wanted.dmg
+/dev/disk7\tGUID_partition_scheme\t
+/dev/disk7s1\t48465300-0000-11AA-AA11-00306543ECAC\t/private/tmp/.tmpvS7AFm
+";
+    assert_eq!(
+        dmg_attached_devices(info, Path::new("/cache/wanted.dmg")),
+        vec!["/dev/disk7".to_string()]
+    );
+    assert!(dmg_attached_devices(info, Path::new("/cache/none.dmg")).is_empty());
+}
+
+#[cfg(unix)]
+#[test]
+fn un_dmg_detaches_image_left_attached_by_interrupted_run() -> Result<()> {
+    check_dmg_extraction_with("ordinary.dmg", true)
+}
+
 #[cfg(unix)]
 fn check_dmg_extraction(archive: &str) -> Result<()> {
+    check_dmg_extraction_with(archive, false)
+}
+
+#[cfg(unix)]
+fn check_dmg_extraction_with(archive: &str, stale: bool) -> Result<()> {
     let tmp = tempfile::tempdir()?;
     let hdiutil = tmp.path().join("hdiutil");
     // Emulate the external tool, including a bounded license prompt so a
@@ -26,7 +57,16 @@ fn check_dmg_extraction(archive: &str) -> Result<()> {
         r#"#!/bin/bash
 set -eu
 case "$1" in
+  info)
+if [[ -f "$0.stale" && ! -f "$0.detached" ]]; then
+  printf 'image-path      : %s\n/dev/disk9\tGUID_partition_scheme\t\n' "$(cat "$0.stale")"
+fi
+;;
   attach)
+if [[ -f "$0.stale" && ! -f "$0.detached" ]]; then
+  echo "hdiutil: attach failed - Resource busy" >&2
+  exit 16
+fi
 if [[ "$6" == *licensed.dmg ]]; then
   [[ "${PAGER:-}" == cat ]] || exit 45
   IFS= read -r -t 2 answer || exit 42
@@ -37,7 +77,11 @@ printf 'app payload' > "$5/Example.app/Contents/payload"
 ln -s payload "$5/Example.app/Contents/link"
 ;;
   detach)
-printf '%s' "$2" > "$0.detached"
+if [[ "$2" == -force ]]; then
+  [[ "$3" == /dev/disk9 ]] || exit 47
+  touch "$0.stale-detached"
+fi
+printf '%s' "${3:-$2}" > "$0.detached"
 ;;
   *) exit 44 ;;
 esac
@@ -52,6 +96,12 @@ esac
     env.set("PATH", std::env::join_paths(paths)?);
     env.set("PAGER", "less");
     let dest = tmp.path().join("extracted");
+    if stale {
+        write(
+            tmp.path().join("hdiutil.stale"),
+            tmp.path().join(archive).to_string_lossy().as_bytes(),
+        )?;
+    }
 
     un_dmg(&tmp.path().join(archive), &dest)?;
 
@@ -60,6 +110,9 @@ esac
         "app payload"
     );
     assert!(dest.join("Example.app/Contents/link").is_symlink());
+    if stale {
+        assert!(tmp.path().join("hdiutil.stale-detached").exists());
+    }
     let mount = read_to_string(tmp.path().join("hdiutil.detached"))?;
     assert!(
         !Path::new(&mount).exists(),
