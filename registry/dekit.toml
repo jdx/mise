@@ -1,4 +1,5 @@
+aliases = ["mprocs"]
 backends = ["aqua:pvolok/dekit"]
 description = "Run multiple commands in parallel"
-test = { cmd = "mprocs --version", expected = "mprocs {{version}}" }
+test = { cmd = "dekit --version", expected = "dekit {{version}}" }
 version_order = "semver"
