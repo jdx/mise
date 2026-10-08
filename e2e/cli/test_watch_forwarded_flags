@@ -21,6 +21,12 @@ output_file=.watch_forwarded_output
 MISE_DEBUG=1 mise watch -E dev --watchexec-env FOO=bar --watchexec-quiet --timings \
   --color never --fs-events create,modify --project-origin src --workdir /tmp example >"${output_file}" 2>&1 &
 PID_TO_KILL=$!
+# Stop watchexec as well as mise, also when an assertion below fails.
+stop_watch() {
+  pkill -P "$PID_TO_KILL" 2>/dev/null || true
+  kill "$PID_TO_KILL" 2>/dev/null || true
+}
+trap stop_watch EXIT
 
 runs() { tr -d '\0' <"${output_file}" | grep -c '^task saw FOO=bar' || true; }
 wait_for_runs() {
@@ -42,8 +48,7 @@ wait_for_runs 2
 [ "$(runs)" = 2 ] || fail "src/changed.txt did not rerun the task: $(tr -d '\0' <"${output_file}")"
 
 # Stop watchexec as well as mise; killing mise alone leaves watchexec running.
-pkill -P "$PID_TO_KILL" 2>/dev/null || true
-kill "$PID_TO_KILL" 2>/dev/null || true
+stop_watch
 
 assert_contains "cat ${output_file}" "--env FOO=bar"
 assert_contains "cat ${output_file}" "--color never --timings --quiet"
@@ -66,3 +71,20 @@ run = 'echo ran'
 sources = ["src/**/*.txt", "shared/**/*.txt"]
 EOF
 assert_fail_contains "mise watch --project-origin src example" "does not contain the watched source"
+
+# An exclusion outside the origin excludes nothing inside it, so it is not
+# rejected: the check fails only on the positive source.
+cat <<'EOF' >mise.toml
+[tasks.example]
+run = 'echo ran'
+sources = ["src/**/*.txt", "!shared/**"]
+EOF
+MISE_DEBUG=1 mise watch --project-origin src example >.watch_exclusion_output 2>&1 &
+PID_TO_KILL=$!
+for _ in $(seq 1 40); do
+  grep -Fq '$ watchexec' .watch_exclusion_output && break
+  sleep 0.5
+done
+stop_watch
+assert_contains "cat .watch_exclusion_output" '$ watchexec'
+assert_not_contains "cat .watch_exclusion_output" "does not contain the watched source"

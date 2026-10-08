@@ -9,8 +9,8 @@ use crate::request_exit;
 use crate::task::task_source_checker::task_cwd;
 use crate::task::{Deps, Task};
 use crate::toolset::ToolsetBuilder;
-use eyre::bail;
 use console::style;
+use eyre::bail;
 use itertools::Itertools;
 use std::cmp::PartialEq;
 use std::iter::once;
@@ -178,10 +178,12 @@ impl Watch {
                 let anchor: PathBuf = match (project_origin.clone(), configured, common) {
                     (Some(origin), _, _) => {
                         // watchexec drops a filter outside the origin, so a
-                        // source there would never trigger the task.
-                        if let Some((_, outside)) =
-                            parsed.iter().flatten().find(|(_, p)| !p.starts_with(&origin))
-                        {
+                        // source there would never trigger the task. An
+                        // exclusion there excludes nothing inside it, so
+                        // dropping it is harmless.
+                        if let Some((_, outside)) = parsed.iter().flatten().find(|(kind, p)| {
+                            !matches!(kind, SourceKind::Negation) && !p.starts_with(&origin)
+                        }) {
                             bail!(
                                 "--project-origin {} does not contain the watched source {}; \
                                  use a directory that contains every task's sources",
