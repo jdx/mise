@@ -232,7 +232,7 @@ The signer fields are the exact Fulcio certificate URI subject and OIDC issuer.
 Registry packages without them skip SLSA and may use another verification method.
 To have `mise lock` verify and record SLSA for a package whose registry entry names the
 provenance asset but not the signer, set the signer in the tool options; see
-[`slsa_signer_identity` and `slsa_signer_issuer`](#slsa_signer_identity-and-slsa_signer_issuer).
+[`slsa_signer_identity` and `slsa_signer_issuer`](/dev-tools/backends/aqua.html#slsa-signer-identity-and-slsa-signer-issuer).
 
 A verified [lockfile](/dev-tools/mise-lock.html) is trusted: when it records a checksum and
 provenance, including SLSA, mise checks the artifact digest and does not verify the

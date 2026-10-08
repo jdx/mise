@@ -225,8 +225,8 @@ the literal key `"version"`.
 
 ### `headers`
 
-Extra request headers for the artifact download, [`version_list_url`](#version_list_url),
-and [`checksum_url`](#checksum_url) requests. Use it for servers that need a token other than
+Extra request headers for the artifact download, [`version_list_url`](/dev-tools/backends/http.html#version-list-url),
+and [`checksum_url`](/dev-tools/backends/http.html#checksum-url) requests. Use it for servers that need a token other than
 Basic auth, such as a bearer token for an OCI blob on `ghcr.io` or an API key header for
 Artifactory. Values are templates, so the secret can come from the environment:
 

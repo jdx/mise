@@ -135,7 +135,7 @@ Run `mise lock` after editing a sidecar to accept its updated digest before usin
   installer arguments into a reproducible graph. Use the semantic options instead
   when dependency locking is required: [`with`](#with) injects additional
   requirements into the tool environment, [`expose`](#expose) also exposes their
-  executables, and [`dependency_prereleases`](#dependency_prereleases) sets uv's
+  executables, and [`dependency_prereleases`](/dev-tools/backends/pypi.html#dependency-prereleases) sets uv's
   prerelease policy. These are locked together with the tool, so the graph covers
   the injected packages. Configure [Python](#choosing-python) and the
   [registry URL](#registry-url) directly as well.
@@ -374,7 +374,7 @@ itself. Pass your own `--python` here to choose a different interpreter.
 ```
 
 Prefer the semantic [`with`](#with), [`expose`](#expose), and
-[`dependency_prereleases`](#dependency_prereleases) options when they cover the
+[`dependency_prereleases`](/dev-tools/backends/pypi.html#dependency-prereleases) options when they cover the
 desired behavior. Unlike arbitrary arguments, those options support dependency
 graphs.
 

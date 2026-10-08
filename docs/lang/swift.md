@@ -39,7 +39,7 @@ libform.so.6, libncurses.so.6, libpanel.so.6
 ```
 
 Where the names differ but the libraries are compatible, point the install at a
-directory of aliases with [`install_env`](#install_env):
+directory of aliases with [`install_env`](/lang/swift.html#install-env):
 
 ```sh
 mkdir -p ~/.local/lib/curses-compat
