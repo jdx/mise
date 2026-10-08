@@ -99,6 +99,11 @@ impl Task {
         self
     }
 
+    /// Whether this is the occurrence that runs as another task's `depends_post`.
+    pub fn is_post_dependency(&self) -> bool {
+        self.run_phase == TaskRunPhase::Post
+    }
+
     pub fn graph_display_name(&self) -> String {
         match self.run_phase {
             TaskRunPhase::Normal => self.display_name.clone(),

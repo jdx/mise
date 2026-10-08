@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+
+# Global file tasks load without a global config file. Run from outside $HOME
+# so the walk up from the working directory cannot find them as local tasks.
+mkdir -p "$MISE_CONFIG_DIR/tasks"
+cat <<'EOF' >"$MISE_CONFIG_DIR/tasks/global-file"
+#!/usr/bin/env bash
+echo global-file
+EOF
+chmod +x "$MISE_CONFIG_DIR/tasks/global-file"
+
+outside="$TMPDIR/outside-home"
+mkdir -p "$outside"
+cd "$outside" || exit 1
+
+assert "mise tasks ls --global --name-only" "global-file"
+assert "mise run global-file" "global-file"
+
+# A MISE_CONFIG_DIR other than ~/.config/mise holds its own global tasks.
+custom_config_dir="$TMPDIR/custom-config"
+mkdir -p "$custom_config_dir/tasks"
+cat <<'EOF' >"$custom_config_dir/tasks/custom-file"
+#!/usr/bin/env bash
+echo custom-file
+EOF
+chmod +x "$custom_config_dir/tasks/custom-file"
+
+assert "MISE_CONFIG_DIR='$custom_config_dir' mise run custom-file" "custom-file"
+
+# The same holds once that directory has a config file.
+cat <<'TOML' >"$custom_config_dir/config.toml"
+tasks.inline = "echo inline"
+TOML
+assert "MISE_CONFIG_DIR='$custom_config_dir' mise tasks ls --global --name-only" "custom-file
+global-file
+inline"

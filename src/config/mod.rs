@@ -4606,6 +4606,20 @@ fn default_task_includes() -> Vec<String> {
     ]
 }
 
+/// The default task directories for a config root. The global config root also
+/// searches `$MISE_CONFIG_DIR/tasks`, which `.config/mise/tasks` covers only
+/// when the config directory is the default `~/.config/mise`.
+fn default_task_includes_for_root(dir: &Path) -> Vec<String> {
+    let mut includes = default_task_includes();
+    let global_tasks = dirs::CONFIG.join("tasks");
+    if dir == env::MISE_GLOBAL_CONFIG_ROOT.as_path()
+        && global_tasks != dir.join(".config/mise/tasks")
+    {
+        includes.push(global_tasks.to_string_lossy().into_owned());
+    }
+    includes
+}
+
 fn is_global_task_include_path(path: &Path) -> bool {
     [
         dirs::CONFIG.join("tasks"),
@@ -5417,7 +5431,10 @@ async fn load_global_tasks(config: &Arc<Config>, templates: &TaskDefinitions) ->
     // inheriting metadata from it.
     let mut seen_configs = BTreeSet::new();
     let mut config_groups = vec![];
-    for config_paths in [global_config_files(), system_config_files()] {
+    for (user_scope, config_paths) in [
+        (true, global_config_files()),
+        (false, system_config_files()),
+    ] {
         let configs = config_paths
             .iter()
             .rev()
@@ -5433,7 +5450,10 @@ async fn load_global_tasks(config: &Arc<Config>, templates: &TaskDefinitions) ->
             })
             .filter(|cf| seen_configs.insert(file::desymlink_path(cf.get_path())))
             .collect::<Vec<_>>();
-        if !configs.is_empty() {
+        // The user scope's default task directories, such as
+        // `$MISE_CONFIG_DIR/tasks`, hold global tasks even when no global
+        // config file exists.
+        if user_scope || !configs.is_empty() {
             config_groups.push(configs);
         }
     }
@@ -5444,7 +5464,7 @@ async fn load_global_tasks(config: &Arc<Config>, templates: &TaskDefinitions) ->
     let mut tasks: IndexMap<String, Task> = IndexMap::new();
     let mut rendered_file_tasks = RenderedTaskCache::default();
     for configs in config_groups {
-        let scope_tasks = load_tasks_from_configs_and_folders(
+        let mut scope_tasks = load_tasks_from_configs_and_folders(
             config,
             &env::MISE_GLOBAL_CONFIG_ROOT,
             configs,
@@ -5455,6 +5475,9 @@ async fn load_global_tasks(config: &Arc<Config>, templates: &TaskDefinitions) ->
         )
         .await?;
         rendered_file_tasks.finish_config();
+        // A global config marks its tasks global. Without one, the default
+        // task directories still belong to the global scope.
+        mark_tasks_as_global(&mut scope_tasks);
         for task in scope_tasks {
             tasks.entry(task.name.clone()).or_insert(task);
         }
@@ -6839,7 +6862,13 @@ async fn load_task_sources_from_configs(
                     .map(|includes| (includes, tc.includes_root.clone(), configs.len()))
             })
         })
-        .unwrap_or_else(|| (default_task_includes(), dir.to_path_buf(), configs.len()));
+        .unwrap_or_else(|| {
+            (
+                default_task_includes_for_root(dir),
+                dir.to_path_buf(),
+                configs.len(),
+            )
+        });
     let (excludes, excludes_root) = configs
         .iter()
         .find_map(|cf| match cf.task_config_excludes() {
