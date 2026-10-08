@@ -522,5 +522,7 @@ fn vfox_to_url(name: &str) -> eyre::Result<Url> {
     } else {
         name.to_string().parse()
     };
-    res.wrap_err_with(|| format!("Invalid version: {name}"))
+    res.wrap_err_with(|| {
+        format!("no plugin source for {name}: expected a registry name, owner/repo, or URL")
+    })
 }

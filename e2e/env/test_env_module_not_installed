@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+
+# An [env] module whose plugin is not installed and has no known source
+# must not break every command. mise warns, skips the module, and keeps
+# working, so `mise plugins link`/`install` can still fix it.
+
+cat >mise.toml <<'EOF'
+[env]
+_.not-a-real-env-plugin = {}
+FOO = "bar"
+EOF
+
+assert_contains "mise env -s bash" "export FOO=bar"
+assert_contains "mise env -s bash 2>&1" "skipping env plugin not-a-real-env-plugin"
+assert_contains "mise env -s bash 2>&1" "mise plugins install not-a-real-env-plugin"
+assert "mise x -- echo hi" "hi"
+assert_succeed "mise ls"
+
+# Installing the plugin makes the module work.
+PLUGIN_SRC="$PWD/env-plugin-src"
+mkdir -p "$PLUGIN_SRC/hooks"
+cat >"$PLUGIN_SRC/metadata.lua" <<'EOF'
+PLUGIN = {}
+PLUGIN.name = "not-a-real-env-plugin"
+PLUGIN.version = "1.0.0"
+PLUGIN.homepage = "https://example.com"
+PLUGIN.license = "MIT"
+PLUGIN.description = "Test env plugin"
+PLUGIN.minRuntimeVersion = "0.3.0"
+EOF
+cat >"$PLUGIN_SRC/hooks/mise_env.lua" <<'EOF'
+function PLUGIN:MiseEnv(ctx)
+    return {
+        env = {
+            {key = "FROM_ENV_PLUGIN", value = "yes"}
+        }
+    }
+end
+EOF
+
+assert_succeed "mise plugins link not-a-real-env-plugin $PLUGIN_SRC"
+assert_contains "mise env -s bash" "export FROM_ENV_PLUGIN=yes"
+assert_not_contains "mise env -s bash 2>&1" "skipping env plugin"

@@ -23,10 +23,24 @@ impl EnvResults {
     ) -> Result<()> {
         let config_root = crate::config::config_file::config_root::config_root(&source);
         let path = dirs::PLUGINS.join(name.to_kebab_case());
-        let plugin = VfoxPlugin::new(name, path.clone());
-        plugin
+        let plugin = VfoxPlugin::new(name.clone(), path.clone());
+        if let Err(err) = plugin
             .ensure_installed(config, &MultiProgressReport::get(), false, false)
-            .await?;
+            .await
+        {
+            if plugin.is_installed() {
+                return Err(err);
+            }
+            // Config loading resolves [env], so failing here would break every
+            // command, including the `mise plugins install` that fixes it.
+            warn_once!(
+                "skipping env plugin {name}, it is not installed: {err:#}\n\
+                 Install it with `mise plugins install {name} <git-url>`, \
+                 or set its URL in [plugins]"
+            );
+            r.has_uncacheable = true;
+            return Ok(());
+        }
         if let Some(response) = plugin.mise_env(value, &env, Some(&config_root)).await? {
             // Track cacheability
             if !response.cacheable {
