@@ -2575,8 +2575,12 @@ type = "Bool"
 
 [plugin_autoupdate_last_check_duration]
 default = "7d"
-description = "How long to wait before updating plugins automatically (note this isn't currently implemented)."
+deprecated = "This setting was never implemented and has no effect. Remove it from your config."
+deprecated_remove_at = "2027.10.5"
+deprecated_warn_at = "2026.10.5"
+description = "[deprecated] Has no effect; it was never implemented."
 env = "MISE_PLUGIN_AUTOUPDATE_LAST_CHECK_DURATION"
+hide = true
 type = "String"
 
 [prefer_offline]
@@ -3312,8 +3316,12 @@ optional = true
 type = "Path"
 
 [sops.age_recipients]
-description = "The age public keys to use for sops secret encryption."
+deprecated = "This setting has no effect because mise does not encrypt sops files. Remove it from your config."
+deprecated_remove_at = "2027.10.5"
+deprecated_warn_at = "2026.10.5"
+description = "[deprecated] Has no effect; mise does not encrypt sops files."
 env = "MISE_SOPS_AGE_RECIPIENTS"
+hide = true
 optional = true
 type = "String"
 
@@ -3602,18 +3610,12 @@ optional = true
 type = "Url"
 
 [task.cache.stats_report]
-description = "[experimental] File to write action-cache session statistics to."
-docs = """
-Write a versioned JSON report describing Rust action-cache activity, transfer volume, restored
-outputs, and phase timings. Timing values use nanoseconds. Concurrent phase timings are cumulative
-work time and can exceed the end-to-end `session_duration_ns`; `prefetch_duration_ns` is the sum of
-wall-clock durations for each task prefetch run.
-
-This is intended for CI qualification and benchmarking. Relative paths resolve against mise's
-working directory. The report is replaced atomically after each `mise run` invocation that creates
-an action-cache session.
-"""
+deprecated = "This setting has no effect since the built-in action cache was removed. Remove it from your config."
+deprecated_remove_at = "2027.10.5"
+deprecated_warn_at = "2026.10.5"
+description = "[deprecated] Has no effect since the built-in action cache was removed."
 env = "MISE_TASK_CACHE_STATS_REPORT"
+hide = true
 optional = true
 type = "Path"
 

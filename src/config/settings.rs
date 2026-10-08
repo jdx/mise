@@ -2628,6 +2628,40 @@ mod tests {
     }
 
     #[test]
+    fn test_settings_without_effect_are_deprecated() {
+        let settings = toml::from_str::<toml::Value>(
+            r#"
+            plugin_autoupdate_last_check_duration = "1d"
+
+            [sops]
+            age_recipients = "age1example"
+
+            [task.cache]
+            stats_report = "stats.json"
+            "#,
+        )
+        .unwrap()
+        .as_table()
+        .unwrap()
+        .clone();
+
+        let keys = [
+            "plugin_autoupdate_last_check_duration",
+            "sops.age_recipients",
+            "task.cache.stats_report",
+        ];
+        let deprecated = deprecated_settings_in_toml_table(&settings);
+        for key in keys {
+            assert!(deprecated.contains(&key), "{key} is not deprecated");
+            let meta = SETTINGS_META.get(key).unwrap();
+            assert!(
+                meta.deprecated_warn_at.is_some() && meta.deprecated_remove_at.is_some(),
+                "{key} has no warn_at/remove_at, so setting it never warns"
+            );
+        }
+    }
+
+    #[test]
     fn test_deprecated_settings_in_env_directives_detects_setting_env() {
         let raw = toml::from_str::<toml::Value>(
             r#"
