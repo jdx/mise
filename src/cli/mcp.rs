@@ -628,6 +628,11 @@ mod tests {
     #[tokio::test]
     async fn hidden_subtrees_are_included_when_requested() {
         let all = commands(true).await;
+        // Hidden aliases keep the effect of the command they mount.
+        assert_eq!(
+            find(&all, "bootstrap dotfiles origin")["effect"],
+            "destructive"
+        );
         assert!(all.iter().any(|c| c["command"] == "bootstrap launchd"));
         assert!(
             all.iter()
