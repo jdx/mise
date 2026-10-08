@@ -417,7 +417,7 @@ impl BackendArg {
         }
     }
 
-    pub(crate) fn backend_type(&self) -> BackendType {
+    pub fn backend_type(&self) -> BackendType {
         // Check if this is a valid backend:tool format first
         if let Some((backend_prefix, _tool_name)) = self.short.split_once(':')
             && let Ok(backend_type) = backend_prefix.parse::<BackendType>()

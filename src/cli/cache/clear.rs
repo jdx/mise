@@ -8,19 +8,34 @@ use heck::ToKebabCase;
 use itertools::Itertools;
 use walkdir::WalkDir;
 
-/// Delete all cache files
+/// Delete cached data
+///
+/// With no arguments, deletes the whole cache directory, the cached environment,
+/// and every task's cached artifacts. With TOOL arguments, deletes only the cached
+/// data of those tools, such as their version lists. With --task, deletes only that
+/// task's cached artifacts. Installed tools are not removed; mise downloads or
+/// rebuilds what it needs again.
 #[derive(Debug, usage_rs::Args)]
-#[usage(verbatim_doc_comment, visible_alias = "c", alias = "clean")]
+#[usage(
+    verbatim_doc_comment,
+    visible_alias = "c",
+    alias = "clean",
+    example("mise cache clear", help = "Clear the whole cache"),
+    example("mise cache clear node", help = "Refresh node's version list"),
+    example(
+        "mise cache clear --task build",
+        help = "[experimental] Forget the build task's cached artifacts"
+    )
+)]
 pub(super) struct CacheClear {
-    /// Tool(s) to clear cache for
-    /// e.g.: node, python
+    /// Only clear the cache of these tools, such as `node`
     tool: Option<Vec<String>>,
 
     /// Mark all cache files as old
     #[usage(long, hide = true)]
     outdate: bool,
 
-    /// Clear output cache entries for a task name or pattern
+    /// [experimental] Clear task artifact cache entries for a task name or pattern
     #[usage(long, conflicts = ["tool", "outdate"])]
     task: Option<String>,
 }

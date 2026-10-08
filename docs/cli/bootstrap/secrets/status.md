@@ -13,13 +13,13 @@ Show whether declared bootstrap secret inputs are available
 
 ## Flags
 - **`-J --json`** — Output in JSON format
-- **`--missing`** — Exit with code 1 if a declared secret input is unavailable
+- **`--missing`** — Exit with status 1 if a declared secret input is unset, empty, or not valid Unicode
 - **`-h --help`** — Print help
 
 <!-- generated reference navigation -->
 
 ## Related documentation
 
-- [Bootstrap secrets](/bootstrap/secrets.html).
+- [Secret inputs](/bootstrap/secrets.html).
 - [`mise bootstrap secrets <SUBCOMMAND>`](/cli/bootstrap/secrets.html).
 - [Global flags and argument syntax](/cli/#global-flags).

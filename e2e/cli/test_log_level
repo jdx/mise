@@ -4,3 +4,10 @@ assert_contains "mise x dummy@latest --log-level debug -- dummy 2>&1" "DEBUG"
 assert_contains "mise x dummy@latest --log-level=debug -- dummy 2>&1" "DEBUG"
 assert_contains "mise x dummy@latest --debug -- dummy 2>&1" "DEBUG"
 assert_contains "mise x dummy@latest --trace -- dummy 2>&1" "TRACE"
+
+# the flag takes the level names MISE_LOG_LEVEL documents; `warning` is kept as an alias.
+# `mise trust` reports at info level, so warn must hide what info shows.
+touch mise.toml
+assert_contains "mise trust --log-level info mise.toml 2>&1" "trusted"
+assert_not_contains "mise trust --log-level warn mise.toml 2>&1" "trusted"
+assert_not_contains "mise trust --log-level warning mise.toml 2>&1" "trusted"

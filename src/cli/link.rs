@@ -12,34 +12,32 @@ use crate::{cli::args::ToolArg, config::Config};
 
 /// Symlink a tool version into mise
 ///
-/// Use this to register an install that was compiled by hand or built with another tool.
+/// Use this to register an install that was compiled by hand or built with another
+/// tool. mise uses the version exactly as written, such as `node@24.11.0` or a name
+/// of your own like `node@brew`; `latest`, aliases, and channels are rejected.
 #[derive(Debug, usage_rs::Args)]
 #[usage(
     visible_alias = "ln",
     verbatim_doc_comment,
     example(
-        r###"node-build 20.0.0 ~/.nodes/20.0.0
-mise link node@20.0.0 ~/.nodes/20.0.0"###,
-        help = r###"build node-20.0.0 with node-build and link it into mise"###
+        "mise link node@24.11.0 ~/.nodes/24.11.0",
+        help = "Link a node that node-build built into ~/.nodes/24.11.0"
     ),
     example(
-        r###"brew install node
-mise link node@brew "$(brew --prefix node)"
-mise use node@brew"###,
-        help = r###"have mise use the node version provided by Homebrew"###
+        r###"mise link node@brew "$(brew --prefix node)""###,
+        help = "Register Homebrew's node as node@brew; then run `mise use node@brew`"
     )
 )]
 pub(crate) struct Link {
-    /// Tool name and version to create a symlink for
+    /// Tool and version to create a symlink for
     #[usage(value_name = "TOOL@VERSION")]
     tool: ToolArg,
 
-    /// The local path to the tool version
-    /// e.g.: ~/.nvm/versions/node/v20.0.0
+    /// Directory of the existing installation, such as `~/.nvm/versions/node/v24.11.0`
     #[usage(value_hint = ValueHint::DirPath, verbatim_doc_comment)]
     path: PathBuf,
 
-    /// Overwrite an existing tool version if it exists
+    /// Replace an existing installation of this version
     #[usage(long, short = 'f')]
     force: bool,
 }

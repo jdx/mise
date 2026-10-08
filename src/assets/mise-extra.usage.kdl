@@ -1,82 +1,51 @@
 source_code_link_template #"""
 {%- set path = path | replace(from='-', to='_') -%}
-{%- if path == "daemons" or path is starting_with(pat="daemons/") -%}
-{%- set path = "daemons.rs" -%}
+{%- if path == "bootstrap/dotfiles" or path is starting_with(pat="bootstrap/dotfiles/") -%}
+{%- set path = path | replace(from="bootstrap/dotfiles", to="dotfiles") -%}
+{%- endif -%}
+{%- if path == "daemons/providers" or path is starting_with(pat="daemons/providers/") -%}
+{%- set path = "daemons/providers.rs" -%}
+{%- elif path == "daemons" or path is starting_with(pat="daemons/") -%}
+{%- set path = "cli/daemons.rs" -%}
 {%- elif path == "dotfiles/history" -%}
-{%- set path = "dotfiles/history/mod.rs" -%}
+{%- set path = "cli/dotfiles/history/mod.rs" -%}
 {%- elif path == "dotfiles/include" -%}
-{%- set path = "dotfiles/exclude.rs" -%}
+{%- set path = "cli/dotfiles/exclude.rs" -%}
 {%- elif path == "dotfiles/origin" or path == "dotfiles/origin/set" -%}
-{%- set path = "dotfiles/origin.rs" -%}
+{%- set path = "cli/dotfiles/origin.rs" -%}
 {%- elif path == "bootstrap/packages/apply" -%}
-{%- set path = "system/install.rs" -%}
+{%- set path = "cli/system/install.rs" -%}
+{%- elif path == "bootstrap/packages/export" -%}
+{%- set path = "cli/system/export.rs" -%}
 {%- elif path == "bootstrap/packages/import" -%}
-{%- set path = "system/import.rs" -%}
+{%- set path = "cli/system/import.rs" -%}
 {%- elif path == "bootstrap/packages/prune" -%}
-{%- set path = "system/prune.rs" -%}
+{%- set path = "cli/system/prune.rs" -%}
 {%- elif path == "bootstrap/packages/status" -%}
-{%- set path = "system/status.rs" -%}
+{%- set path = "cli/system/status.rs" -%}
 {%- elif path == "bootstrap/packages/upgrade" -%}
-{%- set path = "system/upgrade.rs" -%}
+{%- set path = "cli/system/upgrade.rs" -%}
 {%- elif path == "bootstrap/packages/use" -%}
-{%- set path = "system/use.rs" -%}
+{%- set path = "cli/system/use.rs" -%}
 {%- elif path == "bootstrap/packages/where" -%}
-{%- set path = "system/where.rs" -%}
-{%- elif path is starting_with(pat="bootstrap/packages/brew") -%}
-{%- set path = "system/brew/mod.rs" -%}
-{%- elif path == "bootstrap/dotfiles/add" -%}
-{%- set path = "dotfiles/add.rs" -%}
-{%- elif path == "bootstrap/dotfiles/apply" -%}
-{%- set path = "dotfiles/apply.rs" -%}
-{%- elif path == "bootstrap/dotfiles/edit" -%}
-{%- set path = "dotfiles/edit.rs" -%}
-{%- elif path == "bootstrap/dotfiles/status" -%}
-{%- set path = "dotfiles/status.rs" -%}
-{%- elif path == "bootstrap/dotfiles/unapply" -%}
-{%- set path = "dotfiles/unapply.rs" -%}
-{%- elif path == "bootstrap/dotfiles/history" -%}
-{%- set path = "dotfiles/history/mod.rs" -%}
-{%- elif path is starting_with(pat="bootstrap/dotfiles/history/") -%}
-{%- set path = path | replace(from="bootstrap/dotfiles/history/", to="dotfiles/history/") ~ ".rs" -%}
-{%- elif path == "bootstrap/dotfiles/paths" -%}
-{%- set path = "dotfiles/paths.rs" -%}
-{%- elif path == "bootstrap/dotfiles/save" -%}
-{%- set path = "dotfiles/save.rs" -%}
-{%- elif path == "bootstrap/dotfiles/capture" -%}
-{%- set path = "dotfiles/capture.rs" -%}
-{%- elif path == "bootstrap/dotfiles/conflicts" -%}
-{%- set path = "dotfiles/conflicts.rs" -%}
-{%- elif path == "bootstrap/dotfiles/track" -%}
-{%- set path = "dotfiles/track.rs" -%}
-{%- elif path == "bootstrap/dotfiles/untrack" -%}
-{%- set path = "dotfiles/untrack.rs" -%}
-{%- elif path == "bootstrap/dotfiles/rollback" -%}
-{%- set path = "dotfiles/rollback.rs" -%}
-{%- elif path == "bootstrap/dotfiles/undo" -%}
-{%- set path = "dotfiles/undo.rs" -%}
-{%- elif path == "bootstrap/dotfiles/watch" -%}
-{%- set path = "dotfiles/watch.rs" -%}
-{%- elif path == "bootstrap/dotfiles/exclude" or path == "bootstrap/dotfiles/include" -%}
-{%- set path = "dotfiles/exclude.rs" -%}
-{%- elif path == "bootstrap/dotfiles/origin" or path == "bootstrap/dotfiles/origin/set" -%}
-{%- set path = "dotfiles/origin.rs" -%}
-{%- elif path == "bootstrap/dotfiles/sync" -%}
-{%- set path = "dotfiles/sync.rs" -%}
-{%- elif path == "bootstrap/dotfiles/pull" -%}
-{%- set path = "dotfiles/pull.rs" -%}
-{%- elif path == "bootstrap/dotfiles/recover" -%}
-{%- set path = "dotfiles/recover.rs" -%}
+{%- set path = "cli/system/where.rs" -%}
+{%- elif path == "bootstrap/packages/brew/tap" -%}
+{%- set path = "cli/system/brew/tap.rs" -%}
+{%- elif path == "bootstrap/packages/brew/untap" -%}
+{%- set path = "cli/system/brew/untap.rs" -%}
+{%- elif path == "bootstrap/packages/brew" -%}
+{%- set path = "cli/system/brew/mod.rs" -%}
 {%- elif path is starting_with(pat="bootstrap") -%}
-{%- set path = "bootstrap.rs" -%}
+{%- set path = "cli/bootstrap.rs" -%}
 {%- elif path == "tasks/run" -%}
-{%- set path = "run.rs" -%}
+{%- set path = "cli/run.rs" -%}
 {%- elif cmd.subcommands | length > 0 -%}
 {%- set parts = path | split(pat="/") -%}
-{%- set path = parts[0] ~ "/mod.rs" -%}
+{%- set path = "cli/" ~ parts[0] ~ "/mod.rs" -%}
 {%- else -%}
-{%- set path = path ~ ".rs" -%}
+{%- set path = "cli/" ~ path ~ ".rs" -%}
 {%- endif -%}
-https://github.com/jdx/mise/blob/main/src/cli/{{path}}
+https://github.com/jdx/mise/blob/main/src/{{path}}
 """#
 
 complete "alias" run="mise alias ls {{words[PREV]}} | awk '{print $2}'"

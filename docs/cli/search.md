@@ -11,31 +11,31 @@ description: "Search for available tools"
 
 Search for available tools
 
-Searches the registry and installed backend catalogs for tools matching NAME.
+Searches the registry and the tool lists of installed backend plugins for
+tools matching NAME. When nothing matches, it also searches the aqua
+registry. Prefix NAME with `npm:`, `cargo:`, `gem:`, or `dotnet:` to also
+search that package registry, or pass `--all` to search every source.
 
-Prefix NAME with a backend to also search that backend's package registry:
-`npm:`, `cargo:`, `gem:`, or `dotnet:`. Use `--all` to search every backend,
-including all of those package registries. Otherwise, unprefixed searches do
-not query package registries.
-
-By default, it will show all tools that fuzzy match the search term. For
-non-fuzzy matches, use the `--match-type` flag.
+Matching is fuzzy by default. Use `--match-type equal` or
+`--match-type contains` for stricter matches.
 
 ## Arguments
 - **`[NAME]`** — The tool to search for
 
 ## Flags
-- **`-a --all`** — Search every backend: the registry, aqua, installed backend plugins, and the npm, cargo, gem, and dotnet package registries
+- **`-a --all`** — Search every source: the registry, aqua, installed backend plugins, and the npm, cargo, gem, and dotnet package registries
 - **`-i --interactive`** — Show an interactive search menu
 - **`-m --match-type <MATCH_TYPE>`** — Match type: equal, contains, or fuzzy
 
   **Choices:** `equal`, `contains`, `fuzzy`
 
   **Default:** `fuzzy`
-- **`--no-header`** — Don't display headers
+- **`--no-header`** — Do not print the table header
 - **`-h --help`** — Print help
 
 ## Examples
+
+Fuzzy-search the registry for jq
 
 ```
 mise search jq
@@ -46,22 +46,18 @@ jiq   jid on jq - interactive JSON query tool using jq expressions. https://gith
 gojq  Pure Go implementation of jq. https://github.com/itchyny/gojq
 ```
 
+Look up one npm package by its exact name
+
 ```
 mise search --match-type equal npm:typescript-language-server
 Tool                            Description
 npm:typescript-language-server  Language Server Protocol (LSP) implementation for TypeScript using tsserver
 ```
 
+Pick a tool from a filterable list
+
 ```
 mise search --interactive
-Tool
-Search a tool
-❯ jq    Command-line JSON processor. https://github.com/jqlang/jq
-  jqp   A TUI playground to experiment with jq. https://github.com/noahgorstein/jqp
-  jiq   jid on jq - interactive JSON query tool using jq expressions. https://github.com/fiatjaf/jiq
-  gojq  Pure Go implementation of jq. https://github.com/itchyny/gojq
-/jq
-esc clear filter • enter confirm
 ```
 
 <!-- generated reference navigation -->

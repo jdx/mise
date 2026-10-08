@@ -1,24 +1,27 @@
 use crate::gitlab;
 use crate::tokens;
 
-/// Display the GitLab token mise will use for a given host
+/// Show the GitLab token mise uses for a host
 ///
-/// Shows which token source mise would use, useful for debugging
-/// authentication issues. The token is masked by default.
+/// Shows the token and where it came from, to debug authentication. The token
+/// is masked unless you pass --unmask.
 #[derive(Debug, usage_rs::Args)]
 #[usage(
     verbatim_doc_comment,
     example(
         r###"mise token gitlab
-gitlab.com: glpa…xxxx (source: GITLAB_TOKEN)"###
+gitlab.com: glpa…xxxx (source: GITLAB_TOKEN)"###,
+        help = "Show the token for gitlab.com"
     ),
     example(
         r###"mise token gitlab --unmask
-gitlab.com: glpat-xxxxxxxxxxxx (source: GITLAB_TOKEN)"###
+gitlab.com: glpat-xxxxxxxxxxxx (source: GITLAB_TOKEN)"###,
+        help = "Show the whole token"
     ),
     example(
         r###"mise token gitlab gitlab.mycompany.com
-gitlab.mycompany.com: (none)"###
+gitlab.mycompany.com: (none)"###,
+        help = "Check a self-managed GitLab instance"
     )
 )]
 pub(super) struct Gitlab {

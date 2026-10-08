@@ -20,7 +20,9 @@ use std::{borrow::Cow, sync::Arc};
 
 pub(crate) use crate::hook_env::HookReason;
 
-/// [internal] called by activate hook to update env vars directory change
+/// [internal] Update the environment at each prompt
+///
+/// The shell hook that `mise activate` installs runs this command.
 #[derive(Debug, usage_rs::Args)]
 #[usage(hide = true)]
 pub(crate) struct HookEnv {

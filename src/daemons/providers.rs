@@ -479,7 +479,7 @@ impl Exec {
     }
 }
 
-/// Manage shared servers defined in global [daemon_providers].
+/// [experimental] Manage shared servers defined in global `[daemon_providers]`
 #[derive(Debug, usage_rs::Args)]
 pub struct Providers {
     #[usage(subcommand)]
@@ -488,17 +488,18 @@ pub struct Providers {
 
 #[derive(Debug, usage_rs::Subcommands)]
 enum ProviderCommand {
-    /// List configured and previously managed shared servers.
+    /// [experimental] List shared servers
     Ls(ProviderList),
-    /// Start the named shared servers.
+    /// [experimental] Start shared servers
     Start(Names),
-    /// Stop the named shared servers without deleting their data.
+    /// [experimental] Stop shared servers (data is kept)
     Stop(Names),
-    /// Restart the named shared servers with their current configuration.
+    /// [experimental] Restart shared servers with their current configuration
     Restart(Names),
 }
 #[derive(Debug, usage_rs::Args)]
 struct ProviderList {
+    /// Output in JSON format
     #[usage(long)]
     json: bool,
 }

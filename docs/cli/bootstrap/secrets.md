@@ -11,6 +11,10 @@ description: "Inspect bootstrap secret inputs without revealing their values"
 
 Inspect bootstrap secret inputs without revealing their values
 
+Secret inputs are values declared in `[bootstrap.secrets]` that file and
+dotfile templates read with `secret()`. mise reads them from environment
+variables, or prompts for missing ones with `--prompt-secrets`.
+
 ## Flags
 - **`-h --help`** — Print help
 
@@ -22,6 +26,6 @@ Inspect bootstrap secret inputs without revealing their values
 
 ## Related documentation
 
-- [Bootstrap secrets](/bootstrap/secrets.html).
+- [Secret inputs](/bootstrap/secrets.html).
 - [`mise bootstrap [FLAGS] [SUBCOMMAND]`](/cli/bootstrap.html).
 - [Global flags and argument syntax](/cli/#global-flags).

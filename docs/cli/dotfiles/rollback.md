@@ -11,28 +11,36 @@ description: "Return files to the version a checkpoint holds"
 
 Return files to the version a checkpoint holds
 
-Without `--to`, each path returns to its most recent saved version that
-differs from what is on disk; unrelated checkpoints never influence the
-choice. With `--to <ref>`, the named checkpoint is the source, and
-`--all` selects everything it covers. The current state is saved in a
-protective checkpoint first, so `mise dot undo` can reverse it.
+Without `--to`, each path returns to its most recent saved version that differs from what is on disk; other checkpoints do not affect the choice. With `--to REF`, the named checkpoint is the source, and `--all` restores everything it covers. mise saves the current state in a checkpoint first, so `mise dot undo` can reverse the rollback.
 
 ## Arguments
 - **`[PATH]…`** — Paths to roll back (files or directories)
 
 ## Flags
 - **`--to <REF>`** — The checkpoint to roll back to: numeric ID, `latest`, `latest~N`, or `commit:<sha>`
-- **`--all`** — With --to: everything the checkpoint covers
+- **`--all`** — With `--to`, restore everything the checkpoint covers
 - **`-n --dry-run`** — Show the plan without changing anything
 - **`-y --yes`** — Apply without prompting
 - **`--force`** — Replace a path whose type changed (file, symlink, directory)
 - **`-h --help`** — Print help
 
-Examples:
+## Examples
+
+Restore the latest saved version that differs from the file
 
 ```
 mise dot rollback ~/.config/hypr/bindings.lua
+```
+
+Restore ~/.zshrc as checkpoint 42 holds it
+
+```
 mise dot rollback ~/.zshrc --to 42
+```
+
+Preview restoring every file from three checkpoints ago
+
+```
 mise dot rollback --to latest~3 --all --dry-run
 ```
 
@@ -40,6 +48,6 @@ mise dot rollback --to latest~3 --all --dry-run
 
 ## Related documentation
 
-- [Getting started](/getting-started.html).
+- [Dotfiles history](/dotfiles/history.html).
 - [`mise dotfiles [--local] <SUBCOMMAND>`](/cli/dotfiles.html).
 - [Global flags and argument syntax](/cli/#global-flags).

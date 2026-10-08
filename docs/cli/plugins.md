@@ -12,11 +12,17 @@ description: "Manage plugins"
 
 Manage plugins
 
+Plugins add tools, backends, environment directives, or bootstrap package
+managers to mise. Most tools need no plugin because most registry tools use
+built-in backends, and mise installs a missing plugin when a configured tool
+needs it.
+
+With no subcommand, lists installed plugins (same as `mise plugins ls`; the
+flags below are passed to it). See <https://mise.jdx.dev/plugins.html>
+
 ## Flags
-- **`-c --core`** — Only show built-in (core) plugins
-  These are hidden by default
-- **`-u --urls`** — Show the git url for each plugin
-  e.g.: <https://github.com/jdx/vfox-cmake.git>
+- **`-c --core`** — List the core tools built into mise instead of installed plugins
+- **`-u --urls`** — Show each plugin's Git URL, ref, and commit
 - **`--user`** — List installed plugins
 
   This is the default behavior but can be used with --core
@@ -36,6 +42,6 @@ Manage plugins
 
 ## Related documentation
 
-- [Plugin selection and maintenance](/plugin-usage.html).
+- [Plugins](/plugins.html).
 - [All commands](/cli/).
 - [Global flags and argument syntax](/cli/#global-flags).

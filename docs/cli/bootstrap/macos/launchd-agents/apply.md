@@ -12,7 +12,7 @@ description: "Install and load LaunchAgents from `[bootstrap.macos.launchd.agent
 Install and load LaunchAgents from `[bootstrap.macos.launchd.agents]`
 
 ## Flags
-- **`-n --dry-run`** — Print the commands that would run without running them
+- **`-n --dry-run`** — Show what would change without changing anything
 - **`-y --yes`** — Skip the confirmation prompt
 - **`-h --help`** — Print help
 

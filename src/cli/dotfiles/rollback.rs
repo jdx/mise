@@ -7,12 +7,25 @@ use crate::system::history::replay::{self, RollbackRequest};
 /// Return files to the version a checkpoint holds
 ///
 /// Without `--to`, each path returns to its most recent saved version that
-/// differs from what is on disk; unrelated checkpoints never influence the
-/// choice. With `--to <ref>`, the named checkpoint is the source, and
-/// `--all` selects everything it covers. The current state is saved in a
-/// protective checkpoint first, so `mise dot undo` can reverse it.
+/// differs from what is on disk; other checkpoints do not affect the choice.
+/// With `--to REF`, the named checkpoint is the source, and `--all` restores
+/// everything it covers. mise saves the current state in a checkpoint first,
+/// so `mise dot undo` can reverse the rollback.
 #[derive(Debug, usage_rs::Args)]
-#[usage(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+#[usage(
+    example(
+        "mise dot rollback ~/.config/hypr/bindings.lua",
+        help = "Restore the latest saved version that differs from the file"
+    ),
+    example(
+        "mise dot rollback ~/.zshrc --to 42",
+        help = "Restore ~/.zshrc as checkpoint 42 holds it"
+    ),
+    example(
+        "mise dot rollback --to latest~3 --all --dry-run",
+        help = "Preview restoring every file from three checkpoints ago"
+    )
+)]
 pub(crate) struct DotfilesRollback {
     /// Paths to roll back (files or directories)
     #[usage(value_name = "PATH")]
@@ -22,7 +35,7 @@ pub(crate) struct DotfilesRollback {
     #[usage(long, value_name = "REF")]
     to: Option<String>,
 
-    /// With --to: everything the checkpoint covers
+    /// With `--to`, restore everything the checkpoint covers
     #[usage(long)]
     all: bool,
 
@@ -55,12 +68,3 @@ impl DotfilesRollback {
         .await
     }
 }
-
-static AFTER_LONG_HELP: &str = color_print::cstr!(
-    r#"<bold><underline>Examples:</underline></bold>
-
-    $ <bold>mise dot rollback ~/.config/hypr/bindings.lua</bold>
-    $ <bold>mise dot rollback ~/.zshrc --to 42</bold>
-    $ <bold>mise dot rollback --to latest~3 --all --dry-run</bold>
-"#
-);

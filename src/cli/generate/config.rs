@@ -4,16 +4,21 @@ use crate::Result;
 use crate::cli::edit::Edit;
 
 /// Generate a mise.toml file
+///
+/// Same as `mise edit`, which has the details. It opens the interactive editor, or
+/// without an interactive terminal (or with --yes) writes a commented starter
+/// template. If PATH already exists it stops with an error rather than replace
+/// the file; pass --force to replace it.
 #[derive(Debug, usage_rs::Args)]
 #[usage(
     verbatim_doc_comment,
     example(
-        r###"mise generate config             # generate mise.toml interactively
-mise generate config .mise.toml  # generate a specific file
-mise generate config -g          # generate the global config file
-mise generate config -y          # skip interactive editor
-mise generate config -y --force  # replace an existing file with the default template
-mise generate config -n          # preview without writing"###
+        "mise generate config",
+        help = "Edit mise.toml in the current directory"
+    ),
+    example(
+        "mise generate config -n",
+        help = "Print the result instead of writing it"
     )
 )]
 pub(super) struct Config {
@@ -22,17 +27,17 @@ pub(super) struct Config {
     // them over, so the conflict does not carry across on its own.
     #[usage(long, short = 'g', conflicts = "path")]
     global: bool,
-    /// Show what would be generated without writing to file
+    /// Print the result instead of writing it to the file
     #[usage(long, short = 'n')]
     dry_run: bool,
-    /// Overwrite an existing file with the default template when not editing interactively
+    /// Replace an existing file with the starter template when not opening the editor
     #[usage(long, short)]
     force: bool,
-    /// Path to the config file to create
+    /// Config file to edit or create; defaults to mise.toml
     #[usage(verbatim_doc_comment, value_hint = ValueHint::FilePath)]
     path: Option<PathBuf>,
-    /// Path to a .tool-versions file to import tools from
-    #[usage(long, short, verbatim_doc_comment, value_hint = ValueHint::FilePath)]
+    /// Copy the tools from this .tool-versions file into the config, without opening the editor
+    #[usage(long, short, value_name = "FILE", verbatim_doc_comment, value_hint = ValueHint::FilePath)]
     tool_versions: Option<PathBuf>,
 }
 

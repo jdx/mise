@@ -11,29 +11,36 @@ description: "Show the path a tool's executable resolves to"
 
 Show the path a tool's executable resolves to
 
-Use this to figure out what version of a tool is currently active.
+Prints the real path of the executable mise would run for BIN_NAME in the
+current directory, bypassing shims. Use `--version` or `--plugin` to see
+which tool version provides it.
 
 ## Arguments
 - **`[BIN_NAME]`** — The executable to look up
 
 ## Flags
-- **`-t --tool <TOOL@VERSION>`** — Use a specific tool@version
-  e.g.: `mise which npm --tool=node@20`
-- **`--plugin`** — Show the plugin name instead of the path
+- **`-t --tool <TOOL@VERSION>`** — Look in a specific tool version, such as `mise which npm --tool=node@20`
+- **`--plugin`** — Show the name of the tool that provides the executable
 - **`--version`** — Show the version instead of the path
 - **`-h --help`** — Print help
 
 ## Examples
 
+Show the path of the node executable
+
 ```
 mise which node
-/home/username/.local/share/mise/installs/node/20.0.0/bin/node
+~/.local/share/mise/installs/node/20.0.0/bin/node
 ```
+
+Show the tool that provides it
 
 ```
 mise which node --plugin
 node
 ```
+
+Show the version that provides it
 
 ```
 mise which node --version

@@ -1,67 +1,128 @@
 ---
-description: "Use ordinary sources and outputs checks to skip work that is already up to date."
+description: "Skip tasks whose inputs have not changed, and restore earlier results from mise's experimental artifact cache."
+socialDescription: "Skip unchanged tasks, or restore earlier results from the experimental artifact cache."
 ---
 
 # Task caching
 
-Use ordinary `sources` and `outputs` checks to skip work that is already up to
-date. Enable experimental artifact caching when you also need to reuse successful
-results after switching inputs or deleting build outputs.
+mise can skip a task whose inputs have not changed in two ways. Freshness
+checks compare file modification times and need only `sources` and `outputs`.
+The artifact cache also brings back outputs you deleted and results from earlier
+inputs, for example after you switch back to a branch you already built.
 
-| Mechanism        | Compares                                             | On a hit                                             |
-| ---------------- | ---------------------------------------------------- | ---------------------------------------------------- |
-| Freshness checks | Source and output modification times                 | Leaves existing outputs in place and skips the task. |
-| Artifact cache   | Declared input contents and other cache-key material | Restores declared outputs and replays captured logs. |
+| Mechanism        | Compares                                       | When nothing changed                          | Status       |
+| ---------------- | ---------------------------------------------- | --------------------------------------------- | ------------ |
+| Freshness checks | Modification times of sources and outputs      | Skips the task and leaves its outputs alone   | Stable       |
+| Artifact cache   | Source contents and the other cache-key inputs | Restores the outputs and replays the task log | Experimental |
 
-For freshness configuration, see [`sources`](/tasks/task-configuration.html#sources)
-and [`outputs`](/tasks/task-configuration.html#outputs). The remainder of this guide
-covers the experimental artifact cache.
+To share artifact cache results between CI and developer machines, see
+[Remote task cache](/tasks/remote-cache.html).
 
-## Artifact cache flow
+## Skip up-to-date tasks
 
-For an eligible task with artifact caching enabled and cache reads and writes
-allowed, mise uses this flow:
+Give a task `sources` and `outputs`:
 
-```mermaid
----
-config:
-  htmlLabels: false
----
-flowchart TB
-    accTitle: Artifact cache lookup and execution
-    accDescr: A usable artifact restores outputs and logs without running the task. Otherwise the task runs and successful results are saved.
-    inputs["Declared inputs<br/>and task context"]
-    key["Compute artifact key"]
-    lookup{"Cache hit?"}
-    restore["Restore outputs<br/>Replay logs<br/>Skip command"]
-    run["Run command"]
-    save["Save outputs<br/>and logs"]
-    inputs --> key --> lookup
-    lookup -->|Yes| restore
-    lookup -->|No| run
-    run -->|Success| save
+```mise-toml
+[tasks.build]
+run = "cargo build"
+sources = ["Cargo.toml", "src/**/*.rs"]
+outputs = ["target/debug/mycli"]
 ```
 
-This describes artifact caching, rather than the modification-time freshness
-check above. With `outputs = []`, a hit reuses the successful result and logs
-without restoring files. Failed runs are not cached. Forced runs, disabled cache
-access, and ineligible tasks can bypass parts of this flow; see
-[per-run cache access](#per-run-cache-access) and
-[storage and output replay](#storage-retention-and-output-replay).
+[`mise run build`](/cli/run.html) runs `cargo build` the first time. On later
+runs it prints `[build] sources up-to-date, skipping` until the task becomes
+[stale](#what-makes-a-task-stale). Use `mise run --force build` to run it
+anyway; `--force` also reruns the task's dependencies.
 
-## Enable artifact caching
+[`sources`](/tasks/task-configuration.html#sources) and
+[`outputs`](/tasks/task-configuration.html#outputs) accept globs, `!`
+exclusions, and usage arguments; the task configuration reference describes the
+pattern syntax. [`mise watch`](/cli/watch.html) uses the same `sources` to decide
+which files to watch.
 
-Stores successful task results in a content-addressed local cache and reuses them when the same task
-inputs are seen again. Declared filesystem outputs are restored after deletion. Tasks with
-`outputs = []` cache their successful result and logs without storing filesystem artifacts, which is
-useful for checks such as linting, testing, and type checking.
-Declaring `outputs = []` asserts that the task has no filesystem side effects that a cache hit needs
-to reproduce.
+### What makes a task stale
 
-Artifact caching requires [`experimental`](/configuration/settings.html#experimental), at least one
-matching `source`, and either explicit output paths or `outputs = []`.
-`outputs = { auto = true }`, absolute outputs, and output patterns (including
-the body of an exclusion) that escape the task directory are not supported.
+A task with `sources` is up to date only when all of these hold:
+
+- Every declared output exists.
+- The newest source file is older than the newest output file.
+- The list of source files, and the size and modification time of each, match
+  what mise recorded after the task last succeeded. Deleting a source, adding
+  one, or restoring an older copy therefore makes the task stale.
+- No source has a modification time of zero (1970-01-01), which some archive
+  tools set.
+- No dependency that has its own `sources` ran or restored outputs in the same
+  `mise run`.
+
+mise adds the config file that defines the task to its sources. Editing that
+file, even to change a different task, makes the task stale.
+
+A failed run records nothing, so the task stays stale until it succeeds.
+
+### Outputs
+
+- Explicit paths or globs, such as `outputs = ["dist"]`, are compared by the
+  [freshness rules](#what-makes-a-task-stale).
+- When a task has `sources` but no `outputs`, mise uses
+  `outputs = { auto = true }`. It touches a marker file in its state directory
+  after each successful run, so the task reruns when a source changes after
+  that run.
+- `outputs = []` declares that the task writes no files. Freshness checks then
+  never skip it. With the [artifact cache](#enable-artifact-caching), mise
+  caches its result and log instead.
+
+### Dependencies
+
+When a dependency that has `sources` runs or restores its outputs from the
+artifact cache, for any reason including `--force`, every task that depends on
+it also runs, even when its own sources are unchanged:
+
+```mise-toml
+[tasks."core:build"]
+run = "tsc -p packages/core"
+sources = ["packages/core/src/**/*.ts"]
+outputs = ["packages/core/dist/**/*.js"]
+
+[tasks."frontend:build"]
+run = "tsc -p packages/frontend"
+sources = ["packages/frontend/src/**/*.ts"]
+outputs = ["packages/frontend/dist/**/*.js"]
+depends = ["core:build"]
+```
+
+A change in `packages/core/src/` runs both tasks. With no changes, both are
+skipped. A dependency without `sources` runs every time, so it does not
+invalidate the tasks that depend on it.
+
+### Inputs shared by every task
+
+[`task_config.global_inputs`](/tasks/task-configuration.html#task_config.global_inputs)
+<Badge type="warning" text="experimental" /> adds source patterns to every task
+in a config scope, such as lockfiles that should invalidate everything. A task
+without its own `sources` then gets those inputs and automatic outputs, so mise
+skips it while they are unchanged.
+
+### Freshness settings
+
+- [`task.source_freshness_hash_contents`](/configuration/settings.html#task.source_freshness_hash_contents)
+  compares BLAKE3 hashes of the source contents with those recorded after the
+  last successful run, and ignores modification times. A task is also stale when
+  its outputs changed since that run. The first run after you enable it always
+  runs the task.
+- [`task.source_freshness_equal_mtime_is_fresh`](/configuration/settings.html#task.source_freshness_equal_mtime_is_fresh)
+  treats a source and output with the same modification time as up to date.
+  Enable it on filesystems with coarse timestamps.
+
+## Enable the artifact cache <Badge type="warning" text="experimental" /> {#enable-artifact-caching}
+
+::: warning Experimental
+The artifact cache requires `experimental = true`.
+:::
+
+Set `cache = { enabled = true }` on a task with `sources` and `outputs`. After a
+successful run, mise stores the outputs and the task's log under a key computed
+from the task's inputs. When the same inputs come back, mise restores them
+instead of running the task.
 
 ```mise-toml
 [settings]
@@ -74,230 +135,19 @@ outputs = ["dist"]
 cache = { enabled = true, env = ["NODE_ENV"] }
 ```
 
-Commands listed in `cache.command_inputs` run before cache lookup. Their command text, stdout, and
-stderr are included in the cache key. Commands use the same inline shell (including a CLI `--shell`
-override), resolved environment and tools, working directory, and sandbox policy as the task. This
-is useful when inputs such as compiler versions or generated configuration cannot be represented by
-source files alone.
+| Situation                                      | mise prints                                   | What happens                                              |
+| ---------------------------------------------- | --------------------------------------------- | --------------------------------------------------------- |
+| First run                                      | `[build] cache miss: no matching cache entry` | Runs `npm run build` and stores `dist` and the log        |
+| Next run, nothing changed                      | `[build] sources up-to-date, skipping`        | Skips the task and replays the stored log                 |
+| `dist` deleted                                 | `[build] restored outputs from cache 7ede…`   | Restores `dist` and replays the log without running       |
+| `src` changed and built, then changed back     | `[build] restored outputs from cache 7ede…`   | Finds the entry for the earlier inputs and restores it    |
+| `NODE_ENV=production`, a value not seen before | `[build] cache miss: no matching cache entry` | Runs the task and stores a second entry for the new value |
 
-```mise-toml
-[tasks.build]
-run = "npm run build"
-sources = ["package.json", "src/**"]
-outputs = ["dist"]
-cache = { enabled = true, command_inputs = ["node --version", "npm config get registry"] }
-```
-
-A command input must be non-empty and exit successfully. Its output is hashed without being printed
-or retained. Command inputs inherit the task timeout, or have a 30-second timeout when the task has
-none, and may emit at most 16 MiB across stdout and stderr. They should be fast, deterministic, and
-free of side effects because they run whenever mise computes the task's cache key. Command inputs
-are not run during dry runs or when caching is disabled for raw or interactive execution.
-
-Set `cache.audit = true` to diagnose incomplete cache declarations on Linux. When a task executes,
-mise uses `strace` to report reads beneath the workspace root that do not match `sources` and writes
-beneath the task directory that do not match `outputs`. The audit is advisory and does not block the
-task or prevent a successful result from being cached. Access outside those roots and directory
-metadata reads are ignored to keep system libraries, executables, and path traversal out of the
-report.
-
-Reported paths are always relative to the task directory, using `..` for the paths above it that a
-read may legitimately touch. A reported read can be added to `sources` exactly as it was printed.
-
-Audit mode requires `strace` on `PATH`. mise warns and runs the task normally when tracing is not
-available; other platforms are not currently supported. Cached tasks are not executed and therefore
-produce no audit report, so use `mise run --force <task>` when checking an existing cache entry.
-
-Console warnings are limited to the first 20 paths per task, which is not enough to classify a task
-that reads thousands of undeclared files. Set
-[`task.cache.audit_report`](/configuration/settings.html#task.cache.audit_report) to also write every
-undeclared path as JSON Lines, one `{"task", "kind", "path"}` object per entry. Truncation happens
-once per `mise` invocation: the first audited task in each invocation truncates the file and later
-audited tasks in that invocation append to it, so one file holds that run's report for every audited
-task and a later run replaces it rather than adding to it.
-
-```shell
-MISE_TASK_CACHE_AUDIT_REPORT=audit.jsonl mise run --force build
-```
-
-```mise-toml
-[tasks.build]
-run = "npm run build"
-sources = ["package.json", "src/**"]
-outputs = ["dist"]
-cache = { enabled = true, audit = true }
-```
-
-## External dependencies and lockfiles
-
-Declare dependency manifests and lockfiles as filesystem inputs so dependency updates invalidate the
-cache. They can be listed directly in a task's `sources`, shared through an input group, or applied to
-every task in a config scope with `task_config.global_inputs`.
-
-```mise-toml
-[settings]
-experimental = true
-
-[task_config]
-global_inputs = ["@group:node-dependencies"]
-
-[task_config.input_groups]
-node-dependencies = ["package.json", "pnpm-lock.yaml"]
-
-[tasks.build]
-run = "pnpm build"
-sources = ["src/**"]
-outputs = ["dist"]
-cache = { enabled = true }
-```
-
-The lockfile content represents the resolved external dependency graph, so installed dependency
-directories such as `node_modules` generally should not be included. Resolved mise tools already
-participate in the cache key. Use `cache.command_inputs` for relevant external state that is not
-captured in committed files, such as a package registry selection or a compiler wrapper version:
-
-```mise-toml
-[tasks.build]
-run = "pnpm build"
-sources = ["package.json", "pnpm-lock.yaml", "src/**"]
-outputs = ["dist"]
-cache = { enabled = true, command_inputs = ["pnpm config get registry"] }
-```
-
-Only declare deterministic external state that can affect task outputs. Secrets and credentials
-should use pass-through environment variables instead so their values are not included in cache
-keys.
-
-## Per-run cache access
-
-Use `mise run --task-cache <mode>` or `MISE_TASK_CACHE` to control task output cache reads and writes
-for one run:
-
-- `read-write` uses cached results and publishes new results. This is the default.
-- `read-only` uses cached results but does not publish misses.
-- `write-only` publishes results but always executes instead of restoring.
-- `off` disables task output caching and uses ordinary source/output freshness checks.
-- `local-only` reads and writes only the local cache, bypassing any configured remote service.
-
-```bash
-# Prevent an untrusted pull request from publishing cache entries
-mise run --task-cache read-only test
-
-# Warm the local cache without consuming existing entries
-mise run --task-cache write-only build
-
-# Diagnose a task without reading or writing task output artifacts
-mise run --task-cache off --force build
-```
-
-These modes only affect the experimental task output cache configured by a task's `cache` property.
-The existing `--no-cache` option controls fetching remote task definitions instead.
-
-## Remote cache and sensitive data
-
-Configure the experimental remote build-cache service with `task.cache.remote_url` and a non-empty
-`task.cache.remote_namespace`. The namespace is an opaque repository or organization identifier;
-the server must isolate entries by both namespace and cache key. It is routing metadata, not an
-authentication mechanism or secret. Use a distinct namespace wherever writers should not be able to
-influence one another's cache entries.
-
-```mise-toml
-[settings]
-experimental = true
-task.cache.remote_url = "https://cache.example.com/mise/"
-task.cache.remote_namespace = "acme/widgets"
-task.cache.remote_mode = "read-write"
-```
-
-The client permits remote writes only for recognized protected-branch push jobs
-in GitHub Actions or GitLab. Local runs, pull requests, tags, and unrecognized CI
-contexts are restricted to reads; a write-only configuration disables the remote
-in those contexts. The server must enforce authorization independently. See the
-[remote protocol](./remote-cache-protocol.html#transport-and-versioning).
-
-Set `MISE_TASK_CACHE_REMOTE_TOKEN` in the process environment to send a bearer credential. The
-equivalent `task.cache.remote_token` setting is global-only, but the environment variable is
-preferred so a token does not need to be written to disk. mise redacts the token from settings trace
-output and marks its HTTP header as sensitive. Requests carrying credentials require HTTPS outside loopback. An unauthenticated
-HTTP connection is permitted with a warning and provides no transport confidentiality
-or server authentication. Servers should still use short-lived,
-least-privilege credentials, restrict namespace access, avoid logging authorization headers, and
-encrypt or otherwise protect stored cache objects according to their sensitivity and retention
-requirements.
-
-For rotating credentials, set `MISE_TASK_CACHE_REMOTE_TOKEN_FILE` to a file containing only the
-bearer token. mise rereads the file before every request, which supports Kubernetes-projected
-service account tokens without restarting a long-running process. The equivalent
-`task.cache.remote_token_file` setting is global-only.
-
-In GitHub Actions, mise can acquire and refresh a short-lived OIDC token itself. Grant the workflow
-permission to request an identity token and set its audience explicitly:
-
-```yaml
-permissions:
-  contents: read
-  id-token: write
-
-jobs:
-  test:
-    runs-on: ubuntu-latest
-    env:
-      MISE_TASK_CACHE_REMOTE_OIDC_AUDIENCE: https://cache.example.com
-    steps:
-      - uses: actions/checkout@v6
-      - uses: jdx/mise-action@v4
-      - run: mise run test
-```
-
-The cache service must trust GitHub's issuer, accept the configured audience, and authorize the
-workflow's identity claims for the selected namespace. mise obtains the token from GitHub's job
-OIDC endpoint, keeps it only in memory, and refreshes it before expiry. The audience setting is
-global-only, and acquisition fails with a clear error when the workflow lacks `id-token: write` permission.
-
-Credential precedence is explicit token, token file, then automatic OIDC. This lets an emergency
-static credential override workload identity without changing project configuration. Other CI
-providers can supply their issued OIDC token directly through `MISE_TASK_CACHE_REMOTE_TOKEN`; they
-do not need a protocol-specific integration.
-
-Task cache entries are not secret-free metadata. They contain captured stdout and stderr plus every
-declared output file. mise applies its configured output redactions before storing logs, but this is
-not a general secret scanner: a task can print an unknown credential or write one into an output
-artifact. Do not cache such a task unless those values are safe to retain and share with every
-reader of its local and remote cache. Clearing a local entry does not delete copies already uploaded
-to a remote service; use the remote service's retention and deletion controls as well.
-
-Artifact checksums detect corruption and HTTPS authenticates the configured server in transit, but
-a checksum is not a signature from the original task runner. Any principal allowed to write a
-namespace can publish entries that its readers will trust. Give untrusted pull-request jobs
-read-only credentials or no remote credentials, use `--task-cache read-only` to prevent publishing,
-and isolate less-trusted writers in a separate namespace.
-
-## Cache correctness and deterministic tasks
-
-Enabling `cache` is a correctness assertion: identical cache-key material must produce equivalent
-captured logs and declared outputs. Every value that can change the result must be represented by a
-source or input group, a resolved mise tool, `cache.env`, `cache.command_inputs`, or a cacheable
-dependency's artifact key. This includes configuration and lockfiles, locale or feature flags,
-compiler wrappers, generated inputs, and relevant external service state. Operating system and
-architecture are included automatically; other machine state is not.
-
-Cache-enabled tasks should be deterministic and should not depend on undeclared files, wall-clock
-time, randomness, mutable network responses, or ambient environment variables. If such an input
-cannot be captured reliably, disable caching for the task. Pass-through environment variables are
-intentionally absent from the key and therefore must not influence cached logs or outputs. A task
-that uses credentials only to fetch content must key on a stable digest or lockfile for that content,
-not on the credential itself.
-
-Declared outputs must completely describe the filesystem state that a hit needs to reproduce. Side
-effects outside those paths—database writes, deployments, notifications, and changes elsewhere in
-the workspace—are not replayed. `outputs = []` is only correct when no filesystem side effect needs
-to be reproduced. On Linux, `cache.audit = true` can reveal many undeclared workspace reads and
-writes, but the audit is advisory and cannot prove determinism or observe every external dependency.
-
-When correctness is uncertain, use `--task-cache off` while diagnosing, add missing key inputs, and
-force an uncached execution before trusting new entries. Use separate remote namespaces when a
-change to task semantics or undeclared external state could otherwise collide with entries produced
-under a different trust policy.
+For checks such as lint or tests that write no files, set `outputs = []` to
+cache only the result and the log. A rerun with unchanged inputs prints
+`sources up-to-date, skipping` and replays the log. Restoring the result for
+earlier inputs, for example after you revert a change, prints
+`restored result from cache <key>`:
 
 ```mise-toml
 [tasks.lint]
@@ -307,10 +157,40 @@ outputs = []
 cache = { enabled = true }
 ```
 
-To enable caching by default for every eligible task in a config scope, set
-`task_config.cache`. Only tasks with at least one source and either explicit output paths or
-`outputs = []` inherit this default; other tasks remain uncached. A task-local `cache` value
-overrides the scoped default.
+### Requirements
+
+- [`experimental`](/configuration/settings.html#experimental) is `true`.
+- The task has at least one entry in `sources`.
+- The task has explicit `outputs` or `outputs = []`. Automatic outputs cannot be
+  stored.
+- Every output pattern, including the part after a `!` exclusion, is a relative
+  path inside the task directory, and no output contains a source.
+
+A task that sets `cache.enabled = true` without meeting these fails with an
+error such as `task build cache requires at least one source`.
+
+### When mise does not use the cache
+
+- `mise run --task-cache off` or `MISE_TASK_CACHE=off` turns the artifact cache
+  off for the run. Freshness checks still apply.
+- `mise run --dry-run` does not read, write, or compute cache keys, unless you
+  also ask for an [explanation](#inspect-and-diagnose-cached-results).
+- `mise run --force` skips cache reads and runs the task, then stores the new
+  result.
+- A task that receives [`secrets`](/tasks/task-configuration.html#secrets) is
+  never cached, because its log or outputs could contain them. mise warns, and
+  freshness checks still apply.
+- A `raw` or `interactive` task, or any task run with `--raw`, keeps the
+  terminal and is not cached. mise warns, and the task runs every time.
+- A task runs instead of restoring when one of its dependencies has `sources`
+  but no artifact cache and ran in the same `mise run`.
+
+### Cache every eligible task in a project
+
+Set `task_config.cache` to give every task in a config scope a default `cache`
+value. Only tasks with at least one source and explicit outputs or
+`outputs = []` receive it; other tasks stay uncached. A task's own `cache` value
+replaces the default entirely.
 
 ```mise-toml
 [settings]
@@ -331,70 +211,142 @@ run = "./deploy.sh"
 cache = { enabled = false }
 ```
 
-The cache key includes source contents, the task definition and arguments, resolved task environment,
-the values (or absence) of variables named in `cache.env`, command-input output, resolved tool
-versions, dependency artifact keys, and the operating system and architecture. Variables inherited
-from the ambient process are ignored unless listed in `cache.env`.
+In a monorepo, [`[monorepo.task_defaults]`](/tasks/workspace-graph.html#root-task-defaults)
+can set `cache` for a task name in every project, and the Node.js workspace
+provider reads `cache` from
+[`turbo.json`](/tasks/workspace-graph.html#provider-task-suggestions).
 
-## Inspect and diagnose cached results
+## How a cached run works {#artifact-cache-flow}
 
-Use `mise run --task-cache-explain <task>` to print a deterministic breakdown of the inputs that
-produced the cache key without printing the aggregate key itself. Environment variables are
-identified only by name and whether they are set, while mise variables are identified only by name,
-so the explanation does not publish their contents or per-value digests. Other potentially
-secret-derived inputs—including source contents, dependency keys, command output, task definitions,
-and resolved tool versions—are reported only by category and count. Matched source paths, declared
-output patterns, currently resolved output roots, and the target platform are listed directly.
+```mermaid
+---
+config:
+  htmlLabels: false
+---
+flowchart TB
+    accTitle: How mise runs a task that has the artifact cache enabled
+    accDescr: mise computes the cache key, skips the task when its outputs are up to date and the key is unchanged, restores a stored entry when one matches, and otherwise runs the task and stores a successful result.
+    key["Compute cache key"]
+    fresh{"Outputs up to date<br/>and key unchanged?"}
+    skip["Skip the task<br/>Replay the log"]
+    lookup{"Entry for this key<br/>in the cache?"}
+    restore["Restore outputs<br/>Replay the log"]
+    run["Run the task"]
+    save["Store outputs<br/>and the log"]
+    key --> fresh
+    fresh -->|Yes| skip
+    fresh -->|No| lookup
+    lookup -->|Yes| restore
+    lookup -->|No| run
+    run -->|Success| save
+```
 
-Combine the flag with `--dry-run` to inspect the key inputs without executing, restoring, or storing
-the task. Cache command inputs still run when the explanation is explicitly requested because their
-output hashes are part of the key.
+mise computes the key first, so `cache.command_inputs` run even when the task is
+then skipped. The skip requires both a
+[freshness check](#what-makes-a-task-stale) and a key equal to the one stored by
+the last run; for `outputs = []`, the key alone decides.
+A lookup checks the local cache and then, when one is configured, the
+[remote cache](/tasks/remote-cache.html). Failed runs are not stored.
 
-Use `mise run --dry-run --task-cache-explain-json <task>` for machine-readable diagnostics. The
-command writes one compact JSON object per selected task to stdout, using the same redaction rules
-as the human explanation. Each object includes the opaque `cache_key` so consumers can distinguish
-separate invocations of the same task without exposing their arguments or dependency environment
-values. This JSON Lines format remains streamable when a pattern selects multiple tasks. Cache
-command inputs still run so their presence can be reported accurately, but their output and hashes
-are not included.
+When the task runs instead of restoring, mise prints the reason after
+`cache miss:`:
 
-Use `mise run --task-cache-stats <task>` to print a run summary with the number and percentage of
-artifact cache hits, the uncompressed output and log bytes restored, and the execution time recorded
-when each restored entry was created. Entries written before this metadata was added remain readable
-and contribute zero bytes and time when restored. Freshness skips that do not perform a cache lookup
-are not counted as hits or misses.
+- `no matching cache entry`
+- `cache entry was corrupt`
+- `cache entry exceeded its age limit`
+- `forced execution`
+- `cache reads are disabled`
+- `dependency completed without a cache key`
 
-Use `mise cache task <task>` to inspect every local output-cache entry associated with a configured
-task. The table shows each key, whether it is the current freshness entry, its stored and restorable
-sizes, recorded execution time, last access time, and output roots. Add `--json` for structured
-output as an array, including when only one task matches. Entries created before task identity
-metadata was added can be inspected when they are the task's current entry; older historical entries
-become discoverable after they are rewritten.
+## What goes into the cache key
 
-Use `mise cache clear --task <task>` to delete only that task's local output-cache entries and
-freshness pointer. Declared outputs in the working directory and entries belonging to other tasks
-are not removed. Legacy current entries without identity metadata are detached but retained because
-their ownership cannot be verified; mise warns when this occurs, and `mise cache clear` removes them.
+- The paths and contents of the source files, plus the config file that defines
+  the task. Paths are relative to the outermost config root, so checkouts at
+  different locations share entries.
+- The task definition: its name, `run` entries, arguments, shell, output
+  patterns, directory, and whether it runs as a `depends_post` dependency.
+- The values of the task's own `env` entries.
+- The values, or absence, of the variables named in `cache.env` and
+  `task_config.global_env`.
+- The mise variables the task can see, from `[vars]` and the task's `vars`.
+- The output of each `cache.command_inputs` command.
+- The resolved tool versions.
+- The cache keys of cached dependencies.
+- The operating system and architecture.
 
-## Environment variables and cache keys
+Other environment variables, whether inherited from your shell or set in
+`[env]`, are part of the key only when you list them in `cache.env`. A source
+outside the outermost config root, such as `../../shared/file`, is keyed by its
+absolute path, so only checkouts at the same path share that entry.
 
-`task_config.global_env` adds ambient variable names to every enabled task cache in the config
-scope, including tasks with a task-local `cache` value. Unlike the default values under
-`task_config.cache`, these names always compose with task-local `cache.env`.
+## External dependencies and lockfiles
+
+Declare dependency manifests and lockfiles as sources so dependency updates
+invalidate the cache. List them in a task's `sources`, share them through an
+input group, or apply them to every task in a config scope with
+`task_config.global_inputs`:
+
+```mise-toml
+[settings]
+experimental = true
+
+[task_config]
+global_inputs = ["@group:node-dependencies"]
+
+[task_config.input_groups]
+node-dependencies = ["package.json", "pnpm-lock.yaml"]
+
+[tasks.build]
+run = "pnpm build"
+sources = ["src/**"]
+outputs = ["dist"]
+cache = { enabled = true }
+```
+
+The lockfile describes the resolved dependency graph, so do not list installed
+dependency directories such as `node_modules`. Resolved mise tools are already
+part of the key.
+
+### Command inputs
+
+Use `cache.command_inputs` for external state that committed files do not
+capture, such as a package registry selection or a compiler wrapper version:
+
+```mise-toml
+[tasks.build]
+run = "pnpm build"
+sources = ["package.json", "pnpm-lock.yaml", "src/**"]
+outputs = ["dist"]
+cache = { enabled = true, command_inputs = ["pnpm config get registry"] }
+```
+
+Each command runs before the cache lookup, with the task's shell (including a
+`--shell` override on the command line), environment, tools, working directory,
+and sandbox. Its command text, stdout, and stderr become part of the key; mise
+hashes the output without printing or keeping it.
+
+A command input must be non-empty and exit successfully. It inherits the task's
+`timeout`, or 30 seconds when the task has none, and may print at most 16 MiB
+across stdout and stderr. Keep command inputs fast, deterministic, and free of
+side effects, because they run every time mise computes the key. They do not run
+during a dry run or for `raw` and `interactive` tasks, unless you request a
+cache-key explanation with `--task-cache-explain` or
+`--task-cache-explain-json`.
+
+### Environment variables and cache keys
+
+`task_config.global_env` adds variable names to the `cache.env` of every
+cache-enabled task in the config scope, including tasks that set their own
+`cache`:
 
 ```mise-toml
 [task_config]
 global_env = ["CI", "NODE_ENV"]
 ```
 
-For cache-enabled tasks, variables named in `cache.env` or `task_config.global_env` remain available
-when environment inheritance is denied. Disabled and non-cache tasks do not inherit variables
-through cache configuration. Use `pass_through_env` for variables that a task needs at runtime but
-that must not affect its cache key, such as short-lived credentials. The scoped
-`task_config.global_pass_through_env` equivalent applies to every task. In mise's default,
-non-sandboxed environment mode, ambient variables already pass through; these options matter when
-environment sandboxing is active through `allow_env`, `deny_env`, `deny_all`, or a corresponding
-CLI option.
+Pass credentials and other values that must not affect the key with
+[`pass_through_env`](/tasks/task-configuration.html#sandbox) on a
+task, or `task_config.global_pass_through_env` for every task in the scope:
 
 ```mise-toml
 [task_config]
@@ -404,47 +356,204 @@ global_pass_through_env = ["CI_JOB_TOKEN"]
 pass_through_env = ["NPM_TOKEN"]
 ```
 
-Pass-through variables can change task behavior without invalidating cached results. Tasks should
-not use them for values that affect generated outputs. Their values are not added to the key or
-persisted as cache metadata, but a task can still expose them by writing them to cached output files
-or logs.
+These lists matter when environment sandboxing is active through `allow_env`,
+`deny_env`, `deny_all`, or the matching command-line options. Without a sandbox,
+tasks inherit your whole environment anyway. In a sandbox, a cache-enabled task
+still receives the variables named in `cache.env` and `task_config.global_env`;
+a task without an enabled cache does not.
+
+A pass-through variable can change what the task does without changing the key,
+so do not use one for a value that affects the outputs. mise does not store
+pass-through values, but a task can still write them into its log or outputs.
+
+## Cache correctness and deterministic tasks
+
+Enabling `cache` asserts that the same cache-key inputs always produce the same
+log and outputs. Every value that can change the result must be in the key: a
+source or input group, a resolved mise tool, `cache.env`,
+`cache.command_inputs`, or a cached dependency. That includes configuration and
+lockfiles, locale and feature flags, compiler wrappers, generated inputs, and
+the state of external services the task reads. The operating system and
+architecture are added automatically; nothing else about the machine is.
+
+A cached task must not depend on undeclared files, the clock, randomness,
+changing network responses, or ambient environment variables. When you cannot
+capture such an input reliably, do not cache the task. A task that uses a
+credential only to download content must key on a lockfile or digest of that
+content, not on the credential.
+
+Declared outputs must describe everything a hit needs to reproduce. mise does
+not replay side effects outside them, such as database writes, deployments,
+notifications, or changes elsewhere in the workspace. `outputs = []` is correct
+only when the task changes no files that later work depends on.
+
+When you are unsure, run with `--task-cache off` while you investigate, add the
+missing inputs, and run with `--force` once before you trust new entries. On
+Linux, an [audit](#find-undeclared-inputs-on-linux) can show many undeclared
+reads and writes, but it cannot prove that a task is deterministic.
+
+## Per-run cache access
+
+`mise run --task-cache <mode>`, or `MISE_TASK_CACHE`, controls the artifact
+cache for one run:
+
+| Mode                   | Reads cached results | Stores new results | Notes                                                         |
+| ---------------------- | -------------------- | ------------------ | ------------------------------------------------------------- |
+| `read-write` (default) | Yes                  | Yes                |                                                               |
+| `read-only`            | Yes                  | No                 | For runs that must not publish entries, such as pull requests |
+| `write-only`           | No                   | Yes                | Always runs the task; use it to warm a cache                  |
+| `off`                  | No                   | No                 | Freshness checks still apply                                  |
+| `local-only`           | Yes                  | Yes                | Uses only the local cache and ignores a configured remote     |
+
+```sh
+# Do not publish entries from an untrusted pull request
+mise run --task-cache read-only test
+
+# Rebuild and store fresh entries without reading existing ones
+mise run --task-cache write-only build
+
+# Investigate a task without the cache
+mise run --task-cache off --force build
+```
+
+`--task-cache` affects only the artifact cache. The unrelated `--no-cache` flag
+refetches remote task files.
+
+## Inspect and diagnose cached results
+
+### Explain a cache key
+
+`mise run --task-cache-explain <task>` lists the inputs that produced the key.
+Add `--dry-run` to see them without running, restoring, or storing anything:
+
+```sh
+mise run --dry-run --task-cache-explain build
+```
+
+```text
+[build] cache key inputs:
+[build]   cache format: 2
+[build]   action version: 1
+[build]   task definition: included
+[build]   sources: 2 files
+[build]     source: mise.toml
+[build]     source: src/a.txt
+[build]   output patterns: 1
+[build]     pattern: dist
+[build]   resolved outputs: 1
+[build]     output: dist
+[build]   dependencies: 0 artifact keys
+[build]   environment NODE_ENV: unset
+[build]   command inputs: 0
+[build]   variable: channel
+[build]   tools: 0 resolved versions
+[build]   platform: linux-x86_64
+```
+
+Values that could be secret appear only as names or counts: environment
+variables show whether they are set, mise variables show their names, and the
+task definition, source contents, command output, dependency keys, and tool
+versions show a count or `included`. Command inputs still run, because their
+output is part of the key.
+
+`mise run --dry-run --task-cache-explain-json <task>` prints the same
+information as one compact JSON object per task on stdout, with the same
+redaction. Each object includes the opaque `cache_key`, so tools can tell runs
+of the same task apart without seeing its arguments or environment.
+
+### Measure hits
+
+`mise run --task-cache-stats <task>` prints a summary after the run:
+
+```text
+Task cache: 1/2 hits (50%), 11 B restored, 5.5ms saved
+```
+
+It counts artifact cache lookups, the bytes of outputs and logs restored, and
+the run time recorded when each restored entry was created. A task skipped by
+the freshness check does no lookup, so a run where every task was up to date
+prints `Task cache: no lookups`.
+
+### List and clear entries
+
+[`mise cache task <task>`](/cli/cache/task.html) lists every local entry for a
+task: its key, whether it is the current entry, its stored and restorable sizes,
+the recorded run time, the last access time, and the output roots. Add `--json`
+for an array that includes each entry's checksum.
+
+[`mise cache clear --task <task>`](/cli/cache/clear.html) deletes that task's
+local entries and its record of the current entry. It leaves the outputs in your
+working directory, other tasks' entries, and copies on a remote server alone. It
+skips entries whose owner it cannot verify; `mise cache clear` without `--task`
+removes everything.
+
+### Find undeclared inputs on Linux
+
+Set `cache.audit = true` to have mise trace the task with `strace` and warn about
+undeclared files:
+
+```mise-toml
+[tasks.build]
+run = "npm run build"
+sources = ["package.json", "src/**"]
+outputs = ["dist"]
+cache = { enabled = true, audit = true }
+```
+
+A restored task does not run, so force a run to audit it:
+
+```sh
+mise run --force build
+```
+
+mise reports reads beneath the workspace root that no `sources` entry matches,
+and writes beneath the task directory that no `outputs` entry matches. Paths are
+relative to the task directory, using `..` for reads above it, so you can copy a
+reported read into `sources` as printed. Reads of directories and of files
+outside those roots, such as system libraries, are not reported. The audit only
+warns: it does not stop the task or keep a successful result out of the cache.
+
+The audit needs Linux and `strace` on `PATH`. Elsewhere, or without `strace`,
+mise warns and runs the task without auditing.
+
+The console shows at most 20 paths per task. To get every path, set
+[`task.cache.audit_report`](/configuration/settings.html#task.cache.audit_report)
+to a file. mise writes one JSON object per line with `task`, `kind`, and `path`
+fields. Each `mise` invocation replaces the file, and every audited task in that
+invocation adds its lines:
+
+```sh
+MISE_TASK_CACHE_AUDIT_REPORT=audit.jsonl mise run --force build
+```
 
 ## Storage, retention, and output replay
 
-Cache entries are stored under `MISE_CACHE_DIR/task-artifacts/v2` by default. Set the experimental
-[`task.cache_dir`](/configuration/settings.html#task.cache_dir) setting or
-`MISE_TASK_CACHE_DIR` to choose a different parent directory; mise keeps the artifact format in its
-`v2` child directory. Default and custom locations are included in `mise cache clear` and
-manual and automatic cache pruning. Only successful task runs are cached. Cache read/write failures
-are treated as misses and never turn a successful task run into a failure.
+mise stores entries in `$MISE_CACHE_DIR/task-artifacts/v2`. Set
+[`task.cache_dir`](/configuration/settings.html#task.cache_dir) or
+`MISE_TASK_CACHE_DIR` to use another parent directory; mise keeps the entries in
+its `v2` subdirectory. `mise cache clear` and cache pruning include the task
+cache wherever it lives.
 
-New cache entries include a BLAKE3 artifact checksum that is independent of the cache lookup key.
-It covers the archived outputs and captured task result metadata, and mise verifies it before
-extracting files or replaying output. Entries written before checksums were introduced remain
-readable. `mise cache task <task> --json` includes the checksum for cache inspection tooling.
+Each entry holds the declared outputs as an archive and the task's stdout and
+stderr. mise applies [redactions](/environments/secrets/#redaction) to the log
+before storing it, but it does not scan output files or catch a credential it
+does not know about. Do not cache a task that prints or writes secrets.
 
-Readers, writers, inspection, and task-scoped deletion coordinate through a cross-process lock for
-each cache key. Concurrent processes therefore see a complete archive and manifest pair instead of
-mistaking an in-progress replacement for corruption; writers for unrelated keys remain independent.
-Temporary archive and manifest files are removed when a write fails normally. On a later cache use,
-mise also removes partial files abandoned by an interrupted process after acquiring the associated
-cache-key lock, so it never deletes files that an active writer is still publishing.
+Set [`task.cache_max_size`](/configuration/settings.html#task.cache_max_size) to
+bound the total size of the cache, or
+[`task.cache_max_age`](/configuration/settings.html#task.cache_max_age) to drop
+entries not used within a period. mise enforces both after storing a new entry,
+removing the least recently used entries first, and treats an entry older than
+the age limit as a miss.
 
-Set [`task.cache_max_size`](/configuration/settings.html#task.cache_max_size) to bound the total
-artifact cache size, or [`task.cache_max_age`](/configuration/settings.html#task.cache_max_age) to
-expire entries based on their last access. Both limits are optional and apply after successful cache
-writes. When a size limit is exceeded, mise removes least-recently-accessed entries first.
+mise verifies each entry's checksum before restoring it, and concurrent `mise`
+processes can share the cache safely. A corrupt, partial, or unreadable entry
+counts as a miss, so the task runs. Errors while reading or writing the cache
+never turn a successful task into a failure.
 
-When a cache-enabled task executes instead of restoring a result, mise reports the reason: no
-matching entry, a corrupt entry, forced execution, disabled reads, or a dependency that completed
-without a stable cache key. Raw and dry-run cache bypasses retain their existing warning or preview
-behavior and are not reported as cache misses.
+mise replays a restored log with the output mode of the current run, so
+`prefix`, `interleave`, `keep-order`, `timed`, `replacing`, `quiet`, `silent`,
+and per-stream silencing apply to it as they do to live output.
 
-Stdout and stderr are stored as ordered, redacted streams and replayed using the output mode selected
-for the cache hit. Prefix, interleave, keep-order, timed, replacing, quiet, silent, and per-stream
-silence therefore apply to replayed output just as they do to live output. Raw and interactive tasks
-retain inherited terminal I/O and conservatively bypass artifact caching.
-
-Cacheable dependencies contribute their artifact keys to dependent task keys, so a dependent can
-restore the matching artifact after its dependencies execute, skip, or restore. If a dependency
-executes without a stable artifact key, its dependents conservatively execute.
+When a task depends on cached tasks, their keys are part of its key, so it can
+restore its own entry after its dependencies run, are skipped, or are restored.

@@ -123,16 +123,34 @@ impl BackendProvider for MiseBackendProvider {
 }
 
 /// Edit mise.toml interactively
+///
+/// Opens a terminal editor for PATH (default: mise.toml in the current directory)
+/// where you can add tools from the registry, pick versions, and set environment
+/// variables, tasks, and settings. It pre-fills tools it detects from files in the
+/// current directory, such as `.node-version`.
+///
+/// Without an interactive terminal, or with --yes, it writes a commented starter
+/// template instead. If PATH already exists it stops with an error rather than
+/// replace the file; pass --force to replace it. Use --dry-run to print the result
+/// without writing it.
 #[derive(Debug, usage_rs::Args)]
 #[usage(
     verbatim_doc_comment,
+    example("mise edit", help = "Edit mise.toml in the current directory"),
+    example("mise edit mise.local.toml", help = "Edit another config file"),
+    example("mise edit -g", help = "Edit the global config"),
     example(
-        r###"mise edit             # edit mise.toml interactively
-mise edit .mise.toml  # edit a specific file
-mise edit -g          # edit the global config file
-mise edit -y          # skip interactive editor
-mise edit -y --force  # replace an existing file with the default template
-mise edit -n          # preview without writing"###
+        "mise edit -t .tool-versions",
+        help = "Copy the tools from .tool-versions into mise.toml"
+    ),
+    example("mise edit -n", help = "Print the result instead of writing it"),
+    example(
+        "mise edit -y new.toml",
+        help = "Write a commented starter config to a new file without opening the editor"
+    ),
+    example(
+        "mise edit -y --force",
+        help = "Replace an existing mise.toml with the starter config"
     )
 )]
 pub(crate) struct Edit {
@@ -144,17 +162,17 @@ pub(crate) struct Edit {
     // same way, with `conflicts_with_all` between its own `--global` and `--path`.
     #[usage(long, short = 'g', conflicts = "path")]
     global: bool,
-    /// Show what would be generated without writing to file
+    /// Print the result instead of writing it to the file
     #[usage(long, short = 'n')]
     dry_run: bool,
-    /// Overwrite an existing file with the default template when not editing interactively
+    /// Replace an existing file with the starter template when not opening the editor
     #[usage(long, short)]
     force: bool,
-    /// Path to the config file to create
+    /// Config file to edit or create; defaults to mise.toml
     #[usage(verbatim_doc_comment, value_hint = ValueHint::FilePath)]
     path: Option<PathBuf>,
-    /// Path to a .tool-versions file to import tools from
-    #[usage(long, short, verbatim_doc_comment, value_hint = ValueHint::FilePath)]
+    /// Copy the tools from this .tool-versions file into the config, without opening the editor
+    #[usage(long, short, value_name = "FILE", verbatim_doc_comment, value_hint = ValueHint::FilePath)]
     tool_versions: Option<PathBuf>,
 }
 
@@ -375,7 +393,7 @@ fn write_new_config(path: &Path, doc: &str) -> Result<()> {
         Ok(f) => f,
         Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => bail!(
             "{} already exists; to edit it, run `mise edit` in a terminal without --yes, \
-             or pass --force to replace it with the default template",
+             or pass --force to replace it with the starter template",
             display_path(path)
         ),
         Err(e) => {

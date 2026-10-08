@@ -3,30 +3,37 @@ use xx::file;
 use crate::file::display_path;
 use crate::git::Git;
 
-/// Generate a GitHub Action workflow file
+/// Generate a GitHub Actions workflow that runs a mise task
 ///
-/// This command generates a GitHub Action workflow file that runs a mise task like `mise run ci`
-/// on pull requests, tags, manual dispatch, and pushes to the current Git branch.
-/// Prints YAML by default; `--write` saves it under .github/workflows. Define
-/// the selected task and review the generated triggers before committing.
+/// The workflow runs the task named by --task on pull requests, tags, manual
+/// dispatch, and pushes to the current branch. It prints YAML unless you pass
+/// --write, which saves `.github/workflows/<NAME>.yml` in the repository root and
+/// replaces an existing file. Define the task and review the triggers before
+/// committing the workflow.
 #[derive(Debug, usage_rs::Args)]
 #[usage(
     verbatim_doc_comment,
     example(
-        r###"mise generate github-action --task=ci
-mise generate github-action --write --task=ci
-git add .github/workflows/ci.yml"###,
-        help = r###"Preview before writing the workflow"###
+        "mise generate github-action",
+        help = "Print a workflow that runs the ci task"
+    ),
+    example(
+        "mise generate github-action --write",
+        help = "Save it as .github/workflows/ci.yml"
+    ),
+    example(
+        "mise generate github-action --task lint --name lint --write",
+        help = "Save a workflow that runs the lint task as .github/workflows/lint.yml"
     )
 )]
 pub(super) struct GithubAction {
     /// The task to run when the workflow is triggered
     #[usage(long, short, default = "ci")]
     task: String,
-    /// Write to .github/workflows/$name.yml
+    /// Write the workflow to `.github/workflows/<NAME>.yml` instead of printing it
     #[usage(long, short)]
     write: bool,
-    /// The name of the workflow to generate
+    /// Name of the workflow and its file
     #[usage(long, default = "ci")]
     name: String,
 }
@@ -64,16 +71,13 @@ concurrency:
   group: ${{{{ github.workflow }}}}-${{{{ github.ref }}}}
   cancel-in-progress: true
 
-env:
-  MISE_EXPERIMENTAL: true
-
 jobs:
   {name}:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v6
-      - uses: jdx/mise-action@v3
+      - uses: actions/checkout@v7
+      - uses: jdx/mise-action@v5
       - run: mise run {task}
 "#
         ))

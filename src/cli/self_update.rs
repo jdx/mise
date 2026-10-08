@@ -193,25 +193,47 @@ fn reexec(args: &[String], original_cwd: Option<&std::path::Path>) -> Result<()>
 
 /// Update mise itself
 ///
-/// Selects the newest stable release satisfying the minimum release age (24h by default).
-/// Explicit versions bypass the delay. Downloads binaries from GitHub Releases.
-/// By default, this will also update any installed plugins.
-/// Uses mise's GitHub token resolution chain for authenticated requests.
+/// Installs the newest stable release, or VERSION, from GitHub Releases and
+/// verifies its signature before replacing the running binary. Without VERSION,
+/// releases younger than the minimum release age are skipped: the
+/// `self_update.minimum_release_age` setting, then `minimum_release_age`, else
+/// 24h. Installed plugins are updated too unless you pass `--no-plugins`. Set
+/// `self_update.auto` to update automatically.
 ///
-/// Packagers can disable this command so that mise is updated through the
-/// package manager instead. See
-/// https://mise.jdx.dev/contributing.html#packaging-and-self-update-instructions
+/// If a package manager such as Homebrew or apt installed mise, update it with
+/// that package manager instead: https://mise.jdx.dev/installing-mise.html#updating
+/// Packagers can disable this command: https://mise.jdx.dev/packaging.html
 #[derive(Debug, Default, usage_rs::Args)]
-#[usage(verbatim_doc_comment)]
+#[usage(
+    verbatim_doc_comment,
+    example(
+        r###"mise self-update"###,
+        help = "Update to the newest eligible release"
+    ),
+    example(
+        r###"mise self-update 2026.10.4"###,
+        help = "Install a specific release"
+    ),
+    example(
+        r###"mise self-update -y --no-plugins"###,
+        help = "Update without prompting or touching plugins"
+    )
+)]
 pub(crate) struct SelfUpdate {
-    /// Update to a specific version
+    /// Update to a specific version, skipping the minimum release age
     version: Option<String>,
 
-    /// Override the minimum release age for unpinned updates (default: 24h)
+    /// Minimum release age for this update, such as 7d
+    ///
+    /// Defaults to the self_update.minimum_release_age setting, then the
+    /// minimum_release_age setting, else 24h.
     #[usage(long)]
     minimum_release_age: Option<String>,
 
     /// Update even if already up to date
+    ///
+    /// Also updates when the package that installed mise has disabled
+    /// self-update.
     #[usage(long, short)]
     force: bool,
 
@@ -219,7 +241,7 @@ pub(crate) struct SelfUpdate {
     #[usage(long, short)]
     yes: bool,
 
-    /// Disable auto-updating plugins
+    /// Do not update installed plugins
     #[usage(long)]
     no_plugins: bool,
 }

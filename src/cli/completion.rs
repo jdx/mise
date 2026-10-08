@@ -145,16 +145,30 @@ fn complete_spec(
 }
 
 /// Generate shell completions
+///
+/// Prints a completion script for SHELL, or with --install writes it where that
+/// shell loads completions from. The script asks mise for candidates as you type,
+/// so it also completes your project's task names and tool versions. See
+/// https://mise.jdx.dev/shell-setup.html#autocompletion.
 #[derive(Debug, usage_rs::Args)]
-#[usage(aliases = ["complete", "completions"], verbatim_doc_comment, example(r###"mise completion zsh --install
-mise completion bash --install
-mise completion fish --install
-mise completion powershell --install"###, help = r###"Install for your shell; follow any printed one-time setup instructions"###),
-    example(r###"mise completion zsh"###, help = r###"Print a completion script to inspect or save at a custom path"###),
-    example(r###"mise completion zsh --tool rg
-mise completion zsh --tool rg --install"###, help = r###"For a tool installed through Packslip with completion resources"###))]
+#[usage(
+    aliases = ["complete", "completions"],
+    verbatim_doc_comment,
+    example(
+        "mise completion zsh --install",
+        help = "Install completions for zsh; bash, fish, and powershell work the same way"
+    ),
+    example(
+        "mise completion zsh",
+        help = "Print the script to inspect it or save it somewhere else"
+    ),
+    example(
+        "mise completion zsh --tool hk --install",
+        help = "Install completions for hk, a tool installed with the packslip backend"
+    )
+)]
 pub(crate) struct Completion {
-    /// Shell type to generate completions for
+    /// Shell type to generate completions for (required)
     #[usage(required_unless = "shell_type", value_enum)]
     shell: Option<Shell>,
 
@@ -162,23 +176,19 @@ pub(crate) struct Completion {
     #[usage(long = "shell", short = 's', hide = true, value_enum)]
     shell_type: Option<Shell>,
 
-    /// Retained for compatibility with older completion generators.
-    ///
-    /// usage-rs's built-in bash script is self-contained, so this is now a no-op.
-    #[usage(long, verbatim_doc_comment)]
+    /// No longer has any effect; kept so older setup scripts keep working
+    #[usage(long, verbatim_doc_comment, hide = true)]
     include_bash_completion_lib: bool,
 
-    /// Retained for compatibility with older completion generators.
-    ///
-    /// Completions now always use usage-rs's built-in protocol, so this is a no-op.
+    /// No longer has any effect; kept so older setup scripts keep working
     #[usage(long, verbatim_doc_comment, hide = true)]
     usage: bool,
 
     /// Install the script where this shell looks for it, instead of printing it
     ///
-    /// Writes the script file and nothing else: no shell rc file and no PowerShell profile is
-    /// edited. Where a shell needs a one-time line of its own — zsh's `fpath+=`, PowerShell's
-    /// dot-source — it is printed for you to add.
+    /// It writes only the script file, never a shell startup file or PowerShell
+    /// profile. If your shell needs a one-time setup line, such as zsh's `fpath+=`
+    /// or PowerShell's dot-source, mise prints it for you to add.
     #[usage(long, verbatim_doc_comment, effect = "write")]
     install: bool,
 
@@ -186,14 +196,15 @@ pub(crate) struct Completion {
     #[usage(long, requires = "--install", effect = "write")]
     force: bool,
 
-    /// A tool's completion instead of mise's own, from the packslip it was installed from
+    /// Generate completions for a tool installed with the `packslip:` backend
     ///
-    /// NAME is a tool installed with the `packslip:` backend, or one of its executables. The
-    /// script comes from whichever version is active here, from the most verifiable source its
-    /// packslip offers: a file the vendor shipped, a script derived from its CLI spec, or a
-    /// command of the tool's own. With --install, what is written is a small stub that asks mise
-    /// for the script each time the shell completes the tool, so it follows version switches
-    /// without being rewritten.
+    /// TOOL is the tool or one of its executables; with --install, pass the
+    /// executable's name. The script matches the version active in the current
+    /// directory and comes from the most verifiable source its packslip offers: a
+    /// file the vendor shipped, a script derived from its CLI spec, or a command of
+    /// the tool's own. With --install, mise writes a small stub that asks mise for
+    /// the script each time the shell completes the tool, so it follows version
+    /// changes without being rewritten.
     #[usage(long, verbatim_doc_comment)]
     tool: Option<String>,
 }

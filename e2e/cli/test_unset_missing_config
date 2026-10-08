@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+
+# With no config file, unset creates mise.toml like set does, instead of
+# trying to write to the directory.
+assert "mise unset FOO" ""
+assert "test -f mise.toml" ""
+
+assert "mise set FOO=1 BAR=2" ""
+assert "mise unset FOO" ""
+assert "cat mise.toml" '[env]
+BAR = "2"'
+
+# An unparseable config file is reported, not hidden behind a write error.
+echo 'not = = toml' >mise.toml
+assert_fail_contains "mise unset BAR" "TOML parse error"
+assert "cat mise.toml" "not = = toml"

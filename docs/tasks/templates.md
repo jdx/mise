@@ -1,55 +1,61 @@
 ---
-description: "Task templates let you define reusable task definitions that multiple tasks can extend."
+description: "Share commands, tools, environment variables, and dependencies across tasks by extending a named task template."
+socialDescription: "Share commands, tools, and dependencies across tasks with task templates."
 ---
 
-# Task Templates
+# Task templates
 
-Define a task template when several tasks share commands, tools, environment variables, or
-dependencies. Each task selects a template with `extends` and supplies the settings that differ.
-Run the task by its name; declaring a template alone does not create a runnable task.
+Define a task template when several tasks share commands, tools, environment
+variables, or dependencies. Each task names its template with `extends` and
+sets only what differs. A template is not a task: declaring one does not create
+anything you can run.
 
-For repeated or nested snippet expansions inside one task's script, use
-[Tera components](/templates.html#parameterized-snippets-with-components).
-Task templates inherit fields; they do not insert parameterized snippets into
-the middle of a task's `run` string.
+Task templates are different from [Tera templates](/templates.html). A task
+template supplies whole task properties that a task inherits; Tera renders
+expressions inside a value, including values that come from a task template.
 
-The Python examples below assume a uv project whose development dependencies
-include `pytest` and, for coverage, `pytest-cov`. Declaring Python as a tool does
-not install those project packages.
+The Python examples assume a uv project with `pytest` and `pytest-cov` in its
+dev dependencies.
 
-## Defining Templates
+## Defining templates
 
-Add a named template under `[task_templates.<name>]` in `mise.toml`:
+Add a named template under `[task_templates.<name>]` in `mise.toml`. A template
+accepts the same properties as a task, with the exceptions listed under
+[merge semantics](#merge-semantics):
 
-```toml
+```mise-toml
 [task_templates."python:build"]
 description = "Build a Python project"
 run = "uv build"
-tools = { python = "3.12", uv = "latest" }
+tools = { python = "3.14", uv = "latest" }
 env = { PYTHONPATH = "src" }
 
 [task_templates."python:test"]
 description = "Run Python tests"
 run = "uv run pytest"
-tools = { python = "3.12", uv = "latest" }
+tools = { python = "3.14", uv = "latest" }
 depends = ["build"]
 ```
 
-## Extending Templates
+Template names are free-form. Group them with `:` the way you group task names,
+for example `python:build` or `rust:cargo:build`.
 
-Set `extends` to the template name. Fields omitted from the task inherit the template
-values; fields set on the task follow the [merge rules](#merge-semantics):
+## Extending templates
 
-```toml
+Set `extends` to the template name. Properties the task omits come from the
+template; properties set on both follow the [merge rules](#merge-semantics):
+
+```mise-toml
 [tasks.build]
 extends = "python:build"
 
 [tasks.test]
 extends = "python:test"
-run = "uv run pytest --cov"  # Override run while keeping tools, depends
+run = "uv run pytest --cov" # replaces run, keeps tools and depends
 ```
 
-[File tasks](/tasks/file-tasks) extend a template from their `#MISE` header:
+[File tasks](/tasks/file-tasks.html) extend a template from their `#MISE`
+header:
 
 ```bash [mise-tasks/build]
 #!/usr/bin/env bash
@@ -57,13 +63,28 @@ run = "uv run pytest --cov"  # Override run while keeping tools, depends
 uv build
 ```
 
-## Parameterizing a Template with Vars
+Run [`mise tasks info <task>`](/cli/tasks/info.html) to see the task that
+results from the merge.
 
-Put a shared command in the template's `run` field and use `vars` for the values that differ
-between tasks. Template fields are merged into each task before rendering, so the inherited
-command sees that task's vars.
+## Template scope
 
-```toml
+mise collects templates from every config file it loads, including global and
+parent configs, into one set of names. When several config files define a
+template with the same name, the one from the highest-precedence config, the
+one nearest the current directory, wins. Every task that names it uses that
+definition, including tasks defined in a parent or global config.
+
+Keep templates that teammates and CI need in the repository. A template in your
+global config works for personal tasks, but another machine needs the same
+definition to resolve `extends`.
+
+## Parameterizing a template with vars
+
+Put a shared command in the template's `run` and use `vars` for the values that
+differ between tasks. mise merges the template into each task before it renders
+the task, so the inherited command sees that task's vars.
+
+```mise-toml
 [task_templates.e2e]
 vars = { mode = "headless" }
 run = "echo --mode={{ vars.mode }}"
@@ -76,73 +97,60 @@ vars = { mode = "headed" }
 extends = "e2e"
 ```
 
-`mise run test` prints `--mode=headed`. `mise run test:ci` inherits the template's default
-and prints `--mode=headless`. Replace `echo` with your test command to use the same pattern
-for a test suite.
+`mise run test` prints `--mode=headed`. `mise run test:ci` inherits the
+template's default and prints `--mode=headless`.
 
-Template vars and task-local vars are combined, with task-local values taking precedence for
-the same name. You can also use a Tera fallback in `run`, such as
-<span v-pre>`{{ vars.mode | default(value='headless') }}`</span>, when the var is optional.
+Template vars and task-local vars are combined, and the task's value wins for
+the same name. Use a Tera fallback in `run`, such as
+<code v-pre>{{ vars.mode | default(value='headless') }}</code>, when the var is
+optional.
 
-Keep expressions that depend on task-local vars in the task or its template. A top-level
-`[vars]` entry is resolved during config loading; task-local overrides do not recalculate
-that stored value. See [when vars are resolved](/configuration/vars.html#when-vars-are-resolved).
+Keep expressions that depend on task-local vars in the task or its template. A
+top-level `[vars]` entry is resolved during config loading, and task-local
+overrides do not recalculate that stored value. See
+[when vars are resolved](/configuration/vars.html#when-vars-are-resolved).
 
-## Template Naming
+## Merge semantics
 
-Template names are arbitrary strings. Use colon (`:`) separators to group related templates,
-just as you would for task names:
+The task inherits every property it omits. When both the template and the task
+set a property, these rules apply:
 
-- `python:build`
-- `python:test`
-- `rust:cargo:build`
-- `node:npm:test`
+| Property                                                                                      | Result                                                                                                                          |
+| --------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `run`, `run_windows`                                                                          | The task's value replaces the template's. Ignored when the task or the template sets `file`.                                    |
+| `file`                                                                                        | The task's value, else the template's.                                                                                          |
+| `tools`, `env`, `vars`                                                                        | Merged by key. The task's entries add to the template's and win for the same key.                                               |
+| `depends`, `depends_post`, `wait_for`                                                         | The task's list replaces the template's.                                                                                        |
+| `alias`, `sources`, `outputs`                                                                 | The task's value replaces the template's.                                                                                       |
+| `dir`                                                                                         | The task's value, else the template's, else `task_config.dir`, else the task's config root.                                     |
+| `usage`                                                                                       | Both specs, the template's first.                                                                                               |
+| `deny_all`, `deny_read`, `deny_write`, `deny_net`, `deny_env`                                 | On when either sets it. A task cannot turn off a template's restriction.                                                        |
+| `allow_read`, `allow_write`, `allow_net`, `allow_env`, `pass_through_env`                     | The template's entries followed by the task's.                                                                                  |
+| `description`, `shell`, `timeout`, `output`, `silent`, `confirm`, `cache`, `watch`, `daemons` | The task's value if set, else the template's.                                                                                   |
+| `quiet`, `hide`, `raw`, `interactive`, `raw_args`, `extends`                                  | Not accepted in templates; mise warns about an unknown field. Set them on each task. A template cannot extend another template. |
+| `secrets`                                                                                     | Not allowed in templates; mise reports a config error.                                                                          |
 
-## Merge Semantics
+### Empty lists {#empty-lists-and-file-tasks}
 
-The task inherits omitted fields. When both the template and task set a field, the following
-rules apply. “Local” means the value defined on the task.
+An empty list on the task inherits the template's value for `run`,
+`run_windows`, `depends`, `depends_post`, `wait_for`, and `sources`, so
+`depends = []` does not clear the template's dependencies. Use a separate
+template for tasks that need none. `outputs = []` does declare that the task
+writes no files, and `cache = { enabled = false }` turns off inherited caching.
 
-| Field                                             | Behavior                                                          |
-| ------------------------------------------------- | ----------------------------------------------------------------- |
-| `run`, `run_windows`                              | Local overrides completely; ignored when the task has a `file`    |
-| `tools`                                           | Deep merge (local tools add to or override the template's values) |
-| `env`                                             | Deep merge (local env adds to or overrides the template's values) |
-| `vars`                                            | Deep merge (local vars add to or override the template's values)  |
-| `depends`, `depends_post`, `wait_for`             | Local overrides completely (not merged)                           |
-| `dir`                                             | Local overrides; defaults to config_root if not in template       |
-| `sources`, `outputs`, `cache`                     | Local overrides completely                                        |
-| `usage`                                           | Concatenated: the template's spec, then the task's own            |
-| `output`                                          | Local overrides template (if set)                                 |
-| Sandbox deny fields                               | Compose with task-local settings                                  |
-| Sandbox allow fields                              | Template and task-local values are combined                       |
-| `description`, `shell`, `timeout`, etc.           | Local overrides template (if set)                                 |
-| `quiet`, `hide`, `raw`, `interactive`, `raw_args` | Not supported on templates (set explicitly on each task)          |
-
-### Empty lists and file tasks
-
-For `run`, `run_windows`, `depends`, `depends_post`, `wait_for`, and `sources`, an
-empty local list currently inherits the template's value. In particular,
-`depends = []` does not clear template dependencies. Use a separate template when
-a task must omit those prerequisites. `outputs = []` is an explicit no-files
-output declaration; `cache = { enabled = false }` explicitly disables inherited caching.
-
-A task that sets `file` — including every file task — runs that script rather than
-any `run` script, so it never inherits `run` or `run_windows` from a template.
-
-### Example: Deep Merge for Tools
+### Example: deep merge for tools
 
 ```toml
 [task_templates."fullstack:build"]
-tools = { python = "3.12", node = "18" }
+tools = { python = "3.14", node = "22" }
 
 [tasks.build]
 extends = "fullstack:build"
-tools = { node = "20" }  # Override node, keep python from template
-# Result: tools = { python = "3.12", node = "20" }
+tools = { node = "24" } # overrides node, keeps python
+# Result: tools = { python = "3.14", node = "24" }
 ```
 
-### Example: Deep Merge for Env
+### Example: deep merge for env
 
 ```toml
 [task_templates."python:build"]
@@ -150,16 +158,16 @@ env = { PYTHONPATH = "src", DEBUG = "0" }
 
 [tasks.build]
 extends = "python:build"
-env = { DEBUG = "1" }  # Override DEBUG, keep PYTHONPATH from template
+env = { DEBUG = "1" } # overrides DEBUG, keeps PYTHONPATH
 # Result: env = { PYTHONPATH = "src", DEBUG = "1" }
 ```
 
-### Example: Shared Arguments
+### Example: shared arguments
 
-A template's `usage` spec holds the flags and arguments its tasks have in common.
-A task that extends it adds its own; it does not have to repeat the shared ones:
+A template's `usage` spec holds the flags and arguments its tasks have in
+common. A task that extends it adds its own without repeating the shared ones:
 
-```toml
+```mise-toml
 [task_templates.deploy]
 usage = """
 flag "--env <env>" help="Target environment"
@@ -172,11 +180,11 @@ usage = 'flag "--replicas <n>" help="How many to run"'
 run = 'echo "env=$usage_env replicas=$usage_replicas"'
 ```
 
-`mise run deploy-api --help` lists `--env`, `--dry-run`, and `--replicas`, in that
-order. Declare each flag in one place: a flag written in both the template and the
-task is two declarations and appears twice in `--help`.
+`mise run deploy-api --help` lists `--env`, `--dry-run`, and `--replicas`, in
+that order. Declare each flag in one place: a flag written in both the template
+and the task is two declarations and appears twice in `--help`.
 
-### Example: Complete Override for Depends
+### Example: complete override for depends
 
 ```toml
 [task_templates."python:test"]
@@ -184,37 +192,44 @@ depends = ["lint", "typecheck"]
 
 [tasks.test]
 extends = "python:test"
-depends = ["build"]  # Completely replaces template depends
-# Result: depends = ["build"] (lint and typecheck NOT included)
+depends = ["build"] # replaces the template's depends
+# Result: depends = ["build"]; lint and typecheck do not run
 ```
 
-## Tera Templating
+## Tera templating
 
-Task templates reuse task definitions; [Tera templates](/templates) evaluate expressions inside
-those definitions. Tera expressions use the context of the project that uses the task template,
-even when the template is defined in a parent or global config:
+Tera expressions in a template render in the context of the task that extends
+it, even when the template is defined in a parent or global config.
+<code v-pre>{{ config_root }}</code> is the config root of that task, not of the
+file that defines the template:
 
-```toml
+```mise-toml
 [task_templates."python:build"]
-description = "Build Python project"
-dir = "{{ config_root }}"  # Resolves to the PROJECT's directory
-run = "uv build"
+run = "uv build --out-dir {{ config_root }}/dist"
 env = { PROJECT = "{{ config_root | basename }}" }
 ```
 
-Available variables (same as regular tasks):
+Templates use the same variables as regular tasks:
 
-- <code v-pre>{{ config_root }}</code> - The project using the template (NOT where the template is defined)
-- <code v-pre>{{ env.VAR }}</code> - Environment variables
-- <code v-pre>{{ cwd }}</code> - Current working directory
-- <code v-pre>{{ vars.* }}</code> - Config vars, with template and task-local overrides
+- <code v-pre>{{ config_root }}</code>: the config root of the task that uses
+  the template
+- <code v-pre>{{ env.VAR }}</code>: environment variables
+- <code v-pre>{{ cwd }}</code>: the current working directory
+- <code v-pre>{{ vars.NAME }}</code>: config vars, with template and task-local
+  overrides
 
-## Monorepo Usage
+A task template supplies whole properties; it cannot insert a parameterized
+snippet into the middle of a task's `run` string. For repeated or nested
+snippets inside one script, use
+[Tera components](/templates.html#parameterized-snippets-with-components).
 
-Define shared templates in the monorepo root, then extend them in each package. In this example,
-the API package adds coverage to its test command while the worker uses the inherited command:
+## Monorepo usage
 
-```toml
+Define shared templates in the monorepo root, then extend them in each project.
+In this example, the API project adds coverage to its test command while the
+worker uses the inherited command:
+
+```mise-toml
 # Root mise.toml
 monorepo_root = true
 
@@ -223,26 +238,26 @@ config_roots = ["packages/api", "packages/worker"]
 
 [task_templates."python:build"]
 run = "uv build"
-tools = { python = "3.12", uv = "latest" }
+tools = { python = "3.14", uv = "latest" }
 
 [task_templates."python:test"]
 run = "uv run pytest"
-tools = { python = "3.12", uv = "latest" }
+tools = { python = "3.14", uv = "latest" }
 depends = ["build"]
 
 [task_templates."python:lint"]
 run = "ruff check ."
-tools = { python = "3.12", ruff = "latest" }
+tools = { python = "3.14", ruff = "latest" }
 ```
 
-```toml
+```mise-toml
 # packages/api/mise.toml
 [tasks.build]
 extends = "python:build"
 
 [tasks.test]
 extends = "python:test"
-run = "uv run pytest --cov"  # Add coverage
+run = "uv run pytest --cov" # adds coverage
 
 [tasks.lint]
 extends = "python:lint"
@@ -260,13 +275,7 @@ extends = "python:test"
 extends = "python:lint"
 ```
 
-## Template scope
-
-Templates come from the active configuration hierarchy, including global and
-parent configurations. A task selects one by name with `extends`; declaring a
-template does not create a runnable task. Use `mise tasks info <task>` to inspect
-the resulting task after inheritance.
-
-Prefer repository-owned templates for behavior teammates and CI need to share.
-Global templates are useful for personal tasks, but another machine will need
-the same template definition to resolve `extends`.
+To give every project's `build` task the same defaults without adding
+`extends` to each one, use `[monorepo.task_defaults.build]` from the
+experimental [workspace project graph](/tasks/workspace-graph.html#root-task-defaults) instead. A
+template named by `extends` takes precedence over a root default.

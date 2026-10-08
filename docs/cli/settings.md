@@ -11,12 +11,21 @@ description: "Manage settings"
 
 Manage settings
 
+With no arguments, lists the settings set in config files (same as
+`mise settings ls`). With SETTING, prints its effective value. With
+SETTING=VALUE or SETTING VALUE, writes it to the global config
+(~/.config/mise/config.toml), or to the nearest project config with
+`--local`. Every setting is described at
+<https://mise.jdx.dev/configuration/settings.html>
+
 ## Arguments
-- **`[SETTING]`** — Name of setting
-- **`[VALUE]`** — Setting value to set
+- **`[SETTING]`** — Only show this setting, or the settings under this prefix such as `python`
+- **`[VALUE]`** — The value to set
 
 ## Global Flags
-- **`-l --local`** — Use the local config file instead of the global one
+- **`-l --local`** — Use only the nearest project config
+
+  Reads only its explicit settings, or writes to it instead of the global config.
 
 ## Flags
 - **`-a --all`** — List all settings
@@ -27,28 +36,28 @@ Manage settings
 
 ## Examples
 
-list explicitly configured settings
+List settings set in config files
 
 ```
 mise settings
 ```
 
-get the value of the setting "always_keep_download"
+Show the effective value of one setting
 
 ```
-mise settings always_keep_download
+mise settings jobs
 ```
 
-set the value of the setting "always_keep_download" to "true"
+Set jobs in the global config
 
 ```
-mise settings always_keep_download=true
+mise settings jobs=4
 ```
 
-set the value of the setting "node.mirror_url" to "<https://npmmirror.com/mirrors/node/>"
+Set a setting in the project config
 
 ```
-mise settings node.mirror_url https://npmmirror.com/mirrors/node/
+mise settings --local node.mirror_url https://npmmirror.com/mirrors/node/
 ```
 
 ## Subcommands

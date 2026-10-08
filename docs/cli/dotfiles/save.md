@@ -11,28 +11,47 @@ description: "Save a checkpoint of the tracked files now"
 
 Save a checkpoint of the tracked files now
 
-Fails when history cannot save or a requested path is not tracked, so a
-script or an agent gets a trustworthy result; a save that finds nothing
-changed succeeds as a no-op. `--best-effort` turns save errors into a
-warning for `set -e` update scripts.
+Exits non-zero when history cannot save or a named path is not tracked. With no changes since the latest checkpoint, nothing is saved unless you pass `--description`, `--label`, `--task`, or a `--trigger` other than `save`.
+
+`--best-effort` turns a failure to write the checkpoint, such as missing Git, into a warning for update scripts that run under `set -e`. A disabled history or an untracked path still fails.
 
 ## Arguments
 - **`[PATH]…`** — Paths to save; every one must be tracked
 
 ## Flags
 - **`-d --description <TEXT>`** — A description for the checkpoint
-- **`--trigger <TRIGGER>`** — What is saving: save (the default), agent, or update
+- **`--trigger <TRIGGER>`** — Record the checkpoint as a save, agent, or update checkpoint
 
   **Default:** `save`
-- **`--task <ID>`** — The task an agent is working on
+- **`--task <ID>`** — The ID of the task an agent is working on, recorded with the checkpoint
 - **`--label <LABEL>`** — A label to find the checkpoint by later
-- **`--best-effort`** — Warn instead of failing when history cannot save
+- **`--best-effort`** — Warn instead of failing when the checkpoint cannot be written
 - **`-h --help`** — Print help
+
+## Examples
+
+Save every tracked file that changed
+
+```
+mise dot save
+```
+
+Save one file with a description
+
+```
+mise dot save ~/.zshrc -d "before the theme change"
+```
+
+Warn instead of failing in a script
+
+```
+mise dot save --best-effort
+```
 
 <!-- generated reference navigation -->
 
 ## Related documentation
 
-- [Getting started](/getting-started.html).
+- [Dotfiles history](/dotfiles/history.html).
 - [`mise dotfiles [--local] <SUBCOMMAND>`](/cli/dotfiles.html).
 - [Global flags and argument syntax](/cli/#global-flags).

@@ -10,34 +10,56 @@ description: "Test that a tool installs and runs"
 
 Test that a tool installs and runs
 
-Includes newly published releases by disabling the global minimum release age
-for this command.
+Installs each tool and runs the `test` command from its registry entry
+(registry/&lt;tool>.toml), checking the output. Use it when adding or changing
+a registry entry. The minimum release age is ignored so that new releases
+can be tested right away.
+
+Warning: before testing, this deletes every installed version of each tested
+tool, along with its cache and downloads directories, so the test installs
+from scratch. To keep your installs and caches, run it with throwaway
+MISE_DATA_DIR and MISE_CACHE_DIR directories.
+
+Registry tools with no `test` entry, or that registry/ marks as unsupported
+on this OS, are skipped without output, and the command still exits 0. Pass
+--include-non-defined to run `<tool> --version` for tools with no `test`
+entry.
 
 ## Arguments
-- **`[TOOLS]…`** — Tool(s) to test
+- **`[TOOLS]…`** — Tools to test
 
 ## Flags
-- **`-a --all`** — Test every tool specified in registry/
-- **`-j --jobs <JOBS>`** — Number of tool tests to run in parallel
-  Values below 1 are treated as 1
-  [default: 4]
+- **`-a --all`** — Test every registry tool that defines a `test` and supports this OS
+- **`-j --jobs <JOBS>`** — Number of tools to test in parallel (default 4)
 
   **Environment Variable:** `MISE_TEST_TOOL_JOBS`
 - **`--all-config`** — Test all tools specified in config files
-- **`--include-non-defined`** — Also test tools not defined in registry/, guessing how to test them
-- **`--raw`** — Connect backend install command stdin/stdout/stderr directly to the terminal. Implies `--jobs=1`
+- **`--include-non-defined`** — Also test registry tools that have no `test` entry by running `<tool> --version`
+
+  These always report a failure that shows the output, for use when writing a test.
+- **`--raw`** — Connect the install commands' stdin, stdout, and stderr to the terminal
+
+  Implies `--jobs=1`.
 - **`-h --help`** — Print help
 
 ## Examples
 
+Reinstall ripgrep and run its registry test
+
 ```
 mise test-tool ripgrep
+```
+
+Test every tool in the config without touching your installs
+
+```
+MISE_DATA_DIR=$(mktemp -d) MISE_CACHE_DIR=$(mktemp -d) mise test-tool --all-config
 ```
 
 <!-- generated reference navigation -->
 
 ## Related documentation
 
-- [Contributing and registry tests](/contributing.html#tool-testing).
+- [Testing registry tools](/contributing/registry.html#tool-testing).
 - [All commands](/cli/).
 - [Global flags and argument syntax](/cli/#global-flags).

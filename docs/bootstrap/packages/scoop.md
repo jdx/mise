@@ -1,10 +1,11 @@
 ---
-description: Converge local Windows packages with Scoop during mise bootstrap.
+description: "Install, pin, and remove Windows apps with Scoop from mise.toml."
 ---
 
-# Scoop
+# Scoop apps (scoop)
 
-Windows command-line tools and applications via [Scoop](https://scoop.sh).
+The `scoop` manager installs, pins, and removes Windows apps with
+[Scoop](https://scoop.sh) in your user scope.
 
 ```toml
 [bootstrap.packages]
@@ -13,93 +14,85 @@ Windows command-line tools and applications via [Scoop](https://scoop.sh).
 "scoop:neovim" = "0.11.0"
 ```
 
-Use the app name Scoop shows in `scoop search`. Qualify it with a bucket —
-`extras/vscode` — to install from a bucket other than `main`. mise adds a
-qualified bucket that is missing with `scoop bucket add <bucket>` before
-installing, so a shared config does not depend on the machine having run that
-command already. A bucket Scoop does not know by name needs a one-time
-`scoop bucket add <name> <repo>`; mise does not manage bucket remotes.
-
-Declare each app once. Scoop compares app and bucket names
-case-insensitively, so `scoop:Git` and `scoop:git` are the same app. Two such
-entries that disagree — on state, or on version — are rejected rather than
-resolved by whichever operand Scoop happens to apply last.
-
-Declare the app name, not a manifest URL or local path. Scoop can install from
-one, but it records the app under the name the manifest declares, which mise
-cannot know — the entry would read as missing on every run. mise rejects those
-declarations instead.
-
-## Commands
-
 ```sh
-mise bootstrap packages use scoop:ripgrep
-mise bootstrap packages status
+mise bootstrap packages apply --manager scoop --dry-run
 mise bootstrap packages apply --manager scoop
-mise bootstrap packages apply --manager scoop --update
-mise bootstrap packages upgrade --manager scoop
 ```
 
-`mise bootstrap packages status` runs `scoop export` and compares each
-installed version with an optional pin as an opaque string. `"latest"` is
-satisfied by any installed version; use the upgrade command to move it to the
-newest version in the configured buckets. An app Scoop reports as a failed
-install is shown as needing repair, and applying the configuration reinstalls
-it. Scoop installs an app under its own name whatever bucket it came from, so
-mise matches installed state on the app name and ignores the bucket qualifier.
+## Prerequisites
 
-Applying the configuration passes `--no-update-scoop` so installing a package
-does not sync Scoop and every bucket as a side effect. Use `--update` to run
-`scoop update` first. Upgrade always runs it, because `scoop update <app>` syncs
-buckets only when Scoop already considers itself outdated — within that window
-an upgrade would compare against a stale bucket clone and find nothing to do.
+Install Scoop first. The manager is available on Windows when `scoop` is on
+`PATH`. On other machines, `scoop:` entries show as
+[`skipped`](/bootstrap/packages/#choose-platforms), so one config can hold
+packages for several platforms.
+
+## Package names
+
+Use the app name that `scoop search` shows. To install from a bucket other than
+`main`, qualify the name with the bucket, as in `extras/vscode`. Before it
+installs, mise runs `scoop bucket add <bucket>` for a qualified bucket Scoop
+does not have yet, so a shared config does not depend on that step. A bucket
+that Scoop does not know by name needs a one-time
+`scoop bucket add <name> <repository>`; mise does not manage bucket URLs.
+
+Declare the app name, not a manifest URL or local path. Scoop records such an
+app under the name its manifest declares, which mise cannot know, so mise
+rejects those declarations.
+
+Scoop app names are case-insensitive, and installed apps are matched by name
+whichever bucket they came from, so `scoop:Git` and `scoop:extras/git` are the
+same app. Declare each app once; mise rejects two spellings that disagree on
+version or state.
 
 ## Version pins
 
-`scoop install <app>@<version>` installs a pinned version by generating a
-manifest for it, so pins work for apps that are not installed yet. Scoop skips
-that command when the app is already installed at another version, so mise
-uninstalls the app first and then installs the pin — the same uninstall
-`scoop update` performs internally when it moves an app's version. Persisted
-data under `persist\` is kept, because mise never passes `--purge`.
+A pin must match Scoop's version string exactly. mise installs it with
+`scoop install <app>@<version>`, which generates a manifest for that version,
+so a pin works even for an app that is not installed yet. A pin fails if the
+upstream download for that version no longer exists.
 
-Not every version resolves: Scoop generates the pinned manifest from the
-current one, and the pin fails if the upstream download for that version is
-gone.
+To move an installed app to a pinned version, mise uninstalls it and installs
+the pinned version. The app's `persist` data is kept.
 
-`mise bootstrap packages upgrade` skips pinned entries with a warning.
-`scoop update` always installs the bucket's current version and cannot hold a
-pin, so upgrading a pinned entry would move it off its pin.
+`upgrade` skips pinned entries with a warning, because `scoop update` always
+moves to the bucket's current version.
 
-## Removal
+## What mise runs
 
-Scoop supports declarative removal:
+| Operation             | Command                                    |
+| --------------------- | ------------------------------------------ |
+| Check installed state | `scoop export`                             |
+| Install               | `scoop install --no-update-scoop <apps>`   |
+| `apply --update`      | `scoop update` first                       |
+| Upgrade               | `scoop update`, then `scoop update <apps>` |
+| Remove                | `scoop uninstall <apps>`                   |
+
+`apply` passes `--no-update-scoop`, so installing an app does not update Scoop
+and every bucket. `upgrade` always runs `scoop update` first, so it sees the
+latest bucket versions. An app that Scoop reports as a failed install shows as
+`needs repair`, and `apply` reinstalls it.
+
+## Remove packages {#removal}
 
 ```toml
 [bootstrap.packages]
 "scoop:neovim" = { state = "absent" }
 ```
 
-Applying that runs `scoop uninstall neovim`, which keeps the app's persisted
-data. `mise bootstrap packages import` and `prune` do not cover Scoop; removing
-an entry from the configuration does not uninstall the app.
+`apply` runs `scoop uninstall neovim`, which keeps the app's persisted data.
+Deleting an entry does not uninstall the app, and `import` and `prune` do not
+support Scoop.
 
-## Availability and scope
+## Global installs {#availability-and-scope}
 
-The manager is available only on Windows when Scoop's `scoop` shim is on
-`PATH`. Shared configs may contain `scoop:` entries alongside Linux or macOS
-package entries; unavailable managers are reported as skipped and do not block
-the other platform's bootstrap.
+mise manages only the current user's Scoop apps. Apps installed with
+`scoop install --global` need administrator rights and are handled like this:
 
-mise installs into the current user's Scoop installation. Global installs
-(`scoop install --global`) need administrator rights and are not managed here.
-An app that exists only as a global install is reported as installed, and mise
-does not upgrade or reinstall it. Because `scoop uninstall` without `--global`
-exits successfully without touching a global install, `state = "absent"` on one
-fails with a message telling you to run `scoop uninstall --global <app>` from
-an elevated shell rather than reporting a removal that did not happen. Any
-other Scoop packages in the same run are removed first, so one global install
-does not strand the rest of the batch. An app installed in both scopes loses
-its user-scope copy and then reports the global one the same way. A pinned
-entry whose only install is global gets the pinned version installed into the
-user scope, which then takes precedence for mise.
+- A global-only app counts as installed. mise never upgrades or reinstalls it.
+- `state = "absent"` on a global-only app fails and tells you to run
+  `scoop uninstall --global <app>` from an elevated shell. Other Scoop entries
+  in the same run are still removed.
+- With `state = "absent"`, an app installed in both scopes loses its user
+  copy, and the global copy is reported the same way.
+- A pinned entry whose only install is global gets the pinned version installed
+  in your user scope.

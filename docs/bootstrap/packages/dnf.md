@@ -1,56 +1,57 @@
 ---
-description: "System packages for Red Hat-family Linux (Fedora, RHEL, CentOS Stream, Rocky, Alma, ...)."
+description: "Install Fedora, RHEL, Rocky Linux, and AlmaLinux packages with dnf from mise.toml."
 ---
 
-# RPM packages (dnf)
+# Fedora and RHEL packages (dnf)
 
-System packages for Red Hat-family Linux (Fedora, RHEL, CentOS Stream, Rocky,
-Alma, ...).
+The `dnf` manager installs packages on Fedora, RHEL, CentOS Stream, Rocky
+Linux, AlmaLinux, and other distributions that use `dnf`. It uses
+[sudo](/bootstrap/packages/#sudo) when mise is not running as root.
 
 ```toml
 [bootstrap.packages]
 "dnf:openssl-devel" = "latest"
 "dnf:postgresql-server" = "latest"
-"dnf:bash" = "5.2.26-3.fc40" # version or version-release pin
+"dnf:bash" = "5.2.26-3.fc40" # version-release pin
 ```
 
-## Preview and apply
-
 ```sh
-mise bootstrap packages status
 mise bootstrap packages apply --manager dnf --dry-run
 mise bootstrap packages apply --manager dnf
 ```
 
-These commands use the active `[bootstrap.packages]` declarations. To add and
-install a package together, use `mise bootstrap packages use dnf:openssl-devel`.
-The manager must be available on the host; an explicit `--manager dnf` fails
-when it is unavailable.
+## Prerequisites
 
-## Behavior
+The manager is available on Linux when `dnf` is on `PATH`. Systems that have
+only `yum`, such as CentOS 7, are not supported. On other machines, its entries
+show as [`skipped`](/bootstrap/packages/#choose-platforms).
 
-- Package state is checked with `rpm -q` (read-only, never elevates).
-- Missing packages are installed with `dnf install -y`, elevated with sudo
-  when necessary (see [sudo](/bootstrap/packages/#sudo)).
-- Version pins are passed to dnf as its native `name-version` /
-  `name-version-release` syntax; a version-only pin is satisfied by any
-  release of that version.
-- `mise bootstrap packages apply --update` adds `--refresh` to force a metadata
-  refresh; otherwise dnf manages its own metadata expiry.
-- `mise bootstrap packages upgrade` runs `dnf upgrade -y --refresh` for the configured
-  packages — only already-installed packages are touched.
+## Package names
 
-## Version selection
+Use the package name, such as `openssl-devel`, not a capability or file path.
+mise checks installed state with `rpm -q`, which looks up package names.
 
-The Fedora version-release above illustrates syntax; it is not portable across
-RPM distributions or releases. Select a version available in the target's
-enabled repositories. mise passes the constraint to dnf and does not add a
-repository or fetch an archived RPM to satisfy it.
+## Version pins
 
-`"latest"` accepts an installed package. Use `upgrade` to request an update;
-source packages and native dependency resolution remain dnf's responsibility.
+mise passes a pin to dnf as `name-version` or `name-version-release`. A
+version-only pin, such as `"5.2.26"`, accepts any release of that version. The
+Fedora pin above is only an example: release strings differ between
+distributions and releases. Pick a version from the target's enabled
+repositories; mise does not add a repository or fetch an archived RPM.
 
-::: info
-Only `dnf` is supported — not legacy `yum`-only systems. On RHEL/CentOS 8+
-and all current Fedora releases, `dnf` is the default.
-:::
+## What mise runs
+
+| Operation                       | Command                               |
+| ------------------------------- | ------------------------------------- |
+| Check installed state (no sudo) | `rpm -q <packages>`                   |
+| Install                         | `dnf install -y <packages>`           |
+| `apply --update`                | `dnf install -y --refresh <packages>` |
+| Upgrade                         | `dnf upgrade -y --refresh <packages>` |
+
+Without `--update`, dnf refreshes its metadata when its own cache expires.
+`upgrade` acts only on configured packages that are installed.
+
+## Remove packages
+
+mise does not remove dnf packages. Deleting an entry leaves the package
+installed; run `dnf remove` yourself.

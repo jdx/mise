@@ -13,25 +13,39 @@ use crate::system::driver::{self, Action, DriverOpts};
 use crate::system::history::OperationScope;
 use crate::system::packages::PackageRequest;
 
-/// Add bootstrap packages to [bootstrap.packages] and install them
+/// Add packages to `[bootstrap.packages]` and install them
 ///
-/// Like `mise use` for tools: writes `"manager:package" = "version"` entries
-/// to mise.toml (the local config by default, the global one with `-g`) and
-/// then installs whatever is missing.
+/// Like `mise use` for tools: writes a `"manager:package" = "version"` entry to
+/// the local mise.toml (or the global config with `-g`), then installs anything
+/// missing. If the manager is not available on this machine, such as `apt:` on
+/// macOS, the entry is written without installing.
 ///
-/// Versions are pinned with `@`: `mise bootstrap packages use apt:curl@8.5.0-2`. Without
-/// `@` (or with `@latest`) no pin is written. brew formulae and casks
-/// version through their names instead (for example `brew:postgresql@17`,
-/// `brew-cask:temurin@17`), where `@` is part of the Homebrew name rather than
-/// a mise version selector. mas uses numeric ADAM IDs and does not support pins.
+/// Pin a version with `@`, as in `apt:curl@8.5.0-2`; without `@`, or with
+/// `@latest`, the entry is `"latest"`. Homebrew puts versions in formula and
+/// cask names (`brew:postgresql@17`, `brew-cask:temurin@17`), so there `@` is
+/// part of the name. mas takes numeric App Store IDs and nix takes attribute
+/// paths or flake references, so neither accepts `@version`. aur, flatpak,
+/// flatpak-user, and pacman accept `@version` but cannot install a pin, so
+/// installing skips those entries with a warning.
 #[derive(Debug, usage_rs::Args)]
 #[usage(
     visible_alias = "u",
     verbatim_doc_comment,
     example(
-        r###"mise bootstrap packages use brew:jq brew-cask:firefox winget:BurntSushi.ripgrep.MSVC
-mise bootstrap packages use -g brew:postgresql@17
-mise bootstrap packages use apt:curl@8.5.0-2"###
+        "mise bootstrap packages use apt:curl winget:BurntSushi.ripgrep.MSVC",
+        help = "Declare apt and winget packages; each machine installs the ones it can"
+    ),
+    example(
+        "mise bootstrap packages use brew:jq brew-cask:firefox",
+        help = "On macOS, add a formula and a cask"
+    ),
+    example(
+        "mise bootstrap packages use -g brew:postgresql@17",
+        help = "Add a versioned Homebrew formula to the global config"
+    ),
+    example(
+        "mise bootstrap packages use apt:curl@8.5.0-2",
+        help = "Pin an apt package to a version"
     )
 )]
 pub(crate) struct SystemUse {
@@ -45,10 +59,13 @@ pub(crate) struct SystemUse {
 
     /// Write to the global config (~/.config/mise/config.toml) instead of the
     /// local one
+    ///
+    /// New entries go to the `write_targets.packages` file when that setting is
+    /// set.
     #[usage(long, short)]
     global: bool,
 
-    /// Print the commands that would run without writing config or installing
+    /// Show what would change without writing config or installing
     #[usage(long, short = 'n')]
     dry_run: bool,
 

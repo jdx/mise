@@ -13,9 +13,13 @@ pub use mise_bootstrap::{
 
 /// Build the resource plan currently supported by the provisioning engine.
 /// Other bootstrap sections will move into this graph as resource adapters land.
+///
+/// `include_firewall = false` leaves the firewall out of the graph entirely,
+/// so a run that skips it never inspects it (which needs elevation).
 pub async fn plan(
     config: &Config,
     secrets: &super::secrets::SecretValues,
+    include_firewall: bool,
 ) -> Result<BootstrapPlan> {
     let mut plan = BootstrapPlan::default();
     let accounts = super::accounts::prepare_requests_from_config(config)?;
@@ -216,7 +220,12 @@ pub async fn plan(
     for status in super::user_services::status(&user_service_requests).await? {
         plan.insert(status.plan())?;
     }
-    if let Some(mut firewall) = super::firewall::prepare_request_from_config(config)? {
+    let firewall = if include_firewall {
+        super::firewall::prepare_request_from_config(config)?
+    } else {
+        None
+    };
+    if let Some(mut firewall) = firewall {
         super::firewall::inspect_request(&mut firewall)?;
         let dependencies = plan
             .ids()

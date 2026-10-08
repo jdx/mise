@@ -1,51 +1,40 @@
 ---
-description: "mise reads encrypted secret files and makes values available as environment variables via env._.file."
+description: "Commit SOPS-encrypted .env.json, .env.yaml or .env.toml files and load their values with env._.file."
 ---
 
-# sops <Badge type="warning" text="experimental" />
+# SOPS files
 
-mise reads encrypted secret files and makes values available as environment variables via `env._.file`.
-
-- **Formats**: `.env.json`, `.env.yaml`, `.env.toml`
-- **Encryption**: [sops](https://getsops.io), using the built-in age support or the external `sops` CLI
+Commit a [SOPS](https://getsops.io)-encrypted `.env.json`, `.env.yaml` or
+`.env.toml` file and load it with [`env._.file`](/environments/#env-file). mise
+decrypts it each time it loads the environment.
 
 <span id="example"></span>
 
-## Choose a decryption method
+## Encrypt a file and load it {#encrypt-with-sops}
 
-The default built-in implementation handles age-encrypted files. To use AWS KMS,
-GCP KMS, Azure Key Vault, Vault, or PGP, install the SOPS CLI, authenticate to the
-provider, and set `sops.rops = false` as described below.
+This walkthrough uses an age key, which mise can decrypt without the `sops` CLI.
 
-## Encrypt with sops
-
-::: info
-The default `sops.rops = true` implementation supports age-encrypted files. Set
-`sops.rops = false` to use the external `sops` CLI for other key services and
-methods supported by SOPS, such as AWS KMS, GCP KMS, Azure Key Vault, Vault,
-and PGP.
-:::
-
-::: warning
-The external `sops` CLI does not currently support TOML input/output. mise can decrypt SOPS-encrypted `.env.toml` files only with the default `sops.rops = true` setting. If you set `sops.rops = false`, mise shells out to the `sops` CLI and encrypted TOML env files fail with a configuration error. Use `.env.json` or `.env.yaml` when you need the external CLI path.
-:::
-
-1. Install tools and enable experimental features:
+### 1. Install the tools
 
 ```sh
 mise use -g sops age
-mise settings set experimental=true
 ```
 
-2. Reuse an existing age identity, or create one if the file does not exist:
+### 2. Create an age key
+
+Reuse an existing age identity, or create one:
 
 ```sh
 mkdir -p ~/.config/mise
 mise exec -- age-keygen -o ~/.config/mise/age.txt
-# Public key: <public key>
+# Public key: age1...
 ```
 
-3. Create `.env.json` with your values. This example uses a placeholder:
+Keep `age.txt` outside the repository.
+
+### 3. Encrypt a file
+
+Create `.env.json` with your values. This example uses a placeholder:
 
 ```json [.env.json]
 {
@@ -53,82 +42,94 @@ mise exec -- age-keygen -o ~/.config/mise/age.txt
 }
 ```
 
-Encrypt it with the public key printed by `age-keygen`:
+Encrypt it with the public key that `age-keygen` printed:
 
 ```sh
-mise exec -- sops encrypt -i --age "<public key>" .env.json
+mise exec -- sops encrypt -i --age "age1..." .env.json
 ```
 
-::: tip
-The `-i` flag replaces the plaintext file with ciphertext. Commit the encrypted
-file, and keep `age.txt` outside the repository. The external SOPS CLI reads
-`SOPS_AGE_KEY_FILE`; `MISE_SOPS_AGE_KEY_FILE` configures mise only. To edit the file:
+`-i` replaces the plaintext file with ciphertext. Commit the encrypted file. To
+edit it later, point the `sops` CLI at the key; it reads `SOPS_AGE_KEY_FILE`,
+not the `MISE_` variables:
 
 ```sh
 SOPS_AGE_KEY_FILE="$HOME/.config/mise/age.txt" mise exec -- sops .env.json
 ```
 
-:::
+### 4. Load it
 
-Age key files use the standard SOPS/age format: put one identity on each line.
-Blank lines and lines beginning with `#` are ignored, and all identities are
-tried when decrypting.
-
-4. Reference it in config:
-
-```toml
+```toml [mise.toml]
 [env]
 _.file = { path = ".env.json", redact = true }
 ```
 
-mise now decrypts the file for `mise exec`, tasks, and shell activation.
-`mise env` prints the plaintext values; `redact = true` does not hide that export.
+mise now decrypts the file for `mise exec`, tasks and activated shells. Check
+that the value arrives without printing it:
 
-## Environment Variables
-
-mise supports both mise-specific environment variables and standard SOPS ones:
-
-**mise-specific variables (highest priority):**
-
-- `MISE_SOPS_AGE_KEY` - Age private key content directly
-- `MISE_SOPS_AGE_KEY_FILE` - Path to age private key file
-
-**Standard SOPS variables (fallback):**
-
-- `SOPS_AGE_KEY_FILE` - Path to age private key file
-- `SOPS_AGE_KEY` - Age private key content directly
-
-**Precedence order:**
-
-1. `MISE_SOPS_AGE_KEY` (mise setting or env var, checked first)
-2. `MISE_SOPS_AGE_KEY_FILE` or `sops.age_key_file` (mise setting or env var)
-3. `SOPS_AGE_KEY_FILE` (standard)
-4. `SOPS_AGE_KEY` (standard, direct key content)
-5. Default: `~/.config/mise/age.txt`
-
-This allows you to override SOPS settings specifically for mise while keeping your standard SOPS configuration intact for other tools.
-
-## Redaction
-
-Mark secrets from files as sensitive:
-
-```toml
-[env]
-_.file = { path = ".env.json", redact = true }
+```sh
+mise exec -- sh -c 'test -n "$API_TOKEN" && echo "API_TOKEN is set"'
 ```
 
-Redaction applies to captured task output. `mise env --redacted` deliberately
-exports the matching secrets; it does not mask them. See [redactions](/environments/#redactions)
-for output-mode limitations.
+`redact = true` keeps the values out of task output, but `mise env` still prints
+them. See [Redaction and CI masking](/environments/secrets/#redaction).
 
-### CI masking (GitHub Actions)
+## Choose a decryption method {#choose-a-decryption-method}
 
-See [CI masking](/environments/#ci-masking) for mise-action integration and a
-manual masking example that preserves whitespace and multiline values.
+mise decrypts age-encrypted SOPS files itself, so the `sops` CLI is not needed
+at runtime. For AWS KMS, GCP KMS, Azure Key Vault, HashiCorp Vault or PGP,
+install the `sops` CLI, sign in to the provider, and set
+[`sops.rops = false`](/configuration/settings.html#sops.rops) so mise runs
+`sops decrypt` instead. mise looks for `sops` in the project's tools first, then
+on `PATH`.
+
+The `sops` CLI cannot read TOML. With `sops.rops = false`, use `.env.json` or
+`.env.yaml`; an encrypted `.env.toml` fails with an error.
+
+By default, mise stops with an error when it cannot decrypt a file, for example
+when no key is found, the key is wrong, or the `sops` CLI is missing. Set
+[`sops.strict = false`](/configuration/settings.html#sops.strict) to skip the
+file and continue instead.
+
+## Where mise finds the age key {#environment-variables}
+
+mise uses the first of these that is set:
+
+1. `MISE_SOPS_AGE_KEY`, or the
+   [`sops.age_key`](/configuration/settings.html#sops.age_key) setting: the key
+   itself
+2. `MISE_SOPS_AGE_KEY_FILE`, or the
+   [`sops.age_key_file`](/configuration/settings.html#sops.age_key_file)
+   setting: a key file
+3. `SOPS_AGE_KEY_FILE`: a key file
+4. `SOPS_AGE_KEY`: the key itself
+5. `~/.config/mise/age.txt`
+
+The `MISE_` variables let you give mise a different key without changing the
+SOPS configuration that other tools use.
+
+These variables can also come from `[env]`, as long as they appear before the
+encrypted file. The settings, including their `MISE_` variables set in your
+shell, still take precedence:
+
+```toml [mise.toml]
+[env]
+MISE_SOPS_AGE_KEY_FILE = "~/age.txt"
+_.file = ".env.yaml"
+```
+
+A key file can hold several identities, one per line. mise ignores blank lines
+and lines that start with `#`, and tries each identity.
+
+## Share with a team {#share-with-a-team}
+
+Encrypt to each team member's public key, for example
+`sops encrypt -i --age "age1...,age1..." .env.json`, or add a `.sops.yaml` file
+with creation rules so `sops` picks the recipients itself. See the
+[SOPS documentation](https://getsops.io/docs/).
 
 ## Settings
 
 <script setup>
 import Settings from '/components/settings.vue';
 </script>
-<Settings child="sops" :level="2" />
+<Settings child="sops" :level="3" />
