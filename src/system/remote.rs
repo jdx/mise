@@ -22,7 +22,7 @@ pub struct RemoteTomlConfig {
     pub mise_env: Option<Vec<String>>,
     pub install_mise: Option<InstallMiseTomlConfig>,
     #[serde(default)]
-    pub copy_links: bool,
+    pub copy_links: Option<bool>,
     #[serde(default)]
     pub copy_link: Vec<PathBuf>,
     #[serde(default)]
@@ -161,7 +161,7 @@ pub fn hosts_from_config(
         let default_source = resolve_local_path(base, remote.source.as_deref())?;
         let default_mise_env = remote.mise_env;
         let default_install_mise = remote.install_mise.and_then(InstallMiseTomlConfig::path);
-        let default_copy_links = remote.copy_links;
+        let default_copy_links = remote.copy_links.unwrap_or(false);
         let default_copy_link = remote.copy_link;
         for (name, host) in remote.hosts {
             if hosts.contains_key(&name) {

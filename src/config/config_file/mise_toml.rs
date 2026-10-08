@@ -5574,6 +5574,40 @@ run = "cargo build"
     }
 
     #[tokio::test]
+    async fn test_remote_fragments_merge_bootstrap_hooks_defaults_and_copy_links() {
+        let _config = Config::get().await.unwrap();
+        let cf = parse(formatdoc! {r#"
+            [bootstrap.hooks]
+            post-tools = "echo own"
+
+            [bootstrap.remote]
+            copy_links = false
+
+            [bootstrap.macos.defaults."com.apple.finder"]
+            ShowPathbar = true
+        "#});
+        let merged = cf
+            .with_remote_fragments(vec![(
+                PathBuf::from("/cache/a.toml"),
+                "[bootstrap.hooks]\npost-tools = \"echo shared\"\n\n[bootstrap.remote]\ncopy_links = true\n\n[bootstrap.macos.defaults.\"com.apple.finder\"]\nAppleShowAllFiles = true\nShowPathbar = false\n\n[[bootstrap.macos.defaults_entries]]\ndomain = \"com.apple.finder\"\nkey = \"ShowPathbar\"\nvalue = false\n"
+                    .to_string(),
+            )])
+            .unwrap();
+        let bootstrap = merged.bootstrap_config().unwrap();
+        assert_eq!(
+            bootstrap.hooks["post-tools"],
+            toml::Value::Array(vec!["echo shared".into(), "echo own".into()])
+        );
+        assert_eq!(bootstrap.remote.copy_links, Some(false));
+        let finder = bootstrap.macos.defaults["com.apple.finder"]
+            .as_table()
+            .unwrap();
+        assert_eq!(finder["ShowPathbar"].as_bool(), Some(true));
+        assert_eq!(finder["AppleShowAllFiles"].as_bool(), Some(true));
+        assert!(bootstrap.macos.defaults_entries.is_empty());
+    }
+
+    #[tokio::test]
     async fn test_malformed_secrets_does_not_fail_the_file() {
         let _config = Config::get().await.unwrap();
         let cf = parse("secrets = [\"X\"]\n".to_string());

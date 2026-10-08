@@ -148,6 +148,20 @@ pub struct BootstrapTomlConfig {
     pub hooks: IndexMap<String, toml::Value>,
 }
 
+/// The commands of a `[bootstrap.hooks]` value, in the shapes the hook parser accepts.
+fn hook_commands(value: toml::Value) -> Option<Vec<toml::Value>> {
+    match value {
+        toml::Value::String(_) => Some(vec![value]),
+        toml::Value::Array(values) => Some(values),
+        toml::Value::Table(mut table) => match table.remove("run")? {
+            run @ toml::Value::String(_) => Some(vec![run]),
+            toml::Value::Array(values) => Some(values),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
 impl BootstrapTomlConfig {
     /// Add the entries of `lower`, the `[bootstrap]` of an included file, below
     /// this one's own: a key this file declares keeps its own value, a list gets
@@ -180,13 +194,28 @@ impl BootstrapTomlConfig {
         fill(&mut self.directories, lower.directories);
         fill(&mut self.repos, lower.repos);
         fill(&mut self.mise_shell_activate, lower.mise_shell_activate);
-        fill(&mut self.hooks, lower.hooks);
+        // hooks add up across files, the shared commands running first
+        for (phase, shared) in lower.hooks {
+            match self.hooks.entry(phase) {
+                indexmap::map::Entry::Occupied(mut own) => {
+                    if let (Some(mut commands), Some(own_commands)) =
+                        (hook_commands(shared), hook_commands(own.get().clone()))
+                    {
+                        commands.extend(own_commands);
+                        own.insert(toml::Value::Array(commands));
+                    }
+                }
+                indexmap::map::Entry::Vacant(slot) => {
+                    slot.insert(shared);
+                }
+            }
+        }
 
         let remote = lower.remote;
         or(&mut self.remote.source, remote.source);
         or(&mut self.remote.mise_env, remote.mise_env);
         or(&mut self.remote.install_mise, remote.install_mise);
-        self.remote.copy_links |= remote.copy_links;
+        or(&mut self.remote.copy_links, remote.copy_links);
         below(&mut self.remote.copy_link, remote.copy_link);
         below(&mut self.remote.exclude, remote.exclude);
         fill(&mut self.remote.hosts, remote.hosts);
@@ -196,8 +225,46 @@ impl BootstrapTomlConfig {
         fill(&mut self.macos.finder, macos.finder);
         fill(&mut self.macos.keyboard, macos.keyboard);
         fill(&mut self.macos.trackpad, macos.trackpad);
-        fill(&mut self.macos.defaults, macos.defaults);
-        below(&mut self.macos.defaults_entries, macos.defaults_entries);
+        // preferences merge per key within a domain, and a shared explicit
+        // entry never beats a preference this file sets for the same key
+        for (domain, shared) in macos.defaults {
+            match (self.macos.defaults.entry(domain), shared) {
+                (indexmap::map::Entry::Occupied(mut own), toml::Value::Table(shared)) => {
+                    if let toml::Value::Table(own) = own.get_mut() {
+                        for (key, value) in shared {
+                            own.entry(key).or_insert(value);
+                        }
+                    }
+                }
+                (indexmap::map::Entry::Vacant(slot), shared) => {
+                    slot.insert(shared);
+                }
+                _ => {}
+            }
+        }
+        let mut own_keys = IndexMap::new();
+        merge_friendly_macos_defaults(&mut own_keys, &self.macos);
+        for (domain, entries) in &self.macos.defaults {
+            if let toml::Value::Table(entries) = entries {
+                for key in entries.keys() {
+                    own_keys.insert((domain.clone(), key.clone()), toml::Value::Boolean(true));
+                }
+            }
+        }
+        let own_keys: std::collections::HashSet<_> = own_keys
+            .into_keys()
+            .map(|(domain, key)| (canonical_domain(&domain).to_string(), key))
+            .collect();
+        let mut shared_entries = macos.defaults_entries;
+        shared_entries.retain(|entry| {
+            !(entry.host == HostScope::Any
+                && entry.path.is_none()
+                && own_keys.contains(&(
+                    canonical_domain(&entry.domain).to_string(),
+                    entry.key.clone(),
+                )))
+        });
+        below(&mut self.macos.defaults_entries, shared_entries);
         fill(&mut self.macos.launchd.agents, macos.launchd.agents);
 
         or(&mut self.linux.firewall, lower.linux.firewall);
