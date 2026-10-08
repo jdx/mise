@@ -79,8 +79,9 @@ the project root, or `.\bin\test.cmd` on Windows. `--windows` also writes
 recorded when you generated it. Regenerate the wrapper to move to a newer mise.
 
 [`mise generate task-stubs`](/cli/generate/task-stubs.html) writes a stub for
-every task mise loads, including hidden tasks and tasks from your global config,
-so delete any stubs you do not want to commit. On Windows the default `.cmd`
+every task mise loads except hidden tasks and tasks from your global config.
+Stubs that an older mise wrote for those stay in `bin/` until you delete them.
+On Windows the default `.cmd`
 launchers can alter arguments that contain `& ^ | " %`; generate with
 `--windows-launcher exe` on Windows when arguments must arrive unchanged. For
 the wrapper's version pinning and directories, see

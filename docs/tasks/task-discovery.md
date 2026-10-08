@@ -62,10 +62,13 @@ task there.
 
 ### Global tasks
 
-For the global config, mise resolves the same directories from your home
-directory, so file tasks in `~/.config/mise/tasks` are available in every
-project. mise loads global tasks only when a global config file, such as
-`~/.config/mise/config.toml`, exists. Inline tasks in that file are global too.
+File tasks in `$MISE_CONFIG_DIR/tasks`, by default `~/.config/mise/tasks`, are
+global: they are available in every directory, with or without a global config
+file. When a global config file such as `~/.config/mise/config.toml` exists,
+mise also resolves the other default task directories from your home directory
+as global. Inline tasks in that file are global too. Without a global config
+file, those other directories in your home directory are not global; they load
+like a project's task directories when you work under your home directory.
 
 ### Trust
 

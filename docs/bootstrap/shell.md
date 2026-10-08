@@ -142,13 +142,13 @@ already running. mise edits these files only when you run `mise bootstrap` or
 mise skips its own block for a file, without a warning, when `[dotfiles]`
 already covers it:
 
-- A whole-file entry for the same path, including a tracked file with
-  `mode = "track"`.
+- An entry that deploys the whole file to the same path.
 - An edit with the id `activate` on the same path, such as
   `"~/.zshrc/activate"`.
 
-To keep activation in a file you track, or to write a custom block, use a
-`[dotfiles]` edit like the `ZDOTDIR` example above.
+A file tracked with `mode = "track"` or `mode = "track-local"` still gets the
+block, because tracking records the file's history without writing it. To write
+a custom block, use a `[dotfiles]` edit like the `ZDOTDIR` example above.
 
 ## Preview and apply
 

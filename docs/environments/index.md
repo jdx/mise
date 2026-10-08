@@ -375,7 +375,9 @@ with the options the plugin documents:
 _.my-env-plugin = { api_url = "https://api.example.com" }
 ```
 
-`tools` and `redact` also work on plugin directives. To write one, see
+`tools` and `redact` also work on plugin directives. If the plugin is not
+installed and mise has no source to install it from, mise warns and skips the
+directive. To write an environment plugin, see
 [Environment plugins](/env-plugin-development.html).
 
 ## Variables that configure mise {#mise-variables}

@@ -266,11 +266,13 @@ precedence. Put hooks that depend on each other's order in one array.
 
 Pass `--no-hooks`, set `MISE_NO_HOOKS=1`, or set
 [`no_hooks = true`](/configuration/settings.html#no_hooks) to skip the
-`[hooks]` entries: `enter`, `leave`, `cd`, `preinstall` and `postinstall`.
-[Safe mode](/security.html#safe-mode) (`MISE_SAFE=1`) skips them too.
+`[hooks]` entries (`enter`, `leave`, `cd`, `preinstall` and `postinstall`) and
+the commands and tasks of `[[watch_files]]` entries.
+[Safe mode](/security.html#safe-mode) (`MISE_SAFE=1`) skips them too. A file
+change that happens while hooks are off does not run its entry later.
 
-The flag, the variable and the setting do not affect `[[watch_files]]` entries
-or a tool's own `postinstall` option.
+The flag, the variable and the setting do not affect a tool's own `postinstall`
+option.
 
 ## `MISE_INSTALLED_TOOLS` {#mise-installed-tools}
 

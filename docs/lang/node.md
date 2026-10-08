@@ -196,8 +196,8 @@ To keep a CLI across Node.js versions, install it as its own tool with the
 
 mise downloads the official binary archive for your platform from
 [`node.mirror_url`](/lang/node.html#node.mirror_url) (`https://nodejs.org/dist/` by default),
-checks it against the release's `SHASUMS256.txt`, and, for Node.js 20 and
-later, verifies the OpenPGP signature on that file
+checks it against the release's `SHASUMS256.txt`, and verifies the OpenPGP
+signature on that file
 ([`node.gpg_verify`](/lang/node.html#node.gpg_verify)). It then runs `node -v` and `npm -v`.
 mise sets no Node.js-specific environment variables; the version's `bin`
 directory goes on `PATH`.

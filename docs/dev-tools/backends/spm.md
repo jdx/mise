@@ -109,6 +109,17 @@ set `api_url` when the API lives somewhere else:
 "spm:https://git.acme.com/acme/my-tool.git" = { version = "latest", provider = "gitlab", api_url = "https://git.acme.com/gitlab/api/v4" }
 ```
 
+A package given as `owner/repo` clones from the host of `api_url`: mise drops
+an `/api/v3` or `/api/v4` suffix, turns a GitHub `https://api.<host>` into
+`https://<host>`, and leaves out any credentials in the URL. Any other
+`api_url`, such as a proxy of the public API, still clones from github.com or
+gitlab.com, so write the full repository URL instead:
+
+```toml
+[tools]
+"spm:acme/SwiftTool" = { version = "1.2.0", api_url = "https://github.acme.com/api/v3" } # clones https://github.acme.com/acme/SwiftTool.git
+```
+
 ### `artifactbundle`
 
 Whether to use SwiftPM artifact bundles. When it is unset, mise tries a matching

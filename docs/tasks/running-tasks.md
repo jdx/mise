@@ -246,6 +246,15 @@ Separate several tasks with `:::`, as with `mise run`. Without a task name,
 [watchexec](https://github.com/watchexec/watchexec); install it with
 `mise use watchexec` or put it on `PATH` yourself.
 
+`mise watch` passes its watchexec flags, such as `--debounce`, `--clear` and
+`--shell`, on to watchexec. watchexec's `--env` and `--quiet` are spelled
+`--watchexec-env` and `--watchexec-quiet` there, because `-E` and `-q` stay
+mise's own `--env` and `--quiet`:
+
+```sh
+mise watch -E dev --watchexec-env LOG_LEVEL=debug build
+```
+
 ## Task environment {#task-environment}
 
 Tasks run with the project's [environment variables](/environments/) and tools,
@@ -257,7 +266,7 @@ plus these variables:
 | `MISE_CONFIG_ROOT`          | The [config root](/configuration.html#config-root) of the file that defines the task, such as `~/proj` for both `~/proj/mise.toml` and `~/proj/.config/mise.toml`.                     |
 | `MISE_PROJECT_ROOT`         | The root of the project that defines the task, whichever directory you run it from. In a monorepo, the subproject's directory. For a global or remote task, the project you run it in. |
 | `MISE_MONOREPO_ROOT`        | The directory whose config sets `monorepo_root = true`. Set only in a [monorepo](/tasks/monorepo.html).                                                                                |
-| `MISE_TASK_NAME`            | The task's name.                                                                                                                                                                       |
+| `MISE_TASK_NAME`            | The task's name as `mise tasks ls` shows it, so a file task's name has no script extension.                                                                                            |
 | `MISE_TASK_FILE`            | The task's script: the file task itself, or the file named by a TOML task's `file`. For a TOML task with an inline `run`, the config file that defines it.                             |
 | `MISE_TASK_DIR`             | The directory that contains `MISE_TASK_FILE`.                                                                                                                                          |
 | `MISE_TASK_COLOR`           | The ANSI sequence for the task's label color. Empty when colors are off, the task is quiet, or the output style shows no label (`interleave`, `silent`).                               |

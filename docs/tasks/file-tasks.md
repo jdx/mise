@@ -41,7 +41,9 @@ replaces them with the paths you list.
 A file's path below the task directory is its task name, with `/` replaced by
 `:`. `mise-tasks/db/migrate.sh` is `db:migrate`, and you can run it as
 `mise run db:migrate` or `mise run db:migrate.sh`. mise shows the name without
-the extension unless another task already has that name. A file named
+a script extension, such as `.sh`, `.py`, `.js` or `.ps1`, unless another task
+already has that name. Any other extension stays in the name, so
+`mise-tasks/gen.proto` is the task `gen.proto`. A file named
 `_default` takes its directory's name, so `mise-tasks/test/_default` is `test`.
 
 For this layout:
@@ -395,8 +397,6 @@ looks the argument up as a task name. On Linux and macOS the file must also be
 executable. In a terminal mise offers to mark it executable; otherwise it stops
 with `` `./build.sh` is not executable. Run: chmod +x ./build.sh ``.
 
-Inside a project, mise checks that the file exists relative to the current
-directory, but resolves a relative path from the project's config root when it
-runs the script. Run it from the project root, or pass an absolute path such as
-`"$PWD/build.sh"` from a subdirectory. The script runs in the config root, like
-other tasks.
+A relative path resolves from the current directory, as in a shell, so
+`mise run ./build.sh` in a subdirectory runs that subdirectory's `build.sh`.
+The script still runs in the config root, like other tasks.

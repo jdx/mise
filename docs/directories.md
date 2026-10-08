@@ -9,14 +9,14 @@ mise keeps config, installed tools, cache, and machine-local state in separate
 directories. The defaults below apply when no `MISE_*_DIR` or `XDG_*` variable
 overrides them.
 
-| Purpose                     | Linux                         | macOS                   | Windows                           | Override                                                           |
-| --------------------------- | ----------------------------- | ----------------------- | --------------------------------- | ------------------------------------------------------------------ |
-| Global config               | `~/.config/mise`              | `~/.config/mise`        | `%USERPROFILE%\.config\mise`      | `MISE_CONFIG_DIR`; otherwise `XDG_CONFIG_HOME` + `/mise`           |
-| Cache                       | `~/.cache/mise`               | `~/Library/Caches/mise` | `%TEMP%\mise`                     | `MISE_CACHE_DIR`; otherwise `XDG_CACHE_HOME` + `/mise`             |
-| Local state                 | `~/.local/state/mise`         | `~/.local/state/mise`   | `%USERPROFILE%\.local\state\mise` | `MISE_STATE_DIR`; otherwise `XDG_STATE_HOME` + `/mise`             |
-| Installed tools and plugins | `~/.local/share/mise`         | `~/.local/share/mise`   | `%LOCALAPPDATA%\mise`             | `MISE_DATA_DIR`; otherwise `XDG_DATA_HOME` + `/mise`               |
-| System config               | `/etc/mise`                   | `/etc/mise`             | `\etc\mise` on the current drive  | `MISE_SYSTEM_CONFIG_DIR` (older name: `MISE_SYSTEM_DIR`)           |
-| Temporary files             | `$TMPDIR/mise` or `/tmp/mise` | `$TMPDIR/mise`          | `%TEMP%\mise`                     | `MISE_TMP_DIR`; otherwise `mise` in the system temporary directory |
+| Purpose                     | Linux                         | macOS                   | Windows                           | Override                                                                                                                          |
+| --------------------------- | ----------------------------- | ----------------------- | --------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| Global config               | `~/.config/mise`              | `~/.config/mise`        | `%USERPROFILE%\.config\mise`      | `MISE_CONFIG_DIR`; otherwise `XDG_CONFIG_HOME` + `/mise`                                                                          |
+| Cache                       | `~/.cache/mise`               | `~/Library/Caches/mise` | `%TEMP%\mise`                     | `MISE_CACHE_DIR`; otherwise `XDG_CACHE_HOME` + `/mise`                                                                            |
+| Local state                 | `~/.local/state/mise`         | `~/.local/state/mise`   | `%USERPROFILE%\.local\state\mise` | `MISE_STATE_DIR`; otherwise `XDG_STATE_HOME` + `/mise`                                                                            |
+| Installed tools and plugins | `~/.local/share/mise`         | `~/.local/share/mise`   | `%LOCALAPPDATA%\mise`             | `MISE_DATA_DIR`; otherwise `XDG_DATA_HOME` + `/mise`                                                                              |
+| System config               | `/etc/mise`                   | `/etc/mise`             | `\etc\mise` on the current drive  | `MISE_SYSTEM_CONFIG_DIR` (older name: `MISE_SYSTEM_DIR`)                                                                          |
+| Temporary files             | `$TMPDIR/mise` or `/tmp/mise` | `$TMPDIR/mise`          | `%TEMP%\mise-tmp`                 | `MISE_TMP_DIR`; otherwise `mise` in the system temporary directory, or `mise-tmp` when `mise` there is inside the cache directory |
 
 These directories live inside the data directory and can be moved on their own:
 

@@ -381,13 +381,13 @@ for the tool and platform you care about.
 | cargo, dotnet, gem, go, spinel, core:dotnet, core:rust                                             | The top-level version only; the language's installer resolves dependencies and build inputs               |
 | vfox tool plugins                                                                                  | URLs that the plugin's hooks return, which locked mode requires                                           |
 | asdf and vfox backend plugins                                                                      | The version only; the plugin performs the installation                                                    |
-| spm                                                                                                | The version only; locked mode still expects a URL, so `mise install --locked` fails for spm tools         |
+| spm                                                                                                | The version only                                                                                          |
 
 Locked mode does not require a URL for `asdf`, `cargo`, `dotnet`, `gem`, `go`,
-`npm`, `pypi` (`pipx`), `spinel`, `ubi`, `core:dotnet`, `core:rust`,
+`npm`, `pypi` (`pipx`), `spinel`, `spm`, `ubi`, `core:dotnet`, `core:rust`,
 `core:swift` and vfox backend plugins, because those backends do not record
-one. spm records no URL either but is not exempt. The exemption covers artifact
-URLs only; npm and PyPI dependency graphs have their own checks.
+one. The exemption covers artifact URLs only; npm and PyPI dependency graphs
+have their own checks.
 
 A `provenance` field is not proof that mise verified the bytes; see
 [provenance and verification](#provenance-and-security).

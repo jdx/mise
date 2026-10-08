@@ -93,9 +93,8 @@ including patterns from the global config:
 TEST_TOKEN = { value = "not-sensitive", redact = false }
 ```
 
-`mise env --redacted` still lists a variable that matches a `redactions` pattern
-even when it sets `redact = false`, so [CI masking](#ci-masking) that reads that
-list also masks it.
+`mise env --redacted` leaves out a variable that sets `redact = false`, so
+[CI masking](#ci-masking) that reads that list does not mask it either.
 
 mise also redacts a value the caller supplies for a `required` variable, or for
 a `default` the caller overrides, when the entry sets `redact = true` or a

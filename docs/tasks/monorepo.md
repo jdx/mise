@@ -86,9 +86,8 @@ settings control that walk and have no effect once `config_roots` is set.
 In normal mode, trusting the monorepo root also trusts every config beneath it,
 so review the whole repository before you run [`mise trust`](/cli/trust.html).
 In [paranoid mode](/paranoid.html), trusting the root does not extend to the
-configs beneath it; trust each one. A root that you trusted in normal mode
-before you turned paranoid mode on still covers them; run
-`MISE_PARANOID=0 mise trust --untrust` in the root to clear that. See
+configs beneath it, even if you trusted the root before you turned paranoid
+mode on; trust each one. See
 [Configuration trust](/security.html#configuration-trust) for the general rules.
 
 ## Run tasks by path {#task-path-syntax}
