@@ -1020,6 +1020,26 @@ mod tests {
     }
 
     #[test]
+    fn extend_without_registry_keeps_only_user_sourced_options() {
+        let mut resolved = ResolvedToolOptions::default();
+        resolved.apply_overrides(
+            &opts(&[("workflow", "release.yml")]),
+            ToolOptionSource::Registry,
+        );
+        resolved.apply_overrides(&opts(&[("variant", "musl")]), ToolOptionSource::Config);
+        let mut kept = ResolvedToolOptions::default();
+        resolved.extend_without_registry(&mut kept);
+        assert_eq!(
+            kept.effective().opts.keys().collect::<Vec<_>>(),
+            vec!["variant"]
+        );
+        assert_eq!(
+            kept.source_for_key("variant"),
+            Some(ToolOptionSource::Config)
+        );
+    }
+
+    #[test]
     fn registry_workflow_survives_unrelated_user_options() {
         let mut resolved = ResolvedToolOptions::default();
         resolved.apply_overrides(

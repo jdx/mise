@@ -266,6 +266,11 @@ impl ToolVersion {
                 request.ba().short.clone(),
                 Some(backend_full.clone()),
             ));
+            // The registry's options are for the backend it chose; the lock's
+            // backend would read them as its own settings and record them.
+            if backend.backend_type() != request.ba().backend_type() {
+                request = request.without_registry_options();
+            }
             match &mut request {
                 ToolRequest::Version { backend: b, .. }
                 | ToolRequest::Prefix { backend: b, .. }
@@ -1551,6 +1556,39 @@ mod tests {
         assert!(
             !ToolVersion::new(request, "ref:main".to_string()).request_pinned_this_version(),
             "a ref names a moving target, not a release"
+        );
+    }
+
+    #[test]
+    fn from_lockfile_drops_registry_options_when_the_lock_binds_another_backend() {
+        let restore = |backend: &str| {
+            let request = ToolRequest::new_with_options(
+                Arc::new(BackendArg::new("hk".to_string(), None)),
+                "latest",
+                ToolVersionOptions::default(),
+                ToolSource::Argument,
+            )
+            .unwrap();
+            assert!(
+                request.options().opts.contains_key("workflow"),
+                "the registry pins hk's signing workflow"
+            );
+            let lt = LockfileTool {
+                version: "1.58.1".to_string(),
+                backend: Some(backend.to_string()),
+                specifiers: Default::default(),
+                options: Default::default(),
+                platforms: Default::default(),
+                aube: None,
+                uv: None,
+            };
+            ToolVersion::from_lockfile(request, lt).request.options()
+        };
+        assert!(!restore("aqua:jdx/hk").opts.contains_key("workflow"));
+        assert!(
+            restore("packslip:github.com/jdx/hk")
+                .opts
+                .contains_key("workflow")
         );
     }
 
