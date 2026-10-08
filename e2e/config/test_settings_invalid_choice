@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+
+# An unknown value for a setting with fixed choices is an error, not a panic.
+cat >mise.toml <<'TOML'
+[tools]
+dummy = "1"
+TOML
+assert_fail_contains "MISE_STATUS_MESSAGE_MISSING_TOOLS=sometimes mise hook-env -s bash" \
+  'invalid status.missing_tools value "sometimes"; expected one of: never, if_other_versions_installed, always'
+assert_fail_contains "MISE_WINDOWS_SHIM_MODE=copy mise ls" \
+  'invalid windows_shim_mode value "copy"; expected one of: exe, file, hardlink, symlink'

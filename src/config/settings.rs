@@ -1403,6 +1403,7 @@ impl SettingsInternal for Settings {
         normalize_storage_dirs(&mut settings)?;
         validate_settings_enum_values(&settings)?;
         settings.validate_lockfile_mode()?;
+        settings.validate_string_choices()?;
         Ok(settings)
     }
 
@@ -1843,6 +1844,39 @@ mod tests {
         assert!(settings.validate_lockfile_mode().is_ok());
         settings.lockfile_mode = Some("invalid".into());
         assert!(settings.validate_lockfile_mode().is_err());
+    }
+
+    #[test]
+    fn test_validate_string_choices() {
+        let mut settings = Settings::builder().load().unwrap();
+        assert!(settings.validate_string_choices().is_ok());
+        for value in ["never", "if_other_versions_installed", "always"] {
+            settings.status.missing_tools = value.into();
+            assert!(settings.validate_string_choices().is_ok(), "{value}");
+            assert_eq!(settings.status.missing_tools().to_string(), value);
+        }
+        for value in ["exe", "file", "hardlink", "symlink"] {
+            settings.windows_shim_mode = value.into();
+            assert!(settings.validate_string_choices().is_ok(), "{value}");
+        }
+
+        settings.status.missing_tools = "sometimes".into();
+        assert_eq!(
+            settings.validate_string_choices().unwrap_err().to_string(),
+            "invalid status.missing_tools value \"sometimes\"; expected one of: never, if_other_versions_installed, always"
+        );
+        // Never panics, even on settings that skipped validation.
+        assert_eq!(
+            settings.status.missing_tools(),
+            SettingsStatusMissingTools::IfOtherVersionsInstalled
+        );
+
+        settings.status.missing_tools = "always".into();
+        settings.windows_shim_mode = "copy".into();
+        assert_eq!(
+            settings.validate_string_choices().unwrap_err().to_string(),
+            "invalid windows_shim_mode value \"copy\"; expected one of: exe, file, hardlink, symlink"
+        );
     }
 
     /// File-backed exclusions are inherited in low-to-high precedence order and deduplicated.

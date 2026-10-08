@@ -292,9 +292,17 @@ impl Display for Settings {
     }
 }
 
+/// Accepted values of `status.missing_tools`.
+const STATUS_MISSING_TOOLS: &[&str] = &["never", "if_other_versions_installed", "always"];
+
+/// Accepted values of `windows_shim_mode`.
+pub const WINDOWS_SHIM_MODES: &[&str] = &["exe", "file", "hardlink", "symlink"];
+
 impl SettingsStatus {
+    /// Loaded settings are checked by [`Settings::validate_string_choices`], so the
+    /// default only covers settings that were built without loading.
     pub fn missing_tools(&self) -> SettingsStatusMissingTools {
-        SettingsStatusMissingTools::from_str(&self.missing_tools).unwrap()
+        SettingsStatusMissingTools::from_str(&self.missing_tools).unwrap_or_default()
     }
 }
 

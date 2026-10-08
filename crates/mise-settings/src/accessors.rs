@@ -38,6 +38,21 @@ impl Settings {
         )
     }
 
+    /// Reject unknown values of string settings that mise matches against a
+    /// fixed set of choices, so a typo fails here instead of panicking later.
+    pub fn validate_string_choices(&self) -> Result<()> {
+        validate_setting_enum_values(
+            "status.missing_tools",
+            [self.status.missing_tools.as_str()],
+            STATUS_MISSING_TOOLS,
+        )?;
+        validate_setting_enum_values(
+            "windows_shim_mode",
+            [self.windows_shim_mode.as_str()],
+            WINDOWS_SHIM_MODES,
+        )
+    }
+
     pub fn lockfile_creation_enabled(&self) -> bool {
         self.lockfile == Some(true)
     }
