@@ -753,7 +753,7 @@ impl Run {
         // output and must not take the stream over from an ancestor.
         let captures_output = !(self.raw || Settings::get().raw);
         let telemetry =
-            otel::TaskRunTelemetry::init_if_enabled(&requested_task_names, captures_output);
+            otel::TaskRunTelemetry::init_if_enabled(&requested_task_names, captures_output)?;
 
         // Fetch remote task files before parsing usage specs, so that
         // file-based remote tasks have their files resolved to local cache.

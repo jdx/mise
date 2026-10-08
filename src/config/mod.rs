@@ -6917,8 +6917,10 @@ async fn load_task_sources_from_configs(
     };
     for include in &includes {
         let artifacts = if include.starts_with("git::") {
+            Settings::get().ensure_experimental("including tasks from a `git::` source")?;
             vec![resolve_git_url_to_path(include).await?]
         } else if include.starts_with(OCI_INCLUDE_PREFIX) {
+            Settings::get().ensure_experimental("including tasks from an `oci::` source")?;
             vec![resolve_oci_url_to_path(include).await?]
         } else {
             expand_task_include(&resolve_dir, include)

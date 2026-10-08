@@ -93,6 +93,12 @@ impl TaskFetcher {
                 if !Self::is_remote_source(&source) {
                     continue;
                 }
+                if source.starts_with("git::") {
+                    Settings::get().ensure_experimental(&format!(
+                        "loading task `{}` from a `git::` file",
+                        t.name
+                    ))?;
+                }
 
                 let original = t.clone();
                 let provider = task_file_providers
