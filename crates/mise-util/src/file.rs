@@ -2474,6 +2474,46 @@ fn copy_dmg_volume(volume: &Path, dest: &Path) -> Result<()> {
     copy_dir_all_preserve_symlinks_skipping(volume, dest, DMG_VOLUME_METADATA)
 }
 
+/// Whole-disk devices that `hdiutil info` reports as still attached from `archive`.
+///
+/// An interrupted extraction leaves its image attached, and attaching the same image again
+/// fails with "Resource busy". In the text output each image block starts with an
+/// `image-path` line, followed by one line per entity; the first `/dev/diskN` is the disk.
+fn dmg_attached_devices(info: &str, archive: &Path) -> Vec<String> {
+    let archive = canonicalize_or_self(archive);
+    let mut devices = vec![];
+    let mut matches = false;
+    let mut found_device = false;
+    for line in info.lines() {
+        if let Some(path) = line.strip_prefix("image-path") {
+            let path = path.trim_start().trim_start_matches(':').trim();
+            matches = paths_eq(&canonicalize_or_self(Path::new(path)), &archive);
+            found_device = false;
+        } else if matches
+            && !found_device
+            && let Some(dev) = line.split_whitespace().next()
+            && dev.starts_with("/dev/disk")
+        {
+            devices.push(dev.to_string());
+            found_device = true;
+        }
+    }
+    devices
+}
+
+fn detach_stale_dmg(archive: &Path) {
+    let Ok(output) = std::process::Command::new("hdiutil").arg("info").output() else {
+        return;
+    };
+    let info = String::from_utf8_lossy(&output.stdout);
+    for dev in dmg_attached_devices(&info, archive) {
+        debug!("hdiutil detach {dev} (left attached by an interrupted run)");
+        if let Err(err) = cmd!("hdiutil", "detach", "-force", dev.as_str()).run() {
+            debug!("failed to detach stale DMG {dev}: {err}");
+        }
+    }
+}
+
 pub fn un_dmg(archive: &Path, dest: &Path) -> Result<()> {
     debug!(
         "hdiutil attach -quiet -nobrowse -mountpoint {} {}",
@@ -2481,6 +2521,7 @@ pub fn un_dmg(archive: &Path, dest: &Path) -> Result<()> {
         archive.display()
     );
     run_blocking(|| {
+        detach_stale_dmg(archive);
         let tmp = tempfile::TempDir::new()?;
         cmd!(
             "hdiutil",

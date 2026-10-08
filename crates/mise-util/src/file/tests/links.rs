@@ -15,6 +15,26 @@ fn un_dmg_extracts_app_without_license() -> Result<()> {
     check_dmg_extraction("ordinary.dmg")
 }
 
+#[test]
+fn dmg_attached_devices_finds_only_the_matching_image() {
+    let info = "\
+================================================
+image-path      : /cache/other.dmg
+image-alias     : /cache/other.dmg
+/dev/disk6\tGUID_partition_scheme\t
+/dev/disk6s1\t48465300-0000-11AA-AA11-00306543ECAC\t/Volumes/Other
+================================================
+image-path      : /cache/wanted.dmg
+/dev/disk7\tGUID_partition_scheme\t
+/dev/disk7s1\t48465300-0000-11AA-AA11-00306543ECAC\t/private/tmp/.tmpvS7AFm
+";
+    assert_eq!(
+        dmg_attached_devices(info, Path::new("/cache/wanted.dmg")),
+        vec!["/dev/disk7".to_string()]
+    );
+    assert!(dmg_attached_devices(info, Path::new("/cache/none.dmg")).is_empty());
+}
+
 #[cfg(unix)]
 fn check_dmg_extraction(archive: &str) -> Result<()> {
     let tmp = tempfile::tempdir()?;
