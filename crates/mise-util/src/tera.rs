@@ -1448,93 +1448,35 @@ pub fn render_for_dry_run(
     }
 }
 
-/// Whether `input` uses the `vars` map as a whole: passes it to a filter or
-/// function, iterates, assigns or tests it, rather than reading one entry
-/// with `vars.NAME` or `vars[...]`. Only the inside of `{{ }}` and `{% %}`
-/// tags counts, outside string literals and `{% raw %}` blocks. Anything this
-/// misjudges counts as a whole-map read, which only shows the template
-/// unrendered.
+/// Whether `input` may use the `vars` map as a whole: pass it to a filter or
+/// function, iterate, spread, assign or test it, rather than read one entry
+/// with `vars.NAME` or `vars[...]`.
+///
+/// This deliberately does not parse the template. Any `vars` identifier that is
+/// not followed by `.` or `[` counts, wherever it appears: in a tag, a string,
+/// a comment, a `{% raw %}` block or plain text. Skipping any of those would
+/// need Tera's own parser to get right, and a miss renders a preview without
+/// the unresolved vars, while a false positive only shows it unrendered.
 fn reads_whole_vars_map(input: &str) -> bool {
     let s = input.as_bytes();
     let is_ident = |b: u8| b.is_ascii_alphanumeric() || b == b'_';
     let mut i = 0;
-    // the closing delimiter of the tag being scanned, if inside one
-    let mut close: Option<&[u8]> = None;
-    let mut quote: Option<u8> = None;
     while i < s.len() {
-        let Some(end) = close else {
-            match s.get(i..i + 2) {
-                Some(b"{{") => close = Some(b"}}".as_slice()),
-                Some(b"{%") => {
-                    // `{% raw %}` text is literal: skip to after `{% endraw %}`
-                    let Some(len) = input[i + 2..].find("%}") else {
-                        return false;
-                    };
-                    let tag = input[i + 2..i + 2 + len]
-                        .trim_matches(|c: char| c == '-' || c.is_whitespace());
-                    if tag == "raw" {
-                        // resume after the first complete `{% endraw %}` tag
-                        let mut at = i + 2 + len + 2;
-                        loop {
-                            let Some(open) = input[at..].find("{%") else {
-                                return false;
-                            };
-                            let open = at + open;
-                            let Some(close_len) = input[open + 2..].find("%}") else {
-                                return false;
-                            };
-                            let inner = input[open + 2..open + 2 + close_len]
-                                .trim_matches(|c: char| c == '-' || c.is_whitespace());
-                            at = open + 2 + close_len + 2;
-                            if inner == "endraw" {
-                                break;
-                            }
-                        }
-                        i = at;
-                        continue;
-                    }
-                    close = Some(b"%}".as_slice())
-                }
-                // skip a comment and its closing `#}`
-                Some(b"{#") => match input[i + 2..].find("#}") {
-                    Some(len) => i += 2 + len,
-                    None => return false,
-                },
-                _ => {
-                    i += 1;
-                    continue;
-                }
-            }
-            i += 2;
+        if !is_ident(s[i]) {
+            i += 1;
             continue;
-        };
-        let b = s[i];
-        if let Some(q) = quote {
-            if b == q {
-                quote = None;
-            }
+        }
+        let start = i;
+        while i < s.len() && is_ident(s[i]) {
             i += 1;
-        } else if matches!(b, b'"' | b'\'' | b'`') {
-            quote = Some(b);
-            i += 1;
-        } else if s[i..].starts_with(end) {
-            close = None;
-            i += end.len();
-        } else if is_ident(b) {
-            let start = i;
-            while i < s.len() && is_ident(s[i]) {
-                i += 1;
+        }
+        // `x.vars` is an attribute, but `...vars` spreads the whole map
+        let attribute = start > 0 && s[start - 1] == b'.' && !s[..start].ends_with(b"...");
+        if &s[start..i] == b"vars" && !attribute {
+            let next = s[i..].iter().find(|b| !b.is_ascii_whitespace());
+            if !matches!(next, Some(b'.' | b'[')) {
+                return true;
             }
-            // `x.vars` is an attribute, but `...vars` spreads the whole map
-            let attribute = start > 0 && s[start - 1] == b'.' && !s[..start].ends_with(b"...");
-            if &s[start..i] == b"vars" && !attribute {
-                let next = s[i..].iter().find(|b| !b.is_ascii_whitespace());
-                if !matches!(next, Some(b'.' | b'[')) {
-                    return true;
-                }
-            }
-        } else {
-            i += 1;
         }
     }
     false

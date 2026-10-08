@@ -374,31 +374,22 @@ fn dry_run_cases() {
         assert!(render(input, &none).contains("hi"), "{input}");
     }
     assert_eq!(render("{{ vars['known'] }}", &pending), "hi");
-    // only a complete `{% endraw %}` tag ends a raw block, and spreading the
-    // map reads all of it
+    assert_eq!(render("{{ vars.known }}{# x.vars #}", &pending), "hi");
+    // spreading the map reads all of it
+    let out = render("{{ {...vars} | json_encode }}", &pending);
+    assert!(out.contains("whole vars map"), "{out}");
+    // the scan does not parse the template, so neither `{% raw %}` text nor a
+    // stray quote can hide a later read; the word `vars` in plain text counts
+    // too, which only errs toward unrendered
     for input in [
+        "echo vars {{ vars.known }}",
+        "echo '{% raw %}{{ vars }}{% endraw %}'",
+        "echo '{% raw %}{%{% endraw %}' '{{ vars | json_encode }}'",
         "{% raw %}endraw {% ignored %}{{ ' }}{% endraw %}{{ vars | json_encode }}",
-        "{{ {...vars} | json_encode }}",
     ] {
         let out = render(input, &pending);
         assert!(out.contains("whole vars map"), "{input}: {out}");
     }
-    // `{% raw %}` text is literal, so it is not a read of the map
-    assert_eq!(
-        render("echo '{% raw %}{{ vars }}{% endraw %}'", &pending),
-        "echo '{{ vars }}'"
-    );
-    assert_eq!(
-        render(
-            "{%- raw -%} {{ vars }} {%- endraw -%}{{ vars.known }}",
-            &pending
-        ),
-        "{{ vars }}hi"
-    );
-    assert_eq!(
-        render("vars {# vars #}{{ 'vars' ~ vars[\"known\"] }}", &pending),
-        "vars varshi"
-    );
     // with nothing unresolved and no exec() call, a failure is an error
     let out = render("echo {{ nope() }}", &none);
     assert!(
