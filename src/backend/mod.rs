@@ -639,7 +639,7 @@ pub fn is_disabled_backend_type(backend_type: &BackendType) -> bool {
         .is_some_and(is_disabled_backend_name)
 }
 
-pub(crate) fn ensure_backend_enabled(backend_type: &BackendType) -> Result<()> {
+pub fn ensure_backend_enabled(backend_type: &BackendType) -> Result<()> {
     if is_disabled_backend_type(backend_type) {
         bail!("backend {backend_type} is disabled by disable_backends");
     }
