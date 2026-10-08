@@ -22,6 +22,13 @@ _.path = ['$($script:binDir)']
 run = 'echo [%MISE_DENY_ENV_PROBE%] [%SystemRoot%]'
 deny_env = true
 
+# A timeout starts the task through a Ctrl+C group leader, which must not hand on mise's
+# environment either.
+[tasks.denied_timeout]
+run = 'echo [%MISE_DENY_ENV_PROBE%] [%SystemRoot%]'
+deny_env = true
+timeout = "1m"
+
 [tasks.allowed]
 run = 'echo [%MISE_DENY_ENV_PROBE%]'
 allow_env = ['MISE_DENY_ENV_PROBE']
@@ -79,6 +86,12 @@ run = 'echo [%MISE_DENY_ENV_PROBE%]'
 
     It 'clears inherited variables for a deny_env task' {
         $output = mise run denied | Select-Object -Last 1
+        $LASTEXITCODE | Should -Be 0
+        $output | Should -Be "[%MISE_DENY_ENV_PROBE%] [$env:SystemRoot]"
+    }
+
+    It 'clears inherited variables for a deny_env task with a timeout' {
+        $output = mise run denied_timeout | Select-Object -Last 1
         $LASTEXITCODE | Should -Be 0
         $output | Should -Be "[%MISE_DENY_ENV_PROBE%] [$env:SystemRoot]"
     }

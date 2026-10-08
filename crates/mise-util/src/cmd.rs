@@ -2102,6 +2102,9 @@ impl<'a> CmdLineRunner<'a> {
         // essentials `SandboxConfig::filter_env` keeps (on Windows, `SystemRoot` and the rest
         // of its list). env_clear() also wipes envs explicitly set via .envs(), so save and
         // restore them. macOS does the same when it rebuilds the command for sandbox-exec.
+        // `inherit_env` records the clear for whatever rebuilds the command later: on Windows a
+        // command with a timeout is started through a Ctrl+C group leader, which would otherwise
+        // inherit mise's whole environment and hand it on.
         #[cfg(not(target_os = "macos"))]
         if sandbox.effective_deny_env() {
             let saved: Vec<(std::ffi::OsString, std::ffi::OsString)> = self
@@ -2111,6 +2114,7 @@ impl<'a> CmdLineRunner<'a> {
                 .filter_map(|(k, v)| v.map(|v| (k.to_os_string(), v.to_os_string())))
                 .collect();
             self.cmd.env_clear();
+            self.inherit_env = false;
             for (k, v) in saved {
                 self.cmd.env(k, v);
             }
@@ -2181,6 +2185,7 @@ impl<'a> CmdLineRunner<'a> {
             }
             if sandbox.effective_deny_env() {
                 new_cmd.env_clear();
+                self.inherit_env = false;
             }
             for (k, v) in self.cmd.as_std().get_envs() {
                 match v {

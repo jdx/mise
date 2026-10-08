@@ -129,8 +129,18 @@ fn dedup_key(path: &std::path::Path) -> PathBuf {
 
 /// Check if an env var name matches an allow_env pattern.
 /// Patterns can contain `*` as a wildcard (e.g., `MYAPP_*` matches `MYAPP_FOO`).
-/// Patterns without `*` require an exact match.
+/// Patterns without `*` require an exact match. On Windows, where names are case-insensitive,
+/// so is the match: `appdata*` matches `APPDATA`.
 fn env_pattern_matches(pattern: &str, key: &str) -> bool {
+    if cfg!(windows) {
+        env_pattern_matches_exactly(&pattern.to_ascii_uppercase(), &key.to_ascii_uppercase())
+    } else {
+        env_pattern_matches_exactly(pattern, key)
+    }
+}
+
+/// [`env_pattern_matches`], comparing names exactly as written.
+fn env_pattern_matches_exactly(pattern: &str, key: &str) -> bool {
     if !pattern.contains('*') {
         return pattern == key;
     }
@@ -285,7 +295,7 @@ impl SandboxConfig {
             return true;
         }
         essential_env_keys().any(|essential| same_env_key(essential, key))
-            || self.cache_env.iter().any(|name| name == key)
+            || self.cache_env.iter().any(|name| same_env_key(name, key))
             || self
                 .allow_env
                 .iter()
@@ -310,23 +320,28 @@ impl SandboxConfig {
             .filter(|(k, _)| self.keeps_env_key(k))
             .map(|(k, v)| (k.clone(), v.clone()))
             .collect();
+        // A name already kept under another spelling (Windows `Path` for `PATH`) is the same
+        // variable, and must not be added again.
+        let has_key = |filtered: &std::collections::BTreeMap<String, String>, key: &str| {
+            filtered.keys().any(|k| same_env_key(k, key))
+        };
         // Pull in allowed vars from parent env that might not be in mise's env map.
         // For wildcard patterns, check all parent env vars; for exact names, check directly.
         for pattern in self.allow_env.iter().chain(&self.pass_through_env) {
             if pattern.contains('*') {
                 for (key, val) in crate::env::vars_safe() {
-                    if !filtered.contains_key(&key) && env_pattern_matches(pattern, &key) {
+                    if !has_key(&filtered, &key) && env_pattern_matches(pattern, &key) {
                         filtered.insert(key, val);
                     }
                 }
-            } else if !filtered.contains_key(pattern)
+            } else if !has_key(&filtered, pattern)
                 && let Ok(val) = std::env::var(pattern)
             {
                 filtered.insert(pattern.clone(), val);
             }
         }
         for key in &self.cache_env {
-            if !filtered.contains_key(key)
+            if !has_key(&filtered, key)
                 && let Ok(val) = std::env::var(key)
             {
                 filtered.insert(key.clone(), val);
@@ -334,7 +349,7 @@ impl SandboxConfig {
         }
         // Also ensure essential vars from parent env are present
         for key in essential_env_keys() {
-            if !filtered.keys().any(|k| same_env_key(k, key))
+            if !has_key(&filtered, key)
                 && let Ok(val) = std::env::var(key)
             {
                 filtered.insert(key.to_string(), val);
@@ -545,6 +560,44 @@ mod tests {
         assert!(!filtered.contains_key("DEPLOY_KEY"));
         let system_root = std::env::var("SystemRoot").expect("SystemRoot is set on Windows");
         assert_eq!(filtered.get("SystemRoot"), Some(&system_root));
+    }
+
+    /// Windows names are case-insensitive, so `allow_env` patterns and `cache_env` names match
+    /// whatever spelling the environment uses, and a kept name is not added a second time.
+    #[cfg(windows)]
+    #[test]
+    fn test_filter_env_matches_names_case_insensitively_on_windows() {
+        let deny = SandboxConfig {
+            deny_env: true,
+            allow_env: vec!["myapp_*".into(), "token".into()],
+            cache_env: vec!["cache_key".into()],
+            ..Default::default()
+        };
+        for key in ["MYAPP_FOO", "Token", "CACHE_KEY"] {
+            assert!(deny.keeps_env_key(key), "{key}");
+        }
+        assert!(!deny.keeps_env_key("OTHER"));
+        let env = BTreeMap::from([
+            ("MYAPP_FOO".to_string(), "foo".to_string()),
+            ("TOKEN".to_string(), "secret".to_string()),
+            ("CACHE_KEY".to_string(), "cache".to_string()),
+            ("OTHER".to_string(), "other".to_string()),
+        ]);
+        let filtered = deny.filter_env(&env);
+        assert_eq!(filtered.get("MYAPP_FOO").map(String::as_str), Some("foo"));
+        assert_eq!(filtered.get("TOKEN").map(String::as_str), Some("secret"));
+        assert_eq!(filtered.get("CACHE_KEY").map(String::as_str), Some("cache"));
+        assert!(!filtered.contains_key("OTHER"));
+        for name in ["token", "cache_key"] {
+            assert_eq!(
+                filtered
+                    .keys()
+                    .filter(|k| k.eq_ignore_ascii_case(name))
+                    .count(),
+                1,
+                "{name} is kept once: {filtered:?}"
+            );
+        }
     }
 
     /// Fixture paths that cannot collide with a previous run or a concurrent one.
