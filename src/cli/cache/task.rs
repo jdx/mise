@@ -15,9 +15,17 @@ use crate::task::task_source_checker::task_cwd;
 use crate::task::{GetMatchingExt, Task};
 use crate::ui::table::MiseTable;
 
-/// Inspect output cache entries for a task
+/// [experimental] Inspect artifact cache entries for a task
+///
+/// Lists the artifact cache entries of the tasks matching TASK with their key,
+/// size, run time, last access, and outputs, and marks the entry that matches the
+/// task's current inputs. Remove entries with `mise cache clear --task TASK`. See
+/// https://mise.jdx.dev/tasks/caching.html#enable-artifact-caching.
 #[derive(Debug, usage_rs::Args)]
-#[usage(verbatim_doc_comment)]
+#[usage(
+    verbatim_doc_comment,
+    example("mise cache task build", help = "List the build task's cache entries")
+)]
 pub(super) struct CacheTask {
     /// Task name or pattern to inspect
     task: String,

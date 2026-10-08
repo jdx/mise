@@ -35,77 +35,116 @@ use crate::toolset::ResolveOptions;
 use crate::ui::prompt::Confirmation;
 use crate::ui::table::MiseTable;
 
-/// Set up a machine from the current configuration
+/// Set up this machine from your mise config
 ///
-/// Runs these phases in order, when configured and selected:
+/// Applies each part your config declares, in this order. Each step names its
+/// parts as `--only` and `--skip` accept them, followed by any condition.
 ///
-/// 1. Linux accounts, then package-manager plugins.
-/// 2. Pre-packages files/directories, the pre-packages hook, then packages handled by built-in managers.
-/// 3. Privileged files/directories, system and user services, firewall, and Compose projects.
-/// 4. Git repositories, then dotfiles, each with its pre/post hooks.
-/// 5. Shell activation, macOS defaults and LaunchAgents, Linux user units, and user settings.
-/// 6. The pre-tools hook, versioned tools, and post-tools hook.
-/// 7. Package-plugin packages, then the post-packages hook and services requiring tools.
-/// 8. The `bootstrap` task, when defined, then the final hook.
+/// 1. `accounts`, then `plugins` (package manager plugins)
+/// 2. `files` with `phase = "pre-packages"`, then built-in `packages`
+/// 3. The remaining `files`, then `services`, `firewall`, and `compose`
+/// 4. `repos`, then `dotfiles`
+/// 5. `mise-shell-activate`, `macos-defaults`, and `macos-launchd-agents`
+/// 6. `linux-systemd-units`, then `user` (the login shell)
+/// 7. `tools`
+/// 8. Plugin `packages`, then user `services` with `requires_tools = true`
+/// 9. `task` (the `bootstrap` task, if defined), then `final-hook`
 ///
-/// Defaults and user settings also have pre/post hooks. See
-/// https://mise.jdx.dev/bootstrap.html for the complete phase order and configuration.
-/// Unchanged resource state is skipped, but hooks and the bootstrap task can run again;
-/// make those commands safe to repeat. Dotfile templates may execute while checking state.
+/// Hooks run before and after packages, repos, dotfiles, macOS defaults, the
+/// login shell, and tools. The post-packages hook runs right after built-in
+/// packages, or after plugin packages when any are configured. See
+/// https://mise.jdx.dev/bootstrap.html#how-it-runs.
 ///
-/// Use `--dry-run` to preview the selected workflow, `bootstrap status` to inspect state,
-/// or `bootstrap plan` for the declarative-resource plan. `--only` and `--skip` accept
-/// repeated or comma-separated parts and cannot be combined.
+/// Parts that already match the config are left alone, but hooks and the
+/// `bootstrap` task run every time, so make them safe to repeat. Checking
+/// dotfile state can render templates, which may run `exec()`.
+///
+/// Preview with `--dry-run`. To inspect without applying, use
+/// `mise bootstrap status` for current state or `mise bootstrap plan` for
+/// resource-level changes.
 #[derive(Debug, usage_rs::Args)]
 #[usage(
     verbatim_doc_comment,
-    example(r###"mise bootstrap                    # packages + repos + dotfiles + tools + bootstrap task
-mise -E work bootstrap --from git@github.com:example/dotfiles.git --yes
-mise bootstrap --adopt git@github.com:example/mise-config.git --yes
-mise bootstrap --adopt git@github.com:example/mise-config.git --replace-history --yes
-mise bootstrap --force-dotfiles   # replace conflicting dotfile targets
-mise bootstrap --skip tools,task  # skip tool installation and the bootstrap task
-mise bootstrap --only tools       # run just tool installation
-mise bootstrap status --missing
-mise bootstrap packages apply --yes
-mise bootstrap repos status
-mise bootstrap repos apply --dry-run
-mise dot status
-mise bootstrap mise-shell-activate apply --dry-run
-mise bootstrap macos defaults status
-mise bootstrap macos launchd-agents apply --dry-run
-mise bootstrap linux systemd-units apply --dry-run
-mise bootstrap user apply --dry-run"###)
+    example("mise bootstrap --dry-run", help = "Preview every configured part"),
+    example("mise bootstrap", help = "Apply every configured part"),
+    example(
+        "mise bootstrap --only dotfiles,tools",
+        help = "Apply only dotfiles and tools"
+    ),
+    example(
+        "mise bootstrap --skip tools,task",
+        help = "Apply everything except tools and the bootstrap task"
+    ),
+    example(
+        "mise bootstrap --force-dotfiles",
+        help = "Replace files that conflict with whole-file dotfile entries"
+    ),
+    example(
+        "mise bootstrap --from git@github.com:example/workstation.git",
+        help = "Clone a bootstrap project and apply it"
+    ),
+    example(
+        "mise -E work bootstrap --from git@github.com:example/workstation.git",
+        help = "Do the same and also load the project's mise.work.toml"
+    ),
+    example(
+        "mise bootstrap --adopt example/mise-config",
+        help = "Clone global config into ~/.config/mise, then apply it"
+    ),
+    example(
+        "mise bootstrap --adopt example/setup --replace-history --yes",
+        help = "Use a setup repository's dotfile history instead of this machine's"
+    ),
+    example(
+        "mise bootstrap --update",
+        help = "Refresh package metadata and fast-forward repositories first"
+    )
 )]
 pub(crate) struct Bootstrap {
     #[usage(subcommand)]
     command: Option<Commands>,
 
-    /// Clone a git repository and bootstrap from its configuration
+    /// Clone a bootstrap project (a Git repository with a mise.toml) and apply it
     ///
-    /// Append `?ref=<branch|tag|commit>` to the URL to check out a ref instead of the
-    /// default branch, for example `git::https://github.com/example/dotfiles.git?ref=v1`.
+    /// The checkout is reused on later runs; add `--update` to fast-forward it
+    /// first. Append `?ref=<branch|tag|commit>` to check out a ref instead of the
+    /// default branch, for example
+    /// `https://github.com/example/workstation.git?ref=v1`. See
+    /// https://mise.jdx.dev/bootstrap/from-repository.html.
     #[usage(long, value_name = "GIT_URL")]
     from: Option<String>,
 
-    /// Adopt global configuration or shared dotfile history from a Git repository, then bootstrap
+    /// Clone a repository of global mise config or dotfile history, then apply it
+    ///
+    /// A repository of global config (`config.toml`, `conf.d/`, `tasks/`) is
+    /// cloned into the global config directory, normally ~/.config/mise. A setup
+    /// repository shared with `mise dotfiles origin set` restores its tracked
+    /// files instead. `OWNER/REPO` is short for
+    /// `https://github.com/OWNER/REPO.git`.
     #[usage(long, value_name = "GIT_URL|OWNER/REPO", conflicts = "from")]
     adopt: Option<String>,
 
-    /// Replace local dotfile history while adopting a setup repository
+    /// Discard this machine's dotfile history and adopt the repository's
+    ///
+    /// Use it with `--adopt` when the two histories are unrelated. Files that
+    /// differ from the repository still stop the adoption until you resolve them,
+    /// or add `--take-remote-all` to take the repository's version of each.
     #[usage(long, requires = "adopt")]
     replace_history: bool,
 
-    /// While adopting a setup repository, take its version of every existing file that differs;
-    /// the replaced versions are saved first, so `mise dot undo` restores them
+    /// Take the setup repository's version of every existing file that differs while adopting
+    ///
+    /// The replaced versions are saved first, so `mise dot undo` restores them.
     #[usage(long, requires = "adopt")]
     take_remote_all: bool,
 
-    /// Directory used for the repository cloned by --from
+    /// Directory for the `--from` checkout (default: `$MISE_DATA_DIR/bootstrap-repo`)
     #[usage(long, value_name = "DIR", requires = "from")]
     from_dir: Option<PathBuf>,
 
-    /// Print what would happen without installing anything
+    /// Show what would change without changing anything
+    ///
+    /// Hooks and the `bootstrap` task are printed instead of run.
     #[usage(long, short = 'n')]
     dry_run: bool,
 
@@ -113,7 +152,7 @@ pub(crate) struct Bootstrap {
     #[usage(long, short = 'y')]
     yes: bool,
 
-    /// Skip configured repos with local changes instead of failing
+    /// Skip configured repositories with local changes instead of failing
     #[usage(long)]
     skip_dirty: bool,
 
@@ -121,24 +160,34 @@ pub(crate) struct Bootstrap {
     #[usage(long)]
     force_dotfiles: bool,
 
-    /// Run only one or more bootstrap parts
+    /// Run only these parts
     ///
-    /// Can be passed multiple times or as a comma-separated list.
-    /// Cannot be used with `--skip`.
-    #[usage(long, value_enum, delimiter = ',', conflicts = "skip")]
+    /// Repeat the flag or separate parts with commas. Cannot be combined with
+    /// `--skip`.
+    #[usage(
+        long,
+        value_enum,
+        value_name = "PART",
+        delimiter = ',',
+        conflicts = "skip"
+    )]
     only: Vec<BootstrapPart>,
 
     /// Prompt securely for missing bootstrap secret inputs
     #[usage(long)]
     prompt_secrets: bool,
 
-    /// Skip one or more bootstrap parts
+    /// Skip these parts
     ///
-    /// Can be passed multiple times or as a comma-separated list.
-    #[usage(long, value_enum, delimiter = ',')]
+    /// Repeat the flag or separate parts with commas. Cannot be combined with
+    /// `--only`.
+    #[usage(long, value_enum, value_name = "PART", delimiter = ',')]
     skip: Vec<BootstrapPart>,
 
-    /// Refresh package manager metadata and update configured repos
+    /// Refresh package metadata and update repositories before applying
+    ///
+    /// Also fast-forwards a checkout that `--from` or `--adopt` reuses. Without
+    /// `--update`, a reused checkout stays at its current commit.
     #[usage(long)]
     update: bool,
 }
@@ -154,13 +203,13 @@ enum BootstrapPart {
     Compose,
     Repos,
     Dotfiles,
-    #[usage(name = "mise-shell-activate", visible_alias = "shell")]
+    #[usage(name = "mise-shell-activate", alias = "shell")]
     Shell,
-    #[usage(name = "macos-defaults", visible_alias = "defaults")]
+    #[usage(name = "macos-defaults", alias = "defaults")]
     Defaults,
-    #[usage(name = "macos-launchd-agents", visible_alias = "launchd")]
+    #[usage(name = "macos-launchd-agents", alias = "launchd")]
     Launchd,
-    #[usage(name = "linux-systemd-units", visible_alias = "systemd")]
+    #[usage(name = "linux-systemd-units", alias = "systemd")]
     Systemd,
     User,
     Tools,
@@ -310,11 +359,11 @@ enum Commands {
     Files(BootstrapFiles),
     Firewall(BootstrapFirewall),
     #[usage(hide = true)]
-    Launchd(BootstrapLaunchd),
+    Launchd(BootstrapLaunchdCompat),
     Linux(BootstrapLinux),
     Macos(BootstrapMacos),
     #[usage(hide = true)]
-    MacosDefaults(BootstrapMacosDefaults),
+    MacosDefaults(BootstrapMacosDefaultsCompat),
     #[usage(name = "mise-shell-activate", alias = "shell")]
     MiseShellActivate(BootstrapShell),
     Packages(BootstrapPackages),
@@ -326,24 +375,41 @@ enum Commands {
     Services(BootstrapServices),
     Status(BootstrapStatus),
     #[usage(hide = true)]
-    Systemd(BootstrapSystemd),
+    Systemd(BootstrapSystemdCompat),
     Unapply(BootstrapUnapply),
     User(BootstrapUser),
 }
 
-/// Show the aggregate bootstrap status
+/// Show the state of every configured bootstrap part
 ///
-/// Inspect configured resource state without applying changes. `--missing` sets a
-/// nonzero exit status for drift; it does not restrict the listing to missing entries.
-/// Dotfile status can render trusted templates, including their `exec()` calls.
+/// Lists secret inputs, packages, accounts, files and directories, services,
+/// the firewall, Compose projects, repositories, dotfiles, shell activation,
+/// macOS defaults, LaunchAgents, systemd user units, the login shell, `[tools]`,
+/// and the system dependencies of those tools, without changing anything.
+/// Checking dotfiles can render trusted templates, which may run `exec()`.
+///
+/// `--missing` exits with status 1 if anything differs from the config; it
+/// still lists every entry.
 #[derive(Debug, usage_rs::Args)]
-#[usage(visible_alias = "ls", verbatim_doc_comment)]
+#[usage(
+    visible_alias = "ls",
+    verbatim_doc_comment,
+    example(
+        "mise bootstrap status",
+        help = "List every configured part and its state"
+    ),
+    example(
+        "mise bootstrap status --missing",
+        help = "Exit with status 1 if anything differs from the config"
+    ),
+    example("mise bootstrap status --json", help = "Print the state as JSON")
+)]
 struct BootstrapStatus {
     /// Output in JSON format
     #[usage(long, short = 'J')]
     json: bool,
 
-    /// Exit with code 1 if any configured bootstrap state is not in its desired state
+    /// Exit with status 1 if anything differs from the config (all entries are still listed)
     #[usage(long, verbatim_doc_comment)]
     missing: bool,
 
@@ -352,20 +418,35 @@ struct BootstrapStatus {
     prompt_secrets: bool,
 }
 
-/// Show the changes declarative bootstrap resources would make
+/// Show what applying bootstrap resources would change
 ///
-/// Covers declarative resources, not every hook, package installation, or task in a
-/// full bootstrap run. Use `bootstrap --dry-run` to preview the complete workflow.
-/// `--detailed-exitcode` distinguishes unchanged (0), changes (2), and errors (1).
+/// Covers accounts, packages, files and directories, system and user services,
+/// the firewall, and Compose projects, in dependency order. Repositories,
+/// dotfiles, shell activation, macOS defaults, LaunchAgents, systemd user
+/// units, the login shell, tools, hooks, and the `bootstrap` task are not
+/// planned; preview the whole run with `mise bootstrap --dry-run`.
 #[derive(Debug, usage_rs::Args)]
-#[usage(verbatim_doc_comment)]
+#[usage(
+    verbatim_doc_comment,
+    example("mise bootstrap plan", help = "Show the planned changes"),
+    example("mise bootstrap plan --json", help = "Print the plan as JSON"),
+    example(
+        "mise bootstrap plan --detailed-exitcode",
+        help = "Exit with status 2 if anything would change"
+    )
+)]
 struct BootstrapPlan {
     /// Output a stable machine-readable plan in JSON format
     #[usage(long, short = 'J')]
     json: bool,
 
-    /// Exit 2 when the plan contains changes, 0 when unchanged, and 1 on errors
-    #[usage(long, verbatim_doc_comment)]
+    /// Exit 0 if nothing would change, 2 if something would, 1 on errors or unknown state
+    ///
+    /// A resource's state is unknown when mise cannot reach its declared state
+    /// on its own, for example a package whose manager is not available on this
+    /// machine or cannot install the pinned version, or a service whose unit
+    /// does not exist.
+    #[usage(long)]
     detailed_exitcode: bool,
 
     /// Prompt securely for missing bootstrap secret inputs
@@ -373,35 +454,44 @@ struct BootstrapPlan {
     prompt_secrets: bool,
 }
 
-/// Remove the resources a config environment contributes
+/// Remove what a config environment's bootstrap sections created
 ///
-/// Remove managed files, directories, user services, and dotfile entries and
-/// edits contributed by the named environments. Environments are selected for
-/// this command even if they are no longer in your normal selection.
+/// Removes the files, directories, user services, and dotfile entries and edits
+/// that the named environments declare. Each named environment's config is
+/// loaded for this command even when `-E` or `MISE_ENV` does not select it.
 ///
-/// Removal uses the current configuration, not a history of bootstrap runs.
-/// Keep the environment files on disk until cleanup is complete. Resources
-/// still declared present elsewhere are kept, as are changed targets unless
-/// `--force` is given. Directories must be empty after the planned removals;
-/// source files and configuration entries are preserved.
+/// mise plans the removal from the current config, not from a record of past
+/// runs, so keep the environment's config files until cleanup is done. Anything
+/// another selected config still declares is kept, and so is anything changed
+/// since it was applied unless you pass `--force`. A directory is removed only
+/// if it is empty afterward. Dotfile sources and config entries are left in
+/// place.
 ///
-/// Use `--dry-run` to preview the plan. Removal requires confirmation unless
-/// `--yes` or mise's `yes` setting is enabled, including in CI.
+/// It asks before removing anything unless `--yes`, `MISE_YES`, or the `yes`
+/// setting is set, and fails when there is no terminal to ask. mise turns on
+/// the `yes` setting when `CI` is set.
 ///
-/// Packages, repositories, and Compose projects require separate cleanup;
-/// the output provides guidance for those declarations. Other bootstrap
-/// sections, including system services, are outside this command's scope.
+/// Packages, repositories, and Compose projects are not removed; the output
+/// says how to clean them up. Accounts, system services, the firewall, and
+/// other sections are left alone.
 #[derive(Debug, usage_rs::Args)]
 #[usage(
     verbatim_doc_comment,
     example(
-        r###"mise bootstrap unapply ssh --dry-run
-mise bootstrap unapply ssh
-mise bootstrap unapply ssh gpg --yes"###
+        "mise bootstrap unapply ssh --dry-run",
+        help = "Preview what removing the `ssh` environment's resources would do"
+    ),
+    example(
+        "mise bootstrap unapply ssh",
+        help = "Remove them after a confirmation prompt"
+    ),
+    example(
+        "mise bootstrap unapply ssh gpg --yes",
+        help = "Remove the resources of two environments without a prompt"
     )
 )]
 struct BootstrapUnapply {
-    /// Config environment(s) whose resources should be removed
+    /// Config environments whose resources should be removed
     #[usage(value_name = "ENV", required = true)]
     environment: Vec<String>,
 
@@ -409,7 +499,7 @@ struct BootstrapUnapply {
     #[usage(long, short)]
     force: bool,
 
-    /// Print what would be removed without removing anything
+    /// Show what would be removed without removing anything
     #[usage(long, short = 'n')]
     dry_run: bool,
 
@@ -425,7 +515,7 @@ struct BootstrapUnapply {
 /// Show non-composed bootstrap declarations in each selected configuration root (deprecated)
 ///
 /// Use this to locate the origin of declarations before composition. For the
-/// combined desired state and its changes, use `bootstrap plan`.
+/// combined desired state and its changes, use `mise bootstrap plan`.
 #[derive(Debug, usage_rs::Args)]
 #[usage(verbatim_doc_comment)]
 struct BootstrapConfigRoots {
@@ -514,10 +604,12 @@ struct BootstrapServiceExec {
     digest: String,
 }
 
-/// Manage Linux users and groups from `[bootstrap.users]` and `[bootstrap.groups]`
+/// Manage Linux users and groups
 ///
-/// These are system accounts on the target Linux host. Inspect `status` or an apply
-/// preview before changing user IDs, memberships, or account state.
+/// Creates, updates, or removes the local accounts declared in
+/// `[bootstrap.users]` and `[bootstrap.groups]` on Linux. Run `status` or
+/// `apply --dry-run` before changing user IDs, group memberships, or account
+/// state.
 #[derive(Debug, usage_rs::Args)]
 #[usage(verbatim_doc_comment)]
 struct BootstrapAccounts {
@@ -531,10 +623,10 @@ enum BootstrapAccountsCommands {
     Status(BootstrapAccountsStatus),
 }
 
-/// Apply configured Linux users and groups
+/// Create, update, or remove the configured Linux users and groups
 #[derive(Debug, usage_rs::Args)]
 struct BootstrapAccountsApply {
-    /// Print what would change without changing anything
+    /// Show what would change without changing anything
     #[usage(long, short = 'n')]
     dry_run: bool,
 
@@ -543,24 +635,37 @@ struct BootstrapAccountsApply {
     yes: bool,
 }
 
-/// Show configured Linux user and group state
+/// Show the state of the configured Linux users and groups
 #[derive(Debug, usage_rs::Args)]
 struct BootstrapAccountsStatus {
     /// Output in JSON format
     #[usage(long, short = 'J')]
     json: bool,
 
-    /// Exit with code 1 when any account is not converged
+    /// Exit with status 1 if any account differs from the config (all are still listed)
     #[usage(long)]
     missing: bool,
 }
 
-/// Manage privileged files and directories from `[bootstrap.files]` and `[bootstrap.directories]`
+/// Manage system files and directories declared in `[bootstrap]`
 ///
-/// Use these resources for ownership, permissions, and desired presence on a host.
-/// For personal symlinks, copies, or edits, use `[dotfiles]` and `bootstrap dotfiles`.
+/// Applies `[bootstrap.files]` and `[bootstrap.directories]`: paths that need a
+/// specific owner, group, or mode, or that must exist or be absent system-wide,
+/// such as configuration under /etc. For files in your home directory that you
+/// edit, use `[dotfiles]` and `mise dotfiles`.
 #[derive(Debug, usage_rs::Args)]
-#[usage(verbatim_doc_comment)]
+#[usage(
+    verbatim_doc_comment,
+    example(
+        "mise bootstrap files status --missing",
+        help = "Exit with status 1 if any file or directory differs from the config"
+    ),
+    example(
+        "mise bootstrap files apply --dry-run",
+        help = "Show what would change"
+    ),
+    example("mise bootstrap files apply --yes", help = "Apply without a prompt")
+)]
 struct BootstrapFiles {
     #[usage(subcommand)]
     command: BootstrapFilesCommands,
@@ -572,10 +677,10 @@ enum BootstrapFilesCommands {
     Status(BootstrapFilesStatus),
 }
 
-/// Apply configured privileged files and directories
+/// Create, update, or remove the configured system files and directories
 #[derive(Debug, usage_rs::Args)]
 struct BootstrapFilesApply {
-    /// Print what would change without changing anything
+    /// Show what would change without changing anything
     #[usage(long, short = 'n')]
     dry_run: bool,
 
@@ -588,14 +693,14 @@ struct BootstrapFilesApply {
     prompt_secrets: bool,
 }
 
-/// Show configured privileged file and directory state
+/// Show the state of the configured system files and directories
 #[derive(Debug, usage_rs::Args)]
 struct BootstrapFilesStatus {
     /// Output in JSON format
     #[usage(long, short = 'J')]
     json: bool,
 
-    /// Exit with code 1 when any resource is not converged
+    /// Exit with status 1 if any file or directory differs from the config (all are still listed)
     #[usage(long)]
     missing: bool,
 
@@ -606,12 +711,29 @@ struct BootstrapFilesStatus {
 
 /// Manage services from `[bootstrap.services]`
 ///
-/// System-scope entries (the default) converge existing Linux systemd system
-/// units. `scope = "user"` entries are services mise defines for the current
-/// user on every platform: a systemd user unit on Linux, a LaunchAgent on
-/// macOS, a Scheduled Task on Windows.
+/// System-scope entries, the default for entries without `builtin`, start,
+/// stop, enable, disable, or mask systemd units that already exist on Linux.
+/// User-scope entries (`scope = "user"`, or any `builtin` service) define a
+/// service for the current user on every platform: a systemd user unit on
+/// Linux, a LaunchAgent on macOS, or a Scheduled Task on Windows. For options
+/// that only one platform has, see `mise bootstrap linux systemd-units` and
+/// `mise bootstrap macos launchd-agents`.
 #[derive(Debug, usage_rs::Args)]
-#[usage(verbatim_doc_comment)]
+#[usage(
+    verbatim_doc_comment,
+    example(
+        "mise bootstrap services status",
+        help = "Show the state of every declared service"
+    ),
+    example(
+        "mise bootstrap services apply --dry-run",
+        help = "Show what would change"
+    ),
+    example(
+        "mise bootstrap services remove mise-history",
+        help = "Uninstall a user service"
+    )
+)]
 struct BootstrapServices {
     #[usage(subcommand)]
     command: BootstrapServicesCommands,
@@ -624,10 +746,10 @@ enum BootstrapServicesCommands {
     Status(BootstrapServicesStatus),
 }
 
-/// Apply configured service state (system and user scope)
+/// Apply the service state declared in `[bootstrap.services]`
 #[derive(Debug, usage_rs::Args)]
 struct BootstrapServicesApply {
-    /// Print what would change without changing anything
+    /// Show what would change without changing anything
     #[usage(long, short = 'n')]
     dry_run: bool,
 
@@ -636,40 +758,62 @@ struct BootstrapServicesApply {
     yes: bool,
 }
 
-/// Remove an installed user-scope service, declared or not
+/// Uninstall a user-scope service
 ///
-/// Deleting a `scope = "user"` declaration leaves its installed unit, agent,
-/// or task in place; this removes it once. The next `mise bootstrap`
-/// recreates it if it is still declared.
+/// Removing a user-scope entry from config does not uninstall its systemd
+/// unit, LaunchAgent, or Scheduled Task. Use this command to uninstall it,
+/// whether or not it is still declared. If the entry is still declared, the
+/// next `mise bootstrap` installs it again.
+///
+/// It removes the dev.mise.NAME.service unit or dev.mise.NAME.plist agent, so it
+/// also removes one that [bootstrap.linux.systemd.units] or
+/// [bootstrap.macos.launchd.agents] wrote under that name. It does not remove
+/// .timer units.
 #[derive(Debug, usage_rs::Args)]
-#[usage(verbatim_doc_comment)]
+#[usage(
+    verbatim_doc_comment,
+    example(
+        "mise bootstrap services remove mise-history --dry-run",
+        help = "Preview uninstalling the user service named mise-history"
+    )
+)]
 struct BootstrapServicesRemove {
-    /// The installed user-service name to remove (declared or not)
+    /// Name of the installed user service
     name: String,
 
-    /// Print what would change without changing anything
+    /// Show what would be removed without removing it
     #[usage(long, short = 'n')]
     dry_run: bool,
 }
 
-/// Show configured service state (system and user scope)
+/// Show the state of services from `[bootstrap.services]`
 #[derive(Debug, usage_rs::Args)]
 struct BootstrapServicesStatus {
     /// Output in JSON format
     #[usage(long, short = 'J')]
     json: bool,
 
-    /// Exit with code 1 when any service is not converged
+    /// Exit with status 1 if any service differs from the config (all are still listed)
     #[usage(long)]
     missing: bool,
 }
 
 /// Manage the Linux host firewall from `[bootstrap.linux.firewall]`
 ///
-/// This manages host firewall policy and rules. Review `apply --dry-run` before applying
-/// a policy to a remote machine, including the rule that permits your SSH connection.
+/// Works with nftables, firewalld, or UFW, and keeps mise's rules separate from
+/// other host rules. Over SSH, mise refuses a default incoming policy of deny
+/// or reject unless a rule allows the current connection or the config sets
+/// `allow_lockout = true`. Check `apply --dry-run` before applying a policy to
+/// a remote machine.
 #[derive(Debug, usage_rs::Args)]
-#[usage(verbatim_doc_comment)]
+#[usage(
+    verbatim_doc_comment,
+    example("mise bootstrap firewall status", help = "Show the firewall's state"),
+    example(
+        "mise bootstrap firewall apply --dry-run",
+        help = "Show the policy and rules that would change"
+    )
+)]
 struct BootstrapFirewall {
     #[usage(subcommand)]
     command: BootstrapFirewallCommands,
@@ -681,10 +825,10 @@ enum BootstrapFirewallCommands {
     Status(BootstrapFirewallStatus),
 }
 
-/// Apply the configured Linux host firewall
+/// Apply the firewall from `[bootstrap.linux.firewall]`
 #[derive(Debug, usage_rs::Args)]
 struct BootstrapFirewallApply {
-    /// Print what would change without changing anything
+    /// Show what would change without changing anything
     #[usage(long, short = 'n')]
     dry_run: bool,
 
@@ -693,24 +837,34 @@ struct BootstrapFirewallApply {
     yes: bool,
 }
 
-/// Show configured Linux host firewall state
+/// Show the state of the firewall from `[bootstrap.linux.firewall]`
 #[derive(Debug, usage_rs::Args)]
 struct BootstrapFirewallStatus {
     /// Output in JSON format
     #[usage(long, short = 'J')]
     json: bool,
 
-    /// Exit with code 1 when the firewall is not converged
+    /// Exit with status 1 if the firewall differs from the config
     #[usage(long)]
     missing: bool,
 }
 
 /// Manage Docker Compose projects from `[bootstrap.compose]`
 ///
-/// Requires a working Docker engine and Compose command on the target host. `apply`
-/// reconciles declared project state; `status` inspects the existing projects.
+/// Needs a running Docker engine and the Docker Compose command on this
+/// machine.
 #[derive(Debug, usage_rs::Args)]
-#[usage(verbatim_doc_comment)]
+#[usage(
+    verbatim_doc_comment,
+    example(
+        "mise bootstrap compose status",
+        help = "Show the state of every declared project"
+    ),
+    example(
+        "mise bootstrap compose apply --dry-run",
+        help = "Show what would change"
+    )
+)]
 struct BootstrapCompose {
     #[usage(subcommand)]
     command: BootstrapComposeCommands,
@@ -722,10 +876,10 @@ enum BootstrapComposeCommands {
     Status(BootstrapComposeStatus),
 }
 
-/// Apply configured Docker Compose project state
+/// Apply Docker Compose projects from `[bootstrap.compose]`
 #[derive(Debug, usage_rs::Args)]
 struct BootstrapComposeApply {
-    /// Print what would change without changing anything
+    /// Show what would change without changing anything
     #[usage(long, short = 'n')]
     dry_run: bool,
 
@@ -734,59 +888,75 @@ struct BootstrapComposeApply {
     yes: bool,
 }
 
-/// Show configured Docker Compose project state
+/// Show the state of Docker Compose projects from `[bootstrap.compose]`
 #[derive(Debug, usage_rs::Args)]
 struct BootstrapComposeStatus {
     /// Output in JSON format
     #[usage(long, short = 'J')]
     json: bool,
 
-    /// Exit with code 1 when any Compose project is not converged
+    /// Exit with status 1 if any Compose project differs from the config (all are still listed)
     #[usage(long)]
     missing: bool,
 }
 
-/// Bootstrap one or more machines over OpenSSH
+/// Bootstrap one or more machines over SSH
 ///
-/// Select inventory hosts by name, tag, or `--all`, or supply ad-hoc `--host` targets.
-/// The source is staged on each target and bootstrap runs there. `--adopt` instead
-/// installs persistent global configuration; preview that choice with `--dry-run`.
+/// Packs a local project directory, copies it to each target, stages mise
+/// there, and runs `mise bootstrap`. The directory is `--source`. Without it,
+/// an inventory host uses its own `source`, then the one in
+/// `[bootstrap.remote]`, then the current directory; a `--host` target uses
+/// the current directory. Pick targets by name, `--tag`, or `--all` from
+/// `[bootstrap.remote.hosts]`, or give any SSH destination with `--host`.
+///
+/// Targets need a POSIX shell plus `tar`, `mktemp`, `cksum`, and `uname`;
+/// Windows targets are not supported. `--dry-run` still connects, uploads, and
+/// inspects each target, but changes nothing there. With `--adopt`, each target
+/// adopts the repository as `mise bootstrap --adopt` does, instead of receiving
+/// a project directory.
+///
+/// The `--github-relay-*` flags let targets read private GitHub repositories
+/// through this machine's credentials for the length of the run, without
+/// copying a token to them. See https://mise.jdx.dev/bootstrap/github-relay.html.
 #[derive(Debug, usage_rs::Args)]
-#[usage(verbatim_doc_comment)]
+#[usage(
+    verbatim_doc_comment,
+    example(
+        "mise bootstrap remote --host devbox --dry-run",
+        help = "Preview a run on a host that is not in the inventory"
+    ),
+    example("mise bootstrap remote cache", help = "Bootstrap one inventory host"),
+    example(
+        "mise bootstrap remote --tag canary --yes",
+        help = "Bootstrap every inventory host tagged canary, without prompts"
+    ),
+    example(
+        "mise bootstrap remote --all --fail-fast",
+        help = "Bootstrap every inventory host and stop at the first failure"
+    ),
+    example(
+        "mise bootstrap remote --host ubuntu@cache.example.com -i ~/.ssh/mise-cache --install-mise",
+        help = "Leave mise installed on the host after the run"
+    ),
+    example(
+        "mise bootstrap remote --host devbox --github-relay-read-only --github-relay-repo example/setup",
+        help = "Let the host read one private GitHub repository during the run"
+    )
+)]
 struct BootstrapRemote {
     /// Adopt global configuration or shared dotfile history on each target
     #[usage(long, value_name = "GIT_URL|OWNER/REPO", conflicts = ["source", "copy_link", "copy_links", "exclude"])]
     adopt: Option<String>,
-    /// Borrow read-only GitHub access for this invocation
-    #[usage(long)]
-    github_relay_read_only: bool,
-    /// Approved GitHub repository; repeat for multiple repositories
-    #[usage(long, value_name = "OWNER/REPO")]
-    github_relay_repo: Vec<String>,
-    /// Explicitly authorize all repositories accessible locally
-    #[usage(long)]
-    github_relay_all_repos: bool,
-    /// Log sanitized relay requests on local stderr
-    #[usage(long, conflicts = "github_relay_no_log_requests")]
-    github_relay_log_requests: bool,
-    /// Disable request logging, overriding the saved preference
-    #[usage(long)]
-    github_relay_no_log_requests: bool,
-    /// Relay log and summary format: text or jsonl
-    #[usage(long, value_name = "FORMAT")]
-    github_relay_log_format: Option<String>,
-    /// Expire borrowed access after a duration such as 1h (0s: session lifetime)
-    #[usage(long, value_name = "DURATION")]
-    github_relay_max_duration: Option<String>,
+
     /// Inventory host names from `[bootstrap.remote.hosts]`
     #[usage(value_name = "TARGET")]
     targets: Vec<String>,
 
-    /// Select every configured inventory host
+    /// Select every inventory host
     #[usage(long)]
     all: bool,
 
-    /// Explicit remote shell command that installs mise and places it on PATH
+    /// Shell command, run on each target, that installs mise and puts it on PATH
     #[usage(
         long,
         value_name = "COMMAND",
@@ -795,18 +965,18 @@ struct BootstrapRemote {
     bootstrap_command: Option<String>,
 
     /// SSH connection timeout in seconds
-    #[usage(long, default_value_t = 10, default = "10")]
+    #[usage(long, value_name = "SECONDS", default_value_t = 10, default = "10")]
     connect_timeout: u16,
 
-    /// Dereference one source-relative symbolic link; repeat for multiple links
+    /// Copy the target of this source-relative symbolic link instead of the link; repeat for more
     #[usage(long, value_name = "PATH", value_hint = usage_rs::ValueHint::AnyPath)]
     copy_link: Vec<std::path::PathBuf>,
 
-    /// Dereference every symbolic link in the source archive
+    /// Copy the targets of every symbolic link in the source instead of the links
     #[usage(long)]
     copy_links: bool,
 
-    /// Additional archive pattern to exclude; repeat for multiple patterns
+    /// Another pattern to leave out of the archive; repeat for more
     #[usage(long, value_name = "PATTERN")]
     exclude: Vec<String>,
 
@@ -814,19 +984,22 @@ struct BootstrapRemote {
     #[usage(long)]
     fail_fast: bool,
 
-    /// Allow remote dotfile conflicts to be replaced
+    /// Overwrite files on each target that conflict with whole-file dotfile entries
     #[usage(long)]
     force_dotfiles: bool,
 
-    /// Ad-hoc SSH destination (`[user@]host`); repeat for multiple hosts
+    /// SSH destination that is not in the inventory (`[user@]host`); repeat for more
     #[usage(long, value_name = "[USER@]HOST")]
     host: Vec<String>,
 
-    /// SSH identity file override
-    #[usage(long, short = 'i', value_hint = usage_rs::ValueHint::FilePath)]
+    /// SSH identity file, overriding the inventory and SSH config
+    #[usage(long, short = 'i', value_name = "PATH", value_hint = usage_rs::ValueHint::FilePath)]
     identity_file: Option<std::path::PathBuf>,
 
-    /// Print the remote bootstrap changes without applying them
+    /// Show what would change on each target without changing it
+    ///
+    /// It still connects to each target, uploads the project, stages mise, and
+    /// inspects the target.
     #[usage(long, short = 'n')]
     dry_run: bool,
 
@@ -848,9 +1021,10 @@ struct BootstrapRemote {
     #[usage(long)]
     keep_staging: bool,
 
-    /// Local mise binary to upload (escape hatch for custom architectures)
+    /// Upload this local mise executable, for platforms without an official release binary
     #[usage(
         long,
+        value_name = "PATH",
         value_hint = usage_rs::ValueHint::FilePath,
         conflicts = ["remote_mise", "bootstrap_command"]
     )]
@@ -860,11 +1034,20 @@ struct BootstrapRemote {
     #[usage(long)]
     no_install_mise: bool,
 
-    /// Run only one or more remote bootstrap parts
-    #[usage(long, value_enum, delimiter = ',', conflicts = "skip")]
+    /// Run only these parts on each target
+    ///
+    /// Repeat the flag or separate parts with commas. Cannot be combined with
+    /// `--skip`.
+    #[usage(
+        long,
+        value_enum,
+        value_name = "PART",
+        delimiter = ',',
+        conflicts = "skip"
+    )]
     only: Vec<BootstrapPart>,
 
-    /// SSH port override
+    /// SSH port, overriding the inventory and SSH config
     #[usage(long)]
     port: Option<u16>,
 
@@ -872,7 +1055,7 @@ struct BootstrapRemote {
     #[usage(long)]
     prompt_secrets: bool,
 
-    /// Config environments to load on the remote host; repeat or delimit with commas (for example, ci,dotfiles)
+    /// Config environments to load on each target; repeat or separate with commas (for example, ci,dotfiles)
     #[usage(long, value_name = "ENV", delimiter = ',')]
     remote_env: Option<Vec<String>>,
 
@@ -884,12 +1067,15 @@ struct BootstrapRemote {
     )]
     remote_mise: Option<String>,
 
-    /// Skip one or more remote bootstrap parts
-    #[usage(long, value_enum, delimiter = ',')]
+    /// Skip these parts on each target
+    ///
+    /// Repeat the flag or separate parts with commas. Cannot be combined with
+    /// `--only`.
+    #[usage(long, value_enum, value_name = "PART", delimiter = ',')]
     skip: Vec<BootstrapPart>,
 
-    /// Local directory archived and sent to each target
-    #[usage(long, value_hint = usage_rs::ValueHint::DirPath)]
+    /// Local directory to archive and send to each target
+    #[usage(long, value_name = "DIR", value_hint = usage_rs::ValueHint::DirPath)]
     source: Option<std::path::PathBuf>,
 
     /// OpenSSH `-o` option; repeat for multiple options
@@ -900,16 +1086,50 @@ struct BootstrapRemote {
     #[usage(long, value_name = "TAG")]
     tag: Vec<String>,
 
-    /// Refresh package manager metadata and update configured repos remotely
+    /// Refresh package metadata and update repositories on each target
     #[usage(long)]
     update: bool,
 
-    /// Skip remote confirmation prompts
+    /// Skip confirmation prompts on each target
     #[usage(long, short = 'y')]
     yes: bool,
+
+    /// Borrow read-only GitHub access for this run (Linux and macOS only)
+    ///
+    /// Needs exactly one of `--github-relay-repo` or `--github-relay-all-repos`.
+    #[usage(long)]
+    github_relay_read_only: bool,
+
+    /// Repository the targets may read through the relay; repeat for more (needs `--github-relay-read-only`)
+    #[usage(long, value_name = "OWNER/REPO")]
+    github_relay_repo: Vec<String>,
+
+    /// Let targets read every repository your local credentials can read (needs `--github-relay-read-only`)
+    #[usage(long)]
+    github_relay_all_repos: bool,
+
+    /// Log sanitized relay requests on local stderr (needs `--github-relay-read-only`)
+    #[usage(long, conflicts = "github_relay_no_log_requests")]
+    github_relay_log_requests: bool,
+
+    /// Turn off request logging, overriding the `github_relay` settings (needs `--github-relay-read-only`)
+    #[usage(long)]
+    github_relay_no_log_requests: bool,
+
+    /// Relay log and summary format, `text` or `jsonl` (needs `--github-relay-read-only`)
+    #[usage(long, value_name = "FORMAT")]
+    github_relay_log_format: Option<String>,
+
+    /// End borrowed access after a duration such as `1h`; `0s` lasts the whole run (needs `--github-relay-read-only`)
+    #[usage(long, value_name = "DURATION")]
+    github_relay_max_duration: Option<String>,
 }
 
 /// Inspect bootstrap secret inputs without revealing their values
+///
+/// Secret inputs are values declared in `[bootstrap.secrets]` that file and
+/// dotfile templates read with `secret()`. mise reads them from environment
+/// variables, or prompts for missing ones with `--prompt-secrets`.
 #[derive(Debug, usage_rs::Args)]
 #[usage(verbatim_doc_comment)]
 struct BootstrapSecrets {
@@ -929,12 +1149,20 @@ struct BootstrapSecretsStatus {
     #[usage(long, short = 'J')]
     json: bool,
 
-    /// Exit with code 1 if a declared secret input is unavailable
+    /// Exit with status 1 if a declared secret input is unset, empty, or not valid Unicode
     #[usage(long)]
     missing: bool,
 }
 
-/// Manage bootstrap system packages from `[bootstrap.packages]`
+/// Manage packages from `[bootstrap.packages]`
+///
+/// Declare packages as `"manager:package" = "version"`. `apply` installs what
+/// is missing and removes what is declared absent, `use` adds an entry and
+/// installs it, and `upgrade` updates configured packages that are installed.
+/// `prune` uninstalls Homebrew formulae, casks, or package plugin packages that
+/// no config declares. `import` records installed Homebrew formulae, and
+/// `status` shows what differs from the config. See
+/// https://mise.jdx.dev/bootstrap/packages/ for each package manager.
 #[derive(Debug, usage_rs::Args)]
 #[usage(verbatim_doc_comment)]
 struct BootstrapPackages {
@@ -944,9 +1172,13 @@ struct BootstrapPackages {
 
 /// Manage package manager plugins declared in `[bootstrap.plugins]`
 ///
-/// Install these plugins before applying packages they manage. Installing a plugin
-/// does not itself install the host packages in `[bootstrap.packages]`.
+/// A package plugin adds a package manager, such as one for VS Code extensions,
+/// that `[bootstrap.packages]` entries can use. `mise bootstrap` installs
+/// plugins before packages; when you run the narrower commands, run
+/// `plugins apply` before `packages apply`. Installing a plugin does not
+/// install its packages.
 #[derive(Debug, usage_rs::Args)]
+#[usage(verbatim_doc_comment)]
 struct BootstrapPlugins {
     #[usage(subcommand)]
     command: BootstrapPluginsCommands,
@@ -959,9 +1191,11 @@ enum BootstrapPluginsCommands {
 }
 
 /// Install package manager plugins declared in `[bootstrap.plugins]`
+///
+/// It does not ask for confirmation.
 #[derive(Debug, usage_rs::Args)]
 struct BootstrapPluginsApply {
-    /// Print what would happen without installing plugins
+    /// Show which plugins would be installed without installing them
     #[usage(long, short = 'n')]
     dry_run: bool,
 }
@@ -969,7 +1203,7 @@ struct BootstrapPluginsApply {
 /// Show whether declared package manager plugins are installed
 #[derive(Debug, usage_rs::Args)]
 struct BootstrapPluginsStatus {
-    /// Exit with code 1 if a declared plugin is missing
+    /// Exit with status 1 if a declared plugin is not installed
     #[usage(long)]
     missing: bool,
 }
@@ -989,11 +1223,12 @@ enum BootstrapPackagesCommands {
     Where(super::system::r#where::SystemWhere),
 }
 
-/// Manage git repo checkouts from `[bootstrap.repos]`
+/// Manage Git repositories from `[bootstrap.repos]`
 ///
-/// Use `apply` to clone or reconcile the configured checkout, `update` to refresh it,
-/// and `exec` to run a command in selected repositories. Existing local changes can
-/// block convergence; `--skip-dirty` skips those repositories without discarding edits.
+/// A repository with uncommitted changes, a different origin, or something
+/// other than a Git checkout at its path stops `apply` and `update` before
+/// anything changes. Pass `--skip-dirty` to skip repositories with uncommitted
+/// changes and continue with the rest.
 #[derive(Debug, usage_rs::Args)]
 #[usage(verbatim_doc_comment)]
 struct BootstrapRepos {
@@ -1009,10 +1244,10 @@ enum BootstrapReposCommands {
     Update(BootstrapReposUpdate),
 }
 
-/// Clone and converge git repos from `[bootstrap.repos]`
+/// Clone missing Git repositories and check out configured refs
 #[derive(Debug, usage_rs::Args)]
 struct BootstrapReposApply {
-    /// Print the commands that would run without running them
+    /// Show what would change without changing anything
     #[usage(long, short = 'n')]
     dry_run: bool,
 
@@ -1020,43 +1255,74 @@ struct BootstrapReposApply {
     #[usage(long, short)]
     yes: bool,
 
-    /// Skip repos with local changes instead of failing
+    /// Skip repositories with local changes instead of failing
     #[usage(long)]
     skip_dirty: bool,
 }
 
-/// Pull the latest changes into configured git repos
-#[derive(Debug, usage_rs::Args)]
-struct BootstrapReposUpdate {
-    /// Update only matching configured or expanded paths
-    #[usage(value_name = "PATH")]
-    paths: Vec<String>,
-
-    /// Print the commands that would run without running them
-    #[usage(long, short = 'n')]
-    dry_run: bool,
-
-    /// Skip the confirmation prompt
-    #[usage(long, short)]
-    yes: bool,
-
-    /// Skip repos with local changes instead of failing
-    #[usage(long)]
-    skip_dirty: bool,
-}
-
-/// Run a command in each configured git repo
+/// Clone missing Git repositories and fast-forward the rest
 ///
-/// Place the executable and its arguments after `--`, for example
-/// `mise bootstrap repos exec -- git status --short`. Arguments before `--` select
-/// repository paths; use `--continue-on-error` to visit remaining repos after a failure.
+/// For a repository without a `ref`, fetches and fast-forwards the current
+/// branch; one with a detached HEAD is skipped with a warning. A repository
+/// with a `ref` is checked out at that ref.
 #[derive(Debug, usage_rs::Args)]
-struct BootstrapReposExec {
-    /// Run only in matching configured or expanded paths
+#[usage(
+    verbatim_doc_comment,
+    example(
+        "mise bootstrap repos update --dry-run",
+        help = "Show the Git commands that would run"
+    ),
+    example(
+        "mise bootstrap repos update ~/src/mise",
+        help = "Update one repository"
+    )
+)]
+struct BootstrapReposUpdate {
+    /// Only update repositories at these paths, as written in config or expanded (for example ~/src/mise)
     #[usage(value_name = "PATH")]
     paths: Vec<String>,
 
-    /// Continue running in other repos after a command fails
+    /// Show what would change without changing anything
+    #[usage(long, short = 'n')]
+    dry_run: bool,
+
+    /// Skip the confirmation prompt
+    #[usage(long, short)]
+    yes: bool,
+
+    /// Skip repositories with local changes instead of failing
+    #[usage(long)]
+    skip_dirty: bool,
+}
+
+/// Run a command in each configured Git repository
+///
+/// Put the command and its arguments after `--`. Paths before `--` select
+/// repositories. The command runs directly, without a shell, so pipes and `&&`
+/// do not work. Missing or conflicting repositories are skipped with a
+/// warning. Use `--continue-on-error` to visit the rest after a failure.
+#[derive(Debug, usage_rs::Args)]
+#[usage(
+    verbatim_doc_comment,
+    example(
+        "mise bootstrap repos exec -- git status --short",
+        help = "Show uncommitted changes in every repository"
+    ),
+    example(
+        "mise bootstrap repos exec ~/src/mise -- git log -1",
+        help = "Run a command in one repository"
+    ),
+    example(
+        "mise bootstrap repos exec --continue-on-error -- git fetch",
+        help = "Fetch every repository, even after one fails"
+    )
+)]
+struct BootstrapReposExec {
+    /// Run only in repositories at these paths, as written in config or expanded
+    #[usage(value_name = "PATH")]
+    paths: Vec<String>,
+
+    /// Continue running in other repositories after a command fails
     #[usage(long, short = 'c')]
     continue_on_error: bool,
 
@@ -1064,24 +1330,24 @@ struct BootstrapReposExec {
     #[usage(long, short = 'n')]
     dry_run: bool,
 
-    /// Command and arguments to run in each repo
+    /// Command and arguments to run in each repository
     #[usage(double_dash = "required", required = true)]
     command: Vec<String>,
 }
 
-/// Show the state of git repos from `[bootstrap.repos]`
+/// Show the state of Git repositories from `[bootstrap.repos]`
 #[derive(Debug, usage_rs::Args)]
 struct BootstrapReposStatus {
     /// Output in JSON format
     #[usage(long, short = 'J')]
     json: bool,
 
-    /// Exit with code 1 if any configured repo is not in its desired state
+    /// Exit with status 1 if any repository differs from the config (all are still listed)
     #[usage(long, verbatim_doc_comment)]
     missing: bool,
 }
 
-/// Manage macOS bootstrap config from `[bootstrap.macos]`
+/// Manage macOS preferences and LaunchAgents from `[bootstrap.macos]`
 #[derive(Debug, usage_rs::Args)]
 #[usage(verbatim_doc_comment)]
 struct BootstrapMacos {
@@ -1096,7 +1362,10 @@ enum BootstrapMacosCommands {
     LaunchdAgents(BootstrapLaunchd),
 }
 
-/// Manage Linux bootstrap config from `[bootstrap.linux]`
+/// Manage systemd user units from `[bootstrap.linux.systemd.units]`
+///
+/// The host firewall in `[bootstrap.linux.firewall]` is managed by
+/// `mise bootstrap firewall`.
 #[derive(Debug, usage_rs::Args)]
 #[usage(verbatim_doc_comment)]
 struct BootstrapLinux {
@@ -1110,15 +1379,37 @@ enum BootstrapLinuxCommands {
     SystemdUnits(BootstrapSystemd),
 }
 
-/// Manage macOS defaults from `[bootstrap.macos.defaults]`
+/// Manage macOS preferences such as Dock, Finder, and keyboard settings
 ///
-/// Declares typed preferences written with macOS defaults. Application preferences
-/// may require restarting the affected application before the change becomes visible.
+/// Applies `[bootstrap.macos.defaults]`, `[[bootstrap.macos.defaults_entries]]`,
+/// and the `[bootstrap.macos.dock]`, `finder`, `keyboard`, and `trackpad`
+/// sections. Preferences are written the way `defaults write` writes them.
+/// mise does not restart apps: Dock, Finder, and some others show a change
+/// only after they relaunch.
 #[derive(Debug, usage_rs::Args)]
 #[usage(verbatim_doc_comment)]
 struct BootstrapMacosDefaults {
     #[usage(subcommand)]
     command: BootstrapMacosDefaultsCommands,
+}
+
+/// Manage macOS preferences (use `mise bootstrap macos defaults`)
+///
+/// This older spelling keeps working.
+#[derive(Debug, usage_rs::Args)]
+struct BootstrapMacosDefaultsCompat {
+    #[usage(subcommand)]
+    command: BootstrapMacosDefaultsCompatCommands,
+}
+
+// The children of a hidden compatibility command are hidden too, so their
+// reference pages are not generated a second time.
+#[derive(Debug, usage_rs::Subcommands)]
+enum BootstrapMacosDefaultsCompatCommands {
+    #[usage(hide = true)]
+    Apply(BootstrapMacosDefaultsApply),
+    #[usage(hide = true)]
+    Status(BootstrapMacosDefaultsStatus),
 }
 
 #[derive(Debug, usage_rs::Subcommands)]
@@ -1127,10 +1418,10 @@ enum BootstrapMacosDefaultsCommands {
     Status(BootstrapMacosDefaultsStatus),
 }
 
-/// Write macOS defaults from `[bootstrap.macos.defaults]`
+/// Write the configured macOS preferences
 #[derive(Debug, usage_rs::Args)]
 struct BootstrapMacosDefaultsApply {
-    /// Print the commands that would run without running them
+    /// Show what would change without changing anything
     #[usage(long, short = 'n')]
     dry_run: bool,
 
@@ -1139,27 +1430,49 @@ struct BootstrapMacosDefaultsApply {
     yes: bool,
 }
 
-/// Show whether macOS defaults match `[bootstrap.macos.defaults]`
+/// Show the state of the configured macOS preferences
 #[derive(Debug, usage_rs::Args)]
 struct BootstrapMacosDefaultsStatus {
     /// Output in JSON format
     #[usage(long, short = 'J')]
     json: bool,
 
-    /// Exit with code 1 if any configured defaults are not in their desired state
+    /// Exit with status 1 if any preference differs from the config (all are still listed)
     #[usage(long, verbatim_doc_comment)]
     missing: bool,
 }
 
 /// Manage macOS LaunchAgents from `[bootstrap.macos.launchd.agents]`
 ///
-/// Installs plist files and reconciles agents in the current GUI login domain. Run
-/// from the intended user session; an SSH-only session may not have that domain.
+/// Writes each agent to ~/Library/LaunchAgents/dev.mise.<name>.plist and loads
+/// it into your GUI login session. Run it as the user who owns the agents; an
+/// SSH session without a GUI login may not be able to load them. For a user
+/// service that also works on Linux and Windows, use `[bootstrap.services]`
+/// with `scope = "user"`.
 #[derive(Debug, usage_rs::Args)]
 #[usage(verbatim_doc_comment)]
 struct BootstrapLaunchd {
     #[usage(subcommand)]
     command: BootstrapLaunchdCommands,
+}
+
+/// Manage macOS LaunchAgents (use `mise bootstrap macos launchd-agents`)
+///
+/// This older spelling keeps working.
+#[derive(Debug, usage_rs::Args)]
+struct BootstrapLaunchdCompat {
+    #[usage(subcommand)]
+    command: BootstrapLaunchdCompatCommands,
+}
+
+// The children of a hidden compatibility command are hidden too, so their
+// reference pages are not generated a second time.
+#[derive(Debug, usage_rs::Subcommands)]
+enum BootstrapLaunchdCompatCommands {
+    #[usage(hide = true)]
+    Apply(BootstrapLaunchdApply),
+    #[usage(hide = true)]
+    Status(BootstrapLaunchdStatus),
 }
 
 #[derive(Debug, usage_rs::Subcommands)]
@@ -1171,7 +1484,7 @@ enum BootstrapLaunchdCommands {
 /// Install and load LaunchAgents from `[bootstrap.macos.launchd.agents]`
 #[derive(Debug, usage_rs::Args)]
 struct BootstrapLaunchdApply {
-    /// Print the commands that would run without running them
+    /// Show what would change without changing anything
     #[usage(long, short = 'n')]
     dry_run: bool,
 
@@ -1180,27 +1493,48 @@ struct BootstrapLaunchdApply {
     yes: bool,
 }
 
-/// Show the state of LaunchAgents from `[bootstrap.macos.launchd.agents]`
+/// Show the state of the configured LaunchAgents
 #[derive(Debug, usage_rs::Args)]
 struct BootstrapLaunchdStatus {
     /// Output in JSON format
     #[usage(long, short = 'J')]
     json: bool,
 
-    /// Exit with code 1 if any configured LaunchAgent is not in its desired state
+    /// Exit with status 1 if any LaunchAgent differs from the config (all are still listed)
     #[usage(long, verbatim_doc_comment)]
     missing: bool,
 }
 
-/// Manage systemd user services from `[bootstrap.linux.systemd.units]`
+/// Manage systemd user units from `[bootstrap.linux.systemd.units]`
 ///
-/// Installs unit files and reconciles services in the current user manager. This is
-/// separate from system services declared in `[bootstrap.services]`.
+/// Writes unit files to ~/.config/systemd/user, then enables and starts them
+/// as configured. They run with your permissions and need a reachable systemd
+/// user manager. For system units, or a user service that also works on macOS
+/// and Windows, use `[bootstrap.services]`.
 #[derive(Debug, usage_rs::Args)]
 #[usage(verbatim_doc_comment)]
 struct BootstrapSystemd {
     #[usage(subcommand)]
     command: BootstrapSystemdCommands,
+}
+
+/// Manage systemd user units (use `mise bootstrap linux systemd-units`)
+///
+/// This older spelling keeps working.
+#[derive(Debug, usage_rs::Args)]
+struct BootstrapSystemdCompat {
+    #[usage(subcommand)]
+    command: BootstrapSystemdCompatCommands,
+}
+
+// The children of a hidden compatibility command are hidden too, so their
+// reference pages are not generated a second time.
+#[derive(Debug, usage_rs::Subcommands)]
+enum BootstrapSystemdCompatCommands {
+    #[usage(hide = true)]
+    Apply(BootstrapSystemdApply),
+    #[usage(hide = true)]
+    Status(BootstrapSystemdStatus),
 }
 
 #[derive(Debug, usage_rs::Subcommands)]
@@ -1209,10 +1543,10 @@ enum BootstrapSystemdCommands {
     Status(BootstrapSystemdStatus),
 }
 
-/// Install and start systemd user services from `[bootstrap.linux.systemd.units]`
+/// Install and start the configured systemd user units
 #[derive(Debug, usage_rs::Args)]
 struct BootstrapSystemdApply {
-    /// Print the commands that would run without running them
+    /// Show what would change without changing anything
     #[usage(long, short = 'n')]
     dry_run: bool,
 
@@ -1221,22 +1555,23 @@ struct BootstrapSystemdApply {
     yes: bool,
 }
 
-/// Show the state of systemd user services from `[bootstrap.linux.systemd.units]`
+/// Show the state of the configured systemd user units
 #[derive(Debug, usage_rs::Args)]
 struct BootstrapSystemdStatus {
     /// Output in JSON format
     #[usage(long, short = 'J')]
     json: bool,
 
-    /// Exit with code 1 if any configured systemd user service is not in its desired state
+    /// Exit with status 1 if any unit differs from the config (all are still listed)
     #[usage(long, verbatim_doc_comment)]
     missing: bool,
 }
 
 /// Manage mise shell activation from `[bootstrap.mise_shell_activate]`
 ///
-/// Writes managed activation blocks into the declared shell startup files. The
-/// current shell is not reactivated by this command; open a new shell afterward.
+/// Writes a managed activation block into each configured shell startup file.
+/// It does not activate mise in the shell you run it from; open a new shell
+/// afterward.
 #[derive(Debug, usage_rs::Args)]
 #[usage(verbatim_doc_comment)]
 struct BootstrapShell {
@@ -1250,10 +1585,10 @@ enum BootstrapShellCommands {
     Status(BootstrapShellStatus),
 }
 
-/// Configure shell activation from `[bootstrap.mise_shell_activate]`
+/// Write mise activation into the configured shell startup files
 #[derive(Debug, usage_rs::Args)]
 struct BootstrapShellApply {
-    /// Print the actions that would run without writing anything
+    /// Show what would change without changing anything
     #[usage(long, short = 'n')]
     dry_run: bool,
 
@@ -1262,22 +1597,22 @@ struct BootstrapShellApply {
     yes: bool,
 }
 
-/// Show whether shell activation matches `[bootstrap.mise_shell_activate]`
+/// Show the state of the configured shell activation
 #[derive(Debug, usage_rs::Args)]
 struct BootstrapShellStatus {
     /// Output in JSON format
     #[usage(long, short = 'J')]
     json: bool,
 
-    /// Exit with code 1 if any configured shell activation is not in its desired state
+    /// Exit with status 1 if any shell activation differs from the config (all are still listed)
     #[usage(long, verbatim_doc_comment)]
     missing: bool,
 }
 
-/// Manage current-user bootstrap settings from `[bootstrap.user]`
+/// Manage your login shell from `[bootstrap.user]`
 ///
-/// Currently manages the login shell. Apply as the intended user; changing the login
-/// shell affects future sessions, not the shell running this command.
+/// Run it as the user whose shell should change. The new shell applies to
+/// future logins, not to the shell running this command.
 #[derive(Debug, usage_rs::Args)]
 #[usage(verbatim_doc_comment)]
 struct BootstrapUser {
@@ -1291,10 +1626,10 @@ enum BootstrapUserCommands {
     Status(BootstrapUserStatus),
 }
 
-/// Apply current-user settings from `[bootstrap.user]`
+/// Set your login shell from `[bootstrap.user]`
 #[derive(Debug, usage_rs::Args)]
 struct BootstrapUserApply {
-    /// Print the commands that would run without running them
+    /// Show what would change without changing anything
     #[usage(long, short = 'n')]
     dry_run: bool,
 
@@ -1303,14 +1638,14 @@ struct BootstrapUserApply {
     yes: bool,
 }
 
-/// Show whether current-user settings match `[bootstrap.user]`
+/// Show whether your login shell matches `[bootstrap.user]`
 #[derive(Debug, usage_rs::Args)]
 struct BootstrapUserStatus {
     /// Output in JSON format
     #[usage(long, short = 'J')]
     json: bool,
 
-    /// Exit with code 1 if any configured user setting is not in its desired state
+    /// Exit with status 1 if your login shell differs from the config
     #[usage(long, verbatim_doc_comment)]
     missing: bool,
 }
@@ -4921,11 +5256,29 @@ impl BootstrapMacosDefaults {
     }
 }
 
+impl BootstrapMacosDefaultsCompat {
+    async fn run(self) -> Result<()> {
+        match self.command {
+            BootstrapMacosDefaultsCompatCommands::Apply(cmd) => cmd.run().await,
+            BootstrapMacosDefaultsCompatCommands::Status(cmd) => cmd.run().await,
+        }
+    }
+}
+
 impl BootstrapLaunchd {
     async fn run(self) -> Result<()> {
         match self.command {
             BootstrapLaunchdCommands::Apply(cmd) => cmd.run().await,
             BootstrapLaunchdCommands::Status(cmd) => cmd.run().await,
+        }
+    }
+}
+
+impl BootstrapLaunchdCompat {
+    async fn run(self) -> Result<()> {
+        match self.command {
+            BootstrapLaunchdCompatCommands::Apply(cmd) => cmd.run().await,
+            BootstrapLaunchdCompatCommands::Status(cmd) => cmd.run().await,
         }
     }
 }
@@ -5038,6 +5391,15 @@ impl BootstrapSystemd {
         match self.command {
             BootstrapSystemdCommands::Apply(cmd) => cmd.run().await,
             BootstrapSystemdCommands::Status(cmd) => cmd.run().await,
+        }
+    }
+}
+
+impl BootstrapSystemdCompat {
+    async fn run(self) -> Result<()> {
+        match self.command {
+            BootstrapSystemdCompatCommands::Apply(cmd) => cmd.run().await,
+            BootstrapSystemdCompatCommands::Status(cmd) => cmd.run().await,
         }
     }
 }

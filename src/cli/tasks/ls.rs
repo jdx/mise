@@ -15,14 +15,23 @@ use serde_json::json;
 
 /// List available tasks
 ///
-/// Tasks come from config files and from task directories such as `.mise/tasks`.
-/// Tasks from all parent directories are merged into this list.
+/// Lists tasks from `[tasks]` in your config files and from task directories
+/// such as `mise-tasks/`, `.mise-tasks/`, and `.mise/tasks/`, including global
+/// tasks in `~/.config/mise/tasks/`. Tasks from parent directories and the
+/// global config are included; a project task overrides a global task with the
+/// same name. In a monorepo, `--all` also lists tasks from sibling projects.
 ///
-/// So if you have global tasks in `~/.config/mise/tasks/*` and project-specific tasks in
-/// ~/myproject/.mise/tasks/*, then they'll both be available but the project-specific
-/// tasks will override the global ones if they have the same name.
+/// See https://mise.jdx.dev/tasks/task-discovery.html
 #[derive(Debug, usage_rs::Args)]
-#[usage(verbatim_doc_comment, example(r###"mise tasks ls"###))]
+#[usage(
+    example("mise tasks ls", help = "List tasks"),
+    example("mise tasks ls --hidden", help = "Include hidden tasks"),
+    example("mise tasks ls --all", help = "List tasks from every monorepo project"),
+    example(
+        "mise tasks ls --name-only | fzf",
+        help = "Pick a task name interactively"
+    )
+)]
 pub(crate) struct TasksLs {
     /// Only show global tasks
     #[usage(short, long, overrides = "local", verbatim_doc_comment)]
@@ -40,9 +49,9 @@ pub(crate) struct TasksLs {
     #[usage(short = 'x', long, verbatim_doc_comment)]
     pub extended: bool,
 
-    /// Load all tasks from the entire monorepo, including sibling directories.
-    /// By default, only tasks from the current directory hierarchy are loaded.
-    #[usage(long, verbatim_doc_comment)]
+    /// Include tasks from every project in the monorepo, not only the current
+    /// directory's hierarchy
+    #[usage(long)]
     pub all: bool,
 
     /// Display tasks for usage completion
@@ -53,7 +62,7 @@ pub(crate) struct TasksLs {
     #[usage(long, verbatim_doc_comment)]
     pub hidden: bool,
 
-    /// Only show task names, one per line. Useful for piping to fzf and similar tools.
+    /// Print only task names, one per line (for fzf and similar tools)
     #[usage(
         long,
         verbatim_doc_comment,
@@ -61,15 +70,15 @@ pub(crate) struct TasksLs {
     )]
     pub name_only: bool,
 
-    /// Do not print table header
+    /// Do not print the table header
     #[usage(long, alias = "no-headers", verbatim_doc_comment)]
     pub no_header: bool,
 
-    /// Sort by column. Default is name.
+    /// Column to sort by (default: name)
     #[usage(long, value_name = "COLUMN", verbatim_doc_comment, value_enum)]
     pub sort: Option<SortColumn>,
 
-    /// Sort order. Default is asc.
+    /// Sort direction (default: asc)
     #[usage(long, verbatim_doc_comment, value_enum)]
     pub sort_order: Option<SortOrder>,
 

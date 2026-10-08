@@ -5,24 +5,29 @@ use crate::{Result, file, minisign};
 use eyre::{bail, eyre};
 use std::path::{Path, PathBuf};
 
-/// Generate a script to download+execute mise
+/// Generate a script that downloads and runs a pinned mise
 ///
-/// This is designed to be used in a project where contributors may not have mise installed.
+/// Commit the script, for example as bin/mise, so contributors and CI can run
+/// `./bin/mise install` without installing mise first. On first run it downloads
+/// the pinned mise version into the mise data directory, or into the project with
+/// --localize, then runs it with the arguments it was given.
 ///
-/// Renamed from `mise generate bootstrap`, which read as a form of `mise bootstrap` (machine
-/// setup). The old name still works but is deprecated and will be removed in mise 2027.9.0.
+/// `mise generate bootstrap` is a deprecated alias for this command and will be
+/// removed in mise 2027.9.0.
 #[derive(Debug, usage_rs::Args)]
 #[usage(
     verbatim_doc_comment,
     example(
-        r###"mise generate install-script --write ./bin/mise
-./bin/mise install"###,
-        help = "Download mise to .mise if it is not already installed."
+        "mise generate install-script --write ./bin/mise",
+        help = "Write ./bin/mise; on first run it downloads the pinned mise, then runs it"
     ),
     example(
-        r###"mise generate install-script --write ./bin/mise --windows
-.\bin\mise.cmd install"###,
-        help = r###"Write bin/mise.cmd as a launcher for contributors who clone the project on Windows."###
+        "mise generate install-script --localize --write ./bin/mise",
+        help = "Keep mise and its tools in .mise inside the project"
+    ),
+    example(
+        "mise generate install-script --write ./bin/mise --windows",
+        help = "Also write bin/mise.cmd for contributors on Windows"
     )
 )]
 pub(super) struct InstallScript {
@@ -32,23 +37,19 @@ pub(super) struct InstallScript {
     /// it is not an OS sandbox for commands the generated script runs.
     #[usage(long, short, verbatim_doc_comment)]
     localize: bool,
-    /// Specify mise version to fetch
+    /// mise version to pin; defaults to the release `mise self-update` would install
     #[usage(long, short = 'V', verbatim_doc_comment)]
     version: Option<String>,
-    /// Write the script to a file and make it executable instead of printing it to stdout
-    #[usage(long, short, verbatim_doc_comment, num_args=0..=1, default_missing = "./bin/mise")]
+    /// Write the script to PATH (./bin/mise when no path is given) and make it executable, instead of printing it
+    #[usage(long, short, value_name = "PATH", verbatim_doc_comment, num_args=0..=1, default_missing = "./bin/mise")]
     write: Option<PathBuf>,
-    /// Directory to put localized data into
-    #[usage(long, verbatim_doc_comment, default=".mise", value_hint=ValueHint::DirPath)]
+    /// Directory for mise data when using --localize, relative to the project
+    #[usage(long, value_name = "DIR", verbatim_doc_comment, default=".mise", value_hint=ValueHint::DirPath)]
     localized_dir: PathBuf,
-    /// Also write a Windows launcher, `<WRITE>.cmd`
+    /// Also write a Windows launcher, `<PATH>.cmd`
     ///
-    /// Windows cannot execute the `#!/usr/bin/env bash` script, so a contributor who clones the
-    /// project on Windows has nothing to run without this.
-    ///
-    /// Generated on every host, not only on Windows: the file is committed, and whoever runs it
-    /// on Windows is not the person who generated it. Requires `--write`, since stdout cannot
-    /// carry two files.
+    /// Windows cannot run the bash script. Generate the launcher on any OS and commit
+    /// it for contributors on Windows. Requires --write.
     // Declared last because `clap-sort` requires long-only flags to be in alphabetical order, and
     // the rendered docs follow declaration order. Not a doc comment: this is not help text.
     #[usage(long, verbatim_doc_comment, requires = "write")]

@@ -30,16 +30,18 @@ use std::env::split_paths;
 use std::path::{Path, PathBuf};
 use strum::IntoEnumIterator;
 
-/// Check mise installation for possible problems
+/// Check your mise setup for problems
+///
+/// Prints mise's version, whether shell activation and shims are set up, its
+/// directories, the config files, tools, and environment in use, and its settings,
+/// then lists any problems and warnings with a suggested fix. Exits with status 1
+/// when it finds a problem. Include this output when you report a bug.
 #[derive(Debug, usage_rs::Args)]
 #[usage(
     visible_alias = "dr",
     verbatim_doc_comment,
-    example(
-        r###"mise doctor
-mise doctor --json
-mise doctor path --full"###
-    )
+    example("mise doctor", help = "Check the setup and list problems"),
+    example("mise doctor --json", help = "Print the report as JSON")
 )]
 pub(crate) struct Doctor {
     #[usage(subcommand)]

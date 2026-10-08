@@ -11,29 +11,34 @@ description: "Symlink python versions installed by pyenv or uv into mise"
 
 Symlink python versions installed by pyenv or uv into mise
 
-Use this to make versions installed by another version manager available to mise.
-
-This won't overwrite managed installs, runtime aliases, or links from other providers.
+Use this to make versions installed by another version manager available to
+mise. It does not overwrite managed installs, runtime aliases, or links from
+other providers. With --uv, it also links mise's python versions into uv.
+Pass --pyenv, --uv, or both; with neither, nothing is linked.
 
 ## Flags
 - **`--pyenv`** — Get tool versions from pyenv
-- **`--uv`** — Sync tool versions with uv (2-way sync)
+- **`--uv`** — Link uv's python versions into mise and mise's python versions into uv
 - **`-h --help`** — Print help
 
 ## Examples
 
-```
-pyenv install 3.11.0
-mise sync python --pyenv
-mise use -g python@3.11.0 # uses pyenv-provided python
-```
+Use a python that pyenv installed
 
 ```
-uv python install 3.11.0
-mise install python@3.10.0
+pyenv install 3.13.0
+mise sync python --pyenv
+mise use -g python@3.13.0
+```
+
+Share python versions with uv in both directions
+
+```
+uv python install 3.13.0
+mise install python@3.12.0
 mise sync python --uv
-mise x python@3.11.0 -- python -V # uses uv-provided python
-uv run -p 3.10.0 -- python -V # uses mise-provided python
+mise exec python@3.13.0 -- python -V
+uv run -p 3.12.0 -- python -V
 ```
 
 <!-- generated reference navigation -->

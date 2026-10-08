@@ -3,7 +3,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "mise-task-schema",
   "type": "object",
-  "description": "Config file for included mise tasks (https://mise.jdx.dev/tasks/#task-configuration)",
+  "description": "Config file for included mise tasks (https://mise.jdx.dev/tasks/task-configuration.html)",
   "additionalProperties": {
     "$ref": "#/$defs/task"
   },
@@ -444,7 +444,7 @@
         },
         "deny_write": {
           "default": false,
-          "description": "block all filesystem writes",
+          "description": "block filesystem writes, except implicitly writable paths such as the temporary directory",
           "type": "boolean"
         },
         "deny_net": {
@@ -472,7 +472,7 @@
           "type": "array"
         },
         "allow_net": {
-          "description": "allow network to specific hosts",
+          "description": "meant to allow only these hosts, but per-host filtering does not work on any platform (https://mise.jdx.dev/sandboxing.html#access-to-particular-hosts)",
           "items": {
             "type": "string"
           },

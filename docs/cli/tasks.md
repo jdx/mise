@@ -12,26 +12,47 @@ description: "Manage tasks"
 
 Manage tasks
 
+With no subcommand, lists tasks like `mise tasks ls` and accepts the same flags. With a task name, shows that task like `mise tasks info`. To run a task, use `mise run`.
+
 ## Arguments
-- **`[TASK]`** — Task name to show info for
+- **`[TASK]`** — Task to show, as `mise tasks info` does
 
 ## Flags
 - **`-g --global`** — Only show global tasks
 - **`-J --json`** — Output in JSON format
 - **`-l --local`** — Only show non-global tasks
 - **`-x --extended`** — Show all columns
-- **`--all`** — Load all tasks from the entire monorepo, including sibling directories.
-  By default, only tasks from the current directory hierarchy are loaded.
+- **`--all`** — Include tasks from every project in the monorepo, not only the current directory's hierarchy
 - **`--hidden`** — Show hidden tasks
-- **`--name-only`** — Only show task names, one per line. Useful for piping to fzf and similar tools.
-- **`--no-header`** — Do not print table header
-- **`--sort <COLUMN>`** — Sort by column. Default is name.
+- **`--name-only`** — Print only task names, one per line (for fzf and similar tools)
+- **`--no-header`** — Do not print the table header
+- **`--sort <COLUMN>`** — Column to sort by (default: name)
 
   **Choices:** `name`, `alias`, `description`, `source`
-- **`--sort-order <SORT_ORDER>`** — Sort order. Default is asc.
+- **`--sort-order <SORT_ORDER>`** — Sort direction (default: asc)
 
   **Choices:** `asc`, `desc`
 - **`-h --help`** — Print help
+
+## Examples
+
+List tasks
+
+```
+mise tasks
+```
+
+Show the build task
+
+```
+mise tasks build
+```
+
+Include hidden tasks, sorted by source
+
+```
+mise tasks --hidden --sort source
+```
 
 ## Subcommands
 

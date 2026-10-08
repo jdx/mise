@@ -8,7 +8,7 @@ use itertools::Itertools;
 const IDIOMATIC_FILES_START: &str = "<!-- mise:idiomatic-version-files:start -->";
 const IDIOMATIC_FILES_END: &str = "<!-- mise:idiomatic-version-files:end -->";
 
-/// internal command to generate markdown from help
+/// [internal] Generate docs files from the CLI and the registry
 #[derive(Debug, usage_rs::Args)]
 #[usage(hide = true)]
 pub(crate) struct RenderHelp {}
@@ -29,7 +29,7 @@ impl RenderHelp {
 }
 
 fn render_idiomatic_version_files() -> Result<()> {
-    let path = "docs/configuration.md";
+    let path = "docs/dev-tools/versions.md";
     let content = file::read_to_string(path)?;
     let start = content
         .find(IDIOMATIC_FILES_START)

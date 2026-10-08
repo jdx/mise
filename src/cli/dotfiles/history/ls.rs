@@ -6,7 +6,14 @@ use crate::ui::table::MiseTable;
 
 /// List checkpoints, newest first
 #[derive(Debug, usage_rs::Args)]
-#[usage(visible_alias = "list", verbatim_doc_comment)]
+#[usage(
+    visible_alias = "list",
+    example("mise dot history ls -n 0", help = "List every checkpoint"),
+    example(
+        "mise dot history ls --pending",
+        help = "List operations that did not finish"
+    )
+)]
 pub(crate) struct HistoryLs {
     /// Output in JSON format
     #[usage(long, short = 'J')]
@@ -20,7 +27,12 @@ pub(crate) struct HistoryLs {
     #[usage(long, value_name = "PATH")]
     path: Option<String>,
 
-    /// Only checkpoints with this trigger (edit, save, bootstrap, …)
+    /// Only checkpoints with this trigger, such as edit, save, agent, bootstrap,
+    /// apply, rollback, or undo
+    ///
+    /// `bootstrap` covers `mise bootstrap`, its `packages` commands, and
+    /// `mise dot add`, `apply`, `edit`, and `unapply`. `apply` covers incoming
+    /// changes written by `mise dot pull` or the watcher.
     #[usage(long, value_name = "TRIGGER")]
     trigger: Option<String>,
 

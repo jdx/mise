@@ -7,15 +7,19 @@ use bytesize::ByteSize;
 use eyre::Result;
 use heck::ToKebabCase;
 
-/// Remove stale cache files
+/// Remove cache files that have not been accessed recently
 ///
-/// By default, this command will remove files that have not been accessed in 30 days.
-/// Change this with the MISE_CACHE_PRUNE_AGE environment variable.
+/// Removes cache files not accessed within the `cache_prune_age` setting. Set it to
+/// `0s` to keep cache files indefinitely. mise also prunes the cache now and then
+/// on its own.
 #[derive(Debug, usage_rs::Args)]
-#[usage(verbatim_doc_comment, visible_alias = "p")]
+#[usage(
+    verbatim_doc_comment,
+    visible_alias = "p",
+    example("mise cache prune --dry-run", help = "List what would be removed")
+)]
 pub(super) struct CachePrune {
-    /// Tool(s) to prune cache for
-    /// e.g.: node, python
+    /// Only prune the cache of these tools, such as `node`
     tool: Option<Vec<String>>,
 
     /// Show pruned files

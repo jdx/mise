@@ -11,22 +11,32 @@ description: "Show the effective value of a setting"
 
 Show the effective value of a setting
 
-Includes defaults, configuration, and environment overrides. With `--local`,
-read only the selected local config's explicit settings; an unset key is an error.
-Use `mise config get settings.KEY --file path/to/mise.toml` to inspect one file.
+Includes defaults, config files, and environment overrides. With `--local`,
+reads only the explicit settings in the nearest project config, and a
+setting that is not set there is an error. An optional setting with no
+default that is not set anywhere, such as `python.compile`, is also reported
+as not set and exits with an error. To inspect one file, use
+`mise config get settings.KEY --file path/to/mise.toml`.
 
 ## Arguments
 - **`<SETTING>`** — The setting to show
 
 ## Flags
-- **`-l --local`** — Use the local config file instead of the global one
+- **`-l --local`** — Read only the explicit settings in the nearest project config
 - **`-h --help`** — Print help
 
 ## Examples
 
+Show the effective number of parallel jobs
+
 ```
 mise settings get jobs
-mise settings get python.compile
+```
+
+Show the value set in the project config
+
+```
+mise settings get --local experimental
 ```
 
 <!-- generated reference navigation -->

@@ -11,9 +11,9 @@ description: "Stop tracking a file or directory"
 
 Stop tracking a file or directory
 
-Removes the `[dotfiles]` track entry (or switches an inherited one off in
-config.local.toml) and stops future captures. The file itself and its
-existing checkpoints are left exactly as they are.
+Removes the path's `mode = "track"` entry from your global config. When a project or system config declares the entry, mise turns it off on this machine in `config.local.toml` next to your global config instead.
+
+A path inside a tracked directory has no entry of its own: mise adds a rule for it to `[history] exclude` in the global config, and `mise dot include <path>` removes that rule. The file itself and its existing checkpoints are not changed.
 
 ## Arguments
 - **`<PATH>…`** — Paths to stop tracking
@@ -21,10 +21,18 @@ existing checkpoints are left exactly as they are.
 ## Flags
 - **`-h --help`** — Print help
 
-Examples:
+## Examples
+
+Stop saving ~/.zshrc
 
 ```
 mise dot untrack ~/.zshrc
+```
+
+Exclude one directory inside a tracked directory
+
+```
+mise dot untrack ~/.config/hypr/plugins
 ```
 
 <!-- generated reference navigation -->

@@ -11,19 +11,23 @@ use std::fs;
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 
-/// Generate shims to run mise tasks
+/// Generate scripts that run mise tasks
 ///
-/// By default, this will build shims like ./bin/<task>. These can be paired with `mise generate install-script`
-/// so contributors to a project can execute mise tasks without installing mise into their system.
-/// When a parent and nested task both exist, the parent stub is written to `<parent>/_default`.
+/// Writes one executable stub per task into a directory, such as `bin/test` for
+/// the `test` task, that runs the task with mise. Pair them with
+/// `mise generate install-script` so contributors can run tasks without installing
+/// mise. When a task has subtasks, the parent's stub is written to
+/// `<parent>/_default`.
 #[derive(Debug, usage_rs::Args)]
 #[usage(
     verbatim_doc_comment,
     example(
-        r###"mise tasks add test -- echo 'running tests'
-mise generate task-stubs
-./bin/test
-running tests"###
+        "mise generate task-stubs",
+        help = "Write a stub for each task into ./bin"
+    ),
+    example(
+        "mise generate task-stubs --mise-bin ./bin/mise",
+        help = "Make the stubs run the mise that `mise generate install-script` wrote"
     )
 )]
 pub(super) struct TaskStubs {
@@ -31,14 +35,20 @@ pub(super) struct TaskStubs {
     #[usage(long, short, verbatim_doc_comment, default="bin", value_hint=ValueHint::DirPath)]
     dir: PathBuf,
 
-    /// Path to a mise bin to use when running the task stub.
+    /// mise executable the stubs run; defaults to mise from PATH
     ///
-    /// Use `--mise-bin=./bin/mise` to use a mise bin generated from `mise generate install-script`
-    ///
-    /// On Windows a path is run as written, so that script needs its own launcher beside it:
-    /// generate it with `mise generate install-script --write ./bin/mise --windows`. The default
-    /// `mise` is a bare name and resolves off PATH, which needs nothing extra.
-    #[usage(long, short, verbatim_doc_comment, default = "mise")]
+    /// Use `--mise-bin ./bin/mise` with a script from `mise generate install-script`.
+    /// On Windows a path runs as written, so that script needs its `.cmd` launcher
+    /// beside it; generate it with
+    /// `mise generate install-script --write ./bin/mise --windows`. The default,
+    /// `mise`, is a bare name that resolves from PATH and needs nothing extra.
+    #[usage(
+        long,
+        short,
+        value_name = "PATH",
+        verbatim_doc_comment,
+        default = "mise"
+    )]
     mise_bin: PathBuf,
 
     /// What to write beside each stub for Windows to launch
@@ -51,7 +61,13 @@ pub(super) struct TaskStubs {
     /// every shell. It is a copy of the mise-shim.exe that ships with the Windows build, so it
     /// can only be generated on Windows, and it adds ~220KB per task to a directory that is
     /// normally committed.
-    #[usage(long, verbatim_doc_comment, value_enum, default = "cmd")]
+    #[usage(
+        long,
+        value_name = "KIND",
+        verbatim_doc_comment,
+        value_enum,
+        default = "cmd"
+    )]
     windows_launcher: WindowsLauncher,
 }
 

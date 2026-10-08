@@ -1,24 +1,27 @@
 use crate::forgejo;
 use crate::tokens;
 
-/// Display the Forgejo token mise will use for a given host
+/// Show the Forgejo token mise uses for a host
 ///
-/// Shows which token source mise would use, useful for debugging
-/// authentication issues. The token is masked by default.
+/// Shows the token and where it came from, to debug authentication. The token
+/// is masked unless you pass --unmask.
 #[derive(Debug, usage_rs::Args)]
 #[usage(
     verbatim_doc_comment,
     example(
         r###"mise token forgejo
-codeberg.org: a180…61f6 (source: FORGEJO_TOKEN)"###
+codeberg.org: xxxx…xxxx (source: FORGEJO_TOKEN)"###,
+        help = "Show the token for codeberg.org"
     ),
     example(
         r###"mise token forgejo --unmask
-codeberg.org: a18099ca69064be387fbe37b8ad1d333758361f6 (source: FORGEJO_TOKEN)"###
+codeberg.org: xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx (source: FORGEJO_TOKEN)"###,
+        help = "Show the whole token"
     ),
     example(
         r###"mise token forgejo forgejo.mycompany.com
-forgejo.mycompany.com: (none)"###
+forgejo.mycompany.com: (none)"###,
+        help = "Check a self-hosted Forgejo instance"
     )
 )]
 pub(super) struct Forgejo {

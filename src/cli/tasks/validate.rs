@@ -18,25 +18,46 @@ use indexmap::IndexMap;
 use itertools::Itertools;
 use serde::Serialize;
 
-/// Validate tasks for common errors and issues
+/// Check task definitions for errors
+///
+/// Checks each task for dependency cycles; references to tasks that do not
+/// exist; `#USAGE` specs that do not parse; invalid `timeout` values; aliases
+/// that more than one task uses; missing or non-executable file tasks; invalid
+/// `dir` paths and templates; missing shell executables; invalid `sources` and
+/// `outputs` globs; broken task references in `run` arrays, empty scripts, and
+/// tasks with nothing to run; required `daemons` that no readable `[daemons]`
+/// section declares; and `secrets` grants that conflict with the sandbox or
+/// `[env]`, or, when the config is trusted, that name keys missing from the
+/// secrets source.
+///
+/// Exits 1 if any error is found, so you can run it in CI. Warnings are
+/// reported but do not fail the command.
 #[derive(Debug, usage_rs::Args)]
-#[usage(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP,
+#[usage(
     example(r###"mise tasks validate"###, help = r###"Validate all tasks"###),
-    example(r###"mise tasks validate build test"###, help = r###"Validate specific tasks"###),
-    example(r###"mise tasks validate --json"###, help = r###"Output results as JSON"###),
-    example(r###"mise tasks validate --errors-only"###, help = r###"Only show errors (skip warnings)"###))]
+    example(
+        r###"mise tasks validate build test"###,
+        help = r###"Validate specific tasks"###
+    ),
+    example(
+        r###"mise tasks validate --json"###,
+        help = r###"Output results as JSON"###
+    ),
+    example(
+        r###"mise tasks validate --errors-only"###,
+        help = r###"Only show errors (skip warnings)"###
+    )
+)]
 pub(super) struct TasksValidate {
-    /// Tasks to validate
-    /// If not specified, validates all tasks
-    #[usage(verbatim_doc_comment)]
+    /// Tasks to validate (default: all tasks)
     pub tasks: Option<Vec<String>>,
 
     /// Only show errors (skip warnings)
-    #[usage(long, verbatim_doc_comment)]
+    #[usage(long)]
     pub errors_only: bool,
 
     /// Output validation results in JSON format
-    #[usage(long, verbatim_doc_comment)]
+    #[usage(long)]
     pub json: bool,
 }
 
@@ -1004,23 +1025,6 @@ fn graph_error_issue(task: &str, details: String) -> ValidationIssue {
         details: Some(details),
     }
 }
-
-static AFTER_LONG_HELP: &str = color_print::cstr!(
-    r###"<bold><underline>Validation Checks:</underline></bold>
-
-The validate command performs the following checks:
-
-  • <bold>Circular Dependencies</bold>: Detects dependency cycles
-  • <bold>Missing References</bold>: Finds references to nonexistent tasks
-  • <bold>Usage Spec Parsing</bold>: Validates #USAGE directives and specs
-  • <bold>Timeout Format</bold>: Checks timeout values are valid durations
-  • <bold>Alias Conflicts</bold>: Detects duplicate aliases across tasks
-  • <bold>File Existence</bold>: Verifies file-based tasks exist
-  • <bold>Directory Templates</bold>: Validates directory paths and templates
-  • <bold>Shell Commands</bold>: Checks shell executables exist
-  • <bold>Glob Patterns</bold>: Validates source and output patterns
-  • <bold>Run Entries</bold>: Ensures tasks reference valid dependencies"###
-);
 
 #[cfg(test)]
 mod tests {

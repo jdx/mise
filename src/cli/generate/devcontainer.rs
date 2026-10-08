@@ -7,26 +7,37 @@ use crate::{
 };
 use serde::Serialize;
 
-/// Generate devcontainer configuration for mise
+/// Generate a devcontainer configuration that installs mise
 ///
-/// Prints JSON by default. `--write` saves .devcontainer/devcontainer.json;
-/// review the image, mounts, and generated setup commands before opening it.
+/// Prints JSON by default. `--write` saves .devcontainer/devcontainer.json in the
+/// repository root (or the current directory outside a git repository), replacing
+/// an existing file. Review the image, mounts, and setup commands before opening it.
 #[derive(Debug, usage_rs::Args)]
-#[usage(verbatim_doc_comment, example(r###"mise generate devcontainer"###))]
+#[usage(
+    verbatim_doc_comment,
+    example("mise generate devcontainer", help = "Print the configuration"),
+    example(
+        "mise generate devcontainer --mount-mise-data --write",
+        help = "Keep installed tools in a volume and save .devcontainer/devcontainer.json"
+    )
+)]
 pub(super) struct Devcontainer {
-    /// The image to use for the devcontainer
+    /// Base image; defaults to mcr.microsoft.com/devcontainers/base:ubuntu
     #[usage(long, short, verbatim_doc_comment)]
     image: Option<String>,
 
-    /// Bind the mise-data-volume to the devcontainer
+    /// Keep installed tools in a `mise-data-volume` Docker volume so they survive rebuilds
+    ///
+    /// Mounts the volume at /mnt/mise-data, sets MISE_DATA_DIR to it, and adds its
+    /// shims directory to PATH.
     #[usage(long, short, verbatim_doc_comment)]
     mount_mise_data: bool,
 
-    /// The name of the devcontainer
+    /// Container name; defaults to mise
     #[usage(long, short, verbatim_doc_comment)]
     name: Option<String>,
 
-    /// Write to .devcontainer/devcontainer.json
+    /// Write to .devcontainer/devcontainer.json instead of printing
     #[usage(long, short)]
     write: bool,
 }

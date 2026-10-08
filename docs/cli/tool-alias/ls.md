@@ -12,27 +12,35 @@ description: "List tool version aliases"
 
 List tool version aliases
 
-Aliases can be defined in user config or provided by plugins via `bin/list-aliases`.
-
-In user config, aliases are defined like the following in `~/.config/mise/config.toml`:
+Lists version aliases from `[tool_alias.<tool>.versions]` in any loaded
+config file and the aliases that tool backends provide, such as node's
+`lts-*` names or an asdf plugin's `bin/list-aliases`. For example:
 
 ```
 [tool_alias.node.versions]
 project = "20"
 ```
 
+Backend aliases (`[tool_alias] tool = "backend"`) are not listed; run
+`mise tool <TOOL>` to see the backend a tool uses.
+
 ## Arguments
-- **`[TOOL]`** — Show aliases for &lt;TOOL>
+- **`[TOOL]`** — Only show aliases for this tool
 
 ## Flags
-- **`--no-header`** — Don't show table header
+- **`--no-header`** — Do not print the table header
 - **`-h --help`** — Print help
 
 ## Examples
 
+List node's version aliases
+
 ```
-mise tool-alias ls
-node  lts-jod      22
+mise tool-alias ls node
+tool  alias      version
+node  lts        24
+node  lts-jod    22
+node  project    20
 ```
 
 <!-- generated reference navigation -->

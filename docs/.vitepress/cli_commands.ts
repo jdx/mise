@@ -202,10 +202,10 @@ export const commands: { [key: string]: Command } = {
         hide: true,
         subcommands: {
           apply: {
-            hide: false,
+            hide: true,
           },
           status: {
-            hide: false,
+            hide: true,
           },
         },
       },
@@ -256,10 +256,10 @@ export const commands: { [key: string]: Command } = {
         hide: true,
         subcommands: {
           apply: {
-            hide: false,
+            hide: true,
           },
           status: {
-            hide: false,
+            hide: true,
           },
         },
       },
@@ -377,10 +377,10 @@ export const commands: { [key: string]: Command } = {
         hide: true,
         subcommands: {
           apply: {
-            hide: false,
+            hide: true,
           },
           status: {
-            hide: false,
+            hide: true,
           },
         },
       },

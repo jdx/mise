@@ -7,15 +7,18 @@ use comfy_table::{Attribute, Cell};
 use eyre::Result;
 use itertools::Itertools;
 
-/// List config files currently in use
+/// List config files currently in use, from lowest to highest precedence
+///
+/// Later files override earlier ones.
 #[derive(Debug, usage_rs::Args)]
 #[usage(
     verbatim_doc_comment,
     example(
         r###"mise config ls
 Path                        Tools
-~/.config/mise/config.toml  pitchfork
-~/src/mise/mise.toml        bun, cargo-binstall, cargo:cargo-insta"###
+~/.config/mise/config.toml  node, python
+~/work/api/mise.toml        node, terraform"###,
+        help = "List the loaded config files and the tools each one requests"
     )
 )]
 pub(crate) struct ConfigLs {
@@ -26,11 +29,14 @@ pub(crate) struct ConfigLs {
     #[usage(short = 'J', long, verbatim_doc_comment)]
     pub json: bool,
 
-    /// Do not print table header
+    /// Do not print the table header
     #[usage(long, alias = "no-headers", verbatim_doc_comment)]
     pub no_header: bool,
 
-    /// List all tracked config files
+    /// List every config file mise has loaded, in any project
+    ///
+    /// mise remembers the config files it loads so `mise prune` keeps the versions
+    /// they use.
     #[usage(long, verbatim_doc_comment)]
     pub tracked_configs: bool,
 }

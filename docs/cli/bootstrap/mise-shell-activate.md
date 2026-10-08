@@ -12,8 +12,9 @@ description: "Manage mise shell activation from `[bootstrap.mise_shell_activate]
 
 Manage mise shell activation from `[bootstrap.mise_shell_activate]`
 
-Writes managed activation blocks into the declared shell startup files. The
-current shell is not reactivated by this command; open a new shell afterward.
+Writes a managed activation block into each configured shell startup file.
+It does not activate mise in the shell you run it from; open a new shell
+afterward.
 
 ## Flags
 - **`-h --help`** — Print help

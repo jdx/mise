@@ -5,21 +5,21 @@ use comfy_table::{Cell, Row};
 use eyre::Result;
 use serde::Serialize;
 
-/// [experimental] Inspect the workspace project graph
+/// [experimental] Show the monorepo project graph
+///
+/// Lists the projects mise infers from Cargo, uv, Go, and Node.js workspace
+/// manifests, with each project's ID, root directory, dependencies, and
+/// metadata. `mise run --affected` uses this graph to decide which projects a
+/// change touches. Requires `experimental = true`.
+///
+/// See https://mise.jdx.dev/tasks/workspace-graph.html
 #[derive(Debug, usage_rs::Args)]
 #[usage(
-    verbatim_doc_comment,
+    example("mise tasks graph", help = "List projects and their dependencies"),
+    example("mise tasks graph --json", help = "Print the project graph as JSON"),
     example(
-        r###"mise tasks graph"###,
-        help = r###"Inspect projects and their dependency edges"###
-    ),
-    example(
-        r###"mise tasks graph --json"###,
-        help = r###"Emit the project graph as JSON"###
-    ),
-    example(
-        r###"mise tasks graph --explain"###,
-        help = r###"Explain where inferred projects and task fields came from"###
+        "mise tasks graph --explain",
+        help = "Show which workspace file each project, dependency, and task came from"
     )
 )]
 pub(super) struct TasksGraph {
@@ -27,8 +27,9 @@ pub(super) struct TasksGraph {
     #[usage(short = 'J', long, verbatim_doc_comment)]
     json: bool,
 
-    /// Explain provider attribution for inferred projects and tasks
-    #[usage(long, conflicts = "json", verbatim_doc_comment)]
+    /// Show which provider and workspace file each project, dependency, and task
+    /// field came from
+    #[usage(long, conflicts = "json")]
     explain: bool,
 
     /// Do not print table headers

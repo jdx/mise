@@ -9,21 +9,25 @@ use tabled::{Table, Tabled};
 
 /// List configured settings and their sources
 ///
-/// By default, list explicit settings from loaded TOML files. `--all` also includes
-/// effective defaults. Use `--local` to restrict output to the selected local file,
-/// and `--json-extended` to include source information in machine-readable output.
-/// Use `mise settings get KEY` when you need one effective value.
+/// By default, lists the settings set in loaded TOML config files. `--all` also
+/// includes the effective value of every other setting. `--local` lists only the
+/// nearest project config, and `--json-extended` adds source information to
+/// JSON output. Use `mise settings get SETTING` for one effective value.
 #[derive(Debug, usage_rs::Args)]
 #[usage(
+    example(r###"mise settings ls"###, help = "List settings set in config files"),
     example(
-        r###"mise settings ls
-mise settings ls --all
-mise settings ls python --json-extended"###
+        r###"mise settings ls --all"###,
+        help = "Include settings left at their defaults"
+    ),
+    example(
+        r###"mise settings ls python --json-extended"###,
+        help = "Show the python settings as JSON with their sources"
     ),
     verbatim_doc_comment
 )]
 pub(crate) struct SettingsLs {
-    /// Name of setting
+    /// Only show this setting, or the settings under this prefix such as `python`
     pub setting: Option<String>,
 
     /// List all settings
@@ -34,7 +38,10 @@ pub(crate) struct SettingsLs {
     #[usage(long, short = 'J', group = "output")]
     json: bool,
 
-    /// Use the local config file instead of the global one
+    /// Use only the nearest project config
+    ///
+    /// Reads only its explicit settings, or writes to it instead of the global
+    /// config.
     #[usage(long, short, global = true)]
     pub local: bool,
 

@@ -23,34 +23,31 @@ use std::sync::Arc;
 /// Run the Model Context Protocol server over stdin/stdout
 ///
 /// Exposes project tools, tasks, environment, and configuration to an MCP client.
-/// Resources use `mise://tools`, `mise://tasks`, `mise://env`, and `mise://config`.
-/// `mise://tools?include_inactive=true` also includes inactive installations.
+/// The client, such as an AI coding assistant, starts this command and exchanges
+/// messages with it. Start it in the project directory or pass `--cd`: the
+/// resources describe that project.
 ///
-/// The `list_commands` tool describes commands and their declared effects. `run_task`
-/// executes project tasks with the user's permissions and can change files or invoke
-/// external services. `install_tool` is advertised but currently returns an error.
+/// Resources (JSON):
+/// - mise://tools: active tool versions (?include_inactive=true adds the rest)
+/// - mise://tasks: task definitions, including monorepo subproject tasks
+/// - mise://env: environment variables
+/// - mise://config: loaded config files and the project root
+///
 /// Environment resources contain real values, including secrets.
 ///
-/// Resources available:
-/// - mise://tools - List all tools (use ?include_inactive=true to include inactive tools)
-/// - mise://tasks - List all tasks with their configurations
-/// - mise://env - List all environment variables
-/// - mise://config - Show configuration files and project root
+/// Tools:
+/// - list_commands: every mise command and its declared effect
+/// - run_task: run a task with your permissions; it can change files and call
+///   external services
+/// - install_tool: advertised but not implemented; calls return an error
 ///
-/// Tools available:
-/// - list_commands - Every mise command, with its declared effect on the world
-/// - install_tool - Install a tool with an optional version (not yet implemented)
-/// - run_task - Execute a mise task with optional arguments
-///
-/// Note: This is primarily intended for integration with AI assistants like Claude,
-/// Cursor, or other tools that support the Model Context Protocol.
 /// See https://mise.jdx.dev/mcp.html for client configuration and access controls.
 #[derive(Debug, usage_rs::Args)]
 #[usage(
     verbatim_doc_comment,
     example(
-        r###"mise -C /path/to/project mcp"###,
-        help = r###"Start from the project directory; an MCP client handles the protocol exchange"###
+        r###"mise --cd /path/to/project mcp"###,
+        help = r###"Serve a project from another directory, as an MCP client config does"###
     )
 )]
 pub(crate) struct Mcp {}
@@ -116,7 +113,7 @@ impl MiseServer {
 
     /// Every mise command, with what running it does to the world
     #[tool(
-        description = "Every mise command, with what running it does: `read` only inspects state, `write` changes it, `destructive` removes something that is work to get back. A command with no effect listed is unclassified — treat it as needing confirmation, not as safe. Call this before running an unfamiliar mise command."
+        description = "Every mise command, with what running it does: `read` only inspects state, `write` changes it, `destructive` removes something that is work to get back. A command with no effect listed is unclassified: treat it as needing confirmation, not as safe. Call this before running an unfamiliar mise command."
     )]
     async fn list_commands(
         &self,
@@ -152,8 +149,10 @@ impl MiseServer {
         json_result(json!({ "bin": "mise", "commands": commands }))
     }
 
-    /// Install a tool with an optional version
-    #[tool(description = "Install a tool with an optional version (e.g. node@20, python@3.12)")]
+    /// Placeholder for installing a tool; always returns an error
+    #[tool(
+        description = "Not implemented yet: always returns an error. Ask the user to run `mise install` instead."
+    )]
     async fn install_tool(
         &self,
         Parameters(_params): Parameters<InstallToolParams>,
@@ -252,7 +251,7 @@ impl ServerHandler for MiseServer {
             .with_protocol_version(ProtocolVersion::V_2025_03_26)
             .with_server_info(Implementation::new("mise", env!("CARGO_PKG_VERSION")))
             .with_instructions(
-                "Mise MCP server provides access to tools, tasks, environment variables, and \
+                "The mise MCP server provides access to tools, tasks, environment variables, and \
                  configuration. Call list_commands before running an unfamiliar mise command: \
                  every command declares its effect on the world (`read`, `write`, \
                  `destructive`), and a command with no effect listed is unclassified rather \

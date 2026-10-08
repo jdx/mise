@@ -227,261 +227,261 @@
 - [mise backends](https://mise.jdx.dev/cli/backends.html): Manage backends
 - [mise backends ls](https://mise.jdx.dev/cli/backends/ls.html): List built-in backends
 - [mise backends switch](https://mise.jdx.dev/cli/backends/switch.html): Switch tools to the backend the registry now installs them from
-- [mise bin-paths](https://mise.jdx.dev/cli/bin-paths.html): List all the active runtime bin paths
-- [mise bootstrap](https://mise.jdx.dev/cli/bootstrap.html): Set up a machine from the current configuration
-- [mise bootstrap accounts](https://mise.jdx.dev/cli/bootstrap/accounts.html): Manage Linux users and groups from [bootstrap.users] and [bootstrap.groups]
-- [mise bootstrap accounts apply](https://mise.jdx.dev/cli/bootstrap/accounts/apply.html): Apply configured Linux users and groups
-- [mise bootstrap accounts status](https://mise.jdx.dev/cli/bootstrap/accounts/status.html): Show configured Linux user and group state
+- [mise bin-paths](https://mise.jdx.dev/cli/bin-paths.html): List the bin directories of the active tools
+- [mise bootstrap](https://mise.jdx.dev/cli/bootstrap.html): Set up this machine from your mise config
+- [mise bootstrap accounts](https://mise.jdx.dev/cli/bootstrap/accounts.html): Manage Linux users and groups
+- [mise bootstrap accounts apply](https://mise.jdx.dev/cli/bootstrap/accounts/apply.html): Create, update, or remove the configured Linux users and groups
+- [mise bootstrap accounts status](https://mise.jdx.dev/cli/bootstrap/accounts/status.html): Show the state of the configured Linux users and groups
 - [mise bootstrap compose](https://mise.jdx.dev/cli/bootstrap/compose.html): Manage Docker Compose projects from [bootstrap.compose]
-- [mise bootstrap compose apply](https://mise.jdx.dev/cli/bootstrap/compose/apply.html): Apply configured Docker Compose project state
-- [mise bootstrap compose status](https://mise.jdx.dev/cli/bootstrap/compose/status.html): Show configured Docker Compose project state
-- [mise bootstrap dotfiles](https://mise.jdx.dev/cli/bootstrap/dotfiles.html): Manage dotfiles from [dotfiles]
-- [mise bootstrap dotfiles add](https://mise.jdx.dev/cli/bootstrap/dotfiles/add.html): Add or update dotfiles in [dotfiles]
-- [mise bootstrap dotfiles apply](https://mise.jdx.dev/cli/bootstrap/dotfiles/apply.html): Apply dotfiles from [dotfiles]
-- [mise bootstrap dotfiles capture](https://mise.jdx.dev/cli/bootstrap/dotfiles/capture.html): Record tracked files before and after an external command
-- [mise bootstrap dotfiles conflicts](https://mise.jdx.dev/cli/bootstrap/dotfiles/conflicts.html): Inspect the local and remote sides of sharing conflicts
-- [mise bootstrap dotfiles diff](https://mise.jdx.dev/cli/bootstrap/dotfiles/diff.html): Show the changes needed to apply dotfiles from [dotfiles]
-- [mise bootstrap dotfiles edit](https://mise.jdx.dev/cli/bootstrap/dotfiles/edit.html): Edit a managed dotfile source
-- [mise bootstrap dotfiles exclude](https://mise.jdx.dev/cli/bootstrap/dotfiles/exclude.html): Never capture paths matching a glob
-- [mise bootstrap dotfiles history](https://mise.jdx.dev/cli/bootstrap/dotfiles/history.html): Browse the checkpoints of your dotfiles
+- [mise bootstrap compose apply](https://mise.jdx.dev/cli/bootstrap/compose/apply.html): Apply Docker Compose projects from [bootstrap.compose]
+- [mise bootstrap compose status](https://mise.jdx.dev/cli/bootstrap/compose/status.html): Show the state of Docker Compose projects from [bootstrap.compose]
+- [mise bootstrap dotfiles](https://mise.jdx.dev/cli/bootstrap/dotfiles.html): Deploy, track, and sync dotfiles
+- [mise bootstrap dotfiles add](https://mise.jdx.dev/cli/bootstrap/dotfiles/add.html): Start deploying a file, or copy its edits back to the source
+- [mise bootstrap dotfiles apply](https://mise.jdx.dev/cli/bootstrap/dotfiles/apply.html): Deploy [dotfiles] entries to their targets
+- [mise bootstrap dotfiles capture](https://mise.jdx.dev/cli/bootstrap/dotfiles/capture.html): Run a command and save tracked files before and after it
+- [mise bootstrap dotfiles conflicts](https://mise.jdx.dev/cli/bootstrap/dotfiles/conflicts.html): Compare both sides of a sync conflict
+- [mise bootstrap dotfiles diff](https://mise.jdx.dev/cli/bootstrap/dotfiles/diff.html): Show what mise dot apply would change
+- [mise bootstrap dotfiles edit](https://mise.jdx.dev/cli/bootstrap/dotfiles/edit.html): Open a dotfile's source in your editor
+- [mise bootstrap dotfiles exclude](https://mise.jdx.dev/cli/bootstrap/dotfiles/exclude.html): Never save paths matching a glob
+- [mise bootstrap dotfiles history](https://mise.jdx.dev/cli/bootstrap/dotfiles/history.html): Browse saved versions of your tracked files
 - [mise bootstrap dotfiles history describe](https://mise.jdx.dev/cli/bootstrap/dotfiles/history/describe.html): Set the description of a checkpoint
-- [mise bootstrap dotfiles history diff](https://mise.jdx.dev/cli/bootstrap/dotfiles/history/diff.html): Compare checkpoints, or the working tree against one
+- [mise bootstrap dotfiles history diff](https://mise.jdx.dev/cli/bootstrap/dotfiles/history/diff.html): Compare checkpoints, or your files against one
 - [mise bootstrap dotfiles history ls](https://mise.jdx.dev/cli/bootstrap/dotfiles/history/ls.html): List checkpoints, newest first
-- [mise bootstrap dotfiles history show](https://mise.jdx.dev/cli/bootstrap/dotfiles/history/show.html): Show one checkpoint: what triggered it, what changed, and its journal
+- [mise bootstrap dotfiles history show](https://mise.jdx.dev/cli/bootstrap/dotfiles/history/show.html): Show a checkpoint: its trigger, changes, and operation journal
 - [mise bootstrap dotfiles include](https://mise.jdx.dev/cli/bootstrap/dotfiles/include.html): Stop excluding paths matching a glob
 - [mise bootstrap dotfiles notify](https://mise.jdx.dev/cli/bootstrap/dotfiles/notify.html): Send a test desktop notification
-- [mise bootstrap dotfiles origin](https://mise.jdx.dev/cli/bootstrap/dotfiles/origin.html): Connect or disconnect the setup repository
-- [mise bootstrap dotfiles origin set](https://mise.jdx.dev/cli/bootstrap/dotfiles/origin/set.html): Connect a setup repository
-- [mise bootstrap dotfiles paths](https://mise.jdx.dev/cli/bootstrap/dotfiles/paths.html): Show what history tracks and under which policies
-- [mise bootstrap dotfiles pull](https://mise.jdx.dev/cli/bootstrap/dotfiles/pull.html): Pull incoming shared changes into the live files
+- [mise bootstrap dotfiles origin](https://mise.jdx.dev/cli/bootstrap/dotfiles/origin.html): Show, connect, or disconnect the origin repository
+- [mise bootstrap dotfiles origin set](https://mise.jdx.dev/cli/bootstrap/dotfiles/origin/set.html): Connect an origin repository
+- [mise bootstrap dotfiles paths](https://mise.jdx.dev/cli/bootstrap/dotfiles/paths.html): List tracked paths and how they are saved
+- [mise bootstrap dotfiles pull](https://mise.jdx.dev/cli/bootstrap/dotfiles/pull.html): Apply incoming changes from the origin to your files
 - [mise bootstrap dotfiles recover](https://mise.jdx.dev/cli/bootstrap/dotfiles/recover.html): Recover an interrupted dotfile operation
 - [mise bootstrap dotfiles rollback](https://mise.jdx.dev/cli/bootstrap/dotfiles/rollback.html): Return files to the version a checkpoint holds
 - [mise bootstrap dotfiles save](https://mise.jdx.dev/cli/bootstrap/dotfiles/save.html): Save a checkpoint of the tracked files now
-- [mise bootstrap dotfiles status](https://mise.jdx.dev/cli/bootstrap/dotfiles/status.html): Show the status of dotfiles from [dotfiles]
-- [mise bootstrap dotfiles sync](https://mise.jdx.dev/cli/bootstrap/dotfiles/sync.html): Publish, fetch, and record what is pending now
+- [mise bootstrap dotfiles status](https://mise.jdx.dev/cli/bootstrap/dotfiles/status.html): Show the state of your dotfiles and their history
+- [mise bootstrap dotfiles sync](https://mise.jdx.dev/cli/bootstrap/dotfiles/sync.html): Push saved checkpoints and fetch incoming changes
 - [mise bootstrap dotfiles track](https://mise.jdx.dev/cli/bootstrap/dotfiles/track.html): Track a file or directory in place
-- [mise bootstrap dotfiles unapply](https://mise.jdx.dev/cli/bootstrap/dotfiles/unapply.html): Remove dotfiles applied from [dotfiles]
+- [mise bootstrap dotfiles unapply](https://mise.jdx.dev/cli/bootstrap/dotfiles/unapply.html): Remove files that mise dot apply deployed
 - [mise bootstrap dotfiles undo](https://mise.jdx.dev/cli/bootstrap/dotfiles/undo.html): Reverse the tracked-file changes from an operation
 - [mise bootstrap dotfiles untrack](https://mise.jdx.dev/cli/bootstrap/dotfiles/untrack.html): Stop tracking a file or directory
 - [mise bootstrap dotfiles watch](https://mise.jdx.dev/cli/bootstrap/dotfiles/watch.html): Save tracked files as they change
-- [mise bootstrap files](https://mise.jdx.dev/cli/bootstrap/files.html): Manage privileged files and directories from [bootstrap.files] and [bootstrap.directories]
-- [mise bootstrap files apply](https://mise.jdx.dev/cli/bootstrap/files/apply.html): Apply configured privileged files and directories
-- [mise bootstrap files status](https://mise.jdx.dev/cli/bootstrap/files/status.html): Show configured privileged file and directory state
+- [mise bootstrap files](https://mise.jdx.dev/cli/bootstrap/files.html): Manage system files and directories declared in [bootstrap]
+- [mise bootstrap files apply](https://mise.jdx.dev/cli/bootstrap/files/apply.html): Create, update, or remove the configured system files and directories
+- [mise bootstrap files status](https://mise.jdx.dev/cli/bootstrap/files/status.html): Show the state of the configured system files and directories
 - [mise bootstrap firewall](https://mise.jdx.dev/cli/bootstrap/firewall.html): Manage the Linux host firewall from [bootstrap.linux.firewall]
-- [mise bootstrap firewall apply](https://mise.jdx.dev/cli/bootstrap/firewall/apply.html): Apply the configured Linux host firewall
-- [mise bootstrap firewall status](https://mise.jdx.dev/cli/bootstrap/firewall/status.html): Show configured Linux host firewall state
-- [mise bootstrap linux](https://mise.jdx.dev/cli/bootstrap/linux.html): Manage Linux bootstrap config from [bootstrap.linux]
-- [mise bootstrap linux systemd-units](https://mise.jdx.dev/cli/bootstrap/linux/systemd-units.html): Manage systemd user services from [bootstrap.linux.systemd.units]
-- [mise bootstrap linux systemd-units apply](https://mise.jdx.dev/cli/bootstrap/linux/systemd-units/apply.html): Install and start systemd user services from [bootstrap.linux.systemd.units]
-- [mise bootstrap linux systemd-units status](https://mise.jdx.dev/cli/bootstrap/linux/systemd-units/status.html): Show the state of systemd user services from [bootstrap.linux.systemd.units]
-- [mise bootstrap macos](https://mise.jdx.dev/cli/bootstrap/macos.html): Manage macOS bootstrap config from [bootstrap.macos]
-- [mise bootstrap macos defaults](https://mise.jdx.dev/cli/bootstrap/macos/defaults.html): Manage macOS defaults from [bootstrap.macos.defaults]
-- [mise bootstrap macos defaults apply](https://mise.jdx.dev/cli/bootstrap/macos/defaults/apply.html): Write macOS defaults from [bootstrap.macos.defaults]
-- [mise bootstrap macos defaults status](https://mise.jdx.dev/cli/bootstrap/macos/defaults/status.html): Show whether macOS defaults match [bootstrap.macos.defaults]
+- [mise bootstrap firewall apply](https://mise.jdx.dev/cli/bootstrap/firewall/apply.html): Apply the firewall from [bootstrap.linux.firewall]
+- [mise bootstrap firewall status](https://mise.jdx.dev/cli/bootstrap/firewall/status.html): Show the state of the firewall from [bootstrap.linux.firewall]
+- [mise bootstrap linux](https://mise.jdx.dev/cli/bootstrap/linux.html): Manage systemd user units from [bootstrap.linux.systemd.units]
+- [mise bootstrap linux systemd-units](https://mise.jdx.dev/cli/bootstrap/linux/systemd-units.html): Manage systemd user units from [bootstrap.linux.systemd.units]
+- [mise bootstrap linux systemd-units apply](https://mise.jdx.dev/cli/bootstrap/linux/systemd-units/apply.html): Install and start the configured systemd user units
+- [mise bootstrap linux systemd-units status](https://mise.jdx.dev/cli/bootstrap/linux/systemd-units/status.html): Show the state of the configured systemd user units
+- [mise bootstrap macos](https://mise.jdx.dev/cli/bootstrap/macos.html): Manage macOS preferences and LaunchAgents from [bootstrap.macos]
+- [mise bootstrap macos defaults](https://mise.jdx.dev/cli/bootstrap/macos/defaults.html): Manage macOS preferences such as Dock, Finder, and keyboard settings
+- [mise bootstrap macos defaults apply](https://mise.jdx.dev/cli/bootstrap/macos/defaults/apply.html): Write the configured macOS preferences
+- [mise bootstrap macos defaults status](https://mise.jdx.dev/cli/bootstrap/macos/defaults/status.html): Show the state of the configured macOS preferences
 - [mise bootstrap macos launchd-agents](https://mise.jdx.dev/cli/bootstrap/macos/launchd-agents.html): Manage macOS LaunchAgents from [bootstrap.macos.launchd.agents]
 - [mise bootstrap macos launchd-agents apply](https://mise.jdx.dev/cli/bootstrap/macos/launchd-agents/apply.html): Install and load LaunchAgents from [bootstrap.macos.launchd.agents]
-- [mise bootstrap macos launchd-agents status](https://mise.jdx.dev/cli/bootstrap/macos/launchd-agents/status.html): Show the state of LaunchAgents from [bootstrap.macos.launchd.agents]
+- [mise bootstrap macos launchd-agents status](https://mise.jdx.dev/cli/bootstrap/macos/launchd-agents/status.html): Show the state of the configured LaunchAgents
 - [mise bootstrap mise-shell-activate](https://mise.jdx.dev/cli/bootstrap/mise-shell-activate.html): Manage mise shell activation from [bootstrap.mise_shell_activate]
-- [mise bootstrap mise-shell-activate apply](https://mise.jdx.dev/cli/bootstrap/mise-shell-activate/apply.html): Configure shell activation from [bootstrap.mise_shell_activate]
-- [mise bootstrap mise-shell-activate status](https://mise.jdx.dev/cli/bootstrap/mise-shell-activate/status.html): Show whether shell activation matches [bootstrap.mise_shell_activate]
-- [mise bootstrap packages](https://mise.jdx.dev/cli/bootstrap/packages.html): Manage bootstrap system packages from [bootstrap.packages]
-- [mise bootstrap packages apply](https://mise.jdx.dev/cli/bootstrap/packages/apply.html): Apply system packages from [bootstrap.packages]
-- [mise bootstrap packages brew](https://mise.jdx.dev/cli/bootstrap/packages/brew.html): Manage Homebrew taps used by bootstrap packages
-- [mise bootstrap packages brew tap](https://mise.jdx.dev/cli/bootstrap/packages/brew/tap.html): Add a Homebrew tap URL to [bootstrap.brew.taps]
+- [mise bootstrap mise-shell-activate apply](https://mise.jdx.dev/cli/bootstrap/mise-shell-activate/apply.html): Write mise activation into the configured shell startup files
+- [mise bootstrap mise-shell-activate status](https://mise.jdx.dev/cli/bootstrap/mise-shell-activate/status.html): Show the state of the configured shell activation
+- [mise bootstrap packages](https://mise.jdx.dev/cli/bootstrap/packages.html): Manage packages from [bootstrap.packages]
+- [mise bootstrap packages apply](https://mise.jdx.dev/cli/bootstrap/packages/apply.html): Install or remove packages to match [bootstrap.packages]
+- [mise bootstrap packages brew](https://mise.jdx.dev/cli/bootstrap/packages/brew.html): Manage Homebrew tap URLs in [bootstrap.brew.taps]
+- [mise bootstrap packages brew tap](https://mise.jdx.dev/cli/bootstrap/packages/brew/tap.html): Add a Homebrew tap URL to the global [bootstrap.brew.taps]
 - [mise bootstrap packages brew untap](https://mise.jdx.dev/cli/bootstrap/packages/brew/untap.html): Remove Homebrew tap URLs from [bootstrap.brew.taps]
-- [mise bootstrap packages export](https://mise.jdx.dev/cli/bootstrap/packages/export.html): Export active Nix bootstrap packages as a NixOS module
-- [mise bootstrap packages import](https://mise.jdx.dev/cli/bootstrap/packages/import.html): Import installed system packages into [bootstrap.packages]
-- [mise bootstrap packages prune](https://mise.jdx.dev/cli/bootstrap/packages/prune.html): Prune installed system packages no longer declared in [bootstrap.packages]
-- [mise bootstrap packages status](https://mise.jdx.dev/cli/bootstrap/packages/status.html): Show the status of system packages from [bootstrap.packages]
-- [mise bootstrap packages upgrade](https://mise.jdx.dev/cli/bootstrap/packages/upgrade.html): Upgrade installed bootstrap packages from [bootstrap.packages]
-- [mise bootstrap packages use](https://mise.jdx.dev/cli/bootstrap/packages/use.html): Add bootstrap packages to [bootstrap.packages] and install them
-- [mise bootstrap packages where](https://mise.jdx.dev/cli/bootstrap/packages/where.html): Print the stable root of an installed Homebrew formula
-- [mise bootstrap plan](https://mise.jdx.dev/cli/bootstrap/plan.html): Show the changes declarative bootstrap resources would make
+- [mise bootstrap packages export](https://mise.jdx.dev/cli/bootstrap/packages/export.html): Print the configured nix: packages as a NixOS module
+- [mise bootstrap packages import](https://mise.jdx.dev/cli/bootstrap/packages/import.html): Record installed Homebrew formulae in [bootstrap.packages]
+- [mise bootstrap packages prune](https://mise.jdx.dev/cli/bootstrap/packages/prune.html): Uninstall packages that no config declares
+- [mise bootstrap packages status](https://mise.jdx.dev/cli/bootstrap/packages/status.html): Show the state of packages from [bootstrap.packages]
+- [mise bootstrap packages upgrade](https://mise.jdx.dev/cli/bootstrap/packages/upgrade.html): Upgrade installed packages from [bootstrap.packages]
+- [mise bootstrap packages use](https://mise.jdx.dev/cli/bootstrap/packages/use.html): Add packages to [bootstrap.packages] and install them
+- [mise bootstrap packages where](https://mise.jdx.dev/cli/bootstrap/packages/where.html): Print the opt path of an installed Homebrew formula
+- [mise bootstrap plan](https://mise.jdx.dev/cli/bootstrap/plan.html): Show what applying bootstrap resources would change
 - [mise bootstrap plugins](https://mise.jdx.dev/cli/bootstrap/plugins.html): Manage package manager plugins declared in [bootstrap.plugins]
 - [mise bootstrap plugins apply](https://mise.jdx.dev/cli/bootstrap/plugins/apply.html): Install package manager plugins declared in [bootstrap.plugins]
 - [mise bootstrap plugins status](https://mise.jdx.dev/cli/bootstrap/plugins/status.html): Show whether declared package manager plugins are installed
-- [mise bootstrap remote](https://mise.jdx.dev/cli/bootstrap/remote.html): Bootstrap one or more machines over OpenSSH
-- [mise bootstrap repos](https://mise.jdx.dev/cli/bootstrap/repos.html): Manage git repo checkouts from [bootstrap.repos]
-- [mise bootstrap repos apply](https://mise.jdx.dev/cli/bootstrap/repos/apply.html): Clone and converge git repos from [bootstrap.repos]
-- [mise bootstrap repos exec](https://mise.jdx.dev/cli/bootstrap/repos/exec.html): Run a command in each configured git repo
-- [mise bootstrap repos status](https://mise.jdx.dev/cli/bootstrap/repos/status.html): Show the state of git repos from [bootstrap.repos]
-- [mise bootstrap repos update](https://mise.jdx.dev/cli/bootstrap/repos/update.html): Pull the latest changes into configured git repos
+- [mise bootstrap remote](https://mise.jdx.dev/cli/bootstrap/remote.html): Bootstrap one or more machines over SSH
+- [mise bootstrap repos](https://mise.jdx.dev/cli/bootstrap/repos.html): Manage Git repositories from [bootstrap.repos]
+- [mise bootstrap repos apply](https://mise.jdx.dev/cli/bootstrap/repos/apply.html): Clone missing Git repositories and check out configured refs
+- [mise bootstrap repos exec](https://mise.jdx.dev/cli/bootstrap/repos/exec.html): Run a command in each configured Git repository
+- [mise bootstrap repos status](https://mise.jdx.dev/cli/bootstrap/repos/status.html): Show the state of Git repositories from [bootstrap.repos]
+- [mise bootstrap repos update](https://mise.jdx.dev/cli/bootstrap/repos/update.html): Clone missing Git repositories and fast-forward the rest
 - [mise bootstrap secrets](https://mise.jdx.dev/cli/bootstrap/secrets.html): Inspect bootstrap secret inputs without revealing their values
 - [mise bootstrap secrets status](https://mise.jdx.dev/cli/bootstrap/secrets/status.html): Show whether declared bootstrap secret inputs are available
 - [mise bootstrap services](https://mise.jdx.dev/cli/bootstrap/services.html): Manage services from [bootstrap.services]
-- [mise bootstrap services apply](https://mise.jdx.dev/cli/bootstrap/services/apply.html): Apply configured service state (system and user scope)
-- [mise bootstrap services remove](https://mise.jdx.dev/cli/bootstrap/services/remove.html): Remove an installed user-scope service, declared or not
-- [mise bootstrap services status](https://mise.jdx.dev/cli/bootstrap/services/status.html): Show configured service state (system and user scope)
-- [mise bootstrap status](https://mise.jdx.dev/cli/bootstrap/status.html): Show the aggregate bootstrap status
-- [mise bootstrap unapply](https://mise.jdx.dev/cli/bootstrap/unapply.html): Remove the resources a config environment contributes
-- [mise bootstrap user](https://mise.jdx.dev/cli/bootstrap/user.html): Manage current-user bootstrap settings from [bootstrap.user]
-- [mise bootstrap user apply](https://mise.jdx.dev/cli/bootstrap/user/apply.html): Apply current-user settings from [bootstrap.user]
-- [mise bootstrap user status](https://mise.jdx.dev/cli/bootstrap/user/status.html): Show whether current-user settings match [bootstrap.user]
+- [mise bootstrap services apply](https://mise.jdx.dev/cli/bootstrap/services/apply.html): Apply the service state declared in [bootstrap.services]
+- [mise bootstrap services remove](https://mise.jdx.dev/cli/bootstrap/services/remove.html): Uninstall a user-scope service
+- [mise bootstrap services status](https://mise.jdx.dev/cli/bootstrap/services/status.html): Show the state of services from [bootstrap.services]
+- [mise bootstrap status](https://mise.jdx.dev/cli/bootstrap/status.html): Show the state of every configured bootstrap part
+- [mise bootstrap unapply](https://mise.jdx.dev/cli/bootstrap/unapply.html): Remove what a config environment's bootstrap sections created
+- [mise bootstrap user](https://mise.jdx.dev/cli/bootstrap/user.html): Manage your login shell from [bootstrap.user]
+- [mise bootstrap user apply](https://mise.jdx.dev/cli/bootstrap/user/apply.html): Set your login shell from [bootstrap.user]
+- [mise bootstrap user status](https://mise.jdx.dev/cli/bootstrap/user/status.html): Show whether your login shell matches [bootstrap.user]
 - [mise cache](https://mise.jdx.dev/cli/cache.html): Manage the mise cache
-- [mise cache clear](https://mise.jdx.dev/cli/cache/clear.html): Delete all cache files
-- [mise cache path](https://mise.jdx.dev/cli/cache/path.html): Show the cache directory path
-- [mise cache prune](https://mise.jdx.dev/cli/cache/prune.html): Remove stale cache files
-- [mise cache task](https://mise.jdx.dev/cli/cache/task.html): Inspect output cache entries for a task
+- [mise cache clear](https://mise.jdx.dev/cli/cache/clear.html): Delete cached data
+- [mise cache path](https://mise.jdx.dev/cli/cache/path.html): Print the cache directory path
+- [mise cache prune](https://mise.jdx.dev/cli/cache/prune.html): Remove cache files that have not been accessed recently
+- [mise cache task](https://mise.jdx.dev/cli/cache/task.html): [experimental] Inspect artifact cache entries for a task
 - [mise completion](https://mise.jdx.dev/cli/completion.html): Generate shell completions
 - [mise config](https://mise.jdx.dev/cli/config.html): Manage config files
-- [mise config get](https://mise.jdx.dev/cli/config/get.html): Display a value from one mise TOML file
-- [mise config ls](https://mise.jdx.dev/cli/config/ls.html): List config files currently in use
+- [mise config get](https://mise.jdx.dev/cli/config/get.html): Print a value from one mise TOML file
+- [mise config ls](https://mise.jdx.dev/cli/config/ls.html): List config files currently in use, from lowest to highest precedence
 - [mise config set](https://mise.jdx.dev/cli/config/set.html): Set a value in one mise TOML file
 - [mise daemons](https://mise.jdx.dev/cli/daemons.html): [experimental] Manage project daemons with pitchfork
-- [mise daemons logs](https://mise.jdx.dev/cli/daemons/logs.html): Arguments passed to pitchfork; daemon names may be short or qualified.
-- [mise daemons ls](https://mise.jdx.dev/cli/daemons/ls.html): List project daemons without starting a supervisor or registering configuration.
-- [mise daemons providers](https://mise.jdx.dev/cli/daemons/providers.html): Manage shared servers defined in global [daemon_providers].
-- [mise daemons providers ls](https://mise.jdx.dev/cli/daemons/providers/ls.html): List configured and previously managed shared servers.
-- [mise daemons providers restart](https://mise.jdx.dev/cli/daemons/providers/restart.html): Restart the named shared servers with their current configuration.
-- [mise daemons providers start](https://mise.jdx.dev/cli/daemons/providers/start.html): Start the named shared servers.
-- [mise daemons providers stop](https://mise.jdx.dev/cli/daemons/providers/stop.html): Stop the named shared servers without deleting their data.
-- [mise daemons prune](https://mise.jdx.dev/cli/daemons/prune.html): Remove daemon state left behind by deleted project directories.
-- [mise daemons register](https://mise.jdx.dev/cli/daemons/register.html): Prepare all project daemons for on-demand startup without starting them.
-- [mise daemons restart](https://mise.jdx.dev/cli/daemons/restart.html): Arguments passed to pitchfork; daemon names may be short or qualified.
-- [mise daemons start](https://mise.jdx.dev/cli/daemons/start.html): Arguments passed to pitchfork; daemon names may be short or qualified.
-- [mise daemons status](https://mise.jdx.dev/cli/daemons/status.html): Arguments passed to pitchfork; daemon names may be short or qualified.
-- [mise daemons stop](https://mise.jdx.dev/cli/daemons/stop.html): Arguments passed to pitchfork; daemon names may be short or qualified.
-- [mise daemons tui](https://mise.jdx.dev/cli/daemons/tui.html): Open pitchfork's dashboard with optional pitchfork TUI flags.
-- [mise daemons urls](https://mise.jdx.dev/cli/daemons/urls.html): Show each project daemon's port and its proxy hostname URL.
+- [mise daemons logs](https://mise.jdx.dev/cli/daemons/logs.html): [experimental] Show the output of project daemons
+- [mise daemons ls](https://mise.jdx.dev/cli/daemons/ls.html): [experimental] List project daemons
+- [mise daemons providers](https://mise.jdx.dev/cli/daemons/providers.html): [experimental] Manage shared servers from global [daemon_providers]
+- [mise daemons providers ls](https://mise.jdx.dev/cli/daemons/providers/ls.html): [experimental] List shared servers
+- [mise daemons providers restart](https://mise.jdx.dev/cli/daemons/providers/restart.html): [experimental] Restart shared servers with their current configuration
+- [mise daemons providers start](https://mise.jdx.dev/cli/daemons/providers/start.html): [experimental] Start shared servers
+- [mise daemons providers stop](https://mise.jdx.dev/cli/daemons/providers/stop.html): [experimental] Stop shared servers (data is kept)
+- [mise daemons prune](https://mise.jdx.dev/cli/daemons/prune.html): [experimental] Remove daemon state left by deleted projects
+- [mise daemons register](https://mise.jdx.dev/cli/daemons/register.html): [experimental] Register project daemons for on-demand startup
+- [mise daemons restart](https://mise.jdx.dev/cli/daemons/restart.html): [experimental] Restart project daemons
+- [mise daemons start](https://mise.jdx.dev/cli/daemons/start.html): [experimental] Start project daemons and the daemons they depend on
+- [mise daemons status](https://mise.jdx.dev/cli/daemons/status.html): [experimental] Show the status of project daemons
+- [mise daemons stop](https://mise.jdx.dev/cli/daemons/stop.html): [experimental] Stop project daemons
+- [mise daemons tui](https://mise.jdx.dev/cli/daemons/tui.html): [experimental] Open the pitchfork dashboard
+- [mise daemons urls](https://mise.jdx.dev/cli/daemons/urls.html): [experimental] Show each daemon's URL and port
 - [mise deactivate](https://mise.jdx.dev/cli/deactivate.html): Print the script to disable mise in the current shell session
 - [mise deps](https://mise.jdx.dev/cli/deps.html): [experimental] Manage project dependencies
-- [mise deps add](https://mise.jdx.dev/cli/deps/add.html): Add a dependency
-- [mise deps install](https://mise.jdx.dev/cli/deps/install.html): Install all project dependencies
-- [mise deps remove](https://mise.jdx.dev/cli/deps/remove.html): Remove a dependency
-- [mise doctor](https://mise.jdx.dev/cli/doctor.html): Check mise installation for possible problems
-- [mise doctor path](https://mise.jdx.dev/cli/doctor/path.html): Print the current PATH entries mise is providing
+- [mise deps add](https://mise.jdx.dev/cli/deps/add.html): Add packages to the project's dependencies
+- [mise deps install](https://mise.jdx.dev/cli/deps/install.html): Install project dependencies
+- [mise deps remove](https://mise.jdx.dev/cli/deps/remove.html): Remove packages from the project's dependencies
+- [mise doctor](https://mise.jdx.dev/cli/doctor.html): Check your mise setup for problems
+- [mise doctor path](https://mise.jdx.dev/cli/doctor/path.html): Print the directories mise adds to PATH
 - [mise doctor project](https://mise.jdx.dev/cli/doctor/project.html): Run the project's diagnostic checks
-- [mise dotfiles](https://mise.jdx.dev/cli/dotfiles.html): Manage dotfiles from [dotfiles]
-- [mise dotfiles add](https://mise.jdx.dev/cli/dotfiles/add.html): Add or update dotfiles in [dotfiles]
-- [mise dotfiles apply](https://mise.jdx.dev/cli/dotfiles/apply.html): Apply dotfiles from [dotfiles]
-- [mise dotfiles capture](https://mise.jdx.dev/cli/dotfiles/capture.html): Record tracked files before and after an external command
-- [mise dotfiles conflicts](https://mise.jdx.dev/cli/dotfiles/conflicts.html): Inspect the local and remote sides of sharing conflicts
-- [mise dotfiles diff](https://mise.jdx.dev/cli/dotfiles/diff.html): Show the changes needed to apply dotfiles from [dotfiles]
-- [mise dotfiles edit](https://mise.jdx.dev/cli/dotfiles/edit.html): Edit a managed dotfile source
-- [mise dotfiles exclude](https://mise.jdx.dev/cli/dotfiles/exclude.html): Never capture paths matching a glob
-- [mise dotfiles history](https://mise.jdx.dev/cli/dotfiles/history.html): Browse the checkpoints of your dotfiles
+- [mise dotfiles](https://mise.jdx.dev/cli/dotfiles.html): Deploy, track, and sync dotfiles
+- [mise dotfiles add](https://mise.jdx.dev/cli/dotfiles/add.html): Start deploying a file, or copy its edits back to the source
+- [mise dotfiles apply](https://mise.jdx.dev/cli/dotfiles/apply.html): Deploy [dotfiles] entries to their targets
+- [mise dotfiles capture](https://mise.jdx.dev/cli/dotfiles/capture.html): Run a command and save tracked files before and after it
+- [mise dotfiles conflicts](https://mise.jdx.dev/cli/dotfiles/conflicts.html): Compare both sides of a sync conflict
+- [mise dotfiles diff](https://mise.jdx.dev/cli/dotfiles/diff.html): Show what mise dot apply would change
+- [mise dotfiles edit](https://mise.jdx.dev/cli/dotfiles/edit.html): Open a dotfile's source in your editor
+- [mise dotfiles exclude](https://mise.jdx.dev/cli/dotfiles/exclude.html): Never save paths matching a glob
+- [mise dotfiles history](https://mise.jdx.dev/cli/dotfiles/history.html): Browse saved versions of your tracked files
 - [mise dotfiles history describe](https://mise.jdx.dev/cli/dotfiles/history/describe.html): Set the description of a checkpoint
-- [mise dotfiles history diff](https://mise.jdx.dev/cli/dotfiles/history/diff.html): Compare checkpoints, or the working tree against one
+- [mise dotfiles history diff](https://mise.jdx.dev/cli/dotfiles/history/diff.html): Compare checkpoints, or your files against one
 - [mise dotfiles history ls](https://mise.jdx.dev/cli/dotfiles/history/ls.html): List checkpoints, newest first
-- [mise dotfiles history show](https://mise.jdx.dev/cli/dotfiles/history/show.html): Show one checkpoint: what triggered it, what changed, and its journal
+- [mise dotfiles history show](https://mise.jdx.dev/cli/dotfiles/history/show.html): Show a checkpoint: its trigger, changes, and operation journal
 - [mise dotfiles include](https://mise.jdx.dev/cli/dotfiles/include.html): Stop excluding paths matching a glob
 - [mise dotfiles notify](https://mise.jdx.dev/cli/dotfiles/notify.html): Send a test desktop notification
-- [mise dotfiles origin](https://mise.jdx.dev/cli/dotfiles/origin.html): Connect or disconnect the setup repository
-- [mise dotfiles origin set](https://mise.jdx.dev/cli/dotfiles/origin/set.html): Connect a setup repository
-- [mise dotfiles paths](https://mise.jdx.dev/cli/dotfiles/paths.html): Show what history tracks and under which policies
-- [mise dotfiles pull](https://mise.jdx.dev/cli/dotfiles/pull.html): Pull incoming shared changes into the live files
+- [mise dotfiles origin](https://mise.jdx.dev/cli/dotfiles/origin.html): Show, connect, or disconnect the origin repository
+- [mise dotfiles origin set](https://mise.jdx.dev/cli/dotfiles/origin/set.html): Connect an origin repository
+- [mise dotfiles paths](https://mise.jdx.dev/cli/dotfiles/paths.html): List tracked paths and how they are saved
+- [mise dotfiles pull](https://mise.jdx.dev/cli/dotfiles/pull.html): Apply incoming changes from the origin to your files
 - [mise dotfiles recover](https://mise.jdx.dev/cli/dotfiles/recover.html): Recover an interrupted dotfile operation
 - [mise dotfiles rollback](https://mise.jdx.dev/cli/dotfiles/rollback.html): Return files to the version a checkpoint holds
 - [mise dotfiles save](https://mise.jdx.dev/cli/dotfiles/save.html): Save a checkpoint of the tracked files now
-- [mise dotfiles status](https://mise.jdx.dev/cli/dotfiles/status.html): Show the status of dotfiles from [dotfiles]
-- [mise dotfiles sync](https://mise.jdx.dev/cli/dotfiles/sync.html): Publish, fetch, and record what is pending now
+- [mise dotfiles status](https://mise.jdx.dev/cli/dotfiles/status.html): Show the state of your dotfiles and their history
+- [mise dotfiles sync](https://mise.jdx.dev/cli/dotfiles/sync.html): Push saved checkpoints and fetch incoming changes
 - [mise dotfiles track](https://mise.jdx.dev/cli/dotfiles/track.html): Track a file or directory in place
-- [mise dotfiles unapply](https://mise.jdx.dev/cli/dotfiles/unapply.html): Remove dotfiles applied from [dotfiles]
+- [mise dotfiles unapply](https://mise.jdx.dev/cli/dotfiles/unapply.html): Remove files that mise dot apply deployed
 - [mise dotfiles undo](https://mise.jdx.dev/cli/dotfiles/undo.html): Reverse the tracked-file changes from an operation
 - [mise dotfiles untrack](https://mise.jdx.dev/cli/dotfiles/untrack.html): Stop tracking a file or directory
 - [mise dotfiles watch](https://mise.jdx.dev/cli/dotfiles/watch.html): Save tracked files as they change
 - [mise edit](https://mise.jdx.dev/cli/edit.html): Edit mise.toml interactively
-- [mise en](https://mise.jdx.dev/cli/en.html): Start a new shell with the mise environment built from the current configuration
+- [mise en](https://mise.jdx.dev/cli/en.html): Start a subshell with mise's tools and environment
 - [mise env](https://mise.jdx.dev/cli/env.html): Print the environment for the current configuration
-- [mise exec](https://mise.jdx.dev/cli/exec.html): Execute a command with tool(s) set
+- [mise exec](https://mise.jdx.dev/cli/exec.html): Run a command with mise's tools and environment
 - [mise fmt](https://mise.jdx.dev/cli/fmt.html): Format mise TOML configuration
-- [mise generate](https://mise.jdx.dev/cli/generate.html): Generate files for various tools/services
+- [mise generate](https://mise.jdx.dev/cli/generate.html): Generate project files such as CI workflows, git hooks, and scripts
 - [mise generate config](https://mise.jdx.dev/cli/generate/config.html): Generate a mise.toml file
-- [mise generate devcontainer](https://mise.jdx.dev/cli/generate/devcontainer.html): Generate devcontainer configuration for mise
-- [mise generate git-pre-commit](https://mise.jdx.dev/cli/generate/git-pre-commit.html): Generate a git pre-commit hook
-- [mise generate github-action](https://mise.jdx.dev/cli/generate/github-action.html): Generate a GitHub Action workflow file
-- [mise generate install-script](https://mise.jdx.dev/cli/generate/install-script.html): Generate a script to download+execute mise
+- [mise generate devcontainer](https://mise.jdx.dev/cli/generate/devcontainer.html): Generate a devcontainer configuration that installs mise
+- [mise generate git-pre-commit](https://mise.jdx.dev/cli/generate/git-pre-commit.html): Generate a git hook that runs a mise task
+- [mise generate github-action](https://mise.jdx.dev/cli/generate/github-action.html): Generate a GitHub Actions workflow that runs a mise task
+- [mise generate install-script](https://mise.jdx.dev/cli/generate/install-script.html): Generate a script that downloads and runs a pinned mise
 - [mise generate task-docs](https://mise.jdx.dev/cli/generate/task-docs.html): Generate Markdown documentation for project tasks
-- [mise generate task-stubs](https://mise.jdx.dev/cli/generate/task-stubs.html): Generate shims to run mise tasks
-- [mise generate tool-stub](https://mise.jdx.dev/cli/generate/tool-stub.html): Generate a tool stub for HTTP-based tools
+- [mise generate task-stubs](https://mise.jdx.dev/cli/generate/task-stubs.html): Generate scripts that run mise tasks
+- [mise generate tool-stub](https://mise.jdx.dev/cli/generate/tool-stub.html): Generate or update a tool stub
 - [mise implode](https://mise.jdx.dev/cli/implode.html): Remove the mise CLI and all related data
-- [mise install](https://mise.jdx.dev/cli/install.html): Install a tool version
-- [mise install-into](https://mise.jdx.dev/cli/install-into.html): Install a tool version to a specific path
-- [mise installs](https://mise.jdx.dev/cli/installs.html): [experimental] Inspect and choose installations of the identity install layout
+- [mise install](https://mise.jdx.dev/cli/install.html): Install the tools in your config, or specific tool versions
+- [mise install-into](https://mise.jdx.dev/cli/install-into.html): Install a tool version into a directory outside mise
+- [mise installs](https://mise.jdx.dev/cli/installs.html): [experimental] Inspect and choose identity-layout installations
 - [mise installs ls](https://mise.jdx.dev/cli/installs/ls.html): List the installations of the identity install layout
 - [mise installs migrate](https://mise.jdx.dev/cli/installs/migrate.html): Reinstall legacy installations into the identity install layout
-- [mise installs select](https://mise.jdx.dev/cli/installs/select.html): Choose the installation that requests without a lockfile use
-- [mise latest](https://mise.jdx.dev/cli/latest.html): Resolve the latest matching version request for a tool
+- [mise installs select](https://mise.jdx.dev/cli/installs/select.html): Choose which installation mise uses when no lockfile pins one
+- [mise latest](https://mise.jdx.dev/cli/latest.html): Print the latest version that matches a version request
 - [mise link](https://mise.jdx.dev/cli/link.html): Symlink a tool version into mise
 - [mise lock](https://mise.jdx.dev/cli/lock.html): Create or refresh lockfile versions, checksums, and download URLs
 - [mise ls](https://mise.jdx.dev/cli/ls.html): List installed and active tool versions
 - [mise ls-remote](https://mise.jdx.dev/cli/ls-remote.html): List tool versions available to install
 - [mise mcp](https://mise.jdx.dev/cli/mcp.html): Run the Model Context Protocol server over stdin/stdout
-- [mise oci](https://mise.jdx.dev/cli/oci.html): [experimental] Build OCI container images from a mise.toml
+- [mise oci](https://mise.jdx.dev/cli/oci.html): [experimental] Build, push, and run OCI images of a project's tools
 - [mise oci build](https://mise.jdx.dev/cli/oci/build.html): [experimental] Build an OCI image from the current mise.toml
 - [mise oci push](https://mise.jdx.dev/cli/oci/push.html): [experimental] Build an OCI image and push it to a registry
-- [mise oci run](https://mise.jdx.dev/cli/oci/run.html): [experimental] Build an OCI image from the current mise.toml and run a command in it
+- [mise oci run](https://mise.jdx.dev/cli/oci/run.html): [experimental] Build the project's image and run a command in it
 - [mise outdated](https://mise.jdx.dev/cli/outdated.html): Show outdated tool versions
-- [mise packslip](https://mise.jdx.dev/cli/packslip.html): The signers mise accepts packslips from
-- [mise packslip forget](https://mise.jdx.dev/cli/packslip/forget.html): Forget a project's pinned signer, so the next release accepted sets it again
-- [mise packslip pins](https://mise.jdx.dev/cli/packslip/pins.html): List the signers mise has accepted packslips from
+- [mise packslip](https://mise.jdx.dev/cli/packslip.html): Inspect and reset the signers mise has pinned for packslip tools
+- [mise packslip forget](https://mise.jdx.dev/cli/packslip/forget.html): Forget a project's pinned signer so the next accepted release sets it
+- [mise packslip pins](https://mise.jdx.dev/cli/packslip/pins.html): List the signer mise has pinned for each packslip project
 - [mise patrons](https://mise.jdx.dev/cli/patrons.html): Show the individuals supporting mise as Patron-tier members
 - [mise plugins](https://mise.jdx.dev/cli/plugins.html): Manage plugins
-- [mise plugins install](https://mise.jdx.dev/cli/plugins/install.html): Install a plugin from a configured source, Git URL, or supported archive
+- [mise plugins install](https://mise.jdx.dev/cli/plugins/install.html): Install plugins from a configured source, Git URL, or archive
 - [mise plugins link](https://mise.jdx.dev/cli/plugins/link.html): Link a local plugin directory into mise for development
-- [mise plugins ls](https://mise.jdx.dev/cli/plugins/ls.html): List installed external plugins
-- [mise plugins ls-remote](https://mise.jdx.dev/cli/plugins/ls-remote.html): List all available remote plugins
+- [mise plugins ls](https://mise.jdx.dev/cli/plugins/ls.html): List installed plugins
+- [mise plugins ls-remote](https://mise.jdx.dev/cli/plugins/ls-remote.html): List registry tools that have an asdf or vfox plugin backend
 - [mise plugins uninstall](https://mise.jdx.dev/cli/plugins/uninstall.html): Remove an installed plugin
-- [mise plugins update](https://mise.jdx.dev/cli/plugins/update.html): Update a plugin to the latest version
-- [mise prune](https://mise.jdx.dev/cli/prune.html): Delete unused versions of tools
+- [mise plugins update](https://mise.jdx.dev/cli/plugins/update.html): Update installed plugins
+- [mise prune](https://mise.jdx.dev/cli/prune.html): Delete tool versions that nothing uses
 - [mise registry](https://mise.jdx.dev/cli/registry.html): List registry shorthand names and their backends
 - [mise reshim](https://mise.jdx.dev/cli/reshim.html): Create shims for executables provided by installed tools
 - [mise run](https://mise.jdx.dev/cli/run.html): Run tasks and their dependencies
 - [mise search](https://mise.jdx.dev/cli/search.html): Search for available tools
-- [mise secrets](https://mise.jdx.dev/cli/secrets.html): [experimental] List the secret names this project's secrets source provides, without their values
-- [mise secrets ls](https://mise.jdx.dev/cli/secrets/ls.html): List the secret names this project's secrets source provides, without their values
+- [mise secrets](https://mise.jdx.dev/cli/secrets.html): [experimental] Inspect the project's secrets source
+- [mise secrets ls](https://mise.jdx.dev/cli/secrets/ls.html): [experimental] List secret names from the project's secrets source
 - [mise self-update](https://mise.jdx.dev/cli/self-update.html): Update mise itself
-- [mise set](https://mise.jdx.dev/cli/set.html): Set environment variables in mise.toml
+- [mise set](https://mise.jdx.dev/cli/set.html): Set, show, or list environment variables in mise.toml
 - [mise settings](https://mise.jdx.dev/cli/settings.html): Manage settings
 - [mise settings add](https://mise.jdx.dev/cli/settings/add.html): Append a value to an array setting
 - [mise settings get](https://mise.jdx.dev/cli/settings/get.html): Show the effective value of a setting
 - [mise settings ls](https://mise.jdx.dev/cli/settings/ls.html): List configured settings and their sources
-- [mise settings set](https://mise.jdx.dev/cli/settings/set.html): Add/update a setting
-- [mise settings unset](https://mise.jdx.dev/cli/settings/unset.html): Clear a setting
+- [mise settings set](https://mise.jdx.dev/cli/settings/set.html): Set a setting
+- [mise settings unset](https://mise.jdx.dev/cli/settings/unset.html): Remove a setting from the global or project config
 - [mise shell](https://mise.jdx.dev/cli/shell.html): Set a tool version for the current shell session
 - [mise shell-alias](https://mise.jdx.dev/cli/shell-alias.html): Manage shell aliases
 - [mise shell-alias get](https://mise.jdx.dev/cli/shell-alias/get.html): Show the command for a shell alias
 - [mise shell-alias ls](https://mise.jdx.dev/cli/shell-alias/ls.html): List shell aliases
-- [mise shell-alias set](https://mise.jdx.dev/cli/shell-alias/set.html): Add/update a shell alias
-- [mise shell-alias unset](https://mise.jdx.dev/cli/shell-alias/unset.html): Remove a shell alias
-- [mise skills](https://mise.jdx.dev/cli/skills.html): Agent skills the active tools ship, from their packslips
+- [mise shell-alias set](https://mise.jdx.dev/cli/shell-alias/set.html): Set a shell alias in the global config
+- [mise shell-alias unset](https://mise.jdx.dev/cli/shell-alias/unset.html): Remove a shell alias from the global config
+- [mise skills](https://mise.jdx.dev/cli/skills.html): List and link the agent skills that active tools ship
 - [mise skills ls](https://mise.jdx.dev/cli/skills/ls.html): List the skills the active tools declare
 - [mise skills sync](https://mise.jdx.dev/cli/skills/sync.html): Link the active tools' skills where an agent looks for them
 - [mise sponsors](https://mise.jdx.dev/cli/sponsors.html): Show the companies sponsoring mise and the jdx.dev open source tools
 - [mise ssh](https://mise.jdx.dev/cli/ssh.html): Open an SSH session, optionally borrowing read-only GitHub access
-- [mise sync](https://mise.jdx.dev/cli/sync.html): Synchronize tools from other version managers with mise
+- [mise sync](https://mise.jdx.dev/cli/sync.html): Use tool versions installed by other version managers
 - [mise sync node](https://mise.jdx.dev/cli/sync/node.html): Symlink node versions installed by nvm, nodenv, or Homebrew into mise
 - [mise sync python](https://mise.jdx.dev/cli/sync/python.html): Symlink python versions installed by pyenv or uv into mise
 - [mise sync ruby](https://mise.jdx.dev/cli/sync/ruby.html): Symlink ruby versions installed by Homebrew into mise
 - [mise tasks](https://mise.jdx.dev/cli/tasks.html): Manage tasks
-- [mise tasks add](https://mise.jdx.dev/cli/tasks/add.html): Create a new task
-- [mise tasks deps](https://mise.jdx.dev/cli/tasks/deps.html): Display a tree visualization of a dependency graph
-- [mise tasks edit](https://mise.jdx.dev/cli/tasks/edit.html): Edit a task with $EDITOR
-- [mise tasks graph](https://mise.jdx.dev/cli/tasks/graph.html): [experimental] Inspect the workspace project graph
-- [mise tasks info](https://mise.jdx.dev/cli/tasks/info.html): Get information about a task
+- [mise tasks add](https://mise.jdx.dev/cli/tasks/add.html): Add a task
+- [mise tasks deps](https://mise.jdx.dev/cli/tasks/deps.html): Show the dependency tree of tasks
+- [mise tasks edit](https://mise.jdx.dev/cli/tasks/edit.html): Open a task in your editor
+- [mise tasks graph](https://mise.jdx.dev/cli/tasks/graph.html): [experimental] Show the monorepo project graph
+- [mise tasks info](https://mise.jdx.dev/cli/tasks/info.html): Show a task's definition
 - [mise tasks ls](https://mise.jdx.dev/cli/tasks/ls.html): List available tasks
-- [mise tasks run](https://mise.jdx.dev/cli/tasks/run.html): Run tasks and their dependencies
-- [mise tasks validate](https://mise.jdx.dev/cli/tasks/validate.html): Validate tasks for common errors and issues
+- [mise tasks run](https://mise.jdx.dev/cli/tasks/run.html): Run tasks; an alias for mise run
+- [mise tasks validate](https://mise.jdx.dev/cli/tasks/validate.html): Check task definitions for errors
 - [mise test-tool](https://mise.jdx.dev/cli/test-tool.html): Test that a tool installs and runs
-- [mise token](https://mise.jdx.dev/cli/token.html): Display git provider tokens mise will use
-- [mise token forgejo](https://mise.jdx.dev/cli/token/forgejo.html): Display the Forgejo token mise will use for a given host
-- [mise token github](https://mise.jdx.dev/cli/token/github.html): Display the GitHub token mise will use for a given host
-- [mise token gitlab](https://mise.jdx.dev/cli/token/gitlab.html): Display the GitLab token mise will use for a given host
+- [mise token](https://mise.jdx.dev/cli/token.html): Show which Git provider token mise uses
+- [mise token forgejo](https://mise.jdx.dev/cli/token/forgejo.html): Show the Forgejo token mise uses for a host
+- [mise token github](https://mise.jdx.dev/cli/token/github.html): Show the GitHub token mise uses for a host
+- [mise token gitlab](https://mise.jdx.dev/cli/token/gitlab.html): Show the GitLab token mise uses for a host
 - [mise tool](https://mise.jdx.dev/cli/tool.html): Show information about a tool
-- [mise tool-alias](https://mise.jdx.dev/cli/tool-alias.html): Manage tool version aliases
-- [mise tool-alias get](https://mise.jdx.dev/cli/tool-alias/get.html): Show a configured version alias for a tool
+- [mise tool-alias](https://mise.jdx.dev/cli/tool-alias.html): Manage tool backend and version aliases
+- [mise tool-alias get](https://mise.jdx.dev/cli/tool-alias/get.html): Show the version a tool's version alias stands for
 - [mise tool-alias ls](https://mise.jdx.dev/cli/tool-alias/ls.html): List tool version aliases
-- [mise tool-alias set](https://mise.jdx.dev/cli/tool-alias/set.html): Add/update an alias for a tool/backend
-- [mise tool-alias unset](https://mise.jdx.dev/cli/tool-alias/unset.html): Clear an alias for a tool/backend
-- [mise tool-stub](https://mise.jdx.dev/cli/tool-stub.html): Execute a tool stub
+- [mise tool-alias set](https://mise.jdx.dev/cli/tool-alias/set.html): Set a backend alias or a version alias in the global config
+- [mise tool-alias unset](https://mise.jdx.dev/cli/tool-alias/unset.html): Remove a backend alias or a version alias from the global config
+- [mise tool-stub](https://mise.jdx.dev/cli/tool-stub.html): Run a tool stub file
 - [mise trust](https://mise.jdx.dev/cli/trust.html): Mark a config file as trusted
 - [mise uninstall](https://mise.jdx.dev/cli/uninstall.html): Remove installed tool versions
-- [mise unset](https://mise.jdx.dev/cli/unset.html): Remove environment variable(s) from the config file
+- [mise unset](https://mise.jdx.dev/cli/unset.html): Remove environment variables from mise.toml
 - [mise untrust](https://mise.jdx.dev/cli/untrust.html): Remove explicit trust for a config
-- [mise unuse](https://mise.jdx.dev/cli/unuse.html): Remove tool requests from configuration and prune unused installations
+- [mise unuse](https://mise.jdx.dev/cli/unuse.html): Remove tool requests from config files and prune unused installations
 - [mise upgrade](https://mise.jdx.dev/cli/upgrade.html): Upgrade outdated tools
 - [mise use](https://mise.jdx.dev/cli/use.html): Install a tool and add it to configuration
-- [mise version](https://mise.jdx.dev/cli/version.html): Display the version of mise
-- [mise watch](https://mise.jdx.dev/cli/watch.html): Run task(s) and rerun them when files change
-- [mise where](https://mise.jdx.dev/cli/where.html): Display the installation path for a tool
+- [mise version](https://mise.jdx.dev/cli/version.html): Show the version of mise
+- [mise watch](https://mise.jdx.dev/cli/watch.html): Run tasks and rerun them when files change
+- [mise where](https://mise.jdx.dev/cli/where.html): Show the install directory of a tool version
 - [mise which](https://mise.jdx.dev/cli/which.html): Show the path a tool's executable resolves to

@@ -22,10 +22,13 @@ directory, with the version it belongs to and the directory holding its
 
 ## Examples
 
+List the skills of the active tools
+
 ```
 mise skills ls
-Skill  Tool                        Version  Path
-mise   packslip:github.com/jdx/mise  2026.9.1  ~/.local/share/mise/installs/.../skills/mise
+Skill         Tool                        Version  Path
+hk-configure  packslip:github.com/jdx/hk  2.5.0    ~/.local/share/mise/installs/packslip-github-com-jdx-hk/2.5.0/skills/hk-configure
+hk-debug      packslip:github.com/jdx/hk  2.5.0    ~/.local/share/mise/installs/packslip-github-com-jdx-hk/2.5.0/skills/hk-debug
 ```
 
 <!-- generated reference navigation -->

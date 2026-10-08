@@ -12,54 +12,74 @@ use std::path::PathBuf;
 /// or `--global`/`--system` to edit or create those config files.
 ///
 /// This edits configuration without installing tools. Use `mise use` to install and
-/// select a version together. Known settings use their declared type; other values
-/// are strings or booleans unless `--type` is given. Use `--type string` when a value
-/// such as `true` should remain literal text.
+/// select a version together. For environment variables and settings, `mise set`
+/// and `mise settings set` are shorter, but they choose their file differently:
+/// `mise set` writes the nearest `mise.toml`, and `mise settings set` writes the
+/// global config unless you pass `--local`.
+///
+/// Known settings use their declared type; boolean settings accept only `true` and
+/// `false`. Other values are stored as strings, except `true` and `false`, which
+/// become booleans; `1`, `0`, `yes`, and `no` are rejected, even with
+/// `--type bool`. Use `--type string` to store such a value, or a value such as
+/// `true`, as literal text, and `--type integer` for `1` or `0`.
 #[derive(Debug, usage_rs::Args)]
 #[usage(
+    example("mise config set tools.python 3.13", help = "Request python 3.13"),
     example(
-        r###"mise config set tools.python 3.12
-mise config set settings.always_keep_download true
-mise config set env.TEST_ENV_VAR ABC
-mise config set settings.disable_tools node,rust
-mise config set --append env._.path ~/.local/bin
-mise config set --remove env._.path ~/.local/bin"###
+        "mise config set env.NODE_ENV production",
+        help = "Set an environment variable"
     ),
     example(
-        r###"mise config set settings.jobs 4"###,
-        help = r###"Type for `settings` is inferred"###
+        "mise config set settings.jobs 4",
+        help = "Settings get their declared type, here an integer"
+    ),
+    example(
+        "mise config set settings.disable_tools node,rust",
+        help = "List settings take comma-separated values"
+    ),
+    example(
+        "mise config set --append env._.path ~/.local/bin",
+        help = "Add a PATH entry unless it is already there"
+    ),
+    example(
+        "mise config set --remove env._.path ~/.local/bin",
+        help = "Remove that PATH entry"
+    ),
+    example(
+        "mise config set -g settings.experimental true",
+        help = "Edit the global config"
     ),
     verbatim_doc_comment
 )]
 pub(super) struct ConfigSet {
-    /// Dotted key path to set, e.g. `tools.python`
+    /// Dotted key path to set, such as `tools.python`
     #[usage(complete = complete_key)]
     pub key: String,
 
     /// The value to set the key to (optional if provided as KEY=VALUE)
     pub value: Option<String>,
 
-    /// The path to the mise.toml file to edit
+    /// Config file to edit, or a directory whose config file to edit
     ///
-    /// Can be a file path or directory. If a directory is provided, the config file in that directory is used.
-    ///
-    /// If not provided, the highest-precedence loaded TOML file is used
+    /// For a directory, mise edits the TOML config file already there, such as
+    /// `.mise.toml`, or `mise.toml` when there is none. Defaults to the
+    /// highest-precedence loaded TOML file.
     #[usage(short, long, visible_alias = "path", value_hint = usage_rs::ValueHint::AnyPath)]
     pub file: Option<PathBuf>,
 
-    /// Edit the global config file.
+    /// Edit the global config file
     #[usage(long, short = 'g', conflicts = ["file", "system"])]
     pub global: bool,
 
-    /// Edit the system config file.
+    /// Edit the system config file
     #[usage(long, conflicts = ["file", "global"])]
     pub system: bool,
 
-    /// Append the value without duplicating an existing entry.
+    /// Append the value to a list without duplicating an existing entry
     #[usage(long, conflicts = "remove")]
     pub append: bool,
 
-    /// Remove the value from an existing collection.
+    /// Remove the value from an existing list
     #[usage(long, conflicts = "append")]
     pub remove: bool,
 

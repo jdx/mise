@@ -12,32 +12,30 @@ description: "Symlink a tool version into mise"
 
 Symlink a tool version into mise
 
-Use this to register an install that was compiled by hand or built with another tool.
+Use this to register an install that was compiled by hand or built with another
+tool. mise uses the version exactly as written, such as `node@24.11.0` or a name
+of your own like `node@brew`; `latest`, aliases, and channels are rejected.
 
 ## Arguments
-- **`<TOOL@VERSION>`** — Tool name and version to create a symlink for
-- **`<PATH>`** — The local path to the tool version
-  e.g.: ~/.nvm/versions/node/v20.0.0
+- **`<TOOL@VERSION>`** — Tool and version to create a symlink for
+- **`<PATH>`** — Directory of the existing installation, such as `~/.nvm/versions/node/v24.11.0`
 
 ## Flags
-- **`-f --force`** — Overwrite an existing tool version if it exists
+- **`-f --force`** — Replace an existing installation of this version
 - **`-h --help`** — Print help
 
 ## Examples
 
-build node-20.0.0 with node-build and link it into mise
+Link a node that node-build built into ~/.nodes/24.11.0
 
 ```
-node-build 20.0.0 ~/.nodes/20.0.0
-mise link node@20.0.0 ~/.nodes/20.0.0
+mise link node@24.11.0 ~/.nodes/24.11.0
 ```
 
-have mise use the node version provided by Homebrew
+Register Homebrew's node as node@brew; then run `mise use node@brew`
 
 ```
-brew install node
 mise link node@brew "$(brew --prefix node)"
-mise use node@brew
 ```
 
 <!-- generated reference navigation -->

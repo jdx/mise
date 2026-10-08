@@ -119,75 +119,85 @@ fn live_tool_stubs(
 
 /// Create or refresh lockfile versions, checksums, and download URLs
 ///
-/// Operates on the current config root, including tools declared by tasks. Existing
-/// matching locked versions are preserved unless `--bump` re-resolves their selectors.
-/// This command writes lockfiles without installing tools; `--dry-run` previews changes.
+/// Operates on the current config root, including tools declared by tasks.
+/// Existing matching locked versions are preserved unless `--bump` re-resolves
+/// their requests. This command does not install tools; `--dry-run` previews
+/// changes.
 ///
-/// Use `--platform` for explicit targets. Otherwise mise uses `lockfile_platforms`
-/// plus the current platform when that setting is configured, existing lockfile
-/// platforms when available, or the common platform defaults for a new lockfile.
+/// `mise lock TOOL@VERSION` locks that exact version. When the version falls
+/// outside the configured request, such as `tiny@3.0.1` with `tiny = "2"`, mise
+/// also updates the request in mise.toml to match.
 #[derive(Debug, usage_rs::Args)]
 #[usage(
     verbatim_doc_comment,
-    example("mise lock", help = "create or refresh the project lockfile"),
-    example("mise lock node python", help = "update only node and python"),
+    example("mise lock", help = "Create or refresh the project lockfile"),
+    example("mise lock node python", help = "Refresh only node and python"),
+    example(
+        "mise lock node@24.11.0",
+        help = "Lock an exact version; mise.toml keeps a request such as \"24\""
+    ),
     example(
         "mise lock --platform linux-x64",
-        help = "update only linux-x64 platform"
+        help = "Lock only the linux-x64 platform"
     ),
-    example("mise lock --dry-run", help = "show what would be updated"),
+    example("mise lock --dry-run", help = "Show what would change"),
     example(
         "mise lock --bump",
-        help = "re-resolve selectors like \"latest\" or \"20\" to the latest matching versions"
+        help = "Re-resolve requests such as \"latest\" or \"24\" to the latest matching versions"
     ),
     example(
         "mise lock --bump --dry-run --json",
-        help = "list available updates as JSON without writing"
+        help = "List available updates as JSON without writing"
     ),
     example(
         "mise lock --minimum-release-age 2024-01-01",
-        help = "lock latest/fuzzy versions released before 2024-01-01"
+        help = "Lock versions released before 2024-01-01 for requests that are not exact"
     ),
-    example("mise lock --local", help = "update mise.local.lock for local configs"),
-    example("mise lock --global", help = "update only global config lockfiles")
+    example("mise lock --local", help = "Update mise.local.lock"),
+    example("mise lock --global", help = "Update only the global lockfiles")
 )]
 pub(crate) struct Lock {
-    /// Tool(s) to update in lockfile
-    /// e.g.: node python
-    /// If not specified, all configured and task-specific tools will be updated
+    /// Tools to lock, such as `node python`; defaults to every configured tool and every tool a task needs
+    ///
+    /// Use `tool@version` to lock an exact version. If it falls outside the configured
+    /// request, mise.toml is updated to match.
     #[usage(value_name = "TOOL", verbatim_doc_comment)]
     pub tool: Vec<ToolArg>,
 
-    /// Target only global config lockfiles (~/.config/mise/mise.lock and system config)
-    /// By default, only the active project config root is locked
+    /// Lock only the global and system config lockfiles
+    ///
+    /// These are ~/.config/mise/mise.lock and the system config's lockfile. By
+    /// default, only the current project's config root is locked.
     #[usage(long, short, verbatim_doc_comment)]
     pub global: bool,
 
-    /// Number of jobs to run in parallel
-    /// Values below 1 are treated as 1
+    /// How many jobs to run in parallel; defaults to the `jobs` setting
+    ///
+    /// Values below 1 are treated as 1.
     #[usage(long, short, env = "MISE_JOBS", verbatim_doc_comment)]
     pub jobs: Option<usize>,
 
-    /// Show what would be updated without making changes
+    /// Show what would change, without writing anything
     #[usage(long, short = 'n', verbatim_doc_comment)]
     pub dry_run: bool,
 
-    /// Comma-separated list of platforms to target
-    /// e.g.: linux-x64,macos-arm64,windows-x64
-    /// If omitted, use lockfile_platforms, existing platforms, or common defaults
+    /// Platforms to lock, comma-separated, such as `linux-x64,macos-arm64`
+    ///
+    /// Defaults to the `lockfile_platforms` setting plus the current platform when
+    /// that setting is configured, else the platforms already in the lockfile, else
+    /// a common set for a new lockfile.
     #[usage(long, short, delimiter = ',', verbatim_doc_comment)]
     pub platform: Vec<String>,
 
-    /// Re-resolve fuzzy version selectors against the latest available versions
+    /// Re-resolve version requests against the latest available versions
     ///
     /// By default, `mise lock` refreshes metadata for the currently locked versions.
-    /// With this flag, selectors like "latest", "lts", or prefixes like "20" are
+    /// With this flag, requests such as "latest", "lts", or prefixes such as "24" are
     /// re-resolved against the latest matching remote versions, so the lockfile
     /// advances without installing anything. Config files are never modified:
-    /// exactly pinned versions resolve to themselves and stay unchanged
-    /// (use `mise upgrade --bump` to rewrite pins in mise.toml).
-    /// If the remote versions cannot be fetched, it fails rather than keep
-    /// the locked version.
+    /// exact versions resolve to themselves and stay unchanged (use
+    /// `mise upgrade --bump` to rewrite pins in mise.toml). If the remote versions
+    /// cannot be fetched, it fails rather than keep the locked version.
     #[usage(long, verbatim_doc_comment)]
     pub bump: bool,
 
@@ -196,48 +206,47 @@ pub(crate) struct Lock {
     /// Prints an array of objects describing lockfile version changes:
     /// name, backend, lockfile, old_versions, new_versions.
     /// Version lists keep config/lockfile order; they are not sorted.
-    /// Only version-level changes are reported: checksum/URL refreshes for
-    /// unchanged versions produce no entries, so plain `mise lock --json`
-    /// typically prints `[]` while still updating the lockfile.
+    /// Only version-level changes are reported: checksum and URL refreshes for
+    /// unchanged versions produce no entries, so `mise lock --json` prints `[]`
+    /// when no version changed, even though it still updates the lockfile.
     /// Suppresses the human-readable output. Combine with `--dry-run` to
     /// detect available updates without writing the lockfile.
     #[usage(long, verbatim_doc_comment)]
     pub json: bool,
 
-    /// Update mise.local.lock instead of mise.lock
-    /// Use for tools defined in .local.toml configs
+    /// Update mise.local.lock, for tools in mise.local.toml, instead of mise.lock
     #[usage(long, verbatim_doc_comment)]
     pub local: bool,
 
-    /// Only lock versions released before this age or date
+    /// Only lock versions released before a date or at least a duration ago
     ///
-    /// Supports absolute dates like "2024-06-01" and relative durations like "90d" or "1y".
-    /// This only affects fuzzy version matches like "20" or "latest".
-    /// Explicitly pinned versions like "22.5.0" are not filtered.
-    /// Existing matching lockfile entries are preserved and are not downgraded solely by this flag.
-    #[usage(
-        long,
-        alias = "before",
-        value_name = "MINIMUM_RELEASE_AGE",
-        verbatim_doc_comment
-    )]
+    /// Takes a date such as `2024-06-01` or a duration such as `90d` or `1y`.
+    /// Overrides the `minimum_release_age` setting and tool option. It filters only
+    /// requests that are not exact, such as "24" or "latest"; exact versions such
+    /// as "24.11.0" are not filtered. Existing matching lockfile entries are kept;
+    /// this flag alone does not downgrade them.
+    #[usage(long, alias = "before", value_name = "AGE", verbatim_doc_comment)]
     pub minimum_release_age: Option<String>,
 
-    /// Upgrade legacy lockfiles to the latest format
+    /// Upgrade lockfiles to the latest format
     ///
-    /// Existing unversioned lockfiles use format version 0 and are otherwise
-    /// preserved to avoid unexpected lockfile drift. This flag upgrades them
-    /// to the latest format with request-specific version bindings.
-    /// Format upgrades always process every configured tool and cannot be
-    /// combined with tool arguments.
+    /// mise keeps an existing lockfile at its format version during normal updates,
+    /// so collaborators on an older mise can still read it. This flag rewrites it in
+    /// the newest format, which adds request bindings, dependency-graph sidecars,
+    /// and packslip repository IDs. It processes every configured tool and cannot be
+    /// combined with tool arguments. See
+    /// https://mise.jdx.dev/dev-tools/mise-lock-reference.html#format-versions.
     #[usage(long, verbatim_doc_comment)]
     pub upgrade: bool,
 
     /// List native dependency sidecars instead of updating lockfiles
     ///
-    /// Prints, for each existing lockfile in scope, the sidecar directory mise
-    /// keeps its native dependency graphs in and every sidecar directory the
-    /// lockfile references. Nothing is resolved, installed, or written.
+    /// Backends such as npm and pypi keep a tool's locked dependency graph in a
+    /// sidecar directory next to mise.lock; see
+    /// https://mise.jdx.dev/dev-tools/mise-lock-reference.html#native-dependency-sidecars.
+    /// For each existing lockfile in scope, prints the sidecar directory mise keeps
+    /// its dependency graphs in and every sidecar directory the lockfile references.
+    /// Nothing is resolved, installed, or written.
     /// Paths are relative to the current directory when they are inside it,
     /// and absolute otherwise, such as the sidecars of a symlinked lockfile.
     /// Combine with `--json` for machine-readable output, or with `--local`

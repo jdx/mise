@@ -10,28 +10,32 @@ use eyre::Result;
 use itertools::Itertools;
 use path_absolutize::Absolutize;
 
-/// Remove tool requests from configuration and prune unused installations
+/// Remove tool requests from config files and prune unused installations
 ///
-/// Without a selector, mise edits the first loaded config that declares one of the
-/// requested tools. Use `--path`, `--global`, or `--env` to choose a specific file.
-/// A version argument matches the configured request literally: to remove `node = "20"`,
-/// use `mise unuse node@20`, not the concrete installed version it resolved to.
-/// Omit the version to remove all requests for that tool from the selected file.
+/// Without `--path`, `--global`, or `--env`, mise edits the first loaded config
+/// that declares one of the tools; in your home directory it edits the global
+/// config. A version argument matches the configured request literally: to
+/// remove `node = "20"`, use `mise unuse node@20`, not the installed version it
+/// resolved to. Omit the version to remove every request for that tool from the
+/// selected file.
 ///
-/// Versions are pruned only when no remaining tracked config or tool stub needs them.
-/// Pass `--no-prune` to edit configuration while keeping installations. To remove an
-/// installation without editing configuration, use `mise uninstall`.
+/// Versions are pruned only when no remaining tracked config or tool stub needs
+/// them. Pass `--no-prune` to edit the config and keep the installations. To
+/// remove an installation without editing config, use `mise uninstall`.
 #[derive(Debug, usage_rs::Args)]
-#[usage(verbatim_doc_comment, visible_aliases = ["rm", "remove"], example(r###"mise unuse node@18.0.0"###, help = r###"remove node@18.0.0 from mise.toml and uninstall it"###),
-    example(r###"mise unuse -g node@18.0.0"###, help = r###"remove it from the global config instead"###),
-    example(r###"mise unuse --env local node@20"###, help = r###"remove the literal node@20 request from mise.local.toml"###),
-    example(r###"mise unuse --env staging node@20"###, help = r###"remove the literal node@20 request from mise.staging.toml"###))]
+#[usage(verbatim_doc_comment, visible_aliases = ["rm", "remove"],
+    example(r###"mise unuse node@22.0.0"###, help = r###"Remove node@22.0.0 from mise.toml and uninstall it if nothing else uses it"###),
+    example(r###"mise unuse -g node@22.0.0"###, help = r###"Remove it from the global config instead"###),
+    example(r###"mise unuse --env staging node@20"###, help = r###"Remove the node@20 request from mise.staging.toml"###))]
 pub(crate) struct Unuse {
-    /// Tool(s) to remove
+    /// Tools to remove from the config, with the version written as in the config
     #[usage(value_name = "INSTALLED_TOOL@VERSION", required = true)]
     installed_tool: Vec<ToolArg>,
 
-    /// Modify `.mise.<env>.toml` when it exists, otherwise `mise.<env>.toml`
+    /// Edit mise.<ENV>.toml in the current directory, or .mise.<ENV>.toml if that exists
+    ///
+    /// Not the same as the global -E, which only chooses which config files
+    /// are loaded.
     #[usage(long, short, overrides = & ["global", "path"])]
     env: Option<String>,
 
@@ -39,10 +43,7 @@ pub(crate) struct Unuse {
     #[usage(short, long, overrides = & ["path", "env"])]
     global: bool,
 
-    /// Specify a path to a config file or directory
-    ///
-    /// If a directory is specified, it will look for a config file in that directory following
-    /// the target-file selection rules.
+    /// Edit this config file, or the config file in this directory
     #[usage(short, long, visible_alias = "file", overrides = & ["global", "env"], value_hint = usage_rs::ValueHint::FilePath)]
     path: Option<PathBuf>,
 

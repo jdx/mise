@@ -11,35 +11,37 @@ description: "Remove installed tool versions"
 
 Remove installed tool versions
 
-This only removes the installed version; it does not modify mise.toml.
-Use `mise unuse` to remove a tool from mise.toml and uninstall it.
+Removes installed versions but does not edit mise.toml. Use `mise unuse` to
+remove a tool from mise.toml and uninstall it. A tool name or version prefix,
+such as `node` or `node@22`, must match exactly one installed version unless
+you pass `--all`.
 
 ## Arguments
-- **`[INSTALLED_TOOL@VERSION]…`** — Tool(s) to remove
+- **`[INSTALLED_TOOL@VERSION]…`** — Tools to remove, such as node@22.0.0
 
 ## Flags
-- **`-a --all`** — Delete all installed versions
-- **`-n --dry-run`** — Do not actually delete anything
-- **`--dry-run-code`** — Like --dry-run but exits with code 1 if there are tools to uninstall
+- **`-a --all`** — Remove every installed version of the named tools, or of every tool when none is named
+- **`-n --dry-run`** — Show what would change without changing anything
+- **`--dry-run-code`** — Like --dry-run, but exit with code 1 if there are tools to uninstall
 
-  This is useful for scripts to check if tools need to be uninstalled.
+  Use it in scripts that check whether tools need uninstalling.
 - **`-h --help`** — Print help
 
 ## Examples
 
-uninstall a specific version
+Uninstall a specific version
 
 ```
-mise uninstall node@18.0.0
+mise uninstall node@22.0.0
 ```
 
-uninstall the current node version (if only one version is installed)
+Uninstall node when exactly one version is installed
 
 ```
 mise uninstall node
 ```
 
-uninstall every installed version of node
+Uninstall every installed version of node
 
 ```
 mise uninstall --all node
