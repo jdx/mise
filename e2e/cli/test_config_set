@@ -25,6 +25,16 @@ done
 mise config set settings.experimental yes
 assert "mise config get settings.experimental" "true"
 assert_fail "mise config set --type bool env._.python.venv.create maybe" "invalid boolean"
+# keys that are not settings infer only the literals true/false as booleans:
+# `FOO = false` unsets FOO, so `1`, `0`, `yes`, and `no` must stay strings
+for value in 1 0 yes no; do
+  mise config set env.FOO "$value"
+  assert_contains "cat mise.toml" "FOO = \"$value\""
+done
+mise config set env.FOO false
+assert_contains "cat mise.toml" "FOO = false"
+mise config set --type bool env.FOO yes
+assert_contains "cat mise.toml" "FOO = true"
 mise config set settings.disable_tools node,rust,node
 assert "mise config get settings.disable_tools" '["node", "rust"]'
 assert_contains "cat mise.toml" 'disable_tools = ["node", "rust"]'

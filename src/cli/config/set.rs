@@ -157,6 +157,8 @@ impl ConfigSet {
             }
         }
 
+        // A setting that takes a bool or a string reads yes/no/1/0 as booleans itself, so
+        // storing them as booleans keeps their meaning.
         let infer_bool_or_string = |value: &str| match value {
             "true" | "yes" | "1" => TomlValueTypes::Bool,
             "false" | "no" | "0" => TomlValueTypes::Bool,
@@ -181,7 +183,7 @@ impl ConfigSet {
                         SettingsType::SetString => TomlValueTypes::Set,
                         SettingsType::IndexMap => TomlValueTypes::String,
                     },
-                    None => infer_bool_or_string(&value),
+                    None => infer_unknown_key(&value),
                 }
             }
             _ => self.type_,
@@ -233,6 +235,18 @@ impl ConfigSet {
         }
         std::fs::write(&file, raw)?;
         Ok(())
+    }
+}
+
+/// Infer the type of a key that is not a setting, such as `env.PORT` or a task's env.
+///
+/// Only the TOML literals `true` and `false` become booleans. Anything else, including `yes`,
+/// `no`, `1`, and `0`, stays a string: `env.DEBUG = false` unsets `DEBUG` and `env.PORT = true`
+/// exports `PORT=true`, so reading those spellings as booleans would change what they mean.
+fn infer_unknown_key(value: &str) -> TomlValueTypes {
+    match value {
+        "true" | "false" => TomlValueTypes::Bool,
+        _ => TomlValueTypes::String,
     }
 }
 
@@ -332,7 +346,7 @@ fn remove_value(
 
 #[cfg(test)]
 mod tests {
-    use super::parse_bool;
+    use super::{TomlValueTypes, infer_unknown_key, parse_bool};
 
     #[test]
     fn parse_bool_accepts_the_spellings_settings_accept() {
@@ -344,6 +358,22 @@ mod tests {
         }
         for value in ["", "on", "2", "maybe"] {
             assert!(parse_bool(value).is_err(), "{value}");
+        }
+    }
+
+    #[test]
+    fn unknown_keys_only_infer_literal_booleans() {
+        for value in ["true", "false"] {
+            assert!(
+                matches!(infer_unknown_key(value), TomlValueTypes::Bool),
+                "{value}"
+            );
+        }
+        for value in ["yes", "no", "1", "0", "TRUE", "False"] {
+            assert!(
+                matches!(infer_unknown_key(value), TomlValueTypes::String),
+                "{value}"
+            );
         }
     }
 }

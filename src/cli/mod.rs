@@ -130,7 +130,8 @@ pub(crate) enum LevelFilter {
     Trace,
     Debug,
     Info,
-    // `warn` is what MISE_LOG_LEVEL and the `log` crate accept; `warning` stays for old scripts.
+    // `warn` is the spelling the `log_level` setting documents and the `log` crate parses;
+    // `warning` stays for old scripts.
     #[usage(alias = "warning")]
     Warn,
     Error,
@@ -1782,7 +1783,9 @@ mod tests {
     }
 
     #[test]
-    fn log_level_flag_accepts_the_levels_mise_log_level_accepts() {
+    /// The flag takes the names the `log_level` setting lists in settings.toml (`off`, which the
+    /// `log` crate also parses, is not one of them).
+    fn log_level_flag_accepts_the_documented_log_level_names() {
         let parse = |level: &str| {
             parse_cli(&["mise", "--log-level", level, "version"])
                 .unwrap()
