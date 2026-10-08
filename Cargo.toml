@@ -299,6 +299,7 @@ nix = { version = "0.31", features = [
   "feature",
   "fs",
   "hostname",
+  "resource",
   "signal",
   "term",
   "user",

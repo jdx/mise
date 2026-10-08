@@ -42,7 +42,26 @@ mod test {
     }
 }
 
+/// Raise the soft open-file limit. launchd starts agents with a soft limit of 256, which parallel
+/// installs (aube's store import in particular) exhaust with "Too many open files". The soft limit
+/// is unprivileged to raise up to the hard limit; macOS additionally rejects values above
+/// OPEN_MAX (10240) even when the hard limit is unlimited.
+#[cfg(unix)]
+fn raise_nofile_limit() {
+    use nix::sys::resource::{Resource, getrlimit, setrlimit};
+    const TARGET: u64 = 10240;
+    let Ok((soft, hard)) = getrlimit(Resource::RLIMIT_NOFILE) else {
+        return;
+    };
+    let new = hard.min(TARGET);
+    if soft < new {
+        let _ = setrlimit(Resource::RLIMIT_NOFILE, new, hard);
+    }
+}
+
 fn main() -> ExitCode {
+    #[cfg(unix)]
+    raise_nofile_limit();
     cli::register_frontend();
     register_util_hooks();
     // Same reason, different caller: `self-replace` spawns a copy of this binary under a generated
