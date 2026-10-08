@@ -776,7 +776,7 @@ machine.
         example "mise bootstrap compose status" help="Show the state of every declared project"
         example "mise bootstrap compose apply --dry-run" help="Show what would change"
     }
-    cmd dotfiles subcommand_required=#true help="Deploy, track, and sync dotfiles" effect=read {
+    cmd dotfiles hide=#true subcommand_required=#true help="Deploy, track, and sync dotfiles" effect=read {
         long_help #"""
 Deploy, track, and sync dotfiles
 
@@ -6617,7 +6617,7 @@ See https://mise.jdx.dev/tasks/task-discovery.html
         example "mise tasks ls --all" help="List tasks from every monorepo project"
         example "mise tasks ls --name-only | fzf" help="Pick a task name interactively"
     }
-    cmd run disable_help_flag=#true restart_token=::: help="Run tasks; an alias for `mise run`" unknown_flags=value {
+    cmd run hide=#true disable_help_flag=#true restart_token=::: help="Run tasks; an alias for `mise run`" unknown_flags=value {
         alias r
         long_help #"""
 Run tasks; an alias for `mise run`

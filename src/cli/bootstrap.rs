@@ -355,6 +355,8 @@ enum Commands {
     #[usage(hide = true)]
     ConfigRoots(BootstrapConfigRoots),
     Compose(BootstrapCompose),
+    // The same commands as `mise dotfiles`, which is the documented spelling.
+    #[usage(hide = true)]
     Dotfiles(Dotfiles),
     Files(BootstrapFiles),
     Firewall(BootstrapFirewall),

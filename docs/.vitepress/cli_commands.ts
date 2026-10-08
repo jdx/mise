@@ -84,7 +84,7 @@ export const commands: { [key: string]: Command } = {
         hide: true,
       },
       dotfiles: {
-        hide: false,
+        hide: true,
         subcommands: {
           add: {
             hide: false,
@@ -920,7 +920,7 @@ export const commands: { [key: string]: Command } = {
         hide: false,
       },
       run: {
-        hide: false,
+        hide: true,
       },
       validate: {
         hide: false,

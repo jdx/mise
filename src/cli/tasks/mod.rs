@@ -49,6 +49,7 @@ enum Commands {
     ///
     /// Takes the same arguments and flags as `mise run`. See `mise run --help`
     /// or https://mise.jdx.dev/cli/run.html for the full reference.
+    #[usage(hide = true)]
     Run(Box<run::Run>),
     Validate(validate::TasksValidate),
 }
