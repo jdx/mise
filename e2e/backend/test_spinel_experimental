@@ -14,3 +14,11 @@ TOML
 assert_succeed "mise ls"
 # Offline skips the version listing, so the install reaches the backend.
 assert_fail_contains "MISE_OFFLINE=1 mise install" "the spinel backend is experimental"
+
+# A forced reinstall is rejected before the existing install is removed.
+install_dir="$MISE_DATA_DIR/installs/spinel-org-repo/1.0.0"
+mkdir -p "$install_dir/bin"
+echo "#!/bin/sh" >"$install_dir/bin/repo"
+assert_not_contains "mise ls" "missing"
+assert_fail_contains "MISE_OFFLINE=1 mise install --force spinel:org/repo@1.0.0" "the spinel backend is experimental"
+assert_succeed "test -f '$install_dir/bin/repo'"
