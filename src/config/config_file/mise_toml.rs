@@ -649,7 +649,7 @@ impl MiseToml {
         if let Ok(toml::Value::Table(table)) = toml::from_str::<toml::Value>(body) {
             // Only what is resolved from the merged config. `[settings]` and the
             // monorepo keys are read before any include exists, tasks are
-            // discovered from files, and the system sections (dotfiles,
+            // discovered from files, and the other system sections (dotfiles,
             // daemons, ...) are loaded per file.
             const ALLOWED: &[&str] = &[
                 "_",
@@ -664,6 +664,7 @@ impl MiseToml {
                 "env",
                 "env_path",
                 "vars",
+                "bootstrap",
             ];
             for key in table.keys() {
                 if !ALLOWED.contains(&key.as_str()) {
@@ -726,6 +727,11 @@ impl MiseToml {
         }
         for (name, url) in fragment.plugins {
             self.plugins.entry(name).or_insert(url);
+        }
+        if let Some(shared) = fragment.bootstrap {
+            self.bootstrap
+                .get_or_insert_with(Default::default)
+                .merge_below(shared);
         }
         let mut tools = self.tools.lock().unwrap();
         fill(&mut tools, fragment.tools.into_inner().unwrap());
@@ -5524,6 +5530,81 @@ run = "cargo build"
     fn test_secrets_section_is_never_trust_exempt() {
         assert!(!is_safe_config_body("[secrets.fnox]\n"));
         assert!(!is_safe_config_body("[secrets.fnox]\nprofile = \"dev\"\n"));
+    }
+
+    #[tokio::test]
+    async fn test_remote_fragments_merge_bootstrap_below_the_including_file() {
+        let _config = Config::get().await.unwrap();
+        let cf = parse(formatdoc! {r#"
+            [bootstrap.packages]
+            "brew:jq" = "1.7"
+
+            [bootstrap.brew.taps]
+            "own/tap" = "https://example.com/own.git"
+        "#});
+        let merged = cf
+            .with_remote_fragments(vec![(
+                PathBuf::from("/cache/a.toml"),
+                "[bootstrap.packages]\n\"brew:jq\" = \"latest\"\n\"brew:fd\" = \"latest\"\n\n[bootstrap.brew.taps]\n\"shared/tap\" = \"https://example.com/shared.git\"\n\n[bootstrap.user]\nlogin_shell = \"zsh\"\n"
+                    .to_string(),
+            )])
+            .unwrap();
+        let bootstrap = merged.bootstrap_config().unwrap();
+        assert_eq!(bootstrap.packages.get("brew:jq").unwrap().version(), "1.7");
+        assert_eq!(
+            bootstrap.packages.get("brew:fd").unwrap().version(),
+            "latest"
+        );
+        assert_eq!(bootstrap.brew.taps.len(), 2);
+        assert_eq!(bootstrap.user.login_shell.as_deref(), Some("zsh"));
+        // an including file without its own [bootstrap] still gets the shared one
+        let merged = parse(String::new())
+            .with_remote_fragments(vec![(
+                PathBuf::from("/cache/a.toml"),
+                "[bootstrap.packages]\n\"brew:fd\" = \"latest\"\n".to_string(),
+            )])
+            .unwrap();
+        assert!(
+            merged
+                .bootstrap_config()
+                .unwrap()
+                .packages
+                .contains_key("brew:fd")
+        );
+    }
+
+    #[tokio::test]
+    async fn test_remote_fragments_merge_bootstrap_hooks_defaults_and_copy_links() {
+        let _config = Config::get().await.unwrap();
+        let cf = parse(formatdoc! {r#"
+            [bootstrap.hooks]
+            post-tools = "echo own"
+
+            [bootstrap.remote]
+            copy_links = false
+
+            [bootstrap.macos.defaults."com.apple.finder"]
+            ShowPathbar = true
+        "#});
+        let merged = cf
+            .with_remote_fragments(vec![(
+                PathBuf::from("/cache/a.toml"),
+                "[bootstrap.hooks]\npost-tools = \"echo shared\"\n\n[bootstrap.remote]\ncopy_links = true\n\n[bootstrap.macos.defaults.\"com.apple.finder\"]\nAppleShowAllFiles = true\nShowPathbar = false\n\n[[bootstrap.macos.defaults_entries]]\ndomain = \"com.apple.finder\"\nkey = \"ShowPathbar\"\nvalue = false\n"
+                    .to_string(),
+            )])
+            .unwrap();
+        let bootstrap = merged.bootstrap_config().unwrap();
+        assert_eq!(
+            bootstrap.hooks["post-tools"],
+            toml::Value::Array(vec!["echo shared".into(), "echo own".into()])
+        );
+        assert_eq!(bootstrap.remote.copy_links, Some(false));
+        let finder = bootstrap.macos.defaults["com.apple.finder"]
+            .as_table()
+            .unwrap();
+        assert_eq!(finder["ShowPathbar"].as_bool(), Some(true));
+        assert_eq!(finder["AppleShowAllFiles"].as_bool(), Some(true));
+        assert!(bootstrap.macos.defaults_entries.is_empty());
     }
 
     #[tokio::test]

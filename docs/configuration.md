@@ -566,9 +566,11 @@ tools are locked in the including file's lockfile, and its `min_version` is
 enforced.
 
 An included file can contain `[tools]`, `[tool_alias]`, `[env]`, `[vars]`,
-`[hooks]`, `[shell_alias]`, `[plugins]`, `[wrappers]`, `min_version`, and
-`[_]`. The deprecated `[alias]` and `env_path` keys are also accepted. Its hooks
-run before the including file's hooks for the same event. Any other key is an
+`[hooks]`, `[shell_alias]`, `[plugins]`, `[wrappers]`, `[bootstrap]`,
+`min_version`, and `[_]`. The deprecated `[alias]` and `env_path` keys are also
+accepted. Its hooks
+run before the including file's hooks for the same event. `[bootstrap]` entries
+merge key by key, and the including file's own entry wins. Any other key is an
 error: `include` (includes do not nest), `[settings]` and the monorepo keys
 (mise reads them before it resolves includes), `[tasks]`, `task_config`, and
 `task_templates` (share tasks with
