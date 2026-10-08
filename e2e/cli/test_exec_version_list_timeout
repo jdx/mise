@@ -27,7 +27,10 @@ PY
 export MISE_HTTP_TIMEOUT=1s
 tool="http:hello-timeout[url=http://127.0.0.1:$HTTP_PORT/hello-{{version}}.tar.gz,bin_path=hello/bin,version_list_url=http://127.0.0.1:$HTTP_PORT/versions.txt]"
 
-mise x "$tool@1.0.0" -- hello-timeout >"$TMPDIR/out" 2>&1 || true
+if ! mise x "$tool@1.0.0" -- hello-timeout >"$TMPDIR/out" 2>&1; then
+  cat "$TMPDIR/out"
+  fail "mise x failed"
+fi
 assert_contains "cat $TMPDIR/out" "hello from 1.0.0"
 assert_contains "cat $TMPDIR/out" "installing 1.0.0 as written"
 assert_not_contains "cat $TMPDIR/out" "couldn't exec process"

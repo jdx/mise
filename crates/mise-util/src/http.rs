@@ -1706,10 +1706,7 @@ impl Client {
             .await
         {
             Ok(resp) => Ok(resp),
-            Err(err)
-                if url.scheme() == "http"
-                    && (is_connection_error(&err) || is_unavailable_http_host_error(&err)) =>
-            {
+            Err(err) if url.scheme() == "http" && is_unreachable(&err) => {
                 let mut url = url;
                 url.set_scheme("https").unwrap();
                 self.send_once_with_retry_headers(method, url, headers, verb_label, options)
@@ -2682,6 +2679,13 @@ fn is_connection_error(err: &Report) -> bool {
         };
         (reqwest_err.is_connect() || reqwest_err.is_timeout()) && reqwest_err.status().is_none()
     })
+}
+
+/// True if a request failed without reaching the server: a connection failure,
+/// a timeout, or a host already marked unavailable. Unlike [`is_transient`],
+/// HTTP statuses and other errors from the server or the caller never match.
+pub fn is_unreachable(err: &Report) -> bool {
+    is_connection_error(err) || is_unavailable_http_host_error(err)
 }
 
 fn http_host_key(url: &Url) -> Option<String> {

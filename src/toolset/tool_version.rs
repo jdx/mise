@@ -959,15 +959,16 @@ impl ToolVersion {
             return build(v);
         }
         // A fully-qualified version usually names itself, so prefer-offline
-        // commands install it as written when the remote lookup fails (e.g.
-        // `mise x tool@1.2.3` hitting the short prefer-offline timeout) rather
-        // than leaving it unresolved. The installer reports a missing release.
+        // commands install it as written when the remote lookup cannot reach
+        // its server (e.g. `mise x tool@1.2.3` hitting the short prefer-offline
+        // timeout) rather than leaving it unresolved. The installer reports a
+        // missing release. Other errors, such as invalid settings, still fail.
         let fall_back_to_literal = settings.prefer_offline()
             && !opts.latest_versions
             && (v.matches('.').count() >= 2 || backend.is_exact_version(&v));
         match Self::resolve_remote_version(config, &backend, &v, opts, pin_remote_matches).await {
             Ok(v) => build(v),
-            Err(err) if fall_back_to_literal => {
+            Err(err) if fall_back_to_literal && crate::http::is_unreachable(&err) => {
                 // Keyed without the error: a command can resolve more than once,
                 // and a retry fails with different text for the same cause.
                 let key = format!("version list fallback {backend}@{v}");
