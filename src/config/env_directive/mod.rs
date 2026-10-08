@@ -538,6 +538,9 @@ impl EnvResults {
                     }
                 }
                 EnvDirective::Default(k, v, opts) => {
+                    if resolve_opts.vars && opts.prompt.is_some() {
+                        prompt::note_declared(&k);
+                    }
                     // Same fold as `Val` above, and for the same reason.
                     let k = if resolve_opts.vars {
                         k
@@ -622,6 +625,9 @@ impl EnvResults {
                     r.env_remove.insert(k);
                 }
                 EnvDirective::Required(k, opts) => {
+                    if resolve_opts.vars && opts.prompt.is_some() {
+                        prompt::note_declared(&k);
+                    }
                     // Required directives only validate; they never assign. Record the key so
                     // redaction can resolve it against the caller environment.
                     r.caller_env_keys.insert(k.clone());
@@ -924,7 +930,8 @@ impl EnvResults {
             &r,
             &context_vars_for_validation,
             &oci_env_keys,
-            resolve_opts.warn_on_missing_required,
+            resolve_opts.warn_on_missing_required
+                || (resolve_opts.vars && prompt::tolerates_missing()),
             resolve_opts.vars,
         )?;
 

@@ -17,6 +17,10 @@ use crate::dirs;
 static ENABLED: AtomicBool = AtomicBool::new(false);
 /// When set, only these vars may be asked for.
 static ONLY: Mutex<Option<BTreeSet<String>>> = Mutex::new(None);
+/// Every var seen declaring a `prompt` while config resolved.
+static DECLARED: Mutex<BTreeSet<String>> = Mutex::new(BTreeSet::new());
+/// Whether a missing `required` var should warn instead of failing config load.
+static TOLERATE_MISSING: AtomicBool = AtomicBool::new(false);
 /// Vars answered by this process, in order.
 static ANSWERED: Mutex<Vec<String>> = Mutex::new(Vec::new());
 
@@ -24,6 +28,28 @@ static ANSWERED: Mutex<Vec<String>> = Mutex::new(Vec::new());
 /// unanswered var falls back to its `default`, or to `required`'s error.
 pub fn enable() {
     ENABLED.store(true, Ordering::Relaxed);
+}
+
+/// Let config load with unanswered `required` vars, warning about them. A
+/// command that asks for only some vars would otherwise fail on the others.
+pub fn tolerate_missing() {
+    TOLERATE_MISSING.store(true, Ordering::Relaxed);
+}
+
+pub(crate) fn tolerates_missing() -> bool {
+    TOLERATE_MISSING.load(Ordering::Relaxed)
+}
+
+/// Record that `key` declares a `prompt`.
+pub(crate) fn note_declared(key: &str) {
+    if let Ok(mut declared) = DECLARED.lock() {
+        declared.insert(key.to_string());
+    }
+}
+
+/// Every var that declared a `prompt` while config resolved.
+pub fn declared() -> BTreeSet<String> {
+    DECLARED.lock().map(|d| d.clone()).unwrap_or_default()
 }
 
 /// Limit prompting to `names`. An empty list leaves it unrestricted.

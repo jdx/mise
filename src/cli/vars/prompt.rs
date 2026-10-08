@@ -31,10 +31,18 @@ impl VarsPrompt {
         }
         prompt::enable();
         prompt::only(&self.names);
+        // Naming some vars must not fail on the `required` ones left out.
+        prompt::tolerate_missing();
         // Prompting happens while the vars resolve, so (re)load the config now.
         Config::reset().await?;
+        let declared = prompt::declared();
+        if let Some(unknown) = self.names.iter().find(|name| !declared.contains(*name)) {
+            bail!("no [vars] entry named '{unknown}' declares a `prompt` here");
+        }
         let answered = prompt::answered();
-        if answered.is_empty() {
+        if answered.is_empty() && declared.is_empty() {
+            miseprintln!("No [vars] entry declares a `prompt` here.");
+        } else if answered.is_empty() {
             miseprintln!("Nothing to ask: every prompt var already has an answer.");
         } else {
             miseprintln!(
