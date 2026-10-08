@@ -22,7 +22,7 @@ pub(crate) struct DotfilesSync {
     #[usage(long)]
     fetch_only: bool,
 
-    /// Allow pushing older unencrypted versions of files that are now encrypted
+    /// Allow pushing older unencrypted versions of files that are now encrypted, and versions that look like they contain secrets
     #[usage(long)]
     allow_plaintext_history: bool,
 
