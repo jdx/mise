@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+use std::ffi::OsString;
 use std::sync::Arc;
 
 use eyre::Result;
@@ -83,8 +85,10 @@ impl PluginsUninstall {
 /// The second covers a tool whose last version was uninstalled: its tool-level
 /// cache and kept downloads remain, but it is no longer an installed tool.
 /// Directories are never matched by name, since `<plugin>-<tool>` can also
-/// be another tool's directory. Other plugins provide the tool of the same
-/// name.
+/// be another tool's directory. For the same reason a configured tool that is
+/// not installed is skipped when its directory name is also another backend's
+/// tool's, installed or configured: `acme:extra` and an asdf `acme-extra` both
+/// use `acme-extra`. Other plugins provide the tool of the same name.
 ///
 /// Only the user's own installs dir is purged. The installed-tool scan also
 /// reports tools found in shared and system install dirs, which other users
@@ -117,10 +121,43 @@ async fn backends_to_purge(
             }
             BackendArg::from(tool)
         });
+    let (installed, installed_others): (Vec<_>, Vec<_>) =
+        installed.partition(|ba| ba.backend_type() == backend_type);
+    let (configured, configured_others): (Vec<_>, Vec<_>) = configured
+        .into_iter()
+        .partition(|ba| ba.backend_type() == backend_type);
+    let claimed = installed_others
+        .iter()
+        .chain(&configured_others)
+        .flat_map(dir_names)
+        .collect::<HashSet<_>>();
+    let configured = configured
+        .into_iter()
+        .filter(|ba| !installed.iter().any(|owned| owned.short == ba.short))
+        .unique_by(|ba| ba.short.clone())
+        .filter(|ba| {
+            let shared = dir_names(ba).any(|name| claimed.contains(&name));
+            if shared {
+                warn!(
+                    "not purging {}: another tool uses its directory",
+                    style::eblue(&ba.short)
+                );
+            }
+            !shared
+        })
+        .collect::<Vec<_>>();
     Ok(installed
+        .into_iter()
         .chain(configured)
-        .filter(|ba| ba.backend_type() == backend_type)
         .unique_by(|ba| ba.short.clone())
         .filter_map(backend::arg_to_backend)
         .collect())
+}
+
+/// The names of the installs, cache, and downloads directories a tool uses.
+fn dir_names(ba: &BackendArg) -> impl Iterator<Item = OsString> + '_ {
+    [ba.installs_path(), ba.cache_path(), ba.downloads_path()]
+        .into_iter()
+        .filter_map(|path| path.file_name())
+        .map(|name| name.to_os_string())
 }
