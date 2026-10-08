@@ -33,6 +33,38 @@ eval "$(mise activate bash --shims)"
 assert "go-example" "hello world"
 assert "tool" "deep v2 postgres"
 
+# A published go.mod can miss a requirement its packages need. `go install
+# -mod=readonly` rejects that with "updates to go.mod needed", so mise uses
+# -mod=mod, which still keeps a project's GOFLAGS=-mod=vendor out (#7052).
+# A local GOPROXY serves such a module: untidy imports dep without requiring it.
+python3 - "$PWD/goproxy" <<'PY'
+import json, pathlib, sys, zipfile
+
+proxy = pathlib.Path(sys.argv[1])
+modules = {
+    ("example.com/dep", "v1.0.0"): {
+        "go.mod": "module example.com/dep\n\ngo 1.22\n",
+        "dep.go": 'package dep\n\nfunc Msg() string { return "untidy ok" }\n',
+    },
+    ("example.com/untidy", "v0.1.0"): {
+        "go.mod": "module example.com/untidy\n\ngo 1.22\n",
+        "cmd/untidy/main.go": 'package main\n\nimport (\n\t"fmt"\n\n\t"example.com/dep"\n)\n\nfunc main() { fmt.Println(dep.Msg()) }\n',
+    },
+}
+for (module, version), files in modules.items():
+    d = proxy / module / "@v"
+    d.mkdir(parents=True)
+    (d / "list").write_text(version + "\n")
+    (d / f"{version}.info").write_text(json.dumps({"Version": version, "Time": "2026-01-01T00:00:00Z"}))
+    (d / f"{version}.mod").write_text(files["go.mod"])
+    with zipfile.ZipFile(d / f"{version}.zip", "w") as zf:
+        for name, body in files.items():
+            zf.writestr(f"{module}@{version}/{name}", body)
+PY
+assert \
+  "GOPROXY=file://$PWD/goproxy GOSUMDB=off GOFLAGS=-mod=vendor mise x go:example.com/untidy/cmd/untidy@v0.1.0 -- untidy" \
+  "untidy ok"
+
 # Remote-version caches for the same module must be isolated by Go's routing
 # configuration. Without that isolation, the GOPROXY=off lookup reuses the
 # public proxy's cached list.
