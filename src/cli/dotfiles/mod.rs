@@ -122,6 +122,13 @@ impl Dotfiles {
         // runs. The watcher itself is where those notices come from, so
         // it is not where they are delivered.
         let deliver = !matches!(self.command, Commands::Watch(_));
+        // Before any result-based return, so the warning shows even when
+        // global entries remain.
+        if Settings::safe_mode()
+            && let Ok(config) = Config::get().await
+        {
+            warn_if_ignored_in_safe_mode(&config);
+        }
         if deliver {
             crate::system::history::notices::drain();
         }
@@ -281,15 +288,13 @@ pub(crate) fn warn_if_dotfiles_ignored(config: &Config) {
     warn_if_ignored_in_safe_mode(config);
 }
 
-/// Name the project config files whose `[bootstrap]`, `[dotfiles]` and
-/// `[dotfile_groups]` safe mode drops, so a run that applies less than the
-/// files declare says why. Printed at most once per process.
-pub(crate) fn warn_if_ignored_in_safe_mode(config: &Config) {
-    static WARNED: AtomicBool = AtomicBool::new(false);
-    if !Settings::safe_mode() || WARNED.load(Ordering::Relaxed) {
-        return;
+/// The project config files whose `[bootstrap]`, `[dotfiles]` or
+/// `[dotfile_groups]` safe mode drops. Empty outside safe mode.
+pub(crate) fn ignored_in_safe_mode(config: &Config) -> Vec<&Path> {
+    if !Settings::safe_mode() {
+        return vec![];
     }
-    let ignored = config
+    config
         .config_files
         .keys()
         .filter(|path| {
@@ -297,7 +302,31 @@ pub(crate) fn warn_if_ignored_in_safe_mode(config: &Config) {
                 && declares_any_table(path, &["bootstrap", "dotfiles", "dotfile_groups"])
         })
         .map(|path| path.as_path())
-        .collect::<Vec<_>>();
+        .collect()
+}
+
+/// Refuse `--prune` while safe mode hides project dotfiles: files their
+/// groups deployed would look orphaned and be removed.
+pub(crate) fn ensure_prune_sees_every_group(config: &Config) -> Result<()> {
+    let ignored = ignored_in_safe_mode(config);
+    if !ignored.is_empty() {
+        eyre::bail!(
+            "--prune is unavailable in safe mode (MISE_SAFE=1) while these project config files declare dotfiles it ignores, since their files would look orphaned:\n{}",
+            path_list(&ignored)
+        );
+    }
+    Ok(())
+}
+
+/// Name the project config files whose `[bootstrap]`, `[dotfiles]` and
+/// `[dotfile_groups]` safe mode drops, so a run that applies less than the
+/// files declare says why. Printed at most once per process.
+pub(crate) fn warn_if_ignored_in_safe_mode(config: &Config) {
+    static WARNED: AtomicBool = AtomicBool::new(false);
+    if WARNED.load(Ordering::Relaxed) {
+        return;
+    }
+    let ignored = ignored_in_safe_mode(config);
     if !ignored.is_empty() && !WARNED.swap(true, Ordering::Relaxed) {
         warn!(
             "[bootstrap], [dotfiles] and [dotfile_groups] in these config files were skipped because safe mode (MISE_SAFE=1) ignores project config:\n{}",

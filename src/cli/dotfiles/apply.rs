@@ -72,6 +72,9 @@ impl DotfilesApply {
                 "--prune removes orphaned files of every group and cannot be combined with target arguments"
             );
         }
+        if self.prune {
+            super::ensure_prune_sees_every_group(config)?;
+        }
         super::select_requests(config, &self.targets)
     }
 

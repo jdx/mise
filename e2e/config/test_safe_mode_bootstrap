@@ -37,6 +37,7 @@ assert_not_contains "MISE_SAFE=1 mise dotfiles status" "project-dotfile"
 assert_not_contains "MISE_SAFE=1 mise dotfiles status" "project-group-root"
 assert_contains "MISE_SAFE=1 mise dotfiles status 2>&1" "skipped because safe mode (MISE_SAFE=1) ignores project config"
 assert_contains "MISE_SAFE=1 mise bootstrap --yes 2>&1" "skipped because safe mode (MISE_SAFE=1) ignores project config"
+assert_contains "MISE_SAFE=1 mise bootstrap repos status 2>&1" "skipped because safe mode (MISE_SAFE=1) ignores project config"
 assert_directory_not_exists "$HOME/src/project-repo"
 assert_fail "test -e $HOME/.project-dotfile"
 assert_fail "test -e $HOME/project-group"
@@ -51,6 +52,9 @@ cat <<EOF >"$MISE_CONFIG_DIR/config.toml"
 "~/src/global-repo" = { url = "file://$SRC", ref = "main" }
 EOF
 assert_succeed "MISE_SAFE=1 mise bootstrap --yes"
+# The warning shows even when global entries remain.
+assert_contains "MISE_SAFE=1 mise dotfiles status 2>&1" "~/.global-dotfile"
+assert_contains "MISE_SAFE=1 mise dotfiles status 2>&1" "skipped because safe mode (MISE_SAFE=1) ignores project config"
 assert "readlink $HOME/.global-dotfile" "$PWD/global-source"
 assert "cat $HOME/src/global-repo/version.txt" "v1"
 assert_directory_not_exists "$HOME/src/project-repo"
@@ -78,3 +82,26 @@ assert_succeed "mise bootstrap --yes"
 assert "readlink $HOME/.project-dotfile" "$PWD/project-source"
 assert "cat $HOME/project-group" "group dotfile"
 assert "cat $HOME/src/project-repo/version.txt" "v1"
+
+echo "=== safe mode refuses --prune while it hides project groups ==="
+# The project group is deployed now; hiding its declaration must not make
+# its files look orphaned.
+assert_fail_contains "MISE_SAFE=1 mise dotfiles apply --prune --yes" "--prune is unavailable in safe mode"
+assert "cat $HOME/project-group" "group dotfile"
+
+echo "=== safe mode ignores config_roots that project config selects ==="
+mkdir -p roots-project/roots/extra
+echo "project root dotfile" >roots-project/roots/extra/project-root-source
+cat <<EOF >roots-project/roots/extra/mise.toml
+[dotfiles]
+"~/.project-root-dotfile" = "project-root-source"
+EOF
+cat <<EOF >roots-project/mise.toml
+[bootstrap]
+config_roots = ["roots/*"]
+EOF
+cd roots-project
+assert_contains "mise dotfiles status" "~/.project-root-dotfile"
+assert_not_contains "MISE_SAFE=1 mise dotfiles status" "project-root-dotfile"
+assert_succeed "MISE_SAFE=1 mise bootstrap --yes"
+assert_fail "test -e $HOME/.project-root-dotfile"
