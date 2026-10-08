@@ -1797,7 +1797,6 @@ impl Bootstrap {
             // Anything that ran before this point (such as tool purgatory cleanup)
             // may have cached config whose vars never had the chance to prompt.
             Config::reset().await?;
-            crate::config::env_directive::prompt::disable();
         }
         let generation = OperationScope::begin("bootstrap", self.dry_run).await?;
         let result = self.run_phases().await;

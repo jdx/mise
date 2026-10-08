@@ -15,6 +15,8 @@ use eyre::{Result, WrapErr, bail};
 use crate::dirs;
 
 static ENABLED: AtomicBool = AtomicBool::new(false);
+/// Held while asking, so concurrent resolutions never interleave prompts.
+static ASKING: Mutex<()> = Mutex::new(());
 /// When set, only these vars may be asked for.
 static ONLY: Mutex<Option<BTreeSet<String>>> = Mutex::new(None);
 /// Every var seen declaring a `prompt` while config resolved.
@@ -218,6 +220,11 @@ pub(crate) fn answer(key: &str, prompt: &str, default: Option<&str>) -> Result<O
     }
     if !ENABLED.load(Ordering::Relaxed) || !may_ask(key) || !console::user_attended_stderr() {
         return Ok(None);
+    }
+    // One prompt at a time; whoever waited may find the answer already saved.
+    let _asking = ASKING.lock().unwrap_or_else(|e| e.into_inner());
+    if let Some(value) = saved(key) {
+        return Ok(Some(value));
     }
     let theme = crate::ui::theme::get_theme();
     let mut input = Input::new(prompt).theme(&theme);
