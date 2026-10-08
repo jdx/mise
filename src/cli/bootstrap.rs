@@ -9,6 +9,7 @@ use futures_util::future::LocalBoxFuture;
 use heck::ToKebabCase;
 use serde::Serialize;
 use serde_json::{Value, json};
+use usage_rs::spec::ValueEnum;
 
 use super::dotfiles::{Dotfiles, DotfilesApply, write_and_reload};
 use super::install::Install;
@@ -126,7 +127,7 @@ pub(crate) struct Bootstrap {
     /// Can be passed multiple times or as a comma-separated list.
     /// Cannot be used with `--skip`.
     #[usage(long, value_enum, delimiter = ',', conflicts = "skip")]
-    only: Vec<BootstrapPart>,
+    only: Vec<BootstrapPartArg>,
 
     /// Prompt securely for missing bootstrap secret inputs
     #[usage(long)]
@@ -136,7 +137,7 @@ pub(crate) struct Bootstrap {
     ///
     /// Can be passed multiple times or as a comma-separated list.
     #[usage(long, value_enum, delimiter = ',')]
-    skip: Vec<BootstrapPart>,
+    skip: Vec<BootstrapPartArg>,
 
     /// Refresh package manager metadata and update configured repos
     #[usage(long)]
@@ -190,6 +191,69 @@ impl BootstrapPart {
         Self::Task,
         Self::FinalHook,
     ];
+}
+
+/// One `--only`/`--skip` word: the part it names, and the legacy alias it
+/// was spelled with, if any. The aliases parse to the same part, so the
+/// word is kept here to warn about the old spelling.
+#[derive(Clone, Copy, Debug)]
+struct BootstrapPartArg {
+    part: BootstrapPart,
+    alias: Option<&'static str>,
+}
+
+impl ValueEnum for BootstrapPartArg {
+    const CHOICES: &'static [&'static str] = BootstrapPart::CHOICES;
+    const ACCEPTED_CHOICES: &'static [&'static str] = BootstrapPart::ACCEPTED_CHOICES;
+    const ALIASES: &'static [(&'static str, &'static str)] = BootstrapPart::ALIASES;
+    const DETAILS: &'static [usage_rs::spec::ChoiceMeta<'static>] = BootstrapPart::DETAILS;
+    const IGNORE_CASE: bool = BootstrapPart::IGNORE_CASE;
+
+    fn from_choice(value: &str) -> Option<Self> {
+        let part = BootstrapPart::from_choice(value)?;
+        let alias = BootstrapPart::ALIASES
+            .iter()
+            .find(|(_, alias)| *alias == value)
+            .map(|&(_, alias)| alias);
+        Some(Self { part, alias })
+    }
+}
+
+/// Warn about the part names `--only` and `--skip` accepted before the
+/// parts were renamed, such as `launchd` for `macos-launchd-agents`.
+fn warn_legacy_part_aliases(only: &[BootstrapPartArg], skip: &[BootstrapPartArg]) {
+    let renames = only
+        .iter()
+        .chain(skip)
+        .filter_map(|arg| {
+            let alias = arg.alias?;
+            Some(format!(
+                "`{alias}` with `{}`",
+                bootstrap_part_name(&arg.part)
+            ))
+        })
+        .collect::<indexmap::IndexSet<_>>();
+    if renames.is_empty() {
+        return;
+    }
+    deprecated_at!(
+        "2026.10.4",
+        "2027.10.4",
+        "bootstrap.part_aliases",
+        "Legacy bootstrap part names in --only/--skip are deprecated. Replace {}.",
+        renames.into_iter().collect::<Vec<_>>().join(", ")
+    );
+}
+
+/// Warn about `mise bootstrap launchd`, `systemd` and `macos-defaults`, the
+/// spellings from before the commands moved under `macos` and `linux`.
+fn warn_legacy_bootstrap_command(id: &'static str, legacy: &str, replacement: &str) {
+    deprecated_at!(
+        "2026.10.4",
+        "2027.10.4",
+        id,
+        "`mise bootstrap {legacy}` is deprecated. Use `mise bootstrap {replacement}` instead."
+    );
 }
 
 type BootstrapPredictionGraph = HashMap<ResourceId, (ResourceAction, Vec<ResourceId>)>;
@@ -862,7 +926,7 @@ struct BootstrapRemote {
 
     /// Run only one or more remote bootstrap parts
     #[usage(long, value_enum, delimiter = ',', conflicts = "skip")]
-    only: Vec<BootstrapPart>,
+    only: Vec<BootstrapPartArg>,
 
     /// SSH port override
     #[usage(long)]
@@ -886,7 +950,7 @@ struct BootstrapRemote {
 
     /// Skip one or more remote bootstrap parts
     #[usage(long, value_enum, delimiter = ',')]
-    skip: Vec<BootstrapPart>,
+    skip: Vec<BootstrapPartArg>,
 
     /// Local directory archived and sent to each target
     #[usage(long, value_hint = usage_rs::ValueHint::DirPath)]
@@ -1355,6 +1419,7 @@ impl Bootstrap {
     }
 
     async fn run_with_notices(mut self) -> Result<()> {
+        warn_legacy_part_aliases(&self.only, &self.skip);
         if self.from.is_some() || self.adopt.is_some() {
             if self.command.is_some() {
                 let flag = if self.adopt.is_some() {
@@ -2161,9 +2226,9 @@ impl Bootstrap {
 
     fn skip_parts(&self) -> HashSet<BootstrapPart> {
         if self.only.is_empty() {
-            self.skip.iter().copied().collect()
+            self.skip.iter().map(|arg| arg.part).collect()
         } else {
-            let only = self.only.iter().copied().collect::<HashSet<_>>();
+            let only = self.only.iter().map(|arg| arg.part).collect::<HashSet<_>>();
             BootstrapPart::ALL
                 .into_iter()
                 .filter(|part| !only.contains(part))
@@ -2574,10 +2639,24 @@ impl Commands {
             Self::Dotfiles(cmd) => Box::pin(cmd.run()),
             Self::Files(cmd) => Box::pin(cmd.run()),
             Self::Firewall(cmd) => Box::pin(cmd.run()),
-            Self::Launchd(cmd) => Box::pin(cmd.run()),
+            Self::Launchd(cmd) => {
+                warn_legacy_bootstrap_command(
+                    "bootstrap.launchd",
+                    "launchd",
+                    "macos launchd-agents",
+                );
+                Box::pin(cmd.run())
+            }
             Self::Linux(cmd) => Box::pin(cmd.run()),
             Self::Macos(cmd) => Box::pin(cmd.run()),
-            Self::MacosDefaults(cmd) => Box::pin(cmd.run()),
+            Self::MacosDefaults(cmd) => {
+                warn_legacy_bootstrap_command(
+                    "bootstrap.macos-defaults",
+                    "macos-defaults",
+                    "macos defaults",
+                );
+                Box::pin(cmd.run())
+            }
             Self::MiseShellActivate(cmd) => Box::pin(cmd.run()),
             Self::Packages(cmd) => Box::pin(cmd.run()),
             Self::Plan(cmd) => Box::pin(cmd.run()),
@@ -2587,7 +2666,14 @@ impl Commands {
             Self::Secrets(cmd) => Box::pin(cmd.run()),
             Self::Services(cmd) => Box::pin(cmd.run()),
             Self::Status(cmd) => Box::pin(cmd.run()),
-            Self::Systemd(cmd) => Box::pin(cmd.run()),
+            Self::Systemd(cmd) => {
+                warn_legacy_bootstrap_command(
+                    "bootstrap.systemd",
+                    "systemd",
+                    "linux systemd-units",
+                );
+                Box::pin(cmd.run())
+            }
             Self::Unapply(cmd) => Box::pin(cmd.run()),
             Self::User(cmd) => Box::pin(cmd.run()),
         }
@@ -3319,6 +3405,7 @@ impl BootstrapSecrets {
 
 impl BootstrapRemote {
     async fn run(self) -> Result<()> {
+        warn_legacy_part_aliases(&self.only, &self.skip);
         crate::ui::ctrlc::exit_on_ctrl_c(false);
         let relay = crate::github_relay::Scope::from_flags(
             self.github_relay_read_only,
@@ -3385,8 +3472,16 @@ impl BootstrapRemote {
             update: self.update,
             prompt_secrets: self.prompt_secrets,
             force_dotfiles: self.force_dotfiles,
-            skip: self.skip.iter().map(bootstrap_part_name).collect(),
-            only: self.only.iter().map(bootstrap_part_name).collect(),
+            skip: self
+                .skip
+                .iter()
+                .map(|arg| bootstrap_part_name(&arg.part))
+                .collect(),
+            only: self
+                .only
+                .iter()
+                .map(|arg| bootstrap_part_name(&arg.part))
+                .collect(),
             keep_staging: self.keep_staging,
             connect_timeout: self.connect_timeout,
         };
@@ -5702,6 +5797,36 @@ mod tests {
                 ["--cd", "/checkout", "bootstrap", "--yes"].map(OsString::from)
             );
         }
+    }
+
+    #[test]
+    fn part_values_remember_a_legacy_alias() {
+        use super::BootstrapPart;
+        let argv = [
+            "mise",
+            "bootstrap",
+            "--skip",
+            "launchd,macos-defaults",
+            "--skip=shell",
+        ]
+        .map(OsStr::new);
+        let cli = Cli::parse_from_argv(&argv).unwrap();
+        let Some(Commands::Bootstrap(parsed)) = cli.command else {
+            panic!("bootstrap should be the resolved command");
+        };
+        let skip = parsed
+            .skip
+            .iter()
+            .map(|arg| (arg.part, arg.alias))
+            .collect::<Vec<_>>();
+        assert_eq!(
+            skip,
+            [
+                (BootstrapPart::Launchd, Some("launchd")),
+                (BootstrapPart::Defaults, None),
+                (BootstrapPart::Shell, Some("shell")),
+            ]
+        );
     }
 
     #[test]
