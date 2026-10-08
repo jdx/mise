@@ -1,221 +1,347 @@
 ---
-description: "Definitions for the concepts used in the guides and CLI reference."
+description: "Look up the terms used across the mise docs, from backends and version requests to trust, shims, and bootstrap."
+socialDescription: "Terms used in the mise docs, from backends and version requests to trust and shims."
+outline: [2, 3]
 ---
 
 # Glossary
 
-Definitions for the concepts used in the guides and CLI reference. Follow a term's link for
-configuration syntax and examples.
+Each term links to the page that explains it.
 
-## Core Concepts
+## Tools and versions {#tools-and-versions}
 
-**Activation**
-: The process of loading mise's context (tools, environment variables, PATH modifications) into your shell session. Typically done via `eval "$(mise activate bash)"` in your shell rc file. See [Installing mise](/installing-mise.html) for setup instructions.
+### Tool {#tool}
 
-**Backend**
-: An implementation that resolves versions and installs tools from a particular source. A backend may download releases directly or use a package manager; it is not necessarily a separate program. See [Backends](#backends) below and [Backend Architecture](/dev-tools/backend_architecture) for details.
+A program that mise installs and puts on `PATH` for a project, such as `node`,
+`terraform`, or `jq`. Declare tools under `[tools]` in `mise.toml`. See
+[Dev tools](/dev-tools/).
 
-**Core Tools**
-: Built-in tool implementations written in Rust that ship with mise. These provide first-class support for popular languages such as Node.js, Python, Ruby, and Go. See [Core tools](/core-tools) for the full list.
+### Backend {#backend}
 
-**mise.toml**
-: The primary configuration file for mise projects. Contains tool versions, environment variables, tasks, and hooks. See [Configuration](/configuration) for the full specification.
+Where mise gets a tool and how it installs it, such as `aqua`, `github`,
+`npm`, or `pypi` (also accepted as `pipx`). Core tools use installers built
+into mise. The `ubi` backend is deprecated; use `github`, or `gitlab` or
+`http` for other hosts, as the [ubi migration guide](/dev-tools/backends/ubi.html)
+describes. See [Backends](/dev-tools/backends/).
 
-**mise.local.toml**
-: A user-local configuration file that overrides `mise.toml`. Typically added to `.gitignore` for personal settings that shouldn't be shared with the team.
+### Backend identifier {#backend-identifier}
 
-**Plugin**
-: An extension that adds functionality to mise, such as managing additional tools or setting up environment variables. See [Plugins](/plugins) for an overview.
+A tool name with its backend prefix, such as `aqua:aws/aws-cli` or
+`npm:prettier`. Use one in `mise.toml` or on the command line for a tool that
+has no registry short name, or to choose a backend yourself. See
+[Backend identifiers](/dev-tools/backends/#identifiers).
 
-**Registry**
-: The collection of tool aliases that map user-friendly short names to their full backend specifications. For example, `aws-cli` maps to `aqua:aws/aws-cli`. See [Registry](/registry).
+### Core tools {#core-tools}
 
-**Tool**
-: A development tool or runtime that mise can install and manage, such as `node`, `python`, `terraform`, or `jq`.
+Languages whose installers are built into mise, such as Node.js, Python, Ruby,
+Go, and Java. They need no plugin. See [Core tools overview](/core-tools.html).
 
-**Tool Request**
-: A user's specification for a tool version, which may be fuzzy or use aliases. Examples: `node@24`, `python@latest`, `go@1.26`. These are resolved to concrete Tool Versions.
+### Registry {#registry}
 
-**Tool Version**
-: A concrete, resolved version of a tool. For example, `node@24` (tool request) might resolve to `node@24.0.0` (tool version).
+The list of short tool names that mise knows, each mapped to one or more
+backends. For example, `aws-cli` maps to `aqua:aws/aws-cli`. See
+[Registry](/registry.html).
 
-**Toolset**
-: The collection of requested and resolved tools for a specific context, containing all the Tool Versions that should be active for a directory or project.
+### Plugin {#plugin}
 
-## Backends
+An extension, written in Lua or as legacy asdf shell scripts, that adds a tool,
+a backend, environment directives, or a bootstrap package manager. Most tools
+need no plugin. See [Plugins](/plugins.html).
 
-mise supports multiple backends for installing tools from different sources:
+### Toolset {#toolset}
 
-**aqua**
-: Backend using the [aqua](https://aquaproj.github.io/) registry. Supplies release selection and verification metadata for supported tools. See [aqua backend](/dev-tools/backends/aqua).
+The tools and versions that apply in a directory after mise combines every
+config file that applies there. `mise ls --current` lists it.
 
-**asdf**
-: Legacy backend compatible with [asdf](https://asdf-vm.com/) shell-script plugins. Linux and macOS only. Slower than native backends but provides access to the asdf plugin ecosystem. See [asdf backend](/dev-tools/backends/asdf).
+### Version request {#version-request}
 
-**cargo**
-: Installs Rust CLI tools using `cargo-binstall` when available and enabled, or compiles them with `cargo install`. See [cargo backend](/dev-tools/backends/cargo).
+The version you ask for, such as `"24"` in `node = "24"`, `latest`, or
+`ref:main`. mise resolves it to a concrete version. See
+[Version requests and version files](/dev-tools/versions.html).
 
-**conda**
-: Downloads and resolves packages from Conda channels directly, without requiring a conda executable. See [conda backend](/dev-tools/backends/conda).
+### Version prefix {#version-prefix}
 
-**dotnet**
-: Installs .NET tools. See [dotnet backend](/dev-tools/backends/dotnet).
+A version request that names only the start of a version, such as `node@24` or
+`python@3.14`. It matches at separators, so `1.2` matches `1.2.3` but not
+`1.20`. See [Request syntax](/dev-tools/versions.html#request-syntax).
 
-**forgejo**
-: Installs tools from Forgejo releases. See [Forgejo backend](/dev-tools/backends/forgejo.html).
+### Resolved version {#resolved-version}
 
-**gem**
-: Installs Ruby gems as tools. See [gem backend](/dev-tools/backends/gem).
+The concrete version that a request selects, such as `24.11.1` for
+`node = "24"`. mise prefers the version in the lockfile, then a matching
+installed version. See
+[How a request resolves](/dev-tools/versions.html#how-requests-resolve).
 
-**github**
-: Installs tools directly from GitHub releases. See [github backend](/dev-tools/backends/github).
+### Pin {#pin}
 
-**gitlab**
-: Installs tools directly from GitLab releases. See [gitlab backend](/dev-tools/backends/gitlab).
+To record an exact version instead of a prefix. `mise use --pin node@24` writes
+the resolved version, such as `node = "24.11.1"`, to the config file. A
+[lockfile](#lockfile) records exact versions while the config keeps the prefix.
+See [Pin a version or use a lockfile](/dev-tools/versions.html#pin-vs-lockfile).
 
-**go**
-: Installs Go tools using `go install`. See [go backend](/dev-tools/backends/go).
+### Lockfile {#lockfile}
 
-**http**
-: Installs tools from arbitrary HTTP/HTTPS URLs. See [http backend](/dev-tools/backends/http).
+`mise.lock`, a file that records the resolved version of each tool and, for
+backends that support it, its download URL and checksum for each platform, so
+every machine installs the same build. See
+[Lockfile (mise.lock)](/dev-tools/mise-lock.html).
 
-**npm**
-: Installs Node.js packages and CLI tools from the npm registry. See [npm backend](/dev-tools/backends/npm).
+### Idiomatic version file {#idiomatic-version-file}
 
-**packslip**
-: Installs releases from signed manifests and verifies artifact digests and the signer. See [packslip backend](/dev-tools/backends/packslip.html).
+Another tool's version file, such as `.nvmrc`, `.python-version`, or
+`.ruby-version`. mise reads one only for tools you enable with
+[`idiomatic_version_file_enable_tools`](/configuration/settings.html#idiomatic_version_file_enable_tools).
+See [Idiomatic version files](/dev-tools/versions.html#idiomatic-version-files).
 
-**pipx**
-: Installs Python CLI tools in isolated environments using uv by default, or pipx when configured. See [pipx backend](/dev-tools/backends/pipx).
+### `.tool-versions` {#tool-versions}
 
-**s3**
-: Downloads tool artifacts from S3 or compatible storage. See [S3 backend](/dev-tools/backends/s3.html).
+The version file that asdf uses, with one tool per line, such as
+`node 24.11.1`. mise reads it alongside `mise.toml`. See
+[`.tool-versions`](/dev-tools/versions.html#tool-versions).
 
-**spm**
-: Installs tools via Swift Package Manager. See [spm backend](/dev-tools/backends/spm).
+### Tool options {#tool-options}
 
-**ubi**
-: Universal Binary Installer for tools distributed as single binaries (deprecated; use the `github` or `aqua` backend instead). See [ubi backend](/dev-tools/backends/ubi).
+Settings for one tool entry, such as a download URL, an asset pattern, `os`, or
+a `postinstall` command, written as a table:
+`node = { version = "24", postinstall = "corepack enable" }`. See
+[Tool options](/dev-tools/#tool-options).
 
-**vfox**
-: Backend compatible with [VersionFox](https://vfox.dev/) plugins. See [vfox backend](/dev-tools/backends/vfox).
+### Tool alias {#tool-alias}
 
-## Shell Integration
+A name defined under `[tool_alias]` that points a tool at another backend, or
+gives a version request a name. See [Tool aliases](/dev-tools/aliases.html).
 
-**hook-env**
-: The `mise hook-env` command that exports environment changes for shell integration. Called automatically by the shell hook installed via `mise activate`.
+### Lazy tool {#lazy-tool}
 
-**PATH Activation**
-: The default method of shell integration where mise updates the `PATH` environment variable at each prompt to include the appropriate tool binaries.
+A tool marked `lazy = true`. `mise install` skips it, and mise installs it the
+first time one of its commands runs. See
+[Lazy tools](/dev-tools/shims.html#lazy-tools).
 
-**Reshim**
-: The process of updating the shims directory after tools are installed or removed. Run `mise reshim` if shims get out of sync.
+### Tool stub {#tool-stub}
 
-**Shims**
-: Executable launchers that intercept tool commands and delegate to mise, which loads the appropriate tool context before execution. An alternative to PATH activation. See [Shims](/dev-tools/shims).
+An executable file, usually committed to a repository, that names one tool and
+version. Running it installs the tool if needed and runs it with your
+arguments. See [Tool stubs](/dev-tools/tool-stubs.html).
 
-## Configuration
+### Versions host {#versions-host}
 
-**config_root**
-: The canonical project root directory that mise uses when resolving relative paths in configuration files. Derived from the configuration file's location. An imported file can have a different `config_root` from the active project's `MISE_PROJECT_ROOT`.
+[mise-versions](https://mise-versions.jdx.dev), a service that serves version
+lists and GitHub release metadata for most tools, so mise makes fewer requests
+to GitHub. Turn it off with
+[`use_versions_host`](/configuration/settings.html#use_versions_host). See
+[A new release is not listed](/troubleshooting.html#new-version-of-a-tool-is-not-available).
 
-**Configuration Environments**
-: Environment-specific configuration files like `mise.dev.toml` or `mise.prod.toml`, selected with `MISE_ENV`, `mise -E`, or `.miserc.toml`. See [Configuration Environments](/configuration/environments).
+## Configuration {#configuration}
 
-**Configuration Hierarchy**
-: The system where mise.toml files at different levels (system, global, project) are merged, with files closer to the current directory taking precedence over those in parent directories.
+### mise.toml {#mise-toml}
 
-**Settings**
-: Options that control mise itself, normally under `[settings]` in a config file. Some can be project-specific; settings marked global-only must be configured globally. See [Settings](/configuration/settings).
+The project config file. It declares tools, environment variables, tasks,
+hooks, and settings. It can also be named `.mise.toml` or live in `.config/`,
+`.mise/`, or `mise/`; see [Config file locations](/configuration.html#mise-toml).
 
-**Templates**
-: Dynamic values in configuration using Tera template syntax, like <span v-pre>`{{env.HOME}}`</span> or <span v-pre>`{{arch()}}`</span>. See [Templates](/templates).
+### mise.local.toml {#mise-local-toml}
 
-## Environment Variables
+Your personal overrides for a project's `mise.toml`. Keep it out of Git with
+`.git/info/exclude` or a global ignore file.
 
-**env.\_ directives**
-: Special environment configuration directives for advanced setup:
+### Global config {#global-config}
 
-- `env._.file` - Load variables from a file (e.g., `.env`)
-- `env._.path` - Prepend directories to PATH
-- `env._.source` - Source a bash script
+`~/.config/mise/config.toml`, which applies in every directory. `mise use -g`
+writes to it, and project config overrides it. See
+[Global and system config](/configuration.html#global-config).
 
-**Tool-dependent environment**
-: Directives with `tools = true` run after the tool environment is available. This is evaluation order, not lazy installation or evaluation only when a variable is read.
+### Config file precedence {#config-file-precedence}
 
-**Redaction**
-: Masking selected values in output processed by mise. `redact = true` marks an environment value; raw or interactive child output bypasses this processing. See [redaction](/environments/#redactions).
+mise loads the config files from the current directory up to the root, plus
+global and system config. When two files set the same thing, the file closest
+to the current directory wins. `mise config ls` lists the files mise loaded. See
+[How config files combine](/configuration.html#configuration-hierarchy).
 
-## Hooks
+### Config environment {#config-environment}
 
-**Hooks**
-: Commands triggered by events such as entering a project or installing tools. Shell events require normal activation; installation hooks do not. See [Hooks](/hooks).
+An extra config file such as `mise.production.toml`, loaded on top of
+`mise.toml` when you select it with `-E production` or `MISE_ENV=production`.
+See [Config environments](/configuration/environments.html).
 
-**cd hook**
-: Runs whenever you change directories while mise is active.
+### config_root {#config-root}
 
-**enter hook**
-: Runs when entering a directory where a mise.toml becomes active.
+The directory that a config file's relative paths resolve against, and the
+value of <code v-pre>{{ config_root }}</code> in its templates. For project
+config it is the project directory, even when the file lives in `.config/mise/`.
+See [config_root](/configuration.html#config-root).
 
-**leave hook**
-: Runs when leaving a directory where a mise.toml was active.
+### Project root {#project-root}
 
-**postinstall hook**
-: Runs after a tool is successfully installed.
+The directory of the project you are working in, given to tasks and hooks as
+`MISE_PROJECT_ROOT`. In a monorepo, a task gets the root of the subproject that
+defines it. See [Task environment](/tasks/running-tasks.html#task-environment).
 
-**preinstall hook**
-: Runs before a tool installation begins.
+### Settings {#settings}
 
-**watch_files hook**
-: Runs when an activation hook detects changes to matching files. It is not a background watcher; `mise watch` is a separate command.
+Options that control mise itself, set under `[settings]` in a config file, with
+`mise settings set`, or with `MISE_*` environment variables. Some can only be
+set in global config. See [Settings](/configuration/settings.html).
 
-## Tasks
+### Tera templates {#templates}
 
-**Dependency Graph**
-: A Directed Acyclic Graph (DAG) used internally to resolve task execution order based on dependencies.
+Values such as <code v-pre>{{ env.HOME }}</code> or
+<code v-pre>{{ arch() }}</code> that mise renders when it reads a config file.
+See [Tera templates](/templates.html).
 
-**File Tasks**
-: Tasks defined as standalone executable scripts in directories like `mise-tasks/` or `.mise/tasks/`. See [File Tasks](/tasks/file-tasks).
+### Directories {#directories}
 
-**Task**
-: A reusable command defined in mise.toml or as a standalone script that executes within the mise environment. See [Tasks](/tasks/).
+mise keeps installed tools, cached metadata, global config, and state such as
+trust records in separate directories. The defaults and the `MISE_*_DIR`
+variables that move them are listed in [Directories](/directories.html).
 
-**Task Dependencies**
-: Relationships between tasks defined via `depends` (run before), `depends_post` (run after), or `wait_for` (wait but don't trigger). See [Task Configuration](/tasks/task-configuration).
+## Shell and environment {#shell-and-environment}
 
-**TOML Tasks**
-: Tasks defined directly in the `[tasks]` section of mise.toml files. See [TOML Tasks](/tasks/toml-tasks).
+### Shell activation {#activation}
 
-## Directories & Environment
+Running `mise activate` from your shell's startup file, such as
+`eval "$(mise activate zsh)"` in `~/.zshrc`. mise then sets `PATH` and `[env]`
+variables for the current directory and updates them as you move between
+projects. See [Shell setup](/shell-setup.html).
 
-**MISE_CACHE_DIR**
-: Directory where mise caches downloaded files and metadata. Defaults to `~/.cache/mise` on Linux, `~/Library/Caches/mise` on macOS.
+### hook-env {#hook-env}
 
-**MISE_DATA_DIR**
-: Directory where mise stores installed tools and other persistent data. Defaults to `~/.local/share/mise` on Unix and `%LOCALAPPDATA%\mise` on Windows. See [directories](/directories.html).
+The internal command that activation runs before each prompt to update the
+environment for the current directory. Run it with `MISE_TIMINGS=1` to
+[profile a slow prompt](/troubleshooting.html#slow-shell-prompts).
 
-**MISE_PROJECT_ROOT**
-: The active project root passed to tasks and hooks. Nested configuration layouts such as `.config/mise/config.toml` resolve to the owning project directory, not the config file's immediate parent.
+### Shims {#shims}
 
-## Other Terms
+Small executables named after a tool's commands, such as `node`, kept in a shim
+directory. Each one selects the version for the current directory and runs it,
+so editors and other programs that never load an activated shell can use mise
+tools. See [Shims](/dev-tools/shims.html).
 
-**Tool Aliases**
-: Alternative names for tool backends or tool versions, managed via `mise tool-alias` or the `[tool_alias]` config section. Backend aliases let a short name like `node` point to a custom backend. Version aliases let symbolic names like `lts-iron` map to a concrete version number. See [Tool Aliases](/dev-tools/aliases).
+### Reshim {#reshim}
 
-**Shell Aliases**
-: Shell command aliases (example: `ll = "ls -la"`) managed via `mise shell-alias` or the `[shell_alias]` config section. They are set dynamically when entering a directory and unset when leaving it, similar to environment variables. Support varies by shell; see the [shell compatibility table](/getting-started.html#shell-feature-compatibility). See [Shell Aliases](/shell-aliases).
+Rebuilding the shims. mise does it when it installs or removes a tool. Run
+`mise reshim` after another program adds executables to an installed tool, such
+as a global `npm install`. See [Shims](/dev-tools/shims.html#mise-reshim).
 
-**direnv**
-: An external tool for environment management that mise can work alongside. See [direnv integration](/direnv).
+### Command wrapper {#command-wrapper}
 
-**mise-en-place**
-: French culinary phrase meaning "everything in its place" - the philosophy behind mise. Chefs prepare all ingredients before cooking; developers should have all tools ready before coding.
+A command defined under `[wrappers]` that keeps its name but runs another
+program, such as `terraform` running `tofu`. See
+[Command wrappers](/dev-tools/shims.html#command-wrappers).
 
-**mise.lock**
-: A file that records concrete versions and supported artifact metadata for selected platforms. It complements `mise.toml`, which records the requested versions. See [mise.lock](/dev-tools/mise-lock).
+### Env directives {#env-directives}
 
-**Tool Options**
-: Configuration in mise.toml that changes tool behavior, such as an HTTP download URL, asset pattern, or backend-specific installation arguments. Python virtualenv activation is an environment directive, not a generic tool option.
+Keys under `[env]` that start with `_.` and do more than set one variable:
+`_.file` loads a dotenv file, `_.path` adds directories to `PATH`, `_.source`
+runs a script and keeps its exports, and `_.python.venv` activates a
+virtualenv. See [Env directives](/environments/#env-directives).
 
-**Bootstrap packages**
-: Host packages declared in `[bootstrap.packages]`, applied during machine setup. They use a shared system package database or prefix, unlike project-selected `[tools]` versions. See [bootstrap packages](/bootstrap/packages/).
+### Tool-dependent environment {#tool-dependent-environment}
+
+An `[env]` entry with `tools = true`, which mise resolves after it adds tools
+to `PATH`, so the value can use them. See
+[Use values that tools set](/environments/#lazy-eval).
+
+### Redaction {#redaction}
+
+Replacing values marked `redact = true` with `[redacted]` in task output and
+logs that mise captures. Raw and interactive task output is not redacted. See
+[Redaction and CI masking](/environments/secrets/#redaction).
+
+### Shell aliases {#shell-aliases}
+
+Aliases declared under `[shell_alias]`, such as `ll = "ls -la"`, that mise sets
+when you enter a project and removes when you leave. They work in Bash, Zsh,
+and Fish. See [Shell aliases](/shell-aliases.html).
+
+### Hooks {#hooks}
+
+Commands that run on an event: `enter`, `leave`, and `cd` when an activated
+shell changes directory, `preinstall` and `postinstall` around tool installs,
+and `[[watch_files]]` entries when a watched file changes. See
+[Hooks](/hooks.html).
+
+### direnv {#direnv}
+
+A separate tool that changes the environment per directory. mise's `[env]`
+covers the same needs, and running both together is unsupported. See
+[Migrating from direnv](/direnv.html).
+
+## Tasks {#tasks}
+
+### Task {#task}
+
+A named command or script that runs with the project's tools and environment
+variables. See [Tasks](/tasks/).
+
+### TOML task {#toml-task}
+
+A task defined under `[tasks]` in `mise.toml`. See
+[TOML tasks](/tasks/toml-tasks.html).
+
+### File task {#file-task}
+
+A task defined as an executable script in a task directory such as
+`mise-tasks/` or `.mise/tasks/`. See [File tasks](/tasks/file-tasks.html).
+
+### Task dependencies {#task-dependencies}
+
+The order between tasks: `depends` runs other tasks first, `depends_post` runs
+them after, and `wait_for` waits for tasks that are already part of the run.
+See [Dependencies and execution order](/tasks/architecture.html).
+
+### Monorepo root {#monorepo-root}
+
+The root `mise.toml` of a repository that holds several projects, marked with
+`monorepo_root = true`. Each subproject's tasks get a path-based name, such as
+`//projects/api:build`, that runs from anywhere in the repository. List the
+subprojects in `[monorepo].config_roots`; finding them by walking the
+filesystem is deprecated. See [Monorepo tasks](/tasks/monorepo.html).
+
+## Security {#security}
+
+### Trust {#trust}
+
+Your approval for mise to load a project config file that can run code, such
+as one with `[env]`, hooks, templates, or tool options. Give it with
+`mise trust`. See [Configuration trust](/security.html#configuration-trust).
+
+### Safe mode {#safe-mode}
+
+A mode, turned on with `MISE_SAFE=1`, that loads project config without trust
+but skips or refuses everything in it that would run code, such as hooks,
+tasks, and `exec()` in templates. Use it for automation that reads config it
+does not control. See [Safe mode](/security.html#safe-mode).
+
+### Paranoid mode {#paranoid-mode}
+
+A setting that requires trust for every project config file, again whenever
+the file changes. It also turns off automatic trust, including in CI, and
+re-verifies provenance on every install. See [Paranoid mode](/paranoid.html).
+
+## Machine setup {#machine-setup}
+
+### Bootstrap {#bootstrap}
+
+`mise bootstrap`, which sets up a machine from your config: host packages,
+system files, services, Git repositories, dotfiles, shell activation, and
+tools. See [Bootstrap](/bootstrap.html).
+
+### Bootstrap packages {#bootstrap-packages}
+
+Packages declared in `[bootstrap.packages]` and installed with the host's
+package managers, such as apt, Homebrew, or WinGet. The whole machine shares
+them, unlike the per-project versions in `[tools]`. See
+[Bootstrap packages](/bootstrap/packages/).
+
+### Dotfiles {#dotfiles}
+
+Configuration files in your home directory, such as `~/.zshrc`. mise can keep
+a history of their changes, and copy, link, or generate them from your config.
+See [Dotfiles](/dotfiles.html).
+
+### Daemon {#daemon}
+
+A process that keeps running between commands, such as a database or a
+development server, declared in `mise.toml` and supervised by
+[pitchfork](https://pitchfork.jdx.dev/). Daemons are experimental. See
+[Daemons](/daemons.html).

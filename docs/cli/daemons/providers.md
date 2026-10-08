@@ -25,6 +25,6 @@ Manage shared servers defined in global [daemon_providers].
 
 ## Related documentation
 
-- [Getting started](/getting-started.html).
+- [Share daemons across projects](/daemons/sharing.html).
 - [`mise daemons [--json] [SUBCOMMAND]`](/cli/daemons.html).
 - [Global flags and argument syntax](/cli/#global-flags).

@@ -1,271 +1,220 @@
 ---
-description: "Tasks can be defined in mise.toml files in different ways."
+description: "Define short commands and task groups in the [tasks] table of mise.toml."
 ---
 
-# TOML-based Tasks
+# TOML tasks
 
-Tasks can be defined in `mise.toml` files in different ways. Trivial tasks can be written into a `[tasks]` section, while more detailed tasks each get their own section.
+Define a task in `mise.toml` when its command fits on a line or two, or when it
+mostly runs other tasks. Move longer scripts to [file tasks](/tasks/file-tasks.html)
+so your editor can highlight and lint them.
 
-## Trivial task examples
+## Define a task
 
-```mise-toml [mise.toml]
+The shortest form maps a task name to a command:
+
+```toml [mise.toml]
 [tasks]
 build = "cargo build"
 test = "cargo test"
 lint = "cargo clippy"
 ```
 
-## Detailed task examples
+Give a task its own table to add properties:
 
 ```mise-toml [mise.toml]
-[tasks.cleancache]
-run = "rm -rf .cache"
-hide = true # hide this task from the list
-
-[tasks.clean]
-depends = ['cleancache']
-run = "cargo clean" # runs as a shell command
-
 [tasks.build]
-description = 'Build the CLI'
+description = "Build the CLI"
 run = "cargo build"
-alias = 'b' # `mise run b`
-
-[tasks.test]
-description = 'Run automated tests'
-# multiple commands are run in series
-run = [
-    'cargo test',
-    './scripts/test-e2e.sh',
-]
-dir = "{{cwd}}" # run in user's cwd, default is the project's base directory
-
-[tasks.lint]
-description = 'Lint with clippy'
-env = { RUST_BACKTRACE = '1' } # env vars for the script
-# you can specify a multiline script instead of individual commands
-run = '''
-#!/usr/bin/env bash
-cargo clippy
-'''
-
-[tasks.ci] # only dependencies to be run
-description = 'Run CI tasks'
-depends = ['build', 'lint', 'test']
-
-[tasks.release]
-confirm = 'Are you sure you want to cut a new release?'
-description = 'Cut a new release'
-file = 'scripts/release.sh' # execute an external script
 ```
 
-You can use [environment variables](/environments/) or [`vars`](/configuration/vars) to define common arguments:
+Each property below has one example. The
+[task configuration reference](/tasks/task-configuration.html) lists them all.
 
-```mise-toml [mise.toml]
-[env]
-VERBOSE_ARGS = '--verbose'
+### Add a task from the command line
 
-# Vars can be shared between tasks like environment variables,
-# but they are not passed as environment variables to the scripts
-[vars]
-e2e_args = '--headless'
+[`mise tasks add`](/cli/tasks/add.html) writes a task to `mise.toml`:
 
-[tasks.test]
-run = './scripts/test-e2e.sh {{vars.e2e_args}} $VERBOSE_ARGS'
-```
-
-## Adding tasks
-
-You can edit the `mise.toml` file directly or use [`mise tasks add`](/cli/tasks/add). For example:
-
-```shell
+```sh
 mise tasks add pre-commit --depends "test" --depends "render" -- echo pre-commit
 ```
 
-adds the following to `mise.toml`:
+This adds:
 
-```toml
+```mise-toml [mise.toml]
 [tasks.pre-commit]
 depends = ["test", "render"]
 run = "echo pre-commit"
 ```
 
-## Common options
+## Common properties
 
-For an exhaustive list, see [task configuration](/tasks/task-configuration).
+### Run commands
 
-### Run command
-
-Provide the script to run. This can be a single command or an array of commands:
+`run` is a single command or an array of commands:
 
 ```mise-toml
 [tasks.test]
-run = 'cargo test'
+run = "cargo test"
 ```
-
-Commands are run in series. If a command fails, the task stops and the remaining commands do not run.
 
 ```mise-toml
 [tasks.test]
 run = [
-    'cargo test',
-    './scripts/test-e2e.sh',
+  "cargo test",
+  "./scripts/test-e2e.sh",
 ]
 ```
 
-You can specify an alternate command to run on Windows with the `run_windows` key:
+Array entries run in order. If one fails, the task stops and the remaining
+entries do not run. Extra command-line arguments go to the last entry. An entry
+can also run another task; see
+[Run steps in order](/tasks/architecture.html#run-steps-in-order).
+
+`run_windows` replaces `run` on Windows:
 
 ```mise-toml
 [tasks.test]
-run = 'cargo test'
-run_windows = 'cargo test --features windows'
+run = "cargo test"
+run_windows = "cargo test --features windows"
 ```
 
-### Specifying which directory to use
+### Working directory
 
-The [`dir`](/tasks/task-configuration.html#dir) property determines the `cwd` in which the task is executed. You can use the directory
-the task was run from with <span v-pre>`dir = "{{cwd}}"`</span>:
+Tasks run from the [config root](/configuration.html#config-root) by default.
+Set <span v-pre>`dir = "{{cwd}}"`</span> to run from the directory where you
+called mise:
 
 ```mise-toml
 [tasks.test]
-run = 'cargo test'
+run = "cargo test"
 dir = "{{cwd}}"
 ```
 
-`MISE_ORIGINAL_CWD` is also set to the original working directory and passed to the task.
+`MISE_ORIGINAL_CWD` also holds that directory. See
+[`dir`](/tasks/task-configuration.html#dir) for other values.
 
-### Adding a description and alias
-
-You can add a description and an alias to a task.
+### Description and alias
 
 ```mise-toml
 [tasks.build]
-description = 'Build the CLI'
+description = "Build the CLI"
 run = "cargo build"
-alias = 'b' # `mise run b`
+alias = "b"
 ```
 
-- The alias can be used to run the task.
-- The description is displayed when running [`mise tasks ls`](/cli/tasks/ls.html) or [`mise run`](/cli/run.html) with no arguments.
+`mise run b` now runs `build`. The description appears in
+[`mise tasks ls`](/cli/tasks/ls.html) and in the selector that
+[`mise run`](/cli/run.html) opens when you give it no task name.
 
-```shell
-❯ mise run
-Tasks
-# Select a task to run
-# > build  Build the CLI
-#   test   Run the tests
-```
+Set `hide = true` on a helper task to leave it out of `mise tasks ls`. You can
+still run it by name, and `mise tasks ls --hidden` lists it.
 
 ### Dependencies
 
-You can specify dependencies for a task. Dependencies are run before the task itself. If a dependency fails, the task does not run.
+Dependencies run before the task. If one fails, the task does not run:
 
 ```mise-toml
 [tasks.build]
-run = 'cargo build'
+run = "cargo build"
 
 [tasks.test]
-depends = ['build']
+depends = ["build"]
+run = "cargo test"
 ```
 
-There are other ways to specify dependencies; see [wait_for](/tasks/task-configuration.html#wait-for) and [depends_post](/tasks/task-configuration.html#depends-post).
-
-### Daemons <Badge type="warning" text="experimental" />
-
-Use `daemons` when a task needs a service that should keep running between task
-invocations. mise starts the service through pitchfork and waits for readiness
-before running the task.
-
-```mise-toml
-[settings]
-experimental = true
-
-[daemons]
-postgres = "18"
-
-[tasks.test]
-daemons = "postgres"
-run = "npm test"
-```
-
-`mise run test` starts PostgreSQL if needed, waits for it to be ready, and runs
-the test script. Later runs reuse the database. It stays running after the tests
-finish; stop it with `mise daemons stop postgres`.
-
-Use a list such as `daemons = ["postgres", "redis"]` for multiple declared services,
-or `daemons = true` for all daemons in the task's project configuration.
-See the [daemon guide](/daemons.html) for prerequisites and service configuration,
-and the [`daemons` reference](/tasks/task-configuration.html#daemons) for name
-resolution and dependency flags.
+[Dependencies and execution order](/tasks/architecture.html) compares
+`depends` with `wait_for`, `depends_post`, and run steps.
 
 ### Environment variables
 
-You can specify environment variables for a task:
+`env` sets variables for this task only, not for its dependencies:
 
 ```mise-toml
-[tasks.lint]
-description = 'Lint with clippy'
-env = { RUST_BACKTRACE = '1' } # env vars for the script
-# you can specify a multiline script instead of individual commands
-run = '''
-#!/usr/bin/env bash
-cargo clippy
-'''
+[tasks.test]
+env = { RUST_BACKTRACE = "1" }
+run = "cargo test"
 ```
 
-### Sources / Outputs
+Project-wide [environment variables](/environments/) from `[env]` reach every
+task. Use [`[vars]`](/configuration/vars.html) for values a command needs that
+should not be exported to its environment:
 
-To skip a task when certain files haven't changed (that is, when it is up to date), specify `sources` and `outputs`:
+```mise-toml [mise.toml]
+[env]
+VERBOSE_ARGS = "--verbose"
 
-```mise-toml
-[tasks.build]
-description = 'Build the CLI'
-run = "cargo build"
-sources = ['Cargo.toml', 'src/**/*.rs'] # skip running if these files haven't changed
-outputs = ['target/debug/mycli']
+[vars]
+e2e_args = "--headless"
+
+[tasks.test]
+run = "./scripts/test-e2e.sh {{vars.e2e_args}} $VERBOSE_ARGS"
 ```
 
-You can use `sources` alone with [`mise watch`](/cli/watch.html) to run the task when the sources change.
-You can use the [`task_source_files()`](../templates.md#task-source-files) function to get the resolved paths of a task's `sources` from within
-its [template](../templates.md).
+### Sources and outputs
+
+With [`sources`](/tasks/task-configuration.html#sources) and
+[`outputs`](/tasks/task-configuration.html#outputs), mise skips the task while
+its outputs are up to date. See
+[Skip tasks that are up to date](/tasks/running-tasks.html#skip-tasks-that-are-up-to-date)
+for an example, and [Task caching](/tasks/caching.html) for how the checks work.
+`sources` alone also tells [`mise watch`](/cli/watch.html) which
+files to watch. In a run script, the
+[`task_source_files()`](/templates.html#task-source-files) template function
+returns the files that match `sources`.
 
 ### Confirmation
 
-Set `confirm` to prompt before the task's own command runs. Its `depends` tasks
-have already run at this point. To prompt before starting that work, put the
-confirmation on those tasks or invoke them through a `run` array. See
-[`confirm`](./task-configuration.html#confirm).
+`confirm` prompts before the task's own command runs:
 
-```mise-toml
+```toml
 [tasks.release]
-confirm = 'Are you sure you want to cut a new release?'
-description = 'Cut a new release'
-file = 'scripts/release.sh'
+confirm = "Are you sure you want to cut a new release?"
+description = "Cut a new release"
+file = "scripts/release.sh"
 ```
+
+The task's `depends` have already run when the prompt appears. To prompt before
+that work, put the confirmation on those tasks or call them as
+[run steps](/tasks/architecture.html#run-steps-in-order). See
+[`confirm`](/tasks/task-configuration.html#confirm).
+
+### Daemons <Badge type="warning" text="experimental" />
+
+::: warning Experimental
+Daemons require `experimental = true` under `[settings]`.
+:::
+
+Set `daemons = "postgres"` to start a
+[project daemon](/daemons.html#tasks-that-require-daemons) and wait until it is
+ready before the task runs. The daemon keeps running afterward. See
+[`daemons`](/tasks/task-configuration.html#daemons) for the accepted values.
 
 ## Specifying a shell or an interpreter {#shell-shebang}
 
-Tasks are executed with `set -e` (`set -o errexit`) if the shell is `sh`, `bash`, or `zsh`. This means the script
-exits if any command fails. You can disable this by running `set +e` in the script.
+On Unix, inline commands run with the default
+[`sh -o errexit -c`](/configuration/settings.html#unix_default_inline_shell_args),
+so the script stops at the first failing command. Add `set +e` to keep going:
 
 ```mise-toml
-[tasks.echo]
+[tasks.cleanup]
 run = '''
 set +e
 cd /nonexistent
-echo "This will not fail the task"
+echo "This does not fail the task"
 '''
 ```
 
-You can specify a `shell` command to run the script with (default is [`sh -c`](/configuration/settings.html#unix_default_inline_shell_args) or [`cmd /c`](/configuration/settings.html#windows_default_inline_shell_args)):
+The default on Windows is
+[`cmd /c`](/configuration/settings.html#windows_default_inline_shell_args).
+Set `shell` to run a task's commands with another shell:
 
 ```mise-toml
 [tasks.lint]
-shell = 'bash -c'
+shell = "bash -c"
 run = "cargo clippy"
 ```
 
-or use a shebang:
+Or start the script with a shebang:
 
 ```mise-toml
 [tasks.lint]
@@ -275,9 +224,22 @@ cargo clippy
 '''
 ```
 
-Shebang tasks are executed as script files. Extra arguments that are not defined by a
-[`usage` specification](/tasks/task-arguments#usage-field) are passed as normal script arguments,
-such as `$1` and `$@` in Bash:
+A custom `shell` (even `sh -c` or `bash -c`), a shebang script, and the Windows
+default `cmd /c` do not stop at the first failure. Add `set -e` (or
+`set -euo pipefail`) to the script yourself:
+
+```mise-toml
+[tasks.lint]
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+cargo clippy
+'''
+```
+
+mise runs a shebang task as a script file. Extra arguments that a
+[usage spec](/tasks/task-arguments.html) does not define reach the script as
+ordinary arguments, such as `$1` and `$@` in Bash:
 
 ```mise-toml
 [tasks.greet]
@@ -287,18 +249,24 @@ echo "hello $1"
 '''
 ```
 
-```shell
-$ mise run greet world
-hello world
+```sh
+mise run greet world
+# hello world
 ```
 
-By using a `shebang` (or `shell`), you can run tasks in other languages (e.g., Python, Node.js, or Ruby):
+Without a shebang, mise appends the arguments to the last command instead, so
+`$1` is empty.
+
+### Other languages
+
+A shebang or `shell` runs the task with any interpreter, such as Python,
+Node.js, or Ruby:
 
 ::: code-group
 
 ```mise-toml [python]
 [tools]
-python = 'latest'
+python = "latest"
 
 [tasks.python_task]
 run = '''
@@ -310,7 +278,7 @@ for i in range(10):
 
 ```mise-toml [python + uv]
 [tools]
-uv = 'latest'
+uv = "latest"
 
 [tasks.python_uv_task]
 run = '''
@@ -330,10 +298,10 @@ pprint([(k, v["title"]) for k, v in data.items()][:10])
 
 ```mise-toml [node]
 [tools]
-node = 'lts'
+node = "24"
 
 [tasks.node_task]
-shell = 'node -e'
+shell = "node -e"
 run = [
   "console.log('First line')",
   "console.log('Second line')",
@@ -342,7 +310,7 @@ run = [
 
 ```mise-toml [bun]
 [tools]
-bun = 'latest'
+bun = "latest"
 
 [tasks.bun_shell]
 description = "https://bun.sh/docs/runtime/shell"
@@ -357,38 +325,18 @@ await $`cat < ${response} | wc -c`; // 1256
 
 ```mise-toml [deno]
 [tools]
-deno = 'latest'
+deno = "latest"
 
 [tasks.deno_task]
-description = "A more complex task using Deno imports"
 run = '''
 #!/usr/bin/env -S deno run
-import ProgressBar from "jsr:@deno-library/progress";
-import { delay } from "jsr:@std/async";
-
-if (!confirm('Start download?')) {
-    Deno.exit(1);
-}
-
-const progress = new ProgressBar({ title:  "downloading:", total: 100 });
-let completed = 0;
-async function download() {
-  while (completed <= 100) {
-    await progress.render(completed++);
-    await delay(10);
-  }
-}
-await download();
+console.log(`Hello from Deno ${Deno.version.deno}`)
 '''
-# ❯ mise run deno_task
-# [download_task] $ import ProgressBar from "jsr:@deno-library/progress";
-# Start download? [y/N] y
-# downloading: ...
 ```
 
 ```mise-toml [ruby]
 [tools]
-ruby = 'latest'
+ruby = "latest"
 
 [tasks.ruby_task]
 run = '''
@@ -399,211 +347,97 @@ puts 'Hello, ruby!'
 
 :::
 
-::: details What's a shebang? What's the difference between `#!/usr/bin/env` and `#!/usr/bin/env -S`
+::: details What is a shebang, and what does `-S` do?
 
-A shebang is the character sequence `#!` at the beginning of a script file that tells the system which program should interpret the script.
-The [env command](https://manpages.ubuntu.com/manpages/jammy/man1/env.1.html) comes from GNU Coreutils. `mise` does not use `env` but behaves similarly.
+A shebang is the character sequence `#!` at the start of a script that names
+the program that interprets it. `#!/usr/bin/env python` runs the script with
+the `python` found on `PATH`. On Linux and macOS the system runs the shebang
+line, so [`env`](https://manpages.ubuntu.com/manpages/jammy/man1/env.1.html)
+finds `python` on `PATH`. Windows has no shebangs: mise reads the line, drops a
+leading `/usr/bin/env` or `/usr/bin/env -S`, and starts the named interpreter
+itself.
 
-For example, `#!/usr/bin/env python` will run the script with the Python interpreter found in the `PATH`.
-
-The `-S` flag allows passing multiple arguments to the interpreter.
-It treats the rest of the line as a single argument string to be split.
-
-This is useful when you need to specify interpreter flags or options.
-For example, `#!/usr/bin/env -S python -u` runs Python with unbuffered output.
+`-S` splits the rest of the line into separate arguments, so you can pass flags
+to the interpreter. For example, `#!/usr/bin/env -S python -u` runs Python with
+unbuffered output.
 
 :::
 
-## Using a file or remote script
+### Simple commands run without a shell
 
-You can specify a file to run as a task:
+On Unix, when a task uses the default shell, mise can start a simple inline
+command such as `node build.js` directly, without `sh`. A command that uses
+shell syntax (quoting, expansion, operators, or builtins), or that runs with
+`ENV` or `BASH_ENV` set, still goes through the shell, as do sandboxed tasks and
+tasks with `cache.audit = true`. A task `shell`, `mise run --shell`, or the
+`unix_default_inline_shell_args` setting always uses the shell, even when it
+names the default, so set one if a wrapper named `sh` on `PATH` must run.
 
-```mise-toml
+## Using a file or remote script {#using-a-file-or-remote-script}
+
+`file` runs a script instead of an inline command:
+
+```toml
 [tasks.release]
-description = 'Cut a new release'
-file = 'scripts/release.sh' # execute an external script
+description = "Cut a new release"
+file = "scripts/release.sh"
 ```
 
 ### Remote tasks
 
-Task files can be fetched remotely using several protocols:
+`file` can also fetch the script from a URL. mise downloads it and runs it, so
+use only sources you trust.
 
 #### HTTP
 
-```mise-toml
+```toml
 [tasks.build]
 file = "https://example.com/build.sh"
 ```
 
-The file is downloaded and executed, so make sure you trust the source.
-
-#### Git <Badge type="warning" text="experimental" />
+#### Git
 
 ::: code-group
 
-```mise-toml [ssh]
+```toml [ssh]
 [tasks.build]
 file = "git::ssh://git@github.com/myorg/example.git//myfile?ref=v1.0.0"
 ```
 
-```mise-toml [https]
+```toml [https]
 [tasks.build]
 file = "git::https://github.com/myorg/example.git//myfile?ref=v1.0.0"
 ```
 
 :::
 
-The URL must follow the pattern `git::<protocol>://<url>//<path>?ref=<ref>`.
-
-Required fields:
-
-- `protocol`: The git protocol, such as `ssh` or `https`.
-- `url`: The git repository URL.
-- `path`: The path to the file in the repository.
-
-Optional fields:
-
-- `ref`: The git reference (branch, tag, commit).
+The URL has the form `git::<protocol>://<repository>.git//<path>?ref=<ref>`,
+where `ref` is an optional branch, tag, or commit. See
+[Git URL syntax](/tasks/task-discovery.html#git-url-syntax) for every field.
 
 #### Cache
 
-Each task file is cached in the `MISE_CACHE_DIR` directory. If the remote file is updated, it is not re-downloaded until the cache is cleared.
+mise caches each remote task file under `MISE_CACHE_DIR` and does not download
+it again until you run `mise cache clear`. To fetch fresh copies, pass
+`mise run --no-cache` or set
+[`task.remote_no_cache`](/configuration/settings.html#task.remote_no_cache)
+(`MISE_TASK_REMOTE_NO_CACHE=1`).
 
-:::tip
-You can reset the cache by running `mise cache clear`.
-:::
+## Arguments {#arguments}
 
-You can use the `MISE_TASK_REMOTE_NO_CACHE` environment variable to disable caching of remote tasks.
-
-## Arguments
-
-::: tip
-For comprehensive information about task arguments, see the dedicated [Task Arguments](/tasks/task-arguments) page.
-:::
-
-By default, arguments are passed to the last script in the `run` array. So if a task is defined as:
-
-```mise-toml
-[tasks.test]
-run = ['cargo test', './scripts/test-e2e.sh']
-```
-
-Then running `mise run test foo bar` passes `foo bar` to `./scripts/test-e2e.sh` but not to
-`cargo test`.
-
-### Recommended: Using the Usage Field
-
-The recommended way to define arguments is the `usage` field:
+Define arguments with a `usage` spec. mise parses them and passes each value to
+the command as a `usage_*` environment variable:
 
 ```mise-toml
 [tasks.test]
 usage = '''
 arg "<file>" help="Test file to run" default="all"
 flag "--format <format>" help="Output format" default="text"
-flag "-v --verbose" help="Enable verbose output"
 '''
 run = 'echo "Testing ${usage_file?} with format ${usage_format?}"'
 ```
 
-Arguments defined in the usage field are available as environment variables prefixed with `usage_`.
-
-See the [Task Arguments](/tasks/task-arguments#usage-field) page for complete documentation.
-
-### Tera Template Functions <Badge type="danger" text="deprecated" />
-
-::: danger Deprecated - Removal in 2027.5.0
-Using Tera template functions (`arg()`, `option()`, `flag()`) in run scripts is **deprecated** and will be **removed in mise 2027.5.0**. Versions >= 2026.5.0 will show a deprecation warning.
-
-**Why it's being removed:**
-
-- Template functions return empty strings during spec collection (two-pass parsing issue)
-- Shell escaping rules are complex and unpredictable
-- Behavior is inconsistent between TOML and file tasks
-
-**Migrate to the `usage` field instead.** See the [migration guide](/tasks/task-arguments#tera-templates).
-:::
-
-<details>
-<summary>Click to see deprecated Tera template syntax (not recommended)</summary>
-
-You can define arguments using Tera template functions (deprecated):
-
-```mise-toml
-[tasks.test]
-run = [
-    'cargo test {{arg(name="cargo_test_args", var=true)}}',
-    './scripts/test-e2e.sh {{option(name="e2e_args")}}',
-]
-```
-
-Then running `mise run test foo bar` passes `foo bar` to `cargo test`.
-`mise run test --e2e-args baz` passes `baz` to `./scripts/test-e2e.sh`.
-
-#### Positional Arguments
-
-These are defined in scripts with <span v-pre>`{{arg()}}`</span>. They are used for positional
-arguments where the order matters.
-
-Example:
-
-```mise-toml
-[tasks.test]
-run = 'cargo test {{arg(name="file")}}'
-# execute: mise run test my-test-file
-# runs: cargo test my-test-file
-```
-
-- `i`: The index of the argument. This can be used to specify the order of arguments. Defaults to
-  the order they're defined in the scripts.
-- `name`: The name of the argument. This is used for help/error messages.
-- `var`: If `true`, multiple arguments can be passed.
-- `default`: The default value if the argument is not provided.
-
-#### Options
-
-These are defined in scripts with <span v-pre>`{{option()}}`</span>. They are used for named
-arguments where the order doesn't matter.
-
-Example:
-
-```mise-toml
-[tasks.test]
-run = 'cargo test {{option(name="file")}}'
-# execute: mise run test --file my-test-file
-# runs: cargo test my-test-file
-```
-
-- `name`: The name of the argument. This is used for help/error messages.
-- `var`: If `true`, multiple values can be passed.
-- `default`: The default value if the option is not provided.
-
-#### Flags
-
-Flags are like options except they don't take values. They are defined in scripts with <span v-pre>
-`{{flag()}}`</span>.
-
-Examples:
-
-```mise-toml
-[tasks.echo]
-run = 'echo {{flag(name="myflag")}}'
-# execute: mise run echo --myflag
-# runs: echo true
-```
-
-```mise-toml
-[tasks.maybeClean]
-run = '''
-if [ '{{flag(name='clean')}}' = 'true' ]; then
-  echo 'cleaning'
-fi
-'''
-# execute: mise run maybeClean --clean
-# runs: echo cleaning
-```
-
-- `name`: The name of the flag. This is used for help/error messages.
-
-The value is `true` if the flag is passed and `false` otherwise.
-
-</details>
+See [Task arguments](/tasks/task-arguments.html) for the spec syntax. Without a
+spec, extra arguments are [forwarded](/tasks/running-tasks.html#pass-arguments)
+to the command. Tasks that still use `arg()`, `option()`, or `flag()` in `run`
+should follow the [migration guide](/tasks/task-arguments.html#tera-templates).

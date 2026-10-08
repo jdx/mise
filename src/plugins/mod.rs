@@ -211,17 +211,42 @@ impl PluginType {
     }
 
     pub fn from_plugin_config(key: &str) -> (Self, &str) {
-        if let Some(name) = key.strip_prefix("vfox:") {
-            (Self::Vfox, name)
-        } else if let Some(name) = key.strip_prefix("vfox-backend:") {
-            (Self::VfoxBackend, name)
-        } else if let Some(name) = key.strip_prefix("package:") {
-            (Self::Package, name)
-        } else if let Some(name) = key.strip_prefix("asdf:") {
-            (Self::Asdf, name)
-        } else {
+        Self::from_key_prefix(key).unwrap_or_else(|| {
             let path = dirs::PLUGINS.join(key.to_kebab_case());
             (Self::from_plugin_path(&path).unwrap_or(Self::Asdf), key)
+        })
+    }
+
+    /// The type a `[plugins]` entry installs as. An explicit prefix decides
+    /// the type; otherwise [`Self::from_unprefixed_entry`] does.
+    pub(crate) fn from_plugin_entry<'a>(key: &'a str, url: &str) -> (Self, &'a str) {
+        Self::from_key_prefix(key).unwrap_or_else(|| {
+            let path = dirs::PLUGINS.join(key.to_kebab_case());
+            (Self::from_unprefixed_entry(&path, url), key)
+        })
+    }
+
+    /// The type of an unprefixed `[plugins]` entry whose plugin lives at
+    /// `path`. A plugin already installed there keeps the type found on disk.
+    /// Otherwise a signed packslip archive installs as vfox, and anything else
+    /// falls back to asdf.
+    fn from_unprefixed_entry(path: &Path, url: &str) -> Self {
+        Self::from_plugin_path(path).unwrap_or(if url.starts_with("packslip:") {
+            Self::Vfox
+        } else {
+            Self::Asdf
+        })
+    }
+
+    fn from_key_prefix(key: &str) -> Option<(Self, &str)> {
+        if let Some(name) = key.strip_prefix("vfox:") {
+            Some((Self::Vfox, name))
+        } else if let Some(name) = key.strip_prefix("vfox-backend:") {
+            Some((Self::VfoxBackend, name))
+        } else if let Some(name) = key.strip_prefix("package:") {
+            Some((Self::Package, name))
+        } else {
+            key.strip_prefix("asdf:").map(|name| (Self::Asdf, name))
         }
     }
 
@@ -515,7 +540,7 @@ pub(crate) fn install_git_plugin_source(
         file::remove_all_with_progress(plugin_path, pr)?;
         file::remove_all_with_progress(&repo_path, pr)?;
 
-        clone_git_plugin_source(&repo_path, repo_url, git_ref, pr)?;
+        let git = clone_git_plugin_source(&repo_path, repo_url, git_ref, pr)?;
 
         let subdir_path = repo_path.join(subdir);
         if !subdir_path.is_dir() {
@@ -525,9 +550,16 @@ pub(crate) fn install_git_plugin_source(
                 file::display_path(&subdir_path)
             ));
         }
+        // The clone lands in plugin-repos/, so nothing has created the plugins
+        // directory yet on a fresh install.
+        if let Some(parent) = plugin_path.parent() {
+            file::create_dir_all(parent)?;
+        }
         pr.set_message(format!("link {}", file::display_path(plugin_path)));
         file::make_symlink(&subdir_path, plugin_path)?;
-        Ok(Git::new(plugin_path))
+        // Report from the clone itself: gix does not open a repository from
+        // one of its subdirectories.
+        Ok(git)
     } else {
         clone_git_plugin_source(plugin_path, repo_url, git_ref, pr)
     }
@@ -1030,6 +1062,64 @@ mod tests {
         assert_eq!(
             PluginType::from_plugin_config("missing-test-plugin"),
             (PluginType::Asdf, "missing-test-plugin")
+        );
+    }
+
+    #[test]
+    fn test_plugin_type_from_plugin_entry() {
+        let packslip = "packslip:mise-plugins/vfox-bfs#0.1.0-dev.2";
+        assert_eq!(
+            PluginType::from_plugin_entry("missing-test-plugin", packslip),
+            (PluginType::Vfox, "missing-test-plugin")
+        );
+        assert_eq!(
+            PluginType::from_plugin_entry(
+                "missing-test-plugin",
+                "https://github.com/mise-plugins/missing-test-plugin"
+            ),
+            (PluginType::Asdf, "missing-test-plugin")
+        );
+        assert_eq!(
+            PluginType::from_plugin_entry("asdf:missing-test-plugin", packslip),
+            (PluginType::Asdf, "missing-test-plugin")
+        );
+        assert_eq!(
+            PluginType::from_plugin_entry("vfox-backend:missing-test-plugin", packslip),
+            (PluginType::VfoxBackend, "missing-test-plugin")
+        );
+    }
+
+    #[test]
+    fn test_plugin_type_from_unprefixed_entry() {
+        let packslip = "packslip:mise-plugins/vfox-bfs#0.1.0-dev.2";
+        let git = "https://github.com/mise-plugins/asdf-foo";
+
+        let empty = tempfile::tempdir().unwrap();
+        let missing = empty.path().join("foo");
+        assert_eq!(
+            PluginType::from_unprefixed_entry(&missing, packslip),
+            PluginType::Vfox
+        );
+        assert_eq!(
+            PluginType::from_unprefixed_entry(&missing, git),
+            PluginType::Asdf
+        );
+
+        // An installed asdf plugin keeps its type when its entry changes to a
+        // packslip archive, rather than being driven as a vfox plugin.
+        let asdf = tempfile::tempdir().unwrap();
+        file::create_dir_all(asdf.path().join("bin")).unwrap();
+        fs::write(asdf.path().join("bin").join("list-all"), "").unwrap();
+        assert_eq!(
+            PluginType::from_unprefixed_entry(asdf.path(), packslip),
+            PluginType::Asdf
+        );
+
+        let vfox = tempfile::tempdir().unwrap();
+        fs::write(vfox.path().join("metadata.lua"), "").unwrap();
+        assert_eq!(
+            PluginType::from_unprefixed_entry(vfox.path(), git),
+            PluginType::Vfox
         );
     }
 

@@ -5,10 +5,8 @@
 assert "mise latest java | grep -E '^[0-9]+(\\.[0-9]+)*\\+[0-9]'"
 # assert java@21 uses Temurin updates instead of stopping at OpenJDK's 21.0.2
 assert "mise latest java@21 | grep -E '^21\\.0\\.[0-9]+\\+[0-9]'"
-# the Java metadata cache keeps shorthand versions for the vendor that wrote it
-mise cache clear java
+# assert java.shorthand_vendor=openjdk keeps the old OpenJDK builds
 assert "MISE_JAVA_SHORTHAND_VENDOR=openjdk mise latest java@21" "21.0.2"
-mise cache clear java
 # assert vendor version ends with -N.N.N(-SUFFIX)?
 assert "mise latest java@temurin | grep -E '\\-[0-9]+(\\.[0-9]+)*(\..*)?$'"
 # assert vendor 21 version ends with -21.N.N(-SUFFIX)?
@@ -46,3 +44,7 @@ assert "mise latest dummy@sub-1:latest" "1.1.0"
 mise alias set dummy stable latest
 assert "mise latest dummy@sub-1:stable" "1.1.0"
 mise alias unset dummy stable
+
+# `prefix:` requests resolve through the backend's version matching like a bare prefix
+assert "mise latest dummy@prefix:1" "1.1.0"
+assert "mise latest dummy@prefix:2" "2.0.0"

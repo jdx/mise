@@ -21,6 +21,6 @@ Arguments passed to pitchfork; daemon names may be short or qualified.
 
 ## Related documentation
 
-- [Getting started](/getting-started.html).
+- [Daemons](/daemons.html).
 - [`mise daemons [--json] [SUBCOMMAND]`](/cli/daemons.html).
 - [Global flags and argument syntax](/cli/#global-flags).

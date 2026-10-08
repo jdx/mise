@@ -60,6 +60,6 @@ mise installs migrate node python@3.12.1
 
 ## Related documentation
 
-- [Install layout](/dev-tools/install-layout.html).
+- [Identity install layout](/dev-tools/install-layout.html).
 - [`mise installs [SUBCOMMAND]`](/cli/installs.html).
 - [Global flags and argument syntax](/cli/#global-flags).

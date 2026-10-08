@@ -36,6 +36,6 @@ Manage plugins
 
 ## Related documentation
 
-- [Plugin selection and maintenance](/plugin-usage.html).
+- [Plugins](/plugins.html).
 - [All commands](/cli/).
 - [Global flags and argument syntax](/cli/#global-flags).

@@ -38,6 +38,6 @@ With no subcommand, list configured and previously managed daemons.
 
 ## Related documentation
 
-- [Getting started](/getting-started.html).
+- [Daemons](/daemons.html).
 - [All commands](/cli/).
 - [Global flags and argument syntax](/cli/#global-flags).

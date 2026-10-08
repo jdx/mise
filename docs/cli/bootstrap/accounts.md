@@ -26,6 +26,6 @@ preview before changing user IDs, memberships, or account state.
 
 ## Related documentation
 
-- [Users and groups](/bootstrap/accounts.html).
+- [Linux users and groups](/bootstrap/accounts.html).
 - [`mise bootstrap [FLAGS] [SUBCOMMAND]`](/cli/bootstrap.html).
 - [Global flags and argument syntax](/cli/#global-flags).

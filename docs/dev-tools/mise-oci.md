@@ -1,44 +1,41 @@
 ---
-description: "mise oci build turns a mise.toml into a container image, with one OCI layer per installed tool."
+description: Build container images from a project's mise.toml with one OCI layer per tool, then run them locally or push them to a registry.
+socialDescription: Turn a project's mise.toml into a container image with one layer per tool.
 ---
 
-# mise oci <Badge type="warning" text="experimental" />
+# OCI images <Badge type="warning" text="experimental" />
 
-`mise oci build` turns a `mise.toml` into a container image, with one
-[OCI](https://github.com/opencontainers/image-spec) layer per installed tool.
-
-Tool layers can be reused independently when a version changes. Image config,
-manifests, and layers whose inputs changed still need updating; a Python change
-can also invalidate dependent pipx layers.
-
-Build on a **Linux host with the target architecture**. mise packages the installed
-host binaries; it does not cross-compile or download another OS's tools for the
-image. `mise oci run` also requires Docker or Podman. Building and pushing an OCI
-layout use mise's own image and registry support.
+`mise oci build` packages the tools a project's `mise.toml` declares into a
+container image with one [OCI](https://github.com/opencontainers/image-spec)
+layer per tool, so changing one tool's version rebuilds only that tool's layer.
+`mise oci run` runs a command in the image with Docker or Podman, and
+`mise oci push` uploads the image to a registry.
 
 ::: warning Experimental
-`mise oci build` is experimental. Enable it with:
-
-```sh
-mise settings set experimental=true
-# or, per-invocation:
-MISE_EXPERIMENTAL=1 mise oci build …
-```
-
-Flags, output layout, and defaults may change in future releases.
+`mise oci` is experimental. Enable it with `experimental = true` under
+`[settings]`, or with `MISE_EXPERIMENTAL=1`. Flags and the output layout can
+change between releases.
 :::
 
-## Commands at a glance
+## Requirements
 
-| Command          | What it does                                                             |
-| ---------------- | ------------------------------------------------------------------------ |
-| `mise oci build` | Produce an OCI image layout on disk.                                     |
-| `mise oci run`   | Build (or reuse) an image and run a command inside it via podman/docker. |
-| `mise oci push`  | Build (or reuse) an image and push it to a registry.                     |
+- A Linux host with the image's architecture. mise copies the tools installed on
+  the host into the image and does not cross-compile them, so an image built on
+  macOS or Windows contains host binaries that fail with `Exec format error`, and
+  mise warns when you build there. On another OS, run mise inside a Linux
+  container that has its own tool installations; a stock `debian` image does not
+  contain mise, and mounting your macOS or Windows installations into it does
+  not work.
+- The tools installed on the host. Run `mise install` before building: the build
+  fails for a configured version that is not installed. The exception is a tool
+  layer that [`mise oci push` reuses from the registry](#reuse-layers-from-the-registry).
+- Docker or Podman, for `mise oci run` only. Building and pushing use mise's own
+  registry client.
+- A base image with a compatible libc. See [Base images](#registry-base-image-support).
 
 ## Quick start
 
-On Linux, start with a project configuration such as:
+On Linux, start with a project config such as:
 
 ```toml [mise.toml]
 [settings]
@@ -48,281 +45,135 @@ experimental = true
 node = "24"
 ```
 
-Build a local image layout, then verify its executable through a container engine:
+Install the tools, build the image, and run a command in it:
 
 ```sh
+mise install
 mise oci build -o ./mise-oci
 mise oci run --image-dir ./mise-oci -- node --version
+# v24.x.x
 ```
 
-The default base is `debian:bookworm-slim`. Add the generated `mise-oci/` directory
-to `.gitignore`. This creates a tool environment; it does not automatically copy
-your application or install its package dependencies. Use a volume for development
-or [`oci.copy`](/dev-tools/mise-oci.html#oci-section-in-mise-toml) for files that belong in the image.
+`mise oci build` writes an OCI image layout to `./mise-oci`; add `mise-oci/` to
+`.gitignore`. The image holds your tools on top of the base image set by
+[`oci.default_from`](/configuration/settings.html#oci.default_from), but not your
+application or its packages. Mount the project with `--volume` for development,
+or [copy files into the image](#copy-files-into-the-image).
 
-To inspect the layout with an external tool, install `skopeo` and run
-`skopeo inspect oci:./mise-oci`. To publish it, follow [push authentication](#push-authentication)
-and choose a registry/repository you can write to:
+To inspect the layout without a container engine, run
+`skopeo inspect oci:./mise-oci`. To publish the image, see
+[Push to a registry](#mise-oci-push).
 
-```sh
-mise oci push --image-dir ./mise-oci ghcr.io/OWNER/IMAGE:TAG
-```
+## What goes into the image
 
-Replace the uppercase placeholders. This command publishes the image to that
-registry; it is separate from the local build and run checks.
+By default the image contains only what the project's config files declare: the
+project's `mise.toml` and config files in its parent directories, such as a
+monorepo root, but not a `mise.toml` directly in your home directory. Tools,
+`[oci]` settings, `[bootstrap.packages]`, and `[dotfiles]` from your global
+config (`~/.config/mise/config.toml`) and the system config are left out, as are
+`MISE_<TOOL>_VERSION` overrides in the environment, so your personal tools stay
+out of a project image. Pass `--include-global` to `build`, `run`, or `push` to
+include them. Without any project config, the commands fail unless you pass
+`--include-global`.
 
-## How layering works
+`[env]` is the exception: it is read from every loaded config, including your
+global config. See [Environment variables in the image](#environment-variables-in-the-image).
 
-Given this `mise.toml`:
+### Layers {#how-layering-works}
 
-```toml
-[tools]
-node = "20"
-python = "3.12"
-jq = "1.8.1"
-```
+`mise oci build` produces these layers, in order:
 
-`mise oci build` produces layers roughly like this:
-
-1. **Base image layers** (e.g. `debian:bookworm-slim`) — copied through from
-   the registry unchanged, so registry dedup kicks in.
-2. **mise binary** at `/usr/local/bin/mise` (skip with `--no-mise`).
-3. **Configured apt or apk `[bootstrap.packages]`**, if any, installed into the
-   base rootfs and emitted as one package layer.
-4. **One layer per [vfox plugin](#vfox-plugins)** that installed a tool, if any,
-   at `/mise/plugins/<name>/`. Annotated with `dev.mise.plugin`.
-5. **One layer per tool**, each rooted at
-   `/mise/installs/<plugin>/<version>/`. Annotated with
+1. The base image's layers, copied from the registry unchanged so the registry
+   can deduplicate them.
+2. The running mise binary at `/usr/local/bin/mise`, unless you pass `--no-mise`.
+3. One layer for the apt or apk [system packages](#bootstrap-and-dotfiles-in-oci-images),
+   if any.
+4. One layer per [vfox plugin](#vfox-plugins) that installed a tool, at
+   `/mise/plugins/<name>/`, annotated with `dev.mise.plugin`.
+5. One layer per tool at `/mise/installs/<tool>/<version>/`, annotated with
    `dev.mise.tool.short` and `dev.mise.tool.version`.
-6. **Configured `[dotfiles]`**, if any, baked as image files.
-7. **Synthesized `/etc/mise/config.toml`** referencing `/mise` as the data
-   directory.
+6. One layer per [copied file or directory](#copy-files-into-the-image),
+   annotated with `dev.mise.copy`.
+7. One layer for the [dotfiles](#bootstrap-and-dotfiles-in-oci-images), if any.
+8. `/etc/mise/config.toml`, which pins each packaged tool to its exact version.
+   The image's `MISE_DATA_DIR` and `MISE_CONFIG_DIR=/etc/mise` environment
+   variables point the embedded mise at these files.
 
-Changing Node.js leaves unrelated tool archives reusable. The generated
-configuration and image manifest still reflect the new version. Reuse also
-depends on the in-image path, file ownership, and any relocation inputs.
+The paths above use the default mount point, `/mise`; change it with
+`--mount-point` or `[oci].mount_point`.
 
-## `mise oci build`
+Changing the Node.js version rebuilds only Node.js's layer. The other tool
+layers are reused, while the config layer, image config, and manifest change to
+record the new version. A tool layer is also rebuilt when its in-image path,
+file owner, or contents change, and a Python change can rebuild the layers of
+`pypi:` tools that link to that Python.
 
-```sh
-mise oci build [-o PATH] [--from REF] [--tag REF] [--mount-point PATH]
-               [--copy HOST_PATH:IMAGE_PATH]...
-               [--no-mise] [--owner UID[:GID]]
-```
+## Configure the image {#oci-section-in-mise-toml}
 
-- `-o, --output PATH` — output directory (default `./mise-oci`)
-- `--from REF` — base image reference (overrides `[oci].from` and the
-  `oci.default_from` setting). Use `scratch` to build without a base.
-- `-t, --tag REF` — tag written to `index.json` as the
-  `org.opencontainers.image.ref.name` annotation
-- `--mount-point PATH` — where mise installs live inside the image
-  (default `/mise`). Must be absolute.
-- `--copy HOST_PATH:IMAGE_PATH` — copy a host file or directory to an
-  absolute path in the image. Repeat the flag for multiple payloads. Each
-  payload is emitted as an independent, content-addressed layer after the
-  tool layers.
-- `--no-mise` — don't embed the running mise binary at
-  `/usr/local/bin/mise`
-- `--owner UID[:GID]` — numeric owner for every generated layer entry.
-  Defaults to `[oci].user_id` / `[oci].group_id`, then `0:0`. If GID is
-  omitted, it defaults to UID. This affects file ownership only, not the
-  image `USER` directive.
-
-## `mise oci run`
-
-Build (or reuse) an image and run a command inside it, like
-`docker run` / `podman run`. Stdin/stdout/stderr are inherited.
-
-```sh
-mise oci run [--engine ENGINE] [--image-dir DIR]
-             [--from REF] [--mount-point PATH] [--no-mise]
-             [--owner UID[:GID]]
-             [-i] [-t] [-e KEY=VAL]... [--volume HOST:CONTAINER]...
-             [-w DIR] [--keep]
-             -- <cmd> [args...]
-```
-
-- `--engine` — `auto` (default, prefers podman), `podman`, or `docker`.
-- `--image-dir` — skip the build and use an existing OCI layout.
-- `--owner UID[:GID]` — numeric owner for generated layer entries when
-  building fresh; it cannot be combined with `--image-dir`.
-- `-i`, `-t`, `-e`, `--volume`, `-w`, `--keep` — pass through to the
-  underlying engine the same way `docker run` uses them. (There's no
-  `-v` short flag for `--volume` because mise reserves `-v` for
-  `--verbose`; use `--volume` or `--mount`.)
-
-Examples:
-
-```sh
-# Interactive shell
-mise oci run -it -- bash
-
-# One-shot command with env + volume
-mise oci run -e DEBUG=1 --volume "$PWD:/work" -w /work -- npm test
-
-# Re-use a previously built layout
-mise oci build -o ./img
-mise oci run --image-dir ./img -- node --version
-```
-
-**Requirements:** either `podman` (native OCI-layout support) or
-`docker` (mise streams the image into the daemon via `docker load`).
-
-## `mise oci push`
-
-Build (or reuse) an image and push it to a registry with mise's
-built-in registry client — no skopeo, crane, or docker daemon
-required. Only blobs the registry doesn't already have are uploaded,
-so repeat pushes of a mostly-unchanged toolset transfer very little.
-When the base image lives on the destination registry, its blobs are
-cross-repository mounted instead of re-uploaded (no bytes transferred).
-Large layers upload in chunks with progress bars, and transient network
-failures are retried with backoff (`http_retries` controls attempts).
-
-### Layer reuse
-
-`oci build`, `oci run`, and `oci push` share a local cache of packaged tool
-layers. An unchanged tool only needs to be tarred and gzipped once, even when
-building separate images or using different output directories. Concurrent
-builds coordinate per cache entry, and each output layout receives its own
-complete copy of the locally cached layer.
-
-Local reuse hashes the files and their image paths, executable permissions,
-symlink targets, ownership, and relocated contents. Editing or reinstalling a
-tool invalidates its cache when the packaged content changes, even if the
-version, file size, and modification time stay the same. Cache hits still read
-and hash the installation; they avoid tar construction and gzip compression.
-The base image is not part of a tool layer's cache key.
-
-Pass `oci build --no-cache` or `oci push --no-cache` to bypass the local cache.
-`mise cache clear TOOL` removes that tool's cached layers; `mise cache clear`
-removes all cached layers. Cache entries live in the normal mise tool cache,
-so CI jobs can preserve them along with `MISE_CACHE_DIR`.
-
-When pushing an image whose base lives in the **same repository** as the
-destination, mise fetches the current base manifest and config but leaves its
-layer blobs in the registry. Mutable base tags are resolved on every push.
-This avoids downloading base layers that the destination already contains,
-including when using `--cache-from` or `--no-cache`. Builds that install
-`[bootstrap.packages]` still download the base layers to unpack the filesystem;
-`oci build` and `oci run` also download them to produce complete local images.
-
-Tool layers whose cache key (tool, version, in-image prefix, file
-owner, and — for vfox tools — the plugin's contents) matches the previously
-pushed image are **reused from the registry instead of rebuilt** — skipping the tar/gzip work entirely.
-Reused tools don't even need to be installed locally, which makes CI
-pushes fast: only tools whose version actually changed get installed
-and packaged.
-
-- By default the cache is the destination ref itself (the image
-  previously pushed under that tag).
-- `--cache-from REF` reuses layers from another tag in the **same
-  repository** — useful when every push gets a unique tag:
-
-  ```sh
-  mise oci push --cache-from ghcr.io/me/dev:latest ghcr.io/me/dev:$GIT_SHA
-  ```
-
-- `--no-cache` disables remote and local tool-layer reuse and rebuilds from local
-  installs (docker-style escape hatch — reuse trusts that the
-  registry's layer content matches its annotations, rather than
-  rebuilding the exact bytes locally).
-
-One caveat: environment derivation (`JAVA_HOME`-style `exec_env` vars)
-runs against local installs. For a reused tool that isn't installed,
-most backends still derive paths correctly, but exotic backends — including
-vfox plugins whose env hook inspects the install directory — may contribute
-incomplete env. Pass `--no-cache` (with the tool installed) if the image
-config looks wrong.
-
-```sh
-mise oci push [--image-dir DIR]
-              [--from REF] [--mount-point PATH] [--no-mise]
-              [--owner UID[:GID]]
-              <REGISTRY_REF>
-```
-
-- `<REGISTRY_REF>` — fully-qualified destination (e.g.
-  `ghcr.io/me/devenv:latest`). Must include a registry host. Loopback
-  registries (`localhost:5000/…`) are contacted over plain HTTP, the
-  same insecure-by-default convention docker applies. Non-loopback
-  plain-HTTP registries (a homelab `registry.lan:5000`) must be opted
-  in via the `oci.insecure_registries` setting:
-
-  ```toml
-  [settings.oci]
-  insecure_registries = ["registry.lan:5000"]
-  ```
-
-- `--image-dir` — push an existing OCI layout instead of building.
-
-- `--owner UID[:GID]` — numeric owner for generated layer entries when
-  building fresh; it cannot be combined with `--image-dir`.
-
-Examples:
-
-```sh
-# Build + push in one shot
-mise oci push ghcr.io/me/devenv:latest
-
-# Push an image built earlier
-mise oci build -o ./img
-mise oci push --image-dir ./img ghcr.io/me/devenv:v1
-```
-
-### Push authentication
-
-Credentials are resolved from the same sources docker and podman use,
-in this order:
-
-1. `$REGISTRY_AUTH_FILE`
-2. `$XDG_RUNTIME_DIR/containers/auth.json` (podman)
-3. `~/.config/containers/auth.json`
-4. `~/.docker/config.json` (or `$DOCKER_CONFIG/config.json`)
-
-Both inline `auths` entries and credential helpers
-(`credsStore` / `credHelpers`, e.g. `docker-credential-osxkeychain`,
-`docker-credential-ecr-login`) are supported — so a plain
-`docker login ghcr.io` or `podman login ghcr.io` is all the setup
-needed. When no credentials are found, mise pushes anonymously (useful
-for local registries) and warns.
-
-For ghcr.io, the token needs the `write:packages` scope.
-
-### `[oci]` section in `mise.toml`
+Set image options in an `[oci]` section of the project's `mise.toml`:
 
 ```toml
 [oci]
-from        = "debian:bookworm-slim"  # base image ref
-tag         = "ghcr.io/me/devenv:v1"  # default tag for the built image
-workdir     = "/workspace"             # WORKDIR
-entrypoint  = []           # ENTRYPOINT
-cmd         = []                        # CMD
-user        = "1000:1000"                # USER
-user_id     = 1000                      # tar layer entry UID (file ownership)
-group_id    = 1000                      # tar layer entry GID (defaults to user_id)
-mount_point = "/mise"                  # where tools install in the image
+from = "debian:bookworm-slim"  # base image
+tag = "ghcr.io/me/devenv:v1"   # tag recorded in the layout
+workdir = "/workspace"         # WORKDIR
+entrypoint = []                # ENTRYPOINT
+cmd = []                       # CMD
+user = "1000:1000"             # USER
+user_id = 1000                 # owner UID of files in generated layers
+group_id = 1000                # owner GID (defaults to user_id)
+mount_point = "/mise"          # where tools live in the image
 
-[[oci.copy]]
-host  = "dist/my-app"
-image = "/usr/local/bin/my-app"
-
-[[oci.copy]]
-host  = "assets"
-image = "/srv/app/assets"
-
-# Extra env baked into the image config (image-only — won't shadow MISE_*).
-[oci.env]
-NODE_ENV = "production"
-
-# Labels baked into the image config.
 [oci.labels]
 "org.opencontainers.image.source" = "https://github.com/me/my-app"
 ```
 
+`entrypoint`, `cmd`, and `user` default to the base image's values, and
+`workdir` defaults to `/workspace` when neither the base image nor `[oci]` sets
+one. `user` sets the image's `USER`; it does not create an account, home
+directory, or writable workspace, so use a numeric UID and GID or a user the
+base image already has. `user_id` and `group_id` set the owner of files in the
+generated layers (`0:0` when unset); `--owner UID[:GID]` overrides them.
+
+### Precedence
+
+Command-line flags override `[oci]`, and `[oci]` overrides the
+[`oci.default_from`](/configuration/settings.html#oci.default_from) and
+[`oci.default_mount_point`](/configuration/settings.html#oci.default_mount_point)
+settings. When several project config files set `[oci]`, for example a monorepo
+root and a subproject, mise merges them field by field, and the more specific
+file wins each field; `[oci.env]` and `[oci.labels]` merge key by key. `[oci]` in
+your global config applies only with `--include-global`.
+
+### Environment variables in the image
+
+The image's environment is built in this order, and later entries win:
+
+1. The base image's environment.
+2. `[env]` from every loaded config, including your global
+   `~/.config/mise/config.toml`, even without `--include-global`. Templates are
+   expanded and `.env` files are read.
+3. Variables each tool sets, such as `JAVA_HOME`, `GOROOT`, or `GEM_HOME`, with
+   host paths rewritten to the image paths.
+4. `[oci.env]`.
+5. `PATH`: each tool's bin directories in the image, followed by the `PATH` from
+   the entries above.
+6. `MISE_DATA_DIR` (the mount point) and `MISE_CONFIG_DIR=/etc/mise`, which
+   nothing above can override.
+
+::: warning `[env]` values are baked into the image
+Everything in `[env]`, including values loaded from `.env` files and from your
+global config, is written into the image config, where anyone with the image can
+read it with `docker inspect` or `skopeo inspect`. Move personal tokens out of
+your global `[env]`, or unset them, before building an image you will push. Pass
+secrets at runtime with `docker run -e`, secret mounts, or your orchestrator, and
+put only values that are safe to publish in `[oci.env]`. mise warns with the
+number of `[env]` variables it baked in.
+:::
+
 A variable that `[env]` marks `required` is satisfied by `[oci.env]` during
-`mise oci` commands, so the build host doesn't need it set. This lets you give the
-image a placeholder for a secret that only exists at runtime:
+`mise oci` commands, so the build host does not need it set. This lets you give
+the image a placeholder for a secret that exists only at runtime:
 
 ```toml
 [env]
@@ -335,38 +186,38 @@ AWS_ACCESS_KEY_ID = "placeholder"
 Only `[oci.env]` in project configs counts, and other commands still enforce
 `required`.
 
-The copy examples require `dist/my-app` and `assets` to exist.
-`[oci].user` sets the image `USER` directive; it does not create an account, home
-directory, or writable workspace. Use a numeric UID/GID or a user already
-provided by the base image. `[oci].user_id` and
-`[oci].group_id` set layer file ownership; if no `group_id` is configured,
-it defaults to the resolved `user_id`.
+### Copy files into the image
 
-CLI flags override the `[oci]` section. The `[oci]` section overrides the
-`oci.default_from` / `oci.default_mount_point` settings.
+Each `[[oci.copy]]` entry, or `--copy HOST:IMAGE` flag, adds one layer after the
+tool layers:
 
-When `mise.toml` files are layered (global + project), sections are merged
-field-by-field with the more specific file winning per field.
+```toml
+[[oci.copy]]
+host = "dist/my-app"
+image = "/usr/local/bin/my-app"
 
-Copy sources may be files, directories, or symlinks. Directory contents land
-at `image`; the source directory name is not added. Image paths must be
-absolute and may not contain `.` or `..` components. Parent directories are
-created automatically, executable bits are preserved, and ownership follows
-`--owner` or `[oci].user_id` / `[oci].group_id`. Copy layers are annotated
-with `dev.mise.copy=<image path>` so they can be identified during inspection.
-Relative `host` paths in `[[oci.copy]]` resolve from the directory containing
-the config file that declares them; relative CLI paths resolve from the current
-working directory.
-When layered configs copy to the same image path, less-specific entries are
-emitted first so the most-specific config wins. CLI copies are emitted last.
+[[oci.copy]]
+host = "assets"
+image = "/srv/app/assets"
+```
 
-### `[bootstrap]` and `[dotfiles]` in OCI images
+The source can be a file, a directory, or a symlink, and it must exist when you
+build. A directory's contents land at `image`; the source directory's name is
+not added. Image paths must be absolute and cannot contain `.` or `..`
+components. mise creates parent directories, keeps executable bits, and sets
+ownership from `--owner` or `user_id` and `group_id`. A relative `host` path in
+`[[oci.copy]]` resolves from the directory of the config file that declares it,
+and a relative `--copy` path resolves from the current directory. When layered
+configs copy to the same image path, less specific entries come first, so the
+most specific config wins, and `--copy` layers come last. mise warns for each
+copy, as a reminder to check its contents for secrets.
 
-`mise oci build` applies project-scoped `[bootstrap.packages]` and
-`[dotfiles]` entries to the image. This is the OCI equivalent of the
-declarative package and dotfile parts of `mise bootstrap`.
-Pass `--include-global` to also include `[bootstrap.packages]` and
-`[dotfiles]` from global configs.
+## System packages and dotfiles {#bootstrap-and-dotfiles-in-oci-images}
+
+`mise oci build` applies the project's `[bootstrap.packages]` and `[dotfiles]`
+entries to the image, the image equivalent of the package and dotfile parts of
+[`mise bootstrap`](/bootstrap.html). With `--include-global`, entries from the
+global and system configs are applied too.
 
 ```toml
 [bootstrap.packages]
@@ -377,160 +228,148 @@ Pass `--include-global` to also include `[bootstrap.packages]` and
 "~/.config/app/config.toml" = { source = "config.toml", mode = "template" }
 ```
 
-For packages, OCI builds support `apt:` entries with a Debian/Ubuntu base image
-and `apk:` entries with an Alpine/Wolfi base image. mise unpacks the base image
-into a temporary rootfs, calls the matching host package manager to install into
-that rootfs, then emits the filesystem changes as one OCI layer annotated with
-`dev.mise.system.packages=apt` or `dev.mise.system.packages=apk`. A build may
-use only the package manager matching its base image; mixing `apt:` and `apk:`
-entries is rejected.
+Packages can be `apt:` entries on a Debian or Ubuntu base image, or `apk:`
+entries on an Alpine or Wolfi base image, but not both in one build. mise
+unpacks the base image into a temporary root filesystem, runs the matching
+package manager on the host to install into it, and emits the changes as one
+layer annotated with `dev.mise.system.packages`. The host needs `apt-get` and
+`dpkg` for apt, or `apk` for apk. Apk package scripts run inside a chroot, so
+apk layers need a Linux host running mise as root. mise removes package-manager
+caches and logs before creating the layer.
 
-The host must provide `apt-get` and `dpkg` for apt layers, or `apk` for apk
-layers. Apk package scripts execute inside a chroot, so apk layers currently
-require a Linux host running mise as root. `--no-cache` is passed to apk and
-transient package-manager cache and log files are removed before the layer is
-created.
+Entries for any other package manager, such as `brew:`, make the build fail.
+Keep them in a config the image build does not include, or exclude that manager
+for the build with the
+[`system_packages.managers`](/configuration/settings.html#system_packages.managers)
+setting, for example `MISE_SYSTEM_PACKAGES_MANAGERS=apt mise oci build`.
 
-For image builds, `symlink` and `symlink-each` entries are copied as file
-content. Host symlinks would usually point back to the checkout path and be
-broken inside the container, so the image receives the resolved contents
-instead. Targets beginning with `~/` are written under `/root/`.
+Dotfiles are written as files in the image:
 
-`[bootstrap.macos.defaults]` and the imperative `bootstrap` task are not run by
-`mise oci build`. macOS defaults do not apply to Linux OCI images, and
-container-specific startup work belongs in the image entrypoint or command.
+- `symlink` and `symlink-each` entries are copied as file contents, because a
+  link to the build host's checkout would be broken in the container.
+- Targets that start with `~/` are written under `/root/`.
+- An `absent` entry, or a `remove_empty` template that renders empty, adds an
+  OCI whiteout, so a file the base image has at that path is hidden.
+- Templates that call `secret()` fail the build. Templates render without the
+  `env` context, and calling `get_env()`, `exec()`, or `read_file()` fails the
+  build, because those values could be recovered from an image layer.
+- Tracked files and permissions-only entries are left out.
 
-### Settings
+`mise oci build` fails if an included config sets `[bootstrap.macos.*]`
+defaults; keep them in a config the build does not read, such as your global
+config without `--include-global`. Other `[bootstrap]` sections, such as
+`[bootstrap.files]`, and the `bootstrap` task are not applied to images. Put
+container startup work in the image's `entrypoint` or `cmd`.
 
-| Setting                   | Default                | Description                                |
-| ------------------------- | ---------------------- | ------------------------------------------ |
-| `oci.default_from`        | `debian:bookworm-slim` | Default base image when none is specified. |
-| `oci.default_mount_point` | `/mise`                | Where tools install inside the image.      |
+## Run commands in the image {#mise-oci-run}
 
-Choose a base compatible with the packaged binaries and their shared libraries.
-The default uses glibc. An Alpine/musl base requires musl-compatible or suitable
-static binaries; changing `--from` does not rebuild the installed tools for a
-different libc. System libraries required at runtime must be present in the image.
-
-## Environment variables in the image
-
-The image config's `Env` is built in this order (later entries win):
-
-1. Base image env (from the pulled `--from` image's config).
-2. Your `[env]` section from `mise.toml` (fully resolved — templates
-   expanded, `.env` files read).
-3. Each tool's `exec_env()` — e.g. `JAVA_HOME`, `GOROOT`, `GEM_HOME`.
-   Paths are rebased from the host install dir onto the in-image path.
-4. `[oci].env` entries.
-5. Synthesized PATH (each tool's bin paths in the image) plus the
-   inherited PATH.
-6. `MISE_DATA_DIR=/mise` and `MISE_CONFIG_DIR=/etc/mise` — always
-   applied last so they can't be shadowed.
-
-::: warning Secrets in `[env]` are baked into the image
-Anything in your mise `[env]` section — including values loaded from
-`.env` files — is written into the image config JSON and visible to
-anyone who runs `docker inspect` / `skopeo inspect`. **Do not put
-secrets there.** Use `docker run -e`, secret mounts, or orchestrator
-secrets at runtime. Use `[oci].env` only for values that are safe to
-live in the image.
-
-mise emits a warning with the number of `[env]` vars it baked in.
-:::
-
-## Supported backends
-
-The builder accepts built-in backends and packages each selected tool's install
-directory. It also relocates supported executable paths and shebangs. Acceptance
-by the builder does not guarantee that a tool is self-contained: system libraries,
-external runtimes, or paths outside its installation may still be needed.
-Declare required runtimes alongside their tools and verify the resulting image
-with the commands your project actually runs.
-
-asdf plugins are rejected. Their bash install scripts can write outside the
-per-version directory, which the per-tool layer model cannot capture reliably,
-and their `exec-env` scripts expect bash at runtime.
-
-### vfox plugins
-
-Tools installed by [vfox plugins](/dev-tools/backends/vfox.html), including
-custom [backend plugins](/backend-plugin-development.html) (`my-plugin:tool`),
-are packaged like any other tool. mise also copies each plugin into its own
-layer at `/mise/plugins/<name>/` (without `.git`), so the image's embedded mise
-can resolve these tools without cloning the plugin. Plugins embedded in the mise
-binary are not copied. The build logs each plugin directory it copies. A
-symlink inside a plugin that resolves to a file outside the plugin directory
-fails the build instead of copying a host file into the image; replace it with
-a copy. Links that are already broken on the build host are kept as-is.
-
-The plugin's env hook (`EnvKeys` or `BackendExecEnv`) runs on the build host.
-Paths under the host install directory are rewritten to the in-image path;
-other values are baked in as-is. mise warns when a value points under the build
-host's home directory, since that path usually doesn't exist in the container.
-Override such variables with [`[oci].env`](/dev-tools/mise-oci.html#oci-section-in-mise-toml).
-
-A plugin's `PostInstall` or `BackendInstall` hook can run arbitrary commands.
-Only files written to the tool's install directory end up in the image.
-
-A tool layer is reused from the registry only when the plugin's contents
-match the plugin that built it, so updating a plugin rebuilds its tools' layers.
-
-## Registry base-image support
-
-Base images can be pulled from any OCI Distribution v2 registry —
-Docker Hub, ghcr.io, quay.io, self-hosted, etc. Anonymous token auth
-is handled automatically for public images; when you're logged in
-(`docker login` / `podman login`), those credentials are used, so
-private base images work too.
-
-Digest references are supported:
+`mise oci run` builds the image, or uses the layout you pass with `--image-dir`,
+loads it into a container engine, and runs a command with your terminal's
+stdin, stdout, and stderr:
 
 ```sh
-mise oci build --from "REGISTRY/IMAGE@sha256:FULL_DIGEST"
+mise oci run -it -- bash
+mise oci run -e DEBUG=1 --volume "$PWD:/work" -w /work -- npm test
 ```
 
-Replace the placeholders with an actual image reference and its complete
-SHA256 digest. A digest pins the base image; a mutable tag can resolve to a new
-base on a later build.
+mise prefers Podman, which loads OCI layouts natively, and otherwise streams the
+image into Docker with `docker load`; choose one with `--engine`. There is no
+`-v` short flag for `--volume`, because `-v` is mise's `--verbose`. When the
+command exits, mise removes the container and the loaded image. Pass `--keep` to
+keep the image in the engine's storage, tagged `mise-oci:run-*` in Docker.
 
-## Reproducibility
+## Push to a registry {#mise-oci-push}
 
-On the same host, re-running `mise oci build` with unchanged inputs
-produces byte-identical tool layer digests. Across machines, layer
-digests may drift because compiled artifacts (pyc bytecode, generated
-node-gyp output, etc.) can embed absolute paths.
-
-For fully-reproducible image config timestamps, set
-`SOURCE_DATE_EPOCH`:
+`mise oci push` builds the image, or takes the layout you pass with
+`--image-dir`, and uploads it with mise's own registry client. It does not need
+Docker, skopeo, or crane.
 
 ```sh
-SOURCE_DATE_EPOCH=$(git log -1 --format=%ct) mise oci build
+# Build and push in one step
+mise oci push ghcr.io/me/devenv:latest
+
+# Push an image built earlier
+mise oci build -o ./img
+mise oci push --image-dir ./img ghcr.io/me/devenv:v1
 ```
 
-## Cross-platform builds
+Include the registry host in the reference. A reference with a path but no host,
+such as `me/devenv:latest`, is pushed to Docker Hub (`docker.io`), and a bare
+name such as `devenv:latest` is rejected.
 
-OCI images are Linux-targeted. Building on macOS or Windows produces an
-image whose `os` field is `linux`, but any embedded binaries (mise and
-every tool layer) are still host-native — they will fail with
-`Exec format error` when executed inside the container.
+mise uploads only the blobs the registry does not have yet, so pushing a mostly
+unchanged image transfers little. When the base image is on the destination
+registry, its layers are mounted across repositories instead of uploaded. When
+it is in the same repository as the destination, mise does not download its
+layers either, unless the build installs `[bootstrap.packages]`. Large layers
+upload in chunks, and failed requests are retried up to
+[`http_retries`](/configuration/settings.html#http_retries) times.
 
-Build on a Linux host or in a Linux development container that already has mise
-and the required tool-installation dependencies. A stock `debian` image does
-not contain mise. Do not mount macOS or Windows tool installations into that
-container as substitutes for Linux installations. mise warns when host and image
-platforms do not match.
+### Authentication {#push-authentication}
 
-### Multi-arch images
+mise reads registry credentials from the same files Docker and Podman use, in
+this order:
 
-A single host builds a single platform, but `mise oci push
---update-index` lets one runner per architecture assemble a multi-arch
-tag: each push uploads its platform manifest by digest and points the
-tag at an OCI **image index** that preserves the entries other
-platforms pushed.
+1. `$REGISTRY_AUTH_FILE`
+2. `$XDG_RUNTIME_DIR/containers/auth.json`
+3. `~/.config/containers/auth.json`
+4. `~/.docker/config.json`, or `$DOCKER_CONFIG/config.json`
 
-For example, the following GitHub Actions job builds one architecture at a time.
-It assumes the project has `mise.toml`, publishes to GHCR, and grants the workflow
-access to that package:
+Inline `auths` entries and credential helpers (`credsStore` and `credHelpers`,
+such as `docker-credential-osxkeychain` or `docker-credential-ecr-login`) both
+work, so `docker login ghcr.io` or `podman login ghcr.io` is all the setup you
+need. Without credentials, mise warns and pushes anonymously, which suits a
+local registry. For ghcr.io, the token needs the `write:packages` scope.
+
+### Plain-HTTP registries
+
+mise contacts loopback registries such as `localhost:5000` over plain HTTP, as
+Docker does. List any other plain-HTTP registry in
+[`oci.insecure_registries`](/configuration/settings.html#oci.insecure_registries):
+
+```toml
+[settings.oci]
+insecure_registries = ["registry.lan:5000"]
+```
+
+### Reuse layers from the registry
+
+`mise oci push` reuses tool layers from the image already at the destination. A
+layer is reused when its tool, version, mount point, file owner, and, for vfox
+tools, plugin contents all match. Reused tools are not packaged again and do not
+need to be installed locally, so a CI push installs and packages only the tools
+that changed.
+
+When every push gets a unique tag, reuse layers from another tag in the same
+repository with `--cache-from`:
+
+```sh
+mise oci push --cache-from ghcr.io/me/dev:latest "ghcr.io/me/dev:$GIT_SHA"
+```
+
+`--no-cache` turns off remote and local reuse and rebuilds every tool layer from
+local installs; use it if you do not want to trust that a registry layer matches
+its annotations. `--cache-from` cannot be combined with `--no-cache` or
+`--image-dir`.
+
+Tool environment variables such as `JAVA_HOME` are computed from local installs.
+Most backends compute them correctly for a reused tool that is not installed,
+but a vfox plugin whose environment hook inspects the install directory can
+contribute incomplete values. If the image's environment looks wrong, install
+the tool and push with `--no-cache`.
+
+## Multi-arch images
+
+One host builds one platform. To publish a multi-arch tag, run
+`mise oci push --update-index` once per architecture: each push uploads its
+platform's manifest by digest and points the tag at an OCI image index that
+keeps the entries other platforms pushed. Pushing the same platform again
+replaces its entry, and a single-platform tag becomes an index without losing
+its platform. Layer reuse works through indexes, using the entry for the build
+platform.
+
+This GitHub Actions workflow builds one architecture at a time. It assumes the
+project has a `mise.toml` and that the workflow can write to the GHCR package:
 
 ```yaml
 name: Publish development image
@@ -551,8 +390,8 @@ jobs:
     env:
       MISE_EXPERIMENTAL: "1"
     steps:
-      - uses: actions/checkout@v6
-      - uses: jdx/mise-action@v4
+      - uses: actions/checkout@v7
+      - uses: jdx/mise-action@v5
       - name: Authenticate to GHCR
         env:
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -561,30 +400,103 @@ jobs:
         run: mise oci push --update-index "ghcr.io/${GITHUB_REPOSITORY,,}/dev:latest"
 ```
 
-Choose runner labels available to your repository. Matrix serialization prevents
-the two platform pushes from racing, and workflow concurrency prevents overlapping
-runs of this workflow from updating the same tag simultaneously.
+Updating the index is a read-modify-write, because the registry API has no
+conditional writes, so two pushes to the same tag at once can lose an entry.
+`max-parallel: 1` runs the architectures one after another, and the workflow's
+`concurrency` group keeps two runs from updating the tag at the same time.
+Choose runner labels your repository has.
 
-Re-pushing the same platform replaces its entry (no duplicates), and a
-previously single-arch tag is upgraded to an index without losing the
-existing platform. Layer reuse works through indexes — the cache
-resolves to the entry matching the build platform.
+## Layer cache and reproducibility {#layer-reuse}
 
-The index update is read-modify-write (the Distribution API has no
-conditional writes), so concurrent pushes to the same tag from
-different runners can race — sequence them as above.
+`mise oci build`, `run`, and `push` share a local cache of packaged tool layers,
+so an unchanged tool is compressed once even across separate images and output
+directories. The cache key covers each file's contents and image path,
+executable permissions, symlink targets, ownership, and relocated contents, but
+not the base image. Editing or reinstalling a tool invalidates its entry when
+the packaged content changes, even if the version, file size, and modification
+time stay the same. A cache hit still reads and hashes the installation; it
+skips building and compressing the tar.
 
-## Known limitations (v1)
+`mise oci build --no-cache` and `mise oci push --no-cache` bypass the local
+cache. `mise oci run` has no such flag; build with `--no-cache` and pass the
+result to `mise oci run --image-dir`. `mise cache clear TOOL` removes one
+tool's cached layers, and `mise cache clear` removes all of them. The entries
+live in the mise cache directory, so a CI job can keep them by caching
+`MISE_CACHE_DIR`.
 
-- `asdf` backends are rejected (see [Supported backends](#supported-backends)).
-- Cross-platform builds produce broken images (binaries are host-native);
-  run the build on a Linux host.
-- The base image must supply a compatible libc and other runtime libraries.
-- `mise oci run` needs a container engine (podman or docker) — mise has
-  no built-in container runtime. Pushing needs no external tools.
+### Reproducibility
 
-## See also
+On one host, rebuilding with unchanged inputs produces byte-identical tool
+layers. Across machines, layer digests can differ, because compiled files such
+as Python bytecode or node-gyp output can embed absolute paths. To make the
+image config's timestamps reproducible, set `SOURCE_DATE_EPOCH`:
 
-- [`mise oci build`](/cli/oci/build.md) — full CLI reference
-- [OCI Image Spec](https://github.com/opencontainers/image-spec)
-- [OCI Distribution Spec](https://github.com/opencontainers/distribution-spec)
+```sh
+SOURCE_DATE_EPOCH=$(git log -1 --format=%ct) mise oci build
+```
+
+## Supported backends
+
+`mise oci build` packages tools from every backend except asdf, including
+vfox plugins. It copies each tool's install directory into its layer and rewrites
+executable paths and shebangs that point at the host install directory. That
+does not make a tool self-contained: it can still need system libraries, other
+runtimes, or files outside its install directory. Declare the runtimes a tool
+needs alongside it, and test the image with the commands your project runs.
+
+[asdf plugins](/dev-tools/backends/asdf.html) are rejected. Their install
+scripts can write outside the version's directory, which a per-tool layer cannot
+capture, and their `exec-env` scripts expect bash at runtime.
+
+### vfox plugins
+
+Tools installed by [vfox plugins](/dev-tools/backends/vfox.html), including
+custom [backend plugins](/backend-plugin-development.html) (`my-plugin:tool`),
+are packaged like any other tool. mise also copies each plugin, without `.git`,
+into its own layer at `/mise/plugins/<name>/`, so the embedded mise can use those
+tools without cloning the plugin, and logs each plugin directory it copies.
+Plugins built into the mise binary are not copied. A symlink inside a plugin
+that resolves outside the plugin directory fails the build instead of copying a
+host file into the image; replace it with a copy. Links that are already broken
+on the build host are kept as they are.
+
+The plugin's environment hook (`EnvKeys` or `BackendExecEnv`) runs on the build
+host. Paths under the host install directory are rewritten to the image path,
+and other values are written as they are. mise warns when a value points under
+the build host's home directory, which usually does not exist in the container;
+override such variables with [`[oci.env]`](#oci-section-in-mise-toml).
+
+A plugin's `PostInstall` or `BackendInstall` hook can run any command, but only
+files written to the tool's install directory end up in the image. A tool layer
+is reused from the registry only when the plugin's contents match the plugin
+that built it, so updating a plugin rebuilds its tools' layers.
+
+## Base images {#registry-base-image-support}
+
+mise pulls base images from any OCI Distribution v2 registry, such as Docker
+Hub, ghcr.io, quay.io, or a self-hosted one. It handles anonymous tokens for
+public images and uses your `docker login` or `podman login` credentials, so
+private base images work too. Pass `scratch` to `--from` to build without a base
+image.
+
+A digest pins the base image; a mutable tag can resolve to a new base on a later
+build:
+
+```sh
+mise oci build --from "REGISTRY/IMAGE@sha256:FULL_DIGEST"
+```
+
+Replace the placeholders with an image reference and its complete SHA256
+digest.
+
+Choose a base whose libc and shared libraries suit the packaged binaries. The
+default, `debian:bookworm-slim`, uses glibc. An Alpine or other musl base needs
+musl-compatible or static binaries; changing `--from` does not rebuild the
+installed tools for another libc. System libraries a tool needs at runtime must
+be in the image.
+
+For every flag, see [`mise oci build`](/cli/oci/build.html),
+[`mise oci run`](/cli/oci/run.html), and [`mise oci push`](/cli/oci/push.html).
+The [OCI image spec](https://github.com/opencontainers/image-spec) and
+[distribution spec](https://github.com/opencontainers/distribution-spec) define
+the formats.

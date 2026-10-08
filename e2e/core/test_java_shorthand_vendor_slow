@@ -11,7 +11,6 @@ pattern=$(echo "$temurin" | sed 's/\./\\./g; s/+/\\+/g' | paste -sd '|' -)
 assert_matches "mise ls-remote java@21" "$pattern"
 
 # Test setting shorthand vendor back to OpenJDK
-mise cache clear java
 mise settings set java.shorthand_vendor openjdk
 mise i java@17
 assert_not_contains "mise x java@17 -- java -version 2>&1" 'Temurin'

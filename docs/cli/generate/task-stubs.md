@@ -14,6 +14,8 @@ Generate shims to run mise tasks
 By default, this will build shims like ./bin/&lt;task>. These can be paired with `mise generate install-script`
 so contributors to a project can execute mise tasks without installing mise into their system.
 When a parent and nested task both exist, the parent stub is written to `<parent>/_default`.
+Hidden tasks and global tasks are skipped: the stubs are committed to the project, and global
+tasks come from the user's own config.
 
 ## Flags
 - **`-d --dir <DIR>`** — Directory to create task stubs inside of
@@ -57,6 +59,6 @@ running tests
 
 ## Related documentation
 
-- [Tasks and automation](/tasks/).
+- [Project-local task entrypoints](/tips-and-tricks.html#bootstrap-script).
 - [`mise generate <SUBCOMMAND>`](/cli/generate.html).
 - [Global flags and argument syntax](/cli/#global-flags).

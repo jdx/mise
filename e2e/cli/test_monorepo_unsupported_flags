@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+
+# outdated, prune and upgrade accept --monorepo but do not implement it yet.
+# They must fail with an error instead of panicking, and keep the flag out of
+# their help.
+for cmd in outdated prune upgrade; do
+  assert_fail_contains "mise $cmd --monorepo" "--monorepo is not supported by mise $cmd yet"
+  assert_not_contains "mise $cmd --monorepo 2>&1 || true" "panicked"
+  assert_not_contains "mise $cmd --help" "--monorepo"
+done

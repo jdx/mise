@@ -87,8 +87,15 @@ fn is_shorthand_java_request(requested_version: &str) -> bool {
 
 impl JavaPlugin {
     pub(super) fn new() -> Self {
+        Self::from_arg(plugins::core::new_backend_arg("java"))
+    }
+
+    /// Build a plugin for `ba`. The shared core instance has no options, so a request
+    /// with inline options such as `java[release_type=ea]` needs its own instance for
+    /// version listing to see them.
+    pub(super) fn from_arg(ba: BackendArg) -> Self {
         let settings = Settings::get();
-        let ba = Arc::new(plugins::core::new_backend_arg("java"));
+        let ba = Arc::new(ba);
         Self {
             java_metadata_ea_cache: CacheManagerBuilder::new(
                 ba.cache_path().join("java_metadata_ea.msgpack.z"),
@@ -105,6 +112,8 @@ impl JavaPlugin {
         }
     }
 
+    /// Metadata keyed by full version string (`<vendor>-<version>`). The cache does not
+    /// depend on `java.shorthand_vendor`; shorthand versions are added when listing.
     async fn fetch_java_metadata(
         &self,
         release_type: &str,
@@ -174,10 +183,6 @@ impl JavaPlugin {
         m: JavaMetadata,
         platform: &Platform,
     ) {
-        // add short versions like "java@21.0.4+7.0.LTS" for java.shorthand_vendor
-        if m.vendor == Settings::get().java.shorthand_vendor {
-            metadata.insert(m.version.to_string(), m.clone());
-        }
         metadata.insert(m.to_version_string(platform), m);
     }
 
@@ -390,10 +395,9 @@ impl JavaPlugin {
         opts: &ToolVersionOptions,
     ) -> Result<Vec<VersionInfo>> {
         let release_type = JavaOptions::new(opts).release_type().to_string();
-        let versions = self
-            .fetch_java_metadata(&release_type)
-            .await?
-            .iter()
+        let metadata = self.fetch_java_metadata(&release_type).await?;
+        let versions = with_shorthand_versions(metadata, &Settings::get().java.shorthand_vendor)
+            .into_iter()
             .sorted_by_cached_key(|(v, m)| {
                 let is_shorthand = regex!(r"^\d").is_match(v);
                 let vendor = &m.vendor;
@@ -437,7 +441,7 @@ impl JavaPlugin {
                 )
             })
             .map(|(v, m)| VersionInfo {
-                version: v.clone(),
+                version: v.to_string(),
                 created_at: m.created_at.clone(),
                 // The regex is a denylist heuristic, not a total grammar:
                 // a match proves "prerelease", a miss proves nothing.
@@ -693,6 +697,30 @@ impl Backend for JavaPlugin {
     }
 }
 
+/// Every metadata entry under its full version string, plus a shorthand entry like
+/// "17.0.2" for each release from `shorthand_vendor`, which `tv_to_java_version` turns
+/// back into "<vendor>-17.0.2" on install. Entries are visited in key order so the
+/// shorthand points at the canonical "<vendor>-<version>" entry when one exists: digits
+/// sort before the letters of a feature or image type such as "-jre-".
+fn with_shorthand_versions<'a>(
+    metadata: &'a HashMap<String, JavaMetadata>,
+    shorthand_vendor: &str,
+) -> Vec<(&'a str, &'a JavaMetadata)> {
+    let mut shorthand: BTreeMap<&str, &JavaMetadata> = BTreeMap::new();
+    for (_, m) in metadata
+        .iter()
+        .filter(|(_, m)| m.vendor == shorthand_vendor)
+        .sorted_by_key(|(k, _)| *k)
+    {
+        shorthand.entry(m.version.as_str()).or_insert(m);
+    }
+    metadata
+        .iter()
+        .map(|(k, m)| (k.as_str(), m))
+        .chain(shorthand)
+        .collect()
+}
+
 fn find_java_metadata<'a>(
     metadata: &'a HashMap<String, JavaMetadata>,
     version: &str,
@@ -926,6 +954,79 @@ mod tests {
                 .lockfile_options("temurin-17", "temurin")
                 .is_empty()
         );
+    }
+
+    fn java_metadata(vendor: &str, image_type: &str, version: &str) -> JavaMetadata {
+        JavaMetadata {
+            vendor: vendor.to_string(),
+            image_type: Some(image_type.to_string()),
+            version: version.to_string(),
+            ..Default::default()
+        }
+    }
+
+    /// The cached metadata must not depend on `java.shorthand_vendor`, or changing the
+    /// vendor keeps listing the previous vendor's shorthand versions until the cache expires.
+    #[test]
+    fn shorthand_versions_follow_the_current_vendor() {
+        let platform = Platform::parse("linux-x64").unwrap();
+        let mut metadata = HashMap::new();
+        for m in [
+            java_metadata("openjdk", "jdk", "21.0.2"),
+            java_metadata("openjdk", "jre", "21.0.2"),
+            java_metadata("temurin", "jdk", "21.0.5+11"),
+        ] {
+            JavaPlugin::insert_java_metadata(&mut metadata, m, &platform);
+        }
+        assert_eq!(
+            metadata.keys().sorted().collect_vec(),
+            ["openjdk-21.0.2", "openjdk-jre-21.0.2", "temurin-21.0.5+11"]
+        );
+
+        let shorthand = |vendor| {
+            with_shorthand_versions(&metadata, vendor)
+                .into_iter()
+                .filter(|(v, _)| v.starts_with(|c: char| c.is_ascii_digit()))
+                .map(|(v, m)| (v, m.vendor.as_str(), m.image_type.as_deref()))
+                .collect_vec()
+        };
+        assert_eq!(shorthand("openjdk"), [("21.0.2", "openjdk", Some("jdk"))]);
+        assert_eq!(
+            shorthand("temurin"),
+            [("21.0.5+11", "temurin", Some("jdk"))]
+        );
+    }
+
+    /// Core plugins are shared instances without options, so `java[release_type=ea]`
+    /// needs its own instance for version listing to select early-access builds.
+    #[test]
+    fn inline_release_type_reaches_the_java_backend() {
+        let backend =
+            crate::backend::arg_to_backend(BackendArg::from("java[release_type=ea]")).unwrap();
+        let opts = backend.ba().resolve_opts_with_layers(None, None, None);
+        assert_eq!(JavaOptions::new(opts.effective()).release_type(), "ea");
+
+        let shared = crate::backend::arg_to_backend(BackendArg::from("java")).unwrap();
+        assert!(shared.ba().explicit_opts().is_none());
+        assert_eq!(backend.id(), shared.id());
+        assert_eq!(backend.ba().installs_path(), shared.ba().installs_path());
+        assert_eq!(backend.ba().cache_path(), shared.ba().cache_path());
+
+        // An alias such as `[tool_alias] myjava = "core:java"` keeps its options too,
+        // and still uses the shared instance's paths.
+        let aliased = crate::backend::arg_to_backend(BackendArg::new_raw(
+            "myjava".to_string(),
+            Some("core:java".to_string()),
+            "myjava".to_string(),
+            Some(crate::toolset::parse_tool_options("release_type=ea")),
+            crate::args::BackendResolution::new(true),
+        ))
+        .unwrap();
+        let opts = aliased.ba().resolve_opts_with_layers(None, None, None);
+        assert_eq!(JavaOptions::new(opts.effective()).release_type(), "ea");
+        assert_eq!(aliased.id(), shared.id());
+        assert_eq!(aliased.ba().installs_path(), shared.ba().installs_path());
+        assert_eq!(aliased.ba().cache_path(), shared.ba().cache_path());
     }
 
     fn match_versions(versions: &[&str], query: &str) -> Vec<String> {

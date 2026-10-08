@@ -80,6 +80,6 @@ Prefers podman (loads OCI layouts natively). Falls back to docker
 
 ## Related documentation
 
-- [Building and running OCI images](/dev-tools/mise-oci.html).
+- [OCI images](/dev-tools/mise-oci.html).
 - [`mise oci <SUBCOMMAND>`](/cli/oci.html).
 - [Global flags and argument syntax](/cli/#global-flags).

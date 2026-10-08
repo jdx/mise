@@ -1,689 +1,423 @@
 ---
-description: "Manage project environment variables, secrets, and PATH entries with mise."
+description: "Set project environment variables in mise.toml, load them from files and scripts, and add directories to PATH."
 ---
 
-# Environments
+# Environment variables
 
-Define project environment variables in `[env]`. mise supplies them to commands
-run with `mise exec`, tasks, and activated interactive shells.
+Set project environment variables under `[env]` in `mise.toml`. mise applies
+them to commands run with `mise exec`, to tasks, to shims, and to shells where
+mise is activated.
 
-For separate development, test, or production config files, see
-[Config Environments](/configuration/environments.html). For reusable values that
-should stay inside mise templates, use [`[vars]`](/configuration/vars.html).
+For separate files per deployment, such as `mise.production.toml`, see
+[Config environments](/configuration/environments.html). For values that only
+templates need, use [`[vars]`](/configuration/vars.html). To keep secret values
+out of plaintext config, see [Secrets](/environments/secrets/).
 
-Create a `mise.toml` file in the root of your project directory:
+## Set and unset variables {#set-and-unset}
 
 ```toml [mise.toml]
 [env]
-NODE_ENV = 'production'
+NODE_ENV = "production"
 ```
 
 Check the value in a child process without changing your shell:
 
 ```sh
-mise exec -- sh -c 'printf "%s\n" "$NODE_ENV"'
+mise exec -- sh -c 'echo "$NODE_ENV"'
 # production
 ```
 
-To clear an env var, set it to `false`:
+A value can be a string or an integer; `true` becomes the string `"true"`. Set a
+variable to `false` to unset it, for example one that your shell or a parent
+directory's config sets:
 
 ```toml [mise.toml]
 [env]
-NODE_ENV = false # unset a previously set NODE_ENV
+NODE_ENV = false
 ```
 
-To set a fallback while preserving an existing non-empty value, use `default`:
+[`mise set`](/cli/set.html) and [`mise unset`](/cli/unset.html) edit `[env]`
+from the command line:
+
+```sh
+mise set NODE_ENV=development   # writes NODE_ENV = "development" under [env]
+mise set NODE_ENV               # prints development
+mise set                        # lists each variable, its value, and the file it comes from
+mise unset NODE_ENV             # removes it
+```
+
+`mise set` writes to the nearest directory that has config. When that directory
+has both `mise.toml` and `mise.local.toml`, it writes `mise.toml`; see
+[which file a write uses](/configuration.html#target-file-for-write-operations).
+Pass `-E staging` to write `mise.staging.toml`, `-g` to write the global config,
+and `--prompt` or `--stdin` to keep a value out of your shell history.
+
+To print the resolved environment, including `PATH` entries and variables that
+tools set, run [`mise env`](/cli/env.html). Add `--json` or `--dotenv` for other
+formats.
+
+## Where variables apply {#using-environment-variables}
+
+| How you run a command                                | Receives `[env]`                                                     |
+| ---------------------------------------------------- | -------------------------------------------------------------------- |
+| `mise exec -- <command>`                             | Yes                                                                  |
+| `mise run <task>`                                    | Yes, plus the task's own `env`                                       |
+| A shell where [mise is activated](/shell-setup.html) | Yes, updated each time you change directories                        |
+| A [shim](/dev-tools/shims.html)                      | Yes, for the program the shim runs                                   |
+| [`mise en`](/cli/en.html)                            | Yes, in a new shell that does not update when you change directories |
+
+Variables combine with [tools](/dev-tools/) in the same file:
+
+```sh
+mise use node@24
+mise set MY_VAR=123
+mise exec -- node -p process.env.MY_VAR
+# 123
+```
+
+### Task-specific variables {#environment-in-tasks}
+
+A task's own `env` applies only to that task and accepts the same values and
+directives as `[env]`:
+
+```mise-toml [mise.toml]
+[tasks.print]
+env = { MY_VAR = "my variable", _.file = ".env.print" }
+run = "echo $MY_VAR"
+```
+
+See [task `env`](/tasks/task-configuration.html#env).
+
+## Defaults and required variables {#defaults-and-required}
+
+### Defaults {#defaults}
+
+`default` sets a fallback and keeps a value that is already there:
 
 ```toml [mise.toml]
 [env]
 NODE_ENV = { default = "development" }
 ```
 
-This keeps `NODE_ENV` if it was already set before mise ran or by an earlier config file. If it is unset or empty, mise sets it to `"development"`.
-Defaults can be strings or integers.
+mise keeps `NODE_ENV` when it is already set to a non-empty value, either in the
+environment mise started with or by a lower-precedence config file such as the
+global config. Otherwise it sets `NODE_ENV` to `development`. A default must be a
+string or an integer.
 
-You can also use the CLI to get/set env vars:
+### Required variables {#required-variables}
 
-```sh
-mise set NODE_ENV=development
-# mise set NODE_ENV
-# development
-
-mise set
-# key       value        source
-# NODE_ENV  development  mise.toml
-
-cat mise.toml
-# [env]
-# NODE_ENV = 'development'
-
-mise unset NODE_ENV
-```
-
-You can also use the [mise env [--json] [--dotenv]](/cli/env.html) command to export environment variables in various formats (including `PATH` and environment variables set by tools or plugins).
-
-## Using environment variables
-
-Environment variables are available when using [`mise x|exec`](/cli/exec.html), or with [`mise r|run`](/cli/run.html) (i.e. with [tasks](/tasks/)):
-
-```shell
-mise set MY_VAR=123
-mise exec -- bash -c 'echo $MY_VAR'
-# 123
-```
-
-You can of course combine them with [tools](/dev-tools/):
-
-```sh
-mise use node@26
-mise set MY_VAR=123
-cat mise.toml
-# [tools]
-# node = '26'
-# [env]
-# MY_VAR = '123'
-mise exec -- node --eval 'console.log(process.env.MY_VAR)'
-# 123
-```
-
-If [mise is activated](/getting-started.html#activate-mise), it will automatically set environment variables in the current shell session when you `cd` into a directory.
-
-```shell
-cd /path/to/project
-mise set NODE_ENV=production
-cat mise.toml
-# [env]
-# NODE_ENV = 'production'
-
-echo $NODE_ENV
-# production
-```
-
-If you use [`shims`](/dev-tools/shims.html), the environment variables are available when you run a shim:
-
-```shell
-mise set NODE_ENV=production
-mise use node@26
-# using the absolute path for the example
-~/.local/share/mise/shims/node --eval 'console.log(process.env.NODE_ENV)'
-```
-
-Finally, you can also use [`mise en`](/cli/en.html) to start a new shell session with the environment variables set.
-
-```shell
-mise set FOO=bar
-mise en
-> echo $FOO
-# bar
-```
-
-## Environment in tasks
-
-You can also define environment variables inside a task:
+`required = true` declares a variable that something else must set. mise checks
+that it is set but never assigns it. The check passes when the variable is in
+the environment mise started with, or when any other config file sets it, such
+as `mise.local.toml`, a parent directory's config or the global config:
 
 ```toml [mise.toml]
-[tasks.print]
-run = "echo $MY_VAR"
-env = { _.file = '/path/to/file.env', "MY_VAR" = "my variable" }
+[env]
+DATABASE_URL = { required = true }
 ```
 
-## Resolve values after tools {#lazy-eval}
-
-Environment variables typically are resolved before tools—that way you can configure tool installation
-subprocesses with environment variables. This does not apply to variables that configure mise itself,
-such as `MISE_DATA_DIR` or `MISE_INSTALLS_DIR`. These variables are read when the process starts, so
-set them in the shell or CI environment before invoking mise rather than in `[env]`.
-
-Sometimes you want to access environment variables produced by tools. To do that, turn the value into
-a map with `tools = true`:
-
-```toml
+```toml [mise.local.toml]
 [env]
-MY_VAR = { value = "tools path: {{env.PATH}}", tools = true }
-_.path = { path = ["{{env.GEM_HOME}}/bin"], tools = true } # directives may also set tools = true
+DATABASE_URL = "postgres://localhost/app"
+```
+
+Give `required` a string instead of `true` to show help text when the variable
+is missing:
+
+```toml [mise.toml]
+[env]
+DATABASE_URL = { required = "Set DATABASE_URL to your PostgreSQL connection string" }
+```
+
+When a required variable is missing, `mise exec`, `mise run`, `mise env` and
+`mise set` stop with an error that includes the help text. An activated shell
+prints a warning instead and keeps going, so a missing value does not break your
+prompt:
+
+```text
+mise WARN  Required environment variable 'DATABASE_URL' is not defined. It must be set before mise runs or in a later config file. (Required in: ~/src/app/mise.toml)
+Help: Set DATABASE_URL to your PostgreSQL connection string
+```
+
+`required` cannot be combined with `value` or `default`.
+
+To mask a value in task output, including one a caller supplies for a
+`required` variable, mark it with `redact = true`; see
+[Redaction and CI masking](/environments/secrets/#redaction).
+
+## Reference other values {#reference-other-values}
+
+Values are [Tera templates](/templates.html), and they also support shell-style
+`$VAR` expansion:
+
+```toml [mise.toml]
+[env]
+PROJECT_LIB = "{{config_root}}/lib"
+LD_LIBRARY_PATH = "{{env.PROJECT_LIB}}:${LD_LIBRARY_PATH:-}"
+```
+
+A value can use only variables defined above it in the same file, in a
+lower-precedence config file, or in the environment mise started with.
+
+### Templates {#templates}
+
+<span v-pre>`{{config_root}}`</span> is the project directory and
+<span v-pre>`{{env.NAME}}`</span> reads a variable. See
+[Tera templates](/templates.html) for the full context and filters.
+
+### Shell-style expansion {#shell-style-variable-expansion}
+
+| Syntax            | Result                                                           |
+| ----------------- | ---------------------------------------------------------------- |
+| `$VAR`            | The value of `VAR`                                               |
+| `${VAR}`          | The same; use it before letters or digits, as in `${VAR}_suffix` |
+| `${VAR:-default}` | `default` when `VAR` is unset or empty                           |
+| `${VAR:-}`        | An empty string when `VAR` is unset, without a warning           |
+
+Expansion runs after template rendering, so a value can mix both. A variable
+that is not defined and has no default stays as written, and mise prints a
+warning. Turn expansion off with
+[`env_shell_expand = false`](/configuration/settings.html#env_shell_expand).
+
+## Use values that tools set {#lazy-eval}
+
+mise resolves `[env]` before it loads tools, so values can configure tool
+installation, for example `CFLAGS` for a source build. To use something a tool
+provides, such as its version or its `PATH` entries, add `tools = true`. mise
+then resolves that entry after tools load:
+
+```toml [mise.toml]
+[env]
 NODE_VERSION = { value = "{{ tools.node.version }}", tools = true }
+_.path = { path = "{{env.GEM_HOME}}/bin", tools = true }
 ```
 
-## Redactions
+`tools = true` works on variables, `_.file`, `_.path`, `_.source` and
+[plugin directives](#plugin-directives). `_.python.venv` always resolves after
+tools and does not accept the option.
 
-Mark values as sensitive with `redact = true` so mise can mask them in captured
-task output. This does not encrypt the config file or prevent a child process
-from reading the value:
+## Precedence {#precedence}
 
-```toml
+When several config files set the same variable, the more specific file wins:
+
+- `mise.local.toml` wins over `mise.toml`.
+- With `MISE_ENV=dev`, `mise.dev.toml` and then `mise.dev.local.toml` win over
+  both.
+- A project's config wins over a parent directory's config.
+- Any project config wins over the global config
+  (`~/.config/mise/config.toml`).
+
+See [config files](/configuration.html#mise-toml) for the full list of
+locations.
+
+mise evaluates config files from the lowest precedence to the highest, and the
+entries in each file in the order you write them, so each value can reference
+anything set before it. A value in `[env]` replaces a variable of the same name
+in the environment mise started with; `default` and `required` are the
+exceptions described above.
+
+## Env directives {#env-directives}
+
+Directives load variables from files and scripts and add `PATH` entries. They
+live in a table named `_`, because a variable cannot contain a nested table.
+`_.file`, `_.path` and `_.source` each take a path, a table with `path` and
+options, or an array of either:
+
+```toml [mise.toml]
 [env]
-SECRET = { value = "my_secret", redact = true }
-_.file = { path = ".env.json", redact = true }
+_.file = ".env"
+_.path = ["bin", "node_modules/.bin"]
+_.source = { path = "scripts/env.sh", redact = true }
 ```
 
-You can also use the `redactions` array to mark multiple environment variables as sensitive:
+Relative paths resolve against the project directory, even when the config file
+is in `.config/mise/` or `.mise/` (see
+[`config_root`](/configuration.html#config-root)). Paths can use templates,
+`$VAR` and `~`. Directives run in the order you write them, so `_.path` can use
+a variable that `_.source` set above it; `_.python.venv` always runs last.
 
-```toml
-redactions = ["SECRET_*", "*_TOKEN", "PASSWORD"]
+| Option   | `_.file` | `_.source` | `_.path` | Effect                                                                   |
+| -------- | -------- | ---------- | -------- | ------------------------------------------------------------------------ |
+| `path`   | Yes      | Yes        | Yes      | One path or a list of paths                                              |
+| `tools`  | Yes      | Yes        | Yes      | Resolve after tools load ([details](#lazy-eval))                         |
+| `redact` | Yes      | Yes        | No       | Mark every loaded value as [sensitive](/environments/secrets/#redaction) |
+| `expand` | Yes      | No         | No       | Let the file use values loaded before it                                 |
+
+### `env._.file` {#env-file}
+
+Load variables from a file:
+
+```toml [mise.toml]
 [env]
-SECRET_KEY = "sensitive_value"
-API_TOKEN = "token_123"
-PASSWORD = "my_password"
+_.file = ".env"
 ```
 
-Set `redact = false` on an individual variable to exclude it from matching `redactions` patterns,
-including patterns inherited from a global config:
+- The extension selects the format. `.json`, `.yaml` and `.toml` files are
+  parsed as structured files whose top-level keys become variables. Any other
+  name, including `.yml` and `.env`, is parsed as dotenv.
+- The path can be a glob pattern such as `.env.*`; every matching file is
+  loaded.
+- A path that matches no file is skipped without an error, so `_.file` can
+  point at an optional, untracked `.env`.
+- Values from the file replace variables already in the environment.
 
-```toml
+```toml [mise.toml]
 [env]
-TEST_TOKEN = { value = "not-sensitive", redact = false }
+_.file = [
+  ".env.json",
+  "~/.config/myapp/.env",
+  { path = ".secrets.yaml", redact = true },
+]
 ```
 
-Redaction also covers values the caller supplies. A variable declared with `required = true` is only
-validated — mise never assigns it — but the value the caller passed in is still redacted when
-`redact = true` or a `redactions` pattern matches its name:
-
-```toml
-redactions = ["*_KEY_*"]
-
-[tasks.deploy]
-env = { ASC_KEY_ID = { required = true, redact = true } }
-run = "./deploy.sh"
-```
-
-The same applies to a `default` whose fallback the caller overrides.
-
-### Viewing Redacted Environment Variables
-
-`mise env` exports actual values, including secrets. `--redacted` filters the
-output to sensitive variables; it does **not** hide their values. Use these flags
-when deliberately exporting secrets to another program:
-
-```bash
-# Show only redacted environment variables
-mise env --redacted
-
-# Show only values (useful for piping)
-mise env --values
-
-# Show only values of redacted variables
-mise env --redacted --values
-```
-
-::: warning
-Redactions work by intercepting task output line-by-line, so they require a non-`raw` output mode.
-Tasks with `raw = true` bypass this interception (stdout/stderr are passed directly to the terminal), so redactions cannot be applied.
-
-By default, `mise run` uses the `prefix` output mode when tasks run in parallel (`jobs` > 1), and `interleave`
-when `jobs` is 1 or all tasks run sequentially. Both print full task output with redactions applied.
-The `replacing` and `timed` modes do not print every line, so if you use one of them, switch to `prefix` or
-`interleave` in CI environments to see full task logs while still having redactions applied:
-
-```bash
-MISE_TASK_OUTPUT=prefix mise run mytask
-```
-
-:::
-
-### CI masking
-
-[mise-action](https://github.com/jdx/mise-action) registers masks for values marked
-with `redact = true` or matching the `redactions` array. When resolving secrets
-outside that action, register masks before running commands that might print them.
-
-For a custom GitHub Actions step with Bash and `jq` available, export JSON to
-preserve whitespace and escape workflow-command data before emitting masks:
-
-```bash
-set -o pipefail
-mise env --redacted --json | jq -r '
-  .[] | select(length > 0) |
-  "::add-mask::" + (gsub("%"; "%25") | gsub("\r"; "%0D") | gsub("\n"; "%0A"))
-'
-```
-
-This uses the [workflow-command escaping applied by the Actions toolkit](https://github.com/actions/toolkit/blob/main/packages/core/src/command.ts).
-Do not use a whitespace-splitting loop such as `for value in $(...)` for secrets.
-
-## Required Variables
-
-You can mark environment variables as required by setting `required = true`. This ensures that the variable is defined either before mise runs or in a later config file (like `mise.local.toml`):
-
-```toml
-[env]
-DATABASE_URL = { required = true }
-API_KEY = { required = true }
-```
-
-A required variable is validated but never assigned by mise. Its value still participates in
-[redactions](#redactions), so `redact = true` or a matching `redactions` pattern masks whatever the
-caller passed in.
-
-You can also provide help text to guide users on how to set the variable:
-
-```toml
-[env]
-DATABASE_URL = {
-  required = "Set DATABASE_URL to your PostgreSQL connection string",
-}
-API_KEY = {
-  required = "Get your API key from https://example.com/api-keys",
-}
-AWS_REGION = {
-  required = "Set to your AWS region (e.g., us-east-1, eu-west-1)",
-}
-```
-
-When a required variable is missing, mise shows the help text in the error message.
-
-### Required Variable Behavior
-
-When a variable is marked as `required = true`, mise validates that it is defined through one of these sources:
-
-1. **Pre-existing environment** - The variable was set before mise ran
-2. **Later config file** - The variable is defined in a config file processed after the one that declares it as required
-
-```toml
-# In mise.toml
-[env]
-DATABASE_URL = { required = true }
-```
-
-```toml
-# In mise.local.toml (processed later)
-[env]
-DATABASE_URL = "postgres://prod.example.com/db"  # This satisfies the requirement
-```
-
-### Validation Behavior
-
-- **Regular commands** (like `mise env`): Fail with a clear error message when required variables are missing
-- **Shell activation** (`hook-env`): Warn about missing required variables but continue, to avoid breaking shell setup
-
-```bash
-# This will fail if DATABASE_URL is not pre-defined or in a later config
-$ mise env
-Error: Required environment variable 'DATABASE_URL' is not defined...
-
-# This will warn but continue (used by shell activation)
-$ mise hook-env --shell bash
-mise WARN Required environment variable 'DATABASE_URL' is not defined...
-# Shell activation continues successfully
-```
-
-### Use Cases
-
-Required variables are useful for:
-
-- **Database connections** - Ensure critical connection strings are explicitly set
-- **API keys** - Require explicit configuration of sensitive credentials
-- **Environment-specific settings** - Force explicit configuration per environment
-- **Team collaboration** - Document which variables team members must configure
-
-```toml
-[env]
-# API keys (must be set in environment or mise.local.toml)
-STRIPE_API_KEY = { required = true }
-SENTRY_DSN = { required = true }
-
-# Database connection (must be set in environment or mise.local.toml)
-DATABASE_URL = { required = true }
-
-# Feature flags (must be explicitly configured)
-ENABLE_BETA_FEATURES = { required = true }
-```
-
-## `config_root`
-
-`config_root` is the canonical project root directory that mise uses when resolving relative paths inside config files. Generally, relative paths in mise refer to this directory.
-
-- When your config lives at nested paths like `.config/mise/config.toml` or `.mise/config.toml`, `config_root` points to the project directory that contains those files (for example, `/path/to/project`).
-- When your config lives at the project root (for example, `mise.toml`), `config_root` is the directory containing that file, even when you invoke mise from a subdirectory.
-- Relative paths in environment directives are resolved against `config_root` so they behave consistently regardless of where the config file itself lives.
-
-Here are some example config files and their `config_root`:
-
-| Config File                                 | `config_root` |
-| ------------------------------------------- | ------------- |
-| `~/src/foo/.config/mise/conf.d/config.toml` | `~/src/foo`   |
-| `~/src/foo/.config/mise/config.toml`        | `~/src/foo`   |
-| `~/src/foo/.mise/config.toml`               | `~/src/foo`   |
-| `~/src/foo/mise.toml`                       | `~/src/foo`   |
-
-You can see the implementation in [config_root.rs](https://github.com/jdx/mise/blob/main/src/config/config_file/config_root.rs).
-
-Examples:
-
-```toml
-[env]
-# These are equivalent and both resolve against the project root
-_.path = ["tools/bin", "{{config_root}}/tools/bin"]
-
-# Likewise, a relative source path resolves against the project root
-_.source = "scripts/env.sh"          # == "{{config_root}}/scripts/env.sh"
-```
-
-## `env._` directives
-
-`env._.*` directives define special behavior for setting environment variables (for example,
-reading env vars from a file). Since nested environment variables do not make sense,
-mise uses a key named "\_" as a TOML table that holds the configuration for these directives.
-
-::: warning
-The `value` and `values` keys in built-in `file`, `path`, and `source` directive objects under
-`env._` or `vars._` are deprecated. Use `path`, which accepts either a single string or an array of
-strings. They will be removed in mise 2026.12.0. This does not affect `value` in ordinary environment
-variable objects or options for plugin-provided directives.
-
-The legacy `env.mise.*` spelling is deprecated. Use `env._.*` instead. It will be removed in mise
-2026.12.0.
-:::
-
-### `env._.file`
-
-In `mise.toml`, use `env._.file` to specify a [dotenv](https://dotenv.org) file to load.
-
-::: warning
-Top-level `env_file`, `dotenv`, and `env_path` are deprecated. Use `env._.file` and
-`env._.path` instead. These keys will be removed in mise 2027.4.0.
-:::
-
-```toml
-[env]
-_.file = '.env'
-```
-
-::: info
-Dotenv-format files are parsed by mise's own `mise-dotenv` crate, derived from
-[dotenv-ng](https://crates.io/crates/dotenv-ng-core). JSON, YAML, and TOML files use separate parsers.
-:::
-
-The `env._.file` directive supports:
-
-- A single file as a string or an object
-- Multiple files as an array of strings and objects
-- Using relative or absolute paths
-- Using `dotenv`, `json`, `yaml`, or `toml` file formats
-- The `redact`, `tools`, and `expand` options
-
-```toml
-[env]
-_.file = '.env.yaml'
-```
-
-```toml
-[env]
-_.file = '.env.toml'
-```
-
-```toml
-[env]
-# Load env from the dotenv file after tools have defined environment variables
-_.file = { path = ".env", tools = true }
-```
-
-Shell-style expansion in structured JSON, YAML, and TOML files is disabled by default so values
-containing literal `$` characters are preserved. Set `expand = true` to allow values in a file to
-reference variables defined earlier in the same file, an earlier file, or an earlier `[env]` block:
-
-```toml
+Dotenv files use `KEY=value` lines, with `#` comments and quoted values. A
+dotenv value can reference variables assigned earlier in the same file, then
+variables from the environment mise started with. JSON, YAML and TOML values
+are read literally, so a `$` stays a `$`. Set `expand = true` to let a file of
+any format reference values loaded before it, from earlier files or earlier
+`[env]` entries:
+
+```toml [mise.toml]
 [env]
 BASE = "/opt/project"
 _.file = { path = ".env.json", expand = true }
 ```
 
-The `env_shell_expand` setting remains the global switch and can disable expansion even when a file
-sets `expand = true`. Dotenv files always expand references to earlier assignments in the same file, and a file's own values take precedence over variables that are already set (for example ones exported by `mise activate` from another `.env`);
-for dotenv files, `expand = true` additionally enables references to previously loaded values.
+`expand = true` has no effect when
+[`env_shell_expand`](/configuration/settings.html#env_shell_expand) is `false`.
 
-```toml
-[env]
-_.file = [
-    # Load env from the JSON file relative to the config root
-    '.env.json',
-    # Load env from the dotenv file at an absolute path
-    '/Users/bob/.env',
-    # Load env from the YAML file relative to the config root and redact the values
-    { path = ".secrets.yaml", redact = true }
-]
-```
+mise decrypts SOPS-encrypted JSON, YAML and TOML files as it loads them; see
+[SOPS files](/environments/secrets/sops.html).
 
-To automatically load dotenv files from the current directory and parent directories, set
-[`MISE_ENV_FILE=.env`](/configuration#mise-env-file) or `env_file = ".env"` under `[settings]`
-in `~/.config/mise/config.toml`. This is different from `env._.file`, which resolves paths
-relative to the config root of the file that declares it.
+To load a dotenv file from the current directory and every parent directory, set
+the [`env_file`](/configuration/settings.html#env_file) setting, for example
+`MISE_ENV_FILE=.env`. Unlike `_.file`, which resolves paths against the config
+file that declares it, `env_file` searches upward from the current directory,
+and a closer file wins.
 
-See [secrets](/environments/secrets/) for ways to read encrypted files with `env._.file`.
+### `env._.path` {#env-path}
 
-### `env._.path`
+Add directories to `PATH`, ahead of the directories already in it:
 
-`PATH` is treated specially. Use `env._.path` to add extra directories to the `PATH`, making any executables in those directories available in the shell without needing to type the full path:
-
-```toml
-[env]
-_.path = './bin'
-```
-
-The `env._.path` directive supports:
-
-- A single path as a string or an object
-- Multiple paths as an array of strings and objects
-- Using relative or absolute paths
-- The `tools` option
-
-```toml
-[env]
-_.path = 'scripts'
-```
-
-```toml
-[env]
-# Define this path directory after tools have defined environment variables
-_.path = { path = ["{{env.GEM_HOME}}/bin"], tools = true }
-```
-
-```toml
+```toml [mise.toml]
 [env]
 _.path = [
-    # adds an absolute path
-    "~/.local/share/bin",
-    # adds a path relative to the project root (config_root)
-    "{{config_root}}/node_modules/.bin",
-    # adds a relative path (equivalent to "{{config_root}}/tools/bin")
-    "tools/bin",
+  "bin",
+  "{{config_root}}/node_modules/.bin",
+  "~/.local/share/mytool/bin",
 ]
 ```
 
-Relative paths like `tools/bin` or `./tools/bin` are resolved against <span v-pre>`{{config_root}}`</span>. For example, with a config file at `/path/to/project/.config/mise/config.toml`, `tools/bin` resolves to `/path/to/project/tools/bin`.
+Use `_.path` for `PATH`. A `PATH` key in `[env]` is ignored by `mise exec`,
+`mise env` and activated shells.
 
-### `env._.source`
+### `env._.source` {#env-source}
 
-Source an external bash script and pull exported environment variables out of it:
+Run a bash script and take the variables it exports:
 
-```toml
+```toml [mise.toml]
 [env]
-_.source = "./script.sh"
+_.source = "scripts/env.sh"
 ```
 
-::: info
-This **must** be a script that runs in bash as if it were executed like this:
+mise runs the script with bash, as if you ran `source scripts/env.sh`, and
+ignores its shebang. For another language, use a task or an
+[environment plugin](/env-plugin-development.html).
 
-```sh
-source ./script.sh
-```
+- Variables the script exports or changes are added, and variables it unsets
+  are removed.
+- The path can be a glob pattern, and a path that matches no file is skipped,
+  as with `_.file`.
+- The script runs each time mise computes the environment, so keep it fast and
+  safe to run more than once.
+- [Safe mode](/security.html#safe-mode) never runs it, not even from the global
+  config.
 
-The shebang will be **ignored**. See [discussion #6734](https://github.com/jdx/mise/discussions/6734) (archived issue #1448)
-for a potential alternative that would work with binaries or other script languages.
-:::
-
-::: info Windows
-On Windows, sourcing requires a real POSIX bash such as [Git for Windows](https://gitforwindows.org/)
-or MSYS2. mise auto-detects it the same way it does for bash tasks (common install
-locations are probed even when bash is not on `PATH`; set `MISE_BASH_PATH` to point at a
-specific bash; the WSL launcher at `C:\Windows\System32\bash.exe` is never auto-selected
-since WSL cannot read Windows script paths). `PATH` entries the script prepends (in
-`/c/...` or `/cygdrive/c/...` form) are converted back to Windows form.
-:::
-
-The `env._.source` directive supports:
-
-- A single source as a string or an object
-- Multiple sources as an array of strings and objects
-- Using relative or absolute paths
-- The `redact` and `tools` options
-
-For `PATH`, sourced scripts may prepend entries by preserving the original value as an exact
-suffix:
+A script can prepend to `PATH`:
 
 ```sh
 export PATH="/new/bin:$PATH"
 ```
 
-Appending, removing, reordering, or replacing existing `PATH` entries is not supported. Those
-changes are ignored because mise tracks path additions separately so it can preserve activation
-ordering and remove them cleanly when the environment changes. Relative prepended entries are
-resolved against <span v-pre>`{{config_root}}`</span>, and empty entries are ignored rather than
-adding the current directory to `PATH`.
+mise ignores other `PATH` changes, such as appending, removing or reordering
+entries, because it manages `PATH` entries itself so it can remove them cleanly
+when you leave the directory. Relative prepended entries resolve against the
+project directory, and empty entries are ignored.
 
-```toml
+On Windows, `_.source` needs a POSIX bash such as
+[Git for Windows](https://gitforwindows.org/) or MSYS2. mise finds it the same
+way it does for bash tasks, including common install locations that are not on
+`PATH`; set `MISE_BASH_PATH` to choose one. mise never uses the WSL launcher at
+`C:\Windows\System32\bash.exe`, because WSL cannot read Windows script paths.
+`PATH` entries the script prepends in `/c/...` or `/cygdrive/c/...` form are
+converted to Windows form.
+
+### `env._.python.venv` {#env-python-venv}
+
+Create and activate a Python virtual environment:
+
+```toml [mise.toml]
 [env]
-_.source = 'source.sh'
+_.python.venv = { path = ".venv", create = true }
 ```
 
-```toml
+See [Automatic virtualenv activation](/lang/python.html#automatic-virtualenv-activation)
+for all options.
+
+### Directives from plugins {#plugin-directives}
+
+An environment plugin adds its own directive.
+[Install the plugin](/plugins.html#environment-plugins), then name it under `_`
+with the options the plugin documents:
+
+```toml [mise.toml]
 [env]
-# Source this file after tools have defined environment variables
-_.source = { path = "my/env.sh", tools = true }
+_.my-env-plugin = { api_url = "https://api.example.com" }
 ```
 
-```toml
-[env]
-_.source = [
-    # Sources the file relative to the config root
-    './scripts/base.sh',
-    # Sources a file at an absolute path
-    '/Users/bob/env.sh',
-    # Sources the file relative to the config root and redacts the values
-    { path = ".secrets.sh", redact = true }
-]
-```
+`tools` and `redact` also work on plugin directives. To write one, see
+[Environment plugins](/env-plugin-development.html).
 
-## Plugin-provided `env._` Directives
+## Variables that configure mise {#mise-variables}
 
-Plugins can provide their own `env._` directives that dynamically set environment variables and modify your PATH. This is particularly useful for:
+mise reads `MISE_*` variables such as `MISE_DATA_DIR` when it starts, before it
+loads `[env]`, so setting one in `[env]` does not change how that mise process
+behaves. Set them in your shell or CI environment, or use
+[`[settings]`](/configuration/settings.html). See
+[`MISE_*` variables](/configuration/environment-variables.html).
 
-- Integrating with external secret management systems
-- Setting environment variables based on dynamic conditions
-- Managing complex PATH configurations
-- Providing team-wide environment standardization
+The SOPS key variables are the exception: mise reads `MISE_SOPS_AGE_KEY` and
+`MISE_SOPS_AGE_KEY_FILE` from `[env]` to decrypt encrypted files listed after
+them; see [SOPS files](/environments/secrets/sops.html#environment-variables).
 
-### Basic Usage
+## Turn off config env {#no-env}
 
-These are illustrative plugin names. Install a plugin that implements `MiseEnv`
-before using its directive; naming a directive does not create or install a plugin.
+`mise --no-env`, `MISE_NO_ENV=1` or the
+[`no_env`](/configuration/settings.html#no_env) setting skips `[env]` and env
+directives from every config file.
 
-Simple plugin activation:
+In [safe mode](/security.html#safe-mode) (`MISE_SAFE=1`), mise ignores `[env]`
+and env directives from project config, and never runs `_.source`.
 
-```toml
-[env]
-_.my-plugin = {}
-```
+## Next steps {#next-steps}
 
-Plugin with configuration options:
+- [Secrets](/environments/secrets/): encrypt values or fetch them from a secret
+  manager, and mask them in output.
+- [Config environments](/configuration/environments.html): switch sets of values
+  with `MISE_ENV`.
+- [Hooks](/hooks.html): run commands when you enter or leave a project.
+- [Tera templates](/templates.html): the functions and filters values can use.
 
-```toml
-[env]
-_.my-plugin = { option1 = "value1", option2 = "value2" }
-```
+## Deprecated syntax {#deprecated-syntax}
 
-### How It Works
+| Deprecated                                                      | Use instead  | Removed in |
+| --------------------------------------------------------------- | ------------ | ---------- |
+| `env.mise.*`                                                    | `env._.*`    | 2026.12.0  |
+| `value` or `values` in a `_.file`, `_.path` or `_.source` table | `path`       | 2026.12.0  |
+| Top-level `env_file` or `dotenv`                                | `env._.file` | 2027.4.0   |
+| Top-level `env_path`                                            | `env._.path` | 2027.4.0   |
 
-When you use `env._.<plugin-name>`, mise:
-
-1. Loads the plugin from your installed plugins
-2. Calls the plugin's `MiseEnv` hook to get environment variables
-3. Calls the plugin's `MisePath` hook to get PATH entries (if defined)
-4. Applies these to your environment when running `mise env` or using shell integration
-
-The configuration options you provide (the TOML table after `=`) are passed to the plugin's hooks via `ctx.options`, allowing plugins to be configured per-project or per-environment.
-
-### Example: Secret Management Plugin
-
-```toml
-[env]
-_.vault-secrets = {
-  vault_url = "https://vault.example.com",
-  secrets_path = "secret/myapp",
-}
-```
-
-The plugin could then fetch secrets from HashiCorp Vault and expose them as environment variables.
-
-### Example: Dynamic Environment Plugin
-
-```toml
-[env]
-# Set environment based on git branch
-_.git-env = { production_branch = "main" }
-```
-
-The plugin could detect the current git branch and set `ENVIRONMENT=production` when on `main`, or `ENVIRONMENT=development` otherwise.
-
-### Creating Environment Plugins
-
-See [Environment Plugins](/plugins#environment-plugins) in the Plugins documentation for a complete guide to creating your own environment plugins.
-
-For a working example, see the [mise-env-plugin-template](https://github.com/jdx/mise-env-plugin-template) repository.
-
-## Multiple `env._` Directives
-
-Some directives accept an array when you need to apply them more than once. For example,
-multiple scripts can be sourced in order with a single `_.source` key:
-
-```toml
-[env]
-_.source = ["./script_1.sh", "./script_2.sh"]
-```
-
-## Templates
-
-Environment variable values can be templates; see [Templates](/templates) for details.
-
-```toml
-[env]
-PROJECT_CACHE = "{{config_root}}/.cache"
-```
-
-## Using env vars in other env vars
-
-You can use the value of an environment variable in later env vars:
-
-```toml
-[env]
-MY_PROJ_LIB = "{{config_root}}/lib"
-LD_LIBRARY_PATH = "/some/path:{{env.MY_PROJ_LIB}}"
-```
-
-Ordering matters when doing this.
-
-## Shell-style variable expansion
-
-As a simpler alternative to Tera templates for referencing env vars, you can use shell-style `$VAR` syntax:
-
-```toml
-[env]
-MY_PROJ_LIB = "{{config_root}}/lib"
-LD_LIBRARY_PATH = "$MY_PROJ_LIB:${LD_LIBRARY_PATH:-}"
-```
-
-Supported syntax:
-
-| Syntax            | Description                                                                           |
-| ----------------- | ------------------------------------------------------------------------------------- |
-| `$VAR`            | Expands to the value of `VAR`                                                         |
-| `${VAR}`          | Same, useful when followed by alphanumeric characters (e.g., `${VAR}_suffix`)         |
-| `${VAR:-default}` | Uses `default` if `VAR` is unset or empty                                             |
-| `${VAR:-}`        | Expands to empty string if `VAR` is unset (suppresses the undefined variable warning) |
-
-Expansion runs after Tera template rendering, so both syntaxes can be mixed.
-Undefined variables without a default are left unexpanded and produce a warning.
-
-The `env_shell_expand` setting controls shell expansion:
-
-- **`true`** or **unset** (default) — enable shell expansion
-- **`false`** — disable shell expansion
+The `value` and `values` rule also applies to directives under `vars._`. It does
+not affect `value` in an ordinary variable table, such as
+`SECRET = { value = "...", redact = true }`, or the options of plugin
+directives.

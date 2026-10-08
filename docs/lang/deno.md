@@ -1,68 +1,98 @@
 ---
-description: "mise can be used to install and manage multiple versions of deno on the same system."
+description: "Install Deno with mise and select its version from mise.toml, .deno-version, or package.json."
 ---
 
 # Deno
 
-`mise` can be used to install and manage multiple versions of [deno](https://deno.land/) on the same system.
+mise installs [Deno](https://deno.com/) release binaries and selects a version
+per project.
 
-## Usage
+## Quick start
 
-Install Deno for the current project and verify the selected executable:
+Install Deno for the current project and check the selected executable:
 
 ```sh
-mise use deno@latest
+mise use deno@2
 mise exec -- deno --version
 ```
 
-Use `mise use -g deno@latest` for a personal default outside projects. A specific
-version request such as `deno@2` keeps the project within that release series.
+`mise use` writes `deno = "2"` to `mise.toml`, which keeps the project on the
+Deno 2 series. Use `mise use -g deno@2` for a personal default outside projects.
 
-See available versions with `mise ls-remote deno`.
+Update Deno with [`mise upgrade deno`](/cli/upgrade.html). `deno upgrade`
+replaces the binary inside mise's install directory without changing the
+version mise recorded.
 
-> [!NOTE]
-> Update with `mise upgrade deno`. Running `deno upgrade` changes the installed
-> binary without updating mise's recorded version.
+## Choosing a version
 
-These instructions use mise's built-in deno support. An installed external
-plugin with the same name can change the behavior; use `mise plugins ls` to
-check for overrides. See the [core implementation](https://github.com/jdx/mise/blob/main/src/plugins/core/deno.rs)
-for backend details.
+`deno@2` selects the newest 2.x release, `deno@2.9.7` selects that release, and
+`deno@latest` selects the newest release. List the available versions with
+`mise ls-remote deno`. See [version requests](/dev-tools/versions.html) for the
+full syntax.
 
 ## Version files
 
-Enable [idiomatic version files](/configuration.html#idiomatic-version-files) to read
-`.deno-version` or a version declaration in `package.json`:
+mise can read `.deno-version` and the `devEngines.runtime` field of
+`package.json`. Enable them for Deno:
 
 ```sh
 mise settings add idiomatic_version_file_enable_tools deno
 ```
 
-For example, this `package.json` selects Deno 2.2.0:
+This changes your global config. Add `--local` to enable it in the project's
+`mise.toml` instead, so teammates get the same behavior. See
+[idiomatic version files](/dev-tools/versions.html#idiomatic-version-files).
+
+For example, this `package.json` selects Deno 2.9.7:
 
 ```json [package.json]
 {
   "devEngines": {
-    "runtime": { "name": "deno", "version": "2.2.0" }
+    "runtime": { "name": "deno", "version": "2.9.7" }
   }
 }
 ```
 
-mise reads `devEngines.runtime` when its `name` is `deno`.
+mise reads `devEngines.runtime` when its `name` is `deno`. The field can be an
+object or an array; mise reads the first entry of an array. The `engines`
+compatibility field is not used to select a version.
 
-`devEngines.runtime` accepts an object or an array; mise reads the first entry in an array.
-The `engines` compatibility fields are not used to select a version.
+## Global scripts and `DENO_INSTALL_ROOT`
 
-## Tool Options
+mise sets `DENO_INSTALL_ROOT` to `<install>/.deno` and puts `<install>/.deno/bin`
+on `PATH`, where `<install>` is the selected Deno version's install directory.
+Scripts installed with `deno install -g` therefore belong to one Deno version
+and are not on `PATH` after you switch versions. To share them across versions,
+set the root and add its `bin` directory to `PATH`:
 
-The following [tool-options](/dev-tools/#tool-options) are available for the `deno` backend.
-These options go in the `[tools]` section of `mise.toml`.
-
-### `install_env`
-
-Set environment variables for install-time commands run by the core `deno` backend:
-
-```toml
-[tools]
-deno = { version = "latest", install_env = { HTTPS_PROXY = "http://proxy.example" } }
+```toml [mise.toml]
+[env]
+DENO_INSTALL_ROOT = "{{env.HOME}}/.deno"
+_.path = ["{{env.HOME}}/.deno/bin"]
 ```
+
+A `DENO_INSTALL_ROOT` set in `[env]` takes precedence over the one mise sets.
+
+## How mise installs Deno
+
+mise lists Deno versions from its
+[versions host](/configuration/settings.html#use_versions_host), or from
+`deno.com/versions.json` when `use_versions_host` is off. It downloads the
+release archive for your platform from `dl.deno.land` and runs `deno -V` to
+check it. On Linux, mise installs the glibc builds that Deno publishes.
+[`mise lock`](/cli/lock.html) records the checksum from the `.sha256sum` file
+published next to each archive.
+
+An installed plugin named `deno` takes precedence over the built-in
+installer. If mise behaves differently from this page, check
+[`mise plugins ls`](/cli/plugins/ls.html) and see
+[selecting another implementation](/core-tools.html#selecting-another-implementation).
+
+## Tool options
+
+Deno has no Deno-specific options. Generic options such as `install_env`,
+`postinstall` and `os` work as described in
+[tool options](/dev-tools/#tool-options). `install_env` reaches the `deno -V`
+check and `postinstall` commands, not the download. To download through a
+proxy, set `https_proxy` in the environment that runs mise (see the
+[FAQ](/faq.html#how-do-i-use-mise-with-http-proxies)).

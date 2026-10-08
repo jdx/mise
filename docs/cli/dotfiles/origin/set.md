@@ -28,6 +28,6 @@ Connect a setup repository
 
 ## Related documentation
 
-- [Getting started](/getting-started.html).
+- [Sync across machines](/dotfiles/sync.html).
 - [`mise dotfiles origin [--remove] [SUBCOMMAND]`](/cli/dotfiles/origin.html).
 - [Global flags and argument syntax](/cli/#global-flags).

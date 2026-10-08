@@ -24,6 +24,6 @@ Show one checkpoint: what triggered it, what changed, and its journal
 
 ## Related documentation
 
-- [Dotfile ownership and modes](/dotfiles.html).
+- [Dotfiles history](/dotfiles/history.html).
 - [`mise bootstrap dotfiles history [FLAGS] [SUBCOMMAND]`](/cli/bootstrap/dotfiles/history.html).
 - [Global flags and argument syntax](/cli/#global-flags).
