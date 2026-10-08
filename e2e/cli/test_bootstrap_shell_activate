@@ -82,6 +82,13 @@ assert_contains "cat ~/.config/fish/config.fish" "if status is-interactive"
 assert_contains "cat ~/.config/fish/config.fish" "    mise activate fish | source"
 assert_contains "cat ~/.config/fish/config.fish" "    mise activate fish --shims | source"
 assert_succeed "mise bootstrap mise-shell-activate status --missing"
+# the applied block really branches: hooks interactively, only shims otherwise
+mkdir -p "$MISE_DATA_DIR/shims" # fish_add_path skips directories that do not exist
+interactive_fish="$(fish -ic 'functions -q __mise_env_eval; and echo hook; echo $PATH' </dev/null 2>/dev/null)"
+assert_contains_text "$interactive_fish" "hook"
+noninteractive_fish="$(fish -c 'functions -q __mise_env_eval; and echo hook; echo $PATH' </dev/null)"
+assert_not_contains_text "$noninteractive_fish" "hook"
+assert_contains_text "$noninteractive_fish" "$MISE_DATA_DIR/shims"
 
 # auto is fish-only: other shells ignore the entry with a warning
 rm -f ~/.zprofile ~/.zshrc
