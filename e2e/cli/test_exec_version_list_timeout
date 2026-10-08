@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+
+# When `mise x` cannot fetch a tool's version list, a fully-qualified version
+# is installed as written instead of being left unresolved, which made exec
+# fail with "couldn't exec process".
+
+SERVE_DIR="$TMPDIR/serve"
+mkdir -p "$SERVE_DIR/hello/bin"
+printf '#!/usr/bin/env bash\necho "hello from 1.0.0"\n' >"$SERVE_DIR/hello/bin/hello-timeout"
+chmod +x "$SERVE_DIR/hello/bin/hello-timeout"
+tar -czf "$SERVE_DIR/hello-1.0.0.tar.gz" -C "$SERVE_DIR" hello
+
+# versions.txt never answers, like a blackholed version list
+start_http_server --dir "$SERVE_DIR" --handler - <<'PY'
+import time
+
+
+class Handler(TestHandler):
+    def do_GET(self):
+        if self.path == "/versions.txt":
+            time.sleep(60)
+            return
+        super().do_GET()
+PY
+
+# The http backend fetches version_list_url with the plain HTTP timeout
+export MISE_HTTP_TIMEOUT=1s
+tool="http:hello-timeout[url=http://127.0.0.1:$HTTP_PORT/hello-{{version}}.tar.gz,bin_path=hello/bin,version_list_url=http://127.0.0.1:$HTTP_PORT/versions.txt]"
+
+mise x "$tool@1.0.0" -- hello-timeout >"$TMPDIR/out" 2>&1 || true
+assert_contains "cat $TMPDIR/out" "hello from 1.0.0"
+assert_contains "cat $TMPDIR/out" "installing 1.0.0 as written"
+assert_not_contains "cat $TMPDIR/out" "couldn't exec process"
