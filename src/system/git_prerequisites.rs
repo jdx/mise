@@ -74,12 +74,17 @@ fn is_installed(binary: &str) -> bool {
     };
     if cfg!(target_os = "macos") && binary == "git" && path == std::path::Path::new("/usr/bin/git")
     {
-        return std::process::Command::new("xcode-select")
-            .arg("-p")
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .status()
-            .is_ok_and(|status| status.success());
+        // `xcode-select -p` only proves a developer directory is selected, and
+        // running the stub without one opens the installer, so ask it second
+        let succeeds = |program: &str, arg: &str| {
+            std::process::Command::new(program)
+                .arg(arg)
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .status()
+                .is_ok_and(|status| status.success())
+        };
+        return succeeds("xcode-select", "-p") && succeeds("/usr/bin/git", "--version");
     }
     true
 }
