@@ -4575,7 +4575,7 @@ pub(crate) fn get_locked_version(
             }
             // The registry's options are for the backend it chose. Another
             // backend would read them as its own settings and never match.
-            let options = if !request.ba().registry_backend_differs_from(full) {
+            let options = if !request.registry_options_are_not_for(full) {
                 backend.resolve_lockfile_options(request, &PlatformTarget::from_current())?
             } else {
                 backend.resolve_lockfile_options(

@@ -268,7 +268,7 @@ impl ToolVersion {
             ));
             // The registry's options are for the backend it chose; the lock's
             // backend would read them as its own settings and record them.
-            if request.ba().registry_backend_differs_from(backend_full) {
+            if request.registry_options_are_not_for(backend_full) {
                 request = request.without_registry_options();
             }
             match &mut request {
@@ -1607,6 +1607,30 @@ mod tests {
             ToolVersion::from_lockfile(request, lt).request.options()
         };
         assert!(!older.opts.contains_key("workflow"));
+        // Options a non-first registry backend supplied stay with that backend:
+        // below github's `min_version` the registry picks npm for nub.
+        let nub = |backend: &str| {
+            let request = ToolRequest::new_with_options(
+                Arc::new(BackendArg::new("nub".to_string(), None)),
+                "0.9.0",
+                ToolVersionOptions::default(),
+                ToolSource::Argument,
+            )
+            .unwrap();
+            assert!(request.options().opts.contains_key("allow_builds"));
+            let lt = LockfileTool {
+                version: "0.9.0".to_string(),
+                backend: Some(backend.to_string()),
+                specifiers: Default::default(),
+                options: Default::default(),
+                platforms: Default::default(),
+                aube: None,
+                uv: None,
+            };
+            ToolVersion::from_lockfile(request, lt).request.options()
+        };
+        assert!(nub("npm:@nubjs/nub").opts.contains_key("allow_builds"));
+        assert!(!nub("github:nubjs/nub").opts.contains_key("allow_builds"));
         assert!(
             restore("packslip:github.com/jdx/hk")
                 .opts

@@ -526,27 +526,6 @@ impl BackendArg {
         REGISTRY.get(&self.registry_short())
     }
 
-    /// Whether `recorded`, a backend a lock entry names, is not the backend
-    /// that supplied this request's registry options. Those come from the
-    /// registry's choice for the version the request was made with (`latest`,
-    /// a prefix), not from the version the lock entry happens to pin. A tool the
-    /// user bound to a backend by name has no registry choice to differ from.
-    pub(crate) fn registry_backend_differs_from(&self, recorded: &str) -> bool {
-        let Some(registry) = self.registry_tool().and_then(|tool| {
-            tool.backends_for_version(self.registry_version.as_deref())
-                .first()
-                .map(ToString::to_string)
-        }) else {
-            return false;
-        };
-        let name = |full: &str| {
-            split_bracketed_opts(full)
-                .map_or(full, |(name, _)| name)
-                .to_string()
-        };
-        name(&registry) != name(recorded)
-    }
-
     fn has_explicit_backend_identifier(&self) -> bool {
         self.resolution.explicit && self.short.contains(':')
     }
@@ -816,7 +795,7 @@ impl BackendArg {
         request_opts: Option<ToolVersionOptions>,
     ) -> ResolvedToolOptions {
         let mut opts = ResolvedToolOptions::default();
-        opts.apply_overrides(&self.registry_opts(), ToolOptionSource::Registry);
+        opts.apply_registry(&self.registry_opts(), &self.full_without_opts());
         if let Some(manifest_opts) = self.install_manifest_opts() {
             opts.apply_overrides(manifest_opts, ToolOptionSource::InstallManifest);
         }
