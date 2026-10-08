@@ -1764,12 +1764,10 @@ impl Bootstrap {
     }
 
     async fn run_with_notices(mut self) -> Result<()> {
-        if self.prompt_vars
-            && (self.command.is_some() || self.from.is_some() || self.adopt.is_some())
-        {
-            bail!(
-                "--prompt-vars only applies to a full `mise bootstrap` run, not a subcommand, --from, or --adopt"
-            );
+        // `--from` and `--adopt` hand the flag to the full run they start in the
+        // checkout, so only a subcommand can't use it.
+        if self.prompt_vars && self.command.is_some() {
+            bail!("--prompt-vars only applies to a full `mise bootstrap` run, not a subcommand");
         }
         // Every subcommand, not just the full run, applies less than project
         // config declares in safe mode; say so up front.
