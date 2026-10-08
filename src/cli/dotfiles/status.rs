@@ -265,7 +265,7 @@ impl DotfilesStatus {
         // the hint goes to stderr, so an empty --json result explains itself
         // too without anything landing in the parsed output
         if files.is_empty() && edits.is_empty() {
-            super::warn_if_dotfiles_ignored();
+            super::warn_if_dotfiles_ignored(&config);
         }
         if self.json {
             let mut out = json!({

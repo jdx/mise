@@ -1,0 +1,58 @@
+#!/usr/bin/env bash
+
+# Safe mode (MISE_SAFE=1) ignores [bootstrap], [dotfiles] and [dotfile_groups]
+# from project (non-global) config: applying them writes files into $HOME and
+# clones repositories, which an untrusted repository must not get to do.
+# Global config is operator-owned and still applies.
+
+SRC="$PWD/source-repo"
+mkdir -p "$SRC"
+git -C "$SRC" init -q -b main
+echo "v1" >"$SRC/version.txt"
+git -C "$SRC" add .
+git -C "$SRC" -c user.email=test@example.com -c user.name="Test User" commit -q -m v1
+
+echo "project dotfile" >project-source
+mkdir -p project-group-root
+echo "group dotfile" >project-group-root/project-group
+cat <<EOF >mise.toml
+[dotfiles]
+"~/.project-dotfile" = "project-source"
+
+[dotfile_groups.project]
+root = "$PWD/project-group-root"
+
+[bootstrap.repos]
+"~/src/project-repo" = { url = "file://$SRC", ref = "main" }
+EOF
+
+echo "=== project bootstrap and dotfiles config apply outside safe mode ==="
+assert_contains "mise bootstrap repos status" "~/src/project-repo"
+assert_contains "mise dotfiles status" "~/.project-dotfile"
+assert_contains "mise dotfiles status" "project-group-root"
+
+echo "=== safe mode ignores project bootstrap and dotfiles config ==="
+assert_not_contains "MISE_SAFE=1 mise bootstrap repos status" "project-repo"
+assert_not_contains "MISE_SAFE=1 mise dotfiles status" "project-dotfile"
+assert_not_contains "MISE_SAFE=1 mise dotfiles status" "project-group-root"
+assert_contains "MISE_SAFE=1 mise dotfiles status 2>&1" "skipped because safe mode (MISE_SAFE=1) ignores project config"
+assert_succeed "MISE_SAFE=1 mise bootstrap --yes"
+assert_directory_not_exists "$HOME/src/project-repo"
+assert_fail "test -e $HOME/.project-dotfile"
+assert_fail "test -e $HOME/project-group"
+
+echo "=== safe mode keeps global bootstrap and dotfiles config ==="
+echo "global dotfile" >global-source
+cat <<EOF >"$MISE_CONFIG_DIR/config.toml"
+[dotfiles]
+"~/.global-dotfile" = "$PWD/global-source"
+
+[bootstrap.repos]
+"~/src/global-repo" = { url = "file://$SRC", ref = "main" }
+EOF
+assert_succeed "MISE_SAFE=1 mise bootstrap --yes"
+assert "readlink $HOME/.global-dotfile" "$PWD/global-source"
+assert "cat $HOME/src/global-repo/version.txt" "v1"
+assert_directory_not_exists "$HOME/src/project-repo"
+assert_fail "test -e $HOME/.project-dotfile"
+assert_fail "test -e $HOME/project-group"

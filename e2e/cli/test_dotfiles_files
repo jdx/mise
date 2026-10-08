@@ -711,8 +711,8 @@ assert_directory_not_exists "$PWD/copied-root/tree"
 # loaded, instead of implying that every configured copy is in sync.
 assert_contains "MISE_IGNORED_CONFIG_PATHS='$PWD/mise.toml' mise dotfiles add --changed --yes 2>&1" "are not trusted"
 
-# Safe mode may inspect untrusted configuration, but it must not let that
-# configuration bulk-copy arbitrary live files into its checkout.
+# Safe mode ignores an untrusted project's [dotfiles], so that configuration
+# cannot bulk-copy arbitrary live files into its checkout.
 mkdir -p "$HOME/untrusted-changed/source"
 echo "configured" >"$HOME/untrusted-changed/source/file"
 echo "live secret" >"$HOME/untrusted-changed-target"
@@ -720,7 +720,7 @@ cat <<EOF >"$HOME/untrusted-changed/mise.toml"
 [dotfiles]
 "$HOME/untrusted-changed-target" = { source = "source/file", mode = "copy" }
 EOF
-assert_fail "MISE_SAFE=1 MISE_TRUSTED_CONFIG_PATHS='' mise --cd '$HOME/untrusted-changed' dotfiles add --changed --yes" "--changed requires trusted configuration"
+assert_contains "MISE_SAFE=1 MISE_TRUSTED_CONFIG_PATHS='' mise --cd '$HOME/untrusted-changed' dotfiles add --changed --yes 2>&1" "skipped because safe mode (MISE_SAFE=1) ignores project config"
 assert "cat '$HOME/untrusted-changed/source/file'" "configured"
 
 # edit opens the managed source, including symlink sources

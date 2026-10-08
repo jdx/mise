@@ -82,7 +82,7 @@ impl DotfilesApply {
         let secrets = system::secrets::resolve(&config, self.prompt_secrets)?;
         let (files, edits) = self.requests(&config)?;
         if files.is_empty() && edits.is_empty() && !self.prune {
-            super::warn_if_dotfiles_ignored();
+            super::warn_if_dotfiles_ignored(&config);
             info!("no dotfiles configured in [dotfiles]");
             return Ok(true);
         }

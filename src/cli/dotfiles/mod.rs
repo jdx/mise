@@ -2,6 +2,8 @@ use eyre::Result;
 use futures_util::future::LocalBoxFuture;
 use std::path::Path;
 
+use crate::config::{Config, Settings, SettingsExt, is_global_config};
+
 mod add;
 mod apply;
 mod capture;
@@ -233,36 +235,54 @@ fn run_local_argv(remove_local: bool) -> Result<()> {
 /// prompt adds them to the ignore list) but that do declare `[dotfiles]`.
 /// Their entries never reach these commands, so "nothing configured" reads as
 /// a config mistake when the real answer is that the file wasn't loaded.
-///
-/// Reading and parsing the TOML here is inert — nothing is templated or
-/// executed, we only look for the table's presence.
 pub(crate) fn ignored_configs_with_dotfiles() -> Vec<&'static Path> {
     crate::config::IGNORED_CONFIG_FILES
         .iter()
-        .filter(|path| {
-            crate::file::read_to_string(path)
-                .ok()
-                .and_then(|body| body.parse::<toml::Table>().ok())
-                .is_some_and(|table| {
-                    table.contains_key("dotfiles") || table.contains_key("dotfile_groups")
-                })
-        })
+        .filter(|path| declares_dotfiles(path))
         .map(|path| path.as_path())
         .collect()
 }
 
-/// Explain the empty `[dotfiles]` when it's really an untrusted config.
-pub(crate) fn warn_if_dotfiles_ignored() {
-    let ignored = ignored_configs_with_dotfiles();
-    if ignored.is_empty() {
-        return;
-    }
-    warn!(
-        "[dotfiles] in these config files was skipped because they are not trusted:\n{}\nRun `mise trust` in that directory to use them.",
-        ignored
+/// Whether the config file at `path` declares `[dotfiles]` or `[dotfile_groups]`.
+///
+/// Reading and parsing the TOML here is inert — nothing is templated or
+/// executed, we only look for the table's presence.
+fn declares_dotfiles(path: &Path) -> bool {
+    crate::file::read_to_string(path)
+        .ok()
+        .and_then(|body| body.parse::<toml::Table>().ok())
+        .is_some_and(|table| table.contains_key("dotfiles") || table.contains_key("dotfile_groups"))
+}
+
+/// Explain the empty `[dotfiles]` when it's really an untrusted config, or a
+/// project config whose `[dotfiles]` safe mode ignores.
+pub(crate) fn warn_if_dotfiles_ignored(config: &Config) {
+    let list = |paths: &[&Path]| {
+        paths
             .iter()
             .map(|p| format!("  {}", crate::file::display_path(p)))
             .collect::<Vec<_>>()
             .join("\n")
-    );
+    };
+    let ignored = ignored_configs_with_dotfiles();
+    if !ignored.is_empty() {
+        warn!(
+            "[dotfiles] in these config files was skipped because they are not trusted:\n{}\nRun `mise trust` in that directory to use them.",
+            list(&ignored)
+        );
+    }
+    if Settings::safe_mode() {
+        let ignored = config
+            .config_files
+            .keys()
+            .filter(|path| !is_global_config(path) && declares_dotfiles(path))
+            .map(|path| path.as_path())
+            .collect::<Vec<_>>();
+        if !ignored.is_empty() {
+            warn!(
+                "[dotfiles] in these config files was skipped because safe mode (MISE_SAFE=1) ignores project config:\n{}",
+                list(&ignored)
+            );
+        }
+    }
 }

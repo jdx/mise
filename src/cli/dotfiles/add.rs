@@ -154,7 +154,7 @@ impl DotfilesAdd {
                 }
             }
             if self.targets.is_empty() {
-                super::warn_if_dotfiles_ignored();
+                super::warn_if_dotfiles_ignored(&config);
                 info!("dotfiles: no changed copy-mode files");
                 return Ok(());
             }

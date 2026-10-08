@@ -3002,6 +3002,11 @@ to subprocesses mise spawns during resolution, an indirect code-execution vector
 Global/system config is operator-owned and still applies. `_.source` runs a shell script
 (code execution rather than env injection), so it is ignored regardless of source.
 
+`[bootstrap]`, `[dotfiles]`, and `[dotfile_groups]` from project config are ignored too,
+since applying them writes files into the home directory, clones repositories, and
+installs packages. `mise bootstrap` and `mise dotfiles` still apply the ones declared in
+global/system config.
+
 Version resolution still works for every HTTP-based backend (core, aqua, github,
 gitlab, http, cargo, pipx, gem, dotnet, npm) as well as `go` (which runs with
 `GOTOOLCHAIN=local` so a project `go.mod` cannot trigger a toolchain download).
