@@ -2502,8 +2502,16 @@ fn dmg_attached_devices(info: &str, archive: &Path) -> Vec<String> {
 }
 
 fn detach_stale_dmg(archive: &Path) {
-    let Ok(output) = std::process::Command::new("hdiutil").arg("info").output() else {
-        return;
+    let output = match std::process::Command::new("hdiutil").arg("info").output() {
+        Ok(output) if output.status.success() => output,
+        Ok(output) => {
+            debug!("hdiutil info failed: {}", output.status);
+            return;
+        }
+        Err(err) => {
+            debug!("failed to run hdiutil info: {err}");
+            return;
+        }
     };
     let info = String::from_utf8_lossy(&output.stdout);
     for dev in dmg_attached_devices(&info, archive) {
@@ -2521,6 +2529,9 @@ pub fn un_dmg(archive: &Path, dest: &Path) -> Result<()> {
         archive.display()
     );
     run_blocking(|| {
+        // Hold a lock on the archive so another live extraction of the same image is never
+        // mistaken for an interrupted one by `detach_stale_dmg`.
+        let _lock = crate::lock_file::LockFile::new(archive).lock()?;
         detach_stale_dmg(archive);
         let tmp = tempfile::TempDir::new()?;
         cmd!(
