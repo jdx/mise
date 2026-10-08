@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+
+# mise raises a low soft open-file limit at startup, and children inherit it
+assert "bash -c 'ulimit -Sn 256 && mise x -- sh -c \"ulimit -Sn\"'" "$(
+	bash -c 'h=$(ulimit -Hn); [ "$h" = unlimited ] || [ "$h" -ge 10240 ] && echo 10240 || echo "$h"'
+)"
+
+# an already-higher soft limit is left alone
+assert "bash -c 'ulimit -Sn 20000 2>/dev/null || exit 0; mise x -- sh -c \"ulimit -Sn\"'" "20000"
