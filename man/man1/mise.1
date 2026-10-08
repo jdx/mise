@@ -5862,6 +5862,8 @@ Generate shims to run mise tasks
 By default, this will build shims like ./bin/<task>. These can be paired with `mise generate install\-script`
 so contributors to a project can execute mise tasks without installing mise into their system.
 When a parent and nested task both exist, the parent stub is written to `<parent>/_default`.
+Hidden tasks and global tasks are skipped: the stubs are committed to the project, and global
+tasks come from the user's own config.
 .PP
 \fBUsage:\fR mise generate task\-stubs [OPTIONS]
 .PP
