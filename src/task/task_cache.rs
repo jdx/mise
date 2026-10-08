@@ -531,12 +531,10 @@ impl TaskArtifactCache {
     }
 
     /// Forget which key produced the working tree outputs, before a run that may
-    /// change them and fail before marking its own key current.
+    /// change them and fail before marking its own key current. A marker that is
+    /// already gone, including one a concurrent `mise cache clear` removed, is fine.
     pub(crate) fn clear_current(&self) -> Result<()> {
-        if !self.state_path.exists() {
-            return Ok(());
-        }
-        file::remove_file(&self.state_path)
+        remove_cache_file(&self.state_path)
     }
 
     pub(crate) fn mark_current(&self) -> Result<()> {
