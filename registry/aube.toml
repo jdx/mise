@@ -1,5 +1,8 @@
 backends = [
-  { full = "packslip:github.com/aubepkg/aube", min_version = "2.2.11", options = { workflow = ["release-plz.yml@refs/heads/main", "release.yml@refs/heads/main"] } },
+  { full = "packslip:github.com/aubepkg/aube", min_version = "2.2.11", options = { workflow = [
+    "release-plz.yml@refs/heads/main",
+    "release.yml@refs/heads/main",
+  ] } },
   "aqua:aubepkg/aube",
   { full = "github:aubepkg/aube", attestations_since = "2.2.5" },
   "cargo:aube",

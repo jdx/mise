@@ -21,6 +21,7 @@ cat >mise.toml <<'EOF'
 [tools]
 communique = { version = "1.3.5", workflow = "nope/x.yml" }
 EOF
+assert_contains "mise install communique 2>&1 || true" "must be a workflow file name"
 assert_not_contains "mise install communique 2>&1 || true" "cannot be combined"
 
 # A user-set `workflow` next to another user signer option is still an error.
