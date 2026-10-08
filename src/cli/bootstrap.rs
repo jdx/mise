@@ -1391,6 +1391,7 @@ impl Bootstrap {
     /// record; declined prompts end the run early with a note.
     async fn run_phases(&self) -> Result<Summary> {
         let mut config = Config::get().await?;
+        super::dotfiles::warn_if_ignored_in_safe_mode(&config);
         let mut hooks = system::hooks_from_config(&config);
         let skip = self.skip_parts();
         let summary = Summary { message: None };

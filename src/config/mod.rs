@@ -2138,6 +2138,7 @@ fn resolve_monorepo_config_at_root(
 
 /// Loads each selected bootstrap root as an independent hierarchy with scoped variables.
 async fn load_bootstrap_config_maps(config: &Config) -> Result<Vec<BootstrapConfigMap>> {
+    GLOBAL_BOOTSTRAP_ROOT_CONFIG_FILES.lock().unwrap().clear();
     let Some((declaring_config, patterns)) = config.config_files.iter().find_map(|(path, cf)| {
         cf.bootstrap_config()
             .and_then(|bootstrap| bootstrap.config_roots.map(|patterns| (path, patterns)))
@@ -2182,8 +2183,15 @@ async fn load_bootstrap_config_maps(config: &Config) -> Result<Vec<BootstrapConf
         vars_results: config.vars_results_cached().cloned().unwrap_or_default(),
     }];
     let idiomatic_filenames = BTreeMap::new();
+    let declared_globally = is_global_config(declaring_config);
     for root in roots {
         let paths = config_paths_in_dir_with_filenames(&root, &DEFAULT_CONFIG_FILENAMES);
+        if declared_globally {
+            GLOBAL_BOOTSTRAP_ROOT_CONFIG_FILES
+                .lock()
+                .unwrap()
+                .extend(paths.iter().cloned());
+        }
         let config_files = load_config_files_from_paths(&paths, &idiomatic_filenames).await?;
         let vars_config = config.with_config_files(config_files.clone());
         let vars_results = load_vars(&vars_config).await?;
@@ -3165,6 +3173,24 @@ pub fn is_global_config(path: &Path) -> bool {
     config_set_contains(&global_config_files(), path) || is_system_config(path)
 }
 
+/// Whether `path` was loaded from a `[bootstrap].config_roots` root that global
+/// or system config selected. The operator chose those roots, so safe mode
+/// treats their bootstrap and dotfiles sections like global config even though
+/// the files sit outside the global config directory. Every other setting in
+/// them is still handled as project config.
+fn is_global_bootstrap_root_config(path: &Path) -> bool {
+    config_set_contains(&GLOBAL_BOOTSTRAP_ROOT_CONFIG_FILES.lock().unwrap(), path)
+}
+
+/// Whether safe mode drops `[bootstrap]`, `[dotfiles]` and `[dotfile_groups]`
+/// from the config file at `path`. Applying them writes files, installs
+/// packages, clones repositories and renders templates on the host, so only
+/// operator-owned config may declare them in safe mode: global and system
+/// config, and the `[bootstrap].config_roots` roots that config selects.
+pub fn safe_mode_ignores_bootstrap(path: &Path) -> bool {
+    Settings::safe_mode() && !is_global_config(path) && !is_global_bootstrap_root_config(path)
+}
+
 pub fn is_system_config(path: &Path) -> bool {
     config_set_contains(&system_config_files(), path)
 }
@@ -3280,6 +3306,10 @@ pub(crate) fn config_path_is_ignored(path: &Path, include_ignored: bool) -> bool
 
 static GLOBAL_CONFIG_FILES: Lazy<Mutex<Option<IndexSet<PathBuf>>>> = Lazy::new(Default::default);
 static SYSTEM_CONFIG_FILES: Lazy<Mutex<Option<IndexSet<PathBuf>>>> = Lazy::new(Default::default);
+/// Config files loaded from `[bootstrap].config_roots` that global config
+/// declared; rebuilt on every config load. See [`is_global_bootstrap_root_config`].
+static GLOBAL_BOOTSTRAP_ROOT_CONFIG_FILES: Lazy<Mutex<IndexSet<PathBuf>>> =
+    Lazy::new(Default::default);
 
 pub(crate) fn global_config_files() -> IndexSet<PathBuf> {
     let mut g = GLOBAL_CONFIG_FILES.lock().unwrap();

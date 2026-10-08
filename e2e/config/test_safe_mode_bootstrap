@@ -36,7 +36,7 @@ assert_not_contains "MISE_SAFE=1 mise bootstrap repos status" "project-repo"
 assert_not_contains "MISE_SAFE=1 mise dotfiles status" "project-dotfile"
 assert_not_contains "MISE_SAFE=1 mise dotfiles status" "project-group-root"
 assert_contains "MISE_SAFE=1 mise dotfiles status 2>&1" "skipped because safe mode (MISE_SAFE=1) ignores project config"
-assert_succeed "MISE_SAFE=1 mise bootstrap --yes"
+assert_contains "MISE_SAFE=1 mise bootstrap --yes 2>&1" "skipped because safe mode (MISE_SAFE=1) ignores project config"
 assert_directory_not_exists "$HOME/src/project-repo"
 assert_fail "test -e $HOME/.project-dotfile"
 assert_fail "test -e $HOME/project-group"
@@ -56,3 +56,25 @@ assert "cat $HOME/src/global-repo/version.txt" "v1"
 assert_directory_not_exists "$HOME/src/project-repo"
 assert_fail "test -e $HOME/.project-dotfile"
 assert_fail "test -e $HOME/project-group"
+
+echo "=== safe mode keeps the config_roots that global config selects ==="
+mkdir -p "$HOME/dots/bundles/gitcfg"
+echo "root dotfile" >"$HOME/dots/bundles/gitcfg/root-source"
+cat <<EOF >"$HOME/dots/bundles/gitcfg/mise.toml"
+[dotfiles]
+"~/.root-dotfile" = "root-source"
+EOF
+cat <<EOF >"$MISE_CONFIG_DIR/config.toml"
+[bootstrap]
+config_roots = ["dots/bundles/*"]
+EOF
+assert_contains "MISE_SAFE=1 mise dotfiles status" "~/.root-dotfile"
+assert_succeed "MISE_SAFE=1 mise bootstrap --yes"
+assert "readlink $HOME/.root-dotfile" "$HOME/dots/bundles/gitcfg/root-source"
+assert_fail "test -e $HOME/.project-dotfile"
+
+echo "=== outside safe mode the same project config creates those paths ==="
+assert_succeed "mise bootstrap --yes"
+assert "readlink $HOME/.project-dotfile" "$PWD/project-source"
+assert "cat $HOME/project-group" "group dotfile"
+assert "cat $HOME/src/project-repo/version.txt" "v1"

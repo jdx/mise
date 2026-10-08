@@ -30,7 +30,7 @@ use crate::config::env_directive::{
 };
 use crate::config::settings::SettingsPartial;
 use crate::config::{
-    Alias, AliasMap, CommandWrapper, Config, Settings, SettingsExt, is_global_config,
+    Alias, AliasMap, CommandWrapper, Config, Settings, safe_mode_ignores_bootstrap,
 };
 use crate::deps::{DepsConfig, DepsTemplateContext};
 use crate::env_diff::EnvMap;
@@ -2117,15 +2117,11 @@ impl ConfigFile for MiseToml {
 }
 
 impl MiseToml {
-    /// Whether safe mode drops `section` from this file. Bootstrap and dotfiles
-    /// config writes files, installs packages, clones repositories and renders
-    /// templates on the host, so project (non-global) config cannot declare it
-    /// in safe mode, the same way its `[env]` and `[settings]` are ignored.
-    /// Safe mode loads project config without a trust check, which makes all of
-    /// it untrusted here. Global and system config is operator-owned and still
-    /// applies.
+    /// Whether safe mode drops `section` from this file; see
+    /// [`safe_mode_ignores_bootstrap`]. Safe mode loads project config without a
+    /// trust check, which makes all of it untrusted here.
     fn ignored_in_safe_mode(&self, section: &str) -> bool {
-        let ignored = Settings::safe_mode() && !is_global_config(&self.path);
+        let ignored = safe_mode_ignores_bootstrap(&self.path);
         if ignored {
             debug!(
                 "ignoring {section} in {}: safe mode (MISE_SAFE=1)",

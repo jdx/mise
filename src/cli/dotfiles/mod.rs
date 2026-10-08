@@ -1,8 +1,9 @@
 use eyre::Result;
 use futures_util::future::LocalBoxFuture;
 use std::path::Path;
+use std::sync::atomic::{AtomicBool, Ordering};
 
-use crate::config::{Config, Settings, SettingsExt, is_global_config};
+use crate::config::{Config, Settings, SettingsExt, safe_mode_ignores_bootstrap};
 
 mod add;
 mod apply;
@@ -244,45 +245,63 @@ pub(crate) fn ignored_configs_with_dotfiles() -> Vec<&'static Path> {
 }
 
 /// Whether the config file at `path` declares `[dotfiles]` or `[dotfile_groups]`.
+fn declares_dotfiles(path: &Path) -> bool {
+    declares_any_table(path, &["dotfiles", "dotfile_groups"])
+}
+
+/// Whether the config file at `path` declares any of the top-level `tables`.
 ///
 /// Reading and parsing the TOML here is inert — nothing is templated or
 /// executed, we only look for the table's presence.
-fn declares_dotfiles(path: &Path) -> bool {
+fn declares_any_table(path: &Path, tables: &[&str]) -> bool {
     crate::file::read_to_string(path)
         .ok()
         .and_then(|body| body.parse::<toml::Table>().ok())
-        .is_some_and(|table| table.contains_key("dotfiles") || table.contains_key("dotfile_groups"))
+        .is_some_and(|table| tables.iter().any(|name| table.contains_key(*name)))
+}
+
+fn path_list(paths: &[&Path]) -> String {
+    paths
+        .iter()
+        .map(|p| format!("  {}", crate::file::display_path(p)))
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 /// Explain the empty `[dotfiles]` when it's really an untrusted config, or a
 /// project config whose `[dotfiles]` safe mode ignores.
 pub(crate) fn warn_if_dotfiles_ignored(config: &Config) {
-    let list = |paths: &[&Path]| {
-        paths
-            .iter()
-            .map(|p| format!("  {}", crate::file::display_path(p)))
-            .collect::<Vec<_>>()
-            .join("\n")
-    };
     let ignored = ignored_configs_with_dotfiles();
     if !ignored.is_empty() {
         warn!(
             "[dotfiles] in these config files was skipped because they are not trusted:\n{}\nRun `mise trust` in that directory to use them.",
-            list(&ignored)
+            path_list(&ignored)
         );
     }
-    if Settings::safe_mode() {
-        let ignored = config
-            .config_files
-            .keys()
-            .filter(|path| !is_global_config(path) && declares_dotfiles(path))
-            .map(|path| path.as_path())
-            .collect::<Vec<_>>();
-        if !ignored.is_empty() {
-            warn!(
-                "[dotfiles] in these config files was skipped because safe mode (MISE_SAFE=1) ignores project config:\n{}",
-                list(&ignored)
-            );
-        }
+    warn_if_ignored_in_safe_mode(config);
+}
+
+/// Name the project config files whose `[bootstrap]`, `[dotfiles]` and
+/// `[dotfile_groups]` safe mode drops, so a run that applies less than the
+/// files declare says why. Printed at most once per process.
+pub(crate) fn warn_if_ignored_in_safe_mode(config: &Config) {
+    static WARNED: AtomicBool = AtomicBool::new(false);
+    if !Settings::safe_mode() || WARNED.load(Ordering::Relaxed) {
+        return;
+    }
+    let ignored = config
+        .config_files
+        .keys()
+        .filter(|path| {
+            safe_mode_ignores_bootstrap(path)
+                && declares_any_table(path, &["bootstrap", "dotfiles", "dotfile_groups"])
+        })
+        .map(|path| path.as_path())
+        .collect::<Vec<_>>();
+    if !ignored.is_empty() && !WARNED.swap(true, Ordering::Relaxed) {
+        warn!(
+            "[bootstrap], [dotfiles] and [dotfile_groups] in these config files were skipped because safe mode (MISE_SAFE=1) ignores project config:\n{}",
+            path_list(&ignored)
+        );
     }
 }
