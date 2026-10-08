@@ -139,7 +139,9 @@ flag --log-level hide=#true global=#true {
             choice trace
             choice debug
             choice info
-            choice warning
+            choice warn {
+                alias warning hide=#true
+            }
             choice error
         }
     }

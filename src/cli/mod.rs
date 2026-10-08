@@ -130,7 +130,10 @@ pub(crate) enum LevelFilter {
     Trace,
     Debug,
     Info,
-    Warning,
+    // `warn` is the spelling the `log_level` setting documents and the `log` crate parses;
+    // `warning` stays for old scripts.
+    #[usage(alias = "warning")]
+    Warn,
     Error,
 }
 
@@ -1777,6 +1780,25 @@ mod tests {
         let argv: Vec<&std::ffi::OsStr> = args.iter().map(std::ffi::OsStr::new).collect();
         let (_, layer) = Cli::parse_from_argv_with_settings(&argv).unwrap();
         command_local_settings(&layer).unwrap()
+    }
+
+    #[test]
+    /// The flag takes the names the `log_level` setting lists in settings.toml (`off`, which the
+    /// `log` crate also parses, is not one of them).
+    fn log_level_flag_accepts_the_documented_log_level_names() {
+        let parse = |level: &str| {
+            parse_cli(&["mise", "--log-level", level, "version"])
+                .unwrap()
+                .settings_layer(SettingsPartial::empty())
+                .log_level
+                .unwrap()
+        };
+        for level in ["trace", "debug", "info", "warn", "error"] {
+            assert_eq!(parse(level), level);
+            assert!(level.parse::<log::LevelFilter>().is_ok(), "{level}");
+        }
+        // `warning` was the only spelling the flag took, and it meant `info` to the logger
+        assert_eq!(parse("warning"), "warn");
     }
 
     fn parse_truncate(args: &[&str]) -> Option<bool> {

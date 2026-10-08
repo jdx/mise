@@ -40,3 +40,7 @@ assert "mise latest dummy@sub-1:latest" "1.1.0"
 mise alias set dummy stable latest
 assert "mise latest dummy@sub-1:stable" "1.1.0"
 mise alias unset dummy stable
+
+# `prefix:` requests resolve through the backend's version matching like a bare prefix
+assert "mise latest dummy@prefix:1" "1.1.0"
+assert "mise latest dummy@prefix:2" "2.0.0"
