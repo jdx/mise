@@ -587,8 +587,9 @@ Once you trust the file, the included content runs with that trust, as a
 commit SHA or an OCI digest, and a local include is an error because its content
 is not covered by the file's trust hash.
 
-A local include is read on every load and is never cached. mise caches each included file under `MISE_CACHE_DIR` and never refetches a
-commit SHA or an OCI digest. Commands such as `mise install`, `mise use`, and
+A local include is read on every load and is never cached. mise caches each
+remote included file under `MISE_CACHE_DIR` and never refetches a commit SHA or
+an OCI digest. Commands such as `mise install`, `mise use`, and
 `mise upgrade` refresh a branch, tag, or OCI tag once the cached copy is older
 than
 [`fetch_remote_versions_cache`](/configuration/settings.html#fetch_remote_versions_cache).
