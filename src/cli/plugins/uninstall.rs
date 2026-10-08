@@ -131,25 +131,26 @@ async fn backends_to_purge(
         .chain(&configured_others)
         .flat_map(dir_names)
         .collect::<HashSet<_>>();
-    let configured = configured
-        .into_iter()
-        .filter(|ba| !installed.iter().any(|owned| owned.short == ba.short))
-        .unique_by(|ba| ba.short.clone())
-        .filter(|ba| {
-            let shared = dir_names(ba).any(|name| claimed.contains(&name));
-            if shared {
-                warn!(
-                    "not purging {}: another tool uses its directory",
-                    style::eblue(&ba.short)
-                );
-            }
-            !shared
-        })
-        .collect::<Vec<_>>();
+    // Another tool's directory may share a name with one of ours, for
+    // example `acme:extra` and `acme-extra`. Purging removes whole
+    // directories, so a tool that shares one is left alone, installed or not.
+    let unshared = |ba: &BackendArg| {
+        let shared = dir_names(ba).any(|name| claimed.contains(&name));
+        if shared {
+            warn!(
+                "not purging {}: another tool uses its directory",
+                style::eblue(&ba.short)
+            );
+        }
+        !shared
+    };
+    // Installed first, so a tool both installed and configured keeps its
+    // installed paths.
     Ok(installed
         .into_iter()
         .chain(configured)
         .unique_by(|ba| ba.short.clone())
+        .filter(|ba| unshared(ba))
         .filter_map(backend::arg_to_backend)
         .collect())
 }
