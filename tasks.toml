@@ -76,7 +76,7 @@ run = [
   "mise x usage -- usage generate markdown -m --out-dir docs/cli --url-prefix /cli --link-extension .html --html-encode --file mise.usage.kdl --replace-pre-with-code-fences",
   # usage-lib renders <SUBCOMMAND> for any command with subcommands. `mise bootstrap`
   # can run without a subcommand, so normalize the generated markdown.
-  "perl -0pi -e 's/mise (bootstrap( dotfiles (history|origin))?) \\[FLAGS\\] <SUBCOMMAND>/mise $1 [FLAGS] [SUBCOMMAND]/g' docs/cli/bootstrap.md docs/cli/bootstrap/dotfiles.md docs/cli/bootstrap/dotfiles/history.md docs/cli/bootstrap/dotfiles/origin.md docs/cli/index.md",
+  "perl -0pi -e 's/mise bootstrap \\[FLAGS\\] <SUBCOMMAND>/mise bootstrap [FLAGS] [SUBCOMMAND]/g' docs/cli/bootstrap.md docs/cli/index.md",
   "node --test docs/.vitepress/cli-reference.test.ts",
   "node docs/.vitepress/cli-reference.ts",
   "markdownlint --fix docs/cli",

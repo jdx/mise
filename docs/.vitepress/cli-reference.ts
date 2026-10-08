@@ -1,8 +1,15 @@
 // Add mise-specific website navigation after usage generates docs/cli.
 // Command prose, arguments, flags, and visibility still come from mise.usage.kdl.
 import { execFileSync } from "node:child_process";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import {
+  existsSync,
+  readdirSync,
+  readFileSync,
+  rmdirSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { pageDescription } from "./social-descriptions.mjs";
 
@@ -55,7 +62,6 @@ const guides: Record<string, [string, string]> = {
   bootstrap: ["Bootstrap workflow", "/bootstrap.html"],
   "bootstrap accounts": ["Linux users and groups", "/bootstrap/accounts.html"],
   "bootstrap compose": ["Docker Compose projects", "/bootstrap/compose.html"],
-  "bootstrap dotfiles": ["Managed dotfiles", "/dotfiles/managed.html"],
   "bootstrap files": ["System files and directories", "/bootstrap/files.html"],
   "bootstrap firewall": ["Linux firewall", "/bootstrap/firewall.html"],
   "bootstrap linux": ["systemd user units", "/bootstrap/systemd.html"],
@@ -97,26 +103,6 @@ const guides: Record<string, [string, string]> = {
   "dotfiles paths": ["Dotfiles history", "/dotfiles/history.html"],
   "dotfiles capture": ["Dotfiles history", "/dotfiles/history.html"],
   "dotfiles recover": ["Dotfiles history", "/dotfiles/history.html"],
-  "bootstrap dotfiles history": ["Dotfiles history", "/dotfiles/history.html"],
-  "bootstrap dotfiles save": ["Dotfiles history", "/dotfiles/history.html"],
-  "bootstrap dotfiles rollback": ["Dotfiles history", "/dotfiles/history.html"],
-  "bootstrap dotfiles undo": ["Dotfiles history", "/dotfiles/history.html"],
-  "bootstrap dotfiles sync": ["Sync across machines", "/dotfiles/sync.html"],
-  "bootstrap dotfiles pull": ["Sync across machines", "/dotfiles/sync.html"],
-  "bootstrap dotfiles origin": ["Sync across machines", "/dotfiles/sync.html"],
-  "bootstrap dotfiles conflicts": [
-    "Sync across machines",
-    "/dotfiles/sync.html",
-  ],
-  "bootstrap dotfiles watch": ["Dotfiles history", "/dotfiles/history.html"],
-  "bootstrap dotfiles notify": ["Dotfiles history", "/dotfiles/history.html"],
-  "bootstrap dotfiles track": ["Dotfiles history", "/dotfiles/history.html"],
-  "bootstrap dotfiles untrack": ["Dotfiles history", "/dotfiles/history.html"],
-  "bootstrap dotfiles exclude": ["Dotfiles history", "/dotfiles/history.html"],
-  "bootstrap dotfiles include": ["Dotfiles history", "/dotfiles/history.html"],
-  "bootstrap dotfiles paths": ["Dotfiles history", "/dotfiles/history.html"],
-  "bootstrap dotfiles capture": ["Dotfiles history", "/dotfiles/history.html"],
-  "bootstrap dotfiles recover": ["Dotfiles history", "/dotfiles/history.html"],
   secrets: ["fnox secrets", "/environments/secrets/fnox.html"],
   "generate task-stubs": [
     "Project-local task entrypoints",
@@ -293,6 +279,33 @@ export function withCommandDescription(page: string, command: Command): string {
   return `---\ndescription: ${JSON.stringify(description)}\n---\n\n${body}`;
 }
 
+/**
+ * Whether a command sits under a hidden command. usage still generates pages
+ * for the subcommands of a hidden command; they are only reachable through the
+ * hidden spelling, so the reference leaves them out.
+ */
+export function underHiddenCommand(
+  name: string,
+  commands: Map<string, Pick<Command, "hide">>,
+): boolean {
+  const parts = name ? name.split(" ") : [];
+  return parts
+    .slice(0, -1)
+    .some(
+      (_, i) => commands.get(parts.slice(0, i + 1).join(" "))?.hide === true,
+    );
+}
+
+/** Remove directories left empty under `dir`. */
+function removeEmptyDirs(dir: string) {
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue;
+    const path = join(dir, entry.name);
+    removeEmptyDirs(path);
+    if (readdirSync(path).length === 0) rmdirSync(path);
+  }
+}
+
 function sourcePath(url: string): string {
   const path = url.split("#")[0];
   return resolve(
@@ -330,6 +343,7 @@ function main() {
       throw new Error(`Missing guide: ${label} (${url})`);
   }
   let count = 0;
+  let removed = 0;
   for (const name of commands.keys()) {
     const file = resolve(
       docsDir,
@@ -337,6 +351,11 @@ function main() {
       name ? `${name.replaceAll(" ", "/")}.md` : "index.md",
     );
     if (!existsSync(file)) continue; // usage excludes hidden commands' own pages.
+    if (underHiddenCommand(name, commands)) {
+      rmSync(file);
+      removed++;
+      continue;
+    }
     let page = readFileSync(file, "utf8").split(navigationMarker)[0].trimEnd();
     if (name) {
       const parts = name.split(" ");
@@ -378,7 +397,10 @@ function main() {
     );
     count++;
   }
-  console.log(`Added reference navigation to ${count} CLI pages`);
+  removeEmptyDirs(resolve(docsDir, "cli"));
+  console.log(
+    `Added reference navigation to ${count} CLI pages; removed ${removed} under hidden commands`,
+  );
 }
 
 if (import.meta.main) main();

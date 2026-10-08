@@ -62,7 +62,6 @@ mise tasks --hidden --sort source
 - [`mise tasks graph [FLAGS]`](/cli/tasks/graph.html)
 - [`mise tasks info [-J --json] <TASK>`](/cli/tasks/info.html)
 - [`mise tasks ls [FLAGS]`](/cli/tasks/ls.html)
-- [`mise tasks run [FLAGS] [TASK] [ARGS]…`](/cli/tasks/run.html)
 - [`mise tasks validate [--errors-only] [--json] [TASKS]…`](/cli/tasks/validate.html)
 
 <!-- generated reference navigation -->
