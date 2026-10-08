@@ -545,7 +545,7 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/v') && steps.check-release.outputs.exists != 'true'
         run: |
           VERSION="$(./scripts/get-version.sh)"
-          if mise x -- communique generate "$VERSION" -o /tmp/release-notes.txt; then
+          if mise x -- communique generate "$VERSION" --tag-pattern 'v[0-9]*' -o /tmp/release-notes.txt; then
             TITLE="$(head -1 /tmp/release-notes.txt | sed 's/^#* //' | sed "s/^$VERSION: //")"
             echo "RELEASE_TITLE=$VERSION: $TITLE" >> "$GITHUB_ENV"
             # Remove the title line (and any blank line after it) from the notes body
