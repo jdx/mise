@@ -357,4 +357,61 @@ mod tests {
             DESCRIPTION_LIMIT
         );
     }
+
+    #[test]
+    fn missing_previous_owner_uses_its_own_unqualified_path() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let store = Store::open_in(temp.path())?;
+        let outcome = store.attempt(
+            &super::super::tracked::TrackedSet::default(),
+            super::super::checkpoint::Draft::new(store::Trigger::Agent),
+        )?;
+        let super::super::checkpoint::Outcome::Created(mut entry) = outcome else {
+            bail!("test requires an ordinary Git checkpoint");
+        };
+        let repo = store.repo().unwrap();
+        let path = "~/.describe-fallback.conf".to_string();
+        let unqualified = super::super::tracked::display_to_tree_path(&path);
+        let qualified = "home@work/.describe-fallback.conf".to_string();
+        let old = repo.hash_blob(b"previous-unqualified\n")?;
+        let unrelated = repo.hash_blob(b"unrelated-previous-variant\n")?;
+        let new = repo.hash_blob(b"current-variant\n")?;
+        let previous_tree = repo.write_tree(&[
+            ("100644".into(), old, unqualified),
+            ("100644".into(), unrelated, qualified.clone()),
+        ])?;
+        let current_tree = repo.write_tree(&[("100644".into(), new, qualified)])?;
+        let mut previous = entry.checkpoint.clone();
+        previous.tree.snapshot = Some(previous_tree);
+        previous.tree.coverage.entries.clear();
+        store::write_meta_cache_in(store.state_dir(), &previous)?;
+        entry.checkpoint.uuid = "current-fallback-checkpoint".into();
+        entry.checkpoint.tree.snapshot = Some(current_tree);
+        entry.checkpoint.tree.coverage.entries = vec![store::CoverageEntry {
+            path: path.clone(),
+            mode: "track".into(),
+            variant: Some("work".into()),
+            autosave: true,
+            encrypt: false,
+            state: "live".into(),
+            declared_in: None,
+            exclude: None,
+            include: None,
+        }];
+        entry.checkpoint.changes = store::Changes {
+            since: Some(previous.uuid),
+            modified: vec![path],
+            ..Default::default()
+        };
+
+        let input = input(&store, &entry)?;
+        assert!(
+            input.diff.contains("-previous-unqualified"),
+            "{}",
+            input.diff
+        );
+        assert!(input.diff.contains("+current-variant"), "{}", input.diff);
+        assert!(!input.diff.contains("unrelated-previous-variant"));
+        Ok(())
+    }
 }
