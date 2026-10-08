@@ -404,7 +404,7 @@ impl SandboxConfig {
 
         #[cfg(target_os = "macos")]
         {
-            return self.apply_macos(program, args);
+            self.apply_macos(program, args)
         }
 
         // The caller filters the environment itself (`filter_env`), so an
