@@ -420,6 +420,12 @@ impl OperationScope {
             .and_then(|shared| lock_unpoisoned(&shared).before.clone())
     }
 
+    /// The id reserved for this operation's outcome checkpoint.
+    pub(crate) fn outcome_id(&self) -> Option<u64> {
+        self.writer()
+            .map(|shared| lock_unpoisoned(&shared).pending.id)
+    }
+
     pub(crate) fn validate_starting_head(&self, expected: Option<&str>) -> Result<()> {
         let Some(shared) = self.writer() else {
             eyre::bail!("incoming application requires an active recovery operation");
