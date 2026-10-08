@@ -120,10 +120,7 @@ fn load_local(parent: &Path, reference: &str) -> Result<(PathBuf, String)> {
         );
     }
     let path = file::replace_path(reference);
-    let path = match parent.parent() {
-        Some(dir) if path.is_relative() => dir.join(path),
-        _ => path,
-    };
+    let path = resolve_local(parent, path)?;
     if !path.is_file() {
         bail!("a config include must be a file: {}", path.display());
     }
@@ -131,6 +128,29 @@ fn load_local(parent: &Path, reference: &str) -> Result<(PathBuf, String)> {
     MiseToml::parse_remote_fragment(&body, parent)
         .wrap_err_with(|| format!("invalid config include {reference}"))?;
     Ok((path, body))
+}
+
+/// An absolute path as is, a relative one against the including file's directory.
+/// A Windows drive-relative (`C:tools.toml`) or rooted-without-drive (`\\tools.toml`)
+/// path counts as relative but makes `join` drop the directory, so it is refused.
+fn resolve_local(parent: &Path, path: PathBuf) -> Result<PathBuf> {
+    if path.is_absolute() {
+        return Ok(path);
+    }
+    let rooted = path.has_root()
+        || path
+            .components()
+            .any(|c| matches!(c, std::path::Component::Prefix(_)));
+    if rooted {
+        bail!(
+            "a local config include must be a relative path or a full absolute path: {}",
+            path.display()
+        );
+    }
+    Ok(match parent.parent() {
+        Some(dir) => dir.join(path),
+        None => path,
+    })
 }
 
 fn is_local(reference: &str) -> bool {
@@ -255,6 +275,19 @@ mod tests {
         assert!(!is_local("git::https://github.com/org/repo.git//mise.toml"));
         let dir = format!("git::https://github.com/org/repo.git//base?ref={SHA}");
         assert!(classify(&dir).is_err());
+    }
+
+    #[test]
+    fn a_local_include_resolves_against_the_including_file() {
+        let parent = Path::new("/work/mise.toml");
+        assert_eq!(
+            resolve_local(parent, "shared/a.toml".into()).unwrap(),
+            Path::new("/work/shared/a.toml")
+        );
+        assert_eq!(
+            resolve_local(parent, "/etc/a.toml".into()).unwrap(),
+            Path::new("/etc/a.toml")
+        );
     }
 
     #[test]
