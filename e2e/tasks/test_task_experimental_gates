@@ -2,7 +2,7 @@
 
 # Remote `git::` task files, `git::`/`oci::` task includes and OpenTelemetry
 # export are experimental: with experimental off, a config that mentions them
-# still loads, and using them fails before anything is fetched or exported.
+# still loads, and nothing is fetched or exported.
 
 export MISE_EXPERIMENTAL=0
 
@@ -39,8 +39,13 @@ includes = ["git::https://127.0.0.1:9/org/repo.git//tasks"]
 run = "echo local-ok"
 TOML
 
+# The remote include is skipped with a warning; the config's own tasks still
+# list, complete and run.
 assert_succeed "mise config ls"
-assert_fail_matches "mise run local" "including tasks from a .git::. source is experimental"
+assert "mise run local" "local-ok"
+assert_matches "mise run local 2>&1" "skipping task include .git::https://127.0.0.1:9/org/repo.git//tasks.: including tasks from a .git::. source is experimental"
+assert_contains "mise tasks ls" "local"
+assert_contains "mise tasks ls --complete" "local:"
 
 cat <<'TOML' >mise.toml
 [task_config]
@@ -50,7 +55,8 @@ includes = ["oci::127.0.0.1:9/org/tasks:v1"]
 run = "echo local-ok"
 TOML
 
-assert_fail_matches "mise run local" "including tasks from an .oci::. source is experimental"
+assert "mise run local" "local-ok"
+assert_matches "mise run local 2>&1" "including tasks from an .oci::. source is experimental"
 
 cat <<'TOML' >mise.toml
 [settings.otel]
