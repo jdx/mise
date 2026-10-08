@@ -7,5 +7,6 @@ assert_fail "MISE_DISABLE_BACKENDS=aqua mise ls-remote aqua:jqlang/jq" "backend 
 assert_fail "MISE_DISABLE_BACKENDS=asdf mise ls-remote asdf:mise-plugins/mise-tiny" "backend asdf is disabled by disable_backends"
 assert_fail "ls $MISE_DATA_DIR/plugins/asdf-mise-plugins-mise-tiny"
 
-# a registry shorthand still resolves past a disabled backend to an enabled one
-assert_contains "MISE_DISABLE_BACKENDS=asdf mise ls-remote jq" "1.7.1"
+# a registry shorthand still resolves past a disabled backend to an enabled one: pastel lists
+# aqua first, so this only succeeds if shorthand resolution skips aqua for github
+assert_contains "MISE_DISABLE_BACKENDS=aqua mise ls-remote pastel" "0.10.0"
