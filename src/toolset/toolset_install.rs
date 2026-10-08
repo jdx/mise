@@ -121,9 +121,14 @@ impl Toolset {
         // than inheriting the provider's. The provider's own directory is still needed
         // to explain a failure that is caused by writing outside the user's install dir.
         let provider_install_dir = scope_installs_dir(&tv.request);
+        // Running a lazy tool for the first time doesn't need the other missing ones resolved.
         let install_options = InstallOptions {
             reason: "lazy shim".into(),
             scoped_install_dirs: true,
+            after_install_resolve: ResolveOptions {
+                defer_missing_lazy_tools: true,
+                ..Default::default()
+            },
             ..Default::default()
         };
         let requests = self.lazy_install_requests(config, &tv).await;
@@ -144,7 +149,10 @@ impl Toolset {
             })?;
         if !installed.is_empty() {
             let ts = config
-                .get_toolset_with_opts(&ResolveOptions::without_lockfile_warnings())
+                .get_toolset_with_opts(&ResolveOptions {
+                    warn_not_in_lockfile: false,
+                    ..install_options.after_install_resolve.clone()
+                })
                 .await?;
             config::rebuild_shims_and_runtime_symlinks(
                 config,
@@ -234,7 +242,7 @@ impl Toolset {
             let ts = config
                 .get_toolset_with_opts(&ResolveOptions {
                     warn_not_in_lockfile: false,
-                    ..opts.resolve_options.for_side_effect_resolve()
+                    ..opts.after_install_resolve.clone()
                 })
                 .await?;
             config::rebuild_shims_and_runtime_symlinks(
@@ -438,7 +446,7 @@ impl Toolset {
             *config = Config::reset().await?;
             trace!("install: resolving");
             if let Err(err) = self
-                .resolve_with_opts(config, &opts.resolve_options.for_side_effect_resolve())
+                .resolve_with_opts(config, &opts.after_install_resolve)
                 .await
             {
                 debug!("error resolving versions after install: {err:#}");
@@ -454,7 +462,7 @@ impl Toolset {
             // toolset against that snapshot without replacing the global config.
             trace!("install: resolving without reloading config");
             if let Err(err) = self
-                .resolve_with_opts(config, &opts.resolve_options.for_side_effect_resolve())
+                .resolve_with_opts(config, &opts.after_install_resolve)
                 .await
             {
                 debug!("error resolving versions after install: {err:#}");

@@ -704,10 +704,15 @@ impl Upgrade {
                 refresh_remote_versions: false,
                 inactive: self.inactive,
                 warn_not_in_lockfile: true,
-                // What resolves after the install leaves missing lazy tools alone, as the
-                // toolset builder did before it.
+                defer_missing_lazy_tools: false,
+                defer_missing_lazy_online: false,
+            },
+            // What resolves after the install leaves missing lazy tools alone, as the
+            // toolset builder did before it.
+            after_install_resolve: ResolveOptions {
                 defer_missing_lazy_tools: self.for_auto_update,
                 defer_missing_lazy_online: self.for_auto_update,
+                ..Default::default()
             },
             locked: false,
             ..Default::default()
