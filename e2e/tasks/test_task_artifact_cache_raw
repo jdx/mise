@@ -1,0 +1,180 @@
+#!/usr/bin/env bash
+
+# Raw and interactive tasks store and restore no artifact, but they must still
+# be skipped when their sources are fresh and their cache key is unchanged.
+cat <<'EOF' >mise.toml
+[settings]
+experimental = true
+
+[task_config.cache]
+enabled = true
+
+[tasks.raw]
+run = '''
+mkdir -p raw-dist
+printf 'artifact\n' > raw-dist/result.txt
+printf 'ran\n' >> raw-runs.txt
+'''
+sources = ["raw.txt"]
+outputs = ["raw-dist"]
+raw = true
+
+[tasks.interactive]
+run = '''
+mkdir -p interactive-dist
+printf 'artifact\n' > interactive-dist/result.txt
+printf 'ran\n' >> interactive-runs.txt
+'''
+sources = ["interactive.txt"]
+outputs = ["interactive-dist"]
+interactive = true
+
+[tasks.flag]
+run = '''
+mkdir -p flag-dist
+printf 'artifact\n' > flag-dist/result.txt
+printf 'ran\n' >> flag-runs.txt
+'''
+sources = ["flag.txt"]
+outputs = ["flag-dist"]
+EOF
+
+printf 'raw\n' >raw.txt
+printf 'interactive\n' >interactive.txt
+printf 'flag\n' >flag.txt
+
+mise run raw
+assert_contains "mise run raw 2>&1" "sources up-to-date, skipping"
+assert "wc -l < raw-runs.txt | tr -d ' '" "1"
+
+mise run interactive </dev/null
+assert_contains "mise run interactive </dev/null 2>&1" "sources up-to-date, skipping"
+assert "wc -l < interactive-runs.txt | tr -d ' '" "1"
+
+mise run --raw flag
+assert_contains "mise run --raw flag 2>&1" "sources up-to-date, skipping"
+assert "wc -l < flag-runs.txt | tr -d ' '" "1"
+
+# A changed source still reruns the task.
+printf 'changed\n' >raw.txt
+mise run raw
+assert "wc -l < raw-runs.txt | tr -d ' '" "2"
+
+# Fresh sources are not enough: a changed cache key input that is not a source
+# also reruns a raw task, because its outputs were built for the old key.
+cat <<'EOF' >mise.toml
+[settings]
+experimental = true
+
+[tasks.build]
+run = '''
+mkdir -p dist
+printf '%s %s\n' "$PROFILE" "$(cat runtime-version)" > dist/result.txt
+printf 'ran\n' >> build-runs.txt
+test "$PROFILE" != fail
+'''
+sources = ["input.txt"]
+outputs = ["dist"]
+raw = true
+cache = { enabled = true, env = ["PROFILE"], command_inputs = ["cat runtime-version"] }
+EOF
+
+printf 'input\n' >input.txt
+printf 'one\n' >runtime-version
+
+PROFILE=debug mise run build
+assert "cat dist/result.txt" "debug one"
+assert_contains "PROFILE=debug mise run build 2>&1" "sources up-to-date, skipping"
+assert "wc -l < build-runs.txt | tr -d ' '" "1"
+
+# A changed cache.env value reruns the task.
+PROFILE=release mise run build
+assert "cat dist/result.txt" "release one"
+assert "wc -l < build-runs.txt | tr -d ' '" "2"
+assert_contains "PROFILE=release mise run build 2>&1" "sources up-to-date, skipping"
+assert "wc -l < build-runs.txt | tr -d ' '" "2"
+
+# A changed command input reruns the task.
+printf 'two\n' >runtime-version
+PROFILE=release mise run build
+assert "cat dist/result.txt" "release two"
+assert "wc -l < build-runs.txt | tr -d ' '" "3"
+
+# Only the key of the latest run counts: returning to an earlier key reruns it.
+printf 'one\n' >runtime-version
+PROFILE=debug mise run build
+assert "cat dist/result.txt" "debug one"
+assert "wc -l < build-runs.txt | tr -d ' '" "4"
+
+# A failed run forgets the earlier key, so its outputs are not reused.
+assert_fail "PROFILE=fail mise run build"
+assert "cat dist/result.txt" "fail one"
+PROFILE=debug mise run build
+assert "cat dist/result.txt" "debug one"
+assert "wc -l < build-runs.txt | tr -d ' '" "6"
+
+# The cache key is still explained for a fresh raw task.
+explain="$(PROFILE=debug mise run --task-cache-explain build 2>&1)"
+assert_contains "echo \"$explain\"" "cache key inputs:"
+assert_contains "echo \"$explain\"" "sources up-to-date, skipping"
+assert "PROFILE=debug mise run --dry-run --task-cache-explain-json build | jq -r .task" "build"
+assert "wc -l < build-runs.txt | tr -d ' '" "6"
+
+# A raw task with no outputs is skipped on its cache key alone.
+cat <<'EOF' >mise.toml
+[settings]
+experimental = true
+
+[tasks.check]
+run = "printf 'ran\n' >> check-runs.txt"
+sources = ["check.txt"]
+outputs = []
+raw = true
+cache = { enabled = true }
+EOF
+
+printf 'check\n' >check.txt
+mise run check
+assert_contains "mise run check 2>&1" "sources up-to-date, skipping"
+assert "wc -l < check-runs.txt | tr -d ' '" "1"
+printf 'changed\n' >check.txt
+mise run check
+assert "wc -l < check-runs.txt | tr -d ' '" "2"
+
+# A raw task passes its cache key to dependents whether it runs or is skipped,
+# so a dependent built from another upstream key is not reused.
+cat <<'EOF' >mise.toml
+[settings]
+experimental = true
+
+[tasks.upstream]
+run = '''
+mkdir -p up-dist
+printf '%s\n' "$PROFILE" > up-dist/result.txt
+'''
+sources = ["up.txt"]
+outputs = ["up-dist"]
+raw = true
+cache = { enabled = true, env = ["PROFILE"] }
+
+[tasks.downstream]
+depends = ["upstream"]
+run = '''
+mkdir -p down-dist
+cp up-dist/result.txt down-dist/result.txt
+'''
+sources = ["down.txt"]
+outputs = ["down-dist"]
+cache = { enabled = true }
+EOF
+
+printf 'up\n' >up.txt
+printf 'down\n' >down.txt
+PROFILE=a mise run downstream
+assert "cat down-dist/result.txt" "a"
+PROFILE=b mise run upstream
+assert "cat up-dist/result.txt" "b"
+PROFILE=b mise run downstream
+assert "cat down-dist/result.txt" "b"
+assert_contains "PROFILE=a mise run downstream 2>&1" "restored outputs from cache"
+assert "cat down-dist/result.txt" "a"
