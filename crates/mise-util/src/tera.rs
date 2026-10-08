@@ -1451,8 +1451,9 @@ pub fn render_for_dry_run(
 /// Whether `input` uses the `vars` map as a whole: passes it to a filter or
 /// function, iterates, assigns or tests it, rather than reading one entry
 /// with `vars.NAME` or `vars[...]`. Only the inside of `{{ }}` and `{% %}`
-/// tags counts, outside string literals. Anything this misjudges counts as a
-/// whole-map read, which only shows the template unrendered.
+/// tags counts, outside string literals and `{% raw %}` blocks. Anything this
+/// misjudges counts as a whole-map read, which only shows the template
+/// unrendered.
 fn reads_whole_vars_map(input: &str) -> bool {
     let s = input.as_bytes();
     let is_ident = |b: u8| b.is_ascii_alphanumeric() || b == b'_';
@@ -1464,7 +1465,26 @@ fn reads_whole_vars_map(input: &str) -> bool {
         let Some(end) = close else {
             match s.get(i..i + 2) {
                 Some(b"{{") => close = Some(b"}}".as_slice()),
-                Some(b"{%") => close = Some(b"%}".as_slice()),
+                Some(b"{%") => {
+                    // `{% raw %}` text is literal: skip to after `{% endraw %}`
+                    let Some(len) = input[i + 2..].find("%}") else {
+                        return false;
+                    };
+                    let tag = input[i + 2..i + 2 + len]
+                        .trim_matches(|c: char| c == '-' || c.is_whitespace());
+                    if tag == "raw" {
+                        let after = i + 2 + len + 2;
+                        let Some(end) = input[after..].find("endraw") else {
+                            return false;
+                        };
+                        let Some(close_len) = input[after + end..].find("%}") else {
+                            return false;
+                        };
+                        i = after + end + close_len + 2;
+                        continue;
+                    }
+                    close = Some(b"%}".as_slice())
+                }
                 // skip a comment and its closing `#}`
                 Some(b"{#") => match input[i + 2..].find("#}") {
                     Some(len) => i += 2 + len,

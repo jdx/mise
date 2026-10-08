@@ -374,6 +374,18 @@ fn dry_run_cases() {
         assert!(render(input, &none).contains("hi"), "{input}");
     }
     assert_eq!(render("{{ vars['known'] }}", &pending), "hi");
+    // `{% raw %}` text is literal, so it is not a read of the map
+    assert_eq!(
+        render("echo '{% raw %}{{ vars }}{% endraw %}'", &pending),
+        "echo '{{ vars }}'"
+    );
+    assert_eq!(
+        render(
+            "{%- raw -%} {{ vars }} {%- endraw -%}{{ vars.known }}",
+            &pending
+        ),
+        "{{ vars }}hi"
+    );
     assert_eq!(
         render("vars {# vars #}{{ 'vars' ~ vars[\"known\"] }}", &pending),
         "vars varshi"
