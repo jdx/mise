@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+
+# Only a file task drops its extension, and only a known script extension:
+# `mise-tasks/build.sh` is `build`, but a TOML task's name is kept as written,
+# so `test.unit` and `test.e2e` are two tasks rather than both showing as
+# `test`. MISE_TASK_NAME carries the same name `mise tasks ls` shows.
+
+mkdir -p mise-tasks
+
+cat <<'EOF' >mise-tasks/build.sh
+#!/usr/bin/env bash
+echo "build-ran name=$MISE_TASK_NAME"
+EOF
+
+# `.proto` is not a script extension, so it stays part of the name.
+cat <<'EOF' >mise-tasks/gen.proto
+#!/usr/bin/env bash
+echo "gen-ran name=$MISE_TASK_NAME"
+EOF
+
+chmod +x mise-tasks/build.sh mise-tasks/gen.proto
+
+cat <<'EOF' >mise.toml
+[tasks."test.unit"]
+run = 'echo "unit-ran name=$MISE_TASK_NAME"'
+
+[tasks."test.e2e"]
+run = 'echo "e2e-ran name=$MISE_TASK_NAME"'
+EOF
+
+assert "mise tasks ls --no-header --hidden" "build
+gen.proto
+test.e2e
+test.unit"
+
+assert "mise run test.unit" "unit-ran name=test.unit"
+assert "mise run test.e2e" "e2e-ran name=test.e2e"
+# Neither TOML task answers to the shortened name.
+assert_fail "mise run test"
+
+assert "mise run build" "build-ran name=build"
+assert "mise run build.sh" "build-ran name=build"
+
+assert "mise run gen.proto" "gen-ran name=gen.proto"
+assert_fail "mise run gen"
