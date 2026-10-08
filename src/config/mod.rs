@@ -3498,7 +3498,7 @@ fn conf_d_environment_candidates(
 /// target: with no `config.toml` yet, `mise use -g` creates one rather than putting a
 /// machine-local tool into an environment module.
 fn global_write_candidates() -> IndexSet<PathBuf> {
-    let envs = &*env::MISE_ENV;
+    let envs = &*env::MISE_ENV_WITH_AUTO;
     global_config_files()
         .into_iter()
         .filter(|p| !is_active_env_config_file(p, envs))
