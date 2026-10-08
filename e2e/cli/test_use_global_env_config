@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+
+# With an environment active and no config.toml yet, `mise use -g` creates
+# config.toml instead of writing into config.<env>.toml.
+export MISE_CEILING_PATHS="$HOME"
+echo 'env = ["work"]' >"$MISE_CONFIG_DIR/miserc.local.toml"
+touch "$MISE_CONFIG_DIR/config.work.toml"
+
+mise use -g dummy@1.0.0
+assert "test -f $MISE_CONFIG_DIR/config.toml && echo yes" "yes"
+assert_contains "cat $MISE_CONFIG_DIR/config.toml" 'dummy = "1.0.0"'
+assert "cat $MISE_CONFIG_DIR/config.work.toml" ""

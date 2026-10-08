@@ -3493,12 +3493,39 @@ fn conf_d_environment_candidates(
         .collect()
 }
 
+/// Global config files that may receive a write. Environment-specific files such as
+/// `config.work.toml` are loaded when that environment is active but are never a default
+/// target: with no `config.toml` yet, `mise use -g` creates one rather than putting a
+/// machine-local tool into an environment module.
+fn global_write_candidates() -> IndexSet<PathBuf> {
+    let envs = &*env::MISE_ENV;
+    global_config_files()
+        .into_iter()
+        .filter(|p| !is_active_env_config_file(p, envs))
+        .collect()
+}
+
+fn is_active_env_config_file(path: &Path, envs: &[String]) -> bool {
+    let Some(stem) = path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .and_then(|n| n.strip_suffix(".toml"))
+    else {
+        return false;
+    };
+    let stem = stem.strip_suffix(".local").unwrap_or(stem);
+    envs.iter().any(|e| {
+        stem.strip_suffix(e.as_str())
+            .is_some_and(|s| s.ends_with('.'))
+    })
+}
+
 /// the preferred global config file to write to, or the path where it should be created.
 /// Uses first_config_file() to pick the lowest-precedence non-local TOML (i.e., config.toml
 /// rather than config.local.toml) so that `mise use -g` writes to config.toml.
 /// See: https://github.com/jdx/mise/discussions/8236
 pub fn global_config_path() -> PathBuf {
-    let files = global_config_files();
+    let files = global_write_candidates();
     first_config_file(&files)
         .cloned()
         .or_else(|| env::MISE_GLOBAL_CONFIG_FILE.clone())
@@ -3521,7 +3548,7 @@ pub fn global_shared_config_path() -> PathBuf {
     if let Some(path) = env::MISE_GLOBAL_CONFIG_FILE.clone() {
         return path;
     }
-    let files = global_config_files();
+    let files = global_write_candidates();
     first_config_file(&files)
         .filter(|path| path.extension().is_some_and(|ext| ext == "toml") && !local(path))
         .cloned()
@@ -9801,6 +9828,26 @@ mod write_target_tests {
 
     fn set(paths: &[&str]) -> IndexSet<PathBuf> {
         paths.iter().map(PathBuf::from).collect()
+    }
+
+    #[test]
+    fn env_config_files_are_not_global_write_targets() {
+        let envs = vec!["work".to_string()];
+        for f in [
+            "config.work.toml",
+            "config.work.local.toml",
+            "mise.work.toml",
+        ] {
+            assert!(is_active_env_config_file(Path::new(f), &envs), "{f}");
+        }
+        for f in [
+            "config.toml",
+            "config.local.toml",
+            "config.other.toml",
+            "work.toml",
+        ] {
+            assert!(!is_active_env_config_file(Path::new(f), &envs), "{f}");
+        }
     }
 
     #[test]
