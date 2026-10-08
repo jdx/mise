@@ -559,17 +559,11 @@ impl EnvResults {
                         crate::env::normalize_path_key(k)
                     };
                     if resolve_opts.vars {
-                        if let Some((v, existing)) = r.vars.get(&k).filter(|(v, _)| !v.is_empty()) {
+                        if r.vars.get(&k).is_some_and(|(v, _)| !v.is_empty()) {
+                            // The value stays with the file (or the saved answer) that set it.
                             if redact.unwrap_or(false) {
                                 r.redactions.push(k.clone());
                             }
-                            // A saved answer keeps its own source rather than this file's.
-                            let kept = if *existing == prompt::answers_path() {
-                                existing.clone()
-                            } else {
-                                source.clone()
-                            };
-                            r.vars.insert(k, (v.clone(), kept));
                             continue;
                         }
                         if let Some(v) = env::PRISTINE_ENV.get(&k).filter(|v| !v.is_empty()) {

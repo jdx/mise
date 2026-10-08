@@ -144,3 +144,16 @@ assert_fail_contains "mise vars prompt nope" "needs an interactive terminal"
 mise vars unset other
 assert_fail_contains "mise vars other" "no var named 'other'"
 assert_fail_contains "mise vars unset" "name at least one var"
+
+# A later `default` for the same var leaves the value, and its source, with the file that set it
+cat <<EOF2 >mise.toml
+[vars.shared]
+default = "from-toml"
+EOF2
+cat <<EOF2 >mise.local.toml
+[vars.shared]
+default = "from-local"
+EOF2
+assert "mise vars shared" "from-toml"
+assert_contains "mise vars --no-header | grep shared" "mise.toml"
+rm mise.local.toml
