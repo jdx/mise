@@ -59,6 +59,9 @@ pub(crate) async fn apply(cf: Arc<dyn ConfigFile>) -> Result<Arc<dyn ConfigFile>
 
 /// The cached copy of a fragment, refreshed first when it is due.
 async fn load(parent: &Path, reference: &str) -> Result<(PathBuf, String)> {
+    if is_local(reference) {
+        return load_local(parent, reference);
+    }
     let pin = classify(reference)?;
     if pin == Pin::Mutable && Settings::try_get().is_ok_and(|s| s.paranoid) {
         bail!(
@@ -103,6 +106,55 @@ async fn load(parent: &Path, reference: &str) -> Result<(PathBuf, String)> {
         Err(err) => return Err(err),
     };
     Ok((cache, body))
+}
+
+/// A local include is read from disk on every load: there is nothing to fetch,
+/// pin or cache, and an edit takes effect immediately.
+fn load_local(parent: &Path, reference: &str) -> Result<(PathBuf, String)> {
+    // Paranoid mode binds trust to the including file's hash, which does not
+    // cover a file that can change without it.
+    if Settings::try_get().is_ok_and(|s| s.paranoid) {
+        bail!(
+            "paranoid mode binds trust to content, so a local config include is not \
+             allowed: {reference}"
+        );
+    }
+    let path = file::replace_path(reference);
+    let path = resolve_local(parent, path)?;
+    if !path.is_file() {
+        bail!("a config include must be a file: {}", path.display());
+    }
+    let body = file::read_to_string(&path)?;
+    MiseToml::parse_remote_fragment(&body, parent)
+        .wrap_err_with(|| format!("invalid config include {reference}"))?;
+    Ok((path, body))
+}
+
+/// An absolute path as is, a relative one against the including file's directory.
+/// A Windows drive-relative (`C:tools.toml`) or rooted-without-drive (`\\tools.toml`)
+/// path counts as relative but makes `join` drop the directory, so it is refused.
+fn resolve_local(parent: &Path, path: PathBuf) -> Result<PathBuf> {
+    if path.is_absolute() {
+        return Ok(path);
+    }
+    let rooted = path.has_root()
+        || path
+            .components()
+            .any(|c| matches!(c, std::path::Component::Prefix(_)));
+    if rooted {
+        bail!(
+            "a local config include must be a relative path or a full absolute path: {}",
+            path.display()
+        );
+    }
+    Ok(match parent.parent() {
+        Some(dir) => dir.join(path),
+        None => path,
+    })
+}
+
+fn is_local(reference: &str) -> bool {
+    !reference.starts_with("git::") && !reference.starts_with(OCI_INCLUDE_PREFIX)
 }
 
 /// `None` is offline mode, where a cached fragment is always used.
@@ -219,8 +271,23 @@ mod tests {
     fn rejects_other_sources_and_directories() {
         assert!(classify("https://example.com/mise.toml").is_err());
         assert!(classify("./local.toml").is_err());
+        assert!(is_local("./local.toml"));
+        assert!(!is_local("git::https://github.com/org/repo.git//mise.toml"));
         let dir = format!("git::https://github.com/org/repo.git//base?ref={SHA}");
         assert!(classify(&dir).is_err());
+    }
+
+    #[test]
+    fn a_local_include_resolves_against_the_including_file() {
+        // absolute on every platform, unlike a bare `/work`
+        let dir = std::env::temp_dir();
+        let parent = dir.join("mise.toml");
+        assert_eq!(
+            resolve_local(&parent, "shared/a.toml".into()).unwrap(),
+            dir.join("shared/a.toml")
+        );
+        let absolute = dir.join("etc").join("a.toml");
+        assert_eq!(resolve_local(&parent, absolute.clone()).unwrap(), absolute);
     }
 
     #[test]

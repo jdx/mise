@@ -5993,14 +5993,14 @@
       ]
     },
     "include": {
-      "description": "remote config files merged into this one, ranking just below it: git::<url>//<path>.toml?ref=<ref> or oci::<registry>/<repo>[:tag|@sha256:<digest>] (the artifact holds a mise.toml). Paranoid mode requires a commit sha or digest; otherwise a branch or tag is refreshed after fetch_remote_versions_cache",
+      "description": "config files merged into this one, ranking just below it: a local path (relative to this file), git::<url>//<path>.toml?ref=<ref> or oci::<registry>/<repo>[:tag|@sha256:<digest>] (the artifact holds a mise.toml). Paranoid mode requires a commit sha or digest for remote includes and rejects local ones; otherwise a branch or tag is refreshed after fetch_remote_versions_cache",
       "oneOf": [
         {
-          "description": "a remote config fragment",
+          "description": "a config fragment",
           "type": "string"
         },
         {
-          "description": "remote config fragments",
+          "description": "config fragments",
           "type": "array",
           "items": {
             "type": "string"
