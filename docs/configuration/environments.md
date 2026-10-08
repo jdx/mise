@@ -43,7 +43,10 @@ files use names such as `mise.production.toml`; the global config uses
 `config.production.toml` in `MISE_CONFIG_DIR`.
 
 Multiple environments can be specified, for example `mise -E ci,test run build`.
-Within the same directory, the last environment takes precedence. Use
+Within the same directory, the last environment takes precedence among files of the same kind,
+but any `mise.<env>.local.toml` still overrides every `mise.<env>.toml` (see
+[Local overrides](#local-overrides)): with `ci,test`, `mise.ci.local.toml` overrides
+`mise.test.toml`. Use
 `mise -E ci,test config` to inspect the combined selection.
 
 For machine setup, group an application's packages, dotfiles, and services in
@@ -198,7 +201,9 @@ load automatically and selects matching lockfiles like `mise.windows.lock`. All 
 usual config file locations and `.local.toml` variants work.
 
 Platform environments have lower precedence than explicit `MISE_ENV` entries. The full order is
-(later overrides earlier): `unix` < `{os}` < `{os}-{arch}` < explicit `MISE_ENV` entries.
+(later overrides earlier): `unix` < `{os}` < `{os}-{arch}` < explicit `MISE_ENV` entries. As with
+multiple explicit environments, this order applies among files of the same kind:
+`mise.linux.local.toml` still overrides `mise.ci.toml`.
 
 Platform environments only affect config file discovery and lockfile selection. They are not
 added to `MISE_ENV` itself: the `{{ mise_env }}` template variable and the `MISE_ENV` variable

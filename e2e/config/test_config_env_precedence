@@ -65,3 +65,22 @@ MISE_ENV='' assert "winner" "tools=3 env=3"
 rm mise.local.toml mise.test.local.toml
 assert "winner" "tools=2 env=2"
 MISE_ENV='' assert "winner" "tools=1 env=1"
+
+# A conf.d folder ranks its own files the same way, in the global config dir
+# (walked or not) and in a project.
+frag() {
+  mkdir -p "$(dirname "$1")"
+  printf '[env]\nFRAG = "%s"\n' "$2" >"$1"
+}
+frag "$MISE_CONFIG_DIR/conf.d/f/mise.toml" global-shared
+frag "$MISE_CONFIG_DIR/conf.d/f/mise.test.toml" global-env
+assert_contains "mise env -s bash" "FRAG=global-env"
+frag "$MISE_CONFIG_DIR/conf.d/f/mise.local.toml" global-local
+assert_contains "mise env -s bash" "FRAG=global-local"
+MISE_CEILING_PATHS="$HOME" assert_contains "mise env -s bash" "FRAG=global-local"
+frag .mise/conf.d/f/mise.test.toml project-env
+assert_contains "mise env -s bash" "FRAG=project-env"
+frag .mise/conf.d/f/mise.local.toml project-local
+assert_contains "mise env -s bash" "FRAG=project-local"
+frag .mise/conf.d/f/mise.test.local.toml project-env-local
+assert_contains "mise env -s bash" "FRAG=project-env-local"

@@ -2328,17 +2328,14 @@ static SHARED_CONFIG_FILENAMES: Lazy<IndexSet<&'static str>> = Lazy::new(|| {
         paths.extend([
             ".config/mise/conf.d/*.toml",
             ".config/mise/conf.d/*/mise.toml",
-            ".config/mise/conf.d/*/mise.local.toml",
             ".config/mise/config.toml",
             ".config/mise/mise.toml",
             ".config/mise.toml",
             ".mise/conf.d/*.toml",
             ".mise/conf.d/*/mise.toml",
-            ".mise/conf.d/*/mise.local.toml",
             ".mise/config.toml",
             "mise/conf.d/*.toml",
             "mise/conf.d/*/mise.toml",
-            "mise/conf.d/*/mise.local.toml",
             "mise/config.toml",
             "mise.toml",
             &*env::MISE_DEFAULT_CONFIG_FILENAME, // mise.toml
@@ -2357,10 +2354,13 @@ static LOCAL_OVERRIDE_CONFIG_FILENAMES: Lazy<Vec<&'static str>> = Lazy::new(|| {
         return vec![];
     }
     vec![
+        ".config/mise/conf.d/*/mise.local.toml",
         ".config/mise/config.local.toml",
         ".config/mise/mise.local.toml",
         ".config/mise.local.toml",
+        ".mise/conf.d/*/mise.local.toml",
         ".mise/config.local.toml",
+        "mise/conf.d/*/mise.local.toml",
         "mise/config.local.toml",
         "mise.local.toml",
         ".mise.local.toml",
@@ -3371,7 +3371,6 @@ pub(crate) fn config_files_with_incoming(
         }
     }
     files.extend(conf_folder_files("mise.toml"));
-    files.extend(conf_folder_files("mise.local.toml"));
     files.extend([dir.join("config.toml"), dir.join("mise.toml")]);
     for environment in &*env::MISE_ENV_WITH_AUTO {
         if env::env_conf_d() {
@@ -3387,6 +3386,7 @@ pub(crate) fn config_files_with_incoming(
             dir.join(format!("mise.{environment}.toml")),
         ]);
     }
+    files.extend(conf_folder_files("mise.local.toml"));
     files.extend([dir.join("config.local.toml"), dir.join("mise.local.toml")]);
     for environment in &*env::MISE_ENV_WITH_AUTO {
         if env::env_conf_d() {

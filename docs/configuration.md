@@ -57,7 +57,7 @@ Notes:
 - Paths that start with `mise` can be dotfiles, e.g. `.mise.toml` or `.mise/config.toml`.
 - This list doesn't include [Configuration Environments](/configuration/environments), which allow environment-specific config files like `mise.development.toml`—selected with `MISE_ENV=development`. Platform-specific environments like `mise.windows.toml` or `mise.macos-arm64.toml` can be enabled automatically with the [`auto_env` setting](/configuration/environments.html#platform-environments).
 - A folder inside any `conf.d` directory is also a fragment. See [conf.d folders](/configuration.html#conf-d-folders).
-- See [`LOCAL_CONFIG_FILENAMES` in `src/config/mod.rs`](https://github.com/jdx/mise/blob/main/src/config/mod.rs) for the actual code for these paths and their precedence. Some legacy paths are not listed here for brevity.
+- See [`DEFAULT_CONFIG_FILENAMES` in `src/config/mod.rs`](https://github.com/jdx/mise/blob/main/src/config/mod.rs) for the actual code for these paths and their precedence. Some legacy paths are not listed here for brevity.
 
 ## conf.d folders
 
@@ -102,9 +102,12 @@ affected by the `env_conf_d` migration.
 
 Folder fragments load after single-file fragments in the same `conf.d` directory, in alphabetical
 order by folder name, and before the directory's regular config such as `config.toml`. Their
-environment and local files take the same place as `conf.d/<name>.<env>.toml` and
-`conf.d/<name>.local.toml` would. Tools declared in a project folder fragment share the project's
-lockfile.
+environment files take the same place as `conf.d/<name>.<env>.toml` and
+`conf.d/<name>.<env>.local.toml` would. A folder's `mise.local.toml` loads just before the
+directory's own `config.local.toml`. It overrides the `.<env>.toml` files in the folder and the
+directory but not their `.<env>.local.toml` files, following the
+[local override order](/configuration/environments.html#local-overrides). Tools declared in a
+project folder fragment share the project's lockfile.
 
 ## Configuration Hierarchy
 
