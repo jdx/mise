@@ -10,6 +10,7 @@ use crate::task::task_source_checker::task_cwd;
 use crate::task::{Deps, Task};
 use crate::toolset::ToolsetBuilder;
 use console::style;
+use eyre::bail;
 use itertools::Itertools;
 use std::cmp::PartialEq;
 use std::iter::once;
@@ -62,7 +63,7 @@ pub(crate) struct Watch {
     args: Vec<String>,
 
     /// Globs to watch instead of the tasks' sources
-    #[usage(short, long, hide = true)]
+    #[usage(short, long)]
     glob: Vec<String>,
 
     /// Run and watch only the named tasks, not the tasks they depend on
@@ -85,6 +86,9 @@ impl Watch {
                 return Ok(());
             }
         }
+        if self.watchexec.workdir.is_some() {
+            warn!("--workdir has no effect: mise runs each task from its own dir");
+        }
         let config = Config::get().await?;
         let ts = ToolsetBuilder::new().build(&config).await?;
         if let Err(err) = which::which("watchexec") {
@@ -96,7 +100,18 @@ impl Watch {
                 return Err(request_exit(1));
             }
         }
-        let mut args = once(self.task)
+        // watchexec refuses `--manual` alongside a command, and showing its manual page needs no
+        // tasks, so this resolves none and runs nothing but `watchexec --manual`.
+        if self.watchexec.manual {
+            debug!("$ watchexec --manual");
+            let mut cmd = cmd::cmd("watchexec", ["--manual"]);
+            for (k, v) in ts.env_with_path(&config).await? {
+                cmd = cmd.env(k, v);
+            }
+            cmd.run()?;
+            return Ok(());
+        }
+        let mut args = once(self.task.clone())
             .flatten()
             .chain(self.task_flag.iter().cloned())
             .chain(self.args.iter().cloned())
@@ -112,123 +127,17 @@ impl Watch {
             let deps = Deps::new(&config, tasks.clone()).await?;
             deps.all().cloned().collect()
         };
-        let mut args = vec![];
-        if let Some(delay_run) = self.watchexec.delay_run {
-            args.push("--delay-run".to_string());
-            args.push(delay_run);
-        }
-        if let Some(poll) = self.watchexec.poll {
-            args.push("--poll".to_string());
-            args.push(poll);
-        }
-        if let Some(signal) = self.watchexec.signal {
-            args.push("--signal".to_string());
-            args.push(signal);
-        }
-        if let Some(stop_signal) = self.watchexec.stop_signal {
-            args.push("--stop-signal".to_string());
-            args.push(stop_signal);
-        }
-        if self.watchexec.stop_timeout != "10s" {
-            args.push("--stop-timeout".to_string());
-            args.push(self.watchexec.stop_timeout);
-        }
-        if self.watchexec.debounce != "50ms" {
-            args.push("--debounce".to_string());
-            args.push(self.watchexec.debounce);
-        }
-        if self.watchexec.stdin_quit {
-            args.push("--stdin-quit".to_string());
-        }
-        if self.watchexec.no_vcs_ignore || tasks_disable_vcs_ignores(&watched_tasks) {
-            args.push("--no-vcs-ignore".to_string());
-        }
-        if self.watchexec.no_project_ignore {
-            args.push("--no-project-ignore".to_string());
-        }
-        if self.watchexec.no_global_ignore {
-            args.push("--no-global-ignore".to_string());
-        }
-        if self.watchexec.no_default_ignore {
-            args.push("--no-default-ignore".to_string());
-        }
-        if self.watchexec.no_discover_ignore {
-            args.push("--no-discover-ignore".to_string());
-        }
-        if self.watchexec.ignore_nothing {
-            args.push("--ignore-nothing".to_string());
-        }
-        if self.watchexec.postpone {
-            args.push("--postpone".to_string());
-        }
-        if let Some(screen_clear) = self.watchexec.screen_clear {
-            args.push("--clear".to_string());
-            if let ClearMode::Reset = screen_clear {
-                args.push("reset".to_string());
-            }
-        }
-        if self.watchexec.restart {
-            args.push("--restart".to_string());
-        }
-        if self.watchexec.on_busy_update != OnBusyUpdate::DoNothing {
-            args.push("--on-busy-update".to_string());
-            args.push(self.watchexec.on_busy_update.to_string());
-        }
-        args.extend(wrap_process_args(self.watchexec.wrap_process));
-        if !self.watchexec.signal_map.is_empty() {
-            for signal_map in &self.watchexec.signal_map {
-                args.push("--map-signal".to_string());
-                args.push(signal_map.to_string());
-            }
-        }
-        if !self.watchexec.recursive_paths.is_empty() {
-            for path in &self.watchexec.recursive_paths {
-                args.push("--watch".to_string());
-                args.push(path.to_string_lossy().to_string());
-            }
-        }
-        if !self.watchexec.non_recursive_paths.is_empty() {
-            for path in &self.watchexec.non_recursive_paths {
-                args.push("--watch-non-recursive".to_string());
-                args.push(path.to_string_lossy().to_string());
-            }
-        }
-        if !self.watchexec.filter_extensions.is_empty() {
-            for ext in &self.watchexec.filter_extensions {
-                args.push("--exts".to_string());
-                args.push(ext.to_string());
-            }
-        }
-        if !self.watchexec.filter_patterns.is_empty() {
-            for pattern in &self.watchexec.filter_patterns {
-                args.push("--filter".to_string());
-                args.push(pattern.to_string());
-            }
-        }
-        if let Some(watch_file) = &self.watchexec.watch_file {
-            args.push("--watch-file".to_string());
-            args.push(watch_file.to_string_lossy().to_string());
-        }
-        // Forward user-supplied filtering/debug flags that are parsed into
-        // WatchexecArgs but were never re-emitted onto the watchexec command
-        // line (#7776). watchexec unions repeated --ignore flags, so these
-        // combine with the source-derived ignores pushed below rather than
-        // clobbering them.
-        if !self.watchexec.ignore_patterns.is_empty() {
-            for pattern in &self.watchexec.ignore_patterns {
-                args.push("--ignore".to_string());
-                args.push(pattern.to_string());
-            }
-        }
-        if !self.watchexec.ignore_files.is_empty() {
-            for path in &self.watchexec.ignore_files {
-                args.push("--ignore-file".to_string());
-                args.push(path.to_string_lossy().to_string());
-            }
-        }
-        if self.watchexec.print_events {
-            args.push("--print-events".to_string());
-        }
+        let mut args = self
+            .watchexec
+            .watchexec_args(tasks_disable_vcs_ignores(&watched_tasks));
+        // A --project-origin the user gave wins over the one mise derives
+        // below. It is made absolute here, against the directory watchexec
+        // will run in, so the task sources can be made relative to it.
+        let project_origin = self.watchexec.project_origin.as_ref().map(|p| {
+            env::current_dir()
+                .map(|cwd| normalize_path(&cwd.join(p)))
+                .unwrap_or_else(|_| p.clone())
+        });
         // Filter anchor: the path that --project-origin is set to and that
         // every glob filter is made relative to. watchexec interprets -f
         // patterns relative to the origin and silently rejects absolute
@@ -244,7 +153,7 @@ impl Watch {
             // Pre-resolve sources to absolute paths so the anchor can be
             // widened to cover any source that escapes its task's cwd via
             // `..` or an absolute path.
-            let parsed: Vec<Vec<(SourceKind, PathBuf)>> = task_cwds
+            let mut parsed: Vec<Vec<(SourceKind, PathBuf)>> = task_cwds
                 .iter()
                 .map(|(t, cwd)| t.sources.iter().map(|s| parse_source(s, cwd)).collect())
                 .collect();
@@ -262,8 +171,49 @@ impl Watch {
                         .map(|(_, c)| c.as_path())
                         .chain(parsed.iter().flatten().map(|(_, p)| p.as_path())),
                 );
-                let anchor: PathBuf = match (configured, common) {
-                    (Some(mut cfg), Some(common)) => {
+                let anchor: PathBuf = match (project_origin.clone(), configured, common) {
+                    (Some(origin), _, _) => {
+                        // watchexec drops a filter outside the origin, so a
+                        // source there would never trigger the task.
+                        if let Some((_, outside)) = parsed.iter().flatten().find(|(kind, p)| {
+                            !matches!(kind, SourceKind::Negation) && !p.starts_with(&origin)
+                        }) {
+                            bail!(
+                                "--project-origin {} does not contain the watched source {}; \
+                                 use a directory that contains every task's sources",
+                                origin.display(),
+                                outside.display()
+                            );
+                        }
+                        // An exclusion such as `!**/*.tmp` starts above the
+                        // origin but still matches inside it, so it is
+                        // rebased onto the origin; one that cannot match
+                        // inside the origin excludes nothing there and is
+                        // dropped.
+                        for sources in &mut parsed {
+                            sources.retain_mut(|(kind, p)| {
+                                if !matches!(kind, SourceKind::Negation) {
+                                    return true;
+                                }
+                                match negation_within_origin(p, &origin) {
+                                    Some(rebased) => {
+                                        *p = rebased;
+                                        true
+                                    }
+                                    None => {
+                                        debug!(
+                                            "dropping exclusion {} outside --project-origin {}",
+                                            p.display(),
+                                            origin.display()
+                                        );
+                                        false
+                                    }
+                                }
+                            });
+                        }
+                        origin
+                    }
+                    (None, Some(mut cfg), Some(common)) => {
                         while !common.starts_with(&cfg) {
                             if !cfg.pop() {
                                 break;
@@ -275,9 +225,9 @@ impl Watch {
                             cfg
                         }
                     }
-                    (Some(cfg), None) => cfg,
-                    (None, Some(common)) => common,
-                    (None, None) => dirs::CWD.clone().unwrap_or_default(),
+                    (None, Some(cfg), None) => cfg,
+                    (None, None, Some(common)) => common,
+                    (None, None, None) => dirs::CWD.clone().unwrap_or_default(),
                 };
                 let resolved: Vec<Vec<String>> = parsed
                     .iter()
@@ -307,7 +257,7 @@ impl Watch {
                 (i, e, watch_dirs, Some(anchor))
             }
         };
-        if let Some(anchor) = &filter_anchor {
+        if let Some(anchor) = filter_anchor.as_ref().or(project_origin.as_ref()) {
             args.push("--project-origin".to_string());
             args.push(anchor.to_string_lossy().to_string());
         }
@@ -329,27 +279,7 @@ impl Watch {
                 itertools::intersperse(ignores, "--ignore".to_string()).collect::<Vec<_>>(),
             );
         }
-        args.extend([
-            "--".to_string(),
-            env::MISE_BIN.to_string_lossy().to_string(),
-            "run".to_string(),
-        ]);
-        if self.skip_deps {
-            args.push("--skip-deps".to_string());
-        }
-        let task_args = itertools::intersperse(
-            tasks.iter().map(|t| {
-                let mut args = vec![t.name.to_string()];
-                args.extend(t.args.iter().map(|a| a.to_string()));
-                args
-            }),
-            vec![":::".to_string()],
-        )
-        .flatten()
-        .collect_vec();
-        for arg in task_args {
-            args.push(arg);
-        }
+        args.extend(self.command_args(&tasks));
         debug!("$ watchexec {}", args.join(" "));
         let mut cmd = cmd::cmd("watchexec", &args);
         for (k, v) in ts.env_with_path(&config).await? {
@@ -375,6 +305,36 @@ impl Watch {
 
         cmd.run()?;
         Ok(())
+    }
+
+    /// The command watchexec runs on each change: `-- <mise> run [--skip-deps] <tasks>`.
+    ///
+    /// With `--only-emit-events` there is none, because watchexec refuses that flag alongside a
+    /// command; it then only prints the events that the task sources would have triggered on.
+    fn command_args(&self, tasks: &[Task]) -> Vec<String> {
+        if self.watchexec.only_emit_events {
+            return vec![];
+        }
+        let mut args = vec![
+            "--".to_string(),
+            env::MISE_BIN.to_string_lossy().to_string(),
+            "run".to_string(),
+        ];
+        if self.skip_deps {
+            args.push("--skip-deps".to_string());
+        }
+        args.extend(
+            itertools::intersperse(
+                tasks.iter().map(|t| {
+                    let mut args = vec![t.name.to_string()];
+                    args.extend(t.args.iter().map(|a| a.to_string()));
+                    args
+                }),
+                vec![":::".to_string()],
+            )
+            .flatten(),
+        );
+        args
     }
 }
 
@@ -469,6 +429,34 @@ fn source_watch_dir(absolute: &Path) -> PathBuf {
     } else {
         dir.parent().map(|p| p.to_path_buf()).unwrap_or(dir)
     }
+}
+
+/// Express an absolute exclusion pattern as one under `origin` that excludes the same files
+/// inside it, or `None` when it cannot match anything inside `origin`.
+///
+/// A pattern under `origin` is kept as is. One whose literal (glob-free) prefix is an ancestor of
+/// `origin` and whose next component is `**`, such as `<task cwd>/**/*.tmp`, matches at any depth
+/// below that prefix, so `<origin>/**/*.tmp` excludes the same files inside `origin`.
+fn negation_within_origin(absolute: &Path, origin: &Path) -> Option<PathBuf> {
+    use std::path::Component;
+    if absolute.starts_with(origin) {
+        return Some(absolute.to_path_buf());
+    }
+    let is_glob = |s: &std::ffi::OsStr| s.to_string_lossy().contains(['*', '?', '[', '{']);
+    let mut prefix = PathBuf::new();
+    let mut components = absolute.components();
+    for c in components.by_ref() {
+        match c {
+            Component::Normal(part) if is_glob(part) => {
+                if part != "**" || !origin.starts_with(&prefix) {
+                    return None;
+                }
+                return Some(origin.join(part).join(components.as_path()));
+            }
+            _ => prefix.push(c.as_os_str()),
+        }
+    }
+    None
 }
 
 /// Express an already-absolute source path relative to the filter anchor,
@@ -760,53 +748,200 @@ pub(crate) struct WatchexecArgs {
     )]
     pub poll: Option<String>,
 
-    // Hidden because it is not forwarded: mise runs tasks with `mise run`.
-    /// Ignored: mise watch accepts this watchexec flag but does not pass it on
-    #[usage(long, help_heading = "Command", value_name = "SHELL", hide = true)]
+    /// Use a different shell
+    ///
+    /// By default, Watchexec will use '$SHELL' if it's defined or a default of 'sh' on Unix-likes,
+    /// and either 'pwsh', 'powershell', or 'cmd' (CMD.EXE) on Windows, depending on what Watchexec
+    /// detects is the running shell.
+    ///
+    /// With this option, you can override that and use a different shell, for example one with more
+    /// features or one which has your custom aliases and functions.
+    ///
+    /// If the value has spaces, it is parsed as a command line, and the first word used as the
+    /// shell program, with the rest as arguments to the shell.
+    ///
+    /// The command is run with the '-c' flag (except for 'cmd' on Windows, where it's '/C').
+    ///
+    /// The special value 'none' can be used to disable shell use entirely. In that case, the
+    /// command provided to Watchexec will be parsed, with the first word being the executable and
+    /// the rest being the arguments, and executed directly. Note that this parsing is rudimentary,
+    /// and may not work as expected in all cases.
+    ///
+    /// Using 'none' is a little more efficient and can enable a stricter interpretation of the
+    /// input, but it also means that you can't use shell features like globbing, redirection,
+    /// control flow, logic, or pipes.
+    ///
+    /// Examples:
+    ///
+    /// Use without shell:
+    ///
+    ///   $ watchexec -n -- zsh -x -o shwordsplit scr
+    ///
+    /// Use with powershell core:
+    ///
+    ///   $ watchexec --shell=pwsh -- Test-Connection localhost
+    ///
+    /// Use with CMD.exe:
+    ///
+    ///   $ watchexec --shell=cmd -- dir
+    ///
+    /// Use with a different unix shell:
+    ///
+    ///   $ watchexec --shell=bash -- 'echo $BASH_VERSION'
+    ///
+    /// Use with a unix shell and options:
+    ///
+    ///   $ watchexec --shell='zsh -x -o shwordsplit' -- scr
+    #[usage(long, help_heading = "Command", value_name = "SHELL")]
     pub shell: Option<String>,
 
-    // Hidden because it is not forwarded to watchexec.
-    /// Ignored: mise watch accepts this watchexec flag but does not pass it on
-    #[usage(short = 'n', help_heading = "Command", hide = true)]
+    /// Shorthand for '--shell=none'
+    #[usage(short = 'n', help_heading = "Command")]
     pub no_shell: bool,
 
-    // Hidden because it is not forwarded to watchexec.
-    /// Ignored: mise watch accepts this watchexec flag but does not pass it on
+    /// Configure event emission
+    ///
+    /// Watchexec can emit event information when running a command, which can be used by the child
+    /// process to target specific changed files.
+    ///
+    /// One thing to take care with is assuming inherent behaviour where there is only chance.
+    /// Notably, it could appear as if the `RENAMED` variable contains both the original and the new
+    /// path being renamed. In previous versions, it would even appear on some platforms as if the
+    /// original always came before the new. However, none of this was true. It's impossible to
+    /// reliably and portably know which changed path is the old or new, "half" renames may appear
+    /// (only the original, only the new), "unknown" renames may appear (change was a rename, but
+    /// whether it was the old or new isn't known), rename events might split across two debouncing
+    /// boundaries, and so on.
+    ///
+    /// This option controls where that information is emitted. It defaults to 'none', which doesn't
+    /// emit event information at all. The other options are 'environment' (deprecated), 'stdio',
+    /// 'file', 'json-stdio', and 'json-file'.
+    ///
+    /// The 'stdio' and 'file' modes are text-based: 'stdio' writes absolute paths to the stdin of
+    /// the command, one per line, each prefixed with `create:`, `remove:`, `rename:`, `modify:`,
+    /// or `other:`, then closes the handle; 'file' writes the same thing to a temporary file, and
+    /// its path is given with the $WATCHEXEC_EVENTS_FILE environment variable.
+    ///
+    /// There are also two JSON modes, which are based on JSON objects and can represent the full
+    /// set of events Watchexec handles. Here's an example of a folder being created on Linux:
+    ///
+    /// ```json
+    ///   {
+    ///     "tags": [
+    ///       {
+    ///         "kind": "path",
+    ///         "absolute": "/home/user/your/new-folder",
+    ///         "filetype": "dir"
+    ///       },
+    ///       {
+    ///         "kind": "fs",
+    ///         "simple": "create",
+    ///         "full": "Create(Folder)"
+    ///       },
+    ///       {
+    ///         "kind": "source",
+    ///         "source": "filesystem"
+    ///       }
+    ///     ],
+    ///     "metadata": {
+    ///       "notify-backend": "inotify"
+    ///     }
+    ///   }
+    /// ```
+    ///
+    /// The fields are as follows:
+    ///
+    ///   - `tags`, structured event data.
+    ///   - `tags[].kind`, which can be:
+    ///     * 'path', along with:
+    ///       + `absolute`, an absolute path.
+    ///       + `filetype`, a file type if known ('dir', 'file', 'symlink', 'other').
+    ///     * 'fs':
+    ///       + `simple`, the "simple" event type ('access', 'create', 'modify', 'remove', or 'other').
+    ///       + `full`, the "full" event type, which is too complex to fully describe here, but looks like 'General(Precise(Specific))'.
+    ///     * 'source', along with:
+    ///       + `source`, the source of the event ('filesystem', 'keyboard', 'mouse', 'os', 'time', 'internal').
+    ///     * 'keyboard', along with:
+    ///       + `keycode`. Currently only the value 'eof' is supported.
+    ///     * 'process', for events caused by processes:
+    ///       + `pid`, the process ID.
+    ///     * 'signal', for signals sent to Watchexec:
+    ///       + `signal`, the normalised signal name ('hangup', 'interrupt', 'quit', 'terminate', 'user1', 'user2').
+    ///     * 'completion', for when a command ends:
+    ///       + `disposition`, the exit disposition ('success', 'error', 'signal', 'stop', 'exception', 'continued').
+    ///       + `code`, the exit, signal, stop, or exception code.
+    ///   - `metadata`, additional information about the event.
+    ///
+    /// The 'json-stdio' mode will emit JSON events to the standard input of the command, one per
+    /// line, then close stdin. The 'json-file' mode will create a temporary file, write the
+    /// events to it, and provide the path to the file with the $WATCHEXEC_EVENTS_FILE
+    /// environment variable.
+    ///
+    /// Finally, the 'environment' mode was the default until 2.0. It sets environment variables
+    /// with the paths of the affected files, for filesystem events:
+    ///
+    /// $WATCHEXEC_COMMON_PATH is set to the longest common path of all of the below variables,
+    /// and so should be prepended to each path to obtain the full/real path. Then:
+    ///
+    ///   - $WATCHEXEC_CREATED_PATH is set when files/folders were created
+    ///   - $WATCHEXEC_REMOVED_PATH is set when files/folders were removed
+    ///   - $WATCHEXEC_RENAMED_PATH is set when files/folders were renamed
+    ///   - $WATCHEXEC_WRITTEN_PATH is set when files/folders were modified
+    ///   - $WATCHEXEC_META_CHANGED_PATH is set when files/folders' metadata were modified
+    ///   - $WATCHEXEC_OTHERWISE_CHANGED_PATH is set for every other kind of pathed event
+    ///
+    /// Multiple paths are separated by the system path separator, ';' on Windows and ':' on unix.
+    /// Within each variable, paths are deduplicated and sorted in binary order (i.e. neither
+    /// Unicode nor locale aware).
+    ///
+    /// This is the legacy mode, is deprecated, and will be removed in the future. The environment
+    /// is a very restricted space, while also limited in what it can usefully represent. Large
+    /// numbers of files will either cause the environment to be truncated, or may error or crash
+    /// the process entirely. The $WATCHEXEC_COMMON_PATH is also unintuitive, as demonstrated by the
+    /// multiple confused queries that have landed in my inbox over the years.
     #[usage(
         long,
         help_heading = "Command",
+        verbatim_doc_comment,
         default = "none",
         hide_default_value = true,
         value_name = "MODE",
         required_if_eq("only_emit_events", "true"),
-        value_enum,
-        hide = true
+        value_enum
     )]
     pub emit_events_to: EmitEvents,
 
-    // Hidden because it is not forwarded to watchexec.
-    /// Ignored: mise watch accepts this watchexec flag but does not pass it on
+    /// Only emit events to stdout, run no commands.
+    ///
+    /// This is a convenience option for using Watchexec as a file watcher, without running any
+    /// commands. It is almost equivalent to using `cat` as the command, except that it will not
+    /// spawn a new process for each event.
+    ///
+    /// This option requires `--emit-events-to` to be set, and restricts the available modes to
+    /// `stdio` and `json-stdio`, modifying their behaviour to write to stdout instead of the stdin
+    /// of the command.
     #[usage(
-        long,
-        help_heading = "Output",
-        conflicts = ["manual"],
-        hide = true,
+		long,
+		help_heading = "Output",
+		conflicts = ["manual"],
     )]
     pub only_emit_events: bool,
 
-    // Hidden because it is not forwarded to watchexec.
-    /// Ignored: mise watch accepts this watchexec flag but does not pass it on
+    /// Add env vars to the command
     ///
-    /// Before `--`, mise also reads `-E` and `--env` as the global `--env` flag,
-    /// which selects the mise config environment.
+    /// This is a convenience option for setting environment variables for the command, without
+    /// setting them for the Watchexec process itself.
+    ///
+    /// Use key=value syntax. Multiple variables can be set by repeating the option.
+    ///
+    /// This is watchexec's '--env'. In mise, '-E'/'--env' selects the mise environment
+    /// (`mise.<ENV>.toml`), as it does for every other command.
     #[usage(
-        long,
-        short = 'E',
+        long = "watchexec-env",
         help_heading = "Command",
-        value_name = "KEY=VALUE",
-        hide = true
+        value_name = "KEY=VALUE"
     )]
-    pub env: Vec<String>,
+    pub command_env: Vec<String>,
 
     /// How to wrap the task process: group, session, or none
     ///
@@ -817,58 +952,75 @@ pub(crate) struct WatchexecArgs {
     #[usage(long, help_heading = "Command", value_name = "MODE", value_enum)]
     pub wrap_process: Option<WrapMode>,
 
-    // Hidden because it is not forwarded to watchexec.
-    /// Ignored: mise watch accepts this watchexec flag but does not pass it on
-    #[usage(short = 'N', long, help_heading = "Output", hide = true)]
+    /// Alert when commands start and end
+    ///
+    /// With this, Watchexec will emit a desktop notification when a command starts and ends, on
+    /// supported platforms. On unsupported platforms, it may silently do nothing, or log a warning.
+    #[usage(short = 'N', long, help_heading = "Output")]
     pub notify: bool,
 
-    // Hidden because it is not forwarded to watchexec.
-    /// Ignored: mise watch accepts this watchexec flag but does not pass it on
+    /// When to use terminal colours
+    ///
+    /// Setting the environment variable `NO_COLOR` to any value is equivalent to `--color=never`.
     #[usage(
         long,
         help_heading = "Output",
         default = "auto",
         value_name = "MODE",
         alias = "colour",
-        value_enum,
-        hide = true
+        value_enum
     )]
     pub color: ColourMode,
 
-    // Hidden because it is not forwarded to watchexec.
-    /// Ignored: mise watch accepts this watchexec flag but does not pass it on
-    #[usage(long, help_heading = "Output", hide = true)]
+    /// Print how long the command took to run
+    ///
+    /// This may not be exactly accurate, as it includes some overhead from Watchexec itself. Use
+    /// the `time` utility, high-precision timers, or benchmarking tools for more accurate results.
+    #[usage(long, help_heading = "Output")]
     pub timings: bool,
 
-    // Hidden because it is not forwarded to watchexec.
-    /// Ignored: mise watch accepts this watchexec flag but does not pass it on
-    #[usage(short, long, help_heading = "Output", hide = true)]
-    pub quiet: bool,
+    /// Don't print starting and stopping messages
+    ///
+    /// By default Watchexec will print a message when the command starts and stops. This option
+    /// disables this behaviour, so only the command's output, warnings, and errors will be printed.
+    ///
+    /// This is watchexec's '--quiet'. In mise, '-q'/'--quiet' quiets mise's own messages, as it
+    /// does for every other command.
+    #[usage(long = "watchexec-quiet", help_heading = "Output")]
+    pub watchexec_quiet: bool,
 
-    // Hidden because it is not forwarded to watchexec.
-    /// Ignored: mise watch accepts this watchexec flag but does not pass it on
-    #[usage(long, help_heading = "Output", hide = true)]
+    /// Ring the terminal bell on command completion
+    #[usage(long, help_heading = "Output")]
     pub bell: bool,
 
-    // Hidden because it is not forwarded to watchexec.
-    /// Ignored: mise watch accepts this watchexec flag but does not pass it on
+    /// Set the project origin
     ///
-    /// mise sets the project origin itself when the tasks declare sources.
+    /// Watchexec will attempt to discover the project's "origin" (or "root") by searching for a
+    /// variety of markers, like files or directory patterns. It does its best but sometimes gets it
+    /// it wrong, and you can override that with this option.
+    ///
+    /// The project origin is used to determine the path of certain ignore files, which VCS is being
+    /// used, the meaning of a leading '/' in filtering patterns, and maybe more in the future.
+    ///
+    /// When set, Watchexec will also not bother searching, which can be significantly faster.
+    ///
+    /// The directory must contain every watched task's sources, which mise makes relative to it.
     #[usage(
-        long,
-        value_hint = usage_rs::ValueHint::DirPath,
-        value_name = "DIRECTORY",
-        hide = true,
+		long,
+		value_hint = usage_rs::ValueHint::DirPath,
+		value_name = "DIRECTORY",
     )]
     pub project_origin: Option<PathBuf>,
 
-    // Hidden because it is not forwarded to watchexec.
-    /// Ignored: mise watch accepts this watchexec flag but does not pass it on
+    /// Has no effect: mise runs each task from its own `dir`
+    ///
+    /// Accepted so scripts that pass it keep working. Forwarding it would make the nested
+    /// `mise run` look for tasks in that directory instead of this project.
     #[usage(
-        long,
-        value_hint = usage_rs::ValueHint::DirPath,
-        value_name = "DIRECTORY",
-        hide = true,
+		long,
+		value_hint = usage_rs::ValueHint::DirPath,
+		value_name = "DIRECTORY",
+		hide = true,
     )]
     pub workdir: Option<PathBuf>,
 
@@ -898,29 +1050,90 @@ pub(crate) struct WatchexecArgs {
     )]
     pub filter_patterns: Vec<String>,
 
-    // Hidden because it is not forwarded to watchexec.
-    /// Ignored: mise watch accepts this watchexec flag but does not pass it on
+    /// Files to load filters from
+    ///
+    /// Provide a path to a file containing filters, one per line. Empty lines and lines starting
+    /// with '#' are ignored. Uses the same pattern format as the '--filter' option.
+    ///
+    /// This can also be used via the $WATCHEXEC_FILTER_FILES environment variable.
     #[usage(
-        long = "filter-file",
-        help_heading = "Filtering",
-        value_hint = usage_rs::ValueHint::FilePath,
-        value_name = "PATH",
-        env = "WATCHEXEC_FILTER_FILES",
-        hide_env = true,
-        hide = true,
+		long = "filter-file",
+		help_heading = "Filtering",
+		value_hint = usage_rs::ValueHint::FilePath,
+		value_name = "PATH",
+		env = "WATCHEXEC_FILTER_FILES",
+		hide_env = true,
     )]
     #[cfg_attr(windows, usage(delimiter = ';'))]
     #[cfg_attr(not(windows), usage(delimiter = ':'))]
     pub filter_files: Vec<PathBuf>,
 
-    // Hidden because it is not forwarded to watchexec.
-    /// Ignored: mise watch accepts this watchexec flag but does not pass it on
+    /// [experimental] Filter programs.
+    ///
+    /// /!\ This option is EXPERIMENTAL and may change and/or vanish without notice.
+    ///
+    /// Provide your own custom filter programs in jaq (similar to jq) syntax. Programs are given
+    /// an event in the same format as described in '--emit-events-to' and must return a boolean.
+    /// Invalid programs will make watchexec fail to start; use '-v' to see program runtime errors.
+    ///
+    /// In addition to the jaq stdlib, watchexec adds some custom filter definitions:
+    ///
+    ///   - 'path | file_meta' returns file metadata or null if the file does not exist.
+    ///
+    ///   - 'path | file_size' returns the size of the file at path, or null if it does not exist.
+    ///
+    ///   - 'path | file_read(bytes)' returns a string with the first n bytes of the file at path.
+    ///     If the file is smaller than n bytes, the whole file is returned. There is no filter to
+    ///     read the whole file at once to encourage limiting the amount of data read and processed.
+    ///
+    ///   - 'string | hash', and 'path | file_hash' return the hash of the string or file at path.
+    ///     No guarantee is made about the algorithm used: treat it as an opaque value.
+    ///
+    ///   - 'any | kv_store(key)', 'kv_fetch(key)', and 'kv_clear' provide a simple key-value store.
+    ///     Data is kept in memory only, there is no persistence. Consistency is not guaranteed.
+    ///
+    ///   - 'any | printout', 'any | printerr', and 'any | log(level)' will print or log any given
+    ///     value to stdout, stderr, or the log (levels = error, warn, info, debug, trace), and
+    ///     pass the value through (so '[1] | log("debug") | .[]' will produce a '1' and log '[1]').
+    ///
+    /// All filtering done with such programs, and especially those using kv or filesystem access,
+    /// is much slower than the other filtering methods. If filtering is too slow, events will back
+    /// up and stall watchexec. Take care when designing your filters.
+    ///
+    /// If the argument to this option starts with an '@', the rest of the argument is taken to be
+    /// the path to a file containing a jaq program.
+    ///
+    /// Jaq programs are run in order, after all other filters, and short-circuit: if a filter (jaq
+    /// or not) rejects an event, execution stops there, and no other filters are run. Additionally,
+    /// they stop after outputting the first value, so you'll want to use 'any' or 'all' when
+    /// iterating, otherwise only the first item will be processed, which can be quite confusing!
+    ///
+    /// Find user-contributed programs or submit your own useful ones at
+    /// <https://github.com/watchexec/watchexec/discussions/592>.
+    ///
+    /// ## Examples:
+    ///
+    /// Regexp ignore filter on paths:
+    ///
+    ///   'all(.tags[] | select(.kind == "path"); .absolute | test("[.]test[.]js$")) | not'
+    ///
+    /// Pass any event that creates a file:
+    ///
+    ///   'any(.tags[] | select(.kind == "fs"); .simple == "create")'
+    ///
+    /// Pass events that touch executable files:
+    ///
+    ///   'any(.tags[] | select(.kind == "path" and .filetype == "file"); .absolute | file_meta | .executable)'
+    ///
+    /// Ignore files that start with shebangs:
+    ///
+    ///   'any(.tags[] | select(.kind == "path" and .filetype == "file"); .absolute | file_read(2) == "#!") | not'
     #[usage(
         long = "filter-prog",
         short = 'J',
         help_heading = "Filtering",
         value_name = "EXPRESSION",
-        hide = true
+        verbatim_doc_comment
     )]
     pub filter_programs: Vec<String>,
 
@@ -952,8 +1165,16 @@ pub(crate) struct WatchexecArgs {
     #[cfg_attr(not(windows), usage(delimiter = ':'))]
     pub ignore_files: Vec<PathBuf>,
 
-    // Hidden because it is not forwarded to watchexec.
-    /// Ignored: mise watch accepts this watchexec flag but does not pass it on
+    /// Filesystem events to filter to
+    ///
+    /// This is a quick filter to only emit events for the given types of filesystem changes. Choose
+    /// from 'access', 'create', 'remove', 'rename', 'modify', 'metadata'. Multiple types can be
+    /// given by repeating the option or by separating them with commas. By default, this is all
+    /// types except for 'access'.
+    ///
+    /// This may apply filtering at the kernel level when possible, which can be more efficient, but
+    /// may be more confusing when reading the logs.
+    // The default must match DEFAULT_FS_EVENTS, which decides whether to forward this flag.
     #[usage(
         long = "fs-events",
         help_heading = "Filtering",
@@ -966,13 +1187,14 @@ pub(crate) struct WatchexecArgs {
     )]
     pub filter_fs_events: Vec<FsEvent>,
 
-    // Hidden because it is not forwarded to watchexec.
-    /// Ignored: mise watch accepts this watchexec flag but does not pass it on
+    /// Don't emit fs events for metadata changes
+    ///
+    /// This is a shorthand for '--fs-events create,remove,rename,modify'. Using it alongside the
+    /// '--fs-events' option is non-sensical and not allowed.
     #[usage(
         long = "no-meta",
         help_heading = "Filtering",
-        conflicts = "filter_fs_events",
-        hide = true
+        conflicts = "filter_fs_events"
     )]
     pub filter_fs_meta: bool,
 
@@ -983,9 +1205,12 @@ pub(crate) struct WatchexecArgs {
     #[usage(long, help_heading = "Debugging")]
     pub print_events: bool,
 
-    // Hidden because it is not forwarded to watchexec.
-    /// Ignored: mise watch accepts this watchexec flag but does not pass it on
-    #[usage(long, help_heading = "Debugging", hide = true)]
+    /// Show the manual page
+    ///
+    /// This shows the manual page for Watchexec, if the output is a terminal and the 'man' program
+    /// is available. If not, the manual page is printed to stdout in ROFF format (suitable for
+    /// writing to a watchexec.1 file).
+    #[usage(long, help_heading = "Debugging")]
     pub manual: bool,
     // /// Change to this directory before executing the command
     // #[arg(short = 'C', long, value_hint = ValueHint::DirPath, long)]
@@ -1028,7 +1253,182 @@ pub(crate) struct WatchexecArgs {
     // pub raw: bool,
 }
 
-#[derive(Clone, Copy, Debug, Default, usage_rs::ValueEnum)]
+impl WatchexecArgs {
+    /// The watchexec flags these arguments ask for, spelled the way watchexec takes them.
+    ///
+    /// Every flag `mise watch` accepts on watchexec's behalf has to be re-emitted here: one
+    /// that is parsed and not pushed is silently ignored (#7776, #10212). Two are handled in
+    /// `run` instead: `--project-origin`, because mise also derives an origin from the task
+    /// sources and has to pick one, and `--manual`, because watchexec refuses it alongside the
+    /// command mise always runs.
+    ///
+    /// `no_vcs_ignore` is forced on when a watched task opted out of VCS ignores.
+    fn watchexec_args(&self, no_vcs_ignore: bool) -> Vec<String> {
+        let mut args = vec![];
+        if let Some(delay_run) = &self.delay_run {
+            args.push("--delay-run".to_string());
+            args.push(delay_run.clone());
+        }
+        if let Some(poll) = &self.poll {
+            args.push("--poll".to_string());
+            args.push(poll.clone());
+        }
+        if let Some(signal) = &self.signal {
+            args.push("--signal".to_string());
+            args.push(signal.clone());
+        }
+        if let Some(stop_signal) = &self.stop_signal {
+            args.push("--stop-signal".to_string());
+            args.push(stop_signal.clone());
+        }
+        if self.stop_timeout != "10s" {
+            args.push("--stop-timeout".to_string());
+            args.push(self.stop_timeout.clone());
+        }
+        if self.debounce != "50ms" {
+            args.push("--debounce".to_string());
+            args.push(self.debounce.clone());
+        }
+        if self.stdin_quit {
+            args.push("--stdin-quit".to_string());
+        }
+        if self.no_vcs_ignore || no_vcs_ignore {
+            args.push("--no-vcs-ignore".to_string());
+        }
+        if self.no_project_ignore {
+            args.push("--no-project-ignore".to_string());
+        }
+        if self.no_global_ignore {
+            args.push("--no-global-ignore".to_string());
+        }
+        if self.no_default_ignore {
+            args.push("--no-default-ignore".to_string());
+        }
+        if self.no_discover_ignore {
+            args.push("--no-discover-ignore".to_string());
+        }
+        if self.ignore_nothing {
+            args.push("--ignore-nothing".to_string());
+        }
+        if self.postpone {
+            args.push("--postpone".to_string());
+        }
+        if let Some(screen_clear) = self.screen_clear {
+            args.push("--clear".to_string());
+            if let ClearMode::Reset = screen_clear {
+                args.push("reset".to_string());
+            }
+        }
+        if self.restart {
+            args.push("--restart".to_string());
+        }
+        if self.on_busy_update != OnBusyUpdate::DoNothing {
+            args.push("--on-busy-update".to_string());
+            args.push(self.on_busy_update.to_string());
+        }
+        args.extend(wrap_process_args(self.wrap_process));
+        for signal_map in &self.signal_map {
+            args.push("--map-signal".to_string());
+            args.push(signal_map.to_string());
+        }
+        for path in &self.recursive_paths {
+            args.push("--watch".to_string());
+            args.push(path.to_string_lossy().to_string());
+        }
+        for path in &self.non_recursive_paths {
+            args.push("--watch-non-recursive".to_string());
+            args.push(path.to_string_lossy().to_string());
+        }
+        for ext in &self.filter_extensions {
+            args.push("--exts".to_string());
+            args.push(ext.to_string());
+        }
+        for pattern in &self.filter_patterns {
+            args.push("--filter".to_string());
+            args.push(pattern.to_string());
+        }
+        if let Some(watch_file) = &self.watch_file {
+            args.push("--watch-file".to_string());
+            args.push(watch_file.to_string_lossy().to_string());
+        }
+        // watchexec unions repeated --ignore flags, so these combine with the
+        // source-derived ignores `run` pushes rather than clobbering them (#7776).
+        for pattern in &self.ignore_patterns {
+            args.push("--ignore".to_string());
+            args.push(pattern.to_string());
+        }
+        for path in &self.ignore_files {
+            args.push("--ignore-file".to_string());
+            args.push(path.to_string_lossy().to_string());
+        }
+        if self.print_events {
+            args.push("--print-events".to_string());
+        }
+        if let Some(shell) = &self.shell {
+            args.push("--shell".to_string());
+            args.push(shell.clone());
+        }
+        if self.no_shell {
+            args.push("-n".to_string());
+        }
+        if self.emit_events_to != EmitEvents::None {
+            args.push("--emit-events-to".to_string());
+            args.push(self.emit_events_to.to_string());
+        }
+        if self.only_emit_events {
+            args.push("--only-emit-events".to_string());
+        }
+        for env in &self.command_env {
+            args.push("--env".to_string());
+            args.push(env.clone());
+        }
+        if self.notify {
+            args.push("--notify".to_string());
+        }
+        if self.color != ColourMode::Auto {
+            args.push("--color".to_string());
+            args.push(self.color.to_string());
+        }
+        if self.timings {
+            args.push("--timings".to_string());
+        }
+        if self.watchexec_quiet {
+            args.push("--quiet".to_string());
+        }
+        if self.bell {
+            args.push("--bell".to_string());
+        }
+        for path in &self.filter_files {
+            args.push("--filter-file".to_string());
+            args.push(path.to_string_lossy().to_string());
+        }
+        for program in &self.filter_programs {
+            args.push("--filter-prog".to_string());
+            args.push(program.clone());
+        }
+        if self.filter_fs_events != DEFAULT_FS_EVENTS {
+            args.push("--fs-events".to_string());
+            args.push(self.filter_fs_events.iter().join(","));
+        }
+        if self.filter_fs_meta {
+            args.push("--no-meta".to_string());
+        }
+        args
+    }
+}
+
+/// watchexec's own `--fs-events` default. It must match the `default` on `filter_fs_events`;
+/// if the two drift apart, mise forwards `--fs-events` when the user did not pass it.
+const DEFAULT_FS_EVENTS: &[FsEvent] = &[
+    FsEvent::Create,
+    FsEvent::Remove,
+    FsEvent::Rename,
+    FsEvent::Modify,
+    FsEvent::Metadata,
+];
+
+#[derive(Clone, Copy, Debug, Default, usage_rs::ValueEnum, PartialEq, strum::Display)]
+#[strum(serialize_all = "kebab-case")]
 pub(crate) enum EmitEvents {
     #[default]
     Environment,
@@ -1080,7 +1480,8 @@ pub(crate) enum ClearMode {
     Reset,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, usage_rs::ValueEnum)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, usage_rs::ValueEnum, strum::Display)]
+#[strum(serialize_all = "kebab-case")]
 pub(crate) enum FsEvent {
     Access,
     Create,
@@ -1090,7 +1491,8 @@ pub(crate) enum FsEvent {
     Metadata,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, usage_rs::ValueEnum)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, usage_rs::ValueEnum, strum::Display)]
+#[strum(serialize_all = "kebab-case")]
 pub(crate) enum ColourMode {
     Auto,
     Always,
@@ -1351,8 +1753,9 @@ mod terminal_state_tests {
 #[cfg(test)]
 mod tests {
     use super::{
-        WrapMode, common_ancestor, merge_watch_patterns, normalize_path, parse_source,
-        relativize_source, source_watch_dir, tasks_disable_vcs_ignores, wrap_process_args,
+        WrapMode, common_ancestor, merge_watch_patterns, negation_within_origin, normalize_path,
+        parse_source, relativize_source, source_watch_dir, tasks_disable_vcs_ignores,
+        wrap_process_args,
     };
     use crate::cli::{Cli, Commands};
     use crate::task::{Task, TaskWatchOptions};
@@ -1389,6 +1792,154 @@ mod tests {
         assert!(watch.args.is_empty());
         assert!(watch.watchexec.postpone);
         assert_eq!(watch.watchexec.poll.as_deref(), Some("100ms"));
+    }
+
+    fn parse_watch(argv: &[&str]) -> (Cli, super::Watch) {
+        let argv = argv.iter().map(std::ffi::OsStr::new).collect::<Vec<_>>();
+        let mut cli = Cli::parse_from_argv(&argv).unwrap();
+        let Some(Commands::Watch(watch)) = cli.command.take() else {
+            panic!("expected the watch command");
+        };
+        (cli, *watch)
+    }
+
+    #[test]
+    fn defaults_forward_no_watchexec_flags() {
+        let (_, watch) = parse_watch(&["mise", "watch", "build"]);
+        assert!(watch.watchexec.watchexec_args(false).is_empty());
+    }
+
+    /// These flags used to be parsed and then dropped, so watchexec never saw them.
+    #[test]
+    fn forwards_previously_dropped_watchexec_flags() {
+        let (_, watch) = parse_watch(&[
+            "mise",
+            "watch",
+            "--shell",
+            "bash",
+            "-n",
+            "--emit-events-to",
+            "json-stdio",
+            "--watchexec-env",
+            "FOO=bar",
+            "--watchexec-env",
+            "BAZ=qux",
+            "--notify",
+            "--color",
+            "never",
+            "--timings",
+            "--watchexec-quiet",
+            "--bell",
+            "--workdir",
+            "sub",
+            "--filter-file",
+            "filters.txt",
+            "-J",
+            "true",
+            "--fs-events",
+            "create,modify",
+            "build",
+        ]);
+        assert_eq!(
+            watch.watchexec.watchexec_args(false),
+            s(&[
+                "--shell",
+                "bash",
+                "-n",
+                "--emit-events-to",
+                "json-stdio",
+                "--env",
+                "FOO=bar",
+                "--env",
+                "BAZ=qux",
+                "--notify",
+                "--color",
+                "never",
+                "--timings",
+                "--quiet",
+                "--bell",
+                "--filter-file",
+                "filters.txt",
+                "--filter-prog",
+                "true",
+                "--fs-events",
+                "create,modify",
+            ])
+        );
+    }
+
+    /// `--no-meta` conflicts with `--fs-events` in the test above.
+    #[test]
+    fn forwards_no_meta() {
+        let (_, watch) = parse_watch(&["mise", "watch", "--no-meta", "build"]);
+        assert_eq!(watch.watchexec.watchexec_args(false), s(&["--no-meta"]));
+    }
+
+    /// `run` handles `--manual` on its own, as `watchexec --manual` with no command, because
+    /// watchexec refuses `--manual` alongside one.
+    #[test]
+    fn manual_is_not_forwarded_with_the_other_flags() {
+        let (_, watch) = parse_watch(&["mise", "watch", "--manual"]);
+        assert!(watch.watchexec.manual);
+        assert!(watch.watchexec.watchexec_args(false).is_empty());
+    }
+
+    fn named_task(name: &str) -> Task {
+        let mut task = Task::default();
+        task.name = name.to_string();
+        task
+    }
+
+    #[test]
+    fn command_runs_the_tasks() {
+        let (_, watch) = parse_watch(&["mise", "watch", "--skip-deps", "build"]);
+        let args = watch.command_args(&[named_task("build"), named_task("test")]);
+        assert_eq!(args[0], "--");
+        assert_eq!(
+            args[2..],
+            s(&["run", "--skip-deps", "build", ":::", "test"])
+        );
+    }
+
+    /// watchexec refuses `--only-emit-events` alongside a command, so mise must not append
+    /// `-- <mise> run ...` after it.
+    #[test]
+    fn only_emit_events_runs_no_command() {
+        let (_, watch) = parse_watch(&[
+            "mise",
+            "watch",
+            "--emit-events-to",
+            "json-stdio",
+            "--only-emit-events",
+            "build",
+        ]);
+        assert_eq!(
+            watch.watchexec.watchexec_args(false),
+            s(&["--emit-events-to", "json-stdio", "--only-emit-events"])
+        );
+        assert!(watch.command_args(&[named_task("build")]).is_empty());
+    }
+
+    /// `-E`/`--env` and `-q`/`--quiet` are mise's global flags. watchexec's flags of the same
+    /// name used to shadow them after `watch`, and are now spelled `--watchexec-env` and
+    /// `--watchexec-quiet`, so `mise watch -E dev` must not turn into `watchexec --env dev`.
+    #[test]
+    fn env_and_quiet_after_watch_are_mises_own() {
+        let (cli, watch) = parse_watch(&["mise", "watch", "-E", "dev", "-q", "build"]);
+        assert_eq!(cli.env, Some(vec!["dev".to_string()]));
+        assert!(cli.quiet);
+        assert!(watch.watchexec.watchexec_args(false).is_empty());
+
+        let (cli, watch) = parse_watch(&["mise", "watch", "--env", "dev", "--quiet", "build"]);
+        assert_eq!(cli.env, Some(vec!["dev".to_string()]));
+        assert!(cli.quiet);
+        assert!(watch.watchexec.watchexec_args(false).is_empty());
+    }
+
+    #[test]
+    fn glob_is_parsed() {
+        let (_, watch) = parse_watch(&["mise", "watch", "--glob", "src/**/*.rs", "build"]);
+        assert_eq!(watch.glob, s(&["src/**/*.rs"]));
     }
 
     #[test]
@@ -1543,6 +2094,45 @@ mod tests {
         assert_eq!(common, Some(pb("/repo")));
         let rel = relativize_source(super::SourceKind::Plain, &abs, &common.unwrap());
         assert_eq!(rel, "shared/src/*.ts");
+    }
+
+    #[test]
+    fn negation_within_origin_keeps_one_inside() {
+        assert_eq!(
+            negation_within_origin(Path::new("/repo/src/gen/**"), Path::new("/repo/src")),
+            Some(pb("/repo/src/gen/**")),
+        );
+    }
+
+    #[test]
+    fn negation_within_origin_rebases_double_star_above() {
+        assert_eq!(
+            negation_within_origin(Path::new("/repo/**/*.tmp"), Path::new("/repo/src")),
+            Some(pb("/repo/src/**/*.tmp")),
+        );
+        assert_eq!(
+            negation_within_origin(Path::new("/repo/**"), Path::new("/repo/src/a")),
+            Some(pb("/repo/src/a/**")),
+        );
+    }
+
+    #[test]
+    fn negation_within_origin_drops_one_that_cannot_match() {
+        // A sibling of the origin.
+        assert_eq!(
+            negation_within_origin(Path::new("/repo/shared/**"), Path::new("/repo/src")),
+            None,
+        );
+        // A single-level glob above the origin matches only files there.
+        assert_eq!(
+            negation_within_origin(Path::new("/repo/*.log"), Path::new("/repo/src")),
+            None,
+        );
+        // A literal file above the origin.
+        assert_eq!(
+            negation_within_origin(Path::new("/repo/notes.txt"), Path::new("/repo/src")),
+            None,
+        );
     }
 
     #[test]
