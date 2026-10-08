@@ -4,14 +4,20 @@
 //! `mise bootstrap`. They are intentionally explicit bootstrap behavior, not
 //! part of `mise install` or shell activation.
 
+use std::collections::HashMap;
 use std::fmt;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use eyre::{Result, bail};
 use serde::Serialize;
+use serde_json::Value as JsonValue;
 use strum::{EnumIter, IntoEnumIterator};
+use tera::{Kwargs, State, TeraResult, Value};
 
 use crate::config::{Config, Settings, SettingsExt};
+use crate::tera::TeraEngine;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, EnumIter, Serialize)]
 #[serde(rename_all = "kebab-case")]
@@ -145,8 +151,9 @@ pub async fn run_phase(
     };
     for hook in phase_hooks {
         let run = if crate::tera::contains_template_syntax(&hook.run) {
+            let reached_exec = Arc::new(AtomicBool::new(false));
             let mut tera = if dry_run {
-                crate::tera::get_tera_for_dry_run(hook.config_path.parent())
+                get_tera_for_dry_run_hook(hook.config_path.parent(), &reached_exec)
             } else {
                 crate::tera::get_tera(hook.config_path.parent())
             };
@@ -156,12 +163,22 @@ pub async fn run_phase(
                     crate::config::config_file::config_root::config_root(&hook.config_path);
                 context.insert("config_root", &config_root);
             }
-            crate::tera::render_str(&mut tera, &hook.run, &context).map_err(|err| {
-                eyre::eyre!(
+            match crate::tera::render_str(&mut tera, &hook.run, &context) {
+                Ok(run) => run,
+                // a dry run must not execute anything, so a command that
+                // needs exec() output is shown as written instead
+                Err(_) if reached_exec.load(Ordering::Relaxed) => {
+                    info!(
+                        "[bootstrap.hooks.{phase}] in {}: exec() does not run during a dry run; showing the command unrendered",
+                        hook.config_path.display()
+                    );
+                    hook.run.clone()
+                }
+                Err(err) => bail!(
                     "[bootstrap.hooks.{phase}] in {}: failed to render template: {err}",
                     hook.config_path.display()
-                )
-            })?
+                ),
+            }
         } else {
             hook.run.clone()
         };
@@ -180,9 +197,52 @@ pub async fn run_phase(
     Ok(())
 }
 
+/// The dry-run renderer, with `exec()` recording that the template reached it
+/// so the caller can tell that failure apart from a broken template.
+fn get_tera_for_dry_run_hook(dir: Option<&Path>, reached_exec: &Arc<AtomicBool>) -> TeraEngine {
+    const MESSAGE: &str = "exec() is disabled during dry run";
+    let mut tera = crate::tera::get_tera_for_dry_run(dir);
+    let reached = reached_exec.clone();
+    match &mut tera {
+        TeraEngine::V2(tera) => {
+            tera.register_function("exec", move |_: Kwargs, _: &State| -> TeraResult<Value> {
+                reached.store(true, Ordering::Relaxed);
+                Err(tera::Error::message(MESSAGE))
+            })
+        }
+        TeraEngine::V1(tera) => tera.register_function(
+            "exec",
+            move |_: &HashMap<String, JsonValue>| -> tera1::Result<JsonValue> {
+                reached.store(true, Ordering::Relaxed);
+                Err(tera1::Error::msg(MESSAGE))
+            },
+        ),
+    }
+    tera
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn dry_run_renderer_reports_exec_without_running_it() {
+        let dir = tempfile::tempdir().unwrap();
+        let marker = dir.path().join("ran");
+        let context = crate::tera::BASE_CONTEXT.clone();
+        let render = |input: &str| {
+            let reached_exec = Arc::new(AtomicBool::new(false));
+            let mut tera = get_tera_for_dry_run_hook(Some(dir.path()), &reached_exec);
+            let rendered = crate::tera::render_str(&mut tera, input, &context);
+            (rendered.is_ok(), reached_exec.load(Ordering::Relaxed))
+        };
+
+        let exec = format!("echo {{{{ exec(command='touch {}') }}}}", marker.display());
+        assert_eq!(render(&exec), (false, true));
+        assert!(!marker.exists());
+        assert_eq!(render("echo {{ 1 + 1 }}"), (true, false));
+        assert_eq!(render("echo {{ nope() }}"), (false, false));
+    }
 
     #[test]
     fn parses_known_phases_with_hyphen_or_underscore() {

@@ -202,14 +202,21 @@ assert_succeed "mise bootstrap --yes --only packages"
 assert "test -f '$MISE_CONFIG_DIR/bootstrap-hook-rendered'"
 assert "test -f '$PWD/bootstrap-hook-root-rendered'"
 
-# dry-run renders hooks without allowing effectful template functions
+# dry-run shows hooks that use exec() unrendered, without running exec()
 rm -f bootstrap-hook-template-effect
 cat <<'EOF' >mise.toml
 [bootstrap.hooks.post-packages]
-run = "{{ exec(command='touch bootstrap-hook-template-effect') }}"
+run = "echo {{ exec(command='touch bootstrap-hook-template-effect') }}"
 EOF
-assert_fail "mise bootstrap --dry-run --only packages" "exec() is disabled during dry run"
+assert_contains "mise bootstrap --dry-run --only packages" "exec(command="
 assert_fail "test -e bootstrap-hook-template-effect"
+
+# dry-run still reports hook templates that cannot render
+cat <<'EOF' >mise.toml
+[bootstrap.hooks.post-packages]
+run = "echo {{ nope() }}"
+EOF
+assert_fail "mise bootstrap --dry-run --only packages" "failed to render template"
 
 # macOS LaunchAgents in shared configs are inert when launchd is unavailable
 cat <<EOF >mise.toml
