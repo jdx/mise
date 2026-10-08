@@ -1330,12 +1330,13 @@ type = "Bool"
 
 [history.allow_plaintext_history]
 default = false
-description = "Allow publishing or applying history that holds plaintext copies of files now marked for encryption."
+description = "Allow publishing or applying history that holds plaintext copies of files now marked for encryption, or publishing versions that look like they contain secrets."
 docs = """
 By default, the history watcher, `mise dot sync` and `mise dot pull` refuse to
 publish or apply history in which a file now marked for encryption was once
-saved in plain text. With `true`, they skip that check, so those older
-plaintext versions can reach this machine or the setup repository. New saves
+saved in plain text, or to publish saved versions with lines that look like
+secrets, such as `export API_TOKEN=...`. With `true`, they skip those checks, so
+those older versions can reach this machine or the setup repository. New saves
 still follow each file's encryption policy. For a single publish, run
 `mise dot sync --allow-plaintext-history` instead. See
 [Allow plaintext history](/dotfiles/encryption.html#allow-plaintext-history).

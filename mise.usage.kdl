@@ -1258,7 +1258,7 @@ Fetches the origin branch and pushes your local history to it. If the push is re
 The watcher does this on its own in `sync` and `fetch-only` mode (the `history.sync` setting). See https://mise.jdx.dev/dotfiles/sync.html
 """#
             flag --fetch-only help="Fetch without pushing"
-            flag --allow-plaintext-history help="Allow pushing older unencrypted versions of files that are now encrypted"
+            flag --allow-plaintext-history help="Allow pushing older unencrypted versions of files that are now encrypted, and versions that look like they contain secrets"
             flag --best-effort help="Warn instead of failing when the origin is unreachable"
             flag "-h --help" help="Print help" action=help builtin=#true
             example "mise dot sync" help="Push and fetch now"
@@ -3294,7 +3294,7 @@ Fetches the origin branch and pushes your local history to it. If the push is re
 The watcher does this on its own in `sync` and `fetch-only` mode (the `history.sync` setting). See https://mise.jdx.dev/dotfiles/sync.html
 """#
         flag --fetch-only help="Fetch without pushing"
-        flag --allow-plaintext-history help="Allow pushing older unencrypted versions of files that are now encrypted"
+        flag --allow-plaintext-history help="Allow pushing older unencrypted versions of files that are now encrypted, and versions that look like they contain secrets"
         flag --best-effort help="Warn instead of failing when the origin is unreachable"
         flag "-h --help" help="Print help" action=help builtin=#true
         example "mise dot sync" help="Push and fetch now"

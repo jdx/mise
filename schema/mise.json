@@ -1223,7 +1223,7 @@
           "properties": {
             "allow_plaintext_history": {
               "default": false,
-              "description": "Allow publishing or applying history that holds plaintext copies of files now marked for encryption.",
+              "description": "Allow publishing or applying history that holds plaintext copies of files now marked for encryption, or publishing versions that look like they contain secrets.",
               "type": "boolean"
             },
             "describe_command": {

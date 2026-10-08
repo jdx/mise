@@ -179,8 +179,26 @@ Encrypting a file that was saved before leaves its earlier plaintext versions
 in Git. Before a push, mise checks every reachable commit, including
 intermediate saves and merge parents, against your encryption settings. An
 earlier plaintext version blocks the push even if the newest version is
-encrypted. To push, remove that history or explicitly allow it. This check
-uses your encryption settings only; it does not scan other files for secrets.
+encrypted. To push, remove that history or explicitly allow it.
+
+### Secrets in saved versions {#secrets-in-saved-versions}
+
+The credential filter looks at file names, so a tracked `~/.bashrc` is saved
+however many tokens you export in it. Before a push, mise also reads the
+versions the origin does not have yet and refuses to publish when a line looks
+like a secret: a provider token (`ghp_`, `github_pat_`, `glpat-`, `sk-`,
+`AKIA`, `xox`), a private key block, or an assignment to a name ending in
+`_KEY`, `_TOKEN`, `_SECRET`, or `_PASSWORD`. The error names the file, line,
+and saved version, never the value. Files over 1 MiB and binary files are not
+read.
+
+Removing the secret from the file does not help, because the earlier version
+still holds it. Rotate the secret, then encrypt the file or
+[remove the plaintext from history](#remove-plaintext-from-history). To
+publish anyway, use [`--allow-plaintext-history`](#allow-plaintext-history),
+which skips this check along with the encryption check. Versions the origin
+already has are not read again. The scan is a safety net for obvious cases,
+not proof that a version is free of secrets.
 
 ### Allow plaintext history {#allow-plaintext-history}
 

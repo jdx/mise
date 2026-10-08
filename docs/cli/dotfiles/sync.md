@@ -17,7 +17,7 @@ The watcher does this on its own in `sync` and `fetch-only` mode (the `history.s
 
 ## Flags
 - **`--fetch-only`** — Fetch without pushing
-- **`--allow-plaintext-history`** — Allow pushing older unencrypted versions of files that are now encrypted
+- **`--allow-plaintext-history`** — Allow pushing older unencrypted versions of files that are now encrypted, and versions that look like they contain secrets
 - **`--best-effort`** — Warn instead of failing when the origin is unreachable
 - **`-h --help`** — Print help
 

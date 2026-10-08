@@ -22,6 +22,7 @@ mod preflight;
 pub(crate) mod publish;
 pub mod reconcile;
 pub mod run;
+pub(crate) mod secrets;
 pub(crate) mod share;
 pub(crate) mod state;
 
