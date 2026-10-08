@@ -392,7 +392,7 @@ fn write_new_config(path: &Path, doc: &str) -> Result<()> {
     {
         Ok(f) => f,
         Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => bail!(
-            "{} already exists; to edit it, run `mise edit` in a terminal without --yes, \
+            "{} already exists; to edit it, run this command in a terminal without --yes, \
              or pass --force to replace it with the starter template",
             display_path(path)
         ),

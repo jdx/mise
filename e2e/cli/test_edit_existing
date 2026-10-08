@@ -19,6 +19,8 @@ assert_fail_contains "mise edit" "mise.toml already exists"
 assert_fail_contains "mise edit -y" "pass --force"
 assert_fail_contains "mise generate config" "mise.toml already exists"
 assert_fail_contains "mise generate config -y" "pass --force"
+# The hint names no subcommand, so it fits whichever of the two was run.
+assert_fail_contains "mise generate config" "run this command in a terminal"
 assert_contains "cat mise.toml" 'node = "22"'
 assert_not_contains "cat mise.toml" "mise config files are hierarchical"
 
