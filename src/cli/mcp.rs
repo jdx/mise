@@ -271,10 +271,8 @@ impl MiseServer {
         json_result(json!({ "bin": "mise", "commands": commands }))
     }
 
-    /// Placeholder for installing a tool; always returns an error
-    #[tool(
-        description = "Not implemented yet: always returns an error. Ask the user to run `mise install` instead."
-    )]
+    /// Install a tool with an optional version
+    #[tool(description = "Install a tool with an optional version (e.g. node@20, python@3.12)")]
     async fn install_tool(
         &self,
         Parameters(InstallToolParams { tool, version }): Parameters<InstallToolParams>,
