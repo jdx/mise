@@ -74,7 +74,26 @@ pub fn redact_global(input: &str) -> String {
 /// `https://user:token@host/path` becomes `https://[redacted]@host/path`. The
 /// [`Redactor`] only hides values that were registered with it, and a URL that
 /// carries its own credentials (a config value, a CLI argument) never is.
+///
+/// In free text whitespace ends a URL, since `https://host:8080 me@x` cannot be
+/// told apart from userinfo holding a space. A parsed [`url::Url`]
+/// percent-encodes spaces, so its serialization never has one. For a single
+/// command-line argument, which may hold a raw space, use
+/// [`redact_url_userinfo_in_arg`].
 pub fn redact_url_userinfo(text: &str) -> Cow<'_, str> {
+    redact_userinfo(text, true)
+}
+
+/// [`redact_url_userinfo`] for one command-line argument.
+///
+/// URL parsers accept a raw space in userinfo (`https://user:my pass@host`), and
+/// inside one argument it is part of the URL, so only `/`, `?` or `#` ends the
+/// authority. Redact each argument before joining them for display.
+pub fn redact_url_userinfo_in_arg(arg: &str) -> Cow<'_, str> {
+    redact_userinfo(arg, false)
+}
+
+fn redact_userinfo(text: &str, whitespace_ends_url: bool) -> Cow<'_, str> {
     if !text.contains("://") {
         return Cow::Borrowed(text);
     }
@@ -85,7 +104,14 @@ pub fn redact_url_userinfo(text: &str) -> Cow<'_, str> {
         let (head, tail) = rest.split_at(i + 3);
         out.push_str(head);
         rest = tail;
-        if let Some(at) = userinfo_end(tail) {
+        // The userinfo is everything before the authority's last `@`, so an
+        // unencoded `@` in a password is covered.
+        let end = tail
+            .find(|c: char| {
+                matches!(c, '/' | '?' | '#') || (whitespace_ends_url && c.is_whitespace())
+            })
+            .unwrap_or(tail.len());
+        if let Some(at) = tail[..end].rfind('@').filter(|&at| at > 0) {
             out.push_str("[redacted]");
             rest = &tail[at..];
             redacted = true;
@@ -96,27 +122,6 @@ pub fn redact_url_userinfo(text: &str) -> Cow<'_, str> {
     }
     out.push_str(rest);
     Cow::Owned(out)
-}
-
-/// The offset of the `@` that ends the userinfo at the start of `authority`.
-///
-/// The authority ends at the first `/`, `?`, `#` or whitespace, and the
-/// userinfo is everything before its last `@`, so an unencoded `@` in a
-/// password is covered. URL parsers percent-encode a space in a password, so
-/// `user:pass word@host` works too: after a `user:` prefix the `@` is looked for
-/// past whitespace, up to the next `/`, `?`, `#` or line break. Without that
-/// prefix, `https://host` followed by an email address is left alone.
-fn userinfo_end(authority: &str) -> Option<usize> {
-    let end_at = |stop: &dyn Fn(char) -> bool| authority.find(stop).unwrap_or(authority.len());
-    let end = end_at(&|c| matches!(c, '/' | '?' | '#') || c.is_whitespace());
-    let at = authority[..end].rfind('@').or_else(|| {
-        if !authority[..end].contains(':') {
-            return None;
-        }
-        let end = end_at(&|c| matches!(c, '/' | '?' | '#' | '\n' | '\r'));
-        authority[..end].rfind('@')
-    })?;
-    (at > 0).then_some(at)
 }
 
 #[derive(Default, Clone, Debug, serde::Deserialize)]
@@ -469,24 +474,14 @@ mod tests {
                 "error for url (https://u:p@host)",
                 "error for url (https://[redacted]@host)",
             ),
-            // A space in the password, which URL parsers percent-encode.
+            // In free text whitespace ends the URL, so a port is not userinfo.
             (
-                "ARGS: mise x https://user:my TOKEN@host/x -- true",
-                "ARGS: mise x https://[redacted]@host/x -- true",
+                "ARGS: mise x https://host:8080 --user me@example.com",
+                "ARGS: mise x https://host:8080 --user me@example.com",
             ),
-            (
-                "url=https://user:my TOKEN@host\nnext line",
-                "url=https://[redacted]@host\nnext line",
-            ),
-            // Without a `user:` prefix, whitespace still ends the authority.
             (
                 "see https://host and me@example.com",
                 "see https://host and me@example.com",
-            ),
-            // A line break always ends it.
-            (
-                "https://host:8080\nme@example.com",
-                "https://host:8080\nme@example.com",
             ),
             ("no url here", "no url here"),
             ("https://@host", "https://@host"),
@@ -499,5 +494,25 @@ mod tests {
             redact_url_userinfo("https://host/path"),
             Cow::Borrowed(_)
         ));
+    }
+
+    #[test]
+    fn test_redact_url_userinfo_in_arg() {
+        for (input, expected) in [
+            // A raw space in userinfo is part of the URL inside one argument.
+            ("https://user:my TOKEN@host/x", "https://[redacted]@host/x"),
+            ("https://user:my@TOKEN word@host", "https://[redacted]@host"),
+            ("https://MY TOKEN@host", "https://[redacted]@host"),
+            (
+                "--url=https://u:p@host?q=a@b",
+                "--url=https://[redacted]@host?q=a@b",
+            ),
+            ("https://host:8080", "https://host:8080"),
+            ("me@example.com", "me@example.com"),
+        ] {
+            let redacted = redact_url_userinfo_in_arg(input);
+            assert_eq!(redacted, expected, "{input}");
+            assert!(!redacted.contains("TOKEN"));
+        }
     }
 }
