@@ -279,6 +279,7 @@ impl ResolvedToolOptions {
         for key in options.opts.keys() {
             self.sources.insert(key.clone(), source);
         }
+        self.drop_superseded_registry_defaults(options, source);
         if options.os.is_some() {
             self.sources.insert("os".to_string(), source);
         }
@@ -299,6 +300,66 @@ impl ResolvedToolOptions {
         }
         if options.auto_update.is_some() {
             self.sources.insert("auto_update".to_string(), source);
+        }
+    }
+}
+
+/// Options that choose who may have signed a release. A registry entry's
+/// signer options are one policy, so a user's own signer option replaces all
+/// of them: packslip rejects `workflow` next to any other, and a registry
+/// `identity` beside a user's `workflow` would be rejected the same way.
+const SIGNER_OPTION_KEYS: [&str; 5] = [
+    "workflow",
+    "pubkey",
+    "identity",
+    "identity_prefix",
+    "issuer",
+];
+
+/// The registry options that go with its signer: the release list's signer is
+/// judged by the bundle signer's issuer, so it cannot outlive the issuer.
+const REGISTRY_SIGNER_POLICY_KEYS: [&str; 6] = [
+    "workflow",
+    "pubkey",
+    "identity",
+    "identity_prefix",
+    "issuer",
+    "list_identity_prefix",
+];
+
+/// Whether `user` sets a signer option, which retires the registry's.
+fn sets_signer_option(user: &ToolVersionOptions) -> bool {
+    SIGNER_OPTION_KEYS
+        .iter()
+        .any(|key| user.opts.contains_key(*key))
+}
+
+/// Add the registry's install-time defaults beneath the user's options,
+/// leaving out the registry's signer options when the user chose their own.
+pub(crate) fn fill_registry_defaults(user: &mut ToolVersionOptions, registry: ToolVersionOptions) {
+    let user_signer = sets_signer_option(user);
+    for (key, value) in registry.opts {
+        if user_signer && REGISTRY_SIGNER_POLICY_KEYS.contains(&key.as_str()) {
+            continue;
+        }
+        user.opts.entry(key).or_insert(value);
+    }
+}
+
+impl ResolvedToolOptions {
+    fn drop_superseded_registry_defaults(
+        &mut self,
+        options: &ToolVersionOptions,
+        source: ToolOptionSource,
+    ) {
+        if source == ToolOptionSource::Registry || !sets_signer_option(options) {
+            return;
+        }
+        for key in REGISTRY_SIGNER_POLICY_KEYS {
+            if self.sources.get(key) == Some(&ToolOptionSource::Registry) {
+                self.options.opts.shift_remove(key);
+                self.sources.shift_remove(key);
+            }
         }
     }
 }
@@ -859,6 +920,110 @@ mod tests {
 
     fn s(v: &str) -> toml::Value {
         toml::Value::String(v.to_string())
+    }
+
+    fn opts(pairs: &[(&str, &str)]) -> ToolVersionOptions {
+        ToolVersionOptions {
+            opts: pairs.iter().map(|(k, v)| (k.to_string(), s(v))).collect(),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn user_signer_option_drops_registry_workflow() {
+        for key in ["pubkey", "identity", "identity_prefix", "issuer"] {
+            let mut resolved = ResolvedToolOptions::default();
+            resolved.apply_overrides(
+                &opts(&[("workflow", "release.yaml")]),
+                ToolOptionSource::Registry,
+            );
+            resolved.apply_overrides(&opts(&[(key, "x")]), ToolOptionSource::Config);
+            assert!(!resolved.effective().contains_key("workflow"), "{key}");
+            assert!(resolved.effective().contains_key(key), "{key}");
+        }
+    }
+
+    #[test]
+    fn user_workflow_drops_registry_identity_and_issuer() {
+        let mut resolved = ResolvedToolOptions::default();
+        resolved.apply_overrides(
+            &opts(&[("identity", "i"), ("issuer", "x")]),
+            ToolOptionSource::Registry,
+        );
+        resolved.apply_overrides(
+            &opts(&[("workflow", "release.yml")]),
+            ToolOptionSource::Config,
+        );
+        assert_eq!(
+            resolved.effective().opts.keys().collect::<Vec<_>>(),
+            vec!["workflow"]
+        );
+    }
+
+    #[test]
+    fn fill_registry_defaults_yields_to_a_user_signer() {
+        let registry = || opts(&[("workflow", "release.yml"), ("variant", "musl")]);
+        let mut user = opts(&[("pubkey", "k")]);
+        fill_registry_defaults(&mut user, registry());
+        assert_eq!(
+            user.opts.keys().collect::<Vec<_>>(),
+            vec!["pubkey", "variant"]
+        );
+        let mut user = opts(&[("variant", "gnu")]);
+        fill_registry_defaults(&mut user, registry());
+        assert_eq!(
+            user.opts.keys().collect::<Vec<_>>(),
+            vec!["variant", "workflow"]
+        );
+    }
+
+    #[test]
+    fn user_signer_drops_the_registry_release_list_signer_too() {
+        let registry = || {
+            opts(&[
+                ("issuer", "x"),
+                ("identity_prefix", "p"),
+                ("list_identity_prefix", "l"),
+            ])
+        };
+        let mut resolved = ResolvedToolOptions::default();
+        resolved.apply_overrides(&registry(), ToolOptionSource::Registry);
+        resolved.apply_overrides(&opts(&[("identity", "mine")]), ToolOptionSource::Config);
+        assert_eq!(
+            resolved.effective().opts.keys().collect::<Vec<_>>(),
+            vec!["identity"]
+        );
+        let mut user = opts(&[("identity", "mine")]);
+        fill_registry_defaults(&mut user, registry());
+        assert_eq!(user.opts.keys().collect::<Vec<_>>(), vec!["identity"]);
+        // A user's own release-list signer does not retire the bundle signer.
+        let mut user = opts(&[("list_identity_prefix", "mine")]);
+        fill_registry_defaults(&mut user, registry());
+        assert_eq!(
+            user.opts.keys().collect::<Vec<_>>(),
+            vec!["list_identity_prefix", "issuer", "identity_prefix"]
+        );
+    }
+
+    #[test]
+    fn registry_workflow_survives_unrelated_user_options() {
+        let mut resolved = ResolvedToolOptions::default();
+        resolved.apply_overrides(
+            &opts(&[("workflow", "release.yaml")]),
+            ToolOptionSource::Registry,
+        );
+        resolved.apply_overrides(&opts(&[("variant", "musl")]), ToolOptionSource::Config);
+        assert!(resolved.effective().contains_key("workflow"));
+    }
+
+    #[test]
+    fn user_workflow_next_to_user_signer_is_kept_for_packslip_to_reject() {
+        let mut resolved = ResolvedToolOptions::default();
+        resolved.apply_overrides(
+            &opts(&[("workflow", "release.yaml"), ("issuer", "x")]),
+            ToolOptionSource::Config,
+        );
+        assert!(resolved.effective().contains_key("workflow"));
     }
 
     #[test]

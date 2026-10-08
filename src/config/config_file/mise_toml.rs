@@ -1431,9 +1431,7 @@ impl MiseToml {
                                 registry_opts.opts.entry(k).or_insert(v);
                             }
                         }
-                        for (k, v) in registry_opts.opts {
-                            ba_opts.opts.entry(k).or_insert(v);
-                        }
+                        crate::toolset::fill_registry_defaults(&mut ba_opts, registry_opts);
                     }
                     // Replace config-owned fields rather than merging them with cached values.
                     // This intentionally supersedes apply_overrides above so omitted values clear
