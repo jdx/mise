@@ -29,7 +29,7 @@ impl RenderHelp {
 }
 
 fn render_idiomatic_version_files() -> Result<()> {
-    let path = "docs/configuration.md";
+    let path = "docs/dev-tools/versions.md";
     let content = file::read_to_string(path)?;
     let start = content
         .find(IDIOMATIC_FILES_START)

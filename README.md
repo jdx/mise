@@ -95,7 +95,7 @@ commands with current versions.
 On macOS or Linux:
 
 ```sh
-curl -fsSL https://mise.run | sh
+curl https://mise.run | sh
 ~/.local/bin/mise --version
 ```
 
