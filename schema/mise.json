@@ -1698,8 +1698,9 @@
         },
         "plugin_autoupdate_last_check_duration": {
           "default": "7d",
-          "description": "How long to wait before updating plugins automatically (note this isn't currently implemented).",
-          "type": "string"
+          "description": "[deprecated] Has no effect; it was never implemented.",
+          "type": "string",
+          "deprecated": true
         },
         "prefer_offline": {
           "description": "Prefer locally cached data over remote fetches when possible.",
@@ -2068,8 +2069,9 @@
               "type": "string"
             },
             "age_recipients": {
-              "description": "The age public keys to use for sops secret encryption.",
-              "type": "string"
+              "description": "[deprecated] Has no effect; mise does not encrypt sops files.",
+              "type": "string",
+              "deprecated": true
             },
             "rops": {
               "default": true,
@@ -2221,8 +2223,9 @@
                   "type": "string"
                 },
                 "stats_report": {
-                  "description": "[experimental] File to write action-cache session statistics to.",
-                  "type": "string"
+                  "description": "[deprecated] Has no effect since the built-in action cache was removed.",
+                  "type": "string",
+                  "deprecated": true
                 }
               }
             },
