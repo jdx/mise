@@ -4741,7 +4741,7 @@ This will only show tools that are defined in project-local mise.toml and
 will skip tools defined in the global config (~/.config/mise/config.toml).
 """#
     }
-    flag --monorepo help="Placeholder for future monorepo outdated checks; `mise outdated --monorepo` is not implemented yet."
+    flag --monorepo help="Placeholder for future monorepo outdated checks; `mise outdated --monorepo` is not implemented yet." hide=#true
     flag --no-header help="Don't show table header"
     flag "-h --help" help="Print help" action=help builtin=#true
     arg "[TOOL@VERSION]…" help=#"""
@@ -5103,7 +5103,7 @@ Like --dry-run but exits with code 1 if there are tools to prune
 This is useful for scripts to check if tools need to be pruned.
 """#
     }
-    flag --monorepo help="Placeholder for future monorepo pruning; `mise prune --monorepo` is not implemented yet."
+    flag --monorepo help="Placeholder for future monorepo pruning; `mise prune --monorepo` is not implemented yet." hide=#true
     flag --tools help="Prune only unused versions of tools"
     flag "-h --help" help="Print help" action=help builtin=#true
     arg "[INSTALLED_TOOL]…" help="Prune only these tools" required=#false var=#true
@@ -6686,7 +6686,7 @@ Explicitly pinned versions like "22.5.0" are not filtered.
 """#
         arg <MINIMUM_RELEASE_AGE>
     }
-    flag --monorepo help="Placeholder for future monorepo upgrades; `mise upgrade --monorepo` is not implemented yet."
+    flag --monorepo help="Placeholder for future monorepo upgrades; `mise upgrade --monorepo` is not implemented yet." hide=#true
     flag --no-prune help="Do not uninstall the versions that were upgraded away from" overrides=--prune {
         long_help #"""
 Do not uninstall the versions that were upgraded away from

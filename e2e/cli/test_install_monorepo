@@ -94,6 +94,6 @@ assert_fail_contains "cd no-roots && mise install --monorepo 2>&1" "[monorepo].c
 assert_fail_contains "cd empty-roots && mise install --monorepo 2>&1" "did not match any config roots"
 
 echo "=== deferred --monorepo commands are explicit stubs ==="
-assert_fail_contains "cd monorepo && mise upgrade --monorepo 2>&1" "not implemented"
-assert_fail_contains "cd monorepo && mise prune --monorepo 2>&1" "not implemented"
-assert_fail_contains "cd monorepo && mise outdated --monorepo 2>&1" "not implemented"
+assert_fail_contains "cd monorepo && mise upgrade --monorepo 2>&1" "is not supported by mise"
+assert_fail_contains "cd monorepo && mise prune --monorepo 2>&1" "is not supported by mise"
+assert_fail_contains "cd monorepo && mise outdated --monorepo 2>&1" "is not supported by mise"
