@@ -80,7 +80,7 @@ assume I will wait before I look at the PR.
 - On Linux and macOS, OpenSSL and its headers, plus `pkg-config` on Linux.
   `--all-features` also turns on the optional `openssl` dependency, which links
   the system OpenSSL.
-- For E2E tests: Bash, plus zsh, fish, direnv, python3, and jq for the tests
+- For E2E tests: Bash, plus zsh, fish, python3, and jq for the tests
   that use them.
 
 On Debian and Ubuntu:

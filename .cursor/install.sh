@@ -2,7 +2,7 @@
 # Idempotent Cloud Agent bootstrap. Safe to rerun; does not start long-lived processes.
 #
 # Host packages are a subset of packaging/e2e/Dockerfile: enough to build mise and
-# run most e2e tests (zsh/fish/direnv/python/jq/build tools). GUI libraries and
+# run most e2e tests (zsh/fish/python/jq/build tools). GUI libraries and
 # a JDK are omitted; those belong in the dedicated e2e image.
 set -euo pipefail
 
@@ -54,7 +54,6 @@ apt_get install -y --no-install-recommends \
 	build-essential \
 	ca-certificates \
 	curl \
-	direnv \
 	fish \
 	git \
 	jq \

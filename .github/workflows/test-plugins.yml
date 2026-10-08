@@ -99,7 +99,7 @@ jobs:
           #   command: mise exec postgres@latest -- psql -V
     steps:
       - name: apt-get
-        run: sudo apt-get update; sudo apt-get install zsh fish direnv re2c libcurl4-openssl-dev libgd-dev libonig-dev autoconf bison build-essential curl gettext git libgd-dev libcurl4-openssl-dev libedit-dev libicu-dev libjpeg-dev libmysqlclient-dev libonig-dev libpng-dev libpq-dev libreadline-dev libsqlite3-dev libssl-dev libxml2-dev libzip-dev openssl pkg-config re2c zlib1g-dev
+        run: sudo apt-get update; sudo apt-get install zsh fish re2c libcurl4-openssl-dev libgd-dev libonig-dev autoconf bison build-essential curl gettext git libgd-dev libcurl4-openssl-dev libedit-dev libicu-dev libjpeg-dev libmysqlclient-dev libonig-dev libpng-dev libpq-dev libreadline-dev libsqlite3-dev libssl-dev libxml2-dev libzip-dev openssl pkg-config re2c zlib1g-dev
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           name: tarball-x86_64-unknown-linux-gnu
@@ -176,8 +176,8 @@ jobs:
           - sbcl
           - qsv
     steps:
-      - name: Install zsh/fish/direnv
-        run: sudo apt-get update; sudo apt-get install zsh fish direnv
+      - name: Install zsh/fish
+        run: sudo apt-get update; sudo apt-get install zsh fish
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           name: tarball-x86_64-unknown-linux-gnu

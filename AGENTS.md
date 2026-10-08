@@ -316,7 +316,7 @@ Cursor Cloud Agents bootstrap from `.cursor/environment.json`, which runs `.curs
 The install script:
 
 - cds to the repository root derived from the script path before reading `Cargo.toml` or building
-- installs host packages needed to build mise and to run most e2e tests (openssl, pkg-config, zsh, fish, direnv, python3 + venv, jq, git, build-essential, and compile-time libs). It does **not** install a JDK or GUI libraries; those live in `packaging/e2e/Dockerfile`. `apt-get` is invoked as `sudo -n env DEBIAN_FRONTEND=noninteractive apt-get …` so the frontend reaches apt when elevation is required
+- installs host packages needed to build mise and to run most e2e tests (openssl, pkg-config, zsh, fish, python3 + venv, jq, git, build-essential, and compile-time libs). It does **not** install a JDK or GUI libraries; those live in `packaging/e2e/Dockerfile`. `apt-get` is invoked as `sudo -n env DEBIAN_FRONTEND=noninteractive apt-get …` so the frontend reaches apt when elevation is required
 - installs and defaults to the latest stable Rust toolchain (not the `Cargo.toml` `rust-version` MSRV), including `rustfmt` and `clippy`, and updates it on reruns
 - gets a bootstrap `mise` and symlinks it to `/usr/local/bin/mise`: an existing `target/debug/mise` refreshes itself with `mise run build`; if it cannot run this checkout's config, a plain `cargo build` goes to `target/bootstrap` (the `mbx` wrapper leaves read-only outputs in `target/`); with no `target/` yet, a plain `cargo build` goes to `target/`
 - keeps `GITHUB_TOKEN`, `MISE_GITHUB_TOKEN`, and `GH_TOKEN` in sync via one `sync_github_tokens` helper (prefer any already-set token; fall back to `gh auth token` only when all three are empty)
@@ -334,6 +334,6 @@ The debug `mise` binary is already on PATH. Prefer `mise run …` for project ta
 
 - Always `mise run test:e2e [test_filename]...` — never execute e2e scripts directly
 - Slow tests (`*_slow`) are skipped unless `TEST_ALL=1`. Do not run the full suite unless asked; pick tests under the feature area you changed
-- Isolated e2e uses `env -i` and a fake `HOME`, so the agent's mise shims are not on PATH. Tests install their own tools. Host packages (zsh, fish, direnv, python3, jq, git) still need to be on `/usr/bin`
+- Isolated e2e uses `env -i` and a fake `HOME`, so the agent's mise shims are not on PATH. Tests install their own tools. Host packages (zsh, fish, python3, jq, git) still need to be on `/usr/bin`
 - If GitHub API calls 429, run `export GITHUB_TOKEN="$(gh auth token)"; export MISE_GITHUB_TOKEN="$GITHUB_TOKEN"`
 - A leftover `/tmp/mise.toml` will fail the harness; remove it if that error appears
