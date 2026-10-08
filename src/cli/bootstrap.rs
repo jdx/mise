@@ -2362,6 +2362,9 @@ impl Bootstrap {
             .as_deref()
             .map(crate::github_relay::expand_repository)
             .transpose()?;
+        if let Some(url) = expanded.as_deref() {
+            system::git_prerequisites::ensure(url, self.yes, self.dry_run).await?;
+        }
         // A setup repository must not bypass the released checkout-origin
         // guard and install its files inside another repository's checkout.
         if let Some(url) = expanded.as_deref() {
@@ -2430,6 +2433,7 @@ impl Bootstrap {
             )
         };
 
+        system::git_prerequisites::ensure(&url, self.yes, self.dry_run).await?;
         let checkout_is_empty = checkout.is_dir() && checkout.read_dir()?.next().is_none();
         let reuse_checkout = checkout.exists() && !checkout_is_empty;
         if reuse_checkout {
