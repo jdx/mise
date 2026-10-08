@@ -515,7 +515,7 @@ pub(crate) fn install_git_plugin_source(
         file::remove_all_with_progress(plugin_path, pr)?;
         file::remove_all_with_progress(&repo_path, pr)?;
 
-        clone_git_plugin_source(&repo_path, repo_url, git_ref, pr)?;
+        let git = clone_git_plugin_source(&repo_path, repo_url, git_ref, pr)?;
 
         let subdir_path = repo_path.join(subdir);
         if !subdir_path.is_dir() {
@@ -525,9 +525,16 @@ pub(crate) fn install_git_plugin_source(
                 file::display_path(&subdir_path)
             ));
         }
+        // The clone lands in plugin-repos/, so nothing has created the plugins
+        // directory yet on a fresh install.
+        if let Some(parent) = plugin_path.parent() {
+            file::create_dir_all(parent)?;
+        }
         pr.set_message(format!("link {}", file::display_path(plugin_path)));
         file::make_symlink(&subdir_path, plugin_path)?;
-        Ok(Git::new(plugin_path))
+        // Report from the clone itself: gix does not open a repository from
+        // one of its subdirectories.
+        Ok(git)
     } else {
         clone_git_plugin_source(plugin_path, repo_url, git_ref, pr)
     }
