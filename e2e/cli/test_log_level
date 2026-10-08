@@ -4,3 +4,7 @@ assert_contains "mise x dummy@latest --log-level debug -- dummy 2>&1" "DEBUG"
 assert_contains "mise x dummy@latest --log-level=debug -- dummy 2>&1" "DEBUG"
 assert_contains "mise x dummy@latest --debug -- dummy 2>&1" "DEBUG"
 assert_contains "mise x dummy@latest --trace -- dummy 2>&1" "TRACE"
+
+# the flag takes the same level names as MISE_LOG_LEVEL; `warning` is kept as an alias
+assert_not_contains "mise x dummy@latest --log-level warn -- dummy 2>&1" "DEBUG"
+assert_not_contains "mise x dummy@latest --log-level warning -- dummy 2>&1" "DEBUG"

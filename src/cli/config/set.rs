@@ -191,7 +191,7 @@ impl ConfigSet {
             TomlValueTypes::String => toml_edit::value(value),
             TomlValueTypes::Integer => toml_edit::value(value.parse::<i64>()?),
             TomlValueTypes::Float => toml_edit::value(value.parse::<f64>()?),
-            TomlValueTypes::Bool => toml_edit::value(value.parse::<bool>()?),
+            TomlValueTypes::Bool => toml_edit::value(parse_bool(&value)?),
             TomlValueTypes::List => {
                 let mut list = toml_edit::Array::new();
                 for item in value.split(',').map(|s| s.trim()) {
@@ -233,6 +233,16 @@ impl ConfigSet {
         }
         std::fs::write(&file, raw)?;
         Ok(())
+    }
+}
+
+/// Parse a boolean the way settings read one from the environment: `true`/`yes`/`1` and
+/// `false`/`no`/`0`, ignoring case and surrounding whitespace.
+fn parse_bool(value: &str) -> eyre::Result<bool> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "true" | "yes" | "1" => Ok(true),
+        "false" | "no" | "0" => Ok(false),
+        _ => bail!("invalid boolean '{value}': expected true, false, yes, no, 1, or 0"),
     }
 }
 
@@ -318,4 +328,22 @@ fn remove_value(
         table.remove(key);
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_bool;
+
+    #[test]
+    fn parse_bool_accepts_the_spellings_settings_accept() {
+        for value in ["true", "yes", "1", "TRUE", " Yes "] {
+            assert!(parse_bool(value).unwrap(), "{value}");
+        }
+        for value in ["false", "no", "0", "False", "NO "] {
+            assert!(!parse_bool(value).unwrap(), "{value}");
+        }
+        for value in ["", "on", "2", "maybe"] {
+            assert!(parse_bool(value).is_err(), "{value}");
+        }
+    }
 }

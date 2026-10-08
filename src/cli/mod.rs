@@ -130,7 +130,9 @@ pub(crate) enum LevelFilter {
     Trace,
     Debug,
     Info,
-    Warning,
+    // `warn` is what MISE_LOG_LEVEL and the `log` crate accept; `warning` stays for old scripts.
+    #[usage(alias = "warning")]
+    Warn,
     Error,
 }
 
@@ -1777,6 +1779,23 @@ mod tests {
         let argv: Vec<&std::ffi::OsStr> = args.iter().map(std::ffi::OsStr::new).collect();
         let (_, layer) = Cli::parse_from_argv_with_settings(&argv).unwrap();
         command_local_settings(&layer).unwrap()
+    }
+
+    #[test]
+    fn log_level_flag_accepts_the_levels_mise_log_level_accepts() {
+        let parse = |level: &str| {
+            parse_cli(&["mise", "--log-level", level, "version"])
+                .unwrap()
+                .settings_layer(SettingsPartial::empty())
+                .log_level
+                .unwrap()
+        };
+        for level in ["trace", "debug", "info", "warn", "error"] {
+            assert_eq!(parse(level), level);
+            assert!(level.parse::<log::LevelFilter>().is_ok(), "{level}");
+        }
+        // `warning` was the only spelling the flag took, and it meant `info` to the logger
+        assert_eq!(parse("warning"), "warn");
     }
 
     fn parse_truncate(args: &[&str]) -> Option<bool> {

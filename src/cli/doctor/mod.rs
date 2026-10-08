@@ -355,7 +355,7 @@ impl Doctor {
 
         match Config::get().await {
             Ok(config) => self.analyze_config(&config).await?,
-            Err(err) => self.errors.push(format!("failed to load config: {err}")),
+            Err(err) => self.errors.push(format!("failed to load config: {err:#}")),
         }
 
         self.analyze_plugins();
@@ -585,7 +585,7 @@ impl Doctor {
                 self.check_path_ordering(&ts, config).await;
                 self.check_shim_shadowing(&desired_shims).await;
             }
-            Err(err) => self.errors.push(format!("failed to load toolset: {err}")),
+            Err(err) => self.errors.push(format!("failed to load toolset: {err:#}")),
         }
 
         self.analyze_system_packages(config).await?;
