@@ -1856,7 +1856,7 @@ impl Client {
                     let hint = format!(
                         "HTTP timed out after {} for {} (change with `{}` or env `{}`).",
                         format_duration(request_timeout),
-                        url,
+                        log_url(&url),
                         setting,
                         env_var
                     );

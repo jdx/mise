@@ -73,9 +73,7 @@ pub fn redact_global(input: &str) -> String {
 ///
 /// `https://user:token@host/path` becomes `https://[redacted]@host/path`. The
 /// [`Redactor`] only hides values that were registered with it, and a URL that
-/// carries its own credentials (a config value, a CLI argument) never is. The
-/// authority ends at the first `/`, `?`, `#` or whitespace, and the userinfo is
-/// everything before its last `@`, so an unencoded `@` in a password is covered.
+/// carries its own credentials (a config value, a CLI argument) never is.
 pub fn redact_url_userinfo(text: &str) -> Cow<'_, str> {
     if !text.contains("://") {
         return Cow::Borrowed(text);
@@ -86,24 +84,39 @@ pub fn redact_url_userinfo(text: &str) -> Cow<'_, str> {
     while let Some(i) = rest.find("://") {
         let (head, tail) = rest.split_at(i + 3);
         out.push_str(head);
-        let end = tail
-            .find(|c: char| matches!(c, '/' | '?' | '#') || c.is_whitespace())
-            .unwrap_or(tail.len());
-        match tail[..end].rfind('@') {
-            Some(at) if at > 0 => {
-                out.push_str("[redacted]");
-                out.push_str(&tail[at..end]);
-                redacted = true;
-            }
-            _ => out.push_str(&tail[..end]),
+        rest = tail;
+        if let Some(at) = userinfo_end(tail) {
+            out.push_str("[redacted]");
+            rest = &tail[at..];
+            redacted = true;
         }
-        rest = &tail[end..];
     }
     if !redacted {
         return Cow::Borrowed(text);
     }
     out.push_str(rest);
     Cow::Owned(out)
+}
+
+/// The offset of the `@` that ends the userinfo at the start of `authority`.
+///
+/// The authority ends at the first `/`, `?`, `#` or whitespace, and the
+/// userinfo is everything before its last `@`, so an unencoded `@` in a
+/// password is covered. URL parsers percent-encode a space in a password, so
+/// `user:pass word@host` works too: after a `user:` prefix the `@` is looked for
+/// past whitespace, up to the next `/`, `?`, `#` or line break. Without that
+/// prefix, `https://host` followed by an email address is left alone.
+fn userinfo_end(authority: &str) -> Option<usize> {
+    let end_at = |stop: &dyn Fn(char) -> bool| authority.find(stop).unwrap_or(authority.len());
+    let end = end_at(&|c| matches!(c, '/' | '?' | '#') || c.is_whitespace());
+    let at = authority[..end].rfind('@').or_else(|| {
+        if !authority[..end].contains(':') {
+            return None;
+        }
+        let end = end_at(&|c| matches!(c, '/' | '?' | '#' | '\n' | '\r'));
+        authority[..end].rfind('@')
+    })?;
+    (at > 0).then_some(at)
 }
 
 #[derive(Default, Clone, Debug, serde::Deserialize)]
@@ -455,6 +468,25 @@ mod tests {
             (
                 "error for url (https://u:p@host)",
                 "error for url (https://[redacted]@host)",
+            ),
+            // A space in the password, which URL parsers percent-encode.
+            (
+                "ARGS: mise x https://user:my TOKEN@host/x -- true",
+                "ARGS: mise x https://[redacted]@host/x -- true",
+            ),
+            (
+                "url=https://user:my TOKEN@host\nnext line",
+                "url=https://[redacted]@host\nnext line",
+            ),
+            // Without a `user:` prefix, whitespace still ends the authority.
+            (
+                "see https://host and me@example.com",
+                "see https://host and me@example.com",
+            ),
+            // A line break always ends it.
+            (
+                "https://host:8080\nme@example.com",
+                "https://host:8080\nme@example.com",
             ),
             ("no url here", "no url here"),
             ("https://@host", "https://@host"),
