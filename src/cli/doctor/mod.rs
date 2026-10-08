@@ -218,6 +218,7 @@ impl Doctor {
         let ts = config.get_toolset().await?;
         let desired_shims = self.analyze_shims(&config, ts).await;
         self.analyze_plugins();
+        self.analyze_env_modules(&config);
         self.analyze_plugin_drift(&config);
         self.analyze_backend_mismatches();
         self.analyze_system_deps(ts).await;
@@ -355,7 +356,7 @@ impl Doctor {
 
         match Config::get().await {
             Ok(config) => self.analyze_config(&config).await?,
-            Err(err) => self.errors.push(format!("failed to load config: {err}")),
+            Err(err) => self.errors.push(format!("failed to load config: {err:#}")),
         }
 
         self.analyze_plugins();
@@ -557,6 +558,7 @@ impl Doctor {
                 continue;
             }
         }
+        self.analyze_env_modules(config);
 
         if !env::is_activated() && !shims_on_path() {
             let shims = style::ncyan(display_path(dirs::shims()));
@@ -585,7 +587,7 @@ impl Doctor {
                 self.check_path_ordering(&ts, config).await;
                 self.check_shim_shadowing(&desired_shims).await;
             }
-            Err(err) => self.errors.push(format!("failed to load toolset: {err}")),
+            Err(err) => self.errors.push(format!("failed to load toolset: {err:#}")),
         }
 
         self.analyze_system_packages(config).await?;
@@ -1216,6 +1218,17 @@ impl Doctor {
                 self.warnings
                     .push(format!("plugin {} overrides a core plugin", plugin.id()));
             }
+        }
+    }
+
+    fn analyze_env_modules(&mut self, config: &Config) {
+        for (name, source) in crate::config::env_directive::skipped_env_modules(config) {
+            let install = style::nyellow(format!("mise plugins install {name} <url>"));
+            self.errors.push(formatdoc!(
+                r#"env plugin {name} is not installed and has no source, so [env] _.{name} in {source} is skipped
+                    Install it with {install}, or set its URL in [plugins]"#,
+                source = display_path(&source),
+            ));
         }
     }
 

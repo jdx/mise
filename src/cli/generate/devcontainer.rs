@@ -42,9 +42,8 @@ struct DevcontainerTemplate {
     container_env: HashMap<String, String>,
     #[serde(rename = "remoteEnv")]
     remote_env: HashMap<String, String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(rename = "postCreateCommand")]
-    post_create_command: Option<String>,
+    post_create_command: String,
 }
 
 #[derive(Serialize)]
@@ -84,7 +83,9 @@ impl Devcontainer {
             .as_deref()
             .unwrap_or("mcr.microsoft.com/devcontainers/base:ubuntu");
 
-        let mut post_create_command: Option<String> = None;
+        // The mise feature installs mise but not the project's tools, so
+        // install them once the workspace is mounted.
+        let mut post_create_command = "mise install".to_string();
         let mut mounts = vec![];
         let mut container_env = HashMap::new();
         let mut remote_env = HashMap::new();
@@ -99,7 +100,8 @@ impl Devcontainer {
                 "PATH".to_string(),
                 "${containerEnv:PATH}:/mnt/mise-data/shims".to_string(),
             );
-            post_create_command = Some("sudo chown -R vscode:vscode /mnt/mise-data".to_string());
+            post_create_command =
+                format!("sudo chown -R vscode:vscode /mnt/mise-data && {post_create_command}");
         }
 
         let mut features = HashMap::new();

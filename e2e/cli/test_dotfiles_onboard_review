@@ -31,7 +31,7 @@ refs="$(git --git-dir="$MISE_STATE_DIR/history/repo.git" for-each-ref --format='
 assert_succeed "mise bootstrap --adopt file://$origin --dry-run --only dotfiles"
 assert_succeed "cmp '$status' '$PWD/sync-before.json'"
 assert "git --git-dir=$MISE_STATE_DIR/history/repo.git for-each-ref --format='%(refname) %(objectname)'" "$refs"
-assert_fail "MISE_YES=0 mise bootstrap --adopt file://$origin --only dotfiles </dev/null" 'not set up'
+assert_fail "MISE_YES=0 mise bootstrap --adopt file://$origin --only dotfiles --replace-history </dev/null" 'requires confirmation'
 assert_succeed "cmp '$status' '$PWD/sync-before.json'"
 assert "git --git-dir=$MISE_STATE_DIR/history/repo.git for-each-ref --format='%(refname) %(objectname)'" "$refs"
 

@@ -102,8 +102,10 @@ impl Commands {
 }
 
 impl Settings {
-    /// Alias conflicts must not prevent editing the file that contains them.
-    pub(crate) fn is_pypi_repair(&self) -> bool {
+    /// Whether this sets or unsets a setting whose bad value fails settings loading: a pypi
+    /// alias conflict, or an unknown choice for a strict setting. Neither may prevent editing
+    /// the file that contains it, so these run without loading settings.
+    pub(crate) fn is_repair(&self) -> bool {
         let key = match &self.command {
             Some(Commands::Set(cmd)) => Some(cmd.setting.as_str()),
             Some(Commands::Unset(cmd)) => Some(cmd.key.as_str()),
@@ -119,10 +121,9 @@ impl Settings {
             _ => None,
         };
         key.is_some_and(|key| {
-            matches!(
-                canonical_setting(key.split('=').next().unwrap_or(key)),
-                "pypi.uvx" | "pypi.registry_url"
-            )
+            let key = canonical_setting(key.split('=').next().unwrap_or(key));
+            matches!(key, "pypi.uvx" | "pypi.registry_url")
+                || crate::config::settings::STRICT_CHOICE_SETTINGS.contains(&key)
         })
     }
 

@@ -160,8 +160,34 @@ pub static MISE_DATA_DIR: Lazy<PathBuf> =
 pub static MISE_STATE_DIR: Lazy<PathBuf> =
     Lazy::new(|| var_path("MISE_STATE_DIR").unwrap_or_else(|| XDG_STATE_HOME.join("mise")));
 
-pub static MISE_TMP_DIR: Lazy<PathBuf> =
-    Lazy::new(|| var_path("MISE_TMP_DIR").unwrap_or_else(|| temp_dir().join("mise")));
+pub static MISE_TMP_DIR: Lazy<PathBuf> = Lazy::new(|| {
+    var_path("MISE_TMP_DIR").unwrap_or_else(|| default_tmp_dir(&temp_dir(), &MISE_CACHE_DIR))
+});
+
+/// `<temp>/mise`, unless that is inside the cache directory, which `mise cache clear` deletes
+/// wholesale. On Windows the default cache directory is `%TEMP%\mise`, the same path.
+///
+/// The check resolves both paths, so a cache directory spelled differently from the
+/// temporary directory (through a symlink such as macOS `/private/var`, through `..`, or on
+/// Windows in another case) is still seen to contain it.
+fn default_tmp_dir(temp: &Path, cache: &Path) -> PathBuf {
+    let tmp = temp.join("mise");
+    if !is_within(&tmp, cache) {
+        return tmp;
+    }
+    let tmp = temp.join("mise-tmp");
+    if is_within(&tmp, cache) {
+        // The cache directory is the temporary directory itself or one of its parents, so
+        // nothing under it is outside the cache.
+        debug!(
+            "MISE_CACHE_DIR {} contains the temporary directory {}, so `mise cache clear` \
+             deletes mise's temporary files; set MISE_TMP_DIR to a directory outside it",
+            cache.display(),
+            tmp.display()
+        );
+    }
+    tmp
+}
 
 pub static MISE_SYSTEM_CONFIG_DIR: Lazy<PathBuf> = Lazy::new(|| {
     var_path("MISE_SYSTEM_CONFIG_DIR")
@@ -1542,6 +1568,59 @@ mod tests {
     }
 
     use super::*;
+
+    #[test]
+    fn default_tmp_dir_stays_out_of_the_cache_dir() {
+        let tmp = tempfile::tempdir().unwrap();
+        let temp = dunce::canonicalize(tmp.path()).unwrap();
+        // The Windows default: `%TEMP%\mise` for both.
+        assert_eq!(
+            default_tmp_dir(&temp, &temp.join("mise")),
+            temp.join("mise-tmp")
+        );
+        // The same cache directory with a trailing separator, or spelled through `..`.
+        assert_eq!(
+            default_tmp_dir(&temp, &temp.join("mise").join("")),
+            temp.join("mise-tmp")
+        );
+        assert_eq!(
+            default_tmp_dir(&temp, &temp.join("x").join("..").join("mise")),
+            temp.join("mise-tmp")
+        );
+        // Unix and macOS defaults keep the cache elsewhere, so the path is unchanged.
+        let home_cache = temp.join("home").join(".cache").join("mise");
+        assert_eq!(default_tmp_dir(&temp, &home_cache), temp.join("mise"));
+        // A cache inside the temporary directory does not contain it.
+        assert_eq!(
+            default_tmp_dir(&temp, &temp.join("mise").join("cache")),
+            temp.join("mise")
+        );
+        assert_eq!(
+            default_tmp_dir(&temp, &temp.join("mise-cache")),
+            temp.join("mise")
+        );
+        // A cache directory that is the temporary directory itself has no default outside it.
+        assert_eq!(default_tmp_dir(&temp, &temp), temp.join("mise-tmp"));
+        if cfg!(windows) {
+            // `TEMP` and `TMP` differing only in case.
+            let upper = PathBuf::from(temp.to_string_lossy().to_uppercase());
+            assert_eq!(
+                default_tmp_dir(&temp, &upper.join("mise")),
+                temp.join("mise-tmp")
+            );
+        }
+        #[cfg(unix)]
+        {
+            // The cache directory written through a symlink to the temporary directory, as
+            // macOS `/private/var/folders/...` is to `/var/folders/...`.
+            let link = temp.join("link");
+            std::os::unix::fs::symlink(&temp, &link).unwrap();
+            assert_eq!(
+                default_tmp_dir(&temp, &link.join("mise")),
+                temp.join("mise-tmp")
+            );
+        }
+    }
 
     fn keys(names: &[&str]) -> BTreeSet<String> {
         names.iter().map(|k| k.to_string()).collect()

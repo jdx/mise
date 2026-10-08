@@ -38,6 +38,6 @@ mise test-tool ripgrep
 
 ## Related documentation
 
-- [Contributing and registry tests](/contributing.html#tool-testing).
+- [Testing registry tools](/contributing/registry.html#tool-testing).
 - [All commands](/cli/).
 - [Global flags and argument syntax](/cli/#global-flags).

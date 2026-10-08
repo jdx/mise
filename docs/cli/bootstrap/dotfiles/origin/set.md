@@ -28,6 +28,6 @@ Connect a setup repository
 
 ## Related documentation
 
-- [Dotfile ownership and modes](/dotfiles.html).
+- [Sync across machines](/dotfiles/sync.html).
 - [`mise bootstrap dotfiles origin [--remove] [SUBCOMMAND]`](/cli/bootstrap/dotfiles/origin.html).
 - [Global flags and argument syntax](/cli/#global-flags).

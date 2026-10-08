@@ -1,17 +1,23 @@
 ---
-description: "mise deps runs project dependency installers when tracked inputs change or outputs go missing."
+description: Run your project's package installers, such as npm install or uv sync, when their lockfiles change or their outputs go missing.
+socialDescription: Install project packages when lockfiles change or outputs go missing.
 ---
 
-# Deps <Badge type="warning" text="experimental" />
+# Project dependencies <Badge type="warning" text="experimental" />
 
-`mise deps` runs project dependency installers when tracked inputs change or
-outputs go missing. It compares source hashes with the last successful run, then
-invokes the configured package manager. Use `[tools]` to install the package
-manager itself; use `[deps]` to install the project's packages.
+`mise deps` installs a project's packages, such as `node_modules` or a Python
+virtual environment, by running the package manager's install command when the
+files it tracks change or its outputs go missing. Use `[tools]` to install the
+package manager itself and `[deps]` to install the project's packages.
 
-## Quick Start
+::: warning Experimental
+`mise deps` is experimental. Enable it with `experimental = true` under
+`[settings]`, as in the examples below, or with `MISE_EXPERIMENTAL=1`.
+:::
 
-For an existing npm project with `package.json` and `package-lock.json`, add:
+## Quick start
+
+For an npm project with `package.json` and `package-lock.json`, add:
 
 ```toml [mise.toml]
 [settings]
@@ -24,7 +30,8 @@ node = "24"
 auto = true
 ```
 
-Inspect the provider, install its dependencies, and explain the freshness result:
+Install Node.js, check that mise sees the provider, install the packages, and
+ask why the provider is now fresh:
 
 ```sh
 mise install
@@ -33,32 +40,35 @@ mise deps install npm
 mise deps install npm --explain
 ```
 
-With `auto = true`, subsequent `mise exec` and `mise run` commands also check
-this provider. If the project has no lockfile yet, create one with its package
-manager first, for example `mise exec --no-deps -- npm install`.
+With `auto = true`, `mise exec` and `mise run` also run the provider first
+whenever it is stale. A provider stays inactive until its input files exist, so
+if the project has no lockfile yet, create one with the package manager first,
+for example `mise exec --no-deps -- npm install`.
 
-## Configuration
+## Enable and disable providers {#configuration}
 
-Enable only the providers your project uses. An empty table selects a built-in
-provider without making it automatic:
+Configure only the providers your project uses; mise does not detect them on its
+own. An empty table enables a built-in provider without making it automatic:
 
 ```toml
 [deps.uv]
 ```
 
-To disable a provider, for example one inherited from another configuration:
+To turn off a provider, for example one inherited from another config file:
 
 ```toml
 [deps]
 disable = ["npm"]
 ```
 
-This prevents the provider from running; it does not remove installed packages.
-Use `mise deps install --list` to inspect the effective providers.
+This stops the provider from running; it does not remove installed packages.
+Run `mise deps install --list` to see the effective providers and whether each
+is active.
 
-## Built-in Providers
+## Built-in providers
 
-Each provider supplies defaults for sources, outputs, and the install command:
+Each built-in provider supplies default sources, outputs, and an install
+command:
 
 | Provider        | Sources                                                | Tracked output                   | Default command                                                  |
 | --------------- | ------------------------------------------------------ | -------------------------------- | ---------------------------------------------------------------- |
@@ -78,95 +88,34 @@ Each provider supplies defaults for sources, outputs, and the install command:
 | `flutter`       | `pubspec.yaml`, `pubspec.lock`                         | `.dart_tool/package_config.json` | `flutter pub get`                                                |
 | `git-submodule` | `.gitmodules`                                          | Declared submodule directories   | `git submodule update --init --recursive`                        |
 
-Providers must be configured explicitly and have the required project input.
-Most require their lockfile. The exceptions are `go` (`go.mod`), `pip`
-(`requirements.txt`), Dart/Flutter (`pubspec.yaml`), and `git-submodule`
-(a nonempty `.gitmodules`). Pub workspace members track the workspace's package
+A provider is active only when its required project input exists. Most need
+their lockfile; the exceptions are `go` (`go.mod`), `pip` (`requirements.txt`),
+`dart` and `flutter` (`pubspec.yaml`), and `git-submodule` (a non-empty
+`.gitmodules`). Members of a pub workspace track the workspace's package
 configuration file.
 
-An **optional output** is checked for deletion only after mise has observed it
+mise checks an optional output for deletion only after it has seen that output
 following a successful run. This supports package managers that install outside
-the project by default. In particular, the pip provider does not create or select
-a virtualenv: configure [Python virtualenv activation](/lang/python.html#automatic-virtualenv-activation)
+the project by default. The `pip` provider does not create or select a virtual
+environment: set up [Python virtualenv activation](/lang/python.html#automatic-virtualenv-activation)
 first if pip should install into `.venv`.
 
-These defaults are ordinary install commands, not necessarily frozen-lockfile
-installs. To require npm's clean, lockfile-based installation, override `run`:
+The default commands are ordinary installs, not necessarily frozen-lockfile
+installs. To require npm's clean install from the lockfile, override `run`:
 
 ```toml
 [deps.npm]
 run = "npm ci"
 ```
 
-The freshness check still decides whether to run it. Use `--force` when you need
-the command to execute even if its tracked state is unchanged.
+The freshness check still decides whether the command runs. Pass `--force` to
+run it even when nothing it tracks has changed.
 
-## Monorepos
+## Custom providers
 
-By default, `mise deps` only runs providers from the current config root. To run
-providers from every explicitly configured monorepo root, use `--monorepo`:
-
-```toml
-monorepo_root = true
-
-[monorepo]
-config_roots = ["apps/*", "packages/*"]
-```
-
-```bash
-mise deps --monorepo
-```
-
-This requires explicit [`[monorepo].config_roots`](/tasks/monorepo.html#config-roots);
-mise does not search arbitrary subdirectories for dependency providers.
-Providers in the monorepo root config are also included because that config is
-part of every selected config root's hierarchy, matching the behavior of
-`mise install --monorepo`.
-
-Monorepo provider IDs include their config root so the same provider can appear
-in multiple projects. For example, two uv providers are named `//apps/api:uv`
-and `//apps/worker:uv`. Use the qualified name with `--only`, `--skip`, or the
-positional provider argument:
-
-```bash
-mise deps --monorepo --only //apps/api:uv
-mise deps install //apps/worker:uv --monorepo
-```
-
-Provider dependencies without a `//` prefix are resolved within the same config
-root. A provider in `apps/api` with `depends = ["uv"]` therefore depends on
-`//apps/api:uv`.
-
-For a single nested project, the `dir` option remains a simpler alternative:
-
-```toml
-[deps.uv]
-dir = "apps/api"
-```
-
-## Adding and Removing Packages
-
-The `mise deps add` and `mise deps remove` commands let you manage individual packages
-using the `ecosystem:package` syntax:
-
-```bash
-# Add packages
-mise deps add npm:react
-mise deps add npm:@types/react@19
-mise deps add -D npm:vitest        # dev dependency
-
-# Remove packages
-mise deps remove npm:lodash
-```
-
-The ecosystem prefix tells mise which package manager to use. The ecosystems currently
-supported for add/remove are `npm`, `yarn`, `pnpm`, `bun`, `deno`, `aube`, `dart`, `flutter`.
-
-## Custom Providers
-
-Create custom providers for project-specific build steps. These examples assume
-`@graphql-codegen/cli` and `prisma` are already project dependencies and the
-corresponding scripts/configuration exist:
+Define a provider for any project-specific step that turns input files into
+outputs. These examples assume `@graphql-codegen/cli` and `prisma` are already
+project dependencies and that their scripts and configuration exist:
 
 ```toml
 [deps.codegen]
@@ -181,30 +130,31 @@ outputs = ["node_modules/.prisma/"]
 run = "npx prisma generate"
 ```
 
-### Provider Options
+### Provider options
 
-| Option        | Type     | Description                                                               |
-| ------------- | -------- | ------------------------------------------------------------------------- |
-| `auto`        | bool     | Auto-run before `mise x` and `mise run` (default: false)                  |
-| `sources`     | string[] | Files/patterns to check for changes                                       |
-| `outputs`     | string[] | Files/directories that must exist for the provider to be considered fresh |
-| `run`         | string   | Command to run when stale                                                 |
-| `env`         | table    | Environment variables to set                                              |
-| `dir`         | string   | Base directory for sources, outputs, and the command                      |
-| `description` | string   | Description shown in output                                               |
-| `depends`     | string[] | Other provider names that must complete before this one runs              |
-| `timeout`     | string   | Timeout for the run command, e.g., `"30s"`, `"5m"` (default: no timeout)  |
+These options apply to custom and built-in providers:
 
-Built-in providers use their documented sources and outputs when these options are
-omitted. Setting `sources` or `outputs` replaces that provider's defaults rather
-than adding to them. An empty array, such as `outputs = []`, explicitly disables
-that kind of path tracking; it also disables any optional outputs supplied by the
-built-in provider.
+| Option        | Type     | Description                                                                |
+| ------------- | -------- | -------------------------------------------------------------------------- |
+| `auto`        | bool     | Run before `mise exec` and `mise run` when stale (default: `false`).       |
+| `sources`     | string[] | Files or glob patterns whose contents decide freshness.                    |
+| `outputs`     | string[] | Files or directories that must exist for the provider to be fresh.         |
+| `run`         | string   | Command to run when the provider is stale.                                 |
+| `env`         | table    | Environment variables for the command.                                     |
+| `dir`         | string   | Base directory for sources, outputs, and the command.                      |
+| `description` | string   | Description shown in output.                                               |
+| `depends`     | string[] | Providers that must finish successfully first.                             |
+| `timeout`     | string   | Time limit for the command, such as `"30s"` or `"5m"` (default: no limit). |
 
-Relative paths and glob patterns are resolved from the provider's config root after
-applying `dir`. Absolute paths are used as written. For example, a pnpm workspace
-that keeps installed packages below an application directory can override the
-root-level defaults:
+On a built-in provider, setting `sources` or `outputs` replaces that provider's
+defaults instead of adding to them. An empty array, such as `outputs = []`,
+turns off that kind of path tracking, including any optional outputs the
+built-in provider supplies.
+
+Relative paths and glob patterns resolve from the provider's config root after
+applying `dir`; absolute paths are used as written. For example, a pnpm
+workspace that keeps installed packages under an application directory can
+override the root-level defaults:
 
 ```toml
 [deps.pnpm]
@@ -212,133 +162,46 @@ sources = ["pnpm-lock.yaml", "packages/app/package.json"]
 outputs = ["packages/app/node_modules"]
 ```
 
-### Templates and Environment Variables
+### Templates and environment variables
 
-String values in provider configuration support Tera templates such as
-<span v-pre>`{{ config_root }}`</span>, <span v-pre>`{{ env.NAME }}`</span>, and
-<span v-pre>`{{ vars.name }}`</span>. Shell-style environment variables
-such as `$NAME` and `${NAME:-default}` are expanded after Tera templates, using the same
-`env_shell_expand` setting as `[env]` values.
+String values in provider configuration accept [Tera templates](/templates.html)
+such as <span v-pre>`{{ config_root }}`</span>,
+<span v-pre>`{{ env.NAME }}`</span>, and <span v-pre>`{{ vars.name }}`</span>.
+Shell-style variables such as `$NAME` and `${NAME:-default}` are expanded after
+the templates, following the same
+[`env_shell_expand`](/configuration/settings.html#env_shell_expand) setting as
+`[env]` values.
 
 ```toml
 [vars]
 package = "api"
 
 [deps.codegen]
-sources = ["{{ config_root }}/schemas/$SCHEMA_NAME.graphql"]
-outputs = ["{{ config_root }}/generated/${SCHEMA_NAME:-default}/"]
-dir = "{{ config_root }}"
-env = { OUTPUT_PACKAGE = "{{ vars.package }}-$BUILD_MODE" }
+sources = ["schemas/$SCHEMA_NAME.graphql"]
+outputs = ["generated/${SCHEMA_NAME:-default}/"]
+env = { OUTPUT_PACKAGE = "{{ vars.package }}" }
 run = 'npm run codegen -- "$OUTPUT_PACKAGE"'
 ```
 
-Set `SCHEMA_NAME` and `BUILD_MODE` in the environment before running this example.
-Quote shell expansions in `run` when a value should remain one argument.
+`$SCHEMA_NAME` comes from your environment, and `${SCHEMA_NAME:-default}` falls
+back to `default` when it is unset. An undefined variable without a default is
+left as written, with a warning; use `${NAME:-}` to default it to an empty
+string.
 
-`$VAR` expressions in `run` are left for the provider's shell to expand at execution time. This
-allows `run` to use values from the provider's `env` table. Tera expressions in `run` are rendered
-when the provider configuration is loaded.
+In `run`, Tera expressions are rendered when the configuration loads, but `$VAR`
+expressions are left for the provider's shell to expand when the command runs,
+so `run` can use values from the provider's `env` table. Quote shell expansions
+that should stay one argument. Provider IDs and environment variable names are
+not templated. An invalid Tera template is reported as a configuration error
+before any provider command starts.
 
-Provider IDs and environment-variable names are not templated. Invalid Tera templates are reported
-as configuration errors before a provider command starts. An undefined shell-style variable is left
-unchanged with a warning; use `${NAME:-}` to explicitly default it to an empty string.
+## Order and parallelism
 
-## Freshness Checking
-
-mise uses blake3 hashing to determine whether sources or the effective provider command have
-changed since the last successful run. Hashes are stored in
-`$MISE_STATE_DIR/deps/<hash>.toml`, keyed by project root (so nothing is written inside
-the project directory). Command hashes include the run command, shell, provider `env`,
-and working directory; raw command and environment values are not stored in state.
-
-1. Compute blake3 hashes of all source files
-2. Compute a blake3 hash of the effective provider command
-3. Compare against stored hashes from the last successful run
-4. Mark the provider stale if a source or the effective command was added, removed, or changed
-
-Required outputs must exist. Optional outputs must continue to exist once they
-have been observed. With source tracking, the first run is stale and changes to
-sources or the effective command trigger another run.
-
-For custom providers with no sources, existing outputs are enough to be fresh;
-command changes alone do not invalidate them. A provider with neither sources
-nor outputs runs every time. Configure real input files when a command's result
-depends on their contents.
-
-Freshness checks do not inspect every installed package, query for newer upstream
-releases, or detect removal of an untracked external package cache. Use
-`mise deps install <provider> --explain` to see the decision, and `--force` to
-repair dependencies whose files changed outside the tracked state.
-
-State created before command hashing is migrated by running source-tracked
-providers once.
-
-## Auto-Install
-
-When `auto = true` is set on a provider, it runs automatically before:
-
-- `mise run` (task execution)
-- `mise x` (exec command)
-
-Automatic checks use the same sources and outputs as `mise deps`; they ensure
-tracked changes are handled before execution. They do not upgrade packages to
-the newest upstream versions.
-
-To skip auto-install for a single invocation:
-
-```bash
-mise run --no-deps build
-mise x --no-deps -- npm test
-```
-
-## Staleness Warnings
-
-When using `mise activate`, mise warns you if any auto-enabled providers have stale dependencies:
-
-```
-mise WARN deps: npm may need update, run `mise deps`
-```
-
-Disable this with:
-
-```toml
-[settings]
-status.show_deps_stale = false
-```
-
-## CLI Usage
-
-```bash
-# Install all project dependencies
-mise deps
-
-# Install only a specific provider
-mise deps install npm
-
-# Show why a provider is fresh or stale
-mise deps install npm --explain
-
-# Show what would run without executing
-mise deps install --dry-run
-
-# Force run even if outputs are fresh
-mise deps install --force
-
-# List available deps providers
-mise deps install --list
-
-# Skip specific providers
-mise deps install --skip npm
-
-# Add/remove packages
-mise deps add npm:react
-mise deps remove npm:lodash
-```
-
-## Dependencies
-
-Providers can declare dependencies on other providers using the `depends` field. A provider
-waits for all of its dependencies to complete successfully before running.
+Providers without `depends` run in parallel, up to the
+[`jobs`](/configuration/settings.html#jobs) setting. A provider with `depends`
+waits until those providers succeed. If one fails, the providers that depend on
+it are skipped. A dependency cycle is reported with a warning, and the providers
+in it are skipped.
 
 ```toml
 [deps.uv]
@@ -352,30 +215,147 @@ sources = ["requirements.yml"]
 outputs = [".galaxy-installed"]
 ```
 
-This assumes the uv project declares `ansible-core` and its virtualenv is on
-`PATH` (for example through `_.python.venv`). The `ansible-galaxy` provider waits
-for `uv` to finish before starting. A `depends` entry orders configured providers;
-it does not declare a missing provider or install a package manager.
+This assumes the uv project declares `ansible-core` and that its virtual
+environment is on `PATH`, for example through `_.python.venv`. The
+`ansible-galaxy` provider starts after `uv` finishes. `depends` only orders
+configured providers; it does not enable a provider or install a package
+manager.
 
-Providers without `depends` run in parallel. If a dependency fails, all providers
-that depend on it are skipped. Circular dependencies are detected and the affected providers
-are skipped with a warning.
+## Run providers automatically {#auto-install}
 
-## Parallel Execution
+A provider with `auto = true` runs, when it is stale, before:
 
-Deps providers run in parallel, respecting the `jobs` setting for concurrency limits.
-This speeds up installation when multiple providers need to run (e.g., both npm and pip).
-Providers with `depends` wait for their dependencies to complete before starting,
-while independent providers run concurrently.
+- [`mise run`](/cli/run.html) runs a task
+- [`mise exec`](/cli/exec.html) runs a command
+
+These automatic runs use the same sources and outputs as `mise deps`. They
+handle tracked changes before your command starts; they do not upgrade packages
+to newer upstream versions. To skip them for one invocation:
+
+```sh
+mise run --no-deps build
+mise exec --no-deps -- npm test
+```
+
+### Staleness warnings
+
+In an [activated shell](/shell-setup.html), mise warns when an `auto = true`
+provider is stale, naming each provider and the reason:
+
+```text
+mise WARN  deps: npm (package-lock.json changed) — run `mise deps`
+```
+
+To turn the warning off, set
+[`status.show_deps_stale`](/configuration/settings.html#status.show_deps_stale)
+to `false`:
 
 ```toml
 [settings]
-jobs = 4  # Run up to 4 providers in parallel
+status.show_deps_stale = false
 ```
 
-## Example: Full-Stack Project
+## How freshness is checked {#freshness-checking}
 
-This example assumes a repository with npm and uv projects in its root, both
+A provider is fresh when its required outputs exist and nothing it tracks has
+changed since its last successful run: the contents of its `sources`, and its
+effective command (the `run` string, shell, `env`, and `dir`). Otherwise it is
+stale and mise runs it.
+
+- A provider with sources is stale on its first run.
+- An optional output must keep existing once mise has seen it.
+- A custom provider with outputs but no sources is fresh while its outputs
+  exist; editing its command alone does not rerun it.
+- A provider with neither sources nor outputs runs every time.
+
+mise does not check installed packages one by one, look for newer upstream
+releases, or notice when an untracked external package cache is removed. List
+the input files a command's result depends on in `sources`. It keeps this state
+in `$MISE_STATE_DIR/deps/`, not in the project, and stores hashes, not the
+command or environment values.
+
+To see the decision, or what would run, use:
+
+```sh
+mise deps install npm --explain
+mise deps install --dry-run
+```
+
+`--explain` exits 0 only when the provider is fresh. It exits non-zero when the
+provider is stale or inactive (for example, its lockfile is missing), so it can
+serve as a CI check. To run a provider whose files changed outside the tracked
+state, pass `--force`.
+
+## Monorepos
+
+By default, `mise deps` runs only the providers defined in the current project's
+config files, plus any in your global config. To run the providers of every
+explicitly configured monorepo root, pass `--monorepo`:
+
+```toml
+monorepo_root = true
+
+[monorepo]
+config_roots = ["apps/*", "packages/*"]
+```
+
+```sh
+mise deps --monorepo
+```
+
+This requires explicit
+[`[monorepo].config_roots`](/tasks/monorepo.html#explicit-config-roots); mise
+does not search arbitrary subdirectories for providers. Providers in the
+monorepo root's config are included too, because that config is part of every
+selected config root's hierarchy, as with `mise install --monorepo`.
+
+Monorepo provider IDs include their config root, so the same provider can
+appear in several projects. For example, two uv providers are named
+`//apps/api:uv` and `//apps/worker:uv`. Use the qualified name with `--only`,
+`--skip`, or the provider argument:
+
+```sh
+mise deps --monorepo --only //apps/api:uv
+mise deps install //apps/worker:uv --monorepo
+```
+
+A `depends` entry without a `//` prefix resolves within the same config root, so
+a provider in `apps/api` with `depends = ["uv"]` depends on `//apps/api:uv`.
+
+When `mise run` runs a task from another config root, such as
+`mise run //apps/api:build`, the `auto = true` providers of that config root run
+first, along with those of the project you run it from (the monorepo root when
+you run it there) and your global config.
+
+For a single nested project, the `dir` option is simpler:
+
+```toml
+[deps.uv]
+dir = "apps/api"
+```
+
+## Add and remove packages {#adding-and-removing-packages}
+
+`mise deps add` and `mise deps remove` run a package manager's add and remove
+commands, which update the project's manifest, such as `package.json`, and its
+lockfile. Name each package as `ecosystem:package`:
+
+```sh
+mise deps add npm:react
+mise deps add npm:@types/react@19
+mise deps add -D npm:vitest        # dev dependency
+mise deps remove npm:lodash
+```
+
+These commands support `npm`, `yarn`, `pnpm`, `bun`, `deno`, `aube`, `dart`, and
+`flutter`. They install missing tools from `[tools]` first, and they do not need
+a `[deps]` entry, but they use the provider's `dir` when one is configured. For
+the other providers, run the package manager directly, for example
+`mise exec -- uv add httpx`.
+
+## Full-stack example {#example-full-stack-project}
+
+This example assumes a repository with npm and uv projects at its root, both
 lockfiles committed, Prisma installed as a project dependency, and an npm
 `codegen` script:
 
@@ -408,7 +388,12 @@ outputs = ["src/generated/"]
 run = "npm run codegen"
 ```
 
-`mise deps` runs stale npm and uv providers in parallel. Prisma and frontend
-codegen wait for npm, then can run in parallel with each other. The codegen
-provider has no `auto = true`, so it runs through explicit `mise deps` commands,
-not automatically before every `mise exec` or task invocation.
+`mise deps` runs stale `npm` and `uv` providers in parallel. `prisma` and
+`frontend-codegen` wait for `npm` and can then run in parallel with each other.
+`frontend-codegen` has no `auto = true`, so it runs only when you run
+`mise deps`, not before every `mise exec` or task.
+
+For every flag, see [`mise deps`](/cli/deps.html),
+[`mise deps install`](/cli/deps/install.html),
+[`mise deps add`](/cli/deps/add.html), and
+[`mise deps remove`](/cli/deps/remove.html).

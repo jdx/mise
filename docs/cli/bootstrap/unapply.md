@@ -50,6 +50,6 @@ mise bootstrap unapply ssh gpg --yes
 
 ## Related documentation
 
-- [Bootstrap workflow](/bootstrap.html).
+- [Removing a module](/bootstrap/modules.html#remove-a-module-s-resources).
 - [`mise bootstrap [FLAGS] [SUBCOMMAND]`](/cli/bootstrap.html).
 - [Global flags and argument syntax](/cli/#global-flags).

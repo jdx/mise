@@ -18,10 +18,8 @@ Install and start systemd user services from `[bootstrap.linux.systemd.units]`
 
 <!-- generated reference navigation -->
 
-This is a compatibility spelling. Use [`mise bootstrap linux systemd-units apply [-n --dry-run] [-y --yes]`](/cli/bootstrap/linux/systemd-units/apply.html) in new scripts.
-
 ## Related documentation
 
-- [systemd user units](/bootstrap/systemd.html).
+- [Bootstrap workflow](/bootstrap.html).
 - [`mise bootstrap [FLAGS] [SUBCOMMAND]`](/cli/bootstrap.html).
 - [Global flags and argument syntax](/cli/#global-flags).

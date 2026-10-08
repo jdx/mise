@@ -69,6 +69,6 @@ mise completion zsh --tool rg --install
 
 ## Related documentation
 
-- [Shell completions](/dev-tools/packslip-resources.html).
+- [Shell completions](/shell-setup.html#autocompletion).
 - [All commands](/cli/).
 - [Global flags and argument syntax](/cli/#global-flags).

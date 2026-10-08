@@ -47,6 +47,49 @@ pub struct SandboxConfig {
 /// Minimal env vars inherited when deny_env is active.
 const DEFAULT_ENV_KEYS: &[&str] = &["PATH", "HOME", "USER", "SHELL", "TERM", "COLORTERM", "LANG"];
 
+/// What a Windows process needs to start and run normally, kept under deny_env alongside
+/// [`DEFAULT_ENV_KEYS`]:
+///
+/// - `SystemRoot`: system DLLs (Winsock, CryptoAPI, side-by-side assemblies) find their files
+///   through it, so networking, TLS and many programs fail to start without it.
+/// - `SystemDrive` and `windir`: the same directories under the names older programs and
+///   scripts read.
+/// - `ComSpec`: cmd.exe, which runs `.bat`/`.cmd` files and `cmd /c` commands.
+/// - `PATHEXT`: the extensions cmd and other shells try when a command is named without one.
+/// - `TEMP` and `TMP`: without them `GetTempPath` returns the Windows directory, which a normal
+///   user cannot write.
+/// - `USERPROFILE` and `USERNAME`: the Windows spellings of `HOME` and `USER`.
+#[cfg(windows)]
+const WINDOWS_ENV_KEYS: &[&str] = &[
+    "SystemRoot",
+    "SystemDrive",
+    "windir",
+    "ComSpec",
+    "PATHEXT",
+    "TEMP",
+    "TMP",
+    "USERPROFILE",
+    "USERNAME",
+];
+
+/// Every variable deny_env keeps from the parent environment.
+fn essential_env_keys() -> impl Iterator<Item = &'static str> {
+    let keys = DEFAULT_ENV_KEYS.iter();
+    #[cfg(windows)]
+    let keys = keys.chain(WINDOWS_ENV_KEYS);
+    keys.copied()
+}
+
+/// Whether two variable names name the same variable: on Windows names are case-insensitive,
+/// so `Path` is `PATH`.
+fn same_env_key(a: &str, b: &str) -> bool {
+    if cfg!(windows) {
+        a.eq_ignore_ascii_case(b)
+    } else {
+        a == b
+    }
+}
+
 /// The closest ancestor that exists, and so the only one a Landlock rule can
 /// name.
 ///
@@ -86,8 +129,18 @@ fn dedup_key(path: &std::path::Path) -> PathBuf {
 
 /// Check if an env var name matches an allow_env pattern.
 /// Patterns can contain `*` as a wildcard (e.g., `MYAPP_*` matches `MYAPP_FOO`).
-/// Patterns without `*` require an exact match.
+/// Patterns without `*` require an exact match. On Windows, where names are case-insensitive,
+/// so is the match: `appdata*` matches `APPDATA`.
 fn env_pattern_matches(pattern: &str, key: &str) -> bool {
+    if cfg!(windows) {
+        env_pattern_matches_exactly(&pattern.to_ascii_uppercase(), &key.to_ascii_uppercase())
+    } else {
+        env_pattern_matches_exactly(pattern, key)
+    }
+}
+
+/// [`env_pattern_matches`], comparing names exactly as written.
+fn env_pattern_matches_exactly(pattern: &str, key: &str) -> bool {
     if !pattern.contains('*') {
         return pattern == key;
     }
@@ -121,16 +174,20 @@ impl SandboxConfig {
 
     /// Returns true if any sandbox restriction is configured.
     pub fn is_active(&self) -> bool {
+        self.effective_deny_env() || self.restricts_more_than_env()
+    }
+
+    /// Returns true if a file, network or process restriction is configured. Windows applies
+    /// only the environment filter, and warns when anything else was asked for.
+    pub fn restricts_more_than_env(&self) -> bool {
         self.deny_read
             || self.deny_write
             || self.deny_net
-            || self.deny_env
             || self.deny_process
             || self.deny_temp_write
             || !self.allow_read.is_empty()
             || !self.allow_write.is_empty()
             || !self.allow_net.is_empty()
-            || !self.allow_env.is_empty()
     }
 
     /// Resolve allow_* paths to absolute paths relative to cwd.
@@ -178,6 +235,29 @@ impl SandboxConfig {
 
     pub fn effective_deny_env(&self) -> bool {
         self.deny_env || !self.allow_env.is_empty()
+    }
+
+    /// Refuse per-host network exceptions, which no supported sandbox can enforce.
+    ///
+    /// seccomp sees sockets, not destinations, and Seatbelt's `remote ip` filter
+    /// accepts only `*` or `localhost` as the host: `sandbox-exec` rejects a
+    /// profile naming any other address with `host must be * or localhost in
+    /// network address`. Fail before building anything rather than run a
+    /// command whose sandbox cannot start.
+    #[cfg_attr(not(any(target_os = "linux", target_os = "macos")), allow(dead_code))]
+    pub fn reject_allow_net(&self) -> eyre::Result<()> {
+        if !self.allow_net.is_empty() {
+            let platform = if cfg!(target_os = "macos") {
+                "macOS"
+            } else {
+                "Linux"
+            };
+            eyre::bail!(
+                "per-host network filtering (--allow-net=<host>) is not supported on {platform}. \
+                 Use --deny-net to block all network, or remove --allow-net."
+            );
+        }
+        Ok(())
     }
 
     /// Allow-list paths that do not exist, in declaration order and listed once
@@ -237,8 +317,8 @@ impl SandboxConfig {
         if !self.effective_deny_env() {
             return true;
         }
-        DEFAULT_ENV_KEYS.contains(&key)
-            || self.cache_env.iter().any(|name| name == key)
+        essential_env_keys().any(|essential| same_env_key(essential, key))
+            || self.cache_env.iter().any(|name| same_env_key(name, key))
             || self
                 .allow_env
                 .iter()
@@ -263,35 +343,39 @@ impl SandboxConfig {
             .filter(|(k, _)| self.keeps_env_key(k))
             .map(|(k, v)| (k.clone(), v.clone()))
             .collect();
+        // A name already kept under another spelling (Windows `Path` for `PATH`) is the same
+        // variable, and must not be added again.
+        let has_key = |filtered: &std::collections::BTreeMap<String, String>, key: &str| {
+            filtered.keys().any(|k| same_env_key(k, key))
+        };
         // Pull in allowed vars from parent env that might not be in mise's env map.
         // For wildcard patterns, check all parent env vars; for exact names, check directly.
         for pattern in self.allow_env.iter().chain(&self.pass_through_env) {
             if pattern.contains('*') {
                 for (key, val) in crate::env::vars_safe() {
-                    if !filtered.contains_key(&key) && env_pattern_matches(pattern, &key) {
+                    if !has_key(&filtered, &key) && env_pattern_matches(pattern, &key) {
                         filtered.insert(key, val);
                     }
                 }
-            } else if !filtered.contains_key(pattern)
+            } else if !has_key(&filtered, pattern)
                 && let Ok(val) = std::env::var(pattern)
             {
                 filtered.insert(pattern.clone(), val);
             }
         }
         for key in &self.cache_env {
-            if !filtered.contains_key(key)
+            if !has_key(&filtered, key)
                 && let Ok(val) = std::env::var(key)
             {
                 filtered.insert(key.clone(), val);
             }
         }
         // Also ensure essential vars from parent env are present
-        for key in DEFAULT_ENV_KEYS {
-            let k = key.to_string();
-            if !filtered.contains_key(&k)
+        for key in essential_env_keys() {
+            if !has_key(&filtered, key)
                 && let Ok(val) = std::env::var(key)
             {
-                filtered.insert(k, val);
+                filtered.insert(key.to_string(), val);
             }
         }
         filtered
@@ -320,12 +404,18 @@ impl SandboxConfig {
 
         #[cfg(target_os = "macos")]
         {
-            return self.apply_macos(program, args).await;
+            return self.apply_macos(program, args);
         }
 
+        // The caller filters the environment itself (`filter_env`), so an
+        // env-only sandbox is fully applied here.
         #[cfg(not(any(target_os = "linux", target_os = "macos")))]
         {
-            warn!("sandbox is not supported on this platform, running unsandboxed");
+            if self.restricts_more_than_env() {
+                warn!(
+                    "sandbox file, network and process restrictions are not supported on this platform, running without them"
+                );
+            }
             Ok(None)
         }
     }
@@ -336,25 +426,20 @@ impl SandboxConfig {
             landlock::apply_landlock(self, Some(std::path::Path::new(program)))?;
         }
         if self.effective_deny_net() || self.deny_process {
-            if !self.allow_net.is_empty() {
-                eyre::bail!(
-                    "per-host network filtering (--allow-net=<host>) is not supported on Linux. \
-                     Use --deny-net to block all network, or remove --allow-net."
-                );
-            }
+            self.reject_allow_net()?;
             seccomp::apply_seccomp_filter(self.effective_deny_net(), self.deny_process)?;
         }
         Ok(())
     }
 
     #[cfg(target_os = "macos")]
-    async fn apply_macos(
+    fn apply_macos(
         &self,
         program: &str,
         args: &[String],
     ) -> eyre::Result<Option<SandboxedCommand>> {
-        let profile =
-            macos::generate_seatbelt_profile(self, Some(std::path::Path::new(program))).await;
+        self.reject_allow_net()?;
+        let profile = macos::generate_seatbelt_profile(self, Some(std::path::Path::new(program)));
         let mut sandbox_args = vec![
             "-p".to_string(),
             profile,
@@ -395,8 +480,8 @@ pub fn seccomp_apply(deny_net: bool, deny_process: bool) -> eyre::Result<()> {
 
 /// Generate a macOS Seatbelt profile string (macOS only).
 #[cfg(target_os = "macos")]
-pub async fn macos_generate_profile(config: &SandboxConfig, program: &std::path::Path) -> String {
-    macos::generate_seatbelt_profile(config, Some(program)).await
+pub fn macos_generate_profile(config: &SandboxConfig, program: &std::path::Path) -> String {
+    macos::generate_seatbelt_profile(config, Some(program))
 }
 
 #[cfg(test)]
@@ -441,6 +526,103 @@ mod tests {
     use super::*;
     use mise_settings::SettingsSandbox;
     use std::collections::BTreeMap;
+
+    #[test]
+    fn test_restricts_more_than_env_ignores_the_env_filter() {
+        let env_only = SandboxConfig {
+            deny_env: true,
+            allow_env: vec!["TOKEN".into()],
+            ..Default::default()
+        };
+        assert!(env_only.is_active());
+        assert!(!env_only.restricts_more_than_env());
+        let read = SandboxConfig {
+            allow_read: vec![PathBuf::from("/data")],
+            ..Default::default()
+        };
+        assert!(read.is_active());
+        assert!(read.restricts_more_than_env());
+    }
+
+    /// Windows names are case-insensitive: mise's own `Path` is the PATH deny_env keeps, and the
+    /// variables a Windows process needs to start survive whatever their spelling.
+    #[cfg(windows)]
+    #[test]
+    fn test_filter_env_keeps_windows_essentials() {
+        let deny = SandboxConfig {
+            deny_env: true,
+            ..Default::default()
+        };
+        for key in [
+            "Path",
+            "SystemRoot",
+            "SYSTEMROOT",
+            "windir",
+            "ComSpec",
+            "PATHEXT",
+            "TEMP",
+            "USERPROFILE",
+        ] {
+            assert!(deny.keeps_env_key(key), "{key}");
+        }
+        assert!(!deny.keeps_env_key("DEPLOY_KEY"));
+        let env = BTreeMap::from([
+            ("Path".to_string(), r"C:\mise\tools".to_string()),
+            ("DEPLOY_KEY".to_string(), "secret".to_string()),
+        ]);
+        let filtered = deny.filter_env(&env);
+        assert_eq!(
+            filtered.get("Path").map(String::as_str),
+            Some(r"C:\mise\tools")
+        );
+        assert!(
+            !filtered
+                .keys()
+                .any(|k| k != "Path" && k.eq_ignore_ascii_case("PATH")),
+            "PATH must not be added again under another spelling: {filtered:?}"
+        );
+        assert!(!filtered.contains_key("DEPLOY_KEY"));
+        let system_root = std::env::var("SystemRoot").expect("SystemRoot is set on Windows");
+        assert_eq!(filtered.get("SystemRoot"), Some(&system_root));
+    }
+
+    /// Windows names are case-insensitive, so `allow_env` patterns and `cache_env` names match
+    /// whatever spelling the environment uses, and a kept name is not added a second time.
+    #[cfg(windows)]
+    #[test]
+    fn test_filter_env_matches_names_case_insensitively_on_windows() {
+        let deny = SandboxConfig {
+            deny_env: true,
+            allow_env: vec!["myapp_*".into(), "token".into()],
+            cache_env: vec!["cache_key".into()],
+            ..Default::default()
+        };
+        for key in ["MYAPP_FOO", "Token", "CACHE_KEY"] {
+            assert!(deny.keeps_env_key(key), "{key}");
+        }
+        assert!(!deny.keeps_env_key("OTHER"));
+        let env = BTreeMap::from([
+            ("MYAPP_FOO".to_string(), "foo".to_string()),
+            ("TOKEN".to_string(), "secret".to_string()),
+            ("CACHE_KEY".to_string(), "cache".to_string()),
+            ("OTHER".to_string(), "other".to_string()),
+        ]);
+        let filtered = deny.filter_env(&env);
+        assert_eq!(filtered.get("MYAPP_FOO").map(String::as_str), Some("foo"));
+        assert_eq!(filtered.get("TOKEN").map(String::as_str), Some("secret"));
+        assert_eq!(filtered.get("CACHE_KEY").map(String::as_str), Some("cache"));
+        assert!(!filtered.contains_key("OTHER"));
+        for name in ["token", "cache_key"] {
+            assert_eq!(
+                filtered
+                    .keys()
+                    .filter(|k| k.eq_ignore_ascii_case(name))
+                    .count(),
+                1,
+                "{name} is kept once: {filtered:?}"
+            );
+        }
+    }
 
     /// Fixture paths that cannot collide with a previous run or a concurrent one.
     fn missing_fixture(name: &str) -> PathBuf {
@@ -707,5 +889,49 @@ mod tests {
         assert!(config.deny_write);
         assert!(config.deny_net);
         assert!(config.deny_env);
+    }
+
+    #[test]
+    fn test_reject_allow_net() {
+        assert!(SandboxConfig::default().reject_allow_net().is_ok());
+        assert!(
+            SandboxConfig {
+                deny_net: true,
+                ..Default::default()
+            }
+            .reject_allow_net()
+            .is_ok()
+        );
+
+        // Neither Linux nor macOS can enforce a per-host exception, so the
+        // request fails instead of producing a sandbox that cannot start.
+        let err = SandboxConfig {
+            allow_net: vec!["registry.npmjs.org".to_string()],
+            ..Default::default()
+        }
+        .reject_allow_net()
+        .unwrap_err();
+        assert!(
+            err.to_string()
+                .starts_with("per-host network filtering (--allow-net=<host>) is not supported"),
+            "{err}"
+        );
+    }
+
+    /// `mise x` goes through `apply`, which must reject the host before it
+    /// builds the `sandbox-exec` command. macOS only: on Linux `apply`
+    /// sandboxes the calling process, so a regression would sandbox the test.
+    #[cfg(target_os = "macos")]
+    #[tokio::test]
+    async fn test_apply_rejects_allow_net() {
+        let config = SandboxConfig {
+            allow_net: vec!["registry.npmjs.org".to_string()],
+            ..Default::default()
+        };
+        let err = match config.apply("true", &[]).await {
+            Ok(_) => panic!("apply accepted --allow-net"),
+            Err(err) => err,
+        };
+        assert!(err.to_string().contains("--allow-net=<host>"), "{err}");
     }
 }

@@ -26,6 +26,6 @@ a policy to a remote machine, including the rule that permits your SSH connectio
 
 ## Related documentation
 
-- [Host firewall](/bootstrap/firewall.html).
+- [Linux firewall](/bootstrap/firewall.html).
 - [`mise bootstrap [FLAGS] [SUBCOMMAND]`](/cli/bootstrap.html).
 - [Global flags and argument syntax](/cli/#global-flags).

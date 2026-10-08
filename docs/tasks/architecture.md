@@ -1,20 +1,20 @@
 ---
-description: "Understanding how mise's task system works helps you write more efficient tasks and troubleshoot dependency issues."
+description: "Order tasks with depends, wait_for, depends_post and run steps, and debug how mise schedules them."
 ---
 
-# Task System Architecture
+# Dependencies and execution order
 
-Understanding how mise's task system works helps you write more efficient tasks and troubleshoot dependency issues.
+When you run a task, mise builds a graph of that task and everything it depends
+on, then starts each task as soon as its prerequisites succeed, up to the job
+limit. Use this page to choose a dependency type and to debug ordering problems.
 
-## Task Dependency System
+## How mise schedules a run
 
-mise uses a dependency graph to manage task execution order and parallelism. This ensures tasks run in the correct order while maximizing parallel execution.
-
-### Dependency Graph Resolution
-
-When you run a task, mise builds a directed graph of the selected tasks and their
-declared dependencies, then rejects cycles. In this example, selecting `deploy`
-includes all of the prerequisites shown; arrows point from prerequisite to dependent:
+When you run `mise run deploy`, mise loads tasks from every active config, finds
+`deploy` by name or alias (or expands a [wildcard pattern](/tasks/running-tasks.html#wildcards)),
+adds its dependencies to a graph, rejects cycles, and then starts each task once
+its prerequisites have succeeded. In this graph, arrows point from prerequisite
+to dependent:
 
 ```mermaid
 graph TD
@@ -26,275 +26,189 @@ graph TD
     E[package] --> G[deploy]
 ```
 
-This graph ensures that:
+`lint`, `format`, `build`, and `docs` start together. `test` starts when `lint`,
+`format`, and `build` have succeeded, and `package` starts when `test` and
+`docs` have. The scheduling rules are:
 
-- Dependencies run before dependents
-- Independent tasks run in parallel
-- No circular dependencies exist
-- Failed dependencies prevent dependents from running
+- A task starts only after all of its prerequisites succeed.
+- Tasks with no path between them run in parallel, up to `--jobs` (the
+  [`jobs`](/configuration/settings.html#jobs) setting).
+- A task that several others depend on runs once.
+- A graph with a cycle is rejected before any task runs.
+- A failed task stops the run, so its dependents do not start, unless you pass
+  `--continue-on-error`. See
+  [When a task fails](/tasks/running-tasks.html#when-a-task-fails).
 
-### Dependency Types
+mise matches task names exactly, by alias, by wildcard pattern, or without an
+extension, so `mise run build` finds the file task `build.sh`. It does not match
+partial names: `mise run bui` fails with `no task bui found` even when `build`
+exists.
 
-mise supports three types of task dependencies:
+[Task discovery and precedence](/tasks/task-discovery.html) explains where mise
+finds tasks and [which definition wins](/tasks/task-discovery.html#which-definition-wins)
+when two configs define the same name.
 
-#### `depends` - Prerequisites
+## Choose a dependency type
 
-Tasks that must complete successfully before this task runs:
+| Mechanism                                 | Adds the task to the run | When it runs                                                          | In `mise tasks deps`        |
+| ----------------------------------------- | ------------------------ | --------------------------------------------------------------------- | --------------------------- |
+| [`depends`](#depends)                     | Yes                      | Before this task; this task does not start if it fails                | Yes                         |
+| [`wait_for`](#wait-for)                   | No                       | Before this task, only when the other task is already in the run      | Only when both are selected |
+| [`depends_post`](#depends-post)           | Yes                      | After this task, even if this task fails                              | As `<name> (post)`          |
+| [Run steps](#run-steps-in-order) in `run` | Yes, as a step           | In `run` order; a `{ tasks = [...] }` step runs its tasks in parallel | No                          |
 
-```toml
+`depends`, `wait_for`, and `depends_post` accept task names, aliases, and
+patterns, and each entry can pass arguments and environment variables to the
+task it names. See
+[`depends`](/tasks/task-configuration.html#depends) in the task configuration
+reference for the full syntax.
+
+### `depends`
+
+Prerequisites that must succeed before this task runs:
+
+```mise-toml [mise.toml]
 [tasks.test]
 depends = ["lint", "build"]
 run = "npm test"
 ```
 
-#### `depends_post` - Cleanup Tasks
+`lint` and `build` run in parallel; their order in the list does not matter.
 
-Tasks that run after this task completes (whether it succeeded or failed):
+In a [monorepo](/tasks/monorepo.html#task-path-syntax), depend on another
+project's task by its path, such as `depends = ["//api:build"]`.
 
-```toml
+### `depends_post` {#depends-post}
+
+Tasks that run after this task finishes, whether it succeeded or failed:
+
+```mise-toml [mise.toml]
 [tasks.deploy]
 depends = ["build", "test"]
 depends_post = ["cleanup", "notify"]
 run = "kubectl apply -f deployment.yaml"
 ```
 
-Regular dependencies of cleanup tasks belong to the same post-phase subtree and do not start until
-the parent task has completed. mise runs that subtree if the parent started, even when the parent
-fails, but skips the entire subtree when a regular dependency fails before the parent can start. A
-task used as both a regular dependency and a post-dependency is executed separately in each phase.
+`cleanup`, `notify`, and their own dependencies run after `deploy` finishes,
+even if it failed. See [`depends_post`](/tasks/task-configuration.html#depends-post)
+for what happens when `deploy`'s own dependencies fail.
 
-#### `wait_for` - Soft Dependencies
+### `wait_for` {#wait-for}
 
-Tasks that must finish first if they are already scheduled. `wait_for` does not
-schedule them. A missing task definition still causes an error unless the reference
-sets `optional = true`; see [`wait_for`](./task-configuration.html#wait-for).
+Tasks that must finish first, but only when something else already put them in
+the run. `wait_for` does not add them:
 
-```toml
+```mise-toml [mise.toml]
 [tasks.integration-test]
-wait_for = ["start-services"]  # Only waits if start-services is also being run
+wait_for = ["start-services"]
 run = "npm run test:integration"
 ```
 
-## Parallel Execution Engine
+`mise run integration-test` runs only `integration-test`.
+`mise run start-services ::: integration-test` runs `start-services` first. A
+name that matches no task is still an error unless the entry sets
+`optional = true`; see [`wait_for`](/tasks/task-configuration.html#wait-for).
 
-### Job Control
+### Run steps in order {#run-steps-in-order}
 
-mise executes tasks in parallel up to the configured job limit:
+A `run` array can call other tasks as steps. Each step finishes before the next
+one starts, and a `{ tasks = [...] }` step runs its tasks in parallel:
 
-```bash
-mise run --jobs 16 test       # Use 16 parallel jobs
-mise run -j 1 test            # Force sequential execution
+```mise-toml [mise.toml]
+[tasks.example1]
+run = "echo example1"
+
+[tasks.example2]
+run = "echo example2"
+
+[tasks.example3]
+run = "echo example3"
+
+[tasks.one_by_one]
+run = [
+  { task = "example1" },                # finishes before the next step starts
+  { tasks = ["example2", "example3"] }, # these two run in parallel
+]
 ```
 
-The default is 8 parallel jobs, but you can configure this globally:
+Use run steps when the order matters. `depends = ["example1", "example2",
+"example3"]` would also run all three first, but in parallel, with no order
+among them.
 
-```toml
-# ~/.config/mise/config.toml
-[settings]
-jobs = 4
-```
+Run steps belong to this task, not to the graph, so
+`mise tasks deps one_by_one` shows `one_by_one` with no dependencies. The tasks
+in each step still run with their own `depends`. A step can pass arguments and
+environment variables, such as `{ task = "build", args = ["--release"] }`; see
+[`run`](/tasks/task-configuration.html#run).
 
-### Example Execution Flow
+## Run a task from a script
 
-Given these tasks:
+A script can call `mise run` itself, for example to run a task only when a file
+is missing:
 
-```toml
-[tasks.lint]
-run = "eslint src/"
-
-[tasks.test-unit]
-depends = ["lint"]
-run = "npm run test:unit"
-
-[tasks.test-integration]
-depends = ["lint"]
-run = "npm run test:integration"
-
-[tasks.build]
-depends = ["test-unit", "test-integration"]
-run = "npm run build"
-```
-
-Execution with `--jobs 2`:
-
-```
-Time →
-0s:   [lint]
-5s:   [test-unit] [test-integration]  # Run in parallel after lint
-15s:  [build]                        # Waits for both tests
-```
-
-## Task Discovery and Resolution
-
-### Task Sources
-
-mise loads inline TOML tasks, included task files, and executable file tasks from
-the active configuration hierarchy. A child configuration can override a parent
-configuration. An inline metadata-only definition can also add properties to an
-existing command or file task.
-
-There is no single source-type ordering that describes every combination. See
-[`task_config.includes`](./task-configuration.html#task_config.includes) for include
-ordering, command replacement, and metadata overlays. Use `mise tasks info <task>`
-to inspect the selected definition.
-
-### Task Resolution Process
-
-When you run `mise run build`, mise:
-
-1. **Discovers all tasks** from all configuration sources
-2. **Resolves the task name** (handles aliases and partial matches)
-3. **Builds the dependency graph** including all dependencies
-4. **Validates the graph** (checks for circular dependencies)
-5. **Executes in dependency order** with parallelism
-
-### Task Resolution Across Directories
-
-Tasks from parent directories are available in subdirectories and can be overridden:
-
-```
-project/
-├── mise.toml              # defines: lint, test, build
-└── frontend/
-    └── mise.toml          # overrides: test, adds: bundle
-```
-
-In `frontend/`, you have access to `lint` (from parent), `test` (overridden), `build` (from parent), and `bundle` (local).
-
-## Advanced Dependency Features
-
-### Conditional Dependencies
-
-Use task arguments for conditional behavior:
-
-```toml
-[tasks.test]
-depends = ["build"]
-run = '''
-#!/usr/bin/env bash
-if [ "$1" = "--with-lint" ]; then
-  mise run lint
-fi
-npm test
-'''
-```
-
-The shebang selects Bash, which must be installed on the host. Without
-it, mise uses the platform default inline shell (`sh -c` on Unix,
-`cmd /c` on Windows), so the bash `[ ... ]` test would fail to parse on a
-Windows host. For richer argument handling, prefer the
-[`usage` field](/tasks/task-arguments#usage-field) instead of positional
-parameters.
-
-### Dynamic Dependencies
-
-A script can invoke another task conditionally. These nested invocations are
-separate runs; they are not added to the original dependency graph and do not
-appear in `mise tasks deps`:
-
-```bash
+```bash [mise-tasks/start]
 #!/usr/bin/env bash
 #MISE depends=["setup"]
-
-# Additional conditional dependency
-if [ ! -f ".env" ]; then
+if [ ! -f .env ]; then
   mise run generate-env
 fi
-
 npm start
 ```
 
-### Cross-Project Dependencies
+The nested `mise run` is a separate run. It does not join the current graph and
+does not appear in `mise tasks deps`. To choose behavior from a flag such as
+`--with-lint`, define the flag with a [usage spec](/tasks/task-arguments.html)
+instead of reading `$1`.
 
-Enable [monorepo mode](./monorepo.html#configuration) and declare the project
-roots before referencing their tasks. For projects named `api` and `frontend`:
+## Inspect and debug
 
-```toml
-[tasks.deploy-all]
-depends = [
-  "//api:build",
-  "//frontend:build",
-  "deploy-infrastructure"
-]
-run = "echo 'All services deployed'"
+### See the graph
+
+```sh
+mise tasks deps deploy             # tree of deploy's dependencies
+mise tasks deps --dot > deps.dot   # every task, in Graphviz format
+mise run --dry-run deploy          # each command, in execution order, without running it
 ```
 
-## Performance Optimizations
+[`mise tasks deps`](/cli/tasks/deps.html) shows `depends`, `depends_post`, and
+`wait_for` edges, but not run steps. A `wait_for` edge appears only when both
+tasks are selected. A post-dependency appears as `<name> (post)` in `--dot`
+output and when you list every task, but not in the tree for a single task.
 
-### Source and Output Tracking
+### Why a task ran or was skipped
 
-Tasks can skip execution if sources haven't changed:
+A task with `sources` and `outputs` is skipped while its outputs are up to date.
+See [Skip tasks that are up to date](/tasks/running-tasks.html#skip-tasks-that-are-up-to-date)
+and [Task caching](/tasks/caching.html). `mise run --force` runs it anyway, and
+`mise run --verbose` prints debug logs, including each command mise starts.
 
-```toml
-[tasks.build]
-sources = ["src/**/*.ts", "package.json"]
-outputs = ["dist/**/*"]
-run = "npm run build"
+### `circular dependency detected`
+
+```text
+mise ERROR circular dependency detected: test -> build -> test
 ```
 
-mise only runs the task if:
+The path after the colon is the cycle. Remove one of the edges, or move the
+shared work into a separate task that both depend on. `wait_for` also orders
+two tasks when both are in the run, so it does not break a cycle.
 
-- Source files are newer than output files
-- The task has never been run
-- Dependencies have changed
+### `task not found`
 
-### Incremental Execution
-
-Use `mise run --force` to ignore source/output checking:
-
-```bash
-mise run --force build     # Always run, ignore source changes
+```text
+mise ERROR task not found: lint
 ```
 
-### Parallel File Watching
+A `depends`, `depends_post`, or `wait_for` entry names a task that does not
+exist. Define the task, fix the name, or mark the entry
+`{ task = "lint", optional = true }`. A name you type on the command line that
+matches nothing fails with `no task <name> found` and lists the available
+tasks.
 
-Use `mise watch` for continuous development:
+### Tasks run one at a time
 
-```bash
-mise watch              # Watch the default task
-mise watch build test   # Watch specific tasks
-```
-
-This automatically reruns tasks when their source files change.
-
-## Debugging Task Dependencies
-
-### Visualize Dependencies
-
-```bash
-mise tasks deps build           # Show build's declared dependencies
-mise tasks deps --dot > deps.dot # Generate graphviz diagram
-```
-
-### Execution Tracing
-
-```bash
-mise run --verbose build       # Show task execution details
-mise run --dry-run build       # Show what would run without executing
-```
-
-### Common Issues
-
-**Circular Dependencies**:
-
-```
-Error: Circular dependency detected: test → build → test
-```
-
-Solution: Remove the cycle or split the shared work into a separate prerequisite.
-`wait_for` also creates ordering constraints when both tasks are scheduled, so it
-is not a general way to break a cycle.
-
-**Missing Dependencies**:
-
-```
-Error: Task 'build' depends on 'lint' but 'lint' was not found
-```
-
-Solution: Define the missing task or remove the dependency.
-
-**Slow Parallel Execution**:
-
-- Check if tasks have unnecessary dependencies
-- Use `mise tasks deps` to verify the declared dependency graph (`depends`, `wait_for`, `depends_post`)
-- Consider increasing `--jobs` if you have spare CPU cores
+Run `mise tasks deps <task>` to find a chain where you expected siblings. Check
+the `--jobs` value and `MISE_JOBS`, and whether a task sets
+[`raw`](/tasks/task-configuration.html#raw) or
+[`interactive`](/tasks/task-configuration.html#interactive), which take
+exclusive access to the terminal. `mise run --raw` and the global
+[`raw`](/configuration/settings.html#raw) setting also run one command at a time.

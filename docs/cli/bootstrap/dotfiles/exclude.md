@@ -30,6 +30,6 @@ To scope selection to one directory, edit that `[dotfiles]` entry's
 
 ## Related documentation
 
-- [Dotfile ownership and modes](/dotfiles.html).
+- [Dotfiles history](/dotfiles/history.html).
 - [`mise bootstrap dotfiles [--local] <SUBCOMMAND>`](/cli/bootstrap/dotfiles.html).
 - [Global flags and argument syntax](/cli/#global-flags).

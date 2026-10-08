@@ -1,342 +1,258 @@
 ---
-description: "Export OpenTelemetry traces for mise run to Jaeger, Tempo, or any OTLP backend."
+description: "Export OpenTelemetry traces and task output logs from mise run to Jaeger, Grafana Tempo, or any OTLP backend."
+socialDescription: "Export traces and task logs from mise run to any OpenTelemetry backend."
 ---
 
 # OpenTelemetry <Badge type="warning" text="experimental" />
 
-mise can export traces (and, separately, task stdout/stderr logs) for `mise run` to any
-OpenTelemetry-compatible backend such as [Jaeger](https://www.jaegertracing.io/),
+mise can export a trace of each `mise run` to any backend that accepts OTLP
+over HTTP, such as [Jaeger](https://www.jaegertracing.io/),
 [Grafana Tempo](https://grafana.com/oss/tempo/), or [SigNoz](https://signoz.io/).
+Traces show which tasks are slow or failing and which monorepo project each
+task belongs to. With log export on, each task's output appears next to its
+span.
 
-This is useful when you want to answer questions like:
+::: warning Experimental
+Span names, attributes, and settings may change between releases. Export does
+not need `experimental = true`; the `otel.enabled` and `otel.logs` settings
+turn it on.
+:::
 
-- Which task is slow?
-- Which task failed?
-- What did a task print to stdout/stderr? _(requires log export, see below)_
-- Which part of a monorepo run did a task belong to?
+## Quick start
 
-## Quick Start
+Start a local Jaeger that accepts OTLP over HTTP:
 
-Enable OpenTelemetry trace export and set your collector endpoint:
+```sh
+docker run -d --name jaeger -p 16686:16686 -p 4318:4318 jaegertracing/jaeger:latest
+```
+
+Turn on trace export:
 
 ```toml [mise.toml]
 [settings]
 otel.enabled = true
-# Optionally also ship task stdout/stderr as OTLP logs.
-# Read the privacy notes below before turning this on.
-otel.logs = true
 ```
 
-```bash
+Point mise at Jaeger and run some tasks:
+
+```sh
 export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
-```
-
-Then run your tasks as usual:
-
-```bash
 mise run build ::: test ::: lint
 ```
 
-If your collector is reachable, mise will export:
-
-- spans for individual tasks
-- grouped spans for monorepo task roots
-- a root span covering the whole `mise run`, with child spans for setup such as tool installs
-- task logs from stdout/stderr — only when `otel.logs` is also enabled
+Open `http://localhost:16686` and choose the `mise` service. To export task
+output as well, see [Logs](#logs).
 
 ## Configuration
 
-mise uses the standard
-[OpenTelemetry environment variables](https://opentelemetry.io/docs/specs/otel/protocol/exporter/)
-for configuration. The mise-specific settings are opt-in gates — they prevent mise from
-unexpectedly emitting telemetry in environments that set `OTEL_EXPORTER_OTLP_*` for other
-tools, and they keep log export (which is a larger privacy/security boundary) separate
-from trace export.
+Two settings turn export on, one per signal:
 
-| Setting        | Env Var             | Default | Description                                                           |
-| -------------- | ------------------- | ------- | --------------------------------------------------------------------- |
-| `otel.enabled` | `MISE_OTEL_ENABLED` | `false` | Enable OpenTelemetry trace export for task executions.                |
-| `otel.logs`    | `MISE_OTEL_LOGS`    | `false` | Enable OpenTelemetry log export for task stdout/stderr (see Privacy). |
+| Setting                                                     | Environment variable | Default | Exports                                                  |
+| ----------------------------------------------------------- | -------------------- | ------- | -------------------------------------------------------- |
+| [`otel.enabled`](/configuration/settings.html#otel.enabled) | `MISE_OTEL_ENABLED`  | `false` | Traces for `mise run`.                                   |
+| [`otel.logs`](/configuration/settings.html#otel.logs)       | `MISE_OTEL_LOGS`     | `false` | Task stdout and stderr as logs. See [Privacy](#privacy). |
 
-Traces and logs are gated independently:
+Everything else comes from the standard
+[OpenTelemetry environment variables](https://opentelemetry.io/docs/specs/otel/protocol/exporter/).
+mise exports nothing unless one of the settings is on, so an
+`OTEL_EXPORTER_OTLP_ENDPOINT` set for another tool does not make mise send
+data. Each signal also needs an endpoint: the general
+`OTEL_EXPORTER_OTLP_ENDPOINT` or the signal's own `..._TRACES_ENDPOINT` or
+`..._LOGS_ENDPOINT`. An empty value counts as unset.
 
-- Traces are exported only when `otel.enabled = true` **and** a traces endpoint is
-  configured (`OTEL_EXPORTER_OTLP_ENDPOINT` or `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT`).
-- Logs are exported only when `otel.logs = true` **and** a logs endpoint is configured
-  (`OTEL_EXPORTER_OTLP_ENDPOINT` or `OTEL_EXPORTER_OTLP_LOGS_ENDPOINT`).
+### Standard environment variables
 
-Setting `otel.enabled` does not, by itself, ship any task output to the collector.
+| Variable                                                                | Purpose                                                                                                                                                |
+| ----------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `OTEL_EXPORTER_OTLP_ENDPOINT`                                           | The OTLP endpoint for both signals, for example `http://localhost:4318`.                                                                               |
+| `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT`                                    | The traces endpoint. Takes priority over the general endpoint.                                                                                         |
+| `OTEL_EXPORTER_OTLP_LOGS_ENDPOINT`                                      | The logs endpoint. Takes priority over the general endpoint.                                                                                           |
+| `OTEL_EXPORTER_OTLP_HEADERS`                                            | Headers for export requests, as comma-separated `key=value` pairs, for example for authentication.                                                     |
+| `OTEL_EXPORTER_OTLP_TRACES_HEADERS`                                     | Headers for trace export. Take priority over the general headers.                                                                                      |
+| `OTEL_EXPORTER_OTLP_LOGS_HEADERS`                                       | Headers for log export. Take priority over the general headers.                                                                                        |
+| `OTEL_EXPORTER_OTLP_PROTOCOL`                                           | `http/protobuf` (the default) or `http/json`. gRPC is not supported.                                                                                   |
+| `OTEL_EXPORTER_OTLP_TRACES_PROTOCOL`                                    | The protocol for trace export. Takes priority over the general protocol.                                                                               |
+| `OTEL_EXPORTER_OTLP_LOGS_PROTOCOL`                                      | The protocol for log export. Takes priority over the general protocol.                                                                                 |
+| `OTEL_EXPORTER_OTLP_TIMEOUT` (`..._TRACES_TIMEOUT`, `..._LOGS_TIMEOUT`) | The export request timeout in milliseconds. mise defaults to 3 seconds, so an unreachable collector delays the end of `mise run` by at most that long. |
+| `OTEL_SERVICE_NAME`                                                     | The `service.name` resource attribute. Defaults to `mise`.                                                                                             |
+| `OTEL_RESOURCE_ATTRIBUTES`                                              | More resource attributes, as comma-separated `key=value` pairs. A `service.name` here also replaces the default.                                       |
 
-### Standard OTEL Environment Variables
+To send traces to an authenticated collector:
 
-When trace and/or log export is enabled, mise reads the following standard env vars:
-
-| Env Var                              | Description                                                                     |
-| ------------------------------------ | ------------------------------------------------------------------------------- |
-| `OTEL_EXPORTER_OTLP_ENDPOINT`        | General OTLP endpoint (e.g. `http://localhost:4318`).                           |
-| `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` | Signal-specific traces endpoint. Takes priority over the general endpoint.      |
-| `OTEL_EXPORTER_OTLP_LOGS_ENDPOINT`   | Signal-specific logs endpoint. Takes priority over the general endpoint.        |
-| `OTEL_EXPORTER_OTLP_HEADERS`         | Headers for export requests (comma-separated `key=value` pairs), e.g. for auth. |
-| `OTEL_EXPORTER_OTLP_TRACES_HEADERS`  | Signal-specific traces headers. Takes priority over the general headers.        |
-| `OTEL_EXPORTER_OTLP_LOGS_HEADERS`    | Signal-specific logs headers. Takes priority over the general headers.          |
-| `OTEL_EXPORTER_OTLP_PROTOCOL`        | `http/protobuf` (default) or `http/json`. gRPC is not supported.                |
-| `OTEL_SERVICE_NAME`                  | The `service.name` resource attribute (defaults to `mise`).                     |
-| `OTEL_RESOURCE_ATTRIBUTES`           | Additional resource attributes (comma-separated `key=value` pairs).             |
-
-Example with authentication:
-
-```bash
+```sh
 export MISE_OTEL_ENABLED=1
 export OTEL_EXPORTER_OTLP_ENDPOINT=https://otel.example.com:4318
 export OTEL_EXPORTER_OTLP_HEADERS="Authorization=Bearer mytoken"
-```
-
-Example with resource attributes:
-
-```bash
 export OTEL_RESOURCE_ATTRIBUTES="deployment.environment=staging,team.name=platform"
 ```
 
-## What You See
+## Trace structure
 
-Each `mise run` creates one trace.
+Each `mise run` creates one trace. Its root span covers the whole run, setup
+spans cover the work before tasks start, and each task gets a span. Tasks whose
+config root differs from the project you ran in, such as another monorepo
+project or a parent directory's config, are grouped under a span for that
+config root:
 
-That trace contains:
-
-- a root span covering the whole `mise run`
-- setup spans for fetching remote tasks, resolving tasks, installing tools, running deps
-  providers, and starting daemons
-- task spans for individual tasks
-- monorepo group spans when tasks come from different `config_root`s
-
-Typical shape:
-
-```
-mise run                          ← root span
-├── resolve tasks                 ← setup span
-├── install tools                 ← setup span
-├── deps                          ← setup span
-├── start daemons                 ← setup span
-├── packages/frontend             ← monorepo group span
-│   ├── lint                      ← task span
-│   ├── typecheck                 ← task span
-│   └── build                     ← task span
-├── packages/backend              ← monorepo group span
-│   └── test                      ← task span
-└── deploy                        ← task span (direct child of root)
+```text
+mise run //packages/frontend:lint …       ← root span
+├── resolve tasks                         ← setup span
+├── install tools                         ← setup span
+├── deps                                  ← setup span
+├── start daemons                         ← setup span
+├── packages/frontend                     ← monorepo group span
+│   ├── //packages/frontend:lint          ← task span
+│   ├── //packages/frontend:typecheck     ← task span
+│   └── //packages/frontend:build         ← task span
+├── packages/backend                      ← monorepo group span
+│   └── //packages/backend:test           ← task span
+└── //:deploy                             ← task span (direct child of root)
 ```
 
-For monorepos, this makes it easier to see which package or subproject a task came from. See
-[Monorepo Tasks](/tasks/monorepo) for background on `config_root`.
+The root span is named after the tasks you asked for, by their full resolved
+names. A task span uses the task's full name plus any arguments, such as
+`//:deploy prod`. A run that fetches [remote tasks](/tasks/toml-tasks.html#remote-tasks)
+also has a `fetch tasks` setup span. See [Monorepo tasks](/tasks/monorepo.html)
+for how mise names projects.
 
-### Span Timing
+The root span has the attribute `mise.span_type = "run"`, setup spans have
+`"setup"`, and group spans have `"monorepo_group"` plus `mise.config_root`, the
+group's config root. Task spans have no `mise.span_type`.
 
-Spans are live for exactly as long as the thing they measure, so durations nest the way
-you'd expect: the root span opens once the tasks to run are known and closes after the
-last task finishes. A group span opens with its first task and stays open until the run
-ends, since mise can't know whether another task from that package is still to come.
+### Span timing
 
-Setup runs inside the root span, each phase under its own span with
-`mise.span_type = "setup"`: fetching [remote tasks](/tasks/toml-tasks#remote-tasks) (only when
-there are any), resolving the task graph, installing missing tools,
-running automatic deps providers, and starting daemons. A slow first run on a fresh CI
-runner shows up as a long `install tools` span, not as unexplained time before the first
-task. A failed phase is marked as an error, and so is the root span.
+The root span starts once mise knows which tasks you asked for and ends after
+the last task finishes. The setup spans show where the time before the first
+task went: fetching remote tasks, resolving the task graph, installing missing
+tools, running deps providers, and starting daemons. A slow first run on a fresh
+CI runner shows up as a long `install tools` span. A failed setup phase marks
+both its span and the root span as errors.
 
-The rest of the root span is scheduler overhead, per-task queueing on the `jobs`
-semaphore, and per-task toolset and environment resolution. A task span starts when the scheduler picks the task up, not
-when its process is spawned, so the gap between a task span's start and its first output
-is mise's own per-task setup rather than the task itself.
+A task span starts when mise picks the task up, so the gap before its first
+output is mise preparing that task's tools and environment. Root-span time that
+no child covers is scheduling overhead and time spent waiting for a free job
+slot (see [`jobs`](/configuration/settings.html#jobs)). A group span stays open until the
+run ends, because mise cannot know whether another task from that project is
+still to come.
 
-Task spans include attributes such as:
+### Task span attributes
 
-| Attribute               | Description                                                                                                 |
-| ----------------------- | ----------------------------------------------------------------------------------------------------------- |
-| `mise.task.name`        | Task name                                                                                                   |
-| `mise.task.args`        | CLI arguments passed to the task (space-joined)                                                             |
-| `mise.task.source`      | Path to the config file defining the task                                                                   |
-| `mise.task.config_root` | Config root directory (for monorepo tasks)                                                                  |
-| `mise.task.skipped`     | `true` when the task was skipped because sources were up to date                                            |
-| `mise.task.cancelled`   | `true` when the task was stopped because a _sibling_ task failed                                            |
-| `process.command_args`  | Full argv as a string array (`["mise", task_name, ...args]`), per OTel CLI semantic conventions             |
-| `process.exit.code`     | Exit code of the task as an integer (`0` for success/skipped, propagated from the failed command otherwise) |
+| Attribute                | Value                                                                                                    |
+| ------------------------ | -------------------------------------------------------------------------------------------------------- |
+| `mise.task.name`         | The task name.                                                                                           |
+| `mise.task.display_name` | The task name plus its arguments, which is also the span name.                                           |
+| `mise.task.args`         | The arguments passed to the task, joined with spaces. Present only when there are arguments.             |
+| `mise.task.source`       | The path of the config file that defines the task.                                                       |
+| `mise.task.config_root`  | The config root of the task's config file.                                                               |
+| `mise.task.skipped`      | `true` when mise skipped the task because its sources were up to date.                                   |
+| `mise.task.cancelled`    | `true` when mise stopped the task because another task failed or the run was interrupted (Ctrl-C).       |
+| `process.command_args`   | The full argv as a string array (`["mise", task_name, ...args]`), per the OpenTelemetry CLI conventions. |
+| `process.exit.code`      | The task's exit code as an integer: `0` for success or a skipped task, otherwise the failed command's.   |
 
-### Failed vs. Cancelled Tasks
+### Failed vs. cancelled tasks
 
-By default a failing task stops its siblings (unless `--continue-on-error` is set), so
-several tasks can end at once from a single fault. Only the task that actually failed
-gets an `Error` span status; the siblings mise shut down are recorded with an `Unset`
-status and `mise.task.cancelled = true`, so a search for errored spans returns the one
-real cause rather than every task that happened to be running. Because they were
-terminated by a signal and have no exit code of their own, cancelled tasks carry no
-`process.exit.code`. The root span is still marked `Error`, since the run as a whole
-failed.
+Unless you pass `--continue-on-error`, a failing task stops the tasks running
+beside it, so several tasks can end at once from one fault. Only the task that
+failed gets an `Error` span status. The tasks mise shut down get an `Unset`
+status and `mise.task.cancelled = true`, so a search for errored spans finds
+the one real cause. Because a signal ended them, cancelled tasks usually have no
+`process.exit.code`. The root span is still an `Error`, since the run failed.
 
-A sibling that exits with its own non-zero status after the first failure is still an
-`Error`, and so is one that crashes: only tasks ended by the SIGTERM mise sends count as
-cancelled. Windows reports a
-terminated process as an ordinary exit code, so there every task that ends after the
-first failure is recorded as cancelled.
+A task that exits with its own non-zero status after the first failure is still
+an `Error`, and so is one that crashes. Only tasks ended by the SIGTERM mise
+sends, or interrupted by SIGINT, count as cancelled. Windows reports a
+terminated process as an ordinary exit code, so there every task that ends
+after the first failure is recorded as cancelled.
 
-A task whose tools fail to install never starts, but it still gets an `Error` span, since
-its failure is what stopped the run.
+A task whose tools fail to install never starts, but it still gets an `Error`
+span, since its failure stopped the run.
 
-Error messages in span status go through the same redactions as task args.
+When `--timeout` expires, mise ends the root span as an `Error` and flushes it.
+Tasks still running at that point are not exported.
 
-When `--timeout` expires, the root span is ended as an `Error` and flushed. Tasks still
-running at that point are not exported.
+## Trace propagation
+
+mise passes each task its trace context in the `TRACEPARENT` and `TRACESTATE`
+environment variables, following the
+[OpenTelemetry environment carriers](https://opentelemetry.io/docs/specs/otel/context/env-carriers/)
+specification. A nested `mise run` joins the same trace, and an
+OpenTelemetry-instrumented program that a task runs, in any language, puts its
+spans under the task's span without other setup.
 
 ## Logs
 
-Log export is a separate, explicit opt-in (`otel.logs = true` / `MISE_OTEL_LOGS=1`)
-because shipping task stdout/stderr to the collector is a different trust boundary
-from trace export. Read [Privacy and Trust Boundary](#privacy-and-trust-boundary)
-before enabling it.
+Log export is a separate opt-in (`otel.logs = true` or `MISE_OTEL_LOGS=1`)
+because it sends task output, not only timing, to the collector. Read
+[Privacy](#privacy) before you turn it on.
 
-When enabled, each line of task stdout and stderr is exported as an OTLP log record
-linked to the corresponding task span, so you can inspect output directly from the
-trace. The link needs the spans too: with `otel.logs` but not `otel.enabled`, records
-still carry trace and span IDs, but no spans are exported for them to point at.
+With log export on, mise exports each line a task writes to stdout or stderr as
+an OTLP log record linked to the task's span, so you can read the output from
+the trace. stdout lines have severity `INFO`, and stderr lines have `WARN`,
+because many tools write progress and warnings to stderr; the span status and
+`process.exit.code` show whether the task failed. Each record carries
+`mise.task.name`, `mise.task.args` when the task has arguments, and
+`output.stream` (`stdout` or `stderr`).
 
-- stdout is exported with severity `INFO`
-- stderr is exported with severity `WARN` (many tools write progress, diagnostics,
-  and compiler warnings to stderr that are not errors — actual failure is conveyed
-  by the task span status and the `process.exit.code` attribute)
+The link to a span needs trace export too. With `otel.logs` but not
+`otel.enabled`, records still carry trace and span IDs, but no spans are
+exported for them to point at.
+
+### What is exported
+
+mise exports output in every mode that reads it line by line: `prefix`,
+`keep-order`, `timed`, `replacing`, `interleave`, and `quiet`. Output in the
+`silent` mode, from [silenced](/tasks/task-configuration.html#silent) tasks, or
+under `--raw` is not exported.
+
+::: warning
+With log export on, `interleave` and `quiet` tasks get a pipe instead of the
+terminal so mise can read every line. That can change buffering, colors,
+progress bars, prompts, and anything else that checks for a TTY. Run such a task
+with `--raw` to keep the terminal; its output is then not exported.
+:::
 
 ### Nested `mise run`
 
-When a task shells out to `mise run`, the inner run's output flows up through the outer
-task's pipe, so both processes see the same lines. mise hands each task a claim directory
-(`MISE_TASK_OTEL_LOG_CLAIM`); a nested run that exports its own task logs registers there
-while it is alive, and the outer run skips exporting for as long as any nested run is
-registered. Each
-line is therefore exported exactly once, by the innermost run that knows which task
-actually produced it:
+When a task runs `mise run`, the inner run's output also flows through the outer
+task. mise exports each line once, attributed to the innermost task that printed
+it:
 
-```toml
+```mise-toml
 [tasks.outer]
 run = "echo building; mise run inner; echo done"
 ```
 
-`building` and `done` are attributed to the `outer` task span, and everything `inner`
-prints is attributed to the `inner` task span. Terminal output is unaffected — the claim
-only gates log export. Traces are unaffected too: a nested run still contributes its
-spans to the same trace via `TRACEPARENT`.
+`building` and `done` belong to the `outer` span, and everything `inner` prints
+belongs to the `inner` span. If the inner run does not export logs itself,
+because `otel.logs` is off for it or it uses `--raw`, the outer run exports that
+output instead. Output from a `raw` or `interactive` task inside a nested run
+that does export logs is exported by neither run. Terminal output is the same
+either way.
 
-A nested run only takes over if it exports logs itself, so disabling `otel.logs` for the
-inner run leaves the outer run reporting its output as before. Each registration records
-the owning process, so one that dies without releasing it — killed with `SIGKILL`, for
-instance — is detected as stale and the outer run resumes exporting. Nested runs started
-concurrently from a single task (`mise run a & mise run b &`) each register, so the outer
-run stays quiet until the last of them exits.
+## Privacy
 
-A nested `mise run --raw` never reads its tasks' output, so it doesn't claim the stream and
-the outer run keeps exporting it. Within a nested run that does claim the stream, a task
-that is itself `raw` (or `interactive`) is exported by neither run: the nested run doesn't
-read its output and the outer run defers to the nested one. Terminal output is unaffected.
+Anything mise exports can be stored, indexed, and read by everyone with access
+to your telemetry backend, under that backend's retention policy. Trace export
+sends each task's name, display name, arguments, config file and config root,
+`process.command_args`, exit code, timing, and status. Log export also sends
+every line the task writes to stdout and stderr.
 
-:::tip
-Every output mode that reads task output line by line exports it: `prefix`,
-`keep-order`, `timed`, `replacing`, `interleave`, and `quiet`. The `silent` output mode
-and output a task [silences](/tasks/task-configuration#silent) are not read, so they are
-not exported. With
-`--raw`, output goes straight to the terminal and is not exported either.
+- Pass secrets in environment variables, not arguments. Arguments, for example
+  `mise run deploy -- --token=hunter2`, are exported unless they match a
+  [redaction](/environments/secrets/#redaction); environment variables are not
+  exported.
+- With `otel.logs = true`, any secret a task prints is exported, including one
+  that leaks through `set -x` or debug logging.
+- Redactions apply to exported arguments, span names, error messages, and log
+  lines, but they hide only the values you list. They do not detect secrets.
+- `--raw` output is never exported, and redactions do not apply to it either.
 
-In `interleave`/`quiet` mode mise normally hands the task the terminal directly. While log
-export is on it keeps a pipe instead so it can read every line, so the task no longer sees
-a TTY. This can change buffering, colour output, progress bars, prompts, and any
-`isatty()`-dependent behaviour. Run affected tasks under `--raw` to keep a real TTY (at
-the cost of log export for that task).
-:::
+To keep task output on the machine, leave `otel.logs` off.
 
-## Privacy and Trust Boundary
+## Behavior and limits
 
-Exporting traces and logs ships information about your tasks to your OpenTelemetry
-collector. Even though all of this is visible locally already, **the collector is a
-different trust boundary** — anything sent there may be stored, indexed, queryable
-by other users of that backend, and retained according to its policy.
-
-What trace export (`otel.enabled`) sends per task:
-
-- the task name, display name, args, config source, and config root
-- `process.command_args` (the full argv as a string array, per OTel CLI semconv)
-- `process.exit.code`
-- timing and span status
-
-What log export (`otel.logs`) additionally sends:
-
-- every line written to the task's stdout
-- every line written to the task's stderr
-
-**Implications:**
-
-- **Secrets in args.** If a secret appears in `mise.task.args` /
-  `process.command_args` (for example `mise run deploy -- --token=hunter2`), trace
-  export will ship it to the collector unless it matches one of your
-  [redactions](/environments/#redactions). Prefer passing secrets via environment
-  variables, which are never exported.
-- **Secrets in output.** With `otel.logs = true`, any secret that a task writes to
-  stdout/stderr is shipped to the collector. This includes anything the task
-  receives in env vars and accidentally echoes (e.g. via `set -x`, debug logging,
-  or shell tracing).
-- **Redaction.** mise's terminal redaction (`redactions = […]` in `mise.toml`)
-  applies before lines are forwarded to the OTLP log pipeline, so redacted values
-  are also redacted in exported logs, and so are task args on log records. However,
-  redaction only covers values you've
-  explicitly listed — it does not detect arbitrary secrets in output.
-- **`--raw`.** `--raw` bypasses mise's line capture entirely, so task output goes
-  straight to the terminal and is **not** exported as logs. Note that this also
-  disables redactions for that task.
-
-If you don't want task output leaving the machine, leave `otel.logs = false` (the
-default) and rely on trace export alone.
-
-## Example: Local Development with Jaeger
-
-Start Jaeger with OTLP/HTTP support:
-
-```bash
-docker run -d --name jaeger \
-  -p 16686:16686 \
-  -p 4318:4318 \
-  jaegertracing/all-in-one:latest
-```
-
-Configure mise:
-
-```toml [mise.toml]
-[settings]
-otel.enabled = true
-```
-
-```bash
-export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
-```
-
-Now run any mise task and open `http://localhost:16686`.
-
-## Trace Propagation
-
-mise propagates trace context to child processes using the
-[OpenTelemetry Environment Carriers](https://opentelemetry.io/docs/specs/otel/context/env-carriers/)
-spec via the `TRACEPARENT` and `TRACESTATE` env vars (W3C Trace Context
-format). This means:
-
-- **Nested `mise run`** invocations automatically join the parent trace.
-- **Any OTEL-instrumented tool** a task invokes (Node.js, Go, Python, etc.)
-  will automatically parent its spans under the mise task span — no
-  mise-specific integration needed.
-
-## Notes
-
-- When neither `otel.enabled` nor `otel.logs` is set, mise does not create trace context
-  or export any telemetry.
-- Export failures are logged at debug level and never break task execution.
-- Each export request times out after 3 seconds unless `OTEL_EXPORTER_OTLP_TIMEOUT` (or
-  `OTEL_EXPORTER_OTLP_TRACES_TIMEOUT` / `OTEL_EXPORTER_OTLP_LOGS_TIMEOUT`) says otherwise, so an unreachable collector
-  delays the end of `mise run` by at most that much.
-- Offline mode (`--offline` / `MISE_OFFLINE=1`) turns export off.
-- Task args in span names and attributes go through the same
-  [redactions](/environments/#redactions) as terminal output.
-- `service.name` defaults to `mise` unless `OTEL_SERVICE_NAME` or
-  `service.name` in `OTEL_RESOURCE_ATTRIBUTES` sets it.
+- Without `otel.enabled` or `otel.logs`, mise creates no trace context and
+  exports nothing.
+- Offline mode ([`offline`](/configuration/settings.html#offline) or
+  `MISE_OFFLINE=1`) turns export off.
+- Export failures never fail a task. Run with `MISE_DEBUG=1` to see them.

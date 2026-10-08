@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+
+# Stubs are committed to the project, so they cover the project's own tasks only. A hidden task is
+# not meant to be invoked directly, and a global task lives in the user's own config, which nobody
+# else who checks the project out has.
+cat >~/.config/mise/config.toml <<'TOML'
+[tasks.myglobal]
+run = "echo myglobal"
+TOML
+cat >mise.toml <<'TOML'
+[tasks.visible]
+run = "echo visible"
+
+[tasks.secret]
+run = "echo secret"
+hide = true
+TOML
+
+# The control: both tasks exist and resolve from here, so their absence below is the filter's doing.
+assert_contains "mise tasks ls --hidden" "secret"
+assert_contains "mise tasks ls" "myglobal"
+
+assert "mise generate task-stubs"
+assert "./bin/visible" "visible"
+assert_succeed "test -f bin/visible.cmd"
+assert_fail "test -e bin/secret"
+assert_fail "test -e bin/secret.cmd"
+assert_fail "test -e bin/myglobal"
+assert_fail "test -e bin/myglobal.cmd"
+# Exactly the one stub and its launcher are reported.
+assert "mise generate task-stubs 2>&1 | grep -c 'Wrote to'" "2"

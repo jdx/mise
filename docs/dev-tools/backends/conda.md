@@ -1,120 +1,124 @@
 ---
-description: "Install Conda packages and dependencies directly, without a separate Conda installation."
+description: "Install conda packages and their dependencies from conda-forge or another channel, without conda."
 ---
 
-# Conda Backend
+# conda backend
 
-The `conda` backend installs command-line packages and their transitive
-dependencies from [conda-forge](https://conda-forge.org/) or another Anaconda
-channel. It solves dependencies and downloads packages directly, so conda,
-mamba, and micromamba do not need to be installed.
+The `conda` backend installs command-line packages and their dependencies from
+[conda-forge](https://conda-forge.org/) or another conda channel. mise solves
+and downloads the packages itself, so you do not need conda, mamba or
+micromamba.
 
-Each package is installed into its own isolated conda prefix. When a package needs that prefix
-activated — it ships `etc/conda/activate.d` scripts, its prefix contains executables from its
-dependencies, or one of its commands is a script — mise starts its commands through a launcher
-that sets `CONDA_PREFIX`, makes the prefix's executable directories available, and applies the
-activation scripts. This lets a command use its packaged runtime dependencies without adding
-dependency commands to your interactive shell's `PATH`.
+## Requirements
 
-A package with none of those — a single-binary tool such as `conda:ripgrep` — has nothing to
-activate, so on Unix its commands are symlinked directly. They start without an extra shell
-process, and without `CONDA_PREFIX` or the prefix's executable directories being set for the
-command and whatever it spawns.
+<span id="dependencies"></span>
+<span id="platform-support"></span>
 
-The code for this is inside the mise repository at [`./src/backend/conda.rs`](https://github.com/jdx/mise/blob/main/src/backend/conda.rs).
+Nothing beyond mise. The package must be built for your platform, or be a
+`noarch` package; mise picks the platform's conda subdirectory:
 
-## Dependencies
+| Platform    | Conda subdir    |
+| ----------- | --------------- |
+| Linux x64   | `linux-64`      |
+| Linux ARM64 | `linux-aarch64` |
+| macOS x64   | `osx-64`        |
+| macOS ARM64 | `osx-arm64`     |
+| Windows x64 | `win-64`        |
 
-No separate conda package manager is required. The selected packages must still
-support your operating system, architecture, and native runtime environment.
+The solver also considers `noarch` packages. A `noarch` package can still
+depend on platform-specific packages, so it is not guaranteed to install on
+every host. Native requirements such as a compatible libc or GPU driver still
+come from the host.
 
 ## Usage
 
-Install ruff in the current project and verify its executable:
+Install FFmpeg in the current project and run it:
 
 ```sh
-mise use conda:ruff
-mise exec -- ruff --version
+mise use conda:ffmpeg
+mise exec -- ffmpeg -version
 ```
 
-This writes the following to `mise.toml`. Add `-g` for global configuration.
+This writes the following to `mise.toml`. Add `-g` for your global config.
 
 ```toml
 [tools]
-"conda:ruff" = "latest"
+"conda:ffmpeg" = "latest"
 ```
 
-### Specifying a Version
+<span id="specifying-a-version"></span>
 
-List versions with `mise ls-remote conda:ruff`, then select one with
-`mise use conda:ruff@VERSION`. Replace `VERSION` with a listed release.
+Run `mise ls-remote conda:ffmpeg` to list versions, and pin one with
+`mise use conda:ffmpeg@8.1.2`.
 
-### Using a Different Channel
+## How commands run
 
-The default channel is `conda-forge`. For a package published in your team's
-channel, replace these placeholders with its package and channel names:
+<span id="limitations"></span>
+
+Each package is installed into its own conda prefix with its dependencies. Only
+the requested package's commands reach your `PATH`; its dependencies' commands
+do not.
+
+If the prefix needs activating (the package ships `etc/conda/activate.d`
+scripts, the prefix's `bin` directory holds executables from its dependencies,
+or one of its commands is a script), mise starts its commands through a
+launcher. The launcher sets `CONDA_PREFIX`, puts the prefix's executables ahead
+of your `PATH`, and runs the activation scripts. Programs the command starts
+inherit that `PATH`.
+
+A single-binary package such as `conda:ripgrep` needs no activation, so on Unix
+mise symlinks its commands directly. They start without an extra shell process
+but do not see `CONDA_PREFIX`. On Windows every command goes through a launcher.
+
+mise solves one package per tool in an isolated prefix. It does not read or
+maintain an `environment.yml`.
+
+## Mirrors
+
+To fetch conda-forge or another channel through a mirror, map its URL with
+[`url_replacements`](/url-replacements.html). mise applies the replacements to
+channel metadata and package downloads, and refuses a replacement that would
+send credentials from an `https://` URL to an `http://` one.
+
+## Tool options
+
+Set these on the tool's entry in `[tools]`, or inline, as in
+`'conda:my-tool[channel=my-team]'`. Options every backend accepts are described
+under [tool options](/dev-tools/#tool-options).
+
+### `channel`
+
+<span id="using-a-different-channel"></span>
+<span id="common-channels"></span>
+
+Install one package from a channel other than [`conda.channel`](/dev-tools/backends/conda.html#conda.channel),
+which defaults to `conda-forge`:
 
 ```toml
 [tools]
 "conda:my-tool" = { version = "latest", channel = "my-team" }
 ```
 
-The solver uses the selected channel for the package and its dependencies. The
-complete dependency set must be available there; this is not a multi-channel
-conda environment specification.
+The value can be a channel name on anaconda.org or a full channel URL, such as
+`https://conda.example.com/my-team`, for a private or mirrored conda server.
 
-## Platform Support
-
-The conda backend automatically selects the appropriate package for your platform:
-
-| Platform    | Conda Subdir  |
-| ----------- | ------------- |
-| Linux x64   | linux-64      |
-| Linux ARM64 | linux-aarch64 |
-| macOS x64   | osx-64        |
-| macOS ARM64 | osx-arm64     |
-| Windows x64 | win-64        |
-
-The solver considers both the platform subdirectory and `noarch`. A `noarch`
-package may still depend on platform-specific packages, so it does not guarantee
-that an installation works on every host.
+mise solves against that one channel, so the package and all of its
+dependencies must come from it. Channels that build on conda-forge, such as
+bioconda, usually cannot be used on their own for this reason.
 
 ## Settings
-
-Set these with `mise settings set [VARIABLE]=[VALUE]` or by setting the environment variable listed.
 
 <script setup>
 import Settings from '/components/settings.vue';
 </script>
 <Settings child="conda" :level="3" />
 
-## Tool Options
+## Troubleshooting
 
-The following [tool-options](/dev-tools/#tool-options) are available for the `conda` backend—these
-go in `[tools]` in `mise.toml`.
+| Symptom                  | What to check                                                                                                   |
+| ------------------------ | --------------------------------------------------------------------------------------------------------------- |
+| Command not found        | Check that the package itself provides that command. Commands from its dependencies are not put on your `PATH`. |
+| Solving fails            | Check that the package and every dependency exist in the selected channel for the platform named in the error.  |
+| Package is not available | It may not be built for your platform; look for your subdir in the package's files on anaconda.org.             |
 
-### `channel`
-
-Override the conda channel for a specific package:
-
-```toml
-[tools]
-"conda:my-tool" = { version = "latest", channel = "my-team" }
-```
-
-## Common Channels
-
-- `conda-forge` - Community-maintained packages (default)
-- `bioconda` - Bioinformatics packages
-- `nvidia` - NVIDIA CUDA packages
-
-## Limitations
-
-- mise solves and installs transitive dependencies in an isolated prefix for each tool. It does not import or maintain a general-purpose `environment.yml`.
-- Only commands belonging to the requested package are exposed to your shell. For a package that is started through a launcher, its dependencies' executables stay reachable from inside that command but never reach your shell.
-- The solver uses one channel per tool. Packages from channels such as bioconda may require dependencies from another channel that this configuration cannot supply.
-- Native requirements such as a compatible libc or GPU driver still belong to the host.
-
-If a command cannot be found, check whether the requested package actually
-provides a CLI. If solving fails, check package availability, the selected
-channel, and the platform reported in the error before changing versions.
+Implementation: [`src/backend/conda.rs`](https://github.com/jdx/mise/blob/main/src/backend/conda.rs).

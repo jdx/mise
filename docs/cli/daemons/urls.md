@@ -23,6 +23,6 @@ with no port, or with proxy = false, is listed with its port alone.
 
 ## Related documentation
 
-- [Getting started](/getting-started.html).
+- [Daemons](/daemons.html).
 - [`mise daemons [--json] [SUBCOMMAND]`](/cli/daemons.html).
 - [Global flags and argument syntax](/cli/#global-flags).

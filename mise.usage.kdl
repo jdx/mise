@@ -139,7 +139,9 @@ flag --log-level hide=#true global=#true {
             choice trace
             choice debug
             choice info
-            choice warning
+            choice warn {
+                alias warning hide=#true
+            }
             choice error
         }
     }
@@ -1066,7 +1068,7 @@ their shared versions follow in the same run.
 """#
             after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise dot pull --dry-run\u{1b}[22m\n    $ \u{1b}[1mmise dot pull --yes\u{1b}[22m\n    $ \u{1b}[1mmise dot pull --take-remote ~/.zshrc\u{1b}[22m\n    $ \u{1b}[1mmise dot pull --keep-local ~/.zshrc\u{1b}[22m\n    $ \u{1b}[1mmise dot pull --take-remote-all\u{1b}[22m\n    $ \u{1b}[1mmise dot pull --take-remote-all --keep-local ~/.zshrc\u{1b}[22m\n"
             flag "-n --dry-run" help="Show the plan without changing anything"
-            flag "-y --yes" help="Pull without prompting"
+            flag "-y --yes" help="Accepted for compatibility; pull skips the apply confirmation"
             flag --take-remote help="Resolve a conflict with the repository's version" var=#true {
                 arg <PATH>
             }
@@ -1228,7 +1230,7 @@ as a monitor layout that should never be applied on another machine.
             flag --no-autosave help="Save only on `mise dot save <path>`, never automatically"
             flag --encrypt help="Encrypt contents before saving them to history (requires `[history.encryption].recipients`)"
             flag --allow-plaintext help="Save an explicitly tracked credential-named file in plaintext"
-            flag "-y --yes" help="Accept without prompting"
+            flag "-y --yes" help="Accepted for compatibility; track no longer asks to confirm the paths"
             flag "-n --dry-run" help="Show what each path expands to (files, size, what is left out) without tracking it"
             flag "-h --help" help="Print help" action=help builtin=#true
             arg <PATH>… help="Paths to track (absolute or starting with ~/)" var=#true
@@ -2880,7 +2882,7 @@ their shared versions follow in the same run.
 """#
         after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise dot pull --dry-run\u{1b}[22m\n    $ \u{1b}[1mmise dot pull --yes\u{1b}[22m\n    $ \u{1b}[1mmise dot pull --take-remote ~/.zshrc\u{1b}[22m\n    $ \u{1b}[1mmise dot pull --keep-local ~/.zshrc\u{1b}[22m\n    $ \u{1b}[1mmise dot pull --take-remote-all\u{1b}[22m\n    $ \u{1b}[1mmise dot pull --take-remote-all --keep-local ~/.zshrc\u{1b}[22m\n"
         flag "-n --dry-run" help="Show the plan without changing anything"
-        flag "-y --yes" help="Pull without prompting"
+        flag "-y --yes" help="Accepted for compatibility; pull skips the apply confirmation"
         flag --take-remote help="Resolve a conflict with the repository's version" var=#true {
             arg <PATH>
         }
@@ -3042,7 +3044,7 @@ as a monitor layout that should never be applied on another machine.
         flag --no-autosave help="Save only on `mise dot save <path>`, never automatically"
         flag --encrypt help="Encrypt contents before saving them to history (requires `[history.encryption].recipients`)"
         flag --allow-plaintext help="Save an explicitly tracked credential-named file in plaintext"
-        flag "-y --yes" help="Accept without prompting"
+        flag "-y --yes" help="Accepted for compatibility; track no longer asks to confirm the paths"
         flag "-n --dry-run" help="Show what each path expands to (files, size, what is left out) without tracking it"
         flag "-h --help" help="Print help" action=help builtin=#true
         arg <PATH>… help="Paths to track (absolute or starting with ~/)" var=#true
@@ -3268,8 +3270,7 @@ Supports wildcards, e.g. --allow-env='MYAPP_*'
     }
     flag --allow-net help=#"""
 Allow network to specific host (implies --deny-net for everything else)
-Per-host filtering is unsupported on Linux and returns an error.
-See the sandboxing guide for current macOS host-filter limitations.
+Per-host filtering is unsupported on Linux and macOS and returns an error.
 On Windows, sandboxing is unavailable: mise warns and runs without host filtering.
 """# var=#true {
         arg <HOST>
@@ -3573,6 +3574,8 @@ Generate shims to run mise tasks
 By default, this will build shims like ./bin/<task>. These can be paired with `mise generate install-script`
 so contributors to a project can execute mise tasks without installing mise into their system.
 When a parent and nested task both exist, the parent stub is written to `<parent>/_default`.
+Hidden tasks and global tasks are skipped: the stubs are committed to the project, and global
+tasks come from the user's own config.
 """#
         flag "-d --dir" help="Directory to create task stubs inside of" default=bin {
             arg <DIR>
@@ -4429,7 +4432,9 @@ Resources use `mise://tools`, `mise://tasks`, `mise://env`, and `mise://config`.
 
 The `list_commands` tool describes commands and their declared effects. `run_task`
 executes project tasks with the user's permissions and can change files or invoke
-external services. `install_tool` is advertised but currently returns an error.
+external services. `install_tool` installs a tool version as `mise install` does.
+Both refuse to act on a project whose config files are not trusted; run
+`mise trust` to allow them.
 Environment resources contain real values, including secrets.
 
 Resources available:
@@ -4440,7 +4445,7 @@ Resources available:
 
 Tools available:
 - list_commands - Every mise command, with its declared effect on the world
-- install_tool - Install a tool with an optional version (not yet implemented)
+- install_tool - Install a tool with an optional version
 - run_task - Execute a mise task with optional arguments
 
 Note: This is primarily intended for integration with AI assistants like Claude,
@@ -4737,7 +4742,7 @@ This will only show tools that are defined in project-local mise.toml and
 will skip tools defined in the global config (~/.config/mise/config.toml).
 """#
     }
-    flag --monorepo help="Placeholder for future monorepo outdated checks; `mise outdated --monorepo` is not implemented yet."
+    flag --monorepo help="Placeholder for future monorepo outdated checks; `mise outdated --monorepo` is not implemented yet." hide=#true
     flag --no-header help="Don't show table header"
     flag "-h --help" help="Print help" action=help builtin=#true
     arg "[TOOL@VERSION]…" help=#"""
@@ -5099,7 +5104,7 @@ Like --dry-run but exits with code 1 if there are tools to prune
 This is useful for scripts to check if tools need to be pruned.
 """#
     }
-    flag --monorepo help="Placeholder for future monorepo pruning; `mise prune --monorepo` is not implemented yet."
+    flag --monorepo help="Placeholder for future monorepo pruning; `mise prune --monorepo` is not implemented yet." hide=#true
     flag --tools help="Prune only unused versions of tools"
     flag "-h --help" help="Print help" action=help builtin=#true
     arg "[INSTALLED_TOOL]…" help="Prune only these tools" required=#false var=#true
@@ -5283,8 +5288,7 @@ Supports wildcards, e.g. --allow-env='MYAPP_*'
     }
     flag --allow-net help=#"""
 Allow network to specific host (implies --deny-net for everything else)
-Per-host filtering is unsupported on Linux and returns an error.
-See the sandboxing guide for current macOS host-filter limitations.
+Per-host filtering is unsupported on Linux and macOS and returns an error.
 On Windows, sandboxing is unavailable: mise warns and runs without host filtering.
 """# var=#true {
         arg <HOST>
@@ -6200,8 +6204,7 @@ Supports wildcards, e.g. --allow-env='MYAPP_*'
         }
         flag --allow-net help=#"""
 Allow network to specific host (implies --deny-net for everything else)
-Per-host filtering is unsupported on Linux and returns an error.
-See the sandboxing guide for current macOS host-filter limitations.
+Per-host filtering is unsupported on Linux and macOS and returns an error.
 On Windows, sandboxing is unavailable: mise warns and runs without host filtering.
 """# var=#true {
             arg <HOST>
@@ -6682,7 +6685,7 @@ Explicitly pinned versions like "22.5.0" are not filtered.
 """#
         arg <MINIMUM_RELEASE_AGE>
     }
-    flag --monorepo help="Placeholder for future monorepo upgrades; `mise upgrade --monorepo` is not implemented yet."
+    flag --monorepo help="Placeholder for future monorepo upgrades; `mise upgrade --monorepo` is not implemented yet." hide=#true
     flag --no-prune help="Do not uninstall the versions that were upgraded away from" overrides=--prune {
         long_help #"""
 Do not uninstall the versions that were upgraded away from
