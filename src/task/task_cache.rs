@@ -99,7 +99,7 @@ struct CacheKeyMaterial<'a> {
     task: &'a str,
     phase: crate::task::TaskRunPhase,
     run: &'a [RunEntry],
-    args: &'a [String],
+    args: Vec<String>,
     shell: &'a Option<String>,
     outputs: Vec<String>,
     root: PathBuf,
@@ -314,8 +314,10 @@ impl TaskArtifactCacheBuilder {
             inputs,
             output_roots,
         } = self;
-        // The encoded action is uploaded to remote caches, so env and var
-        // values enter it only as digests.
+        // The encoded action is uploaded to remote caches, so env, var, and
+        // arg values enter it only as digests. Args can carry them too: dep
+        // args are rendered from templates such as `{{env.TOKEN}}`, and CLI
+        // args are whatever the user passed.
         let mut environment = declared_env
             .iter()
             .map(|(key, _)| (key.clone(), env_value_digest(resolved_env, key)))
@@ -352,7 +354,7 @@ impl TaskArtifactCacheBuilder {
             task: &task.name,
             phase: task.run_phase,
             run: task.run(),
-            args: &task.args,
+            args: task.args.iter().map(|arg| value_digest(arg)).collect(),
             shell: &task.shell,
             outputs: task.outputs.patterns(),
             root: inputs.root_identity,
@@ -452,7 +454,7 @@ impl TaskArtifactCacheBuilder {
     }
 }
 
-/// Digest of an env or var value as recorded in the cache action, so the
+/// Digest of an env, var, or arg value as recorded in the cache action, so the
 /// action changes with the value without carrying the value itself.
 fn value_digest(value: &str) -> String {
     format!("blake3:{}", hash::hash_blake3_to_str(value))
