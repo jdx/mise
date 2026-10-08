@@ -2098,23 +2098,27 @@ impl<'a> CmdLineRunner<'a> {
             );
         }
 
+        // Clear the inherited env so the child only sees the filtered vars, which carry the
+        // essentials `SandboxConfig::filter_env` keeps (on Windows, `SystemRoot` and the rest
+        // of its list). env_clear() also wipes envs explicitly set via .envs(), so save and
+        // restore them. macOS does the same when it rebuilds the command for sandbox-exec.
+        #[cfg(not(target_os = "macos"))]
+        if sandbox.effective_deny_env() {
+            let saved: Vec<(std::ffi::OsString, std::ffi::OsString)> = self
+                .cmd
+                .as_std()
+                .get_envs()
+                .filter_map(|(k, v)| v.map(|v| (k.to_os_string(), v.to_os_string())))
+                .collect();
+            self.cmd.env_clear();
+            for (k, v) in saved {
+                self.cmd.env(k, v);
+            }
+        }
+
         #[cfg(target_os = "linux")]
         {
             let initial_program = std::path::PathBuf::from(self.cmd.as_std().get_program());
-            // On Linux, clear inherited env before pre_exec so child only sees filtered vars.
-            // env_clear() also wipes envs explicitly set via .envs(), so save and restore them.
-            if sandbox.effective_deny_env() {
-                let saved: Vec<(std::ffi::OsString, std::ffi::OsString)> = self
-                    .cmd
-                    .as_std()
-                    .get_envs()
-                    .filter_map(|(k, v)| v.map(|v| (k.to_os_string(), v.to_os_string())))
-                    .collect();
-                self.cmd.env_clear();
-                for (k, v) in saved {
-                    self.cmd.env(k, v);
-                }
-            }
             // Rules naming a path that does not exist yet get dropped, and the
             // task is then denied. Say so here: pre_exec runs post-fork, where
             // the logger is not available.
@@ -2188,9 +2192,10 @@ impl<'a> CmdLineRunner<'a> {
         }
 
         #[cfg(not(any(target_os = "linux", target_os = "macos")))]
-        {
-            let _ = sandbox;
-            warn!("sandbox is not supported on this platform, running unsandboxed");
+        if sandbox.restricts_more_than_env() {
+            warn!(
+                "sandbox file, network and process restrictions are not supported on this platform, running without them"
+            );
         }
         Ok(())
     }

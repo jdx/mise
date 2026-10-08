@@ -47,6 +47,49 @@ pub struct SandboxConfig {
 /// Minimal env vars inherited when deny_env is active.
 const DEFAULT_ENV_KEYS: &[&str] = &["PATH", "HOME", "USER", "SHELL", "TERM", "COLORTERM", "LANG"];
 
+/// What a Windows process needs to start and run normally, kept under deny_env alongside
+/// [`DEFAULT_ENV_KEYS`]:
+///
+/// - `SystemRoot`: system DLLs (Winsock, CryptoAPI, side-by-side assemblies) find their files
+///   through it, so networking, TLS and many programs fail to start without it.
+/// - `SystemDrive` and `windir`: the same directories under the names older programs and
+///   scripts read.
+/// - `ComSpec`: cmd.exe, which runs `.bat`/`.cmd` files and `cmd /c` commands.
+/// - `PATHEXT`: the extensions cmd and other shells try when a command is named without one.
+/// - `TEMP` and `TMP`: without them `GetTempPath` returns the Windows directory, which a normal
+///   user cannot write.
+/// - `USERPROFILE` and `USERNAME`: the Windows spellings of `HOME` and `USER`.
+#[cfg(windows)]
+const WINDOWS_ENV_KEYS: &[&str] = &[
+    "SystemRoot",
+    "SystemDrive",
+    "windir",
+    "ComSpec",
+    "PATHEXT",
+    "TEMP",
+    "TMP",
+    "USERPROFILE",
+    "USERNAME",
+];
+
+/// Every variable deny_env keeps from the parent environment.
+fn essential_env_keys() -> impl Iterator<Item = &'static str> {
+    let keys = DEFAULT_ENV_KEYS.iter();
+    #[cfg(windows)]
+    let keys = keys.chain(WINDOWS_ENV_KEYS);
+    keys.copied()
+}
+
+/// Whether two variable names name the same variable: on Windows names are case-insensitive,
+/// so `Path` is `PATH`.
+fn same_env_key(a: &str, b: &str) -> bool {
+    if cfg!(windows) {
+        a.eq_ignore_ascii_case(b)
+    } else {
+        a == b
+    }
+}
+
 /// The closest ancestor that exists, and so the only one a Landlock rule can
 /// name.
 ///
@@ -121,16 +164,20 @@ impl SandboxConfig {
 
     /// Returns true if any sandbox restriction is configured.
     pub fn is_active(&self) -> bool {
+        self.effective_deny_env() || self.restricts_more_than_env()
+    }
+
+    /// Returns true if a file, network or process restriction is configured. Windows applies
+    /// only the environment filter, and warns when anything else was asked for.
+    pub fn restricts_more_than_env(&self) -> bool {
         self.deny_read
             || self.deny_write
             || self.deny_net
-            || self.deny_env
             || self.deny_process
             || self.deny_temp_write
             || !self.allow_read.is_empty()
             || !self.allow_write.is_empty()
             || !self.allow_net.is_empty()
-            || !self.allow_env.is_empty()
     }
 
     /// Resolve allow_* paths to absolute paths relative to cwd.
@@ -237,7 +284,7 @@ impl SandboxConfig {
         if !self.effective_deny_env() {
             return true;
         }
-        DEFAULT_ENV_KEYS.contains(&key)
+        essential_env_keys().any(|essential| same_env_key(essential, key))
             || self.cache_env.iter().any(|name| name == key)
             || self
                 .allow_env
@@ -286,12 +333,11 @@ impl SandboxConfig {
             }
         }
         // Also ensure essential vars from parent env are present
-        for key in DEFAULT_ENV_KEYS {
-            let k = key.to_string();
-            if !filtered.contains_key(&k)
+        for key in essential_env_keys() {
+            if !filtered.keys().any(|k| same_env_key(k, key))
                 && let Ok(val) = std::env::var(key)
             {
-                filtered.insert(k, val);
+                filtered.insert(key.to_string(), val);
             }
         }
         filtered
@@ -441,6 +487,65 @@ mod tests {
     use super::*;
     use mise_settings::SettingsSandbox;
     use std::collections::BTreeMap;
+
+    #[test]
+    fn test_restricts_more_than_env_ignores_the_env_filter() {
+        let env_only = SandboxConfig {
+            deny_env: true,
+            allow_env: vec!["TOKEN".into()],
+            ..Default::default()
+        };
+        assert!(env_only.is_active());
+        assert!(!env_only.restricts_more_than_env());
+        let read = SandboxConfig {
+            allow_read: vec![PathBuf::from("/data")],
+            ..Default::default()
+        };
+        assert!(read.is_active());
+        assert!(read.restricts_more_than_env());
+    }
+
+    /// Windows names are case-insensitive: mise's own `Path` is the PATH deny_env keeps, and the
+    /// variables a Windows process needs to start survive whatever their spelling.
+    #[cfg(windows)]
+    #[test]
+    fn test_filter_env_keeps_windows_essentials() {
+        let deny = SandboxConfig {
+            deny_env: true,
+            ..Default::default()
+        };
+        for key in [
+            "Path",
+            "SystemRoot",
+            "SYSTEMROOT",
+            "windir",
+            "ComSpec",
+            "PATHEXT",
+            "TEMP",
+            "USERPROFILE",
+        ] {
+            assert!(deny.keeps_env_key(key), "{key}");
+        }
+        assert!(!deny.keeps_env_key("DEPLOY_KEY"));
+        let env = BTreeMap::from([
+            ("Path".to_string(), r"C:\mise\tools".to_string()),
+            ("DEPLOY_KEY".to_string(), "secret".to_string()),
+        ]);
+        let filtered = deny.filter_env(&env);
+        assert_eq!(
+            filtered.get("Path").map(String::as_str),
+            Some(r"C:\mise\tools")
+        );
+        assert!(
+            !filtered
+                .keys()
+                .any(|k| k != "Path" && k.eq_ignore_ascii_case("PATH")),
+            "PATH must not be added again under another spelling: {filtered:?}"
+        );
+        assert!(!filtered.contains_key("DEPLOY_KEY"));
+        let system_root = std::env::var("SystemRoot").expect("SystemRoot is set on Windows");
+        assert_eq!(filtered.get("SystemRoot"), Some(&system_root));
+    }
 
     /// Fixture paths that cannot collide with a previous run or a concurrent one.
     fn missing_fixture(name: &str) -> PathBuf {
