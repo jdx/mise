@@ -26,10 +26,10 @@ static TOKEN_FORMATS: LazyLock<Regex> = LazyLock::new(|| {
 
 /// `NAME_KEY=value`, `api-token: "value"`, `password = value`. The name has to
 /// end in the keyword, so `keybind = ...` is not one, and a value that only
-/// refers to another variable is not a secret.
+/// refers to another variable is not a secret. A quoted value may hold spaces.
 static ASSIGNMENT: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(
-        r#"(?i)\b(?:[a-z0-9_.-]*[_.-](?:key|token|secret|password|passwd)|token|secret|password|passwd|apikey)["']?\s*[:=]\s*["']?[^\s"'$#{(<\[][^\s"']{7,}"#,
+        r#"(?i)\b(?:[a-z0-9_.-]*[_.-](?:key|token|secret|password|passwd)|token|secret|password|passwd|apikey)["']?\s*[:=]\s*(?:"[^"$\s][^"]{7,}|'[^'$\s][^']{7,}|[^\s"'$#{(<\[][^\s"']{7,})"#,
     )
     .unwrap()
 });
@@ -55,12 +55,10 @@ pub(crate) fn audit_unpublished(
     if commits.is_empty() {
         return Ok(());
     }
+    // Contents the origin has anywhere in its history are already out, even
+    // when they were removed and later saved again unchanged.
     let mut seen: BTreeSet<String> = match upstream {
-        Some(upstream) => repo
-            .ls_tree(upstream)?
-            .into_iter()
-            .map(|entry| entry.oid)
-            .collect(),
+        Some(upstream) => repo.reachable_objects(upstream)?,
         None => BTreeSet::new(),
     };
     // Oldest first, so the report names the commit that introduced the secret.
@@ -80,7 +78,7 @@ pub(crate) fn audit_unpublished(
             let text = String::from_utf8_lossy(&bytes);
             if let Some(line) = text.lines().position(suspicious) {
                 bail!(
-                    "cannot publish: line {} of {} in saved version {} looks like a secret. Removing it from the file does not remove it from saved versions. Encrypt the file with `encrypt = true`, remove that history (see https://mise.jdx.dev/dotfiles/encryption.html#remove-plaintext-from-history), or run `mise dot sync --allow-plaintext-history` to publish it anyway",
+                    "cannot publish: line {} of {} in saved version {} looks like a secret. Removing it from the file does not remove it from saved versions. Rotate the secret and remove that history (see https://mise.jdx.dev/dotfiles/encryption.html#remove-plaintext-from-history), then set `encrypt = true` on the file so later saves are protected, or run `mise dot sync --allow-plaintext-history` to publish it anyway",
                     line + 1,
                     entry.path,
                     &commit[..commit.len().min(12)]
@@ -105,6 +103,8 @@ mod tests {
             "AWS=AKIAABCDEFGHIJKLMNOP",
             "-----BEGIN OPENSSH PRIVATE KEY-----",
             "secret = 'abcdefgh'",
+            "DB_PASSWORD=\"correct horse battery staple\"",
+            "token: 'two words here'",
         ] {
             assert!(suspicious(line), "{line}");
         }
@@ -116,6 +116,8 @@ mod tests {
             "export API_KEY=",
             "bind = SUPER, K, exec, toggle-key",
             "alias tokens='wc -w'",
+            "export DB_PASSWORD=\"$(pass show db)\"",
+            "export DB_PASSWORD=\"$DB_PASSWORD_FILE contents\"",
         ] {
             assert!(!suspicious(line), "{line}");
         }
@@ -152,6 +154,20 @@ mod tests {
         // once the origin has the leaking version it no longer blocks
         audit_unpublished(&repo, &removed, Some(&removed)).unwrap();
         audit_unpublished(&repo, &removed, Some(&leaked)).unwrap();
+    }
+
+    #[test]
+    fn contents_published_earlier_do_not_block_when_saved_again() {
+        let temporary = tempfile::tempdir().unwrap();
+        let repo = HistoryRepo::open_or_init_in(temporary.path())
+            .unwrap()
+            .unwrap();
+        let leaked = commit(&repo, None, b"export MY_TOKEN=abcdefghijkl\n");
+        let removed = commit(&repo, Some(&leaked), b"alias ll=ls\n");
+        let published = commit(&repo, Some(&removed), b"alias la=ls\n");
+        let resaved = commit(&repo, Some(&published), b"export MY_TOKEN=abcdefghijkl\n");
+        // the origin has the leaking contents in an earlier commit, not its newest tree
+        audit_unpublished(&repo, &resaved, Some(&published)).unwrap();
     }
 
     #[test]

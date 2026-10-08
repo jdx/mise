@@ -1704,6 +1704,19 @@ impl HistoryRepo {
         Ok((tree, conflicts))
     }
 
+    /// Every object, including blobs of earlier versions, reachable from `head`.
+    pub(crate) fn reachable_objects(
+        &self,
+        head: &str,
+    ) -> Result<std::collections::BTreeSet<String>> {
+        let out = self.output_str(PlumbingCall::new(["rev-list", "--objects", head]))?;
+        Ok(out
+            .lines()
+            .filter_map(|line| line.split(' ').next())
+            .map(str::to_string)
+            .collect())
+    }
+
     /// Up to `limit` commits reachable from `head`, newest first.
     pub(crate) fn rev_list(&self, head: &str, limit: usize) -> Result<Vec<String>> {
         let count = format!("--max-count={limit}");

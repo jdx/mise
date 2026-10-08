@@ -193,9 +193,9 @@ and saved version, never the value. Files over 1 MiB and binary files are not
 read.
 
 Removing the secret from the file does not help, because the earlier version
-still holds it. Rotate the secret, then encrypt the file or
-[remove the plaintext from history](#remove-plaintext-from-history). To
-publish anyway, use [`--allow-plaintext-history`](#allow-plaintext-history),
+still holds it, and encrypting the file only protects later saves. Rotate the
+secret, [remove the plaintext from history](#remove-plaintext-from-history),
+and encrypt the file before you save it again. To publish anyway, use [`--allow-plaintext-history`](#allow-plaintext-history),
 which skips this check along with the encryption check. Versions the origin
 already has are not read again. The scan is a safety net for obvious cases,
 not proof that a version is free of secrets.
