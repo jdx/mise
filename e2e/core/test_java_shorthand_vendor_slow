@@ -1,12 +1,6 @@
 #!/usr/bin/env bash
 
-# Test default OpenJDK vendor
-mise i java@17
-assert_not_contains "mise x java@17 -- java -version 2>&1" 'Temurin-17'
-mise cache clear
-
-# Test setting shorthand vendor to Temurin
-mise settings set java.shorthand_vendor temurin
+# Test default Temurin vendor
 mise i java@21
 assert_contains "mise x java@21 -- java -version 2>&1" 'Temurin-21'
 
@@ -15,3 +9,47 @@ temurin=$(mise ls-remote java@temurin-21 | sed 's/temurin-//')
 # Create regex pattern with escaped special chars and pipe-separated alternatives
 pattern=$(echo "$temurin" | sed 's/\./\\./g; s/+/\\+/g' | paste -sd '|' -)
 assert_matches "mise ls-remote java@21" "$pattern"
+
+# Test setting shorthand vendor back to OpenJDK
+mise settings set java.shorthand_vendor openjdk
+mise i java@17
+assert_not_contains "mise x java@17 -- java -version 2>&1" 'Temurin'
+assert_contains "mise x java@17 -- java -version 2>&1" 'openjdk version "17.0.2"'
+
+# Move an OpenJDK lock entry to Temurin while the OpenJDK build is still installed
+cat <<TOML >mise.toml
+[tools]
+java = "17"
+TOML
+mise lock
+assert_contains "cat mise.lock" 'shorthand_vendor = "openjdk"'
+mise settings unset java.shorthand_vendor
+assert_fail "mise install --locked" "java@17 is not in the lockfile"
+# Plain mise lock locks the installed OpenJDK build for the new vendor setting
+mise lock
+assert_contains "cat mise.lock" 'version = "17.0.2"'
+assert_contains "cat mise.lock" 'shorthand_vendor = "temurin"'
+assert_contains "cat mise.lock" 'download.java.net'
+mise install --locked
+# Once relocked, the entry keeps the OpenJDK build where it is not installed
+mise uninstall java@17.0.2
+mise lock
+assert_contains "cat mise.lock" 'version = "17.0.2"'
+mise install --locked
+assert_contains "mise x -- java -version 2>&1" 'openjdk version "17.0.2"'
+mise lock --bump java
+assert_contains "cat mise.lock" 'shorthand_vendor = "temurin"'
+assert_matches "cat mise.lock" 'version = "17\.[0-9.]+\+[0-9]'
+assert_not_contains "cat mise.lock" 'download.java.net'
+
+# Without the installed OpenJDK build, an old OpenJDK entry no longer matches and
+# plain mise lock replaces it with Temurin
+mise uninstall --all java
+rm mise.lock
+MISE_JAVA_SHORTHAND_VENDOR=openjdk mise lock
+assert_contains "cat mise.lock" 'shorthand_vendor = "openjdk"'
+assert_fail "mise install --locked" "java@17 is not in the lockfile"
+mise lock
+assert_not_contains "cat mise.lock" 'shorthand_vendor = "openjdk"'
+assert_not_contains "cat mise.lock" 'download.java.net'
+assert_matches "cat mise.lock" 'version = "17\.[0-9.]+\+[0-9]'

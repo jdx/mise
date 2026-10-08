@@ -349,19 +349,19 @@ impl JavaPlugin {
         JavaOptions::new(&raw_opts).release_type().to_string()
     }
 
-    fn tv_to_java_version(&self, tv: &ToolVersion) -> String {
-        if regex!(r"^\d").is_match(&tv.version) {
-            // undo openjdk shorthand
-            format!("{}-{}", Settings::get().java.shorthand_vendor, tv.version)
-        } else {
-            tv.version.clone()
-        }
-    }
-
     async fn tv_to_metadata(&self, tv: &ToolVersion) -> Result<&JavaMetadata> {
-        let v: String = self.tv_to_java_version(tv);
         let release_type = self.tv_release_type(tv);
         let metadata = self.fetch_java_metadata(&release_type).await?;
+        let locked_url = tv
+            .lock_platforms
+            .get(&self.get_platform_key())
+            .and_then(|p| p.url.as_deref());
+        let v = java_metadata_key(
+            metadata,
+            &tv.version,
+            &Settings::get().java.shorthand_vendor,
+            |m| locked_url == Some(m.url.as_str()) || is_openjdk_install(&tv.install_path()),
+        );
         find_java_metadata(metadata, &v, &tv.version, &current_java_platform())
     }
 
@@ -526,11 +526,20 @@ impl Backend for JavaPlugin {
         tv: &ToolVersion,
         target: &PlatformTarget,
     ) -> Result<PlatformInfo> {
-        let version = self.tv_to_java_version(tv);
         let release_type = self.tv_release_type(tv);
         let metadata = self
             .fetch_java_metadata_for_target(&release_type, target)
             .await?;
+        let locked_url = tv
+            .lock_platforms
+            .get(&target.to_key())
+            .and_then(|p| p.url.as_deref());
+        let version = java_metadata_key(
+            &metadata,
+            &tv.version,
+            &Settings::get().java.shorthand_vendor,
+            |m| locked_url == Some(m.url.as_str()) || is_openjdk_install(&tv.install_path()),
+        );
         let m = find_java_metadata(&metadata, &version, &tv.version, &target.platform)?;
 
         Ok(PlatformInfo {
@@ -698,7 +707,7 @@ impl Backend for JavaPlugin {
 }
 
 /// Every metadata entry under its full version string, plus a shorthand entry like
-/// "17.0.2" for each release from `shorthand_vendor`, which `tv_to_java_version` turns
+/// "17.0.2" for each release from `shorthand_vendor`, which `java_metadata_key` turns
 /// back into "<vendor>-17.0.2" on install. Entries are visited in key order so the
 /// shorthand points at the canonical "<vendor>-<version>" entry when one exists: digits
 /// sort before the letters of a feature or image type such as "-jre-".
@@ -719,6 +728,45 @@ fn with_shorthand_versions<'a>(
         .map(|(k, m)| (k.as_str(), m))
         .chain(shorthand)
         .collect()
+}
+
+/// The metadata key for `version`: a vendor-prefixed version as is, and a shorthand
+/// version such as "21.0.4+7" with the `shorthand_vendor` prefix.
+///
+/// Shorthand versions meant OpenJDK builds before the default vendor became Temurin.
+/// A shorthand version that `shorthand_vendor` does not publish, such as "21.0.2"
+/// (Temurin calls it "21.0.2+13"), maps to the OpenJDK build only when `is_openjdk_build`
+/// confirms that this version already is that build: installed from it, or locked to
+/// its URL. A version being resolved fresh, such as `java@12.0.2`, which Temurin does not
+/// publish, never falls back, so installing agrees with `ls-remote`.
+fn java_metadata_key(
+    metadata: &HashMap<String, JavaMetadata>,
+    version: &str,
+    shorthand_vendor: &str,
+    is_openjdk_build: impl FnOnce(&JavaMetadata) -> bool,
+) -> String {
+    if !regex!(r"^\d").is_match(version) {
+        return version.to_string();
+    }
+    let key = format!("{shorthand_vendor}-{version}");
+    if metadata.contains_key(&key) {
+        return key;
+    }
+    let openjdk_key = format!("openjdk-{version}");
+    match metadata.get(&openjdk_key) {
+        Some(m) if is_openjdk_build(m) => openjdk_key,
+        _ => key,
+    }
+}
+
+/// Whether `install_path` holds a jdk.java.net OpenJDK build, going by the
+/// `IMPLEMENTOR` line of the JDK's `release` file.
+fn is_openjdk_install(install_path: &Path) -> bool {
+    fs::read_to_string(install_path.join("release")).is_ok_and(|release| {
+        release
+            .lines()
+            .any(|line| line.trim() == r#"IMPLEMENTOR="Oracle Corporation""#)
+    })
 }
 
 fn find_java_metadata<'a>(
@@ -901,6 +949,51 @@ mod tests {
         let metadata = HashMap::from([("openjdk-8".to_string(), JavaMetadata::default())]);
         let found = find_java_metadata(&metadata, "openjdk-8", "8", &platform).unwrap();
         assert!(std::ptr::eq(found, &metadata["openjdk-8"]));
+    }
+
+    #[test]
+    fn java_metadata_key_falls_back_only_for_existing_openjdk_builds() {
+        let metadata = HashMap::from([
+            ("openjdk-12.0.2".to_string(), JavaMetadata::default()),
+            ("openjdk-21.0.2".to_string(), JavaMetadata::default()),
+            ("temurin-21.0.2+13".to_string(), JavaMetadata::default()),
+            ("openjdk-25".to_string(), JavaMetadata::default()),
+            ("temurin-25".to_string(), JavaMetadata::default()),
+        ]);
+        let key =
+            |version, is_openjdk| java_metadata_key(&metadata, version, "temurin", |_| is_openjdk);
+        // an OpenJDK shorthand version installed or locked before the default became Temurin
+        assert_eq!(key("21.0.2", true), "openjdk-21.0.2");
+        // a fresh request for a version Temurin does not publish finds nothing
+        assert_eq!(key("21.0.2", false), "temurin-21.0.2");
+        assert_eq!(key("12.0.2", false), "temurin-12.0.2");
+        assert_eq!(key("21.0.2+13", true), "temurin-21.0.2+13");
+        // the shorthand vendor wins when both vendors publish the version
+        assert_eq!(key("25", true), "temurin-25");
+        assert_eq!(key("21.0.3", true), "temurin-21.0.3");
+        assert_eq!(key("zulu-21.0.2", true), "zulu-21.0.2");
+        assert_eq!(
+            java_metadata_key(&metadata, "21.0.2", "openjdk", |_| false),
+            "openjdk-21.0.2"
+        );
+    }
+
+    #[test]
+    fn openjdk_install_is_read_from_the_release_file() {
+        let dir = tempfile::tempdir().unwrap();
+        assert!(!is_openjdk_install(dir.path()));
+        fs::write(
+            dir.path().join("release"),
+            "IMPLEMENTOR=\"Eclipse Adoptium\"\nJAVA_VERSION=\"21.0.2\"\n",
+        )
+        .unwrap();
+        assert!(!is_openjdk_install(dir.path()));
+        fs::write(
+            dir.path().join("release"),
+            "IMPLEMENTOR=\"Oracle Corporation\"\nJAVA_VERSION=\"21.0.2\"\n",
+        )
+        .unwrap();
+        assert!(is_openjdk_install(dir.path()));
     }
 
     fn opts_with_release_type(release_type: &str) -> ToolVersionOptions {

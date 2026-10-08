@@ -1,8 +1,15 @@
 #!/usr/bin/env bash
 
 # Java
-# assert shorthand is a N.N.N version
-assert "mise latest java | grep -E '^[0-9]+(\\.[0-9]+)*$'"
+# assert shorthand is a Temurin N.N.N+BUILD version
+assert "mise latest java | grep -E '^[0-9]+(\\.[0-9]+)*\\+[0-9]'"
+# assert java@21 uses Temurin updates instead of stopping at OpenJDK's 21.0.2
+assert "mise latest java@21 | grep -E '^21\\.0\\.[0-9]+\\+[0-9]'"
+# assert java.shorthand_vendor=openjdk keeps the old OpenJDK builds
+assert "MISE_JAVA_SHORTHAND_VENDOR=openjdk mise latest java@21" "21.0.2"
+# assert a version Temurin does not publish finds nothing instead of installing OpenJDK
+assert "mise latest java@12.0.2" ""
+assert_fail "mise install java@12.0.2" "no metadata found for version 12.0.2"
 # assert vendor version ends with -N.N.N(-SUFFIX)?
 assert "mise latest java@temurin | grep -E '\\-[0-9]+(\\.[0-9]+)*(\..*)?$'"
 # assert vendor 21 version ends with -21.N.N(-SUFFIX)?

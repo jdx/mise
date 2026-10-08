@@ -33,10 +33,21 @@ makes the project's distribution choice explicit.
 | `java@lts`               | The current LTS major (25) from `java.shorthand_vendor`                                   |
 
 A request without a vendor uses `java.shorthand_vendor`, which defaults to
-`openjdk`: the builds published on jdk.java.net. Those builds stop at the last
-update jdk.java.net published for a release, so `java@21` resolves to 21.0.2,
-while vendors such as Temurin keep shipping updates. Name a vendor in shared
-config, or set `java.shorthand_vendor` to one such as `temurin`.
+`temurin`, so `java@21` resolves to the newest Temurin 21 build. Set it to
+`openjdk` for the builds published on jdk.java.net, which stop at the last
+update jdk.java.net published for a release (`java@21` is then 21.0.2). Name a
+vendor in shared config so every machine resolves the same build.
+
+An OpenJDK build still installed when the default changes keeps working, and
+plain `mise lock` locks it again under the new default, so machines without it
+install the same OpenJDK build from the lockfile. Without the installed build,
+a lockfile entry recorded with `shorthand_vendor = "openjdk"` no longer
+matches: `mise install --locked` fails, and plain `mise lock` or `mise install`
+replaces the entry with the newest matching Temurin build. Set
+`java.shorthand_vendor = "openjdk"` to keep the old pin. `mise lock --bump java`
+always moves to the newest matching Temurin build. Temurin publishes no builds
+for some releases, such as Java 12, so request those with a vendor, for example
+`openjdk-12`.
 
 Vendor names also carry variants, such as `temurin-jre`, `zulu-javafx`,
 `zulu-crac` and `liberica-nik-openjdk`. On Alpine and other musl systems, mise

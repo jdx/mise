@@ -1369,7 +1369,7 @@
           "unevaluatedProperties": false,
           "properties": {
             "shorthand_vendor": {
-              "default": "openjdk",
+              "default": "temurin",
               "description": "Vendor used for a Java version without a vendor prefix, such as `java@21`.",
               "type": "string"
             }
