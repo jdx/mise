@@ -4,11 +4,11 @@
 hard="$(ulimit -Hn)"
 expected=10240
 if [ "$hard" != unlimited ] && [ "$hard" -lt 10240 ]; then
-	expected="$hard"
+  expected="$hard"
 fi
 assert "bash -c 'ulimit -Sn 256 && mise x -- sh -c \"ulimit -Sn\"'" "$expected"
 
 # an already-higher soft limit is left alone (skipped when the system won't allow one)
 if bash -c 'ulimit -Sn 20000' 2>/dev/null; then
-	assert "bash -c 'ulimit -Sn 20000 && mise x -- sh -c \"ulimit -Sn\"'" "20000"
+  assert "bash -c 'ulimit -Sn 20000 && mise x -- sh -c \"ulimit -Sn\"'" "20000"
 fi
