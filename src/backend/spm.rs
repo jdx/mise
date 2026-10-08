@@ -409,6 +409,17 @@ impl SPMBackend {
         revision: &PackageRevision,
     ) -> Result<PathBuf, eyre::Error> {
         let repo = Git::new(tv.cache_path().join("repo"));
+        // A cache cloned from another remote (for example from github.com
+        // before api_url decided the clone host) must not be reused.
+        if let Some(remote) = repo.get_remote_url()
+            && remote.trim_end_matches('/') != package_repo.url.as_str().trim_end_matches('/')
+        {
+            debug!(
+                "Swift package repo cache remote {remote} differs from {}, re-cloning",
+                package_repo.url.as_str()
+            );
+            file::remove_all(&repo.dir)?;
+        }
         if revision.is_git_revision() && repo.exists() {
             let requested = revision.as_str().to_ascii_lowercase();
             let matches = repo
@@ -778,33 +789,56 @@ impl GitProvider {
     /// The web front end that repositories given as a slug are cloned from,
     /// derived from the API URL so a self-hosted instance (GitHub Enterprise,
     /// self-managed GitLab) clones from its own host rather than the public one.
-    fn web_url(&self) -> Result<Url> {
-        let (public_api_url, public_web_url, api_path) = match self.kind {
-            GitProviderKind::GitHub => (github::API_URL, "https://github.com", github::API_PATH),
-            GitProviderKind::GitLab => (gitlab::API_URL, "https://gitlab.com", gitlab::API_PATH),
+    ///
+    /// Only API URLs with a recognized shape are mapped. Anything else (for
+    /// example a proxy or mirror of the public API) keeps cloning from the
+    /// public host, since a clone URL that still carries an API path is not a
+    /// git remote. A full repository URL as the tool name overrides this.
+    fn web_url(&self) -> String {
+        let (public_api_url, public_web_url) = match self.kind {
+            GitProviderKind::GitHub => (github::API_URL, "https://github.com"),
+            GitProviderKind::GitLab => (gitlab::API_URL, "https://gitlab.com"),
         };
-        let api_url = self.api_url.trim_end_matches('/');
-        if api_url == public_api_url {
-            return Ok(Url::parse(public_web_url)?);
+        if self.api_url.trim_end_matches('/') == public_api_url {
+            return public_web_url.to_string();
         }
-        let mut url = Url::parse(api_url)
-            .wrap_err_with(|| format!("invalid spm api_url: {}", self.api_url))?;
-        url.set_query(None);
-        url.set_fragment(None);
+        match self.self_hosted_web_url() {
+            Some(url) => url.as_str().trim_end_matches('/').to_string(),
+            None => {
+                debug!(
+                    "spm: api_url {} is not a recognized self-hosted API URL, \
+                     cloning slug packages from {public_web_url}",
+                    self.api_url
+                );
+                public_web_url.to_string()
+            }
+        }
+    }
+
+    fn self_hosted_web_url(&self) -> Option<Url> {
+        let api_path = match self.kind {
+            GitProviderKind::GitHub => github::API_PATH,
+            GitProviderKind::GitLab => gitlab::API_PATH,
+        };
+        let mut url = Url::parse(&self.api_url).ok()?;
         let path = url.path().trim_end_matches('/').to_string();
-        match path.strip_suffix(api_path) {
-            Some(web_path) => url.set_path(web_path),
+        if let Some(web_path) = path.strip_suffix(api_path) {
+            url.set_path(web_path);
+        } else if self.kind == GitProviderKind::GitHub && path.is_empty() {
             // GitHub Enterprise with subdomain isolation (and GHE.com) serves its
             // API from `api.<host>` at the root.
-            None if self.kind == GitProviderKind::GitHub && path.is_empty() => {
-                if let Some(host) = url.host_str().and_then(|h| h.strip_prefix("api.")) {
-                    let host = host.to_string();
-                    url.set_host(Some(&host))?;
-                }
-            }
-            None => {}
+            let host = url.host_str()?.strip_prefix("api.")?.to_string();
+            url.set_host(Some(&host)).ok()?;
+        } else {
+            return None;
         }
-        Ok(url)
+        url.set_query(None);
+        url.set_fragment(None);
+        // Credentials in api_url are for the API. Keep them out of the clone
+        // URL, which is logged and written to the cached repo's git config.
+        url.set_username("").ok()?;
+        url.set_password(None).ok()?;
+        Some(url)
     }
 
     /// When the tool name is a full URL pointing to a self-hosted instance,
@@ -850,8 +884,7 @@ impl SwiftPackageRepo {
             let url = Url::parse(name)?;
             (shorthand, url)
         } else if shorthand_regex.is_match(name) {
-            let web_url = provider.web_url()?;
-            let url_str = format!("{}/{}.git", web_url.as_str().trim_end_matches('/'), name);
+            let url_str = format!("{}/{}.git", provider.web_url(), name);
             let url = Url::parse(&url_str)?;
             (name, url)
         } else {
@@ -1357,6 +1390,39 @@ mod tests {
                 GitProviderKind::GitLab,
                 gitlab::API_URL,
                 "https://gitlab.com/acme/SwiftTool.git",
+            ),
+            // Credentials in api_url never reach the clone URL.
+            (
+                GitProviderKind::GitHub,
+                "https://user:token@github.acme.com/api/v3",
+                "https://github.acme.com/acme/SwiftTool.git",
+            ),
+            (
+                GitProviderKind::GitLab,
+                "https://oauth2:token@gitlab.acme.com/api/v4?private=1",
+                "https://gitlab.acme.com/acme/SwiftTool.git",
+            ),
+            // Unrecognized shapes (a proxy or mirror of the public API) keep
+            // cloning from the public host instead of from the API path.
+            (
+                GitProviderKind::GitHub,
+                "https://ghproxy.acme.com/api/github",
+                "https://github.com/acme/SwiftTool.git",
+            ),
+            (
+                GitProviderKind::GitHub,
+                "https://ghproxy.acme.com",
+                "https://github.com/acme/SwiftTool.git",
+            ),
+            (
+                GitProviderKind::GitLab,
+                "https://api.gitlab.acme.com",
+                "https://gitlab.com/acme/SwiftTool.git",
+            ),
+            (
+                GitProviderKind::GitHub,
+                "not a url",
+                "https://github.com/acme/SwiftTool.git",
             ),
         ];
         for (kind, api_url, expected) in cases {
