@@ -82,6 +82,15 @@ impl ToolsetBuilder {
         self
     }
 
+    /// For `auto_update`: the tool being updated resolves in full, while lazy tools
+    /// that are not installed stay unresolved, online or not, so one update does not
+    /// wait on remote version lookups for every other missing lazy tool.
+    pub fn with_deferred_lazy_resolution_online(mut self) -> Self {
+        self.resolve_options.defer_missing_lazy_tools = true;
+        self.resolve_options.defer_missing_lazy_online = true;
+        self
+    }
+
     pub fn with_overridden_lockfile_warnings(mut self) -> Self {
         self.warn_overridden_lockfiles = true;
         self
