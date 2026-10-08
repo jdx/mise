@@ -105,3 +105,40 @@ assert_contains "mise dotfiles status" "~/.project-root-dotfile"
 assert_not_contains "MISE_SAFE=1 mise dotfiles status" "project-root-dotfile"
 assert_succeed "MISE_SAFE=1 mise bootstrap --yes"
 assert_fail "test -e $HOME/.project-root-dotfile"
+
+echo "=== safe mode refuses --prune while project config selects dotfile groups ==="
+mkdir -p "$HOME/selects-groups"
+cat <<EOF >"$HOME/selects-groups/mise.toml"
+[bootstrap]
+dotfile_groups = ["project"]
+EOF
+cd "$HOME/selects-groups"
+assert_fail_contains "MISE_SAFE=1 mise dotfiles apply --prune --yes" "--prune is unavailable in safe mode"
+
+echo "=== safe mode allows --prune when project config only declares repos ==="
+# [bootstrap.repos] hides no dotfiles, so nothing could look orphaned
+# because of it; the warning still names the file. The workdir project is
+# out of scope here, so its group's file is pruned as it would be outside
+# safe mode.
+mkdir -p "$HOME/repos-only"
+cat <<EOF >"$HOME/repos-only/mise.toml"
+[bootstrap.repos]
+"~/src/repos-only" = { url = "file://$SRC", ref = "main" }
+EOF
+cd "$HOME/repos-only"
+assert_contains "MISE_SAFE=1 mise dotfiles apply --prune --yes 2>&1" "skipped because safe mode (MISE_SAFE=1) ignores project config"
+assert_fail "test -e $HOME/project-group"
+assert "readlink $HOME/.root-dotfile" "$HOME/dots/bundles/gitcfg/root-source"
+assert_directory_not_exists "$HOME/src/repos-only"
+
+echo "=== safe mode keeps a global config_roots root's [bootstrap] from inside it ==="
+# Run from inside the root, its file is also project config here, so it is
+# loaded before the roots are expanded; its [bootstrap] must still apply.
+cat <<EOF >>"$HOME/dots/bundles/gitcfg/mise.toml"
+
+[bootstrap.repos]
+"~/src/root-repo" = { url = "file://$SRC", ref = "main" }
+EOF
+cd "$HOME/dots/bundles/gitcfg"
+assert_contains "MISE_SAFE=1 mise bootstrap repos status" "~/src/root-repo"
+assert_contains "MISE_SAFE=1 mise dotfiles status" "~/.root-dotfile"

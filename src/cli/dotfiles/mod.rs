@@ -257,14 +257,36 @@ fn declares_dotfiles(path: &Path) -> bool {
 }
 
 /// Whether the config file at `path` declares any of the top-level `tables`.
+fn declares_any_table(path: &Path, tables: &[&str]) -> bool {
+    parse_table(path).is_some_and(|table| tables.iter().any(|name| table.contains_key(*name)))
+}
+
+/// Whether the config file at `path` declares something that decides which
+/// dotfiles apply: `[dotfiles]`, `[dotfile_groups]`, or the `[bootstrap]`
+/// keys that select groups (`dotfile_groups`) or the roots that declare them
+/// (`config_roots`). Other `[bootstrap]` tables, such as `repos`, do not.
+fn declares_dotfile_selection(path: &Path) -> bool {
+    parse_table(path).is_some_and(|table| {
+        table.contains_key("dotfiles")
+            || table.contains_key("dotfile_groups")
+            || table
+                .get("bootstrap")
+                .and_then(|bootstrap| bootstrap.as_table())
+                .is_some_and(|bootstrap| {
+                    bootstrap.contains_key("dotfile_groups")
+                        || bootstrap.contains_key("config_roots")
+                })
+    })
+}
+
+/// The config file at `path` as a TOML table.
 ///
 /// Reading and parsing the TOML here is inert — nothing is templated or
-/// executed, we only look for the table's presence.
-fn declares_any_table(path: &Path, tables: &[&str]) -> bool {
+/// executed, callers only look for a key's presence.
+fn parse_table(path: &Path) -> Option<toml::Table> {
     crate::file::read_to_string(path)
         .ok()
         .and_then(|body| body.parse::<toml::Table>().ok())
-        .is_some_and(|table| tables.iter().any(|name| table.contains_key(*name)))
 }
 
 fn path_list(paths: &[&Path]) -> String {
@@ -290,25 +312,32 @@ pub(crate) fn warn_if_dotfiles_ignored(config: &Config) {
 
 /// The project config files whose `[bootstrap]`, `[dotfiles]` or
 /// `[dotfile_groups]` safe mode drops. Empty outside safe mode.
-pub(crate) fn ignored_in_safe_mode(config: &Config) -> Vec<&Path> {
+fn ignored_in_safe_mode(config: &Config) -> Vec<&Path> {
+    ignored_in_safe_mode_where(config, |path| {
+        declares_any_table(path, &["bootstrap", "dotfiles", "dotfile_groups"])
+    })
+}
+
+/// The project config files safe mode ignores that `declares` accepts.
+/// Empty outside safe mode.
+fn ignored_in_safe_mode_where(config: &Config, declares: fn(&Path) -> bool) -> Vec<&Path> {
     if !Settings::safe_mode() {
         return vec![];
     }
     config
         .config_files
         .keys()
-        .filter(|path| {
-            safe_mode_ignores_bootstrap(path)
-                && declares_any_table(path, &["bootstrap", "dotfiles", "dotfile_groups"])
-        })
+        .filter(|path| safe_mode_ignores_bootstrap(path) && declares(path))
         .map(|path| path.as_path())
         .collect()
 }
 
-/// Refuse `--prune` while safe mode hides project dotfiles: files their
-/// groups deployed would look orphaned and be removed.
+/// Refuse `--prune` while safe mode hides project config that decides which
+/// dotfiles apply: files their groups deployed would look orphaned and be
+/// removed. A project that only declares `[bootstrap.repos]` and the like
+/// hides no dotfiles, so it does not block a prune.
 pub(crate) fn ensure_prune_sees_every_group(config: &Config) -> Result<()> {
-    let ignored = ignored_in_safe_mode(config);
+    let ignored = ignored_in_safe_mode_where(config, declares_dotfile_selection);
     if !ignored.is_empty() {
         eyre::bail!(
             "--prune is unavailable in safe mode (MISE_SAFE=1) while these project config files declare dotfiles it ignores, since their files would look orphaned:\n{}",
