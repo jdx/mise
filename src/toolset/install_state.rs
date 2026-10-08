@@ -1381,7 +1381,7 @@ pub(crate) fn reset() {
     super::tool_version::reset_install_path_cache();
 }
 
-pub(crate) fn reset_tools() {
+pub fn reset_tools() {
     *INSTALL_STATE_TOOLS
         .lock()
         .expect("INSTALL_STATE_TOOLS lock failed") = None;

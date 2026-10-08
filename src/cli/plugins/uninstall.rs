@@ -67,6 +67,11 @@ impl PluginsUninstall {
                 for backend in backends {
                     backend.purge(pr.as_ref())?;
                 }
+                // The next plugin's shared-directory check must not see the
+                // tools this purge just removed.
+                if self.purge {
+                    install_state::reset_tools();
+                }
                 pr.finish_with_message("uninstalled".into());
             } else {
                 warn!("{} is not installed", style::eblue(plugin_name));
