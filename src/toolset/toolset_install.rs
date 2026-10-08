@@ -232,7 +232,10 @@ impl Toolset {
         }
         if !installed.is_empty() {
             let ts = config
-                .get_toolset_with_opts(&ResolveOptions::without_lockfile_warnings())
+                .get_toolset_with_opts(&ResolveOptions {
+                    warn_not_in_lockfile: false,
+                    ..opts.resolve_options.for_side_effect_resolve()
+                })
                 .await?;
             config::rebuild_shims_and_runtime_symlinks(
                 config,
@@ -434,7 +437,10 @@ impl Toolset {
             trace!("install: reloading config");
             *config = Config::reset().await?;
             trace!("install: resolving");
-            if let Err(err) = self.resolve(config).await {
+            if let Err(err) = self
+                .resolve_with_opts(config, &opts.resolve_options.for_side_effect_resolve())
+                .await
+            {
                 debug!("error resolving versions after install: {err:#}");
             }
             if !failed_backends.is_empty()
@@ -447,7 +453,10 @@ impl Toolset {
             // The caller has a live config that other work is using. Refresh this
             // toolset against that snapshot without replacing the global config.
             trace!("install: resolving without reloading config");
-            if let Err(err) = self.resolve(config).await {
+            if let Err(err) = self
+                .resolve_with_opts(config, &opts.resolve_options.for_side_effect_resolve())
+                .await
+            {
                 debug!("error resolving versions after install: {err:#}");
             }
             if !failed_backends.is_empty()
