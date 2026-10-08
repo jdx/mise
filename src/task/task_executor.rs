@@ -2673,7 +2673,8 @@ impl TaskExecutor {
             &mut env,
             &mut nested_mise_diff_exclude_keys,
             "MISE_TASK_NAME",
-            task.name.clone(),
+            // The name `mise tasks ls` shows, so a file task `build.sh` sees `build`.
+            task.shown_name().to_string(),
         );
         let task_color = self.output_handler.task_prefix_color(task);
         Self::insert_env_excluded_from_nested_mise_diff(
