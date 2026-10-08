@@ -119,8 +119,8 @@ A var resolves in this order, highest first: the process environment, a value
 in a higher-precedence config file such as `mise.local.toml`, the saved answer,
 the `default`. Answers are keyed by var name alone, so projects that use the same
 name share one answer on a machine. A value saved with `mise vars NAME=VALUE`
-works for any var name, with or without a `prompt`. `prompt` works only in
-`[vars]`, not `[env]`.
+works for any var name, with or without a `prompt`, and replaces that var's
+`default` on this machine. `prompt` works only in `[vars]`, not `[env]`.
 
 ## Task-local vars
 
