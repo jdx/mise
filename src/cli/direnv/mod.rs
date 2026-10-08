@@ -29,7 +29,18 @@ enum Commands {
 impl Commands {
     pub(crate) async fn run(self, config: &Arc<Config>) -> Result<()> {
         match self {
-            Self::Activate(cmd) => cmd.run().await,
+            // Only the user-facing command warns. The `use_mise` hook it
+            // prints runs `mise direnv exec` on every direnv reload, so a
+            // warning there would print on every directory change.
+            Self::Activate(cmd) => {
+                deprecated_at!(
+                    "2026.10.4",
+                    "2027.10.4",
+                    "cli.direnv",
+                    "`mise direnv` and the `use mise` direnv integration are deprecated. Use `mise activate`, and move .envrc settings into mise.toml `[env]` (see https://mise.jdx.dev/direnv.html)."
+                );
+                cmd.run().await
+            }
             Self::Envrc(cmd) => cmd.run(config).await,
             Self::Exec(cmd) => cmd.run(config).await,
         }
