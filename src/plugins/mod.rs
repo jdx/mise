@@ -556,11 +556,6 @@ pub(crate) fn install_git_plugin_source(
             file::create_dir_all(parent)?;
         }
         pr.set_message(format!("link {}", file::display_path(plugin_path)));
-        // The clone went to plugin-repos/, so nothing has created plugins/ yet
-        // on a data dir that never held a plugin.
-        if let Some(parent) = plugin_path.parent() {
-            file::create_dir_all(parent)?;
-        }
         file::make_symlink(&subdir_path, plugin_path)?;
         // Report from the clone itself: gix does not open a repository from
         // one of its subdirectories.
