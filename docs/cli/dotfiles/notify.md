@@ -11,21 +11,16 @@ description: "Send a test desktop notification"
 
 Send a test desktop notification
 
-Checks that `history.notify` can reach you. On macOS the first
-notification asks for permission, so run this once to be prompted now
-instead of at the first sync conflict. Fails with the reason when this
-build or machine cannot show notifications, such as an unofficial macOS
-build (Homebrew), a missing `notify-send` on Linux, denied permission, or
-`history.notify = false`.
+Checks that `history.notify` can reach you. On macOS the first notification asks for permission, so run this once to be prompted now instead of at the first sync conflict. Fails with the reason when this build or machine cannot show notifications: a macOS build that is not mise's signed release (such as Homebrew's), a missing `notify-send` on Linux, denied permission, or `history.notify = false`.
 
-Notifications are only sent when conflicts pause sharing for the setup.
-Other problems, such as a watcher that cannot save, show in `mise doctor`
-and `mise dot status`.
+mise notifies you only when a sync conflict pauses syncing. Other problems, such as a watcher that cannot save, appear in `mise doctor` and `mise dot status`.
 
 ## Flags
 - **`-h --help`** — Print help
 
 ## Examples
+
+Send a test notification
 
 ```
 mise dot notify
@@ -35,6 +30,6 @@ mise dot notify
 
 ## Related documentation
 
-- [Getting started](/getting-started.html).
+- [Dotfiles history](/dotfiles/history.html).
 - [`mise dotfiles [--local] <SUBCOMMAND>`](/cli/dotfiles.html).
 - [Global flags and argument syntax](/cli/#global-flags).

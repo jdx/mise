@@ -11,7 +11,11 @@ description: "Manage package manager plugins declared in `[bootstrap.plugins]`"
 
 Manage package manager plugins declared in `[bootstrap.plugins]`
 
-Install these plugins before applying packages they manage. Installing a plugin does not itself install the host packages in `[bootstrap.packages]`.
+A package plugin adds a package manager, such as one for VS Code extensions,
+that `[bootstrap.packages]` entries can use. `mise bootstrap` installs
+plugins before packages; when you run the narrower commands, run
+`plugins apply` before `packages apply`. Installing a plugin does not
+install its packages.
 
 ## Flags
 - **`-h --help`** — Print help
@@ -25,6 +29,6 @@ Install these plugins before applying packages they manage. Installing a plugin 
 
 ## Related documentation
 
-- [Package plugins](/bootstrap/packages/plugins.html).
+- [Package manager plugins](/bootstrap/packages/plugins.html).
 - [`mise bootstrap [FLAGS] [SUBCOMMAND]`](/cli/bootstrap.html).
 - [Global flags and argument syntax](/cli/#global-flags).

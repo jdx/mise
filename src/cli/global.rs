@@ -7,58 +7,55 @@ use crate::{
     config::Config,
 };
 
-/// Sets/gets the global tool version(s)
+/// Set or show the global tool versions (deprecated; use `mise use -g`)
 ///
-/// Displays the contents of global config after writing.
-/// The file is `$HOME/.config/mise/config.toml` by default. It can be changed with `$MISE_GLOBAL_CONFIG_FILE`.
-/// If `$MISE_GLOBAL_CONFIG_FILE` is set to anything that ends in `.toml`, it will be parsed as `mise.toml`.
-/// Otherwise, it will be parsed as a `.tool-versions` file.
+/// With no arguments, prints the global config. With tools, writes them and
+/// prints the file and the tools it changed. The file is
+/// `~/.config/mise/config.toml` unless `MISE_GLOBAL_CONFIG_FILE` names another. A
+/// path ending in `.toml` is parsed as `mise.toml`; any other path is parsed as a
+/// `.tool-versions` file.
 ///
-/// Use MISE_ASDF_COMPAT=1 to default the global config to ~/.tool-versions
-///
-/// Use `mise local` to set a tool version locally in the current directory.
+/// Set MISE_ASDF_COMPAT=1 to make ~/.tool-versions the default global config.
 #[derive(Debug, usage_rs::Args)]
 #[usage(
     verbatim_doc_comment,
     hide = true,
     example(
-        r###"mise global --fuzzy node@20"###,
-        help = r###"set the current version of node to 20.x will use a fuzzy version (e.g.: 20) in .tool-versions file"###
+        r###"mise global --fuzzy node@24"###,
+        help = r###"Save node 24 as written, such as `node = "24"`, to the global config"###
     ),
     example(
-        r###"mise global --pin node@20"###,
-        help = r###"set the current version of node to 20.x will use a precise version (e.g.: 20.0.0) in .tool-versions file"###
+        r###"mise global --pin node@24"###,
+        help = r###"Save the exact version, such as `node = "24.11.0"`"###
     ),
     example(
         r###"mise global node
-20.0.0"###,
-        help = r###"show the current version of node in ~/.tool-versions"###
+24.11.0"###,
+        help = r###"Show the global node version"###
     )
 )]
 pub(crate) struct Global {
-    /// Tool(s) to add to .tool-versions
-    /// e.g.: node@20
-    /// If this is a single tool with no version, the current value of the global
-    /// .tool-versions will be displayed
+    /// Tools to add to the global config, such as `node@24`
+    ///
+    /// With a single tool and no version, prints that tool's global version.
     #[usage(value_name = "TOOL@VERSION", verbatim_doc_comment)]
     tool: Vec<ToolArg>,
 
-    /// Save fuzzy version to `~/.tool-versions`
-    /// e.g.: `mise global --fuzzy node@20` will save `node 20` to ~/.tool-versions
-    /// this is the default behavior unless MISE_ASDF_COMPAT=1
+    /// Save the version as written, such as `24`
+    ///
+    /// This is the default unless MISE_ASDF_COMPAT=1.
     #[usage(long, verbatim_doc_comment, overrides = "pin")]
     fuzzy: bool,
 
-    /// Get the path of the global config file
+    /// Print the path of the global config file
     #[usage(long)]
     path: bool,
 
-    /// Save exact version to `~/.tool-versions`
-    /// e.g.: `mise global --pin node@20` will save `node 20.0.0` to ~/.tool-versions
+    /// Save the exact version, such as `24.11.0`
     #[usage(long, verbatim_doc_comment, overrides = "fuzzy")]
     pin: bool,
 
-    /// Remove the tool(s) from ~/.tool-versions
+    /// Remove these tools from the global config
     #[usage(long, value_name = "TOOL", aliases = ["rm", "unset"])]
     remove: Option<Vec<BackendArg>>,
 }

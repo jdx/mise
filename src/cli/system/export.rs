@@ -4,16 +4,22 @@ use crate::config::{Config, Settings};
 use crate::system;
 use crate::system::packages::nix::{Installable, nix_string};
 
-/// Export active Nix bootstrap packages as a NixOS module
+/// Print the configured `nix:` packages as a NixOS module
 ///
-/// Writes to stdout without invoking Nix. Import the output into an existing
-/// NixOS configuration; packages resolve against that configuration's `pkgs`.
-/// Only shorthand attribute paths are exportable. Explicit flake references
-/// and package-version pins cannot be represented by the importing package set.
+/// Prints a module that adds each package to `environment.systemPackages`,
+/// without running Nix. Import it into a NixOS configuration; packages resolve
+/// against that configuration's `pkgs`. Entries for another OS or environment,
+/// and entries with `state = "absent"`, are left out. Only shorthand
+/// attributes such as `nix:ripgrep` can be exported: a flake reference or a
+/// version pin is an error, because the importing configuration decides where
+/// packages come from.
 #[derive(Debug, usage_rs::Args)]
 #[usage(
     verbatim_doc_comment,
-    example(r###"mise bootstrap packages export --format nix > packages.nix"###)
+    example(
+        "mise bootstrap packages export --format nix > packages.nix",
+        help = "Write the module to a file you can import from a NixOS configuration"
+    )
 )]
 pub(crate) struct SystemExport {
     /// Output format

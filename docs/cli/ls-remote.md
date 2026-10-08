@@ -17,35 +17,53 @@ before querying it again. Version formats and ordering are backend-specific.
 
 ## Arguments
 - **`[TOOL@VERSION]`** — Tool to get versions for
-- **`[PREFIX]`** — Filter the available versions by this prefix
-  Equivalent to the version selector after `@` in the first argument
+- **`[PREFIX]`** — Version prefix to filter by; same as `TOOL@PREFIX`
 
 ## Flags
-- **`--all`** — List available versions for every backend/tool currently known to mise
-- **`--minimum-release-age <MINIMUM_RELEASE_AGE>`** — Only show versions released before this age or date
+- **`--all`** — List available versions for every tool mise currently knows about
+- **`--minimum-release-age <AGE>`** — Only show versions released before a date or at least a duration ago
 
-  Supports absolute dates like "2024-06-01" and relative durations like "90d" or "1y".
-- **`-J --json`** — Output in JSON format (includes version metadata like created_at timestamps when available)
-- **`--no-versions-host`** — Disable checking the mise-versions host
-- **`--prerelease`** — Include pre-release versions in the output for backends that report
-  upstream prerelease metadata or opt in to regex-based prerelease
-  detection. Equivalent to setting `MISE_PRERELEASES=1` or the
-  `prereleases` setting for the duration of this command.
-- **`--strict-metadata`** — Fail if release metadata fetches fail
+  Takes a date such as `2024-06-01` or a duration such as `90d` or `1y`.
+  Overrides the `minimum_release_age` setting and tool option.
+- **`-J --json`** — Output in JSON format, with metadata such as `created_at` when available
+- **`--no-versions-host`** — Fetch versions from the tool's upstream instead of mise's version mirror
 
-  Requires --json and --no-versions-host.
+  Same as `use_versions_host = false` for this command.
+- **`--prerelease`** — Include prerelease versions
 
-  This prevents metadata consumers from accepting empty fallback results
-  when a backend's metadata-producing upstream request fails.
+  Works for backends that report prerelease metadata or detect prereleases by
+  pattern. Same as MISE_PRERELEASES=1 or the `prereleases` setting, for this
+  command only.
+- **`--strict-metadata`** — Exit with an error when release metadata cannot be fetched
+
+  Without it, backends such as aqua and ruby fall back to a version list
+  without release dates, or an empty one. Requires --json and
+  --no-versions-host.
 - **`-h --help`** — Print help
 
 ## Examples
 
+List every node version
+
 ```
 mise ls-remote node
-mise ls-remote node@20
-mise ls-remote node 20
+```
+
+List node 24.x versions
+
+```
+mise ls-remote node@24
+```
+
+Skip versions released in the last 30 days
+
+```
 mise ls-remote node --minimum-release-age 30d
+```
+
+Include release dates, as JSON
+
+```
 mise ls-remote github:cli/cli --json
 ```
 
@@ -53,6 +71,6 @@ mise ls-remote github:cli/cli --json
 
 ## Related documentation
 
-- [Version requests](/dev-tools/).
+- [Version requests](/dev-tools/versions.html).
 - [All commands](/cli/).
 - [Global flags and argument syntax](/cli/#global-flags).

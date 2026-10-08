@@ -2,24 +2,27 @@ use eyre::{Result, bail};
 
 use crate::system::history::sync::run::{self, SyncRequest};
 
-/// Publish, fetch, and record what is pending now
+/// Push saved checkpoints and fetch incoming changes
 ///
-/// Fetches the origin branch and publishes the ordinary local commit history.
-/// A rejected push fetches again and reconciles without rewriting history.
-/// Records incoming changes to apply and conflicts to decide.
-/// Live files are never changed here: `mise dot pull` does
-/// that. In `fetch-only` mode nothing is published.
+/// Fetches the origin branch and pushes your local history to it. If the push
+/// is rejected, mise fetches again and reconciles the two histories without
+/// rewriting either. Incoming changes and conflicts are recorded for
+/// `mise dot pull`; this command never changes your files. With `--fetch-only`,
+/// or in `fetch-only` mode, nothing is pushed.
 ///
-/// The history watcher does this on its own in `sync` and `fetch-only` mode
-/// (`settings.history.sync`); this command is for right now.
+/// The watcher does this on its own in `sync` and `fetch-only` mode (the
+/// `history.sync` setting). See https://mise.jdx.dev/dotfiles/sync.html
 #[derive(Debug, usage_rs::Args)]
-#[usage(verbatim_doc_comment)]
+#[usage(
+    example("mise dot sync", help = "Push and fetch now"),
+    example("mise dot sync --fetch-only", help = "Fetch without pushing")
+)]
 pub(crate) struct DotfilesSync {
-    /// Fetch without publishing
+    /// Fetch without pushing
     #[usage(long)]
     fetch_only: bool,
 
-    /// Allow publishing older unencrypted versions of encrypted files
+    /// Allow pushing older unencrypted versions of files that are now encrypted
     #[usage(long)]
     allow_plaintext_history: bool,
 

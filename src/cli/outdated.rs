@@ -12,33 +12,52 @@ use tabled::settings::location::ByColumnName;
 
 /// Show outdated tool versions
 ///
-/// See `mise upgrade` to upgrade these versions.
+/// Lists tools whose installed version is older than the newest version their
+/// config request allows. For `node = "20"`, that is the newest 20.x release;
+/// pass `--bump` to compare against the newest release overall instead. Run
+/// `mise upgrade` to install the newer versions.
 #[derive(Debug, usage_rs::Args)]
 #[usage(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP,
     example(r###"mise outdated
-Plugin  Requested  Current  Latest
-python  3.11       3.11.0   3.11.1
-node    20         20.0.0   20.1.0"###),
-    example(r###"mise outdated node
-Plugin  Requested  Current  Latest
-node    20         20.0.0   20.1.0"###),
+name    requested  current  latest  source
+node    20         20.0.0   20.1.0  ~/src/app/mise.toml
+python  3.11       3.11.0   3.11.1  ~/src/app/mise.toml"###,
+        help = "Show tools with a newer version inside their configured range"),
+    example(r###"mise outdated --bump
+name  requested  current  bump  latest  source
+node  20         20.0.0   24    24.1.0  ~/src/app/mise.toml"###,
+        help = "Compare against the newest release overall and show the request for it"),
     example(r###"mise outdated --json
-{"python": {"requested": "3.11", "current": "3.11.0", "latest": "3.11.1"}, ...}"###),
-    example(r###"mise outdated --local
-Plugin  Requested  Current  Latest
-node    20         20.0.0   20.1.0"###))]
+{
+  "node": {
+    "name": "node",
+    "requested": "20",
+    "current": "20.0.0",
+    "bump": null,
+    "latest": "20.1.0",
+    "source": {
+      "type": "mise.toml",
+      "path": "/home/me/src/app/mise.toml"
+    }
+  }
+}"###,
+        help = "Print the same information as JSON"),
+    example(r###"mise outdated --local"###,
+        help = "Skip tools that only the global config requests"))]
 pub(crate) struct Outdated {
-    /// Tool(s) to show outdated versions for
-    /// e.g.: node@20 python@3.10
-    /// If not specified, all tools in global and local configs will be shown
-    #[usage(value_name = "TOOL@VERSION", verbatim_doc_comment)]
+    /// Tools to check, such as `node@20 python@3.10`
+    ///
+    /// Checks every tool in the global and project configs when omitted.
+    #[usage(value_name = "TOOL@VERSION")]
     pub tool: Vec<ToolArg>,
 
-    /// Compare against the latest versions available, not just those matching the current config
+    /// Compare against the newest release overall, not only the configured range
     ///
-    /// For example, with `node = "20"` in your config, `mise outdated` normally only reports newer
-    /// 20.x versions. With this flag it reports the newest version overall, such as 22.x.
-    #[usage(long, short = 'b', verbatim_doc_comment)]
+    /// With `node = "20"` in your config, `mise outdated` reports the newest 20.x
+    /// release. With this flag the `latest` column shows the newest release overall,
+    /// such as 24.1.0, and a `bump` column shows the request `mise upgrade --bump`
+    /// would write, such as `24`.
+    #[usage(long, short = 'b')]
     pub bump: bool,
 
     /// Output in JSON format
@@ -49,24 +68,24 @@ pub(crate) struct Outdated {
     #[usage(short = 'l', hide = true)]
     pub legacy_bump: bool,
 
-    /// Show outdated tools including installed-but-inactive tools not present in the current config
+    /// Also check installed tools that the current config does not request
     ///
-    /// By default, `mise outdated` only shows tools that come from the current config.
-    #[usage(long, verbatim_doc_comment, conflicts = "local")]
+    /// By default, `mise outdated` checks only tools that come from the current config.
+    #[usage(long, conflicts = "local")]
     pub inactive: bool,
 
-    /// Only show outdated tools defined in local config files
+    /// Only check tools defined in project config files
     ///
-    /// This will only show tools that are defined in project-local mise.toml and
-    /// will skip tools defined in the global config (~/.config/mise/config.toml).
-    #[usage(long, verbatim_doc_comment)]
+    /// Skips tools defined in the global config (~/.config/mise/config.toml) and
+    /// tools set through `MISE_<TOOL>_VERSION` environment variables.
+    #[usage(long)]
     pub local: bool,
 
     /// Placeholder for future monorepo outdated checks; `mise outdated --monorepo` is not implemented yet.
-    #[usage(long, verbatim_doc_comment)]
+    #[usage(long, hide = true, verbatim_doc_comment)]
     pub monorepo: bool,
 
-    /// Don't show table header
+    /// Do not print the table header
     #[usage(long)]
     pub no_header: bool,
 }
@@ -83,7 +102,7 @@ impl Outdated {
             self.bump = true;
         }
         if self.monorepo {
-            unimplemented!("mise outdated --monorepo is not implemented yet");
+            eyre::bail!("--monorepo is not supported by mise outdated yet");
         }
         let config = Config::get().await?;
         let scope = if self.local {

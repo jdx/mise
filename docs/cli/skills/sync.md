@@ -18,25 +18,28 @@ directory of the nearest mise config. Run it again after `mise use` changes
 a version and the links follow, or set `skills.auto_sync` to have mise do
 that after every install and `mise use`.
 
-Only links mise made, which point into its installs directory, are ever
-replaced or, with --prune or the `skills.prune` setting, removed. A real
-directory or a link of your own at a skill's name is left alone and reported.
+mise replaces only the links it made, which point into its installs
+directory, and removes them only with --prune or the `skills.prune` setting.
+A real directory or a link of your own at a skill's name is left alone and
+reported.
 
 ## Flags
 - **`--dir <DIR>`** — The directory to link skills into
-- **`-g --global`** — Link into ~/.claude/skills instead of the project's directory
+- **`-g --global`** — Link into the skills.dir directory under your home directory instead of the project's
+
+  With the default skills.dir, that is ~/.claude/skills.
 - **`--prune`** — Remove links mise made for skills that are no longer active
 - **`-h --help`** — Print help
 
 ## Examples
 
-into the project's .claude/skills, or wherever skills.dir says
+Link skills into the project's skills.dir (default .claude/skills)
 
 ```
 mise skills sync
 ```
 
-somewhere else, and drop links for skills that are no longer active
+Link into .agents/skills and remove links for skills that are no longer active
 
 ```
 mise skills sync --dir .agents/skills --prune

@@ -456,8 +456,8 @@ impl Config {
         time!("load done");
 
         measure!("config::load install_state", {
-            for plugin in config.repo_urls.keys() {
-                let (plugin_type, plugin) = PluginType::from_plugin_config(plugin);
+            for (plugin, url) in &config.repo_urls {
+                let (plugin_type, plugin) = PluginType::from_plugin_entry(plugin, url);
                 install_state::add_plugin(plugin, plugin_type).await?;
             }
         });
@@ -2305,7 +2305,10 @@ async fn idiomatic_filenames_for_root(
     Ok(load_idiomatic_filenames_for_tools(&rooted.enable_tools, &rooted.disable_files).await)
 }
 
-static LOCAL_CONFIG_FILENAMES: Lazy<IndexSet<&'static str>> = Lazy::new(|| {
+/// Shared (non-`.local`) config filenames for one directory, lowest precedence first.
+/// `DEFAULT_CONFIG_FILENAMES` places the environment files and then the `.local`
+/// overrides above these.
+static SHARED_CONFIG_FILENAMES: Lazy<IndexSet<&'static str>> = Lazy::new(|| {
     let mut paths: IndexSet<&'static str> = IndexSet::new();
     if let Some(o) = &*env::MISE_OVERRIDE_TOOL_VERSIONS_FILENAMES {
         paths.extend(o.iter().map(|s| s.as_str()));
@@ -2325,105 +2328,98 @@ static LOCAL_CONFIG_FILENAMES: Lazy<IndexSet<&'static str>> = Lazy::new(|| {
         paths.extend([
             ".config/mise/conf.d/*.toml",
             ".config/mise/conf.d/*/mise.toml",
-            ".config/mise/conf.d/*/mise.local.toml",
             ".config/mise/config.toml",
             ".config/mise/mise.toml",
             ".config/mise.toml",
             ".mise/conf.d/*.toml",
             ".mise/conf.d/*/mise.toml",
-            ".mise/conf.d/*/mise.local.toml",
             ".mise/config.toml",
             "mise/conf.d/*.toml",
             "mise/conf.d/*/mise.toml",
-            "mise/conf.d/*/mise.local.toml",
             "mise/config.toml",
             "mise.toml",
             &*env::MISE_DEFAULT_CONFIG_FILENAME, // mise.toml
             ".mise.toml",
-            ".config/mise/config.local.toml",
-            ".config/mise/mise.local.toml",
-            ".config/mise.local.toml",
-            ".mise/config.local.toml",
-            "mise/config.local.toml",
-            "mise.local.toml",
-            ".mise.local.toml",
         ]);
     }
 
     paths
 });
+/// `.local` override filenames for one directory, lowest precedence first. They
+/// outrank every shared and environment file in the same directory, except the
+/// environment-specific `.local` files. `MISE_OVERRIDE_CONFIG_FILENAMES` replaces
+/// these together with the shared filenames.
+static LOCAL_OVERRIDE_CONFIG_FILENAMES: Lazy<Vec<&'static str>> = Lazy::new(|| {
+    if !env::MISE_OVERRIDE_CONFIG_FILENAMES.is_empty() {
+        return vec![];
+    }
+    vec![
+        ".config/mise/conf.d/*/mise.local.toml",
+        ".config/mise/config.local.toml",
+        ".config/mise/mise.local.toml",
+        ".config/mise.local.toml",
+        ".mise/conf.d/*/mise.local.toml",
+        ".mise/config.local.toml",
+        "mise/conf.d/*/mise.local.toml",
+        "mise/config.local.toml",
+        "mise.local.toml",
+        ".mise.local.toml",
+    ]
+});
 /// Config filename patterns for a single MISE_ENV environment, in precedence order
-/// (later wins, matching LOCAL_CONFIG_FILENAMES ordering)
-fn env_config_patterns(env: &str) -> Vec<String> {
-    env_config_patterns_with_conf_d(env, env::env_conf_d())
+/// (later wins). `local` selects the `mise.{env}.local.toml` family instead of
+/// `mise.{env}.toml`.
+fn env_config_patterns(env: &str, local: bool) -> Vec<String> {
+    env_config_patterns_with_conf_d(env, local, env::env_conf_d())
 }
 
 /// `env_config_patterns` with the `env_conf_d` decision injected, so tests can
 /// cover both sides of the migration without touching global state.
-fn env_config_patterns_with_conf_d(env: &str, env_conf_d: bool) -> Vec<String> {
+fn env_config_patterns_with_conf_d(env: &str, local: bool, env_conf_d: bool) -> Vec<String> {
     let env = glob::Pattern::escape(env);
+    let env = if local { format!("{env}.local") } else { env };
     let mut patterns = vec![];
-    if env_conf_d {
-        patterns.push(format!(".config/mise/conf.d/*.{env}.toml"));
+    for dir in [".config/mise", "mise", ".mise"] {
+        if env_conf_d {
+            patterns.push(format!("{dir}/conf.d/*.{env}.toml"));
+        }
+        patterns.extend([
+            format!("{dir}/conf.d/*/mise.{env}.toml"),
+            format!("{dir}/config.{env}.toml"),
+            format!("{dir}.{env}.toml"),
+        ]);
     }
-    patterns.push(format!(".config/mise/conf.d/*/mise.{env}.toml"));
-    patterns.extend([
-        format!(".config/mise/config.{env}.toml"),
-        format!(".config/mise.{env}.toml"),
-    ]);
-    if env_conf_d {
-        patterns.push(format!("mise/conf.d/*.{env}.toml"));
-    }
-    patterns.push(format!("mise/conf.d/*/mise.{env}.toml"));
-    patterns.extend([
-        format!("mise/config.{env}.toml"),
-        format!("mise.{env}.toml"),
-    ]);
-    if env_conf_d {
-        patterns.push(format!(".mise/conf.d/*.{env}.toml"));
-    }
-    patterns.push(format!(".mise/conf.d/*/mise.{env}.toml"));
-    patterns.extend([
-        format!(".mise/config.{env}.toml"),
-        format!(".mise.{env}.toml"),
-    ]);
-    if env_conf_d {
-        patterns.push(format!(".config/mise/conf.d/*.{env}.local.toml"));
-    }
-    patterns.push(format!(".config/mise/conf.d/*/mise.{env}.local.toml"));
-    patterns.extend([
-        format!(".config/mise/config.{env}.local.toml"),
-        format!(".config/mise.{env}.local.toml"),
-    ]);
-    if env_conf_d {
-        patterns.push(format!("mise/conf.d/*.{env}.local.toml"));
-    }
-    patterns.push(format!("mise/conf.d/*/mise.{env}.local.toml"));
-    patterns.extend([
-        format!("mise/config.{env}.local.toml"),
-        format!("mise.{env}.local.toml"),
-    ]);
-    if env_conf_d {
-        patterns.push(format!(".mise/conf.d/*.{env}.local.toml"));
-    }
-    patterns.push(format!(".mise/conf.d/*/mise.{env}.local.toml"));
-    patterns.extend([
-        format!(".mise/config.{env}.local.toml"),
-        format!(".mise.{env}.local.toml"),
-    ]);
     patterns
 }
 
 pub static DEFAULT_CONFIG_FILENAMES: Lazy<Vec<String>> = Lazy::new(|| {
-    let mut filenames = LOCAL_CONFIG_FILENAMES
-        .iter()
-        .map(|f| f.to_string())
-        .collect_vec();
-    for env in &*env::MISE_ENV_WITH_AUTO {
-        filenames.extend(env_config_patterns(env));
-    }
-    filenames
+    layer_config_filenames(
+        SHARED_CONFIG_FILENAMES.iter().copied(),
+        LOCAL_OVERRIDE_CONFIG_FILENAMES.iter().copied(),
+        &env::MISE_ENV_WITH_AUTO,
+    )
 });
+
+/// Config filename patterns for one directory, lowest precedence first:
+/// `mise.toml` < `mise.{env}.toml` < `mise.local.toml` < `mise.{env}.local.toml`.
+/// The global config directory uses the same order (`config_files_with_incoming`),
+/// so a directory's files rank the same way whether it is found by walking up from
+/// the cwd or as the global config.
+fn layer_config_filenames<'a>(
+    shared: impl IntoIterator<Item = &'a str>,
+    local: impl IntoIterator<Item = &'a str>,
+    envs: &[String],
+) -> Vec<String> {
+    let shared = shared.into_iter().map(String::from);
+    let env_shared = envs.iter().flat_map(|env| env_config_patterns(env, false));
+    let local = local.into_iter().map(String::from);
+    let env_local = envs.iter().flat_map(|env| env_config_patterns(env, true));
+    shared
+        .chain(env_shared)
+        .chain(local)
+        .chain(env_local)
+        .collect()
+}
 static TOML_CONFIG_FILENAMES: Lazy<Vec<String>> = Lazy::new(|| {
     DEFAULT_CONFIG_FILENAMES
         .iter()
@@ -3047,7 +3043,10 @@ fn detect_auto_env_candidate_files() -> Vec<PathBuf> {
             continue;
         }
         for env_name in &candidate_envs {
-            for pattern in env_config_patterns(env_name) {
+            let patterns = [false, true]
+                .into_iter()
+                .flat_map(|local| env_config_patterns(env_name, local));
+            for pattern in patterns {
                 found.extend(
                     // config_glob applies loading's exclusions, such as hidden
                     // conf.d fragments and folders
@@ -3372,7 +3371,6 @@ pub(crate) fn config_files_with_incoming(
         }
     }
     files.extend(conf_folder_files("mise.toml"));
-    files.extend(conf_folder_files("mise.local.toml"));
     files.extend([dir.join("config.toml"), dir.join("mise.toml")]);
     for environment in &*env::MISE_ENV_WITH_AUTO {
         if env::env_conf_d() {
@@ -3388,6 +3386,7 @@ pub(crate) fn config_files_with_incoming(
             dir.join(format!("mise.{environment}.toml")),
         ]);
     }
+    files.extend(conf_folder_files("mise.local.toml"));
     files.extend([dir.join("config.local.toml"), dir.join("mise.local.toml")]);
     for environment in &*env::MISE_ENV_WITH_AUTO {
         if env::env_conf_d() {
@@ -4606,6 +4605,28 @@ fn default_task_includes() -> Vec<String> {
     ]
 }
 
+/// The default task directories of the user-global scope.
+///
+/// With a global config file, these are the default task directories at
+/// `MISE_GLOBAL_CONFIG_ROOT` plus `$MISE_CONFIG_DIR/tasks`, which
+/// `.config/mise/tasks` covers only when the config directory is the default
+/// `~/.config/mise`. Without one, only `$MISE_CONFIG_DIR/tasks` is global: the
+/// other directories at that root belong to the local walk, which applies the
+/// `task_config` of a config there such as `~/mise.toml`.
+fn user_global_task_includes(has_config: bool) -> Vec<String> {
+    let global_tasks = dirs::CONFIG.join("tasks");
+    // The path is a literal directory, so escape any glob metacharacters in it.
+    let global_include = glob::Pattern::escape(&global_tasks.to_string_lossy());
+    if !has_config {
+        return vec![global_include];
+    }
+    let mut includes = default_task_includes();
+    if global_tasks != env::MISE_GLOBAL_CONFIG_ROOT.join(".config/mise/tasks") {
+        includes.push(global_include);
+    }
+    includes
+}
+
 fn is_global_task_include_path(path: &Path) -> bool {
     [
         dirs::CONFIG.join("tasks"),
@@ -5417,7 +5438,10 @@ async fn load_global_tasks(config: &Arc<Config>, templates: &TaskDefinitions) ->
     // inheriting metadata from it.
     let mut seen_configs = BTreeSet::new();
     let mut config_groups = vec![];
-    for config_paths in [global_config_files(), system_config_files()] {
+    for (user_scope, config_paths) in [
+        (true, global_config_files()),
+        (false, system_config_files()),
+    ] {
         let configs = config_paths
             .iter()
             .rev()
@@ -5433,8 +5457,13 @@ async fn load_global_tasks(config: &Arc<Config>, templates: &TaskDefinitions) ->
             })
             .filter(|cf| seen_configs.insert(file::desymlink_path(cf.get_path())))
             .collect::<Vec<_>>();
-        if !configs.is_empty() {
-            config_groups.push(configs);
+        // `$MISE_CONFIG_DIR/tasks` holds global tasks even when no global
+        // config file exists.
+        if user_scope {
+            let default_includes = user_global_task_includes(!configs.is_empty());
+            config_groups.push((configs, Some(default_includes)));
+        } else if !configs.is_empty() {
+            config_groups.push((configs, None));
         }
     }
 
@@ -5443,18 +5472,23 @@ async fn load_global_tasks(config: &Arc<Config>, templates: &TaskDefinitions) ->
     // simple first-wins replacement by task name.
     let mut tasks: IndexMap<String, Task> = IndexMap::new();
     let mut rendered_file_tasks = RenderedTaskCache::default();
-    for configs in config_groups {
-        let scope_tasks = load_tasks_from_configs_and_folders(
+    for (configs, default_includes) in config_groups {
+        let mut scope_tasks = load_tasks_from_configs_and_folders(
             config,
             &env::MISE_GLOBAL_CONFIG_ROOT,
             configs,
             templates,
-            false,
-            None,
-            Some(&mut rendered_file_tasks),
+            TaskSourceOptions {
+                rendered_file_tasks: Some(&mut rendered_file_tasks),
+                default_includes,
+                ..Default::default()
+            },
         )
         .await?;
         rendered_file_tasks.finish_config();
+        // A global config marks its tasks global. Without one, the scope's
+        // task directory still holds global tasks.
+        mark_tasks_as_global(&mut scope_tasks);
         for task in scope_tasks {
             tasks.entry(task.name.clone()).or_insert(task);
         }
@@ -5544,6 +5578,12 @@ fn merge_file_and_config_tasks(file_tasks: Vec<Task>, config_tasks: Vec<Task>) -
                 for name in stripped_name_overlay_targets(&by_name, &t.name) {
                     file_task_overlays.entry(name).or_insert_with(|| t.clone());
                 }
+            }
+            // A block that took a script over under the script's own name
+            // (`[tasks."hello.sh"]`) stands in for that file task, so it is
+            // listed by the same name the script was: `hello`.
+            if owner == t.name && crate::task::strip_task_name_extension(&t.name) != t.name {
+                t.name_from_file = true;
             }
             t.name = owner;
         }
@@ -6653,11 +6693,28 @@ async fn load_tasks_from_configs(
         dir,
         configs,
         templates,
-        monorepo_context,
-        cascaded_task_config,
-        None,
+        TaskSourceOptions {
+            monorepo_context,
+            cascaded_task_config,
+            ..Default::default()
+        },
     )
     .await
+}
+
+/// How a task root loads, beyond its configs.
+#[derive(Default)]
+struct TaskSourceOptions<'a> {
+    monorepo_context: bool,
+    cascaded_task_config: Option<&'a CascadedTaskConfig>,
+    /// Shared by the global user and system scopes, see
+    /// [`load_task_sources_from_configs`].
+    rendered_file_tasks: Option<&'a mut RenderedTaskCache>,
+    /// The task directories searched when no config sets
+    /// `task_config.includes`, in place of [`default_task_includes`]. For
+    /// [`load_tasks_from_configs_and_folders`], this applies to `dir` and not
+    /// to its conf.d folders.
+    default_includes: Option<Vec<String>>,
 }
 
 /// The configs of one task root, with each config's precedence among all the
@@ -6689,10 +6746,14 @@ async fn load_tasks_from_configs_and_folders(
     dir: &Path,
     configs: Vec<&Arc<dyn ConfigFile>>,
     templates: &TaskDefinitions,
-    monorepo_context: bool,
-    cascaded_task_config: Option<&CascadedTaskConfig>,
-    mut rendered_file_tasks: Option<&mut RenderedTaskCache>,
+    options: TaskSourceOptions<'_>,
 ) -> Result<Vec<Task>> {
+    let TaskSourceOptions {
+        monorepo_context,
+        cascaded_task_config,
+        mut rendered_file_tasks,
+        mut default_includes,
+    } = options;
     let mut roots: IndexMap<PathBuf, TaskRootConfigs> = IndexMap::new();
     roots.insert(dir.to_path_buf(), TaskRootConfigs::default());
     for (precedence, cf) in configs.into_iter().enumerate() {
@@ -6750,9 +6811,13 @@ async fn load_tasks_from_configs_and_folders(
             &root,
             configs,
             templates,
-            monorepo_context,
-            root_cascaded_task_config,
-            rendered_file_tasks.as_deref_mut(),
+            TaskSourceOptions {
+                monorepo_context,
+                cascaded_task_config: root_cascaded_task_config,
+                rendered_file_tasks: rendered_file_tasks.as_deref_mut(),
+                // `dir` is the first root, so only it takes these.
+                default_includes: default_includes.take(),
+            },
         )
         .await?;
         let global_precedence = |task: &Task| {
@@ -6808,10 +6873,14 @@ async fn load_task_sources_from_configs(
     dir: &Path,
     configs: Vec<&Arc<dyn ConfigFile>>,
     templates: &TaskDefinitions,
-    monorepo_context: bool,
-    cascaded_task_config: Option<&CascadedTaskConfig>,
-    mut rendered_file_tasks: Option<&mut RenderedTaskCache>,
+    options: TaskSourceOptions<'_>,
 ) -> Result<TaskSources> {
+    let TaskSourceOptions {
+        monorepo_context,
+        cascaded_task_config,
+        mut rendered_file_tasks,
+        default_includes,
+    } = options;
     let cascaded_task_config =
         if configs.iter().find_map(|cf| cf.task_config().cascade) == Some(false) {
             None
@@ -6839,7 +6908,13 @@ async fn load_task_sources_from_configs(
                     .map(|includes| (includes, tc.includes_root.clone(), configs.len()))
             })
         })
-        .unwrap_or_else(|| (default_task_includes(), dir.to_path_buf(), configs.len()));
+        .unwrap_or_else(|| {
+            (
+                default_includes.unwrap_or_else(default_task_includes),
+                dir.to_path_buf(),
+                configs.len(),
+            )
+        });
     let (excludes, excludes_root) = configs
         .iter()
         .find_map(|cf| match cf.task_config_excludes() {
@@ -7666,6 +7741,7 @@ mod tests {
             name: name.to_string(),
             config_source: PathBuf::from(format!("mise-tasks/{name}")),
             file: Some(PathBuf::from(format!("mise-tasks/{name}"))),
+            name_from_file: true,
             ..Default::default()
         }
     }
@@ -8582,8 +8658,12 @@ mod tests {
 
     #[test]
     fn test_env_config_patterns() {
+        let patterns = |local| env_config_patterns_with_conf_d("linux", local, true);
         assert_eq!(
-            env_config_patterns_with_conf_d("linux", true),
+            patterns(false)
+                .into_iter()
+                .chain(patterns(true))
+                .collect_vec(),
             vec![
                 ".config/mise/conf.d/*.linux.toml",
                 ".config/mise/conf.d/*/mise.linux.toml",
@@ -8614,7 +8694,10 @@ mod tests {
         // Folder fragments are new, so their environment files are never
         // subject to the env_conf_d migration.
         assert!(
-            env_config_patterns_with_conf_d("linux", false)
+            [false, true]
+                .into_iter()
+                .flat_map(|local| env_config_patterns_with_conf_d("linux", local, false))
+                .collect_vec()
                 .iter()
                 .filter(|pattern| pattern.contains("conf.d"))
                 .all(|pattern| pattern.contains("conf.d/*/mise."))
@@ -8661,9 +8744,9 @@ mod tests {
         fs::write(confd.join("tools.qa*.toml"), "[env]\n")?;
         fs::write(confd.join("tools.qa1.toml"), "[env]\n")?;
 
-        let pattern = env_config_patterns_with_conf_d("qa*", true)
+        let pattern = env_config_patterns_with_conf_d("qa*", false, true)
             .into_iter()
-            .find(|pattern| pattern.starts_with(".mise/conf.d/") && !pattern.contains(".local."))
+            .find(|pattern| pattern.starts_with(".mise/conf.d/"))
             .unwrap();
         let matches = glob(tmp.path(), &pattern)?;
         assert_eq!(matches, vec![confd.join("tools.qa*.toml")]);
@@ -8678,11 +8761,54 @@ mod tests {
             let path = tmp.path().join(format!("mise.{env_name}.toml"));
             fs::write(&path, "[env]\n")?;
 
-            let patterns = env_config_patterns(env_name);
+            let patterns = env_config_patterns(env_name, false);
             assert!(config_paths_in_dir_with_filenames(tmp.path(), &patterns).contains(&path));
             assert!(has_config_file_with_filenames(tmp.path(), &patterns));
         }
 
+        Ok(())
+    }
+
+    #[test]
+    fn test_config_filenames_rank_local_above_environment() -> Result<()> {
+        let tmp = TempDir::new()?;
+        for name in [
+            "mise.toml",
+            "mise.test.toml",
+            "mise.local.toml",
+            "mise.test.local.toml",
+            ".config/mise/config.toml",
+            ".config/mise/config.test.toml",
+            ".config/mise/config.local.toml",
+            ".config/mise/config.test.local.toml",
+        ] {
+            let path = tmp.path().join(name);
+            fs::create_dir_all(path.parent().unwrap())?;
+            fs::write(path, "")?;
+        }
+        // Unit tests override the default filenames, so pass the relevant ones.
+        let filenames = layer_config_filenames(
+            [".config/mise/config.toml", "mise.toml"],
+            [".config/mise/config.local.toml", "mise.local.toml"],
+            &["test".to_string()],
+        );
+        // Highest precedence first.
+        assert_eq!(
+            config_paths_in_dir_with_filenames(tmp.path(), &filenames)
+                .iter()
+                .map(|path| path.strip_prefix(tmp.path()).unwrap().to_string_lossy())
+                .collect_vec(),
+            vec![
+                "mise.test.local.toml",
+                ".config/mise/config.test.local.toml",
+                "mise.local.toml",
+                ".config/mise/config.local.toml",
+                "mise.test.toml",
+                ".config/mise/config.test.toml",
+                "mise.toml",
+                ".config/mise/config.toml",
+            ]
+        );
         Ok(())
     }
 

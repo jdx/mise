@@ -9,36 +9,41 @@ use crate::config::Settings;
 use crate::file;
 use crate::oci::{BuildOptions, LayerOwner};
 
-/// [experimental] Build an OCI image from the current mise.toml and run a command in it
+/// [experimental] Build the project's image and run a command in it
 ///
-/// Equivalent to `mise oci build` followed by `docker run` / `podman run`.
-/// The built image is loaded into the local container engine (podman pulls
-/// the OCI layout natively; docker receives it via `docker load`) and the
-/// given command is executed inside it with stdin/stdout/stderr inherited.
+/// Builds the image as `mise oci build` does, unless `--image-dir` names an
+/// existing layout, then loads it into podman or docker and runs the command in
+/// a container with stdin, stdout, and stderr attached. podman reads the OCI
+/// layout directly; docker receives it through `docker load`.
 ///
 /// Requires `mise settings experimental=true` (or `MISE_EXPERIMENTAL=1`) and
-/// one of: `podman`, `docker`.
+/// podman or docker.
 #[derive(Debug, usage_rs::Args)]
-#[usage(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP,
-    example(r###"mise oci run -it -- bash"###, help = r###"Build the current mise.toml and drop into bash:"###),
-    example(r###"mise oci run -e DEBUG=1 --volume "$PWD:/work" -w /work -- npm test"###, help = r###"Run a one-shot command with env + volume (note: `-v` is reserved for --verbose, so use `--volume`):"###),
-    example(r###"mise oci build -o ./img && mise oci run --image-dir ./img -- node -e 'console.log(process.version)'"###, help = r###"Re-use a previously built layout (skip the build step):"###))]
+#[usage(verbatim_doc_comment,
+    example(r###"mise oci run -it -- bash"###, help = r###"Build the project's image and open bash in it"###),
+    example(r###"mise oci run -e DEBUG=1 --volume "$PWD:/work" -w /work -- npm test"###, help = r###"Run a one-shot command with an environment variable and a mounted directory"###),
+    example(r###"mise oci build -o ./img && mise oci run --image-dir ./img -- node -e 'console.log(process.version)'"###, help = r###"Reuse a layout built earlier instead of building again"###))]
 pub(super) struct Run {
     // Long-only flags, kept alphabetical (asserted by
     // `cli::tests::test_subcommands_are_sorted`).
-    /// Container engine to use (`auto`, `podman`, or `docker`)
+    /// Container engine to use; `auto` prefers podman and falls back to docker
     #[usage(long, default = "auto", value_enum)]
     engine: Engine,
 
-    /// Base image reference for the build (ignored with --image-dir)
+    /// Base image for the build
+    ///
+    /// Overrides [oci].from and the oci.default_from setting.
     #[usage(long)]
     from: Option<String>,
 
-    /// Use an already-built OCI image layout instead of building fresh
+    /// Use an existing OCI image layout instead of building one
+    ///
+    /// Cannot be combined with --from, --include-global, --mount-point,
+    /// --no-mise, or --owner.
     #[usage(long, value_hint = ValueHint::DirPath, conflicts = &["from", "mount_point", "no_mise", "owner", "include_global"])]
     image_dir: Option<PathBuf>,
 
-    /// Also include tools from the global / system config (default: project-only)
+    /// Also package tools from the global and system configs
     ///
     /// See `mise oci build --help` for details.
     #[usage(long)]
@@ -47,24 +52,26 @@ pub(super) struct Run {
     /// Keep the loaded image in the engine's storage after the run
     ///
     /// By default, both the container (`--rm`) and the loaded image are
-    /// removed when the command exits, so repeated `mise oci run` calls
-    /// don't accumulate images in podman / docker storage. Pass `--keep`
-    /// to retain the image under the tag mise used (`mise-oci:run-*` for
-    /// docker; the pulled image ID for podman).
+    /// removed when the command exits, so repeated `mise oci run` calls do not
+    /// fill podman or docker storage. With `--keep`, the image stays under the
+    /// tag mise used (`mise-oci:run-*` for docker, the pulled image ID for
+    /// podman).
     #[usage(long)]
     keep: bool,
 
-    /// Override in-image mount point (ignored with --image-dir)
+    /// Where tools install inside the image
+    ///
+    /// Overrides [oci].mount_point and the oci.default_mount_point setting.
     #[usage(long)]
     mount_point: Option<String>,
 
-    /// Don't embed the mise binary (ignored with --image-dir)
+    /// Do not embed the running mise binary at /usr/local/bin/mise
     #[usage(long)]
     no_mise: bool,
 
-    /// UID[:GID] to assign to every tar entry when building (conflicts with --image-dir)
+    /// UID[:GID] to assign to every tar entry when building
     ///
-    /// Overrides [oci].user_id / [oci].group_id. Defaults to 0:0. If GID is
+    /// Overrides [oci].user_id and [oci].group_id. Defaults to 0:0. If GID is
     /// omitted, it defaults to UID. This affects file ownership only; [oci].user
     /// controls the image USER directive.
     #[usage(long, value_name = "UID[:GID]")]
@@ -72,8 +79,8 @@ pub(super) struct Run {
 
     /// Bind-mount a host path (repeatable, `HOST:CONTAINER[:MODE]`)
     ///
-    /// Note: unlike `docker run -v`, there's no `-v` short flag here because
-    /// mise reserves `-v` for --verbose. Use `--volume` or `--mount`.
+    /// Unlike `docker run`, there is no `-v` short form because mise uses `-v`
+    /// for --verbose. Use `--volume` or `--mount`.
     #[usage(long = "volume", alias = "mount", value_name = "HOST:CONTAINER")]
     volume: Vec<String>,
 
@@ -308,10 +315,3 @@ fn load_image(engine: Engine, image_dir: &Path) -> Result<String> {
         Engine::Auto => unreachable!(),
     }
 }
-
-static AFTER_LONG_HELP: &str = color_print::cstr!(
-    r###"<bold><underline>Engines:</underline></bold>
-
-    Prefers <bold>podman</bold> (loads OCI layouts natively). Falls back to <bold>docker</bold>
-    (loaded via <bold>docker load</bold>). Pass <bold>--engine podman</bold> or <bold>--engine docker</bold> to override."###
-);

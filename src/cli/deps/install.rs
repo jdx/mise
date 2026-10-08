@@ -4,46 +4,57 @@ use crate::config::Config;
 use crate::deps::{DepsEngine, DepsOptions, DepsProviderApplicability, DepsStepResult};
 use crate::toolset::{InstallOptions, Toolset, ToolsetBuilder};
 
-/// Install all project dependencies
+/// Install project dependencies
 ///
-/// Uses each provider's freshness rules to compare configured inputs and outputs,
-/// then runs its installation command when needed. `--force` bypasses that check;
-/// `--explain PROVIDER` shows why a provider is considered fresh or stale.
+/// Runs each provider whose inputs changed or whose outputs are missing. Pass
+/// PROVIDER to run only that one, --force to run regardless, or
+/// `--explain PROVIDER` to see why it would or would not run. With --explain,
+/// mise runs nothing and exits non-zero unless the provider is fresh.
 #[derive(Debug, usage_rs::Args)]
-#[usage(verbatim_doc_comment)]
+#[usage(
+    verbatim_doc_comment,
+    example("mise deps install", help = "Run every provider that is out of date"),
+    example(
+        "mise deps install --force",
+        help = "Run every provider, even fresh ones"
+    ),
+    example("mise deps install --dry-run", help = "Show which providers would run")
+)]
 pub(crate) struct DepsInstall {
-    /// Provider to operate on (runs only this provider, or use with --explain)
+    /// Run only this provider, or explain it with --explain
     pub provider: Option<String>,
 
-    /// Show why a provider is fresh or stale (requires a provider argument)
+    /// Show why a provider is fresh or stale, and exit non-zero unless it is
+    /// fresh (requires a PROVIDER argument)
     #[usage(long)]
     pub explain: bool,
 
-    /// Force run all deps steps even if outputs are fresh
+    /// Run providers even when their outputs are up to date
     #[usage(long, short)]
     pub force: bool,
 
-    /// Only check if deps install is needed, don't run commands
+    /// Show which providers would run, without running them
     #[usage(long, short = 'n')]
     pub dry_run: bool,
 
-    /// Show what deps providers are available
+    /// List configured providers with their status, sources, and outputs
     #[usage(long)]
     pub list: bool,
 
-    /// Install dependencies from every [monorepo].config_roots config root
+    /// Also run providers from every config root in `[monorepo].config_roots`
     ///
-    /// Requires monorepo_root = true plus explicit [monorepo].config_roots in
-    /// the monorepo root config. Providers are named like //apps/api:uv.
+    /// Requires `monorepo_root = true` and an explicit `config_roots` list in the
+    /// monorepo root's config. Provider names then include their root, such as
+    /// `//apps/api:uv`.
     #[usage(long, env = "MISE_MONOREPO", verbatim_doc_comment)]
     pub monorepo: bool,
 
-    /// Run specific deps rule(s) only
-    #[usage(long)]
+    /// Run only these providers
+    #[usage(long, value_name = "PROVIDER")]
     pub only: Option<Vec<String>>,
 
-    /// Skip specific deps rule(s)
-    #[usage(long)]
+    /// Skip these providers
+    #[usage(long, value_name = "PROVIDER")]
     pub skip: Option<Vec<String>>,
 }
 

@@ -1,323 +1,298 @@
 ---
-description: "mise maintains compatibility with the asdf plugin ecosystem through its asdf backend."
+description: "Use, maintain and test shell-script asdf plugins with mise, and port them to Lua tool plugins."
 ---
 
-# asdf (Legacy) Plugins
+# asdf plugins (legacy)
 
-::: warning
-asdf plugins are considered legacy. **New asdf and vfox plugins are not accepted into the [mise registry](https://github.com/jdx/mise/blob/main/registry/) for supply-chain security reasons** — for registry submissions use [packslip](/dev-tools/backends/packslip.html) (preferred when the project publishes packslips), [aqua](/dev-tools/backends/aqua.html), [github](/dev-tools/backends/github.html), or [gitlab](/dev-tools/backends/gitlab.html) instead.
+asdf plugins are Git repositories of shell scripts (`bin/list-all`,
+`bin/install` and others) that follow the
+[asdf plugin interface](https://asdf-vm.com/plugins/create.html). mise runs
+them through its [asdf backend](/dev-tools/backends/asdf.html) on Linux and
+macOS, so existing plugins keep working.
 
-If you are writing a private/custom plugin (not for registry submission), prefer [vfox plugins](/dev-tools/backends/vfox.html) over asdf — they're written in Lua, work cross-platform (including Windows), and have access to built-in modules. See the [feature comparison](/dev-tools/backends/asdf.html#feature-comparison-asdf-vs-vfox) and [hook migration table](/dev-tools/backends/asdf.html#hook-migration-asdf-to-vfox) for details.
-:::
+asdf plugins are a legacy format: the mise registry accepts no new tools backed
+by them, and mise does not run them on Windows. To write a new plugin, write a
+[tool plugin](/tool-plugin-development.html) in Lua. The sections below cover
+using and maintaining an existing asdf plugin, and porting one to Lua.
 
-mise maintains compatibility with the asdf plugin ecosystem through its asdf backend. These plugins are considered legacy because they have limitations compared to mise's modern plugin system.
+## Install an asdf plugin {#installing-asdf-legacy-plugins}
 
-## What are asdf (Legacy) Plugins?
+Use a plugin by its repository, with no separate install step:
 
-asdf plugins are shell script-based plugins that follow the asdf plugin specification. They were the original way to extend tool management in the asdf ecosystem and are now supported by mise for backward compatibility.
+```sh
+mise use asdf:owner/asdf-tool@1.2.3
+```
+
+Or install it under a name of your own and use that name:
+
+```sh
+mise plugins install my-tool https://github.com/owner/asdf-tool
+mise use my-tool@1.2.3
+```
+
+`mise plugins add` is an alias of `mise plugins install`. To have
+`mise install` fetch the plugin for everyone who works on a project, declare it
+in `mise.toml`, pinned to a full commit SHA (mise rejects abbreviated ones):
+
+```toml
+[plugins]
+my-tool = "https://github.com/owner/asdf-tool#c532b140abd4ca00d3e76651b9bd32a980bd483c"
+
+[tools]
+my-tool = "1.2.3"
+```
+
+`mise registry <tool>` lists the backends a registry shorthand can use, in
+order of preference, and `mise tool <tool>` shows the one mise selected. Use
+the full `asdf:owner/repo` identifier when you need a particular plugin. Find
+existing plugins in [asdf-plugins](https://github.com/asdf-vm/asdf-plugins)
+and the [mise-plugins](https://github.com/mise-plugins) organization, and see
+[Plugins](/plugins.html) to update or remove them.
 
 ## Limitations
 
-asdf plugins have several limitations compared to mise's modern plugin system:
+- mise does not run asdf plugins on Windows; it skips `asdf:` tools there.
+- [`mise.lock`](/dev-tools/mise-lock.html) records only the version of an
+  asdf tool. The scripts download the tool themselves, so mise has no URL or
+  checksum to lock, and cannot verify what they fetch.
+- Each script runs in a new process; see [bin/exec-env](/asdf-legacy-plugins.html#bin-exec-env) for
+  caching.
+- In [safe mode](/security.html#safe-mode), mise refuses to run asdf plugin
+  scripts.
 
-- **Platform Support**: Require Unix shell utilities; the asdf backend is disabled by default on Windows
-- **Performance**: Shell script execution is slower than mise's native backends
-- **Features**: Limited compared to modern backends like aqua, github, or tool/backend plugins
-- **Maintenance**: Harder to maintain and debug
-- **Execution scope**: Plugin scripts run with your permissions. Lua plugins can also run
-  commands and access files; neither plugin format is an OS sandbox.
+## asdf and Lua plugins compared {#feature-comparison-asdf-vs-vfox}
 
-## When to Use asdf (Legacy) Plugins
+|                           | asdf plugins                              | Lua tool plugins                                                                                                                                                      |
+| ------------------------- | ----------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Written in                | Executable scripts, usually Bash          | Lua hooks that mise runs in its embedded interpreter                                                                                                                  |
+| Platforms                 | Linux and macOS                           | Linux, macOS and Windows, given a build of the tool for each                                                                                                          |
+| External programs         | Usually `curl`, `git`, `tar` and similar  | Built-in [HTTP, JSON, HTML and archive modules](/plugin-lua-modules.html#module-index)                                                                                |
+| Download and verification | The scripts download and install the tool | `PreInstall` returns a URL and checksum; mise downloads, verifies and extracts                                                                                        |
+| `mise.lock`               | The version only                          | The version, each platform's download URL, and the attestation method when `PreInstall` returns one. mise checks the checksum at install time but does not record it. |
 
-Only use asdf plugins when:
+Neither format is a sandbox: both run commands with your permissions.
 
-- The tool is not available through modern backends (aqua, github, etc.)
-- You need compatibility with existing asdf workflows
-- The tool requires complex shell-based installation logic that can't be handled by modern backends
+## Scripts {#plugin-structure}
 
-**For new tools, consider these alternatives first:**
+mise runs these scripts from the plugin's `bin/` directory. Mark them
+executable.
 
-1. [packslip backend](dev-tools/backends/packslip.md) - Preferred for signed release manifests
-2. [aqua backend](dev-tools/backends/aqua.md) - Curated metadata for tools without packslips
-3. [github backend](dev-tools/backends/github.md) - Simple GitHub releases
-4. [gitlab backend](dev-tools/backends/gitlab.md) - Tools released through GitLab
-5. [Language package managers](dev-tools/backends/) - npm, pipx, cargo, gem, etc.
-6. [backend plugins](backend-plugin-development.md) - Enhanced plugins with backend methods
-7. [tool plugins](tool-plugin-development.md) - Hook-based cross-platform plugins
-
-## Installing asdf (Legacy) Plugins
-
-### From the Registry
-
-Some registry entries retain asdf alternatives, but a shorthand may prefer another backend.
-Select asdf explicitly when you need to test or maintain that implementation:
-
-```bash
-# Select the asdf implementation explicitly
-mise use asdf:mise-plugins/mise-postgres@17
-
-# The postgres shorthand currently prefers vfox instead
-mise registry postgres
-```
-
-### From Git Repository
-
-```bash
-# Install plugin directly from repository
-mise plugin install <plugin-name> <git-url>
-
-# Example: PostgreSQL plugin
-mise plugin install postgres https://github.com/mise-plugins/mise-postgres
-```
-
-### Manual Installation
-
-```bash
-# Add plugin manually
-mise plugin add postgres https://github.com/mise-plugins/mise-postgres
-
-# Install tool version
-mise install postgres@17.0
-
-# Use the tool
-mise use postgres@17.0
-```
-
-An installed plugin with that name takes precedence over the registry shorthand when its
-backend is enabled. Use the full `asdf:owner/repo` identifier above to select an implementation
-without relying on an installed short-name plugin.
-
-## Plugin Structure
-
-asdf plugins follow this directory structure:
-
-```
-plugin-name/
-├── bin/
-│   ├── list-all          # List all available versions
-│   ├── download          # Separate download phase [optional]
-│   ├── install           # Install the tool
-│   ├── latest-stable     # Get latest stable version [optional]
-│   ├── help.overview     # Plugin description [optional]
-│   ├── help.deps         # Plugin dependencies [optional]
-│   ├── help.config       # Plugin configuration [optional]
-│   ├── help.links        # Plugin links [optional]
-│   ├── list-legacy-filenames  # Legacy version files [optional]
-│   ├── parse-legacy-file # Parse legacy version files [optional]
-│   ├── post-plugin-add   # Post plugin addition hook [optional]
-│   ├── post-plugin-update # Post plugin update hook [optional]
-│   ├── pre-plugin-remove # Pre plugin removal hook [optional]
-│   └── exec-env          # Set execution environment [optional]
-├── lib/                  # Shared library code [optional]
-└── README.md
-```
-
-## Required Scripts
-
-Provide `bin/list-all` and `bin/install`. The separate `bin/download` hook is optional;
-without it, the install hook is responsible for obtaining the source or binary. Mark
-scripts executable and write diagnostics to stderr so version output stays machine-readable.
+| Script                                                                   | Required | mise uses it to                                                                                              |
+| ------------------------------------------------------------------------ | -------- | ------------------------------------------------------------------------------------------------------------ |
+| `bin/list-all`                                                           | yes      | list versions, oldest first                                                                                  |
+| `bin/install`                                                            | yes      | install `$ASDF_INSTALL_VERSION` into `$ASDF_INSTALL_PATH`                                                    |
+| `bin/download`                                                           | no       | fetch into `$ASDF_DOWNLOAD_PATH` before `install` runs                                                       |
+| `bin/latest-stable`                                                      | no       | resolve `latest`                                                                                             |
+| `bin/list-bin-paths`                                                     | no       | name the directories under the install to add to `PATH` (default `bin`)                                      |
+| `bin/exec-env`                                                           | no       | export variables while the tool is active (`PATH` changes are ignored; use `list-bin-paths`)                 |
+| `bin/list-aliases`                                                       | no       | provide [version aliases](/dev-tools/aliases.html#aliased-versions)                                          |
+| `bin/list-legacy-filenames`, `bin/parse-legacy-file`                     | no       | support idiomatic version files                                                                              |
+| `bin/uninstall`                                                          | no       | clean up outside the install directory; runs before mise deletes the install, download and cache directories |
+| `bin/post-plugin-add`, `bin/post-plugin-update`, `bin/pre-plugin-remove` | no       | run on plugin lifecycle events                                                                               |
 
 ### bin/list-all
 
-Lists all available versions of the tool:
+Print every version, separated by spaces or newlines, oldest first in the
+publisher's order. mise strips a leading `v` before a digit, so `v1.2.3` becomes
+`1.2.3`.
 
 ```bash
 #!/usr/bin/env bash
 set -euo pipefail
-# Illustrative version list, ordered oldest to newest by the publisher's rules.
 printf '%s\n' 1.0.0 1.1.0 1.10.0
 ```
 
-For real plugins, query the publisher's release source and parse structured metadata with
-a suitable parser. Do not scrape JSON with `grep` or assume every tool uses SemVer. Preserve
-meaningful release order; `sort -V` is not portable to macOS and does not understand channels.
+Do not re-sort the list with `sort -V`: it is not available on macOS, and it
+misorders prereleases and channel names.
 
-### bin/download
+### bin/download and bin/install
 
-Downloads the tool source/binary:
-
-```bash
-#!/usr/bin/env bash
-set -euo pipefail
-
-# Input variables from mise
-# ASDF_INSTALL_TYPE (version or ref)
-# ASDF_INSTALL_VERSION (version number or git ref)
-# ASDF_INSTALL_PATH (where to install)
-# ASDF_DOWNLOAD_PATH (where to download)
-
-version="$ASDF_INSTALL_VERSION"
-download_path="$ASDF_DOWNLOAD_PATH"
-
-# Download logic here
-mkdir -p "$download_path"
-curl -fSL -o "$download_path/archive.tar.gz" \
-  "https://github.com/owner/repo/archive/v${version}.tar.gz"
-```
-
-### bin/install
-
-Installs the tool. This source-build sketch assumes the archive contains a Makefile with
-an `install` target accepting `PREFIX`, and that build dependencies are already available:
+`bin/download` is optional. Without it, `bin/install` fetches the tool itself.
+This pair downloads a source archive, checks it against the checksum file
+published next to it, and builds it with `make`:
 
 ```bash
 #!/usr/bin/env bash
+# bin/download
 set -euo pipefail
-
-# Input variables from mise
-# ASDF_INSTALL_TYPE (version or ref)
-# ASDF_INSTALL_VERSION (version number or git ref)
-# ASDF_INSTALL_PATH (where to install)
-# ASDF_DOWNLOAD_PATH (where source is downloaded)
-
-install_path="$ASDF_INSTALL_PATH"
-download_path="$ASDF_DOWNLOAD_PATH"
-
-# Extract and install
-cd "$download_path"
-tar -xzf archive.tar.gz --strip-components=1
-make install PREFIX="$install_path"
+file="tool-${ASDF_INSTALL_VERSION}.tar.gz"
+url="https://github.com/owner/tool/releases/download/v${ASDF_INSTALL_VERSION}/$file"
+mkdir -p "$ASDF_DOWNLOAD_PATH"
+cd "$ASDF_DOWNLOAD_PATH"
+curl -fsSL -o "$file" "$url"
+curl -fsSL -o "$file.sha256" "$url.sha256"
+# The checksum file holds "<digest>  <file>". macOS has shasum, not sha256sum.
+if command -v sha256sum >/dev/null; then
+  sha256sum -c "$file.sha256"
+else
+  shasum -a 256 -c "$file.sha256"
+fi
 ```
 
-## Optional Scripts
+```bash
+#!/usr/bin/env bash
+# bin/install
+set -euo pipefail
+cd "$ASDF_DOWNLOAD_PATH"
+tar -xzf "tool-${ASDF_INSTALL_VERSION}.tar.gz" --strip-components=1
+make install PREFIX="$ASDF_INSTALL_PATH"
+```
+
+mise does not verify what these scripts download, so the checksum check in
+`bin/download` is what stops a corrupted or altered archive: a mismatch makes
+the script exit non-zero, and mise fails the install. mise also fails it when
+`bin/install` exits successfully but leaves `$ASDF_INSTALL_PATH` empty. After
+a successful install, mise deletes the download directory unless
+[`always_keep_download`](/configuration/settings.html#always_keep_download) is
+set, so do not leave files there that the tool needs.
+
+### bin/list-bin-paths
+
+Print the directories to add to `PATH`, relative to `$ASDF_INSTALL_PATH` and
+separated by spaces. `.` means the install directory itself. Without this
+script, mise adds `bin`.
+
+```bash
+#!/usr/bin/env bash
+echo "bin libexec/tool/bin"
+```
 
 ### bin/exec-env
 
-Sets environment variables when the tool runs:
+mise sources this script with Bash and keeps the variables it exports:
 
 ```bash
 #!/usr/bin/env bash
-
-# Set environment variables
 export TOOL_HOME="$ASDF_INSTALL_PATH"
-export PATH="$ASDF_INSTALL_PATH/bin:$PATH"
 ```
+
+mise ignores `PATH` changes made here. It adds `bin`, or the directories that
+`bin/list-bin-paths` prints, to `PATH` itself. To add an absolute directory,
+export `MISE_ADD_PATH` instead.
+
+mise caches the output of this script and of `bin/list-bin-paths` until the
+plugin or the install directory changes. A cache miss runs them while mise
+builds the shell environment, so keep them fast. When the output depends on
+tool options or the project, set a [cache key](#mise-plugin-toml).
 
 ### bin/latest-stable
 
-Gets the latest stable version:
+Print the single version that `latest` should resolve to. Without this script,
+mise resolves `latest` from the `bin/list-all` output.
 
-```bash
-#!/usr/bin/env bash
-# Return a version from bin/list-all according to this tool's stable-release policy.
-printf '%s\n' 1.10.0
+### bin/list-aliases
+
+Print one alias and its version per line, separated by whitespace:
+
+```text
+lts 24.1.0
+current 25.0.0
 ```
 
-### bin/list-legacy-filenames
+### bin/list-legacy-filenames and bin/parse-legacy-file
 
-Lists legacy version file names:
-
-```bash
-#!/usr/bin/env bash
-echo ".example-version"
-```
-
-Enable idiomatic version files for the tool through
+`bin/list-legacy-filenames` prints the names of the idiomatic version files the
+plugin can read, such as `.example-version`. mise reads those files only for
+tools listed in
 [`idiomatic_version_file_enable_tools`](/configuration/settings.html#idiomatic_version_file_enable_tools).
-Do not return `.tool-versions`: mise already parses that multi-tool format itself.
+Do not list `.tool-versions`: mise parses that file itself.
 
-### bin/parse-legacy-file
-
-Parses a legacy version file:
+`bin/parse-legacy-file` receives the file's path as `$1` and prints the
+version. Without it, mise uses the file's contents.
 
 ```bash
 #!/usr/bin/env bash
 head -n 1 "$1"
 ```
 
-## Environment Variables
+### bin/uninstall
 
-Hook inputs depend on the phase. Installation hooks receive the version and path values;
-update hooks receive the previous and new Git refs:
+mise runs `bin/uninstall` before it deletes the version's install, download and
+cache directories. Use it to remove files the tool created elsewhere.
 
-- `ASDF_INSTALL_TYPE` - `version` or `ref`
-- `ASDF_INSTALL_VERSION` - Version number or git ref
-- `ASDF_INSTALL_PATH` - Installation directory
-- `ASDF_DOWNLOAD_PATH` - Download directory
-- `ASDF_PLUGIN_PATH` - Plugin directory
-- `ASDF_PLUGIN_PREV_REF` - Previous git ref (for updates)
-- `ASDF_PLUGIN_POST_REF` - New git ref (for updates)
+### Plugin lifecycle scripts
 
-## Best Practices
+`bin/post-plugin-add` runs after mise installs the plugin, from Git, a zip
+archive or a local path under `[plugins]`; `mise plugins link` does not run it.
+`bin/pre-plugin-remove` runs before mise removes the plugin, and
+`bin/post-plugin-update` after an update that changed the plugin's Git ref.
 
-### Error Handling
+## Environment variables
 
-```bash
-#!/usr/bin/env bash
-set -euo pipefail  # Exit on error, undefined vars, pipe failures
+Every script receives:
 
-# Check dependencies
-command -v curl >/dev/null 2>&1 || {
-  echo "Error: curl is required" >&2
-  exit 1
-}
+| Variable                               | Value                                                                                                   |
+| -------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| `ASDF_PLUGIN_PATH`, `MISE_PLUGIN_PATH` | The plugin's directory                                                                                  |
+| `MISE_PLUGIN_NAME`                     | The name the plugin was installed under                                                                 |
+| `ASDF_CONCURRENCY`, `MISE_CONCURRENCY` | The number of CPUs, for `make -j`                                                                       |
+| `GITHUB_TOKEN`, `GITHUB_API_TOKEN`     | The first of `MISE_GITHUB_TOKEN`, `GITHUB_API_TOKEN` and `GITHUB_TOKEN` that is set; empty when none is |
+| `MISE_DATA_DIR`, `MISE_CACHE_DIR`      | mise's [directories](/directories.html)                                                                 |
+
+`bin/list-all` and `bin/latest-stable` also receive the project's `[env]`
+values and `_.path` entries, so a private plugin can use credentials or helper
+programs from the project while it lists versions. mise keeps a separate
+version cache for each resolved environment, without writing those values to
+the cache.
+
+The scripts that act on one version (`download`, `install`, `uninstall`,
+`list-bin-paths` and `exec-env`) also receive:
+
+| Variable                                                                     | Value                                                                                                                       |
+| ---------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| `ASDF_INSTALL_TYPE`, `MISE_INSTALL_TYPE`                                     | `version`, `ref` for `ref:` requests, `sub` for `sub-` requests, or `path` for `path:` requests                             |
+| `ASDF_INSTALL_VERSION`, `MISE_INSTALL_VERSION`                               | The resolved version, or the Git ref for a `ref:` request                                                                   |
+| `ASDF_INSTALL_PATH`, `MISE_INSTALL_PATH`                                     | The install directory                                                                                                       |
+| `ASDF_DOWNLOAD_PATH`, `MISE_DOWNLOAD_PATH`                                   | The download directory                                                                                                      |
+| `MISE_TOOL_OPTS__<KEY>`                                                      | Each option on the tool's entry in `[tools]`, with the key in upper case: `mirror = "eu"` gives `MISE_TOOL_OPTS__MIRROR=eu` |
+| `MISE_PROJECT_ROOT`                                                          | The project's root directory, when there is one                                                                             |
+| The project's `[env]` values                                                 | As set in `mise.toml`                                                                                                       |
+| The tool's [`install_env`](/dev-tools/backends/asdf.html#install-env) values | As set on the tool's entry                                                                                                  |
+
+`bin/post-plugin-update` also receives `ASDF_PLUGIN_PREV_REF` and
+`ASDF_PLUGIN_POST_REF` (and `MISE_PLUGIN_PREV_REF` and `MISE_PLUGIN_POST_REF`),
+the Git refs before and after the update.
+
+## How mise runs your scripts
+
+- Scripts get `/dev/null` on stdin unless the user sets
+  [`raw`](/configuration/settings.html#raw), so a prompt cannot wait for input.
+- mise reads the output of `list-all`, `latest-stable`, `list-aliases`,
+  `list-legacy-filenames` and `parse-legacy-file`, and hides their stderr
+  unless the user passes `--verbose`. Write diagnostics to stderr so they do
+  not end up in the version list. `list-bin-paths` is read the same way, but
+  its stderr reaches the terminal.
+- An `asdf` command on `PATH` runs mise in its place: `asdf install`,
+  `asdf list` and `asdf reshim` call the matching mise commands, and other
+  subcommands pass through to mise.
+- The tools listed in the tool's [`depends`](/dev-tools/backends/asdf.html#install-dependencies)
+  option come first on `PATH` for `bin/download` and `bin/install`.
+
+### mise.plugin.toml {#mise-plugin-toml}
+
+An optional `mise.plugin.toml` at the plugin's root changes how mise caches or
+replaces some scripts:
+
+```toml
+[exec-env]
+cache-key = ["{{ opts.mirror | default(value='') }}"]
+
+[list-legacy-filenames]
+data = ".example-version"
 ```
 
-### Cross-Platform Compatibility
+`[exec-env]` and `[list-bin-paths]` accept `cache-key`, a list of
+[templates](/templates.html) whose rendered values become part of the cache
+key, so output that depends on them is cached separately. The templates can
+use `opts` (the tool's options) and `project_root`. Give every lookup a
+default, as above: a template that fails to render crashes mise.
+`[list-aliases]` and `[list-legacy-filenames]` accept `data`, a fixed string
+that mise uses instead of running the script.
 
-```bash
-#!/usr/bin/env bash
+## A minimal plugin {#example-plugin}
 
-# Detect platform
-case "$(uname -s)" in
-  Darwin*) platform="darwin" ;;
-  Linux*)  platform="linux" ;;
-  *)       echo "Unsupported platform" >&2; exit 1 ;;
-esac
-
-case "$(uname -m)" in
-  x86_64) arch="amd64" ;;
-  arm64|aarch64) arch="arm64" ;;
-  *)      echo "Unsupported architecture" >&2; exit 1 ;;
-esac
-```
-
-### Version Parsing
-
-Normalize a publisher prefix only when it is part of that tool's convention. Keep
-non-numeric versions and channels intact; a shared SemVer parser is not appropriate.
-
-```bash
-#!/usr/bin/env bash
-
-# Remove this example publisher's prefix
-parse_version() {
-  local version="$1"
-  # Remove 'v' prefix if present
-  version="${version#v}"
-  echo "$version"
-}
-```
-
-## Testing Plugins
-
-### Local Development
-
-```bash
-# Link plugin for development
-mise plugin link my-plugin /path/to/local/plugin
-
-# Test basic functionality
-mise ls-remote my-plugin
-mise use my-plugin@1.0.0
-mise exec -- my-plugin --version
-```
-
-### Debugging
-
-```bash
-# Enable debug mode
-export MISE_DEBUG=1
-
-# Or use --verbose flag
-mise install --verbose my-plugin@1.0.0
-```
-
-## Example Plugin
-
-This self-contained local fixture demonstrates the minimum interface without network
-requests or a compiler. Create these two executable files under `my-plugin/bin/`:
+This plugin needs no network or compiler. Create two executable files in
+`my-plugin/bin/`:
 
 ```bash
 #!/usr/bin/env bash
@@ -331,54 +306,65 @@ printf '%s\n' 1.0.0
 # bin/install
 set -euo pipefail
 mkdir -p "$ASDF_INSTALL_PATH/bin"
-cat > "$ASDF_INSTALL_PATH/bin/my-plugin" <<'SCRIPT'
+cat >"$ASDF_INSTALL_PATH/bin/my-plugin" <<'SCRIPT'
 #!/usr/bin/env sh
 printf '%s\n' 'my-plugin 1.0.0'
 SCRIPT
 chmod +x "$ASDF_INSTALL_PATH/bin/my-plugin"
 ```
 
-Test from a separate project directory:
+Replace the installer with your real download, verification and build steps.
+The [asdf plugin template](https://github.com/asdf-vm/asdf-plugin-template)
+shows common patterns for error handling and platform detection.
+
+## Test it {#testing-plugins}
+
+From a separate project directory, link the plugin and exercise it:
 
 ```sh
-chmod +x /path/to/my-plugin/bin/list-all /path/to/my-plugin/bin/install
-mise plugin link my-plugin /path/to/my-plugin
+chmod +x /path/to/my-plugin/bin/*
+mise plugins link my-plugin /path/to/my-plugin
 mise ls-remote my-plugin
 mise use my-plugin@1.0.0
 mise exec -- my-plugin --version
+# my-plugin 1.0.0
 ```
 
-Replace the fixture installer with your real download, verification, extraction, or build
-steps. Keep `bin/exec-env` cheap: it can run while constructing the shell environment.
+Run `MISE_DEBUG=1 mise install --force my-plugin@1.0.0` to run the install
+scripts again and see each one mise runs, and `mise cache clear my-plugin`
+after you change `bin/list-all`, so mise lists versions again. To keep the
+test away from your own plugins and config, use the
+[isolated test setup](/plugin-publishing.html#testing-before-publication).
 
-## Migration Path
+## Security {#security-considerations}
 
-Consider migrating from asdf plugins to modern alternatives:
+An asdf plugin's scripts run with your permissions whenever mise lists
+versions, installs the tool or builds its environment. Read the scripts before
+you install a plugin, and pin it to a full commit SHA (`#<sha>`) so an update
+cannot change them without your noticing.
 
-1. **Check for [signed packslip releases](/dev-tools/backends/packslip.html), then whether the tool is available in [aqua registry](https://github.com/aquaproj/aqua-registry)**
-2. **Use [github backend](dev-tools/backends/github.md) for simple GitHub releases**
-3. **Create a [mise plugin](tool-plugin-development.md) for complex tools** - use the [mise-tool-plugin-template](https://github.com/jdx/mise-tool-plugin-template) for a quick start
-4. **Use language-specific package managers** (npm, pipx, cargo, gem)
+## Migrate to a Lua plugin {#migration-path}
 
-## Community Resources
+First check whether the tool needs a plugin at all: many tools install directly
+with a [backend](/dev-tools/backends/#which-backend-to-use), such as
+`mise use github:owner/repo`. If it does need one, start from the
+[tool plugin template](https://github.com/jdx/mise-tool-plugin-template) and
+port each script to the hook that replaces it.
 
-- **[asdf Plugin List](https://github.com/asdf-vm/asdf-plugins)** - Official asdf plugin registry
-- **[mise-plugins Organization](https://github.com/mise-plugins)** - Community-maintained plugins
-- **[Plugin Template (asdf)](https://github.com/asdf-vm/asdf-plugin-template)** - Template for creating asdf plugins
-- **[Plugin Template (mise)](https://github.com/jdx/mise-tool-plugin-template)** - Modern template for creating mise plugins with Lua
+### Hook migration {#hook-migration-asdf-to-vfox}
 
-## Security Considerations
+| asdf script                                                              | Lua hook                 | Notes                                                                                               |
+| ------------------------------------------------------------------------ | ------------------------ | --------------------------------------------------------------------------------------------------- |
+| `bin/list-all`                                                           | `Available`              | Return `{ version = "..." }` tables, newest first; `list-all` prints oldest first                   |
+| `bin/latest-stable`                                                      | none                     | mise resolves `latest` from the `Available` list                                                    |
+| `bin/download`                                                           | `PreInstall`             | Return the URL and a `sha256` or `sha512`; mise downloads, verifies and extracts the file           |
+| `bin/install`                                                            | `PostInstall`            | Optional; runs after mise has extracted the download, for steps such as building                    |
+| `bin/list-bin-paths`, `bin/exec-env`                                     | `EnvKeys`                | Return `{ key = "...", value = "..." }` tables, including `PATH` entries, instead of `export` lines |
+| `bin/list-legacy-filenames`                                              | `PLUGIN.legacyFilenames` | A list in [`metadata.lua`](/plugin-lua-modules.html#metadata) instead of a script                   |
+| `bin/parse-legacy-file`                                                  | `ParseLegacyFile`        | Return `{ version = "..." }`                                                                        |
+| `bin/uninstall`                                                          | `PreUninstall`           | Runs before mise removes the version                                                                |
+| `bin/list-aliases`                                                       | none                     | Users define [version aliases](/dev-tools/aliases.html#aliased-versions) in their config            |
+| `bin/post-plugin-add`, `bin/post-plugin-update`, `bin/pre-plugin-remove` | none                     |                                                                                                     |
 
-asdf plugins execute arbitrary shell scripts, which poses security risks:
-
-- **Only install plugins from trusted sources**
-- **Review plugin code before installation**
-- **Avoid plugins with complex installation scripts when possible**
-- **Consider using modern backends for better security**
-
-## Next Steps
-
-- [Explore modern backends](dev-tools/backends/) for better alternatives
-- [Learn about backend plugins](backend-plugin-development.md) for enhanced functionality
-- [Learn about tool plugins](tool-plugin-development.md) for cross-platform support
-- [Check the registry](registry.md) for available tools
+Tool options reach Lua hooks as `ctx.options` as well as `MISE_TOOL_OPTS__`
+variables; see [tool options](/tool-plugin-development.html#tool-options).

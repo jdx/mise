@@ -20,41 +20,44 @@ use crate::sandbox::SandboxConfig;
 use crate::toolset::env_cache::CachedEnv;
 use crate::toolset::{InstallOptions, ResolveOptions, ToolVersion, Toolset, ToolsetBuilder};
 
-/// Execute a command with tool(s) set
+/// Run a command with mise's tools and environment
 ///
-/// Use this to run a command with mise's tools and environment without modifying the shell
-/// session, or to run ad-hoc commands with tools that are not in the config.
+/// Loads the tools and [env] from your config into one child process without
+/// changing the current shell. Use it in scripts and CI, or to run a tool that is
+/// not in the config.
 ///
-/// Tools are loaded from mise.toml and can be overridden with <TOOL@VERSION> args. Only the
-/// tools you name are overridden: if `mise.toml` includes `node = "20"` and you run
-/// `mise exec python@3.11 -- python -V`, node@20 is still loaded.
+/// TOOL@VERSION arguments add tools or override the configured version of that
+/// tool only: with `node = "24"` in mise.toml, `mise exec python@3.13 -- python -V`
+/// still has node 24 on PATH.
 ///
-/// The "--" separates tools from the command to pass along to the subprocess.
+/// Put the command after `--`, or pass a shell command string with `-c`. Missing
+/// tools are installed first unless the `exec_auto_install` or `auto_install`
+/// setting is off; when you name tools, only those are installed. The --allow-* and
+/// --deny-* flags sandbox the command; see https://mise.jdx.dev/sandboxing.html.
 #[derive(Debug, usage_rs::Args)]
 #[usage(
     visible_alias = "x",
     verbatim_doc_comment,
+    example("mise exec node@24 -- node ./app.js", help = "Run app.js with node 24"),
     example(
-        r###"mise exec node@20 -- node ./app.js
-mise x node@20 -- node ./app.js"###,
-        help = "Launch app.js using node-20.x, with the full command or its shorter alias."
+        r###"mise x node@24 python@3.13 -c "node -v && python -V""###,
+        help = "Run a shell command string"
     ),
     example(
-        r###"mise exec node@20 python@3.11 --command "node -v && python -V""###,
-        help = r###"Specify command as a string:"###
+        "mise x -C ~/work/api -- npm test",
+        help = "Run in another project's directory"
     ),
     example(
-        r###"mise x --secrets GH_TOKEN -- gh release list"###,
-        help = "Give the command the GH_TOKEN secret from the project's secrets source. Without a flag it gets none."
+        "mise x --deny-net -- npm run build",
+        help = "Run without network access"
     ),
     example(
-        r###"mise x -C /path/to/project node@20 -- node ./app.js"###,
-        help = r###"Run a command in a different directory:"###
+        "mise x --secrets GH_TOKEN -- gh release list",
+        help = "[experimental] Pass one secret from the project's secrets source"
     )
 )]
 pub(crate) struct Exec {
-    /// Tool(s) to load
-    /// e.g.: node@20 python@3.10
+    /// Tools to add or override, such as `node@24 python@3.13`
     #[usage(value_name = "TOOL@VERSION")]
     pub tool: Vec<ToolArg>,
 
@@ -62,33 +65,35 @@ pub(crate) struct Exec {
     #[usage(conflicts = "c", required_unless = "c", double_dash = "required")]
     pub command: Option<Vec<String>>,
 
-    /// Command string to execute through a shell (supports pipes and redirection)
+    /// Command string to run through a shell (supports pipes and redirection)
     #[usage(short, long = "command", value_hint = usage_rs::ValueHint::CommandString, conflicts = "command")]
     pub c: Option<String>,
 
-    /// Number of jobs to run in parallel
-    /// Values below 1 are treated as 1
-    /// Defaults to the `jobs` setting
+    /// How many tools to install in parallel; defaults to the `jobs` setting
+    ///
+    /// Values below 1 are treated as 1.
     #[usage(long, short, env = "MISE_JOBS", verbatim_doc_comment)]
     pub jobs: Option<usize>,
 
-    /// Allow specific env var through (implies --deny-env for everything else)
-    /// Supports wildcards, e.g. --allow-env='MYAPP_*'
+    /// Pass only VAR through from the environment (implies --deny-env)
+    ///
+    /// Supports wildcards, such as --allow-env='MYAPP_*'.
     #[usage(long, value_name = "VAR", verbatim_doc_comment)]
     pub allow_env: Vec<String>,
 
-    /// Allow network to specific host (implies --deny-net for everything else)
-    /// Per-host filtering is unsupported on Linux and returns an error.
-    /// See the sandboxing guide for current macOS host-filter limitations.
-    /// On Windows, sandboxing is unavailable: mise warns and runs without host filtering.
+    /// Allow network access only to HOST (not supported on any platform)
+    ///
+    /// Per-host filtering does not work: Linux and macOS exit with an error,
+    /// and Windows runs the command without network restrictions. See
+    /// https://mise.jdx.dev/sandboxing.html#access-to-particular-hosts
     #[usage(long, value_name = "HOST", verbatim_doc_comment)]
     pub allow_net: Vec<String>,
 
-    /// Allow reads from specific path (implies --deny-read for everything else)
+    /// Allow reads from PATH (implies --deny-read for everything else)
     #[usage(long, value_name = "PATH", verbatim_doc_comment)]
     pub allow_read: Vec<std::path::PathBuf>,
 
-    /// Allow writes to specific path (implies --deny-write for everything else)
+    /// Allow writes to PATH (implies --deny-write for everything else)
     #[usage(long, value_name = "PATH", verbatim_doc_comment)]
     pub allow_write: Vec<std::path::PathBuf>,
 
@@ -97,6 +102,9 @@ pub(crate) struct Exec {
     pub deny_all: bool,
 
     /// Block env var inheritance except PATH, HOME, USER, SHELL, TERM, COLORTERM, LANG
+    ///
+    /// On Windows it also keeps the variables programs need to start, such as
+    /// SystemRoot and TEMP.
     #[usage(long, verbatim_doc_comment)]
     pub deny_env: bool,
 
@@ -108,7 +116,7 @@ pub(crate) struct Exec {
     #[usage(long, verbatim_doc_comment)]
     pub deny_read: bool,
 
-    /// Block all filesystem writes
+    /// Block filesystem writes except temporary and device paths (/tmp, /dev)
     #[usage(long, verbatim_doc_comment)]
     pub deny_write: bool,
 
@@ -120,16 +128,15 @@ pub(crate) struct Exec {
     #[usage(long)]
     pub no_deps: bool,
 
-    /// Connect backend install command stdin/stdout/stderr directly to the terminal.
-    /// Implies `--jobs=1`
+    /// Connect install commands directly to the terminal; implies --jobs=1
     #[usage(long, overrides = "jobs")]
     pub raw: bool,
 
-    /// Give the command these secrets (comma-separated); by default it gets none
+    /// [experimental] Give the command these secrets (comma-separated); by default it gets none
     #[usage(long, value_name = "SECRET", delimiter = ',', verbatim_doc_comment)]
     pub secrets: Vec<String>,
 
-    /// Give the command every secret the project can inject, except file secrets
+    /// [experimental] Give the command every secret the project can inject, except file secrets
     #[usage(long, conflicts = "secrets", verbatim_doc_comment)]
     pub secrets_all: bool,
 }
@@ -938,11 +945,32 @@ where
     U: IntoIterator,
     U::Item: Into<OsString>,
 {
-    if sandbox.is_active() {
-        warn!("sandbox is not supported on Windows, running unsandboxed");
+    if sandbox.restricts_more_than_env() {
+        warn!(
+            "sandbox file, network and process restrictions are not supported on Windows, running without them"
+        );
     }
+    // Capture the marker before deny-env removes variables from the process.
+    // The lazy state must retain the dispatching shim for candidate filtering.
+    drop(env::MISE_SHIM_PATH.read().unwrap());
     for key in env_remove {
         env::remove_var(key);
+    }
+    if sandbox.effective_deny_env() {
+        // The child inherits mise's environment, so, as on unix, everything `env` does not
+        // name leaves it. `env` already holds what a Windows process needs to start
+        // (`SystemRoot`, `ComSpec`, `PATHEXT`, `TEMP`, ...; see `SandboxConfig::filter_env`).
+        // Names are case-insensitive here, so `Path` in mise's environment is `PATH` in `env`.
+        // The hidden `=C:`-style entries hold cmd's per-drive current directories, not
+        // variables, and `remove_var` panics on a name containing `=`, so they stay.
+        for (k, _) in std::env::vars_os() {
+            let keep = k.to_string_lossy().starts_with('=')
+                || k.to_str()
+                    .is_some_and(|key| env.keys().any(|name| name.eq_ignore_ascii_case(key)));
+            if !keep {
+                env::remove_var(&k);
+            }
+        }
     }
     for (k, v) in env.iter() {
         env::set_var(k, v);

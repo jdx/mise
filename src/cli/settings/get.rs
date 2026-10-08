@@ -5,21 +5,28 @@ use eyre::bail;
 
 /// Show the effective value of a setting
 ///
-/// Includes defaults, configuration, and environment overrides. With `--local`,
-/// read only the selected local config's explicit settings; an unset key is an error.
-/// Use `mise config get settings.KEY --file path/to/mise.toml` to inspect one file.
+/// Includes defaults, config files, and environment overrides. With `--local`,
+/// reads only the explicit settings in the nearest project config, and a
+/// setting that is not set there is an error. An optional setting with no
+/// default that is not set anywhere, such as `python.compile`, is also reported
+/// as not set and exits with an error. To inspect one file, use
+/// `mise config get settings.KEY --file path/to/mise.toml`.
 #[derive(Debug, usage_rs::Args)]
 #[usage(
     example(
-        r###"mise settings get jobs
-mise settings get python.compile"###
+        r###"mise settings get jobs"###,
+        help = "Show the effective number of parallel jobs"
+    ),
+    example(
+        r###"mise settings get --local experimental"###,
+        help = "Show the value set in the project config"
     ),
     verbatim_doc_comment
 )]
 pub(super) struct SettingsGet {
     /// The setting to show
     pub setting: String,
-    /// Use the local config file instead of the global one
+    /// Read only the explicit settings in the nearest project config
     #[usage(long, short)]
     pub local: bool,
 }

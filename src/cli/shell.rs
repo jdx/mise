@@ -10,10 +10,11 @@ use crate::toolset::{InstallOptions, ToolSource, ToolsetBuilder, tool_env_var_na
 
 /// Set a tool version for the current shell session
 ///
-/// Only works in a session where mise is already activated.
-///
-/// This works by setting environment variables for the current shell session
-/// such as `MISE_NODE_VERSION=20` which is "eval"ed as a shell function created by `mise activate`.
+/// Installs the version if needed, then sets `MISE_<TOOL>_VERSION`, such as
+/// `MISE_NODE_VERSION`, to the resolved version in the current shell. That
+/// overrides config files until you close the shell or run
+/// `mise shell --unset <TOOL>`. Requires `mise activate`: the shell function it
+/// defines applies the variable that this command prints.
 #[derive(Debug, usage_rs::Args)]
 #[usage(
     verbatim_doc_comment,
@@ -21,26 +22,30 @@ use crate::toolset::{InstallOptions, ToolSource, ToolsetBuilder, tool_env_var_na
     example(
         r###"mise shell node@20
 node -v
-v20.0.0"###
+v20.19.5"###,
+        help = "Use node 20 in this shell"
+    ),
+    example(
+        r###"mise shell --unset node"###,
+        help = "Go back to the version the config requests"
     )
 )]
 pub(crate) struct Shell {
-    /// Tool(s) to use
+    /// Tools to set, such as node@20
     #[usage(value_name = "TOOL@VERSION", required = true)]
     tool: Vec<ToolArg>,
 
-    /// Number of jobs to run in parallel
-    /// Values below 1 are treated as 1
-    /// Defaults to the `jobs` setting
+    /// Number of jobs to run in parallel (default: the `jobs` setting)
     #[usage(long, short, env = "MISE_JOBS", verbatim_doc_comment)]
     jobs: Option<usize>,
 
-    /// Remove a previously set version
+    /// Remove a version set earlier with `mise shell`
     #[usage(long, short)]
     unset: bool,
 
-    /// Connect backend install command stdin/stdout/stderr directly to the terminal.
-    /// Implies `--jobs=1`
+    /// Connect the install commands' stdin, stdout, and stderr to the terminal
+    ///
+    /// Implies `--jobs=1`.
     #[usage(long, overrides = "jobs")]
     raw: bool,
 }

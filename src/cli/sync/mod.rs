@@ -5,8 +5,13 @@ mod python;
 mod reconcile;
 mod ruby;
 
+/// Use tool versions installed by other version managers
+///
+/// Links node versions from nvm, nodenv, or Homebrew, python versions from pyenv
+/// or uv, and ruby versions from Homebrew into mise, so `mise use` can select
+/// them without reinstalling.
 #[derive(Debug, usage_rs::Args)]
-#[usage(about = "Synchronize tools from other version managers with mise")]
+#[usage(verbatim_doc_comment)]
 pub(crate) struct Sync {
     #[usage(subcommand)]
     command: Commands,

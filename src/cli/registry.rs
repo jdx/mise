@@ -12,27 +12,34 @@ use tokio::{sync::Semaphore, task::JoinSet};
 
 /// List registry shorthand names and their backends
 ///
-/// The registry maps short names to installation backends. For example, `node`
-/// uses the built-in Node backend. A tool may have multiple candidates; explicit
-/// backend syntax and configuration can override registry selection.
+/// The registry maps short names to backends. For example, `node` uses the
+/// built-in node backend (`core:node`). When a tool lists several backends, mise
+/// uses the first one that this platform and your settings allow. An explicit
+/// identifier such as `aqua:jqlang/jq`, a `[tool_alias]` entry, or a
+/// `MISE_BACKENDS_<TOOL>` environment variable overrides that choice.
 ///
 /// This is not a list of every tool mise can install. Use an explicit identifier
-/// such as `github:owner/repo` for a supported source without a registry shorthand.
+/// such as `github:owner/repo` for a source without a registry shorthand.
 #[derive(Debug, usage_rs::Args)]
 #[usage(
     example(
-        r###"mise registry
-mise registry node"###,
-        help = "List the registry, then inspect node. The second command prints `core:node`."
+        r###"mise registry"###,
+        help = "List every registry tool and its backends"
     ),
     example(
-        r###"mise registry --backend aqua
-mise registry --json"###
+        r###"mise registry jq
+aqua:jqlang/jq asdf:mise-plugins/asdf-jq"###,
+        help = "Show the backends for one tool"
     ),
+    example(
+        r###"mise registry --backend aqua"###,
+        help = "List the tools that have an aqua backend"
+    ),
+    example(r###"mise registry --json"###, help = "Print the registry as JSON"),
     verbatim_doc_comment
 )]
 pub(crate) struct Registry {
-    /// Show only the specified tool's full name
+    /// Show only this tool's backends, in the order mise prefers them
     name: Option<String>,
 
     /// Show only tools for this backend
@@ -43,7 +50,7 @@ pub(crate) struct Registry {
     #[usage(long, hide = true)]
     complete: bool,
 
-    /// Hide aliased tools
+    /// Hide names that are aliases of another registry tool
     #[usage(long)]
     hide_aliased: bool,
 
@@ -53,9 +60,8 @@ pub(crate) struct Registry {
 
     /// Include security features for each tool's backends in JSON output
     ///
-    /// Requires --json. Security info is de-duplicated across
-    /// all of a tool's backends. This can add noticeable time for large
-    /// listings since each backend's security info is resolved individually.
+    /// Requires --json. Features are merged across a tool's backends. Each backend
+    /// is resolved separately, so this slows down a full listing.
     #[usage(long, requires = "json")]
     security: bool,
 }

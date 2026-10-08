@@ -4,13 +4,24 @@ use super::display_arg;
 use crate::system::history::shadow::DiffOpts;
 use crate::system::history::tracked::display_to_tree_path;
 
-/// Compare checkpoints, or the working tree against one
+/// Compare checkpoints, or your files against one
 ///
-/// Without arguments, shows what changed by hand since the latest
-/// checkpoint. With one reference, shows what that checkpoint changed
-/// against the one before it. With two, compares the two states.
+/// Without arguments, shows unsaved changes: the files on disk against the
+/// latest checkpoint. With one reference, shows what that checkpoint changed
+/// since the one before it. With two, compares them.
 #[derive(Debug, usage_rs::Args)]
-#[usage(verbatim_doc_comment)]
+#[usage(
+    example("mise dot history diff", help = "Show unsaved changes"),
+    example("mise dot history diff 12", help = "Show what checkpoint 12 changed"),
+    example(
+        "mise dot history diff 11 12 --patch",
+        help = "Print the full patch between two checkpoints"
+    ),
+    example(
+        "mise dot history diff --operation",
+        help = "Show what the newest operation changed"
+    )
+)]
 pub(crate) struct HistoryDiff {
     /// Numeric checkpoint ID, `latest`, `latest~N`, or `commit:<sha>`
     #[usage(value_name = "A")]
@@ -20,11 +31,11 @@ pub(crate) struct HistoryDiff {
     #[usage(value_name = "B")]
     b: Option<String>,
 
-    /// Compare an operation with its recorded protective checkpoint
+    /// Compare an operation with the checkpoint it saved before it ran
     ///
-    /// With no reference, use the newest operation, ignoring later saves.
-    /// With one reference, use that operation. Fails if its before checkpoint
-    /// is unavailable instead of comparing an unrelated preceding save.
+    /// With no reference, uses the newest operation, ignoring later saves. With
+    /// one reference, uses that operation. Fails if the operation's earlier
+    /// checkpoint is unavailable instead of comparing an unrelated save.
     #[usage(long)]
     operation: bool,
 

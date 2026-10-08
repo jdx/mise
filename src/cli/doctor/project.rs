@@ -14,11 +14,20 @@ use crate::toolset::{ResolveOptions, ToolsetBuilder};
 
 /// Run the project's diagnostic checks
 ///
-/// Checks are declared in [doctor.checks.<name>] in mise.toml. Each command runs
-/// with the project's installed tools and environment. Checks should inspect
-/// state; mise does not sandbox them or run their suggested remedies.
+/// Checks are declared in `[doctor.checks.<name>]` tables in mise.toml. Each command
+/// runs with the project's installed tools and environment. Checks should inspect
+/// state; mise does not sandbox them or run their suggested remedies. Exits with
+/// status 1 when a check fails. See
+/// https://mise.jdx.dev/configuration/project-diagnostics.html.
 #[derive(Debug, usage_rs::Args)]
-#[usage(verbatim_doc_comment)]
+#[usage(
+    verbatim_doc_comment,
+    example(
+        "mise doctor project",
+        help = "Run every check and report pass or fail"
+    ),
+    example("mise doctor project --json", help = "Print the report as JSON")
+)]
 pub(crate) struct Project {
     /// Output the complete report as JSON
     #[usage(long, short = 'J')]

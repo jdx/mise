@@ -15,32 +15,31 @@ use demand::Input;
 use eyre::{Result, bail, eyre};
 use tabled::Tabled;
 
-/// Set environment variables in mise.toml
+/// Set, show, or list environment variables in mise.toml
 ///
-/// By default, this command selects the nearest configuration directory and
-/// modifies its lowest-precedence TOML file, creating `mise.toml` here if none exists.
-/// If multiple config files exist (e.g., both `mise.toml` and `mise.local.toml`),
-/// the lowest precedence file (`mise.toml`) will be used.
+/// `mise set KEY=VALUE` writes to the lowest-precedence TOML file in the nearest
+/// config directory (`mise.toml` rather than `mise.local.toml`), creating
+/// `mise.toml` in the current directory if there is none. Run in your home
+/// directory, it writes to the global config. `mise set KEY` prints one value,
+/// and `mise set` lists every variable with its source file. Use `--global`,
+/// `--file`, or `-E <env>` to write elsewhere.
 /// See https://mise.jdx.dev/configuration.html#target-file-for-write-operations
-///
-/// Use `-E <env>` to create/modify environment-specific config files like `mise.<env>.toml`.
 #[derive(Debug, usage_rs::Args)]
-#[usage(aliases = ["ev", "env-vars"], verbatim_doc_comment, example(r###"mise set NODE_ENV=production"###),
-    example("mise set NODE_ENV", help = "Read NODE_ENV; example output: `production`."),
-    example("mise set -E staging NODE_ENV=staging", help = "Create or modify mise.staging.toml."),
-    example("mise set", help = "List keys, values, and source files."),
-    example("mise set --prompt PASSWORD", help = "Prompt for PASSWORD with hidden input."),
-    example("cat private.key | mise set --stdin MY_KEY", help = "Read a multiline value from stdin."),
-    example(r#"printf "line1\nline2" | mise set --stdin MY_KEY"#, help = "Store a multiline value from a pipeline."),
-    example("mise set --age-encrypt API_KEY=secret", help = "Encrypt the value with age (experimental)."),
-    example("mise set --age-encrypt --prompt API_KEY", help = "Prompt with hidden input and encrypt with age (experimental)."))]
+#[usage(aliases = ["ev", "env-vars"], verbatim_doc_comment,
+    example(r###"mise set NODE_ENV=production"###, help = "Set NODE_ENV in mise.toml"),
+    example(r###"mise set NODE_ENV
+production"###, help = "Show one variable's value"),
+    example("mise set", help = "List variables, their values, and their source files"),
+    example("mise set -E staging NODE_ENV=staging", help = "Write the variable to mise.staging.toml"),
+    example("mise set --prompt PASSWORD", help = "Prompt for the value; input is visible unless you add --age-encrypt"),
+    example("cat private.key | mise set --stdin MY_KEY", help = "Read a multiline value from stdin"),
+    example("mise set --age-encrypt --prompt API_KEY", help = "Prompt with hidden input and store the value encrypted with age (experimental)"))]
 pub(crate) struct Set {
-    /// Environment variable(s) to set
-    /// e.g.: NODE_ENV=production
+    /// Environment variables to set, such as NODE_ENV=production
     #[usage(value_name = "ENV_VAR", verbatim_doc_comment)]
     env_vars: Option<Vec<EnvVarArg>>,
 
-    /// Create/modify an environment-specific config file like .mise.<env>.toml
+    /// Write to mise.<ENV>.toml in the current directory, or to .mise.<ENV>.toml if that exists
     #[usage(short = 'E', long, overrides = &["global", "file"])]
     env: Option<String>,
 
@@ -52,9 +51,12 @@ pub(crate) struct Set {
     #[usage(long, requires = "env_vars")]
     age_encrypt: bool,
 
-    /// [experimental] Age identity file for encryption
+    /// [experimental] Age identity file whose public keys to encrypt to
     ///
-    /// Defaults to ~/.config/mise/age.txt if it exists
+    /// Without --age-recipient, --age-ssh-recipient, or --age-key-file, mise
+    /// encrypts to the identities in the `age.key_file` setting (or
+    /// ~/.config/mise/age.txt if it exists) and to ~/.ssh/id_ed25519 and
+    /// ~/.ssh/id_rsa when they exist.
     #[usage(long, value_name = "PATH", requires = "age_encrypt", value_hint = usage_rs::ValueHint::FilePath)]
     age_key_file: Option<PathBuf>,
 
@@ -76,17 +78,20 @@ pub(crate) struct Set {
 
     /// The TOML file to update
     ///
-    /// Can be a file path or directory. If a directory is provided, will create/use mise.toml in that directory.
-    /// Defaults to [`MISE_DEFAULT_CONFIG_FILENAME`](https://mise.jdx.dev/configuration.html#mise_default_config_filename) environment variable, or `mise.toml`.
-    /// Use [`MISE_GLOBAL_CONFIG_FILE`](https://mise.jdx.dev/configuration.html#mise_global_config_file) to choose a different global config path.
-    #[usage(long, visible_alias = "path", verbatim_doc_comment, required = false, value_hint = usage_rs::ValueHint::AnyPath)]
+    /// Can be a file or a directory. For a directory, mise uses the config file
+    /// already in it, or creates one named by MISE_DEFAULT_CONFIG_FILENAME
+    /// (default `mise.toml`):
+    /// https://mise.jdx.dev/configuration/settings.html#default_config_filename
+    /// To move the global config file, set MISE_GLOBAL_CONFIG_FILE:
+    /// https://mise.jdx.dev/configuration/settings.html#global_config_file
+    #[usage(long, visible_alias = "path", required = false, value_hint = usage_rs::ValueHint::AnyPath)]
     file: Option<PathBuf>,
 
     /// Show raw values instead of redacting secrets
     #[usage(long)]
     no_redact: bool,
 
-    /// Prompt for environment variable values
+    /// Prompt for environment variable values (input is masked only with --age-encrypt)
     #[usage(long)]
     prompt: bool,
 
@@ -96,10 +101,9 @@ pub(crate) struct Set {
     #[usage(long, value_name = "ENV_KEY", verbatim_doc_comment, visible_aliases = ["rm", "unset"], hide = true)]
     remove: Option<Vec<String>>,
 
-    /// Read the value from stdin (for multiline input)
+    /// Read the value from stdin, for multiline input
     ///
-    /// When using --stdin, provide a single key without a value.
-    /// The value will be read from stdin until EOF.
+    /// Pass a single key without a value; the value is read from stdin until EOF.
     #[usage(long, conflicts = "prompt", requires = "env_vars")]
     stdin: bool,
 }
@@ -459,7 +463,7 @@ impl Set {
     }
 }
 
-async fn get_mise_toml(filename: &Path) -> Result<MiseToml> {
+pub(crate) async fn get_mise_toml(filename: &Path) -> Result<MiseToml> {
     let path = env::current_dir()?.join(filename);
     // Before the exists/does-not-exist split, so a `.tool-versions` says why it is refused instead
     // of failing later as invalid TOML, and so a name mise cannot read back is never created.

@@ -12,13 +12,23 @@ use crate::system::history::OperationScope;
 use crate::system::history::tracked::{self, TrackedSet};
 use crate::ui::prompt;
 
-/// Edit a managed dotfile source
+/// Open a dotfile's source in your editor
+///
+/// Opens the file that defines TARGET in `$VISUAL` or `$EDITOR`: the source for
+/// symlink, copy, and template entries; the file itself for tracked and
+/// permissions-only entries; and the declaring config for inline `content`,
+/// `absent` entries, and edits without a source file.
+///
+/// An unmanaged target is first added to the global `[dotfiles]`, as
+/// `mise dot add --no-apply` would add it, after a prompt that `--yes` skips.
+/// Without a terminal, an unmanaged target needs `--yes`. With `--apply`,
+/// applies the target after the editor exits.
 #[derive(Debug, usage_rs::Args)]
 #[usage(
-    verbatim_doc_comment,
+    example("mise dot edit ~/.zshrc", help = "Edit the source of ~/.zshrc"),
     example(
-        r###"mise dot edit ~/.zshrc
-mise dot edit --apply ~/.config/starship.toml"###
+        "mise dot edit --apply ~/.config/starship.toml",
+        help = "Edit the source, then deploy it"
     )
 )]
 pub(crate) struct DotfilesEdit {
@@ -30,7 +40,8 @@ pub(crate) struct DotfilesEdit {
     #[usage(long)]
     apply: bool,
 
-    /// Dotfile mode to use if the target is not yet managed
+    /// Mode to use if the target is not managed yet: symlink, symlink-each, copy,
+    /// or template (default: the `dotfiles.default_mode` setting)
     #[usage(long, short)]
     mode: Option<String>,
 
@@ -47,7 +58,8 @@ pub(crate) struct DotfilesEdit {
     #[usage(long, value_name = "NAME", conflicts = ["source"])]
     group: Option<String>,
 
-    /// Prompt securely for missing bootstrap secret inputs
+    /// Prompt for `[bootstrap.secrets]` values that templates need and the
+    /// environment does not set
     #[usage(long)]
     prompt_secrets: bool,
 }

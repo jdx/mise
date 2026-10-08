@@ -5,15 +5,25 @@ use eyre::{Result, WrapErr};
 use crate::system::history::OperationScope;
 use crate::system::history::store::{OperationKind, Summary};
 
-/// Record tracked files before and after an external command
+/// Run a command and save tracked files before and after it
 ///
-/// Runs the command directly, inheriting its terminal and environment. Keeps
-/// a linked checkpoint pair, including when the command fails or changes no
-/// files. Capture failures warn and never replace the command's exit status.
-/// Only tracked files are recorded: package, service, and other system effects
-/// are not reversible. Concurrent editor changes are part of the same interval.
+/// Runs the command with your terminal and environment and saves a checkpoint
+/// before and after it, even when the command fails or changes nothing, so
+/// `mise dot undo` can reverse what it did to your tracked files. Edits you
+/// make while it runs are part of the same operation. Packages, services, and
+/// other system changes are not recorded and cannot be undone. If saving
+/// fails, mise warns and still exits with the command's status.
 #[derive(Debug, usage_rs::Args)]
-#[usage(verbatim_doc_comment)]
+#[usage(
+    example(
+        "mise dot capture -- brew upgrade",
+        help = "Record what an upgrade changes"
+    ),
+    example(
+        "mise dot capture --label \"theme switch\" -- ./switch-theme.sh",
+        help = "Label the operation in history"
+    )
+)]
 pub(crate) struct DotfilesCapture {
     /// Describe this operation in history
     #[usage(long, value_name = "LABEL")]

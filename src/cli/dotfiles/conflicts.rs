@@ -11,14 +11,26 @@ use crate::system::history::sync::reconcile::{Conflict, Object};
 use crate::system::history::sync::run;
 use crate::system::history::tracked::normalize_target;
 
-/// Inspect the local and remote sides of sharing conflicts
+/// Compare both sides of a sync conflict
 ///
-/// By default, prints a unified diff from this machine's saved version to the
-/// fetched repository version. `--difftool` opens the comparison in Git's
+/// Prints a unified diff from this machine's saved version to the version
+/// fetched from the origin. `--difftool` opens the comparison in Git's
 /// configured diff tool; when `diff.tool` is unset, Git falls back to
-/// `merge.tool`. This command does not change either side or resolve a conflict.
+/// `merge.tool`. This command changes neither side. Resolve a conflict with
+/// `mise dot pull --take-remote` or `--keep-local`.
 #[derive(Debug, usage_rs::Args)]
-#[usage(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+#[usage(
+    example("mise dot conflicts", help = "Show every conflict"),
+    example("mise dot conflicts ~/.zshrc", help = "Show one conflicted file"),
+    example(
+        "mise dot conflicts --difftool ~/.zshrc",
+        help = "Open the comparison in Git's diff tool"
+    ),
+    example(
+        "mise dot conflicts --difftool --tool meld ~/.zshrc",
+        help = "Use a specific diff tool"
+    )
+)]
 pub(crate) struct DotfilesConflicts {
     /// Only inspect these conflicted paths
     #[usage(value_name = "PATH")]
@@ -230,13 +242,3 @@ fn git_diff(
         .into_bytes();
     Ok(output)
 }
-
-static AFTER_LONG_HELP: &str = color_print::cstr!(
-    r#"<bold><underline>Examples:</underline></bold>
-
-    $ <bold>mise dot conflicts</bold>
-    $ <bold>mise dot conflicts ~/.zshrc</bold>
-    $ <bold>mise dot conflicts --difftool ~/.zshrc</bold>
-    $ <bold>mise dot conflicts --difftool --tool meld ~/.zshrc</bold>
-"#
-);

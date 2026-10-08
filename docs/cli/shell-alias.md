@@ -11,8 +11,13 @@ description: "Manage shell aliases"
 
 Manage shell aliases
 
+Shell aliases are defined under `[shell_alias]` in mise.toml. In a shell
+where mise is activated, mise sets them when you enter the directory and
+removes them when you leave. With no subcommand, lists them (same as
+`mise shell-alias ls`). See <https://mise.jdx.dev/shell-aliases.html>
+
 ## Flags
-- **`--no-header`** — Don't show table header
+- **`--no-header`** — Do not print the table header
 - **`-h --help`** — Print help
 
 ## Subcommands

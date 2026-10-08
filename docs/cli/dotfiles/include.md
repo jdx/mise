@@ -11,17 +11,7 @@ description: "Stop excluding paths matching a glob"
 
 Stop excluding paths matching a glob
 
-Removes the specified glob from `[history] exclude` in the global
-configuration. Pass the same pattern used with `mise dot exclude`:
-
-```
-mise dot exclude '~/.codex/sessions/**'
-mise dot include '~/.codex/sessions/**'
-```
-
-Other matching exclusion rules still apply. This command does not edit
-a tracked directory's `include` list; change that field in `[dotfiles]`
-to select which files the directory saves.
+Removes a glob that `mise dot exclude` added to `[history] exclude` in the global config. Pass the pattern exactly as you excluded it. Other matching exclusion rules still apply. This command does not edit a tracked directory's `include` list; change that list in its `[dotfiles]` entry.
 
 ## Arguments
 - **`<GLOB>`** — The glob as written by `mise dot exclude`
@@ -29,10 +19,18 @@ to select which files the directory saves.
 ## Flags
 - **`-h --help`** — Print help
 
+## Examples
+
+Save Codex session logs again
+
+```
+mise dot include '~/.codex/sessions/**'
+```
+
 <!-- generated reference navigation -->
 
 ## Related documentation
 
-- [Getting started](/getting-started.html).
+- [Dotfiles history](/dotfiles/history.html).
 - [`mise dotfiles [--local] <SUBCOMMAND>`](/cli/dotfiles.html).
 - [Global flags and argument syntax](/cli/#global-flags).

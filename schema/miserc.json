@@ -11,7 +11,7 @@
     },
     "ceiling_paths": {
       "default": [],
-      "description": "Directories where mise stops searching for config files.",
+      "description": "Directories where mise stops searching parent directories for config files.",
       "type": "array",
       "items": {
         "type": "string"
@@ -19,7 +19,7 @@
     },
     "env": {
       "default": [],
-      "description": "Env to use for mise.<MISE_ENV>.toml files.",
+      "description": "Config environments to load, such as `development` for `mise.development.toml`.",
       "type": "array",
       "items": {
         "type": "string"
@@ -31,7 +31,7 @@
     },
     "ignored_config_paths": {
       "default": [],
-      "description": "This is a list of config paths that mise will ignore.",
+      "description": "Config files and directories mise does not load.",
       "type": "array",
       "items": {
         "type": "string"
@@ -39,7 +39,7 @@
     },
     "override_config_filenames": {
       "default": [],
-      "description": "If set, mise will ignore default config files like `mise.toml` and use these filenames instead.",
+      "description": "Project config filenames that mise looks for instead of `mise.toml`, `.mise.toml` and the other standard names.",
       "type": "array",
       "items": {
         "type": "string"
@@ -47,7 +47,7 @@
     },
     "override_tool_versions_filenames": {
       "default": [],
-      "description": "If set, mise will ignore .tool-versions files and use these filenames instead. Can be set to `none` to disable .tool-versions.",
+      "description": "Filenames that mise reads as `.tool-versions` files instead of `.tool-versions`.",
       "type": "array",
       "items": {
         "type": "string"

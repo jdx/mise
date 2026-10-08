@@ -595,12 +595,12 @@
       "unevaluatedProperties": false,
       "properties": {
         "activate_aggressive": {
-          "description": "Pushes tools' bin-paths to the front of PATH instead of allowing modifications of PATH after activation to take precedence.",
+          "description": "Keep mise's tool directories ahead of `PATH` entries added after `mise activate`.",
           "type": "boolean"
         },
         "activate_shims": {
           "default": true,
-          "description": "Allow full shell activation to add tool shims to PATH.",
+          "description": "Let `mise activate` add the shims directories to `PATH` for auto-install and lazy tools.",
           "type": "boolean"
         },
         "age": {
@@ -608,18 +608,18 @@
           "unevaluatedProperties": false,
           "properties": {
             "identity_files": {
-              "description": "List of age identity files to use for decryption (encrypted shared dotfiles and the experimental `[env]` age directives).",
+              "description": "Age identity files to try when decrypting.",
               "type": "array",
               "items": {
                 "type": "string"
               }
             },
             "key_file": {
-              "description": "Path to the age private key file to use for encryption/decryption: the default recipient and identity for encrypted shared dotfiles and the key for the experimental `[env]` age directives.",
+              "description": "Age private key file used to decrypt and as the default recipient when encrypting.",
               "type": "string"
             },
             "ssh_identity_files": {
-              "description": "List of SSH identity files to use for age decryption (encrypted shared dotfiles and the experimental `[env]` age directives).",
+              "description": "SSH private keys to try when decrypting age values.",
               "type": "array",
               "items": {
                 "type": "string"
@@ -627,21 +627,21 @@
             },
             "strict": {
               "default": true,
-              "description": "If true, fail when age decryption fails (including when age is not available, the key is missing, or the key is invalid). If false, skip decryption and continue in these cases.",
+              "description": "Fail when an `[env]` age value cannot be decrypted, instead of skipping it.",
               "type": "boolean"
             }
           }
         },
         "all_compile": {
-          "description": "do not use precompiled binaries for any tool",
+          "description": "Compile Node.js, Python, Ruby and Erlang from source instead of using precompiled builds.",
           "type": "boolean"
         },
         "always_keep_download": {
-          "description": "keep downloaded files after installation for debugging",
+          "description": "Keep downloaded archives and sources after installing, for debugging.",
           "type": "boolean"
         },
         "always_keep_install": {
-          "description": "should mise keep install files after installation even if the installation fails",
+          "description": "Keep a failed installation's partial install directory and downloads, for debugging.",
           "type": "boolean"
         },
         "aqua": {
@@ -650,53 +650,53 @@
           "properties": {
             "baked_registry": {
               "default": true,
-              "description": "Use baked-in aqua registry.",
+              "description": "Use the aqua registry built into mise.",
               "type": "boolean"
             },
             "cosign": {
               "default": true,
-              "description": "Use cosign to verify aqua tool signatures.",
+              "description": "Verify Cosign signatures for aqua packages that declare them.",
               "type": "boolean"
             },
             "github_attestations": {
               "default": true,
-              "description": "Enable GitHub Artifact Attestations verification for aqua tools.",
+              "description": "Verify GitHub artifact attestations for aqua packages that declare them.",
               "type": "boolean"
             },
             "minisign": {
               "default": true,
-              "description": "Use minisign to verify aqua tool signatures.",
+              "description": "Verify Minisign signatures for aqua packages that declare them.",
               "type": "boolean"
             },
             "registries": {
-              "description": "Aqua registry sources to load before the baked-in registry.",
+              "description": "Aqua registries to search, in order, before the baked-in registry.",
               "type": "array",
               "items": {
                 "type": "string"
               }
             },
             "registry_cache_ttl": {
-              "description": "How long to cache downloaded aqua registry source files.",
+              "description": "How long a downloaded aqua registry stays fresh before mise downloads it again.",
               "type": "string"
             },
             "registry_url": {
-              "description": "[deprecated] URL of an aqua registry repository to fetch.",
+              "description": "[deprecated] URL of one aqua registry repository to search before the baked-in registry.",
               "type": "string",
               "deprecated": true
             },
             "slsa": {
               "default": true,
-              "description": "Use SLSA to verify aqua tool signatures.",
+              "description": "Verify SLSA provenance for aqua packages that declare it.",
               "type": "boolean"
             }
           }
         },
         "arch": {
-          "description": "Architecture to use for precompiled binaries.",
+          "description": "Architecture of the precompiled binaries mise downloads.",
           "type": "string"
         },
         "asdf_compat": {
-          "description": "set to true to ensure .tool-versions will be compatible with asdf",
+          "description": "Write `.tool-versions` files that asdf can read, with exact versions.",
           "type": "boolean",
           "deprecated": true
         },
@@ -706,29 +706,29 @@
         },
         "auto_install": {
           "default": true,
-          "description": "Automatically install missing tools when running `mise x`, `mise run`, or as part of the 'not found' handler.",
+          "description": "Install missing tools automatically when a command needs them.",
           "type": "boolean"
         },
         "auto_install_disable_tools": {
-          "description": "List of tools to skip automatically installing when running `mise x`, `mise run`, or as part of the 'not found' handler.",
+          "description": "Tools that automatic installs skip, such as `node`.",
           "type": "array",
           "items": {
             "type": "string"
           }
         },
         "auto_update": {
-          "description": "[deprecated] Use `self_update.auto` instead.",
+          "description": "[deprecated] Old name for `self_update.auto`.",
           "type": "boolean",
           "deprecated": true
         },
         "auto_update_check_duration": {
-          "description": "[deprecated] Use `self_update.check_duration` instead.",
+          "description": "[deprecated] Old name for `self_update.check_duration`.",
           "type": "string",
           "deprecated": true
         },
         "cache_prune_age": {
           "default": "30d",
-          "description": "Delete files in cache that have not been accessed in this duration",
+          "description": "Delete cache files that have not been accessed for this long.",
           "type": "string"
         },
         "cargo": {
@@ -737,36 +737,36 @@
           "properties": {
             "binstall": {
               "default": true,
-              "description": "Use cargo-binstall instead of cargo install if available",
+              "description": "Install Cargo tools from cargo-binstall's prebuilt binaries when cargo-binstall is installed.",
               "type": "boolean"
             },
             "binstall_native": {
-              "description": "Use mise's native cargo binary installer when cargo-binstall is unavailable.",
+              "description": "Use mise's own prebuilt-binary installer for Cargo tools when cargo-binstall is not installed.",
               "type": "boolean"
             },
             "binstall_only": {
               "default": false,
-              "description": "Require cargo-binstall for Cargo tools without an explicit Git source. Fail if no prebuilt binary is available or if tool options require cargo install.",
+              "description": "Require prebuilt binaries from cargo-binstall instead of falling back to `cargo install`.",
               "type": "boolean"
             },
             "binstall_quickinstall": {
               "default": false,
-              "description": "Allow cargo-binstall to use third-party cargo-quickinstall artifacts.",
+              "description": "Let cargo-binstall download third-party artifacts from cargo-quickinstall.",
               "type": "boolean"
             },
             "registry_name": {
-              "description": "Name of the cargo registry to use.",
+              "description": "Cargo registry to install crates from instead of crates.io.",
               "type": "string"
             }
           }
         },
         "cd": {
-          "description": "Path to change to after launching mise",
+          "description": "Directory to change to after mise starts.",
           "type": "string"
         },
         "ceiling_paths": {
           "default": [],
-          "description": "Directories where mise stops searching for config files.",
+          "description": "Directories where mise stops searching parent directories for config files.",
           "type": "array",
           "items": {
             "type": "string"
@@ -774,17 +774,17 @@
         },
         "ci": {
           "default": "false",
-          "description": "Set to true if running in a CI environment",
+          "description": "Behave as in CI, which answers yes to confirmation prompts; read from the `CI` variable.",
           "type": "boolean"
         },
         "color": {
           "default": true,
-          "description": "Use color in mise terminal output",
+          "description": "Use color in mise's terminal output.",
           "type": "boolean"
         },
         "color_theme": {
           "default": "default",
-          "description": "Theme for interactive prompts (auto/default, charm, base16, catppuccin, dracula)",
+          "description": "Color theme for interactive prompts, such as the task picker in `mise run`.",
           "type": "string",
           "enum": [
             "auto",
@@ -801,40 +801,40 @@
           "properties": {
             "channel": {
               "default": "conda-forge",
-              "description": "Default channel for conda packages.",
+              "description": "Channel for `conda:` tools that do not set their own.",
               "type": "string"
             }
           }
         },
         "debug": {
-          "description": "Sets log level to debug",
+          "description": "Set the log level to debug.",
           "type": "boolean"
         },
         "default_config_filename": {
           "default": "mise.toml",
-          "description": "The default config filename read. `mise use` and other commands that create new config files will use this value. This must be an env var.",
+          "description": "Extra project config filename mise reads, and the name it gives new config files.",
           "type": "string"
         },
         "default_tool_versions_filename": {
           "default": ".tool-versions",
-          "description": "The default .tool-versions filename read. This will not ignore .tool-versions—use override_tool_versions_filename for that. This must be an env var.",
+          "description": "Extra filename mise reads as a `.tool-versions` file.",
           "type": "string"
         },
         "disable_backends": {
           "default": [],
-          "description": "Backends to exclude from tool resolution and new installs, such as `asdf`, `pypi`, or a vfox-backend plugin name. Existing installations are left on disk and become available again if the backend is re-enabled.",
+          "description": "Backends mise ignores when resolving and installing tools, such as `asdf` or `pypi`.",
           "type": "array",
           "items": {
             "type": "string"
           }
         },
         "disable_default_registry": {
-          "description": "Disable the default mapping of short tool names like `php` -> `asdf:mise-plugins/asdf-php`. This parameter disables only for the backends `vfox` and `asdf`.",
+          "description": "Stop mapping short names such as `php` to the asdf and vfox plugins listed in the registry.",
           "type": "boolean"
         },
         "disable_hints": {
           "default": [],
-          "description": "Turns off helpful hints when using different mise features",
+          "description": "Hints to stop showing, by ID; `*` turns off every hint.",
           "type": "array",
           "items": {
             "type": "string"
@@ -842,7 +842,7 @@
         },
         "disable_tools": {
           "default": [],
-          "description": "Tools defined in mise.toml that should be ignored",
+          "description": "Tools mise ignores even when a config file lists them.",
           "type": "array",
           "items": {
             "type": "string"
@@ -859,8 +859,9 @@
           "properties": {
             "default_mode": {
               "default": "symlink",
-              "description": "Default mode for dotfile entries when mode is omitted. Options: `symlink`, `symlink-each`, `copy`, `template`.",
-              "type": "string"
+              "description": "Mode for `[dotfiles]` entries that do not set `mode`.",
+              "type": "string",
+              "enum": ["symlink", "symlink-each", "copy", "template"]
             },
             "relative_symlinks": {
               "default": false,
@@ -869,7 +870,7 @@
             },
             "root": {
               "default": "~/.dotfiles",
-              "description": "Root directory used for implied dotfile sources.",
+              "description": "Directory that holds dotfile sources for entries without a `source`.",
               "type": "string"
             }
           }
@@ -879,11 +880,11 @@
           "unevaluatedProperties": false,
           "properties": {
             "cli_telemetry_optout": {
-              "description": "Set DOTNET_CLI_TELEMETRY_OPTOUT to opt out of .NET CLI telemetry.",
+              "description": "Set `DOTNET_CLI_TELEMETRY_OPTOUT` to opt out of .NET CLI telemetry.",
               "type": "boolean"
             },
             "dotnet_root": {
-              "description": "Path to the shared .NET SDK root directory.",
+              "description": "Shared directory that every .NET SDK version installs into.",
               "type": "string"
             },
             "isolated": {
@@ -893,7 +894,7 @@
             },
             "package_flags": {
               "default": [],
-              "description": "[deprecated] Extends dotnet search and install abilities.",
+              "description": "[deprecated] Flags for every `dotnet:` tool; the only flag, `prerelease`, includes prereleases.",
               "type": "array",
               "deprecated": true,
               "items": {
@@ -908,7 +909,7 @@
           }
         },
         "enable_tools": {
-          "description": "Tools defined in mise.toml that should be used; unset enables all tools and empty disables all tools",
+          "description": "Allowlist of configured tools mise uses; other tools are ignored.",
           "type": "array",
           "items": {
             "type": "string"
@@ -916,7 +917,7 @@
         },
         "env": {
           "default": [],
-          "description": "Env to use for mise.<MISE_ENV>.toml files.",
+          "description": "Config environments to load, such as `development` for `mise.development.toml`.",
           "type": "array",
           "items": {
             "type": "string"
@@ -924,12 +925,12 @@
         },
         "env_cache": {
           "default": false,
-          "description": "[experimental] Enable environment caching for nested mise invocations",
+          "description": "[experimental] Cache computed environments on disk for nested mise commands.",
           "type": "boolean"
         },
         "env_cache_ttl": {
           "default": "1h",
-          "description": "TTL for cached environments",
+          "description": "How long a cached environment stays valid.",
           "type": "string"
         },
         "env_conf_d": {
@@ -937,12 +938,12 @@
           "type": "boolean"
         },
         "env_file": {
-          "description": "Path to a file containing environment variables to automatically load.",
+          "description": "Dotenv file name to load from the current directory and each parent directory.",
           "type": "string"
         },
         "env_shell_expand": {
           "default": true,
-          "description": "Controls shell-style variable expansion in env values (e.g., $FOO, ${BAR:-default})",
+          "description": "Expand shell-style variables such as `$FOO` and `${BAR:-default}` in `[env]` values.",
           "type": "boolean"
         },
         "erlang": {
@@ -950,32 +951,38 @@
           "unevaluatedProperties": false,
           "properties": {
             "compile": {
-              "description": "If true, compile erlang from source. If false, use precompiled binaries. If not set, use precompiled binaries if available.",
+              "description": "Compile Erlang from source instead of using a precompiled build.",
               "type": "boolean"
             },
             "precompiled_os": {
-              "description": "Ubuntu release target to use for precompiled Erlang builds from builds.hex.pm.",
-              "type": "string"
+              "description": "Ubuntu release whose precompiled Erlang build from builds.hex.pm mise installs on Linux.",
+              "type": "string",
+              "enum": [
+                "ubuntu-20.04",
+                "ubuntu-22.04",
+                "ubuntu-24.04",
+                "ubuntu-26.04"
+              ]
             }
           }
         },
         "exec_auto_install": {
           "default": true,
-          "description": "Automatically install missing tools when running `mise x`.",
+          "description": "Install missing tools automatically when you run `mise exec`.",
           "type": "boolean"
         },
         "experimental": {
-          "description": "Enable experimental mise features which are incomplete or unstable—breakings changes may occur",
+          "description": "Enable experimental features, which may change or be removed in any release.",
           "type": "boolean"
         },
         "fetch_remote_versions_cache": {
           "default": "1h",
-          "description": "How long to cache remote versions for tools.",
+          "description": "How long a tool's cached list of available versions stays fresh.",
           "type": "string"
         },
         "fetch_remote_versions_timeout": {
           "default": "20s",
-          "description": "Timeout in seconds for HTTP requests to fetch new tool versions in mise.",
+          "description": "Timeout for looking up a tool's available versions.",
           "type": "string"
         },
         "forgejo": {
@@ -984,17 +991,17 @@
           "properties": {
             "credential_command": {
               "default": "",
-              "description": "Shell command to run to obtain a Forgejo token for mise.",
+              "description": "Command that prints a Forgejo token on stdout.",
               "type": "string"
             },
             "fj_cli_tokens": {
               "default": true,
-              "description": "Read Forgejo tokens from the fj CLI config.",
+              "description": "Read Forgejo tokens that the fj CLI stores in its `keys.json` file.",
               "type": "boolean"
             },
             "use_git_credentials": {
               "default": false,
-              "description": "Use git credential helpers to obtain Forgejo tokens.",
+              "description": "Get Forgejo tokens from your Git credential helpers with `git credential fill`.",
               "type": "boolean"
             }
           }
@@ -1005,42 +1012,42 @@
           "properties": {
             "credential_command": {
               "default": "",
-              "description": "Shell command to run to obtain a GitHub token for mise.",
+              "description": "Command that prints a GitHub token on stdout.",
               "type": "string"
             },
             "gh_cli_tokens": {
               "default": true,
-              "description": "Read GitHub tokens from the gh CLI's hosts.yml config.",
+              "description": "Read GitHub tokens that the gh CLI stores in its `hosts.yml` file.",
               "type": "boolean"
             },
             "github_attestations": {
               "default": true,
-              "description": "Enable GitHub Artifact Attestations verification for github backend tools.",
+              "description": "Verify GitHub artifact attestations for github backend tools.",
               "type": "boolean"
             },
             "oauth_api_url": {
               "default": "https://api.github.com",
-              "description": "GitHub API base URL for native OAuth token validation.",
+              "description": "GitHub API base URL mise uses to validate native OAuth tokens.",
               "type": "string"
             },
             "oauth_auth_url": {
               "default": "https://github.com/login",
-              "description": "GitHub OAuth endpoint base URL for native device-flow tokens.",
+              "description": "GitHub OAuth endpoint base URL for the native device flow.",
               "type": "string"
             },
             "oauth_client_id": {
               "default": "",
-              "description": "GitHub App client ID for native OAuth device-flow tokens.",
+              "description": "GitHub App client ID that turns on native OAuth device-flow tokens.",
               "type": "string"
             },
             "oauth_export_env": {
               "default": "GITHUB_TOKEN",
-              "description": "Environment variable name to export the native GitHub OAuth token under (empty disables).",
+              "description": "Environment variable that mise exports the native GitHub OAuth token under; empty turns the export off.",
               "type": "string"
             },
             "oauth_open_browser": {
               "default": true,
-              "description": "Open the browser during native GitHub OAuth device flow.",
+              "description": "Open the verification page in your browser during the native GitHub OAuth device flow.",
               "type": "boolean"
             },
             "oauth_scopes": {
@@ -1050,19 +1057,19 @@
             },
             "slsa": {
               "default": true,
-              "description": "Enable SLSA provenance verification for github backend tools.",
+              "description": "Verify SLSA provenance for github backend tools that name a signer.",
               "type": "boolean"
             },
             "use_git_credentials": {
               "default": false,
-              "description": "Use git credential helpers to obtain GitHub tokens.",
+              "description": "Get GitHub tokens from your Git credential helpers with `git credential fill`.",
               "type": "boolean"
             }
           }
         },
         "github_attestations": {
           "default": true,
-          "description": "Enable GitHub Artifact Attestations verification for supported tools.",
+          "description": "Verify GitHub artifact attestations for downloads whose publisher provides them.",
           "type": "boolean"
         },
         "github_relay": {
@@ -1071,27 +1078,28 @@
           "properties": {
             "concurrency": {
               "default": 8,
-              "description": "Maximum simultaneous GitHub relay requests (1-32); excess requests fail closed.",
+              "description": "Maximum relayed GitHub requests that run at once, from 1 to 32; more requests fail instead of waiting.",
               "type": "integer"
             },
             "log_format": {
               "default": "text",
-              "description": "GitHub relay request and summary output format: text or jsonl.",
-              "type": "string"
+              "description": "Format of GitHub relay request logs and the end-of-session summary.",
+              "type": "string",
+              "enum": ["text", "jsonl"]
             },
             "log_requests": {
               "default": false,
-              "description": "Log sanitized GitHub relay requests on the initiating machine's stderr.",
+              "description": "Log each relayed GitHub request, without credentials, on this machine's stderr.",
               "type": "boolean"
             },
             "max_duration": {
               "default": "0s",
-              "description": "Maximum borrowed GitHub access duration; 0s means until the session ends.",
+              "description": "How long a GitHub relay lends access; `0s` lasts until the session ends.",
               "type": "string"
             },
             "request_timeout": {
               "default": "5m",
-              "description": "Total time limit for a relayed request, including response streaming.",
+              "description": "Time limit for one relayed GitHub request, including streaming its response.",
               "type": "string"
             }
           }
@@ -1102,32 +1110,32 @@
           "properties": {
             "credential_command": {
               "default": "",
-              "description": "Shell command to run to obtain a GitLab token for mise.",
+              "description": "Command that prints a GitLab token on stdout.",
               "type": "string"
             },
             "glab_cli_tokens": {
               "default": true,
-              "description": "Read GitLab tokens from the glab CLI config.",
+              "description": "Read GitLab tokens that the glab CLI stores in its `config.yml` file.",
               "type": "boolean"
             },
             "use_git_credentials": {
               "default": false,
-              "description": "Use git credential helpers to obtain GitLab tokens.",
+              "description": "Get GitLab tokens from your Git credential helpers with `git credential fill`.",
               "type": "boolean"
             }
           }
         },
         "gix": {
           "default": true,
-          "description": "Use gix for git operations, set to false to shell out to git.",
+          "description": "Clone Git repositories with the built-in gix library instead of running `git`.",
           "type": "boolean"
         },
         "global_config_file": {
-          "description": "Path to the global mise config file. Default is `~/.config/mise/config.toml`. This must be an env var.",
+          "description": "One file to use as the global config instead of the config files in `~/.config/mise`.",
           "type": "string"
         },
         "global_config_root": {
-          "description": "Path which is used as `{{config_root}}` for the global config file. Default is `$HOME`. This must be an env var.",
+          "description": "Directory used as `config_root` for the global config, such as for `{{config_root}}` in templates.",
           "type": "string"
         },
         "go": {
@@ -1136,77 +1144,77 @@
           "properties": {
             "default_packages_file": {
               "default": "~/.default-go-packages",
-              "description": "Path to a file containing default go packages to install when installing go.",
+              "description": "[deprecated] File listing Go packages to install with every Go version.",
               "type": "string",
               "deprecated": true
             },
             "download_mirror": {
               "default": "https://dl.google.com/go",
-              "description": "Mirror to download go sdk tarballs from.",
+              "description": "Base URL that mise downloads Go archives and their checksums from.",
               "type": "string"
             },
             "repo": {
               "default": "https://github.com/golang/go",
-              "description": "URL to fetch go from.",
+              "description": "Git repository mise lists Go versions from.",
               "type": "string"
             },
             "set_gobin": {
-              "description": "Changes where `go install` installs binaries to.",
+              "description": "Set `GOBIN` so `go install` puts binaries in the active Go version's directory.",
               "type": "boolean"
             },
             "set_gopath": {
-              "description": "[deprecated] Set to true to set GOPATH=~/.local/share/mise/installs/go/.../packages.",
+              "description": "[deprecated] Set `GOPATH` to the `packages` directory inside the active Go install.",
               "type": "boolean",
               "deprecated": true
             },
             "set_goroot": {
               "default": true,
-              "description": "Sets GOROOT=~/.local/share/mise/installs/go/.../.",
+              "description": "Set `GOROOT` to the active Go version's install directory.",
               "type": "boolean"
             },
             "skip_checksum": {
-              "description": "Set to true to skip checksum verification when downloading go sdk tarballs.",
+              "description": "Skip SHA-256 verification of Go downloads.",
               "type": "boolean"
             }
           }
         },
         "go_default_packages_file": {
-          "description": "Path to a file containing default go packages to install when installing go.",
+          "description": "File listing Go packages to install with every Go version.",
           "type": "string",
           "deprecated": true
         },
         "go_download_mirror": {
-          "description": "Mirror to download go sdk tarballs from.",
+          "description": "Base URL that mise downloads Go archives and their checksums from.",
           "type": "string",
           "deprecated": true
         },
         "go_repo": {
-          "description": "URL to fetch go from.",
+          "description": "Git repository mise lists Go versions from.",
           "type": "string",
           "deprecated": true
         },
         "go_set_gobin": {
-          "description": "Changes where `go install` installs binaries to.",
+          "description": "Set `GOBIN` so `go install` puts binaries in the active Go version's directory.",
           "type": "boolean",
           "deprecated": true
         },
         "go_set_gopath": {
-          "description": "[deprecated] Set to true to set GOPATH=~/.local/share/mise/installs/go/.../packages.",
+          "description": "[deprecated] Set `GOPATH` to the `packages` directory inside the active Go install.",
           "type": "boolean",
           "deprecated": true
         },
         "go_set_goroot": {
-          "description": "Sets GOROOT=~/.local/share/mise/installs/go/.../.",
+          "description": "Set `GOROOT` to the active Go version's install directory.",
           "type": "boolean",
           "deprecated": true
         },
         "go_skip_checksum": {
-          "description": "Set to true to skip checksum verification when downloading go sdk tarballs.",
+          "description": "Skip SHA-256 verification of Go downloads.",
           "type": "boolean",
           "deprecated": true
         },
         "gpg_verify": {
-          "description": "Verify OpenPGP signatures for all tools (built-in, no external gpg required). Set to false to disable.",
+          "description": "Verify OpenPGP signatures of Node.js and Swift downloads.",
           "type": "boolean"
         },
         "history": {
@@ -1215,38 +1223,38 @@
           "properties": {
             "allow_plaintext_history": {
               "default": false,
-              "description": "Allow publishing history that contains unencrypted versions of files now marked for encryption.",
+              "description": "Allow publishing or applying history that holds plaintext copies of files now marked for encryption.",
               "type": "boolean"
             },
             "describe_command": {
               "default": "",
-              "description": "A command that names commits the watcher saves (an agent, say): it gets one JSON object on stdin (uuid, trigger, the computed description, changed tracked paths, and a unified diff of changed unencrypted files, at most 64 KiB) and prints one line of at most 200 characters, which becomes the description. Empty: computed descriptions only.",
+              "description": "Command, such as an AI agent, that writes the description of each checkpoint the history watcher saves.",
               "type": "string"
             },
             "enabled": {
               "default": true,
-              "description": "Record ordinary Git commits for explicitly tracked files around bootstrap operations and on explicit saves.",
+              "description": "Record Git checkpoints of tracked files around bootstrap operations and on explicit saves.",
               "type": "boolean"
             },
             "fetch_interval": {
               "default": "15m",
-              "description": "How often the history watcher fetches the origin branch. Values below one second use one second; use history.sync = 'manual' to disable automatic synchronization.",
+              "description": "How often the history watcher fetches from the setup repository.",
               "type": "string"
             },
             "notify": {
               "default": true,
-              "description": "Show a desktop notification when conflicts pause sharing for the setup. Enabled by default; retries stay silent until sharing recovers, and a notifier that is missing or failing never holds up history or sync.",
+              "description": "Show a desktop notification when a sync conflict pauses sharing.",
               "type": "boolean"
             },
             "sync": {
               "default": "sync",
-              "description": "What the history watcher does with a connected setup repository on its own: `sync` publishes after saves, fetches periodically, and applies incoming changes. Any conflict pauses publication and incoming application for the entire setup; local commits and fetching continue. `fetch-only` only fetches; `manual` does nothing automatically. `mise bootstrap dotfiles sync` and `pull` work on request in every mode.",
+              "description": "What the history watcher shares with a connected setup repository on its own.",
               "type": "string",
               "enum": ["sync", "fetch-only", "manual"]
             },
             "sync_interval": {
               "default": "5m",
-              "description": "How soon after a save the history watcher publishes to the setup repository, at most this often.",
+              "description": "Minimum time between automatic publishes to the setup repository after a save.",
               "type": "string"
             },
             "watch": {
@@ -1255,17 +1263,17 @@
               "properties": {
                 "debounce": {
                   "default": "2s",
-                  "description": "How long a changed file must stay quiet before the history watcher saves it (the base autosave interval). A file that keeps changing is stretched on its own and never delays the others.",
+                  "description": "How long a changed file must stay unchanged before the history watcher saves it.",
                   "type": "string"
                 },
                 "max_interval": {
                   "default": "24h",
-                  "description": "The longest autosave interval the history watcher stretches a constantly changing file to. Sustained churn doubles a file's own interval up to this; a settled file is saved promptly again, and a sustained quiet period resets it.",
+                  "description": "Longest save interval the history watcher uses for a file that changes constantly.",
                   "type": "string"
                 },
                 "reconcile": {
                   "default": "10m",
-                  "description": "How often the history watcher rescans the whole tracked set for changes its watches missed. `0` disables periodic reconciliation (startup and configuration changes still reconcile).",
+                  "description": "How often the history watcher rescans all tracked files for changes it missed.",
                   "type": "string"
                 }
               }
@@ -1278,24 +1286,24 @@
           "properties": {
             "cache_ttl": {
               "default": "0s",
-              "description": "Cache hook-env directory checks for this duration. Useful for slow filesystems like NFS.",
+              "description": "How long the shell hook reuses its last config file check, for slow filesystems such as NFS.",
               "type": "string"
             },
             "chpwd_only": {
               "default": false,
-              "description": "Only run hook-env checks on directory change, not on every prompt.",
+              "description": "Run the shell hook's full config check only when you change directories, not at every prompt.",
               "type": "boolean"
             }
           }
         },
         "http_download_timeout": {
           "default": "30m",
-          "description": "Total time allowed for an HTTP download, including retries.",
+          "description": "Total time allowed to download one file, including retries.",
           "type": "string"
         },
         "http_retries": {
           "default": 3,
-          "description": "Number of retries for transient HTTP failures in mise.",
+          "description": "Number of retries after a transient HTTP failure.",
           "type": "integer"
         },
         "http_timeout": {
@@ -1304,13 +1312,13 @@
           "type": "string"
         },
         "idiomatic_version_file": {
-          "description": "Set to false to disable the idiomatic version files such as .node-version, .ruby-version, etc.",
+          "description": "[deprecated] No effect; enable idiomatic version files per tool with `idiomatic_version_file_enable_tools`.",
           "type": "boolean",
           "deprecated": true
         },
         "idiomatic_version_file_disable_files": {
           "default": [],
-          "description": "Specific idiomatic version files to disable for a tool.",
+          "description": "Idiomatic version files to ignore for one tool, as `tool:filename` pairs.",
           "type": "array",
           "items": {
             "type": "string"
@@ -1318,7 +1326,7 @@
         },
         "idiomatic_version_file_disable_tools": {
           "default": [],
-          "description": "Specific tools to disable idiomatic version files for.",
+          "description": "[deprecated] No effect; idiomatic version files are off unless enabled with `idiomatic_version_file_enable_tools`.",
           "type": "array",
           "deprecated": true,
           "items": {
@@ -1327,7 +1335,7 @@
         },
         "idiomatic_version_file_enable_tools": {
           "default": [],
-          "description": "Specific tools to enable idiomatic version files for like .node-version, .ruby-version, etc.",
+          "description": "Tools that read idiomatic version files such as `.node-version` or `.ruby-version`.",
           "type": "array",
           "items": {
             "type": "string"
@@ -1340,14 +1348,14 @@
         },
         "ignored_config_paths": {
           "default": [],
-          "description": "This is a list of config paths that mise will ignore.",
+          "description": "Config files and directories mise does not load.",
           "type": "array",
           "items": {
             "type": "string"
           }
         },
         "install_before": {
-          "description": "Minimum release age / supply chain protection — only install versions released before this date",
+          "description": "[deprecated] Install only versions released before this date; use `minimum_release_age` instead.",
           "type": "string",
           "deprecated": true
         },
@@ -1362,7 +1370,7 @@
           "properties": {
             "shorthand_vendor": {
               "default": "openjdk",
-              "description": "Shorthand for Java. Used when installing Java without a vendor prefix.",
+              "description": "Vendor used for a Java version without a vendor prefix, such as `java@21`.",
               "type": "string"
             }
           }
@@ -1375,13 +1383,13 @@
         },
         "legacy_version_file": {
           "default": true,
-          "description": "Set to false to disable the idiomatic version files such as .node-version, .ruby-version, etc.",
+          "description": "[deprecated] No effect; enable idiomatic version files per tool with `idiomatic_version_file_enable_tools`.",
           "type": "boolean",
           "deprecated": true
         },
         "legacy_version_file_disable_tools": {
           "default": [],
-          "description": "Specific tools to disable idiomatic version files for.",
+          "description": "[deprecated] No effect; idiomatic version files are off unless enabled with `idiomatic_version_file_enable_tools`.",
           "type": "array",
           "deprecated": true,
           "items": {
@@ -1389,18 +1397,18 @@
           }
         },
         "libc": {
-          "description": "Libc implementation to use for precompiled Linux binaries.",
+          "description": "Libc build to install on Linux when a tool publishes both glibc and musl builds.",
           "type": "string",
           "enum": ["glibc", "gnu", "musl"]
         },
         "libgit2": {
           "default": true,
-          "description": "Use libgit2 for git operations, set to false to shell out to git.",
+          "description": "Clone Git repositories with the built-in gix library instead of running `git`; same as `gix`.",
           "type": "boolean"
         },
         "locked": {
           "default": false,
-          "description": "Require lockfile URLs to be present during installation.",
+          "description": "Require tool versions and download URLs to come from the lockfile.",
           "type": "boolean"
         },
         "locked_scopes": {
@@ -1414,11 +1422,11 @@
         },
         "locked_verify_provenance": {
           "default": false,
-          "description": "Re-verify provenance at install time even when the lockfile already has provenance.",
+          "description": "Re-verify provenance at install time even when the lockfile already records it.",
           "type": "boolean"
         },
         "lockfile": {
-          "description": "Create and read lockfiles for tool versions.",
+          "description": "Create, read and update `mise.lock` lockfiles for tool versions.",
           "type": "boolean"
         },
         "lockfile_auto_prune": {
@@ -1427,12 +1435,12 @@
           "type": "boolean"
         },
         "lockfile_mode": {
-          "description": "Choose incremental merging or complete lockfile generation.",
+          "description": "How lockfiles are written: entry by entry, or rebuilt from the current requests.",
           "type": "string",
           "enum": ["merge", "generate"]
         },
         "lockfile_platforms": {
-          "description": "Platforms to target in lockfile operations.",
+          "description": "Platforms to resolve lockfile URLs and checksums for.",
           "type": "array",
           "items": {
             "type": "string"
@@ -1440,17 +1448,17 @@
         },
         "log_level": {
           "default": "info",
-          "description": "Show more/less output.",
+          "description": "Log level for mise's own output.",
           "type": "string",
           "enum": ["trace", "debug", "info", "warn", "error"]
         },
         "minimum_release_age": {
-          "description": "Minimum release age / supply chain protection — only install versions older than this threshold",
+          "description": "Skip versions published more recently than this duration or date.",
           "type": "string"
         },
         "minimum_release_age_excludes": {
           "default": [],
-          "description": "Tools and backends to exclude from the global/default minimum_release_age setting",
+          "description": "Tools and backends that the configured and default `minimum_release_age` do not apply to.",
           "type": "array",
           "items": {
             "type": "string"
@@ -1462,7 +1470,7 @@
           "type": "boolean"
         },
         "netrc_file": {
-          "description": "Path to the netrc file to use for HTTP Basic authentication.",
+          "description": "Path of the netrc file to use instead of `~/.netrc` (`%USERPROFILE%\\_netrc` on Windows).",
           "type": "string"
         },
         "no_env": {
@@ -1478,97 +1486,97 @@
           "unevaluatedProperties": false,
           "properties": {
             "apply_patches": {
-              "description": "A list of patch files or URLs to apply to node source.",
+              "description": "Patch files or URLs to apply to the Node.js source before building it.",
               "type": "string"
             },
             "cflags": {
-              "description": "Additional CFLAGS options (e.g., to override -O3).",
+              "description": "Extra `CFLAGS` for compiling Node.js, for example to replace `-O3`.",
               "type": "string"
             },
             "compile": {
-              "description": "Compile node from source.",
+              "description": "Compile Node.js from source instead of using a precompiled build.",
               "type": "boolean"
             },
             "concurrency": {
-              "description": "How many jobs should be used in compilation.",
+              "description": "Number of parallel jobs (`make -j`) when compiling Node.js.",
               "type": "integer"
             },
             "configure_opts": {
-              "description": "Additional ./configure options.",
+              "description": "Extra arguments for `./configure` when compiling Node.js.",
               "type": "string"
             },
             "corepack": {
-              "description": "Installs the default corepack shims after installing any node version.",
+              "description": "Run `corepack enable` after installing a Node.js version, so `yarn` and `pnpm` go through Corepack.",
               "type": "boolean"
             },
             "default_packages_file": {
-              "description": "Path to a file containing default npm packages to install.",
+              "description": "[deprecated] File listing npm packages to install globally into each new Node.js version.",
               "type": "string",
               "deprecated": true
             },
             "flavor": {
-              "description": "Install a specific node flavor like glibc-217 or musl. Use with unofficial node build repo.",
+              "description": "Linux build flavor of Node.js to download, such as `musl` or `glibc-217`.",
               "type": "string"
             },
             "gpg_verify": {
-              "description": "Verify OpenPGP signatures for node (built-in, no external gpg required). Set to false to disable.",
+              "description": "Check the OpenPGP signature of the `SHASUMS256.txt` file that `node.verify` checks downloads against.",
               "type": "boolean"
             },
             "make": {
-              "description": "Make command to use.",
+              "description": "Command to run instead of `make` when compiling Node.js, such as `gmake`.",
               "type": "string"
             },
             "make_install_opts": {
-              "description": "Additional make install options.",
+              "description": "Extra arguments for `make install` when compiling Node.js.",
               "type": "string"
             },
             "make_opts": {
-              "description": "Additional make options.",
+              "description": "Extra arguments for `make` when compiling Node.js.",
               "type": "string"
             },
             "mirror_url": {
-              "description": "Mirror to download node tarballs from.",
+              "description": "Base URL that mise downloads Node.js archives and their `SHASUMS256.txt` checksums from.",
               "type": "string"
             },
             "ninja": {
-              "description": "Use ninja instead of make to compile node.",
+              "description": "Build Node.js with ninja instead of make when compiling from source.",
               "type": "boolean"
             },
             "nodenv_root": {
               "default": "~/.nodenv",
-              "description": "Directory for nodenv.",
+              "description": "Root directory of nodenv, which `mise sync node --nodenv` imports Node.js versions from.",
               "type": "string"
             },
             "npm_shim": {
               "default": true,
-              "description": "Install a bash wrapper at bin/npm that triggers `mise reshim` after `npm install -g`. Disable to let corepack or a global `npm install -g npm@...` manage `bin/npm` directly.",
+              "description": "Wrap each Node.js version's `npm` so that `npm install -g` runs `mise reshim` afterwards.",
               "type": "boolean"
             },
             "nvm_dir": {
               "default": "~/.nvm",
-              "description": "Directory for nvm.",
+              "description": "Directory of nvm, which `mise sync node --nvm` imports Node.js versions from.",
               "type": "string"
             },
             "verify": {
               "default": true,
-              "description": "Verify the downloaded assets using GPG.",
+              "description": "Verify downloaded Node.js archives against the SHA-256 checksums in `SHASUMS256.txt`.",
               "type": "boolean"
             }
           }
         },
         "not_found_auto_install": {
           "default": true,
-          "description": "Set to false to disable the \"command not found\" handler to autoinstall missing tool versions.",
+          "description": "Install the tool that provides a command when your shell cannot find that command.",
           "type": "boolean"
         },
         "not_found_auto_install_registry": {
           "default": false,
-          "description": "Automatically install an unconfigured tool when its registry bin matches a missing command.",
+          "description": "Install an unconfigured tool when exactly one registry entry provides a command your shell cannot find.",
           "type": "boolean"
         },
         "not_found_system_fallback": {
           "default": true,
-          "description": "Set to false to stop shims from falling back to a same-named binary found elsewhere on PATH.",
+          "description": "Let a shim run a same-named executable from elsewhere on `PATH` when mise cannot resolve the tool.",
           "type": "boolean"
         },
         "npm": {
@@ -1576,19 +1584,19 @@
           "unevaluatedProperties": false,
           "properties": {
             "bun": {
-              "description": "Use bun instead of npm if bun is installed and on PATH.",
+              "description": "[deprecated] Install `npm:` tools with bun; same as `npm.package_manager = \"bun\"`.",
               "type": "boolean",
               "deprecated": true
             },
             "package_manager": {
               "default": "auto",
-              "description": "Package manager to use for installing npm packages.",
+              "description": "Package manager that installs `npm:` tools.",
               "type": "string",
               "enum": ["auto", "npm", "aube", "aube_cli", "bun", "pnpm"]
             },
             "shell_out": {
               "default": false,
-              "description": "Shell out to the npm CLI for `npm:` version metadata and installs instead of mise's built-in aube-based implementation.",
+              "description": "Use the npm CLI instead of mise's built-in client for `npm:` version metadata and default installs.",
               "type": "boolean"
             }
           }
@@ -1599,16 +1607,16 @@
           "properties": {
             "default_from": {
               "default": "debian:bookworm-slim",
-              "description": "Default base image for `mise oci build` when [oci].from is not set.",
+              "description": "[experimental] Base image for `mise oci` builds when neither `[oci].from` nor `--from` sets one.",
               "type": "string"
             },
             "default_mount_point": {
               "default": "/mise",
-              "description": "Path inside OCI images where mise tools are installed.",
+              "description": "[experimental] Directory inside `mise oci` images that holds tool installs, unless `[oci].mount_point` sets one.",
               "type": "string"
             },
             "insecure_registries": {
-              "description": "Registries (host or host:port) contacted over plain HTTP instead of HTTPS.",
+              "description": "Registries, as `host` or `host:port`, that mise contacts over plain HTTP instead of HTTPS.",
               "type": "array",
               "items": {
                 "type": "string"
@@ -1617,11 +1625,11 @@
           }
         },
         "offline": {
-          "description": "Disable all HTTP requests. Tools will only use locally cached data.",
+          "description": "Block every HTTP request, so mise uses only installed tools and cached data.",
           "type": "boolean"
         },
         "os": {
-          "description": "OS to use for precompiled binaries.",
+          "description": "Operating system of the precompiled binaries mise downloads.",
           "type": "string"
         },
         "otel": {
@@ -1630,19 +1638,19 @@
           "properties": {
             "enabled": {
               "default": false,
-              "description": "[experimental] Enable OpenTelemetry trace export for task executions.",
+              "description": "[experimental] Export OpenTelemetry traces of `mise run`.",
               "type": "boolean"
             },
             "logs": {
               "default": false,
-              "description": "[experimental] Enable OpenTelemetry log export for task stdout/stderr.",
+              "description": "[experimental] Export each line of task stdout and stderr as an OpenTelemetry log record.",
               "type": "boolean"
             }
           }
         },
         "override_config_filenames": {
           "default": [],
-          "description": "If set, mise will ignore default config files like `mise.toml` and use these filenames instead.",
+          "description": "Project config filenames that mise looks for instead of `mise.toml`, `.mise.toml` and the other standard names.",
           "type": "array",
           "items": {
             "type": "string"
@@ -1650,7 +1658,7 @@
         },
         "override_tool_versions_filenames": {
           "default": [],
-          "description": "If set, mise will ignore .tool-versions files and use these filenames instead. Can be set to `none` to disable .tool-versions.",
+          "description": "Filenames that mise reads as `.tool-versions` files instead of `.tool-versions`.",
           "type": "array",
           "items": {
             "type": "string"
@@ -1662,11 +1670,11 @@
           "properties": {
             "exec": {
               "default": false,
-              "description": "Run a tool's own command at install time to produce a resource its packslip offers only as an exec entry, such as an agent skill.",
+              "description": "Let packslip tools run their own executable at install time to generate resources, such as an agent skill.",
               "type": "boolean"
             },
             "stampers": {
-              "description": "Hosts whose signed stamp lists say which packslip releases may be installed, each with its pin.",
+              "description": "Hosts that must approve a packslip release before mise lists or installs it, each as `host=PIN`.",
               "type": "array",
               "items": {
                 "type": "string"
@@ -1675,11 +1683,11 @@
           }
         },
         "paranoid": {
-          "description": "Enables extra-secure behavior.",
+          "description": "Require explicit, content-bound trust for project config, and re-verify provenance on every install.",
           "type": "boolean"
         },
         "pin": {
-          "description": "Default to pinning versions when running `mise use` in mise.toml files.",
+          "description": "Make `mise use` write the resolved version, such as `24.14.0` for `node@24`, instead of the requested one.",
           "type": "boolean"
         },
         "pipx": {
@@ -1687,36 +1695,37 @@
           "unevaluatedProperties": false,
           "properties": {
             "registry_url": {
-              "description": "URL to use for pipx registry.",
+              "description": "Older name for `pypi.registry_url`.",
               "type": "string"
             },
             "uvx": {
-              "description": "Use uvx instead of pipx if uv is installed and on PATH.",
+              "description": "Older name for `pypi.uvx`.",
               "type": "boolean"
             }
           }
         },
         "plugin_autoupdate_last_check_duration": {
           "default": "7d",
-          "description": "How long to wait before updating plugins automatically (note this isn't currently implemented).",
-          "type": "string"
+          "description": "[deprecated] Has no effect; it was never implemented.",
+          "type": "string",
+          "deprecated": true
         },
         "prefer_offline": {
-          "description": "Prefer locally cached data over remote fetches when possible.",
+          "description": "Use cached version lists instead of fetching new ones, and go to the network only when nothing is cached.",
           "type": "boolean"
         },
         "prereleases": {
-          "description": "Include pre-release versions in `ls-remote`, `latest` resolution, and fuzzy matching for all tools.",
+          "description": "Include prereleases in `mise ls-remote`, `latest` and prefix matching for every tool.",
           "type": "boolean"
         },
         "profile": {
-          "description": "Profile to use for mise.${MISE_PROFILE}.toml files.",
+          "description": "Older name for the `env` setting; use `MISE_ENV` instead.",
           "type": "string",
           "deprecated": true
         },
         "provenance_api_failures_fatal": {
           "default": true,
-          "description": "Fail when provenance API checks cannot be completed.",
+          "description": "Fail an install when a provenance API, such as GitHub's attestation API, cannot be reached or queried.",
           "type": "boolean"
         },
         "prune": {
@@ -1738,11 +1747,11 @@
           "unevaluatedProperties": false,
           "properties": {
             "registry_url": {
-              "description": "Package registry URL for Python tools (pipx.registry_url is a compatibility alias).",
+              "description": "Package index URL that `pypi:` tools list versions from, with `{}` in place of the package name.",
               "type": "string"
             },
             "uvx": {
-              "description": "Use uv for Python tools when available (pipx.uvx is a compatibility alias).",
+              "description": "Install `pypi:` tools with uv when uv is available, and with pipx otherwise.",
               "type": "boolean"
             }
           }
@@ -1752,46 +1761,46 @@
           "unevaluatedProperties": false,
           "properties": {
             "compile": {
-              "description": "If true, compile python from source. If false, use precompiled binaries. If not set, use precompiled binaries if available.",
+              "description": "Compile Python from source with python-build instead of using a precompiled build.",
               "type": "boolean"
             },
             "default_packages_file": {
-              "description": "Path to a file containing default python packages to install when installing a python version.",
+              "description": "[deprecated] Requirements file that mise installs with pip into each new Python version.",
               "type": "string",
               "deprecated": true
             },
             "github_attestations": {
-              "description": "Enable GitHub Artifact Attestations verification for precompiled Python binaries.",
+              "description": "Verify GitHub artifact attestations of precompiled Python builds from python-build-standalone.",
               "type": "boolean"
             },
             "patch_url": {
-              "description": "URL to fetch python patches from to pass to python-build.",
+              "description": "URL of a patch that python-build applies to every Python version it compiles.",
               "type": "string"
             },
             "patches_directory": {
-              "description": "Directory to fetch python patches from.",
+              "description": "Directory of per-version patches for the Python versions that python-build compiles.",
               "type": "string"
             },
             "precompiled_arch": {
-              "description": "Specify the architecture to use for precompiled binaries.",
+              "description": "Architecture of the python-build-standalone build that mise downloads, such as `x86_64_v3` or `aarch64`.",
               "type": "string"
             },
             "precompiled_flavor": {
-              "description": "Specify the flavor to use for precompiled binaries.",
+              "description": "Build flavor of python-build-standalone to download, such as `install_only` or `freethreaded-install_only_stripped`.",
               "type": "string"
             },
             "precompiled_os": {
-              "description": "Specify the OS to use for precompiled binaries.",
+              "description": "OS part of the python-build-standalone build name that mise downloads, such as `unknown-linux-musl`.",
               "type": "string"
             },
             "pyenv_repo": {
               "default": "https://github.com/pyenv/pyenv.git",
-              "description": "URL to fetch pyenv from for compiling python with python-build.",
+              "description": "Git repository that mise clones pyenv from to get python-build.",
               "type": "string"
             },
             "uv_venv_auto": {
               "default": false,
-              "description": "Integrate with uv to manage project venvs when uv.lock is present.",
+              "description": "Activate, and optionally create, the virtualenv of the uv project around the current directory.",
               "enum": [false, "source", "create|source", true],
               "oneOf": [
                 {
@@ -1803,40 +1812,40 @@
               ]
             },
             "uv_venv_create_args": {
-              "description": "Arguments to pass to uv when creating a venv.",
+              "description": "Arguments for `uv venv` when mise creates a virtualenv with uv.",
               "type": "array",
               "items": {
                 "type": "string"
               }
             },
             "venv_create_args": {
-              "description": "Arguments to pass to python when creating a venv. (not used for uv venv creation)",
+              "description": "Arguments for `python -m venv` when `_.python.venv` creates a virtualenv without uv.",
               "type": "array",
               "items": {
                 "type": "string"
               }
             },
             "venv_stdlib": {
-              "description": "Prefer to use venv from Python's standard library.",
+              "description": "Create `_.python.venv` virtualenvs with `python -m venv` even when uv is installed.",
               "type": "boolean"
             }
           }
         },
         "quiet": {
-          "description": "Suppress all output except errors.",
+          "description": "Hide mise's own non-error messages, such as progress and task headers; same as `--quiet`.",
           "type": "boolean"
         },
         "raw": {
-          "description": "Connect stdin/stdout/stderr to child processes.",
+          "description": "Connect tasks and install commands directly to the terminal's stdin, stdout and stderr.",
           "type": "boolean"
         },
         "registry_cache_ttl": {
-          "description": "How long to cache the floating mise registry.",
+          "description": "How long a downloaded mise registry stays fresh when `registry_floating` is on.",
           "type": "string"
         },
         "registry_floating": {
           "default": false,
-          "description": "Fetch the latest released mise registry and current aqua registry instead of using only the snapshots baked into this mise release.",
+          "description": "Use the latest released mise registry and the current aqua registry, not only the copies built into mise.",
           "type": "boolean"
         },
         "ruby": {
@@ -1844,64 +1853,64 @@
           "unevaluatedProperties": false,
           "properties": {
             "apply_patches": {
-              "description": "A list of patch files or URLs to apply to ruby source.",
+              "description": "Patch files or URLs to apply to the Ruby source before compiling it, one per line.",
               "type": "string"
             },
             "compile": {
-              "description": "If true, compile ruby from source. If false, require precompiled binaries. If not set, use precompiled binaries if available.",
+              "description": "Compile Ruby from source instead of using a precompiled build.",
               "type": "boolean"
             },
             "default_packages_file": {
               "default": "~/.default-gems",
-              "description": "Path to a file containing default ruby gems to install when installing ruby.",
+              "description": "[deprecated] File listing gems to install into each new Ruby version.",
               "type": "string",
               "deprecated": true
             },
             "github_attestations": {
-              "description": "Enable GitHub Artifact Attestations verification for precompiled Ruby binaries.",
+              "description": "Verify GitHub artifact attestations of precompiled Ruby builds.",
               "type": "boolean"
             },
             "precompiled_arch": {
-              "description": "Override architecture identifier for precompiled Ruby binaries.",
+              "description": "Architecture name of precompiled Ruby builds, such as `x86_64` or `arm64`, used with `ruby.precompiled_os`.",
               "type": "string"
             },
             "precompiled_os": {
-              "description": "Override OS identifier for precompiled Ruby binaries.",
+              "description": "OS name of precompiled Ruby builds, such as `linux`, used with `ruby.precompiled_arch`.",
               "type": "string"
             },
             "precompiled_url": {
               "default": "jdx/ruby",
-              "description": "URL template or GitHub repo for precompiled Ruby binaries.",
+              "description": "GitHub repository, as `owner/repo`, or URL template that mise downloads precompiled Ruby builds from.",
               "type": "string"
             },
             "ruby_build_cli_opts": {
-              "description": "CLI options passed directly to ruby-build before the version and install prefix.",
+              "description": "Options for ruby-build itself, such as `--keep`, passed before the version and install directory.",
               "type": "string"
             },
             "ruby_build_opts": {
-              "description": "Configure arguments passed through ruby-build after `--`.",
+              "description": "Arguments for Ruby's `configure`, such as `--enable-yjit`, passed through ruby-build.",
               "type": "string"
             },
             "ruby_build_repo": {
               "default": "https://github.com/rbenv/ruby-build.git",
-              "description": "The URL used to fetch ruby-build. This accepts either a Git repository or a ZIP archive.",
+              "description": "Git repository or ZIP archive URL that mise gets ruby-build from.",
               "type": "string"
             },
             "ruby_install": {
-              "description": "Use ruby-install instead of ruby-build.",
+              "description": "Compile Ruby with ruby-install instead of ruby-build.",
               "type": "boolean"
             },
             "ruby_install_opts": {
-              "description": "Options to pass to ruby-install.",
+              "description": "Arguments for Ruby's `configure`, passed through ruby-install.",
               "type": "string"
             },
             "ruby_install_repo": {
               "default": "https://github.com/postmodern/ruby-install.git",
-              "description": "The URL used to fetch ruby-install. This accepts either a Git repository or a ZIP archive.",
+              "description": "Git repository or ZIP archive URL that mise gets ruby-install from.",
               "type": "string"
             },
             "verbose_install": {
-              "description": "Set to true to enable verbose output during ruby installation.",
+              "description": "Show ruby-build's full output while compiling Ruby.",
               "type": "boolean"
             }
           }
@@ -1911,22 +1920,22 @@
           "unevaluatedProperties": false,
           "properties": {
             "cargo_home": {
-              "description": "Path to the cargo home directory. Defaults to `~/.cargo` or `%USERPROFILE%\\.cargo`",
+              "description": "Directory used as `CARGO_HOME` for the Rust toolchains that mise manages.",
               "type": "string"
             },
             "default_host": {
-              "description": "Default host triple to pass to `rustup init` via `--default-host`.",
+              "description": "Host triple that mise passes to `rustup init` as `--default-host`.",
               "type": "string"
             },
             "rustup_home": {
-              "description": "Path to the rustup home directory. Defaults to `~/.rustup` or `%USERPROFILE%\\.rustup`",
+              "description": "Directory used as `RUSTUP_HOME` for the Rust toolchains that mise manages.",
               "type": "string"
             }
           }
         },
         "safe": {
           "default": false,
-          "description": "Prevent project configuration from executing code during config loading and version resolution.",
+          "description": "Load project config without letting it run code or change the environment, for automation that reads untrusted config.",
           "type": "boolean"
         },
         "sandbox": {
@@ -1935,7 +1944,7 @@
           "properties": {
             "deny_all": {
               "default": false,
-              "description": "Deny filesystem reads and writes, network access, and environment variable inheritance by default for `mise run` and `mise exec`.",
+              "description": "Deny filesystem access, network access and inherited environment variables by default for `mise run` and `mise exec`.",
               "type": "boolean"
             },
             "deny_env": {
@@ -1966,32 +1975,32 @@
           "properties": {
             "api_url": {
               "default": "https://api.github.com",
-              "description": "GitHub API base URL used by `mise self-update`.",
+              "description": "GitHub API base URL that `mise self-update` gets mise releases from.",
               "type": "string"
             },
             "auto": {
               "default": false,
-              "description": "Automatically update mise before running eligible commands.",
+              "description": "Update mise automatically before running eligible commands.",
               "type": "boolean"
             },
             "check_duration": {
               "default": "7d",
-              "description": "How often to check for a new mise release when `self_update.auto` is enabled.",
+              "description": "How often automatic updates check for a new mise release when `self_update.auto` is on.",
               "type": "string"
             },
             "minimum_release_age": {
-              "description": "Minimum release age for mise itself; inherits minimum_release_age (24h by default).",
+              "description": "Skip mise releases published more recently than this, for `mise self-update` and automatic updates.",
               "type": "string"
             },
             "repository": {
               "default": "jdx/mise",
-              "description": "GitHub repository used by `mise self-update`.",
+              "description": "GitHub repository, as `owner/repo`, that mise gets its own releases from.",
               "type": "string"
             }
           }
         },
         "shared_install_dirs": {
-          "description": "Additional read-only directories to search for installed tool versions.",
+          "description": "Extra read-only directories that mise searches for installed tool versions.",
           "type": "array",
           "items": {
             "type": "string"
@@ -2003,7 +2012,7 @@
           "properties": {
             "exclude": {
               "default": [],
-              "description": "Command names mise should never create shims for, leaving them to the system.",
+              "description": "Command names that mise never creates shims for, so they resolve to whatever else is on `PATH`.",
               "type": "array",
               "items": {
                 "type": "string"
@@ -2012,16 +2021,16 @@
           }
         },
         "shims_dir": {
-          "description": "Directory containing user shims.",
+          "description": "Directory where mise writes user shims.",
           "type": "string"
         },
         "shorthands_file": {
-          "description": "[deprecated] Path to a file containing custom tool shorthands.",
+          "description": "[deprecated] File of custom tool shorthands; use `[plugins]` instead.",
           "type": "string",
           "deprecated": true
         },
         "silent": {
-          "description": "Suppress all `mise run|watch` output except errors—including what tasks output.",
+          "description": "Hide all output from `mise run` and `mise watch`, including what tasks print, except errors; same as `--silent`.",
           "type": "boolean"
         },
         "skills": {
@@ -2045,14 +2054,14 @@
             },
             "prune": {
               "default": false,
-              "description": "Remove links mise made for skills that are no longer active when syncing.",
+              "description": "Remove links mise made for skills that are no longer active, on every `mise skills sync`.",
               "type": "boolean"
             }
           }
         },
         "slsa": {
           "default": true,
-          "description": "Enable SLSA provenance verification globally.",
+          "description": "Verify SLSA provenance of downloads whose publisher provides it.",
           "type": "boolean"
         },
         "sops": {
@@ -2060,25 +2069,26 @@
           "unevaluatedProperties": false,
           "properties": {
             "age_key": {
-              "description": "The age private key to use for sops secret decryption. Takes precedence over standard SOPS_AGE_KEY environment variable.",
+              "description": "Private age key for decrypting SOPS files, used before any other key source.",
               "type": "string"
             },
             "age_key_file": {
-              "description": "Path to the age private key file for sops secret decryption. Takes precedence over standard SOPS_AGE_KEY_FILE environment variable.",
+              "description": "Path of an age key file for decrypting SOPS files, used after `sops.age_key` and before `SOPS_AGE_KEY_FILE`.",
               "type": "string"
             },
             "age_recipients": {
-              "description": "The age public keys to use for sops secret encryption.",
-              "type": "string"
+              "description": "[deprecated] Has no effect; mise does not encrypt sops files.",
+              "type": "string",
+              "deprecated": true
             },
             "rops": {
               "default": true,
-              "description": "Use rops to decrypt sops files. Disable to shell out to `sops` which will slow down mise but sops may offer features not available in rops. Required for TOML SOPS files because the sops CLI does not support TOML.",
+              "description": "Decrypt SOPS files with mise's built-in rops library instead of the `sops` CLI.",
               "type": "boolean"
             },
             "strict": {
               "default": true,
-              "description": "If true, fail when sops decryption fails (including when sops is not available, the key is missing, or the key is invalid). If false, skip decryption and continue in these cases.",
+              "description": "Fail when a SOPS file cannot be decrypted, instead of skipping it.",
               "type": "boolean"
             }
           }
@@ -2089,7 +2099,7 @@
           "properties": {
             "artifactbundle_only": {
               "default": false,
-              "description": "Only use SwiftPM artifact bundles for installation, fail if no matching bundle is available.",
+              "description": "Install `spm:` tools only from prebuilt artifact bundles, and fail instead of building from source.",
               "type": "boolean"
             }
           }
@@ -2100,25 +2110,26 @@
           "properties": {
             "missing_tools": {
               "default": "if_other_versions_installed",
-              "description": "Show a warning if tools are not installed when entering a directory with a mise.toml file.",
-              "type": "string"
+              "description": "When to warn that tools requested by config are not installed.",
+              "type": "string",
+              "enum": ["never", "if_other_versions_installed", "always"]
             },
             "show_deps_stale": {
               "default": true,
-              "description": "Show warning when deps providers have stale dependencies.",
+              "description": "Warn in an activated shell when a `[deps]` provider with `auto = true` is out of date.",
               "type": "boolean"
             },
             "show_env": {
-              "description": "Show configured env vars when entering a directory with a mise.toml file.",
+              "description": "When you change directories in an activated shell, list the environment variables that mise adds, changes or removes.",
               "type": "boolean"
             },
             "show_tools": {
-              "description": "Show configured tools when entering a directory with a mise.toml file.",
+              "description": "When you change directories in an activated shell, list the tool versions that become active or inactive.",
               "type": "boolean"
             },
             "truncate": {
               "default": true,
-              "description": "Truncate status messages.",
+              "description": "Cut the lines from `status.show_env` and `status.show_tools` to the terminal width.",
               "type": "boolean"
             }
           }
@@ -2128,27 +2139,27 @@
           "unevaluatedProperties": false,
           "properties": {
             "gpg_verify": {
-              "description": "Verify OpenPGP signatures for swift (built-in, no external gpg required). Set to false to disable.",
+              "description": "Verify the OpenPGP signature of Swift downloads on Linux.",
               "type": "boolean"
             },
             "platform": {
-              "description": "Override the distro build to use for precompiled binaries. By default the distro is detected and matched against what the Swift release actually publishes, which changes from release to release. Set this to force a specific build, or to install without reaching swift.org's release index.",
+              "description": "Linux distribution build of Swift to download, such as `ubuntu24.04` or `fedora41`.",
               "type": "string"
             }
           }
         },
         "system_config_file": {
-          "description": "Path to the system mise config file. Default is `/etc/mise/config.toml`. This must be an env var.",
+          "description": "One file to use as the system config instead of the config files in `/etc/mise`.",
           "type": "string"
         },
         "system_deps": {
           "default": "prompt",
-          "description": "How to handle a plugin's declared system dependencies before installing a tool.",
+          "description": "What mise does when a plugin's declared system dependencies are missing before it installs a tool.",
           "type": "string",
           "enum": ["prompt", "auto", "warn", "ignore"]
         },
         "system_installs_dir": {
-          "description": "Directory containing system tool installs.",
+          "description": "Directory that `mise install --system` installs into.",
           "type": "string"
         },
         "system_packages": {
@@ -2156,7 +2167,7 @@
           "unevaluatedProperties": false,
           "properties": {
             "managers": {
-              "description": "Restrict which system package managers mise will use.",
+              "description": "Package managers that mise may use for `[bootstrap.packages]` and missing plugin dependencies.",
               "type": "array",
               "items": {
                 "type": "string"
@@ -2164,13 +2175,13 @@
             },
             "sudo": {
               "default": true,
-              "description": "Allow `mise bootstrap` and `mise install --system` to elevate with sudo when not running as root.",
+              "description": "Let mise run `sudo` for steps that need root, such as system packages and `mise install --system`.",
               "type": "boolean"
             }
           }
         },
         "system_shims_dir": {
-          "description": "Directory containing system shims.",
+          "description": "Directory where `mise reshim --system` writes shims for system installs.",
           "type": "string"
         },
         "task": {
@@ -2179,7 +2190,7 @@
           "properties": {
             "auto_infer": {
               "default": [],
-              "description": "[experimental] Workspace providers from which to automatically infer tasks.",
+              "description": "[experimental] Workspace providers whose package scripts mise imports as tasks, such as `node`.",
               "type": "array",
               "items": {
                 "type": "string"
@@ -2190,87 +2201,88 @@
               "unevaluatedProperties": false,
               "properties": {
                 "audit_report": {
-                  "description": "[experimental] File to write the complete task cache audit report to.",
+                  "description": "[experimental] File that receives every undeclared path found by the `cache.audit` task option.",
                   "type": "string"
                 },
                 "remote_mode": {
                   "default": "read-write",
-                  "description": "[experimental] Remote task and action cache access mode.",
+                  "description": "[experimental] How mise uses the remote task cache server.",
                   "type": "string",
                   "enum": ["read-write", "read-only", "write-only"]
                 },
                 "remote_namespace": {
-                  "description": "[experimental] Namespace sent to the remote build cache.",
+                  "description": "[experimental] Namespace that keeps this project's entries apart on the remote task cache server.",
                   "type": "string"
                 },
                 "remote_oidc_audience": {
-                  "description": "[experimental] Audience for an automatically acquired remote cache OIDC token.",
+                  "description": "[experimental] Audience of the GitHub Actions OIDC token that mise requests for the remote task cache.",
                   "type": "string"
                 },
                 "remote_token": {
-                  "description": "[experimental] Bearer token for remote build-cache authentication.",
+                  "description": "[experimental] Bearer token that mise sends to the remote task cache server.",
                   "type": "string"
                 },
                 "remote_token_file": {
-                  "description": "[experimental] File containing a remote build-cache bearer token.",
+                  "description": "[experimental] File that mise reads the remote task cache token from before each request.",
                   "type": "string"
                 },
                 "remote_url": {
-                  "description": "[experimental] Base URL for the remote build-cache service.",
+                  "description": "[experimental] Base URL of the remote task cache server.",
                   "type": "string"
                 },
                 "stats_report": {
-                  "description": "[experimental] File to write action-cache session statistics to.",
-                  "type": "string"
+                  "description": "[deprecated] Has no effect since the built-in action cache was removed.",
+                  "type": "string",
+                  "deprecated": true
                 }
               }
             },
             "cache_dir": {
-              "description": "[experimental] Directory for task output cache artifacts.",
+              "description": "[experimental] Directory for the task artifact cache.",
               "type": "string"
             },
             "cache_max_age": {
-              "description": "[experimental] Maximum age of task output cache entries since their last access.",
+              "description": "[experimental] Remove task artifact cache entries that have not been used for this long.",
               "type": "string"
             },
             "cache_max_size": {
-              "description": "[experimental] Maximum total size of task output cache entries.",
+              "description": "[experimental] Maximum total size of the task artifact cache, such as `500MB` or `2GiB`.",
               "type": "string"
             },
             "cache_remote_mode": {
-              "description": "Compatibility alias for task.cache.remote_mode.",
+              "description": "Deprecated alias for `task.cache.remote_mode`.",
               "type": "string",
               "deprecated": true,
               "enum": ["read-write", "read-only", "write-only"]
             },
             "cache_remote_namespace": {
-              "description": "Compatibility alias for task.cache.remote_namespace.",
+              "description": "Deprecated alias for `task.cache.remote_namespace`.",
               "type": "string",
               "deprecated": true
             },
             "cache_remote_oidc_audience": {
-              "description": "Compatibility alias for task.cache.remote_oidc_audience.",
+              "description": "Deprecated alias for `task.cache.remote_oidc_audience`.",
               "type": "string",
               "deprecated": true
             },
             "cache_remote_token": {
-              "description": "Compatibility alias for task.cache.remote_token.",
+              "description": "Deprecated alias for `task.cache.remote_token`.",
               "type": "string",
               "deprecated": true
             },
             "cache_remote_token_file": {
-              "description": "Compatibility alias for task.cache.remote_token_file.",
+              "description": "Deprecated alias for `task.cache.remote_token_file`.",
               "type": "string",
               "deprecated": true
             },
             "cache_remote_url": {
-              "description": "Compatibility alias for task.cache.remote_url.",
+              "description": "Deprecated alias for `task.cache.remote_url`.",
               "type": "string",
               "deprecated": true
             },
             "disable_paths": {
               "default": [],
-              "description": "Paths that mise will not look for tasks in.",
+              "description": "Paths that mise does not look for tasks in.",
               "type": "array",
               "items": {
                 "type": "string"
@@ -2278,17 +2290,17 @@
             },
             "disable_spec_from_run_scripts": {
               "default": false,
-              "description": "Opt out of parsing task run scripts to infer the usage spec (arguments and flags). When enabled, mise will derive the usage spec only from the `usage` field, ignoring any `arg()`, `option()`, or `flag()` templates used in run scripts. This can restore previous behavior and avoid the extra template pass over run scripts when collecting specs.",
+              "description": "Build task usage specs only from the `usage` field, ignoring deprecated `arg()`, `option()` and `flag()` in run scripts.",
               "type": "boolean"
             },
             "monorepo_depth": {
               "default": 5,
-              "description": "Maximum depth to search for task files in monorepo subdirectories.",
+              "description": "Maximum directory depth for automatic monorepo discovery, which is deprecated.",
               "type": "integer"
             },
             "monorepo_exclude_dirs": {
               "default": [],
-              "description": "Directory patterns to exclude when discovering monorepo subdirectories.",
+              "description": "Directory names that automatic monorepo discovery skips.",
               "type": "array",
               "items": {
                 "type": "string"
@@ -2296,11 +2308,11 @@
             },
             "monorepo_respect_gitignore": {
               "default": true,
-              "description": "Whether to respect .gitignore files when discovering monorepo subdirectories.",
+              "description": "Skip directories that `.gitignore` files ignore during automatic monorepo discovery.",
               "type": "boolean"
             },
             "output": {
-              "description": "Change output style when executing tasks.",
+              "description": "Default output style for `mise run`.",
               "type": "string",
               "enum": [
                 "prefix",
@@ -2314,56 +2326,56 @@
             },
             "quiet": {
               "default": false,
-              "description": "Suppress mise's own output while executing tasks.",
+              "description": "Hide mise's own messages while tasks run, without changing other mise commands.",
               "type": "boolean"
             },
             "remote_no_cache": {
-              "description": "Mise will always fetch the latest tasks from the remote, by default the cache is used.",
+              "description": "Download remote task files and task includes on every run instead of using the cached copy.",
               "type": "boolean"
             },
             "run_auto_install": {
               "default": true,
-              "description": "Automatically install missing tools when executing tasks.",
+              "description": "Install missing tools automatically before tasks run.",
               "type": "boolean"
             },
             "show_full_cmd": {
-              "description": "Disable truncation of command lines in task execution output. When true, the full command line will be shown.",
+              "description": "Print each task's full command line instead of truncating it to the terminal width.",
               "type": "boolean"
             },
             "skip": {
               "default": [],
-              "description": "Tasks to skip when running `mise run`.",
+              "description": "Names of tasks that `mise run` skips.",
               "type": "array",
               "items": {
                 "type": "string"
               }
             },
             "skip_depends": {
-              "description": "Run only specified tasks skipping all dependencies.",
+              "description": "Run only the tasks named on the command line, skipping their dependencies; same as `mise run --skip-deps`.",
               "type": "boolean"
             },
             "source_freshness_equal_mtime_is_fresh": {
               "default": false,
-              "description": "When source mtime equals output mtime, consider sources fresh (use <=). Default false uses strict < comparison.",
+              "description": "Treat a task as up to date when its newest source and its outputs have the same modification time.",
               "type": "boolean"
             },
             "source_freshness_hash_contents": {
               "default": false,
-              "description": "Use content hashing (blake3) instead of metadata for source freshness. More accurate but slower.",
+              "description": "Decide whether a task's sources changed by hashing their contents instead of comparing modification times.",
               "type": "boolean"
             },
             "timeout": {
-              "description": "Default timeout for tasks.",
+              "description": "Time limit for a whole `mise run` invocation, across every task it runs.",
               "type": "string"
             },
             "timings": {
-              "description": "Show completion message with elapsed time for each task on `mise run`. Default shows when output type is `prefix`.",
+              "description": "Print each task's elapsed time when it finishes.",
               "type": "boolean"
             }
           }
         },
         "task_disable_paths": {
-          "description": "Paths that mise will not look for tasks in.",
+          "description": "Deprecated alias for `task.disable_paths`.",
           "type": "array",
           "deprecated": true,
           "items": {
@@ -2371,27 +2383,27 @@
           }
         },
         "task_output": {
-          "description": "Change output style when executing tasks.",
+          "description": "Deprecated alias for `task.output`.",
           "type": "string",
           "deprecated": true
         },
         "task_remote_no_cache": {
-          "description": "Mise will always fetch the latest tasks from the remote, by default the cache is used.",
+          "description": "Deprecated alias for `task.remote_no_cache`.",
           "type": "boolean",
           "deprecated": true
         },
         "task_run_auto_install": {
-          "description": "Automatically install missing tools when executing tasks.",
+          "description": "Deprecated alias for `task.run_auto_install`.",
           "type": "boolean",
           "deprecated": true
         },
         "task_show_full_cmd": {
-          "description": "Disable truncation of command lines in task execution output. When true, the full command line will be shown.",
+          "description": "Deprecated alias for `task.show_full_cmd`.",
           "type": "boolean",
           "deprecated": true
         },
         "task_skip": {
-          "description": "Tasks to skip when running `mise run`.",
+          "description": "Deprecated alias for `task.skip`.",
           "type": "array",
           "deprecated": true,
           "items": {
@@ -2399,29 +2411,29 @@
           }
         },
         "task_skip_depends": {
-          "description": "Run only specified tasks skipping all dependencies.",
+          "description": "Deprecated alias for `task.skip_depends`.",
           "type": "boolean",
           "deprecated": true
         },
         "task_timeout": {
-          "description": "Default timeout for tasks. Can be overridden by individual tasks.",
+          "description": "Deprecated alias for `task.timeout`.",
           "type": "string",
           "deprecated": true
         },
         "task_timings": {
-          "description": "Show completion message with elapsed time for each task on `mise run`. Default shows when output type is `prefix`.",
+          "description": "Deprecated alias for `task.timings`.",
           "type": "boolean",
           "deprecated": true
         },
         "tera_v1": {
           "default": false,
-          "description": "Use Tera v1 instead of Tera v2 for template rendering.",
+          "description": "[deprecated] Render templates with Tera v1 instead of Tera v2.",
           "type": "boolean",
           "deprecated": true
         },
         "terminal_progress": {
           "default": true,
-          "description": "Enable terminal progress indicators (OSC 9;4) for compatible terminals.",
+          "description": "Show install progress in the terminal window's own progress indicator, with OSC 9;4 escape sequences.",
           "type": "boolean"
         },
         "tool_update": {
@@ -2430,13 +2442,13 @@
           "properties": {
             "check_duration": {
               "default": "24h",
-              "description": "How often to check for updates to a global tool with `auto_update = true`.",
+              "description": "How often mise checks for a newer version of a global tool that sets `auto_update = true`.",
               "type": "string"
             }
           }
         },
         "trace": {
-          "description": "Sets log level to trace",
+          "description": "Set the log level to trace.",
           "type": "boolean"
         },
         "truncate": {
@@ -2446,7 +2458,7 @@
         },
         "trusted_config_paths": {
           "default": [],
-          "description": "This is a list of config paths that mise will automatically mark as trusted. Any config files under these paths will be trusted without prompting. Set to `[\"/\"]` to trust all config files, effectively disabling the trust mechanism. Paths are separated by the OS path separator when using the environment variable, `mise settings set`, or `mise settings add` (`:` on Unix, `;` on Windows).",
+          "description": "Directories whose config files mise trusts without asking.",
           "type": "array",
           "items": {
             "type": "string"
@@ -2454,12 +2466,12 @@
         },
         "unix_default_file_shell_args": {
           "default": "sh",
-          "description": "Default shell arguments for Unix to be used for file commands. For example, `sh` for sh.",
+          "description": "Shell that runs a file task on Unix when the task sets no `shell` and the file has no shebang or known extension.",
           "type": "string"
         },
         "unix_default_inline_shell_args": {
           "default": "sh -o errexit -c",
-          "description": "Default shell arguments for Unix to be used for inline commands. For example, `sh -c` for sh.",
+          "description": "Shell and arguments that run inline scripts on Unix, such as a task's `run`, hooks and `postinstall`.",
           "type": "string"
         },
         "upgrade": {
@@ -2468,18 +2480,18 @@
           "properties": {
             "auto_prune": {
               "default": true,
-              "description": "Schedule the version `mise upgrade` replaced for pruning once the new one has installed.",
+              "description": "Remove the version that `mise upgrade` replaced once `upgrade.prune_after` has passed.",
               "type": "boolean"
             },
             "prune_after": {
               "default": "24h",
-              "description": "Grace period before versions replaced by `mise upgrade` are automatically pruned.",
+              "description": "Grace period before mise removes a version that `mise upgrade` replaced.",
               "type": "string"
             }
           }
         },
         "url_replacements": {
-          "description": "Map of URL patterns to replacement URLs applied to all requests.",
+          "description": "URL patterns and replacements that mise's HTTP client applies before sending a request, for mirrors and proxies.",
           "type": "object",
           "additionalProperties": {
             "type": "string"
@@ -2487,36 +2499,36 @@
         },
         "use_file_shell_for_executable_tasks": {
           "default": false,
-          "description": "Determines whether to use a specified shell for executing tasks in the tasks directory. When set to true, the shell defined in the file will be used, or the default shell specified by `windows_default_file_shell_args` or `unix_default_file_shell_args` will be applied. If set to false, tasks will be executed directly as programs.",
+          "description": "Run executable file tasks through a shell instead of executing them directly.",
           "type": "boolean"
         },
         "use_versions_host": {
           "default": true,
-          "description": "Set to false to disable using the mise-versions API for version lists, public GitHub release metadata, and GitHub artifact attestations.",
+          "description": "Get version lists, public GitHub release metadata and attestations from mise-versions instead of upstream APIs.",
           "type": "boolean"
         },
         "use_versions_host_track": {
           "default": true,
-          "description": "Send anonymous download statistics when installing tools.",
+          "description": "Send anonymous download statistics to mise-versions after installing a tool.",
           "type": "boolean"
         },
         "verbose": {
-          "description": "Shows more verbose output such as installation logs when installing tools.",
+          "description": "Show extra output, such as installation logs, and set the log level to debug; same as `--verbose`.",
           "type": "boolean"
         },
         "windows_default_file_shell_args": {
           "default": "cmd /c",
-          "description": "Default shell arguments for Windows to be used for file commands. For example, `cmd /c` for cmd.exe.",
+          "description": "Shell that runs a file task on Windows when the task sets no `shell` and the file has no shebang or known extension.",
           "type": "string"
         },
         "windows_default_inline_shell_args": {
           "default": "cmd /c",
-          "description": "Default shell arguments for Windows to be used for inline commands. For example, `cmd /c` for cmd.exe.",
+          "description": "Shell and arguments that run inline scripts on Windows, such as a task's `run`, hooks and `postinstall`.",
           "type": "string"
         },
         "windows_executable_extensions": {
           "default": ["exe", "bat", "cmd", "com", "ps1", "vbs"],
-          "description": "List of executable extensions for Windows. For example, `exe` for .exe files, `bat` for .bat files, and so on.",
+          "description": "File extensions, without the dot, that mise treats as executable on Windows.",
           "type": "array",
           "items": {
             "type": "string"
@@ -2524,34 +2536,35 @@
         },
         "windows_powershell_no_profile": {
           "default": true,
-          "description": "Pass `-NoProfile` to PowerShell (`pwsh`/`powershell`) shells that mise spawns for tasks and inline commands, so startup profiles are skipped.",
+          "description": "Pass `-NoProfile` to the PowerShell (`pwsh` or `powershell`) that mise starts, so startup profiles are skipped.",
           "type": "boolean"
         },
         "windows_shim_mode": {
           "default": "exe",
-          "description": "Shim file mode for Windows. Options: `exe`, `file`, `hardlink`, `symlink`.",
-          "type": "string"
+          "description": "How mise creates shims on Windows.",
+          "type": "string",
+          "enum": ["exe", "file", "hardlink", "symlink"]
         },
         "write_targets": {
           "type": "object",
           "unevaluatedProperties": false,
           "properties": {
             "dotfiles": {
-              "description": "Global config file to create new [dotfiles] entries in. Existing entries stay in the config file that already declares them.",
+              "description": "Global config file where `mise dot add` creates new `[dotfiles]` entries.",
               "type": "string"
             },
             "packages": {
-              "description": "Global config file to create new [bootstrap.packages] entries in. Existing entries stay in the config file that already declares them.",
+              "description": "Global config file where `--global` package commands create new `[bootstrap.packages]` entries.",
               "type": "string"
             },
             "tools": {
-              "description": "Global config file to create new [tools] entries in. Existing entries stay in the config file that already declares them.",
+              "description": "Global config file where `mise use --global` creates new `[tools]` entries.",
               "type": "string"
             }
           }
         },
         "yes": {
-          "description": "This will automatically answer yes or no to prompts. This is useful for scripting.",
+          "description": "Answer yes to every confirmation prompt, as `--yes` does.",
           "type": "boolean"
         },
         "zig": {
@@ -2560,7 +2573,7 @@
           "properties": {
             "use_community_mirrors": {
               "default": true,
-              "description": "Download Zig from community-maintained mirrors",
+              "description": "Download Zig from the community mirrors that ziglang.org recommends before trying ziglang.org itself.",
               "type": "boolean"
             }
           }

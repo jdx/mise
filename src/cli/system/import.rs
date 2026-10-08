@@ -33,19 +33,32 @@ use crate::system::packages::brew;
 #[cfg(unix)]
 use toml_edit::{Array, InlineTable, Value};
 
-/// Import installed system packages into `[bootstrap.packages]`
+/// Record installed Homebrew formulae in `[bootstrap.packages]`
 ///
-/// Currently supports Homebrew formulae only. By default, imports linked
-/// formulae whose active keg receipt says they were installed on request.
-/// Pass `--all` to import every linked formula, including dependencies.
+/// Adds a `brew:` entry for each linked formula you installed yourself,
+/// skipping formulae that were installed only as dependencies; `--all`
+/// includes those too. Formulae from third-party taps are written with their
+/// full name, and each tap gets a `[bootstrap.brew.taps]` entry with the URL
+/// already in your config or the default GitHub URL. Writes the local config
+/// unless you pass `-g`, `-e`, or `-p`.
 #[derive(Debug, usage_rs::Args)]
 #[usage(
     verbatim_doc_comment,
     example(
-        r###"mise bootstrap packages import --manager brew
-mise bootstrap packages import --manager brew --all
-mise bootstrap packages import --manager brew --global
-mise bootstrap packages import --manager brew --dry-run"###
+        "mise bootstrap packages import --dry-run",
+        help = "Show the entries that would be written"
+    ),
+    example(
+        "mise bootstrap packages import",
+        help = "Write them to the local config"
+    ),
+    example(
+        "mise bootstrap packages import --all",
+        help = "Include formulae installed as dependencies"
+    ),
+    example(
+        "mise bootstrap packages import -g",
+        help = "Write to the global config"
     )
 )]
 pub(crate) struct SystemImport {
@@ -54,10 +67,13 @@ pub(crate) struct SystemImport {
     env: Option<String>,
 
     /// Write to the global config (~/.config/mise/config.toml)
+    ///
+    /// New entries go to the `write_targets.packages` file when that setting is
+    /// set.
     #[usage(long, short, conflicts = ["env", "path"])]
     global: bool,
 
-    /// Only import packages for this manager. Currently only `brew` is supported.
+    /// Package manager to import from
     #[usage(long, short, default = "brew", choices("brew"))]
     manager: String,
 
@@ -65,7 +81,7 @@ pub(crate) struct SystemImport {
     #[usage(long)]
     all: bool,
 
-    /// Print the config change without writing config
+    /// Show the entries that would be written without writing them
     #[usage(long, short = 'n')]
     dry_run: bool,
 

@@ -63,6 +63,25 @@ content = "managed"
         $out | Should -BeLike '*managed system files are only supported on Unix*'
     }
 
+    It 'skips a Linux firewall in aggregate commands but rejects firewall apply' {
+        @"
+[bootstrap.linux.firewall]
+backend = "nftables"
+"@ | Out-File -FilePath mise.toml -Encoding utf8NoBOM
+
+        $out = mise bootstrap --dry-run 2>&1 | Out-String
+        $LASTEXITCODE | Should -Be 0
+        $out | Should -BeLike '*ignoring `[bootstrap.linux.firewall`] on non-Linux host*'
+
+        $out = mise bootstrap plan 2>&1 | Out-String
+        $LASTEXITCODE | Should -Be 0
+        $out | Should -BeLike '*ignoring `[bootstrap.linux.firewall`] on non-Linux host*'
+
+        $out = mise bootstrap firewall apply --yes 2>&1 | Out-String
+        $LASTEXITCODE | Should -Not -Be 0
+        $out | Should -BeLike '*bootstrap firewall management is only supported on Linux*'
+    }
+
     It 'rejects services selected through bootstrap config roots' {
         $serviceRoot = Join-Path $TestDrive 'service-root'
         New-Item -ItemType Directory -Path $serviceRoot | Out-Null

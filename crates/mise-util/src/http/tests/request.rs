@@ -333,3 +333,48 @@ async fn test_get_html_rejects_non_html_content_type() {
     assert!(err.to_string().contains("Got non-HTML text from"));
     mock.assert();
 }
+
+#[test]
+fn log_url_hides_userinfo() {
+    let url = Url::parse("https://user:TOKEN@git.example.com/api/v1?page=2").unwrap();
+    assert_eq!(
+        log_url(&url),
+        "https://[redacted]@git.example.com/api/v1?page=2"
+    );
+    let url = Url::parse("https://TOKEN@git.example.com/").unwrap();
+    assert_eq!(log_url(&url), "https://[redacted]@git.example.com/");
+    let url = Url::parse("https://git.example.com/a@b").unwrap();
+    assert_eq!(log_url(&url), "https://git.example.com/a@b");
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn request_timeout_error_hides_url_credentials() {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port = listener.local_addr().unwrap().port();
+    // Hold every connection open without answering, so the request times out.
+    tokio::spawn(async move {
+        let mut held = vec![];
+        while let Ok((socket, _)) = listener.accept().await {
+            held.push(socket);
+        }
+    });
+    let url = Url::parse(&format!("http://user:TOKEN@127.0.0.1:{port}/x")).unwrap();
+    let client = Client::new(Duration::from_millis(100), ClientKind::Fetch).unwrap();
+    let err = client
+        .send_once_inner(
+            Method::GET,
+            url,
+            &HeaderMap::new(),
+            "GET",
+            SendOnceOptions::new(None, true),
+        )
+        .await
+        .unwrap_err();
+    let message = format!("{err:#}");
+    assert!(message.contains("HTTP timed out after"), "{message}");
+    assert!(
+        message.contains(&format!("http://[redacted]@127.0.0.1:{port}/x")),
+        "{message}"
+    );
+    assert!(!message.contains("TOKEN"), "{message}");
+}

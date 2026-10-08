@@ -1243,8 +1243,8 @@ mod tests {
         );
         let action_put = server
             .mock("PUT", action_path.as_str())
-            .match_header("mise-cache-protocol", "1")
-            .match_header("mise-cache-namespace", "test-namespace")
+            .match_header("mbx-cache-protocol", "1")
+            .match_header("mbx-cache-namespace", "test-namespace")
             .match_header("if-none-match", "*")
             .match_body(action.to_vec())
             .with_status(201)
@@ -1326,8 +1326,8 @@ mod tests {
         let blob_path = format!("/v1/blobs/blake3/{}/{}", digest.hash, digest.size);
         let blob_get = server
             .mock("GET", blob_path.as_str())
-            .match_header("mise-cache-protocol", "1")
-            .match_header("mise-cache-namespace", "test-namespace")
+            .match_header("mbx-cache-protocol", "1")
+            .match_header("mbx-cache-namespace", "test-namespace")
             .with_status(200)
             .with_body("substituted bytes")
             .expect(1)

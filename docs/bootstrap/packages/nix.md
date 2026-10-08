@@ -1,12 +1,12 @@
 ---
-description: "Install Nix bootstrap packages into a user profile or export them as a NixOS module."
+description: "Install Nix packages into your user profile from mise.toml, or export them as a NixOS module."
 ---
 
-# Nix
+# Nix packages (nix)
 
-The `nix` bootstrap package manager installs packages into the current user's
-normal Nix profile. It works on Linux and macOS with Nix on `PATH`, independently
-of whether the operating system is NixOS.
+The `nix` manager installs packages into your user's Nix profile with
+`nix profile install`. It works on Linux and macOS, on NixOS or not. To add the
+packages to a NixOS system configuration instead, [export them](#export-to-nixos).
 
 ```toml
 [bootstrap.packages]
@@ -16,75 +16,85 @@ of whether the operating system is NixOS.
 ```
 
 ```sh
-mise bootstrap packages use nix:ripgrep
+mise bootstrap packages apply --manager nix --dry-run
 mise bootstrap packages apply --manager nix
-mise bootstrap packages status --json
-mise bootstrap packages upgrade --manager nix
 ```
 
-`mise bootstrap` also applies these packages. They belong to the user's Nix
-profile, not a project's toolset, and use the normal Nix profile `PATH` setup.
-mise does not create shims for them or invoke sudo.
+The packages belong to your Nix profile, not to a project. They use the normal
+Nix profile `PATH` setup, get no mise shims, and never need sudo.
 
-## Requirements and sources
+## Prerequisites {#requirements-and-sources}
 
-Use Nix 2.24 or newer with `nix-command` and `flakes` enabled in your Nix
-configuration. Profiles must use the modern `nix profile` format. mise reports
-legacy `nix-env` profile errors without deleting or migrating the profile.
+The manager is available on Linux and macOS when `nix` is on `PATH`. Use Nix
+2.24 or newer with the `nix-command` and `flakes` features enabled in your Nix
+configuration. The profile must use the `nix profile` format; mise reports an
+error for a legacy `nix-env` profile and does not delete or migrate it.
 
-Shorthand names resolve through the machine's `nixpkgs` registry entry. To
-select another source, use an explicit flake reference and attribute:
+mise uses your existing Nix registries, substituters, and trusted keys. It does
+not install Nix, configure caches, or update flake lock files. Nix may build a
+package from source when no configured cache has it.
+
+## Package names
+
+A shorthand name such as `ripgrep` or `python3Packages.pip` is an attribute
+path resolved through the machine's `nixpkgs` registry entry. To use another
+source, write an explicit flake reference and attribute:
 
 ```toml
 [bootstrap.packages]
 "nix:my-packages#hello" = "latest"
 "nix:path:/absolute/path/to/flake#hello" = "latest"
+"nix:github:NixOS/nixpkgs/<revision>#ripgrep" = "latest"
 ```
 
-Revision-pinned references such as
-`nix:github:NixOS/nixpkgs/<revision>#ripgrep` are also supported: replace
-`<revision>` with a real commit. Relative local paths, arbitrary Nix expressions,
-and `^output` selectors are not supported.
+Replace `<revision>` with a real commit. Relative paths, Nix expressions, and
+`^output` selectors are not supported.
 
-`latest` means the package supplied by the selected source. It does not lock
-a moving source. Pin the source revision, or configure a pinned registry entry,
-when you need to restore the same package selection. Package-version pins such
-as `nix:ripgrep@14` are not supported; table-form version pins are reported and
-skipped during installation and upgrades.
+## Version pins
 
-mise uses the existing Nix registries, substituters, and trusted keys. It does
-not install Nix, configure caches, update flake lockfiles itself, or add fallback
-sources. Nix may build a package when it is not available from a configured cache.
+Nix packages have no version pins: `nix:ripgrep@14` is rejected, and a version
+in the value is reported as a mismatch and skipped. `"latest"` means whatever
+the source currently supplies. To keep the same package set, pin the source
+instead, with a revision in the flake reference as above, or by pinning the
+registry entry, for example with `nix registry pin nixpkgs`.
 
-## Apply, status, and upgrades
+## What mise runs {#apply-status-and-upgrades}
 
-Apply is additive: it installs missing source/attribute combinations and leaves
-other profile entries alone. Repeating apply does not update an already-installed
-package from a moving source; use `upgrade` for that. Upgrades target only matching
-configured profile entries. A revision-pinned source stays pinned.
+| Operation                       | Command                                             |
+| ------------------------------- | --------------------------------------------------- |
+| Check installed state (no sudo) | `nix profile list --json --offline`                 |
+| Install                         | `nix profile install -- nixpkgs#<attribute>`        |
+| `apply --update`                | `nix profile install --refresh -- <references>`     |
+| Upgrade                         | `nix profile upgrade -- <matching profile entries>` |
 
-Status identifies packages by their source and attribute path, not by finding a
-similarly named executable on `PATH`. Its installed-version field contains Nix
-store paths, which identify the installed artifacts without guessing a version.
-Status and dry-run do not initialize a profile or fetch package sources.
+`apply` installs missing packages and leaves other profile entries alone. It
+does not update an installed package from a moving source; `upgrade` does. A
+source pinned to a revision stays pinned.
 
-Removing a declaration does not uninstall a profile package. Native Nix removal
-and rollback remain available through `nix profile`; bootstrap pruning and
-`state = "absent"` removal are not supported for this manager.
+Status matches profile entries by source and attribute path, not by looking for
+an executable on `PATH`. Its installed-version column shows Nix store paths.
+Status and dry runs do not create a profile or fetch package sources.
+
+## Remove packages
+
+mise does not remove Nix packages, and `state = "absent"` and `prune` are not
+supported. Deleting an entry leaves the package in your profile; use
+`nix profile remove` or roll back with `nix profile rollback`.
 
 ## Export to NixOS
 
-Use export when packages should be part of a NixOS system configuration instead
-of a user profile. Add declarations without installing them:
+To make packages part of a NixOS system configuration instead of your user
+profile, add the declarations without installing them, then export a module:
 
 ```sh
 mise bootstrap packages use --no-install nix:ripgrep nix:jq
 mise bootstrap packages export --format nix > packages.nix
 ```
 
-The generated module refers to the importing configuration's `pkgs`:
+The module refers to the `pkgs` of the configuration that imports it:
 
 ```nix
+# Generated by mise bootstrap packages export --format nix
 { pkgs, ... }:
 {
   environment.systemPackages = [
@@ -94,26 +104,23 @@ The generated module refers to the importing configuration's `pkgs`:
 }
 ```
 
-Place `packages.nix` beside your existing NixOS configuration and add
-`./packages.nix` to its `imports`. For a configuration managed in Git, include
-the generated file in the repository so flake evaluation can see it. Then use
-that configuration's normal rebuild workflow, for example:
+Put `packages.nix` next to your NixOS configuration and add `./packages.nix` to
+its `imports`. If the configuration is a flake in Git, add the file to the
+repository so flake evaluation can see it. Then rebuild as usual, for example:
 
 ```sh
 sudo nixos-rebuild switch --flake /path/to/system-config#hostname
 ```
 
-Export itself does not require Nix and does not build, install, or activate
-anything. It reads the merged declarations for the current mise platform and
-environment, honors manager exclusions, and omits `state = "absent"` entries.
-Only `nix:` shorthand attribute paths are exported. Explicit flake references
-and version pins fail before any output is emitted, because the consuming
-configuration owns the package set, its pins, and its overlays.
+[`export`](/cli/bootstrap/packages/export.html) does not need Nix and does not
+build, install, or activate anything. It reads the declarations active for the
+current platform and environment, honors `system_packages.managers`, and leaves
+out `state = "absent"` entries. Only shorthand attribute paths can be exported:
+an explicit flake reference or a version pin fails before any output, because
+the importing configuration owns the package set and its pins.
 
-After removing a declaration, regenerate the module and rebuild. The package
-then stops being contributed by this module; another module may still require
-it. User-profile installations remain independent of the generated system
-configuration and are not rolled back by switching NixOS generations.
-
-For a system-export workflow, use `--no-install` and export rather than running
-`packages apply` on these same declarations: apply installs into the user profile.
+After you remove a declaration, export and rebuild again; another module may
+still install the package. Packages in your user profile are separate from the
+system configuration and are not rolled back by switching NixOS generations.
+Do not also run `apply` on declarations you export, because `apply` installs
+them into your user profile.

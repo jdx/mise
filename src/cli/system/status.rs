@@ -6,15 +6,22 @@ use crate::system;
 use crate::system::packages::{PackageDesiredState, PackageState, PackageStatus};
 use crate::ui::table::MiseTable;
 
-/// Show the status of system packages from `[bootstrap.packages]`
+/// Show the state of packages from `[bootstrap.packages]`
 #[derive(Debug, usage_rs::Args)]
 #[usage(
     visible_alias = "ls",
     verbatim_doc_comment,
     example(
-        r###"mise bootstrap packages status
-mise bootstrap packages status --json
-mise bootstrap packages status --missing # exit 1 if anything is out of sync"###
+        "mise bootstrap packages status",
+        help = "List every configured package and its state"
+    ),
+    example(
+        "mise bootstrap packages status --json",
+        help = "Print the state as JSON"
+    ),
+    example(
+        "mise bootstrap packages status --missing",
+        help = "Exit with status 1 if any package differs from the config"
     )
 )]
 pub(crate) struct SystemStatus {
@@ -22,7 +29,7 @@ pub(crate) struct SystemStatus {
     #[usage(long, short = 'J')]
     json: bool,
 
-    /// Exit with code 1 if any configured packages are not in their desired state
+    /// Exit with status 1 if any package differs from the config (all are still listed)
     #[usage(long, verbatim_doc_comment)]
     missing: bool,
 }

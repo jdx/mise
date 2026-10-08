@@ -10,15 +10,30 @@ mod diff;
 mod ls;
 pub(crate) mod show;
 
-/// Browse the checkpoints of your dotfiles
+/// Browse saved versions of your tracked files
 ///
-/// Every save, every mutating bootstrap command, and the watcher record a
-/// checkpoint of explicitly enrolled `[dotfiles]` entries with `mode = "track"`.
-/// Configuration and deployment sources are not implicitly enrolled. A checkpoint holds files,
-/// never package or service state: restoring one restores files. Without a
-/// subcommand this lists them, newest first.
+/// A checkpoint is a saved version of every `[dotfiles]` entry with
+/// `mode = "track"`. `mise dot save`, the watcher, and every command that
+/// changes tracked files (such as `mise bootstrap`, `mise dot apply`,
+/// `rollback`, `pull`, and `undo`) record one. Checkpoints hold file contents
+/// only, not packages or services. Files deployed in other modes are saved only
+/// if you also track them. With no subcommand, lists checkpoints newest first.
+///
+/// See https://mise.jdx.dev/dotfiles/history.html
 #[derive(Debug, usage_rs::Args)]
-#[usage(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+#[usage(
+    example("mise dot history", help = "List recent checkpoints"),
+    example(
+        "mise dot history --path ~/.config/hypr/bindings.lua",
+        help = "List checkpoints that changed one file"
+    ),
+    example(
+        "mise dot history --trigger bootstrap -n 5",
+        help = "List the last five checkpoints from mise bootstrap or mise dot apply"
+    ),
+    example("mise dot history show latest", help = "Show the newest checkpoint"),
+    example("mise dot history diff", help = "Show unsaved changes")
+)]
 pub(crate) struct DotfilesHistory {
     #[usage(subcommand)]
     command: Option<HistoryCommands>,
@@ -65,17 +80,3 @@ pub(crate) fn local_time(rfc3339: &str) -> String {
         })
         .unwrap_or_else(|_| rfc3339.to_string())
 }
-
-static AFTER_LONG_HELP: &str = color_print::cstr!(
-    r#"<bold><underline>Examples:</underline></bold>
-
-    $ <bold>mise dot history</bold>
-    $ <bold>mise dot history --path ~/.config/hypr/bindings.lua</bold>
-    $ <bold>mise dot history show latest</bold>
-    $ <bold>mise dot history diff</bold>          # the working tree against the latest checkpoint
-    $ <bold>mise dot history diff 11 12 --patch</bold>
-    $ <bold>mise dot save --description "before the theme change"</bold>
-    $ <bold>mise dot rollback ~/.config/hypr/bindings.lua</bold>
-    $ <bold>mise dot undo</bold>
-"#
-);

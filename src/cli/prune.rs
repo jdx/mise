@@ -19,52 +19,54 @@ use eyre::Result;
 
 use super::trust::Trust;
 
-/// Delete unused versions of tools
+/// Delete tool versions that nothing uses
 ///
-/// mise tracks which config files have been used in ~/.local/state/mise/tracked-configs
-/// Versions which are no longer the latest specified in any of those configs are deleted.
-/// Versions installed only with environment variables `MISE_<TOOL>_VERSION` will be deleted,
-/// as will versions only referenced on the command line `mise exec <TOOL>@<VERSION>`.
+/// mise records each config file it loads (in ~/.local/state/mise/tracked-configs)
+/// and each tool stub it runs (in ~/.local/state/mise/tracked-stubs). `mise prune`
+/// deletes installed versions that none of them selects. A config that requests
+/// `node = "20"` keeps only the 20.x version it resolves to. Versions installed
+/// only for `mise exec <TOOL>@<VERSION>` or through `MISE_<TOOL>_VERSION` are
+/// deleted. Versions that a running process was started from are kept, so a
+/// long-running program keeps its files.
 ///
-/// Tool stubs that have been executed are tracked in ~/.local/state/mise/tracked-stubs.
-/// Versions still referenced by a tracked stub are not deleted.
-///
-/// Versions that a running process was started from are not deleted either,
-/// so a long-running program keeps its files after its version stops being needed.
-///
-/// You can list prunable tools with `mise ls --prunable`
+/// It also forgets tracked, trusted, and ignored config files that no longer
+/// exist. Pass `--tools` or `--configs` to do only one of the two. List the
+/// versions it would delete with `mise ls --prunable`.
 #[derive(Debug, usage_rs::Args)]
 #[usage(
     verbatim_doc_comment,
     example(
-        "mise prune --dry-run",
-        help = "Preview unused versions without deleting them. Example output: `rm -rf ~/.local/share/mise/installs/node/20.0.0` and `rm -rf ~/.local/share/mise/installs/node/20.0.1`."
-    )
+        r###"mise prune --dry-run
+mise node@20.0.0 is prunable: node is required at 20.19.5 by ~/src/app/mise.toml
+mise node@20.0.0 [dryrun]  remove ~/.local/share/mise/installs/node/20.0.0, ~/.cache/mise/node/20.0.0"###,
+        help = "Preview what would be deleted and why"
+    ),
+    example("mise prune --tools node", help = "Delete unused node versions only")
 )]
 pub(crate) struct Prune {
     /// Prune only these tools
     #[usage()]
     pub installed_tool: Option<Vec<ToolArg>>,
 
-    /// Do not actually delete anything
+    /// Show what would change without changing anything
     #[usage(long, short = 'n')]
     pub dry_run: bool,
 
-    /// Prune only tracked and trusted configuration links that point to nonexistent configurations
+    /// Only forget tracked, trusted, and ignored config files that no longer exist
     #[usage(long)]
     pub configs: bool,
 
-    /// Like --dry-run but exits with code 1 if there are tools to prune
+    /// Like --dry-run, but exit with code 1 if there are tools to prune
     ///
-    /// This is useful for scripts to check if tools need to be pruned.
-    #[usage(long, verbatim_doc_comment)]
+    /// Use it in scripts that check whether tools need pruning.
+    #[usage(long)]
     pub dry_run_code: bool,
 
     /// Placeholder for future monorepo pruning; `mise prune --monorepo` is not implemented yet.
-    #[usage(long, verbatim_doc_comment)]
+    #[usage(long, hide = true, verbatim_doc_comment)]
     pub monorepo: bool,
 
-    /// Prune only unused versions of tools
+    /// Only delete unused tool versions
     #[usage(long)]
     pub tools: bool,
 }
@@ -76,7 +78,7 @@ impl Prune {
 
     pub(crate) async fn run(self) -> Result<()> {
         if self.monorepo {
-            unimplemented!("mise prune --monorepo is not implemented yet");
+            eyre::bail!("--monorepo is not supported by mise prune yet");
         }
         // Prune inspects the project it runs in from whatever environment it was
         // started in, including when it rebuilds shims afterwards; none of that is

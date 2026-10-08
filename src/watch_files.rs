@@ -38,6 +38,15 @@ pub async fn execute_runs(config: &Arc<Config>, ts: &Toolset) {
     if files.is_empty() {
         return;
     }
+    // watch_files runs are hooks in effect, so they follow the same gating:
+    // skipped with --no-hooks / MISE_NO_HOOKS / no_hooks, and in safe mode.
+    if Settings::no_hooks() || Settings::get().no_hooks.unwrap_or(false) {
+        return;
+    }
+    if Settings::get().safe {
+        debug!("skipping watch_files: safe mode (MISE_SAFE=1)");
+        return;
+    }
     for (root, wf) in config.watch_file_hooks().unwrap_or_default() {
         match has_matching_files(&root, &wf, &files) {
             Ok(files) if files.is_empty() => {

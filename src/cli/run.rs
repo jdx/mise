@@ -35,16 +35,14 @@ use tokio::sync::Mutex;
 
 /// Run tasks and their dependencies
 ///
-/// Use `mise run TASK [ARGS...]` for one task, or separate task invocations with `:::`
-/// to schedule several. Put mise flags before the task name; following arguments are
-/// passed to that task. With no task, mise runs `default` when defined or opens the
-/// task selector in an interactive terminal.
+/// Run one task with `mise run TASK [ARGS...]`, or several with `:::` between
+/// them. Put mise flags before the task name; everything after it goes to the
+/// task. With no task, mise runs the `default` task if there is one, or opens a
+/// task picker in an interactive terminal.
 ///
-/// Tasks are defined in `mise.toml` or task directories. A task with `sources` and
-/// `outputs` can skip execution when its outputs are fresh. `--force` bypasses
-/// freshness checks; task output caching has separate `--task-cache` controls.
-///
-/// For a project that already has npm build scripts and its dependencies installed:
+/// Tasks come from `[tasks]` in `mise.toml` and from task directories such as
+/// `mise-tasks/`. A task with `sources` and `outputs` is skipped while its
+/// outputs are up to date; `--force` runs it anyway. For example:
 ///
 /// ```toml
 /// [tasks.build]
@@ -53,112 +51,117 @@ use tokio::sync::Mutex;
 /// outputs = ["dist/**/*.js"]
 /// ```
 ///
-/// To create a standalone script task, use `mise tasks add --file hello -- echo hello`.
-/// Then run `mise run hello`. See https://mise.jdx.dev/tasks/ for task directories,
-/// arguments, caching, and dependency configuration.
+/// The experimental artifact cache (a task's `cache` field) has separate
+/// `--task-cache` controls.
+///
+/// To create a script task, run `mise tasks add --file hello -- echo hello`,
+/// then `mise run hello`. See https://mise.jdx.dev/tasks/running-tasks.html
 #[derive(usage_rs::Args)]
 #[usage(
     visible_alias = "r",
-    verbatim_doc_comment,
     disable_help_flag = true,
     example(
         r###"mise run lint"###,
-        help = r###"Run the "lint" task, defined either in mise.toml or as a standalone script."###
+        help = r###"Run the "lint" task, defined in mise.toml or as a script"###
     ),
     example(
         r###"mise run --force build"###,
-        help = r###"Force the "build" task to run even if its sources are up to date."###
+        help = r###"Run "build" even if its outputs are up to date"###
     ),
     example(
         r###"mise run --raw test"###,
-        help = r###"Run "test" with stdin/stdout/stderr all connected to the current terminal. This forces `--jobs=1` to prevent interleaving of output."###
-    ),
-    example(
-        r###"mise run --secrets DEPLOY_KEY deploy"###,
-        help = r###"Give the "deploy" task the DEPLOY_KEY secret from the project's secrets source. Its dependencies do not receive it."###
+        help = r###"Run "test" connected directly to the terminal, one task at a time"###
     ),
     example(
         r###"mise run lint ::: test ::: check"###,
-        help = r###"Run the "lint", "test", and "check" tasks in parallel."###
+        help = r###"Run the "lint", "test", and "check" tasks in parallel"###
     ),
     example(
         r###"mise run cmd1 arg1 arg2 ::: cmd2 arg1 arg2"###,
-        help = r###"Run multiple tasks, each with its own arguments."###
+        help = r###"Run several tasks, each with its own arguments"###
+    ),
+    example(
+        r###"mise run -j 1 lint ::: test"###,
+        help = r###"Run tasks one at a time"###
+    ),
+    example(
+        r###"mise run 'test:*'"###,
+        help = r###"Run every task that matches a pattern"###
+    ),
+    example(
+        r###"mise run //services/api:build"###,
+        help = r###"Run a task in a monorepo project"###
+    ),
+    example(
+        r###"mise run --secrets DEPLOY_KEY deploy"###,
+        help = r###"Give "deploy" the DEPLOY_KEY secret (experimental); its dependencies do not get it"###
     ),
     unknown_flags = "value"
 )]
 pub(crate) struct Run {
-    /// Tasks to run
-    /// Can specify multiple tasks by separating with `:::`
-    /// e.g.: mise run task1 arg1 arg2 ::: task2 arg1 arg2
-    /// Defaults to `default` when omitted
-    #[usage(double_dash = "automatic", verbatim_doc_comment)]
+    /// Task to run (default: `default`); separate several tasks with `:::`
+    #[usage(double_dash = "automatic")]
     pub task: Option<String>,
 
-    /// Arguments to pass to the tasks. Use ":::" to separate tasks.
+    /// Arguments for the task; `:::` starts the next task
     #[usage()]
     pub args: Vec<String>,
 
-    /// Arguments to pass to the tasks. Use ":::" to separate tasks.
+    /// Arguments for the task; `:::` starts the next task
     #[usage(hide = true, double_dash = "required")]
     pub args_last: Vec<String>,
 
-    /// Run matching tasks only for projects affected by Git changes
-    #[usage(long, verbatim_doc_comment)]
+    /// [experimental] Run matching tasks only in projects affected by Git changes
+    ///
+    /// Requires a monorepo root (`monorepo_root = true`).
+    #[usage(long)]
     pub affected: bool,
 
-    /// Git base revision for --affected
-    /// Defaults to MISE_AFFECTED_BASE, CI metadata, or HEAD~1
-    #[usage(long, requires = "affected", value_name = "REV", verbatim_doc_comment)]
+    /// [experimental] Git base revision for `--affected`
+    ///
+    /// Defaults to `MISE_AFFECTED_BASE`, CI metadata, or `HEAD~1`.
+    #[usage(long, requires = "affected", value_name = "REV")]
     pub affected_base: Option<String>,
 
-    /// Explain why projects and tasks were selected by --affected
-    #[usage(
-        long,
-        requires = "affected",
-        conflicts = "affected_json",
-        verbatim_doc_comment
-    )]
+    /// [experimental] Explain why `--affected` selected each project and task
+    #[usage(long, requires = "affected", conflicts = "affected_json")]
     pub affected_explain: bool,
 
-    /// Git head revision for --affected
-    /// Defaults to MISE_AFFECTED_HEAD, CI metadata, or HEAD
-    #[usage(long, requires = "affected", value_name = "REV", verbatim_doc_comment)]
+    /// [experimental] Git head revision for `--affected`
+    ///
+    /// Defaults to `MISE_AFFECTED_HEAD`, CI metadata, or `HEAD`.
+    #[usage(long, requires = "affected", value_name = "REV")]
     pub affected_head: Option<String>,
 
-    /// Output affected projects and tasks as JSON without running tasks
-    #[usage(
-        long,
-        requires = "affected",
-        conflicts = "affected_explain",
-        verbatim_doc_comment
-    )]
+    /// [experimental] Print the affected projects and tasks as JSON without
+    /// running tasks
+    #[usage(long, requires = "affected", conflicts = "affected_explain")]
     pub affected_json: bool,
 
-    /// Open the interactive selector with all tasks from the entire monorepo
-    #[usage(long, conflicts = ["task", "affected"], verbatim_doc_comment)]
+    /// Open the task picker with tasks from every project in the monorepo
+    #[usage(long, conflicts = ["task", "affected"])]
     pub all: bool,
 
     /// Continue running tasks even if one fails
-    #[usage(long, short = 'c', verbatim_doc_comment)]
+    #[usage(long, short = 'c')]
     pub continue_on_error: bool,
 
-    /// Change to this directory before executing the command
-    #[usage(short = 'C', long, value_hint = ValueHint::DirPath)]
+    /// Change to this directory before running the tasks
+    #[usage(short = 'C', long, value_name = "DIR", value_hint = ValueHint::DirPath)]
     pub cd: Option<PathBuf>,
 
-    /// Force the tasks to run even if outputs are up to date
-    #[usage(long, short, verbatim_doc_comment)]
+    /// Run the tasks even if their outputs are up to date
+    #[usage(long, short)]
     pub force: bool,
 
-    /// Number of tasks to run in parallel
-    /// Values below 1 are treated as 1
-    /// Defaults to the `jobs` setting or the `MISE_JOBS` env var
-    #[usage(long, short, env = "MISE_JOBS", verbatim_doc_comment)]
+    /// Number of tasks to run in parallel (default: the `jobs` setting)
+    ///
+    /// Values below 1 are treated as 1.
+    #[usage(long, short, env = "MISE_JOBS")]
     pub jobs: Option<usize>,
 
-    /// Don't actually run the task(s), just print them in order of execution
-    #[usage(long, short = 'n', verbatim_doc_comment)]
+    /// Print the tasks in the order they would run, without running them
+    #[usage(long, short = 'n')]
     pub dry_run: bool,
 
     /// How task output is displayed
@@ -168,132 +171,147 @@ pub(crate) struct Run {
     /// - `replacing` - Stdout is replaced each time, stderr is printed as is
     /// - `timed` - Only show stdout lines if they are displayed for more than 1 second
     /// - `keep-order` - Print stdout/stderr by line, prefixed with the task's label, but keep the order of the output
-    /// - `quiet` - Don't show extra output
-    /// - `silent` - Don't show any output including stdout and stderr from the task except for errors
+    /// - `quiet` - Deprecated; use `--output interleave --quiet`
+    /// - `silent` - Do not show any output, including the task's stdout and stderr, except errors
     #[usage(short, long, verbatim_doc_comment, env = "MISE_TASK_OUTPUT")]
     pub output: Option<TaskOutput>,
 
-    /// Don't show extra output
-    #[usage(long, short, verbatim_doc_comment, env = "MISE_QUIET")]
+    /// Do not show extra output
+    #[usage(long, short, env = "MISE_QUIET")]
     pub quiet: bool,
 
-    /// Read/write directly to stdin/stdout/stderr instead of by line
-    /// Redactions are not applied with this option
-    /// Configure with `raw` config or `MISE_RAW` env var
-    #[usage(long, short, verbatim_doc_comment)]
+    /// Connect the tasks directly to stdin, stdout, and stderr instead of
+    /// reading their output by line
+    ///
+    /// Redactions are not applied, and tasks run one at a time. Set the `raw`
+    /// setting to make this the default.
+    #[usage(long, short)]
     pub raw: bool,
 
-    /// Give the tasks named on the command line these secrets (comma-separated)
-    /// Their dependencies and subtasks do not receive them. Put this flag before the task name.
-    #[usage(long, value_name = "SECRET", delimiter = ',', conflicts = ["affected"], verbatim_doc_comment)]
+    /// [experimental] Give the named tasks these secrets (comma-separated); their
+    /// dependencies and subtasks do not get them
+    ///
+    /// Put this flag before the task name. Not allowed in safe mode.
+    #[usage(long, value_name = "SECRET", delimiter = ',', conflicts = ["affected"])]
     pub secrets: Vec<String>,
 
-    /// Give the tasks named on the command line every secret the project can inject
-    /// (fnox env = true or "exec"; never env = false). Dependencies and subtasks do not receive them.
-    #[usage(long, conflicts = ["secrets", "affected"], verbatim_doc_comment)]
+    /// [experimental] Give the named tasks every secret the project can inject;
+    /// their dependencies and subtasks do not get them
+    ///
+    /// Covers the fnox secrets with `env = true` or `env = "exec"`, never those
+    /// with `env = false`. Put this flag before the task name. Not allowed in
+    /// safe mode.
+    #[usage(long, conflicts = ["secrets", "affected"])]
     pub secrets_all: bool,
 
-    /// Shell to use to run toml tasks
+    /// Shell used to run TOML tasks that do not set their own `shell`
     ///
-    /// Defaults to `sh -o errexit -c` on unix, and `cmd /c` on Windows
-    /// Can also be set with the setting `MISE_UNIX_DEFAULT_INLINE_SHELL_ARGS` or `MISE_WINDOWS_DEFAULT_INLINE_SHELL_ARGS`
-    /// Or it can be overridden with the `shell` property on a task.
-    #[usage(long, short, verbatim_doc_comment)]
+    /// Defaults to `sh -o errexit -c` on Unix and `cmd /c` on Windows, from the
+    /// `unix_default_inline_shell_args` or `windows_default_inline_shell_args`
+    /// setting. A task's `shell` property takes precedence over this flag.
+    #[usage(long, short)]
     pub shell: Option<String>,
 
-    /// Don't show any output except for errors
-    #[usage(long, short = 'S', verbatim_doc_comment, env = "MISE_SILENT")]
+    /// Do not show any output except for errors
+    #[usage(long, short = 'S', env = "MISE_SILENT")]
     pub silent: bool,
 
-    /// Tool(s) to run in addition to what is in mise.toml files
-    /// e.g.: node@20 python@3.10
+    /// Extra tools to use with the tasks, e.g. node@24 python@3.13
     #[usage(short, long, value_name = "TOOL@VERSION")]
     pub tool: Vec<ToolArg>,
 
     #[usage(skip)]
     pub is_linear: bool,
 
-    /// Allow specific env var through (implies --deny-env for everything else)
-    /// Supports wildcards, e.g. --allow-env='MYAPP_*'
-    #[usage(long, value_name = "VAR", verbatim_doc_comment)]
+    /// Allow a specific env var through (implies `--deny-env` for everything
+    /// else)
+    ///
+    /// Supports wildcards, such as `--allow-env='MYAPP_*'`.
+    #[usage(long, value_name = "VAR")]
     pub allow_env: Vec<String>,
 
-    /// Allow network to specific host (implies --deny-net for everything else)
-    /// Per-host filtering is unsupported on Linux and returns an error.
-    /// See the sandboxing guide for current macOS host-filter limitations.
-    /// On Windows, sandboxing is unavailable: mise warns and runs without host filtering.
-    #[usage(long, value_name = "HOST", verbatim_doc_comment)]
+    /// Allow network access only to HOST (not supported on any platform)
+    ///
+    /// Per-host filtering does not work: Linux and macOS exit with an error,
+    /// and Windows runs the task without network restrictions. See
+    /// https://mise.jdx.dev/sandboxing.html#access-to-particular-hosts
+    #[usage(long, value_name = "HOST")]
     pub allow_net: Vec<String>,
 
-    /// Allow reads from specific path (implies --deny-read for everything else)
-    #[usage(long, value_name = "PATH", verbatim_doc_comment)]
+    /// Allow reads from a specific path (implies `--deny-read` for everything
+    /// else)
+    #[usage(long, value_name = "PATH")]
     pub allow_read: Vec<std::path::PathBuf>,
 
-    /// Allow writes to specific path (implies --deny-write for everything else)
-    #[usage(long, value_name = "PATH", verbatim_doc_comment)]
+    /// Allow writes to a specific path (implies `--deny-write` for everything
+    /// else)
+    #[usage(long, value_name = "PATH")]
     pub allow_write: Vec<std::path::PathBuf>,
 
     /// Block reads, writes, network, and env vars
-    #[usage(long, verbatim_doc_comment)]
+    #[usage(long)]
     pub deny_all: bool,
 
-    /// Block env var inheritance except PATH, HOME, USER, SHELL, TERM, COLORTERM, LANG
-    #[usage(long, verbatim_doc_comment)]
+    /// Block env var inheritance except PATH, HOME, USER, SHELL, TERM, COLORTERM,
+    /// and LANG
+    ///
+    /// On Windows it also keeps the variables programs need to start, such as
+    /// `SystemRoot` and `TEMP`.
+    #[usage(long)]
     pub deny_env: bool,
 
     /// Block all network access
-    #[usage(long, verbatim_doc_comment)]
+    #[usage(long)]
     pub deny_net: bool,
 
-    /// Block filesystem reads (system libs and tool dirs still accessible)
-    #[usage(long, verbatim_doc_comment)]
+    /// Block filesystem reads (system libraries and tool directories stay
+    /// readable)
+    #[usage(long)]
     pub deny_read: bool,
 
-    /// Block all filesystem writes
-    #[usage(long, verbatim_doc_comment)]
+    /// Block filesystem writes except temporary and device paths (/tmp, /dev)
+    #[usage(long)]
     pub deny_write: bool,
 
     /// Bypass the environment cache and recompute the environment
     #[usage(long)]
     pub fresh_env: bool,
 
-    /// Do not use cache on remote tasks
+    /// Do not use the cache for remote tasks
     #[usage(
         long,
-        verbatim_doc_comment,
         env = "MISE_TASK_REMOTE_NO_CACHE",
         setting = "task.remote_no_cache"
     )]
     pub no_cache: bool,
 
-    /// Skip automatic dependency preparation
+    /// Do not run `[deps]` providers that have `auto = true` before the tasks
     #[usage(long)]
     pub no_deps: bool,
 
     /// Hide the elapsed time printed after each task completes
     ///
-    /// Set `MISE_TASK_TIMINGS=0` to hide it by default
-    #[usage(long, alias = "no-timing", verbatim_doc_comment)]
+    /// Set `task.timings = false` to hide it by default.
+    #[usage(long, alias = "no-timing")]
     pub no_timings: bool,
 
-    /// Run only the specified tasks skipping all dependencies
-    #[usage(long, verbatim_doc_comment, env = "MISE_TASK_SKIP_DEPENDS")]
+    /// Run only the named tasks, not the tasks they depend on
+    #[usage(long, env = "MISE_TASK_SKIP_DEPENDS")]
     pub skip_deps: bool,
 
-    /// Skip installing tools before running tasks
+    /// Do not install missing tools before running the tasks
     ///
-    /// Can also be set persistently with the `task.run_auto_install` setting
-    /// or `MISE_TASK_RUN_AUTO_INSTALL=false` env var
-    #[usage(long, verbatim_doc_comment)]
+    /// Set `task.run_auto_install = false` to make this the default.
+    #[usage(long)]
     pub skip_tools: bool,
 
-    /// Set task output cache access for this run
+    /// [experimental] Set artifact cache access for this run
     ///
     /// - `read-write` - Read cached results and write new results
     /// - `read-only` - Read cached results without writing new results
     /// - `write-only` - Write new results without reading cached results
-    /// - `off` - Disable task output caching
-    /// - `local-only` - Read and write only the local cache; currently equivalent to `read-write`
+    /// - `off` - Disable the artifact cache
+    /// - `local-only` - Read and write only the local cache, skipping any remote cache
     #[usage(
         long,
         value_enum,
@@ -303,32 +321,31 @@ pub(crate) struct Run {
     )]
     pub task_cache: TaskCacheMode,
 
-    /// Explain the inputs that produced each task's output cache key
-    #[usage(long, verbatim_doc_comment)]
+    /// [experimental] Explain the inputs that produced each task's artifact
+    /// cache key
+    #[usage(long)]
     pub task_cache_explain: bool,
 
-    /// Output cache-key input details as JSON Lines without running tasks
-    #[usage(
-        long,
-        requires = "dry_run",
-        conflicts = "task_cache_explain",
-        verbatim_doc_comment
-    )]
+    /// [experimental] Print cache-key input details as JSON Lines without running
+    /// tasks (requires `--dry-run`)
+    #[usage(long, requires = "dry_run", conflicts = "task_cache_explain")]
     pub task_cache_explain_json: bool,
 
-    /// Report task output cache hits, restored bytes, and time saved
-    #[usage(long, conflicts = "dry_run", verbatim_doc_comment)]
+    /// [experimental] Report artifact cache hits, restored bytes, and time
+    /// saved
+    #[usage(long, conflicts = "dry_run")]
     pub task_cache_stats: bool,
 
-    /// Timeout for the task to complete
-    /// e.g.: 30s, 5m
-    #[usage(long, verbatim_doc_comment)]
+    /// Stop the run if it takes longer than this, e.g. 30s or 5m
+    ///
+    /// Overrides the `task.timeout` setting.
+    #[usage(long)]
     pub timeout: Option<String>,
 
     /// Show the elapsed time after each task completes
     ///
-    /// Set `MISE_TASK_TIMINGS=1` to show it by default
-    #[usage(long, alias = "timing", verbatim_doc_comment, hide = true)]
+    /// Set `task.timings = true` to show it by default.
+    #[usage(long, alias = "timing", hide = true)]
     pub timings: bool,
 
     #[usage(skip)]

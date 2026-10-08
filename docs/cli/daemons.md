@@ -12,13 +12,35 @@ description: "[experimental] Manage project daemons with pitchfork"
 
 [experimental] Manage project daemons with pitchfork
 
-Define commands or managed service presets in [daemons]: cockroachdb,
-nats, postgres, redis, spicedb.
-With no subcommand, list configured and previously managed daemons.
+Declare long-running processes in `[daemons]`, either as commands or as service presets such as `postgres` and `redis`, and mise runs them under pitchfork with the project's tools and environment. Requires `experimental = true`.
+
+With no subcommand, lists the project's daemons like `mise daemons ls`.
+
+See <https://mise.jdx.dev/daemons.html>
 
 ## Flags
-- **`--json`**
+- **`--json`** — Output in JSON format, including ports, URLs, and data directories
 - **`-h --help`** — Print help
+
+## Examples
+
+Start the default group, or every project daemon
+
+```
+mise daemons start
+```
+
+Show the last 50 lines of api's output
+
+```
+mise daemons logs api -n 50
+```
+
+Stop every registered project daemon
+
+```
+mise daemons stop
+```
 
 ## Subcommands
 
@@ -38,6 +60,6 @@ With no subcommand, list configured and previously managed daemons.
 
 ## Related documentation
 
-- [Getting started](/getting-started.html).
+- [Daemons](/daemons.html).
 - [All commands](/cli/).
 - [Global flags and argument syntax](/cli/#global-flags).
