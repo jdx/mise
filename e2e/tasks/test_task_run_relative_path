@@ -26,9 +26,31 @@ echo "only in sub"
 EOF
 chmod +x sub/only-here.sh
 
+cat <<'EOF' >sub/context.sh
+#!/usr/bin/env bash
+echo "cwd=$(pwd -P)"
+echo "name=$MISE_TASK_NAME"
+echo "file=$MISE_TASK_FILE"
+echo "dir=$MISE_TASK_DIR"
+EOF
+chmod +x sub/context.sh
+
+root="$(pwd -P)"
+
 assert "mise run ./greet.sh" "root greet"
 
 cd sub || exit 1
 assert "mise run ./greet.sh" "sub greet"
 assert "mise run ./only-here.sh" "only in sub"
 assert "mise run ../greet.sh" "root greet"
+
+# The script runs from the project root, is named after the path as typed, and
+# MISE_TASK_FILE and MISE_TASK_DIR point at the script that actually runs.
+assert "mise run ./context.sh" "cwd=$root
+name=.:context.sh
+file=$root/sub/context.sh
+dir=$root/sub"
+assert "mise run ../sub/context.sh" "cwd=$root
+name=..:sub:context.sh
+file=$root/sub/context.sh
+dir=$root/sub"
