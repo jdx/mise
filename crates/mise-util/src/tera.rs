@@ -1394,28 +1394,32 @@ fn quote_for_cmd(mut engine: TeraEngine) -> TeraEngine {
 /// What a dry run makes of a template. See [`render_for_dry_run`].
 #[derive(Debug)]
 pub enum DryRunRender {
-    /// The template renders as a real run would render it.
+    /// The template rendered with the values the dry run could compute.
     Rendered(String),
-    /// The result depends on something a dry run does not compute.
-    NeedsRun,
-    /// The template fails the way a real run would fail.
+    /// The template failed to render, and the failure may come from what a
+    /// dry run leaves out: it called `exec()`, or a var was left unresolved.
+    /// A real run decides; the dry run shows the template as written.
+    Unrendered(tera::Error),
+    /// The template failed to render with nothing unresolved and no `exec()`
+    /// call, so a real run fails the same way.
     Failed(tera::Error),
 }
 
-/// Renders `input` without running anything.
+/// Renders `input` for a dry run.
 ///
-/// A dry run computes neither `exec()` output nor the vars named in
-/// `unresolved`, which `context` leaves out of `vars` because resolving them
-/// needs a real run. The rule: a template whose result depends on any of them
-/// is [`DryRunRender::NeedsRun`]; any other template is rendered or fails as
-/// in a real run.
+/// A dry run never calls exec() and never substitutes made-up values. Hooks
+/// and dry-run vars are rendered with the values the dry run could compute;
+/// vars that need exec() (directly or through another var) are left
+/// undefined. If that render succeeds, the preview shows it. If it fails and
+/// the dry run left any var unresolved or the template called exec(), the
+/// hook is shown unrendered with a note that includes the render error, and
+/// the dry run continues. If it fails with nothing unresolved and no exec()
+/// call, it is an error, as in a real run.
 ///
-/// The result depends on them when rendering calls `exec()`, or when giving
-/// the unresolved vars two different placeholder values changes the output or
-/// the error. That counts every read however it is spelled (an alias, a loop
-/// over `vars`, an argument to a function), ignores a name that only appears
-/// in the text, and still reports an error that a template raises whatever
-/// those values are.
+/// `context` holds the values the dry run computed, and `unresolved` names
+/// the vars it left out. Known limitation: a template that tolerates an
+/// undefined var (`default`, `is defined`) renders its fallback in the
+/// preview.
 pub fn render_for_dry_run(
     dir: Option<&Path>,
     input: &str,
@@ -1423,56 +1427,27 @@ pub fn render_for_dry_run(
     unresolved: &IndexSet<String>,
 ) -> DryRunRender {
     let reached_exec = Arc::new(AtomicBool::new(false));
-    let render = |placeholder: usize| {
-        let mut context = context.clone();
-        if !unresolved.is_empty() {
-            let mut vars = context
-                .get("vars")
-                .and_then(Value::as_map)
-                .cloned()
-                .unwrap_or_default();
-            for name in unresolved {
-                vars.insert(
-                    tera::value::Key::from(name.clone()),
-                    Value::from(format!("mise-dry-run-placeholder-{placeholder}-{name}")),
-                );
-            }
-            context.insert_value("vars", Value::from(vars));
+    let mut tera = dry_run_tera(dir, reached_exec.clone());
+    match render_str(&mut tera, input, context) {
+        Ok(out) => DryRunRender::Rendered(out),
+        Err(err) if reached_exec.load(Ordering::Relaxed) || !unresolved.is_empty() => {
+            DryRunRender::Unrendered(err)
         }
-        let mut tera = dry_run_tera(dir, reached_exec.clone());
-        render_str(&mut tera, input, &context)
-    };
-    let first = render(1);
-    // with nothing unresolved, a second render would see the same context
-    let second = if unresolved.is_empty() {
-        None
-    } else {
-        Some(render(2))
-    };
-    if reached_exec.load(Ordering::Relaxed) {
-        return DryRunRender::NeedsRun;
-    }
-    match (first, second) {
-        (Ok(out), None) => DryRunRender::Rendered(out),
-        (Err(err), None) => DryRunRender::Failed(err),
-        (Ok(out), Some(Ok(other))) if out == other => DryRunRender::Rendered(out),
-        (Err(err), Some(Err(other))) if error_chain(&err) == error_chain(&other) => {
-            DryRunRender::Failed(err)
-        }
-        _ => DryRunRender::NeedsRun,
+        Err(err) => DryRunRender::Failed(err),
     }
 }
 
-/// The messages of `err` and its sources, which a Tera error's `Display`
-/// leaves out.
-fn error_chain(err: &tera::Error) -> Vec<String> {
+/// The messages of `err` and its sources joined with `: `, since a Tera
+/// error's `Display` leaves out the sources that say what went wrong.
+pub fn error_chain(err: &tera::Error) -> String {
     let mut chain = vec![err.to_string()];
     let mut source = std::error::Error::source(err);
     while let Some(err) = source {
         chain.push(err.to_string());
         source = err.source();
     }
-    chain
+    chain.dedup();
+    chain.join(": ")
 }
 
 /// The normal mise renderer with command execution disabled. A call to

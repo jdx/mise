@@ -4106,12 +4106,13 @@ fn bootstrap_dry_run_vars(
     Ok((vars, unresolved))
 }
 
+/// How a bootstrap dry run resolves a var. See [`crate::tera::render_for_dry_run`].
 enum DryRunVar {
     Resolved(String),
-    /// Resolving the var needs something a dry run must not do, such as
-    /// running `exec()` or reading a var that itself needs one.
+    /// The template failed after calling `exec()` or while other vars were
+    /// unresolved, so it is left undefined for a real run to resolve.
     NeedsRun,
-    /// The template fails for a reason a real run would hit too.
+    /// The template failed with nothing unresolved and no `exec()` call.
     Broken,
 }
 
@@ -4146,17 +4147,19 @@ fn bootstrap_dry_run_var(
     );
     match crate::tera::render_for_dry_run(source.parent(), value, &context, unresolved) {
         DryRunRender::Rendered(value) => DryRunVar::Resolved(value),
-        DryRunRender::NeedsRun => {
+        DryRunRender::Unrendered(err) => {
             debug!(
-                "bootstrap: var template from {} needs a real run; omitted from dry-run context",
-                source.display()
+                "bootstrap: var template from {} needs a real run; omitted from dry-run context: {}",
+                source.display(),
+                crate::tera::error_chain(&err)
             );
             DryRunVar::NeedsRun
         }
         DryRunRender::Failed(err) => {
             debug!(
-                "bootstrap: var template from {} omitted from dry-run context: {err}",
-                source.display()
+                "bootstrap: var template from {} omitted from dry-run context: {}",
+                source.display(),
+                crate::tera::error_chain(&err)
             );
             DryRunVar::Broken
         }

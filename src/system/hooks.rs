@@ -160,12 +160,14 @@ pub async fn run_phase(
                     config.bootstrap_dry_run_unresolved_vars(&hook.config_path),
                 ) {
                     DryRunRender::Rendered(run) => Ok(run),
-                    // a dry run must not execute anything, so a command that
-                    // depends on exec() output is shown as written instead
-                    DryRunRender::NeedsRun => {
+                    // the failure may come from exec() output or a var the
+                    // dry run did not compute, so only a real run can tell;
+                    // show the command as written with the error
+                    DryRunRender::Unrendered(err) => {
                         info!(
-                            "[bootstrap.hooks.{phase}] in {}: depends on values a dry run does not compute, such as exec() output; showing the command unrendered",
-                            hook.config_path.display()
+                            "[bootstrap.hooks.{phase}] in {}: showing the command unrendered because a dry run does not run exec() or compute the vars that need it; render error: {}",
+                            hook.config_path.display(),
+                            crate::tera::error_chain(&err)
                         );
                         Ok(hook.run.clone())
                     }

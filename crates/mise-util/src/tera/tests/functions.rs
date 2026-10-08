@@ -322,27 +322,50 @@ fn dry_run_cases() {
     let mut context = BASE_CONTEXT.clone();
     context.insert("cmd", &format!("touch {}", marker.display()));
     context.insert("vars", &indexmap::IndexMap::from([("known", "hi")]));
-    let unresolved = IndexSet::from(["pending".to_string()]);
-    let render =
-        |input: &str| match render_for_dry_run(Some(dir.path()), input, &context, &unresolved) {
-            DryRunRender::Rendered(out) => out,
-            DryRunRender::NeedsRun => "<needs run>".to_string(),
-            DryRunRender::Failed(_) => "<failed>".to_string(),
-        };
+    let none = IndexSet::new();
+    let pending = IndexSet::from(["pending".to_string()]);
+    let render = |input: &str, unresolved: &IndexSet<String>| match render_for_dry_run(
+        Some(dir.path()),
+        input,
+        &context,
+        unresolved,
+    ) {
+        DryRunRender::Rendered(out) => out,
+        DryRunRender::Unrendered(err) => format!("<unrendered: {}>", error_chain(&err)),
+        DryRunRender::Failed(err) => format!("<failed: {}>", error_chain(&err)),
+    };
 
-    assert_eq!(render("echo {{ vars.known }}"), "echo hi");
-    assert_eq!(render("echo {{ exec(command=cmd) }}"), "<needs run>");
+    assert_eq!(render("echo {{ vars.known }}", &pending), "echo hi");
+    // exec() is never called, and calling it leaves the template unrendered
+    for unresolved in [&none, &pending] {
+        let out = render("echo {{ exec(command=cmd) }}", unresolved);
+        assert!(out.starts_with("<unrendered: "), "{out}");
+        assert!(out.contains("exec() is disabled during dry run"), "{out}");
+    }
     assert!(!marker.exists());
-    // reads of an unresolved var count however they are spelled
-    assert_eq!(render("echo {{ vars.pending }}"), "<needs run>");
-    assert_eq!(render("{% set v = vars %}{{ v.pending }}"), "<needs run>");
-    assert_eq!(render("{{ read_file(path=vars.pending) }}"), "<needs run>");
-    // errors that do not depend on unresolved vars still fail
-    assert_eq!(render("echo {{ nope() }}"), "<failed>");
-    assert_eq!(render("echo {{ vars.undeclared }}"), "<failed>");
-    assert_eq!(
-        render("echo vars.pending {{ vars.undeclared }}"),
-        "<failed>"
+    // with a var unresolved, any failure leaves the template unrendered with
+    // its error, however the var is read
+    for input in [
+        "echo {{ vars.pending }}",
+        "{% set v = vars %}{{ v.pending }}",
+        "{{ read_file(path=vars.pending) }}",
+        "{{ vars.pending | hash_file }}",
+        "{{ vars.pending | extname }}",
+        "echo {{ nope() }}",
+    ] {
+        let out = render(input, &pending);
+        assert!(out.starts_with("<unrendered: "), "{input}: {out}");
+    }
+    // with nothing unresolved and no exec() call, a failure is an error
+    let out = render("echo {{ nope() }}", &none);
+    assert!(
+        out.starts_with("<failed: ") && out.contains("nope"),
+        "{out}"
     );
-    assert_eq!(render("echo {{ vars.pending }} {{ nope() }}"), "<failed>");
+    assert!(render("echo {{ vars.undeclared }}", &none).starts_with("<failed: "));
+    // nothing is substituted for an unresolved var, so a template that does
+    // not read one renders once, as is
+    let out = render("{{ choice(n=8, alphabet='ab') }}", &pending);
+    assert_eq!(out.len(), 8, "{out}");
+    assert!(out.chars().all(|c| c == 'a' || c == 'b'), "{out}");
 }

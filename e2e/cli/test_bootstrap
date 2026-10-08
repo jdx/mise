@@ -202,16 +202,17 @@ assert_succeed "mise bootstrap --yes --only packages"
 assert "test -f '$MISE_CONFIG_DIR/bootstrap-hook-rendered'"
 assert "test -f '$PWD/bootstrap-hook-root-rendered'"
 
-# dry-run shows hooks that use exec() unrendered, without running exec()
+# dry-run shows hooks that use exec() unrendered, with the render error, without running exec()
 rm -f bootstrap-hook-template-effect
 cat <<'EOF' >mise.toml
 [bootstrap.hooks.post-packages]
 run = "echo {{ exec(command='touch bootstrap-hook-template-effect') }}"
 EOF
 assert_contains "mise bootstrap --dry-run --only packages" "exec(command="
+assert_contains "mise bootstrap --dry-run --only packages 2>&1" "exec() is disabled during dry run"
 assert_fail "test -e bootstrap-hook-template-effect"
 
-# dry-run still reports hook templates that cannot render
+# with nothing unresolved and no exec() call, a hook template that cannot render fails the dry run
 cat <<'EOF' >mise.toml
 [bootstrap.hooks.post-packages]
 run = "echo {{ nope() }}"
@@ -222,7 +223,7 @@ assert_fail "mise bootstrap --dry-run --only packages" "failed to render templat
 mkdir -p dotfiles-exec-var
 cat <<'EOF' >dotfiles-exec-var/config.toml
 [vars]
-exec_var = "{{ exec(command='touch bootstrap-var-template-effect && echo hi') }}"
+exec_var = "{{ exec(command='touch bootstrap-var-template-effect && echo message.txt') }}"
 
 [bootstrap.hooks.post-dotfiles]
 run = "echo {{ vars.exec_var }} > exec_var_hook_ran"
@@ -232,21 +233,26 @@ cat <<'EOF' >mise.toml
 "~/.config/mise/config.toml" = "dotfiles-exec-var/config.toml"
 EOF
 assert_contains "mise bootstrap dotfiles apply --dry-run --force" "echo {{ vars.exec_var }} > exec_var_hook_ran"
+assert_contains "mise bootstrap dotfiles apply --dry-run --force 2>&1" "render error:"
 assert_fail "test -e bootstrap-var-template-effect"
 assert_fail "test -e exec_var_hook_ran"
 
-# reads of an exec()-computed var count however they are spelled
-sed -i.bak 's/{{ vars.exec_var }}/{% set v = vars %}{{ v.exec_var }}/' dotfiles-exec-var/config.toml
-assert_contains "mise bootstrap dotfiles apply --dry-run --force" "{% set v = vars %}{{ v.exec_var }}"
-assert_fail "test -e exec_var_hook_ran"
+# however the hook reads the var, it is shown unrendered and does not run
+for read in '{% set v = vars %}{{ v.exec_var }}' '{{ read_file(path=vars.exec_var) }}' '{{ vars.exec_var | hash_file }}' '{{ vars.exec_var | extname }}'; do
+  printf '[vars]\nexec_var = "{{ exec(command=%s) }}"\n\n[bootstrap.hooks.post-dotfiles]\nrun = "echo %s > exec_var_hook_ran"\n' "'echo message.txt'" "$read" >dotfiles-exec-var/config.toml
+  assert_contains "mise bootstrap dotfiles apply --dry-run --force" "echo $read > exec_var_hook_ran"
+  assert_fail "test -e exec_var_hook_ran"
+done
 
-# vars that no config declares still fail the dry run, even next to an exec()-computed one
-sed -i.bak 's/run = .*/run = "echo vars.exec_var {{ vars.undeclared_var }}"/' dotfiles-exec-var/config.toml
-assert_fail "mise bootstrap dotfiles apply --dry-run --force" "failed to render template"
+# a template that is broken anyway is shown unrendered too, and the note carries its error
 sed -i.bak 's/run = .*/run = "echo {{ vars.exec_var }} {{ nope() }}"/' dotfiles-exec-var/config.toml
-assert_fail "mise bootstrap dotfiles apply --dry-run --force" "failed to render template"
+assert_matches "mise bootstrap dotfiles apply --dry-run --force 2>&1" "render error:.*nope"
 
-# so do vars whose template is broken rather than waiting on exec()
+# a hook that reads no unresolved var renders, even with random output
+sed -i.bak "s/run = .*/run = \"echo {{ choice(n=8, alphabet='ab') }}\"/" dotfiles-exec-var/config.toml
+assert_matches "mise bootstrap dotfiles apply --dry-run --force" "echo [ab]{8}"
+
+# vars whose template is broken with nothing unresolved fail the dry run where a hook reads them
 cat <<'EOF' >dotfiles-exec-var/config.toml
 [vars]
 bad_var = "{{ nope() }}"
@@ -255,18 +261,6 @@ bad_var = "{{ nope() }}"
 run = "echo {{ vars.bad_var }}"
 EOF
 assert_fail "mise bootstrap dotfiles apply --dry-run --force" "failed to render template"
-
-# hooks that pass an exec()-computed var, or one derived from it, to a function show unrendered
-cat <<'EOF' >dotfiles-exec-var/config.toml
-[vars]
-exec_file = "{{ exec(command='echo message.txt') }}"
-derived_file = "{{ vars.exec_file }}"
-
-[bootstrap.hooks.post-dotfiles]
-run = "echo {{ read_file(path=vars.derived_file) }} > exec_var_hook_ran"
-EOF
-assert_contains "mise bootstrap dotfiles apply --dry-run --force" "echo {{ read_file(path=vars.derived_file) }} > exec_var_hook_ran"
-assert_fail "test -e exec_var_hook_ran"
 
 # macOS LaunchAgents in shared configs are inert when launchd is unavailable
 cat <<EOF >mise.toml
