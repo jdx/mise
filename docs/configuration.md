@@ -64,7 +64,9 @@ one lower down.
   the same directory.
 - Environment files such as `mise.production.toml` override the shared files
   when their environment is selected, and the local files override them in
-  turn. `mise.production.local.toml` overrides every file in the directory. See
+  turn. Environment local files such as `mise.production.local.toml` override
+  all of these. With several environments selected, a later environment's file
+  overrides an earlier one's of the same kind. See
   [Config environments](/configuration/environments.html#file-names-and-precedence).
 - The [`override_config_filenames`](/configuration/settings.html#override_config_filenames)
   setting replaces the TOML names in this list with your own (environment files

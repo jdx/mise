@@ -92,7 +92,8 @@ The other project locations take environment names the same way, such as
 In the same directory, environment files such as `mise/config.<env>.toml`
 override every shared file without an environment, local files such as
 `mise/config.local.toml` override both, and environment local files such as
-`mise/config.<env>.local.toml` override all of them.
+`mise/config.<env>.local.toml` override all of them. Within each of these
+layers, a later selected environment wins.
 
 The global config directory (`~/.config/mise`) uses `config.<env>.toml` and
 `config.<env>.local.toml` in the same order, so `config.local.toml` overrides
