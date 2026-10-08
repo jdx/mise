@@ -22,6 +22,7 @@ To keep a server or database running alongside your tasks, with readiness checks
 - **`[ARGS]…`** — Arguments for the task; `:::` starts the next task
 
 ## Flags
+- **`-g --glob <GLOB>`** — Globs to watch instead of the tasks' sources
 - **`--skip-deps`** — Run and watch only the named tasks, not the tasks they depend on
 - **`-o --on-busy-update <MODE>`** — What to do when files change while the tasks are running
 
@@ -58,6 +59,15 @@ To keep a server or database running alongside your tasks, with readiness checks
 - **`--poll [INTERVAL]`** — Poll for changes instead of using native file watching
 
   Use it on file systems where native events do not work, such as network shares. Takes an optional interval such as `2s` (default: 30s). Also accepted as `--force-poll`.
+- **`--project-origin <DIRECTORY>`** — Set the project origin
+
+  Watchexec will attempt to discover the project's "origin" (or "root") by searching for a variety of markers, like files or directory patterns. It does its best but sometimes gets it it wrong, and you can override that with this option.
+
+  The project origin is used to determine the path of certain ignore files, which VCS is being used, the meaning of a leading '/' in filtering patterns, and maybe more in the future.
+
+  When set, Watchexec will also not bother searching, which can be significantly faster.
+
+  The directory must contain every watched task's sources, which mise makes relative to it.
 - **`-h --help`** — Print help
 
 ## Filtering
@@ -92,6 +102,73 @@ To keep a server or database running alongside your tasks, with readiness checks
 - **`-f --filter <PATTERN>`** — Only react to files that match this glob
 
   Combined with the patterns mise derives from the tasks' `sources`. Repeat the flag for more patterns. Events that do not come from files, such as signals, pass through.
+- **`--filter-file <PATH>`** — Files to load filters from
+
+  Provide a path to a file containing filters, one per line. Empty lines and lines starting with '#' are ignored. Uses the same pattern format as the '--filter' option.
+
+  This can also be used via the $WATCHEXEC_FILTER_FILES environment variable.
+
+  **Environment Variable:** `WATCHEXEC_FILTER_FILES`
+- **`-J --filter-prog <EXPRESSION>`** — [experimental] Filter programs.
+
+  /!\ This option is EXPERIMENTAL and may change and/or vanish without notice.
+
+  Provide your own custom filter programs in jaq (similar to jq) syntax. Programs are given
+  an event in the same format as described in '--emit-events-to' and must return a boolean.
+  Invalid programs will make watchexec fail to start; use '-v' to see program runtime errors.
+
+  In addition to the jaq stdlib, watchexec adds some custom filter definitions:
+
+    - 'path | file_meta' returns file metadata or null if the file does not exist.
+
+    - 'path | file_size' returns the size of the file at path, or null if it does not exist.
+
+    - 'path | file_read(bytes)' returns a string with the first n bytes of the file at path.
+      If the file is smaller than n bytes, the whole file is returned. There is no filter to
+      read the whole file at once to encourage limiting the amount of data read and processed.
+
+    - 'string | hash', and 'path | file_hash' return the hash of the string or file at path.
+      No guarantee is made about the algorithm used: treat it as an opaque value.
+
+    - 'any | kv_store(key)', 'kv_fetch(key)', and 'kv_clear' provide a simple key-value store.
+      Data is kept in memory only, there is no persistence. Consistency is not guaranteed.
+
+    - 'any | printout', 'any | printerr', and 'any | log(level)' will print or log any given
+      value to stdout, stderr, or the log (levels = error, warn, info, debug, trace), and
+      pass the value through (so '[1] | log("debug") | .[]' will produce a '1' and log '[1]').
+
+  All filtering done with such programs, and especially those using kv or filesystem access,
+  is much slower than the other filtering methods. If filtering is too slow, events will back
+  up and stall watchexec. Take care when designing your filters.
+
+  If the argument to this option starts with an '@', the rest of the argument is taken to be
+  the path to a file containing a jaq program.
+
+  Jaq programs are run in order, after all other filters, and short-circuit: if a filter (jaq
+  or not) rejects an event, execution stops there, and no other filters are run. Additionally,
+  they stop after outputting the first value, so you'll want to use 'any' or 'all' when
+  iterating, otherwise only the first item will be processed, which can be quite confusing!
+
+  Find user-contributed programs or submit your own useful ones at
+  &lt;https://github.com/watchexec/watchexec/discussions/592>.
+
+  ## Examples:
+
+  Regexp ignore filter on paths:
+
+    'all(.tags[] | select(.kind == "path"); .absolute | test("[.]test[.]js$")) | not'
+
+  Pass any event that creates a file:
+
+    'any(.tags[] | select(.kind == "fs"); .simple == "create")'
+
+  Pass events that touch executable files:
+
+    'any(.tags[] | select(.kind == "path" and .filetype == "file"); .absolute | file_meta | .executable)'
+
+  Ignore files that start with shebangs:
+
+    'any(.tags[] | select(.kind == "path" and .filetype == "file"); .absolute | file_read(2) == "#!") | not'
 - **`-i --ignore <PATTERN>`** — Ignore files that match this glob
 
   Repeat the flag for more patterns. Events that do not come from files, such as signals, pass through.
@@ -100,6 +177,9 @@ To keep a server or database running alongside your tasks, with readiness checks
   Empty lines and lines that start with `#` are skipped. The patterns use the same format as `--ignore`. Also read from `$WATCHEXEC_IGNORE_FILES`.
 
   **Environment Variable:** `WATCHEXEC_IGNORE_FILES`
+- **`--no-meta`** — Don't emit fs events for metadata changes
+
+  This is a shorthand for '--fs-events create,remove,rename,modify'. Using it alongside the '--fs-events' option is non-sensical and not allowed.
 
 ## Output
 - **`-c --clear [MODE]`** — Clear the screen before each run
@@ -107,8 +187,179 @@ To keep a server or database running alongside your tasks, with readiness checks
   If the default `clear` mode leaves output behind, use `--clear=reset`. Because the mode is optional, `mise watch --clear build` reads `build` as the mode: put `--clear` after the task name, as in `mise watch build --clear`, or write the mode with `=`.
 
   **Choices:** `clear`, `reset`
+- **`--only-emit-events`** — Only emit events to stdout, run no commands.
+
+  This is a convenience option for using Watchexec as a file watcher, without running any commands. It is almost equivalent to using `cat` as the command, except that it will not spawn a new process for each event.
+
+  This option requires `--emit-events-to` to be set, and restricts the available modes to `stdio` and `json-stdio`, modifying their behaviour to write to stdout instead of the stdin of the command.
+- **`-N --notify`** — Alert when commands start and end
+
+  With this, Watchexec will emit a desktop notification when a command starts and ends, on supported platforms. On unsupported platforms, it may silently do nothing, or log a warning.
+- **`--color <MODE>`** — When to use terminal colours
+
+  Setting the environment variable `NO_COLOR` to any value is equivalent to `--color=never`.
+
+  **Choices:** `auto`, `always`, `never`
+
+  **Default:** `auto`
+- **`--timings`** — Print how long the command took to run
+
+  This may not be exactly accurate, as it includes some overhead from Watchexec itself. Use the `time` utility, high-precision timers, or benchmarking tools for more accurate results.
+- **`--watchexec-quiet`** — Don't print starting and stopping messages
+
+  By default Watchexec will print a message when the command starts and stops. This option disables this behaviour, so only the command's output, warnings, and errors will be printed.
+
+  This is watchexec's '--quiet'. In mise, '-q'/'--quiet' quiets mise's own messages, as it does for every other command.
+- **`--bell`** — Ring the terminal bell on command completion
 
 ## Command
+- **`--shell <SHELL>`** — Use a different shell
+
+  By default, Watchexec will use '$SHELL' if it's defined or a default of 'sh' on Unix-likes, and either 'pwsh', 'powershell', or 'cmd' (CMD.EXE) on Windows, depending on what Watchexec detects is the running shell.
+
+  With this option, you can override that and use a different shell, for example one with more features or one which has your custom aliases and functions.
+
+  If the value has spaces, it is parsed as a command line, and the first word used as the shell program, with the rest as arguments to the shell.
+
+  The command is run with the '-c' flag (except for 'cmd' on Windows, where it's '/C').
+
+  The special value 'none' can be used to disable shell use entirely. In that case, the command provided to Watchexec will be parsed, with the first word being the executable and the rest being the arguments, and executed directly. Note that this parsing is rudimentary, and may not work as expected in all cases.
+
+  Using 'none' is a little more efficient and can enable a stricter interpretation of the input, but it also means that you can't use shell features like globbing, redirection, control flow, logic, or pipes.
+
+  Examples:
+
+  Use without shell:
+
+    $ watchexec -n -- zsh -x -o shwordsplit scr
+
+  Use with powershell core:
+
+    $ watchexec --shell=pwsh -- Test-Connection localhost
+
+  Use with CMD.exe:
+
+    $ watchexec --shell=cmd -- dir
+
+  Use with a different unix shell:
+
+    $ watchexec --shell=bash -- 'echo $BASH_VERSION'
+
+  Use with a unix shell and options:
+
+    $ watchexec --shell='zsh -x -o shwordsplit' -- scr
+- **`-n`** — Shorthand for '--shell=none'
+- **`--emit-events-to <MODE>`** — Configure event emission
+
+  Watchexec can emit event information when running a command, which can be used by the child
+  process to target specific changed files.
+
+  One thing to take care with is assuming inherent behaviour where there is only chance.
+  Notably, it could appear as if the `RENAMED` variable contains both the original and the new
+  path being renamed. In previous versions, it would even appear on some platforms as if the
+  original always came before the new. However, none of this was true. It's impossible to
+  reliably and portably know which changed path is the old or new, "half" renames may appear
+  (only the original, only the new), "unknown" renames may appear (change was a rename, but
+  whether it was the old or new isn't known), rename events might split across two debouncing
+  boundaries, and so on.
+
+  This option controls where that information is emitted. It defaults to 'none', which doesn't
+  emit event information at all. The other options are 'environment' (deprecated), 'stdio',
+  'file', 'json-stdio', and 'json-file'.
+
+  The 'stdio' and 'file' modes are text-based: 'stdio' writes absolute paths to the stdin of
+  the command, one per line, each prefixed with `create:`, `remove:`, `rename:`, `modify:`,
+  or `other:`, then closes the handle; 'file' writes the same thing to a temporary file, and
+  its path is given with the $WATCHEXEC_EVENTS_FILE environment variable.
+
+  There are also two JSON modes, which are based on JSON objects and can represent the full
+  set of events Watchexec handles. Here's an example of a folder being created on Linux:
+
+  ```json
+    {
+      "tags": [
+        {
+          "kind": "path",
+          "absolute": "/home/user/your/new-folder",
+          "filetype": "dir"
+        },
+        {
+          "kind": "fs",
+          "simple": "create",
+          "full": "Create(Folder)"
+        },
+        {
+          "kind": "source",
+          "source": "filesystem"
+        }
+      ],
+      "metadata": {
+        "notify-backend": "inotify"
+      }
+    }
+  ```
+
+  The fields are as follows:
+
+    - `tags`, structured event data.
+    - `tags[].kind`, which can be:
+      * 'path', along with:
+        + `absolute`, an absolute path.
+        + `filetype`, a file type if known ('dir', 'file', 'symlink', 'other').
+      * 'fs':
+        + `simple`, the "simple" event type ('access', 'create', 'modify', 'remove', or 'other').
+        + `full`, the "full" event type, which is too complex to fully describe here, but looks like 'General(Precise(Specific))'.
+      * 'source', along with:
+        + `source`, the source of the event ('filesystem', 'keyboard', 'mouse', 'os', 'time', 'internal').
+      * 'keyboard', along with:
+        + `keycode`. Currently only the value 'eof' is supported.
+      * 'process', for events caused by processes:
+        + `pid`, the process ID.
+      * 'signal', for signals sent to Watchexec:
+        + `signal`, the normalised signal name ('hangup', 'interrupt', 'quit', 'terminate', 'user1', 'user2').
+      * 'completion', for when a command ends:
+        + `disposition`, the exit disposition ('success', 'error', 'signal', 'stop', 'exception', 'continued').
+        + `code`, the exit, signal, stop, or exception code.
+    - `metadata`, additional information about the event.
+
+  The 'json-stdio' mode will emit JSON events to the standard input of the command, one per
+  line, then close stdin. The 'json-file' mode will create a temporary file, write the
+  events to it, and provide the path to the file with the $WATCHEXEC_EVENTS_FILE
+  environment variable.
+
+  Finally, the 'environment' mode was the default until 2.0. It sets environment variables
+  with the paths of the affected files, for filesystem events:
+
+  $WATCHEXEC_COMMON_PATH is set to the longest common path of all of the below variables,
+  and so should be prepended to each path to obtain the full/real path. Then:
+
+    - $WATCHEXEC_CREATED_PATH is set when files/folders were created
+    - $WATCHEXEC_REMOVED_PATH is set when files/folders were removed
+    - $WATCHEXEC_RENAMED_PATH is set when files/folders were renamed
+    - $WATCHEXEC_WRITTEN_PATH is set when files/folders were modified
+    - $WATCHEXEC_META_CHANGED_PATH is set when files/folders' metadata were modified
+    - $WATCHEXEC_OTHERWISE_CHANGED_PATH is set for every other kind of pathed event
+
+  Multiple paths are separated by the system path separator, ';' on Windows and ':' on unix.
+  Within each variable, paths are deduplicated and sorted in binary order (i.e. neither
+  Unicode nor locale aware).
+
+  This is the legacy mode, is deprecated, and will be removed in the future. The environment
+  is a very restricted space, while also limited in what it can usefully represent. Large
+  numbers of files will either cause the environment to be truncated, or may error or crash
+  the process entirely. The $WATCHEXEC_COMMON_PATH is also unintuitive, as demonstrated by the
+  multiple confused queries that have landed in my inbox over the years.
+
+  **Choices:** `environment`, `stdio`, `file`, `json-stdio`, `json-file`, `none`
+
+  **Default:** `none`
+- **`--watchexec-env <KEY=VALUE>`** — Add env vars to the command
+
+  This is a convenience option for setting environment variables for the command, without setting them for the Watchexec process itself.
+
+  Use key=value syntax. Multiple variables can be set by repeating the option.
+
+  This is watchexec's '--env'. In mise, '-E'/'--env' selects the mise environment (`mise.<ENV>.toml`), as it does for every other command.
 - **`--wrap-process <MODE>`** — How to wrap the task process: group, session, or none
 
   By default watchexec uses a session on macOS, a process group on other Unix systems, and a Job Object on Windows. Some programs need a session, and some do not work in a process group; `none` runs the command directly. On Windows, `group` and `session` both use a Job Object.
@@ -119,6 +370,9 @@ To keep a server or database running alongside your tasks, with readiness checks
 - **`--print-events`** — Print the events that trigger each run
 
   Use it to check which files `--watch`, `--filter`, and the tasks' `sources` are reacting to.
+- **`--manual`** — Show the manual page
+
+  This shows the manual page for Watchexec, if the output is a terminal and the 'man' program is available. If not, the manual page is printed to stdout in ROFF format (suitable for writing to a watchexec.1 file).
 
 ## Examples
 
