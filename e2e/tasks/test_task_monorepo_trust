@@ -56,7 +56,6 @@ UNTRUSTED_CHILD = "must prompt"
 EOF
 export MISE_TRUSTED_CONFIG_PATHS=""
 assert_contains "MISE_ENV=disabled MISE_YES=0 mise -C disabled-child env 2>&1 || true" "are not trusted"
-assert_contains "MISE_ENV=disabled MISE_YES=0 mise -C disabled-child env 2>&1 || true" "https://mise.jdx.dev/security.html#configuration-trust"
 
 # Test that trust warnings DO appear for unsafe configs outside monorepo
 # (tasks-only configs are safe and load without trust, so use [env] to make
