@@ -23,6 +23,7 @@ use url::Url;
 use crate::file::display_path;
 use crate::netrc;
 use crate::progress::SingleReport;
+use crate::redactions::redact_url_userinfo;
 use crate::time::format_duration;
 use crate::{env, file};
 use mise_settings::Settings;
@@ -1089,7 +1090,7 @@ impl Client {
                     .eq_ignore_ascii_case("text/html")
             });
         if !is_html {
-            bail!("Got non-HTML text from {}", url);
+            bail!("Got non-HTML text from {}", log_url(&url));
         }
         let html = resp.text().await?;
         Ok(html)
@@ -1173,7 +1174,7 @@ impl Client {
             "offline mode is enabled"
         );
         let url = url.into_url()?;
-        debug!("POST {}", url);
+        debug!("POST {}", log_url(&url));
         let resp = self
             .reqwest()?
             .post(url)
@@ -1295,7 +1296,11 @@ impl Client {
             "offline mode is enabled"
         );
         let url = url.into_url()?;
-        debug!("GET Downloading {} to {}", url, display_path(path));
+        debug!(
+            "GET Downloading {} to {}",
+            log_url(&url),
+            display_path(path)
+        );
         let parent = path.parent().unwrap();
         file::create_dir_all(parent)?;
         let partial = PartialDownload::new(path, download_request_hash(&url, headers))?;
@@ -1349,7 +1354,7 @@ impl Client {
                 bail!(
                     "HTTP download timed out after {} for {} (attempt {}, {} bytes received; change with `http_download_timeout` or env `MISE_HTTP_DOWNLOAD_TIMEOUT`)",
                     format_duration(total_timeout),
-                    url,
+                    log_url(&url),
                     attempt.load(Ordering::Relaxed),
                     progress.attempt.load(Ordering::Relaxed),
                 )
@@ -1792,7 +1797,7 @@ impl Client {
             }
             .into());
         }
-        debug!("{} {}", verb_label, url);
+        debug!("{} {}", verb_label, log_url(&url));
 
         // Apply netrc credentials after URL replacement.
         //
@@ -1863,9 +1868,9 @@ impl Client {
             }
         };
         if *env::MISE_LOG_HTTP {
-            eprintln!("{} {url} {}", verb_label, resp.status());
+            eprintln!("{} {} {}", verb_label, log_url(&url), resp.status());
         }
-        debug!("{} {url} {}", verb_label, resp.status());
+        debug!("{} {} {}", verb_label, log_url(&url), resp.status());
         display_github_rate_limit(&resp);
         if options.retry_github_oauth_401
             && let Some(stale_access_token) =
@@ -1893,7 +1898,8 @@ impl Client {
                         }
                         debug!(
                             "{} {} retrying with refreshed GitHub OAuth token after 401",
-                            verb_label, url
+                            verb_label,
+                            log_url(&url)
                         );
                         return Box::pin(self.send_once_inner(
                             method,
@@ -1965,7 +1971,9 @@ impl Client {
                 forward_rules.attach_to(&mut headers);
                 debug!(
                     "{} {} retrying without GitHub auth after {}",
-                    verb_label, url, status
+                    verb_label,
+                    log_url(&url),
+                    status
                 );
                 return Box::pin(self.send_once_inner(
                     method,
@@ -2036,7 +2044,7 @@ impl TextRequest<'_> {
                 self.url = Ok(url);
                 return Box::pin(self.send()).await;
             }
-            bail!("Got HTML instead of text from {}", url);
+            bail!("Got HTML instead of text from {}", log_url(&url));
         }
         Ok(text)
     }
@@ -2572,8 +2580,8 @@ pub fn apply_url_replacements(url: &mut Url) {
                         trace!(
                             "Replaced URL using regex '{}': {} -> {}",
                             pattern_without_prefix,
-                            url_string,
-                            url.as_str()
+                            redact_url_userinfo(&url_string),
+                            log_url(url)
                         );
                         return; // Apply only the first matching replacement
                     }
@@ -2595,8 +2603,8 @@ pub fn apply_url_replacements(url: &mut Url) {
                         trace!(
                             "Replaced URL using string replacement '{}': {} -> {}",
                             pattern,
-                            url_string,
-                            url.as_str()
+                            redact_url_userinfo(&url_string),
+                            log_url(url)
                         );
                         return; // Apply only the first matching replacement
                     }
@@ -2604,6 +2612,11 @@ pub fn apply_url_replacements(url: &mut Url) {
             }
         }
     }
+}
+
+/// `url` for a log line or error message, without the credentials it may embed.
+fn log_url(url: &Url) -> std::borrow::Cow<'_, str> {
+    redact_url_userinfo(url.as_str())
 }
 
 fn display_github_rate_limit(resp: &Response) {
@@ -2831,7 +2844,7 @@ where
                 warn!(
                     "HTTP {} {} attempt {} failed after {} (transient): {}; retrying in {:?}",
                     verb_label,
-                    url,
+                    log_url(url),
                     attempt,
                     format_duration(started_at.elapsed()),
                     err,

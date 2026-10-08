@@ -333,3 +333,16 @@ async fn test_get_html_rejects_non_html_content_type() {
     assert!(err.to_string().contains("Got non-HTML text from"));
     mock.assert();
 }
+
+#[test]
+fn log_url_hides_userinfo() {
+    let url = Url::parse("https://user:TOKEN@git.example.com/api/v1?page=2").unwrap();
+    assert_eq!(
+        log_url(&url),
+        "https://[redacted]@git.example.com/api/v1?page=2"
+    );
+    let url = Url::parse("https://TOKEN@git.example.com/").unwrap();
+    assert_eq!(log_url(&url), "https://[redacted]@git.example.com/");
+    let url = Url::parse("https://git.example.com/a@b").unwrap();
+    assert_eq!(log_url(&url), "https://git.example.com/a@b");
+}

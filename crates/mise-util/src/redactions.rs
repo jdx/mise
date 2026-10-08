@@ -1,6 +1,7 @@
 use crate::env;
 use aho_corasick::AhoCorasick;
 use indexmap::IndexSet;
+use std::borrow::Cow;
 use std::collections::BTreeSet;
 use std::sync::LazyLock;
 use std::sync::{Arc, Mutex};
@@ -66,6 +67,43 @@ pub(crate) fn inherited_secret_patterns(
 /// long after any config went out of scope.
 pub fn redact_global(input: &str) -> String {
     GLOBAL_REDACTOR.lock().unwrap().redact(input)
+}
+
+/// Replace the userinfo of every `scheme://` URL in `text` with `[redacted]`.
+///
+/// `https://user:token@host/path` becomes `https://[redacted]@host/path`. The
+/// [`Redactor`] only hides values that were registered with it, and a URL that
+/// carries its own credentials (a config value, a CLI argument) never is. The
+/// authority ends at the first `/`, `?`, `#` or whitespace, and the userinfo is
+/// everything before its last `@`, so an unencoded `@` in a password is covered.
+pub fn redact_url_userinfo(text: &str) -> Cow<'_, str> {
+    if !text.contains("://") {
+        return Cow::Borrowed(text);
+    }
+    let mut out = String::with_capacity(text.len());
+    let mut rest = text;
+    let mut redacted = false;
+    while let Some(i) = rest.find("://") {
+        let (head, tail) = rest.split_at(i + 3);
+        out.push_str(head);
+        let end = tail
+            .find(|c: char| matches!(c, '/' | '?' | '#') || c.is_whitespace())
+            .unwrap_or(tail.len());
+        match tail[..end].rfind('@') {
+            Some(at) if at > 0 => {
+                out.push_str("[redacted]");
+                out.push_str(&tail[at..end]);
+                redacted = true;
+            }
+            _ => out.push_str(&tail[..end]),
+        }
+        rest = &tail[end..];
+    }
+    if !redacted {
+        return Cow::Borrowed(text);
+    }
+    out.push_str(rest);
+    Cow::Owned(out)
 }
 
 #[derive(Default, Clone, Debug, serde::Deserialize)]
@@ -394,5 +432,40 @@ mod tests {
         let r = Redactor::new(["".to_string(), "secret".to_string(), "".to_string()]);
         assert_eq!(r.patterns_arc().len(), 1);
         assert_eq!(r.redact("my secret"), "my [redacted]");
+    }
+
+    #[test]
+    fn test_redact_url_userinfo() {
+        for (input, expected) in [
+            (
+                "GET https://user:TOKEN@git.example.com/api/v1",
+                "GET https://[redacted]@git.example.com/api/v1",
+            ),
+            ("https://TOKEN@host?q=1", "https://[redacted]@host?q=1"),
+            ("https://u:p@host", "https://[redacted]@host"),
+            // An unencoded `@` in the password stays inside the redaction.
+            ("https://u:p@ss@host/x", "https://[redacted]@host/x"),
+            // An `@` after the authority is not userinfo.
+            ("https://host/a@b", "https://host/a@b"),
+            ("https://host?email=a@b", "https://host?email=a@b"),
+            (
+                "ARGS: mise x --url=https://u:p@a.example/x git+ssh://git:k@b.example",
+                "ARGS: mise x --url=https://[redacted]@a.example/x git+ssh://[redacted]@b.example",
+            ),
+            (
+                "error for url (https://u:p@host)",
+                "error for url (https://[redacted]@host)",
+            ),
+            ("no url here", "no url here"),
+            ("https://@host", "https://@host"),
+        ] {
+            let redacted = redact_url_userinfo(input);
+            assert_eq!(redacted, expected, "{input}");
+            assert!(!redacted.contains("TOKEN"));
+        }
+        assert!(matches!(
+            redact_url_userinfo("https://host/path"),
+            Cow::Borrowed(_)
+        ));
     }
 }
