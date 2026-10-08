@@ -177,6 +177,13 @@ pub(crate) struct Bootstrap {
     #[usage(long)]
     prompt_secrets: bool,
 
+    /// Ask for `[vars]` entries that declare a `prompt` and have no saved answer
+    ///
+    /// mise saves each answer under `$MISE_STATE_DIR`, not in any config file,
+    /// and never asks for it again. Without a terminal, a var keeps its default.
+    #[usage(long)]
+    prompt_vars: bool,
+
     /// Skip these parts
     ///
     /// Repeat the flag or separate parts with commas. Cannot be combined with
@@ -1757,6 +1764,9 @@ impl Bootstrap {
     }
 
     async fn run_with_notices(mut self) -> Result<()> {
+        if self.prompt_vars {
+            crate::config::env_directive::prompt::enable();
+        }
         // Every subcommand, not just the full run, applies less than project
         // config declares in safe mode; say so up front.
         if Settings::safe_mode()

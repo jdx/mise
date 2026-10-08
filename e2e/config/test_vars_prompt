@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+
+# A var with a `prompt` keeps its default when nothing was saved and nothing may ask
+cat <<EOF2 >mise.toml
+[vars.git_name]
+default = "fallback"
+prompt = "Git author name"
+
+[vars.git_email]
+required = "Set git_email"
+prompt = "Git email"
+
+[tasks.show]
+run = "echo name={{ vars.git_name }} email={{ vars.git_email }}"
+EOF2
+
+# A required var with no saved answer still fails; nothing prompts without a terminal
+assert_fail_contains "mise run show" "Required variable 'git_email' is not defined"
+assert_fail_contains "mise bootstrap --prompt-vars --dry-run" "Required variable 'git_email' is not defined"
+
+# Saved answers are read from the state dir and win over the default
+export MISE_STATE_DIR="$PWD/state"
+mkdir -p "$MISE_STATE_DIR"
+cat <<EOF2 >"$MISE_STATE_DIR/vars.toml"
+[vars]
+git_name = "saved-name"
+git_email = "me@example.com"
+EOF2
+assert_contains "mise run show" "name=saved-name email=me@example.com"
+
+# An explicit value in a config file overrides the saved answer
+cat <<EOF2 >mise.local.toml
+[vars]
+git_name = "local-name"
+EOF2
+assert_contains "mise run show" "name=local-name email=me@example.com"
+
+# `prompt` only makes sense for [vars]
+cat <<EOF2 >mise.toml
+[env]
+GIT_NAME = { default = "x", prompt = "Name" }
+EOF2
+rm mise.local.toml
+assert_fail_contains "mise env" "only supported in [vars]"

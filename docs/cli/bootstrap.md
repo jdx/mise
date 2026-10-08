@@ -64,6 +64,9 @@ resource-level changes.
 
   **Choices:** `plugins`, `packages`, `accounts`, `files`, `services`, `firewall`, `compose`, `repos`, `dotfiles`, `mise-shell-activate`, `macos-defaults`, `macos-launchd-agents`, `linux-systemd-units`, `user`, `tools`, `task`, `final-hook`
 - **`--prompt-secrets`** — Prompt securely for missing bootstrap secret inputs
+- **`--prompt-vars`** — Ask for `[vars]` entries that declare a `prompt` and have no saved answer
+
+  mise saves each answer under `$MISE_STATE_DIR`, not in any config file, and never asks for it again. Without a terminal, a var keeps its default.
 - **`--skip <PART>`** — Skip these parts
 
   Repeat the flag or separate parts with commas. Cannot be combined with `--only`.

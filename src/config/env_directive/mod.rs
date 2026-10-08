@@ -25,6 +25,7 @@ mod file;
 mod module;
 pub use module::skipped_env_modules;
 mod path;
+pub mod prompt;
 mod source;
 pub(crate) mod venv;
 
@@ -119,6 +120,9 @@ pub struct EnvDirectiveOptions {
     pub(crate) required: RequiredValue,
     #[serde(default)]
     pub(crate) expand: bool,
+    /// `[vars]` only: ask for this value once and remember the answer on this machine.
+    #[serde(default)]
+    pub(crate) prompt: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -530,7 +534,10 @@ impl EnvResults {
                         env.insert(k, (v, Some(source.clone())));
                     }
                 }
-                EnvDirective::Default(k, v, _opts) => {
+                EnvDirective::Default(k, v, opts) => {
+                    if !resolve_opts.vars && opts.prompt.is_some() {
+                        eyre::bail!("`prompt` on '{k}' is only supported in [vars]");
+                    }
                     // Same fold as `Val` above, and for the same reason.
                     let k = if resolve_opts.vars {
                         k
@@ -568,7 +575,14 @@ impl EnvResults {
                         if redact.unwrap_or(false) {
                             r.redactions.push(k.clone());
                         }
-                        r.vars.insert(k, (v, source.clone()));
+                        let answer = match &opts.prompt {
+                            Some(p) => prompt::answer(&k, p, Some(&v))?,
+                            None => None,
+                        };
+                        match answer {
+                            Some(a) => r.vars.insert(k, (a, prompt::answers_path())),
+                            None => r.vars.insert(k, (v, source.clone())),
+                        };
                     } else {
                         r.env_remove.remove(&k);
                         if redact.unwrap_or(false) {
@@ -593,7 +607,10 @@ impl EnvResults {
                     r.caller_env_keys.remove(&k);
                     r.env_remove.insert(k);
                 }
-                EnvDirective::Required(k, _opts) => {
+                EnvDirective::Required(k, opts) => {
+                    if !resolve_opts.vars && opts.prompt.is_some() {
+                        eyre::bail!("`prompt` on '{k}' is only supported in [vars]");
+                    }
                     // Required directives only validate; they never assign. Record the key so
                     // redaction can resolve it against the caller environment.
                     r.caller_env_keys.insert(k.clone());
@@ -613,6 +630,13 @@ impl EnvResults {
                         && let Some(v) = required_env.get(&k)
                     {
                         r.vars.insert(k, (v.clone(), source.clone()));
+                    } else if resolve_opts.vars
+                        && !vars.contains_key(&k)
+                        && !r.vars.contains_key(&k)
+                        && let Some(p) = &opts.prompt
+                        && let Some(a) = prompt::answer(&k, p, None)?
+                    {
+                        r.vars.insert(k, (a, prompt::answers_path()));
                     }
                 }
                 EnvDirective::Age {

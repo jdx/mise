@@ -77,6 +77,36 @@ See the [`env._` directive reference](/environments/#env-directives) for the
 file, source, and plugin directive forms. Under `[vars]`, these directives fill
 `vars` instead of exporting environment variables.
 
+## Ask once and remember {#prompt}
+
+`prompt` makes a var a per-machine answer. Pair it with a `default` to offer a
+suggestion, or with `required` when there is none:
+
+```mise-toml
+[vars.git_name]
+default = "Ada Lovelace"
+prompt = "Git author name"
+
+[vars.git_email]
+required = "Run mise bootstrap --prompt-vars to set git_email"
+prompt = "Git email"
+```
+
+`mise bootstrap --prompt-vars` asks for each of these vars that has no answer
+yet. Enter accepts the default. mise saves every answer, including an accepted
+default, in `$MISE_STATE_DIR/vars.toml`, so it is never asked again, never lands
+in your config or dotfiles history, and is available to templates in the same
+run. Delete a line from that file to be asked again.
+
+Only a command given `--prompt-vars` ever asks. Everything else, including
+shell activation, tasks, and runs without a terminal, uses the saved answer and
+otherwise falls back to `default`, or fails as any other `required` var does.
+
+A var resolves in this order, highest first: the process environment, a value
+in a higher-precedence config file such as `mise.local.toml`, the saved answer,
+the `default`. Answers are keyed by var name alone, so projects that use the same
+name share one answer on a machine. `prompt` works only in `[vars]`, not `[env]`.
+
 ## Task-local vars
 
 TOML tasks can define their own vars. A task-local value overrides a config var
