@@ -1011,6 +1011,22 @@ mod tests {
         assert_eq!(backend.id(), shared.id());
         assert_eq!(backend.ba().installs_path(), shared.ba().installs_path());
         assert_eq!(backend.ba().cache_path(), shared.ba().cache_path());
+
+        // An alias such as `[tool_alias] myjava = "core:java"` keeps its options too,
+        // and still uses the shared instance's paths.
+        let aliased = crate::backend::arg_to_backend(BackendArg::new_raw(
+            "myjava".to_string(),
+            Some("core:java".to_string()),
+            "myjava".to_string(),
+            Some(crate::toolset::parse_tool_options("release_type=ea")),
+            crate::args::BackendResolution::new(true),
+        ))
+        .unwrap();
+        let opts = aliased.ba().resolve_opts_with_layers(None, None, None);
+        assert_eq!(JavaOptions::new(opts.effective()).release_type(), "ea");
+        assert_eq!(aliased.id(), shared.id());
+        assert_eq!(aliased.ba().installs_path(), shared.ba().installs_path());
+        assert_eq!(aliased.ba().cache_path(), shared.ba().cache_path());
     }
 
     fn match_versions(versions: &[&str], query: &str) -> Vec<String> {
