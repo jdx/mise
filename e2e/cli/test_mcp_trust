@@ -59,3 +59,24 @@ mise trust
 assert_contains "$run_touch" "status=ok"
 assert "test -e '$marker' && echo ran" "ran"
 assert_contains "$install_dummy" '"version": "1.0.0"'
+
+# The check above covers the project config. Anything else the child reaches
+# must stay untrusted too: here a templated task include in a subdirectory of
+# the now-trusted project, which `mise run` on its own would trust and render.
+include_marker="$PWD/include-rendered"
+mkdir -p sub/mise-tasks
+cat >sub/mise-tasks/ci.toml <<EOF
+[render]
+description = "{{ exec(command='touch $include_marker') }}"
+run = "echo rendered"
+EOF
+run_render="cd sub && python3 ../mcp_call.py run_task '{\"task\": \"render\"}'"
+assert_contains "$run_render" "status=error"
+assert_contains "$run_render" "are not trusted"
+assert_fail "test -e '$include_marker'"
+# Nothing was trusted on the way: a second request is refused the same way.
+assert_contains "$run_render" "are not trusted"
+
+mise trust sub
+assert_contains "$run_render" "status=ok"
+assert_contains "$run_render" "rendered"

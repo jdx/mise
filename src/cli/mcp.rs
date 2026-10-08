@@ -1,7 +1,7 @@
 use crate::Result;
 use crate::args::ToolArg;
 use crate::cmd::{RunningPidGuard, prepare_noninteractive_child};
-use crate::config::config_file::{config_trust_root, is_path_trusted};
+use crate::config::config_file::{REQUIRE_EXPLICIT_TRUST_ENV, config_trust_root, is_path_trusted};
 use crate::config::{self, Config, SettingsExt};
 use itertools::Itertools;
 use rmcp::{
@@ -75,7 +75,8 @@ struct MiseServer {
 struct InstallToolParams {
     /// Tool name (e.g. "node", "python", "go")
     tool: String,
-    /// Optional version to install (e.g. "20", "3.12"). Defaults to latest.
+    /// Optional version to install (e.g. "20", "3.12"). Defaults to the
+    /// configured version, or latest if the tool is not configured.
     #[serde(default)]
     version: Option<String>,
 }
@@ -112,7 +113,9 @@ fn json_result(value: Value) -> std::result::Result<CallToolResult, ErrorData> {
 }
 
 /// A child `mise` with no terminal: output is captured, and the child is
-/// killed if the request is dropped.
+/// killed if the request is dropped. The child trusts no config on its own
+/// (see [`REQUIRE_EXPLICIT_TRUST_ENV`]), so config the user has not trusted
+/// fails to load rather than being trusted on a client's behalf.
 fn mise_child<S: AsRef<std::ffi::OsStr>>(
     args: &[S],
 ) -> std::result::Result<tokio::process::Command, ErrorData> {
@@ -125,6 +128,7 @@ fn mise_child<S: AsRef<std::ffi::OsStr>>(
     command
         .args(args)
         .env("NO_COLOR", "1")
+        .env(REQUIRE_EXPLICIT_TRUST_ENV, "1")
         .kill_on_drop(true)
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::piped())
@@ -169,8 +173,10 @@ fn combined_output(output: &std::process::Output) -> String {
 ///
 /// `mise run` and `mise install` trust the project config they load: typing
 /// either command is the user's consent to it. A request from an MCP client is
-/// not, so the server checks the same files (see `trust_active_config`) before
-/// starting one.
+/// not, so the child cannot trust anything (see [`mise_child`]). This check of
+/// the files `trust_active_config` would trust gives the client an early,
+/// actionable answer; the child still refuses any other untrusted config it
+/// reaches, such as a monorepo subproject's.
 fn untrusted_project_refusal() -> Option<CallToolResult> {
     let untrusted = config::load_config_paths(&config::DEFAULT_CONFIG_FILENAMES, false)
         .into_iter()
@@ -322,9 +328,8 @@ impl MiseServer {
         }
 
         let mut command = mise_child(&cmd_args)?;
-        // Answers a task's `confirm` prompt. It does not change what gets
-        // trusted: `mise run` trusts the config it loads either way, which is
-        // why that config is checked above.
+        // Answers a task's `confirm` prompt. It cannot grant trust: the child
+        // requires explicit trust, which ignores `yes`.
         command.env("MISE_YES", "1");
         let child = command.spawn().map_err(|e| ErrorData {
             code: ErrorCode::INTERNAL_ERROR,
