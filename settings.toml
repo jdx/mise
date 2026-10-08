@@ -3316,7 +3316,7 @@ optional = true
 type = "Path"
 
 [sops.age_recipients]
-deprecated = "This setting has no effect because mise does not encrypt sops files. Remove it from your config."
+deprecated = "This setting has no effect because mise does not encrypt sops files. Remove it from your config. To encrypt a value with age, use `mise set --age-encrypt --age-recipient <recipient>`."
 deprecated_remove_at = "2027.10.5"
 deprecated_warn_at = "2026.10.5"
 description = "[deprecated] Has no effect; mise does not encrypt sops files."
