@@ -183,6 +183,20 @@ impl Hash for ResolvedToolOptions {
 }
 
 impl ResolvedToolOptions {
+    /// Copy every option that did not come from the registry into `target`,
+    /// keeping each one's source.
+    pub(crate) fn extend_without_registry(&self, target: &mut Self) {
+        for source in [
+            ToolOptionSource::InstallManifest,
+            ToolOptionSource::BackendAlias,
+            ToolOptionSource::Config,
+            ToolOptionSource::Request,
+            ToolOptionSource::InlineBackendArg,
+        ] {
+            target.apply_overrides(&self.options_from_sources(&[source]), source);
+        }
+    }
+
     pub(crate) fn effective(&self) -> &ToolVersionOptions {
         &self.options
     }

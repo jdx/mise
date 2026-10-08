@@ -4573,8 +4573,18 @@ pub(crate) fn get_locked_version(
             if backend::is_disabled_backend_type(&backend.get_type()) {
                 return Ok(None);
             }
+            // The registry's options are for the backend it chose. Another
+            // backend would read them as its own settings and never match.
+            let options = if backend.get_type() == request.ba().backend_type() {
+                backend.resolve_lockfile_options(request, &PlatformTarget::from_current())?
+            } else {
+                backend.resolve_lockfile_options(
+                    &request.without_registry_options(),
+                    &PlatformTarget::from_current(),
+                )?
+            };
             return Ok(Some((
-                backend.resolve_lockfile_options(request, &PlatformTarget::from_current())?,
+                options,
                 backend.lockfile_options_are_host_specific(),
             )));
         }

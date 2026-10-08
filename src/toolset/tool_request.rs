@@ -242,18 +242,10 @@ impl ToolRequest {
         let Some(backend) = self.ba().with_registry_version(version) else {
             return self;
         };
-        let previous = self.resolved_options().clone();
         let mut options = ResolvedToolOptions::default();
         options.apply_overrides(&backend.registry_opts(), ToolOptionSource::Registry);
-        for source in [
-            ToolOptionSource::InstallManifest,
-            ToolOptionSource::BackendAlias,
-            ToolOptionSource::Config,
-            ToolOptionSource::Request,
-            ToolOptionSource::InlineBackendArg,
-        ] {
-            options.apply_overrides(&previous.options_from_sources(&[source]), source);
-        }
+        self.resolved_options()
+            .extend_without_registry(&mut options);
         *self.resolved_options_mut() = options;
         match &mut self {
             Self::Version { backend: b, .. }
@@ -386,6 +378,18 @@ impl ToolRequest {
             "lazy tool {} has no registry bin metadata; set lazy_bins explicitly",
             self.ba().short
         )
+    }
+
+    /// This request without the registry's defaults, for a lock entry bound to
+    /// another backend than the one the registry chose: those defaults belong
+    /// to the registry's backend, which may read them as its own settings.
+    pub(crate) fn without_registry_options(&self) -> Self {
+        let mut request = self.clone();
+        let mut options = ResolvedToolOptions::default();
+        self.resolved_options()
+            .extend_without_registry(&mut options);
+        *request.resolved_options_mut() = options;
+        request
     }
 
     pub(crate) fn explicit_options(&self) -> ToolVersionOptions {
