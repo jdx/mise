@@ -88,18 +88,28 @@ default = "Ada Lovelace"
 prompt = "Git author name"
 
 [vars.git_email]
-required = "Run mise bootstrap --prompt-vars to set git_email"
+required = "Run mise vars prompt to set git_email"
 prompt = "Git email"
 ```
 
-`mise bootstrap --prompt-vars` asks for each of these vars that has no answer
-yet. Enter accepts the default. mise saves every answer, including an accepted
-default, in `$MISE_STATE_DIR/vars.toml`, so it is never asked again, never lands
-in your config or dotfiles history, and is available to templates in the same
-run. Delete a line from that file to be asked again.
-A `--dry-run` still saves the answers it asks for.
+Run `mise vars prompt` to be asked for each of these vars that has no answer
+yet; name vars to ask only for those (`mise vars prompt git_name`). Enter accepts
+the default. mise saves every answer, including an accepted default, in
+`$MISE_STATE_DIR/vars.toml`, so it is never asked again, never lands in your
+config or dotfiles history, and is available to every command that reads vars from then on.
 
-Only a command given `--prompt-vars` ever asks. Everything else, including
+```sh
+mise vars prompt          # ask for every unanswered prompt var
+mise vars ls              # show the saved answers
+mise vars unset git_name  # forget one, to be asked again
+```
+
+`mise bootstrap --prompt-vars` does the same inside a bootstrap run, which is how
+a fresh machine answers them with `mise bootstrap --adopt owner/dotfiles`: the
+config that declares the vars only exists once the checkout has been fetched. A
+`--dry-run` still saves the answers it asks for.
+
+Only `mise vars prompt` and `--prompt-vars` ever ask. Everything else, including
 shell activation, tasks, and runs without a terminal, uses the saved answer and
 otherwise falls back to `default`, or fails as any other `required` var does.
 

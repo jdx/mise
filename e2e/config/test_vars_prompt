@@ -65,7 +65,21 @@ cat <<EOF2 >"$MISE_STATE_DIR/vars.toml"
 git_name = "saved-name"
 git_email = ""
 EOF2
-assert_fail_contains "mise vars" "Required variable 'git_email' is not defined"
+assert_fail_contains "mise env" "Required variable 'git_email' is not defined"
 
 # --prompt-vars is for the full run only
 assert_fail_contains "mise bootstrap --prompt-vars status" "only applies to a full"
+
+# `mise vars` manages the saved answers without loading config
+cat <<EOF2 >"$MISE_STATE_DIR/vars.toml"
+[vars]
+git_name = "saved-name"
+git_email = "me@example.com"
+EOF2
+rm mise.toml
+assert "mise vars ls --no-header" "git_email me@example.com
+git_name  saved-name"
+assert_fail_contains "mise vars prompt" "needs an interactive terminal"
+mise vars unset git_name
+assert "mise vars ls --no-header" "git_email me@example.com"
+assert_fail_contains "mise vars unset" "name at least one var"

@@ -48,6 +48,7 @@ const guides: Record<string, [string, string]> = {
   shell: ["Shell setup", "/shell-setup.html"],
   completion: ["Shell completions", "/shell-setup.html#autocompletion"],
   "shell-alias": ["Shell aliases", "/shell-aliases.html"],
+  vars: ["Config variables", "/configuration/vars.html"],
   env: ["Environment variables", "/environments/"],
   set: ["Environment variables", "/environments/"],
   unset: ["Environment variables", "/environments/"],
@@ -212,7 +213,7 @@ const categories = [
   ],
   [
     "Shell and environment",
-    "activate deactivate completion en env exec shell set unset shell-alias tool-alias secrets token ssh",
+    "activate deactivate completion en env exec shell set unset vars shell-alias tool-alias secrets token ssh",
   ],
   ["Tasks and project automation", "run tasks watch deps daemons generate"],
   ["Machine setup and images", "bootstrap dotfiles oci"],

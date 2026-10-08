@@ -4,15 +4,21 @@
 //! it never reaches a dotfiles repository. Reading an answer never prompts;
 //! only a command that called [`enable`] asks, and only on a terminal.
 
+use std::collections::BTreeSet;
 use std::path::PathBuf;
+use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use demand::Input;
-use eyre::{Result, WrapErr};
+use eyre::{Result, WrapErr, bail};
 
 use crate::dirs;
 
 static ENABLED: AtomicBool = AtomicBool::new(false);
+/// When set, only these vars may be asked for.
+static ONLY: Mutex<Option<BTreeSet<String>>> = Mutex::new(None);
+/// Vars answered by this process, in order.
+static ANSWERED: Mutex<Vec<String>> = Mutex::new(Vec::new());
 
 /// Let this process ask for unanswered `prompt` vars. Without it, an
 /// unanswered var falls back to its `default`, or to `required`'s error.
@@ -20,8 +26,26 @@ pub fn enable() {
     ENABLED.store(true, Ordering::Relaxed);
 }
 
+/// Limit prompting to `names`. An empty list leaves it unrestricted.
+pub fn only(names: &[String]) {
+    if let Ok(mut only) = ONLY.lock() {
+        *only = (!names.is_empty()).then(|| names.iter().cloned().collect());
+    }
+}
+
+/// The vars this process asked for and saved, in order.
+pub fn answered() -> Vec<String> {
+    ANSWERED.lock().map(|a| a.clone()).unwrap_or_default()
+}
+
+fn may_ask(key: &str) -> bool {
+    ONLY.lock()
+        .map(|only| only.as_ref().is_none_or(|names| names.contains(key)))
+        .unwrap_or(false)
+}
+
 /// The file that holds the saved answers.
-pub(crate) fn answers_path() -> PathBuf {
+pub fn answers_path() -> PathBuf {
     dirs::STATE.join("vars.toml")
 }
 
@@ -47,24 +71,57 @@ pub(crate) fn saved(key: &str) -> Option<String> {
     }
 }
 
-fn save(key: &str, value: &str) -> Result<()> {
+/// Apply `change` to the saved answers while holding the lock, so a
+/// concurrent save of another var is not overwritten by a stale table.
+fn update<T>(what: &str, change: impl FnOnce(&mut toml::Table) -> T) -> Result<T> {
     let path = answers_path();
     if let Some(parent) = path.parent() {
         crate::file::create_dir_all(parent)?;
     }
-    // Hold the lock across read, update and rename, so a concurrent save of
-    // another var is not overwritten by a stale copy of the table.
     let mut lock = fslock::LockFile::open(&path.with_extension("toml.lock"))?;
     lock.lock()?;
     let mut table = read_answers();
     let vars = table
         .entry("vars")
         .or_insert_with(|| toml::Value::Table(toml::Table::new()));
-    if let Some(vars) = vars.as_table_mut() {
-        vars.insert(key.to_string(), toml::Value::String(value.to_string()));
-    }
+    let result = match vars.as_table_mut() {
+        Some(vars) => change(vars),
+        None => bail!("{} has a non-table `vars` entry", path.display()),
+    };
     write_private(&path, toml::to_string(&table)?.as_bytes())
-        .wrap_err_with(|| format!("failed to save the answer for var '{key}'"))
+        .wrap_err_with(|| format!("failed to {what}"))?;
+    Ok(result)
+}
+
+fn save(key: &str, value: &str) -> Result<()> {
+    update(&format!("save the answer for var '{key}'"), |vars| {
+        vars.insert(key.to_string(), toml::Value::String(value.to_string()));
+    })?;
+    if let Ok(mut answered) = ANSWERED.lock() {
+        answered.push(key.to_string());
+    }
+    Ok(())
+}
+
+/// Every saved answer, sorted by name.
+pub fn saved_all() -> Vec<(String, String)> {
+    let table = read_answers();
+    let Some(vars) = table.get("vars").and_then(|v| v.as_table()) else {
+        return vec![];
+    };
+    let mut all: Vec<_> = vars
+        .iter()
+        .filter_map(|(k, v)| v.as_str().map(|v| (k.clone(), v.to_string())))
+        .collect();
+    all.sort();
+    all
+}
+
+/// Forget the saved answer for `key`. Returns whether there was one.
+pub fn remove(key: &str) -> Result<bool> {
+    update(&format!("remove the answer for var '{key}'"), |vars| {
+        vars.remove(key).is_some()
+    })
 }
 
 /// Write `contents` to `path` through a sibling file that is owner-only from
@@ -108,7 +165,7 @@ pub(crate) fn answer(key: &str, prompt: &str, default: Option<&str>) -> Result<O
     if let Some(value) = saved(key) {
         return Ok(Some(value));
     }
-    if !ENABLED.load(Ordering::Relaxed) || !console::user_attended_stderr() {
+    if !ENABLED.load(Ordering::Relaxed) || !may_ask(key) || !console::user_attended_stderr() {
         return Ok(None);
     }
     let theme = crate::ui::theme::get_theme();

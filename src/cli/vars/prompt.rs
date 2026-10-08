@@ -1,0 +1,48 @@
+use eyre::{Result, bail};
+
+use crate::config::Config;
+use crate::config::env_directive::prompt;
+
+/// Ask for the prompt vars that have no saved answer
+///
+/// Enter accepts the suggested default. Each answer, accepted defaults
+/// included, is saved and never asked for again; use `mise vars unset` to be
+/// asked again. Needs a terminal. Asks about every unanswered `prompt` var in
+/// the config files that apply here, or only the ones you name.
+#[derive(Debug, usage_rs::Args)]
+#[usage(
+    verbatim_doc_comment,
+    example(
+        r###"mise vars prompt"###,
+        help = "Ask for every unanswered prompt var"
+    ),
+    example(r###"mise vars prompt git_name"###, help = "Ask for git_name only")
+)]
+pub(super) struct VarsPrompt {
+    /// Only ask for these vars
+    #[usage(value_name = "NAME")]
+    names: Vec<String>,
+}
+
+impl VarsPrompt {
+    pub(super) async fn run(self) -> Result<()> {
+        if !console::user_attended_stderr() {
+            bail!("`mise vars prompt` needs an interactive terminal");
+        }
+        prompt::enable();
+        prompt::only(&self.names);
+        // Prompting happens while the vars resolve, so (re)load the config now.
+        Config::reset().await?;
+        let answered = prompt::answered();
+        if answered.is_empty() {
+            miseprintln!("Nothing to ask: every prompt var already has an answer.");
+        } else {
+            miseprintln!(
+                "Saved {} to {}",
+                answered.join(", "),
+                prompt::answers_path().display()
+            );
+        }
+        Ok(())
+    }
+}

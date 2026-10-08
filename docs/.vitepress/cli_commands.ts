@@ -991,6 +991,20 @@ export const commands: { [key: string]: Command } = {
   use: {
     hide: false,
   },
+  vars: {
+    hide: false,
+    subcommands: {
+      ls: {
+        hide: false,
+      },
+      prompt: {
+        hide: false,
+      },
+      unset: {
+        hide: false,
+      },
+    },
+  },
   version: {
     hide: false,
   },
