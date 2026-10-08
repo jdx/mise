@@ -44,18 +44,20 @@ An edit entry is keyed by the target path followed by `/<id>`, such as
 `"~/.zshrc/aliases"`. Ids can contain letters, digits, `_`, `-`, and `.`. See
 [Edit part of a file](/dotfiles/edits.html).
 
-| Key        | Type                      | Meaning                                                                                              |
-| ---------- | ------------------------- | ---------------------------------------------------------------------------------------------------- |
-| `block`    | string                    | Inline content to keep between marker comments.                                                      |
-| `source`   | path                      | A file with the block content (with `template = "tera"`) or the keys to merge (with `merge = true`). |
-| `template` | `"tera"`                  | Render `source` with Tera first.                                                                     |
-| `comment`  | string                    | The marker comment prefix. Defaults to one inferred from the file extension.                         |
-| `line`     | string                    | One exact line to ensure exists.                                                                     |
-| `position` | `"append"` or `"prepend"` | Where a missing `line` goes. Defaults to `"append"`.                                                 |
-| `merge`    | `true`                    | Set the keys in `source` on a `.json`, `.toml`, `.yaml`, or `.yml` target.                           |
+| Key        | Type                      | Meaning                                                                                                                                                                                                           |
+| ---------- | ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `block`    | string                    | Inline content to keep between marker comments.                                                                                                                                                                   |
+| `source`   | path                      | A file with the block content (with `template = "tera"`) or the keys to merge (with `merge`).                                                                                                                     |
+| `template` | `"tera"`                  | Render `source` with Tera first.                                                                                                                                                                                  |
+| `comment`  | string                    | The marker comment prefix. Defaults to one inferred from the file extension.                                                                                                                                      |
+| `line`     | string                    | One exact line to ensure exists.                                                                                                                                                                                  |
+| `position` | `"append"` or `"prepend"` | Where a missing `line` goes. Defaults to `"append"`.                                                                                                                                                              |
+| `merge`    | `true` or `"missing"`     | Set the keys in `source` on a `.json`, `.toml`, `.yaml`, or `.yml` target. `"missing"` sets only keys the target has no value for; see [Defaults the application may change](/dotfiles/edits.html#merge-missing). |
 
 `block` and `source` are mutually exclusive, and neither combines with
-`line`. `position` applies only to `line`. `merge` needs `source` and takes no
+`line`. `position` applies only to `line`. A `merge` entry without `source`
+reads the target's path under
+[`dotfiles.root`](/configuration/settings.html#dotfiles.root), and takes no
 `block`, `line`, `position`, or `comment`. An edit entry takes no
 `permissions`. Edits are never encrypted.
 
