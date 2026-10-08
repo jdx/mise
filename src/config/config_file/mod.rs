@@ -673,9 +673,14 @@ pub fn is_trusted(path: &Path) -> bool {
         return true;
     }
 
+    let settings = Settings::get();
     // Check if this path is within a trusted monorepo root
-    // Monorepo roots are marked with a special marker file when trusted
-    if let Some(parent) = canonicalized_path.parent() {
+    // Monorepo roots are marked with a special marker file when trusted.
+    // The marker trusts descendants by path, so paranoid mode, which binds
+    // trust to file contents, ignores it and checks each file's hash below.
+    if !settings.paranoid
+        && let Some(parent) = canonicalized_path.parent()
+    {
         let mut current = parent;
         while let Some(dir) = current.parent() {
             let monorepo_marker = with_appended_extension(&trust_path(dir), "monorepo");
@@ -686,7 +691,6 @@ pub fn is_trusted(path: &Path) -> bool {
             current = dir;
         }
     }
-    let settings = Settings::get();
     if settings.paranoid {
         let trusted = trust_file_hash(path).unwrap_or_else(|e| {
             warn!("trust_file_hash: {e}");
