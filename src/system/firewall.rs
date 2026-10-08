@@ -295,6 +295,10 @@ struct FirewallInspection {
     active: bool,
     reason: Option<String>,
     current_rules: Option<Vec<FirewallRule>>,
+    /// The commands a dry run previews, computed by the elevated inspection
+    /// because they depend on the root-only state file.
+    #[serde(default)]
+    preview: Option<Vec<Vec<String>>>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -390,6 +394,7 @@ pub fn inspect_request(request: &mut FirewallRequest) -> Result<()> {
             active: false,
             reason: Some(error.to_string()),
             current_rules: None,
+            preview: None,
         });
         return Ok(());
     }
@@ -747,9 +752,7 @@ pub fn apply(request: &FirewallRequest, dry_run: bool, yes: bool) -> Result<()> 
         bail!("refusing unsafe firewall change; inspect `mise bootstrap firewall status`");
     }
     if dry_run {
-        let inspection = request.inspection.as_ref().expect("firewall was inspected");
-        let backend = inspection.backend.expect("available firewall backend");
-        for command in preview_commands(request, backend)? {
+        for command in preview_commands(request)? {
             miseprintln!("would run {}", shell_words::join(command));
         }
         return Ok(());
@@ -826,6 +829,7 @@ fn inspect_privileged(request: &FirewallRequest) -> FirewallInspection {
                 active: false,
                 reason: Some(error.to_string()),
                 current_rules: None,
+                preview: None,
             };
         }
     };
@@ -837,6 +841,7 @@ fn inspect_privileged(request: &FirewallRequest) -> FirewallInspection {
             active: false,
             reason: Some(error.to_string()),
             current_rules: None,
+            preview: None,
         };
     }
     let effective = effective_request(request, state.as_ref());
@@ -848,6 +853,7 @@ fn inspect_privileged(request: &FirewallRequest) -> FirewallInspection {
             active: false,
             reason: Some(error.to_string()),
             current_rules: None,
+            preview: None,
         };
     }
     let expected_digest = request_digest(&effective, backend).unwrap_or_default();
@@ -897,6 +903,7 @@ fn inspect_privileged(request: &FirewallRequest) -> FirewallInspection {
         } else {
             None
         },
+        preview: Some(effective_preview_commands(&effective, backend)),
     }
 }
 
@@ -1883,13 +1890,14 @@ fn ufw_endpoint_matches(actual: Option<&str>, desired: Option<IpNet>) -> bool {
     }
 }
 
-fn preview_commands(
-    request: &FirewallRequest,
-    backend: FirewallBackend,
-) -> Result<Vec<Vec<String>>> {
-    let effective = effective_request(request, read_state()?.as_ref());
-    validate_effective_backend_request(request, &effective, backend)?;
-    Ok(effective_preview_commands(&effective, backend))
+/// The dry-run commands from the elevated inspection. The state file they
+/// depend on is root-only, so the unprivileged process never reads it.
+fn preview_commands(request: &FirewallRequest) -> Result<&[Vec<String>]> {
+    request
+        .inspection
+        .as_ref()
+        .and_then(|inspection| inspection.preview.as_deref())
+        .ok_or_else(|| eyre!("firewall inspection did not include a dry-run preview"))
 }
 
 fn effective_preview_commands(
@@ -2525,6 +2533,7 @@ mod tests {
             active: false,
             reason: None,
             current_rules: Some(vec![]),
+            preview: None,
         });
         let plans = request.plans();
         assert!(plans.iter().all(|plan| plan.action == ResourceAction::Noop));
@@ -2542,6 +2551,7 @@ mod tests {
             active: true,
             reason: None,
             current_rules: None,
+            preview: None,
         });
 
         let plans = request.plans();
@@ -2561,6 +2571,7 @@ mod tests {
             active: false,
             reason: Some("firewall backend unavailable".to_string()),
             current_rules: None,
+            preview: None,
         });
 
         let plans = request.plans();
@@ -2583,6 +2594,7 @@ mod tests {
             active: true,
             reason: None,
             current_rules: Some(current_rules),
+            preview: None,
         });
 
         let plans = request.plans();
@@ -2640,6 +2652,14 @@ mod tests {
 
         // Read-only paths report it without elevating to inspect it.
         inspect_request(&mut request).unwrap();
+        let inspection = request.inspection.as_ref().unwrap();
+        assert!(inspection.backend.is_none());
+        assert!(
+            inspection
+                .reason
+                .as_deref()
+                .is_some_and(|reason| reason.contains("no incoming TCP allow rule covers"))
+        );
         let plans = request.plans();
         assert_eq!(plans[0].action, ResourceAction::Unknown);
         assert!(
@@ -2686,5 +2706,31 @@ mod tests {
             "--force".to_string(),
             "reset".to_string()
         ]));
+    }
+
+    #[test]
+    fn dry_run_preview_comes_from_the_elevated_inspection() {
+        // A non-root dry run cannot read the 0600 state file, so the preview
+        // must come from the inspection rather than from `read_state`.
+        let mut request = request_with_ssh(None);
+        let preview = vec![vec![
+            "ufw".to_string(),
+            "--force".to_string(),
+            "reset".to_string(),
+        ]];
+        request.inspection = Some(FirewallInspection {
+            backend: Some(FirewallBackend::Ufw),
+            managed: true,
+            exact: false,
+            active: true,
+            reason: None,
+            current_rules: None,
+            preview: Some(preview.clone()),
+        });
+        assert_eq!(preview_commands(&request).unwrap(), preview.as_slice());
+        apply(&request, true, true).unwrap();
+
+        request.inspection.as_mut().unwrap().preview = None;
+        assert!(preview_commands(&request).is_err());
     }
 }
