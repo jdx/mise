@@ -1684,8 +1684,9 @@ set this to `openjdk`, or request `openjdk-21` explicitly. Temurin has no builds
 
 Installed versions are not changed. A lockfile entry records the vendor that resolved it, so an
 entry written with `openjdk` matches only while this setting is `openjdk`. With another vendor,
-`mise install --locked` reports that the tool is not in the lockfile, and `mise lock` or an
-unlocked `mise install` resolves the request again.
+`mise install --locked` reports that the tool is not in the lockfile. Run `mise lock --bump java`
+to lock the new vendor's build. Plain `mise lock` and `mise install` reuse an installed OpenJDK
+build instead of locking the new vendor's build.
 
 ```toml
 [settings]
