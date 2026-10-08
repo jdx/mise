@@ -247,10 +247,3 @@ dummy = { version = "1", auto_update = true }
 "aqua:jdx/mise-test-missing-lazy-tool" = { version = "latest", lazy = true, lazy_bins = ["missing-lazy-tool"] }
 CONFIG
 assert_not_contains "mise x -- dummy 2>&1" "Failed to resolve tool version list"
-
-# The same holds when the update installs a newer version: what runs after the
-# install doesn't resolve the missing lazy tool either.
-fresh_state lazy-neighbors-upgrade
-reset_dummy
-assert_not_contains "mise x -- dummy 2>&1" "Failed to resolve tool version list"
-assert_contains "mise ls --installed dummy" "1.1.0"

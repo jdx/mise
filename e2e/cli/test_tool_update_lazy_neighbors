@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+
+# An `auto_update` that installs a newer version resolves only the tool it
+# updates. A lazy tool that isn't installed stays unresolved, so the launch
+# doesn't list its remote versions (offline, each lookup waited for a timeout).
+# The dummy backend offers 1.0.0, 1.1.0, and 2.0.0.
+export MISE_STATE_DIR="$PWD/state"
+
+mise install dummy@1.0.0
+cat >"$MISE_CONFIG_DIR/config.toml" <<'CONFIG'
+[tools]
+dummy = { version = "1", auto_update = true }
+"aqua:jdx/mise-test-missing-lazy-tool" = { version = "latest", lazy = true, lazy_bins = ["missing-lazy-tool"] }
+CONFIG
+assert_not_contains "mise x -- dummy 2>&1" "Failed to resolve tool version list"
+assert_contains "mise ls --installed dummy 2>/dev/null" "1.1.0"
