@@ -742,28 +742,31 @@ impl TaskExecutor {
                     if raw && !self.dry_run {
                         // Raw and interactive tasks inherit stdio, so there is no output to
                         // capture or replay and no artifact is stored or restored. They are
-                        // still skipped, but only when their sources are fresh and the
-                        // outputs in the working tree were produced under this same key, so
-                        // a change to `cache.env`, a command input, a tool or a dependency
-                        // key runs them again.
+                        // still skipped, but only when their sources are fresh (or they
+                        // declare no outputs) and the outputs in the working tree were
+                        // produced under this same key, so a change to `cache.env`, a command
+                        // input, a tool or a dependency key runs them again. The key is
+                        // passed on to dependents so their own keys follow it.
                         if self.task_cache.reads()
                             && !self.force
                             && !dependency_state.any_unkeyed_did_work
                             && cache.is_current()
-                            && sources_are_fresh(task, config).await?
+                            && (task.outputs.is_no_files()
+                                || sources_are_fresh(task, config).await?)
                         {
                             if !self.quiet(Some(task)) {
                                 self.eprint(task, &prefix, "sources up-to-date, skipping");
                             }
-                            return Ok(TaskRunOutcome::default());
+                            return Ok(TaskRunOutcome {
+                                did_work: false,
+                                cache_key: Some(cache.key().to_string()),
+                            });
                         }
-                        // The run may change the outputs and fail before it marks its key.
-                        if let Err(err) = cache.clear_current() {
-                            warn!(
-                                "task {} artifact cache state update failed: {err}",
-                                task.name
-                            );
-                        }
+                        // The run may change the outputs and fail before it marks its key, so
+                        // it must not start while an earlier key could still approve them.
+                        cache.clear_current().wrap_err_with(|| {
+                            format!("task {} artifact cache state update failed", task.name)
+                        })?;
                     }
                     if raw {
                         warn!(
@@ -1004,15 +1007,19 @@ impl TaskExecutor {
         }
 
         save_checksum(task, config).await?;
-        if self.task_cache.writes()
-            && let Some(cache) = raw_cache_state
-            && let Err(err) = cache.mark_current()
-        {
-            warn!(
-                "task {} artifact cache state update failed: {err}",
-                task.name
-            );
-        }
+        // A raw or interactive run stores no artifact, but its key still identifies the
+        // outputs it produced, so dependents include it in their own keys.
+        let raw_cache_key = raw_cache_state.map(|cache| {
+            if self.task_cache.writes()
+                && let Err(err) = cache.mark_current()
+            {
+                warn!(
+                    "task {} artifact cache state update failed: {err}",
+                    task.name
+                );
+            }
+            cache.key().to_string()
+        });
         let cache_key = if self.task_cache.writes()
             && let Some(cache) = artifact_cache
         {
@@ -1036,7 +1043,7 @@ impl TaskExecutor {
                 }
             }
         } else {
-            None
+            raw_cache_key
         };
         Ok(TaskRunOutcome {
             did_work: true,

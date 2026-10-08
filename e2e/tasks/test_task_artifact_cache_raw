@@ -119,3 +119,62 @@ assert_contains "echo \"$explain\"" "cache key inputs:"
 assert_contains "echo \"$explain\"" "sources up-to-date, skipping"
 assert "PROFILE=debug mise run --dry-run --task-cache-explain-json build | jq -r .task" "build"
 assert "wc -l < build-runs.txt | tr -d ' '" "6"
+
+# A raw task with no outputs is skipped on its cache key alone.
+cat <<'EOF' >mise.toml
+[settings]
+experimental = true
+
+[tasks.check]
+run = "printf 'ran\n' >> check-runs.txt"
+sources = ["check.txt"]
+outputs = []
+raw = true
+cache = { enabled = true }
+EOF
+
+printf 'check\n' >check.txt
+mise run check
+assert_contains "mise run check 2>&1" "sources up-to-date, skipping"
+assert "wc -l < check-runs.txt | tr -d ' '" "1"
+printf 'changed\n' >check.txt
+mise run check
+assert "wc -l < check-runs.txt | tr -d ' '" "2"
+
+# A raw task passes its cache key to dependents whether it runs or is skipped,
+# so a dependent built from another upstream key is not reused.
+cat <<'EOF' >mise.toml
+[settings]
+experimental = true
+
+[tasks.upstream]
+run = '''
+mkdir -p up-dist
+printf '%s\n' "$PROFILE" > up-dist/result.txt
+'''
+sources = ["up.txt"]
+outputs = ["up-dist"]
+raw = true
+cache = { enabled = true, env = ["PROFILE"] }
+
+[tasks.downstream]
+depends = ["upstream"]
+run = '''
+mkdir -p down-dist
+cp up-dist/result.txt down-dist/result.txt
+'''
+sources = ["down.txt"]
+outputs = ["down-dist"]
+cache = { enabled = true }
+EOF
+
+printf 'up\n' >up.txt
+printf 'down\n' >down.txt
+PROFILE=a mise run downstream
+assert "cat down-dist/result.txt" "a"
+PROFILE=b mise run upstream
+assert "cat up-dist/result.txt" "b"
+PROFILE=b mise run downstream
+assert "cat down-dist/result.txt" "b"
+assert_contains "PROFILE=a mise run downstream 2>&1" "restored outputs from cache"
+assert "cat down-dist/result.txt" "a"
