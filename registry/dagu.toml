@@ -1,5 +1,5 @@
 backends = [
-  { full = "packslip:github.com/dagucloud/dagu", min_version = "2.18.0" },
+  { full = "packslip:github.com/dagucloud/dagu", min_version = "2.18.0", options = { workflow = "release.yaml" } },
   "aqua:dagucloud/dagu",
 ]
 bins = ["dagu"]

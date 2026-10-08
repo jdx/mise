@@ -128,17 +128,31 @@ fn same_task_without_phase(task: &Task, other: &Task) -> bool {
 /// manages a dependency graph of tasks so `mise run` knows what to run next
 impl Deps {
     pub async fn new(config: &Arc<Config>, tasks: Vec<Task>) -> eyre::Result<Self> {
-        Self::new_with_cycle_limit(config, tasks, Some(1)).await
+        Self::new_with_cycle_limit(config, tasks, Some(1), TaskFetcher::new).await
     }
 
+    /// Builds the graph for a command that inspects it without running it, such as
+    /// `mise tasks deps`. A `git::` task file that experimental gates is left unfetched (see
+    /// [`TaskFetcher`]) instead of failing the graph.
+    pub async fn new_for_inspection(config: &Arc<Config>, tasks: Vec<Task>) -> eyre::Result<Self> {
+        Self::new_with_cycle_limit(config, tasks, Some(1), TaskFetcher::for_inspection).await
+    }
+
+    /// Like [`Self::new_for_inspection`], but reports every cycle rather than the first, for
+    /// `mise tasks validate`. It does not warn about an unfetched `git::` file, since validate
+    /// reports each validated one as an issue.
     pub async fn new_for_validation(config: &Arc<Config>, tasks: Vec<Task>) -> eyre::Result<Self> {
-        Self::new_with_cycle_limit(config, tasks, None).await
+        Self::new_with_cycle_limit(config, tasks, None, |no_cache| {
+            TaskFetcher::for_inspection(no_cache).without_warning()
+        })
+        .await
     }
 
     async fn new_with_cycle_limit(
         config: &Arc<Config>,
         tasks: Vec<Task>,
         cycle_limit: Option<usize>,
+        new_fetcher: fn(bool) -> TaskFetcher,
     ) -> eyre::Result<Self> {
         let mut graph = DiGraph::new();
         let mut indexes = HashMap::new();
@@ -163,7 +177,7 @@ impl Deps {
         }
         let all_tasks_to_run = resolve_depends(config, tasks).await?;
         let no_cache = Settings::get().task.remote_no_cache.unwrap_or(false);
-        let fetcher = TaskFetcher::new(no_cache);
+        let fetcher = new_fetcher(no_cache);
         while let Some(mut a) = stack.pop() {
             if seen.contains(&a) {
                 // prevent infinite loop
@@ -182,7 +196,12 @@ impl Deps {
             // Re-render runtime templates with usage values (including defaults)
             // so {{usage.*}} resolves before graph construction and freshness checks.
             if a.has_usage_runtime_templates() {
-                let usage_values = parse_usage_values_from_task(config, &a).await?;
+                // A `git::` file left unfetched (experimental is off) can't be read, so its usage
+                // defaults come from the task's TOML alone.
+                let usage_values = match TaskFetcher::toml_only(&a) {
+                    Some(toml_only) => parse_usage_values_from_task(config, &toml_only).await?,
+                    None => parse_usage_values_from_task(config, &a).await?,
+                };
                 if !usage_values.is_empty() {
                     a.render_runtime_templates_with_usage(config, &usage_values)
                         .await?;

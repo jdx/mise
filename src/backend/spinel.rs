@@ -98,14 +98,25 @@ impl Backend for SpinelBackend {
         .await
     }
 
+    // Runs before `--force` removes an existing install, so a rejected
+    // reinstall leaves the working one in place.
+    async fn prepare_install_version(
+        &self,
+        _ctx: &crate::install_context::InstallContext,
+        tv: crate::toolset::ToolVersion,
+    ) -> Result<crate::toolset::ToolVersion> {
+        Settings::get().ensure_experimental("the spinel backend")?;
+        if cfg!(windows) {
+            bail!("the spinel backend does not support Windows");
+        }
+        Ok(tv)
+    }
+
     async fn install_version_(
         &self,
         ctx: &crate::install_context::InstallContext,
         tv: crate::toolset::ToolVersion,
     ) -> Result<crate::toolset::ToolVersion> {
-        if cfg!(windows) {
-            bail!("the spinel backend does not support Windows");
-        }
         let request_opts = tv.request.options();
         if SpinelOptions::new(&request_opts)
             .values

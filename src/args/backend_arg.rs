@@ -795,7 +795,7 @@ impl BackendArg {
         request_opts: Option<ToolVersionOptions>,
     ) -> ResolvedToolOptions {
         let mut opts = ResolvedToolOptions::default();
-        opts.apply_overrides(&self.registry_opts(), ToolOptionSource::Registry);
+        opts.apply_registry(&self.registry_opts(), &self.full_without_opts());
         if let Some(manifest_opts) = self.install_manifest_opts() {
             opts.apply_overrides(manifest_opts, ToolOptionSource::InstallManifest);
         }

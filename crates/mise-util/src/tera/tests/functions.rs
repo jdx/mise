@@ -303,3 +303,103 @@ async fn test_read_file() {
     .unwrap();
     assert_eq!(s, "test content\nwith multiple lines");
 }
+
+#[test]
+fn test_render_for_dry_run() {
+    {
+        let _lock = crate::testing::lock_ignoring_poison(&crate::testing::SETTINGS_LOCK);
+        dry_run_cases();
+    }
+    let _v1 = SettingsGuard::tera_v1();
+    dry_run_cases();
+}
+
+fn dry_run_cases() {
+    let dir = tempfile::tempdir().unwrap();
+    let marker = dir.path().join("ran");
+    // the command goes through the context: a Windows path in a template
+    // string literal would contain backslash escapes Tera rejects
+    let mut context = BASE_CONTEXT.clone();
+    context.insert("cmd", &format!("touch {}", marker.display()));
+    context.insert("vars", &indexmap::IndexMap::from([("known", "hi")]));
+    let none = IndexSet::new();
+    let pending = IndexSet::from(["pending".to_string()]);
+    let render = |input: &str, unresolved: &IndexSet<String>| match render_for_dry_run(
+        Some(dir.path()),
+        input,
+        &context,
+        unresolved,
+    ) {
+        DryRunRender::Rendered(out) => out,
+        DryRunRender::Unrendered(err) => format!("<unrendered: {}>", error_chain(&err)),
+        DryRunRender::Failed(err) => format!("<failed: {}>", error_chain(&err)),
+    };
+
+    assert_eq!(render("echo {{ vars.known }}", &pending), "echo hi");
+    // exec() is never called, and calling it leaves the template unrendered
+    for unresolved in [&none, &pending] {
+        let out = render("echo {{ exec(command=cmd) }}", unresolved);
+        assert!(out.starts_with("<unrendered: "), "{out}");
+        assert!(out.contains("exec() is disabled during dry run"), "{out}");
+    }
+    assert!(!marker.exists());
+    // with a var unresolved, any failure leaves the template unrendered with
+    // its error, however the var is read
+    for input in [
+        "echo {{ vars.pending }}",
+        "{% set v = vars %}{{ v.pending }}",
+        "{{ read_file(path=vars.pending) }}",
+        "{{ vars.pending | hash_file }}",
+        "{{ vars.pending | extname }}",
+        "echo {{ nope() }}",
+    ] {
+        let out = render(input, &pending);
+        assert!(out.starts_with("<unrendered: "), "{input}: {out}");
+    }
+    // with a var unresolved, a template that uses the whole vars map would
+    // render without it, so it is left unrendered; one entry at a time, or
+    // with nothing unresolved, it renders
+    for input in [
+        "echo '{{ vars | json_encode }}'",
+        "{% for k, v in vars %}{{ k }}={{ v }} {% endfor %}",
+        "{% set v = vars %}{{ v.known }}",
+    ] {
+        let out = render(input, &pending);
+        assert!(
+            out.starts_with("<unrendered: ")
+                && out.contains("whole vars map")
+                && out.contains("pending"),
+            "{input}: {out}"
+        );
+        assert!(render(input, &none).contains("hi"), "{input}");
+    }
+    assert_eq!(render("{{ vars['known'] }}", &pending), "hi");
+    assert_eq!(render("{{ vars.known }}{# x.vars #}", &pending), "hi");
+    // spreading the map reads all of it
+    let out = render("{{ {...vars} | json_encode }}", &pending);
+    assert!(out.contains("whole vars map"), "{out}");
+    // the scan does not parse the template, so neither `{% raw %}` text nor a
+    // stray quote can hide a later read; the word `vars` in plain text counts
+    // too, which only errs toward unrendered
+    for input in [
+        "echo vars {{ vars.known }}",
+        "echo '{% raw %}{{ vars }}{% endraw %}'",
+        "echo '{% raw %}{%{% endraw %}' '{{ vars | json_encode }}'",
+        "{% raw %}endraw {% ignored %}{{ ' }}{% endraw %}{{ vars | json_encode }}",
+    ] {
+        let out = render(input, &pending);
+        assert!(out.contains("whole vars map"), "{input}: {out}");
+    }
+    // with nothing unresolved and no exec() call, a failure is an error
+    let out = render("echo {{ nope() }}", &none);
+    assert!(
+        out.starts_with("<failed: ") && out.contains("nope"),
+        "{out}"
+    );
+    assert!(render("echo {{ vars.undeclared }}", &none).starts_with("<failed: "));
+    // nothing is substituted for an unresolved var, so a template that does
+    // not read one renders once, as is
+    let out = render("{{ choice(n=8, alphabet='ab') }}", &pending);
+    assert_eq!(out.len(), 8, "{out}");
+    assert!(out.chars().all(|c| c == 'a' || c == 'b'), "{out}");
+}

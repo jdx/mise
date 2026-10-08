@@ -9,6 +9,7 @@
 //! span is alive while the task runs, its `SpanContext` is available for both
 //! W3C context propagation and log correlation.
 
+use crate::config::Settings;
 use crate::otel::{LogClaim, TaskOutputForwarder, logs_enabled, traces_enabled};
 use crate::task::Task;
 use crate::task::task_executor::TaskRunOutcome;
@@ -67,7 +68,8 @@ impl TaskRunTelemetry {
     /// - traces require `otel.enabled = true` and a traces endpoint
     /// - logs require `otel.logs = true` and a logs endpoint
     ///
-    /// Returns `None` when neither signal is enabled.
+    /// Returns `None` when neither signal is enabled, and an error when one
+    /// is but experimental features are off.
     ///
     /// When mise is invoked from another mise run (or any OTEL-aware
     /// parent), the `TRACEPARENT` env var carries W3C Traceparent so
@@ -75,12 +77,16 @@ impl TaskRunTelemetry {
     ///
     /// `captures_output` is false for a `--raw` run, which never reads task
     /// output and so must not claim an ancestor's log stream.
-    pub fn init_if_enabled(requested_task_names: &[String], captures_output: bool) -> Option<Self> {
+    pub fn init_if_enabled(
+        requested_task_names: &[String],
+        captures_output: bool,
+    ) -> Result<Option<Self>> {
         let traces = traces_enabled();
         let logs = logs_enabled();
         if !traces && !logs {
-            return None;
+            return Ok(None);
         }
+        Settings::get().ensure_experimental("OpenTelemetry export")?;
         let suffix = if requested_task_names.is_empty() {
             String::new()
         } else {
@@ -100,7 +106,7 @@ impl TaskRunTelemetry {
             None
         };
         if exporting_provider.is_none() && output_forwarder.is_none() {
-            return None;
+            return Ok(None);
         }
         // Without trace export, spans never leave the process. The SDK still
         // assigns real trace/span IDs, which is all log records need to carry
@@ -114,13 +120,13 @@ impl TaskRunTelemetry {
             .then(LogClaim::acquire)
             .flatten();
 
-        Some(Self::new(
+        Ok(Some(Self::new(
             &root_span_name,
             provider,
             parent_cx_from_env(),
             output_forwarder,
             log_claim,
-        ))
+        )))
     }
 
     fn new(

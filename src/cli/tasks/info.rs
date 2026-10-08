@@ -63,7 +63,7 @@ impl TasksInfo {
             let mut tasks = vec![task.clone()];
             // always pass no_cache=false as the command doesn't take no-cache argument
             // MISE_TASK_REMOTE_NO_CACHE env var is still respected if set
-            TaskFetcher::new(false)
+            TaskFetcher::for_inspection(false)
                 .fetch_tasks(&config, &mut tasks)
                 .await?;
             let task = &tasks[0];
@@ -160,7 +160,7 @@ impl TasksInfo {
                 .join("\n");
             info::section("Environment Variables", env_display)?;
         }
-        let spec = task.parse_usage_spec_for_display(config).await?;
+        let spec = usage_spec(config, task).await?;
         if !spec.is_empty() {
             info::section("Usage Spec", &spec)?;
         }
@@ -168,7 +168,7 @@ impl TasksInfo {
     }
 
     async fn display_json(&self, config: &Arc<Config>, task: &Task) -> Result<()> {
-        let spec = task.parse_usage_spec_for_display(config).await?;
+        let spec = usage_spec(config, task).await?;
         let resolved_dir = task
             .dir(config)
             .await?
@@ -208,5 +208,14 @@ impl TasksInfo {
         });
         miseprintln!("{}", serde_json::to_string_pretty(&o)?);
         Ok(())
+    }
+}
+
+/// A `git::` file left unfetched (experimental is off) can't be read, so its usage comes from
+/// the task's TOML metadata alone.
+async fn usage_spec(config: &Arc<Config>, task: &Task) -> Result<usage::Spec> {
+    match TaskFetcher::toml_only(task) {
+        Some(toml_only) => toml_only.parse_usage_spec_for_display(config).await,
+        None => task.parse_usage_spec_for_display(config).await,
     }
 }

@@ -1,12 +1,14 @@
 use std::collections::{HashMap, HashSet};
 use std::iter::once;
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
 
 use heck::{
     ToKebabCase, ToLowerCamelCase, ToShoutyKebabCase, ToShoutySnakeCase, ToSnakeCase,
     ToUpperCamelCase,
 };
+use indexmap::IndexSet;
 use path_absolutize::Absolutize;
 use rand::prelude::*;
 use regex::Regex;
@@ -64,8 +66,10 @@ impl TeraEngine {
             Self::V2(tera) => tera.render_str(input, context, false),
             Self::V1(tera) => {
                 let context = tera1_context(input, context)?;
+                // keep the cause (such as a function's own error) as the
+                // source, which the message alone leaves out
                 tera.render_str(input, &context)
-                    .map_err(|e| tera_err(e.to_string()))
+                    .map_err(|e| tera::Error::chain(e.to_string(), e))
             }
         }
     }
@@ -1387,29 +1391,140 @@ fn quote_for_cmd(mut engine: TeraEngine) -> TeraEngine {
     engine
 }
 
-/// Returns the normal mise renderer with command execution disabled.
-pub fn get_tera_for_dry_run(dir: Option<&Path>) -> TeraEngine {
+/// What a dry run makes of a template. See [`render_for_dry_run`].
+#[derive(Debug)]
+pub enum DryRunRender {
+    /// The template rendered with the values the dry run could compute.
+    Rendered(String),
+    /// The template failed to render, and the failure may come from what a
+    /// dry run leaves out: it called `exec()`, or a var was left unresolved.
+    /// A real run decides; the dry run shows the template as written.
+    Unrendered(tera::Error),
+    /// The template failed to render with nothing unresolved and no `exec()`
+    /// call, so a real run fails the same way.
+    Failed(tera::Error),
+}
+
+/// Renders `input` for a dry run.
+///
+/// A dry run never calls exec() and never substitutes made-up values. Hooks
+/// and dry-run vars are rendered with the values the dry run could compute;
+/// vars that need exec() (directly or through another var) are left
+/// undefined. If that render succeeds, the preview shows it. If it fails and
+/// the dry run left any var unresolved or the template called exec(), the
+/// hook is shown unrendered with a note that includes the render error, and
+/// the dry run continues. If it fails with nothing unresolved and no exec()
+/// call, it is an error, as in a real run. While any var is unresolved, a
+/// template that uses the `vars` map as a whole rather than one entry at a
+/// time (`vars | json_encode`, `{% for k, v in vars %}`, `{% set v = vars %}`)
+/// is also shown unrendered, since it would render without the vars the dry
+/// run could not compute.
+///
+/// `context` holds the values the dry run computed, and `unresolved` names
+/// the vars it left out. Known limitation: a template that tolerates an
+/// undefined var (`default`, `is defined`) renders its fallback in the
+/// preview.
+pub fn render_for_dry_run(
+    dir: Option<&Path>,
+    input: &str,
+    context: &Context,
+    unresolved: &IndexSet<String>,
+) -> DryRunRender {
+    if !unresolved.is_empty() && reads_whole_vars_map(input) {
+        let names = unresolved.iter().map(String::as_str).collect::<Vec<_>>();
+        return DryRunRender::Unrendered(tera_err(format!(
+            "the template reads the whole vars map, which leaves out vars the dry run could not compute: {}",
+            names.join(", ")
+        )));
+    }
+    let reached_exec = Arc::new(AtomicBool::new(false));
+    let mut tera = dry_run_tera(dir, reached_exec.clone());
+    match render_str(&mut tera, input, context) {
+        Ok(out) => DryRunRender::Rendered(out),
+        Err(err) if reached_exec.load(Ordering::Relaxed) || !unresolved.is_empty() => {
+            DryRunRender::Unrendered(err)
+        }
+        Err(err) => DryRunRender::Failed(err),
+    }
+}
+
+/// Whether `input` may use the `vars` map as a whole: pass it to a filter or
+/// function, iterate, spread, assign or test it, rather than read one entry
+/// with `vars.NAME` or `vars[...]`.
+///
+/// This deliberately does not parse the template. Any `vars` identifier that is
+/// not followed by `.` or `[` counts, wherever it appears: in a tag, a string,
+/// a comment, a `{% raw %}` block or plain text. Skipping any of those would
+/// need Tera's own parser to get right, and a miss renders a preview without
+/// the unresolved vars, while a false positive only shows it unrendered.
+fn reads_whole_vars_map(input: &str) -> bool {
+    let s = input.as_bytes();
+    let is_ident = |b: u8| b.is_ascii_alphanumeric() || b == b'_';
+    let mut i = 0;
+    while i < s.len() {
+        if !is_ident(s[i]) {
+            i += 1;
+            continue;
+        }
+        let start = i;
+        while i < s.len() && is_ident(s[i]) {
+            i += 1;
+        }
+        // `x.vars` is an attribute, but `...vars` spreads the whole map
+        let attribute = start > 0 && s[start - 1] == b'.' && !s[..start].ends_with(b"...");
+        if &s[start..i] == b"vars" && !attribute {
+            let next = s[i..].iter().find(|b| !b.is_ascii_whitespace());
+            if !matches!(next, Some(b'.' | b'[')) {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+/// The messages of `err` and its sources joined with `: `, since a Tera
+/// error's `Display` leaves out the sources that say what went wrong.
+pub fn error_chain(err: &tera::Error) -> String {
+    let mut chain = vec![err.to_string()];
+    let mut source = std::error::Error::source(err);
+    while let Some(err) = source {
+        chain.push(err.to_string());
+        source = err.source();
+    }
+    chain.dedup();
+    chain.join(": ")
+}
+
+/// The normal mise renderer with command execution disabled. A call to
+/// `exec()` fails and sets `reached_exec`.
+fn dry_run_tera(dir: Option<&Path>, reached_exec: Arc<AtomicBool>) -> TeraEngine {
     if use_tera_v1() {
         let mut tera = get_tera_v1(dir);
-        tera.register_function("exec", dry_run_disabled_fn_v1("exec"));
+        tera.register_function("exec", dry_run_disabled_fn_v1("exec", reached_exec));
         TeraEngine::V1(Box::new(tera))
     } else {
         let mut tera = get_tera_v2(dir);
-        tera.register_function("exec", dry_run_disabled_fn("exec"));
+        tera.register_function("exec", dry_run_disabled_fn("exec", reached_exec));
         TeraEngine::V2(Box::new(tera))
     }
 }
 
-fn dry_run_disabled_fn(name: &'static str) -> impl Fn(Kwargs, &State) -> TeraResult<Value> {
+fn dry_run_disabled_fn(
+    name: &'static str,
+    reached: Arc<AtomicBool>,
+) -> impl Fn(Kwargs, &State) -> TeraResult<Value> {
     move |_args: Kwargs, _: &State| -> TeraResult<Value> {
+        reached.store(true, Ordering::Relaxed);
         Err(tera_err(format!("{name}() is disabled during dry run")))
     }
 }
 
 fn dry_run_disabled_fn_v1(
     name: &'static str,
+    reached: Arc<AtomicBool>,
 ) -> impl Fn(&HashMap<String, JsonValue>) -> tera1::Result<JsonValue> {
     move |_args: &HashMap<String, JsonValue>| -> tera1::Result<JsonValue> {
+        reached.store(true, Ordering::Relaxed);
         Err(tera1_err(format!("{name}() is disabled during dry run")))
     }
 }
