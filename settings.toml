@@ -1670,8 +1670,28 @@ optional = true
 type = "String"
 
 [java.shorthand_vendor]
-default = "openjdk"
-description = "Shorthand for Java. Used when installing Java without a vendor prefix."
+default = "temurin"
+description = "Vendor used for Java versions without a vendor prefix, such as `java@21` or `java@lts`."
+docs = """
+Versions without a vendor prefix, such as `java@21`, `java@lts`, or `java@latest`, install this
+vendor's builds. The default is `temurin` (Eclipse Temurin), which keeps publishing quarterly
+updates for long-term-support releases.
+
+Earlier versions of mise defaulted to `openjdk`. jdk.java.net publishes OpenJDK builds only until
+the next feature release, so with that vendor `java@21` stays on 21.0.2. To keep the old behavior,
+set this to `openjdk`, or request `openjdk-21` explicitly. Temurin has no builds of Java 9, 10, or
+12 through 15; request those with an `openjdk-` prefix.
+
+Installed versions are not changed. A lockfile entry records the vendor that resolved it, so an
+entry written with `openjdk` matches only while this setting is `openjdk`. With another vendor,
+`mise install --locked` reports that the tool is not in the lockfile, and `mise lock` or an
+unlocked `mise install` resolves the request again.
+
+```toml
+[settings]
+java.shorthand_vendor = "openjdk"
+```
+"""
 env = "MISE_JAVA_SHORTHAND_VENDOR"
 type = "String"
 

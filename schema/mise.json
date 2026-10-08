@@ -1361,8 +1361,8 @@
           "unevaluatedProperties": false,
           "properties": {
             "shorthand_vendor": {
-              "default": "openjdk",
-              "description": "Shorthand for Java. Used when installing Java without a vendor prefix.",
+              "default": "temurin",
+              "description": "Vendor used for Java versions without a vendor prefix, such as `java@21` or `java@lts`.",
               "type": "string"
             }
           }
