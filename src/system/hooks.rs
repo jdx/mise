@@ -4,7 +4,6 @@
 //! `mise bootstrap`. They are intentionally explicit bootstrap behavior, not
 //! part of `mise install` or shell activation.
 
-use std::collections::HashMap;
 use std::fmt;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -13,11 +12,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use eyre::{Result, bail};
 use serde::Serialize;
 use strum::{EnumIter, IntoEnumIterator};
-use tera::Value;
 
-use crate::config::env_directive::EnvDirective;
 use crate::config::{Config, Settings, SettingsExt};
-use crate::tera::TeraEngine;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, EnumIter, Serialize)]
 #[serde(rename_all = "kebab-case")]
@@ -181,13 +177,10 @@ pub async fn run_phase(
                 // could not resolve, such as ones computed with exec()
                 Err(_)
                     if dry_run
-                        && renders_with_unresolved_vars(
-                            config,
-                            hook,
-                            &mut tera,
-                            &context,
-                            &reached_exec,
-                        )? =>
+                        && crate::config::references_any_var(
+                            &hook.run,
+                            config.bootstrap_dry_run_unresolved_vars(&hook.config_path),
+                        ) =>
                 {
                     info!(
                         "[bootstrap.hooks.{phase}] in {}: uses vars that are not resolved during a dry run; showing the command unrendered",
@@ -218,55 +211,6 @@ pub async fn run_phase(
     Ok(())
 }
 
-/// Whether a hook that failed to render in a dry run renders once the vars its
-/// config declares, but the dry-run context lacks, are given placeholder
-/// values. The dry-run config view leaves out vars it cannot resolve without
-/// running anything (for example ones computed with `exec()`), so such a hook
-/// would otherwise fail although it renders fine in a real run.
-fn renders_with_unresolved_vars(
-    config: &Config,
-    hook: &BootstrapHook,
-    tera: &mut TeraEngine,
-    context: &tera::Context,
-    reached_exec: &AtomicBool,
-) -> Result<bool> {
-    let mut vars: HashMap<String, Value> = context
-        .get("vars")
-        .and_then(Value::as_map)
-        .map(|vars| {
-            vars.iter()
-                .map(|(key, value)| (key.to_string(), value.clone()))
-                .collect()
-        })
-        .unwrap_or_default();
-    let config_files = config
-        .bootstrap_config_maps()
-        .find(|config_files| config_files.contains_key(&hook.config_path))
-        .unwrap_or(&config.config_files);
-    let mut unresolved = false;
-    for config_file in config_files.values() {
-        for directive in config_file.vars_entries()? {
-            let (EnvDirective::Val(key, ..)
-            | EnvDirective::Default(key, ..)
-            | EnvDirective::Age { key, .. }) = directive
-            else {
-                continue;
-            };
-            if let std::collections::hash_map::Entry::Vacant(entry) = vars.entry(key) {
-                entry.insert(Value::from(""));
-                unresolved = true;
-            }
-        }
-    }
-    if !unresolved {
-        return Ok(false);
-    }
-    let mut context = context.clone();
-    context.insert("vars", &vars);
-    let rendered = crate::tera::render_str(tera, &hook.run, &context);
-    Ok(rendered.is_ok() || reached_exec.load(Ordering::Relaxed))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -293,6 +237,18 @@ mod tests {
         assert!(!marker.exists());
         assert_eq!(render("echo {{ 1 + 1 }}"), (true, false));
         assert_eq!(render("echo {{ nope() }}"), (false, false));
+    }
+
+    #[test]
+    fn finds_hooks_that_read_unresolved_vars() {
+        let unresolved = indexmap::IndexSet::from(["file".to_string()]);
+        let reads = |template| crate::config::references_any_var(template, &unresolved);
+        assert!(reads("cat {{ read_file(path=vars.file) }}"));
+        assert!(reads(r#"echo {{ vars["file"] }}"#));
+        assert!(reads("echo {{ vars [ 'file' ] }}"));
+        assert!(!reads("echo {{ vars.file_name }}"));
+        assert!(!reads("echo {{ file }}"));
+        assert!(!reads("echo {{ myvars.file }}"));
     }
 
     #[test]

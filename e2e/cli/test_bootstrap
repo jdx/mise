@@ -239,6 +239,28 @@ assert_fail "test -e exec_var_hook_ran"
 sed -i.bak 's/vars.exec_var/vars.undeclared_var/' dotfiles-exec-var/config.toml
 assert_fail "mise bootstrap dotfiles apply --dry-run --force" "failed to render template"
 
+# so do vars whose template is broken rather than waiting on exec()
+cat <<'EOF' >dotfiles-exec-var/config.toml
+[vars]
+bad_var = "{{ nope() }}"
+
+[bootstrap.hooks.post-dotfiles]
+run = "echo {{ vars.bad_var }}"
+EOF
+assert_fail "mise bootstrap dotfiles apply --dry-run --force" "failed to render template"
+
+# hooks that pass an exec()-computed var, or one derived from it, to a function show unrendered
+cat <<'EOF' >dotfiles-exec-var/config.toml
+[vars]
+exec_file = "{{ exec(command='echo message.txt') }}"
+derived_file = "{{ vars.exec_file }}"
+
+[bootstrap.hooks.post-dotfiles]
+run = "echo {{ read_file(path=vars.derived_file) }} > exec_var_hook_ran"
+EOF
+assert_contains "mise bootstrap dotfiles apply --dry-run --force" "echo {{ read_file(path=vars.derived_file) }} > exec_var_hook_ran"
+assert_fail "test -e exec_var_hook_ran"
+
 # macOS LaunchAgents in shared configs are inert when launchd is unavailable
 cat <<EOF >mise.toml
 [bootstrap.macos.launchd.agents.my-sync]
