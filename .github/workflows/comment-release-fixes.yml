@@ -29,7 +29,7 @@ jobs:
       pull-requests: read
       issues: write
       discussions: write
-    uses: jdx/workflows/.github/workflows/comment-release-fixes.yml@v1.1.0
+    uses: jdx/workflows/.github/workflows/comment-release-fixes.yml@4c952564543dd54d60f15ef4062af7fb60c5561d # v1.1.0
     with:
       tag: ${{ inputs.tag || github.event.release.tag_name }}
       marker_prefix: mise-fixed-in
