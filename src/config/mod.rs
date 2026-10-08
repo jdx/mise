@@ -3513,10 +3513,13 @@ fn is_active_env_config_file(path: &Path, envs: &[String]) -> bool {
     else {
         return false;
     };
-    let stem = stem.strip_suffix(".local").unwrap_or(stem);
+    // An environment name may itself end in `.local`, so test the whole stem first.
+    let local_stripped = stem.strip_suffix(".local");
     envs.iter().any(|e| {
-        stem.strip_suffix(e.as_str())
-            .is_some_and(|s| s.ends_with('.'))
+        [Some(stem), local_stripped]
+            .into_iter()
+            .flatten()
+            .any(|s| s.strip_suffix(e.as_str()).is_some_and(|r| r.ends_with('.')))
     })
 }
 
