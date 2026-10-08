@@ -7459,25 +7459,30 @@ Tool options can also be set inline:
     example "mise use --env staging node@24" help="Write mise.staging.toml, which mise loads when MISE_ENV=staging"
     complete path type=path
 }
-cmd vars help="Ask for and list the per-machine answers to `[vars]` that declare a `prompt`" effect=write {
+cmd vars help="List, set, and ask for config vars" effect=write {
     long_help #"""
-Ask for and list the per-machine answers to `[vars]` that declare a `prompt`
+List, set, and ask for config vars
 
-A `[vars]` entry with a `prompt` is asked for once per machine and the
-answer is remembered in `$MISE_STATE_DIR/vars.toml`, outside every config
-file. With no subcommand, lists the saved answers (same as `mise vars ls`).
-`mise vars prompt` asks for them or, as `NAME=VALUE`, sets them directly;
-only it and `mise bootstrap --prompt-vars` ever ask. See
-https://mise.jdx.dev/configuration/vars.html#prompt
+Like `mise set`: with no arguments, lists every var and where it comes from;
+`mise vars NAME=VALUE` saves a value on this machine and `mise vars NAME`
+prints one. Saved values live in `$MISE_STATE_DIR/vars.toml`, outside every
+config file, and sit above a var's `default` but below any value a config
+file sets. `mise vars prompt` asks for the `[vars]` that declare a `prompt`;
+only it and `mise bootstrap --prompt-vars` ever ask.
+See https://mise.jdx.dev/configuration/vars.html#prompt
 """#
     flag --no-header help="Do not print the table header"
     flag "-h --help" help="Print help" action=help builtin=#true
-    cmd ls help="List the saved answers" effect=read {
+    arg "[NAME[=VALUE]]…" help="Values to save (`NAME=VALUE`) or to print (`NAME`)" required=#false var=#true
+    cmd ls help="List every var, with the file it comes from" effect=read {
         alias list
         long_help #"""
-List the saved answers
+List every var, with the file it comes from
 
-Reads `$MISE_STATE_DIR/vars.toml`; no config is loaded.
+Lists the `[vars]` of every config file mise loads here, plus the answers
+saved on this machine (source: `$MISE_STATE_DIR/vars.toml`). Values hidden
+with `redact` show as `[redacted]`. A `required` var that is still unset only
+warns here.
 """#
         flag --no-header help="Do not print the table header"
         flag "-h --help" help="Print help" action=help builtin=#true
@@ -7511,7 +7516,9 @@ Edits `$MISE_STATE_DIR/vars.toml`; no config is loaded. The next
         arg "[NAME]…" help="The vars whose answers to forget" required=#false var=#true
         example "mise vars unset git_name" help="Be asked for git_name again"
     }
-    example "mise vars" help="List the saved answers"
+    example "mise vars git_name=\"Ada Lovelace\"" help="Save a value on this machine without asking"
+    example "mise vars git_name" help="Print the saved value of git_name"
+    example "mise vars" help="List every var and its source"
 }
 cmd version help="Show the version of mise" effect=read {
     alias v

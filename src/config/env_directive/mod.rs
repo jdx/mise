@@ -413,6 +413,15 @@ impl EnvResults {
             .map(|(k, v)| (k.clone(), (v.clone(), None)))
             .collect::<IndexMap<_, _>>();
         let mut r = Self::default();
+        if resolve_opts.vars {
+            // Saved answers sit below every config value and above a `default`,
+            // which keeps a value that is already there.
+            for (key, value) in prompt::saved_all() {
+                if !value.is_empty() {
+                    r.vars.insert(key, (value, prompt::answers_path()));
+                }
+            }
+        }
         let normalize_path = |config_root: &Path, p: PathBuf| {
             let p = p.strip_prefix("./").unwrap_or(&p);
             match p.strip_prefix("~/") {

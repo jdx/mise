@@ -99,10 +99,11 @@ the default. mise saves every answer, including an accepted default, in
 config or dotfiles history, and is available to every command that reads vars from then on.
 
 ```sh
-mise vars prompt          # ask for every unanswered prompt var
-mise vars prompt git_name=Ada  # set an answer without asking
-mise vars ls              # show the saved answers
-mise vars unset git_name  # forget one, to be asked again
+mise vars                       # list every var and where it comes from
+mise vars git_name=Ada          # save a value on this machine, no terminal needed
+mise vars git_name              # print the value templates see
+mise vars prompt                # ask for every unanswered prompt var
+mise vars unset git_name        # forget a saved value, to be asked again
 ```
 
 `mise bootstrap --prompt-vars` does the same inside a bootstrap run, which is how
@@ -117,7 +118,9 @@ otherwise falls back to `default`, or fails as any other `required` var does.
 A var resolves in this order, highest first: the process environment, a value
 in a higher-precedence config file such as `mise.local.toml`, the saved answer,
 the `default`. Answers are keyed by var name alone, so projects that use the same
-name share one answer on a machine. `prompt` works only in `[vars]`, not `[env]`.
+name share one answer on a machine. A value saved with `mise vars NAME=VALUE`
+works for any var name, with or without a `prompt`. `prompt` works only in
+`[vars]`, not `[env]`.
 
 ## Task-local vars
 

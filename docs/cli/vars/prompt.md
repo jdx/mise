@@ -49,5 +49,5 @@ mise vars prompt git_name="Ada Lovelace"
 ## Related documentation
 
 - [Config variables](/configuration/vars.html).
-- [`mise vars [--no-header] [SUBCOMMAND]`](/cli/vars.html).
+- [`mise vars [--no-header] [NAME[=VALUE]]… [SUBCOMMAND]`](/cli/vars.html).
 - [Global flags and argument syntax](/cli/#global-flags).

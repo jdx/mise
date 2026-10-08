@@ -70,26 +70,51 @@ assert_fail_contains "mise env" "Required variable 'git_email' is not defined"
 # --prompt-vars is for the full run only
 assert_fail_contains "mise bootstrap --prompt-vars status" "only applies to a full"
 
-# `mise vars` manages the saved answers without loading config
-cat <<EOF2 >"$MISE_STATE_DIR/vars.toml"
+# `mise vars NAME=VALUE` saves a value on this machine, like `mise set`; `mise vars NAME` prints it
+cat <<EOF2 >mise.toml
 [vars]
-git_name = "saved-name"
-git_email = "me@example.com"
+plain = "from-config"
+
+[vars.git_name]
+default = "fallback"
+prompt = "Git author name"
 EOF2
-rm mise.toml
-assert "mise vars ls --no-header" "git_email me@example.com
-git_name  saved-name"
+rm -f "$MISE_STATE_DIR/vars.toml" mise.local.toml
+mise vars color=blue git_name="Ada Lovelace"
+assert "mise vars color" "blue"
+assert "mise vars git_name" "Ada Lovelace"
+assert "mise vars plain" "from-config"
+assert_fail_contains "mise vars missing" "no var named 'missing'"
+assert_fail_contains "mise vars =x" "expected NAME or NAME=VALUE"
+assert_fail_contains "mise vars empty=" "would count as unanswered"
+
+# Bare `mise vars` lists every var with its source, saved or from config
+assert_contains "mise vars --no-header" "plain"
+assert_contains "mise vars --no-header" "from-config"
+assert_contains "mise vars --no-header" "color"
+assert_contains "mise vars --no-header" "vars.toml"
+
+# A saved value is an ordinary var, so a template sees it even with no `prompt`
+cat <<EOF2 >>mise.toml
+
+[tasks.show-color]
+run = "echo {{ vars.color }}"
+EOF2
+assert_contains "mise run show-color" "blue"
+
+# A value in a config file still beats the saved one
+cat <<EOF2 >mise.local.toml
+[vars]
+color = "red"
+EOF2
+assert "mise vars color" "red"
+rm mise.local.toml
+
+# `mise vars prompt NAME=VALUE` saves too, and `unset` forgets
+mise vars prompt other=x
+assert "mise vars other" "x"
 assert_fail_contains "mise vars prompt" "needs an interactive terminal"
 assert_fail_contains "mise vars prompt nope" "needs an interactive terminal"
-mise vars unset git_name
-assert "mise vars ls --no-header" "git_email me@example.com"
+mise vars unset other
+assert_fail_contains "mise vars other" "no var named 'other'"
 assert_fail_contains "mise vars unset" "name at least one var"
-
-# `mise vars prompt NAME=VALUE` sets an answer without asking, and bare `mise vars` lists them
-mise vars prompt git_name="Ada Lovelace" other=x
-assert "mise vars --no-header" "git_email me@example.com
-git_name  Ada Lovelace
-other     x"
-assert_fail_contains "mise vars prompt =x" "expected NAME or NAME=VALUE"
-assert_fail_contains "mise vars prompt empty=" "would count as unanswered"
-assert_fail_contains "mise vars git_name=x" "unrecognized subcommand"
