@@ -6,16 +6,16 @@
 
 use std::collections::HashMap;
 use std::fmt;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use eyre::{Result, bail};
 use serde::Serialize;
-use serde_json::Value as JsonValue;
 use strum::{EnumIter, IntoEnumIterator};
-use tera::{Kwargs, State, TeraResult, Value};
+use tera::Value;
 
+use crate::config::env_directive::EnvDirective;
 use crate::config::{Config, Settings, SettingsExt};
 use crate::tera::TeraEngine;
 
@@ -153,7 +153,10 @@ pub async fn run_phase(
         let run = if crate::tera::contains_template_syntax(&hook.run) {
             let reached_exec = Arc::new(AtomicBool::new(false));
             let mut tera = if dry_run {
-                get_tera_for_dry_run_hook(hook.config_path.parent(), &reached_exec)
+                crate::tera::get_tera_for_dry_run_tracking_exec(
+                    hook.config_path.parent(),
+                    reached_exec.clone(),
+                )
             } else {
                 crate::tera::get_tera(hook.config_path.parent())
             };
@@ -170,6 +173,24 @@ pub async fn run_phase(
                 Err(_) if reached_exec.load(Ordering::Relaxed) => {
                     info!(
                         "[bootstrap.hooks.{phase}] in {}: exec() does not run during a dry run; showing the command unrendered",
+                        hook.config_path.display()
+                    );
+                    hook.run.clone()
+                }
+                // the same goes for a command that reads vars the dry run
+                // could not resolve, such as ones computed with exec()
+                Err(_)
+                    if dry_run
+                        && renders_with_unresolved_vars(
+                            config,
+                            hook,
+                            &mut tera,
+                            &context,
+                            &reached_exec,
+                        )? =>
+                {
+                    info!(
+                        "[bootstrap.hooks.{phase}] in {}: uses vars that are not resolved during a dry run; showing the command unrendered",
                         hook.config_path.display()
                     );
                     hook.run.clone()
@@ -197,28 +218,53 @@ pub async fn run_phase(
     Ok(())
 }
 
-/// The dry-run renderer, with `exec()` recording that the template reached it
-/// so the caller can tell that failure apart from a broken template.
-fn get_tera_for_dry_run_hook(dir: Option<&Path>, reached_exec: &Arc<AtomicBool>) -> TeraEngine {
-    const MESSAGE: &str = "exec() is disabled during dry run";
-    let mut tera = crate::tera::get_tera_for_dry_run(dir);
-    let reached = reached_exec.clone();
-    match &mut tera {
-        TeraEngine::V2(tera) => {
-            tera.register_function("exec", move |_: Kwargs, _: &State| -> TeraResult<Value> {
-                reached.store(true, Ordering::Relaxed);
-                Err(tera::Error::message(MESSAGE))
-            })
+/// Whether a hook that failed to render in a dry run renders once the vars its
+/// config declares, but the dry-run context lacks, are given placeholder
+/// values. The dry-run config view leaves out vars it cannot resolve without
+/// running anything (for example ones computed with `exec()`), so such a hook
+/// would otherwise fail although it renders fine in a real run.
+fn renders_with_unresolved_vars(
+    config: &Config,
+    hook: &BootstrapHook,
+    tera: &mut TeraEngine,
+    context: &tera::Context,
+    reached_exec: &AtomicBool,
+) -> Result<bool> {
+    let mut vars: HashMap<String, Value> = context
+        .get("vars")
+        .and_then(Value::as_map)
+        .map(|vars| {
+            vars.iter()
+                .map(|(key, value)| (key.to_string(), value.clone()))
+                .collect()
+        })
+        .unwrap_or_default();
+    let config_files = config
+        .bootstrap_config_maps()
+        .find(|config_files| config_files.contains_key(&hook.config_path))
+        .unwrap_or(&config.config_files);
+    let mut unresolved = false;
+    for config_file in config_files.values() {
+        for directive in config_file.vars_entries()? {
+            let (EnvDirective::Val(key, ..)
+            | EnvDirective::Default(key, ..)
+            | EnvDirective::Age { key, .. }) = directive
+            else {
+                continue;
+            };
+            if let std::collections::hash_map::Entry::Vacant(entry) = vars.entry(key) {
+                entry.insert(Value::from(""));
+                unresolved = true;
+            }
         }
-        TeraEngine::V1(tera) => tera.register_function(
-            "exec",
-            move |_: &HashMap<String, JsonValue>| -> tera1::Result<JsonValue> {
-                reached.store(true, Ordering::Relaxed);
-                Err(tera1::Error::msg(MESSAGE))
-            },
-        ),
     }
-    tera
+    if !unresolved {
+        return Ok(false);
+    }
+    let mut context = context.clone();
+    context.insert("vars", &vars);
+    let rendered = crate::tera::render_str(tera, &hook.run, &context);
+    Ok(rendered.is_ok() || reached_exec.load(Ordering::Relaxed))
 }
 
 #[cfg(test)]
@@ -229,16 +275,21 @@ mod tests {
     fn dry_run_renderer_reports_exec_without_running_it() {
         let dir = tempfile::tempdir().unwrap();
         let marker = dir.path().join("ran");
-        let context = crate::tera::BASE_CONTEXT.clone();
+        // the command goes through the context: a Windows path in a template
+        // string literal would contain backslash escapes Tera rejects
+        let mut context = crate::tera::BASE_CONTEXT.clone();
+        context.insert("cmd", &format!("touch {}", marker.display()));
         let render = |input: &str| {
             let reached_exec = Arc::new(AtomicBool::new(false));
-            let mut tera = get_tera_for_dry_run_hook(Some(dir.path()), &reached_exec);
+            let mut tera = crate::tera::get_tera_for_dry_run_tracking_exec(
+                Some(dir.path()),
+                reached_exec.clone(),
+            );
             let rendered = crate::tera::render_str(&mut tera, input, &context);
             (rendered.is_ok(), reached_exec.load(Ordering::Relaxed))
         };
 
-        let exec = format!("echo {{{{ exec(command='touch {}') }}}}", marker.display());
-        assert_eq!(render(&exec), (false, true));
+        assert_eq!(render("echo {{ exec(command=cmd) }}"), (false, true));
         assert!(!marker.exists());
         assert_eq!(render("echo {{ 1 + 1 }}"), (true, false));
         assert_eq!(render("echo {{ nope() }}"), (false, false));

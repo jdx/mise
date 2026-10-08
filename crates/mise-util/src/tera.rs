@@ -1,7 +1,8 @@
 use std::collections::{HashMap, HashSet};
 use std::iter::once;
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
 
 use heck::{
     ToKebabCase, ToLowerCamelCase, ToShoutyKebabCase, ToShoutySnakeCase, ToSnakeCase,
@@ -1389,27 +1390,51 @@ fn quote_for_cmd(mut engine: TeraEngine) -> TeraEngine {
 
 /// Returns the normal mise renderer with command execution disabled.
 pub fn get_tera_for_dry_run(dir: Option<&Path>) -> TeraEngine {
+    dry_run_tera(dir, None)
+}
+
+/// Like [`get_tera_for_dry_run`], but sets `reached_exec` when a template calls
+/// `exec()`, so a caller can tell a template that needs command output apart
+/// from a broken one.
+pub fn get_tera_for_dry_run_tracking_exec(
+    dir: Option<&Path>,
+    reached_exec: Arc<AtomicBool>,
+) -> TeraEngine {
+    dry_run_tera(dir, Some(reached_exec))
+}
+
+fn dry_run_tera(dir: Option<&Path>, reached_exec: Option<Arc<AtomicBool>>) -> TeraEngine {
     if use_tera_v1() {
         let mut tera = get_tera_v1(dir);
-        tera.register_function("exec", dry_run_disabled_fn_v1("exec"));
+        tera.register_function("exec", dry_run_disabled_fn_v1("exec", reached_exec));
         TeraEngine::V1(Box::new(tera))
     } else {
         let mut tera = get_tera_v2(dir);
-        tera.register_function("exec", dry_run_disabled_fn("exec"));
+        tera.register_function("exec", dry_run_disabled_fn("exec", reached_exec));
         TeraEngine::V2(Box::new(tera))
     }
 }
 
-fn dry_run_disabled_fn(name: &'static str) -> impl Fn(Kwargs, &State) -> TeraResult<Value> {
+fn dry_run_disabled_fn(
+    name: &'static str,
+    reached: Option<Arc<AtomicBool>>,
+) -> impl Fn(Kwargs, &State) -> TeraResult<Value> {
     move |_args: Kwargs, _: &State| -> TeraResult<Value> {
+        if let Some(reached) = &reached {
+            reached.store(true, Ordering::Relaxed);
+        }
         Err(tera_err(format!("{name}() is disabled during dry run")))
     }
 }
 
 fn dry_run_disabled_fn_v1(
     name: &'static str,
+    reached: Option<Arc<AtomicBool>>,
 ) -> impl Fn(&HashMap<String, JsonValue>) -> tera1::Result<JsonValue> {
     move |_args: &HashMap<String, JsonValue>| -> tera1::Result<JsonValue> {
+        if let Some(reached) = &reached {
+            reached.store(true, Ordering::Relaxed);
+        }
         Err(tera1_err(format!("{name}() is disabled during dry run")))
     }
 }

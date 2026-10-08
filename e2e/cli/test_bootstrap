@@ -218,6 +218,27 @@ run = "echo {{ nope() }}"
 EOF
 assert_fail "mise bootstrap --dry-run --only packages" "failed to render template"
 
+# dry-run shows hooks that read vars computed with exec() in config the dotfiles add
+mkdir -p dotfiles-exec-var
+cat <<'EOF' >dotfiles-exec-var/config.toml
+[vars]
+exec_var = "{{ exec(command='touch bootstrap-var-template-effect && echo hi') }}"
+
+[bootstrap.hooks.post-dotfiles]
+run = "echo {{ vars.exec_var }} > exec_var_hook_ran"
+EOF
+cat <<'EOF' >mise.toml
+[dotfiles]
+"~/.config/mise/config.toml" = "dotfiles-exec-var/config.toml"
+EOF
+assert_contains "mise bootstrap dotfiles apply --dry-run --force" "echo {{ vars.exec_var }} > exec_var_hook_ran"
+assert_fail "test -e bootstrap-var-template-effect"
+assert_fail "test -e exec_var_hook_ran"
+
+# vars that no config declares still fail the dry run
+sed -i.bak 's/vars.exec_var/vars.undeclared_var/' dotfiles-exec-var/config.toml
+assert_fail "mise bootstrap dotfiles apply --dry-run --force" "failed to render template"
+
 # macOS LaunchAgents in shared configs are inert when launchd is unavailable
 cat <<EOF >mise.toml
 [bootstrap.macos.launchd.agents.my-sync]
