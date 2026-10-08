@@ -194,3 +194,15 @@ assert_succeed "test -f $UNITS/dev.mise.backup.service"
 assert_succeed "mise bootstrap unapply backup --force --yes"
 assert_fail "test -e $UNITS/dev.mise.backup.service"
 assert_succeed "test -f $UNITS/dev.mise.base.service"
+
+# A declared unit with the other kind also installed under its name is kept,
+# with both files, even when the declared unit is edited while the plan runs;
+# the module's other units are still removed.
+assert_succeed "mise -E backup bootstrap linux systemd-units apply --yes"
+echo "[Service]" >"$UNITS/dev.mise.backup-timer.service"
+touch "$STATE/edit-on-check/dev.mise.backup-timer.timer"
+assert_contains "mise bootstrap unapply backup --yes 2>&1" "systemd-unit dev.mise.backup-timer.timer: keeping it, installed, differs; use --force to remove it"
+assert_fail "test -e $STATE/edit-on-check/dev.mise.backup-timer.timer"
+assert_succeed "test -f $UNITS/dev.mise.backup-timer.timer"
+assert_succeed "test -f $UNITS/dev.mise.backup-timer.service"
+assert_fail "test -e $UNITS/dev.mise.backup.service"
