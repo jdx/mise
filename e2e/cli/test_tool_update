@@ -233,3 +233,17 @@ fresh_state system-shim
 reset_dummy
 mise reshim
 assert "$MISE_DATA_DIR/shims/dummy" "This is Dummy 1.1.0!"
+
+# An update resolves only the tool it updates: a lazy tool that isn't installed
+# stays unresolved, so the update doesn't look up its remote versions (offline,
+# each lookup waited for a timeout before the launch could continue). Nothing is
+# outdated here, so only the up-front resolution can reach for the missing tool.
+fresh_state lazy-neighbors
+mise uninstall dummy --all
+mise install dummy@1.1.0
+cat >"$MISE_CONFIG_DIR/config.toml" <<'CONFIG'
+[tools]
+dummy = { version = "1", auto_update = true }
+"aqua:jdx/mise-test-missing-lazy-tool" = { version = "latest", lazy = true, lazy_bins = ["missing-lazy-tool"] }
+CONFIG
+assert_not_contains "mise x -- dummy 2>&1" "Failed to resolve tool version list"
