@@ -66,7 +66,7 @@ pub(crate) struct Watch {
 
     /// Files to watch
     /// Defaults to sources from the task(s)
-    #[usage(short, long, verbatim_doc_comment, hide = true)]
+    #[usage(short, long, verbatim_doc_comment)]
     glob: Vec<String>,
 
     /// Run only the specified tasks skipping all dependencies
@@ -116,123 +116,17 @@ impl Watch {
             let deps = Deps::new(&config, tasks.clone()).await?;
             deps.all().cloned().collect()
         };
-        let mut args = vec![];
-        if let Some(delay_run) = self.watchexec.delay_run {
-            args.push("--delay-run".to_string());
-            args.push(delay_run);
-        }
-        if let Some(poll) = self.watchexec.poll {
-            args.push("--poll".to_string());
-            args.push(poll);
-        }
-        if let Some(signal) = self.watchexec.signal {
-            args.push("--signal".to_string());
-            args.push(signal);
-        }
-        if let Some(stop_signal) = self.watchexec.stop_signal {
-            args.push("--stop-signal".to_string());
-            args.push(stop_signal);
-        }
-        if self.watchexec.stop_timeout != "10s" {
-            args.push("--stop-timeout".to_string());
-            args.push(self.watchexec.stop_timeout);
-        }
-        if self.watchexec.debounce != "50ms" {
-            args.push("--debounce".to_string());
-            args.push(self.watchexec.debounce);
-        }
-        if self.watchexec.stdin_quit {
-            args.push("--stdin-quit".to_string());
-        }
-        if self.watchexec.no_vcs_ignore || tasks_disable_vcs_ignores(&watched_tasks) {
-            args.push("--no-vcs-ignore".to_string());
-        }
-        if self.watchexec.no_project_ignore {
-            args.push("--no-project-ignore".to_string());
-        }
-        if self.watchexec.no_global_ignore {
-            args.push("--no-global-ignore".to_string());
-        }
-        if self.watchexec.no_default_ignore {
-            args.push("--no-default-ignore".to_string());
-        }
-        if self.watchexec.no_discover_ignore {
-            args.push("--no-discover-ignore".to_string());
-        }
-        if self.watchexec.ignore_nothing {
-            args.push("--ignore-nothing".to_string());
-        }
-        if self.watchexec.postpone {
-            args.push("--postpone".to_string());
-        }
-        if let Some(screen_clear) = self.watchexec.screen_clear {
-            args.push("--clear".to_string());
-            if let ClearMode::Reset = screen_clear {
-                args.push("reset".to_string());
-            }
-        }
-        if self.watchexec.restart {
-            args.push("--restart".to_string());
-        }
-        if self.watchexec.on_busy_update != OnBusyUpdate::DoNothing {
-            args.push("--on-busy-update".to_string());
-            args.push(self.watchexec.on_busy_update.to_string());
-        }
-        args.extend(wrap_process_args(self.watchexec.wrap_process));
-        if !self.watchexec.signal_map.is_empty() {
-            for signal_map in &self.watchexec.signal_map {
-                args.push("--map-signal".to_string());
-                args.push(signal_map.to_string());
-            }
-        }
-        if !self.watchexec.recursive_paths.is_empty() {
-            for path in &self.watchexec.recursive_paths {
-                args.push("--watch".to_string());
-                args.push(path.to_string_lossy().to_string());
-            }
-        }
-        if !self.watchexec.non_recursive_paths.is_empty() {
-            for path in &self.watchexec.non_recursive_paths {
-                args.push("--watch-non-recursive".to_string());
-                args.push(path.to_string_lossy().to_string());
-            }
-        }
-        if !self.watchexec.filter_extensions.is_empty() {
-            for ext in &self.watchexec.filter_extensions {
-                args.push("--exts".to_string());
-                args.push(ext.to_string());
-            }
-        }
-        if !self.watchexec.filter_patterns.is_empty() {
-            for pattern in &self.watchexec.filter_patterns {
-                args.push("--filter".to_string());
-                args.push(pattern.to_string());
-            }
-        }
-        if let Some(watch_file) = &self.watchexec.watch_file {
-            args.push("--watch-file".to_string());
-            args.push(watch_file.to_string_lossy().to_string());
-        }
-        // Forward user-supplied filtering/debug flags that are parsed into
-        // WatchexecArgs but were never re-emitted onto the watchexec command
-        // line (#7776). watchexec unions repeated --ignore flags, so these
-        // combine with the source-derived ignores pushed below rather than
-        // clobbering them.
-        if !self.watchexec.ignore_patterns.is_empty() {
-            for pattern in &self.watchexec.ignore_patterns {
-                args.push("--ignore".to_string());
-                args.push(pattern.to_string());
-            }
-        }
-        if !self.watchexec.ignore_files.is_empty() {
-            for path in &self.watchexec.ignore_files {
-                args.push("--ignore-file".to_string());
-                args.push(path.to_string_lossy().to_string());
-            }
-        }
-        if self.watchexec.print_events {
-            args.push("--print-events".to_string());
-        }
+        let mut args = self
+            .watchexec
+            .watchexec_args(tasks_disable_vcs_ignores(&watched_tasks));
+        // A --project-origin the user gave wins over the one mise derives
+        // below. It is made absolute here, against the directory watchexec
+        // will run in, so the task sources can be made relative to it.
+        let project_origin = self.watchexec.project_origin.as_ref().map(|p| {
+            env::current_dir()
+                .map(|cwd| normalize_path(&cwd.join(p)))
+                .unwrap_or_else(|_| p.clone())
+        });
         // Filter anchor: the path that --project-origin is set to and that
         // every glob filter is made relative to. watchexec interprets -f
         // patterns relative to the origin and silently rejects absolute
@@ -266,8 +160,9 @@ impl Watch {
                         .map(|(_, c)| c.as_path())
                         .chain(parsed.iter().flatten().map(|(_, p)| p.as_path())),
                 );
-                let anchor: PathBuf = match (configured, common) {
-                    (Some(mut cfg), Some(common)) => {
+                let anchor: PathBuf = match (project_origin.clone(), configured, common) {
+                    (Some(origin), _, _) => origin,
+                    (None, Some(mut cfg), Some(common)) => {
                         while !common.starts_with(&cfg) {
                             if !cfg.pop() {
                                 break;
@@ -279,9 +174,9 @@ impl Watch {
                             cfg
                         }
                     }
-                    (Some(cfg), None) => cfg,
-                    (None, Some(common)) => common,
-                    (None, None) => dirs::CWD.clone().unwrap_or_default(),
+                    (None, Some(cfg), None) => cfg,
+                    (None, None, Some(common)) => common,
+                    (None, None, None) => dirs::CWD.clone().unwrap_or_default(),
                 };
                 let resolved: Vec<Vec<String>> = parsed
                     .iter()
@@ -311,7 +206,7 @@ impl Watch {
                 (i, e, watch_dirs, Some(anchor))
             }
         };
-        if let Some(anchor) = &filter_anchor {
+        if let Some(anchor) = filter_anchor.as_ref().or(project_origin.as_ref()) {
             args.push("--project-origin".to_string());
             args.push(anchor.to_string_lossy().to_string());
         }
@@ -1057,8 +952,15 @@ pub(crate) struct WatchexecArgs {
     /// setting them for the Watchexec process itself.
     ///
     /// Use key=value syntax. Multiple variables can be set by repeating the option.
-    #[usage(long, short = 'E', help_heading = "Command", value_name = "KEY=VALUE")]
-    pub env: Vec<String>,
+    ///
+    /// This is watchexec's '--env'. In mise, '-E'/'--env' selects the mise environment
+    /// (`mise.<ENV>.toml`), as it does for every other command.
+    #[usage(
+        long = "watchexec-env",
+        help_heading = "Command",
+        value_name = "KEY=VALUE"
+    )]
+    pub command_env: Vec<String>,
 
     /// Configure how the process is wrapped
     ///
@@ -1103,8 +1005,11 @@ pub(crate) struct WatchexecArgs {
     ///
     /// By default Watchexec will print a message when the command starts and stops. This option
     /// disables this behaviour, so only the command's output, warnings, and errors will be printed.
-    #[usage(short, long, help_heading = "Output")]
-    pub quiet: bool,
+    ///
+    /// This is watchexec's '--quiet'. In mise, '-q'/'--quiet' quiets mise's own messages, as it
+    /// does for every other command.
+    #[usage(long = "watchexec-quiet", help_heading = "Output")]
+    pub watchexec_quiet: bool,
 
     /// Ring the terminal bell on command completion
     #[usage(long, help_heading = "Output")]
@@ -1371,7 +1276,187 @@ pub(crate) struct WatchexecArgs {
     // pub raw: bool,
 }
 
-#[derive(Clone, Copy, Debug, Default, usage_rs::ValueEnum)]
+impl WatchexecArgs {
+    /// The watchexec flags these arguments ask for, spelled the way watchexec takes them.
+    ///
+    /// Every flag `mise watch` accepts on watchexec's behalf has to be re-emitted here: one
+    /// that is parsed and not pushed is silently ignored (#7776, #10212). `--project-origin`
+    /// is the exception, because mise also derives an origin from the task sources; `run`
+    /// decides between the two.
+    ///
+    /// `no_vcs_ignore` is forced on when a watched task opted out of VCS ignores.
+    fn watchexec_args(&self, no_vcs_ignore: bool) -> Vec<String> {
+        let mut args = vec![];
+        if let Some(delay_run) = &self.delay_run {
+            args.push("--delay-run".to_string());
+            args.push(delay_run.clone());
+        }
+        if let Some(poll) = &self.poll {
+            args.push("--poll".to_string());
+            args.push(poll.clone());
+        }
+        if let Some(signal) = &self.signal {
+            args.push("--signal".to_string());
+            args.push(signal.clone());
+        }
+        if let Some(stop_signal) = &self.stop_signal {
+            args.push("--stop-signal".to_string());
+            args.push(stop_signal.clone());
+        }
+        if self.stop_timeout != "10s" {
+            args.push("--stop-timeout".to_string());
+            args.push(self.stop_timeout.clone());
+        }
+        if self.debounce != "50ms" {
+            args.push("--debounce".to_string());
+            args.push(self.debounce.clone());
+        }
+        if self.stdin_quit {
+            args.push("--stdin-quit".to_string());
+        }
+        if self.no_vcs_ignore || no_vcs_ignore {
+            args.push("--no-vcs-ignore".to_string());
+        }
+        if self.no_project_ignore {
+            args.push("--no-project-ignore".to_string());
+        }
+        if self.no_global_ignore {
+            args.push("--no-global-ignore".to_string());
+        }
+        if self.no_default_ignore {
+            args.push("--no-default-ignore".to_string());
+        }
+        if self.no_discover_ignore {
+            args.push("--no-discover-ignore".to_string());
+        }
+        if self.ignore_nothing {
+            args.push("--ignore-nothing".to_string());
+        }
+        if self.postpone {
+            args.push("--postpone".to_string());
+        }
+        if let Some(screen_clear) = self.screen_clear {
+            args.push("--clear".to_string());
+            if let ClearMode::Reset = screen_clear {
+                args.push("reset".to_string());
+            }
+        }
+        if self.restart {
+            args.push("--restart".to_string());
+        }
+        if self.on_busy_update != OnBusyUpdate::DoNothing {
+            args.push("--on-busy-update".to_string());
+            args.push(self.on_busy_update.to_string());
+        }
+        args.extend(wrap_process_args(self.wrap_process));
+        for signal_map in &self.signal_map {
+            args.push("--map-signal".to_string());
+            args.push(signal_map.to_string());
+        }
+        for path in &self.recursive_paths {
+            args.push("--watch".to_string());
+            args.push(path.to_string_lossy().to_string());
+        }
+        for path in &self.non_recursive_paths {
+            args.push("--watch-non-recursive".to_string());
+            args.push(path.to_string_lossy().to_string());
+        }
+        for ext in &self.filter_extensions {
+            args.push("--exts".to_string());
+            args.push(ext.to_string());
+        }
+        for pattern in &self.filter_patterns {
+            args.push("--filter".to_string());
+            args.push(pattern.to_string());
+        }
+        if let Some(watch_file) = &self.watch_file {
+            args.push("--watch-file".to_string());
+            args.push(watch_file.to_string_lossy().to_string());
+        }
+        // watchexec unions repeated --ignore flags, so these combine with the
+        // source-derived ignores `run` pushes rather than clobbering them (#7776).
+        for pattern in &self.ignore_patterns {
+            args.push("--ignore".to_string());
+            args.push(pattern.to_string());
+        }
+        for path in &self.ignore_files {
+            args.push("--ignore-file".to_string());
+            args.push(path.to_string_lossy().to_string());
+        }
+        if self.print_events {
+            args.push("--print-events".to_string());
+        }
+        if let Some(shell) = &self.shell {
+            args.push("--shell".to_string());
+            args.push(shell.clone());
+        }
+        if self.no_shell {
+            args.push("-n".to_string());
+        }
+        if self.emit_events_to != EmitEvents::None {
+            args.push("--emit-events-to".to_string());
+            args.push(self.emit_events_to.to_string());
+        }
+        if self.only_emit_events {
+            args.push("--only-emit-events".to_string());
+        }
+        for env in &self.command_env {
+            args.push("--env".to_string());
+            args.push(env.clone());
+        }
+        if self.notify {
+            args.push("--notify".to_string());
+        }
+        if self.color != ColourMode::Auto {
+            args.push("--color".to_string());
+            args.push(self.color.to_string());
+        }
+        if self.timings {
+            args.push("--timings".to_string());
+        }
+        if self.watchexec_quiet {
+            args.push("--quiet".to_string());
+        }
+        if self.bell {
+            args.push("--bell".to_string());
+        }
+        if let Some(workdir) = &self.workdir {
+            args.push("--workdir".to_string());
+            args.push(workdir.to_string_lossy().to_string());
+        }
+        for path in &self.filter_files {
+            args.push("--filter-file".to_string());
+            args.push(path.to_string_lossy().to_string());
+        }
+        for program in &self.filter_programs {
+            args.push("--filter-prog".to_string());
+            args.push(program.clone());
+        }
+        if self.filter_fs_events != DEFAULT_FS_EVENTS {
+            args.push("--fs-events".to_string());
+            args.push(self.filter_fs_events.iter().join(","));
+        }
+        if self.filter_fs_meta {
+            args.push("--no-meta".to_string());
+        }
+        if self.manual {
+            args.push("--manual".to_string());
+        }
+        args
+    }
+}
+
+/// watchexec's own `--fs-events` default; the same list is the default for the flag above.
+const DEFAULT_FS_EVENTS: &[FsEvent] = &[
+    FsEvent::Create,
+    FsEvent::Remove,
+    FsEvent::Rename,
+    FsEvent::Modify,
+    FsEvent::Metadata,
+];
+
+#[derive(Clone, Copy, Debug, Default, usage_rs::ValueEnum, PartialEq, strum::Display)]
+#[strum(serialize_all = "kebab-case")]
 pub(crate) enum EmitEvents {
     #[default]
     Environment,
@@ -1423,7 +1508,8 @@ pub(crate) enum ClearMode {
     Reset,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, usage_rs::ValueEnum)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, usage_rs::ValueEnum, strum::Display)]
+#[strum(serialize_all = "kebab-case")]
 pub(crate) enum FsEvent {
     Access,
     Create,
@@ -1433,7 +1519,8 @@ pub(crate) enum FsEvent {
     Metadata,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, usage_rs::ValueEnum)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, usage_rs::ValueEnum, strum::Display)]
+#[strum(serialize_all = "kebab-case")]
 pub(crate) enum ColourMode {
     Auto,
     Always,
@@ -1732,6 +1819,116 @@ mod tests {
         assert!(watch.args.is_empty());
         assert!(watch.watchexec.postpone);
         assert_eq!(watch.watchexec.poll.as_deref(), Some("100ms"));
+    }
+
+    fn parse_watch(argv: &[&str]) -> (Cli, super::Watch) {
+        let argv = argv.iter().map(std::ffi::OsStr::new).collect::<Vec<_>>();
+        let mut cli = Cli::parse_from_argv(&argv).unwrap();
+        let Some(Commands::Watch(watch)) = cli.command.take() else {
+            panic!("expected the watch command");
+        };
+        (cli, *watch)
+    }
+
+    #[test]
+    fn defaults_forward_no_watchexec_flags() {
+        let (_, watch) = parse_watch(&["mise", "watch", "build"]);
+        assert!(watch.watchexec.watchexec_args(false).is_empty());
+    }
+
+    /// These flags used to be parsed and then dropped, so watchexec never saw them.
+    #[test]
+    fn forwards_previously_dropped_watchexec_flags() {
+        let (_, watch) = parse_watch(&[
+            "mise",
+            "watch",
+            "--shell",
+            "bash",
+            "-n",
+            "--emit-events-to",
+            "json-stdio",
+            "--only-emit-events",
+            "--watchexec-env",
+            "FOO=bar",
+            "--watchexec-env",
+            "BAZ=qux",
+            "--notify",
+            "--color",
+            "never",
+            "--timings",
+            "--watchexec-quiet",
+            "--bell",
+            "--workdir",
+            "sub",
+            "--filter-file",
+            "filters.txt",
+            "-J",
+            "true",
+            "--fs-events",
+            "create,modify",
+            "build",
+        ]);
+        assert_eq!(
+            watch.watchexec.watchexec_args(false),
+            s(&[
+                "--shell",
+                "bash",
+                "-n",
+                "--emit-events-to",
+                "json-stdio",
+                "--only-emit-events",
+                "--env",
+                "FOO=bar",
+                "--env",
+                "BAZ=qux",
+                "--notify",
+                "--color",
+                "never",
+                "--timings",
+                "--quiet",
+                "--bell",
+                "--workdir",
+                "sub",
+                "--filter-file",
+                "filters.txt",
+                "--filter-prog",
+                "true",
+                "--fs-events",
+                "create,modify",
+            ])
+        );
+    }
+
+    /// Each of these conflicts with a flag in the test above.
+    #[test]
+    fn forwards_no_meta_and_manual() {
+        let (_, watch) = parse_watch(&["mise", "watch", "--no-meta", "--manual", "build"]);
+        assert_eq!(
+            watch.watchexec.watchexec_args(false),
+            s(&["--no-meta", "--manual"])
+        );
+    }
+
+    /// `-E`/`--env` and `-q`/`--quiet` are mise's global flags. watchexec's flags of the same
+    /// name used to shadow them after `watch`, and are now spelled `--watchexec-env` and
+    /// `--watchexec-quiet`, so `mise watch -E dev` must not turn into `watchexec --env dev`.
+    #[test]
+    fn env_and_quiet_after_watch_are_mises_own() {
+        let (cli, watch) = parse_watch(&["mise", "watch", "-E", "dev", "-q", "build"]);
+        assert_eq!(cli.env, Some(vec!["dev".to_string()]));
+        assert!(cli.quiet);
+        assert!(watch.watchexec.watchexec_args(false).is_empty());
+
+        let (cli, watch) = parse_watch(&["mise", "watch", "--env", "dev", "--quiet", "build"]);
+        assert_eq!(cli.env, Some(vec!["dev".to_string()]));
+        assert!(cli.quiet);
+        assert!(watch.watchexec.watchexec_args(false).is_empty());
+    }
+
+    #[test]
+    fn glob_is_parsed() {
+        let (_, watch) = parse_watch(&["mise", "watch", "--glob", "src/**/*.rs", "build"]);
+        assert_eq!(watch.glob, s(&["src/**/*.rs"]));
     }
 
     #[test]

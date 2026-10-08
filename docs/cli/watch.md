@@ -29,6 +29,8 @@ cron scheduling), see mise's sister project: https://pitchfork.jdx.dev
 - **`[ARGS]…`** — Task and arguments to run
 
 ## Flags
+- **`-g --glob <GLOB>`** — Files to watch
+  Defaults to sources from the task(s)
 - **`--skip-deps`** — Run only the specified tasks skipping all dependencies
 - **`-o --on-busy-update <MODE>`** — What to do when receiving events while the command is running
 
@@ -315,9 +317,11 @@ cron scheduling), see mise's sister project: https://pitchfork.jdx.dev
 - **`--timings`** — Print how long the command took to run
 
   This may not be exactly accurate, as it includes some overhead from Watchexec itself. Use the `time` utility, high-precision timers, or benchmarking tools for more accurate results.
-- **`-q --quiet`** — Don't print starting and stopping messages
+- **`--watchexec-quiet`** — Don't print starting and stopping messages
 
   By default Watchexec will print a message when the command starts and stops. This option disables this behaviour, so only the command's output, warnings, and errors will be printed.
+
+  This is watchexec's '--quiet'. In mise, '-q'/'--quiet' quiets mise's own messages, as it does for every other command.
 - **`--bell`** — Ring the terminal bell on command completion
 
 ## Command
@@ -461,11 +465,13 @@ cron scheduling), see mise's sister project: https://pitchfork.jdx.dev
   **Choices:** `environment`, `stdio`, `file`, `json-stdio`, `json-file`, `none`
 
   **Default:** `none`
-- **`-E --env <KEY=VALUE>`** — Add env vars to the command
+- **`--watchexec-env <KEY=VALUE>`** — Add env vars to the command
 
   This is a convenience option for setting environment variables for the command, without setting them for the Watchexec process itself.
 
   Use key=value syntax. Multiple variables can be set by repeating the option.
+
+  This is watchexec's '--env'. In mise, '-E'/'--env' selects the mise environment (`mise.<ENV>.toml`), as it does for every other command.
 - **`--wrap-process <MODE>`** — Configure how the process is wrapped
 
   By default, Watchexec will run the command in a session on macOS, in a process group on other Unix platforms, and in a Job Object in Windows.

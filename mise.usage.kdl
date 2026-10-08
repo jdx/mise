@@ -6884,7 +6884,7 @@ cron scheduling), see mise's sister project: https://pitchfork.jdx.dev
     flag "-g --glob" help=#"""
 Files to watch
 Defaults to sources from the task(s)
-"""# var=#true hide=#true {
+"""# var=#true {
         arg <GLOB>
     }
     flag --skip-deps help="Run only the specified tasks skipping all dependencies"
@@ -7309,13 +7309,15 @@ This is a convenience option for using Watchexec as a file watcher, without runn
 This option requires `--emit-events-to` to be set, and restricts the available modes to `stdio` and `json-stdio`, modifying their behaviour to write to stdout instead of the stdin of the command.
 """#
     }
-    flag "-E --env" help="Add env vars to the command" var=#true help_heading=Command {
+    flag --watchexec-env help="Add env vars to the command" var=#true help_heading=Command {
         long_help #"""
 Add env vars to the command
 
 This is a convenience option for setting environment variables for the command, without setting them for the Watchexec process itself.
 
 Use key=value syntax. Multiple variables can be set by repeating the option.
+
+This is watchexec's '--env'. In mise, '-E'/'--env' selects the mise environment (`mise.<ENV>.toml`), as it does for every other command.
 """#
         arg "<KEY=VALUE>"
     }
@@ -7366,11 +7368,13 @@ Print how long the command took to run
 This may not be exactly accurate, as it includes some overhead from Watchexec itself. Use the `time` utility, high-precision timers, or benchmarking tools for more accurate results.
 """#
     }
-    flag "-q --quiet" help="Don't print starting and stopping messages" help_heading=Output {
+    flag --watchexec-quiet help="Don't print starting and stopping messages" help_heading=Output {
         long_help #"""
 Don't print starting and stopping messages
 
 By default Watchexec will print a message when the command starts and stops. This option disables this behaviour, so only the command's output, warnings, and errors will be printed.
+
+This is watchexec's '--quiet'. In mise, '-q'/'--quiet' quiets mise's own messages, as it does for every other command.
 """#
     }
     flag --bell help="Ring the terminal bell on command completion" help_heading=Output
