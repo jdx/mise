@@ -23,6 +23,7 @@ const NFT_UNIT_PATH: &str = "/etc/systemd/system/mise-bootstrap-firewall.service
 const FIREWALLD_INCOMING: &str = "mise-bootstrap-in";
 const FIREWALLD_OUTGOING: &str = "mise-bootstrap-out";
 const UFW_TRANSITION_PREFIX: &str = "mise-transition:";
+const UFW_RESET_ARGS: [&str; 2] = ["--force", "reset"];
 const FIREWALLD_POLICY_DIR: &str = "/etc/firewalld/policies";
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
@@ -372,7 +373,26 @@ pub fn status_request_from_config(config: &Config) -> Result<Option<FirewallRequ
     request_from_config(config)
 }
 
+/// Refuse a declaration that could lock out the SSH session running mise.
+pub fn validate_request(request: &FirewallRequest) -> Result<()> {
+    request.validate_safety()
+}
+
 pub fn inspect_request(request: &mut FirewallRequest) -> Result<()> {
+    // A lockout-prone declaration is reported as unknown so read-only
+    // commands still work; it is never inspected with elevation, and apply
+    // refuses it.
+    if let Err(error) = request.validate_safety() {
+        request.inspection = Some(FirewallInspection {
+            backend: None,
+            managed: false,
+            exact: false,
+            active: false,
+            reason: Some(error.to_string()),
+            current_rules: None,
+        });
+        return Ok(());
+    }
     let input = serde_json::to_vec(request)?;
     let executable = std::env::current_exe()?.to_string_lossy().to_string();
     let output = crate::system::sudo::run_with_input_output(
@@ -441,7 +461,7 @@ impl FirewallRequest {
             .ok()
             .map(|value| parse_ssh_connection(&value))
             .transpose()?;
-        let request = Self {
+        Ok(Self {
             backend: config.backend.unwrap_or_default(),
             state: config.state.unwrap_or_default(),
             default_incoming: config.default_incoming.unwrap_or_else(default_incoming),
@@ -451,9 +471,7 @@ impl FirewallRequest {
             rules,
             ssh_connection,
             inspection: None,
-        };
-        request.validate_safety()?;
-        Ok(request)
+        })
     }
 
     fn validate_safety(&self) -> Result<()> {
@@ -701,6 +719,9 @@ impl FirewallRule {
 }
 
 pub fn apply(request: &FirewallRequest, dry_run: bool, yes: bool) -> Result<()> {
+    if !dry_run {
+        request.validate_safety()?;
+    }
     let plan = request.plans();
     let changes = plan
         .iter()
@@ -1606,7 +1627,7 @@ fn remove_firewalld() -> Result<()> {
 fn apply_ufw(request: &FirewallRequest) -> Result<()> {
     let ufw = crate::file::which("ufw").ok_or_else(|| eyre!("ufw not found"))?;
     if request.exclusive {
-        run(&ufw, &["--force", "reset"])?;
+        run(&ufw, &UFW_RESET_ARGS)?;
     } else {
         let existing = ufw_added_rules()?;
         let nonce = crate::rand::random_string(8);
@@ -1647,15 +1668,20 @@ fn apply_ufw(request: &FirewallRequest) -> Result<()> {
 }
 
 fn finish_ufw_apply(ufw: &Path, request: &FirewallRequest) -> Result<()> {
-    run(
-        ufw,
-        &["default", request.default_incoming.ufw(), "incoming"],
-    )?;
-    run(
-        ufw,
-        &["default", request.default_outgoing.ufw(), "outgoing"],
-    )?;
-    run(ufw, &["--force", "enable"])
+    for args in ufw_finish_args(request) {
+        run(ufw, &args)?;
+    }
+    Ok(())
+}
+
+/// The policy and enable commands every UFW apply ends with, shared with the
+/// dry-run preview so it lists what apply runs.
+fn ufw_finish_args(request: &FirewallRequest) -> [Vec<&'static str>; 3] {
+    [
+        vec!["default", request.default_incoming.ufw(), "incoming"],
+        vec!["default", request.default_outgoing.ufw(), "outgoing"],
+        vec!["--force", "enable"],
+    ]
 }
 
 fn add_ufw_rules(ufw: &Path, rules: &[Vec<String>]) -> Result<()> {
@@ -1863,6 +1889,13 @@ fn preview_commands(
 ) -> Result<Vec<Vec<String>>> {
     let effective = effective_request(request, read_state()?.as_ref());
     validate_effective_backend_request(request, &effective, backend)?;
+    Ok(effective_preview_commands(&effective, backend))
+}
+
+fn effective_preview_commands(
+    effective: &FirewallRequest,
+    backend: FirewallBackend,
+) -> Vec<Vec<String>> {
     let mut commands = vec![];
     match effective.state {
         FirewallState::Absent => commands.push(vec![
@@ -1888,21 +1921,26 @@ fn preview_commands(
                 commands.push(vec!["firewall-cmd".to_string(), "--reload".to_string()]);
             }
             FirewallBackend::Ufw => {
+                let ufw = |args: &[&str]| {
+                    std::iter::once("ufw")
+                        .chain(args.iter().copied())
+                        .map(str::to_string)
+                        .collect::<Vec<_>>()
+                };
+                if effective.exclusive {
+                    commands.push(ufw(&UFW_RESET_ARGS));
+                }
                 for rule in &effective.rules {
                     let mut command = vec!["ufw".to_string()];
                     command.extend(render_ufw_rule(rule));
                     commands.push(command);
                 }
-                commands.push(vec![
-                    "ufw".to_string(),
-                    "--force".to_string(),
-                    "enable".to_string(),
-                ]);
+                commands.extend(ufw_finish_args(effective).iter().map(|args| ufw(args)));
             }
             FirewallBackend::Auto => unreachable!(),
         },
     }
-    Ok(commands)
+    commands
 }
 
 fn request_digest(request: &FirewallRequest, backend: FirewallBackend) -> Result<String> {
@@ -2592,5 +2630,61 @@ mod tests {
             validate_effective_backend_request(&desired, &effective, FirewallBackend::Firewalld)
                 .is_err()
         );
+    }
+
+    #[test]
+    fn lockout_risk_is_reported_as_unknown_and_refused_on_apply() {
+        // The declared allow does not cover the SSH peer.
+        let mut request = request_with_ssh(Some("198.51.100.0/24"));
+        assert!(request.validate_safety().is_err());
+
+        // Read-only paths report it without elevating to inspect it.
+        inspect_request(&mut request).unwrap();
+        let plans = request.plans();
+        assert_eq!(plans[0].action, ResourceAction::Unknown);
+        assert!(
+            plans[0]
+                .current
+                .contains("no incoming TCP allow rule covers")
+        );
+        assert_eq!(plans[1].action, ResourceAction::Unknown);
+        assert!(firewall_change_is_unsafe(&plans));
+        apply(&request, true, true).unwrap();
+
+        let error = apply(&request, false, true).unwrap_err().to_string();
+        assert!(
+            error.contains("no incoming TCP allow rule covers"),
+            "{error}"
+        );
+        assert!(validate_request(&request).is_err());
+    }
+
+    #[test]
+    fn ufw_preview_lists_exclusive_reset_and_default_policies() {
+        let mut request = request_with_ssh(None);
+        request.backend = FirewallBackend::Ufw;
+        request.exclusive = true;
+        let commands = effective_preview_commands(&request, FirewallBackend::Ufw)
+            .into_iter()
+            .map(|command| command.join(" "))
+            .collect::<Vec<_>>();
+        assert_eq!(commands[0], "ufw --force reset");
+        assert!(commands[1].starts_with("ufw allow"), "{commands:?}");
+        assert_eq!(
+            commands[2..],
+            [
+                "ufw default deny incoming",
+                "ufw default allow outgoing",
+                "ufw --force enable",
+            ]
+        );
+
+        request.exclusive = false;
+        let commands = effective_preview_commands(&request, FirewallBackend::Ufw);
+        assert!(!commands.contains(&vec![
+            "ufw".to_string(),
+            "--force".to_string(),
+            "reset".to_string()
+        ]));
     }
 }
