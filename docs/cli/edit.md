@@ -17,8 +17,9 @@ variables, tasks, and settings. It pre-fills tools it detects from files in the
 current directory, such as `.node-version`.
 
 Without an interactive terminal, or with --yes, it writes a commented starter
-template instead. That template replaces PATH if the file already exists. Use
---dry-run to print the result without writing it.
+template instead. If PATH already exists it stops with an error rather than
+replace the file; pass --force to replace it. Use --dry-run to print the result
+without writing it.
 
 ## Arguments
 - **`[PATH]`** — Config file to edit or create; defaults to mise.toml
@@ -26,6 +27,7 @@ template instead. That template replaces PATH if the file already exists. Use
 ## Flags
 - **`-g --global`** — Edit the global config file (~/.config/mise/config.toml)
 - **`-n --dry-run`** — Print the result instead of writing it to the file
+- **`-f --force`** — Replace an existing file with the starter template when not opening the editor
 - **`-t --tool-versions <FILE>`** — Copy the tools from this .tool-versions file into the config, without opening the editor
 - **`-h --help`** — Print help
 
@@ -65,6 +67,12 @@ Write a commented starter config to a new file without opening the editor
 
 ```
 mise edit -y new.toml
+```
+
+Replace an existing mise.toml with the starter config
+
+```
+mise edit -y --force
 ```
 
 <!-- generated reference navigation -->

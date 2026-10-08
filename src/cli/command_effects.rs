@@ -225,15 +225,15 @@ pub(super) const EFFECTS: &[(&str, SpecCommandEffect)] = &[
     ("dotfiles undo", Destructive),
     ("dotfiles untrack", Write),
     ("dotfiles watch", Write),
-    // Without a terminal, or with --yes, it writes a starter template over the
-    // target file, replacing an existing config.
+    // Without a terminal, or with --yes, it writes a starter template; --force
+    // lets that template replace an existing config.
     ("edit", Destructive),
     ("env", Read),
     ("fmt", Write),
     ("generate", Read),
     // Deprecated spelling of `generate install-script`.
     ("generate bootstrap", Write),
-    // Runs `mise edit`, so it can replace an existing config the same way.
+    // Runs `mise edit`, so --force can replace an existing config the same way.
     ("generate config", Destructive),
     ("generate devcontainer", Write),
     ("generate git-pre-commit", Write),

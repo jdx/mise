@@ -5843,7 +5843,8 @@ Generate a mise.toml file
 
 Same as `mise edit`, which has the details. It opens the interactive editor, or
 without an interactive terminal (or with \-\-yes) writes a commented starter
-template. That template replaces PATH if the file already exists.
+template. If PATH already exists it stops with an error rather than replace
+the file; pass \-\-force to replace it.
 .PP
 \fBUsage:\fR mise generate config [OPTIONS] [<PATH>]
 .PP
@@ -5855,6 +5856,9 @@ Generate the global config file (~/.config/mise/config.toml)
 .TP
 \fB\-n, \-\-dry\-run\fR
 Print the result instead of writing it to the file
+.TP
+\fB\-f, \-\-force\fR
+Replace an existing file with the starter template when not opening the editor
 .TP
 \fB\-t, \-\-tool\-versions\fR \fI<FILE>\fR
 Copy the tools from this .tool\-versions file into the config, without opening the editor
@@ -6379,8 +6383,9 @@ variables, tasks, and settings. It pre\-fills tools it detects from files in the
 current directory, such as `.node\-version`.
 
 Without an interactive terminal, or with \-\-yes, it writes a commented starter
-template instead. That template replaces PATH if the file already exists. Use
-\-\-dry\-run to print the result without writing it.
+template instead. If PATH already exists it stops with an error rather than
+replace the file; pass \-\-force to replace it. Use \-\-dry\-run to print the result
+without writing it.
 .PP
 \fBUsage:\fR mise edit [OPTIONS] [<PATH>]
 .PP
@@ -6392,6 +6397,9 @@ Edit the global config file (~/.config/mise/config.toml)
 .TP
 \fB\-n, \-\-dry\-run\fR
 Print the result instead of writing it to the file
+.TP
+\fB\-f, \-\-force\fR
+Replace an existing file with the starter template when not opening the editor
 .TP
 \fB\-t, \-\-tool\-versions\fR \fI<FILE>\fR
 Copy the tools from this .tool\-versions file into the config, without opening the editor
@@ -6439,6 +6447,12 @@ Write a commented starter config to a new file without opening the editor
 .PP
 .RS 4
 mise edit \-y new.toml
+.RE
+.PP
+Replace an existing mise.toml with the starter config
+.PP
+.RS 4
+mise edit \-y \-\-force
 .RE
 .SH "MISE INSTALL"
 Install the tools in your config, or specific tool versions

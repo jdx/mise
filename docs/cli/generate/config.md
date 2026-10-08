@@ -13,7 +13,8 @@ Generate a mise.toml file
 
 Same as `mise edit`, which has the details. It opens the interactive editor, or
 without an interactive terminal (or with --yes) writes a commented starter
-template. That template replaces PATH if the file already exists.
+template. If PATH already exists it stops with an error rather than replace
+the file; pass --force to replace it.
 
 ## Arguments
 - **`[PATH]`** — Config file to edit or create; defaults to mise.toml
@@ -21,6 +22,7 @@ template. That template replaces PATH if the file already exists.
 ## Flags
 - **`-g --global`** — Generate the global config file (~/.config/mise/config.toml)
 - **`-n --dry-run`** — Print the result instead of writing it to the file
+- **`-f --force`** — Replace an existing file with the starter template when not opening the editor
 - **`-t --tool-versions <FILE>`** — Copy the tools from this .tool-versions file into the config, without opening the editor
 - **`-h --help`** — Print help
 

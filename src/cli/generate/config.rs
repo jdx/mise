@@ -7,7 +7,8 @@ use crate::cli::edit::Edit;
 ///
 /// Same as `mise edit`, which has the details. It opens the interactive editor, or
 /// without an interactive terminal (or with --yes) writes a commented starter
-/// template. That template replaces PATH if the file already exists.
+/// template. If PATH already exists it stops with an error rather than replace
+/// the file; pass --force to replace it.
 #[derive(Debug, usage_rs::Args)]
 #[usage(
     verbatim_doc_comment,
@@ -29,6 +30,9 @@ pub(super) struct Config {
     /// Print the result instead of writing it to the file
     #[usage(long, short = 'n')]
     dry_run: bool,
+    /// Replace an existing file with the starter template when not opening the editor
+    #[usage(long, short)]
+    force: bool,
     /// Config file to edit or create; defaults to mise.toml
     #[usage(verbatim_doc_comment, value_hint = ValueHint::FilePath)]
     path: Option<PathBuf>,
@@ -39,8 +43,14 @@ pub(super) struct Config {
 
 impl Config {
     pub(super) async fn run(self) -> Result<()> {
-        Edit::new(self.global, self.dry_run, self.path, self.tool_versions)
-            .run()
-            .await
+        Edit::new(
+            self.global,
+            self.dry_run,
+            self.force,
+            self.path,
+            self.tool_versions,
+        )
+        .run()
+        .await
     }
 }
