@@ -129,7 +129,7 @@ impl DotfilesUnapply {
             );
         }
         if files.is_empty() && edits.is_empty() && records.is_empty() {
-            super::warn_if_dotfiles_ignored();
+            super::warn_if_dotfiles_ignored(&config);
             info!("no dotfiles configured in [dotfiles]");
             return Ok(());
         }

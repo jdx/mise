@@ -29,7 +29,9 @@ use crate::config::env_directive::{
     AgeFormat, EnvDirective, EnvDirectiveOptions, EnvValue, RequiredValue,
 };
 use crate::config::settings::SettingsPartial;
-use crate::config::{Alias, AliasMap, CommandWrapper, Config, Settings};
+use crate::config::{
+    Alias, AliasMap, CommandWrapper, Config, Settings, safe_mode_ignores_bootstrap,
+};
 use crate::deps::{DepsConfig, DepsTemplateContext};
 use crate::env_diff::EnvMap;
 use crate::file::{create_dir_all, display_path};
@@ -2085,7 +2087,10 @@ impl ConfigFile for MiseToml {
     }
 
     fn bootstrap_config(&self) -> Option<BootstrapTomlConfig> {
-        self.bootstrap.clone()
+        self.bootstrap
+            .as_ref()
+            .filter(|_| !self.ignored_in_safe_mode("[bootstrap]"))
+            .cloned()
     }
 
     fn secrets_config(&self) -> Option<toml::Value> {
@@ -2093,17 +2098,37 @@ impl ConfigFile for MiseToml {
     }
 
     fn dotfiles_config(&self) -> Option<DotfilesTomlConfig> {
-        self.dotfiles.clone()
+        self.dotfiles
+            .as_ref()
+            .filter(|_| !self.ignored_in_safe_mode("[dotfiles]"))
+            .cloned()
     }
 
     fn dotfile_groups_config(
         &self,
     ) -> Option<crate::system::dotfile_groups::DotfileGroupsTomlConfig> {
-        self.dotfile_groups.clone()
+        self.dotfile_groups
+            .as_ref()
+            .filter(|_| !self.ignored_in_safe_mode("[dotfile_groups]"))
+            .cloned()
     }
 }
 
 impl MiseToml {
+    /// Whether safe mode drops `section` from this file; see
+    /// [`safe_mode_ignores_bootstrap`]. Safe mode loads project config without a
+    /// trust check, which makes all of it untrusted here.
+    fn ignored_in_safe_mode(&self, section: &str) -> bool {
+        let ignored = safe_mode_ignores_bootstrap(&self.path);
+        if ignored {
+            debug!(
+                "ignoring {section} in {}: safe mode (MISE_SAFE=1)",
+                display_path(&self.path)
+            );
+        }
+        ignored
+    }
+
     /// `[history]` as declared by this file.
     pub(crate) fn history_config(
         &self,

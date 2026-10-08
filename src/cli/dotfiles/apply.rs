@@ -83,6 +83,9 @@ impl DotfilesApply {
                 "--prune removes orphaned files of every group and cannot be combined with target arguments"
             );
         }
+        if self.prune {
+            super::ensure_prune_sees_every_group(config)?;
+        }
         super::select_requests(config, &self.targets)
     }
 
@@ -93,7 +96,7 @@ impl DotfilesApply {
         let secrets = system::secrets::resolve(&config, self.prompt_secrets)?;
         let (files, edits) = self.requests(&config)?;
         if files.is_empty() && edits.is_empty() && !self.prune {
-            super::warn_if_dotfiles_ignored();
+            super::warn_if_dotfiles_ignored(&config);
             info!("no dotfiles configured in [dotfiles]");
             return Ok(true);
         }

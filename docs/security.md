@@ -186,12 +186,8 @@ Safe mode is meant for resolution and metadata commands such as `mise lock`,
 
 ::: warning
 Safe mode does not make other commands safe to run on config you have not
-reviewed. [`mise dotfiles apply`](/cli/dotfiles/apply.html) and
-[`mise bootstrap`](/cli/bootstrap.html) still apply a project's `[dotfiles]`
-and `[bootstrap]` sections, apart from bootstrap hooks, so a repository can
-write files such as `~/.bashrc`. Normal mode does not load that config until
-you trust it. `mise install` can build a tool from source, which runs the
-tool's build scripts, such as a `cargo:` crate's `build.rs`.
+reviewed. `mise install` can build a tool from source, which runs the tool's
+build scripts, such as a `cargo:` crate's `build.rs`.
 :::
 
 ### Refused operations
@@ -226,6 +222,13 @@ These are skipped without an error, so resolution commands keep working:
 - Remote `include` entries in project config, which mise does not fetch.
 - Project daemon declarations. Daemons also do not start or stop when you change
   directories.
+- Project `[bootstrap]`, `[dotfiles]` and `[dotfile_groups]`, and the
+  `[bootstrap] config_roots` a project selects, because applying them writes
+  files into your home directory, clones repositories and installs packages.
+  [`mise bootstrap`](/cli/bootstrap.html) and
+  [`mise dotfiles`](/cli/dotfiles.html) name the skipped files, still apply the
+  ones in global and system config, and refuse `mise dotfiles apply --prune`
+  while a project declares dotfiles they ignore.
 
 Global and system config still applies, apart from these rules. Review it and the
 environment of the process that runs mise.

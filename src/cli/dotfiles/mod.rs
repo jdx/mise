@@ -1,6 +1,9 @@
 use eyre::Result;
 use futures_util::future::LocalBoxFuture;
 use std::path::Path;
+use std::sync::atomic::{AtomicBool, Ordering};
+
+use crate::config::{Config, Settings, SettingsExt, safe_mode_ignores_bootstrap};
 
 mod add;
 mod apply;
@@ -149,6 +152,13 @@ impl Dotfiles {
         // runs. The watcher itself is where those notices come from, so
         // it is not where they are delivered.
         let deliver = !matches!(self.command, Commands::Watch(_));
+        // Before any result-based return, so the warning shows even when
+        // global entries remain.
+        if Settings::safe_mode()
+            && let Ok(config) = Config::get().await
+        {
+            warn_if_ignored_in_safe_mode(&config);
+        }
         if deliver {
             crate::system::history::notices::drain();
         }
@@ -263,36 +273,123 @@ fn run_local_argv(remove_local: bool) -> Result<()> {
 /// prompt adds them to the ignore list) but that do declare `[dotfiles]`.
 /// Their entries never reach these commands, so "nothing configured" reads as
 /// a config mistake when the real answer is that the file wasn't loaded.
-///
-/// Reading and parsing the TOML here is inert — nothing is templated or
-/// executed, we only look for the table's presence.
 pub(crate) fn ignored_configs_with_dotfiles() -> Vec<&'static Path> {
     crate::config::IGNORED_CONFIG_FILES
         .iter()
-        .filter(|path| {
-            crate::file::read_to_string(path)
-                .ok()
-                .and_then(|body| body.parse::<toml::Table>().ok())
-                .is_some_and(|table| {
-                    table.contains_key("dotfiles") || table.contains_key("dotfile_groups")
-                })
-        })
+        .filter(|path| declares_dotfiles(path))
         .map(|path| path.as_path())
         .collect()
 }
 
-/// Explain the empty `[dotfiles]` when it's really an untrusted config.
-pub(crate) fn warn_if_dotfiles_ignored() {
+/// Whether the config file at `path` declares `[dotfiles]` or `[dotfile_groups]`.
+fn declares_dotfiles(path: &Path) -> bool {
+    declares_any_table(path, &["dotfiles", "dotfile_groups"])
+}
+
+/// Whether the config file at `path` declares any of the top-level `tables`.
+fn declares_any_table(path: &Path, tables: &[&str]) -> bool {
+    parse_table(path).is_some_and(|table| tables.iter().any(|name| table.contains_key(*name)))
+}
+
+/// Whether the config file at `path` declares something that decides which
+/// dotfiles apply: `[dotfiles]`, `[dotfile_groups]`, or the `[bootstrap]`
+/// keys that select groups (`dotfile_groups`) or the roots that declare them
+/// (`config_roots`). Other `[bootstrap]` tables, such as `repos`, do not.
+fn declares_dotfile_selection(path: &Path) -> bool {
+    parse_table(path).is_some_and(|table| {
+        table.contains_key("dotfiles")
+            || table.contains_key("dotfile_groups")
+            || table
+                .get("bootstrap")
+                .and_then(|bootstrap| bootstrap.as_table())
+                .is_some_and(|bootstrap| {
+                    bootstrap.contains_key("dotfile_groups")
+                        || bootstrap.contains_key("config_roots")
+                })
+    })
+}
+
+/// The config file at `path` as a TOML table.
+///
+/// Reading and parsing the TOML here is inert — nothing is templated or
+/// executed, callers only look for a key's presence.
+fn parse_table(path: &Path) -> Option<toml::Table> {
+    crate::file::read_to_string(path)
+        .ok()
+        .and_then(|body| body.parse::<toml::Table>().ok())
+}
+
+fn path_list(paths: &[&Path]) -> String {
+    paths
+        .iter()
+        .map(|p| format!("  {}", crate::file::display_path(p)))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// Explain the empty `[dotfiles]` when it's really an untrusted config, or a
+/// project config whose `[dotfiles]` safe mode ignores.
+pub(crate) fn warn_if_dotfiles_ignored(config: &Config) {
     let ignored = ignored_configs_with_dotfiles();
-    if ignored.is_empty() {
+    if !ignored.is_empty() {
+        warn!(
+            "[dotfiles] in these config files was skipped because they are not trusted:\n{}\nRun `mise trust` in that directory to use them.",
+            path_list(&ignored)
+        );
+    }
+    warn_if_ignored_in_safe_mode(config);
+}
+
+/// The project config files whose `[bootstrap]`, `[dotfiles]` or
+/// `[dotfile_groups]` safe mode drops. Empty outside safe mode.
+fn ignored_in_safe_mode(config: &Config) -> Vec<&Path> {
+    ignored_in_safe_mode_where(config, |path| {
+        declares_any_table(path, &["bootstrap", "dotfiles", "dotfile_groups"])
+    })
+}
+
+/// The project config files safe mode ignores that `declares` accepts.
+/// Empty outside safe mode.
+fn ignored_in_safe_mode_where(config: &Config, declares: fn(&Path) -> bool) -> Vec<&Path> {
+    if !Settings::safe_mode() {
+        return vec![];
+    }
+    config
+        .config_files
+        .keys()
+        .filter(|path| safe_mode_ignores_bootstrap(path) && declares(path))
+        .map(|path| path.as_path())
+        .collect()
+}
+
+/// Refuse `--prune` while safe mode hides project config that decides which
+/// dotfiles apply: files their groups deployed would look orphaned and be
+/// removed. A project that only declares `[bootstrap.repos]` and the like
+/// hides no dotfiles, so it does not block a prune.
+pub(crate) fn ensure_prune_sees_every_group(config: &Config) -> Result<()> {
+    let ignored = ignored_in_safe_mode_where(config, declares_dotfile_selection);
+    if !ignored.is_empty() {
+        eyre::bail!(
+            "--prune is unavailable in safe mode (MISE_SAFE=1) while these project config files declare dotfiles it ignores, since their files would look orphaned:\n{}",
+            path_list(&ignored)
+        );
+    }
+    Ok(())
+}
+
+/// Name the project config files whose `[bootstrap]`, `[dotfiles]` and
+/// `[dotfile_groups]` safe mode drops, so a run that applies less than the
+/// files declare says why. Printed at most once per process.
+pub(crate) fn warn_if_ignored_in_safe_mode(config: &Config) {
+    static WARNED: AtomicBool = AtomicBool::new(false);
+    if WARNED.load(Ordering::Relaxed) {
         return;
     }
-    warn!(
-        "[dotfiles] in these config files was skipped because they are not trusted:\n{}\nRun `mise trust` in that directory to use them.",
-        ignored
-            .iter()
-            .map(|p| format!("  {}", crate::file::display_path(p)))
-            .collect::<Vec<_>>()
-            .join("\n")
-    );
+    let ignored = ignored_in_safe_mode(config);
+    if !ignored.is_empty() && !WARNED.swap(true, Ordering::Relaxed) {
+        warn!(
+            "[bootstrap], [dotfiles] and [dotfile_groups] in these config files were skipped because safe mode (MISE_SAFE=1) ignores project config:\n{}",
+            path_list(&ignored)
+        );
+    }
 }

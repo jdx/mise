@@ -16,7 +16,7 @@ use super::install::Install;
 use super::plugins::install::install_plugin;
 use super::run;
 use super::system::{export, import, install, prune, status, upgrade, r#use};
-use crate::config::{self, Config, SettingsExt};
+use crate::config::{self, Config, Settings, SettingsExt};
 use crate::dirs;
 use crate::path::PathExt;
 use crate::system;
@@ -1756,6 +1756,13 @@ impl Bootstrap {
     }
 
     async fn run_with_notices(mut self) -> Result<()> {
+        // Every subcommand, not just the full run, applies less than project
+        // config declares in safe mode; say so up front.
+        if Settings::safe_mode()
+            && let Ok(config) = Config::get().await
+        {
+            super::dotfiles::warn_if_ignored_in_safe_mode(&config);
+        }
         warn_legacy_part_aliases(&self.only, &self.skip);
         if self.from.is_some() || self.adopt.is_some() {
             if self.command.is_some() {

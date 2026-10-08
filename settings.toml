@@ -3012,8 +3012,9 @@ without a trust prompt.
 Safe mode refuses template `exec()` and `read_file()`, tasks, the `postinstall`
 and `install_env` tool options, asdf plugin scripts, plugin installs, mise
 secrets and `mise daemons`, with an error. It skips hooks, as `--no-hooks`
-does, and ignores project `[env]`, `[shell_alias]`, `[settings]` and remote
-includes, so a repository cannot turn off verification or redirect a backend.
+does, and ignores project `[env]`, `[shell_alias]`, `[settings]`, remote
+includes, `[bootstrap]` and `[dotfiles]`, so a repository cannot turn off
+verification, redirect a backend or write files into your home directory.
 Global and system config still apply. Version resolution and `mise.lock`
 updates keep working for backends that query HTTP APIs, such as core tools,
 `aqua:`, `github:`, `pypi:` and `npm:`.

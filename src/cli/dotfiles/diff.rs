@@ -31,7 +31,7 @@ impl DotfilesDiff {
         let secrets = system::secrets::resolve(&config, self.prompt_secrets)?;
         let (files, edits) = super::select_requests(&config, &self.targets)?;
         if files.is_empty() && edits.is_empty() {
-            super::warn_if_dotfiles_ignored();
+            super::warn_if_dotfiles_ignored(&config);
             info!("no dotfiles configured in [dotfiles]");
             return Ok(());
         }

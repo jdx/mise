@@ -1,0 +1,144 @@
+#!/usr/bin/env bash
+
+# Safe mode (MISE_SAFE=1) ignores [bootstrap], [dotfiles] and [dotfile_groups]
+# from project (non-global) config: applying them writes files into $HOME and
+# clones repositories, which an untrusted repository must not get to do.
+# Global config is operator-owned and still applies.
+
+SRC="$PWD/source-repo"
+mkdir -p "$SRC"
+git -C "$SRC" init -q -b main
+echo "v1" >"$SRC/version.txt"
+git -C "$SRC" add .
+git -C "$SRC" -c user.email=test@example.com -c user.name="Test User" commit -q -m v1
+
+echo "project dotfile" >project-source
+mkdir -p project-group-root
+echo "group dotfile" >project-group-root/project-group
+cat <<EOF >mise.toml
+[dotfiles]
+"~/.project-dotfile" = "project-source"
+
+[dotfile_groups.project]
+root = "$PWD/project-group-root"
+
+[bootstrap.repos]
+"~/src/project-repo" = { url = "file://$SRC", ref = "main" }
+EOF
+
+echo "=== project bootstrap and dotfiles config apply outside safe mode ==="
+assert_contains "mise bootstrap repos status" "~/src/project-repo"
+assert_contains "mise dotfiles status" "~/.project-dotfile"
+assert_contains "mise dotfiles status" "project-group-root"
+
+echo "=== safe mode ignores project bootstrap and dotfiles config ==="
+assert_not_contains "MISE_SAFE=1 mise bootstrap repos status" "project-repo"
+assert_not_contains "MISE_SAFE=1 mise dotfiles status" "project-dotfile"
+assert_not_contains "MISE_SAFE=1 mise dotfiles status" "project-group-root"
+assert_contains "MISE_SAFE=1 mise dotfiles status 2>&1" "skipped because safe mode (MISE_SAFE=1) ignores project config"
+assert_contains "MISE_SAFE=1 mise bootstrap --yes 2>&1" "skipped because safe mode (MISE_SAFE=1) ignores project config"
+assert_contains "MISE_SAFE=1 mise bootstrap repos status 2>&1" "skipped because safe mode (MISE_SAFE=1) ignores project config"
+assert_directory_not_exists "$HOME/src/project-repo"
+assert_fail "test -e $HOME/.project-dotfile"
+assert_fail "test -e $HOME/project-group"
+
+echo "=== safe mode keeps global bootstrap and dotfiles config ==="
+echo "global dotfile" >global-source
+cat <<EOF >"$MISE_CONFIG_DIR/config.toml"
+[dotfiles]
+"~/.global-dotfile" = "$PWD/global-source"
+
+[bootstrap.repos]
+"~/src/global-repo" = { url = "file://$SRC", ref = "main" }
+EOF
+assert_succeed "MISE_SAFE=1 mise bootstrap --yes"
+# The warning shows even when global entries remain.
+assert_contains "MISE_SAFE=1 mise dotfiles status 2>&1" "~/.global-dotfile"
+assert_contains "MISE_SAFE=1 mise dotfiles status 2>&1" "skipped because safe mode (MISE_SAFE=1) ignores project config"
+assert "readlink $HOME/.global-dotfile" "$PWD/global-source"
+assert "cat $HOME/src/global-repo/version.txt" "v1"
+assert_directory_not_exists "$HOME/src/project-repo"
+assert_fail "test -e $HOME/.project-dotfile"
+assert_fail "test -e $HOME/project-group"
+
+echo "=== safe mode keeps the config_roots that global config selects ==="
+mkdir -p "$HOME/dots/bundles/gitcfg"
+echo "root dotfile" >"$HOME/dots/bundles/gitcfg/root-source"
+cat <<EOF >"$HOME/dots/bundles/gitcfg/mise.toml"
+[dotfiles]
+"~/.root-dotfile" = "root-source"
+EOF
+cat <<EOF >"$MISE_CONFIG_DIR/config.toml"
+[bootstrap]
+config_roots = ["dots/bundles/*"]
+EOF
+assert_contains "MISE_SAFE=1 mise dotfiles status" "~/.root-dotfile"
+assert_succeed "MISE_SAFE=1 mise bootstrap --yes"
+assert "readlink $HOME/.root-dotfile" "$HOME/dots/bundles/gitcfg/root-source"
+assert_fail "test -e $HOME/.project-dotfile"
+
+echo "=== outside safe mode the same project config creates those paths ==="
+assert_succeed "mise bootstrap --yes"
+assert "readlink $HOME/.project-dotfile" "$PWD/project-source"
+assert "cat $HOME/project-group" "group dotfile"
+assert "cat $HOME/src/project-repo/version.txt" "v1"
+
+echo "=== safe mode refuses --prune while it hides project groups ==="
+# The project group is deployed now; hiding its declaration must not make
+# its files look orphaned.
+assert_fail_contains "MISE_SAFE=1 mise dotfiles apply --prune --yes" "--prune is unavailable in safe mode"
+assert "cat $HOME/project-group" "group dotfile"
+
+echo "=== safe mode ignores config_roots that project config selects ==="
+mkdir -p roots-project/roots/extra
+echo "project root dotfile" >roots-project/roots/extra/project-root-source
+cat <<EOF >roots-project/roots/extra/mise.toml
+[dotfiles]
+"~/.project-root-dotfile" = "project-root-source"
+EOF
+cat <<EOF >roots-project/mise.toml
+[bootstrap]
+config_roots = ["roots/*"]
+EOF
+cd roots-project
+assert_contains "mise dotfiles status" "~/.project-root-dotfile"
+assert_not_contains "MISE_SAFE=1 mise dotfiles status" "project-root-dotfile"
+assert_succeed "MISE_SAFE=1 mise bootstrap --yes"
+assert_fail "test -e $HOME/.project-root-dotfile"
+
+echo "=== safe mode refuses --prune while project config selects dotfile groups ==="
+mkdir -p "$HOME/selects-groups"
+cat <<EOF >"$HOME/selects-groups/mise.toml"
+[bootstrap]
+dotfile_groups = ["project"]
+EOF
+cd "$HOME/selects-groups"
+assert_fail_contains "MISE_SAFE=1 mise dotfiles apply --prune --yes" "--prune is unavailable in safe mode"
+
+echo "=== safe mode allows --prune when project config only declares repos ==="
+# [bootstrap.repos] hides no dotfiles, so nothing could look orphaned
+# because of it; the warning still names the file. The workdir project is
+# out of scope here, so its group's file is pruned as it would be outside
+# safe mode.
+mkdir -p "$HOME/repos-only"
+cat <<EOF >"$HOME/repos-only/mise.toml"
+[bootstrap.repos]
+"~/src/repos-only" = { url = "file://$SRC", ref = "main" }
+EOF
+cd "$HOME/repos-only"
+assert_contains "MISE_SAFE=1 mise dotfiles apply --prune --yes 2>&1" "skipped because safe mode (MISE_SAFE=1) ignores project config"
+assert_fail "test -e $HOME/project-group"
+assert "readlink $HOME/.root-dotfile" "$HOME/dots/bundles/gitcfg/root-source"
+assert_directory_not_exists "$HOME/src/repos-only"
+
+echo "=== safe mode keeps a global config_roots root's [bootstrap] from inside it ==="
+# Run from inside the root, its file is also project config here, so it is
+# loaded before the roots are expanded; its [bootstrap] must still apply.
+cat <<EOF >>"$HOME/dots/bundles/gitcfg/mise.toml"
+
+[bootstrap.repos]
+"~/src/root-repo" = { url = "file://$SRC", ref = "main" }
+EOF
+cd "$HOME/dots/bundles/gitcfg"
+assert_contains "MISE_SAFE=1 mise bootstrap repos status" "~/src/root-repo"
+assert_contains "MISE_SAFE=1 mise dotfiles status" "~/.root-dotfile"
