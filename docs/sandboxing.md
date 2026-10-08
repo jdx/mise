@@ -16,15 +16,15 @@ hooks outside it. To load config you have not reviewed, use
 
 ## Platform support
 
-| Restriction                                                                       | Linux                                   | macOS                                             | Windows                              |
-| --------------------------------------------------------------------------------- | --------------------------------------- | ------------------------------------------------- | ------------------------------------ |
-| Reads and writes (`--deny-read`, `--deny-write`, `--allow-read`, `--allow-write`) | Landlock, Linux 5.13 or later           | Seatbelt (`sandbox-exec`)                         | Not enforced                         |
-| All network access (`--deny-net`)                                                 | seccomp, on x86_64 and arm64            | Seatbelt                                          | Not enforced                         |
-| Access to particular hosts (`--allow-net`)                                        | Not supported; mise exits with an error | Not supported; `sandbox-exec` rejects the profile | Not enforced                         |
-| Environment variables (`--deny-env`, `--allow-env`)                               | Filtered by mise                        | Filtered by mise                                  | Not enforced for inherited variables |
+| Restriction                                                                       | Linux                                   | macOS                                   | Windows          |
+| --------------------------------------------------------------------------------- | --------------------------------------- | --------------------------------------- | ---------------- |
+| Reads and writes (`--deny-read`, `--deny-write`, `--allow-read`, `--allow-write`) | Landlock, Linux 5.13 or later           | Seatbelt (`sandbox-exec`)               | Not enforced     |
+| All network access (`--deny-net`)                                                 | seccomp, on x86_64 and arm64            | Seatbelt                                | Not enforced     |
+| Access to particular hosts (`--allow-net`)                                        | Not supported; mise exits with an error | Not supported; mise exits with an error | Not enforced     |
+| Environment variables (`--deny-env`, `--allow-env`)                               | Filtered by mise                        | Filtered by mise                        | Filtered by mise |
 
-On Windows, mise warns that the sandbox is not supported and runs the command
-without it. In a container, the host kernel provides Landlock and seccomp; if
+On Windows, mise filters the environment and warns that file, network and
+process restrictions are not supported, then runs the command without them. In a container, the host kernel provides Landlock and seccomp; if
 Landlock is unavailable, the command fails instead of running unrestricted. See
 [platform details](#platform-details).
 
@@ -155,7 +155,8 @@ When environment filtering is on, the command gets only `PATH`, `HOME`, `USER`,
 `SHELL`, `TERM`, `COLORTERM` and `LANG`, plus the variables you allow. Variables
 set in `[env]` are dropped too unless you allow them. `PATH` still
 includes the tools mise adds. A task also keeps the variables in its
-`pass_through_env` and in its cache `env`.
+`pass_through_env` and in its cache `env`. On Windows a few more variables
+stay; see [Windows](#windows).
 
 ## When the sandbox blocks something
 
@@ -165,23 +166,19 @@ print. It sees an ordinary error such as `Permission denied` or
 `Could not resolve host`. mise does not report these.
 
 mise itself reports problems that affect the sandbox before the command runs: a
-missing allowed path on Linux is a warning, while `--allow-net` on Linux and an
-unavailable Landlock are errors. On macOS, `sandbox-exec` itself rejects an
-`--allow-net` profile.
+missing allowed path on Linux is a warning, while `--allow-net` and an
+unavailable Landlock are errors.
 
 ## Access to particular hosts
 
 `--allow-net` and the `allow_net` task property cannot limit network access to
 particular hosts:
 
-- On Linux, mise exits with an error before it runs the command:
-  `per-host network filtering (--allow-net=<host>) is not supported on Linux`.
-- On macOS, mise resolves each host to IP addresses and writes them into the
-  Seatbelt profile. Seatbelt accepts only `*` or `localhost` as a network host,
-  so `sandbox-exec` rejects the profile with
-  `host must be * or localhost in network address` and the command does not
-  start. This happens for `localhost` too, because mise writes its IP addresses.
-- On Windows, mise warns and runs the command without a sandbox.
+- On Linux and macOS, mise exits with an error before it runs the command:
+  `per-host network filtering (--allow-net=<host>) is not supported on Linux`
+  (or `on macOS`). Landlock and seccomp cannot name a host, and Seatbelt
+  accepts only `*` or `localhost` as a network host.
+- On Windows, mise warns and runs the command without network restrictions.
 
 Use `--deny-net` to block internet sockets, and a firewall or proxy outside mise
 when a command may reach only certain hosts.
@@ -230,9 +227,11 @@ read anything else in them.
 
 ### Windows
 
-Windows has no sandbox support. mise warns and runs the command without
-filesystem or network restrictions. Environment filtering is incomplete: mise
-leaves out the variables it would have added, but the command still inherits
-mise's own environment, so `--deny-env` does not hide your shell's variables
-from it. A successful run with sandbox flags on Windows is not evidence that the
-policy held.
+Windows has no filesystem, network or process sandbox. When one of those is
+requested, mise warns and runs the command without it, so a successful run with
+those flags is not evidence that the policy held.
+
+Environment filtering works as on the other platforms. Besides the usual
+variables, `--deny-env` keeps the ones Windows programs need to start:
+`SystemRoot`, `SystemDrive`, `windir`, `ComSpec`, `PATHEXT`, `TEMP`, `TMP`,
+`USERPROFILE` and `USERNAME`. Names match without regard to case.

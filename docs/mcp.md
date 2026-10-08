@@ -59,12 +59,12 @@ Connect the server only to a project and a client you trust.
   it has `[env]`, templates or tool options, reads fail with
   `Failed to load config: error parsing config file: <path>` until you run
   `mise trust` in the project.
-- `run_task` runs the project's commands with your account's access. It starts
-  `mise run`, which, like `mise run` in a terminal, trusts the project's active
-  config files outside CI and [paranoid mode](/paranoid.html). Calling it in a
-  project you have not trusted therefore marks the project trusted and runs the
-  task, and later resource reads load its config too. Enable paranoid mode to
-  require an explicit `mise trust` first.
+- `run_task` runs the project's commands with your account's access, and
+  `install_tool` installs tools. Unlike `mise run` and `mise install` in a
+  terminal, neither trusts the project for you: both refuse a project whose
+  config files are not trusted, and list the `mise trust` commands to run after
+  you review the files. The `mise` they start trusts nothing on its own either,
+  so config it reaches in a subdirectory must be trusted too.
 - `run_task` runs without stdin and sets `MISE_YES=1`, which answers mise's
   other confirmation prompts. Use your client's tool approval settings to decide
   which tasks may run, and review task definitions before allowing them.
@@ -82,13 +82,13 @@ and keeps it until it exits, so after you edit `mise.toml` or task files,
 restart the server from your client to refresh the resources. `run_task` starts
 a new `mise run` each time and always uses the current files.
 
-| URI                                  | Contents                                                                                                                                                                                            |
-| ------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `mise://tools`                       | Active tool versions, requested versions, install paths, whether each is installed, and the config file that requested it.                                                                          |
-| `mise://tools?include_inactive=true` | Active tools plus other installed versions.                                                                                                                                                         |
-| `mise://tasks`                       | Task definitions, including monorepo subproject tasks: commands, descriptions, dependencies, source files and options. The `env` field is always empty; read the task's config for its environment. |
-| `mise://env`                         | Resolved environment variable names and values.                                                                                                                                                     |
-| `mise://config`                      | Active config file paths and the project root. It does not include settings.                                                                                                                        |
+| URI                                  | Contents                                                                                                                                                                                                                                       |
+| ------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `mise://tools`                       | Active tool versions, requested versions, install paths, whether each is installed, and the config file that requested it.                                                                                                                     |
+| `mise://tools?include_inactive=true` | Active tools plus other installed versions.                                                                                                                                                                                                    |
+| `mise://tasks`                       | Task definitions, including monorepo subproject tasks: commands, descriptions, dependencies, source files and options. The `env` field lists the task's environment directives as written, such as `"NODE_ENV=test"`, without evaluating them. |
+| `mise://env`                         | Resolved environment variable names and values.                                                                                                                                                                                                |
+| `mise://config`                      | Active config file paths and the project root. It does not include settings.                                                                                                                                                                   |
 
 Reading `mise://tools` resolves each version request, which can fetch version
 lists over the network when no installed version matches. A trimmed example:
@@ -110,11 +110,11 @@ lists over the network when no installed version matches. A trimmed example:
 
 ## Tools {#available-tools}
 
-| Tool            | Arguments                                   | What it does                                                                                                                                                    |
-| --------------- | ------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `list_commands` | `include_hidden` (boolean, default `false`) | Lists mise commands with their help and declared effect: `read`, `write` or `destructive`. A command with no effect is unclassified, not safe. It runs nothing. |
-| `run_task`      | `task` (string), `args` (array of strings)  | Runs a task with its dependencies and environment, and returns its output when it finishes.                                                                     |
-| `install_tool`  | `tool` (string), `version` (string)         | Not implemented; returns an error. Run `mise install` yourself.                                                                                                 |
+| Tool            | Arguments                                   | What it does                                                                                                                                                            |
+| --------------- | ------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `list_commands` | `include_hidden` (boolean, default `false`) | Lists mise commands with their help and declared effect: `read`, `write` or `destructive`. A command with no effect is unclassified, not safe. It runs nothing.         |
+| `run_task`      | `task` (string), `args` (array of strings)  | Runs a task with its dependencies and environment, and returns its output when it finishes.                                                                             |
+| `install_tool`  | `tool` (string), `version` (string)         | Installs a tool, as `mise install` does. `version` defaults to the configured version, or latest. Returns JSON with `tool`, the installed `version` and `install_path`. |
 
 `list_commands` returns entries like:
 

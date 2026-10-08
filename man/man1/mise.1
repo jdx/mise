@@ -7163,9 +7163,9 @@ Supports wildcards, such as \-\-allow\-env='MYAPP_*'.
 \fB\-\-allow\-net\fR \fI<HOST>\fR
 Allow network access only to HOST (not supported on any platform)
 
-Per\-host filtering does not work: Linux exits with an error, macOS
-sandbox\-exec rejects the profile, and Windows runs the command without a
-sandbox. See https://mise.jdx.dev/sandboxing.html#access\-to\-particular\-hosts
+Per\-host filtering does not work: Linux and macOS exit with an error,
+and Windows runs the command without network restrictions. See
+https://mise.jdx.dev/sandboxing.html#access\-to\-particular\-hosts
 .TP
 \fB\-\-allow\-read\fR \fI<PATH>\fR
 Allow reads from PATH (implies \-\-deny\-read for everything else)
@@ -7629,6 +7629,9 @@ the `test` task, that runs the task with mise. Pair them with
 `mise generate install\-script` so contributors can run tasks without installing
 mise. When a task has subtasks, the parent's stub is written to
 `<parent>/_default`.
+
+Hidden tasks and global tasks are skipped: the stubs are committed to the
+project, and global tasks come from each user's own config.
 .PP
 \fBUsage:\fR mise generate task\-stubs [OPTIONS]
 .PP
@@ -8723,7 +8726,10 @@ Tools:
 \- list_commands: every mise command and its declared effect
 \- run_task: run a task with your permissions; it can change files and call
   external services
-\- install_tool: advertised but not implemented; calls return an error
+\- install_tool: install a tool version, as `mise install` does
+
+run_task and install_tool refuse a project whose config files are not
+trusted; run `mise trust` there after reviewing them.
 
 See https://mise.jdx.dev/mcp.html for client configuration and access controls.
 .PP
@@ -10059,7 +10065,7 @@ Supports wildcards, such as `\-\-allow\-env='MYAPP_*'`.
 \fB\-\-allow\-net\fR \fI<HOST>\fR
 Allow network access only to HOST (not supported on any platform)
 
-Per\-host filtering does not work: Linux exits with an error, macOS sandbox\-exec rejects the profile, and Windows runs the task without a sandbox. See https://mise.jdx.dev/sandboxing.html#access\-to\-particular\-hosts
+Per\-host filtering does not work: Linux and macOS exit with an error, and Windows runs the task without network restrictions. See https://mise.jdx.dev/sandboxing.html#access\-to\-particular\-hosts
 .TP
 \fB\-\-allow\-read\fR \fI<PATH>\fR
 Allow reads from a specific path (implies `\-\-deny\-read` for everything else)
@@ -11771,7 +11777,7 @@ Supports wildcards, such as `\-\-allow\-env='MYAPP_*'`.
 \fB\-\-allow\-net\fR \fI<HOST>\fR
 Allow network access only to HOST (not supported on any platform)
 
-Per\-host filtering does not work: Linux exits with an error, macOS sandbox\-exec rejects the profile, and Windows runs the task without a sandbox. See https://mise.jdx.dev/sandboxing.html#access\-to\-particular\-hosts
+Per\-host filtering does not work: Linux and macOS exit with an error, and Windows runs the task without network restrictions. See https://mise.jdx.dev/sandboxing.html#access\-to\-particular\-hosts
 .TP
 \fB\-\-allow\-read\fR \fI<PATH>\fR
 Allow reads from a specific path (implies `\-\-deny\-read` for everything else)

@@ -1706,8 +1706,9 @@
         },
         "plugin_autoupdate_last_check_duration": {
           "default": "7d",
-          "description": "No effect; mise never reads this setting.",
-          "type": "string"
+          "description": "[deprecated] Has no effect; it was never implemented.",
+          "type": "string",
+          "deprecated": true
         },
         "prefer_offline": {
           "description": "Use cached version lists instead of fetching new ones, and go to the network only when nothing is cached.",
@@ -2076,8 +2077,9 @@
               "type": "string"
             },
             "age_recipients": {
-              "description": "No effect; mise does not encrypt SOPS files and never reads this setting.",
-              "type": "string"
+              "description": "[deprecated] Has no effect; mise does not encrypt sops files.",
+              "type": "string",
+              "deprecated": true
             },
             "rops": {
               "default": true,
@@ -2110,7 +2112,7 @@
               "default": "if_other_versions_installed",
               "description": "When to warn that tools requested by config are not installed.",
               "type": "string",
-              "enum": ["if_other_versions_installed", "always", "never"]
+              "enum": ["never", "if_other_versions_installed", "always"]
             },
             "show_deps_stale": {
               "default": true,
@@ -2229,8 +2231,9 @@
                   "type": "string"
                 },
                 "stats_report": {
-                  "description": "No effect; mise no longer writes this report.",
-                  "type": "string"
+                  "description": "[deprecated] Has no effect since the built-in action cache was removed.",
+                  "type": "string",
+                  "deprecated": true
                 }
               }
             },
@@ -5647,7 +5650,7 @@
         },
         "deny_write": {
           "default": false,
-          "description": "block filesystem writes, except implicitly writable paths such as the temporary directory",
+          "description": "block all filesystem writes",
           "type": "boolean"
         },
         "deny_net": {
@@ -5675,7 +5678,7 @@
           "type": "array"
         },
         "allow_net": {
-          "description": "meant to allow only these hosts, but per-host filtering does not work on any platform (https://mise.jdx.dev/sandboxing.html#access-to-particular-hosts)",
+          "description": "allow network to specific hosts",
           "items": {
             "type": "string"
           },
@@ -8415,7 +8418,7 @@
     },
     "history": {
       "type": "object",
-      "description": "dotfiles history: what is never captured, reload commands, and the setup repository (https://mise.jdx.dev/dotfiles/history.html)",
+      "description": "dotfiles history: what is never captured, reload commands, and the setup repository (https://mise.jdx.dev/history.html)",
       "properties": {
         "encryption": {
           "type": "object",

@@ -69,6 +69,8 @@ impl Latest {
         let prefix = match &tool.tvr {
             None => asdf_version,
             Some(ToolRequest::Version { version, .. }) => Some(version.clone()),
+            // `prefix:20` is a plain prefix: the backend's version matching resolves it.
+            Some(ToolRequest::Prefix { prefix, .. }) => Some(prefix.clone()),
             // `sub-N:<base>` resolves its base against the backend, so it is handled
             // below once the backend (and its plugin) is ready.
             Some(ToolRequest::Sub { .. }) => None,
@@ -91,6 +93,8 @@ impl Latest {
             }) => Some(
                 resolve_sub_base(&config, &backend, sub, orig_version, before_date, false).await?,
             ),
+            // `prefix:` asks for a prefix match, never an alias, as `ToolVersion::resolve` treats it.
+            Some(ToolRequest::Prefix { .. }) => prefix,
             _ => match prefix {
                 Some(v) => Some(config.resolve_alias(&backend, &v).await?),
                 None => None,

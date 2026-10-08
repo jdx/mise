@@ -2,8 +2,8 @@ use std::path::PathBuf;
 
 use eyre::Result;
 
+use crate::cli::set::get_mise_toml;
 use crate::config::config_file::ConfigFile;
-use crate::config::config_file::mise_toml::MiseToml;
 use crate::config::{ConfigPathOptions, resolve_target_config_path};
 
 /// Remove environment variables from mise.toml
@@ -55,7 +55,7 @@ impl Unset {
             ..Default::default()
         })?;
 
-        let mut config = MiseToml::from_file(&filename).unwrap_or_default();
+        let mut config = get_mise_toml(&filename).await?;
 
         for name in self.keys.iter() {
             config.remove_env(name)?;

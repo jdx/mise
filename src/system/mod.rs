@@ -1910,10 +1910,11 @@ pub fn shell_activation_from_config_files(config_files: &ConfigMap) -> Vec<Shell
         .filter_map(|(target, mode)| {
             mode.and_then(|mode| {
                 let request = ShellActivationRequest::new(target, mode);
-                if explicit_files
-                    .iter()
-                    .any(|file| file.target == request.edit.path)
-                {
+                // Tracking only observes a file; it writes nothing, so the
+                // activation block still belongs to bootstrap.
+                if explicit_files.iter().any(|file| {
+                    file.mode != files::FileMode::Track && file.target == request.edit.path
+                }) {
                     debug!(
                         "bootstrap: shell activation for {} skipped because [dotfiles] owns {}",
                         target.name(),

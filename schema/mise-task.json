@@ -444,7 +444,7 @@
         },
         "deny_write": {
           "default": false,
-          "description": "block filesystem writes, except implicitly writable paths such as the temporary directory",
+          "description": "block all filesystem writes",
           "type": "boolean"
         },
         "deny_net": {
@@ -472,7 +472,7 @@
           "type": "array"
         },
         "allow_net": {
-          "description": "meant to allow only these hosts, but per-host filtering does not work on any platform (https://mise.jdx.dev/sandboxing.html#access-to-particular-hosts)",
+          "description": "allow network to specific hosts",
           "items": {
             "type": "string"
           },

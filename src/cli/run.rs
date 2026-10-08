@@ -232,9 +232,9 @@ pub(crate) struct Run {
 
     /// Allow network access only to HOST (not supported on any platform)
     ///
-    /// Per-host filtering does not work: Linux exits with an error, macOS
-    /// sandbox-exec rejects the profile, and Windows runs the task without a
-    /// sandbox. See https://mise.jdx.dev/sandboxing.html#access-to-particular-hosts
+    /// Per-host filtering does not work: Linux and macOS exit with an error,
+    /// and Windows runs the task without network restrictions. See
+    /// https://mise.jdx.dev/sandboxing.html#access-to-particular-hosts
     #[usage(long, value_name = "HOST")]
     pub allow_net: Vec<String>,
 

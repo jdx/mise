@@ -102,7 +102,7 @@ impl Outdated {
             self.bump = true;
         }
         if self.monorepo {
-            unimplemented!("mise outdated --monorepo is not implemented yet");
+            eyre::bail!("--monorepo is not supported by mise outdated yet");
         }
         let config = Config::get().await?;
         let scope = if self.local {

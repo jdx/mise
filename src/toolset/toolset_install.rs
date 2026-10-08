@@ -1017,7 +1017,7 @@ impl Toolset {
         let mpr = MultiProgressReport::get();
 
         for (plugin_key, url) in repo_urls {
-            let (plugin_type, name) = Self::parse_plugin_key(plugin_key);
+            let (plugin_type, name) = PluginType::from_plugin_entry(plugin_key, url);
 
             // Skip empty plugin names (e.g., from malformed keys like "" or "vfox:")
             if name.is_empty() {
@@ -1029,16 +1029,19 @@ impl Toolset {
             plugin.set_remote_url(url.clone());
 
             if !plugin.is_installed() {
+                // An unprefixed packslip entry already resolved to vfox, so
+                // only an explicit non-vfox prefix can reach this.
+                if url.starts_with("packslip:") && plugin_type != PluginType::Vfox {
+                    eyre::bail!(
+                        "plugin {plugin_key}: packslip plugin sources require the vfox plugin type"
+                    );
+                }
                 plugin
                     .ensure_installed(config, &mpr, false, dry_run)
                     .await?;
             }
         }
         Ok(())
-    }
-
-    fn parse_plugin_key(key: &str) -> (PluginType, &str) {
-        PluginType::from_plugin_config(key)
     }
 }
 

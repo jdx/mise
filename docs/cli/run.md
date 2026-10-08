@@ -83,7 +83,7 @@ To create a script task, run `mise tasks add --file hello -- echo hello`, then `
   Supports wildcards, such as `--allow-env='MYAPP_*'`.
 - **`--allow-net <HOST>`** — Allow network access only to HOST (not supported on any platform)
 
-  Per-host filtering does not work: Linux exits with an error, macOS sandbox-exec rejects the profile, and Windows runs the task without a sandbox. See <https://mise.jdx.dev/sandboxing.html#access-to-particular-hosts>
+  Per-host filtering does not work: Linux and macOS exit with an error, and Windows runs the task without network restrictions. See <https://mise.jdx.dev/sandboxing.html#access-to-particular-hosts>
 - **`--allow-read <PATH>`** — Allow reads from a specific path (implies `--deny-read` for everything else)
 - **`--allow-write <PATH>`** — Allow writes to a specific path (implies `--deny-write` for everything else)
 - **`--deny-all`** — Block reads, writes, network, and env vars

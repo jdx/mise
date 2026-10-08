@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+
+# Node signs SHASUMS256.txt for every release line, not only 20 and later, so a
+# signature that does not match must fail an 18.x install the same way.
+
+MIRROR=$(mktemp -d "${TMPDIR:-/tmp}/node-mirror.XXXXXX")
+mkdir -p "$MIRROR/v18.20.8"
+echo '[{"version":"v18.20.8","files":[]}]' >"$MIRROR/index.json"
+printf '%s  node-v18.20.8-placeholder.tar.gz\n' "$(printf '0%.0s' {1..64})" >"$MIRROR/v18.20.8/SHASUMS256.txt"
+# A genuine node release signature, but over another release's SHASUMS256.txt
+cp "$ROOT/crates/mise-util/src/gpg_testdata/node_v20.11.0_SHASUMS256.txt.sig" \
+  "$MIRROR/v18.20.8/SHASUMS256.txt.sig"
+
+# Serve a placeholder archive for whichever platform this test runs on
+start_http_server --dir "$MIRROR" --handler - <<'PY'
+class Handler(TestHandler):
+    def do_GET(self):
+        if self.path.startswith("/v18.20.8/node-v18.20.8-"):
+            body = b"placeholder archive"
+            self.send_response(200)
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
+        super().do_GET()
+PY
+
+export MISE_NODE_MIRROR_URL="http://127.0.0.1:$HTTP_PORT/"
+export MISE_USE_VERSIONS_HOST=0
+
+assert_fail "mise install node@18.20.8" "signature does not match any trusted public key"
+
+# node.gpg_verify=false still skips the signature, so the install reaches the
+# SHASUMS256.txt lookup instead
+assert_fail "MISE_NODE_GPG_VERIFY=false mise install node@18.20.8" "not found in SHASUMS256.txt"

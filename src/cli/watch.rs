@@ -92,7 +92,7 @@ impl Watch {
             if !ts.versions.contains_key(&watchexec) {
                 eprintln!("{}: {}", style("Error").red().bold(), err);
                 eprintln!("{}: Install watchexec with:", style("Hint").bold());
-                eprintln!("  mise use -g watchexec@latest");
+                eprintln!("  mise use -g watchexec");
                 return Err(request_exit(1));
             }
         }

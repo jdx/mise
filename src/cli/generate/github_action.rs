@@ -71,16 +71,13 @@ concurrency:
   group: ${{{{ github.workflow }}}}-${{{{ github.ref }}}}
   cancel-in-progress: true
 
-env:
-  MISE_EXPERIMENTAL: true
-
 jobs:
   {name}:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v6
-      - uses: jdx/mise-action@v3
+      - uses: actions/checkout@v7
+      - uses: jdx/mise-action@v5
       - run: mise run {task}
 "#
         ))
