@@ -481,18 +481,11 @@ impl EnvResults {
         };
 
         if resolve_opts.vars {
-            // A saved value is an ordinary var, below every config value. Names that
-            // a `default` or `required` directive declares are left to those, which
-            // rank a saved value below the process environment and record its source.
-            let declared: BTreeSet<&str> = filtered_input
-                .iter()
-                .filter_map(|(d, _)| match d {
-                    EnvDirective::Default(k, ..) | EnvDirective::Required(k, _) => Some(k.as_str()),
-                    _ => None,
-                })
-                .collect();
+            // A saved value is an ordinary var, below every config value and visible to
+            // templates from the start. A name the process environment sets is skipped,
+            // because the environment ranks higher.
             for (key, value) in prompt::saved_all() {
-                if !value.is_empty() && !declared.contains(key.as_str()) {
+                if !value.is_empty() && env::PRISTINE_ENV.get(&key).is_none_or(|v| v.is_empty()) {
                     r.vars.insert(key, (value, prompt::answers_path()));
                 }
             }
@@ -566,11 +559,17 @@ impl EnvResults {
                         crate::env::normalize_path_key(k)
                     };
                     if resolve_opts.vars {
-                        if let Some((v, _)) = r.vars.get(&k).filter(|(v, _)| !v.is_empty()) {
+                        if let Some((v, existing)) = r.vars.get(&k).filter(|(v, _)| !v.is_empty()) {
                             if redact.unwrap_or(false) {
                                 r.redactions.push(k.clone());
                             }
-                            r.vars.insert(k, (v.clone(), source.clone()));
+                            // A saved answer keeps its own source rather than this file's.
+                            let kept = if *existing == prompt::answers_path() {
+                                existing.clone()
+                            } else {
+                                source.clone()
+                            };
+                            r.vars.insert(k, (v.clone(), kept));
                             continue;
                         }
                         if let Some(v) = env::PRISTINE_ENV.get(&k).filter(|v| !v.is_empty()) {

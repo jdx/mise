@@ -99,6 +99,27 @@ assert_contains "mise vars --no-header | grep git_name" "vars.toml"
 # ...and the process environment still beats it
 assert "env git_name=from-env mise vars git_name" "from-env"
 
+# An earlier var can reference a saved value that a later directive declares
+cat <<EOF2 >mise.toml
+[vars]
+greeting = "hi {{ vars.git_name }}"
+
+[vars.git_name]
+default = "fallback"
+prompt = "Git author name"
+EOF2
+assert "mise vars greeting" "hi Ada Lovelace"
+assert_contains "mise vars --no-header | grep git_name" "vars.toml"
+cat <<EOF2 >mise.toml
+[vars]
+plain = "from-config"
+
+[vars.git_name]
+default = "fallback"
+prompt = "Git author name"
+EOF2
+assert "env git_name=from-env mise vars git_name" "from-env"
+
 # A saved value is an ordinary var, so a template sees it even with no `prompt`
 cat <<EOF2 >>mise.toml
 
