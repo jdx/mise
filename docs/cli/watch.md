@@ -177,6 +177,15 @@ To keep a server or database running alongside your tasks, with readiness checks
   Empty lines and lines that start with `#` are skipped. The patterns use the same format as `--ignore`. Also read from `$WATCHEXEC_IGNORE_FILES`.
 
   **Environment Variable:** `WATCHEXEC_IGNORE_FILES`
+- **`--fs-events <EVENTS>`** — Filesystem events to filter to
+
+  This is a quick filter to only emit events for the given types of filesystem changes. Choose from 'access', 'create', 'remove', 'rename', 'modify', 'metadata'. Multiple types can be given by repeating the option or by separating them with commas. By default, this is all types except for 'access'.
+
+  This may apply filtering at the kernel level when possible, which can be more efficient, but may be more confusing when reading the logs.
+
+  **Choices:** `access`, `create`, `remove`, `rename`, `modify`, `metadata`
+
+  **Default:** `create,remove,rename,modify,metadata`
 - **`--no-meta`** — Don't emit fs events for metadata changes
 
   This is a shorthand for '--fs-events create,remove,rename,modify'. Using it alongside the '--fs-events' option is non-sensical and not allowed.

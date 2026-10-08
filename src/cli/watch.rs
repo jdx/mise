@@ -1182,8 +1182,7 @@ pub(crate) struct WatchexecArgs {
         delimiter = ',',
         hide_default_value = true,
         value_enum,
-        value_name = "EVENTS",
-        hide = true
+        value_name = "EVENTS"
     )]
     pub filter_fs_events: Vec<FsEvent>,
 

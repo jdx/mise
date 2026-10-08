@@ -801,7 +801,8 @@ Applies to glibc Linux targets, including `mise lock` for Linux platforms from
 another OS, which otherwise assumes `ubuntu-24.04`. When unset on Linux, mise
 derives it from `$ImageOS` (GitHub Actions) or `/etc/os-release`, and uses
 precompiled builds automatically only for Ubuntu 20.04, 22.04 and 24.04. Set it
-for `ubuntu-26.04`, or to use an Ubuntu build on another glibc distribution.
+to `ubuntu-26.04` on that release, or to one of these Ubuntu releases on another
+glibc distribution to use that release's build; other values are rejected.
 musl Linux always builds from source.
 """
 enum = ["ubuntu-20.04", "ubuntu-22.04", "ubuntu-24.04", "ubuntu-26.04"]
