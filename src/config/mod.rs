@@ -5545,6 +5545,12 @@ fn merge_file_and_config_tasks(file_tasks: Vec<Task>, config_tasks: Vec<Task>) -
                     file_task_overlays.entry(name).or_insert_with(|| t.clone());
                 }
             }
+            // A block that took a script over under the script's own name
+            // (`[tasks."hello.sh"]`) stands in for that file task, so it is
+            // listed by the same name the script was: `hello`.
+            if owner == t.name && crate::task::strip_task_name_extension(&t.name) != t.name {
+                t.name_from_file = true;
+            }
             t.name = owner;
         }
         // `[tasks.hello]` and `[tasks."hello.sh"]` are two spellings of one

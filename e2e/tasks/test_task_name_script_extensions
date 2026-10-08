@@ -43,3 +43,21 @@ assert "mise run build.sh" "build-ran name=build"
 
 assert "mise run gen.proto" "gen-ran name=gen.proto"
 assert_fail "mise run gen"
+
+# A block that takes a script over under the script's own name stands in for
+# that file task, so it keeps the script's listed name.
+cat <<'EOF' >mise-tasks/deploy.sh
+#!/usr/bin/env bash
+echo "deploy-script-ran"
+EOF
+chmod +x mise-tasks/deploy.sh
+
+cat <<'EOF' >>mise.toml
+
+[tasks."deploy.sh"]
+run = 'echo "deploy-inline-ran name=$MISE_TASK_NAME"'
+EOF
+
+assert_contains "mise tasks ls --no-header" "deploy"
+assert_not_contains "mise tasks ls --no-header" "deploy.sh"
+assert "mise run deploy" "deploy-inline-ran name=deploy"

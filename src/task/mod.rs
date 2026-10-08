@@ -821,6 +821,15 @@ pub struct Task {
     /// contributing metadata to the latter.
     #[serde(skip)]
     pub(crate) is_toml_include: bool,
+    /// This task's name is a script file's name, so it drops a known script extension
+    /// for display ([`Task::display_name`]).
+    ///
+    /// Set for every file task, and for a TOML block that takes a discovered script
+    /// over under that script's own name (`[tasks."hello.sh"] run = "..."`), which
+    /// is still the `hello` the script was listed as. Any other TOML task's name is
+    /// shown as written.
+    #[serde(skip)]
+    pub(crate) name_from_file: bool,
 
     /// Relative precedence of the config that defined this task or selected
     /// its TOML include. Lower values have higher precedence. This is scoped
@@ -1491,6 +1500,7 @@ impl Task {
             name: name_from_path(prefix, path)?,
             config_source: path.to_path_buf(),
             config_root: Some(config_root.to_path_buf()),
+            name_from_file: true,
             ..Default::default()
         })
     }
@@ -1895,15 +1905,6 @@ impl Task {
         new_task
     }
 
-    /// Whether this task comes from a script file, whose name is derived from its path.
-    ///
-    /// [`Task::new`] gives such a task the script as both its `config_source` and its
-    /// `file`. A TOML task never has that shape: its `config_source` is the config it
-    /// was declared in, even when `file = "..."` points it at a script.
-    pub(crate) fn is_file_task(&self) -> bool {
-        self.file.as_deref() == Some(self.config_source.as_path())
-    }
-
     /// The name `mise tasks ls` shows and `MISE_TASK_NAME` carries.
     ///
     /// A file task drops a known script extension ([`SCRIPT_EXTENSIONS`]), so
@@ -1911,7 +1912,7 @@ impl Task {
     /// A TOML task is shown exactly as it was declared, so `[tasks."test.unit"]` and
     /// `[tasks."test.e2e"]` stay two tasks rather than both showing as `test`.
     pub(crate) fn display_name(&self, all_tasks: &BTreeMap<String, Task>) -> String {
-        if !self.is_file_task() {
+        if !self.name_from_file {
             return self.name.clone();
         }
         // Only the task part loses its extension: in `//projects/my.app:build.sh` the
@@ -3871,6 +3872,7 @@ impl Default for Task {
             args: vec![],
             file: None,
             is_toml_include: false,
+            name_from_file: false,
             config_precedence: usize::MAX,
             quiet: false,
             tools: Default::default(),
@@ -6038,6 +6040,7 @@ echo "hello world"
             name: name.to_string(),
             config_source: PathBuf::from(format!("/proj/mise-tasks/{name}")),
             file: Some(PathBuf::from(format!("/proj/mise-tasks/{name}"))),
+            name_from_file: true,
             ..Default::default()
         };
         let toml_task = |name: &str, file: Option<&str>| Task {
