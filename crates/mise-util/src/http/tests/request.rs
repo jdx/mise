@@ -251,6 +251,35 @@ async fn test_get_html_accepts_text_html_without_doctype() {
 }
 
 #[tokio::test]
+async fn test_get_text_cached_failures_keep_whether_the_server_was_reached() {
+    let _settings = set_test_http_retries(0);
+    let client = Client::new(Duration::from_secs(3), ClientKind::Http).unwrap();
+
+    // A closed port fails before any response arrives
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+    drop(listener);
+    let refused = client
+        .get_text_cached(format!("http://127.0.0.1:{port}/refused"))
+        .await
+        .unwrap_err();
+    assert!(is_unreachable(&refused), "{refused:?}");
+
+    // A status from the server is not
+    let mut server = mockito::Server::new_async().await;
+    server
+        .mock("GET", "/missing")
+        .with_status(404)
+        .create_async()
+        .await;
+    let missing = client
+        .get_text_cached(format!("{}/missing", server.url()))
+        .await
+        .unwrap_err();
+    assert!(!is_unreachable(&missing), "{missing:?}");
+}
+
+#[tokio::test]
 async fn test_download_metadata_uses_redirected_filename() {
     let mut server = mockito::Server::new_async().await;
     let location = format!("{}/releases/tool.tar.gz", server.url());
