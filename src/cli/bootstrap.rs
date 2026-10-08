@@ -1801,6 +1801,13 @@ impl Bootstrap {
         } else {
             system::firewall::prepare_request_from_config(&config)?
         };
+        // Refuse a lockout-prone firewall before applying anything else.
+        // A dry run reports it as unknown instead.
+        if !self.dry_run
+            && let Some(firewall) = &managed_firewall
+        {
+            system::firewall::validate_request(firewall)?;
+        }
         let mut managed_compose = if skip.contains(&BootstrapPart::Compose) {
             None
         } else {
@@ -1811,7 +1818,12 @@ impl Bootstrap {
                 .as_ref()
                 .is_some_and(|projects| !projects.is_empty())
         {
-            let plan = system::resources::plan(&config, &secrets).await?;
+            let plan = system::resources::plan(
+                &config,
+                &secrets,
+                !skip.contains(&BootstrapPart::Firewall),
+            )
+            .await?;
             let output = plan.output()?;
             let resources = output
                 .resources
@@ -2923,7 +2935,7 @@ impl BootstrapPlan {
     async fn run(self) -> Result<()> {
         let config = Config::get().await?;
         let secrets = system::secrets::resolve(&config, self.prompt_secrets)?;
-        let plan = system::resources::plan(&config, &secrets).await?;
+        let plan = system::resources::plan(&config, &secrets, true).await?;
         let output = plan.output()?;
         if self.json {
             miseprintln!("{}", serde_json::to_string_pretty(&output)?);

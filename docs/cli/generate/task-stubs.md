@@ -17,6 +17,9 @@ the `test` task, that runs the task with mise. Pair them with
 mise. When a task has subtasks, the parent's stub is written to
 `<parent>/_default`.
 
+Hidden tasks and global tasks are skipped: the stubs are committed to the
+project, and global tasks come from each user's own config.
+
 ## Flags
 - **`-d --dir <DIR>`** — Directory to create task stubs inside of
 

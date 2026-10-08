@@ -83,9 +83,9 @@ pub(crate) struct Exec {
 
     /// Allow network access only to HOST (not supported on any platform)
     ///
-    /// Per-host filtering does not work: Linux exits with an error, macOS
-    /// sandbox-exec rejects the profile, and Windows runs the command without a
-    /// sandbox. See https://mise.jdx.dev/sandboxing.html#access-to-particular-hosts
+    /// Per-host filtering does not work: Linux and macOS exit with an error,
+    /// and Windows runs the command without network restrictions. See
+    /// https://mise.jdx.dev/sandboxing.html#access-to-particular-hosts
     #[usage(long, value_name = "HOST", verbatim_doc_comment)]
     pub allow_net: Vec<String>,
 
@@ -942,11 +942,32 @@ where
     U: IntoIterator,
     U::Item: Into<OsString>,
 {
-    if sandbox.is_active() {
-        warn!("sandbox is not supported on Windows, running unsandboxed");
+    if sandbox.restricts_more_than_env() {
+        warn!(
+            "sandbox file, network and process restrictions are not supported on Windows, running without them"
+        );
     }
+    // Capture the marker before deny-env removes variables from the process.
+    // The lazy state must retain the dispatching shim for candidate filtering.
+    drop(env::MISE_SHIM_PATH.read().unwrap());
     for key in env_remove {
         env::remove_var(key);
+    }
+    if sandbox.effective_deny_env() {
+        // The child inherits mise's environment, so, as on unix, everything `env` does not
+        // name leaves it. `env` already holds what a Windows process needs to start
+        // (`SystemRoot`, `ComSpec`, `PATHEXT`, `TEMP`, ...; see `SandboxConfig::filter_env`).
+        // Names are case-insensitive here, so `Path` in mise's environment is `PATH` in `env`.
+        // The hidden `=C:`-style entries hold cmd's per-drive current directories, not
+        // variables, and `remove_var` panics on a name containing `=`, so they stay.
+        for (k, _) in std::env::vars_os() {
+            let keep = k.to_string_lossy().starts_with('=')
+                || k.to_str()
+                    .is_some_and(|key| env.keys().any(|name| name.eq_ignore_ascii_case(key)));
+            if !keep {
+                env::remove_var(&k);
+            }
+        }
     }
     for (k, v) in env.iter() {
         env::set_var(k, v);

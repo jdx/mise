@@ -177,6 +177,8 @@ impl ConfigSet {
             }
         }
 
+        // A setting that takes a bool or a string reads yes/no/1/0 as booleans itself, so
+        // storing them as booleans keeps their meaning.
         let infer_bool_or_string = |value: &str| match value {
             "true" | "yes" | "1" => TomlValueTypes::Bool,
             "false" | "no" | "0" => TomlValueTypes::Bool,
@@ -201,7 +203,7 @@ impl ConfigSet {
                         SettingsType::SetString => TomlValueTypes::Set,
                         SettingsType::IndexMap => TomlValueTypes::String,
                     },
-                    None => infer_bool_or_string(&value),
+                    None => infer_unknown_key(&value),
                 }
             }
             _ => self.type_,
@@ -211,7 +213,7 @@ impl ConfigSet {
             TomlValueTypes::String => toml_edit::value(value),
             TomlValueTypes::Integer => toml_edit::value(value.parse::<i64>()?),
             TomlValueTypes::Float => toml_edit::value(value.parse::<f64>()?),
-            TomlValueTypes::Bool => toml_edit::value(value.parse::<bool>()?),
+            TomlValueTypes::Bool => toml_edit::value(parse_bool(&value)?),
             TomlValueTypes::List => {
                 let mut list = toml_edit::Array::new();
                 for item in value.split(',').map(|s| s.trim()) {
@@ -253,6 +255,28 @@ impl ConfigSet {
         }
         std::fs::write(&file, raw)?;
         Ok(())
+    }
+}
+
+/// Infer the type of a key that is not a setting, such as `env.PORT` or a task's env.
+///
+/// Only the TOML literals `true` and `false` become booleans. Anything else, including `yes`,
+/// `no`, `1`, and `0`, stays a string: `env.DEBUG = false` unsets `DEBUG` and `env.PORT = true`
+/// exports `PORT=true`, so reading those spellings as booleans would change what they mean.
+fn infer_unknown_key(value: &str) -> TomlValueTypes {
+    match value {
+        "true" | "false" => TomlValueTypes::Bool,
+        _ => TomlValueTypes::String,
+    }
+}
+
+/// Parse a boolean the way settings read one from the environment: `true`/`yes`/`1` and
+/// `false`/`no`/`0`, ignoring case and surrounding whitespace.
+fn parse_bool(value: &str) -> eyre::Result<bool> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "true" | "yes" | "1" => Ok(true),
+        "false" | "no" | "0" => Ok(false),
+        _ => bail!("invalid boolean '{value}': expected true, false, yes, no, 1, or 0"),
     }
 }
 
@@ -338,4 +362,38 @@ fn remove_value(
         table.remove(key);
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{TomlValueTypes, infer_unknown_key, parse_bool};
+
+    #[test]
+    fn parse_bool_accepts_the_spellings_settings_accept() {
+        for value in ["true", "yes", "1", "TRUE", " Yes "] {
+            assert!(parse_bool(value).unwrap(), "{value}");
+        }
+        for value in ["false", "no", "0", "False", "NO "] {
+            assert!(!parse_bool(value).unwrap(), "{value}");
+        }
+        for value in ["", "on", "2", "maybe"] {
+            assert!(parse_bool(value).is_err(), "{value}");
+        }
+    }
+
+    #[test]
+    fn unknown_keys_only_infer_literal_booleans() {
+        for value in ["true", "false"] {
+            assert!(
+                matches!(infer_unknown_key(value), TomlValueTypes::Bool),
+                "{value}"
+            );
+        }
+        for value in ["yes", "no", "1", "0", "TRUE", "False"] {
+            assert!(
+                matches!(infer_unknown_key(value), TomlValueTypes::String),
+                "{value}"
+            );
+        }
+    }
 }

@@ -27,7 +27,10 @@ Tools:
 - list_commands: every mise command and its declared effect
 - run_task: run a task with your permissions; it can change files and call
   external services
-- install_tool: advertised but not implemented; calls return an error
+- install_tool: install a tool version, as `mise install` does
+
+run_task and install_tool refuse a project whose config files are not
+trusted; run `mise trust` there after reviewing them.
 
 See <https://mise.jdx.dev/mcp.html> for client configuration and access controls.
 

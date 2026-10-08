@@ -40,9 +40,9 @@ setting is off; when you name tools, only those are installed. The --allow-*and
   Supports wildcards, such as --allow-env='MYAPP_*'.
 - **`--allow-net <HOST>`** — Allow network access only to HOST (not supported on any platform)
 
-  Per-host filtering does not work: Linux exits with an error, macOS
-  sandbox-exec rejects the profile, and Windows runs the command without a
-  sandbox. See <https://mise.jdx.dev/sandboxing.html#access-to-particular-hosts>
+  Per-host filtering does not work: Linux and macOS exit with an error,
+  and Windows runs the command without network restrictions. See
+  <https://mise.jdx.dev/sandboxing.html#access-to-particular-hosts>
 - **`--allow-read <PATH>`** — Allow reads from PATH (implies --deny-read for everything else)
 - **`--allow-write <PATH>`** — Allow writes to PATH (implies --deny-write for everything else)
 - **`--deny-all`** — Block reads, writes, network, and env vars

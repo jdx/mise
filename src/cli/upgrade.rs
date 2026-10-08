@@ -221,7 +221,7 @@ impl Upgrade {
             self.bump = true;
         }
         if self.monorepo {
-            unimplemented!("mise upgrade --monorepo is not implemented yet");
+            eyre::bail!("--monorepo is not supported by mise upgrade yet");
         }
         let mut config = Config::get().await?;
         let mut explicit_config_bumps = Vec::new();

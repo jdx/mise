@@ -12,6 +12,7 @@ API_KEY = "secret123"
 [tasks.test-task]
 run = "echo 'Running test task'"
 description = "A test task for MCP"
+env = { MCP_TASK_ENV = "task_value" }
 
 [tasks.echo-args]
 run = 'echo "args: $@"'
@@ -163,6 +164,10 @@ def test_tasks_resource(proc):
         return 1
 
     tasks = json.loads(resp["result"]["contents"][0]["text"])
+    task = next(t for t in tasks if t["name"] == "test-task")
+    assert task["env"] == ["MCP_TASK_ENV=task_value"], task
+    print("✓ mise://tasks reports each task's env")
+
     task = next(t for t in tasks if t["name"] == "mcp-overlay")
     assert task["source"].endswith("/.mise/tasks/mcp-overlay"), task
     assert len(task["config_sources"]) == 2, task
@@ -236,25 +241,48 @@ def test_run_task_unknown(proc):
     return 0
 
 
-def test_install_tool_stub(proc):
+def test_install_tool(proc):
     send(proc, {
         "jsonrpc": "2.0", "id": 6,
         "method": "tools/call",
         "params": {
             "name": "install_tool",
-            "arguments": {"tool": "node"},
+            "arguments": {"tool": "dummy", "version": "1"},
         },
     })
-    resp = recv(proc, timeout=30.0)
+    resp = recv(proc, timeout=60.0)
     if not resp or "result" not in resp:
         print(f"ERROR: Bad install_tool response: {resp}")
         return 1
 
     result = resp["result"]
-    assert result.get("isError", False), "expected error from stub"
-    text = result["content"][0]["text"]
-    assert "not yet implemented" in text, f"unexpected stub message: {text}"
-    print("✓ install_tool stub returns not-yet-implemented error")
+    assert not result.get("isError", False), f"install_tool returned error: {result}"
+    installed = json.loads(result["content"][0]["text"])
+    assert installed["tool"] == "dummy@1", installed
+    assert installed["version"] == "1.1.0", installed
+    assert os.path.isdir(installed["install_path"]), installed
+    print(f"✓ install_tool installed {installed['tool']} as {installed['version']}")
+    return 0
+
+
+def test_install_tool_unknown(proc):
+    send(proc, {
+        "jsonrpc": "2.0", "id": 8,
+        "method": "tools/call",
+        "params": {
+            "name": "install_tool",
+            "arguments": {"tool": "no-such-mcp-tool", "version": "1"},
+        },
+    })
+    resp = recv(proc, timeout=60.0)
+    if not resp or "result" not in resp:
+        print(f"ERROR: Bad install_tool response: {resp}")
+        return 1
+
+    result = resp["result"]
+    assert result.get("isError", False), f"expected error for an unknown tool: {result}"
+    assert "no-such-mcp-tool" in result["content"][0]["text"], result
+    print("✓ install_tool reports a failed install as an error")
     return 0
 
 
@@ -281,7 +309,8 @@ def main():
             ("run_task success", test_run_task_success),
             ("run_task with args", test_run_task_with_args),
             ("run_task unknown task", test_run_task_unknown),
-            ("install_tool stub", test_install_tool_stub),
+            ("install_tool", test_install_tool),
+            ("install_tool failure", test_install_tool_unknown),
         ]
         for name, test_fn in tests:
             print(f"\n--- {name} ---")

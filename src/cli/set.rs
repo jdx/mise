@@ -463,7 +463,7 @@ impl Set {
     }
 }
 
-async fn get_mise_toml(filename: &Path) -> Result<MiseToml> {
+pub(crate) async fn get_mise_toml(filename: &Path) -> Result<MiseToml> {
     let path = env::current_dir()?.join(filename);
     // Before the exists/does-not-exist split, so a `.tool-versions` says why it is refused instead
     // of failing later as invalid TOML, and so a name mise cannot read back is never created.

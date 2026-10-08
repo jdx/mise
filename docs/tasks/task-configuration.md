@@ -884,18 +884,18 @@ the matching restriction. Relative paths resolve from the task's working
 directory. Support and implicit exceptions differ by platform; see
 [Sandboxing](/sandboxing.html).
 
-| Property                                                        | Type       | Effect                                                                                                                                                |
-| --------------------------------------------------------------- | ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `deny_all`                                                      | `bool`     | Block filesystem reads and writes, network access, and inherited environment variables. `allow_*` entries add exceptions.                             |
-| `deny_read`                                                     | `bool`     | Block filesystem reads, except the system and mise paths the task needs to run.                                                                       |
-| `deny_write`                                                    | `bool`     | Block filesystem writes, except implicitly writable paths such as the temporary directory.                                                            |
-| `deny_net`                                                      | `bool`     | Block network access.                                                                                                                                 |
-| `deny_env`                                                      | `bool`     | Drop inherited environment variables except `PATH`, `HOME`, `USER`, `SHELL`, `TERM`, `COLORTERM`, and `LANG`.                                         |
-| `allow_read`                                                    | `string[]` | Allow reads from these paths and block other reads.                                                                                                   |
-| `allow_write`                                                   | `string[]` | Allow writes to these paths, which also become readable, and block other writes.                                                                      |
-| `allow_net`                                                     | `string[]` | Meant to allow only these hosts, but it does not work on any platform. See [access to particular hosts](/sandboxing.html#access-to-particular-hosts). |
-| `allow_env`                                                     | `string[]` | Keep these inherited variables, with `*` wildcards such as `MYAPP_*`, and drop the others.                                                            |
-| `pass_through_env` <Badge type="warning" text="experimental" /> | `string[]` | Keep these inherited variables, with `*` wildcards, when environment inheritance is denied, without adding their values to the task cache key.        |
+| Property                                                        | Type       | Effect                                                                                                                                                     |
+| --------------------------------------------------------------- | ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `deny_all`                                                      | `bool`     | Block filesystem reads and writes, network access, and inherited environment variables. `allow_*` entries add exceptions.                                  |
+| `deny_read`                                                     | `bool`     | Block filesystem reads, except the system and mise paths the task needs to run.                                                                            |
+| `deny_write`                                                    | `bool`     | Block filesystem writes, except implicitly writable paths such as the temporary directory.                                                                 |
+| `deny_net`                                                      | `bool`     | Block network access.                                                                                                                                      |
+| `deny_env`                                                      | `bool`     | Drop inherited environment variables except `PATH`, `HOME`, `USER`, `SHELL`, `TERM`, `COLORTERM`, and `LANG`.                                              |
+| `allow_read`                                                    | `string[]` | Allow reads from these paths and block other reads.                                                                                                        |
+| `allow_write`                                                   | `string[]` | Allow writes to these paths, which also become readable, and block other writes.                                                                           |
+| `allow_net`                                                     | `string[]` | Not supported: on Linux and macOS a task that sets it fails before it runs. See [access to particular hosts](/sandboxing.html#access-to-particular-hosts). |
+| `allow_env`                                                     | `string[]` | Keep these inherited variables, with `*` wildcards such as `MYAPP_*`, and drop the others.                                                                 |
+| `pass_through_env` <Badge type="warning" text="experimental" /> | `string[]` | Keep these inherited variables, with `*` wildcards, when environment inheritance is denied, without adding their values to the task cache key.             |
 
 The `deny_*` properties default to `false` and the lists to `[]`.
 

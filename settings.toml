@@ -2496,8 +2496,12 @@ type = "Bool"
 
 [plugin_autoupdate_last_check_duration]
 default = "7d"
-description = "No effect; mise never reads this setting."
+deprecated = "This setting was never implemented and has no effect. Remove it from your config."
+deprecated_remove_at = "2027.10.5"
+deprecated_warn_at = "2026.10.5"
+description = "[deprecated] Has no effect; it was never implemented."
 env = "MISE_PLUGIN_AUTOUPDATE_LAST_CHECK_DURATION"
+hide = true
 type = "String"
 
 [prefer_offline]
@@ -3320,8 +3324,12 @@ optional = true
 type = "Path"
 
 [sops.age_recipients]
-description = "No effect; mise does not encrypt SOPS files and never reads this setting."
+deprecated = "This setting has no effect because mise does not encrypt sops files. Remove it from your config. To encrypt a value with age, use `mise set --age-encrypt --age-recipient <recipient> KEY=value`."
+deprecated_remove_at = "2027.10.5"
+deprecated_warn_at = "2026.10.5"
+description = "[deprecated] Has no effect; mise does not encrypt sops files."
 env = "MISE_SOPS_AGE_RECIPIENTS"
+hide = true
 optional = true
 type = "String"
 
@@ -3367,9 +3375,9 @@ of `mise activate` and from commands such as `mise exec` and `mise env`. Tools
 marked `lazy = true` are never reported.
 """
 enum = [
+  { value = "never", description = "never warn" },
   { value = "if_other_versions_installed", description = "warn only when another version of the tool is installed" },
   { value = "always", description = "always warn" },
-  { value = "never", description = "never warn" },
 ]
 env = "MISE_STATUS_MESSAGE_MISSING_TOOLS"
 type = "String"
@@ -3649,8 +3657,12 @@ optional = true
 type = "Url"
 
 [task.cache.stats_report]
-description = "No effect; mise no longer writes this report."
+deprecated = "This setting has no effect since the built-in action cache was removed. Remove it from your config."
+deprecated_remove_at = "2027.10.5"
+deprecated_warn_at = "2026.10.5"
+description = "[deprecated] Has no effect since the built-in action cache was removed."
 env = "MISE_TASK_CACHE_STATS_REPORT"
+hide = true
 optional = true
 type = "Path"
 

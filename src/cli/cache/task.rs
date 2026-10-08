@@ -67,7 +67,7 @@ impl CacheTask {
             .all(|(_, _, entries)| entries.is_empty())
         {
             miseprintln!(
-                "No output cache entries for {}",
+                "No artifact cache entries for {}",
                 task_entries
                     .iter()
                     .map(|(task, _, _)| &task.display_name)
