@@ -403,7 +403,7 @@ pub async fn status(requests: &[SystemdRequest]) -> Result<Vec<SystemdStatus>> {
         if req.is_absent() {
             let installed = [req.unit.clone(), sibling_unit(req)]
                 .into_iter()
-                .find(|unit| user_units_dir().join(unit).exists());
+                .find(|unit| entry_exists(&user_units_dir().join(unit)));
             let (path, active, enabled, state) = match installed {
                 Some(unit) => {
                     let active = is_active(&unit).await?;
@@ -638,7 +638,7 @@ async fn remove_units(units: &[String], dry_run: bool) -> Result<bool> {
     let installed = units
         .iter()
         .map(|unit| (unit, user_units_dir().join(unit)))
-        .filter(|(_, path)| path.exists())
+        .filter(|(_, path)| entry_exists(path))
         .collect::<Vec<_>>();
     if installed.is_empty() {
         return Ok(false);
@@ -877,6 +877,12 @@ fn user_units_dir() -> PathBuf {
         .join(".config")
         .join("systemd")
         .join("user")
+}
+
+/// Whether a directory entry exists at `path`, counting a symlink whose target
+/// is gone, so removal does not leave a dangling unit link behind.
+fn entry_exists(path: &Path) -> bool {
+    std::fs::symlink_metadata(path).is_ok()
 }
 
 fn unit_path(request: &SystemdRequest) -> PathBuf {

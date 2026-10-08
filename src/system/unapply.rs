@@ -667,6 +667,30 @@ pub async fn execute(
             info!("user service {name}: removed its {manager}");
         }
     }
-    systemd::remove(&unapply.systemd_units, opts.dry_run).await?;
+    let units = still_removable_units(&unapply.systemd_units, opts.force).await?;
+    systemd::remove(&units, opts.dry_run).await?;
     Ok(())
+}
+
+/// Check each planned unit again, since the confirmation prompt can stay open
+/// for a while: a unit changed since the plan is kept unless --force is given.
+async fn still_removable_units(
+    requests: &[SystemdRequest],
+    force: bool,
+) -> Result<Vec<SystemdRequest>> {
+    if force || requests.is_empty() {
+        return Ok(requests.to_vec());
+    }
+    let mut keep = vec![];
+    for status in systemd::status(requests).await? {
+        if status.state == SystemdState::Differs {
+            warn!(
+                "systemd unit {}: changed since the plan; use --force to remove it",
+                status.request.unit
+            );
+            continue;
+        }
+        keep.push(status.request);
+    }
+    Ok(keep)
 }

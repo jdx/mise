@@ -8,7 +8,7 @@ if [[ "$(uname)" != "Linux" ]]; then
   exit 0
 fi
 
-mkdir -p fakebin runtime/systemd/private fake-systemd/active fake-systemd/enabled
+mkdir -p fakebin runtime/systemd/private fake-systemd/active fake-systemd/enabled fake-systemd/edit-on-check
 export XDG_RUNTIME_DIR="$PWD/runtime"
 export PATH="$PWD/fakebin:$PATH"
 STATE="$PWD/fake-systemd"
@@ -19,8 +19,17 @@ cat <<SH >fakebin/systemctl
 [[ \$1 == --user ]] && shift
 echo "\$*" >>"$STATE/log"
 case "\$1" in
-is-active) [[ -e "$STATE/active/\$3" ]] ;;
+is-active)
+  [[ -e "$STATE/active/\$3" ]]
+  exit \$?
+  ;;
 is-enabled)
+  # Stand in for an edit made while the unapply prompt is open: the plan has
+  # already read the unit file by the time it asks whether it is enabled.
+  if [[ -e "$STATE/edit-on-check/\$2" ]]; then
+    rm "$STATE/edit-on-check/\$2"
+    echo "# edited while waiting" >>"$UNITS/\$2"
+  fi
   if [[ -e "$STATE/enabled/\$2" ]]; then
     echo enabled
   else
@@ -53,6 +62,8 @@ assert_succeed "test -f $UNITS/dev.mise.sync.service"
 assert_succeed "test -f $UNITS/dev.mise.sync-timer.timer"
 assert_succeed "test -e $STATE/active/dev.mise.sync-timer.timer"
 assert_succeed "test -e $STATE/enabled/dev.mise.sync-timer.timer"
+assert_contains "mise bootstrap linux systemd-units status" "active"
+assert_contains "mise bootstrap linux systemd-units status" "inactive"
 
 # `state = "absent"` needs no other key and removes whichever unit is installed
 # for the name, so the timer does not have to be described again.
@@ -85,6 +96,13 @@ rm -f "$STATE/log"
 assert_succeed "mise bootstrap linux systemd-units apply --yes"
 assert_fail "test -e $STATE/log"
 
+# A unit link whose target is gone still counts as installed, and is removed.
+ln -s "$PWD/gone.service" "$UNITS/dev.mise.sync.service"
+assert_fail "mise bootstrap linux systemd-units status --missing"
+assert_succeed "mise bootstrap linux systemd-units apply --yes"
+assert_fail "test -L $UNITS/dev.mise.sync.service"
+assert_succeed "mise bootstrap linux systemd-units status --missing"
+
 # `mise bootstrap unapply` removes the units a module wrote and keeps the ones
 # the rest of the configuration still declares.
 cat <<'TOML' >mise.toml
@@ -111,6 +129,14 @@ assert_contains "mise bootstrap unapply backup --dry-run" "systemd-unit:dev.mise
 assert_contains "mise bootstrap unapply backup --dry-run" "systemd-unit:dev.mise.backup.service"
 assert_not_contains "mise bootstrap unapply backup --dry-run" "dev.mise.base.service"
 assert_succeed "test -f $UNITS/dev.mise.backup-timer.timer"
+
+# A unit edited after the plan, while the prompt is open, is kept too.
+touch "$STATE/edit-on-check/dev.mise.backup.service"
+assert_contains "mise bootstrap unapply backup --yes 2>&1" "changed since the plan; use --force to remove it"
+assert_fail "test -e $STATE/edit-on-check/dev.mise.backup.service"
+assert_fail "test -e $UNITS/dev.mise.backup-timer.timer"
+assert_succeed "test -f $UNITS/dev.mise.backup.service"
+assert_succeed "mise -E backup bootstrap linux systemd-units apply --yes"
 
 # A unit edited since it was written is kept unless --force is given.
 echo "# edited by hand" >>"$UNITS/dev.mise.backup.service"
