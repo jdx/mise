@@ -646,7 +646,8 @@ fn pin(project: &str, opts: &PackslipOptions<'_>) -> Result<Pin> {
 }
 
 /// The forge policy narrowed to each named workflow file run on a tag, so a
-/// workflow on a branch of the same repository cannot sign a release.
+/// workflow on a branch of the same repository cannot sign a release. An
+/// entry may name another ref, for a project that signs from a branch.
 fn workflow_policies(
     project: &str,
     opts: &PackslipOptions<'_>,
@@ -669,15 +670,31 @@ fn workflow_policies(
         .as_deref()
         .ok_or_else(|| eyre!("packslip:{project}: no repository to pin `workflow` under"))?;
     let mut policies = Vec::new();
-    for workflow in workflows {
-        let workflow = workflow.trim();
-        if workflow.is_empty() || workflow.contains(['/', '@']) {
+    for entry in workflows {
+        let (file, ref_) = match entry.trim().split_once('@') {
+            Some((file, ref_)) => (file, Some(ref_)),
+            None => (entry.trim(), None),
+        };
+        let bad_ref = ref_.is_some_and(|r| {
+            !(r.starts_with("refs/tags/") || r.starts_with("refs/heads/")) || r == "refs/heads/"
+        });
+        if file.is_empty() || file.contains(['/', '@']) || bad_ref {
             bail!(
-                "packslip:{project}: `workflow` must be a workflow file name such as `release.yaml`"
+                "packslip:{project}: `workflow` must be a workflow file name such as `release.yaml`, optionally followed by `@refs/heads/<branch>` or `@refs/tags/`"
             );
         }
         let mut policy = base.clone();
-        policy.identity_prefix = Some(format!("{repo}.github/workflows/{workflow}@refs/tags/"));
+        let path = format!("{repo}.github/workflows/{file}@");
+        match ref_ {
+            // A ref ending in `/` is a namespace, as in `@refs/tags/`.
+            None => policy.identity_prefix = Some(format!("{path}refs/tags/")),
+            Some(r) if r.ends_with('/') => policy.identity_prefix = Some(format!("{path}{r}")),
+            // Any other ref is that one ref, matched whole.
+            Some(r) => {
+                policy.identity_prefix = None;
+                policy.identity = Some(format!("{path}{r}"));
+            }
+        }
         if !policies.contains(&policy) {
             policies.push(policy);
         }
@@ -2671,7 +2688,7 @@ mod tests {
         }
         for bad in [
             r#"workflow = "a/b.yaml""#,
-            r#"workflow = "b.yaml@refs/heads/main""#,
+            r#"workflow = "b.yaml@main""#,
             r#"workflow = " ""#,
         ] {
             let raw: ToolVersionOptions = toml::from_str(bad).unwrap();
@@ -2730,6 +2747,45 @@ mod tests {
             r#"workflow = [1]"#,
             r#"workflow = ["a/b.yml"]"#,
             r#"workflow = ["release.yml", " "]"#,
+        ] {
+            assert!(pin_for(bad).is_err(), "{bad}");
+        }
+    }
+
+    #[test]
+    fn workflow_entry_may_name_a_ref() {
+        let pin_for = |toml: &str| {
+            let raw: ToolVersionOptions = toml::from_str(toml).unwrap();
+            pin("github.com/o/r", &PackslipOptions::new(&raw))
+        };
+        let Pin::Identity(policy) = pin_for(r#"workflow = "release.yml@refs/heads/main""#).unwrap()
+        else {
+            panic!("expected an identity policy");
+        };
+        assert_eq!(
+            policy.identity.as_deref(),
+            Some("https://github.com/o/r/.github/workflows/release.yml@refs/heads/main")
+        );
+        assert_eq!(policy.identity_prefix, None);
+        let Pin::Identity(policy) = pin_for(r#"workflow = "release.yml@refs/tags/""#).unwrap()
+        else {
+            panic!("expected an identity policy");
+        };
+        assert_eq!(
+            policy.identity_prefix.as_deref(),
+            Some("https://github.com/o/r/.github/workflows/release.yml@refs/tags/")
+        );
+        let Pin::Identities(policies) =
+            pin_for(r#"workflow = ["a.yml@refs/heads/main", "b.yml"]"#).unwrap()
+        else {
+            panic!("expected several identities");
+        };
+        assert_eq!(policies.len(), 2);
+        for bad in [
+            r#"workflow = "release.yml@main""#,
+            r#"workflow = "release.yml@""#,
+            r#"workflow = "release.yml@refs/pull/1/merge""#,
+            r#"workflow = "release.yml@refs/heads/""#,
         ] {
             assert!(pin_for(bad).is_err(), "{bad}");
         }

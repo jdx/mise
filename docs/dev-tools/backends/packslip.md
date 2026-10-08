@@ -332,6 +332,11 @@ name several; a release signed by any one of them is accepted:
 "packslip:github.com/example/tool" = { version = "latest", workflow = ["release-plz.yml", "release.yml"] }
 ```
 
+A name may carry the ref the workflow runs on, for a project that signs from a
+branch rather than a tag: `workflow = "release.yml@refs/heads/main"` accepts
+only that branch. A ref ending in `/`, such as `@refs/tags/`, accepts that
+namespace. A branch is easier to move than a tag, so protect it.
+
 The same prefix also applies to the project's signed release list. If the
 vendor signs that list from another workflow or ref, pin it with
 [`list_identity_prefix`](#list-identity-prefix).

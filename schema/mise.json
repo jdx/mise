@@ -4548,7 +4548,7 @@
           "type": "string"
         },
         "workflow": {
-          "description": "repository workflow file, or a list of them, that signs releases on a tag; github.com projects only, not valid with pubkey, identity, identity_prefix, or issuer",
+          "description": "repository workflow file, or a list of them, that signs releases on a tag (or on the ref a name ends with, as in release.yml@refs/heads/main); github.com projects only, not valid with pubkey, identity, identity_prefix, or issuer",
           "oneOf": [
             {
               "type": "string"
