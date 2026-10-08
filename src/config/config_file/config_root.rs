@@ -92,10 +92,15 @@ pub fn config_root(path: &Path) -> PathBuf {
         .nth_back(3)
         .map(|p| p.as_str())
         .unwrap_or_default();
-    let parent_path = || path.parent().unwrap().to_path_buf();
-    let grandparent_path = || parent_path().parent().unwrap().to_path_buf();
-    let great_grandparent_path = || grandparent_path().parent().unwrap().to_path_buf();
-    let great_great_grandparent_path = || great_grandparent_path().parent().unwrap().to_path_buf();
+    // The filesystem root has no parent, so every step saturates there instead
+    // of unwrapping: `config_root` is also handed a root it computed earlier
+    // (`/` for `/mise.toml`) and a config nested under a directory named `mise`
+    // directly below `/` climbs past it.
+    let up = |p: PathBuf| p.parent().map(Path::to_path_buf).unwrap_or(p);
+    let parent_path = || up(path.clone());
+    let grandparent_path = || up(parent_path());
+    let great_grandparent_path = || up(grandparent_path());
+    let great_great_grandparent_path = || up(great_grandparent_path());
     let is_mise_dir = |d: &str| d == "mise" || d == ".mise";
     let is_config_filename = |f: &str| {
         f == "config.toml" || f == "config.local.toml" || regex!(r"config\..+\.toml").is_match(f)
@@ -198,6 +203,13 @@ mod tests {
         ] {
             println!("{p}");
             assert_eq!(config_root(Path::new(p)), PathBuf::from("/foo/bar"));
+        }
+    }
+
+    #[test]
+    fn test_config_root_at_filesystem_root() {
+        for p in ["/mise.toml", "/.mise.toml", "/mise/config.toml", "/"] {
+            assert_eq!(config_root(Path::new(p)), PathBuf::from("/"), "{p}");
         }
     }
 
