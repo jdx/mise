@@ -23,7 +23,7 @@ concurrency:
 
 jobs:
   comment:
-    if: github.repository == 'jdx/mise' && (github.event_name == 'workflow_dispatch' || startsWith(github.event.release.tag_name, 'v'))
+    if: github.repository == 'jdx/mise' && (github.event_name == 'workflow_dispatch' || (startsWith(github.event.release.tag_name, 'v') && !github.event.release.prerelease))
     permissions:
       contents: read
       pull-requests: read
