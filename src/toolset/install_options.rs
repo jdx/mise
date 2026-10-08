@@ -20,6 +20,9 @@ pub struct InstallOptions {
     pub skip_auto_install: bool,
     pub auto_install_disable_tools: Option<Vec<String>>,
     pub resolve_options: ResolveOptions,
+    /// How the toolset resolves again after an install. Only what it leaves unresolved
+    /// matters here; the versions to install come from `resolve_options`.
+    pub after_install_resolve: ResolveOptions,
     pub dry_run: bool,
     /// Only run hooks defined in global config files.
     pub global_hooks_only: bool,
@@ -61,6 +64,7 @@ impl Default for InstallOptions {
             skip_auto_install: false,
             auto_install_disable_tools: Settings::get().auto_install_disable_tools.clone(),
             resolve_options: Default::default(),
+            after_install_resolve: Default::default(),
             dry_run: false,
             global_hooks_only: false,
             locked: Settings::get().locked,

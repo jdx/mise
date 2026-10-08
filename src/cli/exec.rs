@@ -293,10 +293,11 @@ impl Exec {
                 || !Settings::get().exec_auto_install
                 || *env::__MISE_SHIM,
             skip_auto_install: !Settings::get().exec_auto_install || !Settings::get().auto_install,
+            resolve_options,
             // Running a tool doesn't need the other missing lazy tools resolved after an install.
-            resolve_options: ResolveOptions {
+            after_install_resolve: ResolveOptions {
                 defer_missing_lazy_tools: true,
-                ..resolve_options
+                ..Default::default()
             },
             ..Default::default()
         };

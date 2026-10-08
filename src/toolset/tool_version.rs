@@ -1312,17 +1312,6 @@ impl Default for ResolveOptions {
 }
 
 impl ResolveOptions {
-    /// Options for resolving the whole toolset as a side effect of installing: they carry
-    /// over only whether `self` leaves missing lazy tools unresolved, so the follow-up
-    /// resolve doesn't look up versions for tools the command isn't running.
-    pub fn for_side_effect_resolve(&self) -> Self {
-        Self {
-            defer_missing_lazy_tools: self.defer_missing_lazy_tools,
-            defer_missing_lazy_online: self.defer_missing_lazy_online,
-            ..Default::default()
-        }
-    }
-
     /// Full-toolset resolve used as a side effect of another operation.
     pub fn without_lockfile_warnings() -> Self {
         Self {
