@@ -58,7 +58,6 @@ This also updates mise.lock if lockfiles are enabled, see <https://mise.jdx.dev/
 
   This only affects fuzzy version matches like "20" or "latest".
   Explicitly pinned versions like "22.5.0" are not filtered.
-- **`--monorepo`** — Placeholder for future monorepo upgrades; `mise upgrade --monorepo` is not implemented yet.
 - **`--no-prune`** — Do not uninstall the versions that were upgraded away from
 
   The old version is left in place and is not scheduled for removal. Use this when something
