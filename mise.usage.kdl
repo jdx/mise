@@ -4433,7 +4433,9 @@ Resources use `mise://tools`, `mise://tasks`, `mise://env`, and `mise://config`.
 
 The `list_commands` tool describes commands and their declared effects. `run_task`
 executes project tasks with the user's permissions and can change files or invoke
-external services. `install_tool` is advertised but currently returns an error.
+external services. `install_tool` installs a tool version as `mise install` does.
+Both refuse to act on a project whose config files are not trusted; run
+`mise trust` to allow them.
 Environment resources contain real values, including secrets.
 
 Resources available:
@@ -4444,7 +4446,7 @@ Resources available:
 
 Tools available:
 - list_commands - Every mise command, with its declared effect on the world
-- install_tool - Install a tool with an optional version (not yet implemented)
+- install_tool - Install a tool with an optional version
 - run_task - Execute a mise task with optional arguments
 
 Note: This is primarily intended for integration with AI assistants like Claude,

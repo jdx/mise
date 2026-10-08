@@ -545,12 +545,26 @@ pub fn is_path_trusted(path: &Path) -> bool {
 
 static IMPLICITLY_TRUST_ACTIVE_CONFIG: AtomicBool = AtomicBool::new(false);
 
+/// Set on a `mise` that acts for someone other than the user who typed it,
+/// such as the children the MCP server starts. Such a process trusts nothing
+/// on its own: not the config its command would implicitly trust, and not on
+/// a `yes` setting. Untrusted config fails with [`UntrustedConfig`] instead.
+/// The variable is inherited, so a `mise` a task starts follows it too.
+pub const REQUIRE_EXPLICIT_TRUST_ENV: &str = "__MISE_REQUIRE_EXPLICIT_TRUST";
+
+static REQUIRE_EXPLICIT_TRUST: Lazy<bool> =
+    Lazy::new(|| std::env::var_os(REQUIRE_EXPLICIT_TRUST_ENV).is_some_and(|v| !v.is_empty()));
+
 pub fn set_implicitly_trust_active_config(enabled: bool) {
     IMPLICITLY_TRUST_ACTIVE_CONFIG.store(enabled, Ordering::Relaxed);
 }
 
+fn implicitly_trusts_active_config() -> bool {
+    IMPLICITLY_TRUST_ACTIVE_CONFIG.load(Ordering::Relaxed) && !*REQUIRE_EXPLICIT_TRUST
+}
+
 pub fn trust_active_config() -> Result<()> {
-    if !IMPLICITLY_TRUST_ACTIVE_CONFIG.load(Ordering::Relaxed) {
+    if !implicitly_trusts_active_config() {
         return Ok(());
     }
     let Ok(settings) = Settings::try_get() else {
@@ -588,7 +602,7 @@ pub(crate) fn trust_check(path: &Path) -> eyre::Result<()> {
     // to trust their active config in normal mode. Persist the decision here
     // so unsafe config can load before the command starts; safe config is
     // persisted by `trust_active_config` after settings initialization.
-    if IMPLICITLY_TRUST_ACTIVE_CONFIG.load(Ordering::Relaxed)
+    if implicitly_trusts_active_config()
         && !ci_info::is_ci()
         && Settings::try_get().is_ok_and(|settings| !settings.paranoid)
     {
@@ -606,6 +620,9 @@ pub(crate) fn trust_check(path: &Path) -> eyre::Result<()> {
     let cmd = args.get(1).unwrap_or(&default_cmd).as_str();
     if is_path_trusted(path) || cmd == "trust" || mise_util::testing::in_tests() {
         return Ok(());
+    }
+    if *REQUIRE_EXPLICIT_TRUST {
+        Err(UntrustedConfig(path.into()))?
     }
     if cmd != "hook-env" && !is_ignored(&config_root) && !is_ignored(path) {
         let ans = if settings::is_loaded()
