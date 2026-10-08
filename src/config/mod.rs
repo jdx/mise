@@ -7672,6 +7672,7 @@ mod tests {
             name: name.to_string(),
             config_source: PathBuf::from(format!("mise-tasks/{name}")),
             file: Some(PathBuf::from(format!("mise-tasks/{name}"))),
+            name_from_file: true,
             ..Default::default()
         }
     }

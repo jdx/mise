@@ -61,3 +61,16 @@ EOF
 assert_contains "mise tasks ls --no-header" "deploy"
 assert_not_contains "mise tasks ls --no-header" "deploy.sh"
 assert "mise run deploy" "deploy-inline-ran name=deploy"
+
+# A TOML task whose name ends in a script extension is still found only by the
+# name it declares.
+cat <<'EOF' >>mise.toml
+
+[tasks."lint.sh"]
+run = 'echo "lint-ran name=$MISE_TASK_NAME"'
+EOF
+
+assert_contains "mise tasks ls --no-header" "lint.sh"
+assert "mise run lint.sh" "lint-ran name=lint.sh"
+assert_fail "mise run lint"
+assert_fail "mise run 'lin?'"

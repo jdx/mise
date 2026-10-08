@@ -1944,22 +1944,30 @@ impl Task {
         // For pattern matching, we need to handle several cases:
         // 1. Simple pattern (e.g., "build") should match monorepo tasks (e.g., "//projects/my.app:build")
         // 2. Full pattern (e.g., "//projects/my.app:build") should only match exact path
-        // 3. Known script extensions should be stripped for comparison
+        // 3. Known script extensions should be stripped for comparison, but only for a
+        //    file task: a TOML task `lint.sh` is found only by the name it declares
+        let strip = |name| {
+            if self.name_from_file {
+                strip_extension(name)
+            } else {
+                name
+            }
+        };
 
         let matches = if let Some((prefix, task_part)) = self.name.rsplit_once(':') {
             // Task name has a colon (e.g., "//projects/my.app:build.sh")
-            let task_stripped = strip_extension(task_part);
+            let task_stripped = strip(task_part);
 
             if let Some((pat_prefix, pat_task)) = pat.rsplit_once(':') {
                 // Pattern also has a colon - compare full paths
-                prefix == pat_prefix && task_stripped == strip_extension(pat_task)
+                prefix == pat_prefix && task_stripped == strip(pat_task)
             } else {
                 // Pattern is simple (no colon) - just compare task names
-                task_stripped == strip_extension(pat)
+                task_stripped == strip(pat)
             }
         } else {
             // Simple task name without colon (e.g., "build.sh")
-            strip_extension(&self.name) == strip_extension(pat)
+            strip(&self.name) == strip(pat)
         };
 
         matches || self.aliases.contains(&pat.to_string())
@@ -4005,6 +4013,35 @@ pub trait GetMatchingExt<T> {
     fn get_matching(&self, pat: &str) -> Result<Vec<&T>>;
 }
 
+/// What [`GetMatchingExt::get_matching`] needs to know about a task beyond its key.
+pub trait TaskMapEntry {
+    /// Whether a pattern may give `key` without its script extension ([`strip_extension`]).
+    ///
+    /// Only a file task's own name qualifies, so `build` finds `mise-tasks/build.sh`. A
+    /// TOML task's name and any alias are matched only as written.
+    fn drops_script_extension(&self, key: &str) -> bool;
+}
+
+impl TaskMapEntry for Task {
+    fn drops_script_extension(&self, key: &str) -> bool {
+        self.name_from_file && key == self.name
+    }
+}
+
+impl<T: TaskMapEntry + ?Sized> TaskMapEntry for &T {
+    fn drops_script_extension(&self, key: &str) -> bool {
+        (**self).drops_script_extension(key)
+    }
+}
+
+/// Unit tests key plain names to themselves and treat each as a file task's name.
+#[cfg(test)]
+impl TaskMapEntry for String {
+    fn drops_script_extension(&self, _key: &str) -> bool {
+        true
+    }
+}
+
 /// Compile a task-name glob with `:` treated as a group separator.
 ///
 /// globset only assigns recursive semantics to `**` around path separators, so
@@ -4075,7 +4112,7 @@ pub(crate) fn strip_task_name_extension(name: &str) -> Cow<'_, str> {
 
 impl<T> GetMatchingExt<T> for BTreeMap<String, T>
 where
-    T: Eq + Hash,
+    T: Eq + Hash + TaskMapEntry,
 {
     fn get_matching(&self, pat: &str) -> Result<Vec<&T>> {
         // Exact task identities and aliases take precedence over syntax-based
@@ -4134,7 +4171,7 @@ where
                 }
                 return Ok(self
                     .iter()
-                    .filter(|(k, _)| strip_extension(k) == pat)
+                    .filter(|(k, v)| v.drops_script_extension(k) && strip_extension(k) == pat)
                     .map(|(_, v)| v)
                     .collect());
             }
@@ -4155,9 +4192,9 @@ where
                 .collect();
             let matched: Vec<&T> = self
                 .iter()
-                .filter(|(name, _)| {
+                .filter(|(name, task)| {
                     exact_keys.contains(name.as_str())
-                        || (task_name_matches(&matcher, name, true)
+                        || (task_name_matches(&matcher, name, task.drops_script_extension(name))
                             && !exact_keys.contains(strip_extension(name)))
                 })
                 .map(|(_, task)| task)
@@ -4275,9 +4312,10 @@ where
             .collect();
         Ok(self
             .iter()
-            .filter(|(k, _)| {
+            .filter(|(k, t)| {
                 exact_keys.contains(k.as_str())
-                    || (entry_matches(k.as_str(), true) && !exact_keys.contains(&*stripped_key(k)))
+                    || (entry_matches(k.as_str(), t.drops_script_extension(k))
+                        && !exact_keys.contains(&*stripped_key(k)))
             })
             .map(|(_, t)| t)
             .unique()
@@ -6089,6 +6127,57 @@ echo "hello world"
         assert!(tasks.get_matching("test").unwrap().is_empty());
         assert_eq!(tasks.get_matching("test.unit").unwrap(), vec!["test.unit"]);
         assert_eq!(tasks.get_matching("build").unwrap(), vec!["build.sh"]);
+    }
+
+    #[test]
+    fn test_only_file_tasks_match_without_their_script_extension() {
+        use super::GetMatchingExt;
+
+        let task = |name: &str, name_from_file: bool| Task {
+            name: name.to_string(),
+            name_from_file,
+            ..Default::default()
+        };
+        let toml_lint = task("lint.sh", false);
+        let file_build = task("build.sh", true);
+        let toml_pkg_lint = task("//pkg:lint.sh", false);
+        let file_pkg_build = task("//pkg:build.sh", true);
+
+        assert!(toml_lint.is_match("lint.sh"));
+        assert!(!toml_lint.is_match("lint"));
+        assert!(file_build.is_match("build"));
+        assert!(!toml_pkg_lint.is_match("lint"));
+        assert!(!toml_pkg_lint.is_match("//pkg:lint"));
+        assert!(file_pkg_build.is_match("//pkg:build"));
+
+        let map = |tasks: &[&Task]| -> BTreeMap<String, Task> {
+            tasks
+                .iter()
+                .map(|task| (task.name.clone(), (*task).clone()))
+                .collect()
+        };
+        let names = |tasks: &BTreeMap<String, Task>, pat: &str| {
+            tasks
+                .get_matching(pat)
+                .unwrap()
+                .into_iter()
+                .map(|task| task.name.clone())
+                .collect::<Vec<_>>()
+        };
+        let flat = map(&[&toml_lint, &file_build]);
+        let pkg = map(&[&toml_pkg_lint, &file_pkg_build]);
+
+        assert!(names(&flat, "lint").is_empty());
+        assert_eq!(names(&flat, "lint.sh"), vec!["lint.sh"]);
+        assert_eq!(names(&flat, "build"), vec!["build.sh"]);
+        // `?` takes one character, so these globs match only a stem.
+        assert!(names(&flat, "lin?").is_empty());
+        assert_eq!(names(&flat, "buil?"), vec!["build.sh"]);
+        assert!(names(&pkg, "//pkg:lint").is_empty());
+        assert!(names(&pkg, "//pkg:lin?").is_empty());
+        assert_eq!(names(&pkg, "//pkg:lint.sh"), vec!["//pkg:lint.sh"]);
+        assert_eq!(names(&pkg, "//pkg:build"), vec!["//pkg:build.sh"]);
+        assert_eq!(names(&pkg, "//pkg:buil?"), vec!["//pkg:build.sh"]);
     }
 
     #[test]
