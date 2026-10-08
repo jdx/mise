@@ -29,6 +29,6 @@ mise plugins ls-remote
 
 ## Related documentation
 
-- [Plugin selection and maintenance](/plugin-usage.html).
+- [Plugins](/plugins.html).
 - [`mise plugins [FLAGS] [SUBCOMMAND]`](/cli/plugins.html).
 - [Global flags and argument syntax](/cli/#global-flags).

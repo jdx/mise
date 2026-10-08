@@ -516,9 +516,9 @@ impl SystemPackageManager for ScoopManager {
         }
         let export = export().await?;
         // Remove everything mise can reach before reporting the rest. Failing
-        // first would strand every other removable app in the batch, and the
-        // driver aborts the whole run on this error, so it would also skip the
-        // managers queued behind scoop.
+        // first would strand every other removable app in the batch. The
+        // driver records this error and still runs scoop's installs and the
+        // managers queued behind it.
         let apps = user_scope_apps(pkgs, &global_only(pkgs, &export));
         if !apps.is_empty() {
             apply(&uninstall_args(&apps), "uninstall", opts.dry_run, &[]).await?;

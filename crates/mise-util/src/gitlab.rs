@@ -303,7 +303,7 @@ async fn get_release_(api_url: &str, repo: &str, tag: &str) -> Result<GitlabRele
         "{}/projects/{}/releases/{}",
         api_url,
         urlencoding::encode(repo),
-        tag
+        urlencoding::encode(tag)
     );
     let headers = get_headers(&url, api_url)?;
     crate::http::HTTP_FETCH
@@ -832,6 +832,36 @@ hosts:
             ["v2.0.0", "v1.0.0"]
         );
     }
+
+    // Monorepo-style tags contain a slash (`admin-cli/v1.2.3`); GitLab only resolves them when
+    // the tag is percent-encoded in the path.
+    #[tokio::test]
+    async fn test_get_release_encodes_slash_in_tag() {
+        let mut server = mockito::Server::new_async().await;
+        let base = server.url();
+        let _token = TokensFileOverrideGuard::set(&host_of(&base));
+
+        let mock = server
+            .mock(
+                "GET",
+                mockito::Matcher::Regex(
+                    r"^/projects/.+/releases/admin-cli%2Fv1\.2\.3$".to_string(),
+                ),
+            )
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(release_json("admin-cli/v1.2.3").to_string())
+            .expect(1)
+            .create_async()
+            .await;
+
+        let release = get_release_(&base, "owner/repo", "admin-cli/v1.2.3")
+            .await
+            .unwrap();
+        mock.assert_async().await;
+        assert_eq!(release.tag_name, "admin-cli/v1.2.3");
+    }
+
     // Same regression for the tags loop -- see `test_list_releases_sends_auth_on_every_page`.
     #[tokio::test]
     async fn test_list_tags_sends_auth_on_every_page() {

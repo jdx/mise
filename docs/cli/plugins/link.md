@@ -48,6 +48,6 @@ mise ls-remote my-tool
 
 ## Related documentation
 
-- [Developing tool plugins](/tool-plugin-development.html).
+- [Tool plugins](/tool-plugin-development.html).
 - [`mise plugins [FLAGS] [SUBCOMMAND]`](/cli/plugins.html).
 - [Global flags and argument syntax](/cli/#global-flags).

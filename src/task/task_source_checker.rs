@@ -679,11 +679,18 @@ pub(crate) fn task_source_match_root(root: &Path, config: &Config) -> PathBuf {
         .unwrap_or_else(|| root.to_path_buf())
 }
 
+/// Source file metadatas for a task, anchored at the correct workspace root.
+struct SourceMetadatas {
+    root: PathBuf,
+    match_root: PathBuf,
+    files: Vec<(PathBuf, fs::Metadata)>,
+    /// Whether `sources` matched any file. The task's own config files are
+    /// always added to `files`, so `files` is not empty when this is false.
+    matched_sources: bool,
+}
+
 /// Collect source file metadatas for a task, anchored at the correct workspace root.
-async fn collect_source_metadatas(
-    task: &Task,
-    config: &Arc<Config>,
-) -> Result<(PathBuf, PathBuf, Vec<(PathBuf, fs::Metadata)>)> {
+async fn collect_source_metadatas(task: &Task, config: &Arc<Config>) -> Result<SourceMetadatas> {
     let root = task_cwd(task, config).await?;
     // Anchor the Override matcher at the outermost config root that is an
     // ancestor of the task CWD (i.e. the workspace root). This allows
@@ -700,6 +707,7 @@ async fn collect_source_metadatas(
     let matcher = build_source_matcher(match_root, &root, &task.sources);
     let glob_patterns = source_glob_patterns(&task.sources);
     let mut source_metadatas = get_file_metadatas(&root, &glob_patterns, &matcher)?;
+    let matched_sources = !source_metadatas.is_empty();
     // Always include every file that contributed to the task definition,
     // regardless of excludes — a stray `!mise.toml` must not silently
     // disable invalidation.
@@ -716,7 +724,12 @@ async fn collect_source_metadatas(
             source_metadatas.push((config_path, meta));
         }
     }
-    Ok((root, match_root_owned, source_metadatas))
+    Ok(SourceMetadatas {
+        root,
+        match_root: match_root_owned,
+        files: source_metadatas,
+        matched_sources,
+    })
 }
 
 /// Compute the current source hash for a task. Returns `(hash, hash_file_path)`
@@ -729,7 +742,11 @@ async fn compute_source_hash(
         return Ok(None);
     }
     let use_content_hash = Settings::get().task.source_freshness_hash_contents;
-    let (root, _, source_metadatas) = collect_source_metadatas(task, config).await?;
+    let SourceMetadatas {
+        root,
+        files: source_metadatas,
+        ..
+    } = collect_source_metadatas(task, config).await?;
     if source_metadatas.is_empty() {
         return Ok(None);
     }
@@ -763,7 +780,12 @@ pub(crate) async fn task_cache_inputs(
     if task.sources.is_empty() {
         return Ok(None);
     }
-    let (root, match_root, mut source_metadatas) = collect_source_metadatas(task, config).await?;
+    let SourceMetadatas {
+        root,
+        match_root,
+        files: mut source_metadatas,
+        ..
+    } = collect_source_metadatas(task, config).await?;
     if source_metadatas.is_empty() {
         return Ok(None);
     }
@@ -815,14 +837,23 @@ pub(crate) async fn sources_are_fresh(task: &Task, config: &Arc<Config>) -> Resu
     let equal_mtime_is_fresh = settings.task.source_freshness_equal_mtime_is_fresh;
 
     let run = async || -> Result<bool> {
-        let (root, _, source_metadatas) = collect_source_metadatas(task, config).await?;
+        let SourceMetadatas {
+            root,
+            files: source_metadatas,
+            matched_sources,
+            ..
+        } = collect_source_metadatas(task, config).await?;
 
-        // Check if sources resolved to no files (likely a config mistake)
-        if source_metadatas.is_empty() {
+        // Check if sources resolved to no files (likely a config mistake).
+        // The task's own config file is still a source, so freshness is
+        // decided as before.
+        if !matched_sources {
             warn!(
                 "task {} has sources defined but no matching files found",
                 task.name
             );
+        }
+        if source_metadatas.is_empty() {
             return Ok(false);
         }
 

@@ -1,30 +1,34 @@
 ---
-description: "Install .NET command-line tools from NuGet with the dotnet backend."
+description: "Install .NET command-line tools from NuGet with dotnet tool install, each into its own directory."
 ---
 
-# .NET Tool Backend
+# dotnet backend
 
-The `dotnet:` backend installs command-line tool packages from NuGet using
-`dotnet tool install`. The unprefixed `dotnet` tool installs the SDK; see the
-[.NET language guide](/lang/dotnet.html) for SDK selection and `global.json`.
+The `dotnet` backend installs .NET command-line tool packages from
+[NuGet](https://www.nuget.org/) with `dotnet tool install`. The unprefixed
+`dotnet` tool installs the SDK itself; see the [.NET guide](/lang/dotnet.html)
+for SDK versions and `global.json`.
 
-## Dependencies
+## Requirements
 
-Install a .NET SDK and the runtime required by the selected tool package.
-A newer SDK alone does not guarantee that an older tool can run: .NET's runtime
-selection rules still apply. Use `mise exec -- dotnet --list-runtimes` to inspect
-what is installed.
+<span id="dependencies"></span>
+
+Install a .NET SDK, plus the runtime the tool package targets. A newer SDK does
+not guarantee that an older tool runs, because .NET's runtime selection rules
+still apply. Run `mise exec -- dotnet --list-runtimes` to see what is installed.
+When `dotnet` is in your config, mise installs it before your .NET tools.
 
 ## Usage
 
-This example pairs .NET 8 with a GitVersion release that includes a .NET 8 tool:
+Install .NET 8 and a GitVersion release built for it:
 
 ```sh
 mise use dotnet@8 dotnet:GitVersion.Tool@6.0.5
 mise exec -- dotnet-gitversion /version
 ```
 
-Both entries are written to the **project's** `mise.toml`:
+This writes both entries to `mise.toml`. Add `-g` to `mise use` for your global
+config.
 
 ```toml
 [tools]
@@ -32,58 +36,69 @@ dotnet = "8"
 "dotnet:GitVersion.Tool" = "6.0.5"
 ```
 
-Add `-g` to `mise use` for global configuration. To choose another release, run
-`mise ls-remote dotnet:GitVersion.Tool` and check that release's runtime
-requirements. `mise use dotnet:GitVersion.Tool` records a `latest` request.
+To choose another release, run `mise ls-remote dotnet:GitVersion.Tool` and
+check that release's runtime requirements. `mise use dotnet:GitVersion.Tool`
+without a version records `latest`.
 
-mise installs each tool into its own directory with `--tool-path`; it does not
+mise installs each tool into its own directory with `--tool-path`. It does not
 create or update a project's `.config/dotnet-tools.json` manifest.
 
 ## Private feeds
 
-`dotnet.registry_url` selects the NuGet service index used for version discovery.
-The `dotnet` CLI handles installation separately, using its NuGet configuration
-and credentials. Configure the installation source in `NuGet.Config` as well;
-changing the discovery endpoint alone does not add a source to the CLI.
+mise lists versions from the NuGet service index in
+[`dotnet.registry_url`](/configuration/settings.html#dotnet.registry_url), but
+`dotnet tool install` downloads the package using its own `NuGet.Config` and
+credentials. For a private feed, add it to `NuGet.Config` and point
+`dotnet.registry_url` at its service index; changing the setting alone does not
+add an install source.
 
-## Settings
+## Tool options
 
-Set these with `mise settings set [VARIABLE]=[VALUE]` or by setting the environment variable listed.
-
-<script setup>
-import Settings from '/components/settings.vue';
-</script>
-<Settings child="dotnet" :level="3" />
-
-## Tool Options
-
-The following [tool-options](/dev-tools/#tool-options) are available for the `dotnet` backend—these
-go in `[tools]` in `mise.toml`.
+Set these on the tool's entry in `[tools]`, or inline, as in
+`'dotnet:GitVersion.Tool[prerelease=true]'`. Options every backend accepts are
+described under [tool options](/dev-tools/#tool-options).
 
 ### `install_env`
 
-Set environment variables for the `dotnet tool install` command:
+Set environment variables for `dotnet tool install`:
 
 ```toml
 [tools]
-"dotnet:GitVersion.Tool" = { version = "latest", install_env = { DOTNET_CLI_TELEMETRY_OPTOUT = "1" } }
+"dotnet:GitVersion.Tool" = { version = "latest", install_env = { DOTNET_NOLOGO = "1" } }
 ```
 
 ### `prerelease`
 
-By default, NuGet pre-release versions are excluded from `mise ls-remote` and from `latest` resolution. Set `prerelease = true` to include them:
+By default, NuGet prerelease versions are left out of `mise ls-remote` and
+`latest`. Set `prerelease = true` to include them:
 
 ```toml
 [tools]
 "dotnet:GitVersion.Tool" = { version = "latest", prerelease = true }
 ```
 
-The legacy `dotnet.package_flags = ["prerelease"]` setting is deprecated. Prefer the per-tool `prerelease = true` option, or the global `prereleases` setting when every tool should include pre-release versions. Because `dotnet.package_flags` is global, remove it before relying on per-tool `prerelease = false` opt-outs.
+To include prereleases for every tool, set the
+[`prereleases`](/configuration/settings.html#prereleases) setting instead.
+
+## Settings
+
+Two settings apply to `dotnet:` tools. The other `dotnet.*` settings configure
+the .NET SDK; see the [.NET guide](/lang/dotnet.html#settings).
+
+<script setup>
+import Settings from '/components/settings.vue';
+</script>
+<Settings child="dotnet" :keys="['registry_url', 'package_flags']" :level="3" />
+
+mise 2026.11.0 and later warn when `dotnet.package_flags` is set, and mise
+2027.11.0 removes it.
 
 ## Troubleshooting
 
-- **SDK not found:** check `mise exec -- dotnet --info` and any `global.json` that constrains SDK selection.
-- **Required framework missing:** install a compatible runtime/SDK or select a tool release that targets the runtime you have.
-- **Package not found:** verify that the package is a .NET tool and that both discovery and installation can access its feed.
+| Symptom                    | What to check                                                                                            |
+| -------------------------- | -------------------------------------------------------------------------------------------------------- |
+| SDK not found              | Run `mise exec -- dotnet --info` and check any `global.json` that constrains SDK selection.              |
+| Required framework missing | Install a runtime or SDK the tool supports, or choose a tool release that targets the runtime you have.  |
+| Package not found          | Check that the package is a .NET tool and that both version listing and installation can reach its feed. |
 
 Implementation: [`src/backend/dotnet.rs`](https://github.com/jdx/mise/blob/main/src/backend/dotnet.rs).

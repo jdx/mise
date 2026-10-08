@@ -2178,7 +2178,7 @@ their shared versions follow in the same run.
 Show the plan without changing anything
 .TP
 \fB\-y, \-\-yes\fR
-Pull without prompting
+Accepted for compatibility; pull skips the apply confirmation
 .TP
 \fB\-\-take\-remote\fR \fI<PATH>\fR
 Resolve a conflict with the repository's version
@@ -2424,7 +2424,7 @@ Encrypt contents before saving them to history (requires `[history.encryption].r
 Save an explicitly tracked credential\-named file in plaintext
 .TP
 \fB\-y, \-\-yes\fR
-Accept without prompting
+Accepted for compatibility; track no longer asks to confirm the paths
 .TP
 \fB\-n, \-\-dry\-run\fR
 Show what each path expands to (files, size, what is left out) without tracking it
@@ -4875,7 +4875,7 @@ their shared versions follow in the same run.
 Show the plan without changing anything
 .TP
 \fB\-y, \-\-yes\fR
-Pull without prompting
+Accepted for compatibility; pull skips the apply confirmation
 .TP
 \fB\-\-take\-remote\fR \fI<PATH>\fR
 Resolve a conflict with the repository's version
@@ -5121,7 +5121,7 @@ Encrypt contents before saving them to history (requires `[history.encryption].r
 Save an explicitly tracked credential\-named file in plaintext
 .TP
 \fB\-y, \-\-yes\fR
-Accept without prompting
+Accepted for compatibility; track no longer asks to confirm the paths
 .TP
 \fB\-n, \-\-dry\-run\fR
 Show what each path expands to (files, size, what is left out) without tracking it
@@ -5460,8 +5460,7 @@ Supports wildcards, e.g. \-\-allow\-env='MYAPP_*'
 .TP
 \fB\-\-allow\-net\fR \fI<HOST>\fR
 Allow network to specific host (implies \-\-deny\-net for everything else)
-Per\-host filtering is unsupported on Linux and returns an error.
-See the sandboxing guide for current macOS host\-filter limitations.
+Per\-host filtering is unsupported on Linux and macOS and returns an error.
 On Windows, sandboxing is unavailable: mise warns and runs without host filtering.
 .TP
 \fB\-\-allow\-read\fR \fI<PATH>\fR
@@ -5862,6 +5861,8 @@ Generate shims to run mise tasks
 By default, this will build shims like ./bin/<task>. These can be paired with `mise generate install\-script`
 so contributors to a project can execute mise tasks without installing mise into their system.
 When a parent and nested task both exist, the parent stub is written to `<parent>/_default`.
+Hidden tasks and global tasks are skipped: the stubs are committed to the project, and global
+tasks come from the user's own config.
 .PP
 \fBUsage:\fR mise generate task\-stubs [OPTIONS]
 .PP
@@ -6815,7 +6816,9 @@ Resources use `mise://tools`, `mise://tasks`, `mise://env`, and `mise://config`.
 
 The `list_commands` tool describes commands and their declared effects. `run_task`
 executes project tasks with the user's permissions and can change files or invoke
-external services. `install_tool` is advertised but currently returns an error.
+external services. `install_tool` installs a tool version as `mise install` does.
+Both refuse to act on a project whose config files are not trusted; run
+`mise trust` to allow them.
 Environment resources contain real values, including secrets.
 
 Resources available:
@@ -6826,7 +6829,7 @@ Resources available:
 
 Tools available:
 \- list_commands \- Every mise command, with its declared effect on the world
-\- install_tool \- Install a tool with an optional version (not yet implemented)
+\- install_tool \- Install a tool with an optional version
 \- run_task \- Execute a mise task with optional arguments
 
 Note: This is primarily intended for integration with AI assistants like Claude,
@@ -7944,8 +7947,7 @@ Supports wildcards, e.g. \-\-allow\-env='MYAPP_*'
 .TP
 \fB\-\-allow\-net\fR \fI<HOST>\fR
 Allow network to specific host (implies \-\-deny\-net for everything else)
-Per\-host filtering is unsupported on Linux and returns an error.
-See the sandboxing guide for current macOS host\-filter limitations.
+Per\-host filtering is unsupported on Linux and macOS and returns an error.
 On Windows, sandboxing is unavailable: mise warns and runs without host filtering.
 .TP
 \fB\-\-allow\-read\fR \fI<PATH>\fR
@@ -9451,8 +9453,7 @@ Supports wildcards, e.g. \-\-allow\-env='MYAPP_*'
 .TP
 \fB\-\-allow\-net\fR \fI<HOST>\fR
 Allow network to specific host (implies \-\-deny\-net for everything else)
-Per\-host filtering is unsupported on Linux and returns an error.
-See the sandboxing guide for current macOS host\-filter limitations.
+Per\-host filtering is unsupported on Linux and macOS and returns an error.
 On Windows, sandboxing is unavailable: mise warns and runs without host filtering.
 .TP
 \fB\-\-allow\-read\fR \fI<PATH>\fR

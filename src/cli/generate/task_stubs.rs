@@ -5,7 +5,7 @@ use crate::file::display_path;
 use crate::shims::find_mise_shim_bin;
 use crate::task::Task;
 use eyre::{WrapErr, bail};
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{HashMap, HashSet};
 use std::env;
 use std::fs;
 use std::io::ErrorKind;
@@ -16,6 +16,8 @@ use std::path::{Path, PathBuf};
 /// By default, this will build shims like ./bin/<task>. These can be paired with `mise generate install-script`
 /// so contributors to a project can execute mise tasks without installing mise into their system.
 /// When a parent and nested task both exist, the parent stub is written to `<parent>/_default`.
+/// Hidden tasks and global tasks are skipped: the stubs are committed to the project, and global
+/// tasks come from the user's own config.
 #[derive(Debug, usage_rs::Args)]
 #[usage(
     verbatim_doc_comment,
@@ -68,15 +70,25 @@ impl TaskStubs {
     pub(super) async fn run(self) -> eyre::Result<()> {
         let config = Config::get().await?;
         let launchers = Launchers::resolve(self.windows_launcher)?;
-        let tasks = config.tasks().await?;
+        let all_tasks = config.tasks().await?;
+        // Stubs are committed to the project, so they cover the project's own tasks only. A hidden
+        // task is not meant to be invoked directly, and a global task comes from the user's own
+        // config, which nobody else who checks the project out has.
+        let tasks = all_tasks
+            .values()
+            .filter(|task| !task.hide && !task.global)
+            .collect::<Vec<_>>();
         // Two paths per task, and they differ only for a task that came from a file: `name` keeps
         // the file's extension, `display_name` does not. The stub is named after the task, and the
         // file-named path is kept so a stub written under the old spelling can be migrated away.
-        let task_paths = tasks.values().map(Task::name_to_path).collect::<Vec<_>>();
+        let task_paths = tasks
+            .iter()
+            .map(|task| task.name_to_path())
+            .collect::<Vec<_>>();
         let base_paths = stub_base_paths(&tasks, &task_paths);
         let paths = resolve_stub_paths(&self.dir, &base_paths)?;
         let stubs = tasks
-            .values()
+            .into_iter()
             .zip(task_paths)
             .zip(paths)
             .map(|((task, legacy_path), path)| {
@@ -442,10 +454,10 @@ enum StubMigration {
 /// only there. Those keep their file-named paths, because renaming both onto one path would take a
 /// working project and fail its `task-stubs` run. Windows never reaches that branch, so the case
 /// this exists to fix is always unambiguous.
-fn stub_base_paths(tasks: &BTreeMap<String, Task>, task_paths: &[PathBuf]) -> Vec<PathBuf> {
+fn stub_base_paths(tasks: &[&Task], task_paths: &[PathBuf]) -> Vec<PathBuf> {
     let display_paths = tasks
-        .values()
-        .map(Task::display_name_to_path)
+        .iter()
+        .map(|task| task.display_name_to_path())
         .collect::<Vec<_>>();
     let mut counts: HashMap<&PathBuf, usize> = HashMap::new();
     for path in &display_paths {

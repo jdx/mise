@@ -217,6 +217,8 @@ When deprecating a feature, backend, or implicit behavior:
 1. **Immediately**: Mark it as deprecated in docs (add a warning banner) and display a CLI warning using the `deprecated_at!` macro from `src/output.rs` (`warn_at` is the current version).
 2. **12 months after warn** (`remove_at`): `debug_assert!` in `deprecated_at!` fires, signaling the deprecated code or behavior should be removed.
 
+12 months is the default window, not a hard rule. Some deprecations use a shorter window, such as 6 months, on purpose. Use 12 months for new deprecations unless jdx asks for something else, and do not lengthen an existing shorter window.
+
 Delay the CLI warning for up to 6 months only when migration requires a new setting, syntax, or replacement that older supported mise versions would reject or fail to parse. This compatibility window lets users adopt a configuration that works across old and new clients before warnings begin. Do not delay warnings for a behavior change that requires no new configuration, or when the replacement already works in older clients.
 
 Use mise version format for dates (e.g., `deprecated_at!("2026.10.0", "2027.10.0", "id", "message")`).

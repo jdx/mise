@@ -20,6 +20,6 @@ Apply the configured Linux host firewall
 
 ## Related documentation
 
-- [Host firewall](/bootstrap/firewall.html).
+- [Linux firewall](/bootstrap/firewall.html).
 - [`mise bootstrap firewall <SUBCOMMAND>`](/cli/bootstrap/firewall.html).
 - [Global flags and argument syntax](/cli/#global-flags).

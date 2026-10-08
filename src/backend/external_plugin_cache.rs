@@ -31,20 +31,22 @@ impl ExternalPluginCache {
         let cm = self
             .list_bin_paths
             .entry(tv.request.clone())
-            .or_insert_with(|| {
+            .or_try_insert_with(|| {
                 let list_bin_paths_filename = match &plugin.toml.list_bin_paths.cache_key {
                     Some(key) => {
-                        let key = render_cache_key(config, tv, key);
+                        let key = render_cache_key(config, tv, key)?;
                         let filename = format!("{key}.msgpack.z");
                         tv.cache_path().join("list_bin_paths").join(filename)
                     }
                     None => tv.cache_path().join("list_bin_paths.msgpack.z"),
                 };
-                CacheManagerBuilder::new(list_bin_paths_filename)
-                    .with_fresh_file(plugin.plugin_path.clone())
-                    .with_fresh_file(tv.install_path())
-                    .build()
-            });
+                eyre::Ok(
+                    CacheManagerBuilder::new(list_bin_paths_filename)
+                        .with_fresh_file(plugin.plugin_path.clone())
+                        .with_fresh_file(tv.install_path())
+                        .build(),
+                )
+            })?;
         let start = std::time::Instant::now();
         let res = cm.get_or_try_init_async(fetch).await.cloned();
         trace!(
@@ -66,20 +68,25 @@ impl ExternalPluginCache {
         Fut: Future<Output = eyre::Result<EnvMap>>,
         F: FnOnce() -> Fut,
     {
-        let cm = self.exec_env.entry(tv.request.clone()).or_insert_with(|| {
-            let exec_env_filename = match &plugin.toml.exec_env.cache_key {
-                Some(key) => {
-                    let key = render_cache_key(config, tv, key);
-                    let filename = format!("{key}.msgpack.z");
-                    tv.cache_path().join("exec_env").join(filename)
-                }
-                None => tv.cache_path().join("exec_env.msgpack.z"),
-            };
-            CacheManagerBuilder::new(exec_env_filename)
-                .with_fresh_file(plugin.plugin_path.clone())
-                .with_fresh_file(tv.install_path())
-                .build()
-        });
+        let cm = self
+            .exec_env
+            .entry(tv.request.clone())
+            .or_try_insert_with(|| {
+                let exec_env_filename = match &plugin.toml.exec_env.cache_key {
+                    Some(key) => {
+                        let key = render_cache_key(config, tv, key)?;
+                        let filename = format!("{key}.msgpack.z");
+                        tv.cache_path().join("exec_env").join(filename)
+                    }
+                    None => tv.cache_path().join("exec_env.msgpack.z"),
+                };
+                eyre::Ok(
+                    CacheManagerBuilder::new(exec_env_filename)
+                        .with_fresh_file(plugin.plugin_path.clone())
+                        .with_fresh_file(tv.install_path())
+                        .build(),
+                )
+            })?;
         let start = std::time::Instant::now();
         let res = cm.get_or_try_init_async(fetch).await.cloned();
         trace!(
@@ -91,19 +98,23 @@ impl ExternalPluginCache {
     }
 }
 
-fn render_cache_key(config: &Config, tv: &ToolVersion, cache_key: &[String]) -> String {
+fn render_cache_key(
+    config: &Config,
+    tv: &ToolVersion,
+    cache_key: &[String],
+) -> eyre::Result<String> {
     let elements = cache_key
         .iter()
         .map(|tmpl| {
-            let s = parse_template(config, tv, tmpl).unwrap();
+            let s = parse_template(config, tv, tmpl)?;
             let s = s.trim().to_string();
             trace!("cache key element: {} -> {}", tmpl.trim(), s);
             let mut s = hash_to_str(&s);
             s = s.chars().take(10).collect();
-            s
+            Ok(s)
         })
-        .collect::<Vec<String>>();
-    elements.join("-")
+        .collect::<eyre::Result<Vec<String>>>()?;
+    Ok(elements.join("-"))
 }
 
 fn parse_template(config: &Config, tv: &ToolVersion, tmpl: &str) -> eyre::Result<String> {
@@ -122,4 +133,37 @@ fn parse_template(config: &Config, tv: &ToolVersion, tmpl: &str) -> eyre::Result
             .map(|p| p.as_path()),
     );
     render_str(&mut tera, tmpl, &ctx).wrap_err_with(|| eyre!("failed to parse template: {tmpl}"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::args::BackendArg;
+    use crate::toolset::ToolSource;
+
+    fn tool_version() -> ToolVersion {
+        let ba = Arc::new(BackendArg::from("dummy"));
+        let request = ToolRequest::new(ba, "1.0.0", ToolSource::Argument).unwrap();
+        ToolVersion::new(request, "1.0.0".into())
+    }
+
+    #[tokio::test]
+    async fn test_render_cache_key() {
+        let config = Config::get().await.unwrap();
+        let tv = tool_version();
+        let rendered = render_cache_key(&config, &tv, &["foo".into(), "{{ 1 + 1 }}".into()]);
+        let literal = render_cache_key(&config, &tv, &["foo".into(), "2".into()]);
+        assert_eq!(rendered.unwrap(), literal.unwrap());
+    }
+
+    #[tokio::test]
+    async fn test_render_cache_key_invalid_template_is_an_error() {
+        let config = Config::get().await.unwrap();
+        let tv = tool_version();
+        let err = render_cache_key(&config, &tv, &["{{ unclosed".into()]).unwrap_err();
+        assert!(
+            format!("{err:#}").contains("failed to parse template: {{ unclosed"),
+            "{err:#}"
+        );
+    }
 }
