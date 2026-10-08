@@ -714,7 +714,7 @@ Generate project files such as CI workflows, git hooks, and scripts
 Generate a mise.toml file
 .TP
 \fBgenerate devcontainer\fR
-Generate a devcontainer configuration that installs mise
+Generate a devcontainer configuration that installs mise and the project's tools
 .TP
 \fBgenerate git\-pre\-commit\fR
 Generate a git hook that runs a mise task
@@ -7180,6 +7180,9 @@ Block reads, writes, network, and env vars
 .TP
 \fB\-\-deny\-env\fR
 Block env var inheritance except PATH, HOME, USER, SHELL, TERM, COLORTERM, LANG
+
+On Windows it also keeps the variables programs need to start, such as
+SystemRoot and TEMP.
 .TP
 \fB\-\-deny\-net\fR
 Block all network access
@@ -7352,7 +7355,7 @@ Print the result instead of writing it
 mise generate config \-n
 .RE
 .SH "MISE GENERATE DEVCONTAINER"
-Generate a devcontainer configuration that installs mise
+Generate a devcontainer configuration that installs mise and the project's tools
 
 Prints JSON by default. `\-\-write` saves .devcontainer/devcontainer.json in the
 repository root (or the current directory outside a git repository), replacing
@@ -10080,6 +10083,8 @@ Block reads, writes, network, and env vars
 .TP
 \fB\-\-deny\-env\fR
 Block env var inheritance except PATH, HOME, USER, SHELL, TERM, COLORTERM, and LANG
+
+On Windows it also keeps the variables programs need to start, such as `SystemRoot` and `TEMP`.
 .TP
 \fB\-\-deny\-net\fR
 Block all network access
@@ -10721,8 +10726,11 @@ mise settings ls python \-\-json\-extended
 Set a setting
 
 Writes ~/.config/mise/config.toml, or the nearest project config with
-`\-\-local`. Settings that mise reads before loading config files, such as
-`global_config_file`, cannot be set here; set their environment variables.
+`\-\-local`. Settings that mise reads before loading config files cannot be set
+here: set `global_config_file` and similar through their environment
+variables, and `ceiling_paths` and similar in a `miserc.toml` file or their
+environment variables. `\-\-local` refuses settings that only the global config
+can set, such as `yes`.
 See https://mise.jdx.dev/configuration/settings.html
 .PP
 \fBUsage:\fR mise settings set [OPTIONS] <SETTING> [<VALUE>]
@@ -11792,6 +11800,8 @@ Block reads, writes, network, and env vars
 .TP
 \fB\-\-deny\-env\fR
 Block env var inheritance except PATH, HOME, USER, SHELL, TERM, COLORTERM, and LANG
+
+On Windows it also keeps the variables programs need to start, such as `SystemRoot` and `TEMP`.
 .TP
 \fB\-\-deny\-net\fR
 Block all network access

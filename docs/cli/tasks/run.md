@@ -75,6 +75,8 @@ Takes the same arguments and flags as `mise run`. See `mise run --help` or <http
 - **`--allow-write <PATH>`** — Allow writes to a specific path (implies `--deny-write` for everything else)
 - **`--deny-all`** — Block reads, writes, network, and env vars
 - **`--deny-env`** — Block env var inheritance except PATH, HOME, USER, SHELL, TERM, COLORTERM, and LANG
+
+  On Windows it also keeps the variables programs need to start, such as `SystemRoot` and `TEMP`.
 - **`--deny-net`** — Block all network access
 - **`--deny-read`** — Block filesystem reads (system libraries and tool directories stay readable)
 - **`--deny-write`** — Block filesystem writes except temporary and device paths (/tmp, /dev)

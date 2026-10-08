@@ -47,6 +47,9 @@ setting is off; when you name tools, only those are installed. The --allow-*and
 - **`--allow-write <PATH>`** — Allow writes to PATH (implies --deny-write for everything else)
 - **`--deny-all`** — Block reads, writes, network, and env vars
 - **`--deny-env`** — Block env var inheritance except PATH, HOME, USER, SHELL, TERM, COLORTERM, LANG
+
+  On Windows it also keeps the variables programs need to start, such as
+  SystemRoot and TEMP.
 - **`--deny-net`** — Block all network access
 - **`--deny-read`** — Block filesystem reads (system libs and tool dirs still accessible)
 - **`--deny-write`** — Block filesystem writes except temporary and device paths (/tmp, /dev)

@@ -2906,9 +2906,10 @@ A repository must publish releases with assets named like jdx/ruby's. A URL
 template can use `{version}`, `{platform}`, `{arch}` and `{os}`. `{platform}`
 is `macos`, `arm64_linux` or `x86_64_linux`, or `<arch>_<os>` from
 [`ruby.precompiled_arch`](#ruby.precompiled_arch) and
-[`ruby.precompiled_os`](#ruby.precompiled_os). `{arch}` and `{os}` split
-`{platform}` at its first `_`, so on x86-64 Linux they are `x86` and
-`64_linux`, and on macOS `{os}` is empty. Use `{platform}` instead.
+[`ruby.precompiled_os`](#ruby.precompiled_os). `{arch}` and `{os}` are the
+parts of `{platform}` before and after its last `_`, such as `x86_64` and
+`linux`; on macOS they are `arm64` and `macos`. When both of those settings are
+set, `{arch}` and `{os}` are their values as given.
 
 ```toml
 [settings.ruby]
