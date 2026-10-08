@@ -80,6 +80,10 @@ enum SystemDefaultsDiagnosis {
 /// outcome of the `[bootstrap.user].login_shell` doctor check
 #[derive(serde::Serialize)]
 struct DotfilesDiagnosis {
+    /// The local bare repository that holds the history.
+    repo: PathBuf,
+    /// The connected setup repository, if any.
+    origin: Option<DotfilesOriginDiagnosis>,
     tracked: usize,
     watcher: String,
     stale: bool,
@@ -98,6 +102,13 @@ struct DotfilesDiagnosis {
     sync_failures: u32,
     /// Whether conflict notifications can reach the user.
     notifications: String,
+}
+
+#[derive(serde::Serialize)]
+struct DotfilesOriginDiagnosis {
+    url: String,
+    branch: String,
+    sync: String,
 }
 
 /// How long syncs have been failing: since the current run of failures
@@ -788,7 +799,19 @@ impl Doctor {
         .map(|d| d.as_secs())
         .unwrap_or(600);
         let stale = running && age.is_some_and(|age| reconcile > 0 && age > reconcile * 2);
+        let origin = crate::system::history::config::origin()
+            .ok()
+            .flatten()
+            .map(|(_, origin)| DotfilesOriginDiagnosis {
+                url: origin.url,
+                branch: origin.branch,
+                sync: crate::system::history::sync::SyncMode::current()
+                    .map(|mode| mode.as_str().to_string())
+                    .unwrap_or_else(|_| "unknown".to_string()),
+            });
         let mut diagnosis = DotfilesDiagnosis {
+            repo: crate::system::history::store::repo_dir_in(&state_dir),
+            origin,
             tracked: tracks,
             watcher: watcher.as_str().to_string(),
             stale,
@@ -934,6 +957,13 @@ impl Doctor {
             if diagnosis.tracked == 1 { "y" } else { "ies" },
             diagnosis.watcher
         )];
+        lines.push(format!("repo: {}", display_path(&diagnosis.repo)));
+        if let Some(origin) = &diagnosis.origin {
+            lines.push(format!(
+                "origin: {} (branch {}, sync {})",
+                origin.url, origin.branch, origin.sync
+            ));
+        }
         if diagnosis.stale {
             lines.push(format!(
                 "health information is stale (last update {} ago); the watcher may be stuck",

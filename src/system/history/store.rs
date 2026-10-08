@@ -40,7 +40,7 @@ pub fn store_dir_in(state_dir: &Path) -> PathBuf {
     state_dir.join("history")
 }
 
-pub(crate) fn repo_dir_in(state_dir: &Path) -> PathBuf {
+pub fn repo_dir_in(state_dir: &Path) -> PathBuf {
     store_dir_in(state_dir).join("repo.git")
 }
 
