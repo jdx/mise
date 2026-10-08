@@ -4551,7 +4551,7 @@ Re-resolve version requests against the latest available versions
 By default, `mise lock` refreshes metadata for the currently locked versions.
 With this flag, requests such as "latest", "lts", or prefixes such as "24" are
 re-resolved against the latest matching remote versions, so the lockfile
-advances without installing anything. Config files are never modified:
+advances without installing anything. `--bump` never modifies config files:
 exact versions resolve to themselves and stay unchanged (use
 `mise upgrade --bump` to rewrite pins in mise.toml). If the remote versions
 cannot be fetched, it fails rather than keep the locked version.
@@ -7984,7 +7984,7 @@ Empty lines and lines that start with `#` are skipped. The patterns use the same
 """#
         arg <PATH> delimiter=:
     }
-    flag --fs-events help="Filesystem events to filter to" var=#true hide=#true hide_default_value=#true help_heading=Filtering default=create,remove,rename,modify,metadata {
+    flag --fs-events help="Filesystem events to filter to" var=#true hide_default_value=#true help_heading=Filtering default=create,remove,rename,modify,metadata {
         long_help #"""
 Filesystem events to filter to
 

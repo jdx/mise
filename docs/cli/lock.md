@@ -47,7 +47,7 @@ also updates the request in mise.toml to match.
   By default, `mise lock` refreshes metadata for the currently locked versions.
   With this flag, requests such as "latest", "lts", or prefixes such as "24" are
   re-resolved against the latest matching remote versions, so the lockfile
-  advances without installing anything. Config files are never modified:
+  advances without installing anything. `--bump` never modifies config files:
   exact versions resolve to themselves and stay unchanged (use
   `mise upgrade --bump` to rewrite pins in mise.toml). If the remote versions
   cannot be fetched, it fails rather than keep the locked version.
