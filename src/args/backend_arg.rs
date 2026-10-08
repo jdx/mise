@@ -526,12 +526,14 @@ impl BackendArg {
         REGISTRY.get(&self.registry_short())
     }
 
-    /// Whether `recorded`, a backend a lock entry names, is not the backend the
-    /// registry picks for `version`. A tool the user bound to a backend by name
-    /// has no registry choice to differ from.
-    pub(crate) fn registry_backend_differs_from(&self, recorded: &str, version: &str) -> bool {
+    /// Whether `recorded`, a backend a lock entry names, is not the backend
+    /// that supplied this request's registry options. Those come from the
+    /// registry's choice for the version the request was made with (`latest`,
+    /// a prefix), not from the version the lock entry happens to pin. A tool the
+    /// user bound to a backend by name has no registry choice to differ from.
+    pub(crate) fn registry_backend_differs_from(&self, recorded: &str) -> bool {
         let Some(registry) = self.registry_tool().and_then(|tool| {
-            tool.backends_for_version(Some(version))
+            tool.backends_for_version(self.registry_version.as_deref())
                 .first()
                 .map(ToString::to_string)
         }) else {

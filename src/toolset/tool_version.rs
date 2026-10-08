@@ -268,10 +268,7 @@ impl ToolVersion {
             ));
             // The registry's options are for the backend it chose; the lock's
             // backend would read them as its own settings and record them.
-            if request
-                .ba()
-                .registry_backend_differs_from(backend_full, &lt.version)
-            {
+            if request.ba().registry_backend_differs_from(backend_full) {
                 request = request.without_registry_options();
             }
             match &mut request {
@@ -1588,6 +1585,28 @@ mod tests {
             ToolVersion::from_lockfile(request, lt).request.options()
         };
         assert!(!restore("aqua:jdx/hk").opts.contains_key("workflow"));
+        // An entry pinned below the registry's `min_version` for Packslip still
+        // binds a request made with `latest`, which carries Packslip's options.
+        let older = {
+            let request = ToolRequest::new_with_options(
+                Arc::new(BackendArg::new("hk".to_string(), None)),
+                "latest",
+                ToolVersionOptions::default(),
+                ToolSource::Argument,
+            )
+            .unwrap();
+            let lt = LockfileTool {
+                version: "1.57.0".to_string(),
+                backend: Some("aqua:jdx/hk".to_string()),
+                specifiers: Default::default(),
+                options: Default::default(),
+                platforms: Default::default(),
+                aube: None,
+                uv: None,
+            };
+            ToolVersion::from_lockfile(request, lt).request.options()
+        };
+        assert!(!older.opts.contains_key("workflow"));
         assert!(
             restore("packslip:github.com/jdx/hk")
                 .opts
