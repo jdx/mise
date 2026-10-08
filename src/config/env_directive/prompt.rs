@@ -19,6 +19,8 @@ static ENABLED: AtomicBool = AtomicBool::new(false);
 static ONLY: Mutex<Option<BTreeSet<String>>> = Mutex::new(None);
 /// Every var seen declaring a `prompt` while config resolved.
 static DECLARED: Mutex<BTreeSet<String>> = Mutex::new(BTreeSet::new());
+/// Vars that were asked for and left blank.
+static BLANK: Mutex<BTreeSet<String>> = Mutex::new(BTreeSet::new());
 /// Whether a missing `required` var should warn instead of failing config load.
 static TOLERATE_MISSING: AtomicBool = AtomicBool::new(false);
 /// Vars answered by this process, in order.
@@ -45,6 +47,11 @@ pub(crate) fn note_declared(key: &str) {
     if let Ok(mut declared) = DECLARED.lock() {
         declared.insert(key.to_string());
     }
+}
+
+/// Vars this process asked for and got a blank answer to, with no default to fall back on.
+pub fn left_blank() -> BTreeSet<String> {
+    BLANK.lock().map(|b| b.clone()).unwrap_or_default()
 }
 
 /// Every var that declared a `prompt` while config resolved.
@@ -220,6 +227,9 @@ pub(crate) fn answer(key: &str, prompt: &str, default: Option<&str>) -> Result<O
     // Nothing to offer and nothing typed: leave the var unanswered rather than
     // saving a blank that `required` would accept.
     if value.is_empty() {
+        if let Ok(mut blank) = BLANK.lock() {
+            blank.insert(key.to_string());
+        }
         return Ok(None);
     }
     save(key, &value)?;

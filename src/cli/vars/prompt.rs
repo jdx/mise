@@ -60,14 +60,12 @@ impl VarsPrompt {
         if let Some(unknown) = names.iter().find(|name| !declared.contains(*name)) {
             bail!("no [vars] entry named '{unknown}' declares a `prompt` here");
         }
-        let targets: Vec<&String> = if names.is_empty() {
-            declared.iter().collect()
-        } else {
-            names.iter().collect()
-        };
-        let unanswered: Vec<&str> = targets
-            .into_iter()
-            .filter(|name| prompt::saved(name).is_none())
+        // A var already resolved from the environment or another config is never
+        // asked about, so only a blank answer counts as no answer.
+        let blank = prompt::left_blank();
+        let unanswered: Vec<&str> = declared
+            .iter()
+            .filter(|name| blank.contains(*name))
             .map(String::as_str)
             .collect();
         if !unanswered.is_empty() {
