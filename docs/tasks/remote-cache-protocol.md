@@ -45,10 +45,10 @@ and its internally consistent CAS graph. Implementations may use HTTP/1.1, HTTP/
 
 Every API request sends:
 
-| Header                 | Value                                                          |
-| ---------------------- | -------------------------------------------------------------- |
-| `mise-cache-protocol`  | `1`                                                            |
-| `mise-cache-namespace` | The namespace for the operation, except on discovery endpoints |
+| Header                | Value                                                          |
+| --------------------- | -------------------------------------------------------------- |
+| `mbx-cache-protocol`  | `1`                                                            |
+| `mbx-cache-namespace` | The namespace for the operation, except on discovery endpoints |
 
 The URL prefix `/v1` is the protocol's major version. Compatible additions are advertised as
 capabilities and do not require a new URL prefix. An incompatible wire or integrity change requires
@@ -118,7 +118,7 @@ new schema versions without changing the major protocol version.
 
 Clients must honor advertised limits and fall back from optional features. Servers return `426
 Upgrade Required` for unsupported major versions and include their supported major version in
-`mise-cache-protocol`.
+`mbx-cache-protocol`.
 
 `GET /v1/status` is an operational health endpoint. A successful response means the API process is
 live; it is not a substitute for capability negotiation or an authorization check.
@@ -398,7 +398,7 @@ store. Clients communicate with the cache service rather than receiving general 
 credentials.
 
 The official reference server is maintained separately at
-[`jdx/mise-cache`](https://github.com/jdx/mise-cache). It provides filesystem and S3-compatible blob
+[`jdx/mr-boxington-cache`](https://github.com/jdx/mr-boxington-cache). It provides filesystem and S3-compatible blob
 storage, PostgreSQL metadata, namespace-scoped authorization, Docker Compose, and a Helm chart. The
 server remains a separate deployment and release lifecycle from the mise client while this document
 is the canonical protocol specification.
