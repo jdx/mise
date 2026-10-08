@@ -427,10 +427,8 @@ impl EnvResults {
         // is operator-owned and still applies, mirroring the trust model. `_.source`
         // runs a shell script (code execution rather than env injection), so it is
         // ignored regardless of source, including operator-owned global config.
-        let dropped_in_safe_mode = |directive: &EnvDirective, source: &Path| -> bool {
-            safe_mode
-                && (!crate::config::is_global_config(source)
-                    || matches!(directive, EnvDirective::Source(..)))
+        let dropped_in_safe_mode = |directive: &EnvDirective, source: &Path| {
+            safe_mode && dropped_in_safe_mode(directive, source)
         };
         // Choose the last venv among directives that survive the safe-mode filter,
         // so a dropped project venv can't cause an operator's global venv to be
@@ -1277,6 +1275,12 @@ impl Debug for EnvResults {
         }
         ds.finish()
     }
+}
+
+/// Whether safe mode ignores `directive` from `source` (see `resolve_with_toolset`): any
+/// directive from project config, and `_.source` from any config.
+pub(super) fn dropped_in_safe_mode(directive: &EnvDirective, source: &Path) -> bool {
+    !crate::config::is_global_config(source) || matches!(directive, EnvDirective::Source(..))
 }
 
 #[cfg(test)]

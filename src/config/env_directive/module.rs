@@ -1,6 +1,6 @@
 use crate::Result;
-use crate::config::Config;
 use crate::config::env_directive::{EnvDirective, EnvResults};
+use crate::config::{Config, Settings, SettingsExt};
 use crate::dirs;
 use crate::plugins::Plugin;
 use crate::plugins::vfox_plugin::VfoxPlugin;
@@ -89,6 +89,7 @@ fn env_plugin(name: &str) -> (VfoxPlugin, PathBuf) {
 
 /// `[env] _.<name>` modules that are skipped because their plugin is not
 /// installed and has no source, with the config file that declares each.
+/// Modules that safe mode ignores are left out: they are never loaded.
 pub fn skipped_env_modules(config: &Config) -> Vec<(String, PathBuf)> {
     config
         .config_files
@@ -97,6 +98,9 @@ pub fn skipped_env_modules(config: &Config) -> Vec<(String, PathBuf)> {
             cf.env_entries()
                 .unwrap_or_default()
                 .into_iter()
+                .filter(|directive| {
+                    !(Settings::safe_mode() && super::dropped_in_safe_mode(directive, source))
+                })
                 .filter_map(move |directive| match directive {
                     EnvDirective::Module(name, ..) => Some((name, source.clone())),
                     _ => None,

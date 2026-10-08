@@ -81,3 +81,24 @@ EOF
 assert_fail "mise run deploy"
 assert_not_contains "mise run deploy 2>&1 || true" "SECRET=missing"
 assert_not_contains "mise env -s bash 2>&1 || true" "skipping env plugin"
+
+# A [plugins] entry with a malformed URL is a source, so it errors instead of
+# being skipped.
+cat >mise.toml <<'EOF'
+[plugins]
+typo-env-plugin = "htps://github.com/acme/env"
+
+[env]
+_.typo-env-plugin = {}
+EOF
+assert_fail "mise env -s bash"
+assert_not_contains "mise env -s bash 2>&1 || true" "skipping env plugin"
+
+# Safe mode ignores project [env] modules, so doctor does not report them.
+# (not-a-real-env-plugin is linked above, so use a fresh name.)
+cat >mise.toml <<'EOF'
+[env]
+_.unlinked-env-plugin = {}
+EOF
+assert_contains "mise doctor 2>&1 || true" "env plugin unlinked-env-plugin"
+assert_not_contains "MISE_SAFE=1 mise doctor 2>&1 || true" "env plugin unlinked-env-plugin"
