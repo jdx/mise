@@ -993,7 +993,7 @@ Install a tool and add it to configuration
 .RE
 .TP
 \fBvars\fR
-Ask for and manage the per\-machine answers to `[vars]` that declare a `prompt`
+Ask for, set, and list the per\-machine answers to `[vars]` that declare a `prompt`
 .TP
 \fBvars ls\fR
 List the saved answers
@@ -11151,20 +11151,43 @@ Write mise.staging.toml, which mise loads when MISE_ENV=staging
 mise use \-\-env staging node@24
 .RE
 .SH "MISE VARS"
-Ask for and manage the per\-machine answers to `[vars]` that declare a `prompt`
+Ask for, set, and list the per\-machine answers to `[vars]` that declare a `prompt`
 
 A `[vars]` entry with a `prompt` is asked for once per machine and the
 answer is remembered in `$MISE_STATE_DIR/vars.toml`, outside every config
-file. Only `mise vars prompt` and `mise bootstrap \-\-prompt\-vars` ask. See
+file. `mise vars NAME=VALUE` sets an answer without asking; with no
+arguments, lists the saved answers (same as `mise vars ls`). Only
+`mise vars prompt` and `mise bootstrap \-\-prompt\-vars` ask. See
 https://mise.jdx.dev/configuration/vars.html#prompt
 .PP
-\fBUsage:\fR mise vars [OPTIONS] <COMMAND>
+\fBUsage:\fR mise vars [OPTIONS] [<NAME=VALUE>] ... [COMMAND]
 .PP
 \fBOptions:\fR
 .PP
 .TP
+\fB\-\-no\-header\fR
+Do not print the table header
+.TP
 \fB\-h, \-\-help\fR
 Print help
+\fBArguments:\fR
+.PP
+.TP
+\fB<NAME=VALUE>\fR
+Answers to save, as NAME=VALUE
+\fBExamples:\fR
+.PP
+Set an answer without asking
+.PP
+.RS 4
+mise vars git_name="Ada Lovelace"
+.RE
+.PP
+List the saved answers
+.PP
+.RS 4
+mise vars
+.RE
 .SH "MISE VARS LS"
 List the saved answers
 

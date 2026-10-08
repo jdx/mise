@@ -7459,16 +7459,20 @@ Tool options can also be set inline:
     example "mise use --env staging node@24" help="Write mise.staging.toml, which mise loads when MISE_ENV=staging"
     complete path type=path
 }
-cmd vars subcommand_required=#true help="Ask for and manage the per-machine answers to `[vars]` that declare a `prompt`" effect=write {
+cmd vars help="Ask for, set, and list the per-machine answers to `[vars]` that declare a `prompt`" effect=write {
     long_help #"""
-Ask for and manage the per-machine answers to `[vars]` that declare a `prompt`
+Ask for, set, and list the per-machine answers to `[vars]` that declare a `prompt`
 
 A `[vars]` entry with a `prompt` is asked for once per machine and the
 answer is remembered in `$MISE_STATE_DIR/vars.toml`, outside every config
-file. Only `mise vars prompt` and `mise bootstrap --prompt-vars` ask. See
+file. `mise vars NAME=VALUE` sets an answer without asking; with no
+arguments, lists the saved answers (same as `mise vars ls`). Only
+`mise vars prompt` and `mise bootstrap --prompt-vars` ask. See
 https://mise.jdx.dev/configuration/vars.html#prompt
 """#
+    flag --no-header help="Do not print the table header"
     flag "-h --help" help="Print help" action=help builtin=#true
+    arg "[NAME=VALUE]…" help="Answers to save, as NAME=VALUE" required=#false var=#true
     cmd ls help="List the saved answers" effect=read {
         alias list
         long_help #"""
@@ -7505,6 +7509,8 @@ Edits `$MISE_STATE_DIR/vars.toml`; no config is loaded. The next
         arg "[NAME]…" help="The vars whose answers to forget" required=#false var=#true
         example "mise vars unset git_name" help="Be asked for git_name again"
     }
+    example "mise vars git_name=\"Ada Lovelace\"" help="Set an answer without asking"
+    example "mise vars" help="List the saved answers"
 }
 cmd version help="Show the version of mise" effect=read {
     alias v

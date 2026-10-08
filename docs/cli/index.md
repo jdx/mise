@@ -103,7 +103,7 @@ Choose a command family below. Its page lists the available subcommands.
 - [`mise shell`](/cli/shell.html) — Set a tool version for the current shell session
 - [`mise set`](/cli/set.html) — Set, show, or list environment variables in mise.toml
 - [`mise unset`](/cli/unset.html) — Remove environment variables from mise.toml
-- [`mise vars`](/cli/vars.html) — Ask for and manage the per-machine answers to `[vars]` that declare a `prompt`
+- [`mise vars`](/cli/vars.html) — Ask for, set, and list the per-machine answers to `[vars]` that declare a `prompt`
 - [`mise shell-alias`](/cli/shell-alias.html) — Manage shell aliases
 - [`mise tool-alias`](/cli/tool-alias.html) — Manage tool backend and version aliases
 - [`mise secrets`](/cli/secrets.html) — [experimental] Inspect the project's secrets source

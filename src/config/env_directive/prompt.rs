@@ -89,7 +89,7 @@ fn read_answers() -> toml::Table {
 }
 
 /// The answer saved for `key` on this machine, if any.
-pub(crate) fn saved(key: &str) -> Option<String> {
+pub fn saved(key: &str) -> Option<String> {
     match read_answers().get("vars")?.as_table()?.get(key)? {
         // An empty answer counts as none, so a blank line never satisfies `required`.
         toml::Value::String(s) if !s.is_empty() => Some(s.clone()),
@@ -141,6 +141,18 @@ pub fn saved_all() -> Vec<(String, String)> {
         .collect();
     all.sort();
     all
+}
+
+/// Save `value` as the answer for `key` without asking.
+pub fn set(key: &str, value: &str) -> Result<()> {
+    if value.is_empty() {
+        bail!(
+            "an empty answer for '{key}' would count as unanswered; use `mise vars unset {key}` to forget it"
+        );
+    }
+    update(&format!("save the answer for var '{key}'"), |vars| {
+        vars.insert(key.to_string(), toml::Value::String(value.to_string()));
+    })
 }
 
 /// Forget the saved answer for `key`. Returns whether there was one.

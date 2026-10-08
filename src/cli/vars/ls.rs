@@ -23,12 +23,16 @@ struct Row {
 
 impl VarsLs {
     pub(super) fn run(self) -> Result<()> {
-        let rows = prompt::saved_all()
-            .into_iter()
-            .map(|(name, answer)| Row { name, answer })
-            .collect::<Vec<_>>();
-        let mut table = tabled::Table::new(rows);
-        table::print(&mut table, self.no_header)?;
-        Ok(())
+        list(self.no_header)
     }
+}
+
+pub(super) fn list(no_header: bool) -> Result<()> {
+    let rows = prompt::saved_all()
+        .into_iter()
+        .map(|(name, answer)| Row { name, answer })
+        .collect::<Vec<_>>();
+    let mut table = tabled::Table::new(rows);
+    table::print(&mut table, no_header)?;
+    Ok(())
 }

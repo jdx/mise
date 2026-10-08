@@ -84,3 +84,11 @@ assert_fail_contains "mise vars prompt nope" "needs an interactive terminal"
 mise vars unset git_name
 assert "mise vars ls --no-header" "git_email me@example.com"
 assert_fail_contains "mise vars unset" "name at least one var"
+
+# `mise vars NAME=VALUE` sets an answer without asking, and bare `mise vars` lists them
+mise vars git_name="Ada Lovelace" other=x
+assert "mise vars --no-header" "git_email me@example.com
+git_name  Ada Lovelace
+other     x"
+assert_fail_contains "mise vars oops" "expected NAME=VALUE"
+assert_fail_contains "mise vars empty=" "would count as unanswered"
