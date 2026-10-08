@@ -8,24 +8,34 @@ use crate::system::files::FileMode;
 use crate::system::history::tracked::{Policy, TrackedSet, preview_set};
 use crate::ui::table::MiseTable;
 
-/// Show what history tracks and under which policies
+/// List tracked paths and how they are saved
 ///
-/// Every entry is listed with the file that declared it, its policies, and
-/// how many files it currently covers. Declarations that history could not
-/// honour are listed as invalid, omitted, or incomplete, so a failed
-/// enrollment is never mistaken for protection.
+/// Shows each tracked entry with the config file that declares it, whether it
+/// saves automatically, and how many files it covers. Entries mise cannot save
+/// are listed as invalid, omitted, or incomplete, so you can see what is not
+/// protected.
 #[derive(Debug, usage_rs::Args)]
-#[usage(verbatim_doc_comment)]
+#[usage(
+    example("mise dot paths", help = "List tracked paths"),
+    example(
+        "mise dot paths --preview ~/.codex",
+        help = "List the files tracking ~/.codex would save"
+    ),
+    example(
+        "mise dot paths --noisy",
+        help = "List files the watcher saves less often"
+    )
+)]
 pub(crate) struct DotfilesPaths {
     /// Output in JSON format
     #[usage(long, short = 'J')]
     json: bool,
 
-    /// Show what tracking this path would capture
+    /// List the files that tracking this path would save, without tracking it
     #[usage(long, value_name = "PATH")]
     preview: Option<PathBuf>,
 
-    /// List the paths the watcher found changing constantly
+    /// List the paths the watcher found changing constantly and saves less often
     #[usage(long)]
     noisy: bool,
 }

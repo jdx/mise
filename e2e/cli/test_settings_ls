@@ -21,7 +21,7 @@ assert_contains "mise settings --json-extended" "{
   \"all_compile\": {
     \"value\": false,
     \"type\": \"boolean\",
-    \"description\": \"do not use precompiled binaries for any tool\",
+    \"description\": \"Compile Node.js, Python, Ruby and Erlang from source instead of using precompiled builds.\",
     \"source\": \"$HOME/workdir/mise.toml\"
   },
   \"disable_backends\": {
@@ -30,7 +30,7 @@ assert_contains "mise settings --json-extended" "{
       \"java\"
     ],
     \"type\": \"array\",
-    \"description\": \"Backends to exclude from tool resolution and new installs, such as \`asdf\`, \`pypi\`, or a vfox-backend plugin name. Existing installations are left on disk and become available again if the backend is re-enabled.\",
+    \"description\": \"Backends mise ignores when resolving and installing tools, such as \`asdf\` or \`pypi\`.\",
     \"source\": \"$HOME/workdir/mise.toml\"
   }
 }"

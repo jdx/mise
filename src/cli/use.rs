@@ -27,53 +27,54 @@ use crate::{config, env, exit, file};
 /// Install a tool and add it to configuration
 ///
 /// Installs missing tool versions and records the requests in a config file.
-/// By default, mise selects the nearest directory with a supported config and writes
-/// to its lowest-precedence file, such as `mise.toml` rather than `mise.local.toml`.
-/// If no project config exists, it creates one in the current directory. Running from
-/// your home directory targets global configuration.
+/// By default, mise selects the nearest directory with a supported config and
+/// writes to its lowest-precedence file, such as `mise.toml` rather than
+/// `mise.local.toml`. If no project config exists, it creates one in the current
+/// directory. Run from your home directory, it writes to the global config.
 ///
-/// Use `--path` for an explicit file/directory, `--global` for personal defaults, or
-/// `--env` to write `mise.ENV.toml` in the current directory (preserving an existing
-/// `.mise.ENV.toml`). These selectors override one another; use one per command.
+/// Use `--path` for an explicit file or directory, `--global` for personal
+/// defaults, or `--env` to write `mise.ENV.toml` in the current directory (an
+/// existing `.mise.ENV.toml` is used instead). If you pass more than one, the
+/// last one wins.
 ///
 /// See https://mise.jdx.dev/configuration.html#target-file-for-write-operations
-/// for filename overrides and configuration precedence. Selection takes effect in
-/// an activated shell on its next prompt, or immediately in `mise exec` commands.
+/// for filename overrides and config precedence. The change takes effect in an
+/// activated shell at its next prompt, and immediately in `mise exec` commands.
 #[derive(Debug, Default, usage_rs::Args)]
 #[usage(
     verbatim_doc_comment,
     visible_alias = "u",
     example(
         r###"mise use"###,
-        help = r###"run with no arguments to use the interactive selector"###
+        help = r###"Choose tools from an interactive selector"###
     ),
     example(
-        r###"mise use node@20"###,
-        help = r###"set the current version of node to 20.x in the selected project config will write the fuzzy version (e.g.: 20)"###
+        r###"mise use node@24"###,
+        help = r###"Use node 24.x in the project config and record the request `24`"###
     ),
     example(
         r###"mise use --postinstall "mbx setup --defaults" mr-boxington"###,
-        help = r###"run a command after installing a tool"###
+        help = r###"Run a command after installing a tool"###
     ),
     example(
-        r###"mise use --postinstall "setup-a" tool-a --postinstall "setup-b" tool-b"###,
-        help = r###"associate a different postinstall command with each tool"###
+        r###"mise use --postinstall "corepack enable" node@24 --postinstall "python -m pip install -U pip" python@3.13"###,
+        help = r###"Give each tool its own postinstall command"###
     ),
     example(
         r###"mise use --tool-option mr_boxington=true rust mr-boxington"###,
-        help = r###"enable a Rust tool option while installing Rust and mbx"###
+        help = r###"Enable a Rust tool option while installing Rust and mbx"###
     ),
     example(
-        r###"mise use -g --pin node@20"###,
-        help = r###"set the current version of node to 20.x in ~/.config/mise/config.toml will write the precise version (e.g.: 20.0.0)"###
+        r###"mise use -g --pin node@24"###,
+        help = r###"Use node 24.x globally and record the exact version it resolves to"###
     ),
     example(
-        r###"mise use --env local node@20"###,
-        help = r###"writes mise.local.toml (preserving .mise.local.toml if it already exists)"###
+        r###"mise use --env local node@24"###,
+        help = r###"Write mise.local.toml (an existing .mise.local.toml is used instead)"###
     ),
     example(
-        r###"mise use --env staging node@20"###,
-        help = r###"writes mise.staging.toml (loaded with MISE_ENV=staging)"###
+        r###"mise use --env staging node@24"###,
+        help = r###"Write mise.staging.toml, which mise loads when MISE_ENV=staging"###
     ),
     unknown_flags = "error"
 )]
@@ -81,75 +82,80 @@ pub(crate) struct Use {
     #[usage(clause)]
     tools: Vec<UseTool>,
 
-    /// Create/modify an environment-specific config file like .mise.<env>.toml
+    /// Write mise.<ENV>.toml in the current directory, or .mise.<ENV>.toml if that exists
+    ///
+    /// Not the same as the global -E, which only chooses which config files
+    /// are loaded.
     #[usage(long, short, overrides = & ["global", "path"])]
     env: Option<String>,
 
-    /// Force reinstall even if already installed
+    /// Reinstall even if already installed
     #[usage(long, short, requires = "tool")]
     force: bool,
 
-    /// Use the global config file (`~/.config/mise/config.toml`) instead of the local one
+    /// Write to the global config instead of the project config
+    ///
+    /// Updates the global config file that already declares the tool, otherwise
+    /// the file set by the `write_targets.tools` setting, otherwise
+    /// ~/.config/mise/config.toml.
     #[usage(short, long, overrides = & ["path", "env"])]
     global: bool,
 
-    /// Number of jobs to run in parallel
-    /// Values below 1 are treated as 1
-    /// Defaults to the `jobs` setting
+    /// Number of jobs to run in parallel (default: the `jobs` setting)
     #[usage(long, short, env = "MISE_JOBS", verbatim_doc_comment)]
     jobs: Option<usize>,
 
-    /// Perform a dry run, showing what would be installed and modified without making changes
+    /// Show what would change without changing anything
     #[usage(long, short = 'n', verbatim_doc_comment)]
     dry_run: bool,
 
-    /// Specify a path to a config file or directory
+    /// Write to this config file, or to the config file in this directory
     ///
-    /// If a directory is specified, it will look for a config file in that directory following
-    /// the target-file selection rules.
+    /// For a directory, mise picks the file by the usual write-target rules.
     // No `--file` alias here: `-f` on this command is `--force`, so offering `--file`
     // invites `-f <path>`, which is a different action. See `mise unset --path` for the
     // commands where the short form is free.
     #[usage(short, long, overrides = & ["global", "env"], value_hint = usage_rs::ValueHint::FilePath)]
     path: Option<PathBuf>,
 
-    /// Like --dry-run but exits with code 1 if there are changes to make
+    /// Like --dry-run, but exit with code 1 if there are changes to make
     ///
-    /// This is useful for scripts to check if tools need to be added or removed.
-    #[usage(long, verbatim_doc_comment)]
+    /// Use it in scripts that check whether tools need to be added or removed.
+    #[usage(long)]
     dry_run_code: bool,
 
-    /// Save fuzzy version to config file
+    /// Write the version as requested, such as `20` for node@20
     ///
-    /// e.g.: `mise use --fuzzy node@20` will save `20` as the version.
-    /// This is the default behavior unless `MISE_PIN=1`
-    #[usage(long, verbatim_doc_comment, overrides = "pin")]
+    /// This is the default unless the `pin` setting is on.
+    #[usage(long, overrides = "pin")]
     fuzzy: bool,
 
     /// Only install versions released before this date or older than this duration
     ///
-    /// Supports absolute dates like "2024-06-01" and relative durations like "90d" or "1y".
-    #[usage(long, alias = "before", verbatim_doc_comment)]
+    /// Supports absolute dates such as "2024-06-01" and relative durations such as
+    /// "90d" or "1y".
+    #[usage(long, alias = "before")]
     minimum_release_age: Option<String>,
 
-    /// Save the resolved concrete version to the config file
+    /// Write the resolved version, such as `20.19.5` for node@20
     ///
-    /// If the request exactly matches an available release, that release is preferred over
-    /// installed fuzzy matches. Use `prefix:` to explicitly request recursive prefix matching.
-    /// e.g.: `mise use --pin node@20` will save the resolved `20.x.y` version
-    /// Set `MISE_PIN=1` to make this the default behavior
+    /// If the request exactly matches an available release, mise uses that release
+    /// rather than an installed version that only matches it as a prefix.
+    /// Write `prefix:` before the version, as in `node@prefix:20`, to force prefix
+    /// matching. Make this the default with the `pin` setting (`MISE_PIN=1`).
     ///
-    /// Consider using mise.lock as a better alternative to pinning in mise.toml:
-    /// https://mise.jdx.dev/configuration/settings.html#lockfile
-    #[usage(long, verbatim_doc_comment, overrides = "fuzzy")]
+    /// To record exact versions without editing mise.toml, use a lockfile:
+    /// https://mise.jdx.dev/dev-tools/mise-lock.html
+    #[usage(long, overrides = "fuzzy")]
     pin: bool,
 
-    /// Connect backend install command stdin/stdout/stderr directly to the terminal.
-    /// Implies `--jobs=1`
+    /// Connect the install commands' stdin, stdout, and stderr to the terminal
+    ///
+    /// Implies `--jobs=1`.
     #[usage(long, overrides = "jobs")]
     raw: bool,
 
-    /// Remove the tool(s) from config file
+    /// Remove these tools from the config file
     #[usage(long, value_name = "TOOL", aliases = ["rm", "unset"])]
     remove: Vec<BackendArg>,
 }
@@ -160,18 +166,17 @@ struct UseTool {
     #[usage(long, value_name = "COMMAND")]
     postinstall: Option<String>,
 
-    /// Set an option for this tool (repeat for multiple options).
-    /// Values use inline tool-option types; unquoted text is treated as a string.
-    /// Place these flags before the tool they apply to.
-    #[usage(long, value_name = "KEY=VALUE", verbatim_doc_comment)]
+    /// Set an option for the tool that follows; repeat for several options
+    ///
+    /// Values use inline tool-option types; unquoted text is a string.
+    /// Put these flags before the tool they apply to.
+    #[usage(long, value_name = "KEY=VALUE")]
     tool_option: Vec<String>,
 
-    /// Tool to add to config file
+    /// Tool to add to the config file, such as node@24, cargo:ripgrep@latest, or npm:prettier@3
     ///
-    /// e.g.: node@20, cargo:ripgrep@latest, npm:prettier@3
-    /// If no version is specified, it defaults to @latest
-    ///
-    /// Tool options can be set with this syntax:
+    /// Without a version, mise requests `latest`; with --pin it writes the resolved version.
+    /// Tool options can also be set inline:
     ///
     ///     mise use "cargo:ripgrep[features=pcre2]"
     #[usage(value_name = "TOOL@VERSION", verbatim_doc_comment)]

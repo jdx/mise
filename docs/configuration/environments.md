@@ -50,8 +50,11 @@ lowest precedence:
 
 To select several environments, separate them with commas:
 `mise -E ci,test run build` or `MISE_ENV=ci,test`. When two selected
-environments set the same value in one directory, the last one wins. Run
-`mise -E ci,test config` to see the combined selection.
+environments set the same value in one directory, the last one wins among files
+of the same kind, but a local file still overrides every shared one (see
+[File names and precedence](#file-names-and-precedence)): with `ci,test`,
+`mise.ci.local.toml` overrides `mise.test.toml`. Run `mise -E ci,test config` to
+see the combined selection.
 
 ### Set a default in .miserc.toml {#setting-mise-env-in-miserc-toml}
 
@@ -74,23 +77,27 @@ In a project directory, a file higher in this table overrides one lower down:
 | File                    | Use                                                   |
 | ----------------------- | ----------------------------------------------------- |
 | `mise.<env>.local.toml` | Personal overrides for one environment, not committed |
-| `mise.<env>.toml`       | Shared config for one environment                     |
 | `mise.local.toml`       | Personal overrides, not committed                     |
+| `mise.<env>.toml`       | Shared config for one environment                     |
 | `mise.toml`             | Shared config                                         |
 
-So `mise.production.toml` overrides `mise.local.toml` when the `production`
-environment is selected. Add `mise.local.toml` and `mise.*.local.toml` to
-`.gitignore`.
+So your `mise.local.toml` overrides a committed `mise.production.toml` when the
+`production` environment is selected. To override a value for one environment
+only, put it in `mise.production.local.toml`. Add `mise.local.toml` and
+`mise.*.local.toml` to `.gitignore`.
 
 The other project locations take environment names the same way, such as
 `mise/config.<env>.toml`, `.mise/config.<env>.toml`, and
 `.config/mise.<env>.toml`; see [Config file locations](/configuration.html#mise-toml).
-Every environment file overrides every file without an environment in the same
-directory.
+In the same directory, environment files such as `mise/config.<env>.toml`
+override every shared file without an environment, local files such as
+`mise/config.local.toml` override both, and environment local files such as
+`mise/config.<env>.local.toml` override all of them. Within each of these
+layers, a later selected environment wins.
 
 The global config directory (`~/.config/mise`) uses `config.<env>.toml` and
-`config.<env>.local.toml`, and its order differs: there, `config.local.toml`
-overrides `config.<env>.toml`.
+`config.<env>.local.toml` in the same order, so `config.local.toml` overrides
+`config.<env>.toml`.
 
 If [`override_config_filenames`](/configuration/settings.html#override_config_filenames)
 is set, its filenames replace `mise.toml`, `mise.local.toml`, and the other
@@ -186,7 +193,9 @@ their `.local.toml` variants, and mise selects matching lockfiles such as
 
 Platform environments have lower precedence than environments you select. From
 lowest to highest: `unix`, `{os}`, `{os}-{arch}`, then your `-E` or `MISE_ENV`
-entries. They affect only config file discovery and lockfile selection, so
+entries. As with several selected environments, this order applies among files
+of the same kind, so `mise.linux.local.toml` still overrides `mise.ci.toml`.
+They affect only config file discovery and lockfile selection, so
 <code v-pre>{{ mise_env }}</code> and the `MISE_ENV` variable passed to tasks
 list only the environments you selected.
 

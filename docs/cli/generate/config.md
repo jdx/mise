@@ -6,28 +6,36 @@ description: "Generate a mise.toml file"
 # `mise generate config`
 
 - **Usage:** `mise generate config [FLAGS] [PATH]`
-- **Effect:** modifies state
+- **Effect:** destructive — may delete or irreversibly overwrite
 - **Source code:** [`src/cli/generate/config.rs`](https://github.com/jdx/mise/blob/main/src/cli/generate/config.rs)
 
 Generate a mise.toml file
 
+Same as `mise edit`, which has the details. It opens the interactive editor, or
+without an interactive terminal (or with --yes) writes a commented starter
+template. That template replaces PATH if the file already exists.
+
 ## Arguments
-- **`[PATH]`** — Path to the config file to create
+- **`[PATH]`** — Config file to edit or create; defaults to mise.toml
 
 ## Flags
 - **`-g --global`** — Generate the global config file (~/.config/mise/config.toml)
-- **`-n --dry-run`** — Show what would be generated without writing to file
-- **`-t --tool-versions <TOOL_VERSIONS>`** — Path to a .tool-versions file to import tools from
+- **`-n --dry-run`** — Print the result instead of writing it to the file
+- **`-t --tool-versions <FILE>`** — Copy the tools from this .tool-versions file into the config, without opening the editor
 - **`-h --help`** — Print help
 
 ## Examples
 
+Edit mise.toml in the current directory
+
 ```
-mise generate config             # generate mise.toml interactively
-mise generate config .mise.toml  # generate a specific file
-mise generate config -g          # generate the global config file
-mise generate config -y          # skip interactive editor
-mise generate config -n          # preview without writing
+mise generate config
+```
+
+Print the result instead of writing it
+
+```
+mise generate config -n
 ```
 
 <!-- generated reference navigation -->

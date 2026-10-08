@@ -7,7 +7,8 @@ use crate::config::Config;
 #[usage(
     example(
         r###"mise shell-alias get ll
-ls -la"###
+ls -la"###,
+        help = "Print the command that ll runs"
     ),
     verbatim_doc_comment
 )]

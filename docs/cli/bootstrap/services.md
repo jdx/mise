@@ -11,13 +11,36 @@ description: "Manage services from `[bootstrap.services]`"
 
 Manage services from `[bootstrap.services]`
 
-System-scope entries (the default) converge existing Linux systemd system
-units. `scope = "user"` entries are services mise defines for the current
-user on every platform: a systemd user unit on Linux, a LaunchAgent on
-macOS, a Scheduled Task on Windows.
+System-scope entries, the default for entries without `builtin`, start,
+stop, enable, disable, or mask systemd units that already exist on Linux.
+User-scope entries (`scope = "user"`, or any `builtin` service) define a
+service for the current user on every platform: a systemd user unit on
+Linux, a LaunchAgent on macOS, or a Scheduled Task on Windows. For options
+that only one platform has, see `mise bootstrap linux systemd-units` and
+`mise bootstrap macos launchd-agents`.
 
 ## Flags
 - **`-h --help`** — Print help
+
+## Examples
+
+Show the state of every declared service
+
+```
+mise bootstrap services status
+```
+
+Show what would change
+
+```
+mise bootstrap services apply --dry-run
+```
+
+Uninstall a user service
+
+```
+mise bootstrap services remove mise-history
+```
 
 ## Subcommands
 

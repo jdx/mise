@@ -90,20 +90,23 @@ impl SelfUpdateSource {
     }
 }
 
-/// Display the version of mise
+/// Show the version of mise
 ///
-/// Displays the version, os, architecture, and the date of the build.
-///
-/// If the version is out of date, it will display a warning.
+/// Prints the version, OS, architecture, and build date, and warns when a newer
+/// release is available. `mise --version`, `mise -V`, and `mise -v` with no
+/// other arguments print the same line.
 #[derive(Debug, usage_rs::Args)]
 #[usage(
     verbatim_doc_comment,
     visible_alias = "v",
     example(
         r###"mise version
-mise --version
-mise -v
-mise -V"###
+2026.10.4 linux-x64 (2026-10-07)"###,
+        help = "Show the version"
+    ),
+    example(
+        r###"mise version --json"###,
+        help = "Also show the latest release and the build time, as JSON"
     )
 )]
 pub(crate) struct Version {

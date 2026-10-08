@@ -11,11 +11,9 @@ description: "Reverse the tracked-file changes from an operation"
 
 Reverse the tracked-file changes from an operation
 
-Restores exactly the paths that operation changed from the protective
-checkpoint it took, leaving everything else as it is now. Without a
-reference, the newest operation not yet undone is reversed.
-Bootstrap, captured commands, rollback, undo, and pull are supported.
-Package installations, service state, and untracked files are not reversed.
+Restores exactly the paths that an operation changed from the checkpoint it saved first, and leaves everything else as it is now. Without a reference, reverses the newest operation that has not been undone.
+
+Works for operations that changed tracked files: `mise bootstrap`, `mise dot add`, `apply`, `edit`, `unapply`, `capture`, `rollback`, `pull` (including changes the watcher applied), and `undo` itself. Package installations, service state, and untracked files are not reversed.
 
 ## Arguments
 - **`[REF]`** — The operation's checkpoint: numeric ID, `latest`, `latest~N`, or `commit:<sha>`
@@ -24,6 +22,26 @@ Package installations, service state, and untracked files are not reversed.
 - **`-n --dry-run`** — Show the plan without changing anything
 - **`-y --yes`** — Apply without prompting
 - **`-h --help`** — Print help
+
+## Examples
+
+Reverse the newest operation
+
+```
+mise dot undo
+```
+
+Show what would be restored
+
+```
+mise dot undo --dry-run
+```
+
+Reverse the operation recorded as checkpoint 42
+
+```
+mise dot undo 42
+```
 
 <!-- generated reference navigation -->
 

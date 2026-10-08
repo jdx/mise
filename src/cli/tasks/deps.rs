@@ -9,16 +9,15 @@ use eyre::{Result, eyre};
 use itertools::Itertools;
 use petgraph::dot::Dot;
 
-/// Display a tree visualization of a dependency graph
+/// Show the dependency tree of tasks
 ///
-/// The graph is built from declared dependencies: `depends`, `depends_post`,
+/// The tree is built from declared dependencies: `depends`, `depends_post`,
 /// and `wait_for`. Task references inside a `run` or `run_windows` array
 /// (`{ task = "..." }` or `{ tasks = [...] }`) are execution steps, not graph
 /// edges, so they do not appear here. Those nested tasks still run, including
 /// their own `depends`.
 #[derive(Debug, usage_rs::Args)]
 #[usage(
-    verbatim_doc_comment,
     example(
         r###"mise tasks deps"###,
         help = r###"Show dependencies for all tasks"###
@@ -38,10 +37,7 @@ use petgraph::dot::Dot;
     unknown_flags = "error"
 )]
 pub(super) struct TasksDeps {
-    /// Tasks to show dependencies for
-    /// Can specify multiple tasks by separating with spaces
-    /// e.g.: mise tasks deps lint test check
-    #[usage(verbatim_doc_comment)]
+    /// Tasks to show (default: all tasks)
     pub tasks: Option<Vec<String>>,
 
     /// Collapse repeated dependencies after their first occurrence

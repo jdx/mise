@@ -89,7 +89,9 @@ pub(super) const EFFECTS: &[(&str, SpecCommandEffect)] = &[
     ("bootstrap systemd apply", Write),
     ("bootstrap systemd status", Read),
     ("bootstrap dotfiles add", Write),
-    ("bootstrap dotfiles apply", Write),
+    // Removes `mode = "absent"` targets, `--prune` orphans and empty
+    // `remove_empty` templates, and can replace modified copies.
+    ("bootstrap dotfiles apply", Destructive),
     ("bootstrap dotfiles conflicts", Read),
     ("bootstrap dotfiles diff", Read),
     ("bootstrap dotfiles edit", Write),
@@ -196,7 +198,8 @@ pub(super) const EFFECTS: &[(&str, SpecCommandEffect)] = &[
     ("doctor path", Read),
     ("dotfiles", Read),
     ("dotfiles add", Write),
-    ("dotfiles apply", Write),
+    // Same as `bootstrap dotfiles apply`: it can delete and replace files.
+    ("dotfiles apply", Destructive),
     ("dotfiles conflicts", Read),
     ("dotfiles diff", Read),
     ("dotfiles edit", Write),
@@ -222,13 +225,16 @@ pub(super) const EFFECTS: &[(&str, SpecCommandEffect)] = &[
     ("dotfiles undo", Destructive),
     ("dotfiles untrack", Write),
     ("dotfiles watch", Write),
-    ("edit", Write),
+    // Without a terminal, or with --yes, it writes a starter template over the
+    // target file, replacing an existing config.
+    ("edit", Destructive),
     ("env", Read),
     ("fmt", Write),
     ("generate", Read),
     // Deprecated spelling of `generate install-script`.
     ("generate bootstrap", Write),
-    ("generate config", Write),
+    // Runs `mise edit`, so it can replace an existing config the same way.
+    ("generate config", Destructive),
     ("generate devcontainer", Write),
     ("generate git-pre-commit", Write),
     ("generate github-action", Write),
@@ -236,7 +242,6 @@ pub(super) const EFFECTS: &[(&str, SpecCommandEffect)] = &[
     ("generate task-docs", Write),
     ("generate task-stubs", Write),
     ("generate tool-stub", Write),
-    // Removes the mise CLI and every tool, plugin and cache it owns.
     ("github", Read),
     ("github token", Read),
     // Writes the global config after setting the version.
@@ -250,7 +255,9 @@ pub(super) const EFFECTS: &[(&str, SpecCommandEffect)] = &[
     // Removes the mise CLI and every tool, plugin and cache it owns.
     ("implode", Destructive),
     ("install", Write),
-    ("install-into", Write),
+    // Deletes the contents of a non-empty destination after a confirmation,
+    // which can be any files the user put there.
+    ("install-into", Destructive),
     ("installs", Read),
     ("installs ls", Read),
     ("installs migrate", Write),

@@ -11,21 +11,20 @@ description: "[experimental] Build an OCI image and push it to a registry"
 
 [experimental] Build an OCI image and push it to a registry
 
-Pushes with mise's built-in registry client — no skopeo/crane/docker
-required. If `--image-dir` is not passed, builds fresh from the current
-mise.toml first. Only blobs the registry doesn't already have are
-uploaded, so repeat pushes of mostly-unchanged toolsets are cheap.
+Builds from the project's config, as `mise oci build` does, unless
+`--image-dir` names an image layout built earlier. Then uploads only the
+blobs the registry does not already have. mise pushes with its own registry
+client, so skopeo, crane, and docker are not needed.
 
 Tool layers whose tool, version, mount point, and file owner match the
 previously pushed image (or `--cache-from`) are reused without being
-rebuilt — those tools don't even need to be installed locally. Pass
-`--no-cache` to rebuild tool layers without using the remote or local layer cache.
+rebuilt, so those tools need not be installed locally. Pass `--no-cache` to
+rebuild every tool layer.
 
-Credentials are read from the same places docker and podman use:
-`$REGISTRY_AUTH_FILE`, `$XDG_RUNTIME_DIR/containers/auth.json`,
-`~/.config/containers/auth.json`, and `~/.docker/config.json`
-(including credential helpers) — so `docker login` / `podman login`
-is all the setup needed.
+Credentials come from the files docker and podman use: `$REGISTRY_AUTH_FILE`,
+`$XDG_RUNTIME_DIR/containers/auth.json`, `~/.config/containers/auth.json`,
+then `~/.docker/config.json`, including inline auths and credential helpers.
+Log in with `docker login` or `podman login`.
 
 Requires `mise settings experimental=true` (or `MISE_EXPERIMENTAL=1`).
 
@@ -33,20 +32,26 @@ Requires `mise settings experimental=true` (or `MISE_EXPERIMENTAL=1`).
 - **`<REF>`** — Destination registry reference (e.g. `ghcr.io/me/devenv:latest`)
 
 ## Flags
-- **`--cache-from <REF>`** — Reuse unchanged tool layers from this image instead of the destination ref
+- **`--cache-from <REF>`** — Reuse unchanged tool layers from this image instead of the destination's current tag
 
-  Must live in the same repository as the destination. Useful when each push gets a unique tag (e.g. per-commit tags in CI): `--cache-from ghcr.io/me/dev:latest ghcr.io/me/dev:$SHA`.
-- **`--from <FROM>`** — Base image for the build (ignored with --image-dir)
-- **`--image-dir <IMAGE_DIR>`** — Push an already-built OCI image layout (skip the build step)
-- **`--include-global`** — Also include tools from the global / system config (default: project-only)
+  Must be in the same repository as the destination. Useful when every push gets a new tag, as with per-commit tags in CI: `mise oci push --cache-from ghcr.io/me/dev:latest ghcr.io/me/dev:$SHA`. Cannot be combined with --no-cache.
+- **`--from <FROM>`** — Base image for the build
+
+  Overrides [oci].from and the oci.default_from setting.
+- **`--image-dir <IMAGE_DIR>`** — Push an existing OCI image layout instead of building one
+
+  Cannot be combined with --cache-from, --from, --include-global, --mount-point, --no-mise, or --owner.
+- **`--include-global`** — Also package tools from the global and system configs
 
   See `mise oci build --help` for details.
-- **`--mount-point <MOUNT_POINT>`** — Override in-image mount point (ignored with --image-dir)
-- **`--no-cache`** — Rebuild tool layers without using the remote or local layer cache
-- **`--no-mise`** — Don't embed the mise binary (ignored with --image-dir)
-- **`--owner <UID[:GID]>`** — UID[:GID] to assign to every tar entry when building (conflicts with --image-dir)
+- **`--mount-point <MOUNT_POINT>`** — Where tools install inside the image
 
-  Overrides [oci].user_id / [oci].group_id. Defaults to 0:0. If GID is omitted, it defaults to UID. This affects file ownership only; [oci].user controls the image USER directive.
+  Overrides [oci].mount_point and the oci.default_mount_point setting.
+- **`--no-cache`** — Rebuild tool layers without using the remote or local layer cache
+- **`--no-mise`** — Do not embed the running mise binary at /usr/local/bin/mise
+- **`--owner <UID[:GID]>`** — UID[:GID] to assign to every tar entry when building
+
+  Overrides [oci].user_id and [oci].group_id. Defaults to 0:0. If GID is omitted, it defaults to UID. This affects file ownership only; [oci].user controls the image USER directive.
 - **`--update-index`** — Maintain the tag as a multi-arch image index
 
   Pushes this build's manifest by digest and points the tag at an OCI image index containing one entry per platform, preserving entries other architectures pushed. Run `mise oci push --update-index` from one runner per platform to assemble a multi-arch tag.
@@ -54,28 +59,17 @@ Requires `mise settings experimental=true` (or `MISE_EXPERIMENTAL=1`).
 
 ## Examples
 
-Build and push to GHCR:
+Build and push to GHCR
 
 ```
 mise oci push ghcr.io/me/devenv:latest
 ```
 
-Push an image built earlier:
+Push an image built earlier
 
 ```
 mise oci build -o ./img
 mise oci push --image-dir ./img ghcr.io/me/devenv:v1
-```
-
-Auth:
-
-```
-Credentials are resolved the same way docker/podman resolve them:
-$REGISTRY_AUTH_FILE, $XDG_RUNTIME_DIR/containers/auth.json,
-~/.config/containers/auth.json, then ~/.docker/config.json
-(inline auths and credential helpers). Log in with either:
-$ docker login ghcr.io
-$ podman login ghcr.io
 ```
 
 <!-- generated reference navigation -->

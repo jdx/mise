@@ -3,22 +3,30 @@ use eyre::{Result, bail};
 use crate::system::history::sync::SyncMode;
 use crate::system::history::sync::origin;
 
-/// Connect or disconnect the setup repository
+/// Show, connect, or disconnect the origin repository
 ///
-/// `set <url>` connects the ordinary tracked-file repository to an origin.
-/// All committed history becomes eligible for synchronization, including
-/// intermediate commits made before connecting. Preview the sync mode and
-/// tracked paths before confirming. Encrypted-file policy is checked across
-/// every reachable commit; unrelated histories are never replaced.
-/// The connection is written to machine-local `[history.origin]` configuration;
-/// the mode is `settings.history.sync`.
+/// The origin is a Git repository that shares the history of your tracked
+/// files with your other machines. With no subcommand, prints the connected
+/// URL, its branch, the config file that declares it, and the sync mode (the
+/// `history.sync` setting). `--remove` disconnects; local checkpoints and
+/// fetched history stay.
+///
+/// See https://mise.jdx.dev/dotfiles/sync.html
 #[derive(Debug, usage_rs::Args)]
-#[usage(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+#[usage(
+    example("mise dot origin", help = "Show the connected repository"),
+    example(
+        "mise dot origin set git@github.com:you/dotfiles.git",
+        help = "Connect a repository"
+    ),
+    example("mise dot origin --remove", help = "Disconnect the repository")
+)]
 pub(crate) struct DotfilesOrigin {
     #[usage(subcommand)]
     command: Option<DotfilesOriginCommands>,
 
-    /// Disconnect: remove `[history.origin]` (local checkpoints and fetched refs stay)
+    /// Disconnect the origin by removing `[history.origin]`; local checkpoints and
+    /// fetched history stay
     #[usage(long, effect = "destructive")]
     remove: bool,
 }
@@ -28,25 +36,45 @@ enum DotfilesOriginCommands {
     Set(DotfilesOriginSet),
 }
 
-/// Connect a setup repository
+/// Connect an origin repository
+///
+/// Use a private repository: every saved checkpoint is shared, including those
+/// saved before you connect. mise shows the sync mode and the tracked files
+/// before you confirm, then runs the first sync. It never replaces a repository
+/// that has unrelated history, and it refuses to push older plaintext versions
+/// of files you now encrypt. The connection is written to `[history.origin]` in
+/// `config.local.toml` next to your global config, so it stays on this machine.
 #[derive(Debug, usage_rs::Args)]
+#[usage(
+    example(
+        "mise dot origin set https://github.com/you/dotfiles.git",
+        help = "Connect and choose a sync mode at the prompt"
+    ),
+    example(
+        "mise dot origin set git@github.com:you/dotfiles.git --sync manual",
+        help = "Connect without automatic network activity"
+    )
+)]
 pub(crate) struct DotfilesOriginSet {
-    /// The repository url (any git url; a private repository is recommended)
+    /// The repository URL (any Git URL; use a private repository)
     url: String,
 
-    /// The setup branch (default: the repository's own default branch)
+    /// The branch to sync (default: the repository's default branch)
     ///
     /// Reconnecting a repository this machine already follows keeps that
-    /// connection's branch. A repository with no branches at all takes `main`,
-    /// which the first publication creates.
+    /// connection's branch. A repository with no branches gets `main`, which the
+    /// first push creates.
     #[usage(long, value_name = "BRANCH")]
     branch: Option<String>,
 
-    /// How the repository is used: sync, fetch-only, or manual
+    /// How to sync with the repository: sync, fetch-only, or manual
     ///
-    /// Prompts when omitted. With --yes, accepts the configured mode (default: sync),
-    /// including automatic publication and incoming writes. Use --sync manual
-    /// to keep automatic local history without automatic network activity.
+    /// `sync` pushes saved checkpoints and applies incoming changes
+    /// automatically. `fetch-only` fetches automatically and never pushes.
+    /// `manual` makes no automatic network calls: `mise dot sync` pushes and
+    /// fetches, and `mise dot pull` applies, only when you run them; local
+    /// history is still saved automatically. When omitted, mise prompts; with
+    /// `--yes`, it uses the `history.sync` setting.
     #[usage(long, value_name = "MODE")]
     sync: Option<String>,
 
@@ -123,13 +151,3 @@ impl DotfilesOriginSet {
         .await
     }
 }
-
-static AFTER_LONG_HELP: &str = color_print::cstr!(
-    r#"<bold><underline>Examples:</underline></bold>
-
-    $ <bold>mise dot origin set https://github.com/you/setup.git</bold>
-    $ <bold>mise dot origin set git@github.com:you/setup.git --sync manual</bold>
-    $ <bold>mise dot origin</bold>              # what is connected
-    $ <bold>mise dot origin --remove</bold>
-"#
-);

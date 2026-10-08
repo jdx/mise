@@ -14,25 +14,28 @@ use std::{
 };
 use tokio::sync::OnceCell;
 
-/// Install a tool version to a specific path
+/// Install a tool version into a directory outside mise
 ///
-/// Used for building a tool to a directory for use outside of mise
+/// Downloads or builds TOOL@VERSION into PATH for use without mise. mise does not
+/// track the result, so it does not appear in `mise ls`.
+///
+/// If PATH is not empty, mise asks before deleting its contents; --yes deletes
+/// them without asking.
 #[derive(Debug, usage_rs::Args)]
 #[usage(
     verbatim_doc_comment,
     example(
-        r###"mise install-into node@20.0.0 ./mynode && ./mynode/bin/node -v
-v20.0.0"###,
-        help = r###"install node@20.0.0 into ./mynode"###
+        r###"mise install-into node@24 ./mynode && ./mynode/bin/node -v
+v24.11.0"###,
+        help = r###"Install node 24 into ./mynode and run it"###
     )
 )]
 pub(crate) struct InstallInto {
-    /// Tool to install
-    /// e.g.: node@20
+    /// Tool and version to install, such as `node@24`
     #[usage(value_name = "TOOL@VERSION")]
     tool: ToolArg,
 
-    /// Path to install the tool into
+    /// Directory to install into; its existing contents are deleted
     #[usage(value_hint = ValueHint::DirPath)]
     path: PathBuf,
 }

@@ -8,13 +8,10 @@ mod activate;
 mod envrc;
 mod exec;
 
-/// Output direnv function to use mise inside direnv
+/// Print `use_mise`, a direnv function that loads mise inside direnv
 ///
-/// See https://mise.jdx.dev/direnv.html for more information
-///
-/// Because this generates the idiomatic files based on currently installed plugins,
-/// you should run this command after installing new plugins. Otherwise
-/// direnv may not know to update environment variables when idiomatic file versions change.
+/// Running mise inside direnv is unsupported. To move a project from direnv to mise,
+/// see https://mise.jdx.dev/direnv.html.
 #[derive(Debug, usage_rs::Args)]
 #[usage(hide = true, verbatim_doc_comment)]
 pub(crate) struct Direnv {

@@ -14,27 +14,27 @@ List the installations of the identity install layout
 
 Every installation is listed separately, so variants of one version (made
 with different options, or pinned to different artifacts by lockfiles) can
-be told apart. The status column says which installation requests without
-a lockfile use (`selected`), which a lockfile adopted (`pinned`), and which
-live in a read-only shared installs directory (`shared`).
+be told apart. The Status column marks the installation mise uses when no
+lockfile pins one (`selected`), installations a lockfile pins (`pinned`), and
+installations in a read-only shared installs directory (`shared`).
 
 ## Arguments
 - **`[TOOL]…`** — Only show the installations of these tools
 
 ## Flags
 - **`-J --json`** — Output in JSON format
-- **`--no-header`** — Don't display headers
+- **`--no-header`** — Do not print the table header
 - **`-h --help`** — Print help
 
 ## Examples
 
-Every installation in the identity layout
+List every installation in the identity layout
 
 ```
 mise installs ls
 ```
 
-The installations of node, as JSON
+List the installations of node as JSON
 
 ```
 mise installs ls node --json

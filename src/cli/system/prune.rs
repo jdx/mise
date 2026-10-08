@@ -11,30 +11,43 @@ use crate::system::packages::brew;
 use crate::system::packages::plugin::PackagePluginManager;
 use crate::ui::prompt;
 
-/// Prune installed system packages no longer declared in `[bootstrap.packages]`
+/// Uninstall packages that no config declares
 ///
-/// Supports Homebrew formulae, conservatively removable mise-owned casks, and
-/// packages installed by package plugins that implement `PackageUninstall`.
-/// Pruning keeps packages needed by the current config or by trusted, loadable
-/// tracked configs. Plugin packages that were already installed before mise
-/// first applied them are never claimed or removed.
+/// For `brew` (the default), removes every linked formula that is neither
+/// declared nor needed by a declared formula or cask, including formulae you
+/// installed with Homebrew itself. Run with `--dry-run` first, or record
+/// existing formulae with `mise bootstrap packages import`.
+///
+/// For `brew-cask`, removes only casks mise installed and can prove are
+/// unchanged. For a package plugin that supports uninstalling, removes only
+/// packages mise installed. A package is kept while the current config, or any
+/// trusted config mise has tracked, still declares it.
 #[derive(Debug, usage_rs::Args)]
 #[usage(
     verbatim_doc_comment,
     example(
-        r###"mise bootstrap packages prune --manager brew
-mise bootstrap packages prune --manager brew --dry-run
-mise bootstrap packages prune --manager brew --yes
-mise bootstrap packages prune --manager brew-cask --dry-run
-mise bootstrap packages prune --manager vscode --dry-run"###
+        "mise bootstrap packages prune --dry-run",
+        help = "Preview which Homebrew formulae would be removed"
+    ),
+    example(
+        "mise bootstrap packages prune --yes",
+        help = "Remove them without a prompt"
+    ),
+    example(
+        "mise bootstrap packages prune --manager brew-cask --dry-run",
+        help = "Preview which casks would be removed"
+    ),
+    example(
+        "mise bootstrap packages prune --manager vscode --dry-run",
+        help = "Preview removals for a package plugin named vscode"
     )
 )]
 pub(crate) struct SystemPrune {
-    /// Only prune packages for this manager
+    /// Package manager to prune: `brew`, `brew-cask`, or a package plugin
     #[usage(long, short, default = "brew")]
     manager: String,
 
-    /// Print what would be removed without deleting anything
+    /// Show what would be removed without removing anything
     #[usage(long, short = 'n')]
     dry_run: bool,
 

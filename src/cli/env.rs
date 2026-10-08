@@ -20,20 +20,27 @@ use indexmap::IndexSet;
 ///
 /// JSON, dotenv, and shell output contain actual variable values, including secrets.
 /// `--redacted` selects variables marked for redaction; it does not mask their values.
-/// Environment construction may install missing tools according to mise's settings.
+/// Tools you pass as TOOL@VERSION arguments are installed first if they are missing;
+/// missing tools from the config are reported, not installed.
 #[derive(Debug, usage_rs::Args)]
 #[usage(
     visible_alias = "e",
     verbatim_doc_comment,
     example(
-        r###"eval "$(mise env -s bash)"
-eval "$(mise env -s zsh)"
-mise env -s fish | source
-execx($(mise env -s xonsh))"###
+        r#"eval "$(mise env -s bash)""#,
+        help = "Load the environment once into the current bash session"
+    ),
+    example(r#"eval "$(mise env -s zsh)""#, help = "Same, for zsh"),
+    example("mise env -s fish | source", help = "Same, for fish"),
+    example("execx($(mise env -s xonsh))", help = "Same, for xonsh"),
+    example("mise env --json", help = "Print the variables as JSON"),
+    example(
+        "mise env --dotenv > .env",
+        help = "Write a dotenv file; it contains secret values"
     )
 )]
 pub(crate) struct Env {
-    /// Tool(s) to include in addition to those in config, e.g. node@20
+    /// Tools to include in addition to those in the config, such as `node@24`
     #[usage(value_name = "TOOL@VERSION")]
     tool: Vec<ToolArg>,
 

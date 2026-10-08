@@ -13,38 +13,57 @@ pub(crate) struct BootstrapApplyReport {
     pub skipped_reason: Option<String>,
 }
 
-/// Apply system packages from `[bootstrap.packages]`
+/// Install or remove packages to match `[bootstrap.packages]`
 ///
-/// Checks which configured packages are missing and installs them with the
-/// system package manager. Built-in system managers may elevate with sudo when
-/// not running as root (see `system_packages.sudo`); package plugins never do.
+/// Installs each configured package that is missing or does not match its
+/// declared version, and removes packages declared `state = "absent"` on the
+/// managers that support removal (pacman, scoop, and zypper). On other
+/// managers, an installed package declared absent is left in place with a
+/// warning; `apply` fails for it only when you pass `--manager` or name the
+/// package.
+/// Built-in managers may use sudo when not running as root (see the
+/// `system_packages.sudo` setting); package plugins never do. Managers that
+/// are not available on this machine are skipped.
 ///
-/// Packages can also be given explicitly in `manager:package` form (e.g.
-/// `apk:zlib-dev`, `apt:curl`, `brew:jq`, `winget:BurntSushi.ripgrep.MSVC`);
-/// they are installed whether or not they appear in the config. Explicit packages and `--manager` scope the run to packages
-/// only. `install` is accepted as an alias for this command.
+/// Name packages as `manager:package`, for example `apt:curl` or `brew:jq`, to
+/// install them without adding them to config; use
+/// `mise bootstrap packages use` to record them as well. When you name packages
+/// or pass `--manager`, an unavailable manager is an error instead of a skip.
 #[derive(Debug, usage_rs::Args)]
 #[usage(
     visible_alias = "i",
     verbatim_doc_comment,
     example(
-        r###"mise bootstrap packages apply
-mise bootstrap packages apply brew:jq brew-cask:firefox winget:BurntSushi.ripgrep.MSVC
-mise bootstrap packages apply --dry-run
-mise bootstrap packages apply --manager apt --yes"###
+        "mise bootstrap packages apply",
+        help = "Install missing packages and remove ones declared absent"
+    ),
+    example(
+        "mise bootstrap packages apply --dry-run",
+        help = "Show what would change"
+    ),
+    example(
+        "mise bootstrap packages apply --manager apt --yes",
+        help = "Apply only apt packages, without a prompt"
+    ),
+    example(
+        "mise bootstrap packages apply apt:curl",
+        help = "On Debian or Ubuntu, install one package without adding it to config"
+    ),
+    example(
+        "mise bootstrap packages apply brew:jq brew-cask:firefox",
+        help = "On macOS, install a formula and a cask without adding them to config"
     )
 )]
 pub(crate) struct SystemInstall {
-    /// Packages in `manager:package` form; defaults to everything configured
-    /// in [bootstrap.packages]
+    /// Packages as `manager:package`; defaults to every package in `[bootstrap.packages]`
     #[usage(value_name = "PACKAGE")]
     packages: Vec<String>,
 
-    /// Only install packages for this built-in or plugin manager
+    /// Only apply packages for this built-in or plugin manager
     #[usage(long, short)]
     manager: Option<String>,
 
-    /// Print the commands that would run without running them
+    /// Show what would change without changing anything
     #[usage(long, short = 'n')]
     dry_run: bool,
 
@@ -52,7 +71,10 @@ pub(crate) struct SystemInstall {
     #[usage(long, short)]
     yes: bool,
 
-    /// Refresh package manager metadata first (apk: `--update-cache`, apt: `apt-get update`, zypper: `refresh`, winget: `source update`)
+    /// Refresh package manager metadata first, where the manager supports it
+    ///
+    /// For example, apt runs `apt-get update` and dnf adds `--refresh`. brew,
+    /// brew-cask, flatpak, flatpak-user, macos-app, and mas ignore this flag.
     #[usage(long)]
     update: bool,
 }

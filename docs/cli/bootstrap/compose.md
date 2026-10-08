@@ -11,11 +11,25 @@ description: "Manage Docker Compose projects from `[bootstrap.compose]`"
 
 Manage Docker Compose projects from `[bootstrap.compose]`
 
-Requires a working Docker engine and Compose command on the target host. `apply`
-reconciles declared project state; `status` inspects the existing projects.
+Needs a running Docker engine and the Docker Compose command on this
+machine.
 
 ## Flags
 - **`-h --help`** — Print help
+
+## Examples
+
+Show the state of every declared project
+
+```
+mise bootstrap compose status
+```
+
+Show what would change
+
+```
+mise bootstrap compose apply --dry-run
+```
 
 ## Subcommands
 

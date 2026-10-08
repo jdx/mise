@@ -15,41 +15,43 @@ use crate::{config, dirs, exit, file};
 
 /// Remove installed tool versions
 ///
-/// This only removes the installed version; it does not modify mise.toml.
-/// Use `mise unuse` to remove a tool from mise.toml and uninstall it.
+/// Removes installed versions but does not edit mise.toml. Use `mise unuse` to
+/// remove a tool from mise.toml and uninstall it. A tool name or version prefix,
+/// such as `node` or `node@22`, must match exactly one installed version unless
+/// you pass `--all`.
 #[derive(Debug, usage_rs::Args)]
 #[usage(
     verbatim_doc_comment,
     example(
-        r###"mise uninstall node@18.0.0"###,
-        help = r###"uninstall a specific version"###
+        r###"mise uninstall node@22.0.0"###,
+        help = r###"Uninstall a specific version"###
     ),
     example(
         r###"mise uninstall node"###,
-        help = r###"uninstall the current node version (if only one version is installed)"###
+        help = r###"Uninstall node when exactly one version is installed"###
     ),
     example(
         r###"mise uninstall --all node"###,
-        help = r###"uninstall every installed version of node"###
+        help = r###"Uninstall every installed version of node"###
     )
 )]
 pub(crate) struct Uninstall {
-    /// Tool(s) to remove
+    /// Tools to remove, such as node@22.0.0
     #[usage(value_name = "INSTALLED_TOOL@VERSION", required_unless = "all")]
     installed_tool: Vec<ToolArg>,
 
-    /// Delete all installed versions
+    /// Remove every installed version of the named tools, or of every tool when none is named
     #[usage(long, short)]
     all: bool,
 
-    /// Do not actually delete anything
+    /// Show what would change without changing anything
     #[usage(long, short = 'n')]
     dry_run: bool,
 
-    /// Like --dry-run but exits with code 1 if there are tools to uninstall
+    /// Like --dry-run, but exit with code 1 if there are tools to uninstall
     ///
-    /// This is useful for scripts to check if tools need to be uninstalled.
-    #[usage(long, verbatim_doc_comment)]
+    /// Use it in scripts that check whether tools need uninstalling.
+    #[usage(long)]
     dry_run_code: bool,
 }
 

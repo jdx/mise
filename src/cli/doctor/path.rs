@@ -2,18 +2,27 @@ use crate::Result;
 use crate::config::Config;
 use std::env;
 
-/// Print the current PATH entries mise is providing
+/// Print the directories mise adds to PATH
+///
+/// Lists tool bin directories and `_.path` entries from [env]. --full prints the
+/// whole PATH mise would set. `mise bin-paths` lists tool bin directories only.
 #[derive(Debug, usage_rs::Args)]
 #[usage(
     alias = "paths",
     verbatim_doc_comment,
     example(
-        "mise doctor path",
-        help = "Get the PATH entries mise provides, such as `/home/user/.local/share/mise/installs/node/24.0.0/bin`, `/home/user/.local/share/mise/installs/rust/1.90.0/bin`, and `/home/user/.local/share/mise/installs/python/3.10.0/bin`."
+        r###"mise doctor path
+/home/user/.local/share/mise/installs/node/24.11.0/bin
+/home/user/.local/share/mise/installs/python/3.13.1/bin"###,
+        help = "Print the directories mise adds to PATH"
+    ),
+    example(
+        "mise doctor path --full",
+        help = "Print the whole PATH mise would set"
     )
 )]
 pub(crate) struct Path {
-    /// Print all entries including those not provided by mise
+    /// Print every PATH entry, including those mise does not provide
     #[usage(long, short, verbatim_doc_comment)]
     full: bool,
 }

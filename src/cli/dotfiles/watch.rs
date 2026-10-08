@@ -9,40 +9,47 @@ use crate::system::history::watch::runtime::{self, WatchOptions};
 
 /// Save tracked files as they change
 ///
-/// Runs in the foreground: installs filesystem watches for every autosaved
-/// tracked entry, saves a checkpoint once a changed file has been quiet for
-/// `history.watch.debounce` (a file that keeps changing never delays the
-/// others; `history.watch.max_interval` saves it regardless), and
-/// reconciles the whole set at startup, every `history.watch.reconcile`,
-/// and when the configuration changes. Manual-save entries are never
-/// watched.
+/// Runs in the foreground and saves a checkpoint once a changed file has been
+/// quiet for `history.watch.debounce`. A file that keeps changing does not
+/// delay the others and is still saved every `history.watch.max_interval`. The
+/// watcher also rescans every tracked path at startup, every
+/// `history.watch.reconcile`, and when the configuration changes. Entries
+/// tracked with `--no-autosave` are not watched.
 ///
-/// With a connected setup repository the watcher also synchronizes per
-/// `settings.history.sync`: in `sync` mode it publishes within
-/// `history.sync_interval` after a save, fetches every
-/// `history.fetch_interval`, and applies incoming changes once the complete setup is conflict-free;
-/// in `fetch-only` mode it only fetches; in `manual` mode it does nothing
-/// on the network. A failed sync backs off and is retried while saving
-/// continues. `--once` runs one reconcile and one such synchronization.
+/// With an origin connected, the watcher also syncs according to the
+/// `history.sync` setting. In `sync` mode it pushes within
+/// `history.sync_interval` of a save, fetches every `history.fetch_interval`,
+/// and applies incoming changes when there are no conflicts. In `fetch-only`
+/// mode it only fetches; in `manual` mode it does not use the network. A
+/// failed sync is retried with backoff while saving continues. `--once` runs
+/// one rescan and one sync, then exits.
 ///
-/// The `history-watch` built-in service runs this for you:
+/// The built-in `history-watch` service runs this for you:
 ///
 ///     [bootstrap.services.mise-history]
 ///     builtin = "history-watch"
 ///
-/// Exit codes: 0 when history is disabled or another watcher already runs;
-/// 1 when git is unusable, the store cannot open, or no watch can be
-/// installed. A capture that fails is retried with backoff and never drops
-/// the pending changes; one that would overlap another history operation
-/// is deferred.
+/// Exits 0 when history is disabled or another watcher is already running,
+/// and 1 when Git is unusable, the store cannot be opened, or no watch can be
+/// installed. A failed save is retried with backoff and never drops the
+/// pending changes, and a save that would overlap another history operation
+/// is deferred. With `--once`, nothing is retried: a save that fails or is
+/// deferred, or a sync that fails, exits 1.
 #[derive(Debug, usage_rs::Args)]
-#[usage(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+#[usage(
+    example("mise dot watch", help = "Watch and save until stopped"),
+    example("mise dot watch --once", help = "Rescan and sync once, for a timer"),
+    example(
+        "mise dot watch --json",
+        help = "Print JSON lines instead of log lines"
+    )
+)]
 pub(crate) struct DotfilesWatch {
-    /// Reconcile and synchronize once and exit (for timers and cron)
+    /// Rescan and sync once, then exit (for timers and cron)
     #[usage(long)]
     once: bool,
 
-    /// One JSON object per line instead of log lines
+    /// Print one JSON object per line instead of log lines
     #[usage(long, short = 'J')]
     json: bool,
 }
@@ -183,12 +190,3 @@ impl Drop for LocalWatcher {
         }
     }
 }
-
-static AFTER_LONG_HELP: &str = color_print::cstr!(
-    r#"<bold><underline>Examples:</underline></bold>
-
-    $ <bold>mise dot watch</bold>
-    $ <bold>mise dot watch --once</bold>      # one reconcile, for a timer
-    $ <bold>mise dot watch --json</bold>
-"#
-);

@@ -3,14 +3,12 @@ use eyre::Result;
 use strum::IntoEnumIterator;
 
 /// List built-in backends
+///
+/// Backends that plugins add are listed by `mise plugins ls`.
 #[derive(Debug, usage_rs::Args)]
 #[usage(
     visible_alias = "list",
-    example(
-        r###"mise backends ls
-mise plugins ls"###,
-        help = r###"Installed plugin availability and built-in backends are separate lists"###
-    ),
+    example("mise backends ls", help = "List the backends built into mise"),
     verbatim_doc_comment
 )]
 pub(super) struct BackendsLs {}

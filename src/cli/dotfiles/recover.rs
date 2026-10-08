@@ -8,22 +8,33 @@ use crate::system::history::{
 
 /// Recover an interrupted dotfile operation
 ///
-/// Retries safe recovery without overwriting later edits. If recovery cannot
-/// determine what is safe, inspect the listed files first. `--keep-current`
-/// explicitly accepts their live contents and discards only the selected
-/// operation's temporary recovery copies; it does not erase Git history.
+/// Finishes recovering from an operation that was interrupted, for example by
+/// a crash or Ctrl-C. With no argument, recovers every interrupted operation.
+/// mise restores files from the operation's recovery copies unless you have
+/// edited them since. When it cannot tell which version is safe, it lists the
+/// files: check them, then rerun with `--keep-current` to keep what is on disk
+/// and discard the operation's recovery copies. When several operations were
+/// interrupted, `--keep-current` needs the ID of one. Git history is not
+/// changed.
 #[derive(Debug, usage_rs::Args)]
-#[usage(verbatim_doc_comment)]
+#[usage(
+    example("mise dot recover", help = "Recover every interrupted operation"),
+    example(
+        "mise dot recover 42 --keep-current --yes",
+        help = "Keep the files on disk for operation 42"
+    )
+)]
 pub(crate) struct DotfilesRecover {
-    /// Pending numeric ID or an unambiguous operation UUID prefix
+    /// The operation's checkpoint ID (see `mise dot history --pending`) or a unique
+    /// prefix of its UUID
     #[usage(value_name = "OPERATION")]
     operation: Option<String>,
 
-    /// Accept live files instead of restoring temporary recovery copies
+    /// Keep the files on disk instead of restoring the recovery copies
     #[usage(long)]
     keep_current: bool,
 
-    /// Confirm discarding the selected operation's temporary recovery copies
+    /// Discard the operation's recovery copies without prompting
     #[usage(long, short = 'y')]
     yes: bool,
 }

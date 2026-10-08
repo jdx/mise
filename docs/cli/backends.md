@@ -12,6 +12,12 @@ description: "Manage backends"
 
 Manage backends
 
+A backend is where mise installs a tool from: a package registry such as npm or
+cargo, a release host such as GitHub, or a plugin. Each tool uses one, either
+written as a prefix (`npm:prettier`) or chosen by the registry. With no
+subcommand, lists the built-in backends. See
+<https://mise.jdx.dev/dev-tools/backends/>.
+
 ## Flags
 - **`-h --help`** — Print help
 
@@ -22,8 +28,8 @@ Manage backends
 
 Deprecation:
 
-The `mise b` alias is deprecated and will be removed in mise 2027.4.0.
-Use `mise backends` instead.
+The `mise b` alias is deprecated and will be removed in mise 2027.4.0; use
+`mise backends`.
 
 <!-- generated reference navigation -->
 

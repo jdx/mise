@@ -9,7 +9,7 @@ use crate::toolset::ToolsetBuilder;
 
 use super::r#use::Use;
 
-/// [internal] called by shell when a command is not found
+/// [internal] Handle a command the shell could not find
 #[derive(Debug, usage_rs::Args)]
 #[usage(hide = true)]
 pub(crate) struct HookNotFound {
