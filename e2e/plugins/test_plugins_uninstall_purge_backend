@@ -36,11 +36,22 @@ LUA
 
 mise plugins link purge-backend "$PLUGIN_DIR"
 mise plugins link keep-backend "$PLUGIN_DIR"
-mise install purge-backend:demo@1.0.0 purge-backend:other@1.0.0 keep-backend:demo@1.0.0
+mise install purge-backend:demo@1.0.0 purge-backend:other@1.0.0 purge-backend:shared@1.0.0 keep-backend:demo@1.0.0
 assert "cat '$MISE_DATA_DIR/installs/purge-backend-demo/1.0.0/manifest'" "demo@1.0.0"
 assert "cat '$MISE_DATA_DIR/installs/purge-backend-other/1.0.0/manifest'" "other@1.0.0"
 assert_directory_exists "$MISE_CACHE_DIR/purge-backend-demo"
 assert_directory_exists "$MISE_CACHE_DIR/purge-backend-other"
+mkdir -p "$MISE_DATA_DIR/downloads/purge-backend-demo/1.0.0"
+
+# Installs in a shared install dir belong to other users too, so they survive:
+# one tool installed only there, and a copy of a tool the user also installed.
+SHARED_INSTALLS="$PWD/shared-installs"
+mkdir -p "$SHARED_INSTALLS"
+mv "$MISE_DATA_DIR/installs/purge-backend-shared" "$SHARED_INSTALLS/"
+cp -R "$MISE_DATA_DIR/installs/purge-backend-demo" "$SHARED_INSTALLS/"
+export MISE_SHARED_INSTALL_DIRS="$SHARED_INSTALLS"
+assert_contains "mise ls purge-backend:shared" "1.0.0"
+assert_directory_exists "$MISE_CACHE_DIR/purge-backend-shared"
 
 mise plugins uninstall purge-backend --purge
 assert_not_contains "mise plugins ls" "purge-backend"
@@ -48,6 +59,11 @@ assert_directory_not_exists "$MISE_DATA_DIR/installs/purge-backend-demo"
 assert_directory_not_exists "$MISE_DATA_DIR/installs/purge-backend-other"
 assert_directory_not_exists "$MISE_CACHE_DIR/purge-backend-demo"
 assert_directory_not_exists "$MISE_CACHE_DIR/purge-backend-other"
+assert_directory_not_exists "$MISE_DATA_DIR/downloads/purge-backend-demo"
+assert "cat '$SHARED_INSTALLS/purge-backend-shared/1.0.0/manifest'" "shared@1.0.0"
+assert "cat '$SHARED_INSTALLS/purge-backend-demo/1.0.0/manifest'" "demo@1.0.0"
+# The user's own cache for the shared-only tool is still purged.
+assert_directory_not_exists "$MISE_CACHE_DIR/purge-backend-shared"
 
 # Another backend plugin's tools are left alone.
 assert_contains "mise plugins ls" "keep-backend"

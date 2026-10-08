@@ -2,13 +2,14 @@ use std::sync::Arc;
 
 use eyre::Result;
 
+use crate::args::BackendArg;
 use crate::backend::backend_type::BackendType;
 use crate::backend::{Backend, unalias_backend};
 use crate::plugins::PluginType;
 use crate::toolset::install_state;
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::ui::style;
-use crate::{backend, plugins};
+use crate::{backend, env, plugins};
 
 /// Remove an installed plugin
 ///
@@ -78,6 +79,11 @@ impl PluginsUninstall {
 /// A backend plugin provides any number of `plugin:tool` tools, so every
 /// installed tool it backs is purged. Other plugins provide the tool of the
 /// same name.
+///
+/// Only the user's own installs dir is purged. The installed-tool scan also
+/// reports tools found in shared and system install dirs, which other users
+/// rely on, so a tool found only there is pointed back at the user's installs
+/// dir: its own cache and downloads are purged, the shared install is not.
 fn backends_to_purge(plugin_name: &str, plugin_type: PluginType) -> Result<Vec<Arc<dyn Backend>>> {
     if plugin_type != PluginType::VfoxBackend {
         return Ok(backend::get(&plugin_name.into()).into_iter().collect());
@@ -85,7 +91,16 @@ fn backends_to_purge(plugin_name: &str, plugin_type: PluginType) -> Result<Vec<A
     let backend_type = BackendType::VfoxBackend(plugin_name.to_string());
     Ok(install_state::try_list_tools()?
         .values()
-        .filter_map(|tool| backend::arg_to_backend(tool.clone().into()))
-        .filter(|backend| backend.get_type() == backend_type)
+        .map(|tool| {
+            let mut tool = tool.clone();
+            if tool.installs_path.as_deref().is_some_and(|path| {
+                env::install_path_category(path) != env::InstallPathCategory::Local
+            }) {
+                tool.installs_path = None;
+            }
+            BackendArg::from(tool)
+        })
+        .filter(|ba| ba.backend_type() == backend_type)
+        .filter_map(backend::arg_to_backend)
         .collect())
 }
