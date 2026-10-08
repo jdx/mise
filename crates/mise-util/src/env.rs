@@ -160,8 +160,20 @@ pub static MISE_DATA_DIR: Lazy<PathBuf> =
 pub static MISE_STATE_DIR: Lazy<PathBuf> =
     Lazy::new(|| var_path("MISE_STATE_DIR").unwrap_or_else(|| XDG_STATE_HOME.join("mise")));
 
-pub static MISE_TMP_DIR: Lazy<PathBuf> =
-    Lazy::new(|| var_path("MISE_TMP_DIR").unwrap_or_else(|| temp_dir().join("mise")));
+pub static MISE_TMP_DIR: Lazy<PathBuf> = Lazy::new(|| {
+    var_path("MISE_TMP_DIR").unwrap_or_else(|| default_tmp_dir(&temp_dir(), &MISE_CACHE_DIR))
+});
+
+/// `<temp>/mise`, unless that is inside the cache directory, which `mise cache clear` deletes
+/// wholesale. On Windows the default cache directory is `%TEMP%\mise`, the same path.
+fn default_tmp_dir(temp: &Path, cache: &Path) -> PathBuf {
+    let tmp = temp.join("mise");
+    if tmp.starts_with(cache) {
+        temp.join("mise-tmp")
+    } else {
+        tmp
+    }
+}
 
 pub static MISE_SYSTEM_CONFIG_DIR: Lazy<PathBuf> = Lazy::new(|| {
     var_path("MISE_SYSTEM_CONFIG_DIR")
@@ -1542,6 +1554,34 @@ mod tests {
     }
 
     use super::*;
+
+    #[test]
+    fn default_tmp_dir_stays_out_of_the_cache_dir() {
+        let temp = Path::new("/tmp");
+        // The Windows default: `%TEMP%\mise` for both.
+        assert_eq!(
+            default_tmp_dir(temp, Path::new("/tmp/mise")),
+            Path::new("/tmp/mise-tmp")
+        );
+        assert_eq!(
+            default_tmp_dir(temp, Path::new("/tmp/mise/")),
+            Path::new("/tmp/mise-tmp")
+        );
+        // Unix and macOS defaults keep the cache elsewhere, so the path is unchanged.
+        assert_eq!(
+            default_tmp_dir(temp, Path::new("/home/me/.cache/mise")),
+            Path::new("/tmp/mise")
+        );
+        // A cache inside the temporary directory does not contain it.
+        assert_eq!(
+            default_tmp_dir(temp, Path::new("/tmp/mise/cache")),
+            Path::new("/tmp/mise")
+        );
+        assert_eq!(
+            default_tmp_dir(temp, Path::new("/tmp/mise-cache")),
+            Path::new("/tmp/mise")
+        );
+    }
 
     fn keys(names: &[&str]) -> BTreeSet<String> {
         names.iter().map(|k| k.to_string()).collect()
