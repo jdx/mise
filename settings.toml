@@ -1181,7 +1181,7 @@ type = "Bool"
 [gix]
 default = true
 description = "Clone Git repositories with the built-in gix library instead of running `git`."
-docs = "mise runs the `git` command only when both this and `libgit2` are `false`."
+docs = "mise runs the `git` command when both this and `libgit2` are `false`, and always inside a GitHub relay session started by `mise ssh`."
 env = "MISE_GIX"
 hide = true
 type = "Bool"
@@ -1725,7 +1725,7 @@ type = "String"
 [libgit2]
 default = true
 description = "Clone Git repositories with the built-in gix library instead of running `git`; same as `gix`."
-docs = "mise runs the `git` command only when both this and `gix` are `false`."
+docs = "mise runs the `git` command when both this and `gix` are `false`, and always inside a GitHub relay session started by `mise ssh`."
 env = "MISE_LIBGIT2"
 hide = true
 type = "Bool"
