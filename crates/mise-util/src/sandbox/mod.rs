@@ -753,4 +753,21 @@ mod tests {
             "{err}"
         );
     }
+
+    /// `mise x` goes through `apply`, which must reject the host before it
+    /// builds the `sandbox-exec` command. macOS only: on Linux `apply`
+    /// sandboxes the calling process, so a regression would sandbox the test.
+    #[cfg(target_os = "macos")]
+    #[tokio::test]
+    async fn test_apply_rejects_allow_net() {
+        let config = SandboxConfig {
+            allow_net: vec!["registry.npmjs.org".to_string()],
+            ..Default::default()
+        };
+        let err = match config.apply("true", &[]).await {
+            Ok(_) => panic!("apply accepted --allow-net"),
+            Err(err) => err,
+        };
+        assert!(err.to_string().contains("--allow-net=<host>"), "{err}");
+    }
 }
