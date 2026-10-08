@@ -156,10 +156,9 @@ async fn backends_to_purge(
             }
             !shared
         })
-        .filter_map(|ba| match plugin_type {
-            PluginType::VfoxBackend => backend::arg_to_backend(ba),
-            _ => backend::get(&ba),
-        })
+        // Built from the checked argument, not looked up: a cached backend can
+        // hold a tool's shared install path.
+        .filter_map(backend::arg_to_backend)
         .collect())
 }
 

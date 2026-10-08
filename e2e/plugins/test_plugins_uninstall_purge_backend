@@ -132,3 +132,15 @@ cat >mise.toml <<'TOML'
 TOML
 assert_contains "mise plugins uninstall keep-backend-tool --purge 2>&1" "not purging keep-backend-tool"
 assert "cat '$MISE_DATA_DIR/installs/keep-backend-tool/1.0.0/manifest'" "solo"
+
+# A single-tool plugin installed only in a shared install dir keeps that
+# install, even when config loading has cached a backend for it there.
+rm mise.toml
+mise plugins link solo-shared "$SOLO_DIR"
+mise install solo-shared@1.0.0
+mv "$MISE_DATA_DIR/installs/solo-shared" "$SHARED_INSTALLS/"
+assert_contains "mise ls solo-shared" "1.0.0"
+MISE_IDIOMATIC_VERSION_FILE_ENABLE_TOOLS=solo-shared mise plugins uninstall solo-shared --purge
+assert_fail "mise plugins ls | grep -qx solo-shared"
+assert "cat '$SHARED_INSTALLS/solo-shared/1.0.0/manifest'" "solo"
+assert_directory_not_exists "$MISE_CACHE_DIR/solo-shared"
