@@ -279,15 +279,15 @@ mod tests {
 
     #[test]
     fn a_local_include_resolves_against_the_including_file() {
-        let parent = Path::new("/work/mise.toml");
+        // absolute on every platform, unlike a bare `/work`
+        let dir = std::env::temp_dir();
+        let parent = dir.join("mise.toml");
         assert_eq!(
-            resolve_local(parent, "shared/a.toml".into()).unwrap(),
-            Path::new("/work/shared/a.toml")
+            resolve_local(&parent, "shared/a.toml".into()).unwrap(),
+            dir.join("shared/a.toml")
         );
-        assert_eq!(
-            resolve_local(parent, "/etc/a.toml".into()).unwrap(),
-            Path::new("/etc/a.toml")
-        );
+        let absolute = dir.join("etc").join("a.toml");
+        assert_eq!(resolve_local(&parent, absolute.clone()).unwrap(), absolute);
     }
 
     #[test]
