@@ -43,17 +43,21 @@ assert_directory_exists "$MISE_CACHE_DIR/purge-backend-demo"
 assert_directory_exists "$MISE_CACHE_DIR/purge-backend-other"
 mkdir -p "$MISE_DATA_DIR/downloads/purge-backend-demo/1.0.0"
 
-# A tool whose last version was already uninstalled keeps its tool-level
-# cache, and its downloads with always_keep_download.
+# A configured tool whose last version was already uninstalled keeps its
+# tool-level cache, and its downloads with always_keep_download.
+cat >mise.toml <<'TOML'
+[tools]
+"purge-backend:gone" = "1.0.0"
+TOML
 mise install purge-backend:gone@1.0.0
 MISE_ALWAYS_KEEP_DOWNLOAD=1 mise uninstall purge-backend:gone@1.0.0
 assert_directory_exists "$MISE_CACHE_DIR/purge-backend-gone"
 mkdir -p "$MISE_DATA_DIR/downloads/purge-backend-gone/1.0.0"
 assert_contains "mise ls --installed" "purge-backend:demo"
 assert_not_contains "mise ls --installed" "purge-backend:gone"
-# A plugin whose name extends this one keeps its cache.
-mkdir -p "$MISE_CACHE_DIR/purge-backend-extra-tool"
-mise plugins link purge-backend-extra "$PLUGIN_DIR"
+# A directory is never purged by its name alone: this could be another
+# backend's tool.
+mkdir -p "$MISE_CACHE_DIR/purge-backend-extra"
 
 # Installs in a shared install dir belong to other users too, so they survive:
 # one tool installed only there, and a copy of a tool the user also installed.
@@ -67,7 +71,6 @@ assert_directory_exists "$MISE_CACHE_DIR/purge-backend-shared"
 
 mise plugins uninstall purge-backend --purge
 assert_fail "mise plugins ls | grep -qx purge-backend"
-assert_succeed "mise plugins ls | grep -qx purge-backend-extra"
 assert_directory_not_exists "$MISE_DATA_DIR/installs/purge-backend-demo"
 assert_directory_not_exists "$MISE_DATA_DIR/installs/purge-backend-other"
 assert_directory_not_exists "$MISE_CACHE_DIR/purge-backend-demo"
@@ -76,7 +79,7 @@ assert_directory_not_exists "$MISE_DATA_DIR/downloads/purge-backend-demo"
 assert_directory_not_exists "$MISE_DATA_DIR/installs/purge-backend-gone"
 assert_directory_not_exists "$MISE_CACHE_DIR/purge-backend-gone"
 assert_directory_not_exists "$MISE_DATA_DIR/downloads/purge-backend-gone"
-assert_directory_exists "$MISE_CACHE_DIR/purge-backend-extra-tool"
+assert_directory_exists "$MISE_CACHE_DIR/purge-backend-extra"
 assert "cat '$SHARED_INSTALLS/purge-backend-shared/1.0.0/manifest'" "shared@1.0.0"
 assert "cat '$SHARED_INSTALLS/purge-backend-demo/1.0.0/manifest'" "demo@1.0.0"
 # The user's own cache for the shared-only tool is still purged.
