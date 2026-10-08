@@ -7387,14 +7387,16 @@ Watchexec will attempt to discover the project's "origin" (or "root") by searchi
 The project origin is used to determine the path of certain ignore files, which VCS is being used, the meaning of a leading '/' in filtering patterns, and maybe more in the future.
 
 When set, Watchexec will also not bother searching, which can be significantly faster.
+
+The directory must contain every watched task's sources, which mise makes relative to it.
 """#
         arg <DIRECTORY>
     }
-    flag --workdir help="Set the working directory" {
+    flag --workdir help="Has no effect: mise runs each task from its own `dir`" hide=#true {
         long_help #"""
-Set the working directory
+Has no effect: mise runs each task from its own `dir`
 
-By default, the working directory of the command is the working directory of Watchexec. You can change that with this option. Note that paths may be less intuitive to use with this.
+Accepted so scripts that pass it keep working. Forwarding it would make the nested `mise run` look for tasks in that directory instead of this project.
 """#
         arg <DIRECTORY>
     }

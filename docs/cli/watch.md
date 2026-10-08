@@ -116,9 +116,8 @@ cron scheduling), see mise's sister project: https://pitchfork.jdx.dev
   The project origin is used to determine the path of certain ignore files, which VCS is being used, the meaning of a leading '/' in filtering patterns, and maybe more in the future.
 
   When set, Watchexec will also not bother searching, which can be significantly faster.
-- **`--workdir <DIRECTORY>`** — Set the working directory
 
-  By default, the working directory of the command is the working directory of Watchexec. You can change that with this option. Note that paths may be less intuitive to use with this.
+  The directory must contain every watched task's sources, which mise makes relative to it.
 - **`-h --help`** — Print help
 
 ## Filtering

@@ -9,6 +9,7 @@ use crate::request_exit;
 use crate::task::task_source_checker::task_cwd;
 use crate::task::{Deps, Task};
 use crate::toolset::ToolsetBuilder;
+use eyre::bail;
 use console::style;
 use itertools::Itertools;
 use std::cmp::PartialEq;
@@ -88,6 +89,9 @@ impl Watch {
                 miseprint!("{}", render_subcommand_help("watch", true))?;
                 return Ok(());
             }
+        }
+        if self.watchexec.workdir.is_some() {
+            warn!("--workdir has no effect: mise runs each task from its own dir");
         }
         let config = Config::get().await?;
         let ts = ToolsetBuilder::new().build(&config).await?;
@@ -172,7 +176,21 @@ impl Watch {
                         .chain(parsed.iter().flatten().map(|(_, p)| p.as_path())),
                 );
                 let anchor: PathBuf = match (project_origin.clone(), configured, common) {
-                    (Some(origin), _, _) => origin,
+                    (Some(origin), _, _) => {
+                        // watchexec drops a filter outside the origin, so a
+                        // source there would never trigger the task.
+                        if let Some((_, outside)) =
+                            parsed.iter().flatten().find(|(_, p)| !p.starts_with(&origin))
+                        {
+                            bail!(
+                                "--project-origin {} does not contain the watched source {}; \
+                                 use a directory that contains every task's sources",
+                                origin.display(),
+                                outside.display()
+                            );
+                        }
+                        origin
+                    }
                     (None, Some(mut cfg), Some(common)) => {
                         while !common.starts_with(&cfg) {
                             if !cfg.pop() {
@@ -1046,6 +1064,8 @@ pub(crate) struct WatchexecArgs {
     /// used, the meaning of a leading '/' in filtering patterns, and maybe more in the future.
     ///
     /// When set, Watchexec will also not bother searching, which can be significantly faster.
+    ///
+    /// The directory must contain every watched task's sources, which mise makes relative to it.
     #[usage(
 		long,
 		value_hint = usage_rs::ValueHint::DirPath,
@@ -1053,14 +1073,15 @@ pub(crate) struct WatchexecArgs {
     )]
     pub project_origin: Option<PathBuf>,
 
-    /// Set the working directory
+    /// Has no effect: mise runs each task from its own `dir`
     ///
-    /// By default, the working directory of the command is the working directory of Watchexec. You
-    /// can change that with this option. Note that paths may be less intuitive to use with this.
+    /// Accepted so scripts that pass it keep working. Forwarding it would make the nested
+    /// `mise run` look for tasks in that directory instead of this project.
     #[usage(
 		long,
 		value_hint = usage_rs::ValueHint::DirPath,
 		value_name = "DIRECTORY",
+		hide = true,
     )]
     pub workdir: Option<PathBuf>,
 
@@ -1442,10 +1463,6 @@ impl WatchexecArgs {
         }
         if self.bell {
             args.push("--bell".to_string());
-        }
-        if let Some(workdir) = &self.workdir {
-            args.push("--workdir".to_string());
-            args.push(workdir.to_string_lossy().to_string());
         }
         for path in &self.filter_files {
             args.push("--filter-file".to_string());
@@ -1906,8 +1923,6 @@ mod tests {
                 "--timings",
                 "--quiet",
                 "--bell",
-                "--workdir",
-                "sub",
                 "--filter-file",
                 "filters.txt",
                 "--filter-prog",
