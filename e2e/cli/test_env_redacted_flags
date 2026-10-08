@@ -113,3 +113,19 @@ TOML
 
 assert_contains "mise env --redacted" "SOURCED_SECRET=sourced_secret_val"
 assert_not_contains "mise env --redacted" "NORMAL_VAR=normal"
+
+# Test --redacted honors redact = false exclusions from redactions patterns
+cat <<'TOML' >mise.toml
+redactions = ["*_TOKEN"]
+[env]
+SECRET_TOKEN = "s3cret"
+TEST_TOKEN = { value = "not-sensitive", redact = false }
+TOOLS_TOKEN = { value = "tools-not-sensitive", tools = true, redact = false }
+TOML
+
+assert_contains "mise env --redacted" "SECRET_TOKEN=s3cret"
+assert_not_contains "mise env --redacted" "TEST_TOKEN"
+assert_not_contains "mise env --redacted" "TOOLS_TOKEN"
+assert_not_contains "mise env -J --redacted" '"TEST_TOKEN"'
+assert_not_contains "mise env -D --redacted" "TEST_TOKEN"
+assert_not_contains "mise env --redacted --values" "not-sensitive"
