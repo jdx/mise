@@ -31,11 +31,25 @@ assert_contains "cat mise.lock" 'version = "17.0.2"'
 assert_contains "cat mise.lock" 'shorthand_vendor = "temurin"'
 assert_contains "cat mise.lock" 'download.java.net'
 mise install --locked
-# The entry reinstalls the locked OpenJDK build once it is no longer installed
+# Once relocked, the entry keeps the OpenJDK build where it is not installed
 mise uninstall java@17.0.2
+mise lock
+assert_contains "cat mise.lock" 'version = "17.0.2"'
 mise install --locked
 assert_contains "mise x -- java -version 2>&1" 'openjdk version "17.0.2"'
 mise lock --bump java
 assert_contains "cat mise.lock" 'shorthand_vendor = "temurin"'
 assert_matches "cat mise.lock" 'version = "17\.[0-9.]+\+[0-9]'
 assert_not_contains "cat mise.lock" 'download.java.net'
+
+# Without the installed OpenJDK build, an old OpenJDK entry no longer matches and
+# plain mise lock replaces it with Temurin
+mise uninstall --all java
+rm mise.lock
+MISE_JAVA_SHORTHAND_VENDOR=openjdk mise lock
+assert_contains "cat mise.lock" 'shorthand_vendor = "openjdk"'
+assert_fail "mise install --locked" "java@17 is not in the lockfile"
+mise lock
+assert_not_contains "cat mise.lock" 'shorthand_vendor = "openjdk"'
+assert_not_contains "cat mise.lock" 'download.java.net'
+assert_matches "cat mise.lock" 'version = "17\.[0-9.]+\+[0-9]'
