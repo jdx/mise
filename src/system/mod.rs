@@ -56,6 +56,7 @@ pub mod firewall;
 #[cfg(not(target_os = "linux"))]
 #[path = "firewall_non_linux.rs"]
 pub mod firewall;
+pub mod git_prerequisites;
 pub mod history;
 pub mod hooks;
 pub mod launchd;

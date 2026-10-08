@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+
+# With no git on PATH, --from and --adopt say what is missing instead of
+# failing on a spawn error. A dry run never installs anything.
+mise_bin="$(command -v mise)"
+mkdir -p "$PWD/nogit-bin"
+ln -s "$mise_bin" "$PWD/nogit-bin/mise"
+
+for flag in --from --adopt; do
+  out="$(PATH="$PWD/nogit-bin" "$PWD/nogit-bin/mise" bootstrap "$flag" https://example.invalid/setup.git --dry-run 2>&1)" && fail "expected $flag to fail without git"
+  case "$out" in
+    *"git must be installed to clone https://example.invalid/setup.git"*) ;;
+    *) fail "unexpected output for $flag: $out" ;;
+  esac
+done

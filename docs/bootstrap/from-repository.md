@@ -78,6 +78,14 @@ files stay in place, so every later mise command reads them as your global
 config. If you set `$MISE_GLOBAL_CONFIG_FILE`, mise clones into that file's
 directory and loads that file.
 
+Cloning needs `git`, and an SSH URL such as `git@github.com:you/setup.git` also
+needs `ssh`. On a fresh machine that lacks them, mise offers to install them with
+the host package manager (apt, dnf, pacman, apk, zypper, Homebrew, scoop, or
+winget) before it clones. Pass `--yes` to accept without being asked. The
+repository's own `[bootstrap.packages]` can't do this, because it has not been
+cloned yet. With `--dry-run`, mise reports what is missing instead of
+installing it.
+
 The destination must be missing, empty, or already a Git checkout whose
 `origin` is the repository you name. Move an existing `~/.config/mise` aside
 before adopting into it. With an existing checkout, `--update` fast-forwards it
