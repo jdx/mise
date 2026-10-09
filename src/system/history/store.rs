@@ -1302,13 +1302,17 @@ fn write_json_if_changed<T: Serialize>(path: &Path, value: &T) -> Result<()> {
 fn write_json_text<T: Serialize>(path: &Path, value: &T, skip_unchanged: bool) -> Result<()> {
     let mut text = serde_json::to_string_pretty(value)?;
     text.push('\n');
-    if skip_unchanged && std::fs::read(path).is_ok_and(|existing| existing == text.as_bytes()) {
-        return Ok(());
+    let unchanged =
+        skip_unchanged && std::fs::read(path).is_ok_and(|existing| existing == text.as_bytes());
+    if !unchanged {
+        if let Some(parent) = path.parent() {
+            file::create_dir_all(parent)?;
+        }
+        file::write_atomic(path, text)
+            .wrap_err_with(|| format!("writing {}", display_path(path)))?;
     }
-    if let Some(parent) = path.parent() {
-        file::create_dir_all(parent)?;
-    }
-    file::write_atomic(path, text).wrap_err_with(|| format!("writing {}", display_path(path)))?;
+    // reset even when the bytes were kept, so a rebuild still heals a file
+    // whose mode drifted
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
