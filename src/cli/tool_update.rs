@@ -56,13 +56,13 @@ pub(crate) struct ToolUpdate {
 /// update runs on its own, and the new version is picked up once the shell
 /// re-resolves its environment. Output is discarded; a failure is recorded for
 /// `mise doctor`.
-pub(crate) fn update_in_background(ts: &Toolset) {
+pub(crate) fn update_in_background(config: &Arc<Config>, ts: &Toolset) {
     if tool_update::any_opted_in(ts) {
         start_due_updates(ts);
     }
     // Prompts that change nothing exit before loading config, so they go
     // through the full path again only once a check is due.
-    tool_update::record_prompt_check(ts);
+    tool_update::record_prompt_check(config);
 }
 
 fn start_due_updates(ts: &Toolset) {

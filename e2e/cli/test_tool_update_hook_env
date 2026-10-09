@@ -100,3 +100,11 @@ for _ in {1..300}; do
 done
 assert_contains "mise ls --installed dummy" "1.1.0"
 eval "$(mise deactivate)"
+
+# The schedule comes from global config, so a shell in a project that pins the
+# tool does not erase it for the others.
+export MISE_STATE_DIR="$PWD/state-shared"
+mkdir pinned && cd pinned || exit 1
+printf '[tools]\ndummy = "1.0.0"\n' >mise.toml
+mise hook-env --shell bash --force >/dev/null 2>&1
+assert_succeed "test -s '$MISE_STATE_DIR/tool-update/prompt-next-check'"

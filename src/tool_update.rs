@@ -9,13 +9,16 @@
 //! rate-limits checks and reports failures to `mise doctor`.
 
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::time::Duration;
 
 use eyre::{Result, bail};
 
 use crate::config::settings::AutoUpdate;
-use crate::config::{Settings, SettingsExt, is_global_config};
-use crate::toolset::{ToolOptionSource, ToolRequest, ToolSource, ToolVersion, Toolset};
+use crate::config::{Config, Settings, SettingsExt, is_global_config};
+use crate::toolset::{
+    ConfigScope, ToolOptionSource, ToolRequest, ToolSource, ToolVersion, Toolset, ToolsetBuilder,
+};
 use crate::{dirs, duration, file, hash, lock_file};
 
 const STATE_DIR: &str = "tool-update";
@@ -231,21 +234,27 @@ pub fn prompt_check_due() -> bool {
         .is_some_and(|due| unix_now() >= due)
 }
 
-/// Record when the next prompt should check `toolset`'s opted-in tools: when
-/// the first one's interval ends, or in an hour when one is overdue yet could
-/// not be checked (offline, in CI, behind the service), so that does not send
-/// every prompt through the full path. Removed when no tool opted in.
-pub fn record_prompt_check(toolset: &Toolset) {
+/// Record when the next prompt should check the opted-in tools: when the first
+/// one's interval ends, or in an hour when one is overdue yet could not be
+/// checked (offline, in CI, behind the service), so that does not send every
+/// prompt through the full path. The file is shared by every shell, so it comes
+/// from global config alone, not from the current directory's toolset, where a
+/// project that pins a tool would hide it. Removed when no tool opted in.
+pub fn record_prompt_check(config: &Arc<Config>) {
     let path = prompt_check_path();
-    let waits = toolset
-        .list_current_versions()
+    let global = ToolsetBuilder::new()
+        .with_scope(ConfigScope::GlobalOnly)
+        .without_runtime_env()
+        .build_unresolved(config);
+    let waits = global
         .iter()
-        .filter(|(_, tv)| updatable(tv))
-        .filter_map(|(_, tv)| {
-            let interval = interval(&tv.request)?.max(MIN_CHECK_DURATION);
-            let age = file::modified_duration(
-                &StatePaths::new(&tv.request.ba().full_without_opts()).marker,
-            );
+        .flat_map(|global| global.versions.values())
+        .flat_map(|versions| versions.requests.iter())
+        .filter(|request| request.is_os_supported())
+        .filter_map(|request| {
+            let interval = interval(request)?.max(MIN_CHECK_DURATION);
+            let age =
+                file::modified_duration(&StatePaths::new(&request.ba().full_without_opts()).marker);
             Some(age.map_or(Duration::ZERO, |age| interval.saturating_sub(age)))
         })
         .min();
