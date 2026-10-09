@@ -154,8 +154,9 @@ TOML
 # placeholder values while running tombi through `mise x`.
 cat >"$HOME/workdir/mise-age.toml" <<'TOML'
 [env]
-VALUE_OBJECT = { value = 123, tools = true, redact = true, required = "set VALUE_OBJECT" }
+VALUE_OBJECT = { value = 123, tools = true, redact = true, required = false }
 VALUE_DEFAULT = { default = 123, tools = true, redact = true }
+REQUIRED_HELP = { required = "set REQUIRED_HELP", tools = true }
 SECRET_SIMPLE = { age = "AGE-SECRET", tools = true }
 SECRET_COMPLEX = { age = { value = "AGE-SECRET", format = "raw", tools = true, redact = true } }
 TOML
@@ -259,7 +260,7 @@ strict = true
 
 [[schemas]]
 path = "file://$SCHEMA_PATH"
-include = ["mise-bad.toml", "mise-bad-age.toml", "mise-bad-dotfiles.toml", "mise-bad-dotfiles-manifest.toml", "mise-bad-dotfiles-position.toml", "mise-bad-env-default.toml", "mise-bad-env-directive.toml", "mise-bad-env-float.toml", "mise-bad-install-env-float.toml", "mise-bad-minimum-release-age-array.toml", "mise-bad-minimum-release-age-table.toml", "mise-bad-package-state.toml", "mise-bad-postinstall.toml", "mise-bad-vars.toml", "mise-bad-tmpl.toml", "mise-bad-tmpl-output-flag.toml", "mise-bad-os.toml", "mise-bad-watch-files.toml", "mise-bad-launchd-calendar.toml", "mise-bad-launchd-queue.toml", "mise-bad-launchd-throttle.toml", "mise-bad-systemd.toml", "mise-bad-oci-copy.toml", "mise-bad-shell-activate.toml", "mise-bad-backend-options.toml", "mise-bad-core-options.toml", "mise-bad-task-deps-empty.toml"]
+include = ["mise-bad.toml", "mise-bad-age.toml", "mise-bad-dotfiles.toml", "mise-bad-dotfiles-manifest.toml", "mise-bad-dotfiles-position.toml", "mise-bad-env-default.toml", "mise-bad-env-directive.toml", "mise-bad-env-value-required.toml", "mise-bad-env-value-required-help.toml", "mise-bad-env-required-false.toml", "mise-bad-env-float.toml", "mise-bad-install-env-float.toml", "mise-bad-minimum-release-age-array.toml", "mise-bad-minimum-release-age-table.toml", "mise-bad-package-state.toml", "mise-bad-postinstall.toml", "mise-bad-vars.toml", "mise-bad-tmpl.toml", "mise-bad-tmpl-output-flag.toml", "mise-bad-os.toml", "mise-bad-watch-files.toml", "mise-bad-launchd-calendar.toml", "mise-bad-launchd-queue.toml", "mise-bad-launchd-throttle.toml", "mise-bad-systemd.toml", "mise-bad-oci-copy.toml", "mise-bad-shell-activate.toml", "mise-bad-backend-options.toml", "mise-bad-core-options.toml", "mise-bad-task-deps-empty.toml"]
 
 [[schemas]]
 path = "file://$TASK_SCHEMA_PATH"
@@ -388,6 +389,27 @@ _.file = { path = ".env", required = 123 }
 TOML
 
 assert_fail "$TOMBI_LINT mise-bad-env-directive.toml"
+
+# mise rejects a variable that has its own value and is also required, and one
+# with neither a value nor `required = true`. One case per file, so each must fail
+# on its own.
+cat >"$HOME/workdir/mise-bad-env-value-required.toml" <<'TOML'
+[env]
+X = { value = "x", required = true }
+TOML
+assert_fail "$TOMBI_LINT mise-bad-env-value-required.toml"
+
+cat >"$HOME/workdir/mise-bad-env-value-required-help.toml" <<'TOML'
+[env]
+X = { value = "x", required = "set X" }
+TOML
+assert_fail "$TOMBI_LINT mise-bad-env-value-required-help.toml"
+
+cat >"$HOME/workdir/mise-bad-env-required-false.toml" <<'TOML'
+[env]
+X = { required = false }
+TOML
+assert_fail "$TOMBI_LINT mise-bad-env-required-false.toml"
 
 cat >"$HOME/workdir/mise-bad-env-float.toml" <<'TOML'
 [env]
