@@ -1,0 +1,70 @@
+#!/usr/bin/env bash
+
+export MISE_LOCKFILE=1
+export MISE_AQUA_BAKED_REGISTRY=0
+
+# An HTTP registry entry has no release-tag lookup. Exercise the same fallback
+# used when a pinned GitHub release is absent from the release listing.
+ASSET="codex-package-x86_64-pc-windows-msvc.tar.gz"
+mkdir -p server/rust-v0.154.0
+printf 'archive\n' >"server/rust-v0.154.0/$ASSET"
+printf 'old archive\n' >server/old.zip
+printf 'new archive\n' >server/new.zip
+start_http_server --dir server
+
+REGISTRY_DIR="$PWD/aqua-registry-local"
+mkdir -p "$REGISTRY_DIR"
+cat <<EOF >"$REGISTRY_DIR/registry.yaml"
+packages:
+  - type: http
+    name: example/codex-package
+    version_prefix: rust-
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.133.0-alpha.1")
+        url: http://127.0.0.1:$HTTP_PORT/legacy.zst
+        format: zst
+      - version_constraint: "true"
+        url: http://127.0.0.1:$HTTP_PORT/{{.Version}}/codex-package-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x86_64
+          windows: pc-windows-msvc
+  - type: http
+    name: example/ambiguous
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: "true"
+        version_prefix: old-v
+        url: http://127.0.0.1:$HTTP_PORT/old.zip
+      - version_constraint: "true"
+        version_prefix: new-v
+        url: http://127.0.0.1:$HTTP_PORT/new.zip
+EOF
+export MISE_AQUA_REGISTRY_URL="file://$REGISTRY_DIR"
+
+cat <<'EOF' >mise.toml
+[tools]
+"aqua:example/codex-package" = "0.154.0"
+EOF
+
+mise lock --platform windows-x64
+
+assert_contains "cat mise.lock" '"platforms.windows-x64"'
+assert_contains "cat mise.lock" "url = \"http://127.0.0.1:$HTTP_PORT/rust-v0.154.0/$ASSET\""
+
+# Both prefix families have reachable archives. A missing tag must not let
+# registry order choose which one gets recorded in the lockfile.
+mkdir ambiguous
+cd ambiguous
+cat <<'EOF' >mise.toml
+[tools]
+"aqua:example/ambiguous" = "1.0.0"
+EOF
+
+output=$(mise lock aqua:example/ambiguous --platform windows-x64 2>&1) || true
+assert_contains "echo '$output'" "ambiguous aqua version prefixes for 1.0.0: old-v, new-v"
+if [[ -f mise.lock ]]; then
+  assert_not_contains "cat mise.lock" "/old.zip"
+  assert_not_contains "cat mise.lock" "/new.zip"
+fi
