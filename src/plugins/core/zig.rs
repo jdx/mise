@@ -90,7 +90,7 @@ impl ZigPlugin {
         // The same checksum names the archive whichever host serves it.
         let pinned = lock_checksum(tv, &self.get_platform_key());
         if settings.zig.use_community_mirrors
-            && let Some(mirrors) = community_mirrors
+            && let Some(mirrors) = community_mirrors.as_ref()
         {
             for i in 0..mirrors.len() {
                 let disp_i = i + 1;
@@ -128,9 +128,37 @@ impl ZigPlugin {
 
         pr.set_message(format!("minisign {filename}"));
         let tarball_data = file::read(&tarball_path)?;
-        let sig = HTTP
-            .get_text(format!("{used_url}.minisig{REQUEST_SUFFIX}"))
-            .await?;
+        // The archive may have come from the download store without contacting
+        // `used_url`, so the signature is looked for there first, then on the
+        // other hosts. The key is fixed, so any host's signature is checked the
+        // same way.
+        let mut sig_bases = vec![used_url.clone()];
+        if !sig_bases.contains(&url) {
+            sig_bases.push(url.clone());
+        }
+        for mirror in community_mirrors.iter().flatten() {
+            let base = format!("{mirror}/{filename}");
+            if !sig_bases.contains(&base) {
+                sig_bases.push(base);
+            }
+        }
+        let mut fetched = None;
+        let mut last_err = None;
+        for base in sig_bases {
+            match HTTP
+                .get_text(format!("{base}.minisig{REQUEST_SUFFIX}"))
+                .await
+            {
+                Ok(text) => {
+                    fetched = Some((base, text));
+                    break;
+                }
+                Err(err) => last_err = Some(err),
+            }
+        }
+        let Some((used_url, sig)) = fetched else {
+            return Err(last_err.expect("at least one signature host was tried"));
+        };
         minisign::verify(ZIG_MINISIGN_KEY, &tarball_data, &sig)?;
         // Since this passed the verify step, the format is guaranteed to be correct
         let trusted_comment = sig.split('\n').nth(2).unwrap().to_string();
