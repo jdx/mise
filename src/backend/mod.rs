@@ -449,6 +449,26 @@ pub async fn load_tools() -> Result<Arc<BackendMap>> {
     if let Some(memo_tools) = TOOLS.lock().unwrap().clone() {
         return Ok(memo_tools);
     }
+    let tools = build_tools().await?;
+    // Two tasks can race past the memo check above and both build seed maps.
+    // Committing unconditionally would let the loser replace a map list() may
+    // already have extended with installed tools — and TOOLS_INCLUDE_INSTALLED
+    // stays set, so those entries would never be restored. First publisher
+    // wins; everyone else adopts the published map.
+    {
+        let mut cached = TOOLS.lock().unwrap();
+        if let Some(existing) = cached.as_ref() {
+            return Ok(existing.clone());
+        }
+        *TOOLS_SEEDED.lock().unwrap() = Some(tools.clone());
+        *cached = Some(tools.clone());
+    }
+    time!("load_tools done");
+    Ok(tools)
+}
+
+/// Build the seed map: core tools plus registry entries with idiomatic files.
+async fn build_tools() -> Result<Arc<BackendMap>> {
     install_state::init().await?;
     time!("load_tools start");
     let core_tools = CORE_PLUGINS.values().cloned().collect::<Vec<ABackend>>();
@@ -477,22 +497,7 @@ pub async fn load_tools() -> Result<Arc<BackendMap>> {
         .into_iter()
         .map(|backend| (backend.ba().short.clone(), backend))
         .collect();
-    let tools = Arc::new(tools);
-    // Two tasks can race past the memo check above and both build seed maps.
-    // Committing unconditionally would let the loser replace a map list() may
-    // already have extended with installed tools — and TOOLS_INCLUDE_INSTALLED
-    // stays set, so those entries would never be restored. First publisher
-    // wins; everyone else adopts the published map.
-    {
-        let mut cached = TOOLS.lock().unwrap();
-        if let Some(existing) = cached.as_ref() {
-            return Ok(existing.clone());
-        }
-        *TOOLS_SEEDED.lock().unwrap() = Some(tools.clone());
-        *cached = Some(tools.clone());
-    }
-    time!("load_tools done");
-    Ok(tools)
+    Ok(Arc::new(tools))
 }
 
 /// Whether an installed tool should displace the TOOLS entry for `short`.
@@ -507,20 +512,19 @@ fn installed_replaces<V>(seeded: &BTreeMap<String, V>, short: &str) -> bool {
     seeded.contains_key(short)
 }
 
-/// Extend TOOLS with a backend for every installed tool. Installed tools are
-/// otherwise loaded one at a time through [`get`]; enumerating callers need
-/// them all, which means a full installs-dir scan.
-fn ensure_installed_tools_loaded() {
+/// Extend TOOLS with a backend for every installed tool and return the result.
+/// Installed tools are otherwise loaded one at a time through [`get`];
+/// enumerating callers need them all, which means a full installs-dir scan.
+///
+/// Returns the map read under the same lock that extended it, so a concurrent
+/// [`reset`] cannot swap it out between the two. `None` means load_tools has
+/// not run; the flag stays clear so a later call extends the map it publishes.
+fn installed_tools() -> Option<Arc<BackendMap>> {
     let mut tools = TOOLS.lock().unwrap();
+    let current = tools.clone()?;
     if TOOLS_INCLUDE_INSTALLED.swap(true, std::sync::atomic::Ordering::SeqCst) {
-        return;
+        return Some(current);
     }
-    let Some(current) = tools.as_ref() else {
-        // load_tools has not run; the flag stays set and list() callers go
-        // through load_tools first, which ends up here again.
-        TOOLS_INCLUDE_INSTALLED.store(false, std::sync::atomic::Ordering::SeqCst);
-        return;
-    };
     let settings = Settings::get();
     let enable_tools = settings.enable_tools();
     let disable_tools = settings.disable_tools();
@@ -546,19 +550,15 @@ fn ensure_installed_tools_loaded() {
             next.entry(short).or_insert(backend);
         }
     }
-    *tools = Some(Arc::new(next));
+    let next = Arc::new(next);
+    *tools = Some(next.clone());
+    Some(next)
 }
 
 pub fn list() -> BackendList {
-    ensure_installed_tools_loaded();
-    TOOLS
-        .lock()
-        .unwrap()
-        .as_ref()
-        .unwrap()
-        .values()
-        .cloned()
-        .collect()
+    installed_tools()
+        .map(|tools| tools.values().cloned().collect())
+        .unwrap_or_default()
 }
 
 /// Backends that can contribute version aliases.
@@ -609,7 +609,11 @@ pub fn get(ba: &BackendArg) -> Option<ABackend> {
     }
 
     let mut tools = TOOLS.lock().unwrap();
-    let tools_ = tools.as_ref().unwrap();
+    let Some(tools_) = tools.as_ref() else {
+        // load_tools has not run. Caching here would publish a map that
+        // load_tools then adopts in place of the seed map.
+        return arg_to_backend(ba.clone());
+    };
     if let Some(backend) = tools_.get(&ba.short) {
         Some(backend.clone())
     } else if let Some(backend) = arg_to_backend(ba.clone()) {
@@ -965,6 +969,31 @@ mod tests {
         // An entry `get` resolved after load_tools may carry command-scoped
         // options, so it is left alone.
         assert!(!installed_replaces(&seeded, "mytool"));
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn test_list_and_get_survive_concurrent_reset() {
+        load_tools().await.unwrap();
+        let stop = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let readers = (0..4)
+            .map(|_| {
+                let stop = stop.clone();
+                std::thread::spawn(move || {
+                    let ba = BackendArg::from("node");
+                    while !stop.load(std::sync::atomic::Ordering::SeqCst) {
+                        list();
+                        get(&ba);
+                    }
+                })
+            })
+            .collect::<Vec<_>>();
+        for _ in 0..200 {
+            reset().await.unwrap();
+        }
+        stop.store(true, std::sync::atomic::Ordering::SeqCst);
+        for reader in readers {
+            reader.join().expect("reader panicked during reset");
+        }
     }
 
     fn create_test_backend_arg(tool: &str) -> Arc<BackendArg> {
@@ -7019,12 +7048,13 @@ fn invalidate_postinstall_env() {
 pub async fn reset() -> Result<()> {
     install_state::reset();
     invalidate_postinstall_env();
-    {
-        let mut tools = TOOLS.lock().unwrap();
-        *tools = None;
-        *TOOLS_SEEDED.lock().unwrap() = None;
-        TOOLS_INCLUDE_INSTALLED.store(false, std::sync::atomic::Ordering::SeqCst);
-    }
-    load_tools().await?;
+    // Build the new map before replacing the old one. Clearing TOOLS first left
+    // a window, while the rebuild ran, in which a concurrent list() or get()
+    // found no map at all and panicked (#14238).
+    let tools = build_tools().await?;
+    let mut cached = TOOLS.lock().unwrap();
+    *TOOLS_SEEDED.lock().unwrap() = Some(tools.clone());
+    TOOLS_INCLUDE_INSTALLED.store(false, std::sync::atomic::Ordering::SeqCst);
+    *cached = Some(tools);
     Ok(())
 }
