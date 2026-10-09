@@ -1,9 +1,9 @@
 //! Opt-in updates for tools configured in global config.
 //!
-//! A tool whose global `[tools]` entry sets `auto_update` is upgraded within
-//! its configured version when its check interval has elapsed: by the
-//! `tool-update` service when it is running, otherwise when a shim or `mise x`
-//! is about to launch it. The upgrade runs in `mise __tool-update`; this module
+//! A tool whose global `[tools]` entry sets `auto_update`, or any global tool
+//! when `tool_update.global_auto` is on, is upgraded within its configured version
+//! when its check interval has elapsed: by the `tool-update` service when it
+//! is running, otherwise when a shim or `mise x` is about to launch it. The upgrade runs in `mise __tool-update`; this module
 //! decides which tool is eligible and when, and keeps the state that
 //! rate-limits checks and reports failures to `mise doctor`.
 
@@ -12,6 +12,7 @@ use std::time::Duration;
 
 use eyre::{Result, bail};
 
+use crate::config::settings::AutoUpdate;
 use crate::config::{Settings, SettingsExt, is_global_config};
 use crate::toolset::{ToolOptionSource, ToolRequest, ToolSource, ToolVersion, Toolset};
 use crate::{dirs, duration, file, hash, lock_file};
@@ -40,31 +41,37 @@ pub fn parse_auto_update(value: &str) -> Result<Option<Duration>> {
     }
 }
 
-/// The `auto_update` value of a request written in a global config file.
-/// Options layered on from anywhere else (a runtime argument, an env var, a
-/// project's tool alias, the registry) never count: a project must not be able
-/// to make a user's commands download and install tools.
+/// The `auto_update` value of a request written in a global config file, or
+/// `tool_update.global_auto`'s when its entry doesn't set one. Options
+/// layered on from anywhere else (a runtime argument, an env var, a project's
+/// tool alias, the registry) never count: a project must not be able to make a
+/// user's commands download and install tools.
 fn global_auto_update(request: &ToolRequest) -> Option<String> {
     let ToolSource::MiseToml(path) = request.source() else {
         return None;
     };
+    if !is_global_config(path) {
+        return None;
+    }
     // Options in the entry's own table are `InlineBackendArg`, and in its
     // version spec `Request`; both were written in this file.
     let from_entry = matches!(
         request.option_source("auto_update"),
         Some(ToolOptionSource::Request | ToolOptionSource::InlineBackendArg)
     );
-    if !from_entry || !is_global_config(path) {
-        return None;
+    if from_entry {
+        return request.options().get("auto_update").map(str::to_string);
     }
-    request.options().get("auto_update").map(str::to_string)
+    match &Settings::get().tool_update.global_auto {
+        AutoUpdate::Off => None,
+        AutoUpdate::On => Some("true".to_string()),
+        AutoUpdate::Every(interval) => Some(interval.clone()),
+    }
 }
 
 /// Whether `request`, from a global config file, has `auto_update` enabled.
 pub fn enabled(request: &ToolRequest) -> bool {
-    global_auto_update(request)
-        .and_then(|value| parse_auto_update(&value).ok().flatten())
-        .is_some()
+    interval(request).is_some()
 }
 
 /// Whether any tool in `toolset` opted in. This is in memory only, so a
@@ -73,7 +80,7 @@ pub fn any_opted_in(toolset: &Toolset) -> bool {
     toolset
         .list_current_versions()
         .iter()
-        .any(|(_, tv)| global_auto_update(&tv.request).is_some())
+        .any(|(_, tv)| enabled(&tv.request))
 }
 
 /// Who is asking to update a tool.
@@ -135,6 +142,14 @@ fn eligible(request: &ToolRequest, updater: Updater) -> Option<(String, Duration
         return None;
     }
     let value = global_auto_update(request)?;
+    let tool_id = request.ba().full_without_opts();
+    let interval = match parse_auto_update(&value) {
+        Ok(interval) => interval?,
+        Err(err) => {
+            debug!("tool-update: {tool_id}: {err:#}");
+            return None;
+        }
+    };
     let settings = Settings::get();
     // Only what describes this machine right now. Settings about a project's
     // lockfile or remote lookups don't apply: the update runs on global config
@@ -145,14 +160,7 @@ fn eligible(request: &ToolRequest, updater: Updater) -> Option<(String, Duration
     if updater == Updater::Launch && service_running() {
         return None;
     }
-    let tool_id = request.ba().full_without_opts();
-    match parse_auto_update(&value) {
-        Ok(interval) => Some((tool_id, interval?)),
-        Err(err) => {
-            debug!("tool-update: {tool_id}: {err:#}");
-            None
-        }
-    }
+    Some((tool_id, interval))
 }
 
 /// Whether `tool_id` was checked within `interval` (at least an hour).

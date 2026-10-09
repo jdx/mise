@@ -387,7 +387,7 @@ fn normalize_verbosity(settings: &mut Settings) {
 fn normalize_self_update_aliases(partial: &mut SettingsPartial) {
     if let Some(v) = partial.auto_update.take() {
         warn_deprecated("auto_update");
-        partial.self_update.auto.get_or_insert(v);
+        partial.self_update.auto.get_or_insert(v.into());
     }
     if let Some(v) = partial.auto_update_check_duration.take() {
         warn_deprecated("auto_update_check_duration");
@@ -416,6 +416,17 @@ fn self_update_env_alias_layer() -> Result<Option<SettingsPartial>> {
     alias_layer.self_update.auto = env_layer.self_update.auto;
     alias_layer.self_update.check_duration = env_layer.self_update.check_duration;
     Ok(Some(alias_layer))
+}
+
+/// An interval that isn't a duration would leave the setting on while every
+/// check failed quietly, so turn it off and say why.
+fn validate_auto_update(key: &str, value: &mut AutoUpdate) {
+    if let Some(interval) = value.interval()
+        && let Err(err) = duration::parse_duration(interval)
+    {
+        warn!("{key} must be true, false, or a duration such as \"6h\", got {interval:?}: {err}");
+        *value = AutoUpdate::Off;
+    }
 }
 
 fn normalize_hidden_config_aliases(mut partial: SettingsPartial) -> SettingsPartial {
@@ -1141,7 +1152,8 @@ impl SettingsExt for Settings {
 
     #[cfg(feature = "self_update")]
     fn self_update_check_duration(&self) -> eyre::Result<Duration> {
-        duration::parse_duration(&self.self_update.check_duration)
+        let interval = self.self_update.auto.interval();
+        duration::parse_duration(interval.unwrap_or(&self.self_update.check_duration))
     }
 
     fn fetch_remote_versions_timeout(&self) -> Duration {
@@ -1636,6 +1648,11 @@ fn load() -> Result<Arc<Settings>> {
         settings.color = false;
     }
     normalize_verbosity(&mut settings);
+    validate_auto_update("self_update.auto", &mut settings.self_update.auto);
+    validate_auto_update(
+        "tool_update.global_auto",
+        &mut settings.tool_update.global_auto,
+    );
     if settings.python.uv_venv_auto.is_legacy_true() {
         deprecated_at!(
             "2026.7.0",
@@ -2918,8 +2935,39 @@ mod tests {
         partial.auto_update_check_duration = Some("1d".to_string());
         Settings::reset(Some(partial));
         let settings = Settings::get();
-        assert!(settings.self_update.auto);
+        assert_eq!(settings.self_update.auto, AutoUpdate::On);
         assert_eq!(settings.self_update.check_duration, "1d");
+    }
+
+    #[test]
+    fn test_invalid_auto_update_interval_turns_it_off() {
+        let mut value = AutoUpdate::Every("soon".to_string());
+        validate_auto_update("self_update.auto", &mut value);
+        assert_eq!(value, AutoUpdate::Off);
+        let mut value = AutoUpdate::Every("6h".to_string());
+        validate_auto_update("self_update.auto", &mut value);
+        assert_eq!(value, AutoUpdate::Every("6h".to_string()));
+    }
+
+    #[cfg(feature = "self_update")]
+    #[test]
+    fn test_self_update_auto_interval_overrides_check_duration() {
+        let _settings = crate::test::SettingsGuard::lock();
+        let mut partial = SettingsPartial::empty();
+        partial.self_update.check_duration = Some("2d".to_string());
+        Settings::reset(Some(partial.clone()));
+        assert_eq!(
+            Settings::get().self_update_check_duration().unwrap(),
+            Duration::from_secs(2 * 24 * 60 * 60)
+        );
+        partial.self_update.auto = Some(AutoUpdate::Every("6h".to_string()));
+        Settings::reset(Some(partial));
+        let settings = Settings::get();
+        assert!(settings.self_update.auto.is_on());
+        assert_eq!(
+            settings.self_update_check_duration().unwrap(),
+            Duration::from_secs(6 * 60 * 60)
+        );
     }
 
     #[test]
@@ -2938,7 +2986,7 @@ mod tests {
         let partial = normalize_hidden_config_aliases(settings_file.settings);
         assert_eq!(partial.auto_update, None);
         assert_eq!(partial.auto_update_check_duration, None);
-        assert_eq!(partial.self_update.auto, Some(false));
+        assert_eq!(partial.self_update.auto, Some(AutoUpdate::Off));
         assert_eq!(partial.self_update.check_duration.as_deref(), Some("2d"));
     }
 
