@@ -32,7 +32,7 @@ include = ["mise.toml", "mise-age.toml", "mise-env-directives.toml", "mise-os.to
 
 [[schemas]]
 path = "file://$TASK_SCHEMA_PATH"
-include = ["mise-task-os.toml"]
+include = ["mise-task-os.toml", "mise-task-deps.toml"]
 
 [[schemas]]
 path = "file://$REGISTRY_TOOL_SCHEMA_PATH"
@@ -68,6 +68,9 @@ allow_read = ["."]
 extends = "base"
 run = "cargo clippy"
 description = "Lint the project"
+depends = { task = "fmt", optional = true }
+depends_post = { task = "build", args = ["--release"], env = { CI = "1" } }
+wait_for = { task = "build", optional = true }
 
 [vars]
 e2e_args = { default = "--headless", redact = true }
@@ -208,6 +211,15 @@ build = "cargo build"
 ci = ["cargo fmt --check", { task = "lint" }, { task = "build", args = ["--release"], env = { CI = "1" } }, { tasks = ["lint", "build"] }]
 TOML
 
+# A task file accepts the same dependency shapes as mise.toml.
+cat >"$HOME/workdir/mise-task-deps.toml" <<'TOML'
+[build]
+run = "echo ok"
+depends = { task = "lint", optional = true }
+depends_post = [["build", "--release"]]
+wait_for = { task = "lint" }
+TOML
+
 cat >"$HOME/workdir/mise-registry-tool.toml" <<'TOML'
 backends = [
   { full = "aqua:ImageMagick/ImageMagick", platforms = ["windows-x64"] },
@@ -226,6 +238,7 @@ assert_succeed "$TOMBI_LINT mise-env-directives.toml"
 assert_succeed "$TOMBI_LINT mise-vars.toml"
 assert_succeed "$TOMBI_LINT mise-os.toml"
 assert_succeed "$TOMBI_LINT mise-task-os.toml"
+assert_succeed "$TOMBI_LINT mise-task-deps.toml"
 assert_succeed "$TOMBI_LINT mise-registry-tool.toml"
 assert_succeed "$TOMBI_LINT mise-task-array.toml"
 
@@ -246,11 +259,11 @@ strict = true
 
 [[schemas]]
 path = "file://$SCHEMA_PATH"
-include = ["mise-bad.toml", "mise-bad-age.toml", "mise-bad-dotfiles.toml", "mise-bad-dotfiles-manifest.toml", "mise-bad-dotfiles-position.toml", "mise-bad-env-default.toml", "mise-bad-env-directive.toml", "mise-bad-env-float.toml", "mise-bad-install-env-float.toml", "mise-bad-minimum-release-age-array.toml", "mise-bad-minimum-release-age-table.toml", "mise-bad-package-state.toml", "mise-bad-postinstall.toml", "mise-bad-vars.toml", "mise-bad-tmpl.toml", "mise-bad-tmpl-output-flag.toml", "mise-bad-os.toml", "mise-bad-watch-files.toml", "mise-bad-launchd-calendar.toml", "mise-bad-launchd-queue.toml", "mise-bad-launchd-throttle.toml", "mise-bad-systemd.toml", "mise-bad-oci-copy.toml", "mise-bad-shell-activate.toml", "mise-bad-backend-options.toml", "mise-bad-core-options.toml"]
+include = ["mise-bad.toml", "mise-bad-age.toml", "mise-bad-dotfiles.toml", "mise-bad-dotfiles-manifest.toml", "mise-bad-dotfiles-position.toml", "mise-bad-env-default.toml", "mise-bad-env-directive.toml", "mise-bad-env-float.toml", "mise-bad-install-env-float.toml", "mise-bad-minimum-release-age-array.toml", "mise-bad-minimum-release-age-table.toml", "mise-bad-package-state.toml", "mise-bad-postinstall.toml", "mise-bad-vars.toml", "mise-bad-tmpl.toml", "mise-bad-tmpl-output-flag.toml", "mise-bad-os.toml", "mise-bad-watch-files.toml", "mise-bad-launchd-calendar.toml", "mise-bad-launchd-queue.toml", "mise-bad-launchd-throttle.toml", "mise-bad-systemd.toml", "mise-bad-oci-copy.toml", "mise-bad-shell-activate.toml", "mise-bad-backend-options.toml", "mise-bad-core-options.toml", "mise-bad-task-deps-empty.toml"]
 
 [[schemas]]
 path = "file://$TASK_SCHEMA_PATH"
-include = ["mise-bad-task-os.toml", "mise-bad-task-install-env-float.toml", "mise-bad-task-postinstall.toml"]
+include = ["mise-bad-task-os.toml", "mise-bad-task-install-env-float.toml", "mise-bad-task-postinstall.toml", "mise-bad-task-file-deps-empty.toml"]
 
 [[schemas]]
 path = "file://$REGISTRY_TOOL_SCHEMA_PATH"
@@ -638,3 +651,20 @@ java = { version = "21", release_type = "stable" }
 TOML
 
 assert_fail "$TOMBI_LINT mise-bad-core-options.toml"
+
+# A nested dependency array needs a task name, as the parser requires.
+cat >"$HOME/workdir/mise-bad-task-deps-empty.toml" <<'TOML'
+[tasks.main]
+depends = [[]]
+run = "echo main"
+TOML
+
+assert_fail "$TOMBI_LINT mise-bad-task-deps-empty.toml"
+
+cat >"$HOME/workdir/mise-bad-task-file-deps-empty.toml" <<'TOML'
+[main]
+depends = [[]]
+run = "echo main"
+TOML
+
+assert_fail "$TOMBI_LINT mise-bad-task-file-deps-empty.toml"
