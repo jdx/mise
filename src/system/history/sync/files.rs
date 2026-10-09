@@ -275,8 +275,18 @@ pub(crate) fn decrypt(
     if let Some(decrypted) = repo.decrypted_object(&object.1) {
         return Ok(decrypted);
     }
-    let bytes = agecrypt::decrypt_sync(&outer.ciphertext.0, interactive)
-        .wrap_err_with(|| Locked(path.to_string()))?;
+    let bytes = agecrypt::decrypt_sync(&outer.ciphertext.0, interactive).map_err(|err| {
+        // a damaged file is not one another key would unlock, so it is not
+        // collected with the locked ones: it fails as itself
+        if matches!(
+            err.downcast_ref::<agecrypt::DecryptError>(),
+            Some(agecrypt::DecryptError::Corrupt(_))
+        ) {
+            err.wrap_err(format!("{path} is not a readable encrypted file"))
+        } else {
+            err.wrap_err(Locked(path.to_string()))
+        }
+    })?;
     let inner: Plaintext =
         rmp_serde::from_slice(&bytes).wrap_err("invalid encrypted file payload")?;
     validate(path, &outer, &inner)?;
@@ -563,6 +573,55 @@ mod tests {
             };
             assert!(validate("tracked/home/secret", &outer, &inner).is_err());
         }
+    }
+
+    #[test]
+    fn a_damaged_ciphertext_is_not_reported_as_locked() {
+        use age::secrecy::ExposeSecret;
+        let tmp = tempfile::tempdir().unwrap();
+        let repo = HistoryRepo::open_or_init_in(tmp.path()).unwrap().unwrap();
+        let key = age::x25519::Identity::generate();
+        let mut environment = crate::test::EnvVarGuard::new();
+        environment.set("MISE_AGE_KEY", key.to_string().expose_secret());
+        let outer = Envelope {
+            path: "tracked/home/secret".into(),
+            mode: "100644".into(),
+            scheme: "scheme".into(),
+            ciphertext: Bytes(b"not an age file".to_vec()),
+        };
+        let mut encoded = MAGIC.to_vec();
+        encoded.extend(rmp_serde::to_vec_named(&outer).unwrap());
+        let object = ("100644".into(), repo.hash_blob(&encoded).unwrap());
+        let err = decrypt(&repo, "tracked/home/secret", &object, false).unwrap_err();
+        assert!(err.downcast_ref::<Locked>().is_none(), "{err:#}");
+        assert!(
+            format!("{err:#}").contains("is not a readable encrypted file"),
+            "{err:#}"
+        );
+
+        // and one this machine's key does not open is
+        let other: Vec<Box<dyn age::Recipient + Send>> =
+            vec![Box::new(age::x25519::Identity::generate().to_public())];
+        let sealed = repo
+            .hash_blob(
+                &encode(
+                    "tracked/home/secret",
+                    "100644",
+                    b"private",
+                    "scheme",
+                    &other,
+                )
+                .unwrap(),
+            )
+            .unwrap();
+        let err = decrypt(
+            &repo,
+            "tracked/home/secret",
+            &("100644".into(), sealed),
+            false,
+        )
+        .unwrap_err();
+        assert!(err.downcast_ref::<Locked>().is_some(), "{err:#}");
     }
 
     #[test]
