@@ -995,16 +995,17 @@ pub(crate) async fn lock_rust_state_for_config(
         let from_install = install_env
             .get(key)
             .map(|value| value.clone().into_string());
+        // an env directive removed the variable, so the child won't see the ambient value
+        let removed = matches!(from_install, Some(None));
         let config_value = match from_install {
-            Some(Some(value)) => Some(value),
-            // an env directive removed the variable, so the child won't see it
-            Some(None) => None,
+            Some(value) => value,
             None => toolset_env.get(key).cloned(),
         };
         match config_value {
             Some(value) => {
                 config_env.insert(key.to_string(), value);
             }
+            None if removed => {}
             None if key == "CARGO_HOME" => {
                 ambient_cargo = env::vars_safe()
                     .find(|(k, _)| k == key)
@@ -2106,5 +2107,25 @@ targets = ["wasm32-wasip1", " wasm32-wasip1 "]
             None,
         );
         assert_plugin_locks_are_covered(&plugin_homes);
+    }
+
+    #[tokio::test]
+    async fn config_lock_ignores_ambient_home_removed_by_install_env() {
+        let _settings_guard = crate::test::SettingsGuard::lock();
+        let mut env_guard = ambient_homes_guard();
+        let root = tempfile::tempdir().unwrap();
+        env_guard.set("CARGO_HOME", root.path().join("ambient-cargo"));
+        let install_env = IndexMap::from([(
+            "CARGO_HOME".to_string(),
+            crate::config::env_directive::EnvValue::Boolean(false),
+        )]);
+
+        let _locks = lock_rust_state_for_config(&BTreeMap::new(), &install_env)
+            .await
+            .unwrap();
+
+        // the child `cargo` no longer sees CARGO_HOME, so it uses the default home
+        let child_homes = RustHomes::from_sources(&IndexMap::new(), None, None, None, None);
+        assert_plugin_locks_are_covered(&child_homes);
     }
 }
