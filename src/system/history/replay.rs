@@ -1685,9 +1685,27 @@ pub fn unsaved_paths(
     let saved = without_local(repo, snapshot, &tracked.local)?;
     let mut encrypted = super::sync::files::encrypted_paths(repo, Some(&saved))?;
     encrypted.extend(super::sync::files::encrypted_paths(repo, Some(&live))?);
+    // a save carries a path the walk omitted or did not finish scanning
+    // (too large, a special file) rather than record it as removed
+    let coverage = tracked.coverage(walk);
+    let carried: Vec<PathBuf> = coverage
+        .omitted
+        .iter()
+        .chain(&coverage.incomplete)
+        .map(|omitted| crate::file::replace_path(&omitted.path))
+        .collect();
+    let roots = super::sync::layout::Roots::current();
     let mut unsaved = vec![];
     for change in repo.changes(Some(&saved), &live)? {
         if change.path.starts_with(".mise-history/") {
+            continue;
+        }
+        if change.status == 'D'
+            && roots
+                .locate(&change.path)
+                .path()
+                .is_some_and(|path| carried.iter().any(|omitted| path.starts_with(omitted)))
+        {
             continue;
         }
         // encrypting unchanged contents again (the encryption cache is only

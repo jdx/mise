@@ -58,3 +58,11 @@ assert_succeed 'mise dot save'
 chmod 000 ~/.config/app/sub
 assert "mise dot status --json | jq -c .history.unsaved" 'null'
 chmod 755 ~/.config/app/sub
+
+# a saved file the walk now omits (here, replaced by a special file) is
+# carried by the next save, so it is not an unsaved removal either
+echo saved >~/.config/app/fifo
+assert_succeed 'mise dot save'
+rm ~/.config/app/fifo
+mkfifo ~/.config/app/fifo
+assert "mise dot status --json | jq -c .history.unsaved" '[]'
