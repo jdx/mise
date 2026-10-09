@@ -87,21 +87,14 @@ pub fn store(checksum: &str, src: &Path, effective_filename: Option<&str>) -> Re
     }
     let dir = entry.parent().expect("entry() joins a file name");
     file::create_dir_all(dir)?;
-    // Written beside the entry and renamed into place, so a reader never
-    // sees a partial file.
-    let tmp = dir.join(format!(
-        "{}.tmp-{}",
-        entry.file_name().unwrap().to_string_lossy(),
-        std::process::id()
-    ));
-    file::copy(src, &tmp)?;
+    // Copied to a name no other install shares and renamed into place, so a
+    // reader never sees a partial file and parallel stores can't truncate one.
+    let tmp = tempfile::NamedTempFile::new_in(dir)?;
+    std::fs::copy(src, tmp.path())?;
     if let Some(name) = effective_filename {
         file::write(name_path(&entry), name)?;
     }
-    if let Err(err) = file::rename(&tmp, &entry) {
-        let _ = file::remove_file(&tmp);
-        return Err(err);
-    }
+    tmp.persist(&entry).map_err(|err| err.error)?;
     Ok(())
 }
 
