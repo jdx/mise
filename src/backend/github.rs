@@ -1716,7 +1716,7 @@ impl UnifiedGitBackend {
 
         ctx.pr.set_message(format!("download {filename}"));
         let pinned = pinned_checksum(tv, &self.get_platform_key(), opts.raw());
-        HTTP.download_file_with_pin(
+        HTTP.download_file_linked(
             url,
             &file_path,
             &headers,

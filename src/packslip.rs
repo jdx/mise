@@ -267,7 +267,7 @@ pub(crate) async fn download_file(
     pr: Option<&dyn SingleReport>,
 ) -> Result<()> {
     let reason = match HTTP
-        .download_file_with_pin(url, dest, &headers_for(url)?, pin, pr)
+        .download_file_linked(url, dest, &headers_for(url)?, pin, pr)
         .await
     {
         Ok(_) if !downloaded_sign_in_page(url, dest) => return Ok(()),
@@ -277,7 +277,7 @@ pub(crate) async fn download_file(
     let Some(api_url) = retry_url(url, &reason).await else {
         return Err(reason.into_error(url));
     };
-    HTTP.download_file_with_pin(&api_url, dest, &headers_for(&api_url)?, pin, pr)
+    HTTP.download_file_linked(&api_url, dest, &headers_for(&api_url)?, pin, pr)
         .await
         .map(|_| ())
 }

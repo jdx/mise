@@ -606,12 +606,7 @@ async fn test_download_reuses_stored_file_on_not_modified() {
 
     // A stored file that no longer hashes to what was recorded is not used,
     // even though the server says it is current.
-    let stored = std::fs::read_dir(cache.path().join("blobs"))
-        .unwrap()
-        .next()
-        .unwrap()
-        .unwrap()
-        .path();
+    let stored = stored_blob(cache.path());
     std::fs::write(&stored, b"tampered").unwrap();
     std::fs::remove_file(&dest).unwrap();
     client.download_file(&url, &dest, None).await.unwrap();
@@ -653,12 +648,7 @@ async fn test_download_reuses_pinned_file_without_a_request() {
     assert_eq!(count.load(std::sync::atomic::Ordering::SeqCst), 1);
 
     // A blob that no longer matches the pin is not used.
-    let blob = std::fs::read_dir(cache.path().join("blobs"))
-        .unwrap()
-        .next()
-        .unwrap()
-        .unwrap()
-        .path();
+    let blob = stored_blob(cache.path());
     std::fs::write(&blob, b"tampered").unwrap();
     std::fs::remove_file(&dest).unwrap();
     assert!(
@@ -667,6 +657,62 @@ async fn test_download_reuses_pinned_file_without_a_request() {
             .await
             .is_err()
     );
+
+    *cas::TEST_ROOT.lock().unwrap() = None;
+}
+
+fn stored_blob(cache: &std::path::Path) -> PathBuf {
+    let dir = std::fs::read_dir(cache.join("blobs"))
+        .unwrap()
+        .next()
+        .unwrap()
+        .unwrap()
+        .path();
+    std::fs::read_dir(dir)
+        .unwrap()
+        .next()
+        .unwrap()
+        .unwrap()
+        .path()
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn test_download_linked_shares_one_stored_file() {
+    let _settings = set_test_http_retries(0);
+    let cache = tempfile::tempdir().unwrap();
+    *cas::TEST_ROOT.lock().unwrap() = Some(cache.path().to_path_buf());
+    let (port, count) = spawn_canned_server(vec![cacheable_download_response()]).await;
+    let url = format!("http://127.0.0.1:{port}/artifact.bin");
+    let client = Client::new(Duration::from_secs(2), ClientKind::Http).unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let dest = dir.path().join("artifact.bin");
+    let hello = dir.path().join("hello");
+    std::fs::write(&hello, b"hello").unwrap();
+    let pin = format!(
+        "sha256:{}",
+        crate::hash::file_hash_prog::<sha2::Sha256>(&hello, None).unwrap()
+    );
+
+    client
+        .download_file_linked(&url, &dest, &HeaderMap::new(), Some(&pin), None)
+        .await
+        .unwrap();
+    assert_eq!(std::fs::read(&dest).unwrap(), b"hello");
+    // The stored file keeps the name it was downloaded as.
+    assert_eq!(
+        stored_blob(cache.path()).file_name().unwrap(),
+        "artifact.bin"
+    );
+
+    // A second install is served from the store with no request, and the
+    // destination holds the same bytes.
+    std::fs::remove_file(&dest).unwrap();
+    client
+        .download_file_linked(&url, &dest, &HeaderMap::new(), Some(&pin), None)
+        .await
+        .unwrap();
+    assert_eq!(std::fs::read(&dest).unwrap(), b"hello");
+    assert_eq!(count.load(std::sync::atomic::Ordering::SeqCst), 1);
 
     *cas::TEST_ROOT.lock().unwrap() = None;
 }

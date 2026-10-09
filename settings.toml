@@ -104,11 +104,15 @@ optional = true
 type = "Bool"
 
 [always_keep_download]
-description = "Keep downloaded archives and sources after installing, for debugging."
+deprecated = "Finished downloads are kept in the download cache instead; see download_cache."
+deprecated_remove_at = "2027.11.0"
+deprecated_warn_at = "2026.11.0"
+description = "[deprecated] Keep downloaded archives and sources after installing, for debugging."
 docs = """
 mise keeps the files under `~/.local/share/mise/downloads` so you can inspect
-them while debugging a backend or plugin. This is not a download cache; see
-[`download_cache`](#download_cache).
+them while debugging a backend or plugin. Downloads that go through mise's HTTP
+client are kept in [`download_cache`](#download_cache) instead, under their own
+names, so this is only needed for files an asdf plugin script downloads itself.
 """
 env = "MISE_ALWAYS_KEEP_DOWNLOAD"
 type = "Bool"
@@ -685,8 +689,11 @@ hash, and uses one again in two cases:
 - **A tool pinned its checksum**, in its options or in `mise.lock`. The kept
   file is used with no request at all, even if the URL changed.
 
-The `http`, `github` and `aqua` backends pin; every other download that goes
-through mise's HTTP client uses the first case.
+The `http`, `github`, `aqua` and `packslip` backends pin and install from the
+stored file, linked into place where the filesystem allows, so the archive takes
+no extra space and is not copied; across devices it is copied. Every other
+download that goes through mise's HTTP client uses the first case and is copied
+into place.
 
 A kept file is hashed again before it is used, and one that no longer matches is
 dropped and downloaded again. The recorded hash lives beside the file, so this

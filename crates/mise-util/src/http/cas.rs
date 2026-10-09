@@ -1,6 +1,8 @@
 //! A content-addressed store of finished downloads.
 //!
-//! Files are kept by their BLAKE3 hash under `blobs/`. Two small indexes point
+//! Files are kept by their BLAKE3 hash under `blobs/<hash>/<name>`, under the
+//! name they were downloaded as, since installers read the format and the
+//! binary's name from it. Two small indexes point
 //! into them:
 //!
 //! - `urls/`: a request (URL and headers) to the blob it last returned and the
@@ -62,8 +64,23 @@ fn is_hex(value: &str) -> bool {
     !value.is_empty() && value.bytes().all(|b| b.is_ascii_hexdigit())
 }
 
-fn blob_path(root: &Path, blake3: &str) -> PathBuf {
+fn blob_dir(root: &Path, blake3: &str) -> PathBuf {
     root.join("blobs").join(blake3)
+}
+
+/// The file a blob directory holds, whatever name it was stored under.
+fn blob_file(dir: &Path) -> Option<PathBuf> {
+    std::fs::read_dir(dir)
+        .ok()?
+        .flatten()
+        .map(|entry| entry.path())
+        .find(|path| path.is_file())
+}
+
+/// Where an in-flight download is written: stable per request, so a partial
+/// one can be resumed, and on the store's filesystem so it renames into place.
+pub(super) fn staging_path(request_hash: &str, name: &str) -> Option<PathBuf> {
+    Some(root()?.join("incoming").join(request_hash).join(name))
 }
 
 fn url_path(root: &Path, request_hash: &str) -> PathBuf {
@@ -120,10 +137,7 @@ pub(super) fn lookup_url(request_hash: &str) -> Option<Cached> {
     if !url.validator.is_valid() || !is_hex(&url.blake3) {
         return None;
     }
-    let blob = blob_path(&root, &url.blake3);
-    if !blob.is_file() {
-        return None;
-    }
+    let blob = blob_file(&blob_dir(&root, &url.blake3))?;
     Some(Cached {
         validator: url.validator,
         hit: Hit {
@@ -143,10 +157,7 @@ pub(super) fn lookup_pin(pin: &str) -> Option<Hit> {
     if !is_hex(&pinned.blake3) {
         return None;
     }
-    let blob = blob_path(&root, &pinned.blake3);
-    if !blob.is_file() {
-        return None;
-    }
+    let blob = blob_file(&blob_dir(&root, &pinned.blake3))?;
     Some(Hit {
         blob,
         effective_filename: pinned.effective_filename,
@@ -159,9 +170,9 @@ pub(super) fn lookup_pin(pin: &str) -> Option<Hit> {
 }
 
 impl Hit {
-    /// Copy the blob to `dest` if it still hashes to what it is expected to.
-    /// Otherwise drop what pointed at it and return `false`.
-    pub(super) fn restore(&self, dest: &Path) -> Result<bool> {
+    /// The stored file, once it hashes to what it is expected to. Otherwise
+    /// drop what pointed at it and return `None`.
+    pub(super) fn verified(&self) -> Option<PathBuf> {
         let intact = match &self.verify {
             Verify::Blake3(expected) => {
                 crate::hash::file_hash_blake3(&self.blob, None).is_ok_and(|hash| hash == *expected)
@@ -172,25 +183,43 @@ impl Hit {
         };
         if !intact {
             let _ = file::remove_file(&self.entry);
-            if matches!(self.verify, Verify::Blake3(_)) {
-                let _ = file::remove_file(&self.blob);
+            if matches!(self.verify, Verify::Blake3(_))
+                && let Some(dir) = self.blob.parent()
+            {
+                let _ = file::remove_all(dir);
             }
-            return Ok(false);
+            return None;
         }
-        let parent = dest.parent().unwrap_or(Path::new("."));
-        file::create_dir_all(parent)?;
-        // Renamed into place so an interrupted copy never leaves a truncated
-        // file at the destination. A `TempPath` holds no open handle, which
-        // Windows needs to copy over it.
-        let tmp = tempfile::NamedTempFile::new_in(parent)?.into_temp_path();
-        file::copy(&self.blob, &tmp)?;
-        tmp.persist(dest).map_err(|err| err.error)?;
         // Marks the blob as recently used for eviction.
         if let Ok(f) = std::fs::File::options().write(true).open(&self.blob) {
             let _ = f.set_modified(SystemTime::now());
         }
-        Ok(true)
+        Some(self.blob.clone())
     }
+}
+
+/// Put `blob` at `dest` without ever leaving a partial file there. With `link`
+/// the content is shared where the filesystem allows and copied where it
+/// doesn't, such as across devices; without it the content is always copied.
+pub(super) fn place(blob: &Path, dest: &Path, link: bool) -> Result<()> {
+    let parent = dest.parent().unwrap_or(Path::new("."));
+    file::create_dir_all(parent)?;
+    // A directory of our own, so the name inside it is free to link to. A
+    // `TempPath` would exist already, and Windows can't copy over a file that
+    // is open.
+    let scratch = tempfile::Builder::new()
+        .prefix(".mise-place-")
+        .tempdir_in(parent)?;
+    let staged = scratch.path().join("file");
+    if link {
+        file::hard_link_or_copy(blob, &staged)?;
+    } else {
+        file::copy(blob, &staged)?;
+    }
+    std::fs::rename(&staged, dest).map_err(|err| {
+        eyre::Report::new(err).wrap_err(format!("failed to place {}", dest.display()))
+    })?;
+    Ok(())
 }
 
 /// Write `contents` to `path` so a reader never sees a partial file.
@@ -203,84 +232,145 @@ fn write_atomic(path: &Path, contents: &[u8]) -> Result<()> {
     Ok(())
 }
 
-/// Keep `path`, just downloaded. `validator` lets the server confirm it later;
-/// `pin` lets a tool that pinned the same checksum skip the request.
-pub(super) fn store(
-    request_hash: &str,
-    pin: Option<&str>,
-    path: &Path,
-    validator: Option<&DownloadValidator>,
-    effective_filename: Option<String>,
-) -> Result<()> {
+/// What kept a download: how to find it again.
+pub(super) struct Keep<'a> {
+    pub(super) request_hash: &'a str,
+    /// The checksum the tool pinned.
+    pub(super) pin: Option<&'a str>,
+    pub(super) validator: Option<&'a DownloadValidator>,
+    pub(super) effective_filename: Option<String>,
+}
+
+/// Keep `path`, just downloaded, by copying it into the store. Returns the
+/// stored file, or `None` when there is nothing to index it by.
+pub(super) fn store(path: &Path, keep: Keep<'_>) -> Result<Option<PathBuf>> {
+    keep_file(path, keep, false)
+}
+
+/// Keep `path`, which sits in the store's staging area, by moving it into the
+/// store. Returns the stored file.
+pub(super) fn ingest(path: &Path, keep: Keep<'_>) -> Result<Option<PathBuf>> {
+    keep_file(path, keep, true)
+}
+
+fn keep_file(path: &Path, keep: Keep<'_>, move_in: bool) -> Result<Option<PathBuf>> {
     let Some(root) = root() else {
-        return Ok(());
+        return Ok(None);
     };
     // The caller checks the pin after the download. Checking here too keeps a
     // wrong file from ever being indexed under it.
-    let pin = pin.and_then(parse_pin).filter(|(algo, hex)| {
+    let pin = keep.pin.and_then(parse_pin).filter(|(algo, hex)| {
         let ok = crate::hash::ensure_checksum(path, hex, None, algo).is_ok();
         if !ok {
             debug!("not indexing a download that doesn't match its pin");
         }
         ok
     });
-    if validator.is_none() && pin.is_none() {
-        return Ok(());
+    if keep.validator.is_none() && pin.is_none() {
+        return Ok(None);
     }
+    let name = path.file_name().expect("downloads have a file name");
     let blake3 = crate::hash::file_hash_blake3(path, None)?;
-    let blob = blob_path(&root, &blake3);
-    if !blob.is_file() {
-        let parent = blob.parent().expect("blob paths have a parent");
-        file::create_dir_all(parent)?;
-        let tmp = tempfile::NamedTempFile::new_in(parent)?.into_temp_path();
-        file::copy(path, &tmp)?;
-        tmp.persist(&blob).map_err(|err| err.error)?;
-    }
-    if let Some(validator) = validator {
+    let dir = blob_dir(&root, &blake3);
+    let existing = blob_file(&dir);
+    let blob = match existing {
+        Some(blob) => {
+            if move_in {
+                let _ = file::remove_file(path);
+            }
+            blob
+        }
+        None => {
+            let blob = dir.join(name);
+            // Built beside its final place so the rename can't cross a device.
+            let blobs = root.join("blobs");
+            file::create_dir_all(&blobs)?;
+            let building = tempfile::Builder::new()
+                .prefix(".building-")
+                .tempdir_in(&blobs)?;
+            let staged = building.path().join(name);
+            if move_in {
+                file::rename(path, &staged)?;
+            } else {
+                file::copy(path, &staged)?;
+            }
+            let building = building.keep();
+            if let Err(err) = std::fs::rename(&building, &dir) {
+                let _ = file::remove_all(&building);
+                // Another process stored the same download first.
+                if blob_file(&dir).is_none() {
+                    return Err(err.into());
+                }
+            }
+            blob_file(&dir).unwrap_or(blob)
+        }
+    };
+    if let Some(validator) = keep.validator {
         let entry = UrlEntry {
             validator: validator.clone(),
             blake3: blake3.clone(),
-            effective_filename: effective_filename.clone(),
+            effective_filename: keep.effective_filename.clone(),
         };
-        write_atomic(&url_path(&root, request_hash), &serde_json::to_vec(&entry)?)?;
+        write_atomic(
+            &url_path(&root, keep.request_hash),
+            &serde_json::to_vec(&entry)?,
+        )?;
     }
     if let Some((algo, hex)) = pin {
         let entry = PinEntry {
             blake3,
-            effective_filename,
+            effective_filename: keep.effective_filename,
         };
         write_atomic(&pin_path(&root, algo, &hex), &serde_json::to_vec(&entry)?)?;
     }
-    evict(&root.join("blobs"));
-    Ok(())
+    evict(&root);
+    Ok(Some(blob))
 }
 
-fn evict(blobs: &Path) {
-    let Ok(read) = std::fs::read_dir(blobs) else {
+/// Past `MAX_CACHE_BYTES` the least recently used blobs go first. Staged
+/// downloads that were never finished go after a week.
+fn evict(root: &Path) {
+    let week = std::time::Duration::from_secs(7 * 24 * 60 * 60);
+    if let Ok(read) = std::fs::read_dir(root.join("incoming")) {
+        for entry in read.flatten() {
+            let stale = entry
+                .metadata()
+                .and_then(|m| m.modified())
+                .ok()
+                .and_then(|modified| modified.elapsed().ok())
+                .is_some_and(|age| age > week);
+            if stale {
+                let _ = file::remove_all(entry.path());
+            }
+        }
+    }
+    let Ok(read) = std::fs::read_dir(root.join("blobs")) else {
         return;
     };
     let mut entries = Vec::new();
     let mut total = 0u64;
     for entry in read.flatten() {
-        let Ok(meta) = entry.metadata() else {
-            continue;
-        };
-        if !meta.is_file() || entry.file_name().to_string_lossy().starts_with('.') {
+        let dir = entry.path();
+        if entry.file_name().to_string_lossy().starts_with('.') || !dir.is_dir() {
             continue;
         }
-        total += meta.len();
-        entries.push((
-            meta.modified().unwrap_or(SystemTime::UNIX_EPOCH),
-            meta.len(),
-            entry.path(),
-        ));
+        // Names of one blob share a file where they can, so count the largest.
+        let (mut size, mut used) = (0, SystemTime::UNIX_EPOCH);
+        for file in std::fs::read_dir(&dir).into_iter().flatten().flatten() {
+            if let Ok(meta) = file.metadata() {
+                size = size.max(meta.len());
+                used = used.max(meta.modified().unwrap_or(SystemTime::UNIX_EPOCH));
+            }
+        }
+        total += size;
+        entries.push((used, size, dir));
     }
     entries.sort();
-    for (_, size, path) in entries {
+    for (_, size, dir) in entries {
         if total <= MAX_CACHE_BYTES {
             break;
         }
-        if file::remove_file(&path).is_ok() {
+        if file::remove_all(&dir).is_ok() {
             total -= size;
         }
     }

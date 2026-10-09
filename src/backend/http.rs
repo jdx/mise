@@ -1389,9 +1389,10 @@ impl Backend for HttpBackend {
                 ctx.pr.set_message(format!("download {filename}"));
                 let headers = opts.headers(Some(tv.version.as_str()))?;
                 if headers.is_empty() {
-                    HTTP.download_file_pinned(
+                    HTTP.download_file_linked(
                         &url,
                         &file_path,
+                        &crate::http::host_auth_headers(&reqwest::Url::parse(&url)?)?,
                         pinned.as_deref(),
                         Some(ctx.pr.as_ref()),
                     )
@@ -1400,7 +1401,7 @@ impl Backend for HttpBackend {
                     // Keep the automatic host token; configured headers override it.
                     let headers =
                         crate::http::with_host_auth(&reqwest::Url::parse(&url)?, &headers)?;
-                    HTTP.download_file_with_pin(
+                    HTTP.download_file_linked(
                         &url,
                         &file_path,
                         &headers,

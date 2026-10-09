@@ -233,6 +233,17 @@ struct CacheMode<'a> {
     enabled: bool,
 }
 
+/// How a download was satisfied.
+struct Fetched {
+    metadata: DownloadFileMetadata,
+    /// A stored file answered the request, so nothing was written to the
+    /// destination.
+    stored: Option<PathBuf>,
+    /// The validator that came with a complete response, for keeping it.
+    validator: Option<DownloadValidator>,
+    request_hash: String,
+}
+
 /// What an attempt learned beyond the bytes it wrote.
 #[derive(Default)]
 struct AttemptOutcome {
@@ -1370,8 +1381,111 @@ impl Client {
             pin,
             enabled: use_cache,
         };
-        self.download_file_inner(url, path, headers, cache, pr, total_timeout)
-            .await
+        let fetched = self
+            .download_file_inner(url, path, headers, cache, pr, total_timeout)
+            .await?;
+        if let Some(blob) = fetched.stored {
+            let dest = path.to_path_buf();
+            tokio::task::spawn_blocking(move || cas::place(&blob, &dest, false)).await??;
+            return Ok(fetched.metadata);
+        }
+        if use_cache {
+            // Best effort: a download that can't be kept is still a download.
+            let path = path.to_path_buf();
+            let pin = pin.map(str::to_string);
+            let effective_filename = fetched.metadata.effective_filename.clone();
+            let kept = tokio::task::spawn_blocking(move || {
+                cas::store(
+                    &path,
+                    cas::Keep {
+                        request_hash: &fetched.request_hash,
+                        pin: pin.as_deref(),
+                        validator: fetched.validator.as_ref(),
+                        effective_filename,
+                    },
+                )
+            })
+            .await;
+            if let Ok(Err(err)) | Err(err) = kept.map_err(Report::from) {
+                debug!("could not keep the download: {err:#}");
+            }
+        }
+        Ok(fetched.metadata)
+    }
+
+    /// Like [`Client::download_file_pinned`], but the download is kept in the
+    /// store first and `dest` is a link to it where the filesystem allows one,
+    /// so the bytes exist once. Across devices, or without a store, it is a
+    /// copy. For callers that only read the file: a change through the link
+    /// would change the stored file, which is hashed again before it is reused.
+    pub async fn download_file_linked<U: IntoUrl>(
+        &self,
+        url: U,
+        dest: &Path,
+        headers: &HeaderMap,
+        pin: Option<&str>,
+        pr: Option<&dyn SingleReport>,
+    ) -> Result<DownloadFileMetadata> {
+        let url = url.into_url()?;
+        let name = dest
+            .file_name()
+            .ok_or_else(|| eyre!("download destination has no filename: {}", dest.display()))?
+            .to_string_lossy()
+            .to_string();
+        let request_hash = download_request_hash(&url, headers);
+        let staging = (Settings::get().download_cache && !Settings::get().generate_lockfiles())
+            .then(|| cas::staging_path(&request_hash, &name))
+            .flatten();
+        let Some(staging) = staging else {
+            return self
+                .download_file_with_pin(url, dest, headers, pin, pr)
+                .await;
+        };
+        let cache = CacheMode { pin, enabled: true };
+        let fetched = self
+            .download_file_inner(
+                url,
+                &staging,
+                headers,
+                cache,
+                pr,
+                crate::network::http_download_timeout(&Settings::get()),
+            )
+            .await?;
+        let blob = match fetched.stored {
+            Some(blob) => Some(blob),
+            None => {
+                let staged = staging.clone();
+                let pin = pin.map(str::to_string);
+                let effective_filename = fetched.metadata.effective_filename.clone();
+                let validator = fetched.validator.clone();
+                let hash = fetched.request_hash.clone();
+                tokio::task::spawn_blocking(move || {
+                    cas::ingest(
+                        &staged,
+                        cas::Keep {
+                            request_hash: &hash,
+                            pin: pin.as_deref(),
+                            validator: validator.as_ref(),
+                            effective_filename,
+                        },
+                    )
+                })
+                .await??
+            }
+        };
+        let dest = dest.to_path_buf();
+        // With nothing to index it by (no validator, no pin) the staged file is
+        // the download itself.
+        let (source, link) = match &blob {
+            Some(blob) => (blob.clone(), true),
+            None => (staging.clone(), false),
+        };
+        tokio::task::spawn_blocking(move || cas::place(&source, &dest, link)).await??;
+        if blob.is_none() {
+            let _ = file::remove_file(&staging);
+        }
+        Ok(fetched.metadata)
     }
 
     /// With `use_cache`, a download kept under `pin` is reused outright, and one
@@ -1385,25 +1499,30 @@ impl Client {
         cache: CacheMode<'_>,
         pr: Option<&dyn SingleReport>,
         total_timeout: Duration,
-    ) -> Result<DownloadFileMetadata> {
+    ) -> Result<Fetched> {
         let CacheMode {
             pin,
             enabled: use_cache,
         } = cache;
+        let url = url.into_url()?;
+        let request_hash = download_request_hash(&url, headers);
         // A pinned download kept earlier needs no request, so this comes before
         // the offline check.
         if use_cache && let Some(hit) = pin.and_then(cas::lookup_pin) {
             let effective_filename = hit.effective_filename.clone();
-            let dest = path.to_path_buf();
-            if tokio::task::spawn_blocking(move || hit.restore(&dest)).await?? {
-                return Ok(DownloadFileMetadata { effective_filename });
+            if let Some(blob) = tokio::task::spawn_blocking(move || hit.verified()).await? {
+                return Ok(Fetched {
+                    metadata: DownloadFileMetadata { effective_filename },
+                    stored: Some(blob),
+                    validator: None,
+                    request_hash,
+                });
             }
         }
         ensure!(
             !crate::network::offline(&Settings::get()),
             "offline mode is enabled"
         );
-        let url = url.into_url()?;
         debug!(
             "GET Downloading {} to {}",
             log_url(&url),
@@ -1422,7 +1541,6 @@ impl Client {
                 .await??;
         let attempt = Arc::new(AtomicUsize::new(0));
         let progress = Arc::new(DownloadProgress::default());
-        let request_hash = download_request_hash(&url, headers);
         let cached = if use_cache {
             cas::lookup_url(&request_hash)
         } else {
@@ -1489,11 +1607,14 @@ impl Client {
             && let Some(cached) = cached
         {
             let effective_filename = cached.effective_filename();
-            let dest = path.clone();
             let hit = cached.into_hit();
-            let restored = tokio::task::spawn_blocking(move || hit.restore(&dest)).await??;
-            if restored {
-                return Ok(DownloadFileMetadata { effective_filename });
+            if let Some(blob) = tokio::task::spawn_blocking(move || hit.verified()).await? {
+                return Ok(Fetched {
+                    metadata: DownloadFileMetadata { effective_filename },
+                    stored: Some(blob),
+                    validator: None,
+                    request_hash,
+                });
             }
             // The stored file no longer matches what was recorded: fetch it again.
             drop(_download_lock);
@@ -1514,24 +1635,12 @@ impl Client {
         let persist_path = path.clone();
         tokio::task::spawn_blocking(move || partial.persist(&persist_path)).await??;
         let validator = outcome.validator.lock().unwrap().take();
-        if use_cache {
-            let effective_filename = metadata.effective_filename.clone();
-            let pin = pin.map(str::to_string);
-            let stored = tokio::task::spawn_blocking(move || {
-                cas::store(
-                    &request_hash,
-                    pin.as_deref(),
-                    &path,
-                    validator.as_ref(),
-                    effective_filename,
-                )
-            })
-            .await;
-            if let Ok(Err(err)) | Err(err) = stored.map_err(Report::from) {
-                debug!("could not keep the download for revalidation: {err:#}");
-            }
-        }
-        Ok(metadata)
+        Ok(Fetched {
+            metadata,
+            stored: None,
+            validator,
+            request_hash,
+        })
     }
 
     async fn download_file_attempt(
@@ -2432,7 +2541,7 @@ pub fn with_host_auth(url: &Url, headers: &HeaderMap) -> Result<HeaderMap> {
     Ok(merged)
 }
 
-fn host_auth_headers(url: &Url) -> Result<HeaderMap> {
+pub fn host_auth_headers(url: &Url) -> Result<HeaderMap> {
     // raw.githubusercontent.com is not an API host, but a private repository's
     // files are a 404 without the token, so it is routed here too. `get_headers`
     // decides what each host actually gets.

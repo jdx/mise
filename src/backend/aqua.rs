@@ -2828,8 +2828,15 @@ impl AquaBackend {
             .lock_platforms
             .get(&self.get_platform_key())
             .and_then(|platform| platform.checksum.clone());
-        HTTP.download_file_pinned(url, &tarball_path, pinned.as_deref(), Some(ctx.pr.as_ref()))
-            .await?;
+        let headers = crate::http::host_auth_headers(&reqwest::Url::parse(url)?)?;
+        HTTP.download_file_linked(
+            url,
+            &tarball_path,
+            &headers,
+            pinned.as_deref(),
+            Some(ctx.pr.as_ref()),
+        )
+        .await?;
         Ok(())
     }
 
