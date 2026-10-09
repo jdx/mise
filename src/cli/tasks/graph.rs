@@ -1,16 +1,16 @@
-use crate::config::{Config, Settings};
+use crate::config::Config;
 use crate::task::workspace::{WorkspaceProject, WorkspaceProjectGraph};
 use crate::ui::table::MiseTable;
 use comfy_table::{Cell, Row};
 use eyre::Result;
 use serde::Serialize;
 
-/// [experimental] Show the monorepo project graph
+/// Show the monorepo project graph
 ///
 /// Lists the projects mise infers from Cargo, uv, Go, and Node.js workspace
 /// manifests, with each project's ID, root directory, dependencies, and
 /// metadata. `mise run --affected` uses this graph to decide which projects a
-/// change touches. Requires `experimental = true`.
+/// change touches.
 ///
 /// See https://mise.jdx.dev/tasks/workspace-graph.html
 #[derive(Debug, usage_rs::Args)]
@@ -44,7 +44,6 @@ struct ProjectGraphOutput<'a> {
 
 impl TasksGraph {
     pub(super) async fn run(self) -> Result<()> {
-        Settings::get().ensure_experimental("workspace project graph")?;
         let config = Config::get().await?;
         let graph = config.workspace_project_graph()?;
 

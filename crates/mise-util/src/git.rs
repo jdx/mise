@@ -479,12 +479,80 @@ impl Git {
         .stdout_capture()
         .run()
         .wrap_err_with(|| format!("git diff for {range} failed"))?;
-        output
-            .stdout
-            .split(|byte| *byte == 0)
-            .filter(|path| !path.is_empty())
-            .map(path_from_git_bytes)
-            .collect()
+        parse_nul_paths(&output.stdout)
+    }
+
+    /// Returns tracked paths that differ between `HEAD` and the working tree,
+    /// staged and unstaged alike.
+    ///
+    /// Same path rules as [`Git::changed_paths`].
+    pub fn uncommitted_paths(&self) -> Result<BTreeSet<PathBuf>> {
+        let output = git_cmd!(
+            &self.dir,
+            "diff",
+            "--name-only",
+            "-z",
+            "--no-renames",
+            "--relative",
+            "HEAD",
+            "--",
+            "."
+        )
+        .stdout_capture()
+        .run()
+        .wrap_err("git diff for uncommitted changes failed")?;
+        parse_nul_paths(&output.stdout)
+    }
+
+    /// Returns untracked paths that Git's ignore rules do not exclude.
+    ///
+    /// Paths are relative to `self.dir`, and paths outside it are excluded.
+    pub fn untracked_paths(&self) -> Result<BTreeSet<PathBuf>> {
+        let output = git_cmd!(
+            &self.dir,
+            "ls-files",
+            "--others",
+            "--exclude-standard",
+            "-z",
+            "--",
+            "."
+        )
+        .stdout_capture()
+        .run()
+        .wrap_err("git ls-files for untracked files failed")?;
+        parse_nul_paths(&output.stdout)
+    }
+
+    /// Whether two revisions name the same commit.
+    pub fn same_commit(&self, left: &str, right: &str) -> Result<bool> {
+        Ok(self.commit_id(left)? == self.commit_id(right)?)
+    }
+
+    fn commit_id(&self, revision: &str) -> Result<String> {
+        validate_revision("revision", revision)?;
+        let spec = format!("{revision}^{{commit}}");
+        Ok(git_cmd_read!(
+            &self.dir,
+            "rev-parse",
+            "--verify",
+            "--end-of-options",
+            spec.as_str()
+        )?
+        .trim()
+        .to_string())
+    }
+
+    /// Reads a UTF-8 file from the working tree, returning `None` when it does not exist.
+    pub fn file_in_worktree(&self, path: &Path) -> Result<Option<String>> {
+        match std::fs::read(self.dir.join(path)) {
+            Ok(bytes) => {
+                Ok(Some(String::from_utf8(bytes).wrap_err_with(|| {
+                    format!("Working tree file {path:?} is not UTF-8")
+                })?))
+            }
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(None),
+            Err(err) => Err(err).wrap_err_with(|| format!("failed to read {path:?}")),
+        }
     }
 
     /// Returns the merge base used by a triple-dot comparison.
@@ -538,6 +606,14 @@ fn validate_revision(name: &str, revision: &str) -> Result<()> {
         return Err(eyre!("invalid Git {name} revision {revision:?}"));
     }
     Ok(())
+}
+
+fn parse_nul_paths(stdout: &[u8]) -> Result<BTreeSet<PathBuf>> {
+    stdout
+        .split(|byte| *byte == 0)
+        .filter(|path| !path.is_empty())
+        .map(path_from_git_bytes)
+        .collect()
 }
 
 fn path_from_git_bytes(path: &[u8]) -> Result<PathBuf> {

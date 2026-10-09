@@ -277,5 +277,5 @@ extends = "python:lint"
 
 To give every project's `build` task the same defaults without adding
 `extends` to each one, use `[monorepo.task_defaults.build]` from the
-experimental [workspace project graph](/tasks/workspace-graph.html#root-task-defaults) instead. A
+[workspace project graph](/tasks/workspace-graph.html#root-task-defaults) instead. A
 template named by `extends` takes precedence over a root default.

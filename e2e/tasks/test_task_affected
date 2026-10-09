@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
 
-export MISE_EXPERIMENTAL=1
 export AFFECTED_LOG="$PWD/affected.log"
 
 cat <<'EOF' >.gitignore
@@ -208,3 +207,48 @@ output=$(mise run --affected --affected-explain --jobs 1 build)
 assert_contains "echo \"$output\"" "lockfile change: pnpm-lock.yaml"
 assert_contains "echo \"$output\"" "depends on affected project: node:lib"
 assert "sort affected.log" $'app\nlib'
+
+# Untracked files count by default and under --affected-untracked, but not under
+# --affected-committed. Ignored files never count.
+echo notes >packages/other/notes.txt
+echo ignored >affected.log.bak
+echo '*.bak' >>.git/info/exclude
+: >affected.log
+mise run --affected --jobs 1 build
+assert "sort affected.log" $'app\nlib\nother'
+: >affected.log
+mise run --affected --affected-untracked --jobs 1 build
+assert "cat affected.log" "other"
+: >affected.log
+mise run --affected --affected-committed --jobs 1 build
+assert "sort affected.log" $'app\nlib'
+rm packages/other/notes.txt
+
+# Staged and unstaged edits to tracked files count as uncommitted.
+echo '# edit' >>packages/other/mise.toml
+: >affected.log
+mise run --affected --affected-uncommitted --jobs 1 build
+assert "cat affected.log" "other"
+git add packages/other/mise.toml
+: >affected.log
+mise run --affected --affected-uncommitted --jobs 1 build
+assert "cat affected.log" "other"
+: >affected.log
+mise run --affected --affected-untracked --jobs 1 build
+assert "cat affected.log" ""
+: >affected.log
+mise run --affected --affected-uncommitted --affected-committed --jobs 1 build
+assert "sort affected.log" $'app\nlib\nother'
+git reset -q --hard
+
+# A lockfile edited in the working tree is attributed to the projects it changes.
+sed -i 's/2\.0\.0/3.0.0/g' pnpm-lock.yaml
+output=$(mise run --affected --affected-uncommitted --affected-explain --jobs 1 build)
+assert_contains "echo \"$output\"" "lockfile change: pnpm-lock.yaml"
+git checkout -q pnpm-lock.yaml
+
+# The working tree only counts when head is the checkout.
+: >affected.log
+mise run --affected --affected-head HEAD~1 --affected-base HEAD~1 --jobs 1 build
+assert "cat affected.log" ""
+assert_fail_contains "mise run --affected --affected-head HEAD~1 --affected-uncommitted build" "current checkout"
