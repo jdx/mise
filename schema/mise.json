@@ -640,6 +640,11 @@
           "description": "Keep downloaded archives and sources after installing, for debugging.",
           "type": "boolean"
         },
+        "download_cache": {
+          "default": true,
+          "description": "Reuse a verified download instead of fetching it again.",
+          "type": "boolean"
+        },
         "always_keep_install": {
           "description": "Keep a failed installation's partial install directory and downloads, for debugging.",
           "type": "boolean"

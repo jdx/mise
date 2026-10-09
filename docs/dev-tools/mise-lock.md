@@ -424,11 +424,18 @@ themselves and `postinstall` hooks change files. For tools built from source,
 such as Python and Ruby, it covers only the source tarball, not the compiled
 output.
 
-So treat a cache as trusted build input:
+Downloads are different. With a pinned checksum, the `http` backend keeps the
+verified artifact in `$MISE_CACHE_DIR/downloads-cas`, hashes it again on every
+use, and falls back to downloading when it doesn't match. See
+[`download_cache`](/configuration/settings.html#download_cache).
+
+So treat a cache of installed files as trusted build input:
 
 - Don't restore caches written by untrusted refs or triggers.
-- Save a manifest with the cache and check it on restore. That proves the cache
-  is unchanged since CI saved it, not that it matches the lockfile.
+- Record a manifest of the cache outside it, in trusted CI metadata, and check
+  the restored files against it. A manifest stored in the cache can be replaced
+  along with it. That proves the cache is unchanged since CI saved it, not that
+  it matches the lockfile.
 - For a fully verified install, run `mise install --locked` with an empty data
   directory.
 

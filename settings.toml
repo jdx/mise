@@ -107,12 +107,25 @@ type = "Bool"
 description = "Keep downloaded archives and sources after installing, for debugging."
 docs = """
 mise keeps the files under `~/.local/share/mise/downloads` so you can inspect
-them while debugging a backend or plugin. This is not a download cache: some
-backends skip a download when the file already exists, but that is not
-guaranteed. To avoid reinstalling tools in CI, cache
-`~/.local/share/mise/installs` instead.
+them while debugging a backend or plugin. This is not a download cache; see
+[`download_cache`](#download_cache).
 """
 env = "MISE_ALWAYS_KEEP_DOWNLOAD"
+type = "Bool"
+
+[download_cache]
+default = true
+description = "Reuse a verified download instead of fetching it again."
+docs = """
+When a tool pins a checksum, in its options or in `mise.lock`, mise keeps the
+verified download in `$MISE_CACHE_DIR/downloads-cas`, named by that checksum.
+Later installs hash the kept file again and use it instead of downloading when
+it matches, so a restored or shared cache can save a download but cannot change
+what gets installed. A file that no longer matches is removed. Only the `http`
+backend uses it so far. Extracted files are not covered; see
+[Restored caches and installed tools](/dev-tools/mise-lock.html#restored-caches).
+"""
+env = "MISE_DOWNLOAD_CACHE"
 type = "Bool"
 
 [always_keep_install]

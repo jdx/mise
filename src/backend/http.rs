@@ -15,6 +15,7 @@ use crate::backend::static_helpers::{
 use crate::backend::version_list;
 use crate::config::Config;
 use crate::config::Settings;
+use crate::download_cache;
 use crate::http::{DownloadFileMetadata, HTTP};
 use crate::install_context::InstallContext;
 use crate::lockfile::PlatformInfo;
@@ -1374,8 +1375,28 @@ impl Backend for HttpBackend {
             .and_then(|p| p.checksum.as_ref())
             .is_some();
 
-        let download = match local_artifact_path(&url)? {
-            Some(src) => {
+        // A checksum the tool pinned names the artifact, so a copy kept from an
+        // earlier install can stand in for the download once it hashes to it.
+        let pinned = opts.checksum().or_else(|| {
+            tv.lock_platforms
+                .get(&platform_key)
+                .and_then(|p| p.checksum.clone())
+        });
+        let local_src = local_artifact_path(&url)?;
+        let restored = match (&pinned, &local_src) {
+            (Some(checksum), None) => {
+                ctx.pr.set_message(format!("cached {filename}"));
+                download_cache::restore(checksum, &file_path, Some(ctx.pr.as_ref()))?
+            }
+            _ => None,
+        };
+        let from_cache = restored.is_some();
+
+        let download = match (restored, local_src) {
+            (Some(restored), _) => DownloadFileMetadata {
+                effective_filename: restored.effective_filename,
+            },
+            (None, Some(src)) => {
                 ctx.pr.set_message(format!("copy {filename}"));
                 if let Some(parent) = file_path.parent() {
                     file::create_dir_all(parent)?;
@@ -1383,7 +1404,7 @@ impl Backend for HttpBackend {
                 file::run_blocking(|| file::copy(&src, &file_path))?;
                 DownloadFileMetadata::default()
             }
-            None => {
+            (None, None) => {
                 ctx.pr.set_message(format!("download {filename}"));
                 let headers = opts.headers(Some(tv.version.as_str()))?;
                 if headers.is_empty() {
@@ -1460,6 +1481,14 @@ impl Backend for HttpBackend {
             ctx.pr.next_operation();
         }
         self.verify_checksum(ctx, &mut tv, &file_path)?;
+
+        // Verified against the pin above, so it is safe to keep for next time.
+        if let Some(checksum) = pinned.as_ref().filter(|_| !from_cache)
+            && let Err(err) =
+                download_cache::store(checksum, &file_path, download.effective_filename.as_deref())
+        {
+            debug!("could not keep {filename} in the download cache: {err}");
+        }
 
         Ok(tv)
     }
