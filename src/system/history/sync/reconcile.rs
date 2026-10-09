@@ -47,17 +47,16 @@ pub(crate) fn upstream_with_interaction(
     let encrypted = super::files::encrypted_paths(repo, commit)?;
     // every file this machine cannot unlock is named at once, so a stale
     // recipient list is fixed in one pass rather than one file per retry.
-    // Once one has failed, the rest are only tried without prompting: the
-    // operation fails either way, and a passphrase is not asked for again
-    // per file just to list them.
+    // Each is tried as the caller asked, prompting included: a hardware
+    // identity loads only when it may prompt, and a file it would open must
+    // not be listed as locked.
     let mut locked: Vec<String> = vec![];
     let mut first_locked = None;
     if let Some(commit) = commit {
         for entry in repo.ls_tree(commit)? {
             if let Some((mode, oid)) = repo.object_at(commit, &entry.path)? {
                 let object = if encrypted.contains(&entry.path) {
-                    let prompt = interactive && first_locked.is_none();
-                    match super::files::decrypt(repo, &entry.path, &(mode, oid), prompt) {
+                    match super::files::decrypt(repo, &entry.path, &(mode, oid), interactive) {
                         Ok(object) => object,
                         Err(err) if err.downcast_ref::<super::files::Locked>().is_some() => {
                             locked.push(entry.path);
