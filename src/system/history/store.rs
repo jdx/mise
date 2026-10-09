@@ -994,7 +994,7 @@ pub(crate) fn meta_cache_path_in(state_dir: &Path, uuid: &str) -> PathBuf {
 }
 
 pub(crate) fn write_meta_cache_in(state_dir: &Path, checkpoint: &Checkpoint) -> Result<()> {
-    write_json(&meta_cache_path_in(state_dir, &checkpoint.uuid), checkpoint)
+    write_json_if_changed(&meta_cache_path_in(state_dir, &checkpoint.uuid), checkpoint)
 }
 
 pub(crate) fn read_meta_cache_in(state_dir: &Path, uuid: &str) -> Result<Option<Checkpoint>> {
@@ -1289,8 +1289,22 @@ pub(crate) fn new_uuid() -> String {
 }
 
 pub(crate) fn write_json<T: Serialize>(path: &Path, value: &T) -> Result<()> {
+    write_json_text(path, value, false)
+}
+
+/// [`write_json`], leaving a file that already holds these bytes alone. An
+/// index rebuild visits every checkpoint, and rewriting each one through a
+/// temporary file and an fsync costs I/O proportional to the whole history.
+fn write_json_if_changed<T: Serialize>(path: &Path, value: &T) -> Result<()> {
+    write_json_text(path, value, true)
+}
+
+fn write_json_text<T: Serialize>(path: &Path, value: &T, skip_unchanged: bool) -> Result<()> {
     let mut text = serde_json::to_string_pretty(value)?;
     text.push('\n');
+    if skip_unchanged && std::fs::read(path).is_ok_and(|existing| existing == text.as_bytes()) {
+        return Ok(());
+    }
     if let Some(parent) = path.parent() {
         file::create_dir_all(parent)?;
     }
