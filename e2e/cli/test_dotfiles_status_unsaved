@@ -1,0 +1,91 @@
+#!/usr/bin/env bash
+# `mise dot status` says when tracked files changed since the latest
+# checkpoint, so unsaved edits are visible without `history diff`.
+require_cmd git
+echo one >~/.zshrc
+mkdir -p ~/.config/app ~/.config/mise
+echo one >~/.config/app/config.toml
+echo key >~/.config/app/secrets.key
+# with no checkpoint yet there is nothing to compare against
+assert "mise dot status --json | jq -c .history.unsaved" 'null'
+assert_succeed "mise dot track ~/.zshrc ~/.config/app"
+
+# right after a save there is nothing to report, and a credential the
+# guard leaves out is not an unsaved change
+assert_not_contains 'mise dot status' 'unsaved changes'
+assert "mise dot status --json | jq -c .history.unsaved" '[]'
+
+echo two >~/.zshrc
+echo new >~/.config/app/added.toml
+assert_contains 'mise dot status' 'unsaved changes: 2 path(s) since the latest checkpoint (~/.config/app/added.toml, ~/.zshrc)'
+assert "mise dot status --json | jq -c .history.unsaved" '["~/.config/app/added.toml","~/.zshrc"]'
+# status only reports; the edits are still unsaved afterwards
+assert_contains 'mise dot status' 'unsaved changes: 2 path(s)'
+
+assert_succeed 'mise dot save'
+assert_not_contains 'mise dot status' 'unsaved changes'
+
+rm ~/.zshrc
+assert "mise dot status --json | jq -c .history.unsaved" '["~/.zshrc"]'
+
+# an unchanged encrypted file is not reported, and an edited one is
+export MISE_AGE_KEY="AGE-SECRET-KEY-142E7VJ8GUWR94MXDCYQJ7ZTQZRXKQSP9PUJU8HUQJ206QN7QPV4SM5QRL8"
+cat >>"$MISE_CONFIG_DIR/config.toml" <<'TOML'
+[history.encryption]
+recipients = ["age1fuvsfq02qr5ju0nhh3rulrwracymjljlr5j49kres24ltd3fjq0s9z9d8l"]
+TOML
+echo private >~/.private
+assert_succeed 'mise dot track --encrypt ~/.private'
+assert_succeed 'mise dot save'
+assert "mise dot status --json | jq -c .history.unsaved" '[]'
+echo changed >~/.private
+assert "mise dot status --json | jq -c .history.unsaved" '["~/.private"]'
+
+# the encryption cache is only a cache: without it, an unchanged encrypted
+# file encrypts to a new ciphertext and is still not reported
+assert_succeed 'mise dot save'
+rm -f "$MISE_STATE_DIR/history/index/encryption.json"
+assert "mise dot status --json | jq -c .history.unsaved" '[]'
+# nor is it guessed at when this machine cannot decrypt to compare
+rm -f "$MISE_STATE_DIR/history/index/encryption.json"
+assert "MISE_AGE_KEY= mise dot status --json | jq -c .history.unsaved" 'null'
+
+# a tracked file or directory that cannot be read is unknown, not removed
+# (root reads through the permissions, so only an ordinary user can check)
+mkdir -p ~/.config/app/sub
+echo nested >~/.config/app/sub/nested.toml
+assert_succeed 'mise dot save'
+if [ "$(id -u)" != 0 ]; then
+  chmod 000 ~/.config/app/config.toml
+  assert "mise dot status --json | jq -c .history.unsaved" 'null'
+  chmod 644 ~/.config/app/config.toml
+  chmod 000 ~/.config/app/sub
+  assert "mise dot status --json | jq -c .history.unsaved" 'null'
+  chmod 755 ~/.config/app/sub
+fi
+
+# a saved file the walk now omits (here, replaced by a special file) is
+# carried by the next save, so it is not an unsaved removal either
+echo saved >~/.config/app/fifo
+assert_succeed 'mise dot save'
+rm ~/.config/app/fifo
+mkfifo ~/.config/app/fifo
+assert "mise dot status --json | jq -c .history.unsaved" '[]'
+
+# but one the rules no longer retain (a credential whose encryption was
+# turned off) is a removal the next save records, so status reports it
+echo token >~/.secret-token
+assert_succeed 'mise dot track --encrypt ~/.secret-token'
+assert_succeed 'mise dot save'
+sed -i.bak 's|^"~/.secret-token" = { mode = "track", encrypt = true }|"~/.secret-token" = { mode = "track" }|' "$MISE_CONFIG_DIR/config.toml"
+assert_contains "cat $MISE_CONFIG_DIR/config.toml" '"~/.secret-token" = { mode = "track" }'
+assert "mise dot status --json | jq -c .history.unsaved" '["~/.secret-token"]'
+assert_contains 'mise dot save 2>&1' 'removed ~/.secret-token'
+assert "mise dot status --json | jq -c .history.unsaved" '[]'
+
+# turning encryption off for an ordinary file is a change the next save
+# records, not a reason to give up on the whole list
+echo other-edit >~/.zshrc
+sed -i.bak 's|^"~/.private" = { mode = "track", encrypt = true }|"~/.private" = { mode = "track" }|' "$MISE_CONFIG_DIR/config.toml"
+assert_contains "cat $MISE_CONFIG_DIR/config.toml" '"~/.private" = { mode = "track" }'
+assert "mise dot status --json | jq -c .history.unsaved" '["~/.private","~/.zshrc"]'

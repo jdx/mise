@@ -1657,6 +1657,90 @@ pub fn live_tree(repo: &HistoryRepo, tracked: &TrackedSet) -> Result<String> {
     Ok(captured.tree)
 }
 
+/// The tracked paths whose working-tree contents differ from `snapshot`,
+/// spelled the way checkpoints record their changes. `None` when the answer
+/// would be a guess: a file could not be read (a partial capture reports it
+/// as removed), or an encrypted file's contents could not be compared.
+/// Like `mise dot history diff`, this reads and hashes every tracked file.
+pub fn unsaved_paths(
+    repo: &HistoryRepo,
+    tracked: &TrackedSet,
+    walk: &super::tracked::Walk,
+    snapshot: &str,
+) -> Result<Option<Vec<String>>> {
+    // the walk leaves out a file it cannot read, and every file past the
+    // point where a scan stopped (`incomplete`); the guard's intentional
+    // omissions are not read failures
+    if !walk.incomplete.is_empty()
+        || walk
+            .omitted
+            .iter()
+            .any(|omitted| omitted.reason.starts_with("unreadable"))
+    {
+        return Ok(None);
+    }
+    let recipients = if walk.files.values().any(|(_, policy)| policy.encrypt) {
+        tracked.manifest.recipients.clone()
+    } else {
+        vec![]
+    };
+    // never prompts: a status report does not ask for a passphrase
+    let captured = repo.capture_live(walk, &recipients, false)?;
+    if !captured.omitted.is_empty() {
+        return Ok(None);
+    }
+    let live = without_local(repo, &captured.tree, &tracked.local)?;
+    let saved = without_local(repo, snapshot, &tracked.local)?;
+    let mut encrypted = super::sync::files::encrypted_paths(repo, Some(&saved))?;
+    encrypted.extend(super::sync::files::encrypted_paths(repo, Some(&live))?);
+    // a save carries a path the walk omitted (too large, a special file)
+    // rather than record it as removed, when the tracking rules still retain
+    // it (`retain_omitted`)
+    let carried: Vec<PathBuf> = tracked
+        .coverage(walk)
+        .omitted
+        .iter()
+        .map(|omitted| crate::file::replace_path(&omitted.path))
+        .collect();
+    let roots = super::sync::layout::Roots::current();
+    let mut unsaved = vec![];
+    for change in repo.changes(Some(&saved), &live)? {
+        if change.path.starts_with(".mise-history/") {
+            continue;
+        }
+        if change.status == 'D'
+            && let Some(path) = roots.locate(&change.path).path()
+            && carried.iter().any(|omitted| path.starts_with(omitted))
+            && tracked.would_retain(path)?
+        {
+            continue;
+        }
+        // encrypting unchanged contents again (the encryption cache is only
+        // a cache) gives a new ciphertext, so two envelopes are compared by
+        // what they decrypt to. One envelope and one plain file is a change of
+        // `encrypt` the next save records, whatever the contents.
+        if change.status == 'M' && encrypted.contains(&change.path) {
+            let envelope = |tree: &str| -> Result<Option<(String, String)>> {
+                Ok(repo.object_at(tree, &change.path)?.filter(|object| {
+                    repo.blob_starts_with(&object.1, b"mise-encrypted-file-v1\n")
+                        .unwrap_or(false)
+                }))
+            };
+            if let (Some(saved), Some(live)) = (envelope(&saved)?, envelope(&live)?) {
+                let decrypt =
+                    |object| super::sync::files::decrypt(repo, &change.path, &object, false).ok();
+                match (decrypt(saved), decrypt(live)) {
+                    (Some(saved), Some(live)) if saved == live => continue,
+                    (Some(_), Some(_)) => {}
+                    _ => return Ok(None),
+                }
+            }
+        }
+        unsaved.push(tree_path_to_display(&change.path));
+    }
+    Ok(Some(unsaved))
+}
+
 /// The checkpoint that saved the version of `path` that checkpoint `id`
 /// holds: the newest one at or before it that changed the path, or `id`
 /// itself when none did. A truncated change list cannot say whether it
