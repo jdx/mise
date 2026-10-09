@@ -243,7 +243,16 @@ impl Upgrade {
         if self.global && super::tool_update::needs_global_scope() {
             return super::tool_update::rerun_in_global_scope();
         }
-        let mut config = Config::get().await?;
+        // Like an `auto_update` upgrade, a global one rewrites the global config
+        // and lockfile, so it waits for any other update and reads config after.
+        let _update_lock = (self.global && !self.is_dry_run())
+            .then(crate::tool_update::lock_for_update)
+            .transpose()?;
+        let mut config = if _update_lock.is_some() {
+            Config::reset().await?
+        } else {
+            Config::get().await?
+        };
         let mut explicit_config_bumps = Vec::new();
         if self.bump && !self.tool.is_empty() {
             let effective = self.toolset_builder().build_unresolved(&config)?;

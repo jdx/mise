@@ -269,7 +269,11 @@ pub(super) fn needs_global_scope() -> bool {
 /// `mise outdated --global` work this way, like an `auto_update` upgrade.
 pub(super) fn rerun_in_global_scope() -> Result<()> {
     let args = without_cd(env::ARGS.read().unwrap().iter().skip(1).cloned());
-    let status = global_scope_command(&args).status()?;
+    // A global upgrade holds the update lock, so launches inside its hooks
+    // skip their own updates, as they do inside an `auto_update` one.
+    let status = global_scope_command(&args)
+        .env(tool_update::UPDATING_ENV, "1")
+        .status()?;
     if status.success() {
         Ok(())
     } else {
