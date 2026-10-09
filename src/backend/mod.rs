@@ -973,27 +973,38 @@ mod tests {
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn test_list_and_get_survive_concurrent_reset() {
+        use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+        const READERS: usize = 4;
         load_tools().await.unwrap();
-        let stop = Arc::new(std::sync::atomic::AtomicBool::new(false));
-        let readers = (0..4)
+        let stop = Arc::new(AtomicBool::new(false));
+        let reads = Arc::new(AtomicUsize::new(0));
+        // Hold the resets until every reader is running, so the readers cannot
+        // all start after the loop has finished and pass without reading.
+        let ready = Arc::new(std::sync::Barrier::new(READERS + 1));
+        let readers = (0..READERS)
             .map(|_| {
-                let stop = stop.clone();
+                let (stop, reads, ready) = (stop.clone(), reads.clone(), ready.clone());
                 std::thread::spawn(move || {
                     let ba = BackendArg::from("node");
-                    while !stop.load(std::sync::atomic::Ordering::SeqCst) {
+                    ready.wait();
+                    while !stop.load(Ordering::SeqCst) {
                         list();
                         get(&ba);
+                        reads.fetch_add(1, Ordering::SeqCst);
                     }
                 })
             })
             .collect::<Vec<_>>();
+        tokio::task::block_in_place(|| ready.wait());
         for _ in 0..200 {
             reset().await.unwrap();
         }
-        stop.store(true, std::sync::atomic::Ordering::SeqCst);
+        let reads_during_reset = reads.load(Ordering::SeqCst);
+        stop.store(true, Ordering::SeqCst);
         for reader in readers {
             reader.join().expect("reader panicked during reset");
         }
+        assert!(reads_during_reset > 0, "no reader ran while resetting");
     }
 
     fn create_test_backend_arg(tool: &str) -> Arc<BackendArg> {
