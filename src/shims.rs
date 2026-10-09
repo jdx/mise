@@ -1424,7 +1424,7 @@ fn is_current_owned_mise_shim(path: &Path, mise_bin: &Path) -> Result<bool> {
     Ok(file::paths_eq(&target, mise_bin))
 }
 
-fn list_executables_in_dir(dir: &Path) -> Result<HashSet<String>> {
+pub(crate) fn list_executables_in_dir(dir: &Path) -> Result<HashSet<String>> {
     Ok(dir
         .read_dir()?
         .map(|bin| {

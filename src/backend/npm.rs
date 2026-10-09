@@ -1173,6 +1173,20 @@ impl Backend for NPMBackend {
         Ok(tv)
     }
 
+    async fn verify_install(&self, _ctx: &InstallContext, tv: &ToolVersion) -> Result<()> {
+        // A library such as `npm:lodash` installs cleanly but puts nothing on PATH, which
+        // leaves a configured tool that does nothing. Warn rather than fail: `bin` can
+        // change between versions, and a package may be installed only for its files.
+        if !Self::install_has_executables(&tv.install_path()) {
+            warn!(
+                "{}@{} installed no executables, so mise created no shims for it. npm: tools are for command-line programs; add a library to your project's package.json instead.",
+                self.display_backend_name(),
+                tv.version,
+            );
+        }
+        Ok(())
+    }
+
     #[cfg(windows)]
     async fn list_bin_paths(
         &self,
@@ -2243,6 +2257,14 @@ impl NPMBackend {
     /// legacy `aube add --global` installs — use `bin/`. Whichever exists is
     /// returned; the bare install path is the last-resort fallback (some npm
     /// global layouts drop executables at the root on Windows).
+    /// Whether shim generation would find anything to link in this install. An
+    /// unreadable directory counts as having executables, so it cannot cause a warning.
+    fn install_has_executables(install_path: &Path) -> bool {
+        Self::bin_paths_for_install_path(install_path)
+            .iter()
+            .any(|dir| !matches!(crate::shims::list_executables_in_dir(dir), Ok(bins) if bins.is_empty()))
+    }
+
     fn bin_paths_for_install_path(install_path: &Path) -> Vec<std::path::PathBuf> {
         let node_bin = install_path.join("node_modules").join(".bin");
         let bin_dir = install_path.join("bin");
@@ -2739,6 +2761,28 @@ mod tests {
     use super::*;
     use crate::args::{BackendArg, BackendResolution};
     use crate::toolset::{ToolRequest, ToolSource, ToolVersion};
+
+    #[test]
+    fn install_has_executables_matches_what_shims_link() {
+        let install = tempfile::tempdir().unwrap();
+        let node_bin = install.path().join("node_modules").join(".bin");
+
+        // a library install: package files but nothing to link
+        std::fs::create_dir_all(install.path().join("node_modules").join("lodash")).unwrap();
+        std::fs::write(install.path().join("package.json"), "{}").unwrap();
+        assert!(!NPMBackend::install_has_executables(install.path()));
+        std::fs::create_dir_all(&node_bin).unwrap();
+        assert!(!NPMBackend::install_has_executables(install.path()));
+
+        let name = if cfg!(windows) {
+            "prettier.cmd"
+        } else {
+            "prettier"
+        };
+        std::fs::write(node_bin.join(name), "").unwrap();
+        crate::file::make_executable(node_bin.join(name)).unwrap();
+        assert!(NPMBackend::install_has_executables(install.path()));
+    }
 
     #[cfg(unix)]
     fn npm_view_env(dirs: &[&Path]) -> BTreeMap<String, String> {
