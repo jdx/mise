@@ -417,7 +417,6 @@ impl Parser {
     fn parse_unquoted(&mut self) -> Result<(String, bool), ParseError> {
         let value_start = self.position;
         let mut escaped = false;
-        let mut substitution_depth = 0_usize;
         let mut ended = true;
 
         while let Some(character) = self.peek() {
@@ -436,18 +435,26 @@ impl Parser {
             } else if character == '\\' {
                 escaped = true;
             } else if character == '$' && self.options.substitution {
-                // A `${...}` expression is one unit, so quotes in its default word
-                // (`${NAME:-"a b"}`) do not start a segment. `$$` is a literal dollar.
-                let next = self.source[self.position + 1..].chars().next();
-                if next == Some('{') {
-                    substitution_depth += 1;
+                // `$$` is a literal dollar, and a `${...}` expression is one unit, so quotes in
+                // its default word (`${NAME:-"{}"}`) do not start a segment.
+                let after_dollar = self.position + 1;
+                if self.source[after_dollar..].starts_with('$') {
                     self.advance();
-                } else if next == Some('$') && substitution_depth == 0 {
-                    self.advance();
-                }
-            } else if substitution_depth > 0 {
-                if character == '}' {
-                    substitution_depth -= 1;
+                } else if self.source[after_dollar..].starts_with('{') {
+                    let line_end = self.source[after_dollar..]
+                        .find(['\n', '\r'])
+                        .map_or(self.source.len(), |offset| after_dollar + offset);
+                    if let Some(end) =
+                        Self::find_substitution_end(&self.source[..line_end], after_dollar + 1)
+                    {
+                        if let Some(offset) = self.source[after_dollar..end].find('\0') {
+                            return Err(self.error(
+                                after_dollar + offset,
+                                ParseErrorKind::InvalidValueCharacter('\0'),
+                            ));
+                        }
+                        self.position = end;
+                    }
                 }
             } else if matches!(character, '\'' | '"') {
                 ended = false;
@@ -587,30 +594,44 @@ impl Parser {
         Ok(())
     }
 
-    fn find_substitution_end(raw: &str, mut position: usize) -> Option<usize> {
+    /// Finds the `}` closing a `${` whose contents start at `position`. Braces inside a quoted
+    /// default (`${NAME:-"{}"}`) do not close it; a quote that never closes, as in
+    /// `${NAME:-it's}`, is plain text.
+    fn find_substitution_end(raw: &str, position: usize) -> Option<usize> {
+        Self::scan_substitution_end(raw, position, true)
+            .or_else(|| Self::scan_substitution_end(raw, position, false))
+    }
+
+    fn scan_substitution_end(raw: &str, mut position: usize, honor_quotes: bool) -> Option<usize> {
         let mut depth = 1_usize;
+        let mut quote = None;
         while position < raw.len() {
-            if raw[position..].starts_with("${") {
+            if quote.is_none() && raw[position..].starts_with("${") {
                 depth += 1;
                 position += 2;
                 continue;
             }
 
             let character = next_char(raw, position);
-            if character == '\\' {
-                position += character.len_utf8();
-                if let Some(next) = raw[position..].chars().next() {
-                    position += next.len_utf8();
-                }
-                continue;
-            }
-            if character == '}' {
-                depth -= 1;
-                if depth == 0 {
-                    return Some(position);
-                }
-            }
             position += character.len_utf8();
+            match (quote, character) {
+                (Some(open), _) if character == open => quote = None,
+                (Some('\''), _) => {}
+                (_, '\\') => {
+                    if let Some(next) = raw[position..].chars().next() {
+                        position += next.len_utf8();
+                    }
+                }
+                (Some(_), _) => {}
+                (None, '\'' | '"') if honor_quotes => quote = Some(character),
+                (None, '}') => {
+                    depth -= 1;
+                    if depth == 0 {
+                        return Some(position - '}'.len_utf8());
+                    }
+                }
+                _ => {}
+            }
         }
         None
     }
@@ -1342,6 +1363,9 @@ KEY7="line 1\nline 2"
             r#"NAME=world
 VALUE='$NAME '"$NAME "${NAME}' ${NAME}'
 DEFAULT=${MISSING:-"a b"}
+BRACES=${MISSING:-"{}"}x
+SINGLE="${MISSING:-'{a}'}"
+APOSTROPHE=${MISSING:-it's}
 "#,
             ParseOptions::new().substitution(true),
         )
@@ -1349,6 +1373,11 @@ DEFAULT=${MISSING:-"a b"}
         assert_eq!(parsed[1].1, "$NAME world world ${NAME}");
         // A `${...}` expression is one unit, so the quotes in its default do not split the value.
         assert_eq!(parsed[2].1, r#""a b""#);
+        // Braces inside a quoted default do not close the expression, and a quote that never
+        // closes is plain text.
+        assert_eq!(parsed[3].1, r#""{}"x"#);
+        assert_eq!(parsed[4].1, "'{a}'");
+        assert_eq!(parsed[5].1, "it's");
     }
 
     #[test]
