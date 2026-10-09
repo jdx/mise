@@ -5921,7 +5921,10 @@ fn prune_stale_links(req: &FileRequest, written: &mut Vec<PathBuf>) -> Result<()
 /// remove whatever sits at `path` so it can be replaced — conflicts have
 /// already been vetted (or --force given) by the time this runs
 fn remove_existing(path: &Path) -> Result<bool> {
-    if path.is_symlink() || path.is_file() {
+    if file::is_symlink_or_junction(path) {
+        // a Windows directory link (junction) is refused by `remove_file`
+        file::remove_symlink_or_junction(path)?;
+    } else if path.is_file() {
         file::remove_file(path)?;
     } else if path.is_dir() {
         file::remove_all(path)?;
@@ -7714,6 +7717,24 @@ source = "oldrc""#,
             "symlink-each must not create a symlink"
         );
         assert_eq!(file::read_to_string(&target)?, "contents");
+        Ok(())
+    }
+
+    /// A directory link (a junction on Windows) is removed as a link: `remove_file` is refused
+    /// for one there, and the directory it points to must survive.
+    #[test]
+    fn remove_existing_removes_a_directory_link_not_its_target() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let source = dir.path().join("a");
+        let target = dir.path().join("link");
+        file::create_dir_all(&source)?;
+        file::write(source.join("keep"), "x")?;
+        link_path(&source, &target, false, true)?;
+
+        assert!(remove_existing(&target)?);
+
+        assert!(!file::entry_exists(&target));
+        assert!(source.join("keep").exists());
         Ok(())
     }
 
