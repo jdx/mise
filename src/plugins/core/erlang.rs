@@ -357,7 +357,7 @@ impl ErlangPlugin {
             HTTP.download_file_stored(
                 &url,
                 &tarball_path,
-                lock_checksum(&tv, &self.get_platform_key()).as_deref(),
+                lock_checksum(&tv, &self.get_platform_key(), &url).as_deref(),
                 Some(ctx.pr.as_ref()),
             )
             .await?;
@@ -449,7 +449,7 @@ impl ErlangPlugin {
             HTTP.download_file_stored(
                 &url,
                 &tarball_path,
-                lock_checksum(&tv, &self.get_platform_key()).as_deref(),
+                lock_checksum(&tv, &self.get_platform_key(), &url).as_deref(),
                 Some(ctx.pr.as_ref()),
             )
             .await?;
@@ -510,7 +510,8 @@ impl ErlangPlugin {
         let zip_path = tv.download_path().join(zip_name);
         if !zip_path.exists() {
             // The lockfile's checksum, or else the digest the release API gave.
-            let pinned = lock_checksum(&tv, &self.get_platform_key()).or_else(|| checksum.clone());
+            let pinned =
+                lock_checksum(&tv, &self.get_platform_key(), &url).or_else(|| checksum.clone());
             HTTP.download_file_stored(&url, &zip_path, pinned.as_deref(), Some(ctx.pr.as_ref()))
                 .await?;
         }

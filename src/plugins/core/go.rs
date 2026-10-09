@@ -131,7 +131,7 @@ impl GoPlugin {
         HTTP.download_file_stored(
             &*tarball_url,
             &tarball_path,
-            lock_checksum(tv, &self.get_platform_key()).as_deref(),
+            lock_checksum(tv, &self.get_platform_key(), &tarball_url).as_deref(),
             Some(pr),
         )
         .await?;

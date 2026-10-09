@@ -88,7 +88,7 @@ impl ZigPlugin {
         };
 
         // The same checksum names the archive whichever host serves it.
-        let pinned = lock_checksum(tv, &self.get_platform_key());
+        let pinned = lock_checksum(tv, &self.get_platform_key(), &url);
         if settings.zig.use_community_mirrors
             && let Some(mirrors) = community_mirrors.as_ref()
         {

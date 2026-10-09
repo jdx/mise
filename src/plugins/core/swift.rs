@@ -66,7 +66,7 @@ impl SwiftPlugin {
             HTTP.download_file_stored(
                 url,
                 &tarball_path,
-                lock_checksum(tv, &self.get_platform_key()).as_deref(),
+                lock_checksum(tv, &self.get_platform_key(), url).as_deref(),
                 Some(pr),
             )
             .await?;

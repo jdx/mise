@@ -218,7 +218,7 @@ impl JavaPlugin {
         HTTP.download_file_stored(
             &m.url,
             &tarball_path,
-            lock_checksum(tv, &self.get_platform_key()).as_deref(),
+            lock_checksum(tv, &self.get_platform_key(), &m.url).as_deref(),
             Some(pr),
         )
         .await?;
@@ -622,7 +622,7 @@ impl Backend for JavaPlugin {
                     if !tarball_path.exists() {
                         debug!("File not found, downloading from cached URL: {}", url);
                         // Download using the lockfile URL, not JavaMetadata
-                        let pinned = lock_checksum(&tv, &platform_key);
+                        let pinned = lock_checksum(&tv, &platform_key, url);
                         HTTP.download_file_stored(
                             url,
                             &tarball_path,

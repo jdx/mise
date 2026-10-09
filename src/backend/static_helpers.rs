@@ -932,15 +932,20 @@ fn make_configured_bin_executable(search_dir: &Path, bin_name: &str) -> Result<(
     Ok(())
 }
 
-/// The checksum the lockfile records for this platform. It names a kept
-/// download that can be reused, and is still checked after the download.
+/// The checksum the lockfile records for this platform, if the entry describes
+/// the download of `url`. It names a kept download that can be reused, and is
+/// still checked after the download. An entry written for another URL, such as
+/// before a setting changed where the tool is fetched from, pins nothing.
 pub(crate) fn lock_checksum(
     tv: &crate::toolset::ToolVersion,
     platform_key: &str,
+    url: &str,
 ) -> Option<String> {
-    tv.lock_platforms
-        .get(platform_key)
-        .and_then(|platform| platform.checksum.clone())
+    let info = tv.lock_platforms.get(platform_key)?;
+    if info.url.as_deref().is_some_and(|locked| locked != url) {
+        return None;
+    }
+    info.checksum.clone()
 }
 
 /// The checksum a tool pinned for this platform, in its options or in the
@@ -950,7 +955,11 @@ pub(crate) fn pinned_checksum(
     platform_key: &str,
     opts: &crate::toolset::ToolVersionOptions,
 ) -> Option<String> {
-    lookup_with_fallback(opts, "checksum").or_else(|| lock_checksum(tv, platform_key))
+    lookup_with_fallback(opts, "checksum").or_else(|| {
+        tv.lock_platforms
+            .get(platform_key)
+            .and_then(|platform| platform.checksum.clone())
+    })
 }
 
 pub(crate) fn verify_artifact(
