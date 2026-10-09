@@ -166,12 +166,15 @@ A duration such as `"6h"` sets that tool's own interval. Intervals under one
 hour are raised to one hour.
 
 Updates respect [`minimum_release_age`](/security.html#minimum-release-age),
-which defaults to `24h`, so a release is never installed until it is at least
-that old. The check interval adds to this: a release becomes eligible 24 hours
-after it is published, but mise only notices it at the next check. With the
-defaults, an update can land anywhere from 24 to 48 hours after a release. To
-wait longer, raise the cutoff for one tool with its own `minimum_release_age`
-option:
+which defaults to `24h` for
+[most backends](/security.html#which-backends-have-a-default), so for those
+tools a release is not installed until it is at least that old. The check
+interval adds to this: a release becomes eligible 24 hours after it is
+published, but mise only notices it at the next check. With the defaults, and
+a tool you launch at least once per check interval, an update lands 24 to 48
+hours after a release. If you launch the tool less often, the next check, and
+so the update, comes later. To wait longer, raise the cutoff for one tool with
+its own `minimum_release_age` option:
 
 ```toml [~/.config/mise/config.toml]
 [tools]
