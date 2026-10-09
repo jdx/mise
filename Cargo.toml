@@ -112,13 +112,13 @@ chrono = { version = "0.4", default-features = false, features = [
   "clock",
 ] }
 ci_info = "0.14"
-usage_rs = { package = "usage-rs", version = "6.11", features = [
+usage_rs = { package = "usage-rs", version = "7.0", features = [
   "completions",
   "config",
   "diagnostics",
   "validation",
 ] }
-usage-cli = "6.11"
+usage-cli = "7.0"
 color-eyre = { version = "0.6", default-features = false, features = [
   "track-caller",
 ] }
@@ -258,7 +258,7 @@ unicode-normalization = "0.1"
 url = "2"
 urlencoding = "2"
 uuid = { version = "1", features = ["v7"] }
-usage-lib = { version = "6.11", features = ["docs"] }
+usage-lib = { version = "7.0", features = ["docs"] }
 versions = { version = "8", features = ["serde"] }
 vfox = { path = "crates/vfox", default-features = false }
 aqua-registry = { path = "crates/aqua-registry" }

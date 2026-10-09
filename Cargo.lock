@@ -597,7 +597,7 @@ dependencies = [
  "toml_edit 0.25.15+spec-1.1.0",
  "tracing",
  "tracing-subscriber",
- "usage-rs",
+ "usage-rs 6.12.1",
  "xx",
  "yaml_serde",
 ]
@@ -1505,7 +1505,7 @@ dependencies = [
  "bitflags 2.13.2",
  "cexpr",
  "clang-sys",
- "itertools 0.10.5",
+ "itertools 0.13.0",
  "log",
  "prettyplease",
  "proc-macro2",
@@ -6644,7 +6644,7 @@ dependencies = [
  "urlencoding",
  "usage-cli",
  "usage-lib",
- "usage-rs",
+ "usage-rs 7.0.0",
  "uuid",
  "versions",
  "vfox",
@@ -11711,10 +11711,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "95e0e816704b1c059bade81820deb21681403e303b7b1b43f7d103ccca52a561"
 
 [[package]]
-name = "usage-cli"
-version = "6.12.1"
+name = "usage-argv"
+version = "7.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b963171fbc493da01477d4d70bdf2af5d4dae4f91337c4c51f555c4a6e858e4d"
+checksum = "3f31e087c07f22ebec8bdfacc0882da2acc40f4cebe7f7076c063989f3ed8591"
+
+[[package]]
+name = "usage-cli"
+version = "7.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "884fa9af78961ecb142d4bf35c1a0c8fe7c9497d25b5c58388a983a415c7bf31"
 dependencies = [
  "env_logger",
  "exec",
@@ -11733,14 +11739,14 @@ dependencies = [
  "thiserror 2.0.21",
  "tokio",
  "usage-lib",
- "usage-rs",
+ "usage-rs 7.0.0",
 ]
 
 [[package]]
 name = "usage-config"
-version = "6.12.1"
+version = "7.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f058d1d0e7bc05309ea73e67c63000fd9d10c9755fd25e8f13f8833e3c937146"
+checksum = "8dfa31ad90392105df7a10959ebccb95c19547c656e9609d360741bd08738f36"
 
 [[package]]
 name = "usage-derive"
@@ -11755,10 +11761,21 @@ dependencies = [
 ]
 
 [[package]]
-name = "usage-lib"
-version = "6.12.1"
+name = "usage-derive"
+version = "7.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e3629826d1fd197c3734b6d0450fefd90a57d413a3eef09b3038ddbae395740a"
+checksum = "342a9df274d3e00d174204e0f9a6f7708dea1b23ee5004db07cbc881e4e57cab"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 3.0.6",
+]
+
+[[package]]
+name = "usage-lib"
+version = "7.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2cdf41d75ec80333e3fef9dd05593cf7c180975a122bc0ee52a08869f78afaee"
 dependencies = [
  "indexmap 2.14.2",
  "itertools 0.15.0",
@@ -11772,8 +11789,8 @@ dependencies = [
  "tera 2.4.0",
  "thiserror 2.0.21",
  "unicode-width 0.2.2",
- "usage-argv",
- "usage-validation",
+ "usage-argv 7.0.0",
+ "usage-validation 7.0.0",
  "winnow 1.0.4",
 ]
 
@@ -11783,11 +11800,23 @@ version = "6.12.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1c296fe5806b82d0d80374bb56ccd31cd9fe5c49b4b0e5683de6231416bd976d"
 dependencies = [
- "usage-argv",
+ "usage-argv 6.12.1",
+ "usage-derive 6.12.1",
+ "usage-test 6.12.1",
+ "usage-validation 6.12.1",
+]
+
+[[package]]
+name = "usage-rs"
+version = "7.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6f78bceaa649166d281dc30c457b11e82509b757b710c20def341a02088688ff"
+dependencies = [
+ "usage-argv 7.0.0",
  "usage-config",
- "usage-derive",
- "usage-test",
- "usage-validation",
+ "usage-derive 7.0.0",
+ "usage-test 7.0.0",
+ "usage-validation 7.0.0",
 ]
 
 [[package]]
@@ -11796,7 +11825,16 @@ version = "6.12.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5be92e160b54b3f3c58dd43e903c7b2e2c676655c5fe20ec9a7b2ba8f06fb861"
 dependencies = [
- "usage-argv",
+ "usage-argv 6.12.1",
+]
+
+[[package]]
+name = "usage-test"
+version = "7.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c03023025a29589b93406b11055b5740f74884b766a71de062134413f150a779"
+dependencies = [
+ "usage-argv 7.0.0",
 ]
 
 [[package]]
@@ -11804,6 +11842,15 @@ name = "usage-validation"
 version = "6.12.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "62fb9843f7b52be4669d9f44dd282d23a3bdcb8e4f58c132799cb029745523e6"
+dependencies = [
+ "expr-lang",
+]
+
+[[package]]
+name = "usage-validation"
+version = "7.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "08e63f4dce1e5f4553821c1dfd3cc80f816ba60b29c5718d37e1d4047b0a2d6e"
 dependencies = [
  "expr-lang",
 ]
@@ -11895,7 +11942,7 @@ dependencies = [
  "tokio",
  "toml 1.1.6+spec-1.1.0",
  "url",
- "usage-rs",
+ "usage-rs 7.0.0",
  "wiremock",
  "xx",
 ]
