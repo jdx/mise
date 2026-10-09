@@ -158,33 +158,17 @@ fn is_unquoted_safe(value: &str) -> bool {
         return false;
     }
 
-    let mut quote = None;
+    // Quotes in an unquoted value start a quoted segment and are removed.
     let mut escaped = false;
     let mut previous = None;
     for character in value.chars() {
-        if matches!(character, '\0' | '\n' | '\r') {
+        if matches!(character, '\0' | '\n' | '\r' | '\'' | '"') {
             return false;
         }
-
-        if let Some(open_quote) = quote {
-            if character == open_quote && !escaped {
-                quote = None;
-            }
-            if character == '\\' {
-                escaped = !escaped;
-            } else {
-                escaped = false;
-            }
-        } else {
-            if character == '#' && previous.is_none_or(is_horizontal_whitespace) && !escaped {
-                return false;
-            }
-            if matches!(character, '\'' | '"') && !escaped {
-                quote = Some(character);
-            }
-            escaped = character == '\\' && !escaped;
+        if character == '#' && previous.is_none_or(is_horizontal_whitespace) && !escaped {
+            return false;
         }
-
+        escaped = character == '\\' && !escaped;
         previous = Some(character);
     }
 

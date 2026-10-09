@@ -72,8 +72,6 @@ pub enum ParseErrorKind {
     InvalidKeyCharacter(char),
     /// A value contains a character that cannot be represented in an environment variable.
     InvalidValueCharacter(char),
-    /// Non-comment text followed a quoted value.
-    TrailingCharacters,
     /// A quoted value was not closed.
     UnterminatedQuote(char),
     /// A `${...}` expression was not closed.
@@ -107,9 +105,6 @@ impl fmt::Display for ParseErrorKind {
                     f,
                     "environment variable value contains invalid character {character:?}"
                 )
-            }
-            Self::TrailingCharacters => {
-                f.write_str("expected a comment or end of line after the quoted value")
             }
             Self::UnterminatedQuote(quote) => write!(f, "unterminated {quote:?} quoted value"),
             Self::UnterminatedSubstitution => f.write_str("unterminated `${...}` substitution"),
@@ -309,9 +304,7 @@ impl Parser {
                 }
                 String::new()
             }
-            Some('\'') => self.parse_quoted('\'', ValueStyle::SingleQuoted)?,
-            Some('"') => self.parse_quoted('"', ValueStyle::DoubleQuoted)?,
-            Some(_) => self.parse_unquoted()?,
+            Some(_) => self.parse_value()?,
         };
 
         Ok((key, value))
@@ -332,7 +325,45 @@ impl Parser {
         self.skip_horizontal_whitespace();
     }
 
-    fn parse_quoted(&mut self, quote: char, style: ValueStyle) -> Result<String, ParseError> {
+    /// Parses a value the way a shell reads a word: adjacent unquoted, single-quoted, and
+    /// double-quoted segments are joined and their quotes removed, so `'it'\''s'` is `it's`.
+    fn parse_value(&mut self) -> Result<String, ParseError> {
+        let mut value = String::new();
+        let mut first_segment = true;
+
+        loop {
+            match self.peek() {
+                Some('\'') => {
+                    let segment =
+                        self.parse_quoted('\'', ValueStyle::SingleQuoted, first_segment)?;
+                    value.push_str(&segment);
+                }
+                Some('"') => {
+                    let segment =
+                        self.parse_quoted('"', ValueStyle::DoubleQuoted, first_segment)?;
+                    value.push_str(&segment);
+                }
+                _ => {
+                    let (segment, ended) = self.parse_unquoted()?;
+                    value.push_str(&segment);
+                    if ended {
+                        return Ok(value);
+                    }
+                }
+            }
+            first_segment = false;
+        }
+    }
+
+    /// Parses one quoted segment. Only a value's opening segment may continue onto later lines,
+    /// so a stray apostrophe later in a value (`NAME=O'Brien`) is reported on its own line instead
+    /// of swallowing the assignments after it.
+    fn parse_quoted(
+        &mut self,
+        quote: char,
+        style: ValueStyle,
+        may_span_lines: bool,
+    ) -> Result<String, ParseError> {
         let quote_position = self.position;
         self.advance();
         let value_start = self.position;
@@ -344,6 +375,11 @@ impl Parser {
             };
 
             if character == '\n' || character == '\r' {
+                if !may_span_lines {
+                    return Err(
+                        self.error(quote_position, ParseErrorKind::UnterminatedQuote(quote))
+                    );
+                }
                 if !self.options.multiline {
                     return Err(self.error(self.position, ParseErrorKind::MultilineDisabled));
                 }
@@ -362,9 +398,7 @@ impl Parser {
                 let value_end = self.position;
                 self.advance();
                 let raw = &self.source[value_start..value_end];
-                let value = self.expand(raw, value_start, style)?;
-                self.finish_quoted_value()?;
-                return Ok(value);
+                return self.expand(raw, value_start, style);
             }
 
             // Single-quoted values are literal, so a backslash cannot escape the closing quote.
@@ -377,27 +411,14 @@ impl Parser {
         }
     }
 
-    fn finish_quoted_value(&mut self) -> Result<(), ParseError> {
-        self.skip_horizontal_whitespace();
-        match self.peek() {
-            None => Ok(()),
-            Some('#') => {
-                self.skip_comment();
-                Ok(())
-            }
-            Some('\n' | '\r') => {
-                self.consume_newline();
-                Ok(())
-            }
-            Some(_) => Err(self.error(self.position, ParseErrorKind::TrailingCharacters)),
-        }
-    }
-
-    fn parse_unquoted(&mut self) -> Result<String, ParseError> {
+    /// Parses an unquoted segment up to the next unescaped quote, comment, or line end. Returns
+    /// whether the value ends here; when it does, trailing whitespace is trimmed and the rest of
+    /// the line is consumed.
+    fn parse_unquoted(&mut self) -> Result<(String, bool), ParseError> {
         let value_start = self.position;
-        let mut quote = None;
         let mut escaped = false;
-        let mut previous = None;
+        let mut substitution_depth = 0_usize;
+        let mut ended = true;
 
         while let Some(character) = self.peek() {
             if character == '\n' || character == '\r' {
@@ -410,39 +431,48 @@ impl Parser {
                 ));
             }
 
-            if let Some(open_quote) = quote {
-                if character == open_quote && !escaped {
-                    quote = None;
+            if escaped {
+                escaped = false;
+            } else if character == '\\' {
+                escaped = true;
+            } else if character == '$' && self.options.substitution {
+                // A `${...}` expression is one unit, so quotes in its default word
+                // (`${NAME:-"a b"}`) do not start a segment. `$$` is a literal dollar.
+                let next = self.source[self.position + 1..].chars().next();
+                if next == Some('{') {
+                    substitution_depth += 1;
+                    self.advance();
+                } else if next == Some('$') && substitution_depth == 0 {
+                    self.advance();
                 }
-                if character == '\\' {
-                    escaped = !escaped;
-                } else {
-                    escaped = false;
+            } else if substitution_depth > 0 {
+                if character == '}' {
+                    substitution_depth -= 1;
                 }
-            } else {
-                if character == '#' && previous.is_none_or(is_horizontal_whitespace) && !escaped {
-                    break;
-                }
-                if matches!(character, '\'' | '"') && !escaped {
-                    quote = Some(character);
-                }
-                escaped = character == '\\' && !escaped;
+            } else if matches!(character, '\'' | '"') {
+                ended = false;
+                break;
+            } else if character == '#' && self.previous().is_some_and(is_horizontal_whitespace) {
+                break;
             }
 
-            previous = Some(character);
             self.advance();
         }
 
-        let value_end = self.position;
-        let raw = trim_unquoted_trailing_whitespace(&self.source[value_start..value_end]);
+        let mut raw = &self.source[value_start..self.position];
+        if ended {
+            raw = trim_unquoted_trailing_whitespace(raw);
+        }
         let value = self.expand(raw, value_start, ValueStyle::Unquoted)?;
 
-        if self.peek() == Some('#') {
-            self.skip_comment();
-        } else {
-            self.consume_newline();
+        if ended {
+            if self.peek() == Some('#') {
+                self.skip_comment();
+            } else {
+                self.consume_newline();
+            }
         }
-        Ok(value)
+        Ok((value, ended))
     }
 
     fn expand(
@@ -740,6 +770,10 @@ impl Parser {
         }
     }
 
+    fn previous(&self) -> Option<char> {
+        self.source[..self.position].chars().next_back()
+    }
+
     fn peek(&self) -> Option<char> {
         self.source[self.position..].chars().next()
     }
@@ -892,7 +926,7 @@ KEY=1
 KEY2 = "two words"
 KEY3='literal $KEY'
 KEY4=unquoted values may contain spaces
-KEY5={ "json": "works", "hash": "# literal" }
+KEY5='{ "json": "works", "hash": "# literal" }'
 EMPTY=
 export EXPORTED=yes
 export=also-a-key
@@ -925,6 +959,7 @@ B=value # comment with ' and "
 C="value # literal" # comment
 D='value # literal' # comment
 E=before "# literal" after # comment
+F="value"#literal
 "##,
         )
         .unwrap();
@@ -936,7 +971,8 @@ E=before "# literal" after # comment
                 ("B", "value"),
                 ("C", "value # literal"),
                 ("D", "value # literal"),
-                ("E", "before \"# literal\" after"),
+                ("E", "before # literal after"),
+                ("F", "value#literal"),
             ]
             .map(|(key, value)| (key.to_owned(), value.to_owned()))
         );
@@ -1142,10 +1178,6 @@ LITERAL=$$FOO_BAR
             &ParseErrorKind::MissingEquals
         );
         assert_eq!(
-            parse("KEY=\"value\"tail").unwrap_err().kind(),
-            &ParseErrorKind::TrailingCharacters
-        );
-        assert_eq!(
             parse("KEY='value").unwrap_err().kind(),
             &ParseErrorKind::UnterminatedQuote('\'')
         );
@@ -1184,10 +1216,6 @@ LITERAL=$$FOO_BAR
             (
                 ParseErrorKind::InvalidValueCharacter('\0'),
                 "environment variable value contains invalid character '\\0'",
-            ),
-            (
-                ParseErrorKind::TrailingCharacters,
-                "expected a comment or end of line after the quoted value",
             ),
             (
                 ParseErrorKind::UnterminatedQuote('"'),
@@ -1248,7 +1276,91 @@ LITERAL=$$FOO_BAR
     #[test]
     fn unquoted_embedded_quotes_honor_escaped_quotes() {
         let parsed = parse(r#"KEY=before "a\"b" after"#).unwrap();
-        assert_eq!(parsed[0].1, r#"before "a"b" after"#);
+        assert_eq!(parsed[0].1, r#"before a"b after"#);
+    }
+
+    #[test]
+    fn concatenates_adjacent_quoted_and_unquoted_segments() {
+        let parsed = parse(
+            r#"APOSTROPHE='it'\''s'
+MIXED=a'b c'd
+DOUBLE="one"'two'three
+JSON={"key":"value"}
+ESCAPED=\'kept\'
+SPACED='a' "b" c # comment
+AFTER=next
+"#,
+        )
+        .unwrap();
+        assert_eq!(
+            parsed,
+            [
+                ("APOSTROPHE", "it's"),
+                ("MIXED", "ab cd"),
+                ("DOUBLE", "onetwothree"),
+                ("JSON", "{key:value}"),
+                ("ESCAPED", "'kept'"),
+                ("SPACED", "a b c"),
+                ("AFTER", "next"),
+            ]
+            .map(|(key, value)| (key.to_owned(), value.to_owned()))
+        );
+    }
+
+    #[test]
+    fn matches_dotenvy_escape_and_concatenation_cases() {
+        // From dotenvy 0.15.7's `test_parse_value_escapes`.
+        let parsed = parse(
+            r#"KEY=my\ cool\ value
+KEY2=\$sweet
+KEY3="awesome stuff \"mang\""
+KEY4='sweet $\fgs'\''fds'
+KEY5="'\"yay\\"\ "stuff"
+KEY6="lol" #well you see when I say lol wh
+KEY7="line 1\nline 2"
+"#,
+        )
+        .unwrap();
+        assert_eq!(
+            parsed,
+            [
+                ("KEY", "my cool value"),
+                ("KEY2", "$sweet"),
+                ("KEY3", r#"awesome stuff "mang""#),
+                ("KEY4", r"sweet $\fgs'fds"),
+                ("KEY5", r#"'"yay\ stuff"#),
+                ("KEY6", "lol"),
+                ("KEY7", "line 1\nline 2"),
+            ]
+            .map(|(key, value)| (key.to_owned(), value.to_owned()))
+        );
+    }
+
+    #[test]
+    fn substitutes_only_outside_single_quoted_segments() {
+        let parsed = parse_with_options(
+            r#"NAME=world
+VALUE='$NAME '"$NAME "${NAME}' ${NAME}'
+DEFAULT=${MISSING:-"a b"}
+"#,
+            ParseOptions::new().substitution(true),
+        )
+        .unwrap();
+        assert_eq!(parsed[1].1, "$NAME world world ${NAME}");
+        // A `${...}` expression is one unit, so the quotes in its default do not split the value.
+        assert_eq!(parsed[2].1, r#""a b""#);
+    }
+
+    #[test]
+    fn only_the_opening_quoted_segment_spans_lines() {
+        let parsed = parse("A='one\ntwo'three\nB=next\n").unwrap();
+        assert_eq!(parsed[0].1, "one\ntwothree");
+        assert_eq!(parsed[1].1, "next");
+
+        let error = parse("NAME=O'Brien\nOTHER='x'\n").unwrap_err();
+        assert_eq!(error.kind(), &ParseErrorKind::UnterminatedQuote('\''));
+        assert_eq!(error.line(), 1);
+        assert_eq!(error.column(), 7);
     }
 
     #[test]
