@@ -323,13 +323,14 @@ fn keep_file(path: &Path, keep: Keep<'_>, move_in: bool) -> Result<Option<PathBu
         };
         write_atomic(&pin_path(&root, algo, &hex), &serde_json::to_vec(&entry)?)?;
     }
-    evict(&root);
+    evict(&root, blob.parent());
     Ok(Some(blob))
 }
 
-/// Past `MAX_CACHE_BYTES` the least recently used blobs go first. Staged
-/// downloads that were never finished go after a week.
-fn evict(root: &Path) {
+/// Past `MAX_CACHE_BYTES` the least recently used blobs go first, except
+/// `keep`, which the caller is about to use. Staged downloads that were never
+/// finished go after a week.
+fn evict(root: &Path, keep: Option<&Path>) {
     let week = std::time::Duration::from_secs(7 * 24 * 60 * 60);
     if let Ok(read) = std::fs::read_dir(root.join("incoming")) {
         for entry in read.flatten() {
@@ -351,7 +352,10 @@ fn evict(root: &Path) {
     let mut total = 0u64;
     for entry in read.flatten() {
         let dir = entry.path();
-        if entry.file_name().to_string_lossy().starts_with('.') || !dir.is_dir() {
+        if entry.file_name().to_string_lossy().starts_with('.')
+            || !dir.is_dir()
+            || keep == Some(dir.as_path())
+        {
             continue;
         }
         // Names of one blob share a file where they can, so count the largest.

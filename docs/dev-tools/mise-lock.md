@@ -420,9 +420,9 @@ restored CI cache or a shared extraction store is trusted as is.
 
 mise can't validate an installed tree against the lockfile. The checksum covers
 the downloaded artifact, and installs are mutable on purpose: tools update
-themselves and `postinstall` hooks change files. For tools built from source,
-such as Python and Ruby, it covers only the source tarball, not the compiled
-output.
+themselves and `postinstall` hooks change files. For tools compiled from source,
+such as Ruby, the lockfile doesn't vouch for the compiled output, and a tool
+that downloads its own source may record no checksum for it at all.
 
 Downloads are different. mise keeps them in a cache and reuses one only when
 the server confirms it is unchanged, or when it hashes to a pinned checksum. A
@@ -437,8 +437,9 @@ So treat a cache of installed files as trusted build input:
   the restored files against it. A manifest stored in the cache can be replaced
   along with it. That proves the cache is unchanged since CI saved it, not that
   it matches the lockfile.
-- For a fully verified install, run `mise install --locked` with an empty data
-  directory.
+- To check an install against the lockfile, run `mise install --locked` with an
+  empty data directory. Every artifact is then downloaded and checked against
+  the checksum the lockfile records, for the backends that record one.
 
 ## Provenance and verification {#provenance-and-security}
 
