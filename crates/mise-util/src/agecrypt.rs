@@ -190,12 +190,19 @@ pub async fn decrypt_bytes_mode(
         .iter()
         .map(|i| i.as_ref() as &dyn Identity)
         .collect();
-    let mut reader = decryptor
-        .decrypt(refs.into_iter())
-        .map_err(|e| DecryptError::Failed {
+    let mut reader = decryptor.decrypt(refs.into_iter()).map_err(|e| match e {
+        // a header that does not parse or authenticate is damaged whatever
+        // identity reads it; another key would not help
+        age::DecryptError::InvalidHeader
+        | age::DecryptError::InvalidMac
+        | age::DecryptError::UnknownFormat => {
+            DecryptError::Corrupt(format!("damaged age file: {e}"))
+        }
+        e => DecryptError::Failed {
             error: e.to_string(),
             hint: unusable_identity_hint(&loaded.unusable),
-        })?;
+        },
+    })?;
     let compressed = read_bounded(&mut reader, MAX_ENCRYPTED_BYTES)
         .map_err(|e| DecryptError::Corrupt(format!("reading the age payload: {e}")))?;
     let decoder = zstd::stream::read::Decoder::new(&compressed[..])
@@ -648,7 +655,21 @@ mod tests {
         vars.set("MISE_AGE_KEY", other.to_string().expose_secret());
         let result = decrypt_bytes_mode(&ciphertext, false).await;
         let corrupt = decrypt_bytes_mode(b"not an age file at all", false).await;
+        // the right key, but a header whose MAC does not verify
+        vars.set("MISE_AGE_KEY", key.to_string().expose_secret());
+        let mut tampered = ciphertext.clone();
+        let mac = tampered
+            .windows(4)
+            .position(|w| w == b"--- ")
+            .expect("age header MAC line")
+            + 4;
+        tampered[mac] = if tampered[mac] == b'A' { b'B' } else { b'A' };
+        let damaged = decrypt_bytes_mode(&tampered, false).await;
         vars.remove("MISE_AGE_KEY");
+        assert!(
+            matches!(damaged, Err(DecryptError::Corrupt(_))),
+            "{damaged:?}"
+        );
         assert!(
             matches!(result, Err(DecryptError::Failed { .. })),
             "{result:?}"
