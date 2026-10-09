@@ -28,7 +28,7 @@ strict = true
 
 [[schemas]]
 path = "file://$SCHEMA_PATH"
-include = ["mise.toml", "mise-age.toml", "mise-env-directives.toml", "mise-os.toml", "mise-vars.toml", "mise-backend-options.toml"]
+include = ["mise.toml", "mise-age.toml", "mise-env-directives.toml", "mise-os.toml", "mise-vars.toml", "mise-backend-options.toml", "mise-task-array.toml"]
 
 [[schemas]]
 path = "file://$TASK_SCHEMA_PATH"
@@ -200,6 +200,14 @@ run = "echo ok"
 node = { version = "latest", os = ["linux/x64", "macos/arm64"], install_env = { KEEP = "value", REMOVE = false, RETRIES = 2 }, profile = "release", matching = ["node", "npm"], platforms = { linux-x64 = { bin = ["node", "npm"], env = { NODE_ENV = "test" } } } }
 TOML
 
+# A task array holds scripts and task references, as the parser accepts.
+cat >"$HOME/workdir/mise-task-array.toml" <<'TOML'
+[tasks]
+lint = "cargo clippy"
+build = "cargo build"
+ci = ["cargo fmt --check", { task = "lint" }, { task = "build", args = ["--release"], env = { CI = "1" } }, { tasks = ["lint", "build"] }]
+TOML
+
 cat >"$HOME/workdir/mise-registry-tool.toml" <<'TOML'
 backends = [
   { full = "aqua:ImageMagick/ImageMagick", platforms = ["windows-x64"] },
@@ -219,6 +227,7 @@ assert_succeed "$TOMBI_LINT mise-vars.toml"
 assert_succeed "$TOMBI_LINT mise-os.toml"
 assert_succeed "$TOMBI_LINT mise-task-os.toml"
 assert_succeed "$TOMBI_LINT mise-registry-tool.toml"
+assert_succeed "$TOMBI_LINT mise-task-array.toml"
 
 # Verify that invalid properties on tasks are rejected
 cat >"$HOME/workdir/mise-bad.toml" <<'TOML'
