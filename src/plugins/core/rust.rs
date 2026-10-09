@@ -2014,11 +2014,11 @@ targets = ["wasm32-wasip1", " wasm32-wasip1 "]
         let _env_guard = ambient_homes_guard();
         let cargo_home_dir = tempfile::Builder::new()
             .prefix("mise-lock-probe-cargo-")
-            .tempdir_in(&*dirs::HOME)
+            .tempdir_in(*dirs::HOME)
             .unwrap();
         let rustup_home_dir = tempfile::Builder::new()
             .prefix("mise-lock-probe-rustup-")
-            .tempdir_in(&*dirs::HOME)
+            .tempdir_in(*dirs::HOME)
             .unwrap();
         let cargo_home = format!(
             "~/{}",
