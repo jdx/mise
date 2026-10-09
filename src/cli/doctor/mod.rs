@@ -80,6 +80,9 @@ enum SystemDefaultsDiagnosis {
 /// outcome of the `[bootstrap.user].login_shell` doctor check
 #[derive(serde::Serialize)]
 struct DotfilesDiagnosis {
+    /// `history.enabled`: when false, nothing is saved or synced and only
+    /// `repo`, `origin`, and `tracked` are reported.
+    history_enabled: bool,
     /// The local bare repository that holds the history.
     repo: PathBuf,
     /// The connected setup repository, if any.
@@ -109,6 +112,55 @@ struct DotfilesOriginDiagnosis {
     url: String,
     branch: String,
     sync: String,
+}
+
+/// The connected setup repository, if any.
+fn dotfiles_origin() -> Option<DotfilesOriginDiagnosis> {
+    crate::system::history::sync::run::origin()
+        .ok()
+        .map(|origin| DotfilesOriginDiagnosis {
+            url: origin.url,
+            branch: origin.branch,
+            sync: crate::system::history::sync::SyncMode::current()
+                .map(|mode| mode.as_str().to_string())
+                .unwrap_or_else(|_| "unknown".to_string()),
+        })
+}
+
+/// Where the dotfiles history would live with `history.enabled = false`:
+/// the store is closed, so nothing about capture or sync health applies.
+/// Reads the declared tracking only, never opening or creating the store.
+/// Returns `None` when nothing is tracked, no history exists, and no setup
+/// repository is connected.
+async fn check_disabled_dotfiles() -> Option<DotfilesDiagnosis> {
+    let config = Config::get().await.ok()?;
+    let tracked = crate::system::history::tracked::TrackedSet::from_config(&config)
+        .map(|set| set.entries.len())
+        .unwrap_or(0);
+    let repo =
+        crate::system::history::store::repo_dir_in(&crate::system::history::store::state_dir());
+    let origin = dotfiles_origin();
+    if tracked == 0 && !repo.is_dir() && origin.is_none() {
+        return None;
+    }
+    Some(DotfilesDiagnosis {
+        history_enabled: false,
+        repo,
+        origin,
+        tracked,
+        watcher: "disabled".to_string(),
+        stale: false,
+        health_age_secs: None,
+        unavailable: None,
+        last_error: None,
+        degraded: vec![],
+        throttled: vec![],
+        sync_conflicts: vec![],
+        sync_error: None,
+        sync_failing_for_secs: None,
+        sync_failures: 0,
+        notifications: "disabled".to_string(),
+    })
 }
 
 /// How long syncs have been failing: since the current run of failures
@@ -778,7 +830,7 @@ impl Doctor {
         use crate::system::history::health;
         use crate::system::history::tracked::TrackedSet;
         if !crate::config::Settings::get().history.enabled {
-            return None;
+            return check_disabled_dotfiles().await;
         }
         let tracked = TrackedSet::effective().await.ok()?;
         let watcher = crate::cli::dotfiles::capture_health::watcher().await.ok()?;
@@ -799,18 +851,10 @@ impl Doctor {
         .map(|d| d.as_secs())
         .unwrap_or(600);
         let stale = running && age.is_some_and(|age| reconcile > 0 && age > reconcile * 2);
-        let origin = crate::system::history::sync::run::origin()
-            .ok()
-            .map(|origin| DotfilesOriginDiagnosis {
-                url: origin.url,
-                branch: origin.branch,
-                sync: crate::system::history::sync::SyncMode::current()
-                    .map(|mode| mode.as_str().to_string())
-                    .unwrap_or_else(|_| "unknown".to_string()),
-            });
         let mut diagnosis = DotfilesDiagnosis {
+            history_enabled: true,
             repo: crate::system::history::store::repo_dir_in(&state_dir),
-            origin,
+            origin: dotfiles_origin(),
             tracked: tracks,
             watcher: watcher.as_str().to_string(),
             stale,
@@ -950,18 +994,28 @@ impl Doctor {
         let Some(diagnosis) = self.check_dotfiles().await else {
             return Ok(());
         };
-        let mut lines = vec![format!(
-            "{} tracked entr{}, watcher {}",
+        let entries = format!(
+            "{} tracked entr{}",
             diagnosis.tracked,
-            if diagnosis.tracked == 1 { "y" } else { "ies" },
-            diagnosis.watcher
-        )];
+            if diagnosis.tracked == 1 { "y" } else { "ies" }
+        );
+        let mut lines = vec![if diagnosis.history_enabled {
+            format!("{entries}, watcher {}", diagnosis.watcher)
+        } else {
+            format!(
+                "{entries}, history disabled (history.enabled = false): nothing is saved or synced"
+            )
+        }];
         lines.push(format!("repo: {}", display_path(&diagnosis.repo)));
         if let Some(origin) = &diagnosis.origin {
             lines.push(format!(
                 "origin: {} (branch {}, sync {})",
                 origin.url, origin.branch, origin.sync
             ));
+        }
+        if !diagnosis.history_enabled {
+            info::section("dotfiles", lines.join("\n"))?;
+            return Ok(());
         }
         if diagnosis.stale {
             lines.push(format!(

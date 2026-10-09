@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+# doctor still shows where dotfiles live when history.enabled = false
+
+git init -q --bare -b main "$PWD/origin.git"
+echo original >"$HOME/.native"
+assert_succeed "mise bootstrap dotfiles track ~/.native --no-autosave"
+assert_succeed "mise bootstrap dotfiles origin set file://$PWD/origin.git --sync manual --yes"
+
+assert_contains "mise doctor 2>&1 || true" "1 tracked entry, watcher"
+
+export MISE_HISTORY_ENABLED=0
+assert_contains "mise doctor 2>&1 || true" "1 tracked entry, history disabled (history.enabled = false): nothing is saved or synced"
+assert_contains "mise doctor 2>&1 || true" "repo: "
+assert_contains "mise doctor 2>&1 || true" "origin.git (branch main, sync manual)"
+assert "mise doctor --json 2>/dev/null | jq -r '.dotfiles.history_enabled, .dotfiles.tracked, .dotfiles.origin.url'" "false
+1
+file://$PWD/origin.git"
+
+# nothing tracked, no history, no setup repository: no section
+export MISE_STATE_DIR="$PWD/empty-state"
+export MISE_CONFIG_DIR="$PWD/empty-config"
+assert_not_contains "mise doctor 2>&1 || true" "dotfiles:"
