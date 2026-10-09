@@ -28,6 +28,9 @@ use crate::file;
 /// Blobs are evicted, least recently used first, past this total size.
 const MAX_CACHE_BYTES: u64 = 2 * 1024 * 1024 * 1024;
 
+/// How long after a blob was last used another install may still be placing it.
+const IN_USE: std::time::Duration = std::time::Duration::from_secs(10 * 60);
+
 /// Algorithms a pin may use. `md5` and `sha1` are not collision resistant
 /// enough to name content by.
 const PIN_ALGOS: &[&str] = &["sha256", "sha384", "sha512", "blake3"];
@@ -214,7 +217,8 @@ pub(super) fn place(blob: &Path, dest: &Path, link: bool) -> Result<()> {
     // is open.
     let scratch = tempfile::Builder::new()
         .prefix(".mise-place-")
-        .tempdir_in(parent)?;
+        .tempdir_in(parent)
+        .map_err(|err| placing(err, dest))?;
     let staged = scratch.path().join("file");
     if link {
         file::hard_link_or_copy(blob, &staged)?;
@@ -223,12 +227,26 @@ pub(super) fn place(blob: &Path, dest: &Path, link: bool) -> Result<()> {
     }
     // `persist` replaces an existing file on Windows too, where a plain rename
     // does not.
-    tempfile::TempPath::try_from_path(&staged)?
+    tempfile::TempPath::try_from_path(&staged)
+        .map_err(|err| placing(err, dest))?
         .persist(dest)
-        .map_err(|err| {
-            eyre::Report::new(err.error).wrap_err(format!("failed to place {}", dest.display()))
-        })?;
+        .map_err(|err| placing(err.error, dest))?;
     Ok(())
+}
+
+/// Name the step and the path, with the Windows hint for an over-long path:
+/// `tempfile` doesn't get the extended-length handling `std::fs` does, so this
+/// is the call that fails first as a directory approaches `MAX_PATH`.
+fn placing(err: std::io::Error, dest: &Path) -> eyre::Report {
+    let msg = file::with_io_hint(
+        format!(
+            "failed to move the downloaded file into place: {}",
+            file::display_path(dest)
+        ),
+        dest,
+        &err,
+    );
+    eyre::Report::new(err).wrap_err(msg)
 }
 
 /// Write `contents` to `path` so a reader never sees a partial file.
@@ -345,7 +363,9 @@ fn keep_file(path: &Path, keep: Keep<'_>, move_in: bool) -> Result<Option<PathBu
 }
 
 /// Past `MAX_CACHE_BYTES` the least recently used blobs go first, except
-/// `keep`, which the caller is about to use. Staged downloads that were never
+/// `keep`, which the caller is about to use, and any used within `IN_USE`: a
+/// blob is verified, which refreshes its time, moments before another install
+/// places it, so a recent one may be mid-use. Staged downloads that were never
 /// finished go after a week.
 fn evict(root: &Path, keep: Option<&Path>) {
     let week = std::time::Duration::from_secs(7 * 24 * 60 * 60);
@@ -384,6 +404,9 @@ fn evict(root: &Path, keep: Option<&Path>) {
             }
         }
         total += size;
+        if used.elapsed().is_ok_and(|age| age < IN_USE) {
+            continue;
+        }
         entries.push((used, size, dir));
     }
     entries.sort();

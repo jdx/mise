@@ -1504,6 +1504,7 @@ impl Client {
             pin,
             enabled: use_cache,
         } = cache;
+        let started = Instant::now();
         let url = url.into_url()?;
         let request_hash = download_request_hash(&url, headers);
         // A pinned download kept earlier needs no request, so this comes before
@@ -1622,15 +1623,19 @@ impl Client {
                 pin,
                 enabled: false,
             };
-            return Box::pin(self.download_file_inner(
-                url,
-                &path,
-                headers,
-                cache,
-                pr,
-                total_timeout,
-            ))
-            .await;
+            // What is left of the budget, not a fresh one.
+            let remaining = total_timeout
+                .checked_sub(started.elapsed())
+                .filter(|left| !left.is_zero())
+                .ok_or_else(|| {
+                    eyre!(
+                        "HTTP download timed out after {} for {}",
+                        format_duration(total_timeout),
+                        log_url(&url)
+                    )
+                })?;
+            return Box::pin(self.download_file_inner(url, &path, headers, cache, pr, remaining))
+                .await;
         }
         let persist_path = path.clone();
         tokio::task::spawn_blocking(move || partial.persist(&persist_path)).await??;
