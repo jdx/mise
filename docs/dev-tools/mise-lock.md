@@ -442,6 +442,10 @@ Treat a cache as part of your trusted build input instead:
 - Save a manifest of the cache when you write it and check it on restore. That
   catches a modified cache entry for every backend, but it proves the cache is
   unchanged since your CI saved it, not that it matches the lockfile.
+- For an `http` tool with `shared_extraction`, remove the installs that link
+  into `$MISE_DATA_DIR/http-tarballs` and the directory itself, then reinstall.
+  mise downloads each artifact, checks it against its checksum and extracts a
+  fresh copy. `mise install --force` alone reuses the store's files.
 - For a fully verified install, run `mise install --locked` with an empty data
   directory so every artifact is downloaded and checked against the checksum
   in `mise.lock`. An entry without a checksum has one generated instead of
