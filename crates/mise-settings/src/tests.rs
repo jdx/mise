@@ -375,3 +375,23 @@ fn test_parse_env_guard_covers_sets_and_maps_too() {
         vec!["bad_list", "bad_map", "bad_set", "group.bad_nested"]
     );
 }
+
+#[test]
+fn auto_update_accepts_a_bool_or_an_interval() {
+    #[derive(Deserialize)]
+    struct Wrapper {
+        auto: AutoUpdate,
+    }
+    let parse = |value: &str| {
+        toml::from_str::<Wrapper>(&format!("auto = {value}"))
+            .unwrap()
+            .auto
+    };
+    assert_eq!(parse("true"), AutoUpdate::On);
+    assert_eq!(parse("false"), AutoUpdate::Off);
+    assert_eq!(parse(r#""6h""#), AutoUpdate::Every("6h".to_string()));
+    assert_eq!(parse(r#""1""#), AutoUpdate::On);
+    assert_eq!(parse(r#""no""#), AutoUpdate::Off);
+    assert_eq!(AutoUpdate::Every("6h".to_string()).interval(), Some("6h"));
+    assert!(!AutoUpdate::Off.is_on());
+}

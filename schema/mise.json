@@ -1981,11 +1981,18 @@
             "auto": {
               "default": false,
               "description": "Update mise automatically before running eligible commands.",
-              "type": "boolean"
+              "oneOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "string"
+                }
+              ]
             },
             "check_duration": {
               "default": "7d",
-              "description": "How often automatic updates check for a new mise release when `self_update.auto` is on.",
+              "description": "How often automatic updates check for a new mise release when `self_update.auto = true`.",
               "type": "string"
             },
             "minimum_release_age": {
@@ -2440,9 +2447,21 @@
           "type": "object",
           "unevaluatedProperties": false,
           "properties": {
+            "global_auto": {
+              "default": false,
+              "description": "Update every tool in global config automatically, as if each set `auto_update` to this value.",
+              "oneOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "string"
+                }
+              ]
+            },
             "check_duration": {
               "default": "24h",
-              "description": "How often mise checks for a newer version of a global tool that sets `auto_update = true`.",
+              "description": "How often mise checks for a newer version of a global tool that sets `auto_update = true`, or of every global tool with `tool_update.global_auto = true`.",
               "type": "string"
             }
           }

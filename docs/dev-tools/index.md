@@ -165,6 +165,21 @@ fails or you are offline, mise warns and runs the version you have.
 A duration such as `"6h"` sets that tool's own interval. Intervals under one
 hour are raised to one hour.
 
+To update every tool in your global config without marking each one, set
+[`tool_update.global_auto`](/configuration/settings.html#tool_update.global_auto)
+to `true` or an interval. A tool's own `auto_update` still wins, so
+`auto_update = false` opts it out:
+
+```toml [~/.config/mise/config.toml]
+[settings]
+tool_update.global_auto = "12h"
+
+[tools]
+claude = "latest"
+node = { version = "24", auto_update = "6h" }
+python = { version = "3.13", auto_update = false }
+```
+
 - Only global config can turn this on. A project config cannot, and when a
   project sets its own version of the tool, runs in that project do not update
   it.

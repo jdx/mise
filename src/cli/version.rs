@@ -219,7 +219,7 @@ pub(crate) fn show_auto_update_hint() {
     };
     if select_version_hint(
         SelfUpdate::is_available(),
-        settings.self_update.auto,
+        settings.self_update.auto.is_on(),
         false,
         cfg!(windows),
     ) == Some(VersionHint::AutoUpdate)
@@ -238,7 +238,7 @@ pub(crate) fn show_version_hint() {
     };
     match select_version_hint(
         SelfUpdate::is_available(),
-        settings.self_update.auto,
+        settings.self_update.auto.is_on(),
         is_homebrew_install(),
         cfg!(windows),
     ) {

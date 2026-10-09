@@ -387,7 +387,7 @@ fn normalize_verbosity(settings: &mut Settings) {
 fn normalize_self_update_aliases(partial: &mut SettingsPartial) {
     if let Some(v) = partial.auto_update.take() {
         warn_deprecated("auto_update");
-        partial.self_update.auto.get_or_insert(v);
+        partial.self_update.auto.get_or_insert(v.into());
     }
     if let Some(v) = partial.auto_update_check_duration.take() {
         warn_deprecated("auto_update_check_duration");
@@ -1141,7 +1141,8 @@ impl SettingsExt for Settings {
 
     #[cfg(feature = "self_update")]
     fn self_update_check_duration(&self) -> eyre::Result<Duration> {
-        duration::parse_duration(&self.self_update.check_duration)
+        let interval = self.self_update.auto.interval();
+        duration::parse_duration(interval.unwrap_or(&self.self_update.check_duration))
     }
 
     fn fetch_remote_versions_timeout(&self) -> Duration {
@@ -2918,8 +2919,29 @@ mod tests {
         partial.auto_update_check_duration = Some("1d".to_string());
         Settings::reset(Some(partial));
         let settings = Settings::get();
-        assert!(settings.self_update.auto);
+        assert_eq!(settings.self_update.auto, AutoUpdate::On);
         assert_eq!(settings.self_update.check_duration, "1d");
+    }
+
+    #[cfg(feature = "self_update")]
+    #[test]
+    fn test_self_update_auto_interval_overrides_check_duration() {
+        let _settings = crate::test::SettingsGuard::lock();
+        let mut partial = SettingsPartial::empty();
+        partial.self_update.check_duration = Some("2d".to_string());
+        Settings::reset(Some(partial.clone()));
+        assert_eq!(
+            Settings::get().self_update_check_duration().unwrap(),
+            Duration::from_secs(2 * 24 * 60 * 60)
+        );
+        partial.self_update.auto = Some(AutoUpdate::Every("6h".to_string()));
+        Settings::reset(Some(partial));
+        let settings = Settings::get();
+        assert!(settings.self_update.auto.is_on());
+        assert_eq!(
+            settings.self_update_check_duration().unwrap(),
+            Duration::from_secs(6 * 60 * 60)
+        );
     }
 
     #[test]
@@ -2938,7 +2960,7 @@ mod tests {
         let partial = normalize_hidden_config_aliases(settings_file.settings);
         assert_eq!(partial.auto_update, None);
         assert_eq!(partial.auto_update_check_duration, None);
-        assert_eq!(partial.self_update.auto, Some(false));
+        assert_eq!(partial.self_update.auto, Some(AutoUpdate::Off));
         assert_eq!(partial.self_update.check_duration.as_deref(), Some("2d"));
     }
 
