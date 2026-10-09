@@ -439,6 +439,7 @@ impl Store {
                             (composed, re_encrypted) = super::sync::files::re_encrypt(
                                 repo,
                                 &composed,
+                                previous_tree.as_ref().map(|(_, tree)| tree.as_str()),
                                 console::user_attended_stderr(),
                             )?;
                         }

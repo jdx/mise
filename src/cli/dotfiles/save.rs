@@ -120,6 +120,7 @@ impl DotfilesSave {
         // local-only paths are saved in this machine's own history, by the
         // same command in the local scope
         let mut shared = self.paths.clone();
+        let mut local_args = None;
         if !tracked.local.is_empty() {
             let (local, rest): (Vec<_>, Vec<_>) = self.paths.iter().cloned().partition(|path| {
                 let path = normalize_target(path);
@@ -127,19 +128,33 @@ impl DotfilesSave {
             });
             shared = rest;
             if self.paths.is_empty() || !local.is_empty() {
-                let result = crate::system::history::local::run(self.local_args(&local));
-                match result {
-                    Err(err) if self.best_effort => warn!("history save: {err:#}"),
-                    result => result?,
-                }
-            }
-            if !self.paths.is_empty() && shared.is_empty() {
-                return Ok(());
+                local_args = Some(self.local_args(&local));
             }
         }
-        let mut this = self;
-        this.paths = shared;
-        this.save_shared(store, tracked, entries, trigger).await
+        let best_effort = self.best_effort;
+        let save_local = |args: Option<Vec<std::ffi::OsString>>| -> Result<()> {
+            let Some(args) = args else { return Ok(()) };
+            match crate::system::history::local::run(args) {
+                Err(err) if best_effort => {
+                    warn!("history save: {err:#}");
+                    Ok(())
+                }
+                result => result,
+            }
+        };
+        // local-only history holds no encrypted file, so a re-encryption can
+        // only fail in the shared one; saving that first keeps "nothing was
+        // saved" true of both
+        let re_encrypt = self.re_encrypt;
+        if !re_encrypt {
+            save_local(local_args.take())?;
+        }
+        if self.paths.is_empty() || !shared.is_empty() {
+            let mut this = self;
+            this.paths = shared;
+            this.save_shared(store, tracked, entries, trigger).await?;
+        }
+        save_local(local_args)
     }
 
     /// `mise dot save` arguments that save `paths` (all, when empty) in

@@ -51,10 +51,16 @@ assert_succeed "mise bootstrap dotfiles sync"
 new_machine b
 assert_fail "./b bootstrap --adopt file://$origin --yes --only dotfiles 2>&1" 'cannot unlock'
 
-# Without an identity that unlocks them, nothing is saved and every file is named.
+# Without an identity that unlocks them, nothing is saved and every file is
+# named, in the local-only history either.
+printf 'local\n' >"$HOME/.localonly"
+assert_succeed "mise dot track --local ~/.localonly --yes"
+printf 'local-edit\n' >"$HOME/.localonly"
+local_before=$(mise dot --local history --json | jq length)
 head_before=$(git --git-dir="$repo" rev-parse main)
 assert_fail "MISE_AGE_KEY= mise dot save --re-encrypt 2>&1" 'cannot re-encrypt ~/.manual, ~/.other'
 assert "git --git-dir=$repo rev-parse main" "$head_before"
+assert "mise dot --local history --json | jq length" "$local_before"
 
 assert_contains "mise dot save --re-encrypt 2>&1" 'history: re-encrypted 2 files to the current recipients'
 assert_succeed "mise bootstrap dotfiles sync"
@@ -69,3 +75,7 @@ assert "cat $HOME/.manual" 'unsaved-edit'
 head_before=$(git --git-dir="$repo" rev-parse main)
 assert_contains "mise dot save --re-encrypt 2>&1" 'history: every encrypted file already uses the current recipients'
 assert "git --git-dir=$repo rev-parse main" "$head_before"
+
+# A file the save captures and encrypts afresh counts as re-encrypted too.
+sed -i.bak "s/\"$PUB\", \"$PUB2\"]/\"$PUB\"]/" "$MISE_CONFIG_DIR/config.toml"
+assert_contains "mise dot save --re-encrypt 2>&1" 'history: re-encrypted 3 files to the current recipients'

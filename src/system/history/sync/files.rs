@@ -345,11 +345,14 @@ fn parse_recipients(
 /// Re-encrypt every encrypted file in `tree` whose envelope names other
 /// recipients than the tree's manifest, keeping the contents the tree holds:
 /// a saved version is never replaced by live contents. Returns the new tree
-/// and the paths re-encrypted. When this machine cannot unlock a file,
-/// refuses and names each one, replacing nothing.
+/// and the paths whose recipients changed since `previous`, both those
+/// re-encrypted here and those the capture already encrypted afresh. When
+/// this machine cannot unlock a file, refuses and names each one, replacing
+/// nothing.
 pub(crate) fn re_encrypt(
     repo: &HistoryRepo,
     tree: &str,
+    previous: Option<&str>,
     interactive: bool,
 ) -> Result<(String, Vec<String>)> {
     let Some(manifest) = crate::system::history::manifest::Manifest::read(repo, tree)? else {
@@ -360,15 +363,26 @@ pub(crate) fn re_encrypt(
     let mut recipients = None;
     let mut overlays = vec![];
     let mut locked = vec![];
+    // files the capture read live are already encrypted to the current
+    // recipients; they count when the previous checkpoint used others
+    let mut captured = vec![];
     for entry in repo.ls_tree(tree)? {
         if !encrypted.contains(&entry.path) {
             continue;
         }
         let object = (entry.mode, entry.oid);
         // a file outside an envelope is the publish audit's to refuse
-        if envelope(repo, &object, agecrypt::MAX_ENCRYPTED_BYTES)?
-            .is_none_or(|outer| outer.scheme == scheme)
-        {
+        let Some(outer) = envelope(repo, &object, agecrypt::MAX_ENCRYPTED_BYTES)? else {
+            continue;
+        };
+        if outer.scheme == scheme {
+            if let Some(previous) = previous
+                && let Some(before) = repo.object_at(previous, &entry.path)?
+                && envelope(repo, &before, agecrypt::MAX_ENCRYPTED_BYTES)?
+                    .is_some_and(|before| before.scheme != scheme)
+            {
+                captured.push(entry.path);
+            }
             continue;
         }
         let plain = match decrypt(repo, &entry.path, &object, interactive) {
@@ -400,6 +414,7 @@ pub(crate) fn re_encrypt(
     let paths = overlays
         .iter()
         .map(|overlay| overlay.path.clone())
+        .chain(captured)
         .collect();
     Ok((repo.compose(tree, &overlays)?, paths))
 }
