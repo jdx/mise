@@ -1,0 +1,167 @@
+#!/usr/bin/env bash
+
+# A var with a `prompt` keeps its default when nothing was saved and nothing may ask
+cat <<EOF2 >mise.toml
+[vars.git_name]
+default = "fallback"
+prompt = "Git author name"
+
+[vars.git_email]
+required = "Set git_email"
+prompt = "Git email"
+
+[tasks.show]
+run = "echo name={{ vars.git_name }} email={{ vars.git_email }}"
+EOF2
+
+# A required var with no saved answer still fails; nothing prompts without a terminal
+assert_fail_contains "mise run show" "Required variable 'git_email' is not defined"
+assert_fail_contains "mise bootstrap --prompt-vars --dry-run" "Required variable 'git_email' is not defined"
+
+# Saved answers are read from the state dir and win over the default
+export MISE_STATE_DIR="$PWD/state"
+mkdir -p "$MISE_STATE_DIR"
+cat <<EOF2 >"$MISE_STATE_DIR/vars.toml"
+[vars]
+git_name = "saved-name"
+git_email = "me@example.com"
+EOF2
+assert_contains "mise run show" "name=saved-name email=me@example.com"
+
+# An explicit value in a config file overrides the saved answer
+cat <<EOF2 >mise.local.toml
+[vars]
+git_name = "local-name"
+EOF2
+assert_contains "mise run show" "name=local-name email=me@example.com"
+
+# `prompt` only makes sense for [vars]
+cat <<EOF2 >mise.toml
+[env]
+GIT_NAME = { default = "x", prompt = "Name" }
+EOF2
+rm mise.local.toml
+assert_fail_contains "mise env" "only supported in [vars]"
+
+# `prompt` is rejected on every [env] form, including a plain value
+cat <<EOF2 >mise.toml
+[env]
+GIT_NAME = { value = "x", prompt = "Name" }
+EOF2
+assert_fail_contains "mise env" "only supported in [vars]"
+
+# A saved answer wins even when the default cannot render, and a blank one counts as unanswered
+cat <<EOF2 >mise.toml
+[vars.git_name]
+default = "{{ vars.missing_var }}"
+prompt = "Git author name"
+
+[vars.git_email]
+required = "Set git_email"
+prompt = "Git email"
+EOF2
+cat <<EOF2 >"$MISE_STATE_DIR/vars.toml"
+[vars]
+git_name = "saved-name"
+git_email = ""
+EOF2
+assert_fail_contains "mise env" "Required variable 'git_email' is not defined"
+
+# --prompt-vars is for the full run only
+assert_fail_contains "mise bootstrap --prompt-vars status" "only applies to a full"
+
+# `mise vars NAME=VALUE` saves a value on this machine, like `mise set`; `mise vars NAME` prints it
+cat <<EOF2 >mise.toml
+[vars]
+plain = "from-config"
+
+[vars.git_name]
+default = "fallback"
+prompt = "Git author name"
+EOF2
+rm -f "$MISE_STATE_DIR/vars.toml" mise.local.toml
+mise vars color=blue git_name="Ada Lovelace"
+assert "mise vars color" "blue"
+assert "mise vars git_name" "Ada Lovelace"
+assert "mise vars plain" "from-config"
+assert_fail_contains "mise vars missing" "no var named 'missing'"
+assert_fail_contains "mise vars =x" "expected NAME or NAME=VALUE"
+assert_fail_contains "mise vars empty=" "would count as unanswered"
+
+# Bare `mise vars` lists every var with its source, saved or from config
+assert_contains "mise vars --no-header" "plain"
+assert_contains "mise vars --no-header" "from-config"
+assert_contains "mise vars --no-header" "color"
+assert_contains "mise vars --no-header" "vars.toml"
+
+# A saved answer for a declared var is attributed to vars.toml, not the config file
+assert_contains "mise vars --no-header | grep git_name" "vars.toml"
+# ...and the process environment still beats it
+assert "env git_name=from-env mise vars git_name" "from-env"
+
+# An earlier var can reference a saved value that a later directive declares
+cat <<EOF2 >mise.toml
+[vars]
+greeting = "hi {{ vars.git_name }}"
+
+[vars.git_name]
+default = "fallback"
+prompt = "Git author name"
+EOF2
+assert "mise vars greeting" "hi Ada Lovelace"
+assert_contains "mise vars --no-header | grep git_name" "vars.toml"
+cat <<EOF2 >mise.toml
+[vars]
+plain = "from-config"
+
+[vars.git_name]
+default = "fallback"
+prompt = "Git author name"
+EOF2
+assert "env git_name=from-env mise vars git_name" "from-env"
+
+# A saved value is an ordinary var, so a template sees it even with no `prompt`
+cat <<EOF2 >>mise.toml
+
+[tasks.show-color]
+run = "echo {{ vars.color }}"
+EOF2
+assert_contains "mise run show-color" "blue"
+
+# A value in a config file still beats the saved one
+cat <<EOF2 >mise.local.toml
+[vars]
+color = "red"
+EOF2
+assert "mise vars color" "red"
+rm mise.local.toml
+
+# `mise vars prompt NAME=VALUE` saves too, and `unset` forgets
+mise vars prompt other=x
+assert "mise vars other" "x"
+assert_fail_contains "mise vars prompt" "needs an interactive terminal"
+assert_fail_contains "mise vars prompt nope" "needs an interactive terminal"
+mise vars unset other
+assert_fail_contains "mise vars other" "no var named 'other'"
+assert_fail_contains "mise vars unset" "name at least one var"
+
+# A later `default` for the same var leaves the value, and its source, with the file that set it
+cat <<EOF2 >mise.toml
+[vars.shared]
+default = "from-toml"
+EOF2
+cat <<EOF2 >mise.local.toml
+[vars.shared]
+default = "from-local"
+EOF2
+assert "mise vars shared" "from-toml"
+assert_contains "mise vars --no-header | grep shared" "mise.toml"
+rm mise.local.toml
+
+# `prompt` on a plain value would never ask, so it is an error
+cat <<EOF2 >mise.toml
+[vars.x]
+value = "1"
+prompt = "X"
+EOF2
+assert_fail_contains "mise vars" "on the same var"

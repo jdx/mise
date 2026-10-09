@@ -119,6 +119,7 @@ mod unuse;
 mod upgrade;
 mod usage;
 mod r#use;
+mod vars;
 pub(crate) mod version;
 mod watch;
 mod r#where;
@@ -400,6 +401,7 @@ pub(crate) enum Commands {
     Upgrade(upgrade::Upgrade),
     Usage(usage::Usage),
     Use(r#use::Use),
+    Vars(vars::Vars),
     Version(version::Version),
     Watch(Box<watch::Watch>),
     Where(r#where::Where),
@@ -569,6 +571,7 @@ impl Commands {
             Self::Upgrade(cmd) => Box::pin(cmd.run()),
             Self::Usage(cmd) => Box::pin(async move { cmd.run() }),
             Self::Use(cmd) => Box::pin(cmd.run()),
+            Self::Vars(cmd) => Box::pin(cmd.run()),
             Self::Version(cmd) => Box::pin(cmd.run()),
             Self::Watch(cmd) => Box::pin(cmd.run()),
             Self::Where(cmd) => Box::pin(cmd.run()),

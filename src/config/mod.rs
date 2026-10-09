@@ -675,7 +675,7 @@ impl Config {
     pub(crate) fn env_results_cached(&self) -> Option<&EnvResults> {
         self.env.get()
     }
-    pub(crate) fn vars_results_cached(&self) -> Option<&EnvResults> {
+    pub fn vars_results_cached(&self) -> Option<&EnvResults> {
         self.vars_results.get()
     }
     pub async fn path_dirs(self: &Arc<Self>) -> eyre::Result<&Vec<PathBuf>> {

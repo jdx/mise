@@ -177,6 +177,14 @@ pub(crate) struct Bootstrap {
     #[usage(long)]
     prompt_secrets: bool,
 
+    /// Ask for `[vars]` entries that declare a `prompt` and have no saved answer
+    ///
+    /// mise saves each answer under `$MISE_STATE_DIR`, not in any config file,
+    /// and never asks for it again. Without a terminal, a var keeps its default. A
+    /// `--dry-run` still saves the answers it asks for.
+    #[usage(long)]
+    prompt_vars: bool,
+
     /// Skip these parts
     ///
     /// Repeat the flag or separate parts with commas. Cannot be combined with
@@ -1757,6 +1765,11 @@ impl Bootstrap {
     }
 
     async fn run_with_notices(mut self) -> Result<()> {
+        // `--from` and `--adopt` hand the flag to the full run they start in the
+        // checkout, so only a subcommand can't use it.
+        if self.prompt_vars && self.command.is_some() {
+            bail!("--prompt-vars only applies to a full `mise bootstrap` run, not a subcommand");
+        }
         // Every subcommand, not just the full run, applies less than project
         // config declares in safe mode; say so up front.
         if Settings::safe_mode()
@@ -1778,6 +1791,12 @@ impl Bootstrap {
         }
         if let Some(command) = self.command.take() {
             return command.run().await;
+        }
+        if self.prompt_vars {
+            crate::config::env_directive::prompt::enable();
+            // Anything that ran before this point (such as tool purgatory cleanup)
+            // may have cached config whose vars never had the chance to prompt.
+            Config::reset().await?;
         }
         let generation = OperationScope::begin("bootstrap", self.dry_run).await?;
         let result = self.run_phases().await;

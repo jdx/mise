@@ -646,6 +646,13 @@ Repeat the flag or separate parts with commas. Cannot be combined with `--skip`.
         }
     }
     flag --prompt-secrets help="Prompt securely for missing bootstrap secret inputs"
+    flag --prompt-vars help="Ask for `[vars]` entries that declare a `prompt` and have no saved answer" {
+        long_help #"""
+Ask for `[vars]` entries that declare a `prompt` and have no saved answer
+
+mise saves each answer under `$MISE_STATE_DIR`, not in any config file, and never asks for it again. Without a terminal, a var keeps its default. A `--dry-run` still saves the answers it asks for.
+"""#
+    }
     flag --skip help="Skip these parts" var=#true {
         long_help #"""
 Skip these parts
@@ -7451,6 +7458,67 @@ Tool options can also be set inline:
     example "mise use --env local node@24" help="Write mise.local.toml (an existing .mise.local.toml is used instead)"
     example "mise use --env staging node@24" help="Write mise.staging.toml, which mise loads when MISE_ENV=staging"
     complete path type=path
+}
+cmd vars help="List, set, and ask for config vars" effect=write {
+    long_help #"""
+List, set, and ask for config vars
+
+Like `mise set`: with no arguments, lists every var and where it comes from;
+`mise vars NAME=VALUE` saves a value on this machine and `mise vars NAME`
+prints one. Saved values live in `$MISE_STATE_DIR/vars.toml`, outside every
+config file, and sit above a var's `default` but below any value a config
+file sets. `mise vars prompt` asks for the `[vars]` that declare a `prompt`;
+only it and `mise bootstrap --prompt-vars` ever ask.
+See https://mise.jdx.dev/configuration/vars.html#prompt
+"""#
+    flag --no-header help="Do not print the table header"
+    flag "-h --help" help="Print help" action=help builtin=#true
+    arg "[NAME[=VALUE]]…" help="Values to save (`NAME=VALUE`) or to print (`NAME`)" required=#false var=#true
+    cmd ls help="List every var, with the file it comes from" effect=read {
+        alias list
+        long_help #"""
+List every var, with the file it comes from
+
+Lists the `[vars]` of every config file mise loads here, plus the answers
+saved on this machine (source: `$MISE_STATE_DIR/vars.toml`). Values hidden
+with `redact` show as `[redacted]`. A `required` var that is still unset only
+warns here.
+"""#
+        flag --no-header help="Do not print the table header"
+        flag "-h --help" help="Print help" action=help builtin=#true
+    }
+    cmd prompt help="Ask for the prompt vars that have no saved answer, or set answers directly" effect=write {
+        long_help #"""
+Ask for the prompt vars that have no saved answer, or set answers directly
+
+Enter accepts the suggested default. Each answer, accepted defaults
+included, is saved and never asked for again; use `mise vars unset` to be
+asked again. With no arguments, asks about every unanswered `prompt` var in
+the config files that apply here. `NAME` asks for only that var;
+`NAME=VALUE` saves the answer without asking, as `mise set` does for an
+env var, so it needs no terminal.
+"""#
+        flag "-h --help" help="Print help" action=help builtin=#true
+        arg "[NAME[=VALUE]]…" help="Vars to ask for (`NAME`) or answers to save (`NAME=VALUE`)" required=#false var=#true
+        example "mise vars prompt" help="Ask for every unanswered prompt var"
+        example "mise vars prompt git_name" help="Ask for git_name only"
+        example "mise vars prompt git_name=\"Ada Lovelace\"" help="Set the answer for git_name without asking"
+    }
+    cmd unset help="Forget saved answers so they are asked for again" effect=write {
+        alias rm remove
+        long_help #"""
+Forget saved answers so they are asked for again
+
+Edits `$MISE_STATE_DIR/vars.toml`; no config is loaded. The next
+`mise vars prompt` or `mise bootstrap --prompt-vars` asks again.
+"""#
+        flag "-h --help" help="Print help" action=help builtin=#true
+        arg "[NAME]…" help="The vars whose answers to forget" required=#false var=#true
+        example "mise vars unset git_name" help="Be asked for git_name again"
+    }
+    example "mise vars git_name=\"Ada Lovelace\"" help="Save a value on this machine without asking"
+    example "mise vars git_name" help="Print the saved value of git_name"
+    example "mise vars" help="List every var and its source"
 }
 cmd version help="Show the version of mise" effect=read {
     alias v
