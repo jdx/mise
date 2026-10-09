@@ -11,7 +11,8 @@ use regex::Regex;
 use reqwest::StatusCode;
 use reqwest::header::{
     ACCEPT_ENCODING, AUTHORIZATION, CONTENT_RANGE, CONTENT_TYPE, COOKIE, DATE, ETAG, HeaderMap,
-    HeaderName, HeaderValue, IF_RANGE, LAST_MODIFIED, PROXY_AUTHORIZATION, RANGE,
+    HeaderName, HeaderValue, IF_MODIFIED_SINCE, IF_NONE_MATCH, IF_RANGE, LAST_MODIFIED,
+    PROXY_AUTHORIZATION, RANGE,
 };
 use reqwest::{ClientBuilder, IntoUrl, Method, Response};
 use serde::{Deserialize, Serialize};
@@ -27,6 +28,8 @@ use crate::redactions::redact_url_userinfo;
 use crate::time::format_duration;
 use crate::{env, file};
 use mise_settings::Settings;
+
+mod revalidate;
 
 pub static HTTP: Lazy<Client> = Lazy::new(|| {
     Client::new_shared(
@@ -220,6 +223,17 @@ impl DownloadValidator {
             } => is_strong_last_modified(value, response_date),
         }
     }
+}
+
+/// What an attempt learned beyond the bytes it wrote.
+#[derive(Default)]
+struct AttemptOutcome {
+    /// The validator of the stored copy, sent so the server can confirm it.
+    cond: Option<DownloadValidator>,
+    /// The server confirmed the stored copy is current; nothing was written.
+    not_modified: std::sync::atomic::AtomicBool,
+    /// The validator that came with a complete response, for keeping it.
+    validator: Mutex<Option<DownloadValidator>>,
 }
 
 #[derive(Debug)]
@@ -1311,6 +1325,22 @@ impl Client {
         pr: Option<&dyn SingleReport>,
         total_timeout: Duration,
     ) -> Result<DownloadFileMetadata> {
+        let use_cache = Settings::get().download_cache;
+        self.download_file_inner(url, path, headers, pr, total_timeout, use_cache)
+            .await
+    }
+
+    /// With `use_cache`, a finished download of the same request is offered to
+    /// the server for revalidation and reused on `304 Not Modified`.
+    async fn download_file_inner<U: IntoUrl>(
+        &self,
+        url: U,
+        path: &Path,
+        headers: &HeaderMap,
+        pr: Option<&dyn SingleReport>,
+        total_timeout: Duration,
+        use_cache: bool,
+    ) -> Result<DownloadFileMetadata> {
         ensure!(
             !crate::network::offline(&Settings::get()),
             "offline mode is enabled"
@@ -1334,6 +1364,16 @@ impl Client {
                 .await??;
         let attempt = Arc::new(AtomicUsize::new(0));
         let progress = Arc::new(DownloadProgress::default());
+        let request_hash = download_request_hash(&url, headers);
+        let cached = if use_cache {
+            revalidate::lookup(&request_hash)
+        } else {
+            None
+        };
+        let outcome = Arc::new(AttemptOutcome {
+            cond: cached.as_ref().map(|c| c.validator().clone()),
+            ..Default::default()
+        });
 
         // Retry the whole transfer, resuming a validated partial response when
         // possible. send_once_with_https_fallback_allow_416 (not
@@ -1343,10 +1383,11 @@ impl Client {
             let progress = progress.clone();
             let request_url = url.clone();
             let partial = partial.clone();
+            let outcome = outcome.clone();
             async move {
                 attempt.fetch_add(1, Ordering::Relaxed);
                 progress.start_attempt();
-                self.download_file_attempt(request_url, headers, &partial, pr, &progress)
+                self.download_file_attempt(request_url, headers, &partial, pr, &progress, &outcome)
                     .await
             }
         });
@@ -1386,7 +1427,40 @@ impl Client {
         // of `timeout` prevents us from returning an error while it can still
         // install the destination in the background.
         let path = path.to_path_buf();
-        tokio::task::spawn_blocking(move || partial.persist(&path)).await??;
+        if outcome.not_modified.load(Ordering::Relaxed)
+            && let Some(cached) = cached
+        {
+            let effective_filename = cached.effective_filename();
+            let dest = path.clone();
+            let restored = tokio::task::spawn_blocking(move || cached.restore(&dest)).await??;
+            if restored {
+                return Ok(DownloadFileMetadata { effective_filename });
+            }
+            // The stored file no longer matches what was recorded: fetch it again.
+            drop(_download_lock);
+            return Box::pin(self.download_file_inner(
+                url,
+                &path,
+                headers,
+                pr,
+                total_timeout,
+                false,
+            ))
+            .await;
+        }
+        let persist_path = path.clone();
+        tokio::task::spawn_blocking(move || partial.persist(&persist_path)).await??;
+        let validator = outcome.validator.lock().unwrap().take();
+        if use_cache && let Some(validator) = validator {
+            let effective_filename = metadata.effective_filename.clone();
+            let stored = tokio::task::spawn_blocking(move || {
+                revalidate::store(&request_hash, &path, &validator, effective_filename)
+            })
+            .await;
+            if let Ok(Err(err)) | Err(err) = stored.map_err(Report::from) {
+                debug!("could not keep the download for revalidation: {err:#}");
+            }
+        }
         Ok(metadata)
     }
 
@@ -1397,6 +1471,7 @@ impl Client {
         partial: &PartialDownload,
         pr: Option<&dyn SingleReport>,
         progress: &DownloadProgress,
+        outcome: &AttemptOutcome,
     ) -> Result<DownloadFileMetadata> {
         let mut restarted_without_resume = false;
         loop {
@@ -1420,6 +1495,20 @@ impl Client {
             let offset = resume.as_ref().map(|(_, size)| *size).unwrap_or(0);
             let mut request_headers = headers.clone();
             request_headers.insert(ACCEPT_ENCODING, HeaderValue::from_static("identity"));
+            let mut conditional = false;
+            if resume.is_none()
+                && let Some(cond) = &outcome.cond
+            {
+                conditional = true;
+                match cond {
+                    DownloadValidator::Etag(value) => {
+                        request_headers.insert(IF_NONE_MATCH, HeaderValue::from_str(value)?);
+                    }
+                    DownloadValidator::LastModified { value, .. } => {
+                        request_headers.insert(IF_MODIFIED_SINCE, HeaderValue::from_str(value)?);
+                    }
+                }
+            }
             if let Some((state, _)) = &resume {
                 request_headers.insert(RANGE, HeaderValue::from_str(&format!("bytes={offset}-"))?);
                 request_headers.insert(
@@ -1448,6 +1537,14 @@ impl Client {
             #[cfg(not(unix))]
             let served_by = resp.url();
             progress.served_by(served_by);
+
+            if conditional && resp.status() == StatusCode::NOT_MODIFIED {
+                outcome.not_modified.store(true, Ordering::Relaxed);
+                return Ok(DownloadFileMetadata::default());
+            }
+            *outcome.validator.lock().unwrap() = (resp.status() != StatusCode::PARTIAL_CONTENT)
+                .then(|| response_validator(resp.headers()))
+                .flatten();
 
             if resp.status() == StatusCode::RANGE_NOT_SATISFIABLE {
                 if let Some(ParsedContentRange::Unsatisfied { total }) = resp

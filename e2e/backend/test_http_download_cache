@@ -24,6 +24,29 @@ assert_contains "mise x -- mytool" "cached tool ok"
 ENTRY="$MISE_CACHE_DIR/downloads-cas/sha256/$SHA"
 assert "test -f $ENTRY && echo kept" "kept"
 
+# Without a pin, the server is asked whether the kept download is still current.
+printf '#!/bin/sh\necho unpinned tool ok\n' >"$SRV/mytool2"
+touch -d '2020-01-01' "$SRV/mytool2"
+cat >mise.toml <<EOF
+[tools."http:cas-unpinned"]
+version = "1.0.0"
+bin = "mytool2"
+url = "http://127.0.0.1:${HTTP_PORT}/mytool2"
+EOF
+mise install
+assert_contains "mise x -- mytool2" "unpinned tool ok"
+assert "ls $MISE_CACHE_DIR/downloads-cache | wc -l | tr -d ' '" "1"
+mise uninstall http:cas-unpinned@1.0.0
+mise install
+assert_contains "mise x -- mytool2" "unpinned tool ok"
+cat >mise.toml <<EOF
+[tools."http:cas-tool"]
+version = "1.0.0"
+bin = "mytool"
+url = "http://127.0.0.1:${HTTP_PORT}/mytool"
+checksum = "sha256:${SHA}"
+EOF
+
 # With the server gone, a reinstall is served from the kept download.
 kill "$HTTP_SERVER_PID"
 mise uninstall http:cas-tool@1.0.0

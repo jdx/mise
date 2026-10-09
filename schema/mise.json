@@ -642,7 +642,7 @@
         },
         "download_cache": {
           "default": true,
-          "description": "Reuse a verified download instead of fetching it again.",
+          "description": "Reuse a finished download when the server says it hasn't changed.",
           "type": "boolean"
         },
         "always_keep_install": {

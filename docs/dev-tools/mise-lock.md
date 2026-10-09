@@ -424,9 +424,8 @@ themselves and `postinstall` hooks change files. For tools built from source,
 such as Python and Ruby, it covers only the source tarball, not the compiled
 output.
 
-Downloads are different. With a pinned checksum, the `http` backend keeps the
-verified artifact in `$MISE_CACHE_DIR/downloads-cas`, hashes it again on every
-use, and falls back to downloading when it doesn't match. See
+Downloads are different. mise keeps them in a cache and reuses one only when
+the server confirms it is unchanged, or when it hashes to a pinned checksum. See
 [`download_cache`](/configuration/settings.html#download_cache).
 
 So treat a cache of installed files as trusted build input:

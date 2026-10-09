@@ -559,3 +559,65 @@ refresh_expires_at = "2099-01-01T00:00:00Z"
 fn json_empty_array_response() -> &'static str {
     "HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\n[]"
 }
+
+fn cacheable_download_response() -> &'static str {
+    concat!(
+        "HTTP/1.1 200 OK\r\n",
+        "Content-Length: 5\r\n",
+        "ETag: \"artifact-v1\"\r\n",
+        "Connection: close\r\n",
+        "\r\n",
+        "hello"
+    )
+}
+fn not_modified_response() -> &'static str {
+    "HTTP/1.1 304 Not Modified\r\nETag: \"artifact-v1\"\r\nConnection: close\r\n\r\n"
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn test_download_reuses_stored_file_on_not_modified() {
+    let _settings = set_test_http_retries(0);
+    let cache = tempfile::tempdir().unwrap();
+    *revalidate::TEST_ROOT.lock().unwrap() = Some(cache.path().to_path_buf());
+    let (port, count, requests) = spawn_recording_server(vec![
+        cacheable_download_response(),
+        not_modified_response(),
+        not_modified_response(),
+        cacheable_download_response(),
+    ])
+    .await;
+    let url = format!("http://127.0.0.1:{port}/artifact");
+    let client = Client::new(Duration::from_secs(2), ClientKind::Http).unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let dest = dir.path().join("artifact");
+
+    client.download_file(&url, &dest, None).await.unwrap();
+    assert_eq!(std::fs::read(&dest).unwrap(), b"hello");
+
+    // The second request is conditional, and a 304 serves the stored file.
+    std::fs::remove_file(&dest).unwrap();
+    client.download_file(&url, &dest, None).await.unwrap();
+    assert_eq!(std::fs::read(&dest).unwrap(), b"hello");
+    assert!(
+        requests.lock().unwrap()[1]
+            .to_lowercase()
+            .contains("if-none-match: \"artifact-v1\"")
+    );
+
+    // A stored file that no longer hashes to what was recorded is not used,
+    // even though the server says it is current.
+    let stored = std::fs::read_dir(cache.path())
+        .unwrap()
+        .next()
+        .unwrap()
+        .unwrap()
+        .path()
+        .join("file");
+    std::fs::write(&stored, b"tampered").unwrap();
+    std::fs::remove_file(&dest).unwrap();
+    client.download_file(&url, &dest, None).await.unwrap();
+    assert_eq!(std::fs::read(&dest).unwrap(), b"hello");
+    assert_eq!(count.load(std::sync::atomic::Ordering::SeqCst), 4);
+
+    *revalidate::TEST_ROOT.lock().unwrap() = None;
+}
