@@ -218,7 +218,13 @@ pub async fn rollback(req: RollbackRequest) -> Result<()> {
             let portable = tree_path_to_display(&repository_path(repo, &live, path)?);
             let id = match req.to {
                 Some(_) => target.entry.id,
-                None => saved_in(&entries, target.entry.id, &portable),
+                None => saved_in(
+                    entries
+                        .iter()
+                        .map(|entry| (entry.id, &entry.checkpoint.changes)),
+                    target.entry.id,
+                    &portable,
+                ),
             };
             versions.entry(id).or_default().push(portable);
         }
@@ -1653,14 +1659,20 @@ pub fn live_tree(repo: &HistoryRepo, tracked: &TrackedSet) -> Result<String> {
 
 /// The checkpoint that saved the version of `path` that checkpoint `id`
 /// holds: the newest one at or before it that changed the path, or `id`
-/// itself when none did.
-fn saved_in(entries: &[Entry], id: u64, path: &str) -> u64 {
-    entries
-        .iter()
+/// itself when none did. A truncated change list cannot say whether it
+/// changed the path, so reaching one also answers `id`, which does hold
+/// the version.
+fn saved_in<'a>(
+    changes: impl DoubleEndedIterator<Item = (u64, &'a super::store::Changes)>,
+    id: u64,
+    path: &str,
+) -> u64 {
+    changes
         .rev()
-        .filter(|entry| entry.id <= id)
-        .find(|entry| entry.checkpoint.changes.touches(path))
-        .map_or(id, |entry| entry.id)
+        .filter(|(entry, _)| *entry <= id)
+        .find(|(_, changes)| changes.truncated || changes.touches(path))
+        .filter(|(_, changes)| changes.touches(path))
+        .map_or(id, |(entry, _)| entry)
 }
 
 /// The newest checkpoint whose captured content for `path` differs from the
@@ -2060,6 +2072,34 @@ fn config_hint(touched: &[PathBuf]) {
 #[cfg(test)]
 mod reload_tests {
     use super::*;
+
+    /// A rollback names the checkpoint that changed the path, and falls back
+    /// to the one it restores from when a truncated change list in between
+    /// leaves that unknown.
+    #[test]
+    fn saved_in_names_the_checkpoint_that_changed_the_path() {
+        use super::super::store::Changes;
+        let touching = Changes {
+            modified: vec!["~/.zshrc".into()],
+            ..Default::default()
+        };
+        let other = Changes {
+            modified: vec!["~/.other".into()],
+            ..Default::default()
+        };
+        let truncated = Changes {
+            modified: vec!["~/.other".into()],
+            truncated: true,
+            ..Default::default()
+        };
+        let versions = [(1, &touching), (2, &other), (3, &other), (4, &touching)];
+        assert_eq!(saved_in(versions.into_iter(), 3, "~/.zshrc"), 1);
+        assert_eq!(saved_in(versions.into_iter(), 4, "~/.zshrc"), 4);
+        // nothing at or before it changed the path
+        assert_eq!(saved_in(versions.into_iter(), 3, "~/.none"), 3);
+        let versions = [(1, &touching), (2, &truncated), (3, &other)];
+        assert_eq!(saved_in(versions.into_iter(), 3, "~/.zshrc"), 3);
+    }
 
     #[test]
     fn excluded_empty_directories_require_removal_approval() -> Result<()> {
