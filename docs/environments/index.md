@@ -270,10 +270,15 @@ _.file = [
 ]
 ```
 
-Dotenv files use `KEY=value` lines, with `#` comments and quoted values. A
-dotenv value can reference variables assigned earlier in the same file, then
-variables from the environment mise started with. JSON, YAML and TOML values
-are read literally, so a `$` stays a `$`. Set `expand = true` to let a file of
+Dotenv files use `KEY=value` lines, with `#` comments and quoted values.
+Quoting works as in a shell: single-quoted text is literal, and quoted and
+unquoted parts next to each other are joined with their quotes removed, so
+`'it'\''s'` is `it's`. A quote with no partner later on its line, as in
+`O'Brien`, is kept as written. A partner in a trailing comment still counts, so
+write `NAME="O'Brien" # owner's name`. Single-quote a value that must keep its
+own quotes, such as JSON: `CONFIG='{"debug": true}'`. A dotenv value can
+reference variables assigned earlier in the same file, then variables from the
+environment mise started with. JSON, YAML and TOML values are read literally, so a `$` stays a `$`. Set `expand = true` to let a file of
 any format reference values loaded before it, from earlier files or earlier
 `[env]` entries:
 

@@ -252,6 +252,97 @@ impl serde::Serialize for PythonUvVenvAuto {
     }
 }
 
+/// A setting that turns on automatic updates: `false`, `true` to check every
+/// matching `check_duration`, or its own check interval such as `"6h"`.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub enum AutoUpdate {
+    #[default]
+    Off,
+    On,
+    Every(String),
+}
+
+impl AutoUpdate {
+    pub fn is_on(&self) -> bool {
+        !matches!(self, Self::Off)
+    }
+
+    /// The check interval it sets itself, which overrides `check_duration`.
+    pub fn interval(&self) -> Option<&str> {
+        match self {
+            Self::Every(interval) => Some(interval),
+            Self::Off | Self::On => None,
+        }
+    }
+}
+
+impl From<bool> for AutoUpdate {
+    fn from(value: bool) -> Self {
+        if value { Self::On } else { Self::Off }
+    }
+}
+
+impl<'de> Deserialize<'de> for AutoUpdate {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        use serde::de::{self, Visitor};
+        use std::fmt;
+
+        struct AutoUpdateVisitor;
+
+        impl<'de> Visitor<'de> for AutoUpdateVisitor {
+            type Value = AutoUpdate;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                formatter.write_str("a boolean or a duration such as \"6h\"")
+            }
+
+            fn visit_bool<E>(self, value: bool) -> Result<AutoUpdate, E>
+            where
+                E: de::Error,
+            {
+                Ok(value.into())
+            }
+
+            fn visit_str<E>(self, value: &str) -> Result<AutoUpdate, E>
+            where
+                E: de::Error,
+            {
+                let value = value.trim();
+                match value.to_ascii_lowercase().as_str() {
+                    "true" | "yes" | "y" | "on" | "1" => self.visit_bool(true),
+                    "false" | "no" | "n" | "off" | "0" | "" => self.visit_bool(false),
+                    _ => Ok(AutoUpdate::Every(value.to_string())),
+                }
+            }
+
+            fn visit_string<E>(self, value: String) -> Result<AutoUpdate, E>
+            where
+                E: de::Error,
+            {
+                self.visit_str(&value)
+            }
+        }
+
+        deserializer.deserialize_any(AutoUpdateVisitor)
+    }
+}
+
+impl serde::Serialize for AutoUpdate {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        match self {
+            AutoUpdate::Off => serializer.serialize_bool(false),
+            AutoUpdate::On => serializer.serialize_bool(true),
+            AutoUpdate::Every(interval) => serializer.serialize_str(interval),
+        }
+    }
+}
+
 fn remove_empty_nested_settings(table: &mut toml::Table, prefix: &str) {
     table.retain(|key, value| {
         let path = if prefix.is_empty() {

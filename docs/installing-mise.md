@@ -534,11 +534,12 @@ mise settings self_update.auto=true
 ```
 
 mise then checks for a new release at the interval set by
-[`self_update.check_duration`](/configuration/settings.html#self_update.check_duration).
-When one is available, it installs it before an eligible interactive command and
-runs the command again with the new binary. It skips the check in CI, in
-offline modes, in non-interactive sessions and for installations whose packager
-disabled self-update.
+[`self_update.check_duration`](/configuration/settings.html#self_update.check_duration),
+or at the interval you give instead of `true`, such as
+`mise settings self_update.auto=1d`. When one is available, it installs it
+before an eligible interactive command and runs the command again with the new
+binary. It skips the check in CI, in offline modes, in non-interactive sessions
+and for installations whose packager disabled self-update.
 
 `mise self-update` and automatic updates skip releases younger than
 [`self_update.minimum_release_age`](/configuration/settings.html#self_update.minimum_release_age),

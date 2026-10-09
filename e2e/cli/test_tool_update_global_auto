@@ -1,0 +1,77 @@
+#!/usr/bin/env bash
+
+# `tool_update.global_auto` updates every global tool as if each set
+# `auto_update` to its value. The dummy backend offers 1.0.0, 1.1.0, and 2.0.0. Each
+# case gets its own state dir, so its first check is always due.
+
+fresh_state() {
+  export MISE_STATE_DIR="$PWD/state-$1"
+}
+
+global_config() {
+  printf '[settings]\ntool_update.global_auto = true\n\n[tools]\n%s\n' "$1" >"$MISE_CONFIG_DIR/config.toml"
+}
+
+reset_dummy() {
+  mise uninstall dummy --all
+  mise install dummy@1.0.0
+}
+
+assert_not_checked() {
+  assert_fail "test -e '$MISE_STATE_DIR/tool-update'"
+}
+
+# A global tool without its own `auto_update` updates within its version.
+fresh_state default
+global_config 'dummy = "1"'
+reset_dummy
+assert "mise x -- dummy" "This is Dummy 1.1.0!"
+assert_not_contains "mise ls --installed dummy" "2.0.0"
+
+# Shims update the same way.
+fresh_state shim
+reset_dummy
+mise reshim
+assert "$MISE_DATA_DIR/shims/dummy" "This is Dummy 1.1.0!"
+
+# The env var turns it on too.
+fresh_state env
+printf '[tools]\ndummy = "1"\n' >"$MISE_CONFIG_DIR/config.toml"
+reset_dummy
+assert "MISE_TOOL_UPDATE_GLOBAL_AUTO=1 mise x -- dummy" "This is Dummy 1.1.0!"
+
+# An interval sets how often every global tool is checked.
+fresh_state interval
+printf '[settings]\ntool_update.global_auto = "1m"\n\n[tools]\ndummy = "1"\n' >"$MISE_CONFIG_DIR/config.toml"
+reset_dummy
+assert_contains "mise x -- dummy 2>&1" "below the 1h minimum"
+assert_contains "mise ls --installed dummy" "1.1.0"
+
+# A tool's own `auto_update = false` opts it out.
+fresh_state opt-out
+global_config 'dummy = { version = "1", auto_update = false }'
+reset_dummy
+assert "mise x -- dummy" "This is Dummy 1.0.0!"
+assert_not_checked
+
+# Exact versions are never updated.
+fresh_state pin
+global_config 'dummy = "1.0.0"'
+assert "mise x -- dummy" "This is Dummy 1.0.0!"
+assert_not_checked
+
+# A project's version of the tool is never updated.
+fresh_state project-version
+global_config 'dummy = "1"'
+printf '[tools]\ndummy = "1"\n' >mise.toml
+assert "mise x -- dummy" "This is Dummy 1.0.0!"
+assert_not_checked
+rm mise.toml
+
+# A project can't turn the setting on.
+fresh_state project-setting
+printf '[tools]\ndummy = "1"\n' >"$MISE_CONFIG_DIR/config.toml"
+printf '[settings]\ntool_update.global_auto = true\n' >mise.toml
+mise trust mise.toml
+assert_contains "mise x -- dummy 2>&1" "This is Dummy 1.0.0!"
+assert_not_checked

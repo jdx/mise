@@ -117,23 +117,25 @@ impl ToolUpdate {
     }
 }
 
-/// The detached update a prompt started. Nothing supervises it, and it holds
-/// the update lock that every launch's update waits on, so it stops itself
-/// after the time a service pass gets: the failure is recorded for `mise
-/// doctor`, and on Unix its process group (hooks and downloads too) is killed,
-/// which releases the lock.
+/// The detached process a prompt started. Nothing else supervises the update,
+/// and it holds the update lock every launch's update waits on, so this process
+/// runs the update as a child the way a service pass does: in its own process
+/// group (a job object on Windows), stopped with everything it started, hooks
+/// and downloads too, after the time a pass gets. That releases the lock and
+/// records the failure for `mise doctor`; blocking waits inside the child can't
+/// outlast it.
 async fn update_in_background_process(tool: ToolArg, tool_id: String) -> Result<()> {
-    match tokio::time::timeout(TICK_TIMEOUT, update_tool(tool, tool_id.clone(), true)).await {
-        Ok(result) => result,
-        Err(_) => {
-            let err = eyre::eyre!("the update took longer than {TICK_TIMEOUT:?}; stopped it");
-            tool_update::record_result(&tool_id, &Err(eyre::eyre!("{err}")));
-            #[cfg(unix)]
-            let _ =
-                nix::sys::signal::killpg(nix::unistd::getpgrp(), nix::sys::signal::Signal::SIGKILL);
-            Err(err)
-        }
+    let started = std::time::Instant::now();
+    let mut update = Tick::start(update_command(&[&tool.ba.short, "--id", &tool_id]))?;
+    let result = update.wait(TICK_TIMEOUT).await;
+    // The child records its own failures; only a stop it could not report is
+    // recorded here.
+    if let Err(err) = &result
+        && started.elapsed() >= TICK_TIMEOUT
+    {
+        tool_update::record_result(&tool_id, &Err(eyre::eyre!("{err:#}")));
     }
+    result
 }
 
 async fn update_tool(tool: ToolArg, tool_id: String, in_pass: bool) -> Result<()> {

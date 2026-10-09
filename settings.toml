@@ -3126,10 +3126,11 @@ type = "Url"
 default = false
 description = "Update mise automatically before running eligible commands."
 docs = """
-mise checks for a newer release every
+With `true`, mise checks for a newer release every
 [`self_update.check_duration`](#self_update.check_duration), before commands
-that may use the network. When one is available, it installs it without
-updating plugins, then runs the original command again with the new binary.
+that may use the network; a duration such as `"1d"` sets the interval instead.
+When one is available, it installs it without updating plugins, then runs the
+original command again with the new binary.
 Automatic updates are skipped in CI, in offline and prefer-offline modes, in
 non-interactive sessions, for shell activation commands, and for installations
 whose packager disabled self-update.
@@ -3143,11 +3144,12 @@ See [Updating mise](/installing-mise.html#updating).
 """
 env = "MISE_SELF_UPDATE_AUTO"
 global_only = true
-type = "Bool"
+rust_type = "AutoUpdate"
+type = "BoolOrString"
 
 [self_update.check_duration]
 default = "7d"
-description = "How often automatic updates check for a new mise release when `self_update.auto` is on."
+description = "How often automatic updates check for a new mise release when `self_update.auto = true`."
 env = "MISE_SELF_UPDATE_CHECK_DURATION"
 global_only = true
 type = "Duration"
@@ -4100,7 +4102,7 @@ type = "Bool"
 
 [tool_update.check_duration]
 default = "24h"
-description = "How often mise checks for a newer version of a global tool that sets `auto_update = true`."
+description = "How often mise checks for a newer version of a global tool that sets `auto_update = true`, or of every global tool with `tool_update.global_auto = true`."
 docs = """
 A tool can set its own interval instead, such as `auto_update = "6h"`.
 Intervals under `1h` are raised to `1h`. See
@@ -4109,6 +4111,27 @@ Intervals under `1h` are raised to `1h`. See
 env = "MISE_TOOL_UPDATE_CHECK_DURATION"
 global_only = true
 type = "Duration"
+
+[tool_update.global_auto]
+default = false
+description = "Update every tool in global config automatically, as if each set `auto_update` to this value."
+docs = """
+`true` checks every [`tool_update.check_duration`](#tool_update.check_duration),
+and a duration such as `"6h"` sets the interval instead. A tool's own
+`auto_update` takes precedence, so `auto_update = false` opts one tool out.
+Tools in project config are never updated, and exact versions such as
+`node = "24.11.1"` stay as they are. See
+[Automatic tool updates](/dev-tools/#automatic-tool-updates).
+
+```toml
+[settings]
+tool_update.global_auto = true
+```
+"""
+env = "MISE_TOOL_UPDATE_GLOBAL_AUTO"
+global_only = true
+rust_type = "AutoUpdate"
+type = "BoolOrString"
 
 [trace]
 description = "Set the log level to trace."

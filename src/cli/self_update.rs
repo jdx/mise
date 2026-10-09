@@ -61,7 +61,7 @@ pub(crate) async fn maybe_auto_update(
         return Ok(());
     };
     if !auto_update_eligible(AutoUpdateContext {
-        enabled: settings.self_update.auto,
+        enabled: settings.self_update.auto.is_on(),
         offline: settings.offline(),
         prefer_offline: settings.prefer_offline(),
         ci: settings.ci || ci_info::is_ci(),

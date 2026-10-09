@@ -173,6 +173,21 @@ error.
 A duration such as `"6h"` sets that tool's own interval. Intervals under one
 hour are raised to one hour.
 
+To update every tool in your global config without marking each one, set
+[`tool_update.global_auto`](/configuration/settings.html#tool_update.global_auto)
+to `true` or an interval. A tool's own `auto_update` still wins, so
+`auto_update = false` opts it out:
+
+```toml [~/.config/mise/config.toml]
+[settings]
+tool_update.global_auto = "12h"
+
+[tools]
+claude = "latest"
+node = { version = "24", auto_update = "6h" }
+python = { version = "3.13", auto_update = false }
+```
+
 ::: tip A 24h delay can mean up to 48h
 Updates respect [`minimum_release_age`](/security.html#minimum-release-age),
 which defaults to `24h` for

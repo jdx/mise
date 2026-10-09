@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+# shellcheck disable=SC2016
+
+# Adjacent quoted and unquoted parts of a dotenv value are joined and their quotes removed,
+# as a shell does, so the usual way to put an apostrophe in a single-quoted value works.
+cat >.env <<'EOF2'
+APOSTROPHE='it'\''s'
+MIXED=a'b c'd
+DOUBLE="one"'two'three
+NAME=O'Brien
+AFTER=still read
+EOF2
+
+cat >mise.toml <<'EOF2'
+[env]
+_.file = ".env"
+EOF2
+assert "mise x -- sh -c 'printf %s \"\$APOSTROPHE\"'" "it's"
+assert "mise x -- sh -c 'printf %s \"\$MIXED\"'" 'ab cd'
+assert "mise x -- sh -c 'printf %s \"\$DOUBLE\"'" 'onetwothree'
+# A quote with no partner later on its line is kept as written.
+assert "mise x -- sh -c 'printf %s \"\$NAME\"'" "O'Brien"
+assert "mise x -- sh -c 'printf %s \"\$AFTER\"'" 'still read'
+
+# The `env_file` setting parses the same way and keeps reading after the joined value.
+rm mise.toml
+assert "MISE_ENV_FILE=.env mise x -- sh -c 'printf %s \"\$APOSTROPHE\"'" "it's"
+assert "MISE_ENV_FILE=.env mise x -- sh -c 'printf %s \"\$AFTER\"'" 'still read'
