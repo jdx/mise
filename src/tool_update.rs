@@ -242,12 +242,16 @@ pub fn prompt_check_due() -> bool {
 /// project that pins a tool would hide it. Removed when no tool opted in.
 pub fn record_prompt_check(config: &Arc<Config>) {
     let path = prompt_check_path();
-    let global = ToolsetBuilder::new()
+    // A config that can't be read this once says nothing about which tools
+    // opted in: leave the schedule as it was.
+    let Ok(global) = ToolsetBuilder::new()
         .with_scope(ConfigScope::GlobalOnly)
         .without_runtime_env()
-        .build_unresolved(config);
-    let waits = global
-        .iter()
+        .build_unresolved(config)
+    else {
+        return;
+    };
+    let waits = std::iter::once(&global)
         .flat_map(|global| global.versions.values())
         .flat_map(|versions| versions.requests.iter())
         .filter(|request| request.is_os_supported())

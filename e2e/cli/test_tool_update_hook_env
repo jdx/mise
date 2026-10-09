@@ -115,3 +115,17 @@ mkdir pinned && cd pinned || exit 1
 printf '[tools]\ndummy = "1.0.0"\n' >mise.toml
 mise hook-env --shell bash --force >/dev/null 2>&1
 assert_succeed "test -s '$MISE_STATE_DIR/tool-update/prompt-next-check'"
+
+# An exact pin is checked once per interval, so it does not keep the prompt
+# schedule at an hour.
+cd .. || exit 1
+export MISE_STATE_DIR="$PWD/state-pin"
+printf '[tools]\ndummy = { version = "1.0.0", auto_update = true }\n' >"$MISE_CONFIG_DIR/config.toml"
+mise uninstall dummy --all
+mise install dummy@1.0.0
+mise hook-env --shell bash --force >/dev/null 2>&1
+due="$(cat "$MISE_STATE_DIR/tool-update/prompt-next-check")"
+if [ "$due" -lt "$(($(date +%s) + 12 * 3600))" ]; then
+  echo "an exact pin kept the prompt schedule short: $due"
+  exit 1
+fi

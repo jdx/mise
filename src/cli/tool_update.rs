@@ -67,12 +67,17 @@ pub(crate) fn update_in_background(config: &Arc<Config>, ts: &Toolset) {
 
 fn start_due_updates(ts: &Toolset) {
     for (_, tv) in ts.list_current_versions() {
-        if !tool_update::updatable(&tv) || !tool_update::is_due(&tv.request, Updater::Launch) {
+        if !tool_update::is_due(&tv.request, Updater::Launch) {
             continue;
         }
-        let Some(tool_id) = tool_update::claim_due(&tv, Updater::Launch) else {
+        let Some(tool_id) = tool_update::claim_due_request(&tv.request, Updater::Launch) else {
             continue;
         };
+        // An exact pin is checked all the same, so it does not stay due and
+        // send every hour's prompt through the full path.
+        if !tool_update::updatable(&tv) {
+            continue;
+        }
         if let Err(err) = spawn_detached(&tv.ba().short, &tool_id) {
             // The claim stays, so a failure that persists (resource limits, a
             // moved executable) warns once per interval, not at every prompt.
