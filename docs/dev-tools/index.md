@@ -163,9 +163,10 @@ fails or you are offline, mise warns and runs the version you have.
 In a shell with [`mise activate`](/shell-setup.html), tools run straight from
 `PATH`, so nothing sits between you and the command. Instead, when the shell
 prompt appears and a tool's check is due, mise starts the update in the
-background and the prompt does not wait. The new version is used by the next
-command you run after it finishes. Its output is discarded; if it fails,
-`mise doctor` shows the error.
+background and the prompt does not wait. Commands use the new version once the
+update has finished and the shell has refreshed its environment, which happens
+at a prompt. Its output is discarded; if it fails, `mise doctor` shows the
+error.
 
 `auto_update = true` checks every
 [`tool_update.check_duration`](/configuration/settings.html#tool_update.check_duration).

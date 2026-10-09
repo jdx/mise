@@ -63,6 +63,7 @@ pub(crate) fn update_in_background(ts: &Toolset) {
             continue;
         };
         if let Err(err) = spawn_detached(&tv.ba().short, &tool_id) {
+            tool_update::release_claim(&tool_id);
             warn!("could not start an update of {tool_id}: {err}");
         }
     }
