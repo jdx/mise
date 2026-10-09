@@ -207,8 +207,9 @@ node = { version = "24", auto_update = "6h", minimum_release_age = "3d" }
 - Only global config can turn this on. A project config cannot, and when a
   project sets its own version of the tool, runs in that project do not update
   it.
-- Only the tool being run is checked: `mise exec -- npm test` does not update
-  `claude`. Tasks never update tools.
+- A launch checks only the tool being run: `mise exec -- npm test` does not
+  update `claude`. In an activated shell, a prompt checks every opted-in tool
+  whose interval has elapsed. Tasks never update tools.
 - Exact versions such as `node = "24.11.1"` are never updated. If a global
   lockfile (`mise lock --global`) pins the tool, the update moves the lock
   entry to the new version. A project's config and lockfile are never changed.

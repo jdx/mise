@@ -57,9 +57,15 @@ pub(crate) struct ToolUpdate {
 /// re-resolves its environment. Output is discarded; a failure is recorded for
 /// `mise doctor`.
 pub(crate) fn update_in_background(ts: &Toolset) {
-    if !tool_update::any_opted_in(ts) {
-        return;
+    if tool_update::any_opted_in(ts) {
+        start_due_updates(ts);
     }
+    // Prompts that change nothing exit before loading config, so they go
+    // through the full path again only once a check is due.
+    tool_update::record_prompt_check(ts);
+}
+
+fn start_due_updates(ts: &Toolset) {
     for (_, tv) in ts.list_current_versions() {
         if !tool_update::updatable(&tv) || !tool_update::is_due(&tv.request, Updater::Launch) {
             continue;
@@ -125,8 +131,14 @@ impl ToolUpdate {
 /// records the failure for `mise doctor`; blocking waits inside the child can't
 /// outlast it.
 async fn update_in_background_process(tool: ToolArg, tool_id: String) -> Result<()> {
+    // One at a time, and the clock starts after the wait: every due tool gets a
+    // process, and they would otherwise spend each other's time.
+    let _queue = tool_update::lock_background_update()?;
     let started = std::time::Instant::now();
-    let mut update = Tick::start(update_command(&[&tool.ba.short, "--id", &tool_id]))?;
+    let mut update =
+        Tick::start(update_command(&[&tool.ba.short, "--id", &tool_id])).inspect_err(|err| {
+            tool_update::record_result(&tool_id, &Err(eyre::eyre!("could not start it: {err:#}")))
+        })?;
     let result = update.wait(TICK_TIMEOUT).await;
     // The child records its own failures; only a stop it could not report is
     // recorded here.

@@ -109,7 +109,8 @@ assert "MISE_OFFLINE=1 mise x -- dummy" "This is Dummy 1.0.0!"
 assert_not_checked
 fresh_state hook-env-offline
 assert_succeed "MISE_OFFLINE=1 mise hook-env -s bash >/dev/null"
-assert_not_checked
+# A prompt records when to look again, but makes no check.
+assert_fail "find '$MISE_STATE_DIR/tool-update' -type f ! -name prompt-next-check 2>/dev/null | grep -q ."
 
 # A per-tool interval is accepted; one under an hour is raised with a warning.
 fresh_state interval

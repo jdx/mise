@@ -200,6 +200,72 @@ fn claim(tool_id: &str, interval: Duration) -> Result<bool> {
     Ok(true)
 }
 
+/// Take the lock detached prompt updates queue on, waiting for the one
+/// running. Each such update's time limit starts after this, so one waiting
+/// behind another is not stopped for the other's run.
+pub fn lock_background_update() -> Result<fslock::LockFile> {
+    lock_file::LockFile::at(&state_dir().join("background.lock"))
+        .with_pid()
+        .lock()
+}
+
+/// Where a prompt records when an opted-in tool's check is next due, for
+/// [`prompt_check_due`].
+fn prompt_check_path() -> PathBuf {
+    state_dir().join("prompt-next-check")
+}
+
+fn unix_now() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |elapsed| elapsed.as_secs())
+}
+
+/// Whether a prompt should take the full `hook-env` path, not the early exit
+/// for an unchanged environment, because an opted-in tool's check is due. A
+/// single small read, and only for users who opted in.
+pub fn prompt_check_due() -> bool {
+    std::fs::read_to_string(prompt_check_path())
+        .ok()
+        .and_then(|due| due.trim().parse::<u64>().ok())
+        .is_some_and(|due| unix_now() >= due)
+}
+
+/// Record when the next prompt should check `toolset`'s opted-in tools: when
+/// the first one's interval ends, or in an hour when one is overdue yet could
+/// not be checked (offline, in CI, behind the service), so that does not send
+/// every prompt through the full path. Removed when no tool opted in.
+pub fn record_prompt_check(toolset: &Toolset) {
+    let path = prompt_check_path();
+    let waits = toolset
+        .list_current_versions()
+        .iter()
+        .filter(|(_, tv)| updatable(tv))
+        .filter_map(|(_, tv)| {
+            let interval = interval(&tv.request)?.max(MIN_CHECK_DURATION);
+            let age = file::modified_duration(
+                &StatePaths::new(&tv.request.ba().full_without_opts()).marker,
+            );
+            Some(age.map_or(Duration::ZERO, |age| interval.saturating_sub(age)))
+        })
+        .min();
+    let Some(wait) = waits else {
+        let _ = std::fs::remove_file(&path);
+        return;
+    };
+    let wait = if wait.is_zero() {
+        MIN_CHECK_DURATION
+    } else {
+        wait
+    };
+    let due = unix_now() + wait.as_secs();
+    if let Err(err) =
+        file::create_dir_all(state_dir()).and_then(|()| file::write_atomic(&path, due.to_string()))
+    {
+        debug!("tool-update: could not record the next prompt check: {err:#}");
+    }
+}
+
 /// Whether the `tool-update` service is running: it holds this lock for as
 /// long as it runs.
 fn service_running() -> bool {

@@ -72,3 +72,31 @@ for _ in {1..300}; do
   sleep 0.1
 done
 assert_contains "mise doctor 2>&1 || true" "the last auto_update of asdf:dummy failed"
+
+# An activated shell's prompt that changes nothing exits before loading config,
+# yet still starts the update once a check is due.
+export MISE_STATE_DIR="$PWD/state-prompt"
+printf '[tools]\ndummy = { version = "1", auto_update = true }\n' >"$MISE_CONFIG_DIR/config.toml"
+mise uninstall dummy --all
+mise install dummy@1.0.0
+eval "$(mise activate bash)" && _mise_hook
+for _ in {1..300}; do
+  mise ls --installed dummy | grep -q 1.1.0 && break
+  sleep 0.1
+done
+assert_contains "mise ls --installed dummy" "1.1.0"
+# Not due yet: an unchanged prompt starts nothing.
+mise uninstall dummy@1.1.0
+_mise_hook
+sleep 2
+assert_not_contains "mise ls --installed dummy" "1.1.0"
+# Due: the same unchanged prompt starts the update.
+find "$MISE_STATE_DIR/tool-update" -type f ! -name '*.*' ! -name 'prompt-next-check' -delete
+echo 0 >"$MISE_STATE_DIR/tool-update/prompt-next-check"
+_mise_hook
+for _ in {1..300}; do
+  mise ls --installed dummy | grep -q 1.1.0 && break
+  sleep 0.1
+done
+assert_contains "mise ls --installed dummy" "1.1.0"
+eval "$(mise deactivate)"
