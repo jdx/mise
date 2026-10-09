@@ -191,12 +191,6 @@ fn claim(tool_id: &str, interval: Duration) -> Result<bool> {
     Ok(true)
 }
 
-/// Undo [`claim_due`]'s claim when the update could not even be started, so
-/// the next check tries again instead of waiting out the interval.
-pub fn release_claim(tool_id: &str) {
-    let _ = std::fs::remove_file(&StatePaths::new(tool_id).marker);
-}
-
 /// Whether the `tool-update` service is running: it holds this lock for as
 /// long as it runs.
 fn service_running() -> bool {

@@ -43,6 +43,11 @@ pub(crate) struct ToolUpdate {
     /// there, so `mise doctor` finds it under the same id
     #[usage(long, hide = true)]
     id: Option<String>,
+
+    /// Started detached from a shell prompt: stop the update if it runs longer
+    /// than a service pass may
+    #[usage(long, hide = true, conflicts = "watch", conflicts = "due")]
+    background: bool,
 }
 
 /// At a prompt, start a detached update of each opted-in tool in `ts` whose
@@ -63,8 +68,10 @@ pub(crate) fn update_in_background(ts: &Toolset) {
             continue;
         };
         if let Err(err) = spawn_detached(&tv.ba().short, &tool_id) {
-            tool_update::release_claim(&tool_id);
+            // The claim stays, so a failure that persists (resource limits, a
+            // moved executable) warns once per interval, not at every prompt.
             warn!("could not start an update of {tool_id}: {err}");
+            tool_update::record_result(&tool_id, &Err(eyre::eyre!("could not start it: {err}")));
         }
     }
 }
@@ -73,7 +80,7 @@ pub(crate) fn update_in_background(ts: &Toolset) {
 /// Windows) with no output, so the shell neither lists it as a job nor waits
 /// for it.
 fn spawn_detached(tool: &str, tool_id: &str) -> std::io::Result<()> {
-    let mut command = update_command(&[tool, "--id", tool_id]);
+    let mut command = update_command(&[tool, "--id", tool_id, "--background"]);
     command.stdout(Stdio::null()).stderr(Stdio::null());
     #[cfg(unix)]
     {
@@ -103,7 +110,29 @@ impl ToolUpdate {
             bail!("pass a tool or --watch");
         };
         let tool_id = self.id.unwrap_or_else(|| tool.ba.full_without_opts());
+        if self.background {
+            return update_in_background_process(tool, tool_id).await;
+        }
         update_tool(tool, tool_id, false).await
+    }
+}
+
+/// The detached update a prompt started. Nothing supervises it, and it holds
+/// the update lock that every launch's update waits on, so it stops itself
+/// after the time a service pass gets: the failure is recorded for `mise
+/// doctor`, and on Unix its process group (hooks and downloads too) is killed,
+/// which releases the lock.
+async fn update_in_background_process(tool: ToolArg, tool_id: String) -> Result<()> {
+    match tokio::time::timeout(TICK_TIMEOUT, update_tool(tool, tool_id.clone(), true)).await {
+        Ok(result) => result,
+        Err(_) => {
+            let err = eyre::eyre!("the update took longer than {TICK_TIMEOUT:?}; stopped it");
+            tool_update::record_result(&tool_id, &Err(eyre::eyre!("{err}")));
+            #[cfg(unix)]
+            let _ =
+                nix::sys::signal::killpg(nix::unistd::getpgrp(), nix::sys::signal::Signal::SIGKILL);
+            Err(err)
+        }
     }
 }
 
