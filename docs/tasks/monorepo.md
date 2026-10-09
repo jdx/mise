@@ -364,25 +364,24 @@ worktrees outside the main checkout, for example in `myproject-worktrees/feature
 Define a [task template](/tasks/templates.html#monorepo-usage) in the root config
 and `extends` it in each project. To give every project's task of a given name
 the same defaults without touching the projects, use
-[`[monorepo.task_defaults]`](/tasks/workspace-graph.html#root-task-defaults)
-<Badge type="warning" text="experimental" />.
+[`[monorepo.task_defaults]`](/tasks/workspace-graph.html#root-task-defaults).
 
 ## `[monorepo]` reference
 
 `monorepo_root = true` marks the config root. These keys go in the
 `[monorepo]` section of a config at that root:
 
-| Key             | Type                       | Default | Description                                                                                                           |
-| --------------- | -------------------------- | ------- | --------------------------------------------------------------------------------------------------------------------- |
-| `config_roots`  | array of strings           | none    | Project directories, as paths or single-level globs. See [Config roots](#explicit-config-roots)                       |
-| `path_aliases`  | table of strings           | `{}`    | Short names for config roots. See [Path aliases](#short-names-for-project-paths)                                      |
-| `lockfile`      | boolean                    | unset   | Root or per-project lockfiles. See [Lockfiles](#lockfiles)                                                            |
-| `task_defaults` | table of task definitions  | `{}`    | Experimental defaults by task name. See [Root task defaults](/tasks/workspace-graph.html#root-task-defaults)          |
-| `projects`      | table of project overrides | `{}`    | Experimental corrections to the project graph. See [Project overrides](/tasks/workspace-graph.html#project-overrides) |
+| Key             | Type                       | Default | Description                                                                                              |
+| --------------- | -------------------------- | ------- | -------------------------------------------------------------------------------------------------------- |
+| `config_roots`  | array of strings           | none    | Project directories, as paths or single-level globs. See [Config roots](#explicit-config-roots)          |
+| `path_aliases`  | table of strings           | `{}`    | Short names for config roots. See [Path aliases](#short-names-for-project-paths)                         |
+| `lockfile`      | boolean                    | unset   | Root or per-project lockfiles. See [Lockfiles](#lockfiles)                                               |
+| `task_defaults` | table of task definitions  | `{}`    | Defaults by task name. See [Root task defaults](/tasks/workspace-graph.html#root-task-defaults)          |
+| `projects`      | table of project overrides | `{}`    | Corrections to the project graph. See [Project overrides](/tasks/workspace-graph.html#project-overrides) |
 
 ## Next steps
 
-- [Workspace project graph](/tasks/workspace-graph.html) <Badge type="warning" text="experimental" />:
+- [Workspace project graph](/tasks/workspace-graph.html):
   infer projects and their dependencies from Cargo, uv, Go, and Node.js
   workspaces, run only affected tasks, and import package scripts.
 - [Task templates](/tasks/templates.html): share task definitions between

@@ -27,17 +27,26 @@ The experimental artifact cache (a task's `cache` field) has separate `--task-ca
 To create a script task, run `mise tasks add --file hello -- echo hello`, then `mise run hello`. See <https://mise.jdx.dev/tasks/running-tasks.html>
 
 ## Flags
-- **`--affected`** — [experimental] Run matching tasks only in projects affected by Git changes
+- **`--affected`** — Run matching tasks only in projects affected by Git changes
 
-  Requires a monorepo root (`monorepo_root = true`).
-- **`--affected-base <REV>`** — [experimental] Git base revision for `--affected`
+  Counts committed changes between the base and head revisions, plus staged, unstaged, and untracked changes in the working tree when the head revision is the checked-out commit. Requires a monorepo root (`monorepo_root = true`).
+- **`--affected-base <REV>`** — Git base revision for `--affected`
 
   Defaults to `MISE_AFFECTED_BASE`, CI metadata, or `HEAD~1`.
-- **`--affected-explain`** — [experimental] Explain why `--affected` selected each project and task
-- **`--affected-head <REV>`** — [experimental] Git head revision for `--affected`
+- **`--affected-committed`** — Count committed changes between the base and head revisions
+
+  Alone, ignores the working tree. Combines with `--affected-uncommitted` and `--affected-untracked`. With none of the three, every source counts (the working-tree sources only when the head revision is the checked-out commit). Also set by `MISE_AFFECTED_COMMITTED`.
+- **`--affected-explain`** — Explain why `--affected` selected each project and task
+- **`--affected-head <REV>`** — Git head revision for `--affected`
 
   Defaults to `MISE_AFFECTED_HEAD`, CI metadata, or `HEAD`.
-- **`--affected-json`** — [experimental] Print the affected projects and tasks as JSON without running tasks
+- **`--affected-json`** — Print the affected projects and tasks as JSON without running tasks
+- **`--affected-uncommitted`** — Count staged and unstaged changes to tracked files
+
+  Combines with the other source flags. Alone, ignores committed changes. Needs the head revision to be the current checkout. Also set by `MISE_AFFECTED_UNCOMMITTED`.
+- **`--affected-untracked`** — Count untracked files that Git does not ignore
+
+  Combines with the other source flags. Alone, ignores committed changes. Needs the head revision to be the current checkout. Also set by `MISE_AFFECTED_UNTRACKED`.
 - **`--all`** — Open the task picker with tasks from every project in the monorepo
 - **`-c --continue-on-error`** — Continue running tasks even if one fails
 - **`-C --cd <DIR>`** — Change to this directory before running the tasks

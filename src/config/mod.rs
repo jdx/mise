@@ -1252,7 +1252,9 @@ impl Config {
         let config = Config::get().await?;
         time!("load_all_tasks");
 
-        let workspace_graph = (Settings::get().experimental && config.monorepo_root().is_some())
+        let workspace_graph = config
+            .monorepo_root()
+            .is_some()
             .then(|| config.workspace_project_graph_for_task_loading());
         let task_definitions = collect_task_definitions(
             &config.config_files,
@@ -1284,7 +1286,7 @@ impl Config {
             .map(|t| (t.name.clone(), t))
             .collect();
         let settings = Settings::get();
-        if settings.experimental && !settings.task.auto_infer.is_empty() {
+        if !settings.task.auto_infer.is_empty() {
             let inferred_tasks = match workspace_graph.as_ref() {
                 Some(Ok(graph)) => {
                     inferred_workspace_tasks(
@@ -1363,9 +1365,7 @@ impl Config {
                 tasks.insert(task.name.clone(), task);
             }
         }
-        if Settings::get().experimental
-            && let Some(monorepo_root) = config.monorepo_root()
-        {
+        if let Some(monorepo_root) = config.monorepo_root() {
             match workspace_graph.as_ref() {
                 Some(Ok(graph)) => {
                     let mut project_ids_by_root = BTreeMap::new();
@@ -4332,46 +4332,47 @@ fn collect_task_definitions(
         }
     }
 
-    let workspace_defaults = Settings::get()
-        .experimental
-        .then(|| {
-            let config = find_monorepo_config(config_files)?;
-            let root = config.root;
-            let monorepo = config.monorepo;
-            let tasks = config.task_defaults;
-            let mut project_roots = expand_config_root_dirs(
-                &root,
-                monorepo.config_roots.as_deref().unwrap_or_default(),
-                None,
-            )
-            .unwrap_or_default()
-            .into_iter()
-            .map(|project_root| file::desymlink_path(&project_root))
-            .collect::<BTreeSet<_>>();
-            project_roots.extend(
-                monorepo
-                    .projects
-                    .values()
-                    .filter(|project| !project.remove)
-                    .filter_map(|project| project.root.as_ref())
-                    .map(|project_root| file::desymlink_path(&root.join(project_root))),
-            );
-            if let Some(graph) = workspace_graph {
-                project_roots.extend(
-                    graph
-                        .projects()
-                        .map(|project| file::desymlink_path(&root.join(&project.root))),
-                );
-            }
-            (!tasks.is_empty()).then_some(WorkspaceTaskDefaults {
-                project_roots,
-                tasks,
-            })
-        })
-        .flatten();
-
-    definitions.workspace_defaults = workspace_defaults;
+    definitions.workspace_defaults = workspace_task_defaults(config_files, workspace_graph);
     definitions
+}
+
+/// The workspace-root task defaults, with the roots of every project they apply to.
+fn workspace_task_defaults(
+    config_files: &ConfigMap,
+    workspace_graph: Option<&crate::task::workspace::WorkspaceProjectGraph>,
+) -> Option<WorkspaceTaskDefaults> {
+    let config = find_monorepo_config(config_files)?;
+    let root = config.root;
+    let monorepo = config.monorepo;
+    let tasks = config.task_defaults;
+    let mut project_roots = expand_config_root_dirs(
+        &root,
+        monorepo.config_roots.as_deref().unwrap_or_default(),
+        None,
+    )
+    .unwrap_or_default()
+    .into_iter()
+    .map(|project_root| file::desymlink_path(&project_root))
+    .collect::<BTreeSet<_>>();
+    project_roots.extend(
+        monorepo
+            .projects
+            .values()
+            .filter(|project| !project.remove)
+            .filter_map(|project| project.root.as_ref())
+            .map(|project_root| file::desymlink_path(&root.join(project_root))),
+    );
+    if let Some(graph) = workspace_graph {
+        project_roots.extend(
+            graph
+                .projects()
+                .map(|project| file::desymlink_path(&root.join(&project.root))),
+        );
+    }
+    (!tasks.is_empty()).then_some(WorkspaceTaskDefaults {
+        project_roots,
+        tasks,
+    })
 }
 
 /// Resolve task definition layers from highest to lowest precedence.
@@ -6613,7 +6614,9 @@ pub(crate) fn resolve_template_for_late_task(config: &Arc<Config>, task: &mut Ta
     if task.extends.is_none() {
         return Ok(());
     }
-    let workspace_graph = (Settings::get().experimental && config.monorepo_root().is_some())
+    let workspace_graph = config
+        .monorepo_root()
+        .is_some()
         .then(|| config.workspace_project_graph_for_task_loading());
     let definitions = collect_task_definitions(
         &config.config_files,
@@ -6634,7 +6637,9 @@ pub async fn load_tasks_in_dir(
     dir: &Path,
     config_files: &ConfigMap,
 ) -> Result<Vec<Task>> {
-    let workspace_graph = (Settings::get().experimental && config.monorepo_root().is_some())
+    let workspace_graph = config
+        .monorepo_root()
+        .is_some()
         .then(|| config.workspace_project_graph_for_task_loading());
     let definitions = collect_task_definitions(
         config_files,

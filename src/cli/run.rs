@@ -111,32 +111,58 @@ pub(crate) struct Run {
     #[usage(hide = true, double_dash = "required")]
     pub args_last: Vec<String>,
 
-    /// [experimental] Run matching tasks only in projects affected by Git changes
+    /// Run matching tasks only in projects affected by Git changes
     ///
-    /// Requires a monorepo root (`monorepo_root = true`).
+    /// Counts committed changes between the base and head revisions, plus staged,
+    /// unstaged, and untracked changes in the working tree when the head revision
+    /// is the checked-out commit. Requires a monorepo root (`monorepo_root = true`).
     #[usage(long)]
     pub affected: bool,
 
-    /// [experimental] Git base revision for `--affected`
+    /// Git base revision for `--affected`
     ///
     /// Defaults to `MISE_AFFECTED_BASE`, CI metadata, or `HEAD~1`.
     #[usage(long, requires = "affected", value_name = "REV")]
     pub affected_base: Option<String>,
 
-    /// [experimental] Explain why `--affected` selected each project and task
+    /// Count committed changes between the base and head revisions
+    ///
+    /// Alone, ignores the working tree. Combines with `--affected-uncommitted`
+    /// and `--affected-untracked`. With none of the three, every source counts (the working-tree sources only
+    /// when the head revision is the checked-out commit).
+    /// Also set by `MISE_AFFECTED_COMMITTED`.
+    #[usage(long, requires = "affected")]
+    pub affected_committed: bool,
+
+    /// Explain why `--affected` selected each project and task
     #[usage(long, requires = "affected", conflicts = "affected_json")]
     pub affected_explain: bool,
 
-    /// [experimental] Git head revision for `--affected`
+    /// Git head revision for `--affected`
     ///
     /// Defaults to `MISE_AFFECTED_HEAD`, CI metadata, or `HEAD`.
     #[usage(long, requires = "affected", value_name = "REV")]
     pub affected_head: Option<String>,
 
-    /// [experimental] Print the affected projects and tasks as JSON without
-    /// running tasks
+    /// Print the affected projects and tasks as JSON without running tasks
     #[usage(long, requires = "affected", conflicts = "affected_explain")]
     pub affected_json: bool,
+
+    /// Count staged and unstaged changes to tracked files
+    ///
+    /// Combines with the other source flags. Alone, ignores committed changes.
+    /// Needs the head revision to be the current checkout. Also set by
+    /// `MISE_AFFECTED_UNCOMMITTED`.
+    #[usage(long, requires = "affected")]
+    pub affected_uncommitted: bool,
+
+    /// Count untracked files that Git does not ignore
+    ///
+    /// Combines with the other source flags. Alone, ignores committed changes.
+    /// Needs the head revision to be the current checkout. Also set by
+    /// `MISE_AFFECTED_UNTRACKED`.
+    #[usage(long, requires = "affected")]
+    pub affected_untracked: bool,
 
     /// Open the task picker with tasks from every project in the monorepo
     #[usage(long, conflicts = ["task", "affected"])]
@@ -417,18 +443,15 @@ async fn get_affected_task_list(
     config: &Arc<Config>,
     args: &[String],
     only: bool,
-    base: Option<&str>,
-    head: Option<&str>,
+    revisions: crate::task::workspace::git::WorkspaceGitRevisions,
     explain: bool,
     json: bool,
 ) -> Result<Vec<Task>> {
-    Settings::get().ensure_experimental("affected tasks")?;
     let workspace_root = config
         .monorepo_root()
         .ok_or_else(|| eyre!("--affected requires a monorepo root configuration"))?;
     let graph = config.workspace_project_graph()?;
-    let revisions = crate::task::workspace::git::WorkspaceGitRevisions::resolve(base, head);
-    let changed_paths = revisions.changed_paths(&workspace_root)?;
+    let changes = revisions.changed_paths(&workspace_root)?;
     let global_inputs = config.monorepo_global_task_inputs().await?;
     let git = crate::git::Git::new(&workspace_root);
     let cargo = crate::task::workspace::cargo::CargoWorkspaceProvider;
@@ -438,9 +461,8 @@ async fn get_affected_task_list(
     let providers: [&dyn crate::task::workspace::WorkspaceProvider; 4] = [&cargo, &go, &node, &uv];
     let mut regular_paths = BTreeSet::new();
     let mut lockfile_projects = BTreeMap::<PathBuf, BTreeSet<_>>::new();
-    let mut comparison_base: Option<String> = None;
 
-    for path in changed_paths {
+    for path in changes.paths.iter().cloned() {
         let Some(lockfile_candidates) =
             graph.affected_projects_for_lockfile(&providers, &path, None, None)?
         else {
@@ -451,23 +473,18 @@ async fn get_affected_task_list(
             regular_paths.insert(path);
             continue;
         }
-        let comparison_base = match &comparison_base {
-            Some(base) => base.clone(),
-            None => {
-                let base = git.merge_base(&revisions.base, &revisions.head)?;
-                comparison_base = Some(base.clone());
-                base
+        for (before, after) in changes.file_versions(&git, &path)? {
+            if let Some(projects) = graph.affected_projects_for_lockfile(
+                &providers,
+                &path,
+                before.as_deref(),
+                after.as_deref(),
+            )? {
+                lockfile_projects
+                    .entry(path.clone())
+                    .or_default()
+                    .extend(projects);
             }
-        };
-        let before = git.file_at_revision(&comparison_base, &path)?;
-        let after = git.file_at_revision(&revisions.head, &path)?;
-        if let Some(projects) = graph.affected_projects_for_lockfile(
-            &providers,
-            &path,
-            before.as_deref(),
-            after.as_deref(),
-        )? {
-            lockfile_projects.entry(path).or_default().extend(projects);
         }
     }
 
@@ -736,8 +753,15 @@ impl Run {
                 &config,
                 &args,
                 self.skip_deps,
-                self.affected_base.as_deref(),
-                self.affected_head.as_deref(),
+                crate::task::workspace::git::WorkspaceGitRevisions::resolve(
+                    self.affected_base.as_deref(),
+                    self.affected_head.as_deref(),
+                    crate::task::workspace::git::AffectedSources {
+                        committed: self.affected_committed,
+                        uncommitted: self.affected_uncommitted,
+                        untracked: self.affected_untracked,
+                    },
+                ),
                 self.affected_explain,
                 self.affected_json,
             )
