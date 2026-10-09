@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+# A machine that adopted a shared setup tracks entries through history
+# without declaring them in its own [dotfiles] table. Status must not
+# claim nothing is configured above a block that reports those entries.
+require_cmd git
+export MISE_HISTORY_NOTIFY=false
+origin="$PWD/adopt-origin.git"
+git init -q --bare -b main "$origin"
+echo shared >~/.shared-config
+assert_succeed "mise dot track ~/.shared-config --yes"
+assert_succeed "mise dot origin set file://$origin --sync manual --yes"
+
+# with nothing tracked anywhere, the message stays
+empty="$(dirname "$HOME")/empty"
+mkdir -p "$empty/.config/mise"
+assert_contains "env HOME=$empty XDG_CONFIG_HOME=$empty/.config MISE_CONFIG_DIR=$empty/.config/mise MISE_STATE_DIR=$empty/.local/state/mise mise dot status 2>&1" 'nothing configured in [dotfiles]'
+
+second="$(dirname "$HOME")/second"
+mkdir -p "$second/.config/mise"
+run_second() {
+  (
+    cd "$second" || exit
+    env HOME="$second" XDG_CONFIG_HOME="$second/.config" MISE_CONFIG_DIR="$second/.config/mise" \
+      MISE_STATE_DIR="$second/.local/state/mise" MISE_DATA_DIR="$second/.local/share/mise" \
+      MISE_CACHE_DIR="$second/.cache/mise" MISE_TRUSTED_CONFIG_PATHS="$second" mise "$@"
+  )
+}
+export -f run_second
+export second
+assert_succeed "run_second bootstrap --adopt file://$origin --yes --only dotfiles"
+assert "cat $second/.shared-config" shared
+assert_not_contains 'run_second dot status 2>&1' 'nothing configured in [dotfiles]'
+assert_contains 'run_second dot status 2>&1' 'History: tracking 1 entries'
