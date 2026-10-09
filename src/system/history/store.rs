@@ -1311,12 +1311,16 @@ fn write_json_text<T: Serialize>(path: &Path, value: &T, skip_unchanged: bool) -
         file::write_atomic(path, text)
             .wrap_err_with(|| format!("writing {}", display_path(path)))?;
     }
-    // reset even when the bytes were kept, so a rebuild still heals a file
-    // whose mode drifted
+    // a rebuild still heals a file whose mode drifted, but a file already at
+    // 0600 is not touched: a chmod writes the inode too
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        let _ = std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600));
+        let private =
+            std::fs::metadata(path).is_ok_and(|meta| meta.permissions().mode() & 0o777 == 0o600);
+        if !private {
+            let _ = std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600));
+        }
     }
     Ok(())
 }
