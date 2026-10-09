@@ -87,6 +87,8 @@ impl ZigPlugin {
             None
         };
 
+        // The same checksum names the archive whichever host serves it.
+        let pinned = lock_checksum(tv, &self.get_platform_key());
         if settings.zig.use_community_mirrors
             && let Some(mirrors) = community_mirrors
         {
@@ -99,9 +101,10 @@ impl ZigPlugin {
                 used_url = format!("{mirror_url}/{filename}");
 
                 if HTTP
-                    .download_file(
+                    .download_file_stored(
                         format!("{used_url}{REQUEST_SUFFIX}"),
                         &tarball_path,
+                        pinned.as_deref(),
                         Some(pr),
                     )
                     .await
@@ -117,13 +120,8 @@ impl ZigPlugin {
             // Try the usual ziglang.org or machengine.org download
             pr.set_message(format!("download {filename}"));
             used_url = url.clone();
-            HTTP.download_file_pinned(
-                &url,
-                &tarball_path,
-                lock_checksum(tv, &self.get_platform_key()).as_deref(),
-                Some(pr),
-            )
-            .await?;
+            HTTP.download_file_stored(&url, &tarball_path, pinned.as_deref(), Some(pr))
+                .await?;
             // If this was ziglang.org and error is not 404 and community_mirrors is None,
             // the user might want to place the mirror list in cache dir by hand
         }

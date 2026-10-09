@@ -1422,6 +1422,21 @@ impl Client {
         Ok(fetched.metadata)
     }
 
+    /// [`Client::download_file_linked`] with the automatic host credentials, for
+    /// callers that send no headers of their own.
+    pub async fn download_file_stored<U: IntoUrl>(
+        &self,
+        url: U,
+        dest: &Path,
+        pin: Option<&str>,
+        pr: Option<&dyn SingleReport>,
+    ) -> Result<DownloadFileMetadata> {
+        let url = url.into_url()?;
+        let headers = host_auth_headers(&url)?;
+        self.download_file_linked(url, dest, &headers, pin, pr)
+            .await
+    }
+
     /// Like [`Client::download_file_pinned`], but the download is kept in the
     /// store first and `dest` is a link to it where the filesystem allows one,
     /// so the bytes exist once. Across devices, or without a store, it is a

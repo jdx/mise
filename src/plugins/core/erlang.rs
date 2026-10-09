@@ -354,7 +354,7 @@ impl ErlangPlugin {
 
         ctx.pr.set_message(format!("Downloading {filename}"));
         if !tarball_path.exists() {
-            HTTP.download_file_pinned(
+            HTTP.download_file_stored(
                 &url,
                 &tarball_path,
                 lock_checksum(&tv, &self.get_platform_key()).as_deref(),
@@ -446,7 +446,7 @@ impl ErlangPlugin {
         ctx.pr.set_message(format!("Downloading {tarball_name}"));
         let tarball_path = tv.download_path().join(tarball_name);
         if !tarball_path.exists() {
-            HTTP.download_file_pinned(
+            HTTP.download_file_stored(
                 &url,
                 &tarball_path,
                 lock_checksum(&tv, &self.get_platform_key()).as_deref(),
@@ -509,7 +509,9 @@ impl ErlangPlugin {
         ctx.pr.set_message(format!("Downloading {}", zip_name));
         let zip_path = tv.download_path().join(zip_name);
         if !zip_path.exists() {
-            HTTP.download_file(&url, &zip_path, Some(ctx.pr.as_ref()))
+            // The lockfile's checksum, or else the digest the release API gave.
+            let pinned = lock_checksum(&tv, &self.get_platform_key()).or_else(|| checksum.clone());
+            HTTP.download_file_stored(&url, &zip_path, pinned.as_deref(), Some(ctx.pr.as_ref()))
                 .await?;
         }
         self.set_lockfile_info(&mut tv, None, &url, checksum, None);

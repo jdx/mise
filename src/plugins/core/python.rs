@@ -438,7 +438,7 @@ impl PythonPlugin {
 
         let tarball_path = tv.download_path().join(filename);
         ctx.pr.set_message(format!("download {filename}"));
-        HTTP.download_file_pinned(
+        HTTP.download_file_stored(
             &url,
             &tarball_path,
             lock_checksum(tv, &self.get_platform_key()).as_deref(),
@@ -568,7 +568,7 @@ impl PythonPlugin {
         let tarball_path = download.join(filename);
 
         ctx.pr.set_message(format!("download {filename}"));
-        HTTP.download_file_pinned(
+        HTTP.download_file_stored(
             &url,
             &tarball_path,
             lock_checksum(tv, &self.get_platform_key()).as_deref(),

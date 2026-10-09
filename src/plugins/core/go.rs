@@ -128,7 +128,7 @@ impl GoPlugin {
             HTTP.get_text(checksum_url).await
         });
         pr.set_message(format!("download {filename}"));
-        HTTP.download_file_pinned(
+        HTTP.download_file_stored(
             &*tarball_url,
             &tarball_path,
             lock_checksum(tv, &self.get_platform_key()).as_deref(),

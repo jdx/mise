@@ -215,7 +215,7 @@ impl JavaPlugin {
         let tarball_path = tv.download_path().join(filename);
 
         pr.set_message(format!("download {filename}"));
-        HTTP.download_file_pinned(
+        HTTP.download_file_stored(
             &m.url,
             &tarball_path,
             lock_checksum(tv, &self.get_platform_key()).as_deref(),
@@ -622,8 +622,14 @@ impl Backend for JavaPlugin {
                     if !tarball_path.exists() {
                         debug!("File not found, downloading from cached URL: {}", url);
                         // Download using the lockfile URL, not JavaMetadata
-                        HTTP.download_file(url, &tarball_path, Some(ctx.pr.as_ref()))
-                            .await?;
+                        let pinned = lock_checksum(&tv, &platform_key);
+                        HTTP.download_file_stored(
+                            url,
+                            &tarball_path,
+                            pinned.as_deref(),
+                            Some(ctx.pr.as_ref()),
+                        )
+                        .await?;
                         // Optionally verify checksum if present
                         self.verify_checksum(ctx, &mut tv, &tarball_path)?;
                     } else {

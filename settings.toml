@@ -689,10 +689,13 @@ hash, and uses one again in two cases:
 - **A tool pinned its checksum**, in its options or in `mise.lock`. The kept
   file is used with no request at all, even if the URL changed.
 
-The `http`, `github`, `aqua` and `packslip` backends pin and install from the
-stored file, linked into place where the filesystem allows, so the archive takes
-no extra space and is not copied; across devices it is copied. The core tools
-pin with the checksum in `mise.lock` and copy the file into place. Every other
+The `http`, `github`, `aqua` and `packslip` backends and the core tools'
+precompiled archives pin and install from the stored file, linked into place
+where the filesystem allows, so the archive takes no extra space and is not
+copied; across devices it is copied. The core tools pin with the checksum in
+`mise.lock`. Node's source tarball is kept the same way and compiled each time.
+Other source builds, such as Ruby and Python through `ruby-build` and
+`python-build`, download their own sources, which are not kept. Every other
 download that goes through mise's HTTP client uses the first case and is copied
 into place.
 

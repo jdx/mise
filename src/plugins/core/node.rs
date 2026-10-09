@@ -275,7 +275,7 @@ impl NodePlugin {
             ctx.pr.set_message(format!("cached {tarball_name}"));
         } else {
             ctx.pr.set_message(format!("download {tarball_name}"));
-            HTTP.download_file_pinned(
+            HTTP.download_file_stored(
                 url.clone(),
                 local,
                 lock_checksum(tv, &self.get_platform_key()).as_deref(),
