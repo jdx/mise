@@ -49,7 +49,7 @@ mod test {
 #[cfg(unix)]
 fn raise_nofile_limit() {
     use nix::sys::resource::{Resource, getrlimit, setrlimit};
-    const TARGET: u64 = 10240;
+    const TARGET: nix::libc::rlim_t = 10240;
     let Ok((soft, hard)) = getrlimit(Resource::RLIMIT_NOFILE) else {
         return;
     };
