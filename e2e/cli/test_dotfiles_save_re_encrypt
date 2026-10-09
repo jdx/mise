@@ -1,0 +1,71 @@
+#!/usr/bin/env bash
+# `mise dot save --re-encrypt` re-encrypts the saved versions a save carries
+# forward, so a recipient added later can read every file.
+require_cmd git
+export MISE_EXPERIMENTAL=0
+KEY="AGE-SECRET-KEY-142E7VJ8GUWR94MXDCYQJ7ZTQZRXKQSP9PUJU8HUQJ206QN7QPV4SM5QRL8"
+PUB="age1fuvsfq02qr5ju0nhh3rulrwracymjljlr5j49kres24ltd3fjq0s9z9d8l"
+KEY2="AGE-SECRET-KEY-12LCM5FM5DQ7HZDGYUZWMJ6QHM66J07NZ75VVP2VVGCZX53HYD5PQUXUN8K"
+PUB2="age15myzzpkenzud22ag88x5ksqd80g4tkwtruu976uev57l4r240qcqcuqnt9"
+export MISE_AGE_KEY="$KEY"
+origin="$PWD/origin.git"
+repo="$MISE_STATE_DIR/history/repo.git"
+git init -q --bare -b main "$origin"
+printf 'saved-manual\n' >"$HOME/.manual"
+printf 'saved-other\n' >"$HOME/.other"
+printf 'auto\n' >"$HOME/.auto"
+cat >"$MISE_CONFIG_DIR/config.toml" <<TOML
+[history.encryption]
+recipients = ["$PUB"]
+[dotfiles]
+"~/.manual" = { mode = "track", encrypt = true, autosave = false }
+"~/.other" = { mode = "track", encrypt = true, autosave = false }
+"~/.auto" = { mode = "track", encrypt = true }
+TOML
+assert_succeed "mise bootstrap dotfiles origin set file://$origin --sync manual --yes"
+# An edit the user leaves unsaved.
+printf 'unsaved-edit\n' >"$HOME/.manual"
+
+# A machine that holds only the second key.
+new_machine() {
+  local home
+  home="$(dirname "$HOME")/$1"
+  mkdir -p "$home/.config/mise"
+  cat >"$PWD/$1" <<WRAPPER
+#!/usr/bin/env bash
+export HOME="$home" XDG_CONFIG_HOME="$home/.config" MISE_CONFIG_DIR="$home/.config/mise" \\
+ MISE_STATE_DIR="$home/.local/state/mise" MISE_DATA_DIR="$home/.local/share/mise" \\
+ MISE_CACHE_DIR="$home/.cache/mise" MISE_TRUSTED_CONFIG_PATHS="$home" MISE_AGE_KEY="$KEY2"
+cd "\$HOME" && exec mise "\$@"
+WRAPPER
+  chmod +x "$PWD/$1"
+}
+
+sed -i.bak "s/\"$PUB\"]/\"$PUB\", \"$PUB2\"]/" "$MISE_CONFIG_DIR/config.toml"
+# A plain save re-encrypts what it captures, not the saved versions it carries.
+manual_before=$(git --git-dir="$repo" rev-parse main:home/.manual)
+printf 'auto-changed\n' >"$HOME/.auto"
+assert_succeed "mise dot save"
+assert "git --git-dir=$repo rev-parse main:home/.manual" "$manual_before"
+assert_succeed "mise bootstrap dotfiles sync"
+new_machine b
+assert_fail "./b bootstrap --adopt file://$origin --yes --only dotfiles 2>&1" 'cannot unlock'
+
+# Without an identity that unlocks them, nothing is saved and every file is named.
+head_before=$(git --git-dir="$repo" rev-parse main)
+assert_fail "MISE_AGE_KEY= mise dot save --re-encrypt 2>&1" 'cannot re-encrypt ~/.manual, ~/.other'
+assert "git --git-dir=$repo rev-parse main" "$head_before"
+
+assert_contains "mise dot save --re-encrypt 2>&1" 'history: re-encrypted 2 files to the current recipients'
+assert_succeed "mise bootstrap dotfiles sync"
+new_machine c
+assert_succeed "./c bootstrap --adopt file://$origin --yes --only dotfiles"
+# The saved version, never the unsaved live edit.
+assert "cat $(dirname "$HOME")/c/.manual" 'saved-manual'
+assert "cat $(dirname "$HOME")/c/.other" 'saved-other'
+assert "cat $(dirname "$HOME")/c/.auto" 'auto-changed'
+assert "cat $HOME/.manual" 'unsaved-edit'
+
+head_before=$(git --git-dir="$repo" rev-parse main)
+assert_contains "mise dot save --re-encrypt 2>&1" 'history: every encrypted file already uses the current recipients'
+assert "git --git-dir=$repo rev-parse main" "$head_before"

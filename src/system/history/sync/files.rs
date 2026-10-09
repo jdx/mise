@@ -306,10 +306,7 @@ pub(super) fn commit_object(
     }) {
         return Ok(object.clone());
     }
-    let mut strings = manifest.recipients.clone();
-    strings.sort();
-    strings.dedup();
-    let scheme = crate::hash::hash_sha256_to_str(&strings.join("\n"));
+    let (strings, scheme) = scheme(&manifest.recipients);
     for parent in parents {
         if let Some(raw) = repo.object_at(parent, path)?
             && envelope(repo, &raw, agecrypt::MAX_ENCRYPTED_BYTES)?
@@ -319,14 +316,92 @@ pub(super) fn commit_object(
             return Ok(raw);
         }
     }
-    let recipients = strings
+    let recipients = parse_recipients(&strings, interactive)?;
+    encrypt(repo, path, object, &scheme, &recipients)
+}
+
+/// The normalized recipient list and the scheme an envelope records for it.
+fn scheme(recipients: &[String]) -> (Vec<String>, String) {
+    let mut strings = recipients.to_vec();
+    strings.sort();
+    strings.dedup();
+    let scheme = crate::hash::hash_sha256_to_str(&strings.join("\n"));
+    (strings, scheme)
+}
+
+fn parse_recipients(
+    strings: &[String],
+    interactive: bool,
+) -> Result<Vec<Box<dyn age::Recipient + Send>>> {
+    strings
         .iter()
         .map(|recipient| {
             agecrypt::parse_recipient_mode(recipient, interactive)?
                 .ok_or_else(|| eyre::eyre!("invalid age recipient: {recipient}"))
         })
-        .collect::<Result<Vec<_>>>()?;
-    encrypt(repo, path, object, &scheme, &recipients)
+        .collect()
+}
+
+/// Re-encrypt every encrypted file in `tree` whose envelope names other
+/// recipients than the tree's manifest, keeping the contents the tree holds:
+/// a saved version is never replaced by live contents. Returns the new tree
+/// and the paths re-encrypted. When this machine cannot unlock a file,
+/// refuses and names each one, replacing nothing.
+pub(crate) fn re_encrypt(
+    repo: &HistoryRepo,
+    tree: &str,
+    interactive: bool,
+) -> Result<(String, Vec<String>)> {
+    let Some(manifest) = crate::system::history::manifest::Manifest::read(repo, tree)? else {
+        return Ok((tree.into(), vec![]));
+    };
+    let encrypted = encrypted_paths(repo, Some(tree))?;
+    let (strings, scheme) = scheme(&manifest.recipients);
+    let mut recipients = None;
+    let mut overlays = vec![];
+    let mut locked = vec![];
+    for entry in repo.ls_tree(tree)? {
+        if !encrypted.contains(&entry.path) {
+            continue;
+        }
+        let object = (entry.mode, entry.oid);
+        // a file outside an envelope is the publish audit's to refuse
+        if envelope(repo, &object, agecrypt::MAX_ENCRYPTED_BYTES)?
+            .is_none_or(|outer| outer.scheme == scheme)
+        {
+            continue;
+        }
+        let plain = match decrypt(repo, &entry.path, &object, interactive) {
+            Ok(plain) => plain,
+            Err(err) => {
+                debug!("history: {err:#}");
+                locked.push(crate::system::history::tracked::tree_path_to_display(
+                    &entry.path,
+                ));
+                continue;
+            }
+        };
+        let recipients = match &recipients {
+            Some(recipients) => recipients,
+            None => recipients.insert(parse_recipients(&strings, interactive)?),
+        };
+        let object = encrypt(repo, &entry.path, &plain, &scheme, recipients)?;
+        overlays.push(crate::system::history::shadow::Overlay {
+            path: entry.path,
+            object: Some(object),
+        });
+    }
+    if !locked.is_empty() {
+        bail!(
+            "cannot re-encrypt {}: no age identity on this machine unlocks them; nothing was saved. Run `mise dot save --re-encrypt` where they can be unlocked",
+            locked.join(", ")
+        );
+    }
+    let paths = overlays
+        .iter()
+        .map(|overlay| overlay.path.clone())
+        .collect();
+    Ok((repo.compose(tree, &overlays)?, paths))
 }
 
 /// Encrypt bytes before they enter Git. Callers may store only the returned

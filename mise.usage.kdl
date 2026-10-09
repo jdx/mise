@@ -1207,6 +1207,8 @@ Save a checkpoint of the tracked files now
 Exits non-zero when history cannot save or a named path is not tracked. With no changes since the latest checkpoint, nothing is saved unless you pass `--description`, `--label`, `--task`, or a `--trigger` other than `save`.
 
 `--best-effort` turns a failure to write the checkpoint, such as missing Git, into a warning for update scripts that run under `set -e`. A disabled history or an untracked path still fails.
+
+A save re-encrypts the files it captures to the current `[history.encryption] recipients`. `--re-encrypt` also re-encrypts the encrypted files it does not capture: files with `autosave = false` that it does not name, and variants for other platforms. It re-encrypts their saved versions and saves no unsaved edit. Run it after changing recipients so a machine added to the list can read every file. This machine must be able to unlock each one; otherwise nothing is saved and the error lists each file it cannot unlock.
 """#
             flag "-d --description" help="A description for the checkpoint" {
                 arg <TEXT>
@@ -1221,11 +1223,13 @@ Exits non-zero when history cannot save or a named path is not tracked. With no 
                 arg <LABEL>
             }
             flag --best-effort help="Warn instead of failing when the checkpoint cannot be written"
+            flag --re-encrypt help="Re-encrypt every saved encrypted file to the current recipients"
             flag "-h --help" help="Print help" action=help builtin=#true
             arg "[PATH]…" help="Paths to save; every one must be tracked" required=#false var=#true
             example "mise dot save" help="Save every tracked file that changed"
             example "mise dot save ~/.zshrc -d \"before the theme change\"" help="Save one file with a description"
             example "mise dot save --best-effort" help="Warn instead of failing in a script"
+            example "mise dot save --re-encrypt" help="Re-encrypt every encrypted file after changing recipients"
         }
         cmd status help="Show the state of your dotfiles and their history" effect=read {
             alias ls
@@ -3243,6 +3247,8 @@ Save a checkpoint of the tracked files now
 Exits non-zero when history cannot save or a named path is not tracked. With no changes since the latest checkpoint, nothing is saved unless you pass `--description`, `--label`, `--task`, or a `--trigger` other than `save`.
 
 `--best-effort` turns a failure to write the checkpoint, such as missing Git, into a warning for update scripts that run under `set -e`. A disabled history or an untracked path still fails.
+
+A save re-encrypts the files it captures to the current `[history.encryption] recipients`. `--re-encrypt` also re-encrypts the encrypted files it does not capture: files with `autosave = false` that it does not name, and variants for other platforms. It re-encrypts their saved versions and saves no unsaved edit. Run it after changing recipients so a machine added to the list can read every file. This machine must be able to unlock each one; otherwise nothing is saved and the error lists each file it cannot unlock.
 """#
         flag "-d --description" help="A description for the checkpoint" {
             arg <TEXT>
@@ -3257,11 +3263,13 @@ Exits non-zero when history cannot save or a named path is not tracked. With no 
             arg <LABEL>
         }
         flag --best-effort help="Warn instead of failing when the checkpoint cannot be written"
+        flag --re-encrypt help="Re-encrypt every saved encrypted file to the current recipients"
         flag "-h --help" help="Print help" action=help builtin=#true
         arg "[PATH]…" help="Paths to save; every one must be tracked" required=#false var=#true
         example "mise dot save" help="Save every tracked file that changed"
         example "mise dot save ~/.zshrc -d \"before the theme change\"" help="Save one file with a description"
         example "mise dot save --best-effort" help="Warn instead of failing in a script"
+        example "mise dot save --re-encrypt" help="Re-encrypt every encrypted file after changing recipients"
     }
     cmd status help="Show the state of your dotfiles and their history" effect=read {
         alias ls
