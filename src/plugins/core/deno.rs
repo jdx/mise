@@ -15,6 +15,7 @@ use crate::backend::Backend;
 use crate::backend::VersionInfo;
 use crate::backend::platform_target::PlatformTarget;
 use crate::backend::static_helpers::fetch_checksum_from_file;
+use crate::backend::static_helpers::lock_checksum;
 use crate::cmd::CmdLineRunner;
 use crate::config::Config;
 use crate::http::{HTTP, HTTP_FETCH};
@@ -62,7 +63,13 @@ impl DenoPlugin {
         let tarball_path = tv.download_path().join(filename);
 
         pr.set_message(format!("download {filename}"));
-        HTTP.download_file(&url, &tarball_path, Some(pr)).await?;
+        HTTP.download_file_pinned(
+            &url,
+            &tarball_path,
+            lock_checksum(tv, &self.get_platform_key()).as_deref(),
+            Some(pr),
+        )
+        .await?;
 
         Ok(tarball_path)
     }

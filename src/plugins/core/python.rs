@@ -2,6 +2,7 @@ use crate::args::BackendArg;
 use crate::backend::options::BackendOptions;
 use crate::backend::platform_target::PlatformTarget;
 use crate::backend::static_helpers::fetch_checksum_from_shasums;
+use crate::backend::static_helpers::lock_checksum;
 use crate::backend::{Backend, VersionCacheManager, VersionInfo};
 use crate::build_time::built_info;
 use crate::cache::{CacheManager, CacheManagerBuilder};
@@ -437,8 +438,13 @@ impl PythonPlugin {
 
         let tarball_path = tv.download_path().join(filename);
         ctx.pr.set_message(format!("download {filename}"));
-        HTTP.download_file(&url, &tarball_path, Some(ctx.pr.as_ref()))
-            .await?;
+        HTTP.download_file_pinned(
+            &url,
+            &tarball_path,
+            lock_checksum(tv, &self.get_platform_key()).as_deref(),
+            Some(ctx.pr.as_ref()),
+        )
+        .await?;
         tv.lock_platforms.entry(platform_key).or_default().url = Some(url.clone());
         self.verify_checksum(ctx, tv, &tarball_path)?;
 
@@ -562,8 +568,13 @@ impl PythonPlugin {
         let tarball_path = download.join(filename);
 
         ctx.pr.set_message(format!("download {filename}"));
-        HTTP.download_file(&url, &tarball_path, Some(ctx.pr.as_ref()))
-            .await?;
+        HTTP.download_file_pinned(
+            &url,
+            &tarball_path,
+            lock_checksum(tv, &self.get_platform_key()).as_deref(),
+            Some(ctx.pr.as_ref()),
+        )
+        .await?;
 
         // Record the URL in lock_platforms so verify_checksum can find it
         tv.lock_platforms

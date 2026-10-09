@@ -1,5 +1,6 @@
 use crate::args::BackendArg;
 use crate::backend::VersionInfo;
+use crate::backend::static_helpers::lock_checksum;
 use crate::backend::{
     Backend, VersionCacheManager, normalize_idiomatic_contents, platform_target::PlatformTarget,
 };
@@ -274,8 +275,13 @@ impl NodePlugin {
             ctx.pr.set_message(format!("cached {tarball_name}"));
         } else {
             ctx.pr.set_message(format!("download {tarball_name}"));
-            HTTP.download_file(url.clone(), local, Some(ctx.pr.as_ref()))
-                .await?;
+            HTTP.download_file_pinned(
+                url.clone(),
+                local,
+                lock_checksum(tv, &self.get_platform_key()).as_deref(),
+                Some(ctx.pr.as_ref()),
+            )
+            .await?;
         }
         ctx.pr.next_operation();
         let platform_key = self.get_platform_key();

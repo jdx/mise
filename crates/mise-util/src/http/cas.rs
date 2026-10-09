@@ -25,8 +25,28 @@ use serde::{Deserialize, Serialize};
 use super::DownloadValidator;
 use crate::file;
 
+/// The size `download_cache_max_size` falls back to when it can't be read.
+const DEFAULT_MAX_CACHE_BYTES: u64 = 2 * 1024 * 1024 * 1024;
+
 /// Blobs are evicted, least recently used first, past this total size.
-const MAX_CACHE_BYTES: u64 = 2 * 1024 * 1024 * 1024;
+/// `download_cache_max_size = "0"` is no limit.
+pub(super) fn max_cache_bytes() -> u64 {
+    let setting = mise_settings::Settings::get();
+    match setting
+        .download_cache_max_size
+        .parse::<bytesize::ByteSize>()
+    {
+        Ok(size) if size.as_u64() == 0 => u64::MAX,
+        Ok(size) => size.as_u64(),
+        Err(err) => {
+            debug!(
+                "invalid download_cache_max_size {:?}: {err}",
+                setting.download_cache_max_size
+            );
+            DEFAULT_MAX_CACHE_BYTES
+        }
+    }
+}
 
 /// How long after a blob was last used another install may still be placing it.
 const IN_USE: std::time::Duration = std::time::Duration::from_secs(10 * 60);
@@ -362,7 +382,7 @@ fn keep_file(path: &Path, keep: Keep<'_>, move_in: bool) -> Result<Option<PathBu
     Ok(Some(blob))
 }
 
-/// Past `MAX_CACHE_BYTES` the least recently used blobs go first, except
+/// Past `download_cache_max_size` the least recently used blobs go first, except
 /// `keep`, which the caller is about to use, and any used within `IN_USE`: a
 /// blob is verified, which refreshes its time, moments before another install
 /// places it, so a recent one may be mid-use. Staged downloads that were never
@@ -410,8 +430,9 @@ fn evict(root: &Path, keep: Option<&Path>) {
         entries.push((used, size, dir));
     }
     entries.sort();
+    let limit = max_cache_bytes();
     for (_, size, dir) in entries {
-        if total <= MAX_CACHE_BYTES {
+        if total <= limit {
             break;
         }
         if file::remove_all(&dir).is_ok() {

@@ -8,6 +8,7 @@ use crate::args::BackendArg;
 use crate::backend::Backend;
 use crate::backend::VersionInfo;
 use crate::backend::platform_target::PlatformTarget;
+use crate::backend::static_helpers::lock_checksum;
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings};
 use crate::duration::DAILY;
@@ -116,7 +117,13 @@ impl ZigPlugin {
             // Try the usual ziglang.org or machengine.org download
             pr.set_message(format!("download {filename}"));
             used_url = url.clone();
-            HTTP.download_file(&url, &tarball_path, Some(pr)).await?;
+            HTTP.download_file_pinned(
+                &url,
+                &tarball_path,
+                lock_checksum(tv, &self.get_platform_key()).as_deref(),
+                Some(pr),
+            )
+            .await?;
             // If this was ziglang.org and error is not 404 and community_mirrors is None,
             // the user might want to place the mirror list in cache dir by hand
         }

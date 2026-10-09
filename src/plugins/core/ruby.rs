@@ -10,6 +10,7 @@ use xx::regex;
 
 use crate::args::BackendArg;
 use crate::backend::platform_target::PlatformTarget;
+use crate::backend::static_helpers::lock_checksum;
 use crate::backend::{Backend, VersionInfo, normalize_idiomatic_contents, strict_metadata};
 use crate::cmd::CmdLineRunner;
 use crate::config::{CompilePurpose, Config, Settings, SettingsExt};
@@ -835,8 +836,13 @@ impl RubyPlugin {
         let tarball_path = tv.download_path().join(&filename);
 
         ctx.pr.set_message(format!("download {}", filename));
-        HTTP.download_file(&url, &tarball_path, Some(ctx.pr.as_ref()))
-            .await?;
+        HTTP.download_file_pinned(
+            &url,
+            &tarball_path,
+            lock_checksum(tv, &self.get_platform_key()).as_deref(),
+            Some(ctx.pr.as_ref()),
+        )
+        .await?;
 
         if let Some(hash_str) = checksum.as_ref().and_then(|c| c.strip_prefix("sha256:")) {
             ctx.pr.set_message(format!("checksum {}", filename));

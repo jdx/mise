@@ -225,6 +225,15 @@ impl DownloadValidator {
     }
 }
 
+/// Whether a download may use the store. With `locked` or `paranoid` only a
+/// pinned one may: the checksum is checked after the download, so a store that
+/// was restored or shared can't change what gets installed, while an unpinned
+/// download has nothing to check a kept file against.
+fn cache_allowed(pin: Option<&str>) -> bool {
+    let settings = Settings::get();
+    settings.download_cache && (pin.is_some() || !(settings.locked || settings.paranoid))
+}
+
 /// How a download may use the store of finished downloads.
 #[derive(Clone, Copy)]
 struct CacheMode<'a> {
@@ -1376,7 +1385,7 @@ impl Client {
         pr: Option<&dyn SingleReport>,
         total_timeout: Duration,
     ) -> Result<DownloadFileMetadata> {
-        let use_cache = Settings::get().download_cache;
+        let use_cache = cache_allowed(pin);
         let cache = CacheMode {
             pin,
             enabled: use_cache,
@@ -1433,7 +1442,7 @@ impl Client {
             .to_string_lossy()
             .to_string();
         let request_hash = download_request_hash(&url, headers);
-        let staging = (Settings::get().download_cache && !Settings::get().generate_lockfiles())
+        let staging = (cache_allowed(pin) && !Settings::get().generate_lockfiles())
             .then(|| cas::staging_path(&request_hash, &name))
             .flatten();
         let Some(staging) = staging else {

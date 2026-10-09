@@ -9,6 +9,7 @@ use itertools::Itertools;
 use versions::Versioning;
 
 use crate::args::BackendArg;
+use crate::backend::static_helpers::lock_checksum;
 use crate::cmd::CmdLineRunner;
 use crate::http::HTTP;
 use crate::install_context::InstallContext;
@@ -64,7 +65,13 @@ impl BunPlugin {
         let tarball_path = tv.download_path().join(filename);
 
         pr.set_message(format!("download {filename}"));
-        HTTP.download_file(&url, &tarball_path, Some(pr)).await?;
+        HTTP.download_file_pinned(
+            &url,
+            &tarball_path,
+            lock_checksum(tv, &self.get_platform_key()).as_deref(),
+            Some(pr),
+        )
+        .await?;
 
         Ok(tarball_path)
     }

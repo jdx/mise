@@ -6,6 +6,7 @@ use std::sync::Arc;
 
 use crate::args::BackendArg;
 use crate::backend::options::BackendOptions;
+use crate::backend::static_helpers::lock_checksum;
 use crate::backend::{
     Backend, VersionInfo, normalize_idiomatic_contents, platform_target::PlatformTarget,
 };
@@ -214,7 +215,13 @@ impl JavaPlugin {
         let tarball_path = tv.download_path().join(filename);
 
         pr.set_message(format!("download {filename}"));
-        HTTP.download_file(&m.url, &tarball_path, Some(pr)).await?;
+        HTTP.download_file_pinned(
+            &m.url,
+            &tarball_path,
+            lock_checksum(tv, &self.get_platform_key()).as_deref(),
+            Some(pr),
+        )
+        .await?;
 
         let platform_key = self.get_platform_key();
         if !tv.lock_platforms.contains_key(&platform_key) {

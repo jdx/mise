@@ -8,6 +8,7 @@ use crate::args::BackendArg;
 use crate::backend::Backend;
 use crate::backend::VersionInfo;
 use crate::backend::normalize_idiomatic_contents;
+use crate::backend::static_helpers::lock_checksum;
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings, SettingsExt};
 use crate::env::PATH_KEY;
@@ -141,7 +142,13 @@ impl RubyPlugin {
         let tarball_path = tv.download_path().join(&filename);
 
         pr.set_message(format!("downloading {filename}"));
-        HTTP.download_file(&url, &tarball_path, Some(pr)).await?;
+        HTTP.download_file_pinned(
+            &url,
+            &tarball_path,
+            lock_checksum(tv, &self.get_platform_key()).as_deref(),
+            Some(pr),
+        )
+        .await?;
 
         Ok(tarball_path)
     }
