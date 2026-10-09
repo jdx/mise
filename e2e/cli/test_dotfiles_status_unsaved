@@ -82,3 +82,10 @@ assert_contains "cat $MISE_CONFIG_DIR/config.toml" '"~/.secret-token" = { mode =
 assert "mise dot status --json | jq -c .history.unsaved" '["~/.secret-token"]'
 assert_contains 'mise dot save 2>&1' 'removed ~/.secret-token'
 assert "mise dot status --json | jq -c .history.unsaved" '[]'
+
+# turning encryption off for an ordinary file is a change the next save
+# records, not a reason to give up on the whole list
+echo other-edit >~/.zshrc
+sed -i.bak 's|^"~/.private" = { mode = "track", encrypt = true }|"~/.private" = { mode = "track" }|' "$MISE_CONFIG_DIR/config.toml"
+assert_contains "cat $MISE_CONFIG_DIR/config.toml" '"~/.private" = { mode = "track" }'
+assert "mise dot status --json | jq -c .history.unsaved" '["~/.private","~/.zshrc"]'

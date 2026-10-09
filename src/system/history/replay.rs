@@ -1710,16 +1710,24 @@ pub fn unsaved_paths(
             continue;
         }
         // encrypting unchanged contents again (the encryption cache is only
-        // a cache) gives a new ciphertext, so compare what both decrypt to
+        // a cache) gives a new ciphertext, so two envelopes are compared by
+        // what they decrypt to. One envelope and one plain file is a change of
+        // `encrypt` the next save records, whatever the contents.
         if change.status == 'M' && encrypted.contains(&change.path) {
-            let decrypted = |tree: &str| -> Option<(String, String)> {
-                let object = repo.object_at(tree, &change.path).ok()??;
-                super::sync::files::decrypt(repo, &change.path, &object, false).ok()
+            let envelope = |tree: &str| -> Result<Option<(String, String)>> {
+                Ok(repo.object_at(tree, &change.path)?.filter(|object| {
+                    repo.blob_starts_with(&object.1, b"mise-encrypted-file-v1\n")
+                        .unwrap_or(false)
+                }))
             };
-            match (decrypted(&saved), decrypted(&live)) {
-                (Some(saved), Some(live)) if saved == live => continue,
-                (Some(_), Some(_)) => {}
-                _ => return Ok(None),
+            if let (Some(saved), Some(live)) = (envelope(&saved)?, envelope(&live)?) {
+                let decrypt =
+                    |object| super::sync::files::decrypt(repo, &change.path, &object, false).ok();
+                match (decrypt(saved), decrypt(live)) {
+                    (Some(saved), Some(live)) if saved == live => continue,
+                    (Some(_), Some(_)) => {}
+                    _ => return Ok(None),
+                }
             }
         }
         unsaved.push(tree_path_to_display(&change.path));
