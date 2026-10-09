@@ -216,11 +216,21 @@ fn shell(command: &str) -> Command {
 /// What the command is told: never an excluded path or encrypted contents.
 fn input<'a>(store: &Store, entry: &'a Entry) -> Result<Input<'a>> {
     let checkpoint = &entry.checkpoint;
+    let previous = checkpoint.changes.since.as_deref().and_then(|since| {
+        store::read_meta_cache_in(store.state_dir(), since)
+            .ok()
+            .flatten()
+    });
     let encrypted: BTreeSet<&str> = checkpoint
         .tree
         .coverage
         .entries
         .iter()
+        .chain(
+            previous
+                .iter()
+                .flat_map(|previous| &previous.tree.coverage.entries),
+        )
         .filter(|entry| entry.encrypt)
         .map(|entry| entry.path.as_str())
         .collect();
@@ -241,32 +251,40 @@ fn input<'a>(store: &Store, entry: &'a Entry) -> Result<Input<'a>> {
     let (diff, diff_truncated) = match (
         store.repo(),
         &checkpoint.tree.snapshot,
-        checkpoint
-            .changes
-            .since
-            .as_deref()
-            .and_then(|since| {
-                store::read_meta_cache_in(store.state_dir(), since)
-                    .ok()
-                    .flatten()
-            })
-            .and_then(|previous| previous.tree.snapshot),
+        previous.as_ref().and_then(|previous| {
+            previous
+                .tree
+                .snapshot
+                .as_deref()
+                .map(|snapshot| (previous, snapshot))
+        }),
     ) {
-        (Some(repo), Some(snapshot), Some(previous)) => {
+        (Some(repo), Some(snapshot), Some((previous, previous_snapshot))) => {
             let mut text = String::new();
-            for path in added.iter().chain(&modified).chain(&removed) {
+            for path in checkpoint
+                .changes
+                .added
+                .iter()
+                .chain(&checkpoint.changes.modified)
+                .chain(&checkpoint.changes.removed)
+            {
                 if under(path, &encrypted) {
                     continue;
                 }
-                let tree_path = super::tracked::display_to_tree_path(path);
+                let from_path = previous
+                    .portable_path(path)
+                    .unwrap_or_else(|| super::tracked::display_to_tree_path(path));
+                let to_path = checkpoint
+                    .portable_path(path)
+                    .unwrap_or_else(|| super::tracked::display_to_tree_path(path));
                 let result = repo.diff(
-                    &previous,
+                    previous_snapshot,
                     snapshot,
                     &DiffOpts {
                         patch: true,
                         stream: false,
                         color: false,
-                        paths: Some((tree_path.clone(), tree_path)),
+                        paths: Some((from_path, to_path)),
                     },
                 )?;
                 text.push_str(&String::from_utf8_lossy(&result.output));
@@ -356,5 +374,62 @@ mod tests {
             first_line(long.as_bytes()).unwrap().len(),
             DESCRIPTION_LIMIT
         );
+    }
+
+    #[test]
+    fn missing_previous_owner_uses_its_own_unqualified_path() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let store = Store::open_in(temp.path())?;
+        let outcome = store.attempt(
+            &super::super::tracked::TrackedSet::default(),
+            super::super::checkpoint::Draft::new(store::Trigger::Agent),
+        )?;
+        let super::super::checkpoint::Outcome::Created(mut entry) = outcome else {
+            bail!("test requires an ordinary Git checkpoint");
+        };
+        let repo = store.repo().unwrap();
+        let path = "~/.describe-fallback.conf".to_string();
+        let unqualified = super::super::tracked::display_to_tree_path(&path);
+        let qualified = "home@work/.describe-fallback.conf".to_string();
+        let old = repo.hash_blob(b"previous-unqualified\n")?;
+        let unrelated = repo.hash_blob(b"unrelated-previous-variant\n")?;
+        let new = repo.hash_blob(b"current-variant\n")?;
+        let previous_tree = repo.write_tree(&[
+            ("100644".into(), old, unqualified),
+            ("100644".into(), unrelated, qualified.clone()),
+        ])?;
+        let current_tree = repo.write_tree(&[("100644".into(), new, qualified)])?;
+        let mut previous = entry.checkpoint.clone();
+        previous.tree.snapshot = Some(previous_tree);
+        previous.tree.coverage.entries.clear();
+        store::write_meta_cache_in(store.state_dir(), &previous)?;
+        entry.checkpoint.uuid = "current-fallback-checkpoint".into();
+        entry.checkpoint.tree.snapshot = Some(current_tree);
+        entry.checkpoint.tree.coverage.entries = vec![store::CoverageEntry {
+            path: path.clone(),
+            mode: "track".into(),
+            variant: Some("work".into()),
+            autosave: true,
+            encrypt: false,
+            state: "live".into(),
+            declared_in: None,
+            exclude: None,
+            include: None,
+        }];
+        entry.checkpoint.changes = store::Changes {
+            since: Some(previous.uuid),
+            modified: vec![path],
+            ..Default::default()
+        };
+
+        let input = input(&store, &entry)?;
+        assert!(
+            input.diff.contains("-previous-unqualified"),
+            "{}",
+            input.diff
+        );
+        assert!(input.diff.contains("+current-variant"), "{}", input.diff);
+        assert!(!input.diff.contains("unrelated-previous-variant"));
+        Ok(())
     }
 }
