@@ -85,11 +85,18 @@ for _ in {1..300}; do
   sleep 0.1
 done
 assert_contains "mise ls --installed dummy" "1.1.0"
-# Not due yet: an unchanged prompt starts nothing.
+# Not due yet: a prompt starts nothing and claims nothing, so the check marker
+# keeps its time.
 mise uninstall dummy@1.1.0
+snapshot() { (cd "$MISE_STATE_DIR/tool-update" && stat -c '%n %Y' $(find . -type f ! -name '*.lock' ! -name '*.claim' ! -name prompt-next-check | sort)); }
+before="$(snapshot)"
 _mise_hook
 sleep 2
 assert_not_contains "mise ls --installed dummy" "1.1.0"
+if [ "$(snapshot)" != "$before" ]; then
+  echo "a prompt that was not due claimed an update"
+  exit 1
+fi
 # Due: the same unchanged prompt starts the update.
 find "$MISE_STATE_DIR/tool-update" -type f ! -name '*.*' ! -name 'prompt-next-check' -delete
 echo 0 >"$MISE_STATE_DIR/tool-update/prompt-next-check"
