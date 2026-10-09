@@ -36,8 +36,8 @@ install_layout = "identity"
 age = "1.2.1"
 ```
 
-To turn it on everywhere, run `mise settings set experimental=true` and
-`mise settings set install_layout=identity`, or export `MISE_EXPERIMENTAL=1` and
+To turn it on everywhere, run `mise settings experimental=true` and
+`mise settings install_layout=identity`, or export `MISE_EXPERIMENTAL=1` and
 `MISE_INSTALL_LAYOUT=identity`. See
 [`install_layout`](/configuration/settings.html#install_layout).
 

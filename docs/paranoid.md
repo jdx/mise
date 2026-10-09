@@ -13,10 +13,10 @@ commands you approve; see [Sandboxing](/sandboxing.html).
 Turn it on for one command with `MISE_PARANOID=1`, or for every command:
 
 ```sh
-mise settings set paranoid true
+mise settings paranoid=true
 ```
 
-`mise settings set paranoid false` turns it off. The
+`mise settings paranoid=false` turns it off. The
 [`paranoid`](/configuration/settings.html#paranoid) setting is global-only, so a
 project cannot change it.
 

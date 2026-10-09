@@ -170,7 +170,7 @@ aqua.registries = ["https://github.com/my-org/aqua-registry", "registry.yaml"]
 ```
 
 Relative paths resolve only from config files, so a path in
-`MISE_AQUA_REGISTRIES` must be an absolute `file://` URL. `mise settings set`
+`MISE_AQUA_REGISTRIES` must be an absolute `file://` URL. `mise settings`
 writes the value into a config file, so a relative path set that way resolves
 against that file's config root (`$HOME` for the global config).
 
@@ -430,7 +430,7 @@ is not searched itself: with `MISE_CEILING_PATHS=/home/user`,
 `/home/user/projects/app/mise.toml` loads but `/home/user/mise.toml` does not.
 This matches Git's `GIT_CEILING_DIRECTORIES`.
 
-`mise settings set` and `mise settings add` refuse this setting, because mise
+`mise settings` and `mise settings add` refuse this setting, because mise
 reads it before config files load; put it in a `.miserc.toml` file or the
 environment variable instead.
 """
@@ -1628,7 +1628,7 @@ and the stale-version check in `mise upgrade`) honor only the environment
 variable and the global and system `miserc.toml` files, so a project's
 `.miserc.toml` cannot hide other projects' configs from them.
 
-`mise settings set` and `mise settings add` refuse this setting, because mise
+`mise settings` and `mise settings add` refuse this setting, because mise
 reads it before config files load; put it in a `.miserc.toml` file or the
 environment variable instead.
 """

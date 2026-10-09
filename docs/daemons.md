@@ -311,7 +311,7 @@ This needs:
 - pitchfork already installed, for example with `mise use -g pitchfork`. The
   shell hook never installs tools.
 - `experimental = true` in your global config, for example with
-  `mise settings set experimental true`. mise stops updating daemon sessions
+  `mise settings experimental=true`. mise stops updating daemon sessions
   in any directory where `experimental` is off. With the setting only in the
   project's `mise.toml`, leaving the project does not end the shell's session,
   so `auto = ["stop"]` does not fire until the shell enters a directory where

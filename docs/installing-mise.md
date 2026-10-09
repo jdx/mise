@@ -530,7 +530,7 @@ To update automatically, enable
 global config:
 
 ```sh
-mise settings set self_update.auto true
+mise settings self_update.auto=true
 ```
 
 mise then checks for a new release at the interval set by

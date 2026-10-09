@@ -204,8 +204,8 @@ change directories, and it exports `[env]` variables that your prompt can read.
 ### Print what changes when you enter a project {#print-what-changes-when-you-enter-a-project}
 
 ```sh
-mise settings set status.show_tools true
-mise settings set status.show_env true
+mise settings status.show_tools=true
+mise settings status.show_env=true
 ```
 
 These commands write to your global config. Entering a project then prints
