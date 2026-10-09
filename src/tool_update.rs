@@ -336,6 +336,23 @@ impl StatePaths {
     }
 }
 
+/// A pass stopped for running past its time limit, as opposed to one that
+/// failed on its own.
+#[derive(Debug)]
+pub struct TimedOut(Duration);
+
+impl std::fmt::Display for TimedOut {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "updating due tools took longer than {:?}; stopped it",
+            self.0
+        )
+    }
+}
+
+impl std::error::Error for TimedOut {}
+
 /// One run of the `tool-update` service's update pass (`mise __tool-update
 /// --due`), started in its own process group (a job object on Windows) so a
 /// timeout or shutdown stops everything it started, hooks and downloads too.
@@ -383,7 +400,7 @@ impl Tick {
             }
             if std::time::Instant::now() >= deadline {
                 self.kill();
-                bail!("updating due tools took longer than {timeout:?}; stopped it");
+                return Err(TimedOut(timeout).into());
             }
             tokio::time::sleep(Duration::from_secs(1)).await;
         }

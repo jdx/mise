@@ -143,7 +143,6 @@ async fn update_in_background_process(tool: ToolArg, tool_id: String) -> Result<
     // One at a time, and the clock starts after the wait: every due tool gets a
     // process, and they would otherwise spend each other's time.
     let _queue = tool_update::lock_background_update()?;
-    let started = std::time::Instant::now();
     let mut update =
         Tick::start(update_command(&[&tool.ba.short, "--id", &tool_id])).inspect_err(|err| {
             tool_update::record_result(&tool_id, &Err(eyre::eyre!("could not start it: {err:#}")))
@@ -152,7 +151,7 @@ async fn update_in_background_process(tool: ToolArg, tool_id: String) -> Result<
     // The child records its own failures; only a stop it could not report is
     // recorded here.
     if let Err(err) = &result
-        && started.elapsed() >= TICK_TIMEOUT
+        && err.downcast_ref::<tool_update::TimedOut>().is_some()
     {
         tool_update::record_result(&tool_id, &Err(eyre::eyre!("{err:#}")));
     }
