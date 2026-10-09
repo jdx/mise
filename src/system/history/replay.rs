@@ -206,17 +206,31 @@ pub async fn rollback(req: RollbackRequest) -> Result<()> {
         info!("history: nothing to roll back");
         return Ok(());
     }
-    let label = targets
-        .iter()
-        .map(|target| format!("checkpoint {}", target.entry.id))
-        .collect::<Vec<_>>()
-        .join(", ");
-    let paths_label = targets
-        .iter()
-        .flat_map(|target| target.paths.iter().map(display_path))
-        .collect::<Vec<_>>()
-        .join(", ");
-    let message = format!("rolled back {paths_label} to {label}");
+    // Without `--to`, the checkpoint picked is the newest one holding a
+    // different version, which is often an unrelated save that only carried
+    // that version along. The message names the checkpoint that saved it,
+    // the one `mise dot history --path` lists; what is restored is the same.
+    let mut versions: BTreeMap<u64, Vec<String>> = BTreeMap::new();
+    for target in &targets {
+        for path in &target.paths {
+            // spelled the way checkpoints record their changes (the portable
+            // root, not this machine's HOME), as `history --path` matches them
+            let portable = tree_path_to_display(&repository_path(repo, &live, path)?);
+            let id = match req.to {
+                Some(_) => target.entry.id,
+                None => saved_in(&entries, target.entry.id, &portable),
+            };
+            versions.entry(id).or_default().push(portable);
+        }
+    }
+    let message = format!(
+        "rolled back {}",
+        versions
+            .iter()
+            .map(|(id, paths)| format!("{} to checkpoint {id}", paths.join(", ")))
+            .collect::<Vec<_>>()
+            .join("; ")
+    );
     let command = format!(
         "bootstrap dotfiles rollback {}",
         shell_words::join(req.paths.iter().map(display_path))
@@ -484,11 +498,24 @@ async fn execute(
             },
         ),
     };
-    scope.finish(error, Some(summary));
+    let outcome = scope.outcome_id();
+    let before = scope.before().map(|(id, _)| id);
+    let recorded = scope.finish_recorded(error, Some(summary));
     let touched = result?;
     run_reload(&reload, &touched);
     config_hint(&touched);
-    info!("history: {}", exec.message);
+    // an operation takes two checkpoints, and only the ones that change a
+    // path show up under `mise dot history --path`; naming both accounts
+    // for the numbers a listing skips. An outcome that failed to record
+    // has no checkpoint to name.
+    let recorded = match (outcome.filter(|_| recorded), before) {
+        (Some(outcome), Some(before)) => format!(
+            "; recorded as checkpoint {outcome}, with checkpoint {before} holding the state before it"
+        ),
+        (Some(outcome), None) => format!("; recorded as checkpoint {outcome}"),
+        _ => String::new(),
+    };
+    info!("history: {}{recorded}", exec.message);
     Ok(())
 }
 
@@ -1622,6 +1649,18 @@ pub fn live_tree(repo: &HistoryRepo, tracked: &TrackedSet) -> Result<String> {
         );
     }
     Ok(captured.tree)
+}
+
+/// The checkpoint that saved the version of `path` that checkpoint `id`
+/// holds: the newest one at or before it that changed the path, or `id`
+/// itself when none did.
+fn saved_in(entries: &[Entry], id: u64, path: &str) -> u64 {
+    entries
+        .iter()
+        .rev()
+        .filter(|entry| entry.id <= id)
+        .find(|entry| entry.checkpoint.changes.touches(path))
+        .map_or(id, |entry| entry.id)
 }
 
 /// The newest checkpoint whose captured content for `path` differs from the

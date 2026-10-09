@@ -266,6 +266,17 @@ newest operation changed, and other files keep their current contents. Both
 rollback and undo create new commits, so earlier versions stay available and
 the restored version can sync to other machines.
 
+Each rollback or undo records two checkpoints: one that holds the state before
+it and one with the result. Its message names both, and names the version it
+restored by the checkpoint that saved it:
+
+```text
+history: rolled back ~/.zshrc to checkpoint 6; recorded as checkpoint 10, with checkpoint 9 holding the state before it
+```
+
+`mise dot history --path ~/.zshrc` lists only the checkpoints that changed the
+file, so it shows 6 and 10 but not 9 unless you had unsaved edits.
+
 To choose a checkpoint, use an ID from `history` or a
 [checkpoint reference](#referring-to-checkpoints):
 
