@@ -568,7 +568,9 @@ Without encryption, built-in filename rules leave out `.netrc`, `*.age`,
 
 The rules look at the file's own name, not its contents or the names of its
 parent directories. Both `id_ed25519` and `id_ed25519.pub` match `id_*`, and a
-shell function named `secrets.fish` matches `*secret*`. `mise dot save` and
+shell function named `secrets.fish` matches `*secret*`. Names ending in
+`.example`, `.sample`, or `.template`, such as `secrets.sh.example`, are
+templates and are not left out. `mise dot save` and
 `mise dot track` report what they leave out, `mise dot status` shows omission
 counts, and `mise dot paths` lists each path and its reason. To save a
 credential, [encrypt it](/dotfiles/encryption.html).
@@ -584,7 +586,8 @@ mise dot track --allow-plaintext ~/commit-mossy-token.md
 ```
 
 The choice is saved as `allow_plaintext = true` on that file's entry, so later
-saves and your other machines use the same policy. Use
+saves and your other machines use the same policy without asking or warning
+again. `mise dot paths` still lists the file as plaintext. Use
 `mise dot track --encrypt` for a real credential. `--allow-plaintext` can
 approve a file before it exists; if that path later becomes a directory, the
 directory stays tracked and the usual filter applies to its contents.
