@@ -88,7 +88,7 @@ assert_contains "mise ls --installed dummy" "1.1.0"
 # Not due yet: a prompt starts nothing and claims nothing, so the check marker
 # keeps its time.
 mise uninstall dummy@1.1.0
-snapshot() { (cd "$MISE_STATE_DIR/tool-update" && stat -c '%n %Y' $(find . -type f ! -name '*.lock' ! -name '*.claim' ! -name prompt-next-check | sort)); }
+snapshot() { (cd "$MISE_STATE_DIR/tool-update" && find . -type f ! -name '*.lock' ! -name '*.claim' ! -name prompt-next-check -exec stat -c '%n %Y' {} + | sort); }
 before="$(snapshot)"
 _mise_hook
 sleep 2
