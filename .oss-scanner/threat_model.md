@@ -31,7 +31,8 @@ Use a throwaway `HOME`, `MISE_DATA_DIR`, `MISE_CONFIG_DIR` and `MISE_STATE_DIR` 
 - Critical: code execution or arbitrary file write from untrusted config without trust, from a malicious
   or tampered download that passes verification, or from a crafted archive escaping the install dir.
 - High: bypass of trust or of checksum/signature verification; credential disclosure to a third party;
-  injection into emitted shell code.
+  injection into emitted shell code. Rate by demonstrated impact: a bypass that leads to code execution
+  or arbitrary file write is Critical, and the highest applicable level wins.
 - Medium: denial of service from untrusted input (crash, unbounded memory or disk), local-only
   information disclosure.
 - Low: hardening gaps with no demonstrated exploit.
@@ -40,5 +41,6 @@ Use a throwaway `HOME`, `MISE_DATA_DIR`, `MISE_CONFIG_DIR` and `MISE_STATE_DIR` 
 - Behavior that requires the user to run `mise trust`, install a plugin, or add a tool source they chose.
 - A malicious tool being malicious after it is correctly installed.
 - Reports that need a pre-compromised machine, an attacker-controlled `PATH` or `HOME`, or root.
-- Panics reachable only through `unwrap` on trusted internal state.
+- Panics reachable only through `unwrap` on trusted internal state that untrusted input cannot trigger or
+  influence. A panic an attacker can trigger stays in scope (Medium, see above).
 Reports should include a runnable reproducer; a minimal patch is preferred over a large refactor.
