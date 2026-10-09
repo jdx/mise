@@ -3939,7 +3939,13 @@ fn lock_package_for_version(
 ) -> Result<AquaPackage> {
     let candidates = resolved_package_version_candidates(version, tag, &pkg);
     let versions = candidates.iter().map(|v| v.as_ref()).collect_vec();
-    if tag.is_none() {
+    // Without a prefix on any override every candidate resolves to the root prefix,
+    // so there is nothing to disambiguate and no reason to clone the package.
+    let has_override_prefix = pkg
+        .version_overrides
+        .iter()
+        .any(|vo| vo.version_prefix.is_some());
+    if tag.is_none() && has_override_prefix {
         let prefixes = versions
             .iter()
             .filter(|v| pkg.version_constraint_ok(&[v]))
@@ -3953,7 +3959,7 @@ fn lock_package_for_version(
             .collect_vec();
         if prefixes.len() > 1 {
             bail!(
-                "ambiguous aqua version prefixes for {version}: {}; no exact release tag was found",
+                "ambiguous aqua version prefixes for {version}: {}; no exact release tag matched",
                 prefixes
                     .iter()
                     .map(|prefix| if prefix.is_empty() { "(none)" } else { prefix })
@@ -4730,11 +4736,6 @@ version_overrides:
 "#,
         )
         .unwrap();
-        let err = lock_package_for_version(pkg.clone(), "1.0.0", None, "windows", "amd64", None)
-            .unwrap_err();
-        assert!(err.to_string().contains("ambiguous aqua version prefixes"));
-        assert!(err.to_string().contains("old-v, new-v"));
-
         let pkg =
             lock_package_for_version(pkg, "1.0.0", Some("new-v1.0.0"), "windows", "amd64", None)
                 .unwrap();
@@ -4743,6 +4744,27 @@ version_overrides:
             pkg.asset("new-v1.0.0", "windows", "amd64").unwrap(),
             "new-layout.zip"
         );
+    }
+
+    #[test]
+    fn test_lock_package_without_tag_rejects_ambiguous_override_prefixes() {
+        let pkg: AquaPackage = serde_yaml::from_str(
+            r#"
+version_constraint: "false"
+version_overrides:
+  - version_constraint: "true"
+    version_prefix: old-v
+    asset: old-layout.zip
+  - version_constraint: "true"
+    version_prefix: new-v
+    asset: new-layout.zip
+"#,
+        )
+        .unwrap();
+        let err =
+            lock_package_for_version(pkg, "1.0.0", None, "windows", "amd64", None).unwrap_err();
+        assert!(err.to_string().contains("ambiguous aqua version prefixes"));
+        assert!(err.to_string().contains("old-v, new-v"));
     }
 
     #[test]

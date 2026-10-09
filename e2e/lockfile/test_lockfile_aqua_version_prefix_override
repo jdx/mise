@@ -62,8 +62,7 @@ cat <<'EOF' >mise.toml
 "aqua:example/ambiguous" = "1.0.0"
 EOF
 
-output=$(mise lock aqua:example/ambiguous --platform windows-x64 2>&1) || true
-assert_contains "echo '$output'" "ambiguous aqua version prefixes for 1.0.0: old-v, new-v"
+assert_contains "mise lock aqua:example/ambiguous --platform windows-x64 2>&1" "ambiguous aqua version prefixes for 1.0.0: old-v, new-v"
 if [[ -f mise.lock ]]; then
   assert_not_contains "cat mise.lock" "/old.zip"
   assert_not_contains "cat mise.lock" "/new.zip"
