@@ -312,8 +312,8 @@ impl<'de> Deserialize<'de> for AutoUpdate {
             {
                 let value = value.trim();
                 match value.to_ascii_lowercase().as_str() {
-                    "true" | "yes" | "1" => self.visit_bool(true),
-                    "false" | "no" | "0" | "" => self.visit_bool(false),
+                    "true" | "yes" | "y" | "on" | "1" => self.visit_bool(true),
+                    "false" | "no" | "n" | "off" | "0" | "" => self.visit_bool(false),
                     _ => Ok(AutoUpdate::Every(value.to_string())),
                 }
             }

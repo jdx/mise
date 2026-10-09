@@ -2447,6 +2447,11 @@
           "type": "object",
           "unevaluatedProperties": false,
           "properties": {
+            "check_duration": {
+              "default": "24h",
+              "description": "How often mise checks for a newer version of a global tool that sets `auto_update = true`, or of every global tool with `tool_update.global_auto = true`.",
+              "type": "string"
+            },
             "global_auto": {
               "default": false,
               "description": "Update every tool in global config automatically, as if each set `auto_update` to this value.",
@@ -2458,11 +2463,6 @@
                   "type": "string"
                 }
               ]
-            },
-            "check_duration": {
-              "default": "24h",
-              "description": "How often mise checks for a newer version of a global tool that sets `auto_update = true`, or of every global tool with `tool_update.global_auto = true`.",
-              "type": "string"
             }
           }
         },

@@ -392,6 +392,8 @@ fn auto_update_accepts_a_bool_or_an_interval() {
     assert_eq!(parse(r#""6h""#), AutoUpdate::Every("6h".to_string()));
     assert_eq!(parse(r#""1""#), AutoUpdate::On);
     assert_eq!(parse(r#""no""#), AutoUpdate::Off);
+    assert_eq!(parse(r#""on""#), AutoUpdate::On);
+    assert_eq!(parse(r#""off""#), AutoUpdate::Off);
     assert_eq!(AutoUpdate::Every("6h".to_string()).interval(), Some("6h"));
     assert!(!AutoUpdate::Off.is_on());
 }

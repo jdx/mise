@@ -4100,6 +4100,18 @@ GNOME Terminal and Ptyxis, and not to Alacritty, WezTerm or kitty.
 env = "MISE_TERMINAL_PROGRESS"
 type = "Bool"
 
+[tool_update.check_duration]
+default = "24h"
+description = "How often mise checks for a newer version of a global tool that sets `auto_update = true`, or of every global tool with `tool_update.global_auto = true`."
+docs = """
+A tool can set its own interval instead, such as `auto_update = "6h"`.
+Intervals under `1h` are raised to `1h`. See
+[Automatic tool updates](/dev-tools/#automatic-tool-updates).
+"""
+env = "MISE_TOOL_UPDATE_CHECK_DURATION"
+global_only = true
+type = "Duration"
+
 [tool_update.global_auto]
 default = false
 description = "Update every tool in global config automatically, as if each set `auto_update` to this value."
@@ -4120,18 +4132,6 @@ env = "MISE_TOOL_UPDATE_GLOBAL_AUTO"
 global_only = true
 rust_type = "AutoUpdate"
 type = "BoolOrString"
-
-[tool_update.check_duration]
-default = "24h"
-description = "How often mise checks for a newer version of a global tool that sets `auto_update = true`, or of every global tool with `tool_update.global_auto = true`."
-docs = """
-A tool can set its own interval instead, such as `auto_update = "6h"`.
-Intervals under `1h` are raised to `1h`. See
-[Automatic tool updates](/dev-tools/#automatic-tool-updates).
-"""
-env = "MISE_TOOL_UPDATE_CHECK_DURATION"
-global_only = true
-type = "Duration"
 
 [trace]
 description = "Set the log level to trace."
