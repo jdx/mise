@@ -45,17 +45,42 @@ pub(crate) fn upstream_with_interaction(
 ) -> Result<Upstream> {
     let mut files = BTreeMap::new();
     let encrypted = super::files::encrypted_paths(repo, commit)?;
+    // every file this machine cannot unlock is named at once, so a stale
+    // recipient list is fixed in one pass rather than one file per retry.
+    // Each is tried as the caller asked, prompting included: a hardware
+    // identity loads only when it may prompt, and a file it would open must
+    // not be listed as locked.
+    let mut locked: Vec<String> = vec![];
+    let mut first_locked = None;
     if let Some(commit) = commit {
         for entry in repo.ls_tree(commit)? {
             if let Some((mode, oid)) = repo.object_at(commit, &entry.path)? {
                 let object = if encrypted.contains(&entry.path) {
-                    super::files::decrypt(repo, &entry.path, &(mode, oid), interactive)?
+                    match super::files::decrypt(repo, &entry.path, &(mode, oid), interactive) {
+                        Ok(object) => object,
+                        Err(err) if err.downcast_ref::<super::files::Locked>().is_some() => {
+                            locked.push(entry.path);
+                            first_locked.get_or_insert(err);
+                            continue;
+                        }
+                        Err(err) => return Err(err),
+                    }
                 } else {
                     (mode, oid)
                 };
                 files.insert(entry.path, object);
             }
         }
+    }
+    if let Some(err) = first_locked {
+        if locked.len() == 1 {
+            return Err(err);
+        }
+        return Err(err.wrap_err(format!(
+            "cannot unlock {} encrypted files: {}",
+            locked.len(),
+            locked.join(", ")
+        )));
     }
     Ok(Upstream {
         commit: commit.map(str::to_string),
