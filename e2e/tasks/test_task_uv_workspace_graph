@@ -1,7 +1,5 @@
 #!/usr/bin/env bash
 
-export MISE_EXPERIMENTAL=1
-
 cat <<'EOF' >mise.toml
 monorepo_root = true
 EOF

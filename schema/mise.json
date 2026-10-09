@@ -2190,7 +2190,7 @@
           "properties": {
             "auto_infer": {
               "default": [],
-              "description": "[experimental] Workspace providers whose package scripts mise imports as tasks, such as `node`.",
+              "description": "Workspace providers whose package scripts mise imports as tasks, such as `node`.",
               "type": "array",
               "items": {
                 "type": "string"
@@ -2980,14 +2980,14 @@
           "type": "boolean"
         },
         "task_defaults": {
-          "description": "Experimental task defaults applied by task name across inferred and explicit workspace projects",
+          "description": "Task defaults applied by task name across inferred and explicit workspace projects",
           "type": "object",
           "additionalProperties": {
             "$ref": "#/$defs/task_template"
           }
         },
         "projects": {
-          "description": "Experimental explicit additions, removals, and overrides applied to provider-inferred workspace projects",
+          "description": "Explicit additions, removals, and overrides applied to provider-inferred workspace projects",
           "type": "object",
           "additionalProperties": {
             "type": "object",

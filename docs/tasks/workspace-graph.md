@@ -3,7 +3,7 @@ description: "Infer projects and dependencies from Cargo, uv, Go, and Node.js wo
 socialDescription: "Infer monorepo projects from Cargo, uv, Go, and Node.js workspaces to run affected tasks."
 ---
 
-# Workspace project graph <Badge type="warning" text="experimental" />
+# Workspace project graph
 
 mise can read Cargo, uv, Go, and Node.js workspace manifests to learn which
 projects a [monorepo](/tasks/monorepo.html) contains and how they depend on
@@ -11,18 +11,13 @@ each other. Use the graph to run tasks only in the projects a change affects, to
 run a task in upstream projects first, and to import Node.js package scripts as
 tasks.
 
-::: warning Experimental
-The project graph and everything built on it require `experimental = true`.
-:::
-
 The graph is separate from config roots. Config roots tell mise where task
 configuration lives; the graph comes from ecosystem manifests, and a project
 does not need its own `mise.toml` to appear in it.
 
 ## Set up the graph
 
-Mark the repository root as a monorepo root, set `[monorepo].config_roots`, and
-enable experimental features:
+Mark the repository root as a monorepo root and set `[monorepo].config_roots`:
 
 ```toml
 # mise.toml at the repository root
@@ -30,9 +25,6 @@ monorepo_root = true
 
 [monorepo]
 config_roots = ["apps/*", "packages/*"]
-
-[settings]
-experimental = true
 ```
 
 Without [`config_roots`](/tasks/monorepo.html#explicit-config-roots), mise
@@ -159,11 +151,15 @@ override when the build relationship should differ from the manifests.
 ## Run affected tasks {#affected-tasks}
 
 [`mise run --affected <task>`](/cli/run.html) runs a task only in the projects
-that changed between two Git revisions, and in the projects that depend on them:
+that changed, and in the projects that depend on them. A change is a commit
+between two Git revisions, or an edit in your working tree:
 
 ```sh
-# Compare HEAD with its parent and run build in affected projects
+# Run build in projects changed by HEAD or by uncommitted edits
 mise run --affected build
+
+# Only what you have not committed yet
+mise run --affected --affected-uncommitted --affected-untracked build
 
 # Show why each project was selected, without running anything
 mise run --affected --affected-explain --dry-run build
@@ -176,8 +172,31 @@ mise run --affected --affected-base origin/main --affected-head HEAD test
 ```
 
 A bare task name such as `build` means `//...:build`, the task of that name in
-every project. mise compares `<base>...<head>`: the changes on the head side
-since the merge base. Uncommitted changes are not included.
+every project. mise combines three sources of change:
+
+- **committed**: the changes on the head side of `<base>...<head>` since the
+  merge base;
+- **uncommitted**: staged and unstaged edits to tracked files, compared with
+  `HEAD`;
+- **untracked**: new files that your `.gitignore` does not exclude.
+
+The working tree only counts when the head revision is the commit you have
+checked out. With a different `--affected-head`, mise compares just the
+committed range. In CI the working tree is normally clean, so the result is the
+same as the committed range.
+
+Name the sources you want to narrow the selection. Naming any of them leaves
+out the rest, and they combine:
+
+| Flag                     | Environment variable        | Counts                     |
+| ------------------------ | --------------------------- | -------------------------- |
+| `--affected-committed`   | `MISE_AFFECTED_COMMITTED`   | the committed range        |
+| `--affected-uncommitted` | `MISE_AFFECTED_UNCOMMITTED` | staged and unstaged edits  |
+| `--affected-untracked`   | `MISE_AFFECTED_UNTRACKED`   | untracked, unignored files |
+
+Use `--affected-committed` for a reproducible run that ignores whatever is in
+your working tree. `--affected-uncommitted` and `--affected-untracked` fail when
+the head revision is not the current checkout.
 
 mise selects:
 
@@ -186,7 +205,8 @@ mise selects:
 - every project, when a changed file belongs to no project or matches
   [`task_config.global_inputs`](/tasks/caching.html#inputs-shared-by-every-task);
 - for a changed `pnpm-lock.yaml`, only the Node.js projects whose lockfile
-  entries changed (other lockfiles count as ordinary files);
+  entries changed, comparing the merge base with your working tree when it
+  counts (other lockfiles count as ordinary files);
 - every project that depends on a selected project, directly or through others.
 
 Then mise runs the matching tasks in those projects. Their dependencies run as
@@ -235,7 +255,6 @@ config:
 
 ```toml
 [settings]
-experimental = true
 task.auto_infer = ["node"]
 ```
 
@@ -277,8 +296,7 @@ env = { NODE_ENV = "test" }
 The defaults apply to imported tasks such as `node:@acme/web#build` and to
 explicit mise tasks such as `//apps/web:build`, in every project of the graph,
 every config root, and every project added by an override. They fill only
-fields that the task leaves unset. Root task defaults are ignored unless
-experimental features are enabled.
+fields that the task leaves unset.
 
 ### Task definition precedence
 

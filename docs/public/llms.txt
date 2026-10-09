@@ -428,7 +428,7 @@
 - [mise tasks add](https://mise.jdx.dev/cli/tasks/add.html): Add a task
 - [mise tasks deps](https://mise.jdx.dev/cli/tasks/deps.html): Show the dependency tree of tasks
 - [mise tasks edit](https://mise.jdx.dev/cli/tasks/edit.html): Open a task in your editor
-- [mise tasks graph](https://mise.jdx.dev/cli/tasks/graph.html): [experimental] Show the monorepo project graph
+- [mise tasks graph](https://mise.jdx.dev/cli/tasks/graph.html): Show the monorepo project graph
 - [mise tasks info](https://mise.jdx.dev/cli/tasks/info.html): Show a task's definition
 - [mise tasks ls](https://mise.jdx.dev/cli/tasks/ls.html): List available tasks
 - [mise tasks validate](https://mise.jdx.dev/cli/tasks/validate.html): Check task definitions for errors

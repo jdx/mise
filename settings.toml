@@ -3581,11 +3581,10 @@ type = "Path"
 
 [task.auto_infer]
 default = []
-description = "[experimental] Workspace providers whose package scripts mise imports as tasks, such as `node`."
+description = "Workspace providers whose package scripts mise imports as tasks, such as `node`."
 docs = """
 With `["node"]`, the `scripts` of every Node.js workspace package become tasks
-named like `node:@acme/web#build`. Requires `experimental = true` and a
-monorepo root. An explicit mise task at the same path replaces the imported
+named like `node:@acme/web#build`. Requires a monorepo root. An explicit mise task at the same path replaces the imported
 one. See [Node.js package scripts](/tasks/workspace-graph.html#node-package-scripts).
 """
 env = "MISE_TASK_AUTO_INFER"

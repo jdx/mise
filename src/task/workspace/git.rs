@@ -2,30 +2,92 @@ use std::collections::BTreeSet;
 use std::env;
 use std::path::{Path, PathBuf};
 
-use eyre::Result;
+use eyre::{Result, eyre};
 
 use crate::git::Git;
 
 const DEFAULT_BASE: &str = "HEAD~1";
 const DEFAULT_HEAD: &str = "HEAD";
 
+/// Which kinds of change feed the affected calculation.
+///
+/// Selecting no source is the same as selecting all of them.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct AffectedSources {
+    pub committed: bool,
+    pub uncommitted: bool,
+    pub untracked: bool,
+}
+
+impl AffectedSources {
+    fn is_default(self) -> bool {
+        !(self.committed || self.uncommitted || self.untracked)
+    }
+
+    fn wants_working_tree(self) -> bool {
+        self.uncommitted || self.untracked
+    }
+}
+
 /// Git revisions used to discover changed workspace paths.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct WorkspaceGitRevisions {
     pub base: String,
     pub head: String,
+    sources: AffectedSources,
+}
+
+/// Changed workspace paths, remembering which source each came from so a path's
+/// before and after content is read from the right side.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct WorkspaceChanges {
+    pub paths: BTreeSet<PathBuf>,
+    committed: BTreeSet<PathBuf>,
+    working_tree: BTreeSet<PathBuf>,
+    merge_base: Option<String>,
+    head: String,
+}
+
+impl WorkspaceChanges {
+    /// The (before, after) contents to compare for a path, one pair per source it changed in.
+    ///
+    /// A path changed in both the committed range and the working tree yields two pairs,
+    /// merge base to head and head to working tree, so a committed change that an uncommitted
+    /// edit reverts still counts.
+    pub fn file_versions(
+        &self,
+        git: &Git,
+        path: &Path,
+    ) -> Result<Vec<(Option<String>, Option<String>)>> {
+        let mut versions = Vec::new();
+        if let (Some(merge_base), true) = (&self.merge_base, self.committed.contains(path)) {
+            versions.push((
+                git.file_at_revision(merge_base, path)?,
+                git.file_at_revision(&self.head, path)?,
+            ));
+        }
+        if self.working_tree.contains(path) {
+            // `HEAD`, not `self.head`: working-tree sources require the head to be the checkout.
+            versions.push((
+                git.file_at_revision(DEFAULT_HEAD, path)?,
+                git.file_in_worktree(path)?,
+            ));
+        }
+        Ok(versions)
+    }
 }
 
 impl WorkspaceGitRevisions {
     /// Resolves explicit revisions, mise environment overrides, CI metadata,
     /// and finally the local `HEAD~1...HEAD` default, in that order.
-    pub fn resolve(base: Option<&str>, head: Option<&str>) -> Self {
-        Self::resolve_with(base, head, |name| env::var(name).ok())
+    pub fn resolve(base: Option<&str>, head: Option<&str>, sources: AffectedSources) -> Self {
+        Self::resolve_with(base, head, sources, |name| env::var(name).ok())
     }
 
     fn resolve_with(
         base: Option<&str>,
         head: Option<&str>,
+        sources: AffectedSources,
         get_env: impl Fn(&str) -> Option<String>,
     ) -> Self {
         let base = nonempty(base)
@@ -33,17 +95,70 @@ impl WorkspaceGitRevisions {
             .or_else(|| env_value(&get_env, "MISE_AFFECTED_BASE"))
             .or_else(|| ci_base(&get_env))
             .unwrap_or_else(|| DEFAULT_BASE.to_string());
+        // The source env vars are read here rather than bound to the flags, because a flag
+        // bound to an env var would count as given and demand `--affected` on every `mise run`.
+        let sources = AffectedSources {
+            committed: sources.committed || env_enabled(&get_env, "MISE_AFFECTED_COMMITTED"),
+            uncommitted: sources.uncommitted || env_enabled(&get_env, "MISE_AFFECTED_UNCOMMITTED"),
+            untracked: sources.untracked || env_enabled(&get_env, "MISE_AFFECTED_UNTRACKED"),
+        };
         let head = nonempty(head)
             .map(str::to_string)
             .or_else(|| env_value(&get_env, "MISE_AFFECTED_HEAD"))
             .or_else(|| ci_head(&get_env))
             .unwrap_or_else(|| DEFAULT_HEAD.to_string());
-        Self { base, head }
+        Self {
+            base,
+            head,
+            sources,
+        }
     }
 
-    /// Collects workspace-relative paths changed between the configured revisions.
-    pub fn changed_paths(&self, workspace_root: &Path) -> Result<BTreeSet<PathBuf>> {
-        Git::new(workspace_root).changed_paths(&self.base, &self.head)
+    /// Collects workspace-relative paths changed in the selected sources.
+    ///
+    /// The working tree only counts when `head` is the current checkout. By
+    /// default a different `head` leaves a pure commit range; asking for
+    /// uncommitted or untracked files explicitly alongside one is an error.
+    pub fn changed_paths(&self, workspace_root: &Path) -> Result<WorkspaceChanges> {
+        let git = Git::new(workspace_root);
+        let on_checkout = git.same_commit(&self.head, DEFAULT_HEAD)?;
+        let sources = if self.sources.is_default() {
+            AffectedSources {
+                committed: true,
+                uncommitted: on_checkout,
+                untracked: on_checkout,
+            }
+        } else if self.sources.wants_working_tree() && !on_checkout {
+            return Err(eyre!(
+                "--affected-uncommitted and --affected-untracked need the head revision to be the current checkout, but head is {}",
+                self.head
+            ));
+        } else {
+            self.sources
+        };
+
+        let mut committed = BTreeSet::new();
+        let mut working_tree = BTreeSet::new();
+        let mut merge_base = None;
+        if sources.committed {
+            committed = git.changed_paths(&self.base, &self.head)?;
+            merge_base = Some(git.merge_base(&self.base, &self.head)?);
+        }
+        if sources.uncommitted {
+            working_tree.extend(git.uncommitted_paths()?);
+        }
+        if sources.untracked {
+            working_tree.extend(git.untracked_paths()?);
+        }
+
+        let paths = committed.union(&working_tree).cloned().collect();
+        Ok(WorkspaceChanges {
+            paths,
+            committed,
+            working_tree,
+            merge_base,
+            head: self.head.clone(),
+        })
     }
 }
 
@@ -109,7 +224,9 @@ mod tests {
             .iter()
             .map(|(key, value)| (key.to_string(), value.to_string()))
             .collect::<BTreeMap<_, _>>();
-        WorkspaceGitRevisions::resolve_with(base, head, |name| values.get(name).cloned())
+        WorkspaceGitRevisions::resolve_with(base, head, AffectedSources::default(), |name| {
+            values.get(name).cloned()
+        })
     }
 
     #[test]
@@ -131,6 +248,7 @@ mod tests {
             WorkspaceGitRevisions {
                 base: "release-base".to_string(),
                 head: "release-head".to_string(),
+                sources: AffectedSources::default(),
             }
         );
     }
@@ -181,6 +299,28 @@ mod tests {
     }
 
     #[test]
+    fn source_environment_variables_select_sources() {
+        let revisions = resolve_with_env(
+            None,
+            None,
+            &[
+                ("MISE_AFFECTED_COMMITTED", "1"),
+                ("MISE_AFFECTED_UNTRACKED", "true"),
+                ("MISE_AFFECTED_UNCOMMITTED", "0"),
+            ],
+        );
+
+        assert_eq!(
+            revisions.sources,
+            AffectedSources {
+                committed: true,
+                uncommitted: false,
+                untracked: true,
+            }
+        );
+    }
+
+    #[test]
     fn local_defaults_compare_head_to_its_first_parent() {
         let revisions = resolve_with_env(None, None, &[]);
 
@@ -218,10 +358,14 @@ mod tests {
         git(&["add", "-A"]);
         git(&["commit", "-q", "-m", "change"]);
 
-        let revisions = WorkspaceGitRevisions::resolve(Some("HEAD~1"), Some("HEAD"));
+        let revisions = WorkspaceGitRevisions::resolve(
+            Some("HEAD~1"),
+            Some("HEAD"),
+            AffectedSources::default(),
+        );
 
         assert_eq!(
-            revisions.changed_paths(root).unwrap(),
+            revisions.changed_paths(root).unwrap().paths,
             BTreeSet::from([
                 PathBuf::from("nested/keep.txt"),
                 PathBuf::from("nested/space name.txt"),
@@ -230,8 +374,182 @@ mod tests {
             ])
         );
         assert_eq!(
-            revisions.changed_paths(&root.join("nested")).unwrap(),
+            revisions.changed_paths(&root.join("nested")).unwrap().paths,
             BTreeSet::from([PathBuf::from("keep.txt"), PathBuf::from("space name.txt"),])
+        );
+    }
+
+    fn repo_with_working_tree_changes() -> tempfile::TempDir {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path();
+        let git = |args: &[&str]| {
+            let output = Command::new("git")
+                .args(args)
+                .current_dir(root)
+                .output()
+                .unwrap();
+            assert!(
+                output.status.success(),
+                "git {args:?} failed: {}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+        };
+        git(&["-c", "init.defaultBranch=main", "init", "-q"]);
+        git(&["config", "user.email", "test@example.com"]);
+        git(&["config", "user.name", "Test"]);
+        std::fs::write(root.join("committed.txt"), "0\n").unwrap();
+        std::fs::write(root.join("staged.txt"), "0\n").unwrap();
+        std::fs::write(root.join("unstaged.txt"), "0\n").unwrap();
+        std::fs::write(root.join(".gitignore"), "ignored.txt\n").unwrap();
+        git(&["add", "."]);
+        git(&["commit", "-q", "-m", "initial"]);
+        std::fs::write(root.join("committed.txt"), "1\n").unwrap();
+        git(&["commit", "-q", "-am", "committed"]);
+        std::fs::write(root.join("staged.txt"), "1\n").unwrap();
+        git(&["add", "staged.txt"]);
+        std::fs::write(root.join("unstaged.txt"), "1\n").unwrap();
+        std::fs::write(root.join("untracked.txt"), "1\n").unwrap();
+        std::fs::write(root.join("ignored.txt"), "1\n").unwrap();
+        temp
+    }
+
+    /// Resolves with no ambient environment, so CI's own `GITHUB_SHA` and friends cannot leak in.
+    fn local_revisions(sources: AffectedSources) -> WorkspaceGitRevisions {
+        WorkspaceGitRevisions::resolve_with(None, None, sources, |_| None)
+    }
+
+    fn paths(names: &[&str]) -> BTreeSet<PathBuf> {
+        names.iter().map(PathBuf::from).collect()
+    }
+
+    #[test]
+    fn working_tree_changes_join_the_committed_range_by_default() {
+        let repo = repo_with_working_tree_changes();
+        let revisions = local_revisions(AffectedSources::default());
+
+        let changes = revisions.changed_paths(repo.path()).unwrap();
+
+        assert_eq!(
+            changes.paths,
+            paths(&[
+                "committed.txt",
+                "staged.txt",
+                "unstaged.txt",
+                "untracked.txt"
+            ])
+        );
+        assert_eq!(
+            changes.working_tree,
+            paths(&["staged.txt", "unstaged.txt", "untracked.txt"])
+        );
+    }
+
+    #[test]
+    fn each_source_flag_limits_the_calculation() {
+        let repo = repo_with_working_tree_changes();
+        let only = |committed, uncommitted, untracked| {
+            local_revisions(AffectedSources {
+                committed,
+                uncommitted,
+                untracked,
+            })
+            .changed_paths(repo.path())
+            .unwrap()
+        };
+
+        let committed = only(true, false, false);
+        assert_eq!(committed.paths, paths(&["committed.txt"]));
+        assert!(committed.working_tree.is_empty());
+        assert_eq!(
+            only(false, true, false).paths,
+            paths(&["staged.txt", "unstaged.txt"])
+        );
+        assert_eq!(only(false, false, true).paths, paths(&["untracked.txt"]));
+        assert_eq!(
+            only(false, true, true).paths,
+            paths(&["staged.txt", "unstaged.txt", "untracked.txt"])
+        );
+        assert!(only(false, true, true).committed.is_empty());
+    }
+
+    #[test]
+    fn a_head_other_than_the_checkout_stays_a_pure_commit_range() {
+        let repo = repo_with_working_tree_changes();
+        let revisions = WorkspaceGitRevisions::resolve(
+            Some("HEAD~1"),
+            Some("HEAD~1"),
+            AffectedSources::default(),
+        );
+
+        let changes = revisions.changed_paths(repo.path()).unwrap();
+
+        assert_eq!(changes.paths, paths(&[]));
+        assert!(changes.working_tree.is_empty());
+
+        let explicit = WorkspaceGitRevisions::resolve(
+            Some("HEAD~1"),
+            Some("HEAD~1"),
+            AffectedSources {
+                uncommitted: true,
+                ..AffectedSources::default()
+            },
+        );
+        assert!(explicit.changed_paths(repo.path()).is_err());
+    }
+
+    #[test]
+    fn a_lockfile_edit_is_read_from_the_working_tree_only_when_that_source_is_enabled() {
+        let repo = repo_with_working_tree_changes();
+        let git = Git::new(repo.path());
+        let revisions = local_revisions(AffectedSources {
+            committed: true,
+            untracked: true,
+            ..AffectedSources::default()
+        });
+
+        let changes = revisions.changed_paths(repo.path()).unwrap();
+
+        // Edited in the working tree but not selected: no working-tree pair is compared.
+        assert_eq!(changes.paths, paths(&["committed.txt", "untracked.txt"]));
+        assert!(
+            changes
+                .file_versions(&git, Path::new("unstaged.txt"))
+                .unwrap()
+                .is_empty()
+        );
+        assert_eq!(
+            changes
+                .file_versions(&git, Path::new("untracked.txt"))
+                .unwrap(),
+            vec![(None, Some("1\n".to_string()))]
+        );
+        assert_eq!(
+            changes
+                .file_versions(&git, Path::new("committed.txt"))
+                .unwrap(),
+            vec![(Some("0\n".to_string()), Some("1\n".to_string()))]
+        );
+    }
+
+    #[test]
+    fn a_path_changed_in_both_places_is_compared_in_two_steps() {
+        let repo = repo_with_working_tree_changes();
+        let git = Git::new(repo.path());
+        // committed.txt went 0 -> 1 in a commit; revert it in the working tree.
+        std::fs::write(repo.path().join("committed.txt"), "0\n").unwrap();
+
+        let changes = local_revisions(AffectedSources::default())
+            .changed_paths(repo.path())
+            .unwrap();
+
+        assert_eq!(
+            changes
+                .file_versions(&git, Path::new("committed.txt"))
+                .unwrap(),
+            vec![
+                (Some("0\n".to_string()), Some("1\n".to_string())),
+                (Some("1\n".to_string()), Some("0\n".to_string())),
+            ]
         );
     }
 }
