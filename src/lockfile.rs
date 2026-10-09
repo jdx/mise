@@ -4988,7 +4988,10 @@ pub(crate) fn url_contradicts_version(version: &str, url: &str) -> Option<Vec<St
         .next()
         .unwrap_or_default();
     let path = &path[path.find('/')?..];
-    let identifiers = release_identifiers(path);
+    // A tag such as `cli@0.46.0` is stored percent-encoded (`cli%400.46.0`);
+    // read raw, the `%40` would glue a stray `40` onto the version.
+    let path = urlencoding::decode(path).ok()?;
+    let identifiers = release_identifiers(&path);
     if identifiers.is_empty() {
         return None;
     }
@@ -5530,6 +5533,11 @@ mod tests {
     #[test]
     fn test_url_contradicts_version_accepts_matching_releases() {
         for (version, url) in [
+            // A percent-encoded `@` in the tag is decoded before comparing.
+            (
+                "0.46.0",
+                "https://github.com/getsentry/toolkit/releases/download/cli%400.46.0/sentry-darwin-arm64",
+            ),
             // The plain case: the tag names the version.
             (
                 "1.56.1",
