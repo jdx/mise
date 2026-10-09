@@ -78,10 +78,10 @@ pub(crate) struct Outdated {
 
     /// Only check tools defined in the global config
     ///
-    /// Reports the requests in the global config (~/.config/mise/config.toml),
-    /// even where a project config or a `MISE_<TOOL>_VERSION` environment
-    /// variable sets its own version of the tool: what `mise upgrade --global`
-    /// would install.
+    /// Reports the requests in the global and system config
+    /// (~/.config/mise/config.toml, /etc/mise/config.toml), even where a project
+    /// config or a `MISE_<TOOL>_VERSION` environment variable sets its own
+    /// version of the tool: what `mise upgrade --global` would install.
     #[usage(long, conflicts = "local")]
     pub global: bool,
 
@@ -114,6 +114,9 @@ impl Outdated {
         }
         if self.monorepo {
             eyre::bail!("--monorepo is not supported by mise outdated yet");
+        }
+        if self.global && super::tool_update::needs_global_scope() {
+            return super::tool_update::rerun_in_global_scope();
         }
         let config = Config::get().await?;
         let scope = if self.global {

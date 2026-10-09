@@ -111,12 +111,13 @@ pub(crate) struct Upgrade {
 
     /// Only upgrade tools defined in the global config
     ///
-    /// Upgrades the requests in the global config (~/.config/mise/config.toml),
-    /// even where a project config or a `MISE_<TOOL>_VERSION` environment
-    /// variable sets its own version of the tool, and leaves project config and
-    /// lockfiles alone. Tools that update themselves, such as coding agents, run
-    /// this instead of their own updater; see
-    /// https://mise.jdx.dev/dev-tools/self-updating-tools.html
+    /// Upgrades the requests in the global and system config
+    /// (~/.config/mise/config.toml, /etc/mise/config.toml), even where a project
+    /// config or a `MISE_<TOOL>_VERSION` environment variable sets its own
+    /// version of the tool. It runs as if from outside any project, so project
+    /// config, lockfiles, and `[env]` are neither read nor changed. Tools that
+    /// update themselves, such as coding agents, run this instead of their own
+    /// updater; see https://mise.jdx.dev/dev-tools/self-updating-tools.html
     #[usage(long, conflicts = "local")]
     global: bool,
 
@@ -239,13 +240,13 @@ impl Upgrade {
         if self.monorepo {
             eyre::bail!("--monorepo is not supported by mise upgrade yet");
         }
+        if self.global && super::tool_update::needs_global_scope() {
+            return super::tool_update::rerun_in_global_scope();
+        }
         let mut config = Config::get().await?;
         let mut explicit_config_bumps = Vec::new();
         if self.bump && !self.tool.is_empty() {
-            let scope = self.scope();
-            let effective = ToolsetBuilder::new()
-                .with_scope(scope)
-                .build_unresolved(&config)?;
+            let effective = self.toolset_builder().build_unresolved(&config)?;
             for tool in &self.tool {
                 let Some(request) = tool.tvr.as_ref() else {
                     continue;
@@ -319,12 +320,7 @@ impl Upgrade {
                     .any(|tool| backend_args_match(tool.ba.as_ref(), bump.request.ba()))
             });
         }
-        // Monorepo lockfiles belong to projects, which a global upgrade leaves alone.
-        if !self.is_dry_run()
-            && !self.for_auto_update
-            && !self.global
-            && !Settings::get().generate_lockfiles()
-        {
+        if !self.is_dry_run() && !self.for_auto_update && !Settings::get().generate_lockfiles() {
             crate::lockfile::migrate_monorepo_lockfiles(&config, false)?;
         }
         let ts = self

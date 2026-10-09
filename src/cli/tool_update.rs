@@ -216,16 +216,19 @@ async fn update_due_tools() -> Result<()> {
     Ok(())
 }
 
-/// `mise __tool-update <args>` with the environment mise's activation started
-/// from, run from the filesystem root so no project config (not even one in
-/// $HOME) is above it: it loads only global config, so a project's config,
-/// lockfile, and `[env]` (PATH included) can't steer or be rewritten by the
-/// upgrade. The current environments (`-E`) carry over, since they choose
-/// which global files apply. Launches inside its hooks skip their own updates.
-fn update_command(args: &[&str]) -> Command {
+/// Set in the environment of a command [`global_scope_command`] started, so
+/// a `--global` command run that way doesn't start itself again.
+const GLOBAL_SCOPE_ENV: &str = "__MISE_GLOBAL_SCOPE";
+
+/// `mise <args>` with the environment mise's activation started from, run from
+/// the filesystem root so no project config (not even one in $HOME) is above
+/// it: it loads only global and system config, so a project's config,
+/// lockfile, and `[env]` (PATH included) can't steer or be rewritten by it.
+/// The current environments (`-E`) carry over, since they choose which global
+/// files apply.
+fn global_scope_command<S: AsRef<std::ffi::OsStr>>(args: &[S]) -> Command {
     let mut command = Command::new(&*env::MISE_BIN);
     command
-        .arg("__tool-update")
         .args(args)
         .env_clear()
         .envs(
@@ -233,15 +236,66 @@ fn update_command(args: &[&str]) -> Command {
                 .iter()
                 .filter(|(key, _)| !key.starts_with("__MISE_")),
         )
-        .env(tool_update::UPDATING_ENV, "1")
+        .env(GLOBAL_SCOPE_ENV, "1")
         .env("MISE_ENV", env::mise_env().join(","))
-        .current_dir(dirs::HOME.ancestors().last().unwrap_or(*dirs::HOME))
-        .stdin(Stdio::null());
-    // `--no-hooks` on the launch or watcher applies to its updates too.
+        .current_dir(dirs::HOME.ancestors().last().unwrap_or(*dirs::HOME));
+    // `--no-hooks` on the command applies to the one it starts too.
     if Settings::no_hooks() || Settings::get().no_hooks.unwrap_or(false) {
         command.env("MISE_NO_HOOKS", "1");
     }
     command
+}
+
+/// `mise __tool-update <args>` in the global scope. Launches inside its hooks
+/// skip their own updates.
+fn update_command(args: &[&str]) -> Command {
+    let mut command = global_scope_command(&[&["__tool-update"], args].concat());
+    command
+        .env(tool_update::UPDATING_ENV, "1")
+        .stdin(Stdio::null());
+    command
+}
+
+/// Whether a `--global` command has to start itself again in the global
+/// scope, which it does unless it is that command.
+pub(super) fn needs_global_scope() -> bool {
+    std::env::var_os(GLOBAL_SCOPE_ENV).is_none()
+}
+
+/// Run this mise command again in the global scope, with the same arguments
+/// except `--cd`, and exit as it does. `mise upgrade --global` and
+/// `mise outdated --global` work this way, like an `auto_update` upgrade.
+pub(super) fn rerun_in_global_scope() -> Result<()> {
+    let args = without_cd(env::ARGS.read().unwrap().iter().skip(1).cloned());
+    let status = global_scope_command(&args).status()?;
+    if status.success() {
+        Ok(())
+    } else {
+        Err(crate::exit::request(status.code().unwrap_or(1)))
+    }
+}
+
+/// `args` without `-C`/`--cd`, which would put the command back in the
+/// directory it left.
+fn without_cd(args: impl Iterator<Item = String>) -> Vec<String> {
+    let mut kept = vec![];
+    let mut args = args.peekable();
+    while let Some(arg) = args.next() {
+        if arg == "--" {
+            kept.push(arg);
+            kept.extend(args);
+            break;
+        }
+        if arg == "-C" || arg == "--cd" {
+            args.next();
+            continue;
+        }
+        if arg.starts_with("--cd=") || (arg.starts_with("-C") && arg.len() > 2) {
+            continue;
+        }
+        kept.push(arg);
+    }
+    kept
 }
 
 /// The config's spelling selects the request to upgrade; `tool_id`, the id

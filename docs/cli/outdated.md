@@ -31,7 +31,7 @@ pass `--bump` to compare against the newest release overall instead. Run
   By default, `mise outdated` checks only tools that come from the current config.
 - **`--global`** — Only check tools defined in the global config
 
-  Reports the requests in the global config (~/.config/mise/config.toml), even where a project config or a `MISE_<TOOL>_VERSION` environment variable sets its own version of the tool: what `mise upgrade --global` would install.
+  Reports the requests in the global and system config (~/.config/mise/config.toml, /etc/mise/config.toml), even where a project config or a `MISE_<TOOL>_VERSION` environment variable sets its own version of the tool: what `mise upgrade --global` would install.
 - **`--local`** — Only check tools defined in project config files
 
   Skips tools defined in the global config (~/.config/mise/config.toml) and tools set through `MISE_<TOOL>_VERSION` environment variables.

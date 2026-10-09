@@ -7734,7 +7734,7 @@ By default, `mise outdated` checks only tools that come from the current config.
 \fB\-\-global\fR
 Only check tools defined in the global config
 
-Reports the requests in the global config (~/.config/mise/config.toml), even where a project config or a `MISE_<TOOL>_VERSION` environment variable sets its own version of the tool: what `mise upgrade \-\-global` would install.
+Reports the requests in the global and system config (~/.config/mise/config.toml, /etc/mise/config.toml), even where a project config or a `MISE_<TOOL>_VERSION` environment variable sets its own version of the tool: what `mise upgrade \-\-global` would install.
 .TP
 \fB\-\-local\fR
 Only check tools defined in project config files
@@ -10963,7 +10963,7 @@ Also upgrade installed tools that the current config does not request
 \fB\-\-global\fR
 Only upgrade tools defined in the global config
 
-Upgrades the requests in the global config (~/.config/mise/config.toml), even where a project config or a `MISE_<TOOL>_VERSION` environment variable sets its own version of the tool, and leaves project config and lockfiles alone. Tools that update themselves, such as coding agents, run this instead of their own updater; see https://mise.jdx.dev/dev\-tools/self\-updating\-tools.html
+Upgrades the requests in the global and system config (~/.config/mise/config.toml, /etc/mise/config.toml), even where a project config or a `MISE_<TOOL>_VERSION` environment variable sets its own version of the tool. It runs as if from outside any project, so project config, lockfiles, and `[env]` are neither read nor changed. Tools that update themselves, such as coding agents, run this instead of their own updater; see https://mise.jdx.dev/dev\-tools/self\-updating\-tools.html
 .TP
 \fB\-\-local\fR
 Only upgrade tools defined in project config files

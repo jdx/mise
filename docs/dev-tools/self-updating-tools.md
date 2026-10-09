@@ -74,10 +74,13 @@ what mise will install.
 mise upgrade --global claude
 ```
 
-This installs the newest version the global request allows and moves the
-global lockfile entry if one pins the tool. It never changes a project's config
-or lockfile. Progress goes to stderr, and the command exits non-zero if the
-update fails. Run it non-interactively, with stdin closed.
+This installs the newest version the request in the global or system config
+allows, into the system installs directory if the current version was
+[installed there](/dev-tools/system-installs.html), and moves the global
+lockfile entry if one pins the tool. It runs as if from outside any project, so
+a project's config, lockfile, and `[env]` are neither read nor changed.
+Progress goes to stderr and a summary to stdout, and the command exits non-zero
+if the update fails. Run it non-interactively, with stdin closed.
 
 The version you upgraded from stays installed while any process still runs from
 it, and for [`upgrade.prune_after`](/configuration/settings.html#upgrade.prune_after)

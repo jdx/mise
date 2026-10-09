@@ -39,3 +39,33 @@ printf '[tools]\ndummy = "1.0.0"\n' >"$MISE_CONFIG_DIR/config.toml"
 assert "mise outdated --global dummy --json" "{}"
 mise upgrade --global dummy
 assert "mise x -- dummy" "This is Dummy 1.0.0!"
+
+# A project's lockfile, and a version named on the command line, don't reach
+# the project either, and `-C` doesn't bring the command back into it.
+printf '[tools]\ndummy = "1"\n' >"$MISE_CONFIG_DIR/config.toml"
+mise uninstall dummy --all
+mise install dummy@1.0.0
+mkdir locked
+printf '[tools]\ndummy = "latest"\n' >locked/mise.toml
+mise -C locked lock dummy
+cp locked/mise.lock lock-before
+assert_contains "mise -C locked outdated --global dummy --json" '"latest": "1.1.0"'
+mise -C locked upgrade --global dummy@1.1.0
+assert "cat locked/mise.lock" "$(cat lock-before)"
+assert "cat locked/mise.toml" '[tools]
+dummy = "latest"'
+assert_contains "mise ls --installed dummy" "1.1.0"
+
+# `--bump` writes the global config, even with an environment override.
+MISE_DUMMY_VERSION=1.0.0 mise upgrade --global --bump dummy@2
+assert_contains "cat $MISE_CONFIG_DIR/config.toml" 'dummy = "2"'
+assert "mise x -- dummy" "This is Dummy 2.0.0!"
+
+# A version installed with `--system` is upgraded in the system installs dir.
+export MISE_SYSTEM_DATA_DIR="$HOME/.local/share/mise-system"
+printf '[tools]\ndummy = "1"\n' >"$MISE_CONFIG_DIR/config.toml"
+mise uninstall dummy --all
+mise install --system dummy@1.0.0
+mise upgrade --global dummy
+assert_directory_exists "$MISE_SYSTEM_DATA_DIR/installs/dummy/1.1.0"
+assert_directory_not_exists "$MISE_DATA_DIR/installs/dummy/1.1.0"
