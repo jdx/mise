@@ -32,7 +32,7 @@ local function fetch_versions()
         })
 
         if err ~= nil or resp.status_code ~= 200 then
-            error("Failed to fetch versions from GCS: " .. (err or "status " .. resp.status_code))
+            error("Failed to fetch versions from GCS: " .. (err or ("status " .. resp.status_code)))
         end
 
         local data = json.decode(resp.body)

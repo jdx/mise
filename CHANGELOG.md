@@ -1,5 +1,67 @@
 # Changelog
 
+## [2026.10.6](https://github.com/jdx/mise/releases/tag/v2026.10.6) - 2026-10-09
+
+### 🚀 Features
+
+- **(bootstrap)** offer to install git and ssh before cloning a repository by @jdx in [#14188](https://github.com/jdx/mise/pull/14188)
+- **(config)** allow local paths in include by @jdx in [#14178](https://github.com/jdx/mise/pull/14178)
+- **(dotfiles)** add `mise dot save --re-encrypt` by @jdx in [#14210](https://github.com/jdx/mise/pull/14210)
+- **(dotfiles)** show unsaved changes in `mise dot status` by @jdx in [#14209](https://github.com/jdx/mise/pull/14209)
+- **(task)** include working-tree changes in --affected and drop the experimental gate by @jdx in [#14214](https://github.com/jdx/mise/pull/14214)
+- **(vars)** ask once and remember [vars] answers per machine with mise vars prompt by @jdx in [#14190](https://github.com/jdx/mise/pull/14190)
+
+### 🐛 Bug Fixes
+
+- **(config)** do not panic for a config file at the filesystem root by @jdx in [#14182](https://github.com/jdx/mise/pull/14182)
+- **(dotfiles)** don't say nothing is configured when history tracks entries by @jdx in [#14206](https://github.com/jdx/mise/pull/14206)
+- **(dotfiles)** stop re-warning about approved plaintext files by @jdx in [#14204](https://github.com/jdx/mise/pull/14204)
+- **(dotfiles)** ask the plaintext question only of a terminal by @jdx in [#14205](https://github.com/jdx/mise/pull/14205)
+- **(dotfiles)** name the checkpoints rollback and undo restore and record by @jdx in [#14207](https://github.com/jdx/mise/pull/14207)
+- **(dotfiles)** don't credit rollback to a checkpoint past a truncated change list by @jdx in [#14211](https://github.com/jdx/mise/pull/14211)
+- **(dotfiles)** list every encrypted file a sync cannot unlock by @jdx in [#14208](https://github.com/jdx/mise/pull/14208)
+- **(dotnet)** validate the SDK being installed, not the active one by @jdx in [#14189](https://github.com/jdx/mise/pull/14189)
+- **(exec)** skip lazy tools that are not installed when resolving after an install by @jdx in [#14197](https://github.com/jdx/mise/pull/14197)
+- **(go)** install tools whose published go.mod is not tidy by @JamBalaya56562 in [#14180](https://github.com/jdx/mise/pull/14180)
+- **(npm)** raise the soft open-file limit at startup by @jdx in [#14174](https://github.com/jdx/mise/pull/14174)
+- **(npm)** build the open-file limit raise on 32-bit targets by @jdx in [#14216](https://github.com/jdx/mise/pull/14216)
+- **(oci)** write a tool with several versions once in the embedded config by @JamBalaya56562 in [#14200](https://github.com/jdx/mise/pull/14200)
+- **(release)** fix Full Changelog base tag and cross-link changelog and release notes by @jdx in [#14199](https://github.com/jdx/mise/pull/14199)
+- **(shim)** skip directories when resolving a tool's bin name by @jdx in [#14193](https://github.com/jdx/mise/pull/14193)
+- **(shim)** skip other missing lazy tools when a lazy tool installs on first use by @jdx in [#14201](https://github.com/jdx/mise/pull/14201)
+- **(upgrade)** skip remote lookups for missing lazy tools during auto_update by @jdx in [#14195](https://github.com/jdx/mise/pull/14195)
+
+### 🚜 Refactor
+
+- **(core)** return the macOS sandbox command as a tail expression by @jovial-liu in [#14184](https://github.com/jdx/mise/pull/14184)
+
+### 🧪 Testing
+
+- **(upgrade)** cover auto_update from system config by @jdx in [#14185](https://github.com/jdx/mise/pull/14185)
+
+### 📦️ Dependency Updates
+
+- update jdx crates to v7 by @renovate[bot] in [#14203](https://github.com/jdx/mise/pull/14203)
+
+### Chore
+
+- **(ci)** lint workflows with jactionlint by @jdx in [#14191](https://github.com/jdx/mise/pull/14191)
+- add OSS Scanner build files by @jdx in [#14212](https://github.com/jdx/mise/pull/14212)
+
+### Ci
+
+- add shared release fix notifications by @jdx in [#14196](https://github.com/jdx/mise/pull/14196)
+
+### New Contributors
+
+- @jovial-liu made their first contribution in [#14184](https://github.com/jdx/mise/pull/14184)
+
+### 📦 Aqua Registry Updates
+
+#### Updated Packages (1)
+
+- [`charmbracelet/crush`](https://github.com/charmbracelet/crush)
+
 ## [2026.10.5](https://github.com/jdx/mise/compare/v2026.10.4..v2026.10.5) - 2026-10-08
 
 ### 🚀 Features
