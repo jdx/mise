@@ -404,6 +404,11 @@ mod tests {
         temp
     }
 
+    /// Resolves with no ambient environment, so CI's own `GITHUB_SHA` and friends cannot leak in.
+    fn local_revisions(sources: AffectedSources) -> WorkspaceGitRevisions {
+        WorkspaceGitRevisions::resolve_with(None, None, sources, |_| None)
+    }
+
     fn paths(names: &[&str]) -> BTreeSet<PathBuf> {
         names.iter().map(PathBuf::from).collect()
     }
@@ -411,7 +416,7 @@ mod tests {
     #[test]
     fn working_tree_changes_join_the_committed_range_by_default() {
         let repo = repo_with_working_tree_changes();
-        let revisions = WorkspaceGitRevisions::resolve(None, None, AffectedSources::default());
+        let revisions = local_revisions(AffectedSources::default());
 
         let changes = revisions.changed_paths(repo.path()).unwrap();
 
@@ -434,15 +439,11 @@ mod tests {
     fn each_source_flag_limits_the_calculation() {
         let repo = repo_with_working_tree_changes();
         let only = |committed, uncommitted, untracked| {
-            WorkspaceGitRevisions::resolve(
-                None,
-                None,
-                AffectedSources {
-                    committed,
-                    uncommitted,
-                    untracked,
-                },
-            )
+            local_revisions(AffectedSources {
+                committed,
+                uncommitted,
+                untracked,
+            })
             .changed_paths(repo.path())
             .unwrap()
         };
@@ -491,15 +492,11 @@ mod tests {
     fn a_lockfile_edit_is_read_from_the_working_tree_only_when_that_source_is_enabled() {
         let repo = repo_with_working_tree_changes();
         let git = Git::new(repo.path());
-        let revisions = WorkspaceGitRevisions::resolve(
-            None,
-            None,
-            AffectedSources {
-                committed: true,
-                untracked: true,
-                ..AffectedSources::default()
-            },
-        );
+        let revisions = local_revisions(AffectedSources {
+            committed: true,
+            untracked: true,
+            ..AffectedSources::default()
+        });
 
         let changes = revisions.changed_paths(repo.path()).unwrap();
 
