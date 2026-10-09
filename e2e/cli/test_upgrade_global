@@ -41,7 +41,8 @@ mise upgrade --global dummy
 assert "mise x -- dummy" "This is Dummy 1.0.0!"
 
 # A project's lockfile, and a version named on the command line, don't reach
-# the project either, and `-C` doesn't bring the command back into it.
+# the project either, and `-C` or `MISE_CD` doesn't bring the command back
+# into it.
 printf '[tools]\ndummy = "1"\n' >"$MISE_CONFIG_DIR/config.toml"
 mise uninstall dummy --all
 mise install dummy@1.0.0
@@ -50,7 +51,7 @@ printf '[tools]\ndummy = "latest"\n' >locked/mise.toml
 mise -C locked lock dummy
 cp locked/mise.lock lock-before
 assert_contains "mise -C locked outdated --global dummy --json" '"latest": "1.1.0"'
-mise -C locked upgrade --global dummy@1.1.0
+MISE_CD=locked mise upgrade --global dummy@1.1.0
 assert "cat locked/mise.lock" "$(cat lock-before)"
 assert "cat locked/mise.toml" '[tools]
 dummy = "latest"'

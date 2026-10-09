@@ -236,6 +236,8 @@ fn global_scope_command<S: AsRef<std::ffi::OsStr>>(args: &[S]) -> Command {
                 .iter()
                 .filter(|(key, _)| !key.starts_with("__MISE_")),
         )
+        // `MISE_CD`, like `--cd`, would put it back in the directory it left.
+        .env_remove("MISE_CD")
         .env(GLOBAL_SCOPE_ENV, "1")
         .env("MISE_ENV", env::mise_env().join(","))
         .current_dir(dirs::HOME.ancestors().last().unwrap_or(*dirs::HOME));
