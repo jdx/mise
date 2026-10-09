@@ -129,3 +129,18 @@ if [ "$due" -lt "$(($(date +%s) + 12 * 3600))" ]; then
   echo "an exact pin kept the prompt schedule short: $due"
   exit 1
 fi
+
+# A pin beside a version that can move does not claim the shared check first.
+export MISE_STATE_DIR="$PWD/state-pin-sibling"
+cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'
+[tools]
+dummy = [{ version = "1.0.0", auto_update = true }, { version = "1", auto_update = true }]
+TOML
+mise uninstall dummy --all
+mise install dummy@1.0.0
+mise hook-env --shell bash --force >/dev/null 2>&1
+for _ in {1..300}; do
+  mise ls --installed dummy | grep -q 1.1.0 && break
+  sleep 0.1
+done
+assert_contains "mise ls --installed dummy" "1.1.0"

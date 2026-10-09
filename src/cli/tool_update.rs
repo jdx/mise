@@ -66,7 +66,11 @@ pub(crate) fn update_in_background(config: &Arc<Config>, ts: &Toolset) {
 }
 
 fn start_due_updates(ts: &Toolset) {
-    for (_, tv) in ts.list_current_versions() {
+    // Versions of one tool share a check marker. Movable ones go first, so a
+    // pin beside them does not claim the check and leave them waiting.
+    let mut versions = ts.list_current_versions();
+    versions.sort_by_key(|(_, tv)| !tool_update::updatable(tv));
+    for (_, tv) in versions {
         if !tool_update::is_due(&tv.request, Updater::Launch) {
             continue;
         }
