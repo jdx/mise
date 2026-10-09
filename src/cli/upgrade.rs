@@ -994,7 +994,7 @@ impl Upgrade {
                 hint!(
                     "upgrade_auto_prune",
                     "old tool versions are kept for {prune_after} before automatic pruning. Disable this for future upgrades with",
-                    "mise settings set upgrade.auto_prune false"
+                    "mise settings upgrade.auto_prune=false"
                 );
             }
 

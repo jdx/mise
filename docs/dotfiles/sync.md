@@ -133,7 +133,7 @@ controls what the watcher does on its own:
 | `fetch-only` | Fetch remote changes. Never publish; apply incoming changes only when you run `mise dot pull`.                                                                                                                                   |
 
 Choose a mode with `--sync manual`, `--sync sync`, or `--sync fetch-only` when
-you connect, or change it later with `mise settings set history.sync manual`.
+you connect, or change it later with `mise settings history.sync=manual`.
 Without `--sync`, `origin set` asks whether to turn on automatic sharing, and
 declining selects `manual`. With `--yes`, it uses the configured mode, which is
 `sync` unless you changed it, so pass `--sync` in scripts.
@@ -253,7 +253,7 @@ shown. `mise doctor` reports whether notifications can be delivered. A missing
 or failing notifier never stops history or sync. To turn notifications off:
 
 ```sh
-mise settings set history.notify false
+mise settings history.notify=false
 ```
 
 ## Identify commits by machine {#identify-commits-by-machine}

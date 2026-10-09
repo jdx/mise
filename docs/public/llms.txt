@@ -158,7 +158,7 @@
 
 - [mise.toml](https://mise.jdx.dev/configuration.html): A project's mise.toml declares the tools, environment variables, and tasks the project needs. mise combines it with your global config and with config files in parent directories.
 - [Config environments](https://mise.jdx.dev/configuration/environments.html): A config environment loads extra config files, such as mise.development.toml or mise.production.toml, on top of mise.toml.
-- [Settings](https://mise.jdx.dev/configuration/settings.html): Settings change how mise itself behaves, such as how many jobs run at once, how downloads are verified and how tasks print output.
+- [Settings](https://mise.jdx.dev/configuration/settings.html): Settings change how mise itself behaves, such as how many jobs run at once, how downloads are verified and how tasks print output. Set them with mise settings or under [settings] in a config file.
 - [Config variables](https://mise.jdx.dev/configuration/vars.html): Define shared values in [vars] and reference them with {{ vars.NAME }} in a Tera template. Use vars for values that mise needs to render config; use [env] for values that commands need as environment…
 - [Tera templates](https://mise.jdx.dev/templates.html): mise renders Tera templates in config values, so a value can come from the project directory, the environment, [vars], or a command's output.
 - [MISE_* variables](https://mise.jdx.dev/configuration/environment-variables.html): Every setting except the write_targets tables also has a MISE_* environment variable, listed in its entry on the Settings page; for example, MISE_JOBS=4 sets jobs.

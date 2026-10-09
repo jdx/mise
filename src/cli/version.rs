@@ -225,6 +225,7 @@ pub(crate) fn show_auto_update_hint() {
     ) == Some(VersionHint::AutoUpdate)
     {
         hint!(
+            always,
             "auto_update",
             "keep mise updated automatically with",
             "mise settings self_update.auto=true"

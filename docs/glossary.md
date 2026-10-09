@@ -179,7 +179,7 @@ defines it. See [Task environment](/tasks/running-tasks.html#task-environment).
 ### Settings {#settings}
 
 Options that control mise itself, set under `[settings]` in a config file, with
-`mise settings set`, or with `MISE_*` environment variables. Some can only be
+`mise settings`, or with `MISE_*` environment variables. Some can only be
 set in global config. See [Settings](/configuration/settings.html).
 
 ### Tera templates {#templates}

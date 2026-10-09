@@ -222,7 +222,7 @@ secret, or an external command. Create a GitHub App with device flow enabled,
 then configure its client ID and authorize once:
 
 ```sh
-mise settings set github.oauth_client_id Iv1.yourgithubappclientid
+mise settings github.oauth_client_id=Iv1.yourgithubappclientid
 mise token github --oauth
 ```
 

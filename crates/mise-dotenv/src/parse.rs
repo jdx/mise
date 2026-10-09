@@ -367,7 +367,8 @@ impl Parser {
                 return Ok(value);
             }
 
-            if character == '\\' {
+            // Single-quoted values are literal, so a backslash cannot escape the closing quote.
+            if character == '\\' && !matches!(style, ValueStyle::SingleQuoted) {
                 escaped = !escaped;
             } else {
                 escaped = false;
@@ -456,7 +457,7 @@ impl Parser {
         while position < raw.len() {
             let character = next_char(raw, position);
 
-            if character == '\\' {
+            if character == '\\' && !matches!(style, ValueStyle::SingleQuoted) {
                 position += character.len_utf8();
                 let Some(escaped) = raw[position..].chars().next() else {
                     output.push('\\');
@@ -835,10 +836,7 @@ fn push_escape(output: &mut String, style: ValueStyle, escaped: char) {
             '\\' | '\'' | '"' | '$' => Some(escaped),
             _ => None,
         },
-        ValueStyle::SingleQuoted => match escaped {
-            '\\' | '\'' => Some(escaped),
-            _ => None,
-        },
+        ValueStyle::SingleQuoted => None,
         ValueStyle::Unquoted => match escaped {
             '\\' | '\'' | '"' | '$' | '#' | ' ' | '\t' => Some(escaped),
             _ => None,
@@ -1294,6 +1292,19 @@ LITERAL=$$FOO_BAR
     fn decodes_all_documented_double_quote_control_escapes() {
         let parsed = parse(r#"VALUE="\a\b\f\r\v""#).unwrap();
         assert_eq!(parsed[0].1, "\u{0007}\u{0008}\u{000c}\r\u{000b}");
+    }
+
+    #[test]
+    fn keeps_backslashes_in_single_quotes_literal() {
+        let parsed = parse(
+            r"UNC='\\fileserver\data\share'
+DIR='C:\temp\'
+NEWLINE='a\nb'",
+        )
+        .unwrap();
+        assert_eq!(parsed[0].1, r"\\fileserver\data\share");
+        assert_eq!(parsed[1].1, r"C:\temp\");
+        assert_eq!(parsed[2].1, r"a\nb");
     }
 
     #[test]

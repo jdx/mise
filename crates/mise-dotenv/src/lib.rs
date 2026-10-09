@@ -733,8 +733,8 @@ mod tests {
     more
     on other
     lines"
-    KEY4='hello \'world\'
-    good morning'
+    KEY4='hello \"world\"
+    good morning\'
     WEAK="{value}"
     STRONG='{value}'
     "#
@@ -753,8 +753,8 @@ mod tests {
         );
         assert_eq!(
             env_map.var("KEY4")?,
-            "hello 'world'
-    good morning"
+            r#"hello \"world\"
+    good morning\"#
         );
         assert_eq!(env_map.var("WEAK")?, weak);
         assert_eq!(env_map.var("STRONG")?, value);

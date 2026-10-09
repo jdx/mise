@@ -719,8 +719,6 @@ fn git_output(path: &Path, args: &[&str]) -> Result<String> {
         .arg(path)
         .arg("-c")
         .arg(safe)
-        .arg("-c")
-        .arg("core.autocrlf=false")
         .args(args)
         .output()
         .map_err(|err| eyre!("git failed: {err:#}"))?;
@@ -742,8 +740,6 @@ fn git_success(path: &Path, args: &[&str]) -> Result<bool> {
         .arg(path)
         .arg("-c")
         .arg(safe)
-        .arg("-c")
-        .arg("core.autocrlf=false")
         .args(args)
         .status()
         .map_err(|err| eyre!("git failed: {err:#}"))?;
@@ -758,8 +754,6 @@ fn git_run(path: &Path, args: &[&str]) -> Result<()> {
             .arg(path)
             .arg("-c")
             .arg(safe)
-            .arg("-c")
-            .arg("core.autocrlf=false")
             .args(args),
     )
 }
@@ -780,8 +774,6 @@ fn print_git_command(path: &Path, args: &[&str]) -> Result<()> {
         path.display().to_string(),
         "-c".to_string(),
         format!("safe.directory={}", path.display()),
-        "-c".to_string(),
-        "core.autocrlf=false".to_string(),
     ];
     parts.extend(args.iter().map(|arg| arg.to_string()));
     miseprintln!("{}", shell_words::join(parts));
@@ -1282,6 +1274,51 @@ mod tests {
             local_ref_sha(&target, "origin/main").unwrap(),
             original_origin_sha
         );
+    }
+
+    #[tokio::test]
+    async fn crlf_checkout_is_not_dirty_with_autocrlf_true() {
+        let tmp = tempfile::tempdir().unwrap();
+        let source = tmp.path().join("source");
+        let target = tmp.path().join("target");
+        init_repo(&source);
+        fs::write(source.join("lines.txt"), "a\nb\n").unwrap();
+        test_git(&source, &["add", "."]);
+        test_git(
+            &source,
+            &[
+                "-c",
+                "user.email=test@example.com",
+                "-c",
+                "user.name=Test User",
+                "commit",
+                "-q",
+                "-m",
+                "lines",
+            ],
+        );
+        let url = format!("file://{}", source.display());
+        // like Git for Windows' default: CRLF in the working tree, LF in the blobs
+        test_git(
+            tmp.path(),
+            &[
+                "-c",
+                "core.autocrlf=true",
+                "clone",
+                "-q",
+                &url,
+                target.to_str().unwrap(),
+            ],
+        );
+        test_git(&target, &["config", "core.autocrlf", "true"]);
+        let request = RepoRequest {
+            path_raw: target.display().to_string(),
+            path: target,
+            url,
+            git_ref: None,
+        };
+        let statuses = status(&[request]).await.unwrap();
+        assert_eq!(statuses[0].state, RepoState::Current);
     }
 
     #[tokio::test]

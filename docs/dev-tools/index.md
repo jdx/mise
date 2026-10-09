@@ -180,6 +180,22 @@ node = { version = "24", auto_update = "6h" }
 python = { version = "3.13", auto_update = false }
 ```
 
+::: tip A 24h delay can mean up to 48h
+Updates respect [`minimum_release_age`](/security.html#minimum-release-age),
+which defaults to `24h` for
+[most backends](/security.html#which-backends-have-a-default). A release becomes
+eligible 24 hours after publishing, and mise only notices it at the next check,
+so an update lands 24 to 48 hours after a release if you launch the tool at
+least once per check interval, and later if you don't.
+:::
+
+To wait longer, set `minimum_release_age` on the tool:
+
+```toml [~/.config/mise/config.toml]
+[tools]
+node = { version = "24", auto_update = "6h", minimum_release_age = "3d" }
+```
+
 - Only global config can turn this on. A project config cannot, and when a
   project sets its own version of the tool, runs in that project do not update
   it.

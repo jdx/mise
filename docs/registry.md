@@ -62,7 +62,7 @@ bundled with its release. If your system package manager ships mise updates
 slowly, you can use current registry data without replacing mise:
 
 ```sh
-mise settings set registry_floating true
+mise settings registry_floating=true
 ```
 
 With [`registry_floating`](/configuration/settings.html#registry_floating) on,

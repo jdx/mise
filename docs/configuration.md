@@ -232,7 +232,7 @@ Global config applies in every directory. It lives in `~/.config/mise`
 ([`MISE_CONFIG_DIR`](/directories.html#config-mise)), normally in `config.toml`.
 The directory can also hold `mise.toml`, `conf.d/` fragments, `config.local.toml`
 for machine-specific values, and environment files such as `config.work.toml`.
-`mise use --global` and `mise settings set` write to it.
+`mise use --global` and `mise settings` write to it.
 
 ```toml [~/.config/mise/config.toml]
 [tools]
@@ -267,7 +267,7 @@ same file names as the global directory, such as `/etc/mise/config.toml`.
 ## Which file mise writes to {#target-file-for-write-operations}
 
 When [`mise use`](/cli/use.html), [`mise set`](/cli/set.html),
-[`mise unset`](/cli/unset.html), `mise settings set --local`, and
+[`mise unset`](/cli/unset.html), `mise settings --local`, and
 [`mise tasks add`](/cli/tasks/add.html) change project config, they write to the
 lowest-precedence file in the nearest directory that has config. Shared config
 is updated by default, and personal and environment files change only when you

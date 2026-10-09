@@ -806,7 +806,7 @@ History reads two tables. `[history]` holds what history saves and where it
 goes, and mise reads it only from your global and system config, never from a
 project. `[settings.history]` holds the [settings](/configuration/settings.html)
 that control the watcher and sync, which you can also set with
-`mise settings set` or environment variables.
+`mise settings` or environment variables.
 
 | Table                      | Keys                                                                                                          | Purpose                                                                                                                                               |
 | -------------------------- | ------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
