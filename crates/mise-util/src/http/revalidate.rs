@@ -53,10 +53,13 @@ impl Cached {
             let _ = file::remove_all(&self.dir);
             return Ok(false);
         }
-        if let Some(parent) = dest.parent() {
-            file::create_dir_all(parent)?;
-        }
-        file::copy(&stored, dest)?;
+        let parent = dest.parent().unwrap_or(Path::new("."));
+        file::create_dir_all(parent)?;
+        // Renamed into place so an interrupted copy never leaves a truncated
+        // file at the destination.
+        let tmp = tempfile::NamedTempFile::new_in(parent)?.into_temp_path();
+        file::copy(&stored, &tmp)?;
+        tmp.persist(dest).map_err(|err| err.error)?;
         // Marks the entry as recently used for eviction.
         if let Ok(f) = std::fs::File::options()
             .write(true)

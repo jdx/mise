@@ -425,7 +425,9 @@ such as Python and Ruby, it covers only the source tarball, not the compiled
 output.
 
 Downloads are different. mise keeps them in a cache and reuses one only when
-the server confirms it is unchanged, or when it hashes to a pinned checksum. See
+the server confirms it is unchanged, or when it hashes to a pinned checksum. A
+pinned checksum is always checked after the download; without one, a cache that
+someone can write to is trusted. See
 [`download_cache`](/configuration/settings.html#download_cache).
 
 So treat a cache of installed files as trusted build input:
