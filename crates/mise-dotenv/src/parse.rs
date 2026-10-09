@@ -327,21 +327,23 @@ impl Parser {
 
     /// Parses a value the way a shell reads a word: adjacent unquoted, single-quoted, and
     /// double-quoted segments are joined and their quotes removed, so `'it'\''s'` is `it's`.
+    ///
+    /// Only a value's opening quote may continue onto later lines. A quote later in the value
+    /// with no partner after it on the same line is a literal character, so `NAME=O'Brien` reads
+    /// as written instead of failing or swallowing the assignments after it.
     fn parse_value(&mut self) -> Result<String, ParseError> {
         let mut value = String::new();
         let mut first_segment = true;
 
         loop {
             match self.peek() {
-                Some('\'') => {
-                    let segment =
-                        self.parse_quoted('\'', ValueStyle::SingleQuoted, first_segment)?;
-                    value.push_str(&segment);
-                }
-                Some('"') => {
-                    let segment =
-                        self.parse_quoted('"', ValueStyle::DoubleQuoted, first_segment)?;
-                    value.push_str(&segment);
+                Some(quote @ ('\'' | '"')) if first_segment || self.quote_closes_on_line(quote) => {
+                    let style = if quote == '\'' {
+                        ValueStyle::SingleQuoted
+                    } else {
+                        ValueStyle::DoubleQuoted
+                    };
+                    value.push_str(&self.parse_quoted(quote, style)?);
                 }
                 _ => {
                     let (segment, ended) = self.parse_unquoted()?;
@@ -355,15 +357,23 @@ impl Parser {
         }
     }
 
-    /// Parses one quoted segment. Only a value's opening segment may continue onto later lines,
-    /// so a stray apostrophe later in a value (`NAME=O'Brien`) is reported on its own line instead
-    /// of swallowing the assignments after it.
-    fn parse_quoted(
-        &mut self,
-        quote: char,
-        style: ValueStyle,
-        may_span_lines: bool,
-    ) -> Result<String, ParseError> {
+    /// Whether the quote at the current position has a closing partner later on the same line.
+    fn quote_closes_on_line(&self, quote: char) -> bool {
+        let mut escaped = false;
+        for character in self.source[self.position + quote.len_utf8()..].chars() {
+            match character {
+                '\n' | '\r' => return false,
+                _ if escaped => escaped = false,
+                // Single-quoted text is literal, so only a double quote can be escaped.
+                '\\' if quote == '"' => escaped = true,
+                _ if character == quote => return true,
+                _ => {}
+            }
+        }
+        false
+    }
+
+    fn parse_quoted(&mut self, quote: char, style: ValueStyle) -> Result<String, ParseError> {
         let quote_position = self.position;
         self.advance();
         let value_start = self.position;
@@ -375,11 +385,6 @@ impl Parser {
             };
 
             if character == '\n' || character == '\r' {
-                if !may_span_lines {
-                    return Err(
-                        self.error(quote_position, ParseErrorKind::UnterminatedQuote(quote))
-                    );
-                }
                 if !self.options.multiline {
                     return Err(self.error(self.position, ParseErrorKind::MultilineDisabled));
                 }
@@ -411,7 +416,8 @@ impl Parser {
         }
     }
 
-    /// Parses an unquoted segment up to the next unescaped quote, comment, or line end. Returns
+    /// Parses an unquoted segment up to the next quote that opens a segment, a comment, or the
+    /// line end. Returns
     /// whether the value ends here; when it does, trailing whitespace is trimmed and the rest of
     /// the line is consumed.
     fn parse_unquoted(&mut self) -> Result<(String, bool), ParseError> {
@@ -456,7 +462,7 @@ impl Parser {
                         self.position = end;
                     }
                 }
-            } else if matches!(character, '\'' | '"') {
+            } else if matches!(character, '\'' | '"') && self.quote_closes_on_line(character) {
                 ended = false;
                 break;
             } else if character == '#' && self.previous().is_some_and(is_horizontal_whitespace) {
@@ -1413,15 +1419,30 @@ JOINED=${MISSING:-it's}'{x}'
     }
 
     #[test]
-    fn only_the_opening_quoted_segment_spans_lines() {
-        let parsed = parse("A='one\ntwo'three\nB=next\n").unwrap();
-        assert_eq!(parsed[0].1, "one\ntwothree");
-        assert_eq!(parsed[1].1, "next");
+    fn a_later_quote_without_a_partner_on_its_line_is_literal() {
+        let parsed = parse(
+            "A='one\ntwo'three\nNAME=O'Brien\nGREETING=it's great # comment\n\
+             MIXED=it's 'quoted'\nPAIRED='a'\"b\nDOUBLE=say \"hi\nOTHER='x'\n",
+        )
+        .unwrap();
+        assert_eq!(
+            parsed,
+            [
+                ("A", "one\ntwothree"),
+                ("NAME", "O'Brien"),
+                ("GREETING", "it's great"),
+                ("MIXED", "its quoted'"),
+                ("PAIRED", "a\"b"),
+                ("DOUBLE", "say \"hi"),
+                ("OTHER", "x"),
+            ]
+            .map(|(key, value)| (key.to_owned(), value.to_owned()))
+        );
 
-        let error = parse("NAME=O'Brien\nOTHER='x'\n").unwrap_err();
+        // A value's opening quote still has to close.
+        let error = parse("NAME='O\nOTHER=x\n").unwrap_err();
         assert_eq!(error.kind(), &ParseErrorKind::UnterminatedQuote('\''));
         assert_eq!(error.line(), 1);
-        assert_eq!(error.column(), 7);
     }
 
     #[test]
