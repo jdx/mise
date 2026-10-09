@@ -6,6 +6,8 @@ echo one >~/.zshrc
 mkdir -p ~/.config/app ~/.config/mise
 echo one >~/.config/app/config.toml
 echo key >~/.config/app/secrets.key
+# with no checkpoint yet there is nothing to compare against
+assert "mise dot status --json | jq -c .history.unsaved" 'null'
 assert_succeed "mise dot track ~/.zshrc ~/.config/app"
 
 # right after a save there is nothing to report, and a credential the
