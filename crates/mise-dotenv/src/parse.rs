@@ -594,46 +594,74 @@ impl Parser {
         Ok(())
     }
 
-    /// Finds the `}` closing a `${` whose contents start at `position`. Braces inside a quoted
-    /// default (`${NAME:-"{}"}`) do not close it; a quote that never closes, as in
-    /// `${NAME:-it's}`, is plain text.
+    /// Finds the `}` closing a `${` whose contents start at `position`: the first one that is
+    /// not escaped, nested, or inside a quoted default word (see [`Self::skip_quoted_default`]).
     fn find_substitution_end(raw: &str, position: usize) -> Option<usize> {
-        Self::scan_substitution_end(raw, position, true)
-            .or_else(|| Self::scan_substitution_end(raw, position, false))
-    }
-
-    fn scan_substitution_end(raw: &str, mut position: usize, honor_quotes: bool) -> Option<usize> {
         let mut depth = 1_usize;
-        let mut quote = None;
+        let mut position = Self::skip_quoted_default(raw, position);
         while position < raw.len() {
-            if quote.is_none() && raw[position..].starts_with("${") {
+            if raw[position..].starts_with("${") {
                 depth += 1;
-                position += 2;
+                position = Self::skip_quoted_default(raw, position + 2);
                 continue;
             }
 
             let character = next_char(raw, position);
-            position += character.len_utf8();
-            match (quote, character) {
-                (Some(open), _) if character == open => quote = None,
-                (Some('\''), _) => {}
-                (_, '\\') => {
-                    if let Some(next) = raw[position..].chars().next() {
-                        position += next.len_utf8();
-                    }
+            if character == '\\' {
+                position += character.len_utf8();
+                if let Some(next) = raw[position..].chars().next() {
+                    position += next.len_utf8();
                 }
-                (Some(_), _) => {}
-                (None, '\'' | '"') if honor_quotes => quote = Some(character),
-                (None, '}') => {
-                    depth -= 1;
-                    if depth == 0 {
-                        return Some(position - '}'.len_utf8());
-                    }
-                }
-                _ => {}
+                continue;
             }
+            if character == '}' {
+                depth -= 1;
+                if depth == 0 {
+                    return Some(position);
+                }
+            }
+            position += character.len_utf8();
         }
         None
+    }
+
+    /// Returns the position after a default word that is one quoted string, as in
+    /// `${NAME:-"{}"}`, so braces inside it do not end the expression. Otherwise returns
+    /// `body_start`: any other quote in an expression is plain text, so the apostrophe in
+    /// `${NAME:-it's}` cannot pair with a quote later on the line.
+    fn skip_quoted_default(raw: &str, body_start: usize) -> usize {
+        let body = &raw[body_start..];
+        if !body.starts_with(is_substitution_start) {
+            return body_start;
+        }
+        let name_end = body
+            .find(|character| !is_substitution_continue(character))
+            .unwrap_or(body.len());
+        let operator = &body[name_end..];
+        let operator = operator.strip_prefix(':').unwrap_or(operator);
+        let Some(word) = operator.strip_prefix(['-', '?', '+']) else {
+            return body_start;
+        };
+        let Some(quote) = word
+            .chars()
+            .next()
+            .filter(|quote| matches!(quote, '\'' | '"'))
+        else {
+            return body_start;
+        };
+
+        let word_start = raw.len() - word.len();
+        let mut escaped = false;
+        for (offset, character) in word.char_indices().skip(1) {
+            if escaped {
+                escaped = false;
+            } else if character == '\\' && quote == '"' {
+                escaped = true;
+            } else if character == quote {
+                return word_start + offset + character.len_utf8();
+            }
+        }
+        body_start
     }
 
     fn evaluate_substitution(
@@ -1366,6 +1394,8 @@ DEFAULT=${MISSING:-"a b"}
 BRACES=${MISSING:-"{}"}x
 SINGLE="${MISSING:-'{a}'}"
 APOSTROPHE=${MISSING:-it's}
+COMMENT=${MISSING:-it's} # it's {json}
+JOINED=${MISSING:-it's}'{x}'
 "#,
             ParseOptions::new().substitution(true),
         )
@@ -1373,11 +1403,13 @@ APOSTROPHE=${MISSING:-it's}
         assert_eq!(parsed[1].1, "$NAME world world ${NAME}");
         // A `${...}` expression is one unit, so the quotes in its default do not split the value.
         assert_eq!(parsed[2].1, r#""a b""#);
-        // Braces inside a quoted default do not close the expression, and a quote that never
-        // closes is plain text.
+        // Braces inside a quoted default do not close the expression.
         assert_eq!(parsed[3].1, r#""{}"x"#);
         assert_eq!(parsed[4].1, "'{a}'");
         assert_eq!(parsed[5].1, "it's");
+        // Other quotes in an expression are plain text, so they cannot pair with a later quote.
+        assert_eq!(parsed[6].1, "it's");
+        assert_eq!(parsed[7].1, "it's{x}");
     }
 
     #[test]
