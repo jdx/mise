@@ -1624,6 +1624,37 @@ pub fn live_tree(repo: &HistoryRepo, tracked: &TrackedSet) -> Result<String> {
     Ok(captured.tree)
 }
 
+/// The tracked paths whose working-tree contents differ from `snapshot`,
+/// spelled the way checkpoints record their changes. `None` when a file
+/// could not be read, since a partial capture would report it as removed.
+/// Like `mise dot history diff`, this reads and hashes every tracked file.
+pub fn unsaved_paths(
+    repo: &HistoryRepo,
+    tracked: &TrackedSet,
+    walk: &super::tracked::Walk,
+    snapshot: &str,
+) -> Result<Option<Vec<String>>> {
+    let recipients = if walk.files.values().any(|(_, policy)| policy.encrypt) {
+        tracked.manifest.recipients.clone()
+    } else {
+        vec![]
+    };
+    // never prompts: a status report does not ask for a passphrase
+    let captured = repo.capture_live(walk, &recipients, false)?;
+    if !captured.omitted.is_empty() {
+        return Ok(None);
+    }
+    let live = without_local(repo, &captured.tree, &tracked.local)?;
+    let saved = without_local(repo, snapshot, &tracked.local)?;
+    Ok(Some(
+        repo.changes(Some(&saved), &live)?
+            .into_iter()
+            .filter(|change| !change.path.starts_with(".mise-history/"))
+            .map(|change| tree_path_to_display(&change.path))
+            .collect(),
+    ))
+}
+
 /// The newest checkpoint whose captured content for `path` differs from the
 /// working tree, if any.
 fn newest_differing(

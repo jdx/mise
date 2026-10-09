@@ -129,7 +129,14 @@ stopped watcher.
 `mise dot status` gives more detail: whether the watcher is running, declared
 but stopped, or not declared, and whether its saves are failing; the latest
 save and full scan; the last failure; and each busy file's save interval, last
-save, and pending edits.
+save, and pending edits. It also lists tracked files that changed since the
+latest checkpoint, which `mise dot save` would record:
+
+```text
+  unsaved changes: 2 path(s) since the latest checkpoint (~/.config/app/added.toml, ~/.zshrc); `mise dot history diff` shows them, `mise dot save` records them.
+```
+
+Finding them reads every tracked file, like `mise dot history diff`.
 
 Both commands also report a watcher service that runs an outdated mise, or
 that watches another store because it uses a different `MISE_STATE_DIR`. Run

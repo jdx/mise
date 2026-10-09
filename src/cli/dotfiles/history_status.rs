@@ -24,6 +24,9 @@ pub(crate) struct HistoryReport {
     pub nested: Vec<crate::system::history::store::PathReason>,
     pub checkpoints: usize,
     pub latest: Option<LatestReport>,
+    /// Tracked paths edited since the latest checkpoint; `None` when they
+    /// could not be determined.
+    pub unsaved: Option<Vec<String>>,
     pub pending_operations: usize,
     pub watcher: super::capture_health::Watcher,
     pub unavailable: Option<String>,
@@ -134,6 +137,7 @@ pub(crate) async fn report() -> Result<HistoryReport> {
             nested: vec![],
             checkpoints: 0,
             latest: None,
+            unsaved: None,
             pending_operations: 0,
             watcher: super::capture_health::Watcher::NotDeclared,
             unavailable: None,
@@ -155,6 +159,26 @@ pub(crate) async fn report() -> Result<HistoryReport> {
         trigger: entry.checkpoint.trigger.as_str().to_string(),
         description: entry.checkpoint.description.clone(),
     });
+    // edits nothing has saved yet, which a stopped watcher or a manual-save
+    // entry leaves behind; worked out like `mise dot history diff`
+    let unsaved = match (
+        store.repo(),
+        entries
+            .iter()
+            .rev()
+            .find_map(|entry| entry.checkpoint.tree.snapshot.as_deref()),
+    ) {
+        (Some(repo), Some(snapshot)) => {
+            match crate::system::history::replay::unsaved_paths(repo, &tracked, &walk, snapshot) {
+                Ok(unsaved) => unsaved,
+                Err(err) => {
+                    debug!("history: could not compare the working tree: {err:#}");
+                    None
+                }
+            }
+        }
+        _ => None,
+    };
     Ok(HistoryReport {
         enabled,
         tracked_entries: tracked.entries.len(),
@@ -164,6 +188,7 @@ pub(crate) async fn report() -> Result<HistoryReport> {
         nested: walk.nested,
         checkpoints: entries.len(),
         latest,
+        unsaved,
         pending_operations,
         watcher: super::capture_health::watcher().await?,
         unavailable: store.unavailable().map(str::to_string),
@@ -201,6 +226,22 @@ pub(crate) fn print(report: &HistoryReport) -> Result<()> {
             latest.description
         ),
         None => miseprintln!("  no checkpoint recorded yet; `mise dot save` records one."),
+    }
+    if let Some(unsaved) = report
+        .unsaved
+        .as_ref()
+        .filter(|unsaved| !unsaved.is_empty())
+    {
+        const SHOWN: usize = 5;
+        let mut listed = unsaved.iter().take(SHOWN).cloned().collect::<Vec<_>>();
+        if unsaved.len() > SHOWN {
+            listed.push(format!("and {} more", unsaved.len() - SHOWN));
+        }
+        miseprintln!(
+            "  unsaved changes: {} path(s) since the latest checkpoint ({}); `mise dot history diff` shows them, `mise dot save` records them.",
+            unsaved.len(),
+            listed.join(", ")
+        );
     }
     if !report.omitted.is_empty() || !report.nested.is_empty() {
         miseprintln!(

@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+# `mise dot status` says when tracked files changed since the latest
+# checkpoint, so unsaved edits are visible without `history diff`.
+require_cmd git
+echo one >~/.zshrc
+mkdir -p ~/.config/app ~/.config/mise
+echo one >~/.config/app/config.toml
+echo key >~/.config/app/secrets.key
+assert_succeed "mise dot track ~/.zshrc ~/.config/app"
+
+# right after a save there is nothing to report, and a credential the
+# guard leaves out is not an unsaved change
+assert_not_contains 'mise dot status' 'unsaved changes'
+assert "mise dot status --json | jq -c .history.unsaved" '[]'
+
+echo two >~/.zshrc
+echo new >~/.config/app/added.toml
+assert_contains 'mise dot status' 'unsaved changes: 2 path(s) since the latest checkpoint (~/.config/app/added.toml, ~/.zshrc)'
+assert "mise dot status --json | jq -c .history.unsaved" '["~/.config/app/added.toml","~/.zshrc"]'
+# status only reports; the edits are still unsaved afterwards
+assert_contains 'mise dot status' 'unsaved changes: 2 path(s)'
+
+assert_succeed 'mise dot save'
+assert_not_contains 'mise dot status' 'unsaved changes'
+
+rm ~/.zshrc
+assert "mise dot status --json | jq -c .history.unsaved" '["~/.zshrc"]'
+
+# an unchanged encrypted file is not reported, and an edited one is
+export MISE_AGE_KEY="AGE-SECRET-KEY-142E7VJ8GUWR94MXDCYQJ7ZTQZRXKQSP9PUJU8HUQJ206QN7QPV4SM5QRL8"
+cat >>"$MISE_CONFIG_DIR/config.toml" <<'TOML'
+[history.encryption]
+recipients = ["age1fuvsfq02qr5ju0nhh3rulrwracymjljlr5j49kres24ltd3fjq0s9z9d8l"]
+TOML
+echo private >~/.private
+assert_succeed 'mise dot track --encrypt ~/.private'
+assert_succeed 'mise dot save'
+assert "mise dot status --json | jq -c .history.unsaved" '[]'
+echo changed >~/.private
+assert "mise dot status --json | jq -c .history.unsaved" '["~/.private"]'
