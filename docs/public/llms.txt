@@ -451,6 +451,10 @@
 - [mise unuse](https://mise.jdx.dev/cli/unuse.html): Remove tool requests from config files and prune unused installations
 - [mise upgrade](https://mise.jdx.dev/cli/upgrade.html): Upgrade outdated tools
 - [mise use](https://mise.jdx.dev/cli/use.html): Install a tool and add it to configuration
+- [mise vars](https://mise.jdx.dev/cli/vars.html): List, set, and ask for config vars
+- [mise vars ls](https://mise.jdx.dev/cli/vars/ls.html): List every var, with the file it comes from
+- [mise vars prompt](https://mise.jdx.dev/cli/vars/prompt.html): Ask for the prompt vars that have no saved answer, or set answers directly
+- [mise vars unset](https://mise.jdx.dev/cli/vars/unset.html): Forget saved answers so they are asked for again
 - [mise version](https://mise.jdx.dev/cli/version.html): Show the version of mise
 - [mise watch](https://mise.jdx.dev/cli/watch.html): Run tasks and rerun them when files change
 - [mise where](https://mise.jdx.dev/cli/where.html): Show the install directory of a tool version

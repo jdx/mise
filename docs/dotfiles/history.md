@@ -273,6 +273,17 @@ newest operation changed, and other files keep their current contents. Both
 rollback and undo create new commits, so earlier versions stay available and
 the restored version can sync to other machines.
 
+Each rollback or undo records two checkpoints: one that holds the state before
+it and one with the result. Its message names both, and names the version it
+restored by the checkpoint that saved it:
+
+```text
+history: rolled back ~/.zshrc to checkpoint 6; recorded as checkpoint 10, with checkpoint 9 holding the state before it
+```
+
+`mise dot history --path ~/.zshrc` lists only the checkpoints that changed the
+file, so it shows 6 and 10 but not 9 unless you had unsaved edits.
+
 To choose a checkpoint, use an ID from `history` or a
 [checkpoint reference](#referring-to-checkpoints):
 
@@ -575,14 +586,17 @@ Without encryption, built-in filename rules leave out `.netrc`, `*.age`,
 
 The rules look at the file's own name, not its contents or the names of its
 parent directories. Both `id_ed25519` and `id_ed25519.pub` match `id_*`, and a
-shell function named `secrets.fish` matches `*secret*`. `mise dot save` and
+shell function named `secrets.fish` matches `*secret*`. Names ending in
+`.example`, `.sample`, or `.template`, such as `secrets.sh.example`, are
+templates and are not left out. `mise dot save` and
 `mise dot track` report what they leave out, `mise dot status` shows omission
 counts, and `mise dot paths` lists each path and its reason. To save a
 credential, [encrypt it](/dotfiles/encryption.html).
 
 When you track a file directly and its name looks like a credential store,
 `mise dot track` asks whether to save it in plaintext. The default answer is
-no, and `--yes` does not approve it. For a noninteractive command, pass
+no, and neither `--yes` nor a piped answer approves it. For a noninteractive
+command, including a script that pipes a file list into `mise dot track`, pass
 `--allow-plaintext`, but only after you check that the file is safe to put in
 Git history and on any connected origin:
 
@@ -591,7 +605,8 @@ mise dot track --allow-plaintext ~/commit-mossy-token.md
 ```
 
 The choice is saved as `allow_plaintext = true` on that file's entry, so later
-saves and your other machines use the same policy. Use
+saves and your other machines use the same policy without asking or warning
+again. `mise dot paths` still lists the file as plaintext. Use
 `mise dot track --encrypt` for a real credential. `--allow-plaintext` can
 approve a file before it exists; if that path later becomes a directory, the
 directory stays tracked and the usual filter applies to its contents.

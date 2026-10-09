@@ -992,6 +992,24 @@ Install a tool and add it to configuration
 \fIAliases: \fRu
 .RE
 .TP
+\fBvars\fR
+List, set, and ask for config vars
+.TP
+\fBvars ls\fR
+List every var, with the file it comes from
+.RS
+\fIAliases: \fRlist
+.RE
+.TP
+\fBvars prompt\fR
+Ask for the prompt vars that have no saved answer, or set answers directly
+.TP
+\fBvars unset\fR
+Forget saved answers so they are asked for again
+.RS
+\fIAliases: \fRrm, remove
+.RE
+.TP
 \fBversion\fR
 Show the version of mise
 .RS
@@ -1476,6 +1494,11 @@ Repeat the flag or separate parts with commas. Cannot be combined with `\-\-skip
 .TP
 \fB\-\-prompt\-secrets\fR
 Prompt securely for missing bootstrap secret inputs
+.TP
+\fB\-\-prompt\-vars\fR
+Ask for `[vars]` entries that declare a `prompt` and have no saved answer
+
+mise saves each answer under `$MISE_STATE_DIR`, not in any config file, and never asks for it again. Without a terminal, a var keeps its default. A `\-\-dry\-run` still saves the answers it asks for.
 .TP
 \fB\-\-skip\fR \fI<PART>\fR
 Skip these parts
@@ -11126,6 +11149,135 @@ Write mise.staging.toml, which mise loads when MISE_ENV=staging
 .PP
 .RS 4
 mise use \-\-env staging node@24
+.RE
+.SH "MISE VARS"
+List, set, and ask for config vars
+
+Like `mise set`: with no arguments, lists every var and where it comes from;
+`mise vars NAME=VALUE` saves a value on this machine and `mise vars NAME`
+prints one. Saved values live in `$MISE_STATE_DIR/vars.toml`, outside every
+config file, and sit above a var's `default` but below any value a config
+file sets. `mise vars prompt` asks for the `[vars]` that declare a `prompt`;
+only it and `mise bootstrap \-\-prompt\-vars` ever ask.
+See https://mise.jdx.dev/configuration/vars.html#prompt
+.PP
+\fBUsage:\fR mise vars [OPTIONS] [<NAME[=VALUE]>] ... [COMMAND]
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-\-no\-header\fR
+Do not print the table header
+.TP
+\fB\-h, \-\-help\fR
+Print help
+\fBArguments:\fR
+.PP
+.TP
+\fB<NAME[=VALUE]>\fR
+Values to save (`NAME=VALUE`) or to print (`NAME`)
+\fBExamples:\fR
+.PP
+Save a value on this machine without asking
+.PP
+.RS 4
+mise vars git_name="Ada Lovelace"
+.RE
+.PP
+Print the saved value of git_name
+.PP
+.RS 4
+mise vars git_name
+.RE
+.PP
+List every var and its source
+.PP
+.RS 4
+mise vars
+.RE
+.SH "MISE VARS LS"
+List every var, with the file it comes from
+
+Lists the `[vars]` of every config file mise loads here, plus the answers
+saved on this machine (source: `$MISE_STATE_DIR/vars.toml`). Values hidden
+with `redact` show as `[redacted]`. A `required` var that is still unset only
+warns here.
+.PP
+\fBUsage:\fR mise vars ls [OPTIONS]
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-\-no\-header\fR
+Do not print the table header
+.TP
+\fB\-h, \-\-help\fR
+Print help
+.SH "MISE VARS PROMPT"
+Ask for the prompt vars that have no saved answer, or set answers directly
+
+Enter accepts the suggested default. Each answer, accepted defaults
+included, is saved and never asked for again; use `mise vars unset` to be
+asked again. With no arguments, asks about every unanswered `prompt` var in
+the config files that apply here. `NAME` asks for only that var;
+`NAME=VALUE` saves the answer without asking, as `mise set` does for an
+env var, so it needs no terminal.
+.PP
+\fBUsage:\fR mise vars prompt [OPTIONS] [<NAME[=VALUE]>] ...
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-h, \-\-help\fR
+Print help
+\fBArguments:\fR
+.PP
+.TP
+\fB<NAME[=VALUE]>\fR
+Vars to ask for (`NAME`) or answers to save (`NAME=VALUE`)
+\fBExamples:\fR
+.PP
+Ask for every unanswered prompt var
+.PP
+.RS 4
+mise vars prompt
+.RE
+.PP
+Ask for git_name only
+.PP
+.RS 4
+mise vars prompt git_name
+.RE
+.PP
+Set the answer for git_name without asking
+.PP
+.RS 4
+mise vars prompt git_name="Ada Lovelace"
+.RE
+.SH "MISE VARS UNSET"
+Forget saved answers so they are asked for again
+
+Edits `$MISE_STATE_DIR/vars.toml`; no config is loaded. The next
+`mise vars prompt` or `mise bootstrap \-\-prompt\-vars` asks again.
+.PP
+\fBUsage:\fR mise vars unset [OPTIONS] [<NAME>] ...
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-h, \-\-help\fR
+Print help
+\fBArguments:\fR
+.PP
+.TP
+\fB<NAME>\fR
+The vars whose answers to forget
+\fBExamples:\fR
+.PP
+Be asked for git_name again
+.PP
+.RS 4
+mise vars unset git_name
 .RE
 .SH "MISE VERSION"
 Show the version of mise

@@ -939,17 +939,20 @@ pub(crate) async fn get_versions_needed_by_tracked_configs(
         use_locked_version,
         offline,
         &HashSet::new(),
+        false,
     )
     .await
 }
 
 /// Like [`get_versions_needed_by_tracked_configs`], but ignores lockfile pins
-/// for the provided config paths.
+/// for the provided config paths. With `defer_missing_lazy`, lazy tools that are
+/// not installed stay unresolved: there is nothing of theirs to keep or remove.
 pub async fn get_versions_needed_by_tracked_configs_excluding_locks(
     config: &Arc<Config>,
     use_locked_version: bool,
     offline: bool,
     exclude_locked_config_paths: &HashSet<PathBuf>,
+    defer_missing_lazy: bool,
 ) -> Result<NeededVersions> {
     let mut needed = NeededVersions::new();
     // `mise prune` should keep versions pinned by lockfiles. `mise upgrade`
@@ -962,6 +965,8 @@ pub async fn get_versions_needed_by_tracked_configs_excluding_locks(
         let opts = ResolveOptions {
             use_locked_version,
             offline,
+            defer_missing_lazy_tools: defer_missing_lazy,
+            defer_missing_lazy_online: defer_missing_lazy,
             ..Default::default()
         };
         if use_locked_version && Settings::get().lockfile_enabled() {

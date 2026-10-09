@@ -420,6 +420,12 @@ impl OperationScope {
             .and_then(|shared| lock_unpoisoned(&shared).before.clone())
     }
 
+    /// The id reserved for this operation's outcome checkpoint.
+    pub(crate) fn outcome_id(&self) -> Option<u64> {
+        self.writer()
+            .map(|shared| lock_unpoisoned(&shared).pending.id)
+    }
+
     pub(crate) fn validate_starting_head(&self, expected: Option<&str>) -> Result<()> {
         let Some(shared) = self.writer() else {
             eyre::bail!("incoming application requires an active recovery operation");
@@ -476,6 +482,12 @@ impl OperationScope {
         self.finish_with_writes(error, summary, true);
     }
 
+    /// [`Self::finish`], saying whether the outcome was recorded. A failure
+    /// to record it is warned about, never returned.
+    pub(crate) fn finish_recorded(self, error: Option<String>, summary: Option<Summary>) -> bool {
+        self.finish_with_writes(error, summary, true)
+    }
+
     /// The failed batch could not be safely recovered. Keep its journal until
     /// recovery succeeds; an ordinary failed command does not imply this.
     pub(crate) fn finish_incomplete(self, error: Option<String>, summary: Option<Summary>) {
@@ -487,13 +499,15 @@ impl OperationScope {
         error: Option<String>,
         summary: Option<Summary>,
         writes_finished: bool,
-    ) {
+    ) -> bool {
         let Some(shared) = self.close() else {
-            return;
+            return false;
         };
         if let Err(err) = lock_unpoisoned(&shared).finish(error, summary, writes_finished) {
             warn!("history: could not finish the operation record: {err:#}");
+            return false;
         }
+        true
     }
 
     /// Ends this scope's hold on the process-wide operation, returning the

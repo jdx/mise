@@ -285,7 +285,10 @@ impl DotfilesStatus {
             }
             miseprintln!("{}", serde_json::to_string_pretty(&out)?);
         } else {
-            if file_rows.is_empty() && edit_rows.is_empty() {
+            // entries tracked through history (on a machine that adopted a
+            // shared setup, say) are reported by the history block below,
+            // so "nothing configured" would read as "nothing tracked"
+            if file_rows.is_empty() && edit_rows.is_empty() && history.tracked_entries == 0 {
                 info!("nothing configured in [dotfiles]");
             }
             if !file_rows.is_empty() {

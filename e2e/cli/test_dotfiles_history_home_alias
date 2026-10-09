@@ -16,3 +16,13 @@ done
 echo two >"$HOME/history-file"
 assert_fail "mise bootstrap dotfiles history diff --path '$HOME/history-file' --exit-code"
 assert_succeed "mise bootstrap dotfiles history diff --path '$HOME/history-link' --exit-code"
+
+# rollback names the checkpoint that saved the version it restores, even
+# when an unrelated later checkpoint holds it and HOME is a link
+assert_succeed "mise bootstrap dotfiles save"
+saved="$(mise bootstrap dotfiles history ls --path "$HOME/history-file" --json | jq -r '.[0].id')"
+echo other >"$HOME/history-other"
+assert_succeed "mise bootstrap dotfiles track '$HOME/history-other'"
+echo three >"$HOME/history-file"
+assert_contains "mise bootstrap dotfiles rollback '$HOME/history-file' --yes 2>&1" "rolled back ~/history-file to checkpoint $saved;"
+assert "cat '$HOME/history-file'" two

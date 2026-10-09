@@ -41,6 +41,11 @@ const CREDENTIAL_GLOBS: &[&str] = &[
     "credentials*",
     "oauth*",
 ];
+/// Suffixes that mark a file as a template for a credential store rather
+/// than the store itself: `secrets.sh.example` is the copy that ships with
+/// placeholder values, so a name rule written for `secrets.sh` must not
+/// claim it.
+const TEMPLATE_SUFFIXES: &[&str] = &[".example", ".sample", ".template"];
 
 pub type Policy = FilePolicy;
 
@@ -826,18 +831,27 @@ impl TrackedSet {
                 return capture_exclusion(path, policy).is_none();
             };
             // rule 4 lives on the entry, so every reader gets the same
-            // answer; a file it lets through is announced, because it
-            // goes into history in plaintext and to any connected origin
+            // answer; a file it lets through is listed in `mise dot paths`,
+            // because it goes into history in plaintext and to any
+            // connected origin
             let Some(reason) = owner.capture_exclusion(path) else {
                 if capture_exclusion(path, policy).is_some() {
+                    let display = display_path(path);
+                    // one an include list swept in is also said out loud on
+                    // every capture: nobody was asked about it. A file the
+                    // user approved by name (`allow_plaintext`) was asked
+                    // about once, so it is not warned about again.
+                    let reason = if owner.selected_by_pattern(path) {
+                        walk.capture_warnings.push(format!(
+                            "{display}: selected by an include list; saved in plaintext; this credential-like file may be shared with an origin; `encrypt = true` saves it encrypted instead"
+                        ));
+                        "selected by an include list; saved in plaintext"
+                    } else {
+                        "explicitly allowed for plaintext tracking"
+                    };
                     walk.plaintext.push(PathReason {
-                        path: display_path(path),
-                        reason: if owner.selected_by_pattern(path) {
-                            "selected by an include list; saved in plaintext"
-                        } else {
-                            "explicitly allowed for plaintext tracking"
-                        }
-                        .into(),
+                        path: display,
+                        reason: reason.into(),
                     });
                 }
                 return true;
@@ -848,15 +862,6 @@ impl TrackedSet {
             });
             false
         });
-        // a credential-named file saved because an entry named it exactly
-        // is worth saying out loud on every capture, not only in
-        // `mise dot paths`: it goes to any connected origin as plaintext
-        for plaintext in &walk.plaintext {
-            walk.capture_warnings.push(format!(
-                "{}: {}; this credential-like file may be shared with an origin; `encrypt = true` saves it encrypted instead",
-                plaintext.path, plaintext.reason
-            ));
-        }
         walk.entries = set.entries.clone();
         let config = normalize(&global_config_dir());
         let mut roots: BTreeMap<String, CaptureRoot> = BTreeMap::new();
@@ -1233,6 +1238,12 @@ pub fn is_builtin_credential(path: &Path, name: &str) -> bool {
     static NAMES: std::sync::LazyLock<GlobSet> = std::sync::LazyLock::new(credential_names);
     static GLOBS: std::sync::LazyLock<GlobSet> =
         std::sync::LazyLock::new(|| glob_set(CREDENTIAL_GLOBS));
+    if TEMPLATE_SUFFIXES
+        .iter()
+        .any(|suffix| name.ends_with(suffix))
+    {
+        return false;
+    }
     GLOBS.is_match(name)
         || (path.starts_with(normalize(&global_config_dir())) && NAMES.is_match(name))
 }
@@ -4466,6 +4477,41 @@ mod tests {
         assert!(walk.files.contains_key(&file));
         assert_eq!(walk.plaintext.len(), 1);
         assert!(set.would_retain(&file).unwrap());
+    }
+
+    /// A credential-named file the user approved by name is asked about
+    /// once, at track time. Every later capture saves it without a
+    /// warning; `mise dot paths` still lists it as plaintext.
+    #[test]
+    fn an_approved_plaintext_file_is_not_warned_about_again() {
+        let tmp = tempfile::tempdir().unwrap();
+        let file = tmp.path().join(".api-token");
+        std::fs::write(&file, "synthetic").unwrap();
+        let mut approved = entry(&file);
+        approved.policy.allow_plaintext = true;
+        let mut set = TrackedSet::default();
+        set.push(approved);
+        let walk = set.walk().unwrap();
+        assert!(walk.files.contains_key(&file));
+        assert_eq!(walk.plaintext.len(), 1);
+        assert!(
+            walk.capture_warnings.is_empty(),
+            "{:?}",
+            walk.capture_warnings
+        );
+    }
+
+    /// A template for a credential store ships placeholder values, so a
+    /// name rule written for the store does not claim it.
+    #[test]
+    fn a_credential_template_is_not_a_credential_store() {
+        let path = Path::new("/nonexistent-mise-test/.config/fish");
+        for name in ["secrets.sh.example", "token.sample", "credentials.template"] {
+            assert!(!is_builtin_credential(&path.join(name), name), "{name}");
+        }
+        for name in ["secrets.sh", "token.example.age", "id_ed25519.pub"] {
+            assert!(is_builtin_credential(&path.join(name), name), "{name}");
+        }
     }
 
     /// A repository inside a tracked directory is skipped whatever the

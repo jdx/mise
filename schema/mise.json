@@ -2748,6 +2748,10 @@
               "default": {
                 "$ref": "#/$defs/env_default"
               },
+              "prompt": {
+                "description": "question to ask once, on a machine with no saved answer, when a command is run with a prompt flag such as mise bootstrap --prompt-vars",
+                "type": "string"
+              },
               "redact": {
                 "$ref": "#/$defs/env_redact"
               }
@@ -2758,6 +2762,10 @@
           {
             "type": "object",
             "properties": {
+              "prompt": {
+                "description": "question to ask once, on a machine with no saved answer, when a command is run with a prompt flag such as mise bootstrap --prompt-vars",
+                "type": "string"
+              },
               "redact": {
                 "$ref": "#/$defs/env_redact"
               },
