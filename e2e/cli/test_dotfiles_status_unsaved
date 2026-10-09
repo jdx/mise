@@ -38,3 +38,23 @@ assert_succeed 'mise dot save'
 assert "mise dot status --json | jq -c .history.unsaved" '[]'
 echo changed >~/.private
 assert "mise dot status --json | jq -c .history.unsaved" '["~/.private"]'
+
+# the encryption cache is only a cache: without it, an unchanged encrypted
+# file encrypts to a new ciphertext and is still not reported
+assert_succeed 'mise dot save'
+rm -f "$MISE_STATE_DIR/history/index/encryption.json"
+assert "mise dot status --json | jq -c .history.unsaved" '[]'
+# nor is it guessed at when this machine cannot decrypt to compare
+rm -f "$MISE_STATE_DIR/history/index/encryption.json"
+assert "MISE_AGE_KEY= mise dot status --json | jq -c .history.unsaved" 'null'
+
+# a tracked file or directory that cannot be read is unknown, not removed
+chmod 000 ~/.config/app/config.toml
+assert "mise dot status --json | jq -c .history.unsaved" 'null'
+chmod 644 ~/.config/app/config.toml
+mkdir -p ~/.config/app/sub
+echo nested >~/.config/app/sub/nested.toml
+assert_succeed 'mise dot save'
+chmod 000 ~/.config/app/sub
+assert "mise dot status --json | jq -c .history.unsaved" 'null'
+chmod 755 ~/.config/app/sub

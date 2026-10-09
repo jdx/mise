@@ -1652,8 +1652,9 @@ pub fn live_tree(repo: &HistoryRepo, tracked: &TrackedSet) -> Result<String> {
 }
 
 /// The tracked paths whose working-tree contents differ from `snapshot`,
-/// spelled the way checkpoints record their changes. `None` when a file
-/// could not be read, since a partial capture would report it as removed.
+/// spelled the way checkpoints record their changes. `None` when the answer
+/// would be a guess: a file could not be read (a partial capture reports it
+/// as removed), or an encrypted file's contents could not be compared.
 /// Like `mise dot history diff`, this reads and hashes every tracked file.
 pub fn unsaved_paths(
     repo: &HistoryRepo,
@@ -1661,6 +1662,15 @@ pub fn unsaved_paths(
     walk: &super::tracked::Walk,
     snapshot: &str,
 ) -> Result<Option<Vec<String>>> {
+    // the walk leaves out a file it cannot read; the guard's intentional
+    // omissions are not read failures
+    if walk
+        .omitted
+        .iter()
+        .any(|omitted| omitted.reason.starts_with("unreadable"))
+    {
+        return Ok(None);
+    }
     let recipients = if walk.files.values().any(|(_, policy)| policy.encrypt) {
         tracked.manifest.recipients.clone()
     } else {
@@ -1673,13 +1683,29 @@ pub fn unsaved_paths(
     }
     let live = without_local(repo, &captured.tree, &tracked.local)?;
     let saved = without_local(repo, snapshot, &tracked.local)?;
-    Ok(Some(
-        repo.changes(Some(&saved), &live)?
-            .into_iter()
-            .filter(|change| !change.path.starts_with(".mise-history/"))
-            .map(|change| tree_path_to_display(&change.path))
-            .collect(),
-    ))
+    let mut encrypted = super::sync::files::encrypted_paths(repo, Some(&saved))?;
+    encrypted.extend(super::sync::files::encrypted_paths(repo, Some(&live))?);
+    let mut unsaved = vec![];
+    for change in repo.changes(Some(&saved), &live)? {
+        if change.path.starts_with(".mise-history/") {
+            continue;
+        }
+        // encrypting unchanged contents again (the encryption cache is only
+        // a cache) gives a new ciphertext, so compare what both decrypt to
+        if change.status == 'M' && encrypted.contains(&change.path) {
+            let decrypted = |tree: &str| -> Option<(String, String)> {
+                let object = repo.object_at(tree, &change.path).ok()??;
+                super::sync::files::decrypt(repo, &change.path, &object, false).ok()
+            };
+            match (decrypted(&saved), decrypted(&live)) {
+                (Some(saved), Some(live)) if saved == live => continue,
+                (Some(_), Some(_)) => {}
+                _ => return Ok(None),
+            }
+        }
+        unsaved.push(tree_path_to_display(&change.path));
+    }
+    Ok(Some(unsaved))
 }
 
 /// The checkpoint that saved the version of `path` that checkpoint `id`
