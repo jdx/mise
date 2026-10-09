@@ -2012,8 +2012,26 @@ targets = ["wasm32-wasip1", " wasm32-wasip1 "]
     async fn config_lock_resolves_tilde_homes_like_the_rust_plugin() {
         let _settings_guard = crate::test::SettingsGuard::lock();
         let _env_guard = ambient_homes_guard();
-        let cargo_home = "~/mise-lock-probe-cargo".to_string();
-        let rustup_home = "~/mise-lock-probe-rustup".to_string();
+        let cargo_home_dir = tempfile::Builder::new()
+            .prefix("mise-lock-probe-cargo-")
+            .tempdir_in(&*dirs::HOME)
+            .unwrap();
+        let rustup_home_dir = tempfile::Builder::new()
+            .prefix("mise-lock-probe-rustup-")
+            .tempdir_in(&*dirs::HOME)
+            .unwrap();
+        let cargo_home = format!(
+            "~/{}",
+            cargo_home_dir.path().file_name().unwrap().to_string_lossy()
+        );
+        let rustup_home = format!(
+            "~/{}",
+            rustup_home_dir
+                .path()
+                .file_name()
+                .unwrap()
+                .to_string_lossy()
+        );
         let mut toolset_env = BTreeMap::new();
         toolset_env.insert("CARGO_HOME".to_string(), cargo_home.clone());
         toolset_env.insert("RUSTUP_HOME".to_string(), rustup_home.clone());
@@ -2030,8 +2048,6 @@ targets = ["wasm32-wasip1", " wasm32-wasip1 "]
             Some(file::replace_path(&rustup_home)),
         );
         assert_plugin_locks_are_covered(&plugin_homes);
-        let _ = std::fs::remove_dir_all(file::replace_path(&cargo_home));
-        let _ = std::fs::remove_dir_all(file::replace_path(&rustup_home));
     }
 
     #[tokio::test]
