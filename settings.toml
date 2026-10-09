@@ -113,30 +113,6 @@ them while debugging a backend or plugin. This is not a download cache; see
 env = "MISE_ALWAYS_KEEP_DOWNLOAD"
 type = "Bool"
 
-[download_cache]
-default = true
-description = "Reuse a finished download when the server says it hasn't changed."
-docs = """
-mise keeps finished downloads in `$MISE_CACHE_DIR/downloads-cache`, with the
-`ETag` or `Last-Modified` value the server sent. The next request for the same
-URL asks the server whether the file changed; on `304 Not Modified` mise uses
-the kept file once it hashes to the recorded value again, so a damaged entry is
-dropped and fetched again. The recorded hash lives beside the file, so this does
-not stop someone who can write the cache from replacing both: pin a checksum,
-which is always checked after the download, if the cache is shared. Servers that
-send no validator are not cached. The cache holds up to 2 GiB; the least
-recently used entries go first.
-
-When an `http` tool pins a checksum, in its options or in `mise.lock`, mise also
-keeps the download in `$MISE_CACHE_DIR/downloads-cas`, named by that checksum,
-and reuses it without asking the server.
-
-Extracted files are not covered; see
-[Restored caches and installed tools](/dev-tools/mise-lock.html#restored-caches).
-"""
-env = "MISE_DOWNLOAD_CACHE"
-type = "Bool"
-
 [always_keep_install]
 description = "Keep a failed installation's partial install directory and downloads, for debugging."
 env = "MISE_ALWAYS_KEEP_INSTALL"
@@ -694,6 +670,30 @@ an installation source to the dotnet CLI.
 """
 env = "MISE_DOTNET_REGISTRY_URL"
 type = "Url"
+
+[download_cache]
+default = true
+description = "Reuse a finished download when the server says it hasn't changed."
+docs = """
+mise keeps finished downloads in `$MISE_CACHE_DIR/downloads-cache`, with the
+`ETag` or `Last-Modified` value the server sent. The next request for the same
+URL asks the server whether the file changed; on `304 Not Modified` mise uses
+the kept file once it hashes to the recorded value again, so a damaged entry is
+dropped and fetched again. The recorded hash lives beside the file, so this does
+not stop someone who can write the cache from replacing both: pin a checksum,
+which is always checked after the download, if the cache is shared. Servers that
+send no validator are not cached. The cache holds up to 2 GiB; the least
+recently used entries go first.
+
+When an `http` tool pins a checksum, in its options or in `mise.lock`, mise also
+keeps the download in `$MISE_CACHE_DIR/downloads-cas`, named by that checksum,
+and reuses it without asking the server.
+
+Extracted files are not covered; see
+[Restored caches and installed tools](/dev-tools/mise-lock.html#restored-caches).
+"""
+env = "MISE_DOWNLOAD_CACHE"
+type = "Bool"
 
 [enable_tools]
 description = "Allowlist of configured tools mise uses; other tools are ignored."

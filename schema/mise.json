@@ -640,11 +640,6 @@
           "description": "Keep downloaded archives and sources after installing, for debugging.",
           "type": "boolean"
         },
-        "download_cache": {
-          "default": true,
-          "description": "Reuse a finished download when the server says it hasn't changed.",
-          "type": "boolean"
-        },
         "always_keep_install": {
           "description": "Keep a failed installation's partial install directory and downloads, for debugging.",
           "type": "boolean"
@@ -912,6 +907,11 @@
               "type": "string"
             }
           }
+        },
+        "download_cache": {
+          "default": true,
+          "description": "Reuse a finished download when the server says it hasn't changed.",
+          "type": "boolean"
         },
         "enable_tools": {
           "description": "Allowlist of configured tools mise uses; other tools are ignored.",
