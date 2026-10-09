@@ -37,31 +37,33 @@ pub struct WorkspaceGitRevisions {
     sources: AffectedSources,
 }
 
-/// Where to read a changed file's new content from.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum ChangedFileSide {
-    Revision(String),
-    WorkingTree,
-}
-
-/// Changed workspace paths plus the two sides to compare when a path needs its contents read.
+/// Changed workspace paths, remembering which source each came from so a path's
+/// before and after content is read from the right side.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct WorkspaceChanges {
     pub paths: BTreeSet<PathBuf>,
-    /// Revision holding the content before the change.
-    pub before: String,
-    pub after: ChangedFileSide,
+    committed: BTreeSet<PathBuf>,
+    working_tree: BTreeSet<PathBuf>,
+    merge_base: Option<String>,
+    head: String,
 }
 
 impl WorkspaceChanges {
+    /// A path changed in the committed range starts at the merge base; any other starts at `HEAD`.
     pub fn file_before(&self, git: &Git, path: &Path) -> Result<Option<String>> {
-        git.file_at_revision(&self.before, path)
+        match (&self.merge_base, self.committed.contains(path)) {
+            (Some(merge_base), true) => git.file_at_revision(merge_base, path),
+            _ => git.file_at_revision(DEFAULT_HEAD, path),
+        }
     }
 
+    /// A path from an uncommitted or untracked source ends in the working tree; a path that only
+    /// changed in the committed range ends at the head revision.
     pub fn file_after(&self, git: &Git, path: &Path) -> Result<Option<String>> {
-        match &self.after {
-            ChangedFileSide::Revision(revision) => git.file_at_revision(revision, path),
-            ChangedFileSide::WorkingTree => git.file_in_worktree(path),
+        if self.working_tree.contains(path) {
+            git.file_in_worktree(path)
+        } else {
+            git.file_at_revision(&self.head, path)
         }
     }
 }
@@ -126,31 +128,27 @@ impl WorkspaceGitRevisions {
             self.sources
         };
 
-        let mut paths = BTreeSet::new();
+        let mut committed = BTreeSet::new();
+        let mut working_tree = BTreeSet::new();
+        let mut merge_base = None;
         if sources.committed {
-            paths.extend(git.changed_paths(&self.base, &self.head)?);
+            committed = git.changed_paths(&self.base, &self.head)?;
+            merge_base = Some(git.merge_base(&self.base, &self.head)?);
         }
         if sources.uncommitted {
-            paths.extend(git.uncommitted_paths()?);
+            working_tree.extend(git.uncommitted_paths()?);
         }
         if sources.untracked {
-            paths.extend(git.untracked_paths()?);
+            working_tree.extend(git.untracked_paths()?);
         }
 
-        let before = if sources.committed {
-            git.merge_base(&self.base, &self.head)?
-        } else {
-            DEFAULT_HEAD.to_string()
-        };
-        let after = if sources.uncommitted || sources.untracked {
-            ChangedFileSide::WorkingTree
-        } else {
-            ChangedFileSide::Revision(self.head.clone())
-        };
+        let paths = committed.union(&working_tree).cloned().collect();
         Ok(WorkspaceChanges {
             paths,
-            before,
-            after,
+            committed,
+            working_tree,
+            merge_base,
+            head: self.head.clone(),
         })
     }
 }
@@ -426,7 +424,10 @@ mod tests {
                 "untracked.txt"
             ])
         );
-        assert_eq!(changes.after, ChangedFileSide::WorkingTree);
+        assert_eq!(
+            changes.working_tree,
+            paths(&["staged.txt", "unstaged.txt", "untracked.txt"])
+        );
     }
 
     #[test]
@@ -448,7 +449,7 @@ mod tests {
 
         let committed = only(true, false, false);
         assert_eq!(committed.paths, paths(&["committed.txt"]));
-        assert_eq!(committed.after, ChangedFileSide::Revision("HEAD".into()));
+        assert!(committed.working_tree.is_empty());
         assert_eq!(
             only(false, true, false).paths,
             paths(&["staged.txt", "unstaged.txt"])
@@ -458,7 +459,7 @@ mod tests {
             only(false, true, true).paths,
             paths(&["staged.txt", "unstaged.txt", "untracked.txt"])
         );
-        assert_eq!(only(false, true, true).before, "HEAD");
+        assert!(only(false, true, true).committed.is_empty());
     }
 
     #[test]
@@ -473,7 +474,7 @@ mod tests {
         let changes = revisions.changed_paths(repo.path()).unwrap();
 
         assert_eq!(changes.paths, paths(&[]));
-        assert_eq!(changes.after, ChangedFileSide::Revision("HEAD~1".into()));
+        assert!(changes.working_tree.is_empty());
 
         let explicit = WorkspaceGitRevisions::resolve(
             Some("HEAD~1"),
@@ -484,5 +485,53 @@ mod tests {
             },
         );
         assert!(explicit.changed_paths(repo.path()).is_err());
+    }
+
+    #[test]
+    fn a_lockfile_edit_is_read_from_the_working_tree_only_when_that_source_is_enabled() {
+        let repo = repo_with_working_tree_changes();
+        let git = Git::new(repo.path());
+        let revisions = WorkspaceGitRevisions::resolve(
+            None,
+            None,
+            AffectedSources {
+                committed: true,
+                untracked: true,
+                ..AffectedSources::default()
+            },
+        );
+
+        let changes = revisions.changed_paths(repo.path()).unwrap();
+
+        // Edited in the working tree but not selected: still reads the committed content.
+        assert_eq!(changes.paths, paths(&["committed.txt", "untracked.txt"]));
+        assert!(!changes.paths.contains(Path::new("unstaged.txt")));
+        assert_eq!(
+            changes
+                .file_after(&git, Path::new("unstaged.txt"))
+                .unwrap()
+                .as_deref(),
+            Some("0\n")
+        );
+        assert_eq!(
+            changes
+                .file_after(&git, Path::new("untracked.txt"))
+                .unwrap()
+                .as_deref(),
+            Some("1\n")
+        );
+        assert_eq!(
+            changes
+                .file_before(&git, Path::new("committed.txt"))
+                .unwrap()
+                .as_deref(),
+            Some("0\n")
+        );
+        assert_eq!(
+            changes
+                .file_before(&git, Path::new("untracked.txt"))
+                .unwrap(),
+            None
+        );
     }
 }

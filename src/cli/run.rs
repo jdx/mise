@@ -114,8 +114,8 @@ pub(crate) struct Run {
     /// Run matching tasks only in projects affected by Git changes
     ///
     /// Counts committed changes between the base and head revisions, plus staged,
-    /// unstaged, and untracked changes in the working tree. Requires a monorepo
-    /// root (`monorepo_root = true`).
+    /// unstaged, and untracked changes in the working tree when the head revision
+    /// is the checked-out commit. Requires a monorepo root (`monorepo_root = true`).
     #[usage(long)]
     pub affected: bool,
 
@@ -128,7 +128,8 @@ pub(crate) struct Run {
     /// Count committed changes between the base and head revisions
     ///
     /// Alone, ignores the working tree. Combines with `--affected-uncommitted`
-    /// and `--affected-untracked`. With none of the three, every source counts.
+    /// and `--affected-untracked`. With none of the three, every source counts (the working-tree sources only
+    /// when the head revision is the checked-out commit).
     /// Also set by `MISE_AFFECTED_COMMITTED`.
     #[usage(long, requires = "affected")]
     pub affected_committed: bool,

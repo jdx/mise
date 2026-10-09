@@ -29,13 +29,13 @@ To create a script task, run `mise tasks add --file hello -- echo hello`, then `
 ## Flags
 - **`--affected`** — Run matching tasks only in projects affected by Git changes
 
-  Counts committed changes between the base and head revisions, plus staged, unstaged, and untracked changes in the working tree. Requires a monorepo root (`monorepo_root = true`).
+  Counts committed changes between the base and head revisions, plus staged, unstaged, and untracked changes in the working tree when the head revision is the checked-out commit. Requires a monorepo root (`monorepo_root = true`).
 - **`--affected-base <REV>`** — Git base revision for `--affected`
 
   Defaults to `MISE_AFFECTED_BASE`, CI metadata, or `HEAD~1`.
 - **`--affected-committed`** — Count committed changes between the base and head revisions
 
-  Alone, ignores the working tree. Combines with `--affected-uncommitted` and `--affected-untracked`. With none of the three, every source counts. Also set by `MISE_AFFECTED_COMMITTED`.
+  Alone, ignores the working tree. Combines with `--affected-uncommitted` and `--affected-untracked`. With none of the three, every source counts (the working-tree sources only when the head revision is the checked-out commit). Also set by `MISE_AFFECTED_COMMITTED`.
 - **`--affected-explain`** — Explain why `--affected` selected each project and task
 - **`--affected-head <REV>`** — Git head revision for `--affected`
 
