@@ -4,7 +4,9 @@ name: notify-release-failure
 # failure is silent: the release exists but the artifact, package, or docs it
 # was supposed to publish quietly never ships. Email on failure instead of
 # waiting for a user to report it.
-on: # zizmor: ignore[dangerous-triggers] no permissions, no checkout, and it only fires for release-triggered runs
+# no permissions, no checkout, and it only fires for release-triggered runs
+# jactionlint ignore=dangerous-triggers
+on:
   workflow_run:
     workflows:
       - cloudflare-deploy
@@ -18,6 +20,10 @@ on: # zizmor: ignore[dangerous-triggers] no permissions, no checkout, and it onl
       - snapcraft-publish
       - winget
     types: [completed]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.workflow_run.id }}
+  cancel-in-progress: false
 
 permissions: {}
 

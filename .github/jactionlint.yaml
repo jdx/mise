@@ -12,3 +12,33 @@ paths:
   .github/workflows/test-impl.yml:
     ignore:
       - "shellcheck reported issue in this script: SC2016:.+"
+
+# Findings that are accepted on purpose. Each entry is scoped to a file (and job or
+# action) and says why, so it keeps working when Renovate bumps a pinned ref.
+ignores:
+  # xtasks/release-plz pushes the release tags with `git push`, using the credential
+  # that this checkout (with MISE_GH_TOKEN) leaves in the git config.
+  - rule: artipacked
+    file: .github/workflows/release-plz.yml
+    job: release-plz
+    reason: the release-plz task pushes tags with the persisted checkout credential
+
+  # The jdx/mise repo installs mise with its own installer from mise.run. The
+  # packaging and deploy jobs below have no mise yet and run only on releases.
+  - rule: unverified-download
+    file: .github/workflows/{cloudflare-deploy,npm-publish,ppa-publish}.yml
+    reason: installs the latest mise release with the project's own installer (mise.run)
+
+  # The copr builder image is rebuilt from packaging/copr/Dockerfile by docker.yml.
+  # Renovate is told not to pin it (see .github/renovate.json) because a digest goes
+  # stale on every rebuild.
+  - rule: unpinned-images
+    file: .github/workflows/copr-publish.yml
+    reason: first-party packaging image that is rebuilt on every Dockerfile change; a digest would go stale
+
+  # test.yml runs for pushed v* tags, and the cache step of this action is reachable
+  # from there. Those runs only test: nothing they restore or save ends up in a
+  # release artifact, because release.yml builds without any cache.
+  - rule: cache-poisoning
+    file: .github/actions/mise-tools/action.yml
+    reason: the tag runs of test.yml publish nothing; release builds use no cache

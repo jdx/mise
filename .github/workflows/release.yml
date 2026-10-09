@@ -19,6 +19,9 @@ on:
         required: false
         default: ""
 
+permissions:
+  contents: read
+
 concurrency:
   group: release-${{ inputs.finish_draft_tag || github.ref_name }}
   # A dry run for a superseded release PR head can never satisfy auto-merge,
@@ -118,6 +121,8 @@ jobs:
             target: armv7-unknown-linux-musleabi
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
       - name: Install cross
         uses: taiki-e/install-action@51cd0b8c0499559d9a4d75c0f5c67bec3a894ec8 # v2
         with:
@@ -175,6 +180,8 @@ jobs:
           p12-file-base64: ${{ secrets.APPLE_DEVELOPER_ID_APPLICATION_CERTS_P12 }}
           p12-password: ${{ secrets.APPLE_DEVELOPER_ID_APPLICATION_CERTS_P12_PASS }}
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
       - name: Setup Rust toolchain
         run: rustup toolchain install stable --profile minimal --target ${{matrix.target}}
       - name: Install llvm-tools (PGO)
@@ -312,6 +319,8 @@ jobs:
             runner: windows-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
       - run: rustup target add ${{matrix.target}}
       - run: scripts/build-tarball.ps1 ${{matrix.target}}
         env:
@@ -339,6 +348,8 @@ jobs:
         tranche: [0, 1, 2, 3, 4, 5, 6, 7]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
       - name: Install zsh/fish/fd
         run: sudo apt-get update; sudo apt-get install zsh fish fd-find liblzma-dev libbz2-dev
       - name: Install fd-find
@@ -375,6 +386,8 @@ jobs:
     container: ghcr.io/jdx/mise:rpm@sha256:65f2d1c7143fcf67752ce9a87c413eb67b73f260e6465b2bbbcaae884fa6c85a
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
       - uses: crazy-max/ghaction-import-gpg@2dc316deee8e90f13e1a351ab510b4d5bc0c82cd # v7
         with:
           gpg_private_key: ${{ secrets.MISE_GPG_KEY }}
@@ -400,6 +413,8 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
       - uses: crazy-max/ghaction-import-gpg@2dc316deee8e90f13e1a351ab510b4d5bc0c82cd # v7
         with:
           gpg_private_key: ${{ secrets.MISE_GPG_KEY }}
@@ -475,11 +490,13 @@ jobs:
           fi
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
+          persist-credentials: false
           fetch-depth: 0
       - name: Check for existing release
         id: check-release
         if: startsWith(github.ref, 'refs/tags/v') && inputs.force != true
         run: |
+          set -o pipefail
           VERSION="$(./scripts/get-version.sh)"
           RELEASE="$(gh api --paginate "repos/${{ github.repository }}/releases?per_page=100" |
             jq -s -c --arg version "$VERSION" '[.[][] | select(.tag_name == $version)][0] // {}')"
@@ -544,6 +561,7 @@ jobs:
       - name: Generate release notes
         if: startsWith(github.ref, 'refs/tags/v') && steps.check-release.outputs.exists != 'true'
         run: |
+          set -o pipefail
           VERSION="$(./scripts/get-version.sh)"
           if mise x -- communique generate "$VERSION" --tag-pattern 'v[0-9]*' -o /tmp/release-notes.txt; then
             TITLE="$(head -1 /tmp/release-notes.txt | sed 's/^#* //' | sed "s/^$VERSION: //")"
@@ -579,6 +597,7 @@ jobs:
         id: create-release
         if: startsWith(github.ref, 'refs/tags/v') && steps.check-release.outputs.exists != 'true'
         run: |
+          set -o pipefail
           VERSION="$(./scripts/get-version.sh)"
           if [[ "$EXISTING_DRAFT" == "true" ]]; then
             gh release upload "$VERSION" --clobber "releases/$VERSION"/*
@@ -616,6 +635,7 @@ jobs:
     needs: release
     if: ${{ !cancelled() && needs.release.result == 'success' && needs.release.outputs.created == 'true' }}
     runs-on: ubuntu-24.04
+    timeout-minutes: 15
     permissions:
       attestations: write
       contents: read
@@ -648,6 +668,7 @@ jobs:
       - attest-release
     if: ${{ !cancelled() && needs.release.result == 'success' && needs.attest-release.result == 'success' && needs.release.outputs.created == 'true' }}
     runs-on: ubuntu-24.04
+    timeout-minutes: 15
     permissions:
       contents: write
       id-token: write
@@ -733,6 +754,7 @@ jobs:
       - packslip
     if: ${{ !cancelled() && needs.release.result == 'success' && needs.attest-release.result == 'success' && needs.packslip.result == 'success' && needs.release.outputs.created == 'true' }}
     runs-on: ubuntu-24.04
+    timeout-minutes: 30
     permissions:
       contents: write
     steps:
@@ -748,6 +770,7 @@ jobs:
           path: release-assets
       - name: Verify and publish GitHub Release
         run: |
+          set -o pipefail
           (cd release-assets && sha256sum ./* | sort) > /tmp/expected-assets
           gh api "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID" \
             --jq '.assets[] | select(.digest | startswith("sha256:")) | "\(.digest[7:])  ./\(.name)"' \
@@ -776,6 +799,7 @@ jobs:
         env:
           TAG: ${{ needs.gate.outputs.finish-draft-tag }}
         run: |
+          set -o pipefail
           RELEASE="$(gh api --paginate "repos/${{ github.repository }}/releases?per_page=100" |
             jq -s -c --arg tag "$TAG" '[.[][] | select(.tag_name == $tag)][0] // empty')"
           if [[ -z "$RELEASE" || "$RELEASE" == "null" ]]; then
@@ -798,6 +822,7 @@ jobs:
     needs: [gate, finish-draft-resolve]
     if: ${{ !cancelled() && needs.gate.outputs.finish-draft == 'true' && needs.finish-draft-resolve.result == 'success' }}
     runs-on: ubuntu-24.04
+    timeout-minutes: 15
     permissions:
       attestations: write
       contents: read
@@ -828,6 +853,7 @@ jobs:
     needs: [gate, finish-draft-resolve, finish-draft-attest]
     if: ${{ !cancelled() && needs.gate.outputs.finish-draft == 'true' && needs.finish-draft-attest.result == 'success' }}
     runs-on: ubuntu-24.04
+    timeout-minutes: 15
     permissions:
       contents: write
       id-token: write
@@ -896,6 +922,7 @@ jobs:
       [gate, finish-draft-resolve, finish-draft-attest, finish-draft-packslip]
     if: ${{ !cancelled() && needs.gate.outputs.finish-draft == 'true' && needs.finish-draft-packslip.result == 'success' }}
     runs-on: ubuntu-24.04
+    timeout-minutes: 30
     permissions:
       contents: write
     steps:
@@ -911,6 +938,7 @@ jobs:
           path: release-assets
       - name: Verify and publish GitHub Release
         run: |
+          set -o pipefail
           (cd release-assets && sha256sum ./* | sort) > /tmp/expected-assets
           gh api "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID" \
             --jq '.assets[] | select(.digest | startswith("sha256:")) | "\(.digest[7:])  ./\(.name)"' \

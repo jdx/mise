@@ -28,9 +28,8 @@ on:
 # while and is kept only when its job finishes (a cancelled job's writes to
 # the Namespace cache volume are discarded), so a newer run waits for it, and
 # only the newest waiting run is kept.
-concurrency:
-  group: docs-${{ inputs.deploy && 'deploy-release' || format('validation-{0}', github.head_ref || github.ref) }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+permissions:
+  contents: read
 
 env:
   MBX_DISABLE: "1"
@@ -192,6 +191,7 @@ jobs:
     # (without one if it has none).
     if: ${{ always() && !cancelled() && github.repository == 'jdx/mise' }}
     runs-on: ${{ !inputs.trusted && 'ubuntu-latest' || 'namespace-profile-endev-linux-amd64;overrides.cache-tag=cache' }}
+    timeout-minutes: 30
     env:
       GITHUB_TOKEN: ${{ secrets.MISE_GH_TOKEN || secrets.GITHUB_TOKEN }}
     steps:

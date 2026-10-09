@@ -41,6 +41,7 @@ jobs:
       (github.event_name == 'release' && !github.event.release.prerelease) ||
       (github.event_name == 'workflow_dispatch' && inputs.tag != '')
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     # Serialize publishes per flavor so two releases cannot interleave their
     # tag updates; the floating-tag check below handles ordering.
     concurrency:
@@ -63,6 +64,8 @@ jobs:
             floating_tag: debian
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
       - name: Resolve release tag
         id: release
         env:
@@ -179,6 +182,7 @@ jobs:
           IMAGE: ghcr.io/jdx/mise:${{ steps.release.outputs.version }}${{ matrix.tag_suffix }}
           VERSION: ${{ steps.release.outputs.version }}
         run: |
+          set -o pipefail
           docker buildx imagetools inspect "$IMAGE"
           docker run --rm --entrypoint /usr/local/bin/mise "$IMAGE" --version | tee /dev/stderr | grep -F "$VERSION"
 
@@ -197,12 +201,15 @@ jobs:
           - rpm
           - copr
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     permissions:
       contents: read
       packages: write
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
       - name: Log in to the Container registry
         uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4
         with:
@@ -228,6 +235,10 @@ jobs:
       github.event_name == 'push' ||
       (github.event_name == 'workflow_dispatch' && inputs.tag == '')
     runs-on: ${{ matrix.platform.os }}
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      packages: write
     strategy:
       fail-fast: false
       matrix:
@@ -241,6 +252,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
+          persist-credentials: false
           fetch-depth: 0
       - name: Prepare
         run: |
@@ -266,6 +278,9 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
+        with:
+          # The workflow runs on release events; keep a restored cache out of published images.
+          cache-binary: false
       - name: Build and push by digest
         id: build
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
@@ -287,6 +302,10 @@ jobs:
           retention-days: 1
   merge:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      packages: write
     needs: [dockerhub]
     steps:
       - name: Download digests
@@ -308,6 +327,9 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
+        with:
+          # The workflow runs on release events; keep a restored cache out of published images.
+          cache-binary: false
       - name: Create the dev manifest list and push
         working-directory: ${{ runner.temp }}/digests
         run: |

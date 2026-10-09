@@ -13,7 +13,9 @@ name: perf-pr
 # main contributes to the history — a branch's numbers are not the trunk's, and
 # a series that mixes them cannot be read.
 
-on: # zizmor: ignore[dangerous-triggers] validates live PR metadata before any self-hosted job
+# validates live PR metadata before any self-hosted job
+# jactionlint ignore=dangerous-triggers
+on:
   workflow_run:
     workflows: [perf-pr-preflight]
     types: [completed]
@@ -35,6 +37,7 @@ env:
 jobs:
   authorize:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     outputs:
       authorized: ${{ steps.pr.outputs.authorized }}
       base_ref: ${{ steps.pr.outputs.base_ref }}
@@ -222,6 +225,7 @@ jobs:
           GH_mise: ${{ github.repository }}
           PR_NUMBER: ${{ needs.authorize.outputs.pr_number }}
         run: |
+          set -o pipefail
           marker='<!-- mise-perf-pr -->'
           read -r head_sha base_sha < /tmp/tak-out/shas
           # The backticks below are markdown, not command substitution, and
@@ -259,6 +263,7 @@ jobs:
           HEAD_SHA: ${{ needs.authorize.outputs.head_sha }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
+          set -o pipefail
           status=$(cat /tmp/tak-out/status 2>/dev/null || echo 2)
           if [ "$status" -eq 0 ]; then
             conclusion=success

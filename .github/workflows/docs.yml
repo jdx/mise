@@ -35,6 +35,12 @@ on:
         type: boolean
         default: false
 
+# Held by the caller, which only calls docs-impl.yml: a group set inside the
+# called workflow would use this workflow's name too and wait for this run.
+concurrency:
+  group: docs-${{ ((github.event_name == 'release' && startsWith(github.event.release.tag_name, 'v') && !github.event.release.prerelease) || (github.event_name == 'workflow_dispatch' && inputs.deploy && github.ref == 'refs/heads/main')) && 'deploy-release' || format('validation-{0}', github.head_ref || github.ref) }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 permissions: {}
 
 jobs:

@@ -16,6 +16,13 @@ on:
         default: false
         type: boolean
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.release.tag_name || github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
 env:
   PACKAGE_NAME: mise
 
@@ -30,6 +37,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
+          persist-credentials: false
           fetch-depth: 0
 
       - name: Set up environment variables
@@ -42,6 +50,7 @@ jobs:
           COPR_OWNER_INPUT: ${{ vars.COPR_OWNER || 'jdxcode' }}
           COPR_PROJECT_INPUT: ${{ vars.COPR_PROJECT || 'mise' }}
         run: |
+          set -o pipefail
           VERSION=$(./scripts/get-version.sh | sed 's/^v//')
 
           {
