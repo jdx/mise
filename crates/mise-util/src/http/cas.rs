@@ -183,10 +183,15 @@ impl Hit {
         };
         if !intact {
             let _ = file::remove_file(&self.entry);
-            if matches!(self.verify, Verify::Blake3(_))
-                && let Some(dir) = self.blob.parent()
-            {
-                let _ = file::remove_all(dir);
+            // A blob that doesn't hash to its own name is damaged, whichever
+            // index led here. One that does merely isn't what the pin names.
+            if let Some(dir) = self.blob.parent() {
+                let name = dir.file_name().map(|n| n.to_string_lossy().to_string());
+                let damaged = crate::hash::file_hash_blake3(&self.blob, None)
+                    .is_ok_and(|hash| Some(hash) != name);
+                if damaged {
+                    let _ = file::remove_all(dir);
+                }
             }
             return None;
         }
@@ -216,9 +221,13 @@ pub(super) fn place(blob: &Path, dest: &Path, link: bool) -> Result<()> {
     } else {
         file::copy(blob, &staged)?;
     }
-    std::fs::rename(&staged, dest).map_err(|err| {
-        eyre::Report::new(err).wrap_err(format!("failed to place {}", dest.display()))
-    })?;
+    // `persist` replaces an existing file on Windows too, where a plain rename
+    // does not.
+    tempfile::TempPath::try_from_path(&staged)?
+        .persist(dest)
+        .map_err(|err| {
+            eyre::Report::new(err.error).wrap_err(format!("failed to place {}", dest.display()))
+        })?;
     Ok(())
 }
 
@@ -272,7 +281,15 @@ fn keep_file(path: &Path, keep: Keep<'_>, move_in: bool) -> Result<Option<PathBu
     let name = path.file_name().expect("downloads have a file name");
     let blake3 = crate::hash::file_hash_blake3(path, None)?;
     let dir = blob_dir(&root, &blake3);
-    let existing = blob_file(&dir);
+    // An existing blob is reused only while it still hashes to its own name;
+    // otherwise it is replaced by the file just downloaded.
+    let existing = blob_file(&dir).filter(|existing| {
+        let intact = crate::hash::file_hash_blake3(existing, None).is_ok_and(|h| h == blake3);
+        if !intact {
+            let _ = file::remove_all(&dir);
+        }
+        intact
+    });
     let blob = match existing {
         Some(blob) => {
             if move_in {

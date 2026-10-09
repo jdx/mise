@@ -716,3 +716,58 @@ async fn test_download_linked_shares_one_stored_file() {
 
     *cas::TEST_ROOT.lock().unwrap() = None;
 }
+
+#[tokio::test(flavor = "current_thread")]
+async fn test_download_replaces_a_damaged_stored_file() {
+    let _settings = set_test_http_retries(0);
+    let cache = tempfile::tempdir().unwrap();
+    *cas::TEST_ROOT.lock().unwrap() = Some(cache.path().to_path_buf());
+    let (port, count) = spawn_canned_server(vec![
+        cacheable_download_response(),
+        cacheable_download_response(),
+    ])
+    .await;
+    let url = format!("http://127.0.0.1:{port}/artifact.bin");
+    let client = Client::new(Duration::from_secs(2), ClientKind::Http).unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let dest = dir.path().join("artifact.bin");
+    let hello = dir.path().join("hello");
+    std::fs::write(&hello, b"hello").unwrap();
+    let pin = format!(
+        "sha256:{}",
+        crate::hash::file_hash_prog::<sha2::Sha256>(&hello, None).unwrap()
+    );
+
+    client
+        .download_file_linked(&url, &dest, &HeaderMap::new(), Some(&pin), None)
+        .await
+        .unwrap();
+
+    // Damage the stored file in place. The next download must not install it,
+    // and must leave a good copy behind rather than the damaged one.
+    let blob = stored_blob(cache.path());
+    std::fs::write(&blob, b"tampered").unwrap();
+    std::fs::remove_file(&dest).unwrap();
+    client
+        .download_file_linked(&url, &dest, &HeaderMap::new(), Some(&pin), None)
+        .await
+        .unwrap();
+    assert_eq!(std::fs::read(&dest).unwrap(), b"hello");
+    assert_eq!(count.load(std::sync::atomic::Ordering::SeqCst), 2);
+    assert_eq!(std::fs::read(stored_blob(cache.path())).unwrap(), b"hello");
+
+    // Replacing a destination that already exists works too.
+    // Replace it with a new file: writing through the link would change the
+    // stored file itself.
+    std::fs::remove_file(&dest).unwrap();
+    std::fs::write(&dest, b"stale").unwrap();
+    let (port, _) = spawn_canned_server(vec![]).await;
+    let other = format!("http://127.0.0.1:{port}/artifact.bin");
+    client
+        .download_file_linked(&other, &dest, &HeaderMap::new(), Some(&pin), None)
+        .await
+        .unwrap();
+    assert_eq!(std::fs::read(&dest).unwrap(), b"hello");
+
+    *cas::TEST_ROOT.lock().unwrap() = None;
+}
