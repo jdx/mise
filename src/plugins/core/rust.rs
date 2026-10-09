@@ -976,30 +976,13 @@ fn rust_state_lock_identities(rustup_home: &Path, cargo_home: &Path) -> Vec<Path
 /// Serializes rustup state changes for the homes `config` resolves to. Callers that spawn
 /// `cargo` (which may run rustup itself) must hold this so they don't race the rust plugin.
 pub(crate) async fn lock_rust_state_for_config(
+    config_env: &IndexMap<String, String>,
     toolset_env: &BTreeMap<String, String>,
     install_env: &IndexMap<String, crate::config::env_directive::EnvValue>,
 ) -> Result<Vec<fslock::LockFile>> {
-    // The homes the rust plugin locks, with the same tiering `RustHomes::resolve` applies:
-    // `[env]`-style overrides (the toolset env) form the config tier, settings stay
-    // configured, and the process env is the ambient tier. `install_env` belongs to this
-    // tool only, so the plugin never sees it.
-    let config_env: IndexMap<String, String> = [
-        "CARGO_HOME",
-        "MISE_CARGO_HOME",
-        "RUSTUP_HOME",
-        "MISE_RUSTUP_HOME",
-    ]
-    .into_iter()
-    .filter_map(|key| Some((key.to_string(), toolset_env.get(key)?.clone())))
-    .collect();
-    let settings = Settings::get();
-    let plugin_homes = RustHomes::from_sources(
-        &config_env,
-        settings.rust.cargo_home.clone(),
-        env::var_path("CARGO_HOME"),
-        settings.rust.rustup_home.clone(),
-        env::var_path("RUSTUP_HOME"),
-    );
+    // The homes the rust plugin locks. `install_env` belongs to this tool only, and other
+    // tools' exec env never reaches `RustHomes::resolve`, so neither affects them.
+    let plugin_homes = RustHomes::from_config_env(config_env);
 
     // The homes the spawned `cargo` uses: it inherits the process env, then the toolset
     // env and `install_env` override it. Cargo only reads CARGO_HOME/RUSTUP_HOME.
@@ -1065,15 +1048,18 @@ struct RustHomes {
 
 impl RustHomes {
     async fn resolve(config: &Arc<Config>) -> Result<Self> {
-        let config_env = config.env().await?;
+        Ok(Self::from_config_env(&config.env().await?))
+    }
+
+    fn from_config_env(config_env: &IndexMap<String, String>) -> Self {
         let settings = Settings::get();
-        Ok(Self::from_sources(
-            &config_env,
+        Self::from_sources(
+            config_env,
             settings.rust.cargo_home.clone(),
             env::var_path("CARGO_HOME"),
             settings.rust.rustup_home.clone(),
             env::var_path("RUSTUP_HOME"),
-        ))
+        )
     }
 
     fn from_sources(
@@ -2042,7 +2028,9 @@ targets = ["wasm32-wasip1", " wasm32-wasip1 "]
         toolset_env.insert("CARGO_HOME".to_string(), cargo_home.clone());
         toolset_env.insert("RUSTUP_HOME".to_string(), rustup_home.clone());
 
-        let _locks = lock_rust_state_for_config(&toolset_env, &IndexMap::new())
+        // `[env]` values reach both `config.env()` and the toolset env
+        let config_env = toolset_env.clone().into_iter().collect();
+        let _locks = lock_rust_state_for_config(&config_env, &toolset_env, &IndexMap::new())
             .await
             .unwrap();
 
@@ -2073,19 +2061,12 @@ targets = ["wasm32-wasip1", " wasm32-wasip1 "]
             rustup_home.to_string_lossy().to_string(),
         );
 
-        let _locks = lock_rust_state_for_config(&toolset_env, &IndexMap::new())
+        // `[env]` values reach both `config.env()` and the toolset env
+        let config_env = toolset_env.clone().into_iter().collect();
+        let _locks = lock_rust_state_for_config(&config_env, &toolset_env, &IndexMap::new())
             .await
             .unwrap();
 
-        let mut config_env = IndexMap::new();
-        config_env.insert(
-            "MISE_CARGO_HOME".to_string(),
-            cargo_home.to_string_lossy().to_string(),
-        );
-        config_env.insert(
-            "MISE_RUSTUP_HOME".to_string(),
-            rustup_home.to_string_lossy().to_string(),
-        );
         let plugin_homes = RustHomes::from_sources(&config_env, None, None, None, None);
         assert_plugin_locks_are_covered(&plugin_homes);
     }
@@ -2100,9 +2081,10 @@ targets = ["wasm32-wasip1", " wasm32-wasip1 "]
         settings.rust.rustup_home = Some(root.path().join("rustup"));
         Settings::reset(Some(settings));
 
-        let _locks = lock_rust_state_for_config(&BTreeMap::new(), &IndexMap::new())
-            .await
-            .unwrap();
+        let _locks =
+            lock_rust_state_for_config(&IndexMap::new(), &BTreeMap::new(), &IndexMap::new())
+                .await
+                .unwrap();
 
         let plugin_homes = RustHomes::from_sources(
             &IndexMap::new(),
@@ -2125,12 +2107,50 @@ targets = ["wasm32-wasip1", " wasm32-wasip1 "]
             crate::config::env_directive::EnvValue::Boolean(false),
         )]);
 
-        let _locks = lock_rust_state_for_config(&BTreeMap::new(), &install_env)
+        let _locks = lock_rust_state_for_config(&IndexMap::new(), &BTreeMap::new(), &install_env)
             .await
             .unwrap();
 
         // the child `cargo` no longer sees CARGO_HOME, so it uses the default home
         let child_homes = RustHomes::from_sources(&IndexMap::new(), None, None, None, None);
+        assert_plugin_locks_are_covered(&child_homes);
+    }
+
+    #[tokio::test]
+    async fn config_lock_covers_settings_home_when_another_tool_exports_cargo_home() {
+        let _settings_guard = crate::test::SettingsGuard::lock();
+        let _env_guard = ambient_homes_guard();
+        let root = tempfile::tempdir().unwrap();
+        let mut settings = crate::config::settings::SettingsPartial::empty();
+        settings.rust.cargo_home = Some(root.path().join("settings-cargo"));
+        Settings::reset(Some(settings));
+        // another tool's exec env reaches the toolset env, but not `config.env()`
+        let toolset_env = BTreeMap::from([(
+            "CARGO_HOME".to_string(),
+            root.path().join("tool-cargo").to_string_lossy().to_string(),
+        )]);
+
+        let _locks = lock_rust_state_for_config(&IndexMap::new(), &toolset_env, &IndexMap::new())
+            .await
+            .unwrap();
+
+        // the rust plugin resolves the settings home
+        let plugin_homes = RustHomes::from_sources(
+            &IndexMap::new(),
+            Some(root.path().join("settings-cargo")),
+            None,
+            None,
+            None,
+        );
+        assert_plugin_locks_are_covered(&plugin_homes);
+        // while the child `cargo` uses the exported one
+        let child_homes = RustHomes::from_sources(
+            &IndexMap::new(),
+            None,
+            Some(root.path().join("tool-cargo")),
+            None,
+            None,
+        );
         assert_plugin_locks_are_covered(&child_homes);
     }
 
@@ -2152,7 +2172,7 @@ targets = ["wasm32-wasip1", " wasm32-wasip1 "]
             crate::config::env_directive::EnvValue::Boolean(false),
         )]);
 
-        let _locks = lock_rust_state_for_config(&toolset_env, &install_env)
+        let _locks = lock_rust_state_for_config(&IndexMap::new(), &toolset_env, &install_env)
             .await
             .unwrap();
 
