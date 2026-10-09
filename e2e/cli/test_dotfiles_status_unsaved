@@ -66,3 +66,14 @@ assert_succeed 'mise dot save'
 rm ~/.config/app/fifo
 mkfifo ~/.config/app/fifo
 assert "mise dot status --json | jq -c .history.unsaved" '[]'
+
+# but one the rules no longer retain (a credential whose encryption was
+# turned off) is a removal the next save records, so status reports it
+echo token >~/.secret-token
+assert_succeed 'mise dot track --encrypt ~/.secret-token'
+assert_succeed 'mise dot save'
+sed -i.bak 's|^"~/.secret-token" = { mode = "track", encrypt = true }|"~/.secret-token" = { mode = "track" }|' "$MISE_CONFIG_DIR/config.toml"
+assert_contains "cat $MISE_CONFIG_DIR/config.toml" '"~/.secret-token" = { mode = "track" }'
+assert "mise dot status --json | jq -c .history.unsaved" '["~/.secret-token"]'
+assert_contains 'mise dot save 2>&1' 'removed ~/.secret-token'
+assert "mise dot status --json | jq -c .history.unsaved" '[]'

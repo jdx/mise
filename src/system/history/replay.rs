@@ -1686,7 +1686,8 @@ pub fn unsaved_paths(
     let mut encrypted = super::sync::files::encrypted_paths(repo, Some(&saved))?;
     encrypted.extend(super::sync::files::encrypted_paths(repo, Some(&live))?);
     // a save carries a path the walk omitted or did not finish scanning
-    // (too large, a special file) rather than record it as removed
+    // (too large, a special file) rather than record it as removed, when
+    // the tracking rules still retain it (`retain_omitted`)
     let coverage = tracked.coverage(walk);
     let carried: Vec<PathBuf> = coverage
         .omitted
@@ -1701,10 +1702,9 @@ pub fn unsaved_paths(
             continue;
         }
         if change.status == 'D'
-            && roots
-                .locate(&change.path)
-                .path()
-                .is_some_and(|path| carried.iter().any(|omitted| path.starts_with(omitted)))
+            && let Some(path) = roots.locate(&change.path).path()
+            && carried.iter().any(|omitted| path.starts_with(omitted))
+            && tracked.would_retain(path)?
         {
             continue;
         }
