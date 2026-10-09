@@ -84,6 +84,13 @@ impl WorkspaceGitRevisions {
             .or_else(|| env_value(&get_env, "MISE_AFFECTED_BASE"))
             .or_else(|| ci_base(&get_env))
             .unwrap_or_else(|| DEFAULT_BASE.to_string());
+        // The source env vars are read here rather than bound to the flags, because a flag
+        // bound to an env var would count as given and demand `--affected` on every `mise run`.
+        let sources = AffectedSources {
+            committed: sources.committed || env_enabled(&get_env, "MISE_AFFECTED_COMMITTED"),
+            uncommitted: sources.uncommitted || env_enabled(&get_env, "MISE_AFFECTED_UNCOMMITTED"),
+            untracked: sources.untracked || env_enabled(&get_env, "MISE_AFFECTED_UNTRACKED"),
+        };
         let head = nonempty(head)
             .map(str::to_string)
             .or_else(|| env_value(&get_env, "MISE_AFFECTED_HEAD"))
@@ -282,6 +289,28 @@ mod tests {
         assert_eq!(github.head, "github-head");
         assert_eq!(gitlab.base, "gitlab-base");
         assert_eq!(gitlab.head, "gitlab-head");
+    }
+
+    #[test]
+    fn source_environment_variables_select_sources() {
+        let revisions = resolve_with_env(
+            None,
+            None,
+            &[
+                ("MISE_AFFECTED_COMMITTED", "1"),
+                ("MISE_AFFECTED_UNTRACKED", "true"),
+                ("MISE_AFFECTED_UNCOMMITTED", "0"),
+            ],
+        );
+
+        assert_eq!(
+            revisions.sources,
+            AffectedSources {
+                committed: true,
+                uncommitted: false,
+                untracked: true,
+            }
+        );
     }
 
     #[test]

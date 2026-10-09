@@ -5629,11 +5629,11 @@ Defaults to `MISE_AFFECTED_BASE`, CI metadata, or `HEAD~1`.
 """#
         arg <REV>
     }
-    flag --affected-committed help="Count committed changes between the base and head revisions" requires=--affected env=MISE_AFFECTED_COMMITTED {
+    flag --affected-committed help="Count committed changes between the base and head revisions" requires=--affected {
         long_help #"""
 Count committed changes between the base and head revisions
 
-Alone, ignores the working tree. Combines with `--affected-uncommitted` and `--affected-untracked`. With none of the three, every source counts.
+Alone, ignores the working tree. Combines with `--affected-uncommitted` and `--affected-untracked`. With none of the three, every source counts. Also set by `MISE_AFFECTED_COMMITTED`.
 """#
     }
     flag --affected-explain help="Explain why `--affected` selected each project and task" conflicts=--affected-json requires=--affected
@@ -5646,18 +5646,18 @@ Defaults to `MISE_AFFECTED_HEAD`, CI metadata, or `HEAD`.
         arg <REV>
     }
     flag --affected-json help="Print the affected projects and tasks as JSON without running tasks" conflicts=--affected-explain requires=--affected
-    flag --affected-uncommitted help="Count staged and unstaged changes to tracked files" requires=--affected env=MISE_AFFECTED_UNCOMMITTED {
+    flag --affected-uncommitted help="Count staged and unstaged changes to tracked files" requires=--affected {
         long_help #"""
 Count staged and unstaged changes to tracked files
 
-Combines with the other source flags. Alone, ignores committed changes. Needs the head revision to be the current checkout.
+Combines with the other source flags. Alone, ignores committed changes. Needs the head revision to be the current checkout. Also set by `MISE_AFFECTED_UNCOMMITTED`.
 """#
     }
-    flag --affected-untracked help="Count untracked files that Git does not ignore" requires=--affected env=MISE_AFFECTED_UNTRACKED {
+    flag --affected-untracked help="Count untracked files that Git does not ignore" requires=--affected {
         long_help #"""
 Count untracked files that Git does not ignore
 
-Combines with the other source flags. Alone, ignores committed changes. Needs the head revision to be the current checkout.
+Combines with the other source flags. Alone, ignores committed changes. Needs the head revision to be the current checkout. Also set by `MISE_AFFECTED_UNTRACKED`.
 """#
     }
     flag --all help="Open the task picker with tasks from every project in the monorepo" conflicts=--affected
@@ -6700,11 +6700,11 @@ Defaults to `MISE_AFFECTED_BASE`, CI metadata, or `HEAD~1`.
 """#
             arg <REV>
         }
-        flag --affected-committed help="Count committed changes between the base and head revisions" requires=--affected env=MISE_AFFECTED_COMMITTED {
+        flag --affected-committed help="Count committed changes between the base and head revisions" requires=--affected {
             long_help #"""
 Count committed changes between the base and head revisions
 
-Alone, ignores the working tree. Combines with `--affected-uncommitted` and `--affected-untracked`. With none of the three, every source counts.
+Alone, ignores the working tree. Combines with `--affected-uncommitted` and `--affected-untracked`. With none of the three, every source counts. Also set by `MISE_AFFECTED_COMMITTED`.
 """#
         }
         flag --affected-explain help="Explain why `--affected` selected each project and task" conflicts=--affected-json requires=--affected
@@ -6717,18 +6717,18 @@ Defaults to `MISE_AFFECTED_HEAD`, CI metadata, or `HEAD`.
             arg <REV>
         }
         flag --affected-json help="Print the affected projects and tasks as JSON without running tasks" conflicts=--affected-explain requires=--affected
-        flag --affected-uncommitted help="Count staged and unstaged changes to tracked files" requires=--affected env=MISE_AFFECTED_UNCOMMITTED {
+        flag --affected-uncommitted help="Count staged and unstaged changes to tracked files" requires=--affected {
             long_help #"""
 Count staged and unstaged changes to tracked files
 
-Combines with the other source flags. Alone, ignores committed changes. Needs the head revision to be the current checkout.
+Combines with the other source flags. Alone, ignores committed changes. Needs the head revision to be the current checkout. Also set by `MISE_AFFECTED_UNCOMMITTED`.
 """#
         }
-        flag --affected-untracked help="Count untracked files that Git does not ignore" requires=--affected env=MISE_AFFECTED_UNTRACKED {
+        flag --affected-untracked help="Count untracked files that Git does not ignore" requires=--affected {
             long_help #"""
 Count untracked files that Git does not ignore
 
-Combines with the other source flags. Alone, ignores committed changes. Needs the head revision to be the current checkout.
+Combines with the other source flags. Alone, ignores committed changes. Needs the head revision to be the current checkout. Also set by `MISE_AFFECTED_UNTRACKED`.
 """#
         }
         flag --all help="Open the task picker with tasks from every project in the monorepo" conflicts=--affected

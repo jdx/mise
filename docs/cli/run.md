@@ -35,9 +35,7 @@ To create a script task, run `mise tasks add --file hello -- echo hello`, then `
   Defaults to `MISE_AFFECTED_BASE`, CI metadata, or `HEAD~1`.
 - **`--affected-committed`** — Count committed changes between the base and head revisions
 
-  Alone, ignores the working tree. Combines with `--affected-uncommitted` and `--affected-untracked`. With none of the three, every source counts.
-
-  **Environment Variable:** `MISE_AFFECTED_COMMITTED`
+  Alone, ignores the working tree. Combines with `--affected-uncommitted` and `--affected-untracked`. With none of the three, every source counts. Also set by `MISE_AFFECTED_COMMITTED`.
 - **`--affected-explain`** — Explain why `--affected` selected each project and task
 - **`--affected-head <REV>`** — Git head revision for `--affected`
 
@@ -45,14 +43,10 @@ To create a script task, run `mise tasks add --file hello -- echo hello`, then `
 - **`--affected-json`** — Print the affected projects and tasks as JSON without running tasks
 - **`--affected-uncommitted`** — Count staged and unstaged changes to tracked files
 
-  Combines with the other source flags. Alone, ignores committed changes. Needs the head revision to be the current checkout.
-
-  **Environment Variable:** `MISE_AFFECTED_UNCOMMITTED`
+  Combines with the other source flags. Alone, ignores committed changes. Needs the head revision to be the current checkout. Also set by `MISE_AFFECTED_UNCOMMITTED`.
 - **`--affected-untracked`** — Count untracked files that Git does not ignore
 
-  Combines with the other source flags. Alone, ignores committed changes. Needs the head revision to be the current checkout.
-
-  **Environment Variable:** `MISE_AFFECTED_UNTRACKED`
+  Combines with the other source flags. Alone, ignores committed changes. Needs the head revision to be the current checkout. Also set by `MISE_AFFECTED_UNTRACKED`.
 - **`--all`** — Open the task picker with tasks from every project in the monorepo
 - **`-c --continue-on-error`** — Continue running tasks even if one fails
 - **`-C --cd <DIR>`** — Change to this directory before running the tasks

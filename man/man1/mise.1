@@ -8544,10 +8544,7 @@ Defaults to `MISE_AFFECTED_BASE`, CI metadata, or `HEAD~1`.
 \fB\-\-affected\-committed\fR
 Count committed changes between the base and head revisions
 
-Alone, ignores the working tree. Combines with `\-\-affected\-uncommitted` and `\-\-affected\-untracked`. With none of the three, every source counts.
-.RS
-\fIEnvironment: \fR\fBMISE_AFFECTED_COMMITTED\fR
-.RE
+Alone, ignores the working tree. Combines with `\-\-affected\-uncommitted` and `\-\-affected\-untracked`. With none of the three, every source counts. Also set by `MISE_AFFECTED_COMMITTED`.
 .TP
 \fB\-\-affected\-explain\fR
 Explain why `\-\-affected` selected each project and task
@@ -8563,18 +8560,12 @@ Print the affected projects and tasks as JSON without running tasks
 \fB\-\-affected\-uncommitted\fR
 Count staged and unstaged changes to tracked files
 
-Combines with the other source flags. Alone, ignores committed changes. Needs the head revision to be the current checkout.
-.RS
-\fIEnvironment: \fR\fBMISE_AFFECTED_UNCOMMITTED\fR
-.RE
+Combines with the other source flags. Alone, ignores committed changes. Needs the head revision to be the current checkout. Also set by `MISE_AFFECTED_UNCOMMITTED`.
 .TP
 \fB\-\-affected\-untracked\fR
 Count untracked files that Git does not ignore
 
-Combines with the other source flags. Alone, ignores committed changes. Needs the head revision to be the current checkout.
-.RS
-\fIEnvironment: \fR\fBMISE_AFFECTED_UNTRACKED\fR
-.RE
+Combines with the other source flags. Alone, ignores committed changes. Needs the head revision to be the current checkout. Also set by `MISE_AFFECTED_UNTRACKED`.
 .TP
 \fB\-\-all\fR
 Open the task picker with tasks from every project in the monorepo

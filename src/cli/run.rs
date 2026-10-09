@@ -129,7 +129,8 @@ pub(crate) struct Run {
     ///
     /// Alone, ignores the working tree. Combines with `--affected-uncommitted`
     /// and `--affected-untracked`. With none of the three, every source counts.
-    #[usage(long, requires = "affected", env = "MISE_AFFECTED_COMMITTED")]
+    /// Also set by `MISE_AFFECTED_COMMITTED`.
+    #[usage(long, requires = "affected")]
     pub affected_committed: bool,
 
     /// Explain why `--affected` selected each project and task
@@ -149,15 +150,17 @@ pub(crate) struct Run {
     /// Count staged and unstaged changes to tracked files
     ///
     /// Combines with the other source flags. Alone, ignores committed changes.
-    /// Needs the head revision to be the current checkout.
-    #[usage(long, requires = "affected", env = "MISE_AFFECTED_UNCOMMITTED")]
+    /// Needs the head revision to be the current checkout. Also set by
+    /// `MISE_AFFECTED_UNCOMMITTED`.
+    #[usage(long, requires = "affected")]
     pub affected_uncommitted: bool,
 
     /// Count untracked files that Git does not ignore
     ///
     /// Combines with the other source flags. Alone, ignores committed changes.
-    /// Needs the head revision to be the current checkout.
-    #[usage(long, requires = "affected", env = "MISE_AFFECTED_UNTRACKED")]
+    /// Needs the head revision to be the current checkout. Also set by
+    /// `MISE_AFFECTED_UNTRACKED`.
+    #[usage(long, requires = "affected")]
     pub affected_untracked: bool,
 
     /// Open the task picker with tasks from every project in the monorepo

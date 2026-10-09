@@ -235,7 +235,7 @@ mise run --affected --affected-uncommitted --jobs 1 build
 assert "cat affected.log" "other"
 : >affected.log
 mise run --affected --affected-untracked --jobs 1 build
-assert "cat affected.log" ""
+assert "test ! -s affected.log"
 : >affected.log
 mise run --affected --affected-uncommitted --affected-committed --jobs 1 build
 assert "sort affected.log" $'app\nlib\nother'
@@ -250,5 +250,29 @@ git checkout -q pnpm-lock.yaml
 # The working tree only counts when head is the checkout.
 : >affected.log
 mise run --affected --affected-head HEAD~1 --affected-base HEAD~1 --jobs 1 build
-assert "cat affected.log" ""
+assert "test ! -s affected.log"
 assert_fail_contains "mise run --affected --affected-head HEAD~1 --affected-uncommitted build" "current checkout"
+
+# The source env vars select sources like the flags, and setting one does not
+# make a plain `mise run` demand --affected.
+echo notes >packages/other/notes.txt
+: >affected.log
+MISE_AFFECTED_COMMITTED=1 mise run --affected --jobs 1 build
+assert "sort affected.log" $'app\nlib'
+: >affected.log
+MISE_AFFECTED_UNTRACKED=1 mise run --affected --jobs 1 build
+assert "cat affected.log" "other"
+: >affected.log
+MISE_AFFECTED_COMMITTED=1 MISE_AFFECTED_UNCOMMITTED=1 MISE_AFFECTED_UNTRACKED=1 mise run --jobs 1 //packages/other:build
+assert "cat affected.log" "other"
+rm packages/other/notes.txt
+
+# core.autocrlf=true must not make a CRLF checkout look modified.
+git config core.autocrlf true
+printf 'one\n' >packages/other/crlf.txt
+git add packages/other/crlf.txt
+git commit -qm add-crlf
+printf 'one\r\n' >packages/other/crlf.txt
+: >affected.log
+mise run --affected --affected-uncommitted --jobs 1 build
+assert "test ! -s affected.log"

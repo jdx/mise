@@ -23,6 +23,13 @@ pub struct Git {
 }
 
 macro_rules! git_cmd {
+    // Leaves `core.autocrlf` to the repository's own config, for comparing the working tree.
+    ( @worktree $dir:expr $(, $arg:expr )* $(,)? ) => {
+        {
+            let safe = format!("safe.directory={}", $dir.display());
+            sanitize_git_env(cmd!("git", "-c", $crate::git::github_credential_config("github.com"), "-c", $crate::git::github_credential_config("github.com:443"), "-C", $dir, "-c", safe $(, $arg)*))
+        }
+    };
     ( $dir:expr $(, $arg:expr )* $(,)? ) => {
         {
             let safe = format!("safe.directory={}", $dir.display());
@@ -488,6 +495,7 @@ impl Git {
     /// Same path rules as [`Git::changed_paths`].
     pub fn uncommitted_paths(&self) -> Result<BTreeSet<PathBuf>> {
         let output = git_cmd!(
+            @worktree
             &self.dir,
             "diff",
             "--name-only",
