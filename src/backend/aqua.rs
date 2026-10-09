@@ -770,17 +770,14 @@ impl Backend for AquaBackend {
                 self.id, tv.version
             );
         }
-        let mut v = tag.unwrap_or_else(|| tv.version.clone());
-        let mut v_prefixed = (tag_is_none && !tv.version.starts_with('v')).then(|| format!("v{v}"));
-        let versions = match &v_prefixed {
-            Some(v_prefixed) => vec![v.as_str(), v_prefixed.as_str()],
-            None => vec![v.as_str()],
-        };
-
         // Get package and apply version/overrides directly for the target platform.
         // Using package_with_version() here would apply overrides for the current host
         // platform first, which can leak host-specific overrides into cross-platform lock.
         let pkg = AQUA_REGISTRY.package(&self.id).await?;
+        let versions = resolved_package_version_candidates(&tv.version, tag.as_deref(), &pkg);
+        let versions = versions.iter().map(|v| v.as_ref()).collect_vec();
+        let mut v = tag.clone().unwrap_or_else(|| tv.version.clone());
+        let mut v_prefixed = (tag_is_none && !tv.version.starts_with('v')).then(|| format!("v{v}"));
         let raw_opts = tv.request.options();
         let opts = AquaOptions::new(&raw_opts);
         let target_libc = Self::target_variant_libc(target, self.tool_libc);
@@ -1073,7 +1070,7 @@ impl AquaBackend {
         let mut v_prefixed =
             (tag.is_none() && !tv.version.starts_with('v')).then(|| format!("v{v}"));
         let pkg = AQUA_REGISTRY.package(&self.id).await?;
-        let versions = install_package_version_candidates(&tv.version, tag.as_deref(), &pkg);
+        let versions = resolved_package_version_candidates(&tv.version, tag.as_deref(), &pkg);
         let versions = versions.iter().map(|v| v.as_ref()).collect_vec();
         let pkg = Self::package_with_options_for_pkg(tv, pkg, &versions)?;
         if let Some(prefix) = &pkg.version_prefix
@@ -3910,7 +3907,7 @@ fn package_version_candidates<'a>(version: &'a str, pkg: &AquaPackage) -> Vec<Co
     candidates.into_iter().unique().collect()
 }
 
-fn install_package_version_candidates<'a>(
+fn resolved_package_version_candidates<'a>(
     version: &'a str,
     tag: Option<&'a str>,
     pkg: &AquaPackage,
@@ -3918,9 +3915,9 @@ fn install_package_version_candidates<'a>(
     if let Some(tag) = tag {
         vec![Cow::Borrowed(tag)]
     } else {
-        // Locked HTTP package URLs do not contain a GitHub release tag. Include the
-        // registry's prefixes so prefix-scoped overrides still provide metadata such
-        // as the archive format.
+        // Tag lookup can miss a pinned release, and locked HTTP URLs have no release
+        // tag. Include registry prefixes before selecting version overrides, otherwise
+        // packages such as openai/codex keep their empty top-level asset and format.
         package_version_candidates(version, pkg)
     }
 }
@@ -4630,12 +4627,77 @@ packages:
         let request =
             ToolRequest::new(backend, "3.16.1.0", crate::toolset::ToolSource::Unknown).unwrap();
         let tv = ToolVersion::new(request, "3.16.1.0".to_string());
-        let versions = install_package_version_candidates("3.16.1.0", None, &pkg);
+        let versions = resolved_package_version_candidates("3.16.1.0", None, &pkg);
         let versions = versions.iter().map(|v| v.as_ref()).collect_vec();
         let pkg = AquaBackend::package_with_options_for_pkg(&tv, pkg, &versions).unwrap();
 
         assert_eq!(pkg.version_prefix.as_deref(), Some("cabal-install-v"));
         assert_eq!(pkg.format, "tar.xz");
+    }
+
+    #[test]
+    fn test_resolved_package_without_tag_selects_codex_windows_archive() {
+        let pkg: AquaPackage = serde_yaml::from_str(
+            r#"
+type: github_release
+repo_owner: openai
+repo_name: codex
+version_prefix: rust-
+version_constraint: "false"
+version_overrides:
+  - version_constraint: semver("<= 0.133.0-alpha.1")
+    asset: codex-{{.Arch}}-{{.OS}}.exe.{{.Format}}
+    format: zst
+  - version_constraint: "true"
+    asset: codex-package-{{.Arch}}-{{.OS}}.{{.Format}}
+    format: tar.gz
+    files:
+      - name: codex
+        src: bin/codex
+    replacements:
+      amd64: x86_64
+      windows: pc-windows-msvc
+"#,
+        )
+        .unwrap();
+
+        // A pinned release may be absent from GitHub's release listing. Its registry
+        // prefix must still be considered before applying the version overrides.
+        let versions = resolved_package_version_candidates("0.154.0", None, &pkg);
+        let versions = versions.iter().map(|v| v.as_ref()).collect_vec();
+        let pkg = pkg.with_version(&versions, "windows", "amd64");
+
+        assert_eq!(
+            pkg.asset("rust-v0.154.0", "windows", "amd64").unwrap(),
+            "codex-package-x86_64-pc-windows-msvc.tar.gz"
+        );
+        assert_eq!(pkg.format, "tar.gz");
+        assert_eq!(pkg.files[0].src.as_deref(), Some("bin/codex"));
+    }
+
+    #[test]
+    fn test_resolved_package_known_tag_preserves_override_prefix() {
+        let pkg: AquaPackage = serde_yaml::from_str(
+            r#"
+version_constraint: "false"
+version_overrides:
+  - version_constraint: "true"
+    version_prefix: old-v
+    asset: old-layout.zip
+  - version_constraint: "true"
+    version_prefix: new-v
+    asset: new-layout.zip
+"#,
+        )
+        .unwrap();
+        let versions = resolved_package_version_candidates("1.0.0", Some("new-v1.0.0"), &pkg);
+        let versions = versions.iter().map(|v| v.as_ref()).collect_vec();
+        let pkg = pkg.with_version(&versions, "windows", "amd64");
+
+        assert_eq!(
+            pkg.asset("new-v1.0.0", "windows", "amd64").unwrap(),
+            "new-layout.zip"
+        );
     }
 
     #[test]

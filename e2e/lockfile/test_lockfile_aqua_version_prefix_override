@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+
+export MISE_LOCKFILE=1
+export MISE_AQUA_BAKED_REGISTRY=0
+
+# An HTTP registry entry has no release-tag lookup. Exercise the same fallback
+# used when a pinned GitHub release is absent from the release listing.
+ASSET="codex-package-x86_64-pc-windows-msvc.tar.gz"
+mkdir -p server/rust-v0.154.0
+printf 'archive\n' >"server/rust-v0.154.0/$ASSET"
+start_http_server --dir server
+
+REGISTRY_DIR="$PWD/aqua-registry-local"
+mkdir -p "$REGISTRY_DIR"
+cat <<EOF >"$REGISTRY_DIR/registry.yaml"
+packages:
+  - type: http
+    name: example/codex-package
+    version_prefix: rust-
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.133.0-alpha.1")
+        url: http://127.0.0.1:$HTTP_PORT/legacy.zst
+        format: zst
+      - version_constraint: "true"
+        url: http://127.0.0.1:$HTTP_PORT/{{.Version}}/codex-package-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x86_64
+          windows: pc-windows-msvc
+EOF
+export MISE_AQUA_REGISTRY_URL="file://$REGISTRY_DIR"
+
+cat <<'EOF' >mise.toml
+[tools]
+"aqua:example/codex-package" = "0.154.0"
+EOF
+
+mise lock --platform windows-x64
+
+assert_contains "cat mise.lock" '"platforms.windows-x64"'
+assert_contains "cat mise.lock" "url = \"http://127.0.0.1:$HTTP_PORT/rust-v0.154.0/$ASSET\""
