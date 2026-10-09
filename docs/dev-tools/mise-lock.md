@@ -443,7 +443,9 @@ Treat a cache as part of your trusted build input instead:
   catches a modified cache entry for every backend, but it proves the cache is
   unchanged since your CI saved it, not that it matches the lockfile.
 - For a fully verified install, run `mise install --locked` with an empty data
-  directory so every artifact is downloaded and checked against `mise.lock`.
+  directory so every artifact is downloaded and checked against the checksum
+  in `mise.lock`. An entry without a checksum has one generated instead of
+  validated, so commit entries that have checksums.
 
 ## Provenance and verification {#provenance-and-security}
 
