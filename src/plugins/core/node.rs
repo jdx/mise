@@ -589,7 +589,7 @@ impl NodePlugin {
                     }
                 }
                 msg.push_str("\nYou can try setting the flavor using:\n");
-                msg.push_str("  mise settings set node.flavor=<flavor>\n");
+                msg.push_str("  mise settings node.flavor=<flavor>\n");
                 return Ok(Some(msg));
             } else {
                 // Fallback: list all files for that version if no arch match
@@ -1157,8 +1157,8 @@ fn node_flavor_not_found_message(opts: &BuildOpts) -> Option<String> {
     Some(format!(
         "precompiled node archive not found for node.flavor={flavor:?}: {}\n\
          Node flavors are published by the unofficial builds project. Try:\n  \
-         mise settings set node.mirror_url {UNOFFICIAL_NODE_MIRROR_URL}\n  \
-         mise settings set node.flavor {flavor}\n\
+         mise settings node.mirror_url={UNOFFICIAL_NODE_MIRROR_URL}\n  \
+         mise settings node.flavor={flavor}\n\
          or unset node.flavor to use official Node binaries.",
         opts.binary_tarball_url
     ))

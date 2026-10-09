@@ -11,7 +11,7 @@ import Settings from '/components/settings.vue';
 
 Settings change how mise itself behaves, such as how many jobs run at once, how
 downloads are verified and how tasks print output. Set them with
-`mise settings set` or under `[settings]` in a config file. Variables for your
+`mise settings` or under `[settings]` in a config file. Variables for your
 own programs belong in [`[env]`](/environments/) instead.
 
 ## Change a setting
@@ -22,8 +22,8 @@ instead, normally `mise.toml` (see
 [which file mise writes to](/configuration.html#target-file-for-write-operations)):
 
 ```sh
-mise settings set jobs 4          # global config
-mise settings set --local jobs 2  # project config
+mise settings jobs=4          # global config
+mise settings --local jobs=2  # project config
 mise settings unset --local jobs  # remove the project value
 mise settings add disable_hints python_multi  # append to a list setting
 ```
@@ -92,7 +92,7 @@ project config, mise ignores them and prints a warning:
 mise WARN  yes in non-global config /home/me/app/mise.toml is ignored for security reasons
 ```
 
-`mise settings set --local` and `mise settings add --local` refuse these
+`mise settings --local` and `mise settings add --local` refuse these
 settings. Drop `--local` to write them to the global config, or use the
 environment variable.
 
@@ -114,7 +114,7 @@ env = ["development"]
 ```
 
 Under `[settings]` in `mise.toml` or the global config they have no effect.
-`mise settings set` refuses them and names the `miserc.toml` file or variable to
+`mise settings` refuses them and names the `miserc.toml` file or variable to
 use, so edit `.miserc.toml` yourself.
 
 ### Environment-only settings
@@ -125,7 +125,7 @@ files themselves, so they work only as environment variables:
 [`default_tool_versions_filename`](/configuration/settings.html#default_tool_versions_filename),
 [`global_config_file`](/configuration/settings.html#global_config_file),
 [`global_config_root`](/configuration/settings.html#global_config_root) and
-[`system_config_file`](/configuration/settings.html#system_config_file). `mise settings set` refuses them,
+[`system_config_file`](/configuration/settings.html#system_config_file). `mise settings` refuses them,
 and mise ignores them, with a warning, in every config file, including the
 global one. A `.miserc.toml` ignores them without a warning.
 

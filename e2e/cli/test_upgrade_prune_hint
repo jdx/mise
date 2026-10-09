@@ -49,7 +49,7 @@ env = dict(os.environ)
 hint = "old tool versions are kept for 12h before automatic pruning"
 first = upgrade(env)
 assert hint in first, first
-assert "mise settings set upgrade.auto_prune false" in first, first
+assert "mise settings upgrade.auto_prune=false" in first, first
 assert "dummy 1.0.0 → 1.1.0" in first, first
 marker = Path(env["MISE_STATE_DIR"]) / "hints" / "upgrade_auto_prune"
 assert marker.is_file()

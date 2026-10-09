@@ -209,7 +209,7 @@ everywhere, put it in your global config:
 disable_backends = ["asdf", "vfox"]
 ```
 
-`mise settings set disable_backends asdf,vfox` writes the same setting to your
+`mise settings disable_backends=asdf,vfox` writes the same setting to your
 global config. It replaces the whole list, so name every backend you want
 disabled.
 

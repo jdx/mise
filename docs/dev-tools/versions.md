@@ -316,7 +316,7 @@ To ignore the floors and silence the warning before then, set the
 removed in 2026.11.0 along with the behavior it guards:
 
 ```sh
-mise settings set idiomatic_version_file_ignore_minimum_versions true
+mise settings idiomatic_version_file_ignore_minimum_versions=true
 ```
 
 :::

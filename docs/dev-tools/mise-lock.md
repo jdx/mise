@@ -50,7 +50,7 @@ create and update one whenever it installs or upgrades tools, set
 lockfile = true
 ```
 
-Set it in your global config instead (`mise settings set lockfile true`) to
+Set it in your global config instead (`mise settings lockfile=true`) to
 make that your default for every project.
 
 The setting has three states:

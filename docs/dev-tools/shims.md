@@ -366,7 +366,7 @@ PATH activation puts real tool directories first. When the toolset has a
 [lazy tool](#lazy-tools) or `not_found_auto_install` is on, it also keeps the
 user and system shim directories on `PATH` behind them, so running a missing
 tool's command can still install it. To remove the shim directories from
-activation entirely, run `mise settings set activate_shims false` and restart
+activation entirely, run `mise settings activate_shims=false` and restart
 your shell. See [`activate_shims`](/configuration/settings.html#activate_shims)
 for what stops working. [Command wrappers](#command-wrappers) keep working,
 because they use their own directory, and an explicit `mise activate --shims`
