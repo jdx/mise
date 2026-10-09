@@ -331,6 +331,11 @@ impl Parser {
     /// Only a value's opening quote may continue onto later lines. A quote later in the value
     /// with no partner after it on the same line is a literal character, so `NAME=O'Brien` reads
     /// as written instead of failing or swallowing the assignments after it.
+    ///
+    /// The value is read left to right, so whichever comes first wins: a `#` after whitespace
+    /// starts a comment, and a quote with a partner later on the line opens a segment in which
+    /// `#` is literal. That keeps dotenvy's `a'x #y'` as `ax #y`; the cost is that the
+    /// apostrophes in `NAME=O'Brien # owner's name` pair up, so that value needs quotes.
     fn parse_value(&mut self) -> Result<String, ParseError> {
         let mut value = String::new();
         let mut first_segment = true;
@@ -1422,7 +1427,9 @@ JOINED=${MISSING:-it's}'{x}'
     fn a_later_quote_without_a_partner_on_its_line_is_literal() {
         let parsed = parse(
             "A='one\ntwo'three\nNAME=O'Brien\nGREETING=it's great # comment\n\
-             MIXED=it's 'quoted'\nPAIRED='a'\"b\nDOUBLE=say \"hi\nOTHER='x'\n",
+             MIXED=it's 'quoted'\nPAIRED='a'\"b\nDOUBLE=say \"hi\nOTHER='x'\n\
+             QUOTE_FIRST=a'x #y'\nCOMMENT_FIRST=x #it's 'q'\n\
+             CROSSES_COMMENT=O'Brien # owner's name\nQUOTED=\"O'Brien\" # owner's name\n",
         )
         .unwrap();
         assert_eq!(
@@ -1435,6 +1442,11 @@ JOINED=${MISSING:-it's}'{x}'
                 ("PAIRED", "a\"b"),
                 ("DOUBLE", "say \"hi"),
                 ("OTHER", "x"),
+                // Whichever of a quote and a comment comes first wins, as in dotenvy.
+                ("QUOTE_FIRST", "ax #y"),
+                ("COMMENT_FIRST", "x"),
+                ("CROSSES_COMMENT", "OBrien # owners name"),
+                ("QUOTED", "O'Brien"),
             ]
             .map(|(key, value)| (key.to_owned(), value.to_owned()))
         );
