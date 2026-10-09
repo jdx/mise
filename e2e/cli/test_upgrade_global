@@ -65,6 +65,15 @@ MISE_DUMMY_VERSION=1.0.0 mise upgrade --global --bump dummy@2
 assert_contains "cat $MISE_CONFIG_DIR/config.toml" 'dummy = "2"'
 assert "mise x -- dummy" "This is Dummy 2.0.0!"
 
+# A global upgrade started by a hook inside another one skips instead of
+# waiting for the update lock its parent holds.
+printf '[tools]\ndummy = "1"\n' >"$MISE_CONFIG_DIR/config.toml"
+mise uninstall dummy --all
+mise install dummy@1.0.0
+printf '[tools]\ndummy = { version = "1", postinstall = "mise upgrade --global dummy" }\n' >"$MISE_CONFIG_DIR/config.toml"
+assert_contains "timeout 120 mise upgrade --global dummy 2>&1" "it runs inside another mise update"
+assert_contains "mise ls --installed dummy" "1.1.0"
+
 # A version installed with `--system` is upgraded in the system installs dir.
 export MISE_SYSTEM_DATA_DIR="$HOME/.local/share/mise-system"
 printf '[tools]\ndummy = "1"\n' >"$MISE_CONFIG_DIR/config.toml"

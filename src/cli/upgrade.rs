@@ -241,6 +241,11 @@ impl Upgrade {
             eyre::bail!("--monorepo is not supported by mise upgrade yet");
         }
         if self.global && super::tool_update::needs_global_scope() {
+            // Its own update would wait for the lock that update holds.
+            if !self.is_dry_run() && super::tool_update::inside_update() {
+                warn!("skipping `mise upgrade --global`: it runs inside another mise update");
+                return Ok(());
+            }
             return super::tool_update::rerun_in_global_scope();
         }
         // Like an `auto_update` upgrade, a global one rewrites the global config

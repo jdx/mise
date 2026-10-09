@@ -1,5 +1,5 @@
 use std::process::{Command, ExitStatus, Stdio};
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 use std::time::Duration;
 
 use eyre::{Result, bail};
@@ -261,7 +261,23 @@ fn update_command(args: &[&str]) -> Command {
 /// Whether a `--global` command has to start itself again in the global
 /// scope, which it does unless it is that command.
 pub(super) fn needs_global_scope() -> bool {
-    std::env::var_os(GLOBAL_SCOPE_ENV).is_none()
+    !*IN_GLOBAL_SCOPE
+}
+
+/// Whether this process is the command [`rerun_in_global_scope`] started. The
+/// marker is removed once read, so a command its hooks run starts in the
+/// global scope itself rather than running where the hook did.
+static IN_GLOBAL_SCOPE: LazyLock<bool> = LazyLock::new(|| {
+    let set = std::env::var_os(GLOBAL_SCOPE_ENV).is_some();
+    env::remove_var(GLOBAL_SCOPE_ENV);
+    set
+});
+
+/// Whether this command runs inside a mise update (`auto_update`, the
+/// `tool-update` service, or `mise upgrade --global`), which holds the update
+/// lock until this command, one of its hooks, finishes.
+pub(super) fn inside_update() -> bool {
+    std::env::var_os(tool_update::UPDATING_ENV).is_some()
 }
 
 /// Run this mise command again in the global scope, with the same arguments
