@@ -70,6 +70,7 @@ impl HookEnv {
             .build(&config)
             .await?;
         time!("hook-env");
+        super::tool_update::update_in_background(&config, &ts);
 
         // Try to use cached watch_files for early exit check if env_cache is enabled
         // This avoids executing plugins just to get watch_files

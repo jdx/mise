@@ -1,0 +1,146 @@
+#!/usr/bin/env bash
+
+# A shell prompt (`mise hook-env`) starts a detached update of opted-in global
+# tools whose check is due, so activated shells stay current without the
+# tool-update service. The dummy backend offers 1.0.0, 1.1.0, and 2.0.0.
+
+export MISE_STATE_DIR="$PWD/state"
+printf '[tools]\ndummy = { version = "1", auto_update = true }\n' >"$MISE_CONFIG_DIR/config.toml"
+mise uninstall dummy --all
+mise install dummy@1.0.0
+
+wait_for_1_1_0() {
+  for _ in {1..300}; do
+    mise ls --installed dummy | grep -q 1.1.0 && return
+    sleep 0.1
+  done
+}
+
+# The prompt returns at once, prints nothing from the update, and the update
+# finishes on its own.
+mise hook-env --shell bash --force >/dev/null 2>hook-env.err
+assert "cat hook-env.err" ""
+wait_for_1_1_0
+assert_contains "mise ls --installed dummy" "1.1.0"
+assert_not_contains "mise ls --installed dummy" "2.0.0"
+
+# Within the interval a later prompt does not check again.
+mise uninstall dummy@1.1.0
+mise hook-env --shell bash --force >/dev/null 2>&1
+sleep 2
+assert_not_contains "mise ls --installed dummy" "1.1.0"
+
+# While the tool-update service runs, prompts leave updates to it.
+find "$MISE_STATE_DIR/tool-update" -type f ! -name '*.*' -delete
+mise __tool-update --watch >service.log 2>&1 &
+service=$!
+trap 'kill "$service" 2>/dev/null || true; wait "$service" 2>/dev/null || true' EXIT
+for _ in {1..300}; do
+  mise ls --installed dummy | grep -q 1.1.0 && break
+  sleep 0.1
+done
+for _ in {1..300}; do
+  grep -q '[0-9]' "$MISE_STATE_DIR/tool-update/update.lock" 2>/dev/null || break
+  sleep 0.1
+done
+mise uninstall dummy@1.1.0
+find "$MISE_STATE_DIR/tool-update" -type f ! -name '*.*' -delete
+mise hook-env --shell bash --force >/dev/null 2>&1
+sleep 2
+assert_not_contains "mise ls --installed dummy" "1.1.0"
+kill -TERM "$service"
+wait "$service" || true
+
+# A project that sets its own version of the tool is not updated.
+mkdir project && cd project || exit 1
+printf '[tools]\ndummy = "1.0.0"\n' >mise.toml
+find "$MISE_STATE_DIR/tool-update" -type f ! -name '*.*' -delete
+mise hook-env --shell bash --force >/dev/null 2>&1
+sleep 2
+assert_not_contains "mise ls --installed dummy" "1.1.0"
+
+# A failed background update is recorded for `mise doctor`.
+cd .. || exit 1
+rm -rf project
+export MISE_STATE_DIR="$PWD/state-failed"
+mise uninstall dummy --all
+mise install dummy@1.0.0
+printf '[tools]\ndummy = { version = "1", auto_update = true, postinstall = "exit 1" }\n' >"$MISE_CONFIG_DIR/config.toml"
+mise hook-env --shell bash --force >/dev/null 2>&1
+for _ in {1..300}; do
+  compgen -G "$MISE_STATE_DIR/tool-update/*.failed.json" >/dev/null && break
+  sleep 0.1
+done
+assert_contains "mise doctor 2>&1 || true" "the last auto_update of asdf:dummy failed"
+
+# An activated shell's prompt that changes nothing exits before loading config,
+# yet still starts the update once a check is due.
+export MISE_STATE_DIR="$PWD/state-prompt"
+printf '[tools]\ndummy = { version = "1", auto_update = true }\n' >"$MISE_CONFIG_DIR/config.toml"
+mise uninstall dummy --all
+mise install dummy@1.0.0
+eval "$(mise activate bash)" && _mise_hook
+for _ in {1..300}; do
+  mise ls --installed dummy | grep -q 1.1.0 && break
+  sleep 0.1
+done
+assert_contains "mise ls --installed dummy" "1.1.0"
+# Not due yet: a prompt starts nothing and claims nothing, so the check marker
+# keeps its time.
+mise uninstall dummy@1.1.0
+snapshot() { (cd "$MISE_STATE_DIR/tool-update" && find . -type f ! -name '*.lock' ! -name '*.claim' ! -name prompt-next-check -exec stat -c '%n %Y' {} + | sort); }
+before="$(snapshot)"
+_mise_hook
+sleep 2
+assert_not_contains "mise ls --installed dummy" "1.1.0"
+if [ "$(snapshot)" != "$before" ]; then
+  echo "a prompt that was not due claimed an update"
+  exit 1
+fi
+# Due: the same unchanged prompt starts the update.
+find "$MISE_STATE_DIR/tool-update" -type f ! -name '*.*' ! -name 'prompt-next-check' -delete
+echo 0 >"$MISE_STATE_DIR/tool-update/prompt-next-check"
+_mise_hook
+for _ in {1..300}; do
+  mise ls --installed dummy | grep -q 1.1.0 && break
+  sleep 0.1
+done
+assert_contains "mise ls --installed dummy" "1.1.0"
+eval "$(mise deactivate)"
+
+# The schedule comes from global config, so a shell in a project that pins the
+# tool does not erase it for the others.
+export MISE_STATE_DIR="$PWD/state-shared"
+mkdir pinned && cd pinned || exit 1
+printf '[tools]\ndummy = "1.0.0"\n' >mise.toml
+mise hook-env --shell bash --force >/dev/null 2>&1
+assert_succeed "test -s '$MISE_STATE_DIR/tool-update/prompt-next-check'"
+
+# An exact pin is checked once per interval, so it does not keep the prompt
+# schedule at an hour.
+cd .. || exit 1
+export MISE_STATE_DIR="$PWD/state-pin"
+printf '[tools]\ndummy = { version = "1.0.0", auto_update = true }\n' >"$MISE_CONFIG_DIR/config.toml"
+mise uninstall dummy --all
+mise install dummy@1.0.0
+mise hook-env --shell bash --force >/dev/null 2>&1
+due="$(cat "$MISE_STATE_DIR/tool-update/prompt-next-check")"
+if [ "$due" -lt "$(($(date +%s) + 12 * 3600))" ]; then
+  echo "an exact pin kept the prompt schedule short: $due"
+  exit 1
+fi
+
+# A pin beside a version that can move does not claim the shared check first.
+export MISE_STATE_DIR="$PWD/state-pin-sibling"
+cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'
+[tools]
+dummy = [{ version = "1.0.0", auto_update = true }, { version = "1", auto_update = true }]
+TOML
+mise uninstall dummy --all
+mise install dummy@1.0.0
+mise hook-env --shell bash --force >/dev/null 2>&1
+for _ in {1..300}; do
+  mise ls --installed dummy | grep -q 1.1.0 && break
+  sleep 0.1
+done
+assert_contains "mise ls --installed dummy" "1.1.0"

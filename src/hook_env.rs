@@ -235,6 +235,10 @@ fn check_exit_early_fast() -> bool {
     if has_untrusted_config_warning_marker() {
         return false;
     }
+    // An opted-in tool's update check is due: the full run starts it.
+    if crate::tool_update::prompt_check_due() {
+        return false;
+    }
     // Check if running from precmd for the first time
     // Handle both "--reason=precmd" and "--reason precmd" forms
     let is_precmd = args.iter().any(|a| a == "--reason=precmd")

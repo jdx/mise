@@ -43,6 +43,74 @@ pub(crate) struct ToolUpdate {
     /// there, so `mise doctor` finds it under the same id
     #[usage(long, hide = true)]
     id: Option<String>,
+
+    /// Started detached from a shell prompt: stop the update if it runs longer
+    /// than a service pass may
+    #[usage(long, hide = true, conflicts = "watch", conflicts = "due")]
+    background: bool,
+}
+
+/// At a prompt, start a detached update of each opted-in tool in `ts` whose
+/// check is due, so activated shells, where tools run straight from `PATH`,
+/// stay current without the `tool-update` service. The prompt never waits: the
+/// update runs on its own, and the new version is picked up once the shell
+/// re-resolves its environment. Output is discarded; a failure is recorded for
+/// `mise doctor`.
+pub(crate) fn update_in_background(config: &Arc<Config>, ts: &Toolset) {
+    if tool_update::any_opted_in(ts) {
+        start_due_updates(ts);
+    }
+    // Prompts that change nothing exit before loading config, so they go
+    // through the full path again only once a check is due.
+    tool_update::record_prompt_check(config);
+}
+
+fn start_due_updates(ts: &Toolset) {
+    // Versions of one tool share a check marker. Movable ones go first, so a
+    // pin beside them does not claim the check and leave them waiting.
+    let mut versions = ts.list_current_versions();
+    versions.sort_by_key(|(_, tv)| !tool_update::updatable(tv));
+    for (_, tv) in versions {
+        if !tool_update::is_due(&tv.request, Updater::Launch) {
+            continue;
+        }
+        let Some(tool_id) = tool_update::claim_due_request(&tv.request, Updater::Launch) else {
+            continue;
+        };
+        // An exact pin is checked all the same, so it does not stay due and
+        // send every hour's prompt through the full path.
+        if !tool_update::updatable(&tv) {
+            continue;
+        }
+        if let Err(err) = spawn_detached(&tv.ba().short, &tool_id) {
+            // The claim stays, so a failure that persists (resource limits, a
+            // moved executable) warns once per interval, not at every prompt.
+            warn!("could not start an update of {tool_id}: {err}");
+            tool_update::record_result(&tool_id, &Err(eyre::eyre!("could not start it: {err}")));
+        }
+    }
+}
+
+/// Start `mise __tool-update` in its own process group (a detached process on
+/// Windows) with no output, so the shell neither lists it as a job nor waits
+/// for it.
+fn spawn_detached(tool: &str, tool_id: &str) -> std::io::Result<()> {
+    let mut command = update_command(&[tool, "--id", tool_id, "--background"]);
+    command.stdout(Stdio::null()).stderr(Stdio::null());
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        command.process_group(0);
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
+        const DETACHED_PROCESS: u32 = 0x0000_0008;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        command.creation_flags(CREATE_NEW_PROCESS_GROUP | DETACHED_PROCESS | CREATE_NO_WINDOW);
+    }
+    command.spawn().map(drop)
 }
 
 impl ToolUpdate {
@@ -57,8 +125,38 @@ impl ToolUpdate {
             bail!("pass a tool or --watch");
         };
         let tool_id = self.id.unwrap_or_else(|| tool.ba.full_without_opts());
+        if self.background {
+            return update_in_background_process(tool, tool_id).await;
+        }
         update_tool(tool, tool_id, false).await
     }
+}
+
+/// The detached process a prompt started. Nothing else supervises the update,
+/// and it holds the update lock every launch's update waits on, so this process
+/// runs the update as a child the way a service pass does: in its own process
+/// group (a job object on Windows), stopped with everything it started, hooks
+/// and downloads too, after the time a pass gets. That releases the lock and
+/// records the failure for `mise doctor`; blocking waits inside the child can't
+/// outlast it.
+async fn update_in_background_process(tool: ToolArg, tool_id: String) -> Result<()> {
+    // One at a time, and the clock starts after the wait: every due tool gets a
+    // process, and they would otherwise spend each other's time.
+    let _queue = tool_update::lock_background_update()?;
+    let started = std::time::Instant::now();
+    let mut update =
+        Tick::start(update_command(&[&tool.ba.short, "--id", &tool_id])).inspect_err(|err| {
+            tool_update::record_result(&tool_id, &Err(eyre::eyre!("could not start it: {err:#}")))
+        })?;
+    let result = update.wait(TICK_TIMEOUT).await;
+    // The child records its own failures; only a stop it could not report is
+    // recorded here.
+    if let Err(err) = &result
+        && started.elapsed() >= TICK_TIMEOUT
+    {
+        tool_update::record_result(&tool_id, &Err(eyre::eyre!("{err:#}")));
+    }
+    result
 }
 
 async fn update_tool(tool: ToolArg, tool_id: String, in_pass: bool) -> Result<()> {

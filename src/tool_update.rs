@@ -3,18 +3,22 @@
 //! A tool whose global `[tools]` entry sets `auto_update`, or any global tool
 //! when `tool_update.global_auto` is on, is upgraded within its configured version
 //! when its check interval has elapsed: by the `tool-update` service when it
-//! is running, otherwise when a shim or `mise x` is about to launch it. The upgrade runs in `mise __tool-update`; this module
+//! is running, otherwise when a shim or `mise x` is about to launch it, or in
+//! the background at a shell prompt. The upgrade runs in `mise __tool-update`; this module
 //! decides which tool is eligible and when, and keeps the state that
 //! rate-limits checks and reports failures to `mise doctor`.
 
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::time::Duration;
 
 use eyre::{Result, bail};
 
 use crate::config::settings::AutoUpdate;
-use crate::config::{Settings, SettingsExt, is_global_config};
-use crate::toolset::{ToolOptionSource, ToolRequest, ToolSource, ToolVersion, Toolset};
+use crate::config::{Config, Settings, SettingsExt, is_global_config};
+use crate::toolset::{
+    ConfigScope, ToolOptionSource, ToolRequest, ToolSource, ToolVersion, Toolset, ToolsetBuilder,
+};
 use crate::{dirs, duration, file, hash, lock_file};
 
 const STATE_DIR: &str = "tool-update";
@@ -86,8 +90,8 @@ pub fn any_opted_in(toolset: &Toolset) -> bool {
 /// Who is asking to update a tool.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Updater {
-    /// A shim or `mise x` about to launch the tool; it leaves updates to the
-    /// service while one runs.
+    /// A shim or `mise x` about to launch the tool, or a shell prompt; it
+    /// leaves updates to the service while one runs.
     Launch,
     /// The `tool-update` service.
     Service,
@@ -197,6 +201,82 @@ fn claim(tool_id: &str, interval: Duration) -> Result<bool> {
         warn!("auto_update interval for {tool_id} is below the 1h minimum, using 1h instead");
     }
     Ok(true)
+}
+
+/// Take the lock detached prompt updates queue on, waiting for the one
+/// running. Each such update's time limit starts after this, so one waiting
+/// behind another is not stopped for the other's run.
+pub fn lock_background_update() -> Result<fslock::LockFile> {
+    lock_file::LockFile::at(&state_dir().join("background.lock"))
+        .with_pid()
+        .lock()
+}
+
+/// Where a prompt records when an opted-in tool's check is next due, for
+/// [`prompt_check_due`].
+fn prompt_check_path() -> PathBuf {
+    state_dir().join("prompt-next-check")
+}
+
+fn unix_now() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |elapsed| elapsed.as_secs())
+}
+
+/// Whether a prompt should take the full `hook-env` path, not the early exit
+/// for an unchanged environment, because an opted-in tool's check is due. A
+/// single small read, and only for users who opted in.
+pub fn prompt_check_due() -> bool {
+    std::fs::read_to_string(prompt_check_path())
+        .ok()
+        .and_then(|due| due.trim().parse::<u64>().ok())
+        .is_some_and(|due| unix_now() >= due)
+}
+
+/// Record when the next prompt should check the opted-in tools: when the first
+/// one's interval ends, or in an hour when one is overdue yet could not be
+/// checked (offline, in CI, behind the service), so that does not send every
+/// prompt through the full path. The file is shared by every shell, so it comes
+/// from global config alone, not from the current directory's toolset, where a
+/// project that pins a tool would hide it. Removed when no tool opted in.
+pub fn record_prompt_check(config: &Arc<Config>) {
+    let path = prompt_check_path();
+    // A config that can't be read this once says nothing about which tools
+    // opted in: leave the schedule as it was.
+    let Ok(global) = ToolsetBuilder::new()
+        .with_scope(ConfigScope::GlobalOnly)
+        .without_runtime_env()
+        .build_unresolved(config)
+    else {
+        return;
+    };
+    let waits = std::iter::once(&global)
+        .flat_map(|global| global.versions.values())
+        .flat_map(|versions| versions.requests.iter())
+        .filter(|request| request.is_os_supported())
+        .filter_map(|request| {
+            let interval = interval(request)?.max(MIN_CHECK_DURATION);
+            let age =
+                file::modified_duration(&StatePaths::new(&request.ba().full_without_opts()).marker);
+            Some(age.map_or(Duration::ZERO, |age| interval.saturating_sub(age)))
+        })
+        .min();
+    let Some(wait) = waits else {
+        let _ = std::fs::remove_file(&path);
+        return;
+    };
+    let wait = if wait.is_zero() {
+        MIN_CHECK_DURATION
+    } else {
+        wait
+    };
+    let due = unix_now() + wait.as_secs();
+    if let Err(err) =
+        file::create_dir_all(state_dir()).and_then(|()| file::write_atomic(&path, due.to_string()))
+    {
+        debug!("tool-update: could not record the next prompt check: {err:#}");
+    }
 }
 
 /// Whether the `tool-update` service is running: it holds this lock for as

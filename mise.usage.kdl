@@ -462,6 +462,9 @@ once an hour and update the ones that are due. Declare the service with:
     flag --id help="The tool id the launch claimed the check under; the result is recorded there, so `mise doctor` finds it under the same id" hide=#true {
         arg <ID>
     }
+    flag --background help="Started detached from a shell prompt: stop the update if it runs longer than a service pass may" hide=#true {
+        conflicts "--watch" "--due"
+    }
     flag "-h --help" help="Print help" action=help builtin=#true
     arg "[TOOL]" required=#false
 }

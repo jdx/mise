@@ -160,6 +160,14 @@ showing the usual install progress, then runs the new version. Updates stay
 within the request: `node = "24"` gets the newest 24.x, never 26. If the update
 fails or you are offline, mise warns and runs the version you have.
 
+In a shell with [`mise activate`](/shell-setup.html), tools run straight from
+`PATH`, so nothing sits between you and the command. Instead, when the shell
+prompt appears and a tool's check is due, mise starts the update in the
+background and the prompt does not wait. Commands use the new version once the
+update has finished and the shell has refreshed its environment, which happens
+at a prompt. Its output is discarded; if it fails, `mise doctor` shows the
+error.
+
 `auto_update = true` checks every
 [`tool_update.check_duration`](/configuration/settings.html#tool_update.check_duration).
 A duration such as `"6h"` sets that tool's own interval. Intervals under one
@@ -199,8 +207,9 @@ node = { version = "24", auto_update = "6h", minimum_release_age = "3d" }
 - Only global config can turn this on. A project config cannot, and when a
   project sets its own version of the tool, runs in that project do not update
   it.
-- Only the tool being run is checked: `mise exec -- npm test` does not update
-  `claude`. Tasks, `mise hook-env`, and shell activation never update tools.
+- A launch checks only the tool being run: `mise exec -- npm test` does not
+  update `claude`. In an activated shell, a prompt checks every opted-in tool
+  whose interval has elapsed. Tasks never update tools.
 - Exact versions such as `node = "24.11.1"` are never updated. If a global
   lockfile (`mise lock --global`) pins the tool, the update moves the lock
   entry to the new version. A project's config and lockfile are never changed.
@@ -208,10 +217,9 @@ node = { version = "24", auto_update = "6h", minimum_release_age = "3d" }
 - The previous version is pruned on the same schedule as after `mise upgrade`.
 - If the last update of a tool failed, `mise doctor` shows the error.
 
-To update in the background instead, so launches never wait and tools run
-directly from `PATH` with shell activation stay current too, declare the
-`tool-update` service in your global config and run
-`mise bootstrap services apply`:
+To check on a schedule instead of at launches and prompts, so tools stay
+current even when you are not using a shell, declare the `tool-update` service
+in your global config and run `mise bootstrap services apply`:
 
 ```toml [~/.config/mise/config.toml]
 [bootstrap.services.mise-tool-update]
@@ -219,7 +227,7 @@ builtin = "tool-update"
 ```
 
 The service checks once an hour and updates each tool when its interval is
-due. While it runs, launches do not update tools themselves. See
+due. While it runs, launches and prompts do not update tools themselves. See
 [user services](/bootstrap/services.html#user-services).
 
 ## Remove tools {#remove-tools}
