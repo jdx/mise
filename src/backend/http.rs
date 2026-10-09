@@ -9,13 +9,12 @@ use crate::backend::static_helpers::{
     apply_rename_exe, bin_name_for_download, clean_binary_name, ensure_plain_bin_name,
     ensure_safe_relative_bin_path, eval_checksum_expr, fetch_checksum_from_file_with_headers,
     fetch_checksum_from_shasums_with_headers, get_filename_from_url, lookup_value_with_fallback,
-    rename_binary_name, shasums_has_entries, template_string, template_string_for_target,
-    template_string_strict, verify_artifact,
+    pinned_checksum, rename_binary_name, shasums_has_entries, template_string,
+    template_string_for_target, template_string_strict, verify_artifact,
 };
 use crate::backend::version_list;
 use crate::config::Config;
 use crate::config::Settings;
-use crate::download_cache;
 use crate::http::{DownloadFileMetadata, HTTP};
 use crate::install_context::InstallContext;
 use crate::lockfile::PlatformInfo;
@@ -1375,28 +1374,10 @@ impl Backend for HttpBackend {
             .and_then(|p| p.checksum.as_ref())
             .is_some();
 
-        // A checksum the tool pinned names the artifact, so a copy kept from an
-        // earlier install can stand in for the download once it hashes to it.
-        let pinned = opts.checksum().or_else(|| {
-            tv.lock_platforms
-                .get(&platform_key)
-                .and_then(|p| p.checksum.clone())
-        });
-        let local_src = local_artifact_path(&url)?;
-        let restored = match (&pinned, &local_src) {
-            (Some(checksum), None) => {
-                ctx.pr.set_message(format!("cached {filename}"));
-                download_cache::restore(checksum, &file_path, Some(ctx.pr.as_ref()))?
-            }
-            _ => None,
-        };
-        let from_cache = restored.is_some();
+        let pinned = pinned_checksum(&tv, &platform_key, opts.raw());
 
-        let download = match (restored, local_src) {
-            (Some(restored), _) => DownloadFileMetadata {
-                effective_filename: restored.effective_filename,
-            },
-            (None, Some(src)) => {
+        let download = match local_artifact_path(&url)? {
+            Some(src) => {
                 ctx.pr.set_message(format!("copy {filename}"));
                 if let Some(parent) = file_path.parent() {
                     file::create_dir_all(parent)?;
@@ -1404,20 +1385,26 @@ impl Backend for HttpBackend {
                 file::run_blocking(|| file::copy(&src, &file_path))?;
                 DownloadFileMetadata::default()
             }
-            (None, None) => {
+            None => {
                 ctx.pr.set_message(format!("download {filename}"));
                 let headers = opts.headers(Some(tv.version.as_str()))?;
                 if headers.is_empty() {
-                    HTTP.download_file_with_metadata(&url, &file_path, Some(ctx.pr.as_ref()))
-                        .await?
+                    HTTP.download_file_pinned(
+                        &url,
+                        &file_path,
+                        pinned.as_deref(),
+                        Some(ctx.pr.as_ref()),
+                    )
+                    .await?
                 } else {
                     // Keep the automatic host token; configured headers override it.
                     let headers =
                         crate::http::with_host_auth(&reqwest::Url::parse(&url)?, &headers)?;
-                    HTTP.download_file_with_headers_metadata(
+                    HTTP.download_file_with_pin(
                         &url,
                         &file_path,
                         &headers,
+                        pinned.as_deref(),
                         Some(ctx.pr.as_ref()),
                     )
                     .await?
@@ -1481,14 +1468,6 @@ impl Backend for HttpBackend {
             ctx.pr.next_operation();
         }
         self.verify_checksum(ctx, &mut tv, &file_path)?;
-
-        // Verified against the pin above, so it is safe to keep for next time.
-        if let Some(checksum) = pinned.as_ref().filter(|_| !from_cache)
-            && let Err(err) =
-                download_cache::store(checksum, &file_path, download.effective_filename.as_deref())
-        {
-            debug!("could not keep {filename} in the download cache: {err}");
-        }
 
         Ok(tv)
     }

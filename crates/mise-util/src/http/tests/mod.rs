@@ -578,7 +578,7 @@ fn not_modified_response() -> &'static str {
 async fn test_download_reuses_stored_file_on_not_modified() {
     let _settings = set_test_http_retries(0);
     let cache = tempfile::tempdir().unwrap();
-    *revalidate::TEST_ROOT.lock().unwrap() = Some(cache.path().to_path_buf());
+    *cas::TEST_ROOT.lock().unwrap() = Some(cache.path().to_path_buf());
     let (port, count, requests) = spawn_recording_server(vec![
         cacheable_download_response(),
         not_modified_response(),
@@ -606,18 +606,67 @@ async fn test_download_reuses_stored_file_on_not_modified() {
 
     // A stored file that no longer hashes to what was recorded is not used,
     // even though the server says it is current.
-    let stored = std::fs::read_dir(cache.path())
+    let stored = std::fs::read_dir(cache.path().join("blobs"))
         .unwrap()
         .next()
         .unwrap()
         .unwrap()
-        .path()
-        .join("file");
+        .path();
     std::fs::write(&stored, b"tampered").unwrap();
     std::fs::remove_file(&dest).unwrap();
     client.download_file(&url, &dest, None).await.unwrap();
     assert_eq!(std::fs::read(&dest).unwrap(), b"hello");
     assert_eq!(count.load(std::sync::atomic::Ordering::SeqCst), 4);
 
-    *revalidate::TEST_ROOT.lock().unwrap() = None;
+    *cas::TEST_ROOT.lock().unwrap() = None;
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn test_download_reuses_pinned_file_without_a_request() {
+    let _settings = set_test_http_retries(0);
+    let cache = tempfile::tempdir().unwrap();
+    *cas::TEST_ROOT.lock().unwrap() = Some(cache.path().to_path_buf());
+    let (port, count) = spawn_canned_server(vec![cacheable_download_response()]).await;
+    let url = format!("http://127.0.0.1:{port}/artifact");
+    let client = Client::new(Duration::from_secs(2), ClientKind::Http).unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let dest = dir.path().join("artifact");
+    let sha = crate::hash::file_hash_prog::<sha2::Sha256>;
+    let hello = dir.path().join("hello");
+    std::fs::write(&hello, b"hello").unwrap();
+    let pin = format!("sha256:{}", sha(&hello, None).unwrap());
+
+    client
+        .download_file_pinned(&url, &dest, Some(&pin), None)
+        .await
+        .unwrap();
+    assert_eq!(std::fs::read(&dest).unwrap(), b"hello");
+
+    // A different URL with the same pin is served without any request.
+    std::fs::remove_file(&dest).unwrap();
+    let other = "http://127.0.0.1:1/elsewhere";
+    client
+        .download_file_pinned(other, &dest, Some(&pin), None)
+        .await
+        .unwrap();
+    assert_eq!(std::fs::read(&dest).unwrap(), b"hello");
+    assert_eq!(count.load(std::sync::atomic::Ordering::SeqCst), 1);
+
+    // A blob that no longer matches the pin is not used.
+    let blob = std::fs::read_dir(cache.path().join("blobs"))
+        .unwrap()
+        .next()
+        .unwrap()
+        .unwrap()
+        .path();
+    std::fs::write(&blob, b"tampered").unwrap();
+    std::fs::remove_file(&dest).unwrap();
+    assert!(
+        client
+            .download_file_pinned(other, &dest, Some(&pin), None)
+            .await
+            .is_err()
+    );
+
+    *cas::TEST_ROOT.lock().unwrap() = None;
 }

@@ -910,7 +910,7 @@
         },
         "download_cache": {
           "default": true,
-          "description": "Reuse a finished download when the server says it hasn't changed.",
+          "description": "Reuse finished downloads instead of fetching them again.",
           "type": "boolean"
         },
         "enable_tools": {

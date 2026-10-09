@@ -263,21 +263,23 @@ fn downloaded_sign_in_page(url: &str, dest: &Path) -> bool {
 pub(crate) async fn download_file(
     url: &str,
     dest: &Path,
+    pin: Option<&str>,
     pr: Option<&dyn SingleReport>,
 ) -> Result<()> {
     let reason = match HTTP
-        .download_file_with_headers(url, dest, &headers_for(url)?, pr)
+        .download_file_with_pin(url, dest, &headers_for(url)?, pin, pr)
         .await
     {
-        Ok(()) if !downloaded_sign_in_page(url, dest) => return Ok(()),
-        Ok(()) => Unreachable::SignIn,
+        Ok(_) if !downloaded_sign_in_page(url, dest) => return Ok(()),
+        Ok(_) => Unreachable::SignIn,
         Err(err) => Unreachable::Failed(err),
     };
     let Some(api_url) = retry_url(url, &reason).await else {
         return Err(reason.into_error(url));
     };
-    HTTP.download_file_with_headers(&api_url, dest, &headers_for(&api_url)?, pr)
+    HTTP.download_file_with_pin(&api_url, dest, &headers_for(&api_url)?, pin, pr)
         .await
+        .map(|_| ())
 }
 
 /// Fetch a document a packslip names — a manifest or a signed release list —
@@ -371,7 +373,10 @@ pub(crate) async fn fetch_files(
                     // The tool is installed by now and the asset is an extra:
                     // one that cannot be fetched is reported, not fatal. One
                     // that arrives with the wrong digest is another matter.
-                    if let Err(err) = download_file(url, &dest, Some(pr)).await {
+                    let signed = statement
+                        .digest_of(name)
+                        .map(|sha256| format!("sha256:{sha256}"));
+                    if let Err(err) = download_file(url, &dest, signed.as_deref(), Some(pr)).await {
                         let _ = file::remove_all(&dest);
                         warn!("{}: could not fetch {name}: {err}", tv.style());
                         continue;
@@ -1987,7 +1992,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let dest = dir.path().join("tool.tar.gz");
         let url = format!("{}/tool.tar.gz", server.url());
-        download_file(&url, &dest, None).await.unwrap();
+        download_file(&url, &dest, None, None).await.unwrap();
         assert_eq!(file::read_to_string(&dest).unwrap(), "payload");
         mock.assert_async().await;
     }

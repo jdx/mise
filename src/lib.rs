@@ -44,7 +44,6 @@ pub mod deps;
 pub(crate) mod deps_graph;
 pub mod direnv;
 pub mod dirs;
-pub mod download_cache;
 pub mod duration;
 pub mod env;
 pub mod env_diff;

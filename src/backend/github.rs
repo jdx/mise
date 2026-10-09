@@ -6,8 +6,8 @@ use crate::backend::options::{BackendOptions, VersionOrder};
 use crate::backend::platform_target::PlatformTarget;
 use crate::backend::static_helpers::{
     ArchiveLayout, get_filename_from_url, install_artifact, lookup_platform_key,
-    lookup_with_fallback, template_string, try_with_v_prefix, try_with_v_prefix_and_repo,
-    verify_artifact,
+    lookup_with_fallback, pinned_checksum, template_string, try_with_v_prefix,
+    try_with_v_prefix_and_repo, verify_artifact,
 };
 use crate::backend::{MISE_BINS_DIR, SecurityFeature, runtime_path_for_install_path};
 use crate::config::{Config, Settings, SettingsExt};
@@ -1715,8 +1715,15 @@ impl UnifiedGitBackend {
         };
 
         ctx.pr.set_message(format!("download {filename}"));
-        HTTP.download_file_with_headers(url, &file_path, &headers, Some(ctx.pr.as_ref()))
-            .await?;
+        let pinned = pinned_checksum(tv, &self.get_platform_key(), opts.raw());
+        HTTP.download_file_with_pin(
+            url,
+            &file_path,
+            &headers,
+            pinned.as_deref(),
+            Some(ctx.pr.as_ref()),
+        )
+        .await?;
 
         // Verify and install
         ctx.pr.next_operation();

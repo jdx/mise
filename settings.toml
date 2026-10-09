@@ -673,23 +673,27 @@ type = "Url"
 
 [download_cache]
 default = true
-description = "Reuse a finished download when the server says it hasn't changed."
+description = "Reuse finished downloads instead of fetching them again."
 docs = """
-mise keeps finished downloads in `$MISE_CACHE_DIR/downloads-cache`, with the
-`ETag` or `Last-Modified` value the server sent. The next request for the same
-URL asks the server whether the file changed; on `304 Not Modified` mise uses
-the kept file once it hashes to the recorded value again, so a damaged entry is
-dropped and fetched again. The recorded hash lives beside the file, so this does
-not stop someone who can write the cache from replacing both: pin a checksum,
-which is always checked after the download, if the cache is shared. Servers that
-send no validator are not cached. The cache holds up to 2 GiB; the least
-recently used entries go first.
+mise keeps finished downloads in `$MISE_CACHE_DIR/downloads-cas`, named by their
+hash, and uses one again in two cases:
 
-When an `http` tool pins a checksum, in its options or in `mise.lock`, mise also
-keeps the download in `$MISE_CACHE_DIR/downloads-cas`, named by that checksum,
-and reuses it without asking the server.
+- **The server confirms it is unchanged.** The next request for the same URL
+  carries the `ETag` or `Last-Modified` value the server sent, and a
+  `304 Not Modified` answer means the kept file is used instead of a new
+  download. Servers that send no validator are not cached.
+- **A tool pinned its checksum**, in its options or in `mise.lock`. The kept
+  file is used with no request at all, even if the URL changed.
 
-Extracted files are not covered; see
+The `http`, `github` and `aqua` backends pin; every other download that goes
+through mise's HTTP client uses the first case.
+
+A kept file is hashed again before it is used, and one that no longer matches is
+dropped and downloaded again. The recorded hash lives beside the file, so this
+catches damage but does not stop someone who can write the cache from replacing
+both. A pinned checksum is always checked after the download, so pin one if the
+cache is shared. The cache holds up to 2 GiB; the least recently used entries go
+first. Extracted files are not covered; see
 [Restored caches and installed tools](/dev-tools/mise-lock.html#restored-caches).
 """
 env = "MISE_DOWNLOAD_CACHE"

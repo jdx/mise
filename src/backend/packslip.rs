@@ -1656,7 +1656,8 @@ impl PackslipBackend {
         let bundle_path = tv.download_path().join(bundle_name(&project));
         file::create_dir_all(tv.download_path())?;
         ctx.pr.set_message("download packslip".into());
-        crate::packslip::download_file(&located.url, &bundle_path, Some(ctx.pr.as_ref())).await?;
+        crate::packslip::download_file(&located.url, &bundle_path, None, Some(ctx.pr.as_ref()))
+            .await?;
         let pinned: Vec<&String> = located.digest.iter().chain(vendor_digest.iter()).collect();
         if !pinned.is_empty() {
             let (actual, _) = packslip::digest_file(&bundle_path)?;
@@ -1813,7 +1814,13 @@ impl PackslipBackend {
         let file_path = tv.download_path().join(&artifact.name);
         ctx.pr.next_operation();
         ctx.pr.set_message(format!("download {}", artifact.name));
-        crate::packslip::download_file(&url, &file_path, Some(ctx.pr.as_ref())).await?;
+        // The signed digest names the artifact, so a copy kept earlier can stand in
+        // for the download; `verify_bundle` below still checks the result.
+        let signed = statement
+            .digest_of(&artifact.name)
+            .map(|sha256| format!("sha256:{sha256}"));
+        crate::packslip::download_file(&url, &file_path, signed.as_deref(), Some(ctx.pr.as_ref()))
+            .await?;
 
         // The signed digest and size first, then what the lockfile remembers:
         // a lock entry written from an earlier packslip keeps its checksum and

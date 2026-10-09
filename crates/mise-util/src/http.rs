@@ -29,7 +29,7 @@ use crate::time::format_duration;
 use crate::{env, file};
 use mise_settings::Settings;
 
-mod revalidate;
+mod cas;
 
 pub static HTTP: Lazy<Client> = Lazy::new(|| {
     Client::new_shared(
@@ -223,6 +223,14 @@ impl DownloadValidator {
             } => is_strong_last_modified(value, response_date),
         }
     }
+}
+
+/// How a download may use the store of finished downloads.
+#[derive(Clone, Copy)]
+struct CacheMode<'a> {
+    /// The checksum the tool pinned, as `algo:hex`.
+    pin: Option<&'a str>,
+    enabled: bool,
 }
 
 /// What an attempt learned beyond the bytes it wrote.
@@ -1262,6 +1270,35 @@ impl Client {
         headers: &HeaderMap,
         pr: Option<&dyn SingleReport>,
     ) -> Result<DownloadFileMetadata> {
+        self.download_file_with_pin(url, path, headers, None, pr)
+            .await
+    }
+
+    /// Like [`Client::download_file`], for a tool that pinned `pin`
+    /// (`algo:hex`). A download kept earlier under that checksum is used
+    /// without a request once it hashes to the pin again. The caller still
+    /// verifies the result.
+    pub async fn download_file_pinned<U: IntoUrl>(
+        &self,
+        url: U,
+        path: &Path,
+        pin: Option<&str>,
+        pr: Option<&dyn SingleReport>,
+    ) -> Result<DownloadFileMetadata> {
+        let url = url.into_url()?;
+        let headers = host_auth_headers(&url)?;
+        self.download_file_with_pin(url, path, &headers, pin, pr)
+            .await
+    }
+
+    pub async fn download_file_with_pin<U: IntoUrl>(
+        &self,
+        url: U,
+        path: &Path,
+        headers: &HeaderMap,
+        pin: Option<&str>,
+        pr: Option<&dyn SingleReport>,
+    ) -> Result<DownloadFileMetadata> {
         let url = url.into_url()?;
         if Settings::get().generate_lockfiles() {
             let key = format!("{:p}:{}", self, download_request_hash(&url, headers));
@@ -1279,6 +1316,7 @@ impl Client {
                             url.clone(),
                             &directory.path().join("artifact"),
                             headers,
+                            pin,
                             pr,
                             crate::network::http_download_timeout(&Settings::get()),
                         )
@@ -1311,6 +1349,7 @@ impl Client {
             url,
             path,
             headers,
+            pin,
             pr,
             crate::network::http_download_timeout(&Settings::get()),
         )
@@ -1322,25 +1361,44 @@ impl Client {
         url: U,
         path: &Path,
         headers: &HeaderMap,
+        pin: Option<&str>,
         pr: Option<&dyn SingleReport>,
         total_timeout: Duration,
     ) -> Result<DownloadFileMetadata> {
         let use_cache = Settings::get().download_cache;
-        self.download_file_inner(url, path, headers, pr, total_timeout, use_cache)
+        let cache = CacheMode {
+            pin,
+            enabled: use_cache,
+        };
+        self.download_file_inner(url, path, headers, cache, pr, total_timeout)
             .await
     }
 
-    /// With `use_cache`, a finished download of the same request is offered to
-    /// the server for revalidation and reused on `304 Not Modified`.
+    /// With `use_cache`, a download kept under `pin` is reused outright, and one
+    /// kept for the same request is offered to the server for revalidation and
+    /// reused on `304 Not Modified`.
     async fn download_file_inner<U: IntoUrl>(
         &self,
         url: U,
         path: &Path,
         headers: &HeaderMap,
+        cache: CacheMode<'_>,
         pr: Option<&dyn SingleReport>,
         total_timeout: Duration,
-        use_cache: bool,
     ) -> Result<DownloadFileMetadata> {
+        let CacheMode {
+            pin,
+            enabled: use_cache,
+        } = cache;
+        // A pinned download kept earlier needs no request, so this comes before
+        // the offline check.
+        if use_cache && let Some(hit) = pin.and_then(cas::lookup_pin) {
+            let effective_filename = hit.effective_filename.clone();
+            let dest = path.to_path_buf();
+            if tokio::task::spawn_blocking(move || hit.restore(&dest)).await?? {
+                return Ok(DownloadFileMetadata { effective_filename });
+            }
+        }
         ensure!(
             !crate::network::offline(&Settings::get()),
             "offline mode is enabled"
@@ -1366,12 +1424,12 @@ impl Client {
         let progress = Arc::new(DownloadProgress::default());
         let request_hash = download_request_hash(&url, headers);
         let cached = if use_cache {
-            revalidate::lookup(&request_hash)
+            cas::lookup_url(&request_hash)
         } else {
             None
         };
         let outcome = Arc::new(AttemptOutcome {
-            cond: cached.as_ref().map(|c| c.validator().clone()),
+            cond: cached.as_ref().map(|c| c.validator.clone()),
             ..Default::default()
         });
 
@@ -1432,29 +1490,41 @@ impl Client {
         {
             let effective_filename = cached.effective_filename();
             let dest = path.clone();
-            let restored = tokio::task::spawn_blocking(move || cached.restore(&dest)).await??;
+            let hit = cached.into_hit();
+            let restored = tokio::task::spawn_blocking(move || hit.restore(&dest)).await??;
             if restored {
                 return Ok(DownloadFileMetadata { effective_filename });
             }
             // The stored file no longer matches what was recorded: fetch it again.
             drop(_download_lock);
+            let cache = CacheMode {
+                pin,
+                enabled: false,
+            };
             return Box::pin(self.download_file_inner(
                 url,
                 &path,
                 headers,
+                cache,
                 pr,
                 total_timeout,
-                false,
             ))
             .await;
         }
         let persist_path = path.clone();
         tokio::task::spawn_blocking(move || partial.persist(&persist_path)).await??;
         let validator = outcome.validator.lock().unwrap().take();
-        if use_cache && let Some(validator) = validator {
+        if use_cache {
             let effective_filename = metadata.effective_filename.clone();
+            let pin = pin.map(str::to_string);
             let stored = tokio::task::spawn_blocking(move || {
-                revalidate::store(&request_hash, &path, &validator, effective_filename)
+                cas::store(
+                    &request_hash,
+                    pin.as_deref(),
+                    &path,
+                    validator.as_ref(),
+                    effective_filename,
+                )
             })
             .await;
             if let Ok(Err(err)) | Err(err) = stored.map_err(Report::from) {

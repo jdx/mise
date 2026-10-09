@@ -21,8 +21,9 @@ EOF
 mise install
 assert_contains "mise x -- mytool" "cached tool ok"
 
-ENTRY="$MISE_CACHE_DIR/downloads-cas/sha256/$SHA"
+ENTRY="$MISE_CACHE_DIR/downloads-cas/pins/sha256/$SHA.json"
 assert "test -f $ENTRY && echo kept" "kept"
+BLOB="$(find "$MISE_CACHE_DIR/downloads-cas/blobs" -type f | head -1)"
 
 # Without a pin, the server is asked whether the kept download is still current.
 printf '#!/bin/sh\necho unpinned tool ok\n' >"$SRV/mytool2"
@@ -35,7 +36,7 @@ url = "http://127.0.0.1:${HTTP_PORT}/mytool2"
 EOF
 mise install
 assert_contains "mise x -- mytool2" "unpinned tool ok"
-assert "ls $MISE_CACHE_DIR/downloads-cache | wc -l | tr -d ' '" "1"
+assert "ls $MISE_CACHE_DIR/downloads-cas/urls | wc -l | tr -d ' '" "1"
 mise uninstall http:cas-unpinned@1.0.0
 mise install
 assert_contains "mise x -- mytool2" "unpinned tool ok"
@@ -54,9 +55,9 @@ assert_fail "test -d $MISE_DATA_DIR/installs/http-cas-tool/1.0.0"
 mise install
 assert_contains "mise x -- mytool" "cached tool ok"
 
-# A kept file that no longer matches the pin is never installed. The server is
-# down, so the install fails, and the bad entry is removed.
-printf tampered >>"$ENTRY"
+# A kept file that no longer matches is never installed. The server is down, so
+# the install fails, and the pin entry that pointed at it is removed.
+printf tampered >>"$BLOB"
 mise uninstall http:cas-tool@1.0.0
 assert_fail "mise install"
 assert_fail "test -f $ENTRY"

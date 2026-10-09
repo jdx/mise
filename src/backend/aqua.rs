@@ -2824,7 +2824,11 @@ impl AquaBackend {
             return Ok(());
         }
         ctx.pr.set_message(format!("download {filename}"));
-        HTTP.download_file(url, &tarball_path, Some(ctx.pr.as_ref()))
+        let pinned = tv
+            .lock_platforms
+            .get(&self.get_platform_key())
+            .and_then(|platform| platform.checksum.clone());
+        HTTP.download_file_pinned(url, &tarball_path, pinned.as_deref(), Some(ctx.pr.as_ref()))
             .await?;
         Ok(())
     }
