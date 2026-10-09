@@ -1662,12 +1662,14 @@ pub fn unsaved_paths(
     walk: &super::tracked::Walk,
     snapshot: &str,
 ) -> Result<Option<Vec<String>>> {
-    // the walk leaves out a file it cannot read; the guard's intentional
+    // the walk leaves out a file it cannot read, and every file past the
+    // point where a scan stopped (`incomplete`); the guard's intentional
     // omissions are not read failures
-    if walk
-        .omitted
-        .iter()
-        .any(|omitted| omitted.reason.starts_with("unreadable"))
+    if !walk.incomplete.is_empty()
+        || walk
+            .omitted
+            .iter()
+            .any(|omitted| omitted.reason.starts_with("unreadable"))
     {
         return Ok(None);
     }
@@ -1685,14 +1687,13 @@ pub fn unsaved_paths(
     let saved = without_local(repo, snapshot, &tracked.local)?;
     let mut encrypted = super::sync::files::encrypted_paths(repo, Some(&saved))?;
     encrypted.extend(super::sync::files::encrypted_paths(repo, Some(&live))?);
-    // a save carries a path the walk omitted or did not finish scanning
-    // (too large, a special file) rather than record it as removed, when
-    // the tracking rules still retain it (`retain_omitted`)
-    let coverage = tracked.coverage(walk);
-    let carried: Vec<PathBuf> = coverage
+    // a save carries a path the walk omitted (too large, a special file)
+    // rather than record it as removed, when the tracking rules still retain
+    // it (`retain_omitted`)
+    let carried: Vec<PathBuf> = tracked
+        .coverage(walk)
         .omitted
         .iter()
-        .chain(&coverage.incomplete)
         .map(|omitted| crate::file::replace_path(&omitted.path))
         .collect();
     let roots = super::sync::layout::Roots::current();
