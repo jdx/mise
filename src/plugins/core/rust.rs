@@ -978,10 +978,15 @@ fn rust_state_lock_identities(rustup_home: &Path, cargo_home: &Path) -> Vec<Path
 /// Serializes rustup state changes for the homes `config` resolves to. Callers that spawn
 /// `cargo` (which may run rustup itself) must hold this so they don't race the rust plugin.
 pub(crate) async fn lock_rust_state_for_config(
+    config_env: &IndexMap<String, String>,
     toolset_env: &BTreeMap<String, String>,
     install_env: &IndexMap<String, crate::config::env_directive::EnvValue>,
 ) -> Result<Vec<fslock::LockFile>> {
-    // Mirror the child's environment: it inherits the process env, then the toolset
+    // The homes the rust plugin locks. `install_env` belongs to this tool only, and other
+    // tools' exec env never reaches `RustHomes::resolve`, so neither affects them.
+    let plugin_homes = RustHomes::from_config_env(config_env);
+
+    // The homes the spawned `cargo` uses: it inherits the process env, then the toolset
     // env and `install_env` override it. Cargo only reads CARGO_HOME/RUSTUP_HOME.
     let mut effective: BTreeMap<String, String> = env::vars_safe().collect();
     effective.extend(toolset_env.iter().map(|(k, v)| (k.clone(), v.clone())));
@@ -991,18 +996,32 @@ pub(crate) async fn lock_rust_state_for_config(
             None => effective.remove(key),
         };
     }
-    let homes = RustHomes::from_sources(
+    let child_homes = RustHomes::from_sources(
         &IndexMap::new(),
         None,
         effective.get("CARGO_HOME").map(PathBuf::from),
         None,
         effective.get("RUSTUP_HOME").map(PathBuf::from),
     );
-    lock_rust_state(&homes).await
+
+    // These differ when `install_env` changes or removes a home, or when a settings home
+    // never reaches the child, so lock both.
+    let mut identities = rust_state_lock_identities(&plugin_homes.rustup, &plugin_homes.cargo);
+    identities.extend(rust_state_lock_identities(
+        &child_homes.rustup,
+        &child_homes.cargo,
+    ));
+    lock_rust_state_identities(identities).await
 }
 
 async fn lock_rust_state(homes: &RustHomes) -> Result<Vec<fslock::LockFile>> {
-    let identities = rust_state_lock_identities(&homes.rustup, &homes.cargo);
+    lock_rust_state_identities(rust_state_lock_identities(&homes.rustup, &homes.cargo)).await
+}
+
+/// Takes the locks in sorted order so overlapping lock sets can't deadlock.
+async fn lock_rust_state_identities(mut identities: Vec<PathBuf>) -> Result<Vec<fslock::LockFile>> {
+    identities.sort();
+    identities.dedup();
     tokio::task::spawn_blocking(move || {
         identities
             .into_iter()
@@ -1031,15 +1050,18 @@ struct RustHomes {
 
 impl RustHomes {
     async fn resolve(config: &Arc<Config>) -> Result<Self> {
-        let config_env = config.env().await?;
+        Ok(Self::from_config_env(&config.env().await?))
+    }
+
+    fn from_config_env(config_env: &IndexMap<String, String>) -> Self {
         let settings = Settings::get();
-        Ok(Self::from_sources(
-            &config_env,
+        Self::from_sources(
+            config_env,
             settings.rust.cargo_home.clone(),
             env::var_path("CARGO_HOME"),
             settings.rust.rustup_home.clone(),
             env::var_path("RUSTUP_HOME"),
-        ))
+        )
     }
 
     fn from_sources(
@@ -1372,6 +1394,7 @@ const RUST_TARGET_ARCHES: &[&str] = &[
 #[cfg(test)]
 mod tests {
     use super::*;
+    use confique::Layer;
 
     fn rust_homes_at(root: &Path, explicit: bool) -> RustHomes {
         RustHomes {
@@ -1978,5 +2001,217 @@ targets = ["wasm32-wasip1", " wasm32-wasip1 "]
 
         assert_eq!(runtime.provider, RustProvider::Managed);
         assert_eq!(runtime.bin_dir, homes.cargo_bindir());
+    }
+
+    /// The lock `lock_rust_state_for_config` takes must be the same lock the rust
+    /// plugin resolves for the same environment, or `cargo install` fallbacks can
+    /// still race the plugin on the shared rustup state (#14041/#14042).
+    fn assert_plugin_locks_are_covered(homes: &RustHomes) {
+        let identities = rust_state_lock_identities(&homes.rustup, &homes.cargo);
+        for identity in identities {
+            let probe = LockFile::new(&identity).try_lock().unwrap();
+            assert!(
+                probe.is_none(),
+                "cargo fallback lock does not cover plugin-resolved home {}",
+                file::display_path(&identity)
+            );
+        }
+    }
+
+    fn ambient_homes_guard() -> crate::test::EnvVarGuard {
+        let mut guard = crate::test::EnvVarGuard::new();
+        guard.remove("CARGO_HOME");
+        guard.remove("RUSTUP_HOME");
+        guard
+    }
+
+    #[tokio::test]
+    async fn config_lock_resolves_tilde_homes_like_the_rust_plugin() {
+        let _settings_guard = crate::test::SettingsGuard::lock();
+        let _env_guard = ambient_homes_guard();
+        let cargo_home_dir = tempfile::Builder::new()
+            .prefix("mise-lock-probe-cargo-")
+            .tempdir_in(*dirs::HOME)
+            .unwrap();
+        let rustup_home_dir = tempfile::Builder::new()
+            .prefix("mise-lock-probe-rustup-")
+            .tempdir_in(*dirs::HOME)
+            .unwrap();
+        let cargo_home = format!(
+            "~/{}",
+            cargo_home_dir.path().file_name().unwrap().to_string_lossy()
+        );
+        let rustup_home = format!(
+            "~/{}",
+            rustup_home_dir
+                .path()
+                .file_name()
+                .unwrap()
+                .to_string_lossy()
+        );
+        let mut toolset_env = BTreeMap::new();
+        toolset_env.insert("CARGO_HOME".to_string(), cargo_home.clone());
+        toolset_env.insert("RUSTUP_HOME".to_string(), rustup_home.clone());
+
+        // `[env]` values reach both `config.env()` and the toolset env
+        let config_env = toolset_env.clone().into_iter().collect();
+        let _locks = lock_rust_state_for_config(&config_env, &toolset_env, &IndexMap::new())
+            .await
+            .unwrap();
+
+        let plugin_homes = RustHomes::from_sources(
+            &IndexMap::new(),
+            None,
+            Some(file::replace_path(&cargo_home)),
+            None,
+            Some(file::replace_path(&rustup_home)),
+        );
+        assert_plugin_locks_are_covered(&plugin_homes);
+    }
+
+    #[tokio::test]
+    async fn config_lock_honors_mise_prefixed_homes_from_config_env() {
+        let _settings_guard = crate::test::SettingsGuard::lock();
+        let _env_guard = ambient_homes_guard();
+        let root = tempfile::tempdir().unwrap();
+        let cargo_home = root.path().join("cargo");
+        let rustup_home = root.path().join("rustup");
+        let mut toolset_env = BTreeMap::new();
+        toolset_env.insert(
+            "MISE_CARGO_HOME".to_string(),
+            cargo_home.to_string_lossy().to_string(),
+        );
+        toolset_env.insert(
+            "MISE_RUSTUP_HOME".to_string(),
+            rustup_home.to_string_lossy().to_string(),
+        );
+
+        // `[env]` values reach both `config.env()` and the toolset env
+        let config_env = toolset_env.clone().into_iter().collect();
+        let _locks = lock_rust_state_for_config(&config_env, &toolset_env, &IndexMap::new())
+            .await
+            .unwrap();
+
+        let plugin_homes = RustHomes::from_sources(&config_env, None, None, None, None);
+        assert_plugin_locks_are_covered(&plugin_homes);
+    }
+
+    #[tokio::test]
+    async fn config_lock_covers_settings_configured_homes() {
+        let _settings_guard = crate::test::SettingsGuard::lock();
+        let _env_guard = ambient_homes_guard();
+        let root = tempfile::tempdir().unwrap();
+        let mut settings = crate::config::settings::SettingsPartial::empty();
+        settings.rust.cargo_home = Some(root.path().join("cargo"));
+        settings.rust.rustup_home = Some(root.path().join("rustup"));
+        Settings::reset(Some(settings));
+
+        let _locks =
+            lock_rust_state_for_config(&IndexMap::new(), &BTreeMap::new(), &IndexMap::new())
+                .await
+                .unwrap();
+
+        let plugin_homes = RustHomes::from_sources(
+            &IndexMap::new(),
+            Some(root.path().join("cargo")),
+            None,
+            Some(root.path().join("rustup")),
+            None,
+        );
+        assert_plugin_locks_are_covered(&plugin_homes);
+    }
+
+    #[tokio::test]
+    async fn config_lock_ignores_ambient_home_removed_by_install_env() {
+        let _settings_guard = crate::test::SettingsGuard::lock();
+        let mut env_guard = ambient_homes_guard();
+        let root = tempfile::tempdir().unwrap();
+        env_guard.set("CARGO_HOME", root.path().join("ambient-cargo"));
+        let install_env = IndexMap::from([(
+            "CARGO_HOME".to_string(),
+            crate::config::env_directive::EnvValue::Boolean(false),
+        )]);
+
+        let _locks = lock_rust_state_for_config(&IndexMap::new(), &BTreeMap::new(), &install_env)
+            .await
+            .unwrap();
+
+        // the child `cargo` no longer sees CARGO_HOME, so it uses the default home
+        let child_homes = RustHomes::from_sources(&IndexMap::new(), None, None, None, None);
+        assert_plugin_locks_are_covered(&child_homes);
+    }
+
+    #[tokio::test]
+    async fn config_lock_covers_settings_home_when_another_tool_exports_cargo_home() {
+        let _settings_guard = crate::test::SettingsGuard::lock();
+        let _env_guard = ambient_homes_guard();
+        let root = tempfile::tempdir().unwrap();
+        let mut settings = crate::config::settings::SettingsPartial::empty();
+        settings.rust.cargo_home = Some(root.path().join("settings-cargo"));
+        Settings::reset(Some(settings));
+        // another tool's exec env reaches the toolset env, but not `config.env()`
+        let toolset_env = BTreeMap::from([(
+            "CARGO_HOME".to_string(),
+            root.path().join("tool-cargo").to_string_lossy().to_string(),
+        )]);
+
+        let _locks = lock_rust_state_for_config(&IndexMap::new(), &toolset_env, &IndexMap::new())
+            .await
+            .unwrap();
+
+        // the rust plugin resolves the settings home
+        let plugin_homes = RustHomes::from_sources(
+            &IndexMap::new(),
+            Some(root.path().join("settings-cargo")),
+            None,
+            None,
+            None,
+        );
+        assert_plugin_locks_are_covered(&plugin_homes);
+        // while the child `cargo` uses the exported one
+        let child_homes = RustHomes::from_sources(
+            &IndexMap::new(),
+            None,
+            Some(root.path().join("tool-cargo")),
+            None,
+            None,
+        );
+        assert_plugin_locks_are_covered(&child_homes);
+    }
+
+    #[tokio::test]
+    async fn config_lock_covers_settings_home_and_child_default_when_install_env_removes_it() {
+        let _settings_guard = crate::test::SettingsGuard::lock();
+        let _env_guard = ambient_homes_guard();
+        let root = tempfile::tempdir().unwrap();
+        let mut settings = crate::config::settings::SettingsPartial::empty();
+        settings.rust.cargo_home = Some(root.path().join("cargo"));
+        Settings::reset(Some(settings));
+        // the rust plugin's exec_env exports the settings home to the toolset env
+        let toolset_env = BTreeMap::from([(
+            "CARGO_HOME".to_string(),
+            root.path().join("cargo").to_string_lossy().to_string(),
+        )]);
+        let install_env = IndexMap::from([(
+            "CARGO_HOME".to_string(),
+            crate::config::env_directive::EnvValue::Boolean(false),
+        )]);
+
+        let _locks = lock_rust_state_for_config(&IndexMap::new(), &toolset_env, &install_env)
+            .await
+            .unwrap();
+
+        // the plugin still locks the settings home
+        let plugin_homes = RustHomes::from_sources(
+            &IndexMap::new(),
+            Some(root.path().join("cargo")),
+            None,
+            None,
+            None,
+        );
+        assert_plugin_locks_are_covered(&plugin_homes);
+        // while the child `cargo` falls back to the default home
+        let child_homes = RustHomes::from_sources(&IndexMap::new(), None, None, None, None);
+        assert_plugin_locks_are_covered(&child_homes);
     }
 }
