@@ -554,14 +554,8 @@ and `mise install-into` destinations always get their own copy.
 
 ::: warning The shared store is trusted as is
 mise does not re-check files already in `http-tarballs` against the lockfile
-checksum when it links an install to them. Protect the store like the binaries
-themselves: do not let untrusted jobs, users or refs write to one on a shared
-volume or in a restored CI cache. To stop trusting a store, remove the
-installs that link into it and the `http-tarballs` directory, then reinstall;
-mise extracts a fresh copy from a download it checks against the lockfile.
-`mise install --force` alone reuses the store. See
-[Restored caches and installed tools](/dev-tools/mise-lock.html#restored-caches)
-for why mise cannot validate this for you.
+checksum. Don't let untrusted jobs or users write to a shared or restored store.
+See [Restored caches and installed tools](/dev-tools/mise-lock.html#restored-caches).
 :::
 
 `mise prune`, `mise cache prune` and `mise cache clear` leave `http-tarballs`

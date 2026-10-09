@@ -414,42 +414,23 @@ and [PyPI](/dev-tools/backends/pypi.html) backend pages for installer limits.
 ## Restored caches and installed tools {#restored-caches}
 
 ::: warning
-`mise.lock` verifies what mise downloads. It does not verify what is already on
-disk. A restored CI cache, a shared volume, or an
-[`http` shared extraction store](/dev-tools/backends/http.html#shared-extraction)
-is trusted as is.
+`mise.lock` verifies what mise downloads, not what is already on disk. A
+restored CI cache or a shared extraction store is trusted as is.
 :::
 
-When a version is already installed, `mise install` skips the download, so the
-checksum in `mise.lock` is not checked again. mise can't validate the installed
-files against the lockfile, for two reasons:
+mise can't validate an installed tree against the lockfile. The checksum covers
+the downloaded artifact, and installs are mutable on purpose: tools update
+themselves and `postinstall` hooks change files. For tools built from source,
+such as Python and Ruby, it covers only the source tarball, not the compiled
+output.
 
-- **Installed trees are mutable on purpose.** Tools can update themselves,
-  install packages, and generate files after install, and `postinstall` hooks
-  can change them. The lockfile records the checksum of the downloaded artifact,
-  not a digest of the installed result, so there is nothing stable to compare
-  the directory against.
-- **The artifact doesn't determine the install.** For tools built from source,
-  such as Python and Ruby, the checksum covers the source tarball and not the
-  compiled output. Re-extracting that tarball would prove nothing about the
-  restored tree, and reinstalling from it means compiling again.
+So treat a cache as trusted build input:
 
-Treat a cache as part of your trusted build input instead:
-
-- Don't restore caches written by untrusted refs or triggers, and be wary of
-  write access to the cache from low-trust triggers such as pull requests from
-  forks.
-- Save a manifest of the cache when you write it and check it on restore. That
-  catches a modified cache entry for every backend, but it proves the cache is
-  unchanged since your CI saved it, not that it matches the lockfile.
-- For an `http` tool with `shared_extraction`, remove the installs that link
-  into `$MISE_DATA_DIR/http-tarballs` and the directory itself, then reinstall.
-  mise downloads each artifact, checks it against its checksum and extracts a
-  fresh copy. `mise install --force` alone reuses the store's files.
+- Don't restore caches written by untrusted refs or triggers.
+- Save a manifest with the cache and check it on restore. That proves the cache
+  is unchanged since CI saved it, not that it matches the lockfile.
 - For a fully verified install, run `mise install --locked` with an empty data
-  directory so every artifact is downloaded and checked against the checksum
-  in `mise.lock`. An entry without a checksum has one generated instead of
-  validated, so commit entries that have checksums.
+  directory.
 
 ## Provenance and verification {#provenance-and-security}
 
