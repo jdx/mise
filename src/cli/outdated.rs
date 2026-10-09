@@ -82,7 +82,7 @@ pub(crate) struct Outdated {
     /// (~/.config/mise/config.toml, /etc/mise/config.toml), even where a project
     /// config or a `MISE_<TOOL>_VERSION` environment variable sets its own
     /// version of the tool: what `mise upgrade --global` would install.
-    #[usage(long, conflicts = "local")]
+    #[usage(long, conflicts = ["local", "inactive"])]
     pub global: bool,
 
     /// Only check tools defined in project config files

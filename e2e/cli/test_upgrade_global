@@ -21,6 +21,7 @@ assert "mise outdated dummy --json" "{}"
 assert_contains "mise outdated --global dummy --json" '"latest": "1.1.0"'
 assert_contains "MISE_DUMMY_VERSION=1.0.0 mise outdated --global dummy --json" '"latest": "1.1.0"'
 assert_fail "mise outdated --global --local"
+assert_fail "mise outdated --global --inactive"
 
 # The upgrade stays within the global request and leaves the project alone.
 mise upgrade --global dummy
@@ -33,6 +34,7 @@ assert "mise outdated --global dummy --json" "{}"
 cd .. || exit 1
 assert "mise x -- dummy" "This is Dummy 1.1.0!"
 assert_fail "mise upgrade --global --local"
+assert_fail "mise upgrade --global --inactive"
 
 # An exact global version is never moved.
 printf '[tools]\ndummy = "1.0.0"\n' >"$MISE_CONFIG_DIR/config.toml"

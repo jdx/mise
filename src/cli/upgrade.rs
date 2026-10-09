@@ -118,7 +118,7 @@ pub(crate) struct Upgrade {
     /// config, lockfiles, and `[env]` are neither read nor changed. Tools that
     /// update themselves, such as coding agents, run this instead of their own
     /// updater; see https://mise.jdx.dev/dev-tools/self-updating-tools.html
-    #[usage(long, conflicts = "local")]
+    #[usage(long, conflicts = ["local", "inactive"])]
     global: bool,
 
     /// Only upgrade tools defined in project config files
