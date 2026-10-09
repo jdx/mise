@@ -979,22 +979,52 @@ pub(crate) async fn lock_rust_state_for_config(
     toolset_env: &BTreeMap<String, String>,
     install_env: &IndexMap<String, crate::config::env_directive::EnvValue>,
 ) -> Result<Vec<fslock::LockFile>> {
-    // Mirror the child's environment: it inherits the process env, then the toolset
-    // env and `install_env` override it. Cargo only reads CARGO_HOME/RUSTUP_HOME.
-    let mut effective: BTreeMap<String, String> = env::vars_safe().collect();
-    effective.extend(toolset_env.iter().map(|(k, v)| (k.clone(), v.clone())));
-    for (key, value) in install_env {
-        match value.clone().into_string() {
-            Some(value) => effective.insert(key.clone(), value),
-            None => effective.remove(key),
+    // Resolve the homes the spawned `cargo` will actually use, with the same tiering
+    // `RustHomes::resolve` applies to the plugin: `[env]`-style overrides (toolset_env
+    // and install_env) form the config tier, settings stay configured, and the process
+    // env is the ambient tier. Cargo only reads CARGO_HOME/RUSTUP_HOME.
+    let mut config_env = IndexMap::new();
+    let mut ambient_cargo: Option<PathBuf> = None;
+    let mut ambient_rustup: Option<PathBuf> = None;
+    for key in [
+        "CARGO_HOME",
+        "MISE_CARGO_HOME",
+        "RUSTUP_HOME",
+        "MISE_RUSTUP_HOME",
+    ] {
+        let from_install = install_env
+            .get(key)
+            .map(|value| value.clone().into_string());
+        let config_value = match from_install {
+            Some(Some(value)) => Some(value),
+            // an env directive removed the variable, so the child won't see it
+            Some(None) => None,
+            None => toolset_env.get(key).cloned(),
         };
+        match config_value {
+            Some(value) => {
+                config_env.insert(key.to_string(), value);
+            }
+            None if key == "CARGO_HOME" => {
+                ambient_cargo = env::vars_safe()
+                    .find(|(k, _)| k == key)
+                    .map(|(_, v)| PathBuf::from(v));
+            }
+            None if key == "RUSTUP_HOME" => {
+                ambient_rustup = env::vars_safe()
+                    .find(|(k, _)| k == key)
+                    .map(|(_, v)| PathBuf::from(v));
+            }
+            None => {}
+        }
     }
+    let settings = Settings::get();
     let homes = RustHomes::from_sources(
-        &IndexMap::new(),
-        None,
-        effective.get("CARGO_HOME").map(PathBuf::from),
-        None,
-        effective.get("RUSTUP_HOME").map(PathBuf::from),
+        &config_env,
+        settings.rust.cargo_home.clone(),
+        ambient_cargo,
+        settings.rust.rustup_home.clone(),
+        ambient_rustup,
     );
     lock_rust_state(&homes).await
 }
@@ -1359,6 +1389,7 @@ const RUST_TARGET_ARCHES: &[&str] = &[
 #[cfg(test)]
 mod tests {
     use super::*;
+    use confique::Layer;
 
     fn rust_homes_at(root: &Path, explicit: bool) -> RustHomes {
         RustHomes {
@@ -1953,5 +1984,111 @@ targets = ["wasm32-wasip1", " wasm32-wasip1 "]
 
         assert_eq!(runtime.provider, RustProvider::Managed);
         assert_eq!(runtime.bin_dir, homes.cargo_bindir());
+    }
+
+    /// The lock `lock_rust_state_for_config` takes must be the same lock the rust
+    /// plugin resolves for the same environment, or `cargo install` fallbacks can
+    /// still race the plugin on the shared rustup state (#14041/#14042).
+    fn assert_plugin_locks_are_covered(homes: &RustHomes) {
+        let identities = rust_state_lock_identities(&homes.rustup, &homes.cargo);
+        for identity in identities {
+            let probe = LockFile::new(&identity).try_lock().unwrap();
+            assert!(
+                probe.is_none(),
+                "cargo fallback lock does not cover plugin-resolved home {}",
+                file::display_path(&identity)
+            );
+        }
+    }
+
+    fn ambient_homes_guard() -> crate::test::EnvVarGuard {
+        let mut guard = crate::test::EnvVarGuard::new();
+        guard.remove("CARGO_HOME");
+        guard.remove("RUSTUP_HOME");
+        guard
+    }
+
+    #[tokio::test]
+    async fn config_lock_resolves_tilde_homes_like_the_rust_plugin() {
+        let _settings_guard = crate::test::SettingsGuard::lock();
+        let _env_guard = ambient_homes_guard();
+        let cargo_home = "~/mise-lock-probe-cargo".to_string();
+        let rustup_home = "~/mise-lock-probe-rustup".to_string();
+        let mut toolset_env = BTreeMap::new();
+        toolset_env.insert("CARGO_HOME".to_string(), cargo_home.clone());
+        toolset_env.insert("RUSTUP_HOME".to_string(), rustup_home.clone());
+
+        let _locks = lock_rust_state_for_config(&toolset_env, &IndexMap::new())
+            .await
+            .unwrap();
+
+        let plugin_homes = RustHomes::from_sources(
+            &IndexMap::new(),
+            None,
+            Some(file::replace_path(&cargo_home)),
+            None,
+            Some(file::replace_path(&rustup_home)),
+        );
+        assert_plugin_locks_are_covered(&plugin_homes);
+        let _ = std::fs::remove_dir_all(file::replace_path(&cargo_home));
+        let _ = std::fs::remove_dir_all(file::replace_path(&rustup_home));
+    }
+
+    #[tokio::test]
+    async fn config_lock_honors_mise_prefixed_homes_from_config_env() {
+        let _settings_guard = crate::test::SettingsGuard::lock();
+        let _env_guard = ambient_homes_guard();
+        let root = tempfile::tempdir().unwrap();
+        let cargo_home = root.path().join("cargo");
+        let rustup_home = root.path().join("rustup");
+        let mut toolset_env = BTreeMap::new();
+        toolset_env.insert(
+            "MISE_CARGO_HOME".to_string(),
+            cargo_home.to_string_lossy().to_string(),
+        );
+        toolset_env.insert(
+            "MISE_RUSTUP_HOME".to_string(),
+            rustup_home.to_string_lossy().to_string(),
+        );
+
+        let _locks = lock_rust_state_for_config(&toolset_env, &IndexMap::new())
+            .await
+            .unwrap();
+
+        let mut config_env = IndexMap::new();
+        config_env.insert(
+            "MISE_CARGO_HOME".to_string(),
+            cargo_home.to_string_lossy().to_string(),
+        );
+        config_env.insert(
+            "MISE_RUSTUP_HOME".to_string(),
+            rustup_home.to_string_lossy().to_string(),
+        );
+        let plugin_homes = RustHomes::from_sources(&config_env, None, None, None, None);
+        assert_plugin_locks_are_covered(&plugin_homes);
+    }
+
+    #[tokio::test]
+    async fn config_lock_covers_settings_configured_homes() {
+        let _settings_guard = crate::test::SettingsGuard::lock();
+        let _env_guard = ambient_homes_guard();
+        let root = tempfile::tempdir().unwrap();
+        let mut settings = crate::config::settings::SettingsPartial::empty();
+        settings.rust.cargo_home = Some(root.path().join("cargo"));
+        settings.rust.rustup_home = Some(root.path().join("rustup"));
+        Settings::reset(Some(settings));
+
+        let _locks = lock_rust_state_for_config(&BTreeMap::new(), &IndexMap::new())
+            .await
+            .unwrap();
+
+        let plugin_homes = RustHomes::from_sources(
+            &IndexMap::new(),
+            Some(root.path().join("cargo")),
+            None,
+            Some(root.path().join("rustup")),
+            None,
+        );
+        assert_plugin_locks_are_covered(&plugin_homes);
     }
 }
