@@ -51,15 +51,18 @@ rm -f "$MISE_STATE_DIR/history/index/encryption.json"
 assert "MISE_AGE_KEY= mise dot status --json | jq -c .history.unsaved" 'null'
 
 # a tracked file or directory that cannot be read is unknown, not removed
-chmod 000 ~/.config/app/config.toml
-assert "mise dot status --json | jq -c .history.unsaved" 'null'
-chmod 644 ~/.config/app/config.toml
+# (root reads through the permissions, so only an ordinary user can check)
 mkdir -p ~/.config/app/sub
 echo nested >~/.config/app/sub/nested.toml
 assert_succeed 'mise dot save'
-chmod 000 ~/.config/app/sub
-assert "mise dot status --json | jq -c .history.unsaved" 'null'
-chmod 755 ~/.config/app/sub
+if [ "$(id -u)" != 0 ]; then
+  chmod 000 ~/.config/app/config.toml
+  assert "mise dot status --json | jq -c .history.unsaved" 'null'
+  chmod 644 ~/.config/app/config.toml
+  chmod 000 ~/.config/app/sub
+  assert "mise dot status --json | jq -c .history.unsaved" 'null'
+  chmod 755 ~/.config/app/sub
+fi
 
 # a saved file the walk now omits (here, replaced by a special file) is
 # carried by the next save, so it is not an unsaved removal either
