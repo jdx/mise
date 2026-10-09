@@ -43,7 +43,9 @@ node  20         20.0.0   24    24.1.0  ~/src/app/mise.toml"###,
 }"###,
         help = "Print the same information as JSON"),
     example(r###"mise outdated --local"###,
-        help = "Skip tools that only the global config requests"))]
+        help = "Skip tools that only the global config requests"),
+    example(r###"mise outdated --global claude --json"###,
+        help = "Check the global config's request for claude, even inside a project that sets its own"))]
 pub(crate) struct Outdated {
     /// Tools to check, such as `node@20 python@3.10`
     ///
@@ -73,6 +75,15 @@ pub(crate) struct Outdated {
     /// By default, `mise outdated` checks only tools that come from the current config.
     #[usage(long, conflicts = "local")]
     pub inactive: bool,
+
+    /// Only check tools defined in the global config
+    ///
+    /// Reports the requests in the global config (~/.config/mise/config.toml),
+    /// even where a project config or a `MISE_<TOOL>_VERSION` environment
+    /// variable sets its own version of the tool: what `mise upgrade --global`
+    /// would install.
+    #[usage(long, conflicts = "local")]
+    pub global: bool,
 
     /// Only check tools defined in project config files
     ///
@@ -105,16 +116,20 @@ impl Outdated {
             eyre::bail!("--monorepo is not supported by mise outdated yet");
         }
         let config = Config::get().await?;
-        let scope = if self.local {
+        let scope = if self.global {
+            ConfigScope::GlobalOnly
+        } else if self.local {
             ConfigScope::LocalOnly
         } else {
             ConfigScope::All
         };
-        let mut ts = ToolsetBuilder::new()
+        let mut builder = ToolsetBuilder::new()
             .with_args(&self.tool)
-            .with_scope(scope)
-            .build(&config)
-            .await?;
+            .with_scope(scope);
+        if self.global {
+            builder = builder.without_runtime_env();
+        }
+        let mut ts = builder.build(&config).await?;
         let tool_set = self
             .tool
             .iter()

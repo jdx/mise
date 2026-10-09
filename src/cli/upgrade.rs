@@ -58,7 +58,8 @@ struct ExplicitConfigBump {
     example(r###"mise upgrade --bump"###, help = r###"Upgrade every tool to its newest release and update mise.toml"###),
     example(r###"mise upgrade --dry-run"###, help = r###"Show what would be upgraded"###),
     example(r###"mise upgrade --exclude go"###, help = r###"Upgrade everything except go"###),
-    example(r###"mise upgrade --interactive"###, help = r###"Choose tools from a menu"###))]
+    example(r###"mise upgrade --interactive"###, help = r###"Choose tools from a menu"###),
+    example(r###"mise upgrade --global claude"###, help = r###"Upgrade claude within the global config's request, leaving project config alone"###))]
 pub(crate) struct Upgrade {
     /// Tools to upgrade, such as node@20 python@3.10
     ///
@@ -107,6 +108,17 @@ pub(crate) struct Upgrade {
     /// Also upgrade installed tools that the current config does not request
     #[usage(long, verbatim_doc_comment, conflicts = "local")]
     inactive: bool,
+
+    /// Only upgrade tools defined in the global config
+    ///
+    /// Upgrades the requests in the global config (~/.config/mise/config.toml),
+    /// even where a project config or a `MISE_<TOOL>_VERSION` environment
+    /// variable sets its own version of the tool, and leaves project config and
+    /// lockfiles alone. Tools that update themselves, such as coding agents, run
+    /// this instead of their own updater; see
+    /// https://mise.jdx.dev/dev-tools/self-updating-tools.html
+    #[usage(long, conflicts = "local")]
+    global: bool,
 
     /// Only upgrade tools defined in project config files
     ///
@@ -188,22 +200,24 @@ impl Upgrade {
         ))
     }
 
-    /// Toolsets in this upgrade's scope. An `auto_update` upgrade works on the
-    /// global config's requests, so a `MISE_*_VERSION` in the environment
-    /// doesn't replace the request it was started to upgrade.
+    /// Toolsets in this upgrade's scope. An `auto_update` or `--global` upgrade
+    /// works on the global config's requests, so a `MISE_*_VERSION` in the
+    /// environment doesn't replace the request it was asked to upgrade.
     fn toolset_builder(&self) -> ToolsetBuilder {
         let builder = ToolsetBuilder::new().with_scope(self.scope());
         if self.for_auto_update {
             builder
                 .without_runtime_env()
                 .with_deferred_lazy_resolution_online()
+        } else if self.global {
+            builder.without_runtime_env()
         } else {
             builder
         }
     }
 
     fn scope(&self) -> ConfigScope {
-        if self.for_auto_update {
+        if self.for_auto_update || self.global {
             ConfigScope::GlobalOnly
         } else if self.local {
             ConfigScope::LocalOnly
@@ -305,7 +319,12 @@ impl Upgrade {
                     .any(|tool| backend_args_match(tool.ba.as_ref(), bump.request.ba()))
             });
         }
-        if !self.is_dry_run() && !self.for_auto_update && !Settings::get().generate_lockfiles() {
+        // Monorepo lockfiles belong to projects, which a global upgrade leaves alone.
+        if !self.is_dry_run()
+            && !self.for_auto_update
+            && !self.global
+            && !Settings::get().generate_lockfiles()
+        {
             crate::lockfile::migrate_monorepo_lockfiles(&config, false)?;
         }
         let ts = self

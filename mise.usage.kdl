@@ -5159,6 +5159,13 @@ Also check installed tools that the current config does not request
 By default, `mise outdated` checks only tools that come from the current config.
 """#
     }
+    flag --global help="Only check tools defined in the global config" conflicts=--local {
+        long_help #"""
+Only check tools defined in the global config
+
+Reports the requests in the global config (~/.config/mise/config.toml), even where a project config or a `MISE_<TOOL>_VERSION` environment variable sets its own version of the tool: what `mise upgrade --global` would install.
+"""#
+    }
     flag --local help="Only check tools defined in project config files" {
         long_help #"""
 Only check tools defined in project config files
@@ -5202,6 +5209,7 @@ mise outdated --json
 }
 """# help="Print the same information as JSON"
     example "mise outdated --local" help="Skip tools that only the global config requests"
+    example "mise outdated --global claude --json" help="Check the global config's request for claude, even inside a project that sets its own"
 }
 cmd patrons help="Show the individuals supporting mise as Patron-tier members" effect=read {
     long_help #"""
@@ -7320,6 +7328,13 @@ Use it in scripts that check whether tools need upgrading.
 """#
     }
     flag --inactive help="Also upgrade installed tools that the current config does not request" conflicts=--local
+    flag --global help="Only upgrade tools defined in the global config" conflicts=--local {
+        long_help #"""
+Only upgrade tools defined in the global config
+
+Upgrades the requests in the global config (~/.config/mise/config.toml), even where a project config or a `MISE_<TOOL>_VERSION` environment variable sets its own version of the tool, and leaves project config and lockfiles alone. Tools that update themselves, such as coding agents, run this instead of their own updater; see https://mise.jdx.dev/dev-tools/self-updating-tools.html
+"""#
+    }
     flag --local help="Only upgrade tools defined in project config files" {
         long_help #"""
 Only upgrade tools defined in project config files
@@ -7374,6 +7389,7 @@ Upgrades every configured tool when omitted.
     example "mise upgrade --dry-run" help="Show what would be upgraded"
     example "mise upgrade --exclude go" help="Upgrade everything except go"
     example "mise upgrade --interactive" help="Choose tools from a menu"
+    example "mise upgrade --global claude" help="Upgrade claude within the global config's request, leaving project config alone"
 }
 cmd usage hide=#true help="Generate a usage CLI spec" effect=read {
     long_help #"""

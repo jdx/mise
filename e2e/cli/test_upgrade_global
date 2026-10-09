@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+
+# `mise outdated --global` and `mise upgrade --global` work on the global
+# config's request, even inside a project, or with an environment variable,
+# that sets its own version of the tool. The dummy backend offers 1.0.0,
+# 1.1.0, and 2.0.0.
+
+printf '[tools]\ndummy = "1"\n' >"$MISE_CONFIG_DIR/config.toml"
+mise install dummy@1.0.0
+
+mkdir project
+cat >project/mise.toml <<'EOF'
+[tools]
+dummy = "1.0.0"
+EOF
+cp project/mise.toml project-before.toml
+cd project || exit 1
+
+# The project's exact version has nothing to update; the global request does.
+assert "mise outdated dummy --json" "{}"
+assert_contains "mise outdated --global dummy --json" '"latest": "1.1.0"'
+assert_contains "MISE_DUMMY_VERSION=1.0.0 mise outdated --global dummy --json" '"latest": "1.1.0"'
+assert_fail "mise outdated --global --local"
+
+# The upgrade stays within the global request and leaves the project alone.
+mise upgrade --global dummy
+assert_contains "mise ls --installed dummy" "1.1.0"
+assert_not_contains "mise ls --installed dummy" "2.0.0"
+assert "cat mise.toml" "$(cat ../project-before.toml)"
+assert_fail "test -e mise.lock"
+assert "mise x -- dummy" "This is Dummy 1.0.0!"
+assert "mise outdated --global dummy --json" "{}"
+cd .. || exit 1
+assert "mise x -- dummy" "This is Dummy 1.1.0!"
+assert_fail "mise upgrade --global --local"
+
+# An exact global version is never moved.
+printf '[tools]\ndummy = "1.0.0"\n' >"$MISE_CONFIG_DIR/config.toml"
+assert "mise outdated --global dummy --json" "{}"
+mise upgrade --global dummy
+assert "mise x -- dummy" "This is Dummy 1.0.0!"

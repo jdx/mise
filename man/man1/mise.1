@@ -7731,6 +7731,11 @@ Also check installed tools that the current config does not request
 
 By default, `mise outdated` checks only tools that come from the current config.
 .TP
+\fB\-\-global\fR
+Only check tools defined in the global config
+
+Reports the requests in the global config (~/.config/mise/config.toml), even where a project config or a `MISE_<TOOL>_VERSION` environment variable sets its own version of the tool: what `mise upgrade \-\-global` would install.
+.TP
 \fB\-\-local\fR
 Only check tools defined in project config files
 
@@ -7793,6 +7798,12 @@ Skip tools that only the global config requests
 .PP
 .RS 4
 mise outdated \-\-local
+.RE
+.PP
+Check the global config's request for claude, even inside a project that sets its own
+.PP
+.RS 4
+mise outdated \-\-global claude \-\-json
 .RE
 .SH "MISE PATRONS"
 Show the individuals supporting mise as Patron\-tier members
@@ -10949,6 +10960,11 @@ Use it in scripts that check whether tools need upgrading.
 \fB\-\-inactive\fR
 Also upgrade installed tools that the current config does not request
 .TP
+\fB\-\-global\fR
+Only upgrade tools defined in the global config
+
+Upgrades the requests in the global config (~/.config/mise/config.toml), even where a project config or a `MISE_<TOOL>_VERSION` environment variable sets its own version of the tool, and leaves project config and lockfiles alone. Tools that update themselves, such as coding agents, run this instead of their own updater; see https://mise.jdx.dev/dev\-tools/self\-updating\-tools.html
+.TP
 \fB\-\-local\fR
 Only upgrade tools defined in project config files
 
@@ -11026,6 +11042,12 @@ Choose tools from a menu
 .PP
 .RS 4
 mise upgrade \-\-interactive
+.RE
+.PP
+Upgrade claude within the global config's request, leaving project config alone
+.PP
+.RS 4
+mise upgrade \-\-global claude
 .RE
 .SH "MISE USE"
 Install a tool and add it to configuration
