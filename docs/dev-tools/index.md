@@ -134,7 +134,14 @@ the newest exact version. When you name a request, as in
 mise upgrade --dry-run      # show what would change
 mise upgrade --interactive  # pick tools from a list
 mise upgrade --bump --local # bump only tools in project config
+mise upgrade --global       # upgrade only tools in global config
 ```
+
+`--global` upgrades the global config's requests even inside a project that
+sets its own version of a tool, and never changes project config or
+lockfiles. `mise outdated --global` reports what it would install. Tools that
+update themselves use these two commands; see
+[Self-updating tools](/dev-tools/self-updating-tools.html).
 
 After an upgrade, mise schedules the version it replaced for removal once
 [`upgrade.prune_after`](/configuration/settings.html#upgrade.prune_after) has

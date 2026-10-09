@@ -1,0 +1,84 @@
+#!/usr/bin/env bash
+
+# `mise outdated --global` and `mise upgrade --global` work on the global
+# config's request, even inside a project, or with an environment variable,
+# that sets its own version of the tool. The dummy backend offers 1.0.0,
+# 1.1.0, and 2.0.0.
+
+printf '[tools]\ndummy = "1"\n' >"$MISE_CONFIG_DIR/config.toml"
+mise install dummy@1.0.0
+
+mkdir project
+cat >project/mise.toml <<'EOF'
+[tools]
+dummy = "1.0.0"
+EOF
+cp project/mise.toml project-before.toml
+cd project || exit 1
+
+# The project's exact version has nothing to update; the global request does.
+assert "mise outdated dummy --json" "{}"
+assert_contains "mise outdated --global dummy --json" '"latest": "1.1.0"'
+assert_contains "MISE_DUMMY_VERSION=1.0.0 mise outdated --global dummy --json" '"latest": "1.1.0"'
+assert_fail "mise outdated --global --local"
+assert_fail "mise outdated --global --inactive"
+
+# The upgrade stays within the global request and leaves the project alone,
+# even with a version named on the command line.
+mise upgrade --global dummy@1.1.0
+assert_contains "mise ls --installed dummy" "1.1.0"
+assert_not_contains "mise ls --installed dummy" "2.0.0"
+assert "cat mise.toml" "$(cat ../project-before.toml)"
+assert_fail "test -e mise.lock"
+assert "mise x -- dummy" "This is Dummy 1.0.0!"
+assert "mise outdated --global dummy --json" "{}"
+cd .. || exit 1
+assert "mise x -- dummy" "This is Dummy 1.1.0!"
+assert_fail "mise upgrade --global --local"
+assert_fail "mise upgrade --global --inactive"
+
+# An exact global version is never moved.
+printf '[tools]\ndummy = "1.0.0"\n' >"$MISE_CONFIG_DIR/config.toml"
+assert "mise outdated --global dummy --json" "{}"
+mise upgrade --global dummy
+assert "mise x -- dummy" "This is Dummy 1.0.0!"
+
+# A project's lockfile, and a version named on the command line, don't reach
+# the project either, and `-C` or `MISE_CD` doesn't bring the command back
+# into it.
+printf '[tools]\ndummy = "1"\n' >"$MISE_CONFIG_DIR/config.toml"
+mise uninstall dummy --all
+mise install dummy@1.0.0
+mkdir locked
+printf '[tools]\ndummy = "latest"\n' >locked/mise.toml
+mise -C locked lock dummy
+cp locked/mise.lock lock-before
+assert_contains "mise -C locked outdated --global dummy --json" '"latest": "1.1.0"'
+MISE_CD=locked mise upgrade --global dummy@1.1.0
+assert "cat locked/mise.lock" "$(cat lock-before)"
+assert "cat locked/mise.toml" '[tools]
+dummy = "latest"'
+assert_contains "mise ls --installed dummy" "1.1.0"
+
+# `--bump` writes the global config, even with an environment override.
+MISE_DUMMY_VERSION=1.0.0 mise upgrade --global --bump dummy@2
+assert_contains "cat $MISE_CONFIG_DIR/config.toml" 'dummy = "2"'
+assert "mise x -- dummy" "This is Dummy 2.0.0!"
+
+# A global upgrade started by a hook inside another one skips instead of
+# waiting for the update lock its parent holds.
+printf '[tools]\ndummy = "1"\n' >"$MISE_CONFIG_DIR/config.toml"
+mise uninstall dummy --all
+mise install dummy@1.0.0
+printf '[tools]\ndummy = { version = "1", postinstall = "mise upgrade --global dummy" }\n' >"$MISE_CONFIG_DIR/config.toml"
+assert_contains "timeout 120 mise upgrade --global dummy 2>&1" "it runs inside another mise update"
+assert_contains "mise ls --installed dummy" "1.1.0"
+
+# A version installed with `--system` is upgraded in the system installs dir.
+export MISE_SYSTEM_DATA_DIR="$HOME/.local/share/mise-system"
+printf '[tools]\ndummy = "1"\n' >"$MISE_CONFIG_DIR/config.toml"
+mise uninstall dummy --all
+mise install --system dummy@1.0.0
+mise upgrade --global dummy
+assert_directory_exists "$MISE_SYSTEM_DATA_DIR/installs/dummy/1.1.0"
+assert_directory_not_exists "$MISE_DATA_DIR/installs/dummy/1.1.0"

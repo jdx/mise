@@ -58,7 +58,8 @@ struct ExplicitConfigBump {
     example(r###"mise upgrade --bump"###, help = r###"Upgrade every tool to its newest release and update mise.toml"###),
     example(r###"mise upgrade --dry-run"###, help = r###"Show what would be upgraded"###),
     example(r###"mise upgrade --exclude go"###, help = r###"Upgrade everything except go"###),
-    example(r###"mise upgrade --interactive"###, help = r###"Choose tools from a menu"###))]
+    example(r###"mise upgrade --interactive"###, help = r###"Choose tools from a menu"###),
+    example(r###"mise upgrade --global claude"###, help = r###"Upgrade claude within the global config's request, leaving project config alone"###))]
 pub(crate) struct Upgrade {
     /// Tools to upgrade, such as node@20 python@3.10
     ///
@@ -107,6 +108,18 @@ pub(crate) struct Upgrade {
     /// Also upgrade installed tools that the current config does not request
     #[usage(long, verbatim_doc_comment, conflicts = "local")]
     inactive: bool,
+
+    /// Only upgrade tools defined in the global config
+    ///
+    /// Upgrades the requests in the global and system config
+    /// (~/.config/mise/config.toml, /etc/mise/config.toml), even where a project
+    /// config or a `MISE_<TOOL>_VERSION` environment variable sets its own
+    /// version of the tool. It runs as if from outside any project, so project
+    /// config, lockfiles, and `[env]` are neither read nor changed. Tools that
+    /// update themselves, such as coding agents, run this instead of their own
+    /// updater; see https://mise.jdx.dev/dev-tools/self-updating-tools.html
+    #[usage(long, conflicts = ["local", "inactive"])]
+    global: bool,
 
     /// Only upgrade tools defined in project config files
     ///
@@ -188,22 +201,24 @@ impl Upgrade {
         ))
     }
 
-    /// Toolsets in this upgrade's scope. An `auto_update` upgrade works on the
-    /// global config's requests, so a `MISE_*_VERSION` in the environment
-    /// doesn't replace the request it was started to upgrade.
+    /// Toolsets in this upgrade's scope. An `auto_update` or `--global` upgrade
+    /// works on the global config's requests, so a `MISE_*_VERSION` in the
+    /// environment doesn't replace the request it was asked to upgrade.
     fn toolset_builder(&self) -> ToolsetBuilder {
         let builder = ToolsetBuilder::new().with_scope(self.scope());
         if self.for_auto_update {
             builder
                 .without_runtime_env()
                 .with_deferred_lazy_resolution_online()
+        } else if self.global {
+            builder.without_runtime_env()
         } else {
             builder
         }
     }
 
     fn scope(&self) -> ConfigScope {
-        if self.for_auto_update {
+        if self.for_auto_update || self.global {
             ConfigScope::GlobalOnly
         } else if self.local {
             ConfigScope::LocalOnly
@@ -225,13 +240,27 @@ impl Upgrade {
         if self.monorepo {
             eyre::bail!("--monorepo is not supported by mise upgrade yet");
         }
-        let mut config = Config::get().await?;
+        if self.global && super::tool_update::needs_global_scope() {
+            // Its own update would wait for the lock that update holds.
+            if !self.is_dry_run() && super::tool_update::inside_update() {
+                warn!("skipping `mise upgrade --global`: it runs inside another mise update");
+                return Ok(());
+            }
+            return super::tool_update::rerun_in_global_scope();
+        }
+        // Like an `auto_update` upgrade, a global one rewrites the global config
+        // and lockfile, so it waits for any other update and reads config after.
+        let _update_lock = (self.global && !self.is_dry_run())
+            .then(crate::tool_update::lock_for_update)
+            .transpose()?;
+        let mut config = if _update_lock.is_some() {
+            Config::reset().await?
+        } else {
+            Config::get().await?
+        };
         let mut explicit_config_bumps = Vec::new();
         if self.bump && !self.tool.is_empty() {
-            let scope = self.scope();
-            let effective = ToolsetBuilder::new()
-                .with_scope(scope)
-                .build_unresolved(&config)?;
+            let effective = self.toolset_builder().build_unresolved(&config)?;
             for tool in &self.tool {
                 let Some(request) = tool.tvr.as_ref() else {
                     continue;

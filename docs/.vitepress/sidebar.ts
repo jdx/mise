@@ -76,6 +76,7 @@ export const sidebar: SidebarItem[] = [
       { text: "Shims", link: "/dev-tools/shims" },
       { text: "Tool aliases", link: "/dev-tools/aliases" },
       { text: "Tool stubs", link: "/dev-tools/tool-stubs" },
+      { text: "Self-updating tools", link: "/dev-tools/self-updating-tools" },
       {
         text: "Lockfile (mise.lock)",
         link: "/dev-tools/mise-lock",
