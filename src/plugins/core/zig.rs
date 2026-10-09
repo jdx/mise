@@ -142,37 +142,43 @@ impl ZigPlugin {
                 sig_bases.push(base);
             }
         }
-        let mut fetched = None;
+        // A host only counts once its signature verifies this file, so a stale or
+        // broken `.minisig` on one mirror falls through to the next host.
         let mut last_err = None;
         for base in sig_bases {
-            match HTTP
+            let sig = match HTTP
                 .get_text(format!("{base}.minisig{REQUEST_SUFFIX}"))
                 .await
             {
-                Ok(text) => {
-                    fetched = Some((base, text));
-                    break;
+                Ok(text) => text,
+                Err(err) => {
+                    last_err = Some(err);
+                    continue;
                 }
+            };
+            match Self::verify_signature(&tarball_data, &sig, filename, &base) {
+                Ok(()) => return Ok(tarball_path),
                 Err(err) => last_err = Some(err),
             }
         }
-        let Some((used_url, sig)) = fetched else {
-            return Err(last_err.expect("at least one signature host was tried"));
-        };
-        minisign::verify(ZIG_MINISIGN_KEY, &tarball_data, &sig)?;
+        Err(last_err.expect("at least one signature host was tried"))
+    }
+
+    /// Check `sig` against the archive and that it is the signature for `filename`.
+    fn verify_signature(data: &[u8], sig: &str, filename: &str, base: &str) -> Result<()> {
+        minisign::verify(ZIG_MINISIGN_KEY, data, sig)?;
         // Since this passed the verify step, the format is guaranteed to be correct
-        let trusted_comment = sig.split('\n').nth(2).unwrap().to_string();
+        let trusted_comment = sig.split('\n').nth(2).unwrap_or_default();
         // Verify that this is the desired version using trusted comment to prevent downgrade attacks
         if !trusted_comment.contains(&format!("file:{filename}")) {
             return Err(eyre::eyre!(
                 "Expected {}, but signature {}.minisig had:\n{}",
                 filename,
-                used_url,
+                base,
                 trusted_comment
             ));
         }
-
-        Ok(tarball_path)
+        Ok(())
     }
 
     fn install(&self, ctx: &InstallContext, tv: &ToolVersion, tarball_path: &Path) -> Result<()> {
