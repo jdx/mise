@@ -78,12 +78,11 @@ machines is not a supported way to install tools. For caching it in CI, see
 
 ### `downloads` {#local-share-mise-downloads}
 
-Backends may write archives here while they install a tool. mise deletes them
-afterwards unless
-[`always_keep_download`](/configuration/settings.html#always_keep_download) is
-set. This is not a download cache. To avoid reinstalling tools in CI, cache
-`installs/` instead, together with the install store when it is a separate
-directory.
+Backends may write archives here while they install a tool, and mise deletes
+them afterwards. Finished downloads are kept in the
+[download cache](/configuration/settings.html#download_cache) instead. To avoid
+reinstalling tools in CI, cache `installs/`, together with the install store
+when it is a separate directory.
 
 ### `plugins` {#local-share-mise-plugins}
 

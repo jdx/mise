@@ -559,3 +559,215 @@ refresh_expires_at = "2099-01-01T00:00:00Z"
 fn json_empty_array_response() -> &'static str {
     "HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\n[]"
 }
+
+fn cacheable_download_response() -> &'static str {
+    concat!(
+        "HTTP/1.1 200 OK\r\n",
+        "Content-Length: 5\r\n",
+        "ETag: \"artifact-v1\"\r\n",
+        "Connection: close\r\n",
+        "\r\n",
+        "hello"
+    )
+}
+fn not_modified_response() -> &'static str {
+    "HTTP/1.1 304 Not Modified\r\nETag: \"artifact-v1\"\r\nConnection: close\r\n\r\n"
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn test_download_reuses_stored_file_on_not_modified() {
+    let _settings = set_test_http_retries(0);
+    let cache = tempfile::tempdir().unwrap();
+    *cas::TEST_ROOT.lock().unwrap() = Some(cache.path().to_path_buf());
+    let (port, count, requests) = spawn_recording_server(vec![
+        cacheable_download_response(),
+        not_modified_response(),
+        not_modified_response(),
+        cacheable_download_response(),
+    ])
+    .await;
+    let url = format!("http://127.0.0.1:{port}/artifact");
+    let client = Client::new(Duration::from_secs(2), ClientKind::Http).unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let dest = dir.path().join("artifact");
+
+    client.download_file(&url, &dest, None).await.unwrap();
+    assert_eq!(std::fs::read(&dest).unwrap(), b"hello");
+
+    // The second request is conditional, and a 304 serves the stored file.
+    std::fs::remove_file(&dest).unwrap();
+    client.download_file(&url, &dest, None).await.unwrap();
+    assert_eq!(std::fs::read(&dest).unwrap(), b"hello");
+    assert!(
+        requests.lock().unwrap()[1]
+            .to_lowercase()
+            .contains("if-none-match: \"artifact-v1\"")
+    );
+
+    // A stored file that no longer hashes to what was recorded is not used,
+    // even though the server says it is current.
+    let stored = stored_blob(cache.path());
+    std::fs::write(&stored, b"tampered").unwrap();
+    std::fs::remove_file(&dest).unwrap();
+    client.download_file(&url, &dest, None).await.unwrap();
+    assert_eq!(std::fs::read(&dest).unwrap(), b"hello");
+    assert_eq!(count.load(std::sync::atomic::Ordering::SeqCst), 4);
+
+    *cas::TEST_ROOT.lock().unwrap() = None;
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn test_download_reuses_pinned_file_without_a_request() {
+    let _settings = set_test_http_retries(0);
+    let cache = tempfile::tempdir().unwrap();
+    *cas::TEST_ROOT.lock().unwrap() = Some(cache.path().to_path_buf());
+    let (port, count) = spawn_canned_server(vec![cacheable_download_response()]).await;
+    let url = format!("http://127.0.0.1:{port}/artifact");
+    let client = Client::new(Duration::from_secs(2), ClientKind::Http).unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let dest = dir.path().join("artifact");
+    let sha = crate::hash::file_hash_prog::<sha2::Sha256>;
+    let hello = dir.path().join("hello");
+    std::fs::write(&hello, b"hello").unwrap();
+    let pin = format!("sha256:{}", sha(&hello, None).unwrap());
+
+    client
+        .download_file_pinned(&url, &dest, Some(&pin), None)
+        .await
+        .unwrap();
+    assert_eq!(std::fs::read(&dest).unwrap(), b"hello");
+
+    // A different URL with the same pin is served without any request.
+    std::fs::remove_file(&dest).unwrap();
+    let other = "http://127.0.0.1:1/elsewhere";
+    client
+        .download_file_pinned(other, &dest, Some(&pin), None)
+        .await
+        .unwrap();
+    assert_eq!(std::fs::read(&dest).unwrap(), b"hello");
+    assert_eq!(count.load(std::sync::atomic::Ordering::SeqCst), 1);
+
+    // A blob that no longer matches the pin is not used.
+    let blob = stored_blob(cache.path());
+    std::fs::write(&blob, b"tampered").unwrap();
+    std::fs::remove_file(&dest).unwrap();
+    assert!(
+        client
+            .download_file_pinned(other, &dest, Some(&pin), None)
+            .await
+            .is_err()
+    );
+
+    *cas::TEST_ROOT.lock().unwrap() = None;
+}
+
+fn stored_blob(cache: &std::path::Path) -> PathBuf {
+    let dir = std::fs::read_dir(cache.join("blobs"))
+        .unwrap()
+        .next()
+        .unwrap()
+        .unwrap()
+        .path();
+    std::fs::read_dir(dir)
+        .unwrap()
+        .next()
+        .unwrap()
+        .unwrap()
+        .path()
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn test_download_linked_shares_one_stored_file() {
+    let _settings = set_test_http_retries(0);
+    let cache = tempfile::tempdir().unwrap();
+    *cas::TEST_ROOT.lock().unwrap() = Some(cache.path().to_path_buf());
+    let (port, count) = spawn_canned_server(vec![cacheable_download_response()]).await;
+    let url = format!("http://127.0.0.1:{port}/artifact.bin");
+    let client = Client::new(Duration::from_secs(2), ClientKind::Http).unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let dest = dir.path().join("artifact.bin");
+    let hello = dir.path().join("hello");
+    std::fs::write(&hello, b"hello").unwrap();
+    let pin = format!(
+        "sha256:{}",
+        crate::hash::file_hash_prog::<sha2::Sha256>(&hello, None).unwrap()
+    );
+
+    client
+        .download_file_linked(&url, &dest, &HeaderMap::new(), Some(&pin), None)
+        .await
+        .unwrap();
+    assert_eq!(std::fs::read(&dest).unwrap(), b"hello");
+    // The stored file keeps the name it was downloaded as.
+    assert_eq!(
+        stored_blob(cache.path()).file_name().unwrap(),
+        "artifact.bin"
+    );
+
+    // A second install is served from the store with no request, and the
+    // destination holds the same bytes.
+    std::fs::remove_file(&dest).unwrap();
+    client
+        .download_file_linked(&url, &dest, &HeaderMap::new(), Some(&pin), None)
+        .await
+        .unwrap();
+    assert_eq!(std::fs::read(&dest).unwrap(), b"hello");
+    assert_eq!(count.load(std::sync::atomic::Ordering::SeqCst), 1);
+
+    *cas::TEST_ROOT.lock().unwrap() = None;
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn test_download_replaces_a_damaged_stored_file() {
+    let _settings = set_test_http_retries(0);
+    let cache = tempfile::tempdir().unwrap();
+    *cas::TEST_ROOT.lock().unwrap() = Some(cache.path().to_path_buf());
+    let (port, count) = spawn_canned_server(vec![
+        cacheable_download_response(),
+        cacheable_download_response(),
+    ])
+    .await;
+    let url = format!("http://127.0.0.1:{port}/artifact.bin");
+    let client = Client::new(Duration::from_secs(2), ClientKind::Http).unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let dest = dir.path().join("artifact.bin");
+    let hello = dir.path().join("hello");
+    std::fs::write(&hello, b"hello").unwrap();
+    let pin = format!(
+        "sha256:{}",
+        crate::hash::file_hash_prog::<sha2::Sha256>(&hello, None).unwrap()
+    );
+
+    client
+        .download_file_linked(&url, &dest, &HeaderMap::new(), Some(&pin), None)
+        .await
+        .unwrap();
+
+    // Damage the stored file in place. The next download must not install it,
+    // and must leave a good copy behind rather than the damaged one.
+    let blob = stored_blob(cache.path());
+    std::fs::write(&blob, b"tampered").unwrap();
+    std::fs::remove_file(&dest).unwrap();
+    client
+        .download_file_linked(&url, &dest, &HeaderMap::new(), Some(&pin), None)
+        .await
+        .unwrap();
+    assert_eq!(std::fs::read(&dest).unwrap(), b"hello");
+    assert_eq!(count.load(std::sync::atomic::Ordering::SeqCst), 2);
+    assert_eq!(std::fs::read(stored_blob(cache.path())).unwrap(), b"hello");
+
+    // Replacing a destination that already exists works too.
+    // Replace it with a new file: writing through the link would change the
+    // stored file itself.
+    std::fs::remove_file(&dest).unwrap();
+    std::fs::write(&dest, b"stale").unwrap();
+    let (port, _) = spawn_canned_server(vec![]).await;
+    let other = format!("http://127.0.0.1:{port}/artifact.bin");
+    client
+        .download_file_linked(&other, &dest, &HeaderMap::new(), Some(&pin), None)
+        .await
+        .unwrap();
+    assert_eq!(std::fs::read(&dest).unwrap(), b"hello");
+
+    *cas::TEST_ROOT.lock().unwrap() = None;
+}

@@ -552,6 +552,12 @@ Changes to shared files, including changes made by a `postinstall` hook, affect
 every install that uses them. `mise install --system`, `mise install --shared`
 and `mise install-into` destinations always get their own copy.
 
+::: warning The shared store is trusted as is
+mise does not re-check files already in `http-tarballs` against the lockfile
+checksum. Don't let untrusted jobs or users write to a shared or restored store.
+See [Restored caches and installed tools](/dev-tools/mise-lock.html#restored-caches).
+:::
+
 `mise prune`, `mise cache prune` and `mise cache clear` leave `http-tarballs`
 alone, because installs may still link to it. Installs made by older mise
 versions may also link into it. To give an install its own copy, remove

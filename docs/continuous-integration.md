@@ -38,6 +38,11 @@ jobs:
       - run: mise run test
 ```
 
+::: warning
+A restored tool cache is trusted as is: mise does not check installed files against
+`mise.lock`. See [Restored caches and installed tools](/dev-tools/mise-lock.html#restored-caches).
+:::
+
 The example assumes a `test` task in `mise.toml`, such as
 `test = "npm ci && npm test"` under `[tasks]`. `mise exec -- npm test` works as
 well.

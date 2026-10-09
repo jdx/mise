@@ -9,8 +9,8 @@ use crate::backend::static_helpers::{
     apply_rename_exe, bin_name_for_download, clean_binary_name, ensure_plain_bin_name,
     ensure_safe_relative_bin_path, eval_checksum_expr, fetch_checksum_from_file_with_headers,
     fetch_checksum_from_shasums_with_headers, get_filename_from_url, lookup_value_with_fallback,
-    rename_binary_name, shasums_has_entries, template_string, template_string_for_target,
-    template_string_strict, verify_artifact,
+    pinned_checksum, rename_binary_name, shasums_has_entries, template_string,
+    template_string_for_target, template_string_strict, verify_artifact,
 };
 use crate::backend::version_list;
 use crate::config::Config;
@@ -1374,6 +1374,8 @@ impl Backend for HttpBackend {
             .and_then(|p| p.checksum.as_ref())
             .is_some();
 
+        let pinned = pinned_checksum(&tv, &platform_key, opts.raw());
+
         let download = match local_artifact_path(&url)? {
             Some(src) => {
                 ctx.pr.set_message(format!("copy {filename}"));
@@ -1387,16 +1389,23 @@ impl Backend for HttpBackend {
                 ctx.pr.set_message(format!("download {filename}"));
                 let headers = opts.headers(Some(tv.version.as_str()))?;
                 if headers.is_empty() {
-                    HTTP.download_file_with_metadata(&url, &file_path, Some(ctx.pr.as_ref()))
-                        .await?
+                    HTTP.download_file_linked(
+                        &url,
+                        &file_path,
+                        &crate::http::host_auth_headers(&reqwest::Url::parse(&url)?)?,
+                        pinned.as_deref(),
+                        Some(ctx.pr.as_ref()),
+                    )
+                    .await?
                 } else {
                     // Keep the automatic host token; configured headers override it.
                     let headers =
                         crate::http::with_host_auth(&reqwest::Url::parse(&url)?, &headers)?;
-                    HTTP.download_file_with_headers_metadata(
+                    HTTP.download_file_linked(
                         &url,
                         &file_path,
                         &headers,
+                        pinned.as_deref(),
                         Some(ctx.pr.as_ref()),
                     )
                     .await?

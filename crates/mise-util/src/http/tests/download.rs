@@ -445,6 +445,7 @@ async fn test_download_total_timeout_bounds_trickling_response() {
             &path,
             &HeaderMap::new(),
             None,
+            None,
             Duration::from_millis(500),
         ),
     )

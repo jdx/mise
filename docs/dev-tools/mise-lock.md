@@ -411,6 +411,36 @@ Lifecycle scripts can still produce different output on each machine. See
 for the layout and for editing sidecars, and the [npm](/dev-tools/backends/npm.html)
 and [PyPI](/dev-tools/backends/pypi.html) backend pages for installer limits.
 
+## Restored caches and installed tools {#restored-caches}
+
+::: warning
+`mise.lock` verifies what mise downloads, not what is already on disk. A
+restored CI cache or a shared extraction store is trusted as is.
+:::
+
+mise can't validate an installed tree against the lockfile. The checksum covers
+the downloaded artifact, and installs are mutable on purpose: tools update
+themselves and `postinstall` hooks change files. For tools compiled from source,
+such as Ruby, the lockfile doesn't vouch for the compiled output, and a tool
+that downloads its own source may record no checksum for it at all.
+
+Downloads are different. mise keeps them in a cache and reuses one only when
+the server confirms it is unchanged, or when it hashes to a pinned checksum. A
+pinned checksum is always checked after the download; without one, a cache that
+someone can write to is trusted. See
+[`download_cache`](/configuration/settings.html#download_cache).
+
+So treat a cache of installed files as trusted build input:
+
+- Don't restore caches written by untrusted refs or triggers.
+- Record a manifest of the cache outside it, in trusted CI metadata, and check
+  the restored files against it. A manifest stored in the cache can be replaced
+  along with it. That proves the cache is unchanged since CI saved it, not that
+  it matches the lockfile.
+- To check an install against the lockfile, run `mise install --locked` with an
+  empty data directory. Every artifact is then downloaded and checked against
+  the checksum the lockfile records, for the backends that record one.
+
 ## Provenance and verification {#provenance-and-security}
 
 For supported backends, `mise lock` records provenance such as SLSA, Cosign,

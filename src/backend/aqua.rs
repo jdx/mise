@@ -571,7 +571,8 @@ impl Backend for AquaBackend {
         // Public repos download from the browser URL; private repos return 404/HTML there
         // and must be fetched from the API asset endpoint instead.
         let download_url = select_github_download_url(pkg.private, &url, url_api.as_deref()).await;
-        self.download(ctx, &tv, &download_url, &filename).await?;
+        self.download(ctx, &tv, &download_url, &filename, api_digest.as_deref())
+            .await?;
 
         // Snapshot before any mutation so verify() knows whether the lockfile
         // originally contained a checksum (vs. one we just wrote from api_digest).
@@ -2817,6 +2818,7 @@ impl AquaBackend {
         tv: &ToolVersion,
         url: &str,
         filename: &str,
+        api_digest: Option<&str>,
     ) -> Result<()> {
         let tarball_path = tv.download_path().join(filename);
         if tarball_path.exists() {
@@ -2826,8 +2828,22 @@ impl AquaBackend {
             return Ok(());
         }
         ctx.pr.set_message(format!("download {filename}"));
-        HTTP.download_file(url, &tarball_path, Some(ctx.pr.as_ref()))
-            .await?;
+        // The lockfile's checksum, or else the digest the GitHub API gave for the
+        // release asset, which verify() checks the same way.
+        let pinned = tv
+            .lock_platforms
+            .get(&self.get_platform_key())
+            .and_then(|platform| platform.checksum.clone())
+            .or_else(|| api_digest.map(str::to_string));
+        let headers = crate::http::host_auth_headers(&reqwest::Url::parse(url)?)?;
+        HTTP.download_file_linked(
+            url,
+            &tarball_path,
+            &headers,
+            pinned.as_deref(),
+            Some(ctx.pr.as_ref()),
+        )
+        .await?;
         Ok(())
     }
 

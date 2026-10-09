@@ -11,7 +11,8 @@ use regex::Regex;
 use reqwest::StatusCode;
 use reqwest::header::{
     ACCEPT_ENCODING, AUTHORIZATION, CONTENT_RANGE, CONTENT_TYPE, COOKIE, DATE, ETAG, HeaderMap,
-    HeaderName, HeaderValue, IF_RANGE, LAST_MODIFIED, PROXY_AUTHORIZATION, RANGE,
+    HeaderName, HeaderValue, IF_MODIFIED_SINCE, IF_NONE_MATCH, IF_RANGE, LAST_MODIFIED,
+    PROXY_AUTHORIZATION, RANGE,
 };
 use reqwest::{ClientBuilder, IntoUrl, Method, Response};
 use serde::{Deserialize, Serialize};
@@ -27,6 +28,8 @@ use crate::redactions::redact_url_userinfo;
 use crate::time::format_duration;
 use crate::{env, file};
 use mise_settings::Settings;
+
+mod cas;
 
 pub static HTTP: Lazy<Client> = Lazy::new(|| {
     Client::new_shared(
@@ -220,6 +223,36 @@ impl DownloadValidator {
             } => is_strong_last_modified(value, response_date),
         }
     }
+}
+
+/// How a download may use the store of finished downloads.
+#[derive(Clone, Copy)]
+struct CacheMode<'a> {
+    /// The checksum the tool pinned, as `algo:hex`.
+    pin: Option<&'a str>,
+    enabled: bool,
+}
+
+/// How a download was satisfied.
+struct Fetched {
+    metadata: DownloadFileMetadata,
+    /// A stored file answered the request, so nothing was written to the
+    /// destination.
+    stored: Option<PathBuf>,
+    /// The validator that came with a complete response, for keeping it.
+    validator: Option<DownloadValidator>,
+    request_hash: String,
+}
+
+/// What an attempt learned beyond the bytes it wrote.
+#[derive(Default)]
+struct AttemptOutcome {
+    /// The validator of the stored copy, sent so the server can confirm it.
+    cond: Option<DownloadValidator>,
+    /// The server confirmed the stored copy is current; nothing was written.
+    not_modified: std::sync::atomic::AtomicBool,
+    /// The validator that came with a complete response, for keeping it.
+    validator: Mutex<Option<DownloadValidator>>,
 }
 
 #[derive(Debug)]
@@ -1248,6 +1281,35 @@ impl Client {
         headers: &HeaderMap,
         pr: Option<&dyn SingleReport>,
     ) -> Result<DownloadFileMetadata> {
+        self.download_file_with_pin(url, path, headers, None, pr)
+            .await
+    }
+
+    /// Like [`Client::download_file`], for a tool that pinned `pin`
+    /// (`algo:hex`). A download kept earlier under that checksum is used
+    /// without a request once it hashes to the pin again. The caller still
+    /// verifies the result.
+    pub async fn download_file_pinned<U: IntoUrl>(
+        &self,
+        url: U,
+        path: &Path,
+        pin: Option<&str>,
+        pr: Option<&dyn SingleReport>,
+    ) -> Result<DownloadFileMetadata> {
+        let url = url.into_url()?;
+        let headers = host_auth_headers(&url)?;
+        self.download_file_with_pin(url, path, &headers, pin, pr)
+            .await
+    }
+
+    pub async fn download_file_with_pin<U: IntoUrl>(
+        &self,
+        url: U,
+        path: &Path,
+        headers: &HeaderMap,
+        pin: Option<&str>,
+        pr: Option<&dyn SingleReport>,
+    ) -> Result<DownloadFileMetadata> {
         let url = url.into_url()?;
         if Settings::get().generate_lockfiles() {
             let key = format!("{:p}:{}", self, download_request_hash(&url, headers));
@@ -1265,6 +1327,7 @@ impl Client {
                             url.clone(),
                             &directory.path().join("artifact"),
                             headers,
+                            pin,
                             pr,
                             crate::network::http_download_timeout(&Settings::get()),
                         )
@@ -1297,6 +1360,7 @@ impl Client {
             url,
             path,
             headers,
+            pin,
             pr,
             crate::network::http_download_timeout(&Settings::get()),
         )
@@ -1308,14 +1372,158 @@ impl Client {
         url: U,
         path: &Path,
         headers: &HeaderMap,
+        pin: Option<&str>,
         pr: Option<&dyn SingleReport>,
         total_timeout: Duration,
     ) -> Result<DownloadFileMetadata> {
+        let use_cache = Settings::get().download_cache;
+        let cache = CacheMode {
+            pin,
+            enabled: use_cache,
+        };
+        let fetched = self
+            .download_file_inner(url, path, headers, cache, pr, total_timeout)
+            .await?;
+        if let Some(blob) = fetched.stored {
+            let dest = path.to_path_buf();
+            tokio::task::spawn_blocking(move || cas::place(&blob, &dest, false)).await??;
+            return Ok(fetched.metadata);
+        }
+        if use_cache {
+            // Best effort: a download that can't be kept is still a download.
+            let path = path.to_path_buf();
+            let pin = pin.map(str::to_string);
+            let effective_filename = fetched.metadata.effective_filename.clone();
+            let kept = tokio::task::spawn_blocking(move || {
+                cas::store(
+                    &path,
+                    cas::Keep {
+                        request_hash: &fetched.request_hash,
+                        pin: pin.as_deref(),
+                        validator: fetched.validator.as_ref(),
+                        effective_filename,
+                    },
+                )
+            })
+            .await;
+            if let Ok(Err(err)) | Err(err) = kept.map_err(Report::from) {
+                debug!("could not keep the download: {err:#}");
+            }
+        }
+        Ok(fetched.metadata)
+    }
+
+    /// Like [`Client::download_file_pinned`], but the download is kept in the
+    /// store first and `dest` is a link to it where the filesystem allows one,
+    /// so the bytes exist once. Across devices, or without a store, it is a
+    /// copy. For callers that only read the file: a change through the link
+    /// would change the stored file, which is hashed again before it is reused.
+    pub async fn download_file_linked<U: IntoUrl>(
+        &self,
+        url: U,
+        dest: &Path,
+        headers: &HeaderMap,
+        pin: Option<&str>,
+        pr: Option<&dyn SingleReport>,
+    ) -> Result<DownloadFileMetadata> {
+        let url = url.into_url()?;
+        let name = dest
+            .file_name()
+            .ok_or_else(|| eyre!("download destination has no filename: {}", dest.display()))?
+            .to_string_lossy()
+            .to_string();
+        let request_hash = download_request_hash(&url, headers);
+        let staging = (Settings::get().download_cache && !Settings::get().generate_lockfiles())
+            .then(|| cas::staging_path(&request_hash, &name))
+            .flatten();
+        let Some(staging) = staging else {
+            return self
+                .download_file_with_pin(url, dest, headers, pin, pr)
+                .await;
+        };
+        let cache = CacheMode { pin, enabled: true };
+        let fetched = self
+            .download_file_inner(
+                url,
+                &staging,
+                headers,
+                cache,
+                pr,
+                crate::network::http_download_timeout(&Settings::get()),
+            )
+            .await?;
+        let blob = match fetched.stored {
+            Some(blob) => Some(blob),
+            None => {
+                let staged = staging.clone();
+                let pin = pin.map(str::to_string);
+                let effective_filename = fetched.metadata.effective_filename.clone();
+                let validator = fetched.validator.clone();
+                let hash = fetched.request_hash.clone();
+                tokio::task::spawn_blocking(move || {
+                    cas::ingest(
+                        &staged,
+                        cas::Keep {
+                            request_hash: &hash,
+                            pin: pin.as_deref(),
+                            validator: validator.as_ref(),
+                            effective_filename,
+                        },
+                    )
+                })
+                .await??
+            }
+        };
+        let dest = dest.to_path_buf();
+        // With nothing to index it by (no validator, no pin) the staged file is
+        // the download itself.
+        let (source, link) = match &blob {
+            Some(blob) => (blob.clone(), true),
+            None => (staging.clone(), false),
+        };
+        tokio::task::spawn_blocking(move || cas::place(&source, &dest, link)).await??;
+        if blob.is_none() {
+            let _ = file::remove_file(&staging);
+        }
+        Ok(fetched.metadata)
+    }
+
+    /// With `use_cache`, a download kept under `pin` is reused outright, and one
+    /// kept for the same request is offered to the server for revalidation and
+    /// reused on `304 Not Modified`.
+    async fn download_file_inner<U: IntoUrl>(
+        &self,
+        url: U,
+        path: &Path,
+        headers: &HeaderMap,
+        cache: CacheMode<'_>,
+        pr: Option<&dyn SingleReport>,
+        total_timeout: Duration,
+    ) -> Result<Fetched> {
+        let CacheMode {
+            pin,
+            enabled: use_cache,
+        } = cache;
+        let started = Instant::now();
+        let url = url.into_url()?;
+        let request_hash = download_request_hash(&url, headers);
+        // A pinned download kept earlier needs no request, so this comes before
+        // the offline check.
+        if use_cache && let Some(hit) = pin.and_then(cas::lookup_pin) {
+            let effective_filename = hit.effective_filename.clone();
+            if let Some(blob) = tokio::task::spawn_blocking(move || hit.verified()).await? {
+                return Ok(Fetched {
+                    metadata: DownloadFileMetadata { effective_filename },
+                    stored: Some(blob),
+                    validator: None,
+                    request_hash,
+                });
+            }
+        }
         ensure!(
             !crate::network::offline(&Settings::get()),
             "offline mode is enabled"
         );
-        let url = url.into_url()?;
         debug!(
             "GET Downloading {} to {}",
             log_url(&url),
@@ -1334,6 +1542,15 @@ impl Client {
                 .await??;
         let attempt = Arc::new(AtomicUsize::new(0));
         let progress = Arc::new(DownloadProgress::default());
+        let cached = if use_cache {
+            cas::lookup_url(&request_hash)
+        } else {
+            None
+        };
+        let outcome = Arc::new(AttemptOutcome {
+            cond: cached.as_ref().map(|c| c.validator.clone()),
+            ..Default::default()
+        });
 
         // Retry the whole transfer, resuming a validated partial response when
         // possible. send_once_with_https_fallback_allow_416 (not
@@ -1343,10 +1560,11 @@ impl Client {
             let progress = progress.clone();
             let request_url = url.clone();
             let partial = partial.clone();
+            let outcome = outcome.clone();
             async move {
                 attempt.fetch_add(1, Ordering::Relaxed);
                 progress.start_attempt();
-                self.download_file_attempt(request_url, headers, &partial, pr, &progress)
+                self.download_file_attempt(request_url, headers, &partial, pr, &progress, &outcome)
                     .await
             }
         });
@@ -1386,8 +1604,48 @@ impl Client {
         // of `timeout` prevents us from returning an error while it can still
         // install the destination in the background.
         let path = path.to_path_buf();
-        tokio::task::spawn_blocking(move || partial.persist(&path)).await??;
-        Ok(metadata)
+        if outcome.not_modified.load(Ordering::Relaxed)
+            && let Some(cached) = cached
+        {
+            let effective_filename = cached.effective_filename();
+            let hit = cached.into_hit();
+            if let Some(blob) = tokio::task::spawn_blocking(move || hit.verified()).await? {
+                return Ok(Fetched {
+                    metadata: DownloadFileMetadata { effective_filename },
+                    stored: Some(blob),
+                    validator: None,
+                    request_hash,
+                });
+            }
+            // The stored file no longer matches what was recorded: fetch it again.
+            drop(_download_lock);
+            let cache = CacheMode {
+                pin,
+                enabled: false,
+            };
+            // What is left of the budget, not a fresh one.
+            let remaining = total_timeout
+                .checked_sub(started.elapsed())
+                .filter(|left| !left.is_zero())
+                .ok_or_else(|| {
+                    eyre!(
+                        "HTTP download timed out after {} for {}",
+                        format_duration(total_timeout),
+                        log_url(&url)
+                    )
+                })?;
+            return Box::pin(self.download_file_inner(url, &path, headers, cache, pr, remaining))
+                .await;
+        }
+        let persist_path = path.clone();
+        tokio::task::spawn_blocking(move || partial.persist(&persist_path)).await??;
+        let validator = outcome.validator.lock().unwrap().take();
+        Ok(Fetched {
+            metadata,
+            stored: None,
+            validator,
+            request_hash,
+        })
     }
 
     async fn download_file_attempt(
@@ -1397,6 +1655,7 @@ impl Client {
         partial: &PartialDownload,
         pr: Option<&dyn SingleReport>,
         progress: &DownloadProgress,
+        outcome: &AttemptOutcome,
     ) -> Result<DownloadFileMetadata> {
         let mut restarted_without_resume = false;
         loop {
@@ -1420,6 +1679,20 @@ impl Client {
             let offset = resume.as_ref().map(|(_, size)| *size).unwrap_or(0);
             let mut request_headers = headers.clone();
             request_headers.insert(ACCEPT_ENCODING, HeaderValue::from_static("identity"));
+            let mut conditional = false;
+            if resume.is_none()
+                && let Some(cond) = &outcome.cond
+            {
+                conditional = true;
+                match cond {
+                    DownloadValidator::Etag(value) => {
+                        request_headers.insert(IF_NONE_MATCH, HeaderValue::from_str(value)?);
+                    }
+                    DownloadValidator::LastModified { value, .. } => {
+                        request_headers.insert(IF_MODIFIED_SINCE, HeaderValue::from_str(value)?);
+                    }
+                }
+            }
             if let Some((state, _)) = &resume {
                 request_headers.insert(RANGE, HeaderValue::from_str(&format!("bytes={offset}-"))?);
                 request_headers.insert(
@@ -1448,6 +1721,14 @@ impl Client {
             #[cfg(not(unix))]
             let served_by = resp.url();
             progress.served_by(served_by);
+
+            if conditional && resp.status() == StatusCode::NOT_MODIFIED {
+                outcome.not_modified.store(true, Ordering::Relaxed);
+                return Ok(DownloadFileMetadata::default());
+            }
+            *outcome.validator.lock().unwrap() = (resp.status() != StatusCode::PARTIAL_CONTENT)
+                .then(|| response_validator(resp.headers()))
+                .flatten();
 
             if resp.status() == StatusCode::RANGE_NOT_SATISFIABLE {
                 if let Some(ParsedContentRange::Unsatisfied { total }) = resp
@@ -2265,7 +2546,7 @@ pub fn with_host_auth(url: &Url, headers: &HeaderMap) -> Result<HeaderMap> {
     Ok(merged)
 }
 
-fn host_auth_headers(url: &Url) -> Result<HeaderMap> {
+pub fn host_auth_headers(url: &Url) -> Result<HeaderMap> {
     // raw.githubusercontent.com is not an API host, but a private repository's
     // files are a 404 without the token, so it is routed here too. `get_headers`
     // decides what each host actually gets.

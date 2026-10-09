@@ -637,8 +637,9 @@
           "type": "boolean"
         },
         "always_keep_download": {
-          "description": "Keep downloaded archives and sources after installing, for debugging.",
-          "type": "boolean"
+          "description": "[deprecated] Keep downloaded archives and sources after installing, for debugging.",
+          "type": "boolean",
+          "deprecated": true
         },
         "always_keep_install": {
           "description": "Keep a failed installation's partial install directory and downloads, for debugging.",
@@ -907,6 +908,11 @@
               "type": "string"
             }
           }
+        },
+        "download_cache": {
+          "default": true,
+          "description": "Reuse finished downloads instead of fetching them again.",
+          "type": "boolean"
         },
         "enable_tools": {
           "description": "Allowlist of configured tools mise uses; other tools are ignored.",
