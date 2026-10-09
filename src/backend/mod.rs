@@ -975,6 +975,8 @@ mod tests {
     async fn test_list_and_get_survive_concurrent_reset() {
         use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
         const READERS: usize = 4;
+        // reset() rebuilds the shared cache from the current settings.
+        let _settings = crate::test::SettingsGuard::lock();
         load_tools().await.unwrap();
         let stop = Arc::new(AtomicBool::new(false));
         let reads = Arc::new(AtomicUsize::new(0));
