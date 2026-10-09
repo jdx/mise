@@ -1,4 +1,5 @@
 use std::collections::{BTreeMap, BTreeSet};
+use std::io::IsTerminal;
 use std::path::{Path, PathBuf};
 
 use eyre::{Result, bail};
@@ -276,7 +277,10 @@ impl DotfilesTrack {
                 && !self.allow_plaintext
                 && !self.dry_run
             {
+                // asked only of a terminal: a piped stdin is usually the
+                // list a script is looping over, not an answer to this
                 if !console::user_attended_stderr()
+                    || !std::io::stdin().is_terminal()
                     || !crate::ui::prompt::confirm_with_default(
                         format!(
                             "dotfiles: {target_raw} looks like a credential store. Save it in plaintext history, including any connected origin?"
