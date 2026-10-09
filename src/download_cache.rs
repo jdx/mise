@@ -89,8 +89,9 @@ pub fn store(checksum: &str, src: &Path, effective_filename: Option<&str>) -> Re
     file::create_dir_all(dir)?;
     // Copied to a name no other install shares and renamed into place, so a
     // reader never sees a partial file and parallel stores can't truncate one.
-    let tmp = tempfile::NamedTempFile::new_in(dir)?;
-    std::fs::copy(src, tmp.path())?;
+    // A `TempPath` holds no open handle, which Windows needs to copy over it.
+    let tmp = tempfile::NamedTempFile::new_in(dir)?.into_temp_path();
+    std::fs::copy(src, &tmp)?;
     if let Some(name) = effective_filename {
         file::write(name_path(&entry), name)?;
     }
