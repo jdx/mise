@@ -15,6 +15,8 @@ WORKDIR /src
 # Debug build keeps debug info and assertions; the binary is target/debug/mise.
 # Fetch and compile every dependency now, because the audit has no network.
 RUN cargo build --ignore-rust-version --all-features
+# `cargo build` skips dev-dependencies; compile the tests too so an offline `cargo test` works.
+RUN cargo test --ignore-rust-version --all-features --no-run
 
 ENV PATH="/src/target/debug:$PATH"
 RUN mise --version
