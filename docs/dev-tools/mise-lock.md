@@ -411,6 +411,40 @@ Lifecycle scripts can still produce different output on each machine. See
 for the layout and for editing sidecars, and the [npm](/dev-tools/backends/npm.html)
 and [PyPI](/dev-tools/backends/pypi.html) backend pages for installer limits.
 
+## Restored caches and installed tools {#restored-caches}
+
+::: warning
+`mise.lock` verifies what mise downloads. It does not verify what is already on
+disk. A restored CI cache, a shared volume, or an
+[`http` shared extraction store](/dev-tools/backends/http.html#shared-extraction)
+is trusted as is.
+:::
+
+When a version is already installed, `mise install` skips the download, so the
+checksum in `mise.lock` is not checked again. mise can't validate the installed
+files against the lockfile, for two reasons:
+
+- **Installed trees are mutable on purpose.** Tools can update themselves,
+  install packages, and generate files after install, and `postinstall` hooks
+  can change them. The lockfile records the checksum of the downloaded artifact,
+  not a digest of the installed result, so there is nothing stable to compare
+  the directory against.
+- **The artifact doesn't determine the install.** For tools built from source,
+  such as Python and Ruby, the checksum covers the source tarball and not the
+  compiled output. Re-extracting that tarball would prove nothing about the
+  restored tree, and reinstalling from it means compiling again.
+
+Treat a cache as part of your trusted build input instead:
+
+- Don't restore caches written by untrusted refs or triggers, and be wary of
+  write access to the cache from low-trust triggers such as pull requests from
+  forks.
+- Save a manifest of the cache when you write it and check it on restore. That
+  catches a modified cache entry for every backend, but it proves the cache is
+  unchanged since your CI saved it, not that it matches the lockfile.
+- For a fully verified install, run `mise install --locked` with an empty data
+  directory so every artifact is downloaded and checked against `mise.lock`.
+
 ## Provenance and verification {#provenance-and-security}
 
 For supported backends, `mise lock` records provenance such as SLSA, Cosign,
