@@ -88,6 +88,8 @@ struct DotfilesDiagnosis {
     /// The connected setup repository, if any.
     origin: Option<DotfilesOriginDiagnosis>,
     tracked: usize,
+    /// Why the tracked entries could not be read, when history is disabled.
+    tracking_error: Option<String>,
     watcher: String,
     stale: bool,
     health_age_secs: Option<u64>,
@@ -134,13 +136,16 @@ fn dotfiles_origin() -> Option<DotfilesOriginDiagnosis> {
 /// repository is connected.
 async fn check_disabled_dotfiles() -> Option<DotfilesDiagnosis> {
     let config = Config::get().await.ok()?;
-    let tracked = crate::system::history::tracked::TrackedSet::from_config(&config)
-        .map(|set| set.entries.len())
-        .unwrap_or(0);
+    // a declaration that cannot be read is reported, not taken for none
+    let (tracked, tracking_error) =
+        match crate::system::history::tracked::TrackedSet::from_config(&config) {
+            Ok(set) => (set.entries.len(), None),
+            Err(err) => (0, Some(format!("{err:#}"))),
+        };
     let repo =
         crate::system::history::store::repo_dir_in(&crate::system::history::store::state_dir());
     let origin = dotfiles_origin();
-    if tracked == 0 && !repo.is_dir() && origin.is_none() {
+    if tracked == 0 && tracking_error.is_none() && !repo.is_dir() && origin.is_none() {
         return None;
     }
     Some(DotfilesDiagnosis {
@@ -148,6 +153,7 @@ async fn check_disabled_dotfiles() -> Option<DotfilesDiagnosis> {
         repo,
         origin,
         tracked,
+        tracking_error,
         watcher: "disabled".to_string(),
         stale: false,
         health_age_secs: None,
@@ -856,6 +862,7 @@ impl Doctor {
             repo: crate::system::history::store::repo_dir_in(&state_dir),
             origin: dotfiles_origin(),
             tracked: tracks,
+            tracking_error: None,
             watcher: watcher.as_str().to_string(),
             stale,
             health_age_secs: age,
@@ -1001,6 +1008,10 @@ impl Doctor {
         );
         let mut lines = vec![if diagnosis.history_enabled {
             format!("{entries}, watcher {}", diagnosis.watcher)
+        } else if let Some(error) = &diagnosis.tracking_error {
+            format!(
+                "tracked entries could not be read ({error}); history disabled (history.enabled = false): nothing is saved or synced"
+            )
         } else {
             format!(
                 "{entries}, history disabled (history.enabled = false): nothing is saved or synced"

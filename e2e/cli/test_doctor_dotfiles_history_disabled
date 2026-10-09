@@ -20,3 +20,13 @@ file://$PWD/origin.git"
 export MISE_STATE_DIR="$PWD/empty-state"
 export MISE_CONFIG_DIR="$PWD/empty-config"
 assert_not_contains "mise doctor 2>&1 || true" "dotfiles:"
+
+# a declaration that cannot be read is reported, not taken for none
+mkdir -p "$MISE_CONFIG_DIR"
+cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'
+[history.encryption]
+recipients = []
+[dotfiles]
+"~/.private-value" = { mode = "track", encrypt = true }
+TOML
+assert_contains "mise doctor 2>&1 || true" "tracked entries could not be read ([history.encryption].recipients must not be empty"
