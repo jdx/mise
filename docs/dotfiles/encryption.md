@@ -167,11 +167,24 @@ machine before you rely on it.
 
 ### Change recipients {#change-recipients}
 
-Changing the list re-encrypts each file the next time it is saved. Commits
-already in history keep the recipients they were written with, so a machine
-added later can read the versions saved after the change, not the ones
-before it. Add every machine's recipient before you save private contents
-that all of them must read.
+After you change the list, a save re-encrypts the files it captures. The
+files a save does not capture keep their old encryption: files with
+`autosave = false` that the save does not name, and
+[variants](/dotfiles/history.html#variants) for other platforms. To
+re-encrypt those too, run this after changing the list:
+
+```sh
+mise dot save --re-encrypt
+```
+
+It re-encrypts the saved version of each file and does not save unsaved
+edits. This machine must be able to unlock every file. If it cannot unlock
+some, nothing is saved, and the error lists each one.
+
+Commits already in history keep the recipients they were written with, so a
+machine added later can read the versions saved after the change, not the
+ones before it. Add every machine's recipient before you save private
+contents that all of them must read.
 
 ## Plaintext already in history {#plaintext-already-in-history}
 

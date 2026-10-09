@@ -61,6 +61,10 @@ pub struct Draft {
     /// even though the draft carries metadata: re-tracking a path that is
     /// already tracked has something to say only if it changed.
     pub skip_unchanged: bool,
+    /// Re-encrypt to the current recipients every encrypted file the
+    /// checkpoint holds under other recipients, including the saved
+    /// versions it carries forward rather than reads live.
+    pub re_encrypt: bool,
 }
 
 impl Draft {
@@ -346,11 +350,18 @@ impl Store {
             Some(repo) => repo.ref_oid(HistoryRepo::HISTORY_REF)?,
             None => None,
         };
-        let recipients = if walk.files.values().any(|(_, policy)| policy.encrypt) {
-            tracked.manifest.recipients.clone()
-        } else {
-            vec![]
-        };
+        // a re-encryption records the current recipients even when every
+        // encrypted file is carried forward
+        let recipients =
+            if draft.re_encrypt || walk.files.values().any(|(_, policy)| policy.encrypt) {
+                tracked.manifest.recipients.clone()
+            } else {
+                vec![]
+            };
+        let mut re_encrypted = vec![];
+        // the snapshot before re-encryption: the description names content
+        // changes, and re-encrypting a file changes no contents
+        let mut content_tree = None;
         let (snapshot, roots, available, reason) = match (&self.repo, walk_error) {
             (_, Some(reason)) => (None, vec![], false, Some(reason)),
             (Some(repo), None) => {
@@ -422,7 +433,16 @@ impl Store {
                                 eyre::eyre!("captured tree is missing enrollment metadata")
                             })?;
                         manifest.capture_permissions(&walk.entries, &modes)?;
-                        let composed = manifest.write(repo, &composed)?;
+                        let mut composed = manifest.write(repo, &composed)?;
+                        if draft.re_encrypt {
+                            content_tree = Some(composed.clone());
+                            (composed, re_encrypted) = super::sync::files::re_encrypt(
+                                repo,
+                                &composed,
+                                previous_tree.as_ref().map(|(_, tree)| tree.as_str()),
+                                console::user_attended_stderr(),
+                            )?;
+                        }
                         (Some(composed), result.roots, true, None)
                     }
                     Err(err) => {
@@ -462,6 +482,9 @@ impl Store {
             if let Some(repo) = &self.repo {
                 super::enrollment::confirm(&self.state_dir, repo, tracked)?;
             }
+            if draft.re_encrypt {
+                info!("history: {}", re_encrypt_report(&re_encrypted));
+            }
             return Ok(Outcome::Unchanged);
         }
         if !draft.has_metadata() && snapshot.is_none() {
@@ -483,7 +506,8 @@ impl Store {
                     .as_ref()
                     .map(|(checkpoint, _)| checkpoint.uuid.clone());
                 let from = previous_tree.as_ref().map(|(_, tree)| tree.as_str());
-                changes_from(repo, from, tree, since)?
+                let to = content_tree.as_deref().unwrap_or(tree);
+                changes_from(repo, from, to, since)?
             }
             _ => Changes::default(),
         };
@@ -523,7 +547,10 @@ impl Store {
             changes.removed.retain(keep);
         }
         let total_files: u64 = roots.iter().map(|root| root.files).sum();
-        let summary = describe(&draft, &changes, previous_tree.is_some(), total_files);
+        let mut summary = describe(&draft, &changes, previous_tree.is_some(), total_files);
+        if changes.is_empty() && !re_encrypted.is_empty() && previous_tree.is_some() {
+            summary = re_encrypt_report(&re_encrypted);
+        }
         let (description, description_source) = match &draft.description {
             Some(text) => (
                 text.clone(),
@@ -640,6 +667,9 @@ impl Store {
             && let Some(repo) = &self.repo
         {
             super::enrollment::confirm(&self.state_dir, repo, tracked)?;
+        }
+        if draft.re_encrypt && snapshot.is_some() {
+            info!("history: {}", re_encrypt_report(&re_encrypted));
         }
         Ok(Outcome::Created(entry))
     }
@@ -1063,6 +1093,15 @@ fn manual_plan(
         }
     }
     plan
+}
+
+/// What a re-encrypting capture did, for the user and a computed description.
+fn re_encrypt_report(paths: &[String]) -> String {
+    match paths.len() {
+        0 => "every encrypted file already uses the current recipients".into(),
+        1 => "re-encrypted 1 file to the current recipients".into(),
+        n => format!("re-encrypted {n} files to the current recipients"),
+    }
 }
 
 /// Whether `path` is the entry itself or below it.
