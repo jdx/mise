@@ -427,8 +427,10 @@ that downloads its own source may record no checksum for it at all.
 Downloads are different. mise keeps them in a cache and reuses one only when
 the server confirms it is unchanged, or when it hashes to a pinned checksum. A
 pinned checksum is always checked after the download; without one, a cache that
-someone can write to is trusted. See
-[`download_cache`](/configuration/settings.html#download_cache).
+someone can write to is trusted. With `--locked`, only pinned downloads are
+reused, so a restored download cache is safe to trust. See
+[`download_cache`](/configuration/settings.html#download_cache) and
+[caching downloads in CI](/continuous-integration.html#trusted-cache).
 
 So treat a cache of installed files as trusted build input:
 

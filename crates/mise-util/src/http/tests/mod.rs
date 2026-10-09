@@ -771,3 +771,72 @@ async fn test_download_replaces_a_damaged_stored_file() {
 
     *cas::TEST_ROOT.lock().unwrap() = None;
 }
+
+fn set_test_cache_settings(
+    configure: impl FnOnce(&mut mise_settings::SettingsPartial),
+) -> SettingsGuard {
+    let lock = crate::testing::lock_ignoring_poison(&crate::testing::SETTINGS_LOCK);
+    let mut settings = mise_settings::SettingsPartial::empty();
+    settings.http_retries = Some(0);
+    configure(&mut settings);
+    crate::testing::reset_settings(Some(settings));
+    SettingsGuard { _lock: lock }
+}
+
+#[test]
+fn test_download_cache_max_size_is_configurable() {
+    let size = |value: &str| {
+        let _guard = set_test_cache_settings(|s| s.download_cache_max_size = Some(value.into()));
+        cas::max_cache_bytes()
+    };
+    assert_eq!(size("10KiB"), 10 * 1024);
+    assert_eq!(size("1GB"), 1_000_000_000);
+    assert_eq!(size("0"), u64::MAX);
+    // An unreadable value falls back to the default instead of failing installs.
+    assert_eq!(size("lots"), 2 * 1024 * 1024 * 1024);
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn test_locked_mode_keeps_only_pinned_downloads() {
+    let _settings = set_test_cache_settings(|s| s.locked = Some(true));
+    let cache = tempfile::tempdir().unwrap();
+    *cas::TEST_ROOT.lock().unwrap() = Some(cache.path().to_path_buf());
+    let (port, count) = spawn_canned_server(vec![
+        cacheable_download_response(),
+        cacheable_download_response(),
+        cacheable_download_response(),
+    ])
+    .await;
+    let url = format!("http://127.0.0.1:{port}/artifact.bin");
+    let client = Client::new(Duration::from_secs(2), ClientKind::Http).unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let dest = dir.path().join("artifact.bin");
+
+    // No pin: nothing is kept, and the second request is a full download.
+    client.download_file(&url, &dest, None).await.unwrap();
+    client.download_file(&url, &dest, None).await.unwrap();
+    assert_eq!(count.load(std::sync::atomic::Ordering::SeqCst), 2);
+    assert!(!cache.path().join("blobs").exists());
+
+    // A pinned download is kept, because the pin is checked afterwards.
+    let hello = dir.path().join("hello");
+    std::fs::write(&hello, b"hello").unwrap();
+    let pin = format!(
+        "sha256:{}",
+        crate::hash::file_hash_prog::<sha2::Sha256>(&hello, None).unwrap()
+    );
+    client
+        .download_file_pinned(&url, &dest, Some(&pin), None)
+        .await
+        .unwrap();
+    assert!(cache.path().join("blobs").exists());
+    std::fs::remove_file(&dest).unwrap();
+    client
+        .download_file_pinned(&url, &dest, Some(&pin), None)
+        .await
+        .unwrap();
+    assert_eq!(std::fs::read(&dest).unwrap(), b"hello");
+    assert_eq!(count.load(std::sync::atomic::Ordering::SeqCst), 3);
+
+    *cas::TEST_ROOT.lock().unwrap() = None;
+}

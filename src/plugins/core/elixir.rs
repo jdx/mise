@@ -5,6 +5,7 @@ use std::{
 };
 
 use crate::args::BackendArg;
+use crate::backend::static_helpers::lock_checksum;
 use crate::cmd::CmdLineRunner;
 use crate::http::{HTTP, HTTP_FETCH};
 use crate::install_context::InstallContext;
@@ -102,7 +103,13 @@ impl ElixirPlugin {
 
         pr.set_message(format!("download {filename}"));
         if !tarball_path.exists() {
-            HTTP.download_file(&url, &tarball_path, Some(pr)).await?;
+            HTTP.download_file_stored(
+                &url,
+                &tarball_path,
+                lock_checksum(tv, &self.get_platform_key(), &url).as_deref(),
+                Some(pr),
+            )
+            .await?;
         }
         self.set_lockfile_url(tv, &url);
 

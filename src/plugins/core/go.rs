@@ -5,6 +5,7 @@ use crate::Result;
 use crate::args::BackendArg;
 use crate::backend::platform_target::PlatformTarget;
 use crate::backend::static_helpers::fetch_checksum_from_file;
+use crate::backend::static_helpers::lock_checksum;
 use crate::backend::{Backend, VersionInfo, normalize_idiomatic_contents};
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings, SettingsExt};
@@ -127,8 +128,13 @@ impl GoPlugin {
             HTTP.get_text(checksum_url).await
         });
         pr.set_message(format!("download {filename}"));
-        HTTP.download_file(&*tarball_url, &tarball_path, Some(pr))
-            .await?;
+        HTTP.download_file_stored(
+            &*tarball_url,
+            &tarball_path,
+            lock_checksum(tv, &self.get_platform_key(), &tarball_url).as_deref(),
+            Some(pr),
+        )
+        .await?;
 
         if !settings.go.skip_checksum {
             let platform_key = self.get_platform_key();

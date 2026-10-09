@@ -1,5 +1,6 @@
 use crate::args::BackendArg;
 use crate::backend::platform_target::PlatformTarget;
+use crate::backend::static_helpers::lock_checksum;
 use crate::cmd::CmdLineRunner;
 use crate::config::Settings;
 use crate::http::{HTTP, HTTP_FETCH};
@@ -62,7 +63,13 @@ impl SwiftPlugin {
         let tarball_path = tv.download_path().join(filename);
         if !tarball_path.exists() {
             pr.set_message(format!("download {filename}"));
-            HTTP.download_file(url, &tarball_path, Some(pr)).await?;
+            HTTP.download_file_stored(
+                url,
+                &tarball_path,
+                lock_checksum(tv, &self.get_platform_key(), url).as_deref(),
+                Some(pr),
+            )
+            .await?;
         }
 
         Ok(tarball_path)

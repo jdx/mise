@@ -919,6 +919,11 @@
           "description": "Reuse finished downloads instead of fetching them again.",
           "type": "boolean"
         },
+        "download_cache_max_size": {
+          "default": "2GiB",
+          "description": "Maximum total size of the download cache, such as `500MB` or `10GiB`.",
+          "type": "string"
+        },
         "enable_tools": {
           "description": "Allowlist of configured tools mise uses; other tools are ignored.",
           "type": "array",

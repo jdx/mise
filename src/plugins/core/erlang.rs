@@ -9,6 +9,7 @@ use crate::args::BackendArg;
 use crate::backend::Backend;
 use crate::backend::VersionInfo;
 use crate::backend::platform_target::PlatformTarget;
+use crate::backend::static_helpers::lock_checksum;
 use crate::config::{CompilePurpose, Config, Settings, SettingsExt};
 #[cfg(unix)]
 use crate::file::ExtractOptions;
@@ -353,8 +354,13 @@ impl ErlangPlugin {
 
         ctx.pr.set_message(format!("Downloading {filename}"));
         if !tarball_path.exists() {
-            HTTP.download_file(&url, &tarball_path, Some(ctx.pr.as_ref()))
-                .await?;
+            HTTP.download_file_stored(
+                &url,
+                &tarball_path,
+                lock_checksum(&tv, &self.get_platform_key(), &url).as_deref(),
+                Some(ctx.pr.as_ref()),
+            )
+            .await?;
         }
         self.set_lockfile_info(&mut tv, None, &url, Some(checksum), None);
         self.verify_checksum(ctx, &mut tv, &tarball_path)?;
@@ -440,8 +446,13 @@ impl ErlangPlugin {
         ctx.pr.set_message(format!("Downloading {tarball_name}"));
         let tarball_path = tv.download_path().join(tarball_name);
         if !tarball_path.exists() {
-            HTTP.download_file(&url, &tarball_path, Some(ctx.pr.as_ref()))
-                .await?;
+            HTTP.download_file_stored(
+                &url,
+                &tarball_path,
+                lock_checksum(&tv, &self.get_platform_key(), &url).as_deref(),
+                Some(ctx.pr.as_ref()),
+            )
+            .await?;
         }
         self.set_lockfile_info(&mut tv, None, &url, checksum, None);
         self.verify_checksum(ctx, &mut tv, &tarball_path)?;
@@ -498,7 +509,10 @@ impl ErlangPlugin {
         ctx.pr.set_message(format!("Downloading {}", zip_name));
         let zip_path = tv.download_path().join(zip_name);
         if !zip_path.exists() {
-            HTTP.download_file(&url, &zip_path, Some(ctx.pr.as_ref()))
+            // The lockfile's checksum, or else the digest the release API gave.
+            let pinned =
+                lock_checksum(&tv, &self.get_platform_key(), &url).or_else(|| checksum.clone());
+            HTTP.download_file_stored(&url, &zip_path, pinned.as_deref(), Some(ctx.pr.as_ref()))
                 .await?;
         }
         self.set_lockfile_info(&mut tv, None, &url, checksum, None);

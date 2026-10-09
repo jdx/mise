@@ -932,9 +932,24 @@ fn make_configured_bin_executable(search_dir: &Path, bin_name: &str) -> Result<(
     Ok(())
 }
 
+/// The checksum the lockfile records for this platform, if the entry describes
+/// the download of `url`. It names a kept download that can be reused, and is
+/// still checked after the download. An entry written for another URL, such as
+/// before a setting changed where the tool is fetched from, pins nothing.
+pub(crate) fn lock_checksum(
+    tv: &crate::toolset::ToolVersion,
+    platform_key: &str,
+    url: &str,
+) -> Option<String> {
+    let info = tv.lock_platforms.get(platform_key)?;
+    if info.url.as_deref().is_some_and(|locked| locked != url) {
+        return None;
+    }
+    info.checksum.clone()
+}
+
 /// The checksum a tool pinned for this platform, in its options or in the
-/// lockfile. It names a kept download that can be reused, and is still checked
-/// after the download either way.
+/// lockfile.
 pub(crate) fn pinned_checksum(
     tv: &crate::toolset::ToolVersion,
     platform_key: &str,

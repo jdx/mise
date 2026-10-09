@@ -269,16 +269,26 @@ impl NodePlugin {
         lockfile_install: Option<&str>,
     ) -> Result<()> {
         let settings = Settings::get();
+        let platform_key = self.get_platform_key();
         let tarball_name = local.file_name().unwrap().to_string_lossy().to_string();
         if local.exists() {
             ctx.pr.set_message(format!("cached {tarball_name}"));
         } else {
             ctx.pr.set_message(format!("download {tarball_name}"));
-            HTTP.download_file(url.clone(), local, Some(ctx.pr.as_ref()))
+            // The lock entry holds one artifact per platform, the binary or the
+            // source. Its checksum pins this download only if it describes it.
+            let pinned = tv
+                .lock_platforms
+                .get(&platform_key)
+                .filter(|info| {
+                    info.url.as_deref() == Some(url.as_str())
+                        && info.install.as_deref() == lockfile_install
+                })
+                .and_then(|info| info.checksum.clone());
+            HTTP.download_file_stored(url.clone(), local, pinned.as_deref(), Some(ctx.pr.as_ref()))
                 .await?;
         }
         ctx.pr.next_operation();
-        let platform_key = self.get_platform_key();
         let url = url.to_string();
         let needs_checksum = settings.node.verify
             && tv

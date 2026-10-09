@@ -40,7 +40,8 @@ jobs:
 
 ::: warning
 A restored tool cache is trusted as is: mise does not check installed files against
-`mise.lock`. See [Restored caches and installed tools](/dev-tools/mise-lock.html#restored-caches).
+`mise.lock`. To cache downloads instead, which mise checks, see
+[Cache downloads, not installs](#trusted-cache).
 :::
 
 The example assumes a `test` task in `mise.toml`, such as
@@ -58,6 +59,33 @@ The action gives mise the workflow's GitHub token while it installs tools, but
 does not export it to later steps. If later steps install tools or hit GitHub
 API rate limits, pass a token to them as shown in
 [GitHub tokens](/dev-tools/github-tokens.html#ci-github-actions).
+
+### Cache downloads, not installs {#trusted-cache}
+
+With a `mise.lock`, cache the download store instead of the tools. mise hashes
+each stored file against the checksum in the lockfile before it uses it, so a
+poisoned or stale cache can't change what is installed, and the action's own
+tool cache is turned off:
+
+```yaml
+steps:
+  - uses: actions/checkout@v7
+  - uses: actions/cache@v6
+    with:
+      path: ~/.cache/mise/downloads-cas
+      key: mise-downloads-${{ runner.os }}-${{ hashFiles('mise.lock') }}
+  - uses: jdx/mise-action@v5
+    with:
+      cache: false
+```
+
+Installs run `mise install --locked`, which only reuses a download that has a
+checksum to check it against. Tools are unpacked on every run, so this is slower
+than restoring installs, and tools compiled from source still compile. The store
+holds up to [`download_cache_max_size`](/configuration/settings.html#download_cache_max_size)
+(2 GiB by default). See
+[`download_cache`](/configuration/settings.html#download_cache) and
+[Restored caches and installed tools](/dev-tools/mise-lock.html#restored-caches).
 
 To start a workflow, [`mise generate github-action`](/cli/generate/github-action.html)
 prints one that runs `mise run ci` on pull requests, tags and pushes to the

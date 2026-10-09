@@ -689,22 +689,44 @@ hash, and uses one again in two cases:
 - **A tool pinned its checksum**, in its options or in `mise.lock`. The kept
   file is used with no request at all, even if the URL changed.
 
-The `http`, `github`, `aqua` and `packslip` backends pin and install from the
-stored file, linked into place where the filesystem allows, so the archive takes
-no extra space and is not copied; across devices it is copied. Every other
+The `http`, `github`, `aqua` and `packslip` backends and the core tools'
+precompiled archives pin and install from the stored file, linked into place
+where the filesystem allows, so the archive takes no extra space and is not
+copied; across devices it is copied. The core tools pin with the checksum in
+`mise.lock`. Node's source tarball is kept the same way and compiled each time.
+Other source builds, such as Ruby and Python through `ruby-build` and
+`python-build`, download their own sources, which are not kept. Every other
 download that goes through mise's HTTP client uses the first case and is copied
 into place.
+
+With [`locked`](#locked) or [`paranoid`](#paranoid), only downloads with a
+pinned checksum are reused or kept, since only those are checked afterwards.
+Restoring `downloads-cas` in CI then gives a cache you can trust, which a
+restored install directory is not.
 
 A kept file is hashed again before it is used, and one that no longer matches is
 dropped and downloaded again. The recorded hash lives beside the file, so this
 catches damage but does not stop someone who can write the cache from replacing
 both. A pinned checksum is always checked after the download, so pin one if the
-cache is shared. The cache holds up to 2 GiB; the least recently used entries go
-first. Extracted files are not covered; see
+cache is shared. The cache holds up to
+[`download_cache_max_size`](#download_cache_max_size); the least recently used
+entries go first. Extracted files are not covered; see
 [Restored caches and installed tools](/dev-tools/mise-lock.html#restored-caches).
 """
 env = "MISE_DOWNLOAD_CACHE"
 type = "Bool"
+
+[download_cache_max_size]
+default = "2GiB"
+description = "Maximum total size of the download cache, such as `500MB` or `10GiB`."
+docs = """
+After storing a download, mise removes the least recently used ones until the
+cache in `$MISE_CACHE_DIR/downloads-cas` fits. A download used in the last ten
+minutes is kept, since another install may be placing it. `0` means no limit.
+See [`download_cache`](#download_cache).
+"""
+env = "MISE_DOWNLOAD_CACHE_MAX_SIZE"
+type = "String"
 
 [enable_tools]
 description = "Allowlist of configured tools mise uses; other tools are ignored."
