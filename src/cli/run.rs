@@ -473,15 +473,18 @@ async fn get_affected_task_list(
             regular_paths.insert(path);
             continue;
         }
-        let before = changes.file_before(&git, &path)?;
-        let after = changes.file_after(&git, &path)?;
-        if let Some(projects) = graph.affected_projects_for_lockfile(
-            &providers,
-            &path,
-            before.as_deref(),
-            after.as_deref(),
-        )? {
-            lockfile_projects.entry(path).or_default().extend(projects);
+        for (before, after) in changes.file_versions(&git, &path)? {
+            if let Some(projects) = graph.affected_projects_for_lockfile(
+                &providers,
+                &path,
+                before.as_deref(),
+                after.as_deref(),
+            )? {
+                lockfile_projects
+                    .entry(path.clone())
+                    .or_default()
+                    .extend(projects);
+            }
         }
     }
 

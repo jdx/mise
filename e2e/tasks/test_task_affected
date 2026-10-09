@@ -247,6 +247,13 @@ output=$(mise run --affected --affected-uncommitted --affected-explain --jobs 1 
 assert_contains "echo \"$output\"" "lockfile change: pnpm-lock.yaml"
 git checkout -q pnpm-lock.yaml
 
+# A committed lockfile change still counts when the working tree reverts it.
+sed -i 's/2\.0\.0/1.0.0/g' pnpm-lock.yaml
+: >affected.log
+mise run --affected --jobs 1 build
+assert "sort affected.log" $'app\nlib'
+git checkout -q pnpm-lock.yaml
+
 # The working tree only counts when head is the checkout.
 : >affected.log
 mise run --affected --affected-head HEAD~1 --affected-base HEAD~1 --jobs 1 build

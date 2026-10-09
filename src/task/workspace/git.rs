@@ -49,22 +49,31 @@ pub struct WorkspaceChanges {
 }
 
 impl WorkspaceChanges {
-    /// A path changed in the committed range starts at the merge base; any other starts at `HEAD`.
-    pub fn file_before(&self, git: &Git, path: &Path) -> Result<Option<String>> {
-        match (&self.merge_base, self.committed.contains(path)) {
-            (Some(merge_base), true) => git.file_at_revision(merge_base, path),
-            _ => git.file_at_revision(DEFAULT_HEAD, path),
+    /// The (before, after) contents to compare for a path, one pair per source it changed in.
+    ///
+    /// A path changed in both the committed range and the working tree yields two pairs,
+    /// merge base to head and head to working tree, so a committed change that an uncommitted
+    /// edit reverts still counts.
+    pub fn file_versions(
+        &self,
+        git: &Git,
+        path: &Path,
+    ) -> Result<Vec<(Option<String>, Option<String>)>> {
+        let mut versions = Vec::new();
+        if let (Some(merge_base), true) = (&self.merge_base, self.committed.contains(path)) {
+            versions.push((
+                git.file_at_revision(merge_base, path)?,
+                git.file_at_revision(&self.head, path)?,
+            ));
         }
-    }
-
-    /// A path from an uncommitted or untracked source ends in the working tree; a path that only
-    /// changed in the committed range ends at the head revision.
-    pub fn file_after(&self, git: &Git, path: &Path) -> Result<Option<String>> {
         if self.working_tree.contains(path) {
-            git.file_in_worktree(path)
-        } else {
-            git.file_at_revision(&self.head, path)
+            // `HEAD`, not `self.head`: working-tree sources require the head to be the checkout.
+            versions.push((
+                git.file_at_revision(DEFAULT_HEAD, path)?,
+                git.file_in_worktree(path)?,
+            ));
         }
+        Ok(versions)
     }
 }
 
@@ -500,35 +509,47 @@ mod tests {
 
         let changes = revisions.changed_paths(repo.path()).unwrap();
 
-        // Edited in the working tree but not selected: still reads the committed content.
+        // Edited in the working tree but not selected: no working-tree pair is compared.
         assert_eq!(changes.paths, paths(&["committed.txt", "untracked.txt"]));
-        assert!(!changes.paths.contains(Path::new("unstaged.txt")));
-        assert_eq!(
+        assert!(
             changes
-                .file_after(&git, Path::new("unstaged.txt"))
+                .file_versions(&git, Path::new("unstaged.txt"))
                 .unwrap()
-                .as_deref(),
-            Some("0\n")
+                .is_empty()
         );
         assert_eq!(
             changes
-                .file_after(&git, Path::new("untracked.txt"))
-                .unwrap()
-                .as_deref(),
-            Some("1\n")
-        );
-        assert_eq!(
-            changes
-                .file_before(&git, Path::new("committed.txt"))
-                .unwrap()
-                .as_deref(),
-            Some("0\n")
-        );
-        assert_eq!(
-            changes
-                .file_before(&git, Path::new("untracked.txt"))
+                .file_versions(&git, Path::new("untracked.txt"))
                 .unwrap(),
-            None
+            vec![(None, Some("1\n".to_string()))]
+        );
+        assert_eq!(
+            changes
+                .file_versions(&git, Path::new("committed.txt"))
+                .unwrap(),
+            vec![(Some("0\n".to_string()), Some("1\n".to_string()))]
+        );
+    }
+
+    #[test]
+    fn a_path_changed_in_both_places_is_compared_in_two_steps() {
+        let repo = repo_with_working_tree_changes();
+        let git = Git::new(repo.path());
+        // committed.txt went 0 -> 1 in a commit; revert it in the working tree.
+        std::fs::write(repo.path().join("committed.txt"), "0\n").unwrap();
+
+        let changes = local_revisions(AffectedSources::default())
+            .changed_paths(repo.path())
+            .unwrap();
+
+        assert_eq!(
+            changes
+                .file_versions(&git, Path::new("committed.txt"))
+                .unwrap(),
+            vec![
+                (Some("0\n".to_string()), Some("1\n".to_string())),
+                (Some("1\n".to_string()), Some("0\n".to_string())),
+            ]
         );
     }
 }
