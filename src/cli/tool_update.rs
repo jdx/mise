@@ -45,6 +45,51 @@ pub(crate) struct ToolUpdate {
     id: Option<String>,
 }
 
+/// At a prompt, start a detached update of each opted-in tool in `ts` whose
+/// check is due, so activated shells, where tools run straight from `PATH`,
+/// stay current without the `tool-update` service. The prompt never waits: the
+/// update runs on its own, and the new version is picked up once the shell
+/// re-resolves its environment. Output is discarded; a failure is recorded for
+/// `mise doctor`.
+pub(crate) fn update_in_background(ts: &Toolset) {
+    if !tool_update::any_opted_in(ts) {
+        return;
+    }
+    for (_, tv) in ts.list_current_versions() {
+        if !tool_update::updatable(&tv) || !tool_update::is_due(&tv.request, Updater::Launch) {
+            continue;
+        }
+        let Some(tool_id) = tool_update::claim_due(&tv, Updater::Launch) else {
+            continue;
+        };
+        if let Err(err) = spawn_detached(&tv.ba().short, &tool_id) {
+            warn!("could not start an update of {tool_id}: {err}");
+        }
+    }
+}
+
+/// Start `mise __tool-update` in its own process group (a detached process on
+/// Windows) with no output, so the shell neither lists it as a job nor waits
+/// for it.
+fn spawn_detached(tool: &str, tool_id: &str) -> std::io::Result<()> {
+    let mut command = update_command(&[tool, "--id", tool_id]);
+    command.stdout(Stdio::null()).stderr(Stdio::null());
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        command.process_group(0);
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
+        const DETACHED_PROCESS: u32 = 0x0000_0008;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        command.creation_flags(CREATE_NEW_PROCESS_GROUP | DETACHED_PROCESS | CREATE_NO_WINDOW);
+    }
+    command.spawn().map(drop)
+}
+
 impl ToolUpdate {
     pub(crate) async fn run(self) -> Result<()> {
         if self.watch {

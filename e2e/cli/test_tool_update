@@ -91,7 +91,8 @@ assert "mise x -- dummy" "This is Dummy 1.0.0!"
 assert_not_checked
 rm mise.toml
 
-# Exact versions are never updated; nothing is checked offline or from hook-env.
+# Exact versions are never updated, and nothing is checked offline. A prompt
+# (hook-env) checks opted-in tools; test_tool_update_hook_env covers that.
 fresh_state pin
 global_config 'dummy = { version = "1.0.0", auto_update = true }'
 assert "mise x -- dummy" "This is Dummy 1.0.0!"
@@ -106,8 +107,8 @@ rm "$MISE_CONFIG_DIR/mise.lock"
 fresh_state offline
 assert "MISE_OFFLINE=1 mise x -- dummy" "This is Dummy 1.0.0!"
 assert_not_checked
-fresh_state hook-env
-assert_succeed "mise hook-env -s bash >/dev/null"
+fresh_state hook-env-offline
+assert_succeed "MISE_OFFLINE=1 mise hook-env -s bash >/dev/null"
 assert_not_checked
 
 # A per-tool interval is accepted; one under an hour is raised with a warning.
@@ -149,8 +150,9 @@ MISE_CACHE_DIR="$PWD/empty-cache" RTX_FAILURE=1 mise x -- dummy 2>/dev/null || t
 assert_contains "mise doctor 2>&1 || true" "the last auto_update of asdf:dummy failed"
 global_config 'dummy = { version = "1", auto_update = true }'
 
-# In an activated shell the project's [env] is exported, but the update runs
-# with the environment activation started from.
+# In an activated shell the project's [env] is exported, but the update, which
+# the prompt starts in the background, runs with the environment activation
+# started from.
 fresh_state activated
 reset_dummy
 cat >"$MISE_CONFIG_DIR/config.toml" <<'EOF'
@@ -163,7 +165,11 @@ FOO = "project"
 EOF
 eval "$(mise activate bash)" && _mise_hook
 assert "printenv FOO" "project"
-assert "mise x -- dummy" "This is Dummy 1.1.0!"
+for _ in {1..300}; do
+  test -s "$HOME/postinstall.log" && break
+  sleep 0.1
+done
+assert_contains "mise ls --installed dummy" "1.1.0"
 assert "cat $HOME/postinstall.log" "FOO="
 eval "$(mise deactivate)"
 rm mise.toml

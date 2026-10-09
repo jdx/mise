@@ -3,7 +3,7 @@
 //! A tool whose global `[tools]` entry sets `auto_update` is upgraded within
 //! its configured version when its check interval has elapsed: by the
 //! `tool-update` service when it is running, otherwise when a shim or `mise x`
-//! is about to launch it. The upgrade runs in `mise __tool-update`; this module
+//! is about to launch it, or in the background at a shell prompt. The upgrade runs in `mise __tool-update`; this module
 //! decides which tool is eligible and when, and keeps the state that
 //! rate-limits checks and reports failures to `mise doctor`.
 
@@ -79,8 +79,8 @@ pub fn any_opted_in(toolset: &Toolset) -> bool {
 /// Who is asking to update a tool.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Updater {
-    /// A shim or `mise x` about to launch the tool; it leaves updates to the
-    /// service while one runs.
+    /// A shim or `mise x` about to launch the tool, or a shell prompt; it
+    /// leaves updates to the service while one runs.
     Launch,
     /// The `tool-update` service.
     Service,
