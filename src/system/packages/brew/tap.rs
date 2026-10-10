@@ -967,6 +967,71 @@ end"##,
 
     #[cfg(any(target_os = "linux", target_os = "macos"))]
     #[tokio::test]
+    async fn serializes_cask_generated_completions() -> Result<()> {
+        use super::super::cask::{CompletionShell, cask_artifacts};
+
+        let Some(ruby) = test_ruby().await? else {
+            return Ok(());
+        };
+        let runner = CmdLineRunner::new(ruby)
+            .with_on_stderr(|line| eprintln!("{line}"))
+            .arg("--disable-gems")
+            .arg("-e")
+            .arg(CASK_METADATA_SHIM_RB)
+            .stdin_string(
+                r##"cask "widget" do
+  version "1.2.3"
+  url "https://example.invalid/widget.tar.gz"
+  binary "widget"
+  generate_completions_from_executable "widget", "completion",
+    base_name: "widget",
+    shell_parameter_format: :cobra,
+    shells: [:bash, :zsh, :fish]
+  generate_completions_from_executable "plain", shell_parameter_format: :cobra
+end"##,
+            )
+            .env("MISE_BREW_TOKEN", "widget")
+            .env("MISE_BREW_SOURCE_PATH", "Casks/widget.rb")
+            .env("MISE_BREW_SOURCE_CHECKSUM", "fixture")
+            .env("MISE_BREW_TAP_COMMIT", "fixture")
+            .env("MISE_BREW_MACOS_VERSION", "26")
+            .env("MISE_BREW_OS", "macos")
+            .env("MISE_BREW_ARCH", "aarch64");
+        let output = runner.read().await?;
+        let cask: Cask = serde_json::from_str(&output)?;
+        let metadata: serde_json::Value = serde_json::from_str(&output)?;
+        assert_eq!(
+            metadata["artifacts"],
+            serde_json::json!([
+                {"binary": ["widget"]},
+                {"generate_completions_from_executable": ["widget", "completion", {
+                    "base_name": "widget",
+                    "shell_parameter_format": "cobra",
+                    "shells": ["bash", "zsh", "fish"]
+                }]},
+                {"generate_completions_from_executable": ["plain", {"shell_parameter_format": "cobra"}]}
+            ])
+        );
+        let completions = cask_artifacts(&cask)?.generated_completions;
+        assert_eq!(completions.len(), 2);
+        assert_eq!(completions[0].executable, "widget");
+        assert_eq!(completions[0].args, vec!["completion".to_string()]);
+        assert_eq!(completions[0].base_name.as_deref(), Some("widget"));
+        // a cobra cask that omits `shells` gets Homebrew's default set
+        assert_eq!(
+            completions[1].shells,
+            vec![
+                CompletionShell::Bash,
+                CompletionShell::Zsh,
+                CompletionShell::Fish,
+                CompletionShell::Pwsh
+            ]
+        );
+        Ok(())
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    #[tokio::test]
     async fn serializes_cask_staged_paths_without_reading_host_files() -> Result<()> {
         let Some(ruby) = test_ruby().await? else {
             return Ok(());
