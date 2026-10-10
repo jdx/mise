@@ -38,6 +38,7 @@ impl IntoLua for PostInstallContext {
 #[cfg(test)]
 mod tests {
     use crate::{Plugin, embedded_plugins};
+    use mlua::{Lua, ObjectLike, Table};
     use tokio::test;
 
     use super::*;
@@ -98,5 +99,72 @@ mod tests {
             std::fs::read_to_string(root.join("bin").join(binary_name)).unwrap(),
             "chromedriver"
         );
+    }
+
+    #[test]
+    async fn poetry_quotes_script_paths_and_removes_them_without_a_shell() {
+        let poetry_hook = embedded_plugins::get_embedded_plugin("poetry")
+            .unwrap()
+            .hooks
+            .iter()
+            .find(|(name, _)| *name == "post_install")
+            .unwrap()
+            .1;
+
+        for root_path in [
+            "/tmp/poetry install",
+            "/tmp/poetry; harmless-marker",
+            "/tmp/poetry O'Brien",
+        ] {
+            let lua = Lua::new();
+            lua.load(
+                r#"
+                    PLUGIN = {}
+                    RUNTIME = { osType = "linux" }
+                    commands = {}
+                    removed_path = nil
+                    io.open = function()
+                        return { write = function() end, close = function() end }
+                    end
+                    os.execute = function(command)
+                        table.insert(commands, command)
+                        return 0
+                    end
+                    os.remove = function(path)
+                        removed_path = path
+                    end
+                "#,
+            )
+            .exec()
+            .unwrap();
+            lua.load(poetry_hook).exec().unwrap();
+
+            let ctx = lua.create_table().unwrap();
+            ctx.set("rootPath", root_path).unwrap();
+            let poetry = lua.create_table().unwrap();
+            poetry.set("version", "2.0.0").unwrap();
+            let sdk_info = lua.create_table().unwrap();
+            sdk_info.set("poetry", poetry).unwrap();
+            ctx.set("sdkInfo", sdk_info).unwrap();
+
+            let plugin: Table = lua.globals().get("PLUGIN").unwrap();
+            plugin.call_method::<()>("PostInstall", ctx).unwrap();
+
+            let script_path = format!("{root_path}/install_poetry.sh");
+            let quote = |value: &str| format!("'{}'", value.replace('\'', "'\\''"));
+            let commands: Table = lua.globals().get("commands").unwrap();
+            assert_eq!(
+                commands.get::<String>(1).unwrap(),
+                format!(
+                    "chmod +x {} && {}",
+                    quote(&script_path),
+                    quote(&script_path)
+                )
+            );
+            assert_eq!(
+                lua.globals().get::<String>("removed_path").unwrap(),
+                script_path
+            );
+        }
     }
 }
