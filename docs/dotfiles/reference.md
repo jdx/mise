@@ -81,12 +81,16 @@ also accepts `enabled`.
 | `track-local`    | `exclude`, `include`, `autosave`, `allow_plaintext`                                                                                            |                                  |
 
 For `encrypt` and `relative`, the table means the `true` value; `encrypt =
-false` and `relative = false` are accepted everywhere except that a
-permissions-only entry rejects `encrypt = false`. See
-[Local-only history](/dotfiles/history.html#local-only) for `track-local`.
+false` and `relative = false` are accepted everywhere except that
+permissions-only and `track-local` entries reject any `encrypt` key, including
+`encrypt = false`. See [Local-only history](/dotfiles/history.html#local-only)
+for `track-local`.
 
-mise warns about and ignores an entry that sets any other key; for a `track`
-entry, `mise dot paths` also lists it as invalid. `permissions` with a
+mise warns about and ignores an entry that sets one of the
+[entry keys](#entry-keys) its kind does not accept; for a `track` entry,
+`mise dot paths` also lists it as invalid. A key that is not an entry key at
+all is ignored without a warning, except in configuration arriving from
+another machine, which a pull refuses to apply. `permissions` with a
 directory source, and `manifest` or `dot_prefix` with a file source, stop the
 command with an error. An entry that sets both `permissions` and `manifest` is
 ignored with a warning.
