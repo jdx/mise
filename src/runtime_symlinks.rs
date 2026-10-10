@@ -8,29 +8,32 @@ use crate::config::SettingsExt;
 use crate::config::{Alias, Config};
 use crate::plugins::VERSION_REGEX;
 use crate::semver::split_version_prefix;
-use crate::toolset::{ToolRequest, Toolset, install_state};
+use crate::toolset::{
+    ConfigScope, ResolveOptions, ToolRequest, Toolset, ToolsetBuilder, install_state,
+};
 use crate::{env, file};
 use eyre::{Result, WrapErr};
 use indexmap::IndexMap;
 use itertools::Itertools;
 use versions::Versioning;
 
-pub async fn rebuild_for_toolset(config: &Config, ts: &Toolset) -> Result<()> {
+pub async fn rebuild_for_toolset(config: &Arc<Config>, ts: &Toolset) -> Result<()> {
     rebuild_for_backends(config, ts, ts.list_cached_and_current_backends()).await
 }
 
 pub(crate) async fn rebuild_for_backends(
-    config: &Config,
+    config: &Arc<Config>,
     ts: &Toolset,
     backends: impl IntoIterator<Item = Arc<dyn Backend>>,
 ) -> Result<()> {
+    let global = global_toolset(config).await;
     let rebuilds = backends.into_iter().flat_map(|backend| {
         install_dirs_for(&backend)
             .into_iter()
             .map(move |installs_dir| (backend.clone(), installs_dir))
     });
     run_all_rebuilds(rebuilds, |(backend, installs_dir)| {
-        rebuild_symlinks_in_dir(config, ts, &backend, &installs_dir).wrap_err_with(|| {
+        rebuild_symlinks_in_dir(config, ts, &global, &backend, &installs_dir).wrap_err_with(|| {
             format!(
                 "failed to rebuild runtime symlinks for {} in {}",
                 backend.ba().short,
@@ -38,6 +41,32 @@ pub(crate) async fn rebuild_for_backends(
             )
         })
     })
+}
+
+/// The tools global and system config select, resolved against what is
+/// installed. It backs the `global` link, which names the version in use
+/// outside any project, so project config and `MISE_*_VERSION` stay out of it.
+async fn global_toolset(config: &Arc<Config>) -> Toolset {
+    let built = ToolsetBuilder::new()
+        .with_scope(ConfigScope::GlobalOnly)
+        .without_runtime_env()
+        .build_unresolved(config);
+    let mut global = match built {
+        Ok(global) => global,
+        Err(err) => {
+            debug!("skipping global runtime symlink, global config did not load: {err:#}");
+            return Toolset::default();
+        }
+    };
+    let opts = ResolveOptions {
+        offline: true,
+        ..ResolveOptions::without_lockfile_warnings()
+    };
+    if let Err(err) = global.resolve_with_opts(config, &opts).await {
+        debug!("skipping global runtime symlink, global tools did not resolve: {err:#}");
+        return Toolset::default();
+    }
+    global
 }
 
 fn run_all_rebuilds<T>(
@@ -79,6 +108,7 @@ fn install_dirs_for(backend: &Arc<dyn Backend>) -> Vec<PathBuf> {
 fn rebuild_symlinks_in_dir(
     config: &Config,
     ts: &Toolset,
+    global: &Toolset,
     backend: &Arc<dyn Backend>,
     installs_dir: &Path,
 ) -> Result<()> {
@@ -86,7 +116,7 @@ fn rebuild_symlinks_in_dir(
         crate::install_layout::resolver::heal_links(backend.ba());
     }
     let concrete_installs = concrete_installs_in_dir(backend, installs_dir);
-    let symlinks = list_symlinks_for_dir(config, Some(ts), backend, installs_dir);
+    let symlinks = list_symlinks_for_dir(config, Some(ts), global, backend, installs_dir);
     let default_alias = Alias::default();
     let aliases = &config
         .all_aliases
@@ -186,6 +216,7 @@ fn rebuild_symlinks_in_dir(
 fn list_symlinks_for_dir(
     config: &Config,
     ts: Option<&Toolset>,
+    global: &Toolset,
     backend: &Arc<dyn Backend>,
     installs_dir: &Path,
 ) -> IndexMap<String, PathBuf> {
@@ -225,29 +256,22 @@ fn list_symlinks_for_dir(
             let Some(from) = tv.runtime_pathname() else {
                 continue;
             };
-            let install_path = tv.install_path();
-            // An identity-layout install is a hashed directory in the installs root;
-            // the pin points at the version link beside it, which names the same
-            // installation, never at the hash.
-            if crate::install_layout::resolver::dir_name_of(&install_path).is_some() {
-                let name = tv.tv_pathname();
-                if installs_dir == tv.ba().installs_path()
-                    && install_path.exists()
-                    && installs_dir.join(&name).exists()
-                {
-                    symlinks.insert(from, PathBuf::from(".").join(name));
-                }
-                continue;
-            }
-            if install_path.parent() != Some(installs_dir) || !install_path.exists() {
-                continue;
-            }
-            if let Some(to) = install_path
-                .file_name()
-                .map(|to| PathBuf::from(".").join(to))
-            {
+            if let Some(to) = pin_target(&tv, installs_dir) {
                 symlinks.insert(from, to);
             }
+        }
+    }
+    // `global` is the version global config selects. A real directory by that
+    // name is the user's and stays untouched.
+    let global_link = installs_dir.join(GLOBAL_LINK);
+    if std::fs::symlink_metadata(&global_link).is_err() || is_runtime_symlink(&global_link) {
+        let to = global
+            .list_current_versions()
+            .into_iter()
+            .filter(|(b, _)| b.ba() == backend.ba())
+            .find_map(|(_, tv)| pin_target(&tv, installs_dir));
+        if let Some(to) = to {
+            symlinks.insert(GLOBAL_LINK.to_string(), to);
         }
     }
     symlinks = symlinks
@@ -255,6 +279,31 @@ fn list_symlinks_for_dir(
         .sorted_by_cached_key(|(k, _)| (Versioning::new(k), k.to_string()))
         .collect();
     symlinks
+}
+
+/// The link name for the version global config selects.
+const GLOBAL_LINK: &str = "global";
+
+/// The `./name` link target naming `tv`'s install inside `installs_dir`, or
+/// `None` when that install is not there.
+fn pin_target(tv: &crate::toolset::ToolVersion, installs_dir: &Path) -> Option<PathBuf> {
+    let install_path = tv.install_path();
+    // An identity-layout install is a hashed directory in the installs root;
+    // the pin points at the version link beside it, which names the same
+    // installation, never at the hash.
+    if crate::install_layout::resolver::dir_name_of(&install_path).is_some() {
+        let name = tv.tv_pathname();
+        return (installs_dir == tv.ba().installs_path()
+            && install_path.exists()
+            && installs_dir.join(&name).exists())
+        .then(|| PathBuf::from(".").join(name));
+    }
+    if install_path.parent() != Some(installs_dir) || !install_path.exists() {
+        return None;
+    }
+    install_path
+        .file_name()
+        .map(|to| PathBuf::from(".").join(to))
 }
 
 /// List real (non-symlink) installed versions in a specific directory.
@@ -411,14 +460,18 @@ fn stale_generated_symlinks(
     desired: &IndexMap<String, PathBuf>,
     alias_names: &HashSet<String>,
 ) -> Result<Vec<PathBuf>> {
+    let mut stale = vec![];
+    let global_link = installs_dir.join(GLOBAL_LINK);
+    if !desired.contains_key(GLOBAL_LINK) && is_runtime_symlink(&global_link) {
+        stale.push(global_link);
+    }
     let namespace = generated_symlink_namespace(installs_dir);
     if namespace.is_empty() {
-        return Ok(vec![]);
+        return Ok(stale);
     }
     let eligible = installed_versions_in_dir(backend, installs_dir)
         .into_iter()
         .collect::<HashSet<_>>();
-    let mut stale = vec![];
     for path in file::ls(installs_dir)? {
         let name = path
             .file_name()
