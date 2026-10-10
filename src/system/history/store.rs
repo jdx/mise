@@ -994,7 +994,7 @@ pub(crate) fn meta_cache_path_in(state_dir: &Path, uuid: &str) -> PathBuf {
 }
 
 pub(crate) fn write_meta_cache_in(state_dir: &Path, checkpoint: &Checkpoint) -> Result<()> {
-    write_json(&meta_cache_path_in(state_dir, &checkpoint.uuid), checkpoint)
+    write_json_if_changed(&meta_cache_path_in(state_dir, &checkpoint.uuid), checkpoint)
 }
 
 pub(crate) fn read_meta_cache_in(state_dir: &Path, uuid: &str) -> Result<Option<Checkpoint>> {
@@ -1289,16 +1289,38 @@ pub(crate) fn new_uuid() -> String {
 }
 
 pub(crate) fn write_json<T: Serialize>(path: &Path, value: &T) -> Result<()> {
+    write_json_text(path, value, false)
+}
+
+/// [`write_json`], leaving a file that already holds these bytes alone. An
+/// index rebuild visits every checkpoint, and rewriting each one through a
+/// temporary file and an fsync costs I/O proportional to the whole history.
+fn write_json_if_changed<T: Serialize>(path: &Path, value: &T) -> Result<()> {
+    write_json_text(path, value, true)
+}
+
+fn write_json_text<T: Serialize>(path: &Path, value: &T, skip_unchanged: bool) -> Result<()> {
     let mut text = serde_json::to_string_pretty(value)?;
     text.push('\n');
-    if let Some(parent) = path.parent() {
-        file::create_dir_all(parent)?;
+    let unchanged =
+        skip_unchanged && std::fs::read(path).is_ok_and(|existing| existing == text.as_bytes());
+    if !unchanged {
+        if let Some(parent) = path.parent() {
+            file::create_dir_all(parent)?;
+        }
+        file::write_atomic(path, text)
+            .wrap_err_with(|| format!("writing {}", display_path(path)))?;
     }
-    file::write_atomic(path, text).wrap_err_with(|| format!("writing {}", display_path(path)))?;
+    // a rebuild still heals a file whose mode drifted, but a file already at
+    // 0600 is not touched: a chmod writes the inode too
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        let _ = std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600));
+        let private =
+            std::fs::metadata(path).is_ok_and(|meta| meta.permissions().mode() & 0o777 == 0o600);
+        if !private {
+            let _ = std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600));
+        }
     }
     Ok(())
 }
