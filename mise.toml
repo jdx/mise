@@ -16,7 +16,7 @@ cargo-insta = "latest"
 git-cliff = "latest"
 gh = "latest"
 hk = { version = "latest", minimum_release_age = "0s" }
-jactionlint = "2"
+jactionlint = "2.1.0"
 jq = "latest"
 lua-language-server = "latest"
 stylua = "latest"

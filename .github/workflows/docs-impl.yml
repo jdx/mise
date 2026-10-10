@@ -80,7 +80,7 @@ jobs:
           persist-credentials: false
       # The job's own token, read-only, for mise's GitHub lookups: never the
       # PAT, which this job must not hold.
-      - uses: jdx/mise-action@9149ea85001c7435d5a66bb127d6a1b6227cb0a5 # v5
+      - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5
         with:
           install_args: aube node
           github_token: ${{ github.token }}
@@ -171,7 +171,7 @@ jobs:
             cp "$SHOWREEL_OVERVIEW_CHAPTERS" "$stage/overview-chapters.json"
           fi
           ls -la "$stage"
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         if: steps.stage.outcome == 'success'
         continue-on-error: true
         with:
@@ -203,7 +203,7 @@ jobs:
       # at once, can finish off what the hour's other CI already spent before
       # this job installs its tools. Pass the PAT through so mise draws on its
       # own budget instead.
-      - uses: jdx/mise-action@9149ea85001c7435d5a66bb127d6a1b6227cb0a5 # v5
+      - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5
         with:
           install_args: aube node
           github_token: ${{ secrets.MISE_GH_TOKEN || github.token }}
@@ -238,7 +238,7 @@ jobs:
       # offers the 60 fps file as og:video. The showreel job leaves them, and
       # the facts the page quotes, as an artifact; only those files, by
       # name, are taken from it. Every other run builds the site without it.
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         if: needs.showreel.result == 'success'
         continue-on-error: true
         with:
