@@ -33,13 +33,15 @@ pub(crate) async fn rebuild_for_backends(
             .map(move |installs_dir| (backend.clone(), installs_dir))
     });
     run_all_rebuilds(rebuilds, |(backend, installs_dir)| {
-        rebuild_symlinks_in_dir(config, ts, global.as_ref(), &backend, &installs_dir).wrap_err_with(|| {
-            format!(
-                "failed to rebuild runtime symlinks for {} in {}",
-                backend.ba().short,
-                installs_dir.display()
-            )
-        })
+        rebuild_symlinks_in_dir(config, ts, global.as_ref(), &backend, &installs_dir).wrap_err_with(
+            || {
+                format!(
+                    "failed to rebuild runtime symlinks for {} in {}",
+                    backend.ba().short,
+                    installs_dir.display()
+                )
+            },
+        )
     })
 }
 
@@ -257,7 +259,7 @@ fn list_symlinks_for_dir(
             let Some(from) = tv.runtime_pathname() else {
                 continue;
             };
-            if let Some(to) = pin_target(&tv, installs_dir) {
+            if let Some(to) = pin_target(backend, &tv, installs_dir) {
                 symlinks.insert(from, to);
             }
         }
@@ -271,7 +273,7 @@ fn list_symlinks_for_dir(
                 .list_current_versions()
                 .into_iter()
                 .filter(|(b, _)| b.ba() == backend.ba())
-                .find_map(|(_, tv)| pin_target(&tv, installs_dir)),
+                .find_map(|(_, tv)| pin_target(backend, &tv, installs_dir)),
             // Global config could not be read: keep the link as it is.
             None => runtime_symlink_target(&global_link),
         };
@@ -290,8 +292,12 @@ fn list_symlinks_for_dir(
 const GLOBAL_LINK: &str = "global";
 
 /// The `./name` link target naming `tv`'s install inside `installs_dir`, or
-/// `None` when that install is not there.
-fn pin_target(tv: &crate::toolset::ToolVersion, installs_dir: &Path) -> Option<PathBuf> {
+/// `None` when that install is not there or never finished.
+fn pin_target(
+    backend: &Arc<dyn Backend>,
+    tv: &crate::toolset::ToolVersion,
+    installs_dir: &Path,
+) -> Option<PathBuf> {
     let install_path = tv.install_path();
     // An identity-layout install is a hashed directory in the installs root;
     // the pin points at the version link beside it, which names the same
@@ -300,15 +306,18 @@ fn pin_target(tv: &crate::toolset::ToolVersion, installs_dir: &Path) -> Option<P
         let name = tv.tv_pathname();
         return (installs_dir == tv.ba().installs_path()
             && install_path.exists()
-            && installs_dir.join(&name).exists())
+            && installs_dir.join(&name).exists()
+            && !is_install_incomplete(backend, installs_dir, &name))
         .then(|| PathBuf::from(".").join(name));
     }
     if install_path.parent() != Some(installs_dir) || !install_path.exists() {
         return None;
     }
-    install_path
-        .file_name()
-        .map(|to| PathBuf::from(".").join(to))
+    let name = install_path.file_name()?;
+    if is_install_incomplete(backend, installs_dir, &name.to_string_lossy()) {
+        return None;
+    }
+    Some(PathBuf::from(".").join(name))
 }
 
 /// List real (non-symlink) installed versions in a specific directory.
