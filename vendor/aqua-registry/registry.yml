@@ -84009,6 +84009,71 @@ packages:
           asset: checksums.txt
           algorithm: sha256
   - type: github_release
+    repo_owner: runxhq
+    repo_name: runx
+    description: Governed runtime for agent skill workflows
+    version_prefix: cli-v
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("< 0.8.0")
+        asset: runx-{{.SemVer}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        files:
+          - name: runx
+            src: "{{.AssetWithoutExt}}/runx"
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-msvc
+        supported_envs:
+          - darwin
+          - linux
+          - windows/amd64
+        overrides:
+          - goos: windows
+            format: zip
+            files:
+              - name: runx
+                src: "{{.AssetWithoutExt}}/runx"
+      - version_constraint: "true"
+        asset: runx-{{.SemVer}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-msvc
+        supported_envs:
+          - darwin
+          - linux
+          - windows/amd64
+        files:
+          - name: runx
+            src: "{{.AssetWithoutExt}}/runx"
+          - name: runx-js-worker
+            src: "{{.AssetWithoutExt}}/runx-js-worker"
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
+            files:
+              - name: runx
+                src: "{{.AssetWithoutExt}}/runx"
+              - name: runx-js-worker
+                src: "{{.AssetWithoutExt}}/runx-js-worker"
+  - type: github_release
     repo_owner: russellbanks
     repo_name: Komac
     description: The Community Manifest Creator for WinGet
