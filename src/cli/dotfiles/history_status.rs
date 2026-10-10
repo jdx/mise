@@ -27,6 +27,10 @@ pub(crate) struct HistoryReport {
     /// Tracked paths edited since the latest checkpoint; `None` when they
     /// could not be determined.
     pub unsaved: Option<Vec<String>>,
+    /// Tracked entries another machine saved while they were not selected
+    /// here: saves leave them alone until a pull applies them.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub not_applied: Vec<String>,
     pub pending_operations: usize,
     pub watcher: super::capture_health::Watcher,
     pub unavailable: Option<String>,
@@ -138,6 +142,7 @@ pub(crate) async fn report() -> Result<HistoryReport> {
             checkpoints: 0,
             latest: None,
             unsaved: None,
+            not_applied: vec![],
             pending_operations: 0,
             watcher: super::capture_health::Watcher::NotDeclared,
             unavailable: None,
@@ -161,13 +166,23 @@ pub(crate) async fn report() -> Result<HistoryReport> {
     });
     // edits nothing has saved yet, which a stopped watcher or a manual-save
     // entry leaves behind; worked out like `mise dot history diff`
-    let unsaved = match (
-        store.repo(),
-        entries
-            .iter()
-            .rev()
-            .find_map(|entry| entry.checkpoint.tree.snapshot.as_deref()),
-    ) {
+    let snapshot = entries
+        .iter()
+        .rev()
+        .find_map(|entry| entry.checkpoint.tree.snapshot.as_deref());
+    let not_applied = match (store.repo(), snapshot) {
+        (Some(repo), Some(snapshot)) => {
+            match crate::system::history::held::unheld_entries(repo, snapshot, &walk) {
+                Ok(entries) => entries.into_iter().map(|(_, display)| display).collect(),
+                Err(err) => {
+                    debug!("history: could not compare the working tree: {err:#}");
+                    vec![]
+                }
+            }
+        }
+        _ => vec![],
+    };
+    let unsaved = match (store.repo(), snapshot) {
         (Some(repo), Some(snapshot)) => {
             match crate::system::history::replay::unsaved_paths(repo, &tracked, &walk, snapshot) {
                 Ok(unsaved) => unsaved,
@@ -189,6 +204,7 @@ pub(crate) async fn report() -> Result<HistoryReport> {
         checkpoints: entries.len(),
         latest,
         unsaved,
+        not_applied,
         pending_operations,
         watcher: super::capture_health::watcher().await?,
         unavailable: store.unavailable().map(str::to_string),
@@ -241,6 +257,12 @@ pub(crate) fn print(report: &HistoryReport) -> Result<()> {
             "  unsaved changes: {} path(s) since the latest checkpoint ({}); `mise dot history diff` shows them, `mise dot save` records them.",
             unsaved.len(),
             listed.join(", ")
+        );
+    }
+    if !report.not_applied.is_empty() {
+        miseprintln!(
+            "  not applied here: {} (saved by another machine while not selected here); `mise dot pull` applies them, and saves resume after that.",
+            report.not_applied.join(", ")
         );
     }
     if !report.omitted.is_empty() || !report.nested.is_empty() {

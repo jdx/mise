@@ -185,7 +185,8 @@ pub(crate) async fn apply_locked_with_scope(
 
     // Store choices without publishing or applying any part of the setup.
     let mut sync_state = state::load(repo)?;
-    let shared = super::share::current(repo, tracked)?.objects();
+    let shared_report = super::share::current(repo, tracked)?;
+    let shared = shared_report.objects();
     let encrypted = super::files::encrypted_paths(repo, status.upstream_commit.as_deref())?;
     for conflict in &status.conflicts {
         let Some(local) = roots
@@ -221,6 +222,31 @@ pub(crate) async fn apply_locked_with_scope(
                 }
                 Err(err) => return Err(err),
             };
+            // **Keeping this machine's version of a stream it never held
+            // means saving it.** Its saved version is another machine's, so
+            // there is nothing of this machine's to publish yet: hold the
+            // stream, and the next save records the live files over it.
+            if keep_local.contains(&local)
+                && shared_report.unheld.contains_key(&conflict.branch_path)
+            {
+                if !req.dry_run
+                    && let Some(entry) = tracked.entry_for(&local)
+                {
+                    let mut held = crate::system::history::held::Held::load(repo)?;
+                    held.keep(&entry.tree_path(&entry.path)?);
+                    held.save(repo)?;
+                }
+                let advice = format!(
+                    "{path} keeps this machine's version once it is saved: run `mise dot save {path}`, then `mise dot sync` publishes it",
+                    path = display_path(&local)
+                );
+                if blanket_chosen.contains(&local) {
+                    blanket_held.push(advice);
+                    keep_local.remove(&local);
+                    continue;
+                }
+                bail!("{advice}");
+            }
             let saved = shared.get(&conflict.branch_path).cloned();
             let saved_mode = permissions_at(
                 repo,
@@ -1083,7 +1109,7 @@ fn unusable(path: &Path, what: impl std::fmt::Display) -> eyre::Report {
     eyre::Report::new(UnusableLive(format!("{} {what}", display_path(path))))
 }
 
-pub(super) fn live_object(
+pub(crate) fn live_object(
     repo: &crate::system::history::shadow::HistoryRepo,
     path: &Path,
 ) -> Result<Option<Object>> {
@@ -1129,6 +1155,13 @@ fn saved_object(
     let Some(entry) = tracked.entry_for(path) else {
         return Ok(None);
     };
+    // the saved side as planning read it: see `super::share::current`
+    let stream = entry.tree_path(&entry.path)?;
+    let held = crate::system::history::held::Held::load(repo)?;
+    if !held.always_holds(&stream) && !held.holds(&stream, repo.object_at(&head, &stream)?.as_ref())
+    {
+        return live_object(repo, path);
+    }
     repo.restored_object_at(&head, &entry.tree_path(path)?)
 }
 

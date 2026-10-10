@@ -1,0 +1,105 @@
+#!/usr/bin/env bash
+# A profile stream another machine saved while the profile was inactive here
+# is that machine's version: selecting the profile applies it, and nothing
+# this machine saves deletes or reverts it.
+require_cmd git
+export MISE_HISTORY_NOTIFY=false
+origin="$PWD/profile-origin.git"
+git init -q --bare -b main "$origin"
+echo work-v1 >~/.work
+echo base >~/.shared
+assert_succeed "mise dot track ~/.work --profile work --yes"
+assert_succeed "mise dot track ~/.shared ~/.config/mise/config.toml --yes"
+assert_succeed "mise dot origin set file://$origin --sync manual --yes"
+assert_succeed "mise dot sync"
+assert "git --git-dir=$origin show main:home@work/.work" "work-v1"
+
+machine() {
+  local dir="$1"
+  shift
+  (
+    cd "$dir" || exit
+    env HOME="$dir" XDG_CONFIG_HOME="$dir/.config" MISE_CONFIG_DIR="$dir/.config/mise" \
+      MISE_STATE_DIR="$dir/.local/state/mise" MISE_DATA_DIR="$dir/.local/share/mise" \
+      MISE_CACHE_DIR="$dir/.cache/mise" MISE_TRUSTED_CONFIG_PATHS="$dir" mise "$@"
+  )
+}
+export -f machine
+second="$(dirname "$HOME")/second"
+mkdir -p "$second"
+export second
+b() { machine "$second" "$@"; }
+export -f b
+
+# the second machine adopts the setup with the profile inactive
+assert_succeed "b bootstrap --adopt file://$origin --yes"
+assert_fail "test -e $second/.work"
+
+# selecting the profile: status says the file is not applied here yet, and
+# a save and a sync before pulling publish no deletion
+assert_contains "b -E work dot status" "not applied here: ~/.work"
+assert_not_contains "b -E work dot status" "unsaved changes"
+assert_contains "b -E work dot save 2>&1" "saved by another machine"
+assert_succeed "b -E work dot sync"
+assert "git --git-dir=$origin show main:home@work/.work" "work-v1"
+assert_succeed "b -E work dot pull --yes"
+assert "cat $second/.work" "work-v1"
+assert_not_contains "b -E work dot status" "not applied here"
+# held now: an edit here is saved and shared
+echo work-v2 >"$second/.work"
+assert_succeed "b -E work dot save"
+assert_succeed "b -E work dot sync"
+assert "git --git-dir=$origin show main:home@work/.work" "work-v2"
+
+# the profile goes inactive here, and the first machine edits the file
+assert_succeed "b dot save"
+assert_succeed "mise dot sync"
+assert_succeed "mise -E work dot pull --yes"
+assert "cat ~/.work" "work-v2"
+echo work-v3 >~/.work
+assert_succeed "mise -E work dot save"
+assert_succeed "mise -E work dot sync"
+assert_succeed "b dot sync"
+assert_succeed "b dot pull --yes"
+assert "cat $second/.work" "work-v2"
+# selecting it again here does not revert the first machine's edit
+assert_succeed "b -E work dot save"
+assert_succeed "b -E work dot sync"
+assert "git --git-dir=$origin show main:home@work/.work" "work-v3"
+assert_succeed "b -E work dot pull --yes"
+assert "cat $second/.work" "work-v3"
+
+# a machine with its own copy is asked which version to keep
+third="$(dirname "$HOME")/third"
+mkdir -p "$third"
+export third
+c() { machine "$third" "$@"; }
+export -f c
+assert_succeed "c bootstrap --adopt file://$origin --yes"
+echo third-machine >"$third/.work"
+assert_succeed "c -E work dot save"
+assert_succeed "c -E work dot sync"
+assert "git --git-dir=$origin show main:home@work/.work" "work-v3"
+assert_fail "c -E work dot pull --yes"
+assert "cat $third/.work" "third-machine"
+assert_fail "c -E work dot pull --keep-local $third/.work" "keeps this machine's version once it is saved"
+assert_succeed "c -E work dot save"
+assert_succeed "c -E work dot sync"
+assert "git --git-dir=$origin show main:home@work/.work" "third-machine"
+assert "cat $third/.work" "third-machine"
+
+# or takes the saved version, and saves then record its edits
+fourth="$(dirname "$HOME")/fourth"
+mkdir -p "$fourth"
+export fourth
+d() { machine "$fourth" "$@"; }
+export -f d
+assert_succeed "d bootstrap --adopt file://$origin --yes"
+echo fourth-machine >"$fourth/.work"
+assert_fail "d -E work dot pull --yes"
+assert_succeed "d -E work dot pull --take-remote $fourth/.work"
+assert "cat $fourth/.work" "third-machine"
+echo fourth-edit >"$fourth/.work"
+assert_succeed "d -E work dot save"
+assert_succeed "d -E work dot sync"
+assert "git --git-dir=$origin show main:home@work/.work" "fourth-edit"

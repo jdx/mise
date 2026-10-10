@@ -21,6 +21,11 @@ pub(crate) struct SharedFile {
 pub(crate) struct ShareReport {
     pub files: BTreeMap<String, SharedFile>,
     pub checkpoint: Option<String>,
+    /// Paths of selected streams whose saved version this machine does not
+    /// hold (see [`crate::system::history::held`]), each with the version
+    /// it last held, if any: their `files` are the live ones, and that
+    /// version, not the shared one, is their baseline.
+    pub unheld: BTreeMap<String, Option<(String, String)>>,
 }
 
 impl ShareReport {
@@ -44,6 +49,8 @@ pub(crate) fn current(repo: &HistoryRepo, tracked: &TrackedSet) -> Result<ShareR
     };
     report.checkpoint = Some(head.clone());
     let roots = Roots::current();
+    let record = crate::system::history::held::Held::load(repo)?;
+    let mut holds: BTreeMap<String, bool> = BTreeMap::new();
     for file in repo.ls_tree(&head)? {
         let (local, variant) = match roots.locate(&file.path) {
             Located::Config(path) => (path, None),
@@ -56,7 +63,28 @@ pub(crate) fn current(repo: &HistoryRepo, tracked: &TrackedSet) -> Result<ShareR
         if entry.variant != variant {
             continue;
         }
-        let Some((mode, oid)) = repo.restored_object_at(&head, &file.path)? else {
+        let stream = entry.tree_path(&entry.path)?;
+        let held = match holds.get(&stream) {
+            Some(held) => *held,
+            None => {
+                let held = record.always_holds(&stream)
+                    || record.holds(&stream, repo.object_at(&head, &stream)?.as_ref());
+                holds.insert(stream.clone(), held);
+                held
+            }
+        };
+        // another machine's version is not this one's to compare against:
+        // the live file is what this machine has
+        let object = if held {
+            repo.restored_object_at(&head, &file.path)?
+        } else {
+            report.unheld.insert(
+                file.path.clone(),
+                held_base(repo, &head, &record, &stream, &file.path)?,
+            );
+            super::apply::live_object(repo, &local)?
+        };
+        let Some((mode, oid)) = object else {
             continue;
         };
         report
@@ -64,6 +92,43 @@ pub(crate) fn current(repo: &HistoryRepo, tracked: &TrackedSet) -> Result<ShareR
             .insert(file.path, SharedFile { local, mode, oid });
     }
     Ok(report)
+}
+
+/// The version of `path` this machine last held, from its stream's frozen
+/// version, to compare the live file with. An encrypted path has none: the
+/// frozen version is ciphertext, and the live file is not.
+fn held_base(
+    repo: &HistoryRepo,
+    head: &str,
+    held: &crate::system::history::held::Held,
+    stream: &str,
+    path: &str,
+) -> Result<Option<(String, String)>> {
+    let Some(frozen) = held.frozen(stream) else {
+        return Ok(None);
+    };
+    let encrypted =
+        crate::system::history::manifest::Manifest::read(repo, head)?.is_some_and(|manifest| {
+            manifest.encrypted_paths().iter().any(|prefix| {
+                path == prefix
+                    || path
+                        .strip_prefix(prefix.as_str())
+                        .is_some_and(|rest| rest.starts_with('/'))
+            })
+        });
+    if encrypted {
+        return Ok(None);
+    }
+    if path == stream {
+        return Ok(Some(frozen.clone()));
+    }
+    match path
+        .strip_prefix(stream)
+        .and_then(|rest| rest.strip_prefix('/'))
+    {
+        Some(relative) if frozen.0 == "040000" => repo.object_at(&frozen.1, relative),
+        _ => Ok(None),
+    }
 }
 
 #[cfg(test)]
