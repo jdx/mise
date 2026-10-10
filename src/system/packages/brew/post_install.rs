@@ -4,6 +4,7 @@
 //! tool-specific ones (`compile_gsettings_schemas`, `init_data_dir`, ...) are
 //! reported and skipped, since mise never runs `brew`.
 
+use std::collections::HashMap;
 use std::fs;
 use std::path::{Component, Path, PathBuf};
 
@@ -65,9 +66,25 @@ fn copy_tree(src: &Path, dst: &Path, keep_existing: bool) -> Result<()> {
             fs::create_dir_all(parent)?;
         }
         if ft.is_symlink() {
-            if dest.symlink_metadata().is_err() {
-                crate::file::make_symlink(&fs::read_link(entry.path())?, &dest)?;
+            let link = fs::read_link(entry.path())?;
+            if let Ok(meta) = dest.symlink_metadata() {
+                if meta.is_symlink() && fs::read_link(&dest).ok().as_deref() == Some(&link) {
+                    continue;
+                }
+                if keep_existing {
+                    // a differing link is the user's: the bottle's lands beside it
+                    let mut name = dest.file_name().unwrap().to_os_string();
+                    name.push(".default");
+                    dest.set_file_name(name);
+                }
+                if let Ok(meta) = dest.symlink_metadata() {
+                    if meta.is_dir() {
+                        continue;
+                    }
+                    fs::remove_file(&dest)?;
+                }
             }
+            crate::file::make_symlink(&link, &dest)?;
             continue;
         }
         if keep_existing && let Ok(meta) = dest.symlink_metadata() {
@@ -86,6 +103,8 @@ fn copy_tree(src: &Path, dst: &Path, keep_existing: bool) -> Result<()> {
     Ok(())
 }
 
+type GuardCache = HashMap<String, bool>;
+
 pub(super) struct Context<'a> {
     pub name: &'a str,
     /// the formula's `versions.stable`, for `{{version.major}}` templates
@@ -97,9 +116,12 @@ pub(super) struct Context<'a> {
 /// install failure, and ends the remaining steps; an unsupported step is
 /// reported and skipped.
 pub(super) fn run_steps(steps: &[Value], ctx: &Context) {
+    // brew decides each guard once per formula, so steps that share a guard id
+    // keep one decision even after an earlier step creates or removes the path
+    let mut guards = HashMap::new();
     for step in steps {
         let kind = step.get("type").and_then(Value::as_str).unwrap_or("?");
-        match ctx.apply(step, kind) {
+        match ctx.apply(step, kind, &mut guards) {
             Ok(()) => {}
             Err(err) => {
                 if let Some(un) = err.downcast_ref::<Unsupported>() {
@@ -120,8 +142,8 @@ pub(super) fn run_steps(steps: &[Value], ctx: &Context) {
 }
 
 impl Context<'_> {
-    fn apply(&self, step: &Value, kind: &str) -> Result<()> {
-        if !self.guards_pass(step)? {
+    fn apply(&self, step: &Value, kind: &str, guards: &mut GuardCache) -> Result<()> {
+        if !self.guards_pass(step, guards)? {
             return Ok(());
         }
         match kind {
@@ -338,13 +360,20 @@ impl Context<'_> {
         Ok(())
     }
 
-    fn guards_pass(&self, step: &Value) -> Result<bool> {
+    fn guards_pass(&self, step: &Value, cache: &mut GuardCache) -> Result<bool> {
         for guard in step
             .get("guards")
             .and_then(Value::as_array)
             .into_iter()
             .flatten()
         {
+            let id = guard.get("id").and_then(Value::as_str);
+            if let Some(&cached) = id.and_then(|id| cache.get(id)) {
+                if !cached {
+                    return Ok(false);
+                }
+                continue;
+            }
             let condition = guard.get("condition").and_then(Value::as_str);
             let pass = match condition {
                 Some("on") => match guard.get("value").and_then(Value::as_str) {
@@ -356,6 +385,9 @@ impl Context<'_> {
                 Some("unless_exists") => !self.spec(guard)?.exists(),
                 other => return unsupported(format!("guard {other:?}")),
             };
+            if let Some(id) = id {
+                cache.insert(id.to_string(), pass);
+            }
             if !pass {
                 return Ok(false);
             }
@@ -547,6 +579,41 @@ mod tests {
         assert!(c.spec(&json!({"path": "relative"})).is_err());
         let err = c.expand("{{bash_completion}}").unwrap_err();
         assert!(err.downcast_ref::<Unsupported>().is_some());
+    }
+
+    #[test]
+    fn steps_sharing_a_guard_id_keep_one_decision() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let marker = tmp.path().join("marker");
+        let guard =
+            json!([{"path": marker.to_str().unwrap(), "condition": "unless_exists", "id": "1"}]);
+        let steps = vec![
+            json!({"type": "touch", "path": {"path": marker.to_str().unwrap()}, "guards": guard}),
+            json!({"type": "touch", "path": {"path": tmp.path().join("second").to_str().unwrap()}, "guards": guard}),
+        ];
+        run_steps(&steps, &ctx(tmp.path()));
+        assert!(marker.exists());
+        assert!(tmp.path().join("second").exists());
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn copy_tree_replaces_or_places_differing_symlinks() -> Result<()> {
+        use std::os::unix::fs::symlink;
+        let tmp = tempfile::tempdir()?;
+        let src = tmp.path().join("src");
+        let dst = tmp.path().join("dst");
+        fs::create_dir_all(&src)?;
+        fs::create_dir_all(&dst)?;
+        symlink("new", src.join("l"))?;
+        symlink("old", dst.join("l"))?;
+        copy_tree(&src, &dst, true)?;
+        assert_eq!(fs::read_link(dst.join("l"))?, Path::new("old"));
+        assert_eq!(fs::read_link(dst.join("l.default"))?, Path::new("new"));
+        copy_tree(&src, &dst, false)?;
+        assert_eq!(fs::read_link(dst.join("l"))?, Path::new("new"));
+        Ok(())
     }
 
     #[test]
