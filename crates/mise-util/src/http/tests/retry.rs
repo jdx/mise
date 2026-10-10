@@ -643,7 +643,19 @@ async fn test_text_request_allow_html_returns_the_page() {
     assert_eq!(text, "<!DOCTYPE html>");
 
     // Without it the page is still rejected; an http URL is retried as https first.
-    let (port, _) = spawn_canned_server(vec![HTML, HTML]).await;
+    // That retry sends a TLS hello to this plain-HTTP port, which the canned server
+    // would sit on waiting for request headers until the client timed out, so
+    // answer the first connection and drop the second.
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port = listener.local_addr().unwrap().port();
+    tokio::spawn(async move {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let (mut sock, _) = listener.accept().await.unwrap();
+        let _ = sock.read(&mut [0u8; 4096]).await;
+        let _ = sock.write_all(HTML.as_bytes()).await;
+        drop(sock);
+        let _ = listener.accept().await;
+    });
     assert!(
         client
             .get_text_request(format!("http://127.0.0.1:{port}/"))
