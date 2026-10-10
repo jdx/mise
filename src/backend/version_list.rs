@@ -33,11 +33,11 @@ pub(crate) async fn fetch_versions(
         // When a regex is provided, the caller expects to parse arbitrary
         // content (including HTML directory listings), so bypass the HTML rejection
         // in get_text.
-        let url = reqwest::Url::parse(version_list_url)?;
-        let resp = HTTP
-            .get_async_with_headers(url.clone(), &crate::http::with_host_auth(&url, headers)?)
-            .await?;
-        resp.text().await?
+        HTTP.get_text_request(version_list_url)
+            .headers(headers)
+            .allow_html()
+            .send()
+            .await?
     } else {
         HTTP.get_text_request(version_list_url)
             .headers(headers)

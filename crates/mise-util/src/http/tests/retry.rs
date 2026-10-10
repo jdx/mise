@@ -570,3 +570,85 @@ async fn test_json_deserialization_failure_is_not_transient() {
     assert!(err.is_decode());
     assert!(!is_transient(&Report::new(err)));
 }
+
+fn json_ok_response() -> &'static str {
+    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 11\r\nConnection: close\r\n\r\n{\"ok\":true}"
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn test_get_text_retries_a_body_dropped_mid_stream() {
+    // The headers arrive and the connection closes before the declared length,
+    // so the request resolves and the failure comes from reading the body.
+    let _guard = set_test_http_retries(1);
+    let (port, count) =
+        spawn_canned_server(vec![truncated_download_response(), ok_response()]).await;
+    let client = Client::new(Duration::from_secs(2), ClientKind::Http).unwrap();
+
+    let text = client
+        .get_text_request(format!("http://127.0.0.1:{port}/"))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(text, "OK");
+    assert_eq!(count.load(std::sync::atomic::Ordering::SeqCst), 2);
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn test_json_retries_a_body_dropped_mid_stream() {
+    let _guard = set_test_http_retries(1);
+    let (port, count) =
+        spawn_canned_server(vec![truncated_download_response(), json_ok_response()]).await;
+    let client = Client::new(Duration::from_secs(2), ClientKind::Http).unwrap();
+
+    let json: serde_json::Value = client
+        .json(format!("http://127.0.0.1:{port}/"))
+        .await
+        .unwrap();
+
+    assert_eq!(json["ok"], true);
+    assert_eq!(count.load(std::sync::atomic::Ordering::SeqCst), 2);
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn test_get_bytes_retries_a_body_dropped_mid_stream() {
+    let _guard = set_test_http_retries(1);
+    let (port, count) =
+        spawn_canned_server(vec![truncated_download_response(), ok_response()]).await;
+    let client = Client::new(Duration::from_secs(2), ClientKind::Http).unwrap();
+
+    let bytes = client
+        .get_bytes(format!("http://127.0.0.1:{port}/"))
+        .await
+        .unwrap();
+
+    assert_eq!(bytes.as_ref(), b"OK");
+    assert_eq!(count.load(std::sync::atomic::Ordering::SeqCst), 2);
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn test_text_request_allow_html_returns_the_page() {
+    const HTML: &str =
+        "HTTP/1.1 200 OK\r\nContent-Length: 15\r\nConnection: close\r\n\r\n<!DOCTYPE html>";
+    let _guard = set_test_http_retries(0);
+    let client = Client::new(Duration::from_secs(2), ClientKind::Http).unwrap();
+
+    let (port, _) = spawn_canned_server(vec![HTML]).await;
+    let text = client
+        .get_text_request(format!("http://127.0.0.1:{port}/"))
+        .allow_html()
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(text, "<!DOCTYPE html>");
+
+    // Without it the page is still rejected; an http URL is retried as https first.
+    let (port, _) = spawn_canned_server(vec![HTML, HTML]).await;
+    assert!(
+        client
+            .get_text_request(format!("http://127.0.0.1:{port}/"))
+            .send()
+            .await
+            .is_err()
+    );
+}
