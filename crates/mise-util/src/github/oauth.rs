@@ -11,6 +11,7 @@ use std::time::Duration;
 const GRANT_DEVICE_CODE: &str = "urn:ietf:params:oauth:grant-type:device_code";
 const DEFAULT_TOKEN_SECS: i64 = 8 * 60 * 60;
 const REUSE_BUFFER_SECS: i64 = 300;
+const CLIPBOARD_TIMEOUT: Duration = Duration::from_secs(2);
 
 static REFRESH_TOKEN_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
@@ -445,8 +446,83 @@ fn print_device_instructions(device: &DeviceCodeResponse) {
         "Open {} and enter code {} to authorize GitHub access.",
         device.verification_uri, device.user_code
     );
+    if Settings::get().github.oauth_copy_code {
+        match copy_to_clipboard(&device.user_code) {
+            Ok(()) => eprintln!("Copied the code to your clipboard."),
+            Err(e) => debug!("could not copy the device code to the clipboard: {e}"),
+        }
+    }
     if Settings::get().github.oauth_open_browser {
         let _ = open_browser(&device.verification_uri);
+    }
+}
+
+/// Pipe `text` to the first clipboard tool that works on this platform.
+fn copy_to_clipboard(text: &str) -> std::io::Result<()> {
+    let candidates: &[(&str, &[&str])] = if cfg!(target_os = "macos") {
+        &[("pbcopy", &[])]
+    } else if cfg!(windows) {
+        &[("clip.exe", &[])]
+    } else {
+        &[
+            ("wl-copy", &[]),
+            ("xclip", &["-selection", "clipboard"]),
+            ("xsel", &["--clipboard", "--input"]),
+            ("clip.exe", &[]),
+        ]
+    };
+    let mut last = std::io::Error::new(std::io::ErrorKind::NotFound, "no clipboard tool found");
+    let mut timed_out = false;
+    for (cmd, args) in candidates {
+        // A hung tool means the display is likely stale for the other display
+        // tools too, so skip them. clip.exe (WSL) does not use the display, so
+        // it still gets a bounded try; at most two timeouts are spent in total.
+        if timed_out && *cmd != "clip.exe" {
+            continue;
+        }
+        match pipe_to(cmd, args, text) {
+            Ok(()) => return Ok(()),
+            Err(e) => {
+                timed_out |= e.kind() == std::io::ErrorKind::TimedOut;
+                last = e;
+            }
+        }
+    }
+    Err(last)
+}
+
+fn pipe_to(cmd: &str, args: &[&str], text: &str) -> std::io::Result<()> {
+    let mut child = std::process::Command::new(cmd)
+        .args(args)
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()?;
+    child
+        .stdin
+        .take()
+        .ok_or_else(|| std::io::Error::other("no stdin"))?
+        .write_all(text.as_bytes())?;
+    // A hung clipboard tool (stale DISPLAY, broken WSLg) must not hold up the
+    // device flow until the code expires, so bound the wait.
+    let deadline = std::time::Instant::now() + CLIPBOARD_TIMEOUT;
+    loop {
+        if let Some(status) = child.try_wait()? {
+            return if status.success() {
+                Ok(())
+            } else {
+                Err(std::io::Error::other(format!("{cmd} failed")))
+            };
+        }
+        if std::time::Instant::now() >= deadline {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::TimedOut,
+                format!("{cmd} timed out"),
+            ));
+        }
+        std::thread::sleep(Duration::from_millis(20));
     }
 }
 

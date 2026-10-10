@@ -1053,6 +1053,17 @@ can. See [Native GitHub OAuth](/dev-tools/github-tokens.html#native-github-oauth
 env = "MISE_GITHUB_OAUTH_CLIENT_ID"
 type = "String"
 
+[github.oauth_copy_code]
+default = false
+description = "Copy the one-time device code to the clipboard during the native GitHub OAuth device flow."
+docs = """
+Only the device code is copied, never the token. mise uses `pbcopy` on macOS,
+`clip.exe` on Windows and WSL, and `wl-copy`, `xclip` or `xsel` elsewhere. If
+none is available the code is still printed.
+"""
+env = "MISE_GITHUB_OAUTH_COPY_CODE"
+type = "Bool"
+
 [github.oauth_export_env]
 default = "GITHUB_TOKEN"
 description = "Environment variable that mise exports the native GitHub OAuth token under; empty turns the export off."
