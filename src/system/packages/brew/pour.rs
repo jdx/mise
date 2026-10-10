@@ -443,10 +443,17 @@ pub(super) fn install_prepared(prepared: PreparedBottle, pr: &dyn SingleReport) 
     if prepared.keg.exists() {
         crate::file::remove_all(&prepared.keg)?;
     }
-    crate::file::rename(&prepared.staged_keg, &prepared.keg)?;
+    // copy the bottle's etc/var files first so a failure here leaves nothing
+    // linked and the next install retries; they are rolled back with the keg
+    let config = super::post_install::install_bottle_config(&prepared.staged_keg)?;
+    if let Err(err) = crate::file::rename(&prepared.staged_keg, &prepared.keg) {
+        super::post_install::remove_created(&config);
+        return Err(err);
+    }
     // never leave a half-installed keg: if linking fails (conflicts, IO),
     // remove the keg so the next install retries from scratch
     if let Err(err) = link_keg(&prepared.name, &prepared.pkg_version, prepared.keg_only) {
+        super::post_install::remove_created(&config);
         if let Err(rm_err) = crate::file::remove_all(&prepared.keg) {
             // a keg left behind here is unlinked but looks installed, so
             // future installs would skip it — make that state visible
@@ -457,11 +464,6 @@ pub(super) fn install_prepared(prepared: PreparedBottle, pr: &dyn SingleReport) 
             );
         }
         return Err(err);
-    }
-    // after linking, so a link failure leaves no config files in the prefix
-    // without a keg to account for them
-    if let Err(err) = super::post_install::install_bottle_config(&prepared.keg) {
-        warn!("brew:{}: {err:#}", prepared.name);
     }
     if !prepared.post_install_steps.is_empty() {
         pr.set_message("post-install".to_string());

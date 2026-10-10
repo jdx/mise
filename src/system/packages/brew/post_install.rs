@@ -34,25 +34,48 @@ fn unsupported<T>(what: impl Into<String>) -> Result<T> {
 /// Copy `<keg>/.bottle/{etc,var}` into the prefix like brew's `pour` does,
 /// then remove `.bottle`. A file that already exists and differs is left
 /// alone and the bottle's copy lands beside it as `<name>.default`.
-pub(super) fn install_bottle_config(keg: &Path) -> Result<()> {
+///
+/// Returns the files it created so the caller can roll them back if a later
+/// install step fails; on its own failure it rolls back before returning.
+pub(super) fn install_bottle_config(keg: &Path) -> Result<Vec<PathBuf>> {
     let bottle = keg.join(".bottle");
+    let mut created = Vec::new();
     if !bottle.is_dir() {
-        return Ok(());
+        return Ok(created);
     }
     let prefix = prefix::prefix();
-    for dir in ["etc", "var"] {
+    let copied = ["etc", "var"].into_iter().try_for_each(|dir| {
         let src = bottle.join(dir);
         if src.is_dir() {
-            copy_tree(&src, &prefix.join(dir), true)
+            copy_tree(&src, &prefix.join(dir), true, &mut created)
                 .wrap_err_with(|| format!("failed to install the bottle's {dir} files"))?;
         }
+        Ok(())
+    });
+    let result = copied.and_then(|()| crate::file::remove_all(&bottle));
+    if let Err(err) = result {
+        remove_created(&created);
+        return Err(err);
     }
-    crate::file::remove_all(&bottle)
+    Ok(created)
+}
+
+/// undo `install_bottle_config`
+pub(super) fn remove_created(created: &[PathBuf]) {
+    for path in created {
+        let _ = fs::remove_file(path);
+    }
 }
 
 /// Copy `src` into `dst`. With `keep_existing`, an existing different file is
-/// preserved and the new one is written to `<file>.default`.
-fn copy_tree(src: &Path, dst: &Path, keep_existing: bool) -> Result<()> {
+/// preserved and the new one is written to `<file>.default`. Every file or
+/// link it writes is appended to `created`.
+fn copy_tree(
+    src: &Path,
+    dst: &Path,
+    keep_existing: bool,
+    created: &mut Vec<PathBuf>,
+) -> Result<()> {
     for entry in WalkDir::new(src).sort_by_file_name() {
         let entry = entry?;
         let rel = entry.path().strip_prefix(src)?;
@@ -85,6 +108,7 @@ fn copy_tree(src: &Path, dst: &Path, keep_existing: bool) -> Result<()> {
                 }
             }
             crate::file::make_symlink(&link, &dest)?;
+            created.push(dest);
             continue;
         }
         if keep_existing && let Ok(meta) = dest.symlink_metadata() {
@@ -99,6 +123,7 @@ fn copy_tree(src: &Path, dst: &Path, keep_existing: bool) -> Result<()> {
             dest.set_file_name(name);
         }
         fs::copy(entry.path(), &dest)?;
+        created.push(dest);
     }
     Ok(())
 }
@@ -203,7 +228,7 @@ impl Context<'_> {
             if !flag(step, "recursive") {
                 bail!("{} is a directory", source.display());
             }
-            copy_tree(&source, &target, false)
+            copy_tree(&source, &target, false, &mut Vec::new())
         } else {
             fs::copy(&source, &target)?;
             Ok(())
@@ -608,10 +633,10 @@ mod tests {
         fs::create_dir_all(&dst)?;
         symlink("new", src.join("l"))?;
         symlink("old", dst.join("l"))?;
-        copy_tree(&src, &dst, true)?;
+        copy_tree(&src, &dst, true, &mut Vec::new())?;
         assert_eq!(fs::read_link(dst.join("l"))?, Path::new("old"));
         assert_eq!(fs::read_link(dst.join("l.default"))?, Path::new("new"));
-        copy_tree(&src, &dst, false)?;
+        copy_tree(&src, &dst, false, &mut Vec::new())?;
         assert_eq!(fs::read_link(dst.join("l"))?, Path::new("new"));
         Ok(())
     }
@@ -637,7 +662,7 @@ mod tests {
         fs::write(src.join("sub/b"), "b")?;
         fs::write(dst.join("a.cnf"), "edited")?;
         fs::write(dst.join("same"), "x")?;
-        copy_tree(&src, &dst, true)?;
+        copy_tree(&src, &dst, true, &mut Vec::new())?;
         assert_eq!(fs::read_to_string(dst.join("a.cnf"))?, "edited");
         assert_eq!(fs::read_to_string(dst.join("a.cnf.default"))?, "new");
         assert!(!dst.join("same.default").exists());
