@@ -189,6 +189,7 @@ impl Context<'_> {
     }
 
     fn move_(&self, step: &Value) -> Result<()> {
+        refuse_glob(step)?;
         let source = self.path(step, "source")?;
         let target = self.path(step, "target")?;
         if target.symlink_metadata().is_ok() {
@@ -200,7 +201,7 @@ impl Context<'_> {
         if let Some(parent) = target.parent() {
             fs::create_dir_all(parent)?;
         }
-        fs::rename(&source, &target)?;
+        crate::file::move_file(&source, &target)?;
         Ok(())
     }
 
