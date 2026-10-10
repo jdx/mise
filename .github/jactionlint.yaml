@@ -39,6 +39,10 @@ ignores:
   # test.yml runs for pushed v* tags, and the cache step of this action is reachable
   # from there. Those runs only test: nothing they restore or save ends up in a
   # release artifact, because release.yml builds without any cache.
+  # Untrusted callers cannot poison a shared cache: a fork PR saves into its own
+  # refs/pull/<n>/merge scope, which no other ref can restore, and the only other
+  # untrusted runs are pushes and dispatches by collaborators, who already have
+  # write access to the workflows themselves.
   - rule: cache-poisoning
     file: .github/actions/mise-tools/action.yml
     reason: the tag runs of test.yml publish nothing; release builds use no cache

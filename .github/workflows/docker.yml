@@ -302,7 +302,7 @@ jobs:
           retention-days: 1
   merge:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 60
     permissions:
       contents: read
       packages: write

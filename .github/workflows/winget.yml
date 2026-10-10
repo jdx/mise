@@ -19,7 +19,7 @@ permissions:
 jobs:
   publish:
     runs-on: windows-latest
-    timeout-minutes: 15
+    timeout-minutes: 60
     steps:
       - name: Install komac
         run: winget install --id russellbanks.Komac --version 2.16.0 --exact --accept-source-agreements --accept-package-agreements

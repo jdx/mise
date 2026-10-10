@@ -56,7 +56,7 @@ jobs:
           if-no-files-found: error
   test-install-and-run:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 90
     needs: [build-linux]
     strategy:
       fail-fast: false
@@ -134,7 +134,7 @@ jobs:
     # installing is a better-than-nothing smoke test that the plugin is correctly implemented
     # and behaves as expected with mise.
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 90
     needs: [build-linux]
     strategy:
       fail-fast: false

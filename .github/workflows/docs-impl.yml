@@ -23,11 +23,6 @@ on:
       MISE_GH_TOKEN:
         required: false
 
-# Only pull requests cancel an earlier run. A deploy may be halfway through
-# uploading, and a run on main may be rendering the showreel, which takes a
-# while and is kept only when its job finishes (a cancelled job's writes to
-# the Namespace cache volume are discarded), so a newer run waits for it, and
-# only the newest waiting run is kept.
 permissions:
   contents: read
 
@@ -191,7 +186,9 @@ jobs:
     # (without one if it has none).
     if: ${{ always() && !cancelled() && github.repository == 'jdx/mise' }}
     runs-on: ${{ !inputs.trusted && 'ubuntu-latest' || 'namespace-profile-endev-linux-amd64;overrides.cache-tag=cache' }}
-    timeout-minutes: 30
+    # The build and deploy take about two minutes, but the rate-limit step below can
+    # sleep until the hourly reset first, and this job publishes the site.
+    timeout-minutes: 120
     env:
       GITHUB_TOKEN: ${{ secrets.MISE_GH_TOKEN || secrets.GITHUB_TOKEN }}
     steps:
