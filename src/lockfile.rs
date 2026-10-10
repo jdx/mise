@@ -4935,8 +4935,16 @@ fn dotted_numbers_agree(a: &str, b: &str) -> bool {
 ///   downloaded rather than for the route to it
 ///
 /// Everything between the host and those positions is ignored.
-fn release_identifiers(path: &str) -> Vec<&str> {
-    let segments: Vec<&str> = path.split('/').filter(|s| !s.is_empty()).collect();
+fn release_identifiers(path: &str) -> Vec<String> {
+    // Decode each segment on its own, after splitting: a tag is stored
+    // percent-encoded (`cli%400.46.0`), and an encoded slash inside one
+    // (`cli%2Fv1.2.3`) must stay part of that tag, not become a separator.
+    let decoded: Vec<String> = path
+        .split('/')
+        .filter(|s| !s.is_empty())
+        .map(|s| urlencoding::decode(s).map_or_else(|_| s.to_string(), |d| d.into_owned()))
+        .collect();
+    let segments: Vec<&str> = decoded.iter().map(String::as_str).collect();
     let mut found = Vec::new();
     let tag = segments
         .iter()
@@ -4960,7 +4968,7 @@ fn release_identifiers(path: &str) -> Vec<&str> {
     if let Some(name) = segments.last() {
         found.extend(dotted_number_runs(name));
     }
-    found
+    found.into_iter().map(str::to_string).collect()
 }
 
 /// The releases a download URL names when they provably contradict `version`.
@@ -4998,7 +5006,7 @@ pub(crate) fn url_contradicts_version(version: &str, url: &str) -> Option<Vec<St
     {
         return None;
     }
-    Some(identifiers.into_iter().map(str::to_string).collect())
+    Some(identifiers)
 }
 
 /// Refuse to install a tool whose locked download URL belongs to a different
@@ -5509,6 +5517,13 @@ mod tests {
 
     #[test]
     fn test_url_contradicts_version_reports_a_different_release() {
+        assert_eq!(
+            url_contradicts_version(
+                "2.0.0",
+                "https://github.com/o/r/releases/download/cli%2Fv1.2.3/tool-linux",
+            ),
+            Some(vec!["1.2.3".to_string()])
+        );
         // A `version` rewritten without refreshing the platform block.
         assert_eq!(
             url_contradicts_version(
@@ -5530,6 +5545,16 @@ mod tests {
     #[test]
     fn test_url_contradicts_version_accepts_matching_releases() {
         for (version, url) in [
+            // A percent-encoded `@` in the tag is decoded before comparing.
+            (
+                "0.46.0",
+                "https://github.com/getsentry/toolkit/releases/download/cli%400.46.0/sentry-darwin-arm64",
+            ),
+            // An encoded slash stays inside the tag.
+            (
+                "1.2.3",
+                "https://github.com/o/r/releases/download/cli%2Fv1.2.3/tool-linux",
+            ),
             // The plain case: the tag names the version.
             (
                 "1.56.1",
