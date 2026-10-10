@@ -13,5 +13,8 @@ bins = [
   "ansible-vault",
 ]
 description = "ansible-core python package contains the core runtime and CLI tools, such as ansible and ansible-playbook"
-test = { cmd = "ansible --version", expected = "ansible [core {{version}}]" }
+# pyyaml/pygit2 publish no Python 3.15 wheels yet; mise installs these with --no-build.
+test = { cmd = "ansible --version", expected = "ansible [core {{version}}]", tools = [
+  "python@3.14",
+] }
 version_order = "semver"

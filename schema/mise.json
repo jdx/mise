@@ -5542,8 +5542,7 @@
               "unevaluatedProperties": false,
               "properties": {
                 "auto": {
-                  "description": "automatically touch an internal tracked file instead of specifying outputs",
-                  "enum": [true],
+                  "description": "automatically touch an internal tracked file instead of specifying outputs; `false` is the same as leaving `outputs` unset",
                   "type": "boolean"
                 }
               },
