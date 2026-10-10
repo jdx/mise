@@ -475,6 +475,9 @@ fn copy_to_clipboard(text: &str) -> std::io::Result<()> {
     for (cmd, args) in candidates {
         match pipe_to(cmd, args, text) {
             Ok(()) => return Ok(()),
+            // A hung tool means the display is likely stale for the others
+            // too; give up now so the whole copy stays within one timeout.
+            Err(e) if e.kind() == std::io::ErrorKind::TimedOut => return Err(e),
             Err(e) => last = e,
         }
     }
