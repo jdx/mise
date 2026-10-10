@@ -224,6 +224,7 @@ automatically, and the origin.
 | `differs (<reason>)`                               | The target exists but its content, link, or permissions differ, or it cannot be checked.     | `mise dot diff`, then `mise dot apply`, with `--force` for a conflict |
 | `source missing`                                   | The entry's source does not exist.                                                           | Create the source, or fix `source`.                                   |
 | `tracked`                                          | A `mode = "track"` entry. `tracked (2 omitted, 1 nested)` counts files that saves leave out. | `mise dot paths` lists them.                                          |
+| `not on this machine (variants: <names>)`          | A `track` entry whose variants all select other machines, such as an inactive profile.       | Nothing, or select a variant, such as with `-E <profile>`.            |
 | `absent`                                           | An `absent` entry whose target is gone.                                                      | Nothing.                                                              |
 | `would remove (<reason>)`                          | An `absent` entry whose file or symlink is still there.                                      | `mise dot apply`                                                      |
 | `orphaned`                                         | A file a group deployed that no active entry deploys any more.                               | `mise dot apply --prune` or `mise dot unapply --group <name>`         |
@@ -253,7 +254,8 @@ any entry or edit is `missing`, `source missing`, `differs`, or
 - A `differs` entry has a `reason`. An `absent` entry is `applied` once the
   target is gone and `differs` while it is there, with a reason that ends in
   `; will be removed`. A permissions-only entry whose target does not exist is
-  `applied` with a `reason`.
+  `applied` with a `reason`. A `tracked` entry whose variants all select
+  other machines has a `reason` that names them.
 - Each `edits` element has `path`, `edit` (such as `block:aliases`), `origin`,
   and `state`.
 - Each `orphaned` element has `target`, `group`, and `state`, which is
