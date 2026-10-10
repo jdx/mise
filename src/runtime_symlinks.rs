@@ -33,7 +33,7 @@ pub(crate) async fn rebuild_for_backends(
             .map(move |installs_dir| (backend.clone(), installs_dir))
     });
     run_all_rebuilds(rebuilds, |(backend, installs_dir)| {
-        rebuild_symlinks_in_dir(config, ts, &global, &backend, &installs_dir).wrap_err_with(|| {
+        rebuild_symlinks_in_dir(config, ts, global.as_ref(), &backend, &installs_dir).wrap_err_with(|| {
             format!(
                 "failed to rebuild runtime symlinks for {} in {}",
                 backend.ba().short,
@@ -46,7 +46,8 @@ pub(crate) async fn rebuild_for_backends(
 /// The tools global and system config select, resolved against what is
 /// installed. It backs the `global` link, which names the version in use
 /// outside any project, so project config and `MISE_*_VERSION` stay out of it.
-async fn global_toolset(config: &Arc<Config>) -> Toolset {
+/// `None` when it could not be built, so the links already there are kept.
+async fn global_toolset(config: &Arc<Config>) -> Option<Toolset> {
     let built = ToolsetBuilder::new()
         .with_scope(ConfigScope::GlobalOnly)
         .without_runtime_env()
@@ -55,7 +56,7 @@ async fn global_toolset(config: &Arc<Config>) -> Toolset {
         Ok(global) => global,
         Err(err) => {
             debug!("skipping global runtime symlink, global config did not load: {err:#}");
-            return Toolset::default();
+            return None;
         }
     };
     let opts = ResolveOptions {
@@ -64,9 +65,9 @@ async fn global_toolset(config: &Arc<Config>) -> Toolset {
     };
     if let Err(err) = global.resolve_with_opts(config, &opts).await {
         debug!("skipping global runtime symlink, global tools did not resolve: {err:#}");
-        return Toolset::default();
+        return None;
     }
-    global
+    Some(global)
 }
 
 fn run_all_rebuilds<T>(
@@ -108,7 +109,7 @@ fn install_dirs_for(backend: &Arc<dyn Backend>) -> Vec<PathBuf> {
 fn rebuild_symlinks_in_dir(
     config: &Config,
     ts: &Toolset,
-    global: &Toolset,
+    global: Option<&Toolset>,
     backend: &Arc<dyn Backend>,
     installs_dir: &Path,
 ) -> Result<()> {
@@ -216,7 +217,7 @@ fn rebuild_symlinks_in_dir(
 fn list_symlinks_for_dir(
     config: &Config,
     ts: Option<&Toolset>,
-    global: &Toolset,
+    global: Option<&Toolset>,
     backend: &Arc<dyn Backend>,
     installs_dir: &Path,
 ) -> IndexMap<String, PathBuf> {
@@ -265,11 +266,15 @@ fn list_symlinks_for_dir(
     // name is the user's and stays untouched.
     let global_link = installs_dir.join(GLOBAL_LINK);
     if std::fs::symlink_metadata(&global_link).is_err() || is_runtime_symlink(&global_link) {
-        let to = global
-            .list_current_versions()
-            .into_iter()
-            .filter(|(b, _)| b.ba() == backend.ba())
-            .find_map(|(_, tv)| pin_target(&tv, installs_dir));
+        let to = match global {
+            Some(global) => global
+                .list_current_versions()
+                .into_iter()
+                .filter(|(b, _)| b.ba() == backend.ba())
+                .find_map(|(_, tv)| pin_target(&tv, installs_dir)),
+            // Global config could not be read: keep the link as it is.
+            None => runtime_symlink_target(&global_link),
+        };
         if let Some(to) = to {
             symlinks.insert(GLOBAL_LINK.to_string(), to);
         }
