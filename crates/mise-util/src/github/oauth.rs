@@ -11,6 +11,7 @@ use std::time::Duration;
 const GRANT_DEVICE_CODE: &str = "urn:ietf:params:oauth:grant-type:device_code";
 const DEFAULT_TOKEN_SECS: i64 = 8 * 60 * 60;
 const REUSE_BUFFER_SECS: i64 = 300;
+const CLIPBOARD_TIMEOUT: Duration = Duration::from_secs(2);
 
 static REFRESH_TOKEN_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
@@ -492,10 +493,26 @@ fn pipe_to(cmd: &str, args: &[&str], text: &str) -> std::io::Result<()> {
         .take()
         .ok_or_else(|| std::io::Error::other("no stdin"))?
         .write_all(text.as_bytes())?;
-    if child.wait()?.success() {
-        Ok(())
-    } else {
-        Err(std::io::Error::other(format!("{cmd} failed")))
+    // A hung clipboard tool (stale DISPLAY, broken WSLg) must not hold up the
+    // device flow until the code expires, so bound the wait.
+    let deadline = std::time::Instant::now() + CLIPBOARD_TIMEOUT;
+    loop {
+        if let Some(status) = child.try_wait()? {
+            return if status.success() {
+                Ok(())
+            } else {
+                Err(std::io::Error::other(format!("{cmd} failed")))
+            };
+        }
+        if std::time::Instant::now() >= deadline {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::TimedOut,
+                format!("{cmd} timed out"),
+            ));
+        }
+        std::thread::sleep(Duration::from_millis(20));
     }
 }
 
