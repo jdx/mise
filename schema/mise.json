@@ -8642,6 +8642,208 @@
               }
             ]
           }
+        },
+        "groups": {
+          "type": "object",
+          "description": "[experimental] Linux groups that bootstrap creates or removes, keyed by group name",
+          "propertyNames": {
+            "pattern": "^[A-Za-z_][A-Za-z0-9_-]*\\$?$",
+            "maxLength": 32,
+            "description": "at most 32 ASCII letters, digits, '_' or '-', starting with a letter or '_', with an optional trailing '$'"
+          },
+          "additionalProperties": {
+            "type": "object",
+            "properties": {
+              "state": {
+                "enum": ["present", "absent"],
+                "default": "present",
+                "description": "whether the group should exist"
+              },
+              "gid": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 4294967295,
+                "description": "numeric group ID"
+              },
+              "system": {
+                "type": "boolean",
+                "default": false,
+                "description": "create a system group"
+              }
+            },
+            "additionalProperties": false,
+            "if": {
+              "required": ["state"],
+              "properties": {
+                "state": {
+                  "const": "absent"
+                }
+              },
+              "additionalProperties": true
+            },
+            "then": {
+              "properties": {
+                "gid": false,
+                "system": {
+                  "const": false
+                }
+              },
+              "additionalProperties": true
+            }
+          }
+        },
+        "users": {
+          "type": "object",
+          "description": "[experimental] Linux users that bootstrap creates or removes, keyed by user name",
+          "propertyNames": {
+            "pattern": "^[A-Za-z_][A-Za-z0-9_-]*\\$?$",
+            "maxLength": 32,
+            "description": "at most 32 ASCII letters, digits, '_' or '-', starting with a letter or '_', with an optional trailing '$'"
+          },
+          "additionalProperties": {
+            "type": "object",
+            "properties": {
+              "state": {
+                "enum": ["present", "absent"],
+                "default": "present",
+                "description": "whether the user should exist"
+              },
+              "uid": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 4294967295,
+                "description": "numeric user ID"
+              },
+              "group": {
+                "type": "string",
+                "pattern": "^[A-Za-z_][A-Za-z0-9_-]*\\$?$",
+                "maxLength": 32,
+                "description": "primary group; required for a present user"
+              },
+              "groups": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z_][A-Za-z0-9_-]*\\$?$",
+                  "maxLength": 32
+                },
+                "description": "supplementary groups"
+              },
+              "exclusive_groups": {
+                "type": "boolean",
+                "default": false,
+                "description": "remove the user from supplementary groups not listed in groups"
+              },
+              "home": {
+                "type": "string",
+                "pattern": "^/[^:\\r\\n]*$",
+                "description": "home directory; an absolute path without ':', CR or LF"
+              },
+              "shell": {
+                "type": "string",
+                "pattern": "^/[^:\\r\\n]*$",
+                "description": "login shell; an absolute path without ':', CR or LF"
+              },
+              "comment": {
+                "type": "string",
+                "pattern": "^[^:\\r\\n]*$",
+                "description": "comment (GECOS) field, without ':', CR or LF"
+              },
+              "system": {
+                "type": "boolean",
+                "default": false,
+                "description": "create a system user"
+              },
+              "create_home": {
+                "type": "boolean",
+                "description": "create the home directory"
+              },
+              "move_home": {
+                "type": "boolean",
+                "default": false,
+                "description": "move the existing home directory to home"
+              },
+              "remove_home": {
+                "type": "boolean",
+                "default": false,
+                "description": "remove the home directory when removing the user"
+              }
+            },
+            "additionalProperties": false,
+            "allOf": [
+              {
+                "if": {
+                  "required": ["state"],
+                  "properties": {
+                    "state": {
+                      "const": "absent"
+                    }
+                  },
+                  "additionalProperties": true
+                },
+                "then": {
+                  "properties": {
+                    "uid": false,
+                    "group": false,
+                    "groups": false,
+                    "home": false,
+                    "shell": false,
+                    "comment": false,
+                    "create_home": false,
+                    "exclusive_groups": {
+                      "const": false
+                    },
+                    "system": {
+                      "const": false
+                    },
+                    "move_home": {
+                      "const": false
+                    }
+                  },
+                  "additionalProperties": true
+                },
+                "else": {
+                  "required": ["group"],
+                  "properties": {
+                    "remove_home": {
+                      "const": false
+                    }
+                  },
+                  "additionalProperties": true
+                }
+              },
+              {
+                "if": {
+                  "required": ["exclusive_groups"],
+                  "properties": {
+                    "exclusive_groups": {
+                      "const": true
+                    }
+                  },
+                  "additionalProperties": true
+                },
+                "then": {
+                  "required": ["groups"],
+                  "additionalProperties": true
+                }
+              },
+              {
+                "if": {
+                  "required": ["move_home"],
+                  "properties": {
+                    "move_home": {
+                      "const": true
+                    }
+                  },
+                  "additionalProperties": true
+                },
+                "then": {
+                  "required": ["home"],
+                  "additionalProperties": true
+                }
+              }
+            ]
+          }
         }
       }
     },
