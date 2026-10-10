@@ -1702,10 +1702,20 @@ pub fn unsaved_paths(
         .iter()
         .map(|omitted| crate::file::replace_path(&omitted.path))
         .collect();
+    // a stream another machine saved while it was not selected here is not
+    // an edit a save records (see `super::held`)
+    let unheld: Vec<String> = super::held::unheld_entries(repo, snapshot, walk)?
+        .into_iter()
+        .map(|(stream, _)| stream)
+        .collect();
     let roots = super::sync::layout::Roots::current();
     let mut unsaved = vec![];
     for change in repo.changes(Some(&saved), &live)? {
-        if change.path.starts_with(".mise-history/") {
+        if change.path.starts_with(".mise-history/")
+            || unheld.iter().any(|stream| {
+                change.path == *stream || change.path.starts_with(&format!("{stream}/"))
+            })
+        {
             continue;
         }
         if change.status == 'D'

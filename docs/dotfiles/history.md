@@ -702,7 +702,18 @@ When several variants match, the most specific one wins, and a tie makes mise
 report the ambiguity and skip the path until you fix it. When nothing matches,
 mise uses the variant marked `default = true`; without one, it neither saves
 nor applies the path on that machine. Checkpoints keep the versions that other
-machines saved. The [variant selectors](/dotfiles/reference.html#variant-selectors)
+machines saved.
+
+When a variant becomes selected on a machine, for example when you activate a
+profile with `-E work` after another machine saved that profile's version,
+the saved version is the other machine's. Until `mise dot pull` applies it,
+saves leave that path alone, and `mise dot status` lists it as
+`not applied here`. A pull writes the saved version when the file is missing
+here or unchanged since this machine last had the variant selected. When this
+machine has a different copy, the pull stops with a conflict:
+`mise dot pull --take-remote <path>` takes the saved version, and
+`mise dot pull --keep-local <path>` followed by `mise dot save <path>` keeps
+yours. The [variant selectors](/dotfiles/reference.html#variant-selectors)
 reference has the scoring rules. Tracked variants do not accept `target`;
 to deploy a file to a different path on each machine, see
 [Different targets on different machines](/dotfiles/managed.html#platform-specific-destinations).
