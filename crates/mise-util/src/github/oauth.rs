@@ -472,13 +472,20 @@ fn copy_to_clipboard(text: &str) -> std::io::Result<()> {
         ]
     };
     let mut last = std::io::Error::new(std::io::ErrorKind::NotFound, "no clipboard tool found");
+    let mut timed_out = false;
     for (cmd, args) in candidates {
+        // A hung tool means the display is likely stale for the other display
+        // tools too, so skip them. clip.exe (WSL) does not use the display, so
+        // it still gets a bounded try; at most two timeouts are spent in total.
+        if timed_out && *cmd != "clip.exe" {
+            continue;
+        }
         match pipe_to(cmd, args, text) {
             Ok(()) => return Ok(()),
-            // A hung tool means the display is likely stale for the others
-            // too; give up now so the whole copy stays within one timeout.
-            Err(e) if e.kind() == std::io::ErrorKind::TimedOut => return Err(e),
-            Err(e) => last = e,
+            Err(e) => {
+                timed_out |= e.kind() == std::io::ErrorKind::TimedOut;
+                last = e;
+            }
         }
     }
     Err(last)
