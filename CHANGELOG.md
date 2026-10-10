@@ -1,5 +1,46 @@
 # Changelog
 
+## [2026.10.7](https://github.com/jdx/mise/releases/tag/v2026.10.7) - 2026-10-09
+
+### 🚀 Features
+
+- **(npm)** warn when a package installs no executables by @jdx in [#14246](https://github.com/jdx/mise/pull/14246)
+- **(tool)** update auto_update tools in the background at a shell prompt by @jdx in [#14239](https://github.com/jdx/mise/pull/14239)
+- **(upgrade)** add tool_update.global_auto to update every global tool by @jdx in [#14237](https://github.com/jdx/mise/pull/14237)
+- **(upgrade)** add --global so self-updating tools can update through mise by @jdx in [#14243](https://github.com/jdx/mise/pull/14243)
+- reuse downloads the server confirms are unchanged by @jdx in [#14222](https://github.com/jdx/mise/pull/14222)
+- trust a restored download cache with --locked and make its size configurable by @jdx in [#14242](https://github.com/jdx/mise/pull/14242)
+
+### 🐛 Bug Fixes
+
+- **(backend)** stop list() and get() panicking while the tool map reloads by @jdx in [#14240](https://github.com/jdx/mise/pull/14240)
+- **(bootstrap)** stop reporting freshly cloned repos as dirty with core.autocrlf by @jdx in [#14225](https://github.com/jdx/mise/pull/14225)
+- **(cargo)** lock the same rust homes the rust plugin resolves by @wislertt in [#14219](https://github.com/jdx/mise/pull/14219)
+- **(doctor)** show dotfiles repo and origin when history is disabled by @jdx in [#14244](https://github.com/jdx/mise/pull/14244)
+- **(dotfiles)** replace a junction target when a symlink source changes by @jdx in [#14226](https://github.com/jdx/mise/pull/14226)
+- **(env)** keep backslashes literal in single-quoted dotenv values by @jdx in [#14228](https://github.com/jdx/mise/pull/14228)
+- **(env)** join adjacent quoted and unquoted dotenv value parts again by @jdx in [#14231](https://github.com/jdx/mise/pull/14231)
+- **(history)** describe tracked variant changes by @oppegard in [#14194](https://github.com/jdx/mise/pull/14194)
+- **(lock)** apply aqua version prefixes before selecting overrides by @nettlesh in [#14218](https://github.com/jdx/mise/pull/14218)
+- **(rust)** treat rustup profile aliases like their full names by @JamBalaya56562 in [#14220](https://github.com/jdx/mise/pull/14220)
+- **(schema)** accept task references in a task array by @JamBalaya56562 in [#14229](https://github.com/jdx/mise/pull/14229)
+- **(schema)** accept a single dependency table and reject empty nested dependencies by @JamBalaya56562 in [#14236](https://github.com/jdx/mise/pull/14236)
+- **(schema)** reject env required combinations that mise rejects by @JamBalaya56562 in [#14247](https://github.com/jdx/mise/pull/14247)
+- **(self-update)** keep showing the auto-update hint until it is disabled by @jdx in [#14233](https://github.com/jdx/mise/pull/14233)
+
+### 🚜 Refactor
+
+- **(lock)** skip aqua prefix ambiguity pass without override prefixes by @jdx in [#14232](https://github.com/jdx/mise/pull/14232)
+
+### 📚 Documentation
+
+- explain auto_update's release delay and prefer mise settings KEY=VALUE by @jdx in [#14235](https://github.com/jdx/mise/pull/14235)
+
+### New Contributors
+
+- @wislertt made their first contribution in [#14219](https://github.com/jdx/mise/pull/14219)
+- @oppegard made their first contribution in [#14194](https://github.com/jdx/mise/pull/14194)
+
 ## [2026.10.6](https://github.com/jdx/mise/releases/tag/v2026.10.6) - 2026-10-09
 
 ### 🚀 Features

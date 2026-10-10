@@ -128,6 +128,42 @@ struct RetryState {
     use_netrc: bool,
 }
 
+fn new_retry_state(headers: &HeaderMap) -> RetryStateHandle {
+    Arc::new(Mutex::new(RetryState {
+        headers: headers.clone(),
+        use_netrc: true,
+    }))
+}
+
+/// The headers and send options for the next attempt, which an earlier attempt
+/// may have changed (a refreshed token, netrc turned off).
+fn attempt_options(
+    retry_state: &RetryStateHandle,
+    error_for_status: bool,
+) -> (HeaderMap, SendOnceOptions) {
+    let (headers, use_netrc) = {
+        let state = retry_state.lock().unwrap();
+        (state.headers.clone(), state.use_netrc)
+    };
+    let options = SendOnceOptions::new(Some(retry_state.clone()), use_netrc);
+    let options = if error_for_status {
+        options
+    } else {
+        options.allow_error_status()
+    };
+    (headers, options)
+}
+
+/// The parts of a request that stay fixed across retry attempts.
+struct RetryableRequest<'a> {
+    method: Method,
+    url: Url,
+    headers: &'a HeaderMap,
+    verb_label: &'a str,
+    retries: i64,
+    error_for_status: bool,
+}
+
 #[derive(Clone)]
 struct SendOnceOptions {
     use_netrc: bool,
@@ -1003,9 +1039,24 @@ impl Client {
     }
 
     pub async fn get_bytes<U: IntoUrl>(&self, url: U) -> Result<impl AsRef<[u8]>> {
+        ensure!(
+            !crate::network::offline(&Settings::get()),
+            "offline mode is enabled"
+        );
         let url = url.into_url()?;
-        let resp = self.get_async(url.clone()).await?;
-        Ok(resp.bytes().await?)
+        let headers = host_auth_headers(&url)?;
+        self.send_with_retries(
+            RetryableRequest {
+                method: Method::GET,
+                url,
+                headers: &headers,
+                verb_label: "GET",
+                retries: crate::network::http_retries(&Settings::get()),
+                error_for_status: true,
+            },
+            |resp| async move { Ok(resp.bytes().await?) },
+        )
+        .await
     }
 
     pub async fn get_async<U: IntoUrl>(&self, url: U) -> Result<Response> {
@@ -1080,6 +1131,7 @@ impl Client {
             url: url.into_url().map_err(|e| e.to_string()),
             extra_headers: HeaderMap::new(),
             retries: crate::network::http_retries(&Settings::get()),
+            allow_html: false,
         }
     }
 
@@ -1163,10 +1215,8 @@ impl Client {
         T: serde::de::DeserializeOwned,
     {
         let url = url.into_url()?;
-        let resp = self.get_async(url).await?;
-        let headers = resp.headers().clone();
-        let json = resp.json().await?;
-        Ok((json, headers))
+        let headers = host_auth_headers(&url)?;
+        self.json_headers_with_headers(url, &headers).await
     }
 
     pub async fn json_headers_with_headers<T, U: IntoUrl>(
@@ -1177,11 +1227,26 @@ impl Client {
     where
         T: serde::de::DeserializeOwned,
     {
+        ensure!(
+            !crate::network::offline(&Settings::get()),
+            "offline mode is enabled"
+        );
         let url = url.into_url()?;
-        let resp = self.get_async_with_headers(url, headers).await?;
-        let headers = resp.headers().clone();
-        let json = resp.json().await?;
-        Ok((json, headers))
+        self.send_with_retries(
+            RetryableRequest {
+                method: Method::GET,
+                url,
+                headers,
+                verb_label: "GET",
+                retries: crate::network::http_retries(&Settings::get()),
+                error_for_status: true,
+            },
+            |resp| async move {
+                let headers = resp.headers().clone();
+                Ok((resp.json().await?, headers))
+            },
+        )
+        .await
     }
 
     pub async fn json<T, U: IntoUrl>(&self, url: U) -> Result<T>
@@ -1966,21 +2031,9 @@ impl Client {
         retries: i64,
         error_for_status: bool,
     ) -> Result<Response> {
-        let retry_state = Arc::new(Mutex::new(RetryState {
-            headers: headers.clone(),
-            use_netrc: true,
-        }));
+        let retry_state = new_retry_state(headers);
         retry_async_with_retries(verb_label, &url, retries, || async {
-            let (headers, use_netrc) = {
-                let state = retry_state.lock().unwrap();
-                (state.headers.clone(), state.use_netrc)
-            };
-            let options = SendOnceOptions::new(Some(retry_state.clone()), use_netrc);
-            let options = if error_for_status {
-                options
-            } else {
-                options.allow_error_status()
-            };
+            let (headers, options) = attempt_options(&retry_state, error_for_status);
             self.send_once_with_https_fallback_with_retry_headers(
                 method.clone(),
                 url.clone(),
@@ -1989,6 +2042,31 @@ impl Client {
                 options,
             )
             .await
+        })
+        .await
+    }
+
+    /// Send with retries, turning the response into `T` inside the retried unit.
+    /// reqwest resolves a request once the headers arrive, so reading the body
+    /// after the retry loop leaves a mid-body connection drop unretried.
+    async fn send_with_retries<T, F, Fut>(&self, req: RetryableRequest<'_>, read: F) -> Result<T>
+    where
+        F: Fn(Response) -> Fut,
+        Fut: std::future::Future<Output = Result<T>>,
+    {
+        let retry_state = new_retry_state(req.headers);
+        retry_async_with_retries(req.verb_label, &req.url, req.retries, || async {
+            let (headers, options) = attempt_options(&retry_state, req.error_for_status);
+            let resp = self
+                .send_once_with_https_fallback_with_retry_headers(
+                    req.method.clone(),
+                    req.url.clone(),
+                    &headers,
+                    req.verb_label,
+                    options,
+                )
+                .await?;
+            read(resp).await
         })
         .await
     }
@@ -2325,6 +2403,7 @@ pub struct TextRequest<'a> {
     url: Result<Url, String>,
     extra_headers: HeaderMap,
     retries: i64,
+    allow_html: bool,
 }
 
 impl TextRequest<'_> {
@@ -2338,6 +2417,13 @@ impl TextRequest<'_> {
         self
     }
 
+    /// Accept an HTML body instead of rejecting it, for callers that parse
+    /// arbitrary content such as directory listings.
+    pub fn allow_html(mut self) -> Self {
+        self.allow_html = true;
+        self
+    }
+
     pub async fn send(mut self) -> Result<String> {
         ensure!(
             !crate::network::offline(&Settings::get()),
@@ -2347,19 +2433,21 @@ impl TextRequest<'_> {
         // Merge GitHub headers with any extra headers provided
         let mut headers = host_auth_headers(&url)?;
         headers.extend(self.extra_headers.clone());
-        let resp = self
+        let text = self
             .client
-            .send_with_https_fallback_with_retries(
-                Method::GET,
-                url.clone(),
-                &headers,
-                "GET",
-                self.retries,
-                true,
+            .send_with_retries(
+                RetryableRequest {
+                    method: Method::GET,
+                    url: url.clone(),
+                    headers: &headers,
+                    verb_label: "GET",
+                    retries: self.retries,
+                    error_for_status: true,
+                },
+                |resp| async move { Ok(resp.text().await?) },
             )
             .await?;
-        let text = resp.text().await?;
-        if text.starts_with("<!DOCTYPE html>") {
+        if !self.allow_html && text.starts_with("<!DOCTYPE html>") {
             if url.scheme() == "http" {
                 // try with https since http may be blocked
                 url.set_scheme("https").unwrap();
