@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+# `mise dot status` says when a tracked entry's variants all belong to other
+# machines, such as a profile that is not active here.
+echo work >~/.work
+echo base >~/.shared
+assert_succeed "mise dot track ~/.work --profile dot-3 --yes"
+assert_succeed "mise dot track ~/.shared --yes"
+
+assert_contains "mise dot status" "not on this machine (variants: dot-3)"
+assert_not_contains "mise dot status ~/.shared" "not on this machine"
+assert "mise dot status --json | jq -r '.files[] | select(.target == \"~/.work\") | .reason'" \
+  "no variant matches this machine: dot-3"
+assert "mise dot status --json | jq -r '.files[] | select(.target == \"~/.work\") | .state'" "tracked"
+
+# with the profile active, the entry is tracked here
+assert_not_contains "mise -E dot-3 dot status" "not on this machine"
+assert "mise -E dot-3 dot status --json | jq -r '.files[] | select(.target == \"~/.work\") | .reason'" "null"

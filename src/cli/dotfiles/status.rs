@@ -12,7 +12,8 @@ use crate::ui::table::MiseTable;
 ///
 /// Lists each `[dotfiles]` entry with its state: `applied`, `missing`,
 /// `differs`, `source missing`, `tracked`, or `absent` for a removal that is
-/// done. Then shows the history state: what is tracked, the latest checkpoint,
+/// done. A tracked entry whose variants all select other machines, such as
+/// one for an inactive profile, says `not on this machine`. Then shows the history state: what is tracked, the latest checkpoint,
 /// unfinished operations, and whether edits are saved automatically.
 ///
 /// Files a dotfile group deployed that no active entry deploys now are listed
@@ -98,7 +99,17 @@ impl DotfilesStatus {
             let absent = matches!(state, FileState::Applied)
                 .then(|| system::files::permissions_target_absent(req))
                 .flatten();
+            // a tracked entry whose variants all name other machines is
+            // neither saved nor pulled here
+            let unselected = match state {
+                FileState::Tracked => unselected_variants(req),
+                _ => None,
+            };
             let state_str = match &state {
+                FileState::Tracked if unselected.is_some() => format!(
+                    "not on this machine (variants: {})",
+                    unselected.as_deref().unwrap_or_default()
+                ),
                 FileState::Applied if removal => "absent".to_string(),
                 FileState::Applied => match absent {
                     Some(reason) => format!("applied ({reason})"),
@@ -138,6 +149,9 @@ impl DotfilesStatus {
                     "omitted": omitted,
                     "nested": nested,
                 });
+                if let Some(variants) = &unselected {
+                    entry["reason"] = json!(format!("no variant matches this machine: {variants}"));
+                }
                 if let Some(permissions) = req.permissions {
                     entry["permissions"] = json!(format!("{permissions:04o}"));
                 }
@@ -315,6 +329,24 @@ impl DotfilesStatus {
         }
         Ok(())
     }
+}
+
+/// The variant names of a tracked entry that no variant selects on this
+/// machine, such as one declared for a profile that is not active.
+fn unselected_variants(req: &system::files::FileRequest) -> Option<String> {
+    use crate::system::history::select;
+    let environments = select::active_environments();
+    matches!(
+        select::select(&req.variants, &environments),
+        select::Selection::NoMatch
+    )
+    .then(|| {
+        req.variants
+            .iter()
+            .map(|variant| variant.selector_name())
+            .collect::<Vec<_>>()
+            .join(", ")
+    })
 }
 
 /// How many reported paths are `target` itself or lie beneath it.
