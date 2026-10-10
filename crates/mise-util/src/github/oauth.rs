@@ -445,8 +445,57 @@ fn print_device_instructions(device: &DeviceCodeResponse) {
         "Open {} and enter code {} to authorize GitHub access.",
         device.verification_uri, device.user_code
     );
+    if Settings::get().github.oauth_copy_code {
+        match copy_to_clipboard(&device.user_code) {
+            Ok(()) => eprintln!("Copied the code to your clipboard."),
+            Err(e) => debug!("could not copy the device code to the clipboard: {e}"),
+        }
+    }
     if Settings::get().github.oauth_open_browser {
         let _ = open_browser(&device.verification_uri);
+    }
+}
+
+/// Pipe `text` to the first clipboard tool that works on this platform.
+fn copy_to_clipboard(text: &str) -> std::io::Result<()> {
+    let candidates: &[(&str, &[&str])] = if cfg!(target_os = "macos") {
+        &[("pbcopy", &[])]
+    } else if cfg!(windows) {
+        &[("clip.exe", &[])]
+    } else {
+        &[
+            ("wl-copy", &[]),
+            ("xclip", &["-selection", "clipboard"]),
+            ("xsel", &["--clipboard", "--input"]),
+            ("clip.exe", &[]),
+        ]
+    };
+    let mut last = std::io::Error::new(std::io::ErrorKind::NotFound, "no clipboard tool found");
+    for (cmd, args) in candidates {
+        match pipe_to(cmd, args, text) {
+            Ok(()) => return Ok(()),
+            Err(e) => last = e,
+        }
+    }
+    Err(last)
+}
+
+fn pipe_to(cmd: &str, args: &[&str], text: &str) -> std::io::Result<()> {
+    let mut child = std::process::Command::new(cmd)
+        .args(args)
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()?;
+    child
+        .stdin
+        .take()
+        .ok_or_else(|| std::io::Error::other("no stdin"))?
+        .write_all(text.as_bytes())?;
+    if child.wait()?.success() {
+        Ok(())
+    } else {
+        Err(std::io::Error::other(format!("{cmd} failed")))
     }
 }
 
