@@ -443,7 +443,6 @@ pub(super) fn install_prepared(prepared: PreparedBottle, pr: &dyn SingleReport) 
     if prepared.keg.exists() {
         crate::file::remove_all(&prepared.keg)?;
     }
-    super::post_install::install_bottle_config(&prepared.staged_keg)?;
     crate::file::rename(&prepared.staged_keg, &prepared.keg)?;
     // never leave a half-installed keg: if linking fails (conflicts, IO),
     // remove the keg so the next install retries from scratch
@@ -458,6 +457,11 @@ pub(super) fn install_prepared(prepared: PreparedBottle, pr: &dyn SingleReport) 
             );
         }
         return Err(err);
+    }
+    // after linking, so a link failure leaves no config files in the prefix
+    // without a keg to account for them
+    if let Err(err) = super::post_install::install_bottle_config(&prepared.keg) {
+        warn!("brew:{}: {err:#}", prepared.name);
     }
     if !prepared.post_install_steps.is_empty() {
         pr.set_message("post-install".to_string());
