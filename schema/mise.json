@@ -565,11 +565,13 @@
                         }
                       },
                       "required": ["path"],
+                      "additionalProperties": false,
                       "type": "object"
                     }
                   ]
                 }
               },
+              "additionalProperties": false,
               "type": "object"
             },
             "source": {
