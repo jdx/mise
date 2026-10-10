@@ -676,9 +676,39 @@ pub fn get_filename_from_url(url_str: &str) -> String {
             .unwrap_or(url_str)
             .to_string()
     };
-    urlencoding::decode(&filename)
-        .map(|s| s.to_string())
-        .unwrap_or(filename)
+    // Callers join this under a download directory. Decoding can turn `%2F` or
+    // `%2E%2E` into path syntax, so an unusable result keeps the encoded name,
+    // which stays a single inert component (as brew casks do). A raw name that
+    // would itself leave the directory, such as a literal `C:x` on Windows, is
+    // not used at all.
+    match urlencoding::decode(&filename) {
+        Ok(decoded) if !is_unusable_file_name(&decoded) => decoded.into_owned(),
+        _ if !escapes_directory(&filename) => filename,
+        _ => "download".to_string(),
+    }
+}
+
+/// Whether `name` joined under a directory would name something other than a
+/// file in it. On Windows a `:` makes it a drive or a stream.
+fn escapes_directory(name: &str) -> bool {
+    name.is_empty()
+        || name == "."
+        || name == ".."
+        || name.contains(['/', '\0'])
+        || (cfg!(windows) && name.contains(['\\', ':']))
+}
+
+/// Whether `name` cannot stand as a single path component under a directory.
+/// The Windows-only rules are path syntax there and ordinary names elsewhere.
+fn is_unusable_file_name(name: &str) -> bool {
+    if escapes_directory(name) {
+        return true;
+    }
+    cfg!(windows)
+        && (name.ends_with([' ', '.'])
+            || name
+                .chars()
+                .any(|c| c.is_control() || matches!(c, '<' | '>' | '"' | '|' | '?' | '*')))
 }
 
 /// Whether anything describes what is inside the archive.
@@ -2030,7 +2060,35 @@ mod tests {
             ("https://example.com/muse.tar.gz?token=value", "muse.tar.gz"),
             ("https://example.com/my%20tool.zip", "my tool.zip"),
             ("tool.tar.gz", "tool.tar.gz"),
+            // Decoding that would leave the download directory keeps the
+            // encoded segment, which is a single inert path component.
+            (
+                "https://example.com/tool%2F..%2Fpwned.tar.gz",
+                "tool%2F..%2Fpwned.tar.gz",
+            ),
+            // A URL parser drops an encoded dot segment itself; a bare name does not.
+            ("%2E%2E", "%2E%2E"),
+            ("https://example.com/pkg%00x.tar.gz", "pkg%00x.tar.gz"),
+            (
+                "https://example.com/We%2DAre%2DThe%2DChampions.zip",
+                "We-Are-The-Champions.zip",
+            ),
         ] {
+            assert_eq!(get_filename_from_url(url), expected, "{url}");
+        }
+        // A raw name that would itself leave the directory is not used.
+        assert_eq!(get_filename_from_url(".."), "download");
+        // `:` is path syntax only on Windows, where a literal one would name a
+        // drive and discard the download directory when joined.
+        for (url, windows, elsewhere) in [
+            (
+                "https://example.com/C%3Atool.zip",
+                "C%3Atool.zip",
+                "C:tool.zip",
+            ),
+            ("https://example.com/C:payload", "download", "C:payload"),
+        ] {
+            let expected = if cfg!(windows) { windows } else { elsewhere };
             assert_eq!(get_filename_from_url(url), expected, "{url}");
         }
     }
