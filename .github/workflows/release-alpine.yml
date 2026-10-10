@@ -11,6 +11,9 @@ on:
         default: true
         type: boolean
 
+permissions:
+  contents: read
+
 concurrency:
   group: release-alpine-${{ github.event_name == 'release' && github.event.release.tag_name || github.ref_name }}
 
@@ -35,6 +38,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
       - name: Bump APKBUILD
         run: sudo -Eu packager ./scripts/release-alpine.sh
         env:

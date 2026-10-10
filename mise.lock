@@ -475,62 +475,65 @@ url = "https://github.com/jdx/hk/releases/download/v2.5.0/hk-x86_64-pc-windows-m
 signer = "sigstore-oidc:https://github.com/jdx/hk/.github/workflows/release.yml"
 
 [[tools.jactionlint]]
-version = "1.8.2"
+version = "2.1.0"
 backend = "github:jdx/jactionlint"
-specifiers = ["latest"]
+specifiers = [
+    "2.1.0",
+    "latest",
+]
 
 [tools.jactionlint."platforms.linux-arm64"]
-checksum = "sha256:7d618749dbddd762a14bd491ea97bc4f6599626f830a11edc6c6522ead8bcd05"
-url = "https://github.com/jdx/jactionlint/releases/download/v1.8.2/jactionlint_1.8.2_linux_arm64.tar.gz"
-url_api = "https://api.github.com/repos/jdx/jactionlint/releases/assets/611338576"
+checksum = "sha256:ec0c6496d8a2f37b2ae2a1af0fbf98d58df1f7c98a27cf9fdd64c20ad317234b"
+url = "https://github.com/jdx/jactionlint/releases/download/v2.1.0/jactionlint_2.1.0_linux_arm64.tar.gz"
+url_api = "https://api.github.com/repos/jdx/jactionlint/releases/assets/628112146"
 provenance = "github-attestations"
 
 [tools.jactionlint."platforms.linux-arm64-musl"]
-checksum = "sha256:7d618749dbddd762a14bd491ea97bc4f6599626f830a11edc6c6522ead8bcd05"
-url = "https://github.com/jdx/jactionlint/releases/download/v1.8.2/jactionlint_1.8.2_linux_arm64.tar.gz"
-url_api = "https://api.github.com/repos/jdx/jactionlint/releases/assets/611338576"
+checksum = "sha256:ec0c6496d8a2f37b2ae2a1af0fbf98d58df1f7c98a27cf9fdd64c20ad317234b"
+url = "https://github.com/jdx/jactionlint/releases/download/v2.1.0/jactionlint_2.1.0_linux_arm64.tar.gz"
+url_api = "https://api.github.com/repos/jdx/jactionlint/releases/assets/628112146"
 provenance = "github-attestations"
 
 [tools.jactionlint."platforms.linux-x64"]
-checksum = "sha256:6533bd8047fc012a3f66238d84f65cacdac669da00b9f6cf042c1734c252bc93"
-url = "https://github.com/jdx/jactionlint/releases/download/v1.8.2/jactionlint_1.8.2_linux_amd64.tar.gz"
-url_api = "https://api.github.com/repos/jdx/jactionlint/releases/assets/611338580"
+checksum = "sha256:baebfc5792135438fb3bb5ea266c3bf2538a089753616f1988ef618e4c0c3cb1"
+url = "https://github.com/jdx/jactionlint/releases/download/v2.1.0/jactionlint_2.1.0_linux_amd64.tar.gz"
+url_api = "https://api.github.com/repos/jdx/jactionlint/releases/assets/628112089"
 provenance = "github-attestations"
 
 [tools.jactionlint."platforms.linux-x64-baseline"]
-checksum = "sha256:6533bd8047fc012a3f66238d84f65cacdac669da00b9f6cf042c1734c252bc93"
-url = "https://github.com/jdx/jactionlint/releases/download/v1.8.2/jactionlint_1.8.2_linux_amd64.tar.gz"
-url_api = "https://api.github.com/repos/jdx/jactionlint/releases/assets/611338580"
+checksum = "sha256:baebfc5792135438fb3bb5ea266c3bf2538a089753616f1988ef618e4c0c3cb1"
+url = "https://github.com/jdx/jactionlint/releases/download/v2.1.0/jactionlint_2.1.0_linux_amd64.tar.gz"
+url_api = "https://api.github.com/repos/jdx/jactionlint/releases/assets/628112089"
 provenance = "github-attestations"
 
 [tools.jactionlint."platforms.linux-x64-musl"]
-checksum = "sha256:6533bd8047fc012a3f66238d84f65cacdac669da00b9f6cf042c1734c252bc93"
-url = "https://github.com/jdx/jactionlint/releases/download/v1.8.2/jactionlint_1.8.2_linux_amd64.tar.gz"
-url_api = "https://api.github.com/repos/jdx/jactionlint/releases/assets/611338580"
+checksum = "sha256:baebfc5792135438fb3bb5ea266c3bf2538a089753616f1988ef618e4c0c3cb1"
+url = "https://github.com/jdx/jactionlint/releases/download/v2.1.0/jactionlint_2.1.0_linux_amd64.tar.gz"
+url_api = "https://api.github.com/repos/jdx/jactionlint/releases/assets/628112089"
 provenance = "github-attestations"
 
 [tools.jactionlint."platforms.linux-x64-musl-baseline"]
-checksum = "sha256:6533bd8047fc012a3f66238d84f65cacdac669da00b9f6cf042c1734c252bc93"
-url = "https://github.com/jdx/jactionlint/releases/download/v1.8.2/jactionlint_1.8.2_linux_amd64.tar.gz"
-url_api = "https://api.github.com/repos/jdx/jactionlint/releases/assets/611338580"
+checksum = "sha256:baebfc5792135438fb3bb5ea266c3bf2538a089753616f1988ef618e4c0c3cb1"
+url = "https://github.com/jdx/jactionlint/releases/download/v2.1.0/jactionlint_2.1.0_linux_amd64.tar.gz"
+url_api = "https://api.github.com/repos/jdx/jactionlint/releases/assets/628112089"
 provenance = "github-attestations"
 
 [tools.jactionlint."platforms.macos-arm64"]
-checksum = "sha256:de9eb05af3cde409dc0b37fe2fd6a21b875a575374e7b26c02d45a7086645c28"
-url = "https://github.com/jdx/jactionlint/releases/download/v1.8.2/jactionlint_1.8.2_darwin_arm64.tar.gz"
-url_api = "https://api.github.com/repos/jdx/jactionlint/releases/assets/611338605"
+checksum = "sha256:3766a4b0890d3eb36fe58760289885712131c7974de4bc9fabb9a3faa599e931"
+url = "https://github.com/jdx/jactionlint/releases/download/v2.1.0/jactionlint_2.1.0_darwin_arm64.tar.gz"
+url_api = "https://api.github.com/repos/jdx/jactionlint/releases/assets/628111988"
 provenance = "github-attestations"
 
 [tools.jactionlint."platforms.windows-x64"]
-checksum = "sha256:fd7be539cd3276d5178f85ef140c1bb52395b1ec1f59b1585050e1be3b0b194b"
-url = "https://github.com/jdx/jactionlint/releases/download/v1.8.2/jactionlint_1.8.2_windows_amd64.zip"
-url_api = "https://api.github.com/repos/jdx/jactionlint/releases/assets/611338616"
+checksum = "sha256:5925a118df6db8c5be418acb05bd815d3c14ca98d91a9ecba6156753b87d4ae7"
+url = "https://github.com/jdx/jactionlint/releases/download/v2.1.0/jactionlint_2.1.0_windows_amd64.zip"
+url_api = "https://api.github.com/repos/jdx/jactionlint/releases/assets/628112198"
 provenance = "github-attestations"
 
 [tools.jactionlint."platforms.windows-x64-baseline"]
-checksum = "sha256:fd7be539cd3276d5178f85ef140c1bb52395b1ec1f59b1585050e1be3b0b194b"
-url = "https://github.com/jdx/jactionlint/releases/download/v1.8.2/jactionlint_1.8.2_windows_amd64.zip"
-url_api = "https://api.github.com/repos/jdx/jactionlint/releases/assets/611338616"
+checksum = "sha256:5925a118df6db8c5be418acb05bd815d3c14ca98d91a9ecba6156753b87d4ae7"
+url = "https://github.com/jdx/jactionlint/releases/download/v2.1.0/jactionlint_2.1.0_windows_amd64.zip"
+url_api = "https://api.github.com/repos/jdx/jactionlint/releases/assets/628112198"
 provenance = "github-attestations"
 
 [[tools.jq]]

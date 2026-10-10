@@ -1,6 +1,8 @@
 name: conventional-commits
 
-on: # zizmor: ignore[dangerous-triggers] reads only the PR title and executes no untrusted code
+# reads only the PR title and executes no untrusted code
+# jactionlint ignore=dangerous-triggers
+on:
   pull_request_target:
     types: [opened, edited, reopened, synchronize]
 
@@ -13,6 +15,7 @@ concurrency:
 jobs:
   title:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - name: Check pull request title
         env:

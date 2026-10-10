@@ -19,6 +19,9 @@ on:
         required: false
         default: ""
 
+permissions:
+  contents: read
+
 concurrency:
   group: release-${{ inputs.finish_draft_tag || github.ref_name }}
   # A dry run for a superseded release PR head can never satisfy auto-merge,
@@ -118,8 +121,10 @@ jobs:
             target: armv7-unknown-linux-musleabi
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
       - name: Install cross
-        uses: taiki-e/install-action@51cd0b8c0499559d9a4d75c0f5c67bec3a894ec8 # v2
+        uses: taiki-e/install-action@51cd0b8c0499559d9a4d75c0f5c67bec3a894ec8 # v2.75.28
         with:
           tool: cross
       - name: Install llvm-tools (PGO)
@@ -141,7 +146,7 @@ jobs:
           timeout_minutes: 140
           max_attempts: 3
           command: scripts/build-tarball.sh ${{matrix.target}}
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: tarball-${{matrix.target}}
           path: |
@@ -170,11 +175,13 @@ jobs:
             target: aarch64-apple-darwin
             pgo: 1
     steps:
-      - uses: apple-actions/import-codesign-certs@5142e029c445c10ffc7149d172e540235a065466 # v7
+      - uses: apple-actions/import-codesign-certs@5142e029c445c10ffc7149d172e540235a065466 # v7.0.0
         with:
           p12-file-base64: ${{ secrets.APPLE_DEVELOPER_ID_APPLICATION_CERTS_P12 }}
           p12-password: ${{ secrets.APPLE_DEVELOPER_ID_APPLICATION_CERTS_P12_PASS }}
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
       - name: Setup Rust toolchain
         run: rustup toolchain install stable --profile minimal --target ${{matrix.target}}
       - name: Install llvm-tools (PGO)
@@ -271,7 +278,7 @@ jobs:
             exit 1
           fi
           echo "notarized: submission $id"
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: tarball-${{matrix.target}}
           path: |
@@ -312,6 +319,8 @@ jobs:
             runner: windows-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
       - run: rustup target add ${{matrix.target}}
       - run: scripts/build-tarball.ps1 ${{matrix.target}}
         env:
@@ -319,7 +328,7 @@ jobs:
           ARCH: ${{matrix.arch}}
       - name: Smoke-test vfox Lua errors
         run: scripts/smoke-test-vfox-lua-error.ps1 dist/mise/bin/mise.exe
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: tarball-${{matrix.target}}
           path: dist/*.zip
@@ -339,6 +348,8 @@ jobs:
         tranche: [0, 1, 2, 3, 4, 5, 6, 7]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
       - name: Install zsh/fish/fd
         run: sudo apt-get update; sudo apt-get install zsh fish fd-find liblzma-dev libbz2-dev
       - name: Install fd-find
@@ -346,11 +357,11 @@ jobs:
           mkdir -p "$HOME/.local/bin"
           ln -s "$(which fdfind)" "$HOME/.local/bin/fd"
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: tarball-x86_64-unknown-linux-gnu
           path: dist
-      - uses: taiki-e/install-action@51cd0b8c0499559d9a4d75c0f5c67bec3a894ec8 # v2
+      - uses: taiki-e/install-action@51cd0b8c0499559d9a4d75c0f5c67bec3a894ec8 # v2.75.28
         with:
           tool: usage-cli
       - run: tar -C "$HOME" -xvf "dist/mise-$(./scripts/get-version.sh)-linux-x64.tar.zst"
@@ -375,19 +386,21 @@ jobs:
     container: ghcr.io/jdx/mise:rpm@sha256:65f2d1c7143fcf67752ce9a87c413eb67b73f260e6465b2bbbcaae884fa6c85a
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
       - uses: crazy-max/ghaction-import-gpg@2dc316deee8e90f13e1a351ab510b4d5bc0c82cd # v7
         with:
           gpg_private_key: ${{ secrets.MISE_GPG_KEY }}
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: tarball-x86_64-unknown-linux-gnu
           path: dist
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: tarball-aarch64-unknown-linux-gnu
           path: dist
       - run: scripts/build-rpm.sh
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: rpm
           path: dist/rpmrepo
@@ -400,19 +413,21 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
       - uses: crazy-max/ghaction-import-gpg@2dc316deee8e90f13e1a351ab510b4d5bc0c82cd # v7
         with:
           gpg_private_key: ${{ secrets.MISE_GPG_KEY }}
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: tarball-x86_64-unknown-linux-gnu
           path: dist
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: tarball-aarch64-unknown-linux-gnu
           path: dist
       - run: scripts/build-deb.sh
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: deb
           path: dist/deb
@@ -475,11 +490,13 @@ jobs:
           fi
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
+          persist-credentials: false
           fetch-depth: 0
       - name: Check for existing release
         id: check-release
         if: startsWith(github.ref, 'refs/tags/v') && inputs.force != true
         run: |
+          set -o pipefail
           VERSION="$(./scripts/get-version.sh)"
           RELEASE="$(gh api --paginate "repos/${{ github.repository }}/releases?per_page=100" |
             jq -s -c --arg version "$VERSION" '[.[][] | select(.tag_name == $version)][0] // {}')"
@@ -511,10 +528,10 @@ jobs:
           mkdir -p "$HOME/.local/bin"
           ln -s "$(which fdfind)" "$HOME/.local/bin/fd"
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with: { path: artifacts }
       - run: ls -R artifacts
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           path: artifacts
           pattern: |
@@ -525,7 +542,7 @@ jobs:
           merge-multiple: true
       - run: echo "${{ secrets.MINISIGN_KEY }}" >minisign.key
       - run: ls -R artifacts
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: tarball-x86_64-unknown-linux-gnu
           path: dist
@@ -535,7 +552,7 @@ jobs:
       - run: mise x -- scripts/release.sh
       - name: Stage release assets for attestation
         if: startsWith(github.ref, 'refs/tags/v') && steps.check-release.outputs.exists != 'true'
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: release-assets
           path: releases/${{ github.ref_name }}
@@ -544,6 +561,7 @@ jobs:
       - name: Generate release notes
         if: startsWith(github.ref, 'refs/tags/v') && steps.check-release.outputs.exists != 'true'
         run: |
+          set -o pipefail
           VERSION="$(./scripts/get-version.sh)"
           if mise x -- communique generate "$VERSION" --tag-pattern 'v[0-9]*' -o /tmp/release-notes.txt; then
             TITLE="$(head -1 /tmp/release-notes.txt | sed 's/^#* //' | sed "s/^$VERSION: //")"
@@ -579,6 +597,7 @@ jobs:
         id: create-release
         if: startsWith(github.ref, 'refs/tags/v') && steps.check-release.outputs.exists != 'true'
         run: |
+          set -o pipefail
           VERSION="$(./scripts/get-version.sh)"
           if [[ "$EXISTING_DRAFT" == "true" ]]; then
             gh release upload "$VERSION" --clobber "releases/$VERSION"/*
@@ -616,13 +635,14 @@ jobs:
     needs: release
     if: ${{ !cancelled() && needs.release.result == 'success' && needs.release.outputs.created == 'true' }}
     runs-on: ubuntu-24.04
+    timeout-minutes: 60
     permissions:
       attestations: write
       contents: read
       id-token: write
     steps:
       - name: Download release assets
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: release-assets
           path: release-assets
@@ -648,6 +668,7 @@ jobs:
       - attest-release
     if: ${{ !cancelled() && needs.release.result == 'success' && needs.attest-release.result == 'success' && needs.release.outputs.created == 'true' }}
     runs-on: ubuntu-24.04
+    timeout-minutes: 60
     permissions:
       contents: write
       id-token: write
@@ -660,7 +681,7 @@ jobs:
       GITHUB_API_TOKEN: ""
     steps:
       - name: Download release assets
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: release-assets
           path: release-assets
@@ -713,7 +734,7 @@ jobs:
       # publish-release compares the draft's assets against what this workflow
       # built, so the metadata files added here have to reach it or the diff fails.
       - name: Stage the packslip for the asset check
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: release-extras
           path: |
@@ -733,21 +754,23 @@ jobs:
       - packslip
     if: ${{ !cancelled() && needs.release.result == 'success' && needs.attest-release.result == 'success' && needs.packslip.result == 'success' && needs.release.outputs.created == 'true' }}
     runs-on: ubuntu-24.04
+    timeout-minutes: 60
     permissions:
       contents: write
     steps:
       - name: Download release assets
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: release-assets
           path: release-assets
       - name: Download the packslip
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: release-extras
           path: release-assets
       - name: Verify and publish GitHub Release
         run: |
+          set -o pipefail
           (cd release-assets && sha256sum ./* | sort) > /tmp/expected-assets
           gh api "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID" \
             --jq '.assets[] | select(.digest | startswith("sha256:")) | "\(.digest[7:])  ./\(.name)"' \
@@ -776,6 +799,7 @@ jobs:
         env:
           TAG: ${{ needs.gate.outputs.finish-draft-tag }}
         run: |
+          set -o pipefail
           RELEASE="$(gh api --paginate "repos/${{ github.repository }}/releases?per_page=100" |
             jq -s -c --arg tag "$TAG" '[.[][] | select(.tag_name == $tag)][0] // empty')"
           if [[ -z "$RELEASE" || "$RELEASE" == "null" ]]; then
@@ -798,6 +822,7 @@ jobs:
     needs: [gate, finish-draft-resolve]
     if: ${{ !cancelled() && needs.gate.outputs.finish-draft == 'true' && needs.finish-draft-resolve.result == 'success' }}
     runs-on: ubuntu-24.04
+    timeout-minutes: 60
     permissions:
       attestations: write
       contents: read
@@ -817,7 +842,7 @@ jobs:
         with:
           subject-checksums: release-assets/SHASUMS256.txt
       - name: Stage release assets
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: finish-draft-assets
           path: release-assets
@@ -828,6 +853,7 @@ jobs:
     needs: [gate, finish-draft-resolve, finish-draft-attest]
     if: ${{ !cancelled() && needs.gate.outputs.finish-draft == 'true' && needs.finish-draft-attest.result == 'success' }}
     runs-on: ubuntu-24.04
+    timeout-minutes: 60
     permissions:
       contents: write
       id-token: write
@@ -837,7 +863,7 @@ jobs:
       GITHUB_API_TOKEN: ""
     steps:
       - name: Download release assets
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: finish-draft-assets
           path: release-assets
@@ -878,7 +904,7 @@ jobs:
           out: "."
           token: ${{ secrets.MISE_GH_TOKEN }}
       - name: Stage the packslip for the asset check
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: finish-draft-extras
           path: |
@@ -896,21 +922,23 @@ jobs:
       [gate, finish-draft-resolve, finish-draft-attest, finish-draft-packslip]
     if: ${{ !cancelled() && needs.gate.outputs.finish-draft == 'true' && needs.finish-draft-packslip.result == 'success' }}
     runs-on: ubuntu-24.04
+    timeout-minutes: 60
     permissions:
       contents: write
     steps:
       - name: Download release assets
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: finish-draft-assets
           path: release-assets
       - name: Download the packslip
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: finish-draft-extras
           path: release-assets
       - name: Verify and publish GitHub Release
         run: |
+          set -o pipefail
           (cd release-assets && sha256sum ./* | sort) > /tmp/expected-assets
           gh api "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID" \
             --jq '.assets[] | select(.digest | startswith("sha256:")) | "\(.digest[7:])  ./\(.name)"' \

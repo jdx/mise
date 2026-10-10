@@ -8,8 +8,12 @@ on:
   # Fork pull requests only get a write token under pull_request_target, which
   # the shared workflow needs to comment and close. It never checks out or runs
   # the pull request's code.
-  pull_request_target: # zizmor: ignore[dangerous-triggers]
+  # jactionlint ignore=dangerous-triggers
+  pull_request_target:
     types: [opened, reopened, converted_to_draft]
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 permissions: {}
 

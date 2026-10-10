@@ -9,11 +9,18 @@ on:
   push:
     branches: ["renovate/**"]
 
-permissions:
-  contents: write
+# "-caller" keeps this group apart from the one the shared workflow sets for
+# its own job (aube-lock-<ref>); equal groups would cancel the called job.
+concurrency:
+  group: ${{ github.workflow }}-caller-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions: {}
 
 jobs:
   aube-lock:
+    permissions:
+      contents: write
     uses: jdx/renovate-config/.github/workflows/aube-lock.yml@d0f85cba63adc5a26194009e76eebcf5bc1ee823 # v1.0.2
     secrets:
       AUBE_LOCK_APP_ID: ${{ secrets.AUBE_LOCK_APP_ID }}
