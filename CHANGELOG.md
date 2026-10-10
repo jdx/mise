@@ -1,5 +1,20 @@
 # Changelog
 
+## [2026.10.8](https://github.com/jdx/mise/releases/tag/v2026.10.8) - 2026-10-10
+
+### 🐛 Bug Fixes
+
+- **(history)** skip rewriting unchanged checkpoint metadata on index rebuild by @jdx in [#14249](https://github.com/jdx/mise/pull/14249)
+- **(http)** retry when a response body drops mid-stream by @JamBalaya56562 in [#14253](https://github.com/jdx/mise/pull/14253)
+- **(lock)** decode percent-encoded release tags when checking a locked URL by @jdx in [#14252](https://github.com/jdx/mise/pull/14252)
+- **(schema)** accept outputs = { auto = false } on tasks by @JamBalaya56562 in [#14265](https://github.com/jdx/mise/pull/14265)
+
+### 📦 Aqua Registry Updates
+
+#### New Packages (1)
+
+- [`runxhq/runx`](https://github.com/runxhq/runx)
+
 ## [2026.10.7](https://github.com/jdx/mise/releases/tag/v2026.10.7) - 2026-10-09
 
 ### 🚀 Features
