@@ -510,6 +510,7 @@ mod tests {
                 sha256: Some("1".repeat(64)),
             }),
             tap_git_head: Some("abc123".to_string()),
+            post_install_steps: vec![],
         }
     }
 

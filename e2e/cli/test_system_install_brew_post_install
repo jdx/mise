@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+
+# A poured bottle gets the etc files it ships and its formula's declarative
+# post_install_steps, as after `brew install`. Uses a throwaway prefix, so no
+# root is needed. Requires network.
+if [[ "$(uname)" != "Linux" ]]; then
+  exit 0
+fi
+case "$(uname -m)" in
+  x86_64 | aarch64) ;;
+  *) exit 0 ;;
+esac
+
+export MISE_SYSTEM_BREW_PREFIX="$HOME/brew-post-install-prefix"
+
+cat <<EOF >mise.toml
+[bootstrap.packages]
+"brew:openssl@4" = "latest"
+EOF
+
+mise bootstrap packages apply --yes
+
+# ca-certificates (a dependency) runs libexec/post-install to build the bundle
+assert_succeed "test -s $MISE_SYSTEM_BREW_PREFIX/etc/ca-certificates/cert.pem"
+
+# openssl@4's symlink step points its cert.pem at that bundle, and the files
+# the bottle ships under etc are installed
+assert "readlink $MISE_SYSTEM_BREW_PREFIX/etc/openssl@4/cert.pem" "$MISE_SYSTEM_BREW_PREFIX/etc/ca-certificates/cert.pem"
+assert_succeed "test -f $MISE_SYSTEM_BREW_PREFIX/etc/openssl@4/openssl.cnf"
+assert_fail "test -e $MISE_SYSTEM_BREW_PREFIX/opt/openssl@4/.bottle"
+
+# an etc file the user edited survives a re-pour: the bottle's copy lands
+# beside it as .default instead
+echo "# edited" >>"$MISE_SYSTEM_BREW_PREFIX/etc/openssl@4/openssl.cnf"
+rm -rf "$MISE_SYSTEM_BREW_PREFIX/Cellar/openssl@4" "$MISE_SYSTEM_BREW_PREFIX/opt/openssl@4" \
+  "$MISE_SYSTEM_BREW_PREFIX/var/homebrew/linked/openssl@4"
+mise bootstrap packages apply --yes
+assert_contains "tail -n1 $MISE_SYSTEM_BREW_PREFIX/etc/openssl@4/openssl.cnf" "# edited"
+assert_succeed "test -f $MISE_SYSTEM_BREW_PREFIX/etc/openssl@4/openssl.cnf.default"
