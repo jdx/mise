@@ -131,10 +131,8 @@ impl UsesFromMacos {
         match self {
             Self::Name(name) => Some(name),
             Self::Tagged(deps) => deps.iter().find_map(|(name, tags)| {
-                (!tags.contains("build")
-                    && !tags.contains("test")
-                    && !tags.contains("optional"))
-                .then_some(name)
+                (!tags.contains("build") && !tags.contains("test") && !tags.contains("optional"))
+                    .then_some(name)
             }),
         }
     }
@@ -142,9 +140,9 @@ impl UsesFromMacos {
     pub fn build_name(&self) -> Option<&String> {
         match self {
             Self::Name(_) => None,
-            Self::Tagged(deps) => deps
-                .iter()
-                .find_map(|(name, tags)| (tags.contains("build") && !tags.contains("optional")).then_some(name)),
+            Self::Tagged(deps) => deps.iter().find_map(|(name, tags)| {
+                (tags.contains("build") && !tags.contains("optional")).then_some(name)
+            }),
         }
     }
 }
@@ -376,7 +374,10 @@ mod tests {
         assert_eq!(deps[3].build_name().map(String::as_str), Some("llvm"));
         assert!(deps[4].runtime_name().is_none());
         assert!(deps[4].build_name().is_none());
-        assert_eq!(deps[5].runtime_name().map(String::as_str), Some("suggested"));
+        assert_eq!(
+            deps[5].runtime_name().map(String::as_str),
+            Some("suggested")
+        );
         assert!(deps[6].build_name().is_none());
         assert_eq!(
             formula.uses_from_macos_for("arm64_linux")[0]
