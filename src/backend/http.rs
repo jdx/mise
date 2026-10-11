@@ -358,9 +358,30 @@ impl HttpBackend {
 
     /// Whether a configured option calls the template function `name`, which
     /// makes the artifact depend on a host trait the platform key must carry.
-    fn template_uses(&self, name: &str) -> bool {
-        serde_json::to_string(&self.ba.opts().opts)
-            .is_ok_and(|opts| opts.contains(&format!("{name}(")))
+    /// `request` holds the options a tool request adds on top of the shorthand's
+    /// own, such as a `url` written in `mise.toml`.
+    fn template_uses(&self, request: Option<&ToolVersionOptions>, name: &str) -> bool {
+        let needle = format!("{name}(");
+        let uses = |opts: &ToolVersionOptions| {
+            serde_json::to_string(&opts.opts).is_ok_and(|opts| opts.contains(&needle))
+        };
+        uses(&self.ba.opts()) || request.is_some_and(uses)
+    }
+
+    /// The platform key, as [`Backend::get_platform_key`] builds it, for a request
+    /// whose own options may also call `avx2()` or `libc()`.
+    fn platform_key_for(&self, request: Option<&ToolVersionOptions>) -> String {
+        let mut platform = Platform::current();
+        if platform.arch == "x64"
+            && !crate::platform::host_has_avx2()
+            && self.template_uses(request, "avx2")
+        {
+            // `platform_variants` lists `musl-baseline` only for a template that
+            // also calls `libc()`, so the key must not claim musl otherwise.
+            let musl = platform.qualifier.is_some() && self.template_uses(request, "libc");
+            platform.qualifier = Some(if musl { "musl-baseline" } else { "baseline" }.to_string());
+        }
+        platform.to_key()
     }
 
     /// Built in one place so the dry-run check and the install itself cannot drift apart.
@@ -996,7 +1017,7 @@ impl HttpBackend {
         let filename = file_path.file_name().unwrap().to_string_lossy();
         let lockfile_enabled = settings.lockfile_enabled();
 
-        let platform_key = self.get_platform_key();
+        let platform_key = self.platform_key_for(Some(&tv.request.options()));
         let platform_info = tv.lock_platforms.entry(platform_key).or_default();
 
         // Verify or generate checksum
@@ -1211,23 +1232,15 @@ impl Backend for HttpBackend {
     /// different artifact on a no-AVX2 host, so the lockfile key carries the
     /// `baseline` qualifier the way `mise lock` writes it for that variant.
     fn get_platform_key(&self) -> String {
-        let mut platform = Platform::current();
-        if platform.arch == "x64" && !crate::platform::host_has_avx2() && self.template_uses("avx2")
-        {
-            platform.qualifier = Some(match platform.qualifier.as_deref() {
-                Some(q) => format!("{q}-baseline"),
-                None => "baseline".to_string(),
-            });
-        }
-        platform.to_key()
+        self.platform_key_for(None)
     }
 
     fn platform_variants(&self, platform: &Platform) -> Vec<Platform> {
         if platform.qualifier.is_some() {
             return vec![platform.clone()];
         }
-        let baseline = platform.arch == "x64" && self.template_uses("avx2");
-        let musl = platform.os == "linux" && self.template_uses("libc");
+        let baseline = platform.arch == "x64" && self.template_uses(None, "avx2");
+        let musl = platform.os == "linux" && self.template_uses(None, "libc");
         let variant = |qualifier: &str| Platform {
             qualifier: Some(qualifier.to_string()),
             ..platform.clone()
@@ -1405,7 +1418,7 @@ impl Backend for HttpBackend {
         let file_path = tv.download_path().join(&filename);
 
         // Record URL in lock platforms
-        let platform_key = self.get_platform_key();
+        let platform_key = self.platform_key_for(Some(&raw_opts));
         tv.lock_platforms
             .entry(platform_key.clone())
             .or_default()
