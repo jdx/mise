@@ -87,12 +87,35 @@ pub(super) fn dep_tag(formula: &Formula, host_tag: &str) -> String {
     host_tag.to_string()
 }
 
+/// Runtime dependencies, including libraries Homebrew gets from macOS but
+/// must install separately on Linux.
+pub(super) fn runtime_deps<'a>(formula: &'a Formula, tag: &str) -> Vec<&'a String> {
+    let mut deps: Vec<&String> = formula.dependencies_for(tag).iter().collect();
+    if cfg!(target_os = "linux") {
+        deps.extend(
+            formula
+                .uses_from_macos_for(tag)
+                .iter()
+                .filter_map(|dep| dep.runtime_name()),
+        );
+    }
+    deps
+}
+
 /// dependencies that must be installed before this formula: runtime deps
 /// always, plus build deps when the formula will be built from source
-fn install_deps<'a>(formula: &'a Formula, tag: &str) -> Vec<&'a String> {
-    let mut deps: Vec<&String> = formula.dependencies_for(tag).iter().collect();
+pub(super) fn install_deps<'a>(formula: &'a Formula, tag: &str) -> Vec<&'a String> {
+    let mut deps = runtime_deps(formula, tag);
     if !super::source::has_bottle(formula) {
         deps.extend(formula.build_dependencies_for(tag));
+        if cfg!(target_os = "linux") {
+            deps.extend(
+                formula
+                    .uses_from_macos_for(tag)
+                    .iter()
+                    .filter_map(|dep| dep.build_name()),
+            );
+        }
     }
     deps
 }
@@ -395,6 +418,86 @@ mod tests {
         assert_eq!(name_of("openssl@3"), "openssl@3");
         assert_eq!(name_of("shared"), "openssl@3");
         assert_eq!(name_of("renamed"), "renamed");
+    }
+
+    #[test]
+    fn linux_bottle_includes_uses_from_macos_runtime_dependencies_only() {
+        let formula: Formula = serde_json::from_value(serde_json::json!({
+            "name": "freetype",
+            "versions": {"stable": "1.0"},
+            "dependencies": ["libpng"],
+            "build_dependencies": ["pkgconf"],
+            "uses_from_macos": [
+                "bzip2",
+                {"bison": "build"},
+                {"sqlite": "test"},
+                {"optional-tool": "optional"},
+                {"recommended-tool": "recommended"}
+            ],
+            "bottle": {
+                "stable": {
+                    "files": {
+                        "x86_64_linux": {
+                            "cellar": ":any",
+                            "url": "https://example.com/freetype.tar.gz",
+                            "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+                        },
+                        "arm64_linux": {
+                            "cellar": ":any",
+                            "url": "https://example.com/freetype-arm64.tar.gz",
+                            "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+                        }
+                    }
+                }
+            },
+            "variations": {
+                "x86_64_linux": {"dependencies": ["libpng", "zlib-ng-compat"]},
+                "arm64_linux": {"dependencies": ["libpng", "zlib-ng-compat"]}
+            }
+        }))
+        .unwrap();
+
+        if !cfg!(target_os = "linux") {
+            return;
+        }
+        assert!(super::super::source::has_bottle(&formula));
+        let tag = dep_tag(&formula, &tag::host_tag());
+        let install: Vec<&str> = install_deps(&formula, &tag)
+            .iter()
+            .map(|name| name.as_str())
+            .collect();
+
+        assert_eq!(
+            install,
+            ["libpng", "zlib-ng-compat", "bzip2", "recommended-tool"]
+        );
+    }
+
+    #[test]
+    fn linux_source_build_includes_build_dependencies() {
+        let formula: Formula = serde_json::from_value(serde_json::json!({
+            "name": "freetype",
+            "versions": {"stable": "1.0"},
+            "dependencies": ["libpng"],
+            "build_dependencies": ["pkgconf"],
+            "uses_from_macos": [
+                "bzip2",
+                {"bison": "build"},
+                {"sqlite": "test"},
+                {"optional-tool": "optional"}
+            ]
+        }))
+        .unwrap();
+
+        let install: Vec<&str> = install_deps(&formula, &tag::host_tag())
+            .iter()
+            .map(|name| name.as_str())
+            .collect();
+        if cfg!(target_os = "linux") {
+            assert_eq!(install, ["libpng", "bzip2", "pkgconf", "bison"]);
+        } else {
+            assert_eq!(install, ["libpng", "pkgconf"]);
+        }
     }
 
     #[test]

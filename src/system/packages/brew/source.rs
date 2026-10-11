@@ -349,12 +349,7 @@ fn build_env(
     let mut deps: Vec<&ResolvedFormula> = vec![];
     let mut seen: std::collections::HashSet<&str> =
         std::iter::once(rf.formula.name.as_str()).collect();
-    let mut queue: Vec<&String> = rf
-        .formula
-        .dependencies_for(&rf_tag)
-        .iter()
-        .chain(rf.formula.build_dependencies_for(&rf_tag))
-        .collect();
+    let mut queue = super::resolve::install_deps(&rf.formula, &rf_tag);
     while let Some(dep) = queue.pop() {
         let Some(other) = by_name.get(dep.as_str()) else {
             continue;
@@ -364,7 +359,7 @@ fn build_env(
         }
         deps.push(other);
         let other_tag = super::resolve::dep_tag(&other.formula, &host_tag);
-        queue.extend(other.formula.dependencies_for(&other_tag));
+        queue.extend(super::resolve::runtime_deps(&other.formula, &other_tag));
     }
     let dep_opts: Vec<PathBuf> = deps
         .iter()
@@ -495,6 +490,7 @@ mod tests {
             keg_only_reason: None,
             dependencies: vec![],
             build_dependencies: vec![],
+            uses_from_macos: vec![],
             bottle,
             variations: HashMap::new(),
             urls: HashMap::from([(
