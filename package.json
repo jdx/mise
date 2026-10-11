@@ -43,7 +43,7 @@
     "repo": "jdx/mise",
     "issuesSince": "2026-09-23",
     "issuesFile": "docs/.vitepress/releases-issues.json",
-    "issuesNote": "An issue counts when a pull request in the release closed it. Counting starts on Sep 23, 2026, when GitHub Issues were turned back on. Before that, reports came in as Discussions, which a pull request cannot close, so earlier releases have no count.",
+    "issuesNote": "An issue counts when a pull request in the release closed it. Releases before Sep 23, 2026, when GitHub Issues were turned back on, have no count.",
     "trimFrom": "^## (?:💚 )?Sponsor mise[ \\t]*$",
     "ignoredSections": "^(New Contributors|.*Aqua Registry.*)$"
   }

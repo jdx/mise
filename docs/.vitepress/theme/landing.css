@@ -471,7 +471,7 @@ a:hover > div + .card-link::after {
 .pantry-stat small {
   display: block;
   margin-top: 8px;
-  font-family: "Roc Grotesk", sans-serif;
+  font-family: var(--mise-font-brand);
   font-size: 1rem;
   line-height: 1.5;
   color: var(--vp-c-text-2);
