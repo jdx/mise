@@ -47,7 +47,7 @@ impl Variant {
     /// The stream name of an `os`/`profile`/`default` variant: `macos`,
     /// `linux-arm64`, `macos+work`, `work`, or `default`. A machine variant
     /// names a different stream on every machine; see [`Self::name`].
-    pub(crate) fn selector_name(&self) -> String {
+    pub fn selector_name(&self) -> String {
         let mut parts = vec![];
         for os in &self.os {
             parts.push(os.replace('/', "-"));
@@ -120,7 +120,7 @@ impl Variant {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum Selection {
+pub enum Selection {
     /// The entry has no variants: one stream for every machine.
     Single,
     /// The variant this machine uses.
@@ -156,7 +156,7 @@ pub(crate) fn validate(variants: &[Variant]) -> eyre::Result<()> {
 }
 
 /// Picks the variant for this machine given the active mise environments.
-pub(crate) fn select(variants: &[Variant], environments: &[String]) -> Selection {
+pub fn select(variants: &[Variant], environments: &[String]) -> Selection {
     if variants.is_empty() {
         return Selection::Single;
     }
@@ -184,7 +184,7 @@ pub(crate) fn select(variants: &[Variant], environments: &[String]) -> Selection
 }
 
 /// The active mise environments (`-E` / `MISE_ENV`).
-pub(crate) fn active_environments() -> Vec<String> {
+pub fn active_environments() -> Vec<String> {
     crate::env::MISE_ENV_WITH_AUTO.clone()
 }
 

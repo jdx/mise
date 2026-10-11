@@ -12,7 +12,7 @@ description: "Show the state of your dotfiles and their history"
 
 Show the state of your dotfiles and their history
 
-Lists each `[dotfiles]` entry with its state: `applied`, `missing`, `differs`, `source missing`, `tracked`, or `absent` for a removal that is done. Then shows the history state: what is tracked, the latest checkpoint, unfinished operations, and whether edits are saved automatically.
+Lists each `[dotfiles]` entry with its state: `applied`, `missing`, `differs`, `source missing`, `tracked`, or `absent` for a removal that is done. A tracked entry whose variants all select other machines, such as one for an inactive profile, says `not on this machine`. Then shows the history state: what is tracked, the latest checkpoint, unfinished operations, and whether edits are saved automatically.
 
 Files a dotfile group deployed that no active entry deploys now are listed as `orphaned`: the group was deselected or removed, or a new `exclude` or a deleted source dropped them. `mise dot apply --prune` removes them.
 
