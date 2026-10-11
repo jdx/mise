@@ -1,5 +1,37 @@
 # Changelog
 
+## [2026.10.8](https://github.com/jdx/mise/releases/tag/v2026.10.8) - 2026-10-11
+
+### 🚀 Features
+
+- **(runtime-symlinks)** add a global link to the version global config selects by @jdx in [#14271](https://github.com/jdx/mise/pull/14271)
+
+### 🐛 Bug Fixes
+
+- **(history)** skip rewriting unchanged checkpoint metadata on index rebuild by @jdx in [#14249](https://github.com/jdx/mise/pull/14249)
+- **(http)** retry when a response body drops mid-stream by @JamBalaya56562 in [#14253](https://github.com/jdx/mise/pull/14253)
+- **(lock)** decode percent-encoded release tags when checking a locked URL by @jdx in [#14252](https://github.com/jdx/mise/pull/14252)
+- **(schema)** accept outputs = { auto = false } on tasks by @JamBalaya56562 in [#14265](https://github.com/jdx/mise/pull/14265)
+
+### 📚 Documentation
+
+- **(dotfiles)** add a recommended setup and a readable modes-and-keys table by @jdx in [#14267](https://github.com/jdx/mise/pull/14267)
+
+### 🧪 Testing
+
+- **(http)** stop the allow_html test waiting out the https retry by @jdx in [#14285](https://github.com/jdx/mise/pull/14285)
+
+### 📦 Registry
+
+- test ansible, azure and dvc against python 3.14 by @jdx in [#14268](https://github.com/jdx/mise/pull/14268)
+
+### 📦 Aqua Registry Updates
+
+#### New Packages (2)
+
+- [`runxhq/runx`](https://github.com/runxhq/runx)
+- [`takumin/passt-bin`](https://github.com/takumin/passt-bin)
+
 ## [2026.10.7](https://github.com/jdx/mise/releases/tag/v2026.10.7) - 2026-10-09
 
 ### 🚀 Features

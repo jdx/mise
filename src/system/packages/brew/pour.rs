@@ -1,4 +1,4 @@
-//! Pour a bottle: extract -> relocate -> codesign -> receipt -> link.
+//! Pour a bottle: extract -> relocate -> codesign -> receipt -> etc/var -> link -> post-install.
 
 use std::collections::HashSet;
 use std::io::ErrorKind;
@@ -16,7 +16,8 @@ use crate::result::Result;
 use crate::ui::progress_report::SingleReport;
 
 /// directories linked from a keg into the prefix (brew's Keg::KEG_LINK_DIRECTORIES,
-/// minus etc/var which brew handles specially and we defer)
+/// minus etc/var, which brew copies from the bottle instead of linking; see
+/// `post_install::install_bottle_config`)
 pub(super) const LINK_DIRS: &[&str] = &["bin", "sbin", "include", "lib", "share", "Frameworks"];
 const KEG_ONLY_MARKER: &str = ".mise-keg-only";
 
@@ -264,6 +265,8 @@ pub(super) struct PreparedBottle {
     _staging_lock: fslock::LockFile,
     staging: tempfile::TempDir,
     keg_only: bool,
+    post_install_steps: Vec<serde_json::Value>,
+    stable: Option<String>,
 }
 
 fn create_staging_dir(
@@ -381,6 +384,8 @@ pub(super) fn prepare_bottle(
         _staging_lock: staging_lock,
         staging,
         keg_only: rf.formula.keg_only_for_target(),
+        post_install_steps: rf.formula.post_install_steps.clone(),
+        stable: rf.formula.versions.stable.clone(),
     };
 
     // bottle tarballs contain <name>/<pkg_version>/...
@@ -438,10 +443,17 @@ pub(super) fn install_prepared(prepared: PreparedBottle, pr: &dyn SingleReport) 
     if prepared.keg.exists() {
         crate::file::remove_all(&prepared.keg)?;
     }
-    crate::file::rename(&prepared.staged_keg, &prepared.keg)?;
+    // copy the bottle's etc/var files first so a failure here leaves nothing
+    // linked and the next install retries; they are rolled back with the keg
+    let config = super::post_install::install_bottle_config(&prepared.staged_keg)?;
+    if let Err(err) = crate::file::rename(&prepared.staged_keg, &prepared.keg) {
+        super::post_install::remove_created(&config);
+        return Err(err);
+    }
     // never leave a half-installed keg: if linking fails (conflicts, IO),
     // remove the keg so the next install retries from scratch
     if let Err(err) = link_keg(&prepared.name, &prepared.pkg_version, prepared.keg_only) {
+        super::post_install::remove_created(&config);
         if let Err(rm_err) = crate::file::remove_all(&prepared.keg) {
             // a keg left behind here is unlinked but looks installed, so
             // future installs would skip it — make that state visible
@@ -452,6 +464,23 @@ pub(super) fn install_prepared(prepared: PreparedBottle, pr: &dyn SingleReport) 
             );
         }
         return Err(err);
+    }
+    // Keep the commit lock through the steps: the keg counts as installed as
+    // soon as it is linked, so a concurrent apply must not see a dependency
+    // whose post-install has not finished (e.g. ca-certificates' bundle).
+    if !prepared.post_install_steps.is_empty() {
+        pr.set_message("post-install".to_string());
+        // `run` steps wait on subprocesses; hand the runtime worker off meanwhile
+        crate::file::run_blocking(|| {
+            super::post_install::run_steps(
+                &prepared.post_install_steps,
+                &super::post_install::Context {
+                    name: &prepared.name,
+                    stable: prepared.stable.as_deref(),
+                    keg: &prepared.keg,
+                },
+            )
+        });
     }
     Ok(())
 }

@@ -20,6 +20,21 @@ load `[env]`. Shims also do not change the environment of an editor that is
 already running, so restart affected language servers or the editor after
 changing an inherited environment or a fixed SDK path.
 
+## A fixed path to the global version {#global-version-link}
+
+A setting that takes an installation directory, such as an IDE's Maven or JDK
+home, needs a path that survives version changes. Each tool's install directory
+has a `global` link to the version global and system config select:
+
+```sh
+~/.local/share/mise/installs/maven/global -> ./3.9.16
+```
+
+mise updates it whenever it rebuilds the other runtime symlinks (`latest`, `3`),
+such as after `mise use -g` or `mise install`. Project config and `MISE_*_VERSION`
+variables do not change it, and a tool no global config selects has no link.
+mise leaves a real directory named `global` alone.
+
 ## Put shims on PATH for GUI editors {#adding-shims-to-path-default-shell}
 
 Editors started from the desktop, including VS Code and JetBrains IDEs, read the

@@ -33,6 +33,7 @@ mod api;
 mod cask;
 mod fetch;
 mod maintenance;
+mod post_install;
 mod pour;
 mod prefix;
 mod relocate;

@@ -65,35 +65,35 @@ reads the target's path under
 
 The table shows which whole-file keys each kind of entry accepts. An entry
 with `content` is an inline-content entry, and one with only `permissions`
-(no `source`, `content`, or `mode`) is a permissions-only entry.
+(no `source`, `content`, or `mode`) is a permissions-only entry. Every entry
+also accepts `enabled`.
 
-| Key                   | `symlink` | `symlink-each` | `copy`         | `template` | `content` | Permissions only | `absent` | `track` |
-| --------------------- | --------- | -------------- | -------------- | ---------- | --------- | ---------------- | -------- | ------- |
-| `source`              | yes       | yes, directory | yes            | yes, file  | no        | no               | no       | no      |
-| `exclude`             |           | yes            | yes, directory |            | no        | no               | no       | yes     |
-| `manifest`            | no        | yes            | yes, directory | no         | no        | no               | no       | no      |
-| `dot_prefix`          | no        | yes            | yes, directory | no         | no        | no               | no       | no      |
-| `relative = true`     | yes       | yes            | no             | no         | no        | no               | no       | no      |
-| `permissions`         | no        | no             | yes, file      | yes        | yes       | yes              | no       | no      |
-| `remove_empty`        | no        | no             | no             | yes        | no        | no               | no       | no      |
-| `variants`, selectors | yes       | yes            | yes            | yes        | yes       | yes              | yes      | yes     |
-| `variants`, `target`  | yes       | yes            | yes            | yes        | no        | yes              | yes      | no      |
-| `include`             | no        | no             | no             | no         | no        | no               | no       | yes     |
-| `autosave`            |           |                |                |            |           |                  |          | yes     |
-| `encrypt = true`      |           |                |                |            | no        | no               | no       | yes     |
-| `allow_plaintext`     | no        | no             | no             | no         | no        | no               | no       | yes     |
-| `enabled`             | yes       | yes            | yes            | yes        | yes       | yes              | yes      | yes     |
+| Entry            | Accepts                                                                                                                                        | Accepted, no effect              |
+| ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------- |
+| `symlink`        | `source`, `relative`, `variants` (selectors and `target`)                                                                                      | `exclude`, `autosave`, `encrypt` |
+| `symlink-each`   | `source` (a directory), `exclude`, `manifest`, `dot_prefix`, `relative`, `variants` (selectors and `target`)                                   | `autosave`, `encrypt`            |
+| `copy`           | `source`, `variants` (selectors and `target`); with a directory source, `exclude`, `manifest`, `dot_prefix`; with a file source, `permissions` | `autosave`, `encrypt`            |
+| `template`       | `source` (a file), `permissions`, `remove_empty`, `variants` (selectors and `target`)                                                          | `exclude`, `autosave`, `encrypt` |
+| `content`        | `content`, `permissions`, `variants` (selectors only)                                                                                          | `autosave`                       |
+| Permissions only | `permissions`, `variants` (selectors and `target`)                                                                                             | `autosave`                       |
+| `absent`         | `variants` (selectors and `target`)                                                                                                            | `autosave`                       |
+| `track`          | `exclude`, `include`, `autosave`, `encrypt`, `allow_plaintext`, `variants` (selectors only)                                                    |                                  |
+| `track-local`    | `exclude`, `include`, `autosave`, `allow_plaintext`                                                                                            |                                  |
 
-A `track-local` entry accepts the same keys as `track` except `encrypt` and
-`variants`; see [Local-only history](/dotfiles/history.html#local-only).
+For `encrypt` and `relative`, the table means the `true` value; `encrypt =
+false` and `relative = false` are accepted everywhere except that
+permissions-only and `track-local` entries reject any `encrypt` key, including
+`encrypt = false`. See [Local-only history](/dotfiles/history.html#local-only)
+for `track-local`.
 
-"yes, directory" and "yes, file" mean the key needs a source of that kind.
-"no" means mise warns and ignores the whole entry; for a `track` entry,
-`mise dot paths` also lists it as invalid. A blank cell means mise accepts the
-key and it has no effect. `permissions` with a directory source, and
-`manifest` or `dot_prefix` with a file source, stop the command with an
-error. An entry that sets both `permissions` and `manifest` is ignored with a
-warning. A permissions-only entry also rejects `encrypt = false`.
+mise warns about and ignores an entry that sets one of the
+[entry keys](#entry-keys) its kind does not accept; for a `track` entry,
+`mise dot paths` also lists it as invalid. A key that is not an entry key at
+all is ignored without a warning, except in configuration arriving from
+another machine, which a pull refuses to apply. `permissions` with a
+directory source, and `manifest` or `dot_prefix` with a file source, stop the
+command with an error. An entry that sets both `permissions` and `manifest` is
+ignored with a warning.
 
 ## How entries combine {#how-entries-combine}
 

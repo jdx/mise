@@ -58,6 +58,7 @@ allow_env = ["CI"]
 description = "Build the project"
 depends = ["lint"]
 run = "cargo build"
+outputs = { auto = false }
 dir = "{{config_root}}"
 quiet = true
 usage = "build [args]"
@@ -219,6 +220,7 @@ run = "echo ok"
 depends = { task = "lint", optional = true }
 depends_post = [["build", "--release"]]
 wait_for = { task = "lint" }
+outputs = { auto = false }
 TOML
 
 cat >"$HOME/workdir/mise-registry-tool.toml" <<'TOML'

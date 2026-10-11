@@ -1,6 +1,8 @@
 aliases = ["azure-cli"]
 description = "azure-cli (az)"
-test = { cmd = "az --version", expected = "azure-cli                         {{version}}" }
+test = { cmd = "az --version", expected = "azure-cli                         {{version}}", tools = [
+  "python@3.14",
+] }
 version_order = "semver"
 
 bins = ["az"]
