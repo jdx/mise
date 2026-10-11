@@ -15,12 +15,17 @@ pub(crate) struct AptManager {
     /// `[bootstrap.apt.sources]` changed and the lists were refreshed for
     /// them (or, in a dry run, would be), so this run needs no other refresh.
     lists_refreshed: AtomicBool,
+    /// Packages found installed from elsewhere while a declared source offers
+    /// them, with that source's URL: recorded once installed, see
+    /// [`MovedToSources`].
+    moving: std::sync::Mutex<Vec<(String, String)>>,
 }
 
 impl AptManager {
     pub(crate) fn new() -> Self {
         Self {
             lists_refreshed: AtomicBool::new(false),
+            moving: Default::default(),
         }
     }
 
@@ -101,6 +106,50 @@ impl AptManager {
         )))
     }
 
+    /// `apt-cache policy` for `names`, with the repositories offering each
+    /// version.
+    async fn policy_origins(&self, names: &[&str]) -> Result<HashMap<String, PolicyOrigins>> {
+        debug!("$ apt-cache policy {}", names.join(" "));
+        let output = tokio::process::Command::new("apt-cache")
+            .arg("policy")
+            .args(names)
+            .env("LC_ALL", "C")
+            .env("LANGUAGE", "C")
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .output()
+            .await?;
+        if !output.status.success() {
+            bail!(
+                "apt-cache policy failed: {}",
+                String::from_utf8_lossy(&output.stderr).trim()
+            );
+        }
+        Ok(parse_policy_origins(&String::from_utf8_lossy(
+            &output.stdout,
+        )))
+    }
+
+    /// Remember the packages in `pkgs` that were just installed from a
+    /// declared source. A failure to record only means a later run checks
+    /// them again.
+    fn record_moved(&self, pkgs: &[PackageRequest]) {
+        let moving = std::mem::take(&mut *self.moving.lock().unwrap());
+        let installed = moving
+            .into_iter()
+            .filter(|(name, _)| pkgs.iter().any(|pkg| &pkg.name == name))
+            .collect::<Vec<_>>();
+        if installed.is_empty() {
+            return;
+        }
+        let mut moved = MovedToSources::load();
+        moved.0.extend(installed);
+        if let Err(err) = moved.save() {
+            debug!("could not record packages moved to apt sources: {err:#}");
+        }
+    }
+
     fn update(&self, opts: &InstallOpts) -> Result<()> {
         let args = vec!["update".to_string()];
         if opts.dry_run {
@@ -116,6 +165,138 @@ impl AptManager {
 
 fn debian_frontend() -> Vec<(String, String)> {
     vec![("DEBIAN_FRONTEND".to_string(), "noninteractive".to_string())]
+}
+
+/// Packages mise moved onto a declared `[bootstrap.apt.sources]` source, as
+/// `(package, source URL)`.
+///
+/// apt cannot say where an installed version came from once its repository
+/// stops listing it: after a PPA publishes a newer build, the one installed
+/// from it is known only to dpkg, exactly like a distro build an old image
+/// shipped. This record tells the two apart, so the move happens once per
+/// machine and source.
+#[derive(Debug, Default)]
+struct MovedToSources(std::collections::BTreeSet<(String, String)>);
+
+impl MovedToSources {
+    fn path() -> std::path::PathBuf {
+        crate::dirs::STATE.join("apt-sources-moved")
+    }
+
+    fn load() -> Self {
+        let content = std::fs::read_to_string(Self::path()).unwrap_or_default();
+        Self(
+            content
+                .lines()
+                .filter_map(|line| line.split_once(' '))
+                .map(|(name, uri)| (name.to_string(), uri.to_string()))
+                .collect(),
+        )
+    }
+
+    fn save(&self) -> Result<()> {
+        let content = self
+            .0
+            .iter()
+            .map(|(name, uri)| format!("{name} {uri}\n"))
+            .collect::<String>();
+        crate::file::write(Self::path(), content)?;
+        Ok(())
+    }
+
+    fn contains(&self, name: &str, uri: &str) -> bool {
+        self.0.contains(&(name.to_string(), uri.to_string()))
+    }
+}
+
+/// One package's `apt-cache policy` stanza: its installed and candidate
+/// versions, and the repository URLs that offer each version.
+#[derive(Debug, Default, PartialEq)]
+struct PolicyOrigins {
+    installed: Option<String>,
+    candidate: Option<String>,
+    origins: HashMap<String, Vec<String>>,
+}
+
+impl PolicyOrigins {
+    /// The declared source offering the candidate, when the candidate is a
+    /// different version and no declared source offers the installed one.
+    fn declared_candidate_origin(&self, uris: &std::collections::HashSet<String>) -> Option<&str> {
+        let (Some(installed), Some(candidate)) = (&self.installed, &self.candidate) else {
+            return None;
+        };
+        let declared = |version: &str| {
+            self.origins
+                .get(version)
+                .into_iter()
+                .flatten()
+                .find(|origin| uris.contains(*origin))
+                .map(String::as_str)
+        };
+        if installed == candidate || declared(installed).is_some() {
+            return None;
+        }
+        declared(candidate)
+    }
+}
+
+/// Parse `LC_ALL=C apt-cache policy` output:
+///
+/// ```text
+/// git:
+///   Installed: 1:2.43.0-1ubuntu7.3
+///   Candidate: 1:2.55.0-0ppa1~ubuntu24.04.2
+///   Version table:
+///      1:2.55.0-0ppa1~ubuntu24.04.2 500
+///         500 https://ppa.launchpadcontent.net/git-core/ppa/ubuntu noble/main amd64 Packages
+///  *** 1:2.43.0-1ubuntu7.3 500
+///         500 http://archive.ubuntu.com/ubuntu noble-updates/main amd64 Packages
+///         100 /var/lib/dpkg/status
+/// ```
+fn parse_policy_origins(output: &str) -> HashMap<String, PolicyOrigins> {
+    let mut policies: HashMap<String, PolicyOrigins> = HashMap::new();
+    let mut package: Option<String> = None;
+    let mut version: Option<String> = None;
+    for line in output.lines() {
+        if line.trim().is_empty() {
+            continue;
+        }
+        if !line.starts_with(char::is_whitespace) {
+            package = line.strip_suffix(':').map(str::to_string);
+            version = None;
+            continue;
+        }
+        let Some(policy) = package
+            .as_ref()
+            .map(|p| policies.entry(p.clone()).or_default())
+        else {
+            continue;
+        };
+        let indent = line.len() - line.trim_start().len();
+        let trimmed = line.trim();
+        let none = |value: &str| (value != "(none)").then(|| value.to_string());
+        if let Some(installed) = trimmed.strip_prefix("Installed: ") {
+            policy.installed = none(installed);
+        } else if let Some(candidate) = trimmed.strip_prefix("Candidate: ") {
+            policy.candidate = none(candidate);
+        } else if trimmed.ends_with(':') {
+            // "Version table:"
+        } else if trimmed.starts_with("***") || indent <= 5 {
+            version = trimmed
+                .trim_start_matches("***")
+                .split_whitespace()
+                .next()
+                .map(str::to_string);
+        } else if let (Some(version), Some(origin)) = (&version, trimmed.split_whitespace().nth(1))
+        {
+            policy
+                .origins
+                .entry(version.clone())
+                .or_default()
+                .push(origin.trim_end_matches('/').to_string());
+        }
+    }
+    policies
 }
 
 /// `name` may carry an architecture qualifier (`gcc:arm64`); dpkg-query
@@ -232,6 +413,71 @@ impl SystemPackageManager for AptManager {
         }
     }
 
+    /// A declared source should supply the packages it carries, including
+    /// ones the machine already had: an image that ships Ubuntu's git must
+    /// end up with the PPA's once the PPA is declared. A package counts as out
+    /// of date while apt's candidate comes from a declared source, the
+    /// installed version does not, and mise has not already moved it to that
+    /// source. After the move a newer upload is left to `upgrade`, as for any
+    /// `latest` package.
+    async fn installed_with_options(
+        &self,
+        pkgs: &[PackageRequest],
+        manager_options: &ManagerPackageOptions,
+    ) -> Result<Vec<PackageStatus>> {
+        let mut statuses = self.installed(pkgs).await?;
+        let ManagerPackageOptions::Apt { sources } = manager_options else {
+            return Ok(statuses);
+        };
+        let uris = sources
+            .iter()
+            .flat_map(|source| source.uris())
+            .collect::<std::collections::HashSet<_>>();
+        // apt heads policy stanzas with the bare name, so arch-qualified
+        // requests cannot be matched and are left as dpkg reports them
+        let names = statuses
+            .iter()
+            .filter(|s| s.request.version.is_none() && !s.request.name.contains(':'))
+            .filter(|s| matches!(s.state, PackageState::Installed { .. }))
+            .map(|s| s.request.name.as_str())
+            .collect::<Vec<_>>();
+        if uris.is_empty() || names.is_empty() {
+            return Ok(statuses);
+        }
+        let moved = MovedToSources::load();
+        let policies = match self.policy_origins(&names).await {
+            Ok(policies) => policies,
+            Err(err) => {
+                debug!("apt-cache policy failed, not checking declared sources: {err:#}");
+                return Ok(statuses);
+            }
+        };
+        let mut moving = self.moving.lock().unwrap();
+        for status in &mut statuses {
+            let PackageState::Installed { version } = &status.state else {
+                continue;
+            };
+            if status.request.version.is_some() {
+                continue;
+            }
+            let name = &status.request.name;
+            let Some(uri) = policies
+                .get(name)
+                .and_then(|policy| policy.declared_candidate_origin(&uris))
+            else {
+                continue;
+            };
+            if moved.contains(name, uri) {
+                continue;
+            }
+            moving.push((name.clone(), uri.to_string()));
+            status.state = PackageState::VersionMismatch {
+                installed: version.clone(),
+            };
+        }
+        Ok(statuses)
+    }
+
     async fn installed(&self, pkgs: &[PackageRequest]) -> Result<Vec<PackageStatus>> {
         if pkgs.is_empty() {
             return Ok(vec![]);
@@ -307,7 +553,9 @@ impl SystemPackageManager for AptManager {
             );
             return Ok(());
         }
-        sudo::run("apt-get", &args, &debian_frontend())
+        sudo::run("apt-get", &args, &debian_frontend())?;
+        self.record_moved(pkgs);
+        Ok(())
     }
 
     async fn upgrade(&self, pkgs: &[PackageRequest], opts: &InstallOpts) -> Result<()> {
@@ -334,7 +582,9 @@ impl SystemPackageManager for AptManager {
             );
             return Ok(());
         }
-        sudo::run("apt-get", &args, &debian_frontend())
+        sudo::run("apt-get", &args, &debian_frontend())?;
+        self.record_moved(pkgs);
+        Ok(())
     }
 }
 
@@ -349,6 +599,88 @@ mod tests {
             tap_url: None,
             desired: crate::system::packages::PackageDesiredState::Present,
         }
+    }
+
+    const GIT_POLICY: &str = "\
+git:
+  Installed: 1:2.43.0-1ubuntu7.3
+  Candidate: 1:2.55.0-0ppa1~ubuntu24.04.2
+  Version table:
+     1:2.55.0-0ppa1~ubuntu24.04.2 500
+        500 https://ppa.launchpadcontent.net/git-core/ppa/ubuntu noble/main amd64 Packages
+ *** 1:2.43.0-1ubuntu7.3 500
+        500 http://archive.ubuntu.com/ubuntu noble-updates/main amd64 Packages
+        100 /var/lib/dpkg/status
+     1:2.43.0-1build1 500
+        500 http://archive.ubuntu.com/ubuntu noble/main amd64 Packages
+curl:
+  Installed: 8.5.0-2ubuntu10.6
+  Candidate: 8.5.0-2ubuntu10.6
+  Version table:
+ *** 8.5.0-2ubuntu10.6 500
+        500 http://archive.ubuntu.com/ubuntu noble-updates/main amd64 Packages
+        100 /var/lib/dpkg/status
+";
+
+    fn ppa_uris() -> std::collections::HashSet<String> {
+        ["https://ppa.launchpadcontent.net/git-core/ppa/ubuntu".to_string()].into()
+    }
+
+    #[test]
+    fn policy_origins_map_versions_to_repositories() {
+        let policies = parse_policy_origins(GIT_POLICY);
+        let git = &policies["git"];
+        assert_eq!(git.installed.as_deref(), Some("1:2.43.0-1ubuntu7.3"));
+        assert_eq!(
+            git.candidate.as_deref(),
+            Some("1:2.55.0-0ppa1~ubuntu24.04.2")
+        );
+        assert_eq!(
+            git.origins["1:2.55.0-0ppa1~ubuntu24.04.2"],
+            vec!["https://ppa.launchpadcontent.net/git-core/ppa/ubuntu"]
+        );
+        assert_eq!(
+            git.origins["1:2.43.0-1ubuntu7.3"],
+            vec!["http://archive.ubuntu.com/ubuntu", "/var/lib/dpkg/status"]
+        );
+        assert_eq!(policies["curl"].origins.len(), 1);
+    }
+
+    #[test]
+    fn candidate_from_declared_source_replaces_a_distro_install() {
+        let policies = parse_policy_origins(GIT_POLICY);
+        assert_eq!(
+            policies["git"].declared_candidate_origin(&ppa_uris()),
+            Some("https://ppa.launchpadcontent.net/git-core/ppa/ubuntu")
+        );
+        // a routine distro update is not a declared source's business
+        assert_eq!(
+            policies["curl"].declared_candidate_origin(&ppa_uris()),
+            None
+        );
+        // nothing declared offers git
+        assert_eq!(
+            policies["git"].declared_candidate_origin(
+                &["https://download.docker.com/linux/ubuntu".to_string()].into()
+            ),
+            None
+        );
+    }
+
+    #[test]
+    fn installed_from_declared_source_stays_current() {
+        let policies = parse_policy_origins(
+            "\
+git:
+  Installed: 1:2.55.0-0ppa1~ubuntu24.04.2
+  Candidate: 1:2.55.0-0ppa1~ubuntu24.04.2
+  Version table:
+ *** 1:2.55.0-0ppa1~ubuntu24.04.2 500
+        500 https://ppa.launchpadcontent.net/git-core/ppa/ubuntu noble/main amd64 Packages
+        100 /var/lib/dpkg/status
+",
+        );
+        assert_eq!(policies["git"].declared_candidate_origin(&ppa_uris()), None);
     }
 
     #[test]

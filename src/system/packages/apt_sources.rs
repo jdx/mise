@@ -174,6 +174,20 @@ impl AptSource {
         PathBuf::from(format!("{KEYRINGS_DIR}/mise-{}.gpg", self.name))
     }
 
+    /// The repository URLs as `apt-cache policy` prints them, without a
+    /// trailing slash.
+    pub(crate) fn uris(&self) -> Vec<String> {
+        match &self.kind {
+            AptSourceKind::Ppa { owner, archive } => {
+                vec![ppa_uri(owner, archive).trim_end_matches('/').to_string()]
+            }
+            AptSourceKind::Repository { uris, .. } => uris
+                .split_whitespace()
+                .map(|uri| uri.trim_end_matches('/').to_string())
+                .collect(),
+        }
+    }
+
     fn describe(&self) -> String {
         match &self.kind {
             AptSourceKind::Ppa { owner, archive } => format!("ppa:{owner}/{archive}"),
@@ -190,7 +204,7 @@ impl AptSource {
                     return Ok(None);
                 };
                 (
-                    format!("https://ppa.launchpadcontent.net/{owner}/{archive}/ubuntu/"),
+                    ppa_uri(owner, archive),
                     codename.to_string(),
                     Some("main".to_string()),
                     None,
@@ -284,6 +298,10 @@ impl AptSource {
             .map_err(|err| eyre!("{}: reading the key from {url}: {err}", self.name))?;
         select_keys(&self.name, &url, keys, &fingerprints)
     }
+}
+
+fn ppa_uri(owner: &str, archive: &str) -> String {
+    format!("https://ppa.launchpadcontent.net/{owner}/{archive}/ubuntu/")
 }
 
 /// The declared certificates from a downloaded keyring, in declaration order.

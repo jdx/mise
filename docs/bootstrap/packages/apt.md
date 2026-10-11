@@ -94,9 +94,13 @@ downloads, and fails if one is missing. Once a matching key is in place, mise
 leaves it alone and does not download it again. If the keyring changes or no
 longer matches, the next apply replaces it.
 
-Adding a PPA does not by itself replace a package that is already installed.
-Run `mise bootstrap packages upgrade --manager apt` to move it to the newer
-version.
+A declared source also replaces a package that was already installed from
+somewhere else. If an image ships Ubuntu's `git` and you declare the `git-core`
+PPA, `mise bootstrap` installs the PPA's `git`, and status shows the old one as
+`version mismatch` until it does. mise moves each package to a source once per
+machine and records the move in its state directory. A later upload to the same
+source is left to `mise bootstrap packages upgrade`, as for any `latest`
+package. A version pin or an architecture-qualified name opts a package out.
 
 mise does not remove sources. Deleting an entry leaves its files in place;
 delete `/etc/apt/sources.list.d/mise-<name>.sources` and its keyring yourself.
