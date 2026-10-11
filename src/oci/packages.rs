@@ -397,7 +397,11 @@ fn apt_install_into_rootfs(
     file::create_dir_all(rootfs.join("var/cache/apt/archives/partial"))?;
     file::create_dir_all(rootfs.join("var/lib/apt/lists/partial"))?;
 
-    let update_args = apt_root_args(rootfs, &status, architecture)?
+    let conf_dir = TempDir::new().wrap_err("creating apt config directory")?;
+    let conf = conf_dir.path().join("mise-oci.conf");
+    file::write(&conf, APT_CLEAR_HOST_HOOKS)?;
+
+    let update_args = apt_root_args(rootfs, &status, &conf, architecture)?
         .into_iter()
         .chain(["update".to_string()])
         .collect();
@@ -413,7 +417,7 @@ fn apt_install_into_rootfs(
         Some(v) => format!("{}={v}", p.name),
         None => p.name.clone(),
     });
-    let args = apt_root_args(rootfs, &status, architecture)?
+    let args = apt_root_args(rootfs, &status, &conf, architecture)?
         .into_iter()
         .chain(install_args)
         .chain(package_args)
@@ -454,8 +458,29 @@ fn prepare_apt_rootfs(rootfs: &Path) -> Result<()> {
     Ok(())
 }
 
-fn apt_root_args(rootfs: &Path, status: &Path, architecture: &str) -> Result<Vec<String>> {
+/// apt reads the host's `/etc/apt/apt.conf.d` before applying `-o` overrides, and
+/// `-o` cannot empty a list option. Hooks such as debconf's `dpkg-preconfigure`
+/// or update-notifier's `touch /var/lib/update-notifier/dpkg-run-stamp` would run
+/// against the host instead of the rootfs and fail for non-root users, so a
+/// `-c` file clears them.
+const APT_CLEAR_HOST_HOOKS: &str = "\
+#clear DPkg::Pre-Install-Pkgs;
+#clear DPkg::Pre-Invoke;
+#clear DPkg::Post-Invoke;
+#clear APT::Update::Pre-Invoke;
+#clear APT::Update::Post-Invoke;
+#clear APT::Update::Post-Invoke-Success;
+";
+
+fn apt_root_args(
+    rootfs: &Path,
+    status: &Path,
+    conf: &Path,
+    architecture: &str,
+) -> Result<Vec<String>> {
     Ok(vec![
+        "-c".to_string(),
+        conf.display().to_string(),
         "-o".to_string(),
         format!("Dir={}", rootfs.display()),
         "-o".to_string(),
@@ -939,6 +964,28 @@ mod tests {
 
         assert!(err.to_string().contains("symlink component"));
         assert_eq!(fs::read_to_string(outside.join("keep")).unwrap(), "outside");
+    }
+
+    #[test]
+    fn apt_host_hooks_are_cleared_by_config_file() {
+        if file::which("apt-config").is_none() {
+            return;
+        }
+        let td = TempDir::new().unwrap();
+        let conf = td.path().join("host.conf");
+        write_file(&conf, "DPkg::Post-Invoke:: \"/bin/false\";\n");
+        let dump = |extra: &str| {
+            let cfg = td.path().join("mise.conf");
+            write_file(&cfg, extra);
+            let out = Command::new("apt-config")
+                .env("APT_CONFIG", &conf)
+                .args(["-c", cfg.to_str().unwrap(), "dump"])
+                .output()
+                .unwrap();
+            String::from_utf8_lossy(&out.stdout).into_owned()
+        };
+        assert!(dump("").contains("/bin/false"));
+        assert!(!dump(APT_CLEAR_HOST_HOOKS).contains("/bin/false"));
     }
 
     #[test]
