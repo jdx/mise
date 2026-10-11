@@ -367,6 +367,8 @@ static TERA: Lazy<Tera> = Lazy::new(|| {
         "os_family",
         move |_: Kwargs, _: &State| -> TeraResult<Value> { Ok(Value::from(env::consts::FAMILY)) },
     );
+    tera.register_function("libc", tera2_variant_fn(host_libc_name));
+    tera.register_function("avx2", tera2_variant_fn(host_avx2_name));
     tera.register_function(
         "choice",
         move |args: Kwargs, _: &State| -> TeraResult<Value> {
@@ -925,6 +927,8 @@ static TERA1: Lazy<tera1::Tera> = Lazy::new(|| {
     tera.register_function("get_env", tera1_get_env(env::PRISTINE_ENV.clone()));
     tera.register_function("arch", tera1_host_fn(host_arch_name));
     tera.register_function("os", tera1_host_fn(|| env::consts::OS));
+    tera.register_function("libc", tera1_variant_fn(host_libc_name));
+    tera.register_function("avx2", tera1_variant_fn(host_avx2_name));
     tera.register_function("os_family", move |_: &HashMap<String, JsonValue>| {
         Ok(json!(env::consts::FAMILY))
     });
@@ -1159,6 +1163,58 @@ static TERA1: Lazy<tera1::Tera> = Lazy::new(|| {
 
     tera
 });
+
+/// The libc of the host as `libc()` reports it: `musl` or `gnu`.
+fn host_libc_name() -> String {
+    match crate::platform::Platform::current().libc() {
+        Some("musl") => "musl",
+        _ => "gnu",
+    }
+    .to_string()
+}
+
+/// Whether the host CPU has AVX2, as `avx2()` reports it: `yes` or `no`.
+/// Only x86-64 can lack it, so every other CPU reports `yes`.
+fn host_avx2_name() -> String {
+    let avx2 = crate::platform::host_has_avx2();
+    if avx2 { "yes" } else { "no" }.to_string()
+}
+
+/// The `libc()` and `avx2()` values of a lock target, from its platform
+/// qualifier (`musl`, `baseline`, `musl-baseline`).
+fn target_libc_name(qualifier: Option<&str>) -> String {
+    let musl = qualifier.is_some_and(|q| q.split('-').any(|part| part == "musl"));
+    if musl { "musl" } else { "gnu" }.to_string()
+}
+
+fn target_avx2_name(qualifier: Option<&str>) -> String {
+    let baseline = qualifier.is_some_and(|q| q.split('-').any(|part| part == "baseline"));
+    if baseline { "no" } else { "yes" }.to_string()
+}
+
+fn tera2_variant_fn(
+    value: impl Fn() -> String + Send + Sync + 'static,
+) -> impl Fn(Kwargs, &State) -> TeraResult<Value> + Send + Sync + 'static {
+    move |args: Kwargs, _: &State| -> TeraResult<Value> {
+        let value = value();
+        if let Some(remapped) = args.get::<&str>(&value)? {
+            return Ok(Value::from(remapped));
+        }
+        Ok(Value::from(value))
+    }
+}
+
+fn tera1_variant_fn(
+    value: impl Fn() -> String + Send + Sync + 'static,
+) -> impl Fn(&HashMap<String, JsonValue>) -> tera1::Result<JsonValue> + Send + Sync + 'static {
+    move |args| {
+        let value = value();
+        Ok(args
+            .get(&value)
+            .and_then(JsonValue::as_str)
+            .map_or_else(|| json!(value), |remapped| json!(remapped)))
+    }
+}
 
 fn host_arch_name() -> &'static str {
     if cfg!(target_arch = "x86_64") {
@@ -1537,7 +1593,12 @@ fn dry_run_disabled_fn_v1(
 /// `arch` a platform arch name (e.g. "x64", "arm64"), matching the values
 /// returned by the host-bound functions. Remap arguments such as
 /// `os(macos="darwin")` and `arch(x64="amd64")` keep the same semantics.
-pub fn get_tera_for_target(dir: Option<&Path>, os: &str, arch: &str) -> TeraEngine {
+pub fn get_tera_for_target(
+    dir: Option<&Path>,
+    os: &str,
+    arch: &str,
+    qualifier: Option<&str>,
+) -> TeraEngine {
     // os_family() must follow the target too, not the host.
     let family = if os == "windows" { "windows" } else { "unix" };
     if use_tera_v1() {
@@ -1559,6 +1620,10 @@ pub fn get_tera_for_target(dir: Option<&Path>, os: &str, arch: &str) -> TeraEngi
         tera.register_function("os_family", move |_: &HashMap<String, JsonValue>| {
             Ok(json!(family))
         });
+        let libc = target_libc_name(qualifier);
+        tera.register_function("libc", tera1_variant_fn(move || libc.clone()));
+        let avx2 = target_avx2_name(qualifier);
+        tera.register_function("avx2", tera1_variant_fn(move || avx2.clone()));
         TeraEngine::V1(Box::new(tera))
     } else {
         let mut tera = get_tera_v2(dir);
@@ -1586,6 +1651,11 @@ pub fn get_tera_for_target(dir: Option<&Path>, os: &str, arch: &str) -> TeraEngi
             move |_: Kwargs, _: &State| -> TeraResult<Value> { Ok(Value::from(family)) },
         );
 
+        let libc = target_libc_name(qualifier);
+        tera.register_function("libc", tera2_variant_fn(move || libc.clone()));
+        let avx2 = target_avx2_name(qualifier);
+        tera.register_function("avx2", tera2_variant_fn(move || avx2.clone()));
+
         TeraEngine::V2(Box::new(tera))
     }
 }
@@ -1604,6 +1674,8 @@ pub fn get_tera_preserving_os_arch(dir: Option<&Path>) -> TeraEngine {
         tera.register_function("os", reemit_template_fn_v1("os"));
         tera.register_function("arch", reemit_template_fn_v1("arch"));
         tera.register_function("os_family", reemit_template_fn_v1("os_family"));
+        tera.register_function("libc", reemit_template_fn_v1("libc"));
+        tera.register_function("avx2", reemit_template_fn_v1("avx2"));
         TeraEngine::V1(Box::new(tera))
     } else {
         let mut tera = get_tera_v2(dir);
@@ -1613,6 +1685,8 @@ pub fn get_tera_preserving_os_arch(dir: Option<&Path>) -> TeraEngine {
         // resolving it against the host here would bake e.g. "unix" into a template
         // that is later rendered for a windows target.
         tera.register_function("os_family", reemit_template_fn("os_family"));
+        tera.register_function("libc", reemit_template_fn("libc"));
+        tera.register_function("avx2", reemit_template_fn("avx2"));
         TeraEngine::V2(Box::new(tera))
     }
 }

@@ -324,6 +324,19 @@ fn has_file_prefix(dir: &str, prefix: &str) -> bool {
         .unwrap_or(false)
 }
 
+/// Whether the host CPU supports AVX2. Only x86-64 CPUs can lack it, so every
+/// other CPU reports true.
+pub fn host_has_avx2() -> bool {
+    #[cfg(target_arch = "x86_64")]
+    {
+        std::arch::is_x86_feature_detected!("avx2")
+    }
+    #[cfg(not(target_arch = "x86_64"))]
+    {
+        true
+    }
+}
+
 fn is_musl_system() -> bool {
     detect_libc() == Some("musl")
 }

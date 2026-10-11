@@ -282,7 +282,7 @@ pub fn is_current(
         let specifier = tv.request.version();
         let mut covered: BTreeMap<usize, BTreeSet<String>> = BTreeMap::new();
         for platform in platforms {
-            for platform in backend.platform_variants(platform) {
+            for platform in backend.platform_variants_for(tv, platform) {
                 let options = backend.resolve_lockfile_options(
                     &tv.request,
                     &PlatformTarget::new(platform.clone()),
@@ -379,7 +379,7 @@ pub async fn generate(
     for (ba, tv) in tools {
         let backend = tv.backend()?;
         for platform in platforms {
-            for platform in backend.platform_variants(platform) {
+            for platform in backend.platform_variants_for(tv, platform) {
                 let options = backend.resolve_lockfile_options(
                     &tv.request,
                     &PlatformTarget::new(platform.clone()),

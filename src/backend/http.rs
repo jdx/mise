@@ -18,6 +18,7 @@ use crate::config::Settings;
 use crate::http::{DownloadFileMetadata, HTTP};
 use crate::install_context::InstallContext;
 use crate::lockfile::PlatformInfo;
+use crate::platform::Platform;
 use crate::runtime_symlinks::is_runtime_symlink;
 use crate::toolset::ToolRequest;
 use crate::toolset::ToolVersion;
@@ -355,11 +356,90 @@ impl HttpBackend {
         Self { ba: Arc::new(ba) }
     }
 
+    /// Whether a configured option calls the template function `name`, which
+    /// makes the artifact depend on a host trait the platform key must carry.
+    /// `request` holds the options a tool request adds on top of the shorthand's
+    /// own, such as a `url` written in `mise.toml`.
+    fn template_uses(&self, request: Option<&ToolVersionOptions>, name: &str) -> bool {
+        // Only URLs are templates that pick an artifact; other options can mention
+        // the function in plain text.
+        fn calls(value: &serde_json::Value, key: &str, call: &regex::Regex) -> bool {
+            match value {
+                serde_json::Value::String(s) => key.ends_with("url") && call.is_match(s),
+                serde_json::Value::Object(map) => map.iter().any(|(k, v)| calls(v, k, call)),
+                _ => false,
+            }
+        }
+        let call =
+            regex::Regex::new(&format!(r"\b{name}\s*\(")).expect("valid template call regex");
+        let uses = |opts: &ToolVersionOptions| {
+            serde_json::to_value(&opts.opts).is_ok_and(|opts| calls(&opts, "", &call))
+        };
+        uses(&self.ba.opts()) || request.is_some_and(uses)
+    }
+
+    /// The platform variants a request locks, for [`Backend::platform_variants`].
+    fn variants_for(
+        &self,
+        request: Option<&ToolVersionOptions>,
+        platform: &Platform,
+    ) -> Vec<Platform> {
+        if let Some(qualifier) = platform.qualifier.as_deref() {
+            // An explicit target keeps its own key. A no-AVX2 host installs the
+            // key `platform_key_for` builds, so lock that one as well.
+            let mut variants = vec![platform.clone()];
+            if platform.arch == "x64"
+                && !qualifier.split('-').any(|part| part == "baseline")
+                && self.template_uses(request, "avx2")
+            {
+                let musl = platform.libc() == Some("musl") && self.template_uses(request, "libc");
+                variants.push(Platform {
+                    qualifier: Some(if musl { "musl-baseline" } else { "baseline" }.to_string()),
+                    ..platform.clone()
+                });
+            }
+            return variants;
+        }
+        let baseline = platform.arch == "x64" && self.template_uses(request, "avx2");
+        let musl = platform.os == "linux" && self.template_uses(request, "libc");
+        let variant = |qualifier: &str| Platform {
+            qualifier: Some(qualifier.to_string()),
+            ..platform.clone()
+        };
+        let mut variants = vec![platform.clone()];
+        if baseline {
+            variants.push(variant("baseline"));
+        }
+        if musl {
+            variants.push(variant("musl"));
+        }
+        if baseline && musl {
+            variants.push(variant("musl-baseline"));
+        }
+        variants
+    }
+
+    /// The platform key, as [`Backend::get_platform_key`] builds it, for a request
+    /// whose own options may also call `avx2()` or `libc()`.
+    fn platform_key_for(&self, request: Option<&ToolVersionOptions>) -> String {
+        let mut platform = Platform::current();
+        if platform.arch == "x64"
+            && !crate::platform::host_has_avx2()
+            && self.template_uses(request, "avx2")
+        {
+            // `platform_variants` lists `musl-baseline` only for a template that
+            // also calls `libc()`, so the key must not claim musl otherwise.
+            let musl = platform.qualifier.is_some() && self.template_uses(request, "libc");
+            platform.qualifier = Some(if musl { "musl-baseline" } else { "baseline" }.to_string());
+        }
+        platform.to_key()
+    }
+
     /// Built in one place so the dry-run check and the install itself cannot drift apart.
     /// Names the platform it looked for and the ones the tool does declare, because the fix is
     /// usually to add that key rather than to pick a different tool.
     fn missing_url_error(&self, opts: &HttpOptions<'_>) -> eyre::Report {
-        let platform_key = self.get_platform_key();
+        let platform_key = self.platform_key_for(Some(opts.raw()));
         let available = opts.url_platforms();
         if available.is_empty() {
             eyre::eyre!("Http backend requires 'url' option")
@@ -821,7 +901,7 @@ impl HttpBackend {
             checksum: opts.checksum(),
             size: file_path.metadata()?.len(),
             extracted_at: SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs(),
-            platform: self.get_platform_key(),
+            platform: self.platform_key_for(Some(opts.raw())),
         };
 
         let json = serde_json::to_string_pretty(&metadata)?;
@@ -988,7 +1068,7 @@ impl HttpBackend {
         let filename = file_path.file_name().unwrap().to_string_lossy();
         let lockfile_enabled = settings.lockfile_enabled();
 
-        let platform_key = self.get_platform_key();
+        let platform_key = self.platform_key_for(Some(&tv.request.options()));
         let platform_info = tv.lock_platforms.entry(platform_key).or_default();
 
         // Verify or generate checksum
@@ -1199,6 +1279,25 @@ impl Backend for HttpBackend {
         BackendType::Http
     }
 
+    /// A URL template that picks its build with `avx2()` or `libc()` downloads a
+    /// different artifact on a no-AVX2 host, so the lockfile key carries the
+    /// `baseline` qualifier the way `mise lock` writes it for that variant.
+    fn get_platform_key(&self) -> String {
+        self.platform_key_for(None)
+    }
+
+    fn get_platform_key_for(&self, tv: &ToolVersion) -> String {
+        self.platform_key_for(Some(&tv.request.options()))
+    }
+
+    fn platform_variants(&self, platform: &Platform) -> Vec<Platform> {
+        self.variants_for(None, platform)
+    }
+
+    fn platform_variants_for(&self, tv: &ToolVersion, platform: &Platform) -> Vec<Platform> {
+        self.variants_for(Some(&tv.request.options()), platform)
+    }
+
     fn ba(&self) -> &Arc<BackendArg> {
         &self.ba
     }
@@ -1240,7 +1339,11 @@ impl Backend for HttpBackend {
     async fn install_operation_count(&self, tv: &ToolVersion, _ctx: &InstallContext) -> usize {
         let raw_opts = tv.request.options();
         let opts = HttpOptions::new(&raw_opts);
-        super::http_install_operation_count(opts.checksum().is_some(), &self.get_platform_key(), tv)
+        super::http_install_operation_count(
+            opts.checksum().is_some(),
+            &self.platform_key_for(Some(&tv.request.options())),
+            tv,
+        )
     }
 
     /// Options that affect which artifact is downloaded, resolved for the target
@@ -1359,7 +1462,7 @@ impl Backend for HttpBackend {
         let file_path = tv.download_path().join(&filename);
 
         // Record URL in lock platforms
-        let platform_key = self.get_platform_key();
+        let platform_key = self.platform_key_for(Some(&raw_opts));
         tv.lock_platforms
             .entry(platform_key.clone())
             .or_default()

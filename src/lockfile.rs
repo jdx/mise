@@ -3408,7 +3408,7 @@ where
     let backend = tv.request.backend()?;
 
     for platform in target_platforms {
-        for variant in backend.platform_variants(platform) {
+        for variant in backend.platform_variants_for(tv, platform) {
             let target = PlatformTarget::new(variant.clone());
             let options = backend.resolve_lockfile_options(&tv.request, &target)?;
             let platform_key = variant.to_key();
@@ -3707,7 +3707,7 @@ pub(crate) async fn auto_lock_new_versions(
             for platform in &target_platforms {
                 // Expand platform variants from the backend
                 let variants = if let Some(ref backend) = backend {
-                    backend.platform_variants(platform)
+                    backend.platform_variants_for(tv, platform)
                 } else {
                     vec![platform.clone()]
                 };

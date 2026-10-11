@@ -2476,6 +2476,13 @@ pub trait Backend: Debug + Send + Sync {
         Platform::current().to_key()
     }
 
+    /// [`Self::get_platform_key`] for one tool request, for a backend whose
+    /// artifact depends on options the request sets, such as a `url` template in
+    /// `mise.toml`. Callers that hold the tool version use this one.
+    fn get_platform_key_for(&self, _tv: &ToolVersion) -> String {
+        self.get_platform_key()
+    }
+
     /// Resolves the lockfile options for a tool request on a target platform.
     /// These options affect artifact identity and must match exactly for lockfile lookup.
     ///
@@ -2528,6 +2535,13 @@ pub trait Backend: Debug + Send + Sync {
     /// - linux-x64-musl-baseline (musl + no AVX2)
     fn platform_variants(&self, platform: &Platform) -> Vec<Platform> {
         vec![platform.clone()] // Default: just the base platform
+    }
+
+    /// [`Self::platform_variants`] for one tool request, for a backend whose
+    /// variants depend on options the request sets. Callers that hold the tool
+    /// version use this one.
+    fn platform_variants_for(&self, _tv: &ToolVersion, platform: &Platform) -> Vec<Platform> {
+        self.platform_variants(platform)
     }
 
     /// Whether this backend supports URL-based locking in locked mode.
@@ -4007,7 +4021,7 @@ pub trait Backend: Debug + Send + Sync {
             );
         }
         if ctx.locked && self.supports_lockfile_url() {
-            let platform_key = self.get_platform_key();
+            let platform_key = self.get_platform_key_for(&tv);
             let has_lockfile_url = tv
                 .lock_platforms
                 .get(&platform_key)
@@ -5248,7 +5262,7 @@ pub trait Backend: Debug + Send + Sync {
         let lockfile_enabled = settings.lockfile_enabled();
 
         // Get the platform key for this tool and platform
-        let platform_key = self.get_platform_key();
+        let platform_key = self.get_platform_key_for(tv);
 
         // Get or create asset info for this platform
         let locked = tv

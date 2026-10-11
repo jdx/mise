@@ -610,7 +610,12 @@ pub(crate) fn template_string_for_target(
     render_template(
         template,
         &tv.version,
-        crate::tera::get_tera_for_target(None, target.os_name(), target.arch_name()),
+        crate::tera::get_tera_for_target(
+            None,
+            target.os_name(),
+            target.arch_name(),
+            target.qualifier(),
+        ),
     )
 }
 

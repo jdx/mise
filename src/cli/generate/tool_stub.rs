@@ -826,7 +826,7 @@ exec "$MISE_BIN" tool-stub "$0" "$@"
         let mut lock_platforms: BTreeMap<String, PlatformInfo> = BTreeMap::new();
         let mut lock_targets = vec![PlatformTarget::from_current()];
         for p in lockfile::determine_existing_platforms(&lockfile_path)? {
-            for platform in backend.platform_variants(&p) {
+            for platform in backend.platform_variants_for(&tv, &p) {
                 let target = PlatformTarget::new(platform);
                 lock_targets.push(target.clone());
                 match backend.resolve_lock_info(&tv, &target).await {

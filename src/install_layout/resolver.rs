@@ -229,7 +229,7 @@ pub(crate) fn identity_of(tv: &ToolVersion) -> Option<InstallIdentity> {
     if let Some(graph) = tv.uv_install_identity() {
         inputs.insert("uv".to_string(), graph);
     }
-    let platform = backend.get_platform_key();
+    let platform = backend.get_platform_key_for(tv);
     let mut mode = Mode::Fallback;
     if tv.resolved_from_lockfile()
         && let Some(checksum) = tv
