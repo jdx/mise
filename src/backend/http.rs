@@ -1246,6 +1246,21 @@ impl Backend for HttpBackend {
     }
 
     fn platform_variants(&self, platform: &Platform) -> Vec<Platform> {
+        if platform.qualifier.as_deref() == Some("musl")
+            && platform.arch == "x64"
+            && self.template_uses(None, "avx2")
+            && self.template_uses(None, "libc")
+        {
+            // A musl x64 host without AVX2 installs the `musl-baseline` variant,
+            // so an explicit musl target needs that lock entry too.
+            return vec![
+                platform.clone(),
+                Platform {
+                    qualifier: Some("musl-baseline".to_string()),
+                    ..platform.clone()
+                },
+            ];
+        }
         if platform.qualifier.is_some() {
             return vec![platform.clone()];
         }
