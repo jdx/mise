@@ -237,16 +237,20 @@ impl Context<'_> {
         refuse_glob(step)?;
         let source = self.path(step, "source")?;
         let target = self.path(step, "target")?;
-        if let Some(parent) = target.parent() {
+        let destination = copy_destination(&source, &target)?;
+        if destination.exists() && !flag(step, "overwrite") {
+            bail!("{} already exists", destination.display());
+        }
+        if let Some(parent) = destination.parent() {
             fs::create_dir_all(parent)?;
         }
         if source.is_dir() {
             if !flag(step, "recursive") {
                 bail!("{} is a directory", source.display());
             }
-            copy_tree(&source, &target, false, &mut Vec::new())
+            copy_tree(&source, &destination, false, &mut Vec::new())
         } else {
-            fs::copy(&source, &target)?;
+            fs::copy(&source, &destination)?;
             Ok(())
         }
     }
@@ -547,6 +551,20 @@ fn refuse_glob(step: &Value) -> Result<()> {
     Ok(())
 }
 
+/// Homebrew's copy steps place a source under an existing directory target.
+/// Resolve that path before checking `overwrite`, since it is the path Homebrew
+/// protects (rather than the directory containing it).
+fn copy_destination(source: &Path, target: &Path) -> Result<PathBuf> {
+    if target.is_dir() {
+        let name = source
+            .file_name()
+            .ok_or_else(|| eyre!("source {} has no file name", source.display()))?;
+        Ok(target.join(name))
+    } else {
+        Ok(target.to_path_buf())
+    }
+}
+
 /// Apply an octal (`0700`) or symbolic (`u+w`, `go-rwx`, `a=rx`) mode spec.
 #[cfg(unix)]
 fn apply_mode(spec: &str, current: u32, is_dir: bool) -> Result<u32> {
@@ -683,6 +701,57 @@ mod tests {
         assert_eq!(fs::read_to_string(dst.join("a.cnf.default"))?, "new");
         assert!(!dst.join("same.default").exists());
         assert_eq!(fs::read_to_string(dst.join("sub/b"))?, "b");
+        Ok(())
+    }
+
+    #[test]
+    fn copy_without_overwrite_preserves_existing_destination() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let source = tmp.path().join("source");
+        let destination = tmp.path().join("destination");
+        fs::write(&source, "new")?;
+        fs::write(&destination, "old")?;
+
+        let step = json!({
+            "source": {"path": source},
+            "target": {"path": destination},
+            "overwrite": false,
+        });
+        assert!(ctx(tmp.path()).copy(&step).is_err());
+        assert_eq!(fs::read_to_string(destination)?, "old");
+        Ok(())
+    }
+
+    #[test]
+    fn copy_without_overwrite_creates_absent_file_and_directory_destinations() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let file_source = tmp.path().join("file-source");
+        let file_destination = tmp.path().join("file-destination");
+        fs::write(&file_source, "file")?;
+        let file_step = json!({
+            "source": {"path": file_source},
+            "target": {"path": file_destination},
+            "overwrite": false,
+        });
+        ctx(tmp.path()).copy(&file_step)?;
+        assert_eq!(fs::read_to_string(file_destination)?, "file");
+
+        let directory_source = tmp.path().join("directory-source");
+        let directory_target = tmp.path().join("directory-target");
+        fs::create_dir_all(directory_source.join("nested"))?;
+        fs::create_dir_all(&directory_target)?;
+        fs::write(directory_source.join("nested/file"), "directory")?;
+        let directory_step = json!({
+            "source": {"path": directory_source},
+            "target": {"path": directory_target},
+            "recursive": true,
+            "overwrite": false,
+        });
+        ctx(tmp.path()).copy(&directory_step)?;
+        assert_eq!(
+            fs::read_to_string(directory_target.join("directory-source/nested/file"))?,
+            "directory"
+        );
         Ok(())
     }
 }
