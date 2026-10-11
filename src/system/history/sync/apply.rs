@@ -229,17 +229,31 @@ pub(crate) async fn apply_locked_with_scope(
             if keep_local.contains(&local)
                 && shared_report.unheld.contains_key(&conflict.branch_path)
             {
-                if !req.dry_run
-                    && let Some(entry) = tracked.entry_for(&local)
-                {
-                    let mut held = crate::system::history::held::Held::load(repo)?;
-                    held.keep(&entry.tree_path(&entry.path)?);
-                    held.save(repo)?;
-                }
-                let advice = format!(
-                    "{path} keeps this machine's version once it is saved: run `mise dot save {path}`, then `mise dot sync` publishes it",
-                    path = display_path(&local)
-                );
+                let entry = tracked
+                    .entry_for(&local)
+                    .ok_or_else(|| eyre::eyre!("{} is not tracked here", display_path(&local)))?;
+                // Holding a directory holds every file in it: a sibling
+                // missing here would be saved as a deletion, and a stale one
+                // over the newer shared version. Only a tracked file is
+                // kept on its own.
+                let advice = if entry.path != local {
+                    format!(
+                        "{path} is in a directory another machine saved while it was not selected here, so it cannot be kept on its own: take the repository's version with `mise dot pull --take-remote {path}`, then copy yours back and save it",
+                        path = display_path(&local)
+                    )
+                } else {
+                    if !req.dry_run {
+                        // captures update the same record under the store lock
+                        let _store_lock = store.lock()?;
+                        let mut held = crate::system::history::held::Held::load(repo)?;
+                        held.keep(&entry.tree_path(&entry.path)?);
+                        held.save(repo)?;
+                    }
+                    format!(
+                        "{path} keeps this machine's version once it is saved: run `mise dot save {path}`, then `mise dot sync` publishes it",
+                        path = display_path(&local)
+                    )
+                };
                 if blanket_chosen.contains(&local) {
                     blanket_held.push(advice);
                     keep_local.remove(&local);

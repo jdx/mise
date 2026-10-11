@@ -194,13 +194,20 @@ fn live_matches_saved(
         .filter(|(_, (owner, _))| *owner == index)
         .map(|(path, _)| path)
         .collect();
+    // only this stream's own files: a directory's subtree, or the one file
+    let paths: Vec<String> = match repo.object_at(head, stream)? {
+        None => vec![],
+        Some((mode, oid)) if mode == "040000" => repo
+            .ls_tree(&oid)?
+            .into_iter()
+            .map(|file| format!("{stream}/{}", file.path))
+            .collect(),
+        Some(_) => vec![stream.to_string()],
+    };
     let mut saved = 0;
-    for file in repo.ls_tree(head)? {
-        if file.path != stream && !file.path.starts_with(&format!("{stream}/")) {
-            continue;
-        }
+    for path in paths {
         saved += 1;
-        let Some(local) = roots.locate(&file.path).path().map(Path::to_path_buf) else {
+        let Some(local) = roots.locate(&path).path().map(Path::to_path_buf) else {
             return Ok(false);
         };
         if !live.contains(&local) {
@@ -210,7 +217,7 @@ fn live_matches_saved(
             return Ok(false);
         };
         // a version this machine cannot decrypt is not one it holds
-        if repo.restored_object_at(head, &file.path).ok().flatten() != object {
+        if repo.restored_object_at(head, &path).ok().flatten() != object {
             return Ok(false);
         }
     }

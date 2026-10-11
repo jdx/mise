@@ -137,3 +137,27 @@ assert_succeed "e -E work dot save"
 assert_succeed "e -E work dot sync"
 assert "git --git-dir=$origin show main:home/.shared" "shared-from-fifth"
 assert "git --git-dir=$origin show main:home@work/.work" "work-v4"
+
+# a file in a directory another machine saved is not kept on its own:
+# holding the directory would save its siblings too
+mkdir -p ~/.workdir
+echo a-v1 >~/.workdir/a
+echo b-v1 >~/.workdir/b
+assert_succeed "mise dot sync"
+assert_succeed "mise -E work dot pull --yes"
+assert_succeed "mise dot track ~/.workdir --profile work --yes"
+assert_succeed "mise -E work dot save"
+assert_succeed "mise -E work dot sync"
+assert "git --git-dir=$origin show main:home@work/.workdir/a" "a-v1"
+sixth="$(dirname "$HOME")/sixth"
+mkdir -p "$sixth/.workdir"
+export sixth
+f() { machine "$sixth" "$@"; }
+export -f f
+echo mine >"$sixth/.workdir/a"
+assert_succeed "f bootstrap --adopt file://$origin --yes"
+assert_fail "f -E work dot pull --yes"
+assert_fail "f -E work dot pull --keep-local $sixth/.workdir/a" "cannot be kept on its own"
+assert_succeed "f -E work dot pull --take-remote $sixth/.workdir/a"
+assert "cat $sixth/.workdir/a" "a-v1"
+assert "cat $sixth/.workdir/b" "b-v1"
