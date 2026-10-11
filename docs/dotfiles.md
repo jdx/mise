@@ -12,6 +12,31 @@ shorten to its alias `mise dot`; `mise bootstrap dotfiles` runs the same
 commands. Dotfiles work on their own, with or without
 [`mise bootstrap`](/bootstrap.html).
 
+## Recommended setup {#recommended-setup}
+
+If you are not sure where to start, track your files in place, let the watcher
+save every edit, and share them through a private Git repository. Add the
+watcher to `~/.config/mise/config.toml`:
+
+```toml
+[bootstrap.services.mise-history]
+builtin = "history-watch"
+```
+
+Then track your files and your mise configuration, start the watcher, and
+connect the repository:
+
+```sh
+mise dot track ~/.zshrc ~/.config/nvim ~/.config/mise/config.toml
+mise bootstrap services apply
+mise dot origin set https://github.com/you/dotfiles.git --sync sync
+```
+
+On another machine, `mise bootstrap --adopt you/dotfiles` restores them.
+[Set up a machine](/bootstrap/setup.html) walks through each step. The rest of
+these pages cover the other approaches and every option; you do not need them
+to get started.
+
 ## Choose an approach {#choose-an-approach}
 
 Tracking leaves each file where it is, as a regular file you keep editing, and

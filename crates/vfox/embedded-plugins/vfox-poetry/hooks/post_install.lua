@@ -1,6 +1,10 @@
 --- Post-installation hook for Poetry
 --- Runs the installer script with the correct version
 
+local function shell_quote(value)
+    return "'" .. tostring(value):gsub("'", "'\\''") .. "'"
+end
+
 --- Installs Poetry on Windows without relying on bash, sed, chmod or rm
 local function install_windows(install_path, version)
     local http = require("http")
@@ -104,8 +108,8 @@ fi
     if f then
         f:write(script)
         f:close()
-        local result = os.execute("chmod +x " .. script_path .. " && " .. script_path)
-        os.execute("rm -f " .. script_path)
+        local result = os.execute("chmod +x " .. shell_quote(script_path) .. " && " .. shell_quote(script_path))
+        os.remove(script_path)
         if result ~= 0 and result ~= true then
             error("Poetry installation failed")
         end
