@@ -145,8 +145,11 @@
 
 /* Shared palette. Keep the burgundy identity; use quieter surfaces for reading. */
 :root {
+  /* DM Sans for reading; Roc Grotesk stays for the wordmark and a few landing
+     page details, where its quirky letterforms are the point. */
   --vp-font-family-base:
-    "Roc Grotesk", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    "DM Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --mise-font-brand: "Roc Grotesk", var(--vp-font-family-base);
   --vp-font-family-mono: "JetBrains Mono", "SF Mono", Consolas, monospace;
   --vp-font-family-heading: "Cormorant Garamond", Georgia, serif;
   --vp-layout-max-width: 1440px;
@@ -172,7 +175,8 @@
   --vp-c-danger-1: #ae3838;
   --vp-c-danger-2: #bb4c4c;
   --vp-c-danger-soft: #bb4c4c12;
-  --vp-code-color: var(--vp-c-brand-1);
+  /* Neutral inline code, so links (brand color) stand apart from it. */
+  --vp-code-color: var(--vp-c-text-1);
   --vp-code-bg: var(--vp-c-bg-soft);
   --vp-code-block-bg: var(--vp-c-bg-alt);
   --vp-code-block-divider-color: var(--vp-c-divider);
@@ -257,6 +261,7 @@
   width: auto;
 }
 .VPNavBarTitle .title {
+  font-family: var(--mise-font-brand);
   font-size: 1.1rem;
   letter-spacing: -0.025em;
 }
@@ -332,7 +337,7 @@
 }
 .vp-doc p,
 .vp-doc li {
-  line-height: 1.8;
+  line-height: 1.7;
 }
 .VPDoc .vp-doc > div > h1 + p {
   font-size: 1.125rem;

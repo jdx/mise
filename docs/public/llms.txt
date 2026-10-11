@@ -208,7 +208,7 @@
 ## About
 
 - [About mise](https://mise.jdx.dev/about.html): mise is pronounced "meez". The name is short for mise-en-place, the French kitchen practice of setting out every ingredient and utensil before you start cooking.
-- [Releases](https://mise.jdx.dev/releases.html): mise ships several releases a week, numbered by year and month, such as 2026.10.4. To update, run mise self-update or use the package manager that installed mise; see Updating mise.
+- [Releases](https://mise.jdx.dev/releases.html): mise ships several releases a week. To update, run mise self-update or use the package manager that installed mise; see Updating mise.
 - [Contact](https://mise.jdx.dev/contact.html): Report bugs in GitHub Issues and ask questions in GitHub Discussions, where answers stay searchable for other users.
 - [Demo](https://mise.jdx.dev/demo.html): This recording runs one-off commands with mise exec, installs global tools with mise use --global, and switches Node.js versions between a global default and a project.
 - [mise run: the song](https://mise.jdx.dev/mise-en-place.html): mise run is the mise theme song, and this is its music video. Captions are available from the player. You can also download the video in 1080p or 4K (HEVC), both at 120 fps, or download the MP3.
