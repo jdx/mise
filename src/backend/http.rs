@@ -378,6 +378,49 @@ impl HttpBackend {
         uses(&self.ba.opts()) || request.is_some_and(uses)
     }
 
+    /// The platform variants a request locks, for [`Backend::platform_variants`].
+    fn variants_for(
+        &self,
+        request: Option<&ToolVersionOptions>,
+        platform: &Platform,
+    ) -> Vec<Platform> {
+        if platform.qualifier.as_deref() == Some("musl")
+            && platform.arch == "x64"
+            && self.template_uses(request, "avx2")
+            && self.template_uses(request, "libc")
+        {
+            // A musl x64 host without AVX2 installs the `musl-baseline` variant,
+            // so an explicit musl target needs that lock entry too.
+            return vec![
+                platform.clone(),
+                Platform {
+                    qualifier: Some("musl-baseline".to_string()),
+                    ..platform.clone()
+                },
+            ];
+        }
+        if platform.qualifier.is_some() {
+            return vec![platform.clone()];
+        }
+        let baseline = platform.arch == "x64" && self.template_uses(request, "avx2");
+        let musl = platform.os == "linux" && self.template_uses(request, "libc");
+        let variant = |qualifier: &str| Platform {
+            qualifier: Some(qualifier.to_string()),
+            ..platform.clone()
+        };
+        let mut variants = vec![platform.clone()];
+        if baseline {
+            variants.push(variant("baseline"));
+        }
+        if musl {
+            variants.push(variant("musl"));
+        }
+        if baseline && musl {
+            variants.push(variant("musl-baseline"));
+        }
+        variants
+    }
+
     /// The platform key, as [`Backend::get_platform_key`] builds it, for a request
     /// whose own options may also call `avx2()` or `libc()`.
     fn platform_key_for(&self, request: Option<&ToolVersionOptions>) -> String {
@@ -1250,41 +1293,11 @@ impl Backend for HttpBackend {
     }
 
     fn platform_variants(&self, platform: &Platform) -> Vec<Platform> {
-        if platform.qualifier.as_deref() == Some("musl")
-            && platform.arch == "x64"
-            && self.template_uses(None, "avx2")
-            && self.template_uses(None, "libc")
-        {
-            // A musl x64 host without AVX2 installs the `musl-baseline` variant,
-            // so an explicit musl target needs that lock entry too.
-            return vec![
-                platform.clone(),
-                Platform {
-                    qualifier: Some("musl-baseline".to_string()),
-                    ..platform.clone()
-                },
-            ];
-        }
-        if platform.qualifier.is_some() {
-            return vec![platform.clone()];
-        }
-        let baseline = platform.arch == "x64" && self.template_uses(None, "avx2");
-        let musl = platform.os == "linux" && self.template_uses(None, "libc");
-        let variant = |qualifier: &str| Platform {
-            qualifier: Some(qualifier.to_string()),
-            ..platform.clone()
-        };
-        let mut variants = vec![platform.clone()];
-        if baseline {
-            variants.push(variant("baseline"));
-        }
-        if musl {
-            variants.push(variant("musl"));
-        }
-        if baseline && musl {
-            variants.push(variant("musl-baseline"));
-        }
-        variants
+        self.variants_for(None, platform)
+    }
+
+    fn platform_variants_for(&self, tv: &ToolVersion, platform: &Platform) -> Vec<Platform> {
+        self.variants_for(Some(&tv.request.options()), platform)
     }
 
     fn ba(&self) -> &Arc<BackendArg> {

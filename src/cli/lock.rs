@@ -1425,7 +1425,7 @@ impl Lock {
                 continue;
             };
             for platform in platforms {
-                for variant in backend.platform_variants(platform) {
+                for variant in backend.platform_variants_for(tv, platform) {
                     let Ok(options) = backend.resolve_lockfile_options(
                         &tv.request,
                         &crate::backend::platform_target::PlatformTarget::new(variant),
@@ -2374,7 +2374,7 @@ impl Lock {
             for platform in platforms {
                 // Expand platform variants just like process_tools does
                 let variants = if let Some(ref backend) = backend {
-                    backend.platform_variants(platform)
+                    backend.platform_variants_for(tv, platform)
                 } else {
                     vec![platform.clone()]
                 };
@@ -2417,7 +2417,7 @@ impl Lock {
             for platform in platforms {
                 // Get all variants for this platform from the backend
                 let variants = if let Some(ref backend) = backend {
-                    backend.platform_variants(platform)
+                    backend.platform_variants_for(tv, platform)
                 } else {
                     vec![platform.clone()]
                 };

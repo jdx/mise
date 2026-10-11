@@ -2537,6 +2537,13 @@ pub trait Backend: Debug + Send + Sync {
         vec![platform.clone()] // Default: just the base platform
     }
 
+    /// [`Self::platform_variants`] for one tool request, for a backend whose
+    /// variants depend on options the request sets. Callers that hold the tool
+    /// version use this one.
+    fn platform_variants_for(&self, _tv: &ToolVersion, platform: &Platform) -> Vec<Platform> {
+        self.platform_variants(platform)
+    }
+
     /// Whether this backend supports URL-based locking in locked mode.
     /// Backends that use external installers (like rustup for Rust) should override
     /// this to return false, since they don't have downloadable artifacts with lockable URLs.
