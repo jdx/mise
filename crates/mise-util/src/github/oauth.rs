@@ -464,7 +464,9 @@ fn should_copy_code() -> bool {
     if let Some(copy) = Settings::get().github.oauth_copy_code {
         return copy;
     }
-    if !(console::user_attended_stderr() && std::io::stdin().is_terminal()) {
+    // --yes, MISE_YES and CI mean nobody is there to answer, and copying to the
+    // clipboard is a side effect we should not assume consent for.
+    if Settings::get().yes || !(console::user_attended_stderr() && std::io::stdin().is_terminal()) {
         return false;
     }
     demand::Confirm::new("Copy the code to your clipboard?")
