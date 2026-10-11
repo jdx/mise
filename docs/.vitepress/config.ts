@@ -363,7 +363,19 @@ export default withMermaid(
           sizes: "180x180",
         },
       ],
-      // Google Fonts
+      // Body text on every page; the other self-hosted faces load when used.
+      [
+        "link",
+        {
+          rel: "preload",
+          href: "/fonts/dmsans-latin.woff2",
+          as: "font",
+          type: "font/woff2",
+          crossorigin: "",
+        },
+      ],
+      // Google Fonts (Cormorant Garamond only; see custom.css for why the
+      // others are self-hosted)
       [
         "link",
         {
@@ -382,7 +394,7 @@ export default withMermaid(
       [
         "link",
         {
-          href: "https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;0,600;0,700;1,300;1,400&family=DM+Sans:ital,opsz,wght@0,9..40,100..1000;1,9..40,100..1000&family=JetBrains+Mono:wght@400;500;600;700&display=swap",
+          href: "https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;0,600;0,700;1,300;1,400&display=swap",
           rel: "stylesheet",
         },
       ],
