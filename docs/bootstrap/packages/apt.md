@@ -64,7 +64,9 @@ fingerprint = "9DC8 5822 9FC7 DD38 854A E2D8 8D81 803C 0EBF CD88"
 For each source, mise writes `/etc/apt/sources.list.d/mise-<name>.sources` and
 `/etc/apt/keyrings/mise-<name>.gpg`. The source file names that keyring in
 `Signed-By`, so apt trusts the key only for that repository. When it adds or
-changes a source, mise runs `apt-get update` once before installing. Names may
+changes a source, mise runs `apt-get update` once before installing. If apt
+could not fetch a source's lists, mise warns and runs `apt-get update` again on
+the next apply. Names may
 contain letters, digits, `_`, `-`, and `.`.
 
 A `ppa` entry takes the PPA as `owner/archive`, with or without the `ppa:`
@@ -78,14 +80,14 @@ same config also works on Debian.
 
 Any other repository needs `uris`, `key`, and `fingerprint`:
 
-| Field           | Value                                                                              |
-| --------------- | ---------------------------------------------------------------------------------- |
-| `uris`          | The repository URL, as the vendor's install instructions give it                   |
-| `suites`        | Defaults to the release codename from `/etc/os-release`, such as `noble`           |
-| `components`    | Defaults to `main`, or to none when `suites` is a path ending in `/`               |
-| `architectures` | Optional, such as `amd64`, for a repository that publishes only some architectures |
-| `key`           | An http(s) URL of the signing key, ASCII-armored or binary                         |
-| `fingerprint`   | The key's full fingerprint, or a list of them; spaces are ignored                  |
+| Field           | Value                                                                                                                   |
+| --------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| `uris`          | The repository URL, as the vendor's install instructions give it                                                        |
+| `suites`        | Defaults to the release codename, such as `noble`; on Ubuntu derivatives such as Linux Mint, the Ubuntu base's codename |
+| `components`    | Defaults to `main`, or to none when `suites` is a path ending in `/`                                                    |
+| `architectures` | Optional, such as `amd64`, for a repository that publishes only some architectures                                      |
+| `key`           | An http(s) URL of the signing key, ASCII-armored or binary                                                              |
+| `fingerprint`   | The key's full fingerprint, or a list of them; spaces are ignored                                                       |
 
 mise keeps only the keys whose fingerprints you declared from what it
 downloads, and fails if one is missing. Once a matching key is in place, mise

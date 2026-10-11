@@ -8439,6 +8439,11 @@
                 "oneOf": [
                   {
                     "required": ["ppa"],
+                    "properties": {
+                      "fingerprint": {
+                        "type": "string"
+                      }
+                    },
                     "not": {
                       "anyOf": [
                         {

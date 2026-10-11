@@ -201,10 +201,15 @@ impl AptSource {
                 architectures,
                 ..
             } => {
+                // vendors publish for Ubuntu releases, not for derivatives
+                // such as Linux Mint, which name their Ubuntu base separately
                 let suites = match suites {
                     Some(suites) => suites.clone(),
-                    None => match &release.version_codename {
-                        Some(codename) => codename.clone(),
+                    None => match release
+                        .ubuntu_codename()
+                        .or(release.version_codename.as_deref())
+                    {
+                        Some(codename) => codename.to_string(),
                         None => bail!(
                             "{}: /etc/os-release has no VERSION_CODENAME; set suites",
                             self.name
@@ -441,6 +446,7 @@ pub(crate) async fn apply(sources: &[AptSource], dry_run: bool) -> Result<bool> 
     let release = Release::read();
     let mut changed = false;
     let mut keyrings_dir_ready = Path::new(KEYRINGS_DIR).is_dir();
+    let mut declared = vec![];
     for source in sources {
         let Some(stanza) = source.render(&release)? else {
             debug!(
@@ -451,6 +457,7 @@ pub(crate) async fn apply(sources: &[AptSource], dry_run: bool) -> Result<bool> 
             continue;
         };
         let sources_path = source.sources_path();
+        declared.push((source, sources_path.clone()));
         let keyring_path = source.keyring_path();
         let keyring = std::fs::read(&keyring_path).ok();
         let existing = std::fs::read_to_string(&sources_path).ok();
@@ -504,16 +511,69 @@ pub(crate) async fn apply(sources: &[AptSource], dry_run: bool) -> Result<bool> 
             source.describe()
         );
     }
-    if changed {
+    // A source whose lists were never fetched needs a refresh even though its
+    // files are current: the run that wrote them may have failed, or stopped,
+    // before its `apt-get update` finished.
+    let refresh = changed || !sources_without_lists(&declared).is_empty();
+    if refresh {
         let args = vec!["update".to_string()];
         let env = vec![("DEBIAN_FRONTEND".to_string(), "noninteractive".to_string())];
         if dry_run {
             miseprintln!("{}", sudo::argv_with_env("apt-get", &args, &env).join(" "));
         } else {
             sudo::run("apt-get", &args, &env)?;
+            // apt reports a repository it could not fetch as a warning and
+            // still exits 0
+            for name in sources_without_lists(&declared) {
+                warn!(
+                    "apt: could not fetch the package lists for source {name}; see the apt-get update output above"
+                );
+            }
         }
     }
-    Ok(changed)
+    Ok(refresh)
+}
+
+/// The declared sources apt has not fetched lists for. `apt-get indextargets
+/// --no-release-info` lists every configured index; without the flag it lists
+/// only those whose Release file has been fetched. Neither needs root.
+fn sources_without_lists<'a>(declared: &[(&'a AptSource, PathBuf)]) -> Vec<&'a str> {
+    let entries = |release_info: bool| -> Option<std::collections::HashSet<PathBuf>> {
+        let mut cmd = std::process::Command::new("apt-get");
+        cmd.arg("indextargets");
+        if !release_info {
+            cmd.arg("--no-release-info");
+        }
+        let output = cmd
+            .args(["--format", "$(SOURCESENTRY)"])
+            .stdin(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .output()
+            .ok()
+            .filter(|output| output.status.success())?;
+        Some(parse_sources_entries(&String::from_utf8_lossy(
+            &output.stdout,
+        )))
+    };
+    // when apt cannot answer, assume the lists are there rather than
+    // refreshing on every run
+    let (Some(configured), Some(fetched)) = (entries(false), entries(true)) else {
+        return vec![];
+    };
+    declared
+        .iter()
+        .filter(|(_, path)| configured.contains(path) && !fetched.contains(path))
+        .map(|(source, _)| source.name.as_str())
+        .collect()
+}
+
+/// The files named by `$(SOURCESENTRY)` lines, which read `<path>:<stanza>`.
+fn parse_sources_entries(output: &str) -> std::collections::HashSet<PathBuf> {
+    output
+        .lines()
+        .filter_map(|line| line.trim().rsplit_once(':'))
+        .map(|(path, _)| PathBuf::from(path))
+        .collect()
 }
 
 /// Write a world-readable root-owned file. The content goes over stdin so a
@@ -599,6 +659,18 @@ mod tests {
         );
         assert!(stanza.ends_with("Signed-By: /etc/apt/keyrings/mise-docker.gpg\n"));
         assert!(source.render(&Release::default()).is_err());
+        let mint = source.render(&Release::parse(MINT)).unwrap().unwrap();
+        assert!(mint.contains("Suites: noble\n"), "{mint}");
+    }
+
+    #[test]
+    fn sources_entries_name_the_file() {
+        let entries = parse_sources_entries(
+            "/etc/apt/sources.list.d/ubuntu.sources:1\n/etc/apt/sources.list.d/mise-x.sources:1\n",
+        );
+        assert!(entries.contains(Path::new("/etc/apt/sources.list.d/mise-x.sources")));
+        assert!(entries.contains(Path::new("/etc/apt/sources.list.d/ubuntu.sources")));
+        assert_eq!(entries.len(), 2);
     }
 
     #[test]
