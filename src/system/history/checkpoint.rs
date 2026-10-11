@@ -292,22 +292,6 @@ impl Store {
             })
             .unwrap_or_default();
         let manual = manual_plan(&walk, &draft, &promoted);
-        if !manual.carry.is_empty() {
-            let carried: BTreeSet<usize> = manual.carry.iter().copied().collect();
-            let dropped: BTreeSet<PathBuf> = walk
-                .files
-                .iter()
-                .filter(|(_, (owner, _))| carried.contains(owner))
-                .map(|(path, _)| path.clone())
-                .collect();
-            for path in &dropped {
-                walk.files.remove(path);
-            }
-            for root in &mut walk.roots {
-                root.files
-                    .retain(|rel| !dropped.contains(&root.path.join(rel)));
-            }
-        }
         // a selected stream whose saved version this machine never held is
         // carried like a manual one, not captured: see `super::held`
         let parent_commit = match &self.repo {
@@ -341,6 +325,24 @@ impl Store {
             self.deliver_capture_notices(&notices, true);
         }
         let carried: Vec<usize> = manual.carry.iter().chain(&streams.carry).copied().collect();
+        // a carried entry's live files are neither read nor recorded: its
+        // content and modes come from the parent
+        if !carried.is_empty() {
+            let owners: BTreeSet<usize> = carried.iter().copied().collect();
+            let dropped: BTreeSet<PathBuf> = walk
+                .files
+                .iter()
+                .filter(|(_, (owner, _))| owners.contains(owner))
+                .map(|(path, _)| path.clone())
+                .collect();
+            for path in &dropped {
+                walk.files.remove(path);
+            }
+            for root in &mut walk.roots {
+                root.files
+                    .retain(|rel| !dropped.contains(&root.path.join(rel)));
+            }
+        }
         // Live modes plus the ordinary parent's modes for carried entries.
         // Protective commits use the same history, not a separate saved state.
         let roots = super::sync::layout::Roots::current();

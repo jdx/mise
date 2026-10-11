@@ -78,11 +78,16 @@ pub(crate) fn current(repo: &HistoryRepo, tracked: &TrackedSet) -> Result<ShareR
         let object = if held {
             repo.restored_object_at(&head, &file.path)?
         } else {
-            report.unheld.insert(
-                file.path.clone(),
-                held_base(repo, &head, &record, &stream, &file.path)?,
-            );
-            super::apply::live_object(repo, &local)?
+            let live = super::apply::live_object(repo, &local)?;
+            // a file missing here while its stream was not selected is not
+            // a deletion this machine made: without a base, the pull
+            // applies the saved version
+            let base = match &live {
+                Some(_) => held_base(repo, &head, &record, &stream, &file.path)?,
+                None => None,
+            };
+            report.unheld.insert(file.path.clone(), base);
+            live
         };
         let Some((mode, oid)) = object else {
             continue;

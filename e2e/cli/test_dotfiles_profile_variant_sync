@@ -103,3 +103,20 @@ echo fourth-edit >"$fourth/.work"
 assert_succeed "d -E work dot save"
 assert_succeed "d -E work dot sync"
 assert "git --git-dir=$origin show main:home@work/.work" "fourth-edit"
+
+# a file deleted here while its profile was inactive is applied again, not
+# treated as a deletion
+assert_succeed "mise dot sync"
+assert_succeed "mise -E work dot pull --yes"
+assert "cat ~/.work" "fourth-edit"
+assert_succeed "b dot save"
+rm "$second/.work"
+echo work-v4 >~/.work
+assert_succeed "mise -E work dot save"
+assert_succeed "mise -E work dot sync"
+assert "git --git-dir=$origin show main:home@work/.work" "work-v4"
+assert_succeed "b dot sync"
+assert_succeed "b dot pull --yes"
+assert_contains "b -E work dot status" "not applied here: ~/.work"
+assert_succeed "b -E work dot pull --yes"
+assert "cat $second/.work" "work-v4"
