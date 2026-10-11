@@ -213,12 +213,8 @@ fn live_matches_saved(
     // below: a nested entry's files are that entry's to compare
     let live: BTreeSet<&PathBuf> = walk
         .files
-        .iter()
-        .filter(|(path, (owner, _))| {
-            *owner == index
-                && super::tracked::owning_entry_index(&walk.entries, path) == Some(index)
-        })
-        .map(|(path, _)| path)
+        .keys()
+        .filter(|path| super::tracked::owning_entry_index(&walk.entries, path) == Some(index))
         .collect();
     // only this stream's own files: a directory's subtree, or the one file
     let paths: Vec<String> = match repo.object_at(head, stream)? {
