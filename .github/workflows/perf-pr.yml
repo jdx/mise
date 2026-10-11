@@ -13,7 +13,9 @@ name: perf-pr
 # main contributes to the history — a branch's numbers are not the trunk's, and
 # a series that mixes them cannot be read.
 
-on: # zizmor: ignore[dangerous-triggers] validates live PR metadata before any self-hosted job
+# validates live PR metadata before any self-hosted job
+# jactionlint ignore=dangerous-triggers
+on:
   workflow_run:
     workflows: [perf-pr-preflight]
     types: [completed]
@@ -35,6 +37,7 @@ env:
 jobs:
   authorize:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     outputs:
       authorized: ${{ steps.pr.outputs.authorized }}
       base_ref: ${{ steps.pr.outputs.base_ref }}
@@ -188,7 +191,7 @@ jobs:
           cp /tmp/tak-gate-status /tmp/tak-out/status 2>/dev/null || echo 2 > /tmp/tak-out/status
           printf '%s %s\n' "${HEAD_SHA:0:12}" "${BASE_SHA:0:12}" > /tmp/tak-out/shas
 
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: always()
         with:
           name: tak-report
@@ -209,7 +212,7 @@ jobs:
       checks: write # attach the regression gate to the measured PR head SHA
       pull-requests: write # the sticky comment, and nothing else
     steps:
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: tak-report
           path: /tmp/tak-out
@@ -222,6 +225,7 @@ jobs:
           GH_mise: ${{ github.repository }}
           PR_NUMBER: ${{ needs.authorize.outputs.pr_number }}
         run: |
+          set -o pipefail
           marker='<!-- mise-perf-pr -->'
           read -r head_sha base_sha < /tmp/tak-out/shas
           # The backticks below are markdown, not command substitution, and
@@ -259,6 +263,7 @@ jobs:
           HEAD_SHA: ${{ needs.authorize.outputs.head_sha }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
+          set -o pipefail
           status=$(cat /tmp/tak-out/status 2>/dev/null || echo 2)
           if [ "$status" -eq 0 ]; then
             conclusion=success

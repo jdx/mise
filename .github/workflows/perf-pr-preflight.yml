@@ -7,6 +7,9 @@ on:
       - ".github/**"
       - "mise.lock"
       - "mise.toml"
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
@@ -14,5 +17,6 @@ permissions:
 jobs:
   complete:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - run: echo "The default-branch controller will independently validate this pull request."

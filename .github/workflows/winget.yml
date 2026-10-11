@@ -9,12 +9,17 @@ on:
         required: false
         type: string
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.release.tag_name || inputs.tag || github.ref }}
+  cancel-in-progress: false
+
 permissions:
   contents: read
 
 jobs:
   publish:
     runs-on: windows-latest
+    timeout-minutes: 60
     steps:
       - name: Install komac
         run: winget install --id russellbanks.Komac --version 2.16.0 --exact --accept-source-agreements --accept-package-agreements

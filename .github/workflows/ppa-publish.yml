@@ -26,6 +26,13 @@ on:
         default: ""
         type: string
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.release.tag_name || github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
 env:
   MBX_DISABLE: "1"
   DEBIAN_FRONTEND: noninteractive
@@ -40,6 +47,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
+          persist-credentials: false
           fetch-depth: 0
 
       - name: Set up environment variables
@@ -53,6 +61,7 @@ jobs:
           PPA_MAINTAINER_EMAIL_INPUT: ${{ vars.PPA_MAINTAINER_EMAIL || 'noreply@mise.jdx.dev' }}
           PPA_NAME_INPUT: ${{ vars.PPA_NAME || 'ppa:jdxcode/mise' }}
         run: |
+          set -o pipefail
           VERSION=$(./scripts/get-version.sh | sed 's/^v//')
 
           if [ "$EVENT_NAME" = "release" ]; then
@@ -123,6 +132,7 @@ jobs:
 
       - name: Install mise
         run: |
+          set -o pipefail
           curl https://mise.run | sh
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
       - run: mise x wait-for-gh-rate-limit -- wait-for-gh-rate-limit

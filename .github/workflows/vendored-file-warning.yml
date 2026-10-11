@@ -5,6 +5,9 @@ on:
     paths:
       - "vendor/aqua-registry/**"
       - "crates/vfox/embedded-plugins/**"
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 permissions: {}
 
@@ -12,6 +15,7 @@ jobs:
   warn:
     if: github.event.pull_request.user.login != 'jdx' && github.event.pull_request.user.login != 'mise-en-dev'
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - name: Fail on vendored file changes
         run: |

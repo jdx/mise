@@ -23,14 +23,8 @@ on:
       MISE_GH_TOKEN:
         required: false
 
-# Only pull requests cancel an earlier run. A deploy may be halfway through
-# uploading, and a run on main may be rendering the showreel, which takes a
-# while and is kept only when its job finishes (a cancelled job's writes to
-# the Namespace cache volume are discarded), so a newer run waits for it, and
-# only the newest waiting run is kept.
-concurrency:
-  group: docs-${{ inputs.deploy && 'deploy-release' || format('validation-{0}', github.head_ref || github.ref) }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+permissions:
+  contents: read
 
 env:
   MBX_DISABLE: "1"
@@ -86,7 +80,7 @@ jobs:
           persist-credentials: false
       # The job's own token, read-only, for mise's GitHub lookups: never the
       # PAT, which this job must not hold.
-      - uses: jdx/mise-action@9149ea85001c7435d5a66bb127d6a1b6227cb0a5 # v5
+      - uses: jdx/mise-action@9149ea85001c7435d5a66bb127d6a1b6227cb0a5 # v5.0.0
         with:
           install_args: aube node
           github_token: ${{ github.token }}
@@ -177,7 +171,7 @@ jobs:
             cp "$SHOWREEL_OVERVIEW_CHAPTERS" "$stage/overview-chapters.json"
           fi
           ls -la "$stage"
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: steps.stage.outcome == 'success'
         continue-on-error: true
         with:
@@ -192,6 +186,9 @@ jobs:
     # (without one if it has none).
     if: ${{ always() && !cancelled() && github.repository == 'jdx/mise' }}
     runs-on: ${{ !inputs.trusted && 'ubuntu-latest' || 'namespace-profile-endev-linux-amd64;overrides.cache-tag=cache' }}
+    # The build and deploy take about two minutes, but the rate-limit step below can
+    # sleep until the hourly reset first, and this job publishes the site.
+    timeout-minutes: 120
     env:
       GITHUB_TOKEN: ${{ secrets.MISE_GH_TOKEN || secrets.GITHUB_TOKEN }}
     steps:
@@ -206,7 +203,7 @@ jobs:
       # at once, can finish off what the hour's other CI already spent before
       # this job installs its tools. Pass the PAT through so mise draws on its
       # own budget instead.
-      - uses: jdx/mise-action@9149ea85001c7435d5a66bb127d6a1b6227cb0a5 # v5
+      - uses: jdx/mise-action@9149ea85001c7435d5a66bb127d6a1b6227cb0a5 # v5.0.0
         with:
           install_args: aube node
           github_token: ${{ secrets.MISE_GH_TOKEN || github.token }}
@@ -241,7 +238,7 @@ jobs:
       # offers the 60 fps file as og:video. The showreel job leaves them, and
       # the facts the page quotes, as an artifact; only those files, by
       # name, are taken from it. Every other run builds the site without it.
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         if: needs.showreel.result == 'success'
         continue-on-error: true
         with:
