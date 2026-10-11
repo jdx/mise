@@ -58,10 +58,12 @@ The URL is a [Tera template](/templates.html). Write values in double braces:
 - `{{ os() }}`: `linux`, `macos` or `windows`
 - `{{ arch() }}`: `x64` or `arm64`
 - `{{ os_family() }}`: `unix` or `windows`
+- `{{ libc() }}`: `gnu` or `musl`
+- `{{ avx2() }}`: `yes` or `no`
 
 :::
 
-`os()` and `arch()` take keyword arguments that rename a value, for a project
+`os()`, `arch()`, `libc()` and `avx2()` take keyword arguments that rename a value, for a project
 that uses other names. HashiCorp uses `darwin` for macOS and `amd64` for x64:
 
 ```toml

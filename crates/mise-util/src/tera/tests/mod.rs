@@ -38,8 +38,17 @@ fn locked_tera(dir: Option<&Path>) -> TeraEngine {
 
 /// The `get_tera_for_target` counterpart of [`locked_tera`].
 fn locked_tera_for_target(dir: Option<&Path>, os: &str, arch: &str) -> TeraEngine {
+    locked_tera_for_target_variant(dir, os, arch, None)
+}
+
+fn locked_tera_for_target_variant(
+    dir: Option<&Path>,
+    os: &str,
+    arch: &str,
+    qualifier: Option<&str>,
+) -> TeraEngine {
     let _lock = crate::testing::lock_ignoring_poison(&crate::testing::SETTINGS_LOCK);
-    get_tera_for_target(dir, os, arch)
+    get_tera_for_target(dir, os, arch, qualifier)
 }
 
 fn render(s: &str) -> String {

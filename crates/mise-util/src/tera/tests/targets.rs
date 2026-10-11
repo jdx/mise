@@ -70,3 +70,46 @@ async fn test_preserving_os_family_round_trips_through_target() {
     let mut tera = locked_tera_for_target(None, "windows", "x64");
     assert_eq!(render_str(&mut tera, &preserved, &ctx).unwrap(), "windows");
 }
+#[tokio::test]
+async fn test_libc_and_avx2_follow_the_target_qualifier() {
+    let mut ctx = BASE_CONTEXT.clone();
+    ctx.insert("cwd", "/");
+    let template = r#"{{ avx2(yes="", no="-baseline") }}{{ libc(gnu="", musl="-musl") }}"#;
+    for (qualifier, expected) in [
+        (None, ""),
+        (Some("musl"), "-musl"),
+        (Some("baseline"), "-baseline"),
+        (Some("musl-baseline"), "-baseline-musl"),
+    ] {
+        let mut tera = locked_tera_for_target_variant(None, "linux", "x64", qualifier);
+        assert_eq!(
+            render_str(&mut tera, template, &ctx).unwrap(),
+            expected,
+            "{qualifier:?}"
+        );
+    }
+}
+#[tokio::test]
+async fn test_preserving_libc_and_avx2_round_trip_through_target() {
+    let mut ctx = BASE_CONTEXT.clone();
+    ctx.insert("cwd", "/");
+    let mut deferred = {
+        let _lock = crate::testing::lock_ignoring_poison(&crate::testing::SETTINGS_LOCK);
+        get_tera_preserving_os_arch(None)
+    };
+    let preserved = render_str(
+        &mut deferred,
+        r#"{{ avx2(yes="", no="-baseline") }}{{ libc(gnu="", musl="-musl") }}"#,
+        &ctx,
+    )
+    .unwrap();
+    assert_eq!(
+        preserved,
+        r#"{{ avx2(no="-baseline", yes="") }}{{ libc(gnu="", musl="-musl") }}"#
+    );
+    let mut tera = locked_tera_for_target_variant(None, "linux", "x64", Some("musl-baseline"));
+    assert_eq!(
+        render_str(&mut tera, &preserved, &ctx).unwrap(),
+        "-baseline-musl"
+    );
+}
