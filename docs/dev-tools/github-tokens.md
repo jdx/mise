@@ -261,7 +261,7 @@ The OAuth settings, with non-default examples:
 [settings.github]
 oauth_client_id = "Iv1.yourgithubappclientid"
 oauth_open_browser = false       # do not open a browser; use the printed URL
-oauth_copy_code = true          # copy the device code to the clipboard
+oauth_copy_code = true          # always copy the device code (unset: ask in a terminal)
 oauth_export_env = "GH_TOKEN"    # or "" to turn off the export
 ```
 

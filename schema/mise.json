@@ -1066,7 +1066,6 @@
               "type": "string"
             },
             "oauth_copy_code": {
-              "default": false,
               "description": "Copy the one-time device code to the clipboard during the native GitHub OAuth device flow.",
               "type": "boolean"
             },

@@ -446,7 +446,7 @@ fn print_device_instructions(device: &DeviceCodeResponse) {
         "Open {} and enter code {} to authorize GitHub access.",
         device.verification_uri, device.user_code
     );
-    if Settings::get().github.oauth_copy_code {
+    if should_copy_code() {
         match copy_to_clipboard(&device.user_code) {
             Ok(()) => eprintln!("Copied the code to your clipboard."),
             Err(e) => debug!("could not copy the device code to the clipboard: {e}"),
@@ -455,6 +455,23 @@ fn print_device_instructions(device: &DeviceCodeResponse) {
     if Settings::get().github.oauth_open_browser {
         let _ = open_browser(&device.verification_uri);
     }
+}
+
+/// An explicit `oauth_copy_code` wins; when unset, ask if a person can answer.
+fn should_copy_code() -> bool {
+    use std::io::IsTerminal;
+
+    if let Some(copy) = Settings::get().github.oauth_copy_code {
+        return copy;
+    }
+    if !(console::user_attended_stderr() && std::io::stdin().is_terminal()) {
+        return false;
+    }
+    demand::Confirm::new("Copy the code to your clipboard?")
+        .affirmative("Yes")
+        .negative("No")
+        .run()
+        .unwrap_or(false)
 }
 
 /// Pipe `text` to the first clipboard tool that works on this platform.
