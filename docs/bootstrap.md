@@ -31,7 +31,8 @@ node = "24"
 run = "node --version"
 ```
 
-For Bash or fish, use `bash = true` or `fish = true` instead; see
+For Bash, use `bash = true` instead. For fish, use `fish = "auto"`, which
+activates mise at the prompt and uses shims in scripts; see
 [shell activation](/bootstrap/shell.html). Preview the run, apply it, then check
 the result:
 
