@@ -19,9 +19,10 @@ zsh = true
 ```
 
 `zsh = true` adds shims to `~/.zprofile` and activation to `~/.zshrc`. Use
-`bash = true` for `~/.bash_profile` and `~/.bashrc`, or `fish = true` for
-`~/.config/fish/config.fish`. Apply the section on its own, or as part of a full
-run:
+`bash = true` for `~/.bash_profile` and `~/.bashrc`. For fish, use
+`fish = "auto"`, which writes `~/.config/fish/config.fish`; see
+[fish: activation interactively, shims otherwise](#fish-activation-interactively-shims-otherwise).
+Apply the section on its own, or as part of a full run:
 
 ```sh
 mise bootstrap mise-shell-activate apply
