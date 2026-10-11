@@ -13,7 +13,9 @@ name: release-window
 #
 # To release now anyway, add the `release-now` label to the release PR.
 
-on: # zizmor: ignore[dangerous-triggers] reads only PR metadata and executes no untrusted code
+# reads only PR metadata and executes no untrusted code
+# jactionlint ignore=dangerous-triggers
+on:
   pull_request_target:
     # Report required checks for stacked PRs targeting any base branch.
     types: [opened, edited, synchronize, reopened, labeled, unlabeled]

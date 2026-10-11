@@ -10,6 +10,8 @@ on:
         required: false
         default: true
         type: boolean
+permissions:
+  contents: read
 
 concurrency:
   group: cloudflare-deploy-${{ github.event_name == 'release' && github.event.release.tag_name || github.ref_name }}
@@ -30,9 +32,12 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
 
       - name: Install mise
         run: |
+          set -o pipefail
           curl -fsSL https://mise.run | sh
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
           ~/.local/bin/mise --version

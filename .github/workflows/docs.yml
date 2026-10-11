@@ -35,6 +35,19 @@ on:
         type: boolean
         default: false
 
+# Held by the caller, which only calls docs-impl.yml: a group set inside the
+# called workflow would use this workflow's name too and wait for this run.
+# Only pull requests cancel an earlier run. A deploy may be halfway through
+# uploading, and a run on main may be rendering the showreel, which takes a
+# while and is kept only when its job finishes (a cancelled job's writes to
+# the Namespace cache volume are discarded), so a newer run waits for it. No
+# queue: max on purpose: only the newest waiting run is kept, because each deploy
+# builds the whole site and the newest release's docs supersede an intermediate
+# one's, so deploying every queued release would only repeat work.
+concurrency:
+  group: docs-${{ ((github.event_name == 'release' && startsWith(github.event.release.tag_name, 'v') && !github.event.release.prerelease) || (github.event_name == 'workflow_dispatch' && inputs.deploy && github.ref == 'refs/heads/main')) && 'deploy-release' || format('validation-{0}', github.head_ref || github.ref) }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 permissions: {}
 
 jobs:

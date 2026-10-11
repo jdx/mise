@@ -31,7 +31,8 @@ node = "24"
 run = "node --version"
 ```
 
-For Bash or fish, use `bash = true` or `fish = true` instead; see
+For Bash, use `bash = true` instead. For fish, use `fish = "auto"`, which
+activates mise at the prompt and uses shims in scripts; see
 [shell activation](/bootstrap/shell.html). Preview the run, apply it, then check
 the result:
 
@@ -93,8 +94,18 @@ subcommands.
 
 ## Start from a repository {#starting-from-a-repository}
 
-To set up a machine from configuration you keep in Git, use the command that
-matches what the repository holds:
+To set up a machine from configuration you keep in Git, choose by what the
+repository should become on this machine:
+
+- `--from` runs a setup project that stays apart from your own configuration,
+  such as a team's workstation setup repository. mise keeps a checkout of it,
+  runs bootstrap from that checkout, and does not clone anything into your
+  global config directory.
+- `--adopt` makes the repository this machine's own configuration from then on:
+  your global mise config, or a setup repository of tracked dotfiles that mise
+  restores and keeps in sync.
+
+Then pick the command that matches what the repository holds:
 
 | Repository holds                                       | Command                        | Where the files go                                       |
 | ------------------------------------------------------ | ------------------------------ | -------------------------------------------------------- |

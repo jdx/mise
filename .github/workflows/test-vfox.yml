@@ -9,6 +9,12 @@ on:
   push:
     branches: [release]
 
+# Held by the caller, which only calls test-vfox-impl.yml: a group set inside the
+# called workflow would use this workflow's name too and wait for this run.
+concurrency:
+  group: test-vfox-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions: {}
 
 jobs:
