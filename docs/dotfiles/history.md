@@ -713,7 +713,16 @@ here or unchanged since this machine last had the variant selected. When this
 machine has a different copy, the pull stops with a conflict:
 `mise dot pull --take-remote <path>` takes the saved version, and
 `mise dot pull --keep-local <path>` followed by `mise dot save <path>` keeps
-yours. The [variant selectors](/dotfiles/reference.html#variant-selectors)
+yours. `--keep-local` works only on a tracked file; inside a tracked
+directory, take the saved version, then copy yours back and save it.
+
+::: warning --take-remote cannot be undone here
+Your copy was never saved on this machine, so `mise dot undo` cannot restore
+it after `--take-remote` replaces it. Copy the file aside first if you might
+want it back.
+:::
+
+The [variant selectors](/dotfiles/reference.html#variant-selectors)
 reference has the scoring rules. Tracked variants do not accept `target`;
 to deploy a file to a different path on each machine, see
 [Different targets on different machines](/dotfiles/managed.html#platform-specific-destinations).
