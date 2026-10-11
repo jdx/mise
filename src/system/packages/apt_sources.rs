@@ -560,11 +560,16 @@ pub(crate) async fn apply(sources: &[AptSource], dry_run: bool) -> Result<Applie
                 source.name,
                 source.describe()
             ),
-            Err(err) => applied.failures.push(err.wrap_err(format!(
-                "apt source {} ({})",
-                source.name,
-                source.describe()
-            ))),
+            Err(err) => {
+                // its error explains it; a missing-lists warning would only
+                // repeat that
+                declared.pop();
+                applied.failures.push(err.wrap_err(format!(
+                    "apt source {} ({})",
+                    source.name,
+                    source.describe()
+                )));
+            }
         }
     }
     // A source whose lists were never fetched needs a refresh even though its
