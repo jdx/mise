@@ -853,6 +853,7 @@ a:hover > div + .card-link::after {
 .hero-title {
   margin: 0;
   color: var(--vp-c-brand-1);
+  font-family: var(--mise-font-brand);
   font-size: clamp(2.5rem, 4.5vw, 3.75rem);
   font-weight: 700;
   letter-spacing: -0.05em;
