@@ -470,14 +470,17 @@ pub(super) fn install_prepared(prepared: PreparedBottle, pr: &dyn SingleReport) 
     // whose post-install has not finished (e.g. ca-certificates' bundle).
     if !prepared.post_install_steps.is_empty() {
         pr.set_message("post-install".to_string());
-        super::post_install::run_steps(
-            &prepared.post_install_steps,
-            &super::post_install::Context {
-                name: &prepared.name,
-                stable: prepared.stable.as_deref(),
-                keg: &prepared.keg,
-            },
-        );
+        // `run` steps wait on subprocesses; hand the runtime worker off meanwhile
+        crate::file::run_blocking(|| {
+            super::post_install::run_steps(
+                &prepared.post_install_steps,
+                &super::post_install::Context {
+                    name: &prepared.name,
+                    stable: prepared.stable.as_deref(),
+                    keg: &prepared.keg,
+                },
+            )
+        });
     }
     Ok(())
 }
