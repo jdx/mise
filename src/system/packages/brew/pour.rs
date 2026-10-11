@@ -434,7 +434,7 @@ pub(super) fn prepare_bottle(
 /// Callers keep this step sequential and dependency ordered.
 pub(super) fn install_prepared(prepared: PreparedBottle, pr: &dyn SingleReport) -> Result<()> {
     pr.set_message("link".to_string());
-    let _commit_lock = commit_lock(pr)?;
+    let commit_lock = commit_lock(pr)?;
     // Another mise process may have completed the same formula while this
     // process prepared its bottle outside the commit lock.
     if keg_installed(&prepared.name, &prepared.pkg_version) {
@@ -465,6 +465,8 @@ pub(super) fn install_prepared(prepared: PreparedBottle, pr: &dyn SingleReport) 
         }
         return Err(err);
     }
+    // post-install steps can run subprocesses; don't hold up other installs
+    drop(commit_lock);
     if !prepared.post_install_steps.is_empty() {
         pr.set_message("post-install".to_string());
         super::post_install::run_steps(

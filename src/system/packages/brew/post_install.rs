@@ -103,6 +103,10 @@ fn copy_tree(
                 }
                 if let Ok(meta) = dest.symlink_metadata() {
                     if meta.is_dir() {
+                        warn!(
+                            "brew: not installing {}: a directory is in the way",
+                            dest.display()
+                        );
                         continue;
                     }
                     existed = true;
@@ -118,6 +122,10 @@ fn copy_tree(
         }
         if keep_existing && let Ok(meta) = dest.symlink_metadata() {
             if !meta.is_file() {
+                warn!(
+                    "brew: not installing {}: something that is not a file is in the way",
+                    dest.display()
+                );
                 continue;
             }
             if fs::read(&dest)? == fs::read(entry.path())? {
