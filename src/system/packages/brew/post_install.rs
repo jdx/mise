@@ -90,6 +90,7 @@ fn copy_tree(
         }
         if ft.is_symlink() {
             let link = fs::read_link(entry.path())?;
+            let mut existed = false;
             if let Ok(meta) = dest.symlink_metadata() {
                 if meta.is_symlink() && fs::read_link(&dest).ok().as_deref() == Some(&link) {
                     continue;
@@ -104,11 +105,15 @@ fn copy_tree(
                     if meta.is_dir() {
                         continue;
                     }
+                    existed = true;
                     fs::remove_file(&dest)?;
                 }
             }
             crate::file::make_symlink(&link, &dest)?;
-            created.push(dest);
+            // only what did not exist before is ours to remove on rollback
+            if !existed {
+                created.push(dest);
+            }
             continue;
         }
         if keep_existing && let Ok(meta) = dest.symlink_metadata() {
@@ -122,8 +127,11 @@ fn copy_tree(
             name.push(".default");
             dest.set_file_name(name);
         }
+        let existed = dest.symlink_metadata().is_ok();
         fs::copy(entry.path(), &dest)?;
-        created.push(dest);
+        if !existed {
+            created.push(dest);
+        }
     }
     Ok(())
 }
