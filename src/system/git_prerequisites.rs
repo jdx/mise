@@ -194,6 +194,7 @@ pub async fn ensure(origin: &str, yes: bool, dry_run: bool) -> Result<()> {
             &InstallOpts {
                 dry_run: false,
                 update: false,
+                ask: false,
             },
         )
         .await?;

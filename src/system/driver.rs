@@ -84,6 +84,7 @@ pub async fn run(mgrs: Vec<ManagerPackages>, action: Action, d: &DriverOpts) -> 
     let opts = InstallOpts {
         dry_run: d.dry_run,
         update: d.update,
+        ask: !d.dry_run && !d.yes && console::user_attended_stderr(),
     };
     // Each manager runs on its own: one that fails (a removal it refuses, a
     // package that does not exist, a broken repository) must not skip the

@@ -178,7 +178,9 @@ fn debian_frontend() -> Vec<(String, String)> {
 /// stops listing it: after a PPA publishes a newer build, the one installed
 /// from it is known only to dpkg, exactly like a distro build an old image
 /// shipped. This record tells the two apart, so the move happens once per
-/// machine and source.
+/// source. It lives in the state directory of the user running mise, so
+/// `sudo mise` keeps its own: the worst case is one more upgrade from the
+/// same source the first time the other user applies.
 #[derive(Debug, Default)]
 struct MovedToSources(std::collections::BTreeSet<(String, String)>);
 
@@ -434,7 +436,8 @@ impl SystemPackageManager for AptManager {
     ) -> Result<()> {
         match manager_options {
             ManagerPackageOptions::Apt { sources } => {
-                let mut applied = super::apt_sources::apply(sources, opts.dry_run).await?;
+                let mut applied =
+                    super::apt_sources::apply(sources, opts.dry_run, opts.ask).await?;
                 if applied.refreshed {
                     self.lists_refreshed.store(true, Ordering::Relaxed);
                 }

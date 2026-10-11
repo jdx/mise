@@ -148,6 +148,9 @@ pub struct InstallOpts {
     pub dry_run: bool,
     /// force a package manager metadata refresh before installing
     pub update: bool,
+    /// ask before changes the package prompt does not cover, such as
+    /// adding `[bootstrap.apt.sources]`
+    pub ask: bool,
 }
 
 // `?Send`: the brew manager's source-build path drives the toolset

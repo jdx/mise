@@ -522,8 +522,9 @@ pub(crate) struct Applied {
 /// anything changed so packages from the new sources can be installed.
 /// Failures, including a failed refresh, are collected in [`Applied`] rather
 /// than returned, so none of them hides another; only a failure to print a
-/// dry run's plan is returned.
-pub(crate) async fn apply(sources: &[AptSource], dry_run: bool) -> Result<Applied> {
+/// dry run's plan, or to ask, is returned. With `ask`, mise asks once before
+/// changing any source, and a no leaves every source as it is.
+pub(crate) async fn apply(sources: &[AptSource], dry_run: bool, ask: bool) -> Result<Applied> {
     let mut applied = Applied {
         refreshed: false,
         failures: vec![],
@@ -532,9 +533,8 @@ pub(crate) async fn apply(sources: &[AptSource], dry_run: bool) -> Result<Applie
         return Ok(applied);
     }
     let release = Release::read();
-    let mut changed = false;
-    let mut keyrings_dir_ready = Path::new(KEYRINGS_DIR).is_dir();
     let mut declared = vec![];
+    let mut pending = vec![];
     for source in sources {
         let stanza = match source.render(&release) {
             Ok(Some(stanza)) => stanza,
@@ -553,8 +553,7 @@ pub(crate) async fn apply(sources: &[AptSource], dry_run: bool) -> Result<Applie
         };
         let sources_path = source.sources_path();
         declared.push((source, sources_path.clone()));
-        let keyring_path = source.keyring_path();
-        let keyring = std::fs::read(&keyring_path).ok();
+        let keyring = std::fs::read(source.keyring_path()).ok();
         let existing = std::fs::read_to_string(&sources_path).ok();
         let stanza_current = existing.as_deref() == Some(stanza.as_str());
         // without a declared fingerprint, any key on disk passes the check, so
@@ -566,61 +565,74 @@ pub(crate) async fn apply(sources: &[AptSource], dry_run: bool) -> Result<Applie
             debug!("apt source {}: up to date", source.name);
             continue;
         }
-        if dry_run {
-            changed = true;
-            if !key_current {
+        pending.push(PendingSource {
+            source,
+            stanza,
+            existed: existing.is_some(),
+            key_current,
+            stanza_current,
+        });
+    }
+    let mut changed = false;
+    if dry_run {
+        for p in &pending {
+            if !p.key_current {
                 miseprintln!(
                     "fetch the signing key for {} into {}",
-                    source.describe(),
-                    keyring_path.display()
+                    p.source.describe(),
+                    p.source.keyring_path().display()
                 );
             }
-            if !stanza_current {
-                miseprintln!("write {}", sources_path.display());
+            if !p.stanza_current {
+                miseprintln!("write {}", p.source.sources_path().display());
             }
-            continue;
         }
-        let result: Result<()> = async {
-            if !key_current {
-                let keys = source.fetch_keyring().await?;
-                if !keyrings_dir_ready {
-                    sudo::run(
-                        "install",
-                        &["-d".into(), "-m".into(), "0755".into(), KEYRINGS_DIR.into()],
-                        &[],
-                    )?;
-                    keyrings_dir_ready = true;
+        changed = !pending.is_empty();
+    } else if !pending.is_empty() && ask && !confirm(&pending)? {
+        info!("apt: sources left unchanged");
+        // a source left as it was must not be warned about for its lists
+        declared.retain(|(source, _)| !pending.iter().any(|p| p.source.name == source.name));
+    } else {
+        let mut keyrings_dir_ready = Path::new(KEYRINGS_DIR).is_dir();
+        for p in &pending {
+            let result: Result<()> = async {
+                if !p.key_current {
+                    let keys = p.source.fetch_keyring().await?;
+                    if !keyrings_dir_ready {
+                        sudo::run(
+                            "install",
+                            &["-d".into(), "-m".into(), "0755".into(), KEYRINGS_DIR.into()],
+                            &[],
+                        )?;
+                        keyrings_dir_ready = true;
+                    }
+                    write_root_file(&p.source.keyring_path(), &keys)?;
+                    changed = true;
                 }
-                write_root_file(&keyring_path, &keys)?;
-                changed = true;
+                if !p.stanza_current {
+                    write_root_file(&p.source.sources_path(), p.stanza.as_bytes())?;
+                    changed = true;
+                }
+                Ok(())
             }
-            if !stanza_current {
-                write_root_file(&sources_path, stanza.as_bytes())?;
-                changed = true;
-            }
-            Ok(())
-        }
-        .await;
-        match result {
-            Ok(()) => info!(
-                "apt: {} source {} ({})",
-                if existing.is_some() {
-                    "updated"
-                } else {
-                    "added"
-                },
-                source.name,
-                source.describe()
-            ),
-            Err(err) => {
-                // its error explains it; a missing-lists warning would only
-                // repeat that
-                declared.pop();
-                applied.failures.push(err.wrap_err(format!(
-                    "apt source {} ({})",
-                    source.name,
-                    source.describe()
-                )));
+            .await;
+            match result {
+                Ok(()) => info!(
+                    "apt: {} source {} ({})",
+                    if p.existed { "updated" } else { "added" },
+                    p.source.name,
+                    p.source.describe()
+                ),
+                Err(err) => {
+                    // its error explains it; a missing-lists warning would
+                    // only repeat that
+                    declared.retain(|(source, _)| source.name != p.source.name);
+                    applied.failures.push(err.wrap_err(format!(
+                        "apt source {} ({})",
+                        p.source.name,
+                        p.source.describe()
+                    )));
+                }
             }
         }
     }
@@ -649,6 +661,24 @@ pub(crate) async fn apply(sources: &[AptSource], dry_run: bool) -> Result<Applie
         }
     }
     Ok(applied)
+}
+
+/// A source whose files differ from its declaration.
+struct PendingSource<'a> {
+    source: &'a AptSource,
+    stanza: String,
+    existed: bool,
+    key_current: bool,
+    stanza_current: bool,
+}
+
+fn confirm(pending: &[PendingSource<'_>]) -> Result<bool> {
+    let list = pending
+        .iter()
+        .map(|p| format!("{} ({})", p.source.name, p.source.describe()))
+        .collect::<Vec<_>>()
+        .join(", ");
+    Ok(crate::ui::prompt::confirm(format!("apt: add or update sources {list}?"))?.is_yes())
 }
 
 /// The declared sources apt has not fetched lists for. `apt-get indextargets

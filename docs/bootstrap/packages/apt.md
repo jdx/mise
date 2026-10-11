@@ -64,7 +64,9 @@ fingerprint = "9DC8 5822 9FC7 DD38 854A E2D8 8D81 803C 0EBF CD88"
 For each source, mise writes `/etc/apt/sources.list.d/mise-<name>.sources` and
 `/etc/apt/keyrings/mise-<name>.gpg`. The source file names that keyring in
 `Signed-By`, so apt trusts the key only for that repository. When it adds or
-changes a source, mise runs `apt-get update` once before installing. If apt
+changes a source, mise runs `apt-get update` once before installing. Without
+`--yes`, mise asks before it adds or changes any source, as it does before
+installing packages. If apt
 could not fetch a source's lists, mise warns and runs `apt-get update` again on
 the next apply. Names may
 contain letters, digits, `_`, `-`, and `.`.
@@ -99,7 +101,8 @@ somewhere else. If an image ships Ubuntu's `git` and you declare the `git-core`
 PPA, `mise bootstrap` installs the PPA's `git`, and status shows the old one as
 `version mismatch` until it does. mise records in its state directory which
 packages it has seen installed from a declared source, so each package moves
-once per machine and source. A later upload to the same source is left to
+once per source. The record belongs to the user running mise, so running both
+`mise` and `sudo mise` can move a package one more time. A later upload to the same source is left to
 `mise bootstrap packages upgrade`, as for any `latest` package. A version pin or
 an architecture-qualified name opts a package out. A dry run on a machine that
 does not have the source yet cannot show the move, because apt has no package
