@@ -456,25 +456,45 @@ impl Release {
     }
 }
 
+/// What [`apply`] did.
+pub(crate) struct Applied {
+    /// The package lists were refreshed (or, in a dry run, would be).
+    pub(crate) refreshed: bool,
+    /// The sources that could not be brought to their declared state, such
+    /// as an unreachable key URL. One failing source does not stop the others
+    /// or the refresh.
+    pub(crate) failures: Vec<eyre::Report>,
+}
+
 /// Bring every source to its declared state, then refresh package lists if
 /// anything changed so packages from the new sources can be installed.
-/// Returns whether the lists were refreshed.
-pub(crate) async fn apply(sources: &[AptSource], dry_run: bool) -> Result<bool> {
+pub(crate) async fn apply(sources: &[AptSource], dry_run: bool) -> Result<Applied> {
+    let mut applied = Applied {
+        refreshed: false,
+        failures: vec![],
+    };
     if sources.is_empty() {
-        return Ok(false);
+        return Ok(applied);
     }
     let release = Release::read();
     let mut changed = false;
     let mut keyrings_dir_ready = Path::new(KEYRINGS_DIR).is_dir();
     let mut declared = vec![];
     for source in sources {
-        let Some(stanza) = source.render(&release)? else {
-            debug!(
-                "apt source {}: skipping {}, this release is not based on Ubuntu",
-                source.name,
-                source.describe()
-            );
-            continue;
+        let stanza = match source.render(&release) {
+            Ok(Some(stanza)) => stanza,
+            Ok(None) => {
+                debug!(
+                    "apt source {}: skipping {}, this release is not based on Ubuntu",
+                    source.name,
+                    source.describe()
+                );
+                continue;
+            }
+            Err(err) => {
+                applied.failures.push(err);
+                continue;
+            }
         };
         let sources_path = source.sources_path();
         declared.push((source, sources_path.clone()));
@@ -491,8 +511,8 @@ pub(crate) async fn apply(sources: &[AptSource], dry_run: bool) -> Result<bool> 
             debug!("apt source {}: up to date", source.name);
             continue;
         }
-        changed = true;
         if dry_run {
+            changed = true;
             if !key_current {
                 miseprintln!(
                     "fetch the signing key for {} into {}",
@@ -505,37 +525,50 @@ pub(crate) async fn apply(sources: &[AptSource], dry_run: bool) -> Result<bool> 
             }
             continue;
         }
-        if !key_current {
-            let keys = source.fetch_keyring().await?;
-            if !keyrings_dir_ready {
-                sudo::run(
-                    "install",
-                    &["-d".into(), "-m".into(), "0755".into(), KEYRINGS_DIR.into()],
-                    &[],
-                )?;
-                keyrings_dir_ready = true;
+        let result: Result<()> = async {
+            if !key_current {
+                let keys = source.fetch_keyring().await?;
+                if !keyrings_dir_ready {
+                    sudo::run(
+                        "install",
+                        &["-d".into(), "-m".into(), "0755".into(), KEYRINGS_DIR.into()],
+                        &[],
+                    )?;
+                    keyrings_dir_ready = true;
+                }
+                write_root_file(&keyring_path, &keys)?;
+                changed = true;
             }
-            write_root_file(&keyring_path, &keys)?;
+            if !stanza_current {
+                write_root_file(&sources_path, stanza.as_bytes())?;
+                changed = true;
+            }
+            Ok(())
         }
-        if !stanza_current {
-            write_root_file(&sources_path, stanza.as_bytes())?;
+        .await;
+        match result {
+            Ok(()) => info!(
+                "apt: {} source {} ({})",
+                if existing.is_some() {
+                    "updated"
+                } else {
+                    "added"
+                },
+                source.name,
+                source.describe()
+            ),
+            Err(err) => applied.failures.push(err.wrap_err(format!(
+                "apt source {} ({})",
+                source.name,
+                source.describe()
+            ))),
         }
-        info!(
-            "apt: {} source {} ({})",
-            if existing.is_some() {
-                "updated"
-            } else {
-                "added"
-            },
-            source.name,
-            source.describe()
-        );
     }
     // A source whose lists were never fetched needs a refresh even though its
     // files are current: the run that wrote them may have failed, or stopped,
     // before its `apt-get update` finished.
-    let refresh = changed || !sources_without_lists(&declared).is_empty();
-    if refresh {
+    applied.refreshed = changed || !sources_without_lists(&declared).is_empty();
+    if applied.refreshed {
         let args = vec!["update".to_string()];
         let env = vec![("DEBIAN_FRONTEND".to_string(), "noninteractive".to_string())];
         if dry_run {
@@ -551,7 +584,7 @@ pub(crate) async fn apply(sources: &[AptSource], dry_run: bool) -> Result<bool> 
             }
         }
     }
-    Ok(refresh)
+    Ok(applied)
 }
 
 /// The declared sources apt has not fetched lists for. `apt-get indextargets

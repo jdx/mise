@@ -200,8 +200,12 @@ async fn run_manager(
         return Ok(());
     }
     // sources first: a package from a newly added repository is unknown
-    // until its lists are fetched
-    mp.manager.apply_sources(&mp.options, opts).await?;
+    // until its lists are fetched. A source that fails is reported with the
+    // run's other failures, and the packages still get their turn: most do
+    // not come from it.
+    if let Err(err) = mp.manager.apply_sources(&mp.options, opts).await {
+        failures.push(err);
+    }
     if !d.dry_run {
         mp.manager.prepare_mutation(&mp.requests).await?;
     }

@@ -434,14 +434,26 @@ impl SystemPackageManager for AptManager {
     ) -> Result<()> {
         match manager_options {
             ManagerPackageOptions::Apt { sources } => {
-                if super::apt_sources::apply(sources, opts.dry_run).await? {
+                let mut applied = super::apt_sources::apply(sources, opts.dry_run).await?;
+                if applied.refreshed {
                     self.lists_refreshed.store(true, Ordering::Relaxed);
                 }
                 if !opts.dry_run {
                     *self.recording_uris.lock().unwrap() =
                         sources.iter().flat_map(|source| source.uris()).collect();
                 }
-                Ok(())
+                match applied.failures.len() {
+                    0 => Ok(()),
+                    1 => Err(applied.failures.remove(0)),
+                    count => {
+                        let details = applied
+                            .failures
+                            .iter()
+                            .map(|err| format!("  {err:#}"))
+                            .collect::<Vec<_>>();
+                        bail!("{count} apt sources failed:\n{}", details.join("\n"))
+                    }
+                }
             }
             _ => Ok(()),
         }
