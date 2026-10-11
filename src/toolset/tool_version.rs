@@ -361,8 +361,13 @@ impl ToolVersion {
                 .flatten()
         });
         if let Some(version) = version.map(str::to_string) {
-            // Keep pointing at the directory that was found.
-            self.install_path = Some(self.install_path());
+            // Keep pointing at the directory that was found. In the identity
+            // layout that name is a compatibility link, and the version it
+            // carries would otherwise be hashed into an identity nothing has.
+            self.install_path = Some(
+                crate::install_layout::resolver::physical_dir(self.ba(), &self.version)
+                    .unwrap_or_else(|| self.install_path()),
+            );
             self.version = version;
         }
     }
@@ -832,7 +837,11 @@ impl ToolVersion {
                 && !should_filter_installed_versions
                 && let Some(v) = backend.latest_installed_version(None)?
             {
-                return build(v);
+                // The newest install may be a graph-locked one, listed by its
+                // private directory name (`3.9.9~aube~<digest>`).
+                let mut tv = Self::new(request.clone(), v);
+                tv.strip_install_path_identity();
+                return Ok(tv);
             }
             if defer_missing_lazy {
                 return build(v);
