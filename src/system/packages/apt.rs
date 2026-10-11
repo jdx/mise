@@ -317,13 +317,13 @@ fn parse_policy_origins(output: &str) -> HashMap<String, PolicyOrigins> {
                 .split_whitespace()
                 .next()
                 .map(str::to_string);
-        } else if let (Some(version), Some(origin)) = (&version, trimmed.split_whitespace().nth(1))
-        {
-            policy
-                .origins
-                .entry(version.clone())
-                .or_default()
-                .push(origin.trim_end_matches('/').to_string());
+        } else if let Some(version) = &version {
+            let mut fields = trimmed.split_whitespace().skip(1);
+            if let Some(uri) = fields.next() {
+                policy.origins.entry(version.clone()).or_default().push(
+                    super::apt_sources::origin_key(uri, fields.next().unwrap_or_default()),
+                );
+            }
         }
     }
     policies
@@ -440,7 +440,7 @@ impl SystemPackageManager for AptManager {
                 }
                 if !opts.dry_run {
                     *self.recording_uris.lock().unwrap() =
-                        sources.iter().flat_map(|source| source.uris()).collect();
+                        super::apt_sources::declared_origins(sources);
                 }
                 match applied.failures.len() {
                     0 => Ok(()),
@@ -475,10 +475,7 @@ impl SystemPackageManager for AptManager {
         let ManagerPackageOptions::Apt { sources } = manager_options else {
             return Ok(statuses);
         };
-        let uris = sources
-            .iter()
-            .flat_map(|source| source.uris())
-            .collect::<std::collections::HashSet<_>>();
+        let uris = super::apt_sources::declared_origins(sources);
         // apt heads policy stanzas with the bare name, so arch-qualified
         // requests cannot be matched and are left as dpkg reports them
         let names = statuses
@@ -677,7 +674,7 @@ curl:
 ";
 
     fn ppa_uris() -> std::collections::HashSet<String> {
-        ["https://ppa.launchpadcontent.net/git-core/ppa/ubuntu".to_string()].into()
+        ["https://ppa.launchpadcontent.net/git-core/ppa/ubuntu noble".to_string()].into()
     }
 
     #[test]
@@ -691,11 +688,14 @@ curl:
         );
         assert_eq!(
             git.origins["1:2.55.0-0ppa1~ubuntu24.04.2"],
-            vec!["https://ppa.launchpadcontent.net/git-core/ppa/ubuntu"]
+            vec!["https://ppa.launchpadcontent.net/git-core/ppa/ubuntu noble"]
         );
         assert_eq!(
             git.origins["1:2.43.0-1ubuntu7.3"],
-            vec!["http://archive.ubuntu.com/ubuntu", "/var/lib/dpkg/status"]
+            vec![
+                "http://archive.ubuntu.com/ubuntu noble-updates",
+                "/var/lib/dpkg/status"
+            ]
         );
         assert_eq!(policies["curl"].origins.len(), 1);
     }
@@ -705,7 +705,7 @@ curl:
         let policies = parse_policy_origins(GIT_POLICY);
         assert_eq!(
             policies["git"].declared_candidate_origin(&ppa_uris()),
-            Some("https://ppa.launchpadcontent.net/git-core/ppa/ubuntu")
+            Some("https://ppa.launchpadcontent.net/git-core/ppa/ubuntu noble")
         );
         // a routine distro update is not a declared source's business
         assert_eq!(
@@ -715,7 +715,7 @@ curl:
         // nothing declared offers git
         assert_eq!(
             policies["git"].declared_candidate_origin(
-                &["https://download.docker.com/linux/ubuntu".to_string()].into()
+                &["https://download.docker.com/linux/ubuntu noble".to_string()].into()
             ),
             None
         );
@@ -737,12 +737,36 @@ git:
         assert_eq!(policies["git"].declared_candidate_origin(&ppa_uris()), None);
         assert_eq!(
             policies["git"].installed_origin(&ppa_uris()),
-            Some("https://ppa.launchpadcontent.net/git-core/ppa/ubuntu")
+            Some("https://ppa.launchpadcontent.net/git-core/ppa/ubuntu noble")
         );
         // a distro build is not recorded as coming from the PPA
         assert_eq!(
             parse_policy_origins(GIT_POLICY)["git"].installed_origin(&ppa_uris()),
             None
+        );
+    }
+
+    #[test]
+    fn same_mirror_other_suite_is_not_the_declared_source() {
+        // stable and a declared testing suite share deb.debian.org
+        let policies = parse_policy_origins(
+            "\
+curl:
+  Installed: 7.88.1-10+deb12u8
+  Candidate: 8.14.1-2
+  Version table:
+     8.14.1-2 500
+        500 https://deb.debian.org/debian trixie/main amd64 Packages
+ *** 7.88.1-10+deb12u8 500
+        500 https://deb.debian.org/debian bookworm/main amd64 Packages
+        100 /var/lib/dpkg/status
+",
+        );
+        let testing = ["https://deb.debian.org/debian trixie".to_string()].into();
+        assert_eq!(policies["curl"].installed_origin(&testing), None);
+        assert_eq!(
+            policies["curl"].declared_candidate_origin(&testing),
+            Some("https://deb.debian.org/debian trixie")
         );
     }
 

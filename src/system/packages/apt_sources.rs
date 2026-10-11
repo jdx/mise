@@ -174,18 +174,23 @@ impl AptSource {
         PathBuf::from(format!("{KEYRINGS_DIR}/mise-{}.gpg", self.name))
     }
 
-    /// The repository URLs as `apt-cache policy` prints them, without a
-    /// trailing slash.
-    pub(crate) fn uris(&self) -> Vec<String> {
-        match &self.kind {
-            AptSourceKind::Ppa { owner, archive } => {
-                vec![ppa_uri(owner, archive).trim_end_matches('/').to_string()]
-            }
-            AptSourceKind::Repository { uris, .. } => uris
-                .split_whitespace()
-                .map(|uri| uri.trim_end_matches('/').to_string())
-                .collect(),
-        }
+    /// Each repository and suite this source adds on `release`, as
+    /// [`origin_key`] spells them. A URL alone is not enough: a declared
+    /// testing or backports suite shares its mirror with the release's own.
+    fn origins(&self, release: &Release) -> Vec<String> {
+        let Ok(Some(fields)) = self.fields(release) else {
+            return vec![];
+        };
+        fields
+            .uris
+            .split_whitespace()
+            .flat_map(|uri| {
+                fields
+                    .suites
+                    .split_whitespace()
+                    .map(move |suite| origin_key(uri, suite))
+            })
+            .collect()
     }
 
     fn describe(&self) -> String {
@@ -198,6 +203,35 @@ impl AptSource {
     /// The deb822 stanza for this source on a release, or `None` when the
     /// source does not apply there (a PPA on a release not based on Ubuntu).
     fn render(&self, release: &Release) -> Result<Option<String>> {
+        let Some(SourceFields {
+            uris,
+            suites,
+            components,
+            architectures,
+        }) = self.fields(release)?
+        else {
+            return Ok(None);
+        };
+        let mut out = format!(
+            "# Written by mise for [bootstrap.apt.sources.{}]; changes here are overwritten.\n\
+             Types: deb\n\
+             URIs: {uris}\n\
+             Suites: {suites}\n",
+            self.name
+        );
+        if let Some(components) = components {
+            out.push_str(&format!("Components: {components}\n"));
+        }
+        if let Some(architectures) = architectures {
+            out.push_str(&format!("Architectures: {architectures}\n"));
+        }
+        out.push_str(&format!("Signed-By: {}\n", self.keyring_path().display()));
+        Ok(Some(out))
+    }
+
+    /// The deb822 fields for this source on `release`, defaults resolved, or
+    /// `None` when the source does not apply there.
+    fn fields(&self, release: &Release) -> Result<Option<SourceFields>> {
         let (uris, suites, components, architectures) = match &self.kind {
             AptSourceKind::Ppa { owner, archive } => {
                 let Some(codename) = release.ubuntu_codename() else {
@@ -241,21 +275,12 @@ impl AptSource {
                 (uris.clone(), suites, components, architectures.clone())
             }
         };
-        let mut out = format!(
-            "# Written by mise for [bootstrap.apt.sources.{}]; changes here are overwritten.\n\
-             Types: deb\n\
-             URIs: {uris}\n\
-             Suites: {suites}\n",
-            self.name
-        );
-        if let Some(components) = components {
-            out.push_str(&format!("Components: {components}\n"));
-        }
-        if let Some(architectures) = architectures {
-            out.push_str(&format!("Architectures: {architectures}\n"));
-        }
-        out.push_str(&format!("Signed-By: {}\n", self.keyring_path().display()));
-        Ok(Some(out))
+        Ok(Some(SourceFields {
+            uris,
+            suites,
+            components,
+            architectures,
+        }))
     }
 
     /// Whether the keyring on disk is what this source declares: exactly the
@@ -297,6 +322,33 @@ impl AptSource {
         let keys = crate::gpg::parse_keyring(data.as_ref())
             .map_err(|err| eyre!("{}: reading the key from {url}: {err}", self.name))?;
         select_keys(&self.name, &url, keys, &fingerprints)
+    }
+}
+
+struct SourceFields {
+    uris: String,
+    suites: String,
+    components: Option<String>,
+    architectures: Option<String>,
+}
+
+/// Every repository and suite the declared sources add on this machine.
+pub(crate) fn declared_origins(sources: &[AptSource]) -> std::collections::HashSet<String> {
+    let release = Release::read();
+    sources
+        .iter()
+        .flat_map(|source| source.origins(&release))
+        .collect()
+}
+
+/// A repository as `apt-cache policy` names it on an origin line,
+/// `500 <uri> <suite>[/<component>] <arch> Packages`: the URI without a
+/// trailing slash, then the suite without its component.
+pub(crate) fn origin_key(uri: &str, suite: &str) -> String {
+    let uri = uri.trim_end_matches('/');
+    match suite.split('/').next().filter(|suite| !suite.is_empty()) {
+        Some(suite) => format!("{uri} {suite}"),
+        None => uri.to_string(),
     }
 }
 
@@ -736,6 +788,37 @@ mod tests {
         assert!(entries.contains(Path::new("/etc/apt/sources.list.d/mise-x.sources")));
         assert!(entries.contains(Path::new("/etc/apt/sources.list.d/ubuntu.sources")));
         assert_eq!(entries.len(), 2);
+    }
+
+    #[test]
+    fn origins_pair_each_uri_with_each_suite() {
+        let git = ppa("git-core", "git-core/ppa");
+        assert_eq!(
+            git.origins(&Release::parse(NOBLE)),
+            vec!["https://ppa.launchpadcontent.net/git-core/ppa/ubuntu noble"]
+        );
+        assert!(git.origins(&Release::parse(BOOKWORM)).is_empty());
+        let backports = AptSource::parse(
+            "backports",
+            AptSourceTomlConfig {
+                uris: Some("https://deb.debian.org/debian/".into()),
+                suites: Some("bookworm-backports".into()),
+                ..docker()
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            backports.origins(&Release::parse(BOOKWORM)),
+            vec!["https://deb.debian.org/debian bookworm-backports"]
+        );
+        assert_eq!(
+            origin_key("https://example.com/apt/", "./"),
+            "https://example.com/apt ."
+        );
+        assert_eq!(
+            origin_key("/var/lib/dpkg/status", ""),
+            "/var/lib/dpkg/status"
+        );
     }
 
     #[test]

@@ -34,7 +34,12 @@ pub struct KeyringKey {
 /// Parse an OpenPGP keyring, ASCII-armored or binary, in the forms vendors
 /// publish repository signing keys in.
 pub fn parse_keyring(data: &[u8]) -> Result<Vec<KeyringKey>> {
-    let keys = if is_armored(data) {
+    // armor may follow a comment or a byte order mark; binary keyrings never
+    // contain the header
+    let armored = data
+        .windows(PUBLIC_KEY_ARMOR.len())
+        .any(|window| window == PUBLIC_KEY_ARMOR.as_bytes());
+    let keys = if armored {
         parse_public_keys(&String::from_utf8_lossy(data))?
     } else {
         SignedPublicKey::from_bytes_many(Cursor::new(data))
@@ -51,6 +56,8 @@ pub fn parse_keyring(data: &[u8]) -> Result<Vec<KeyringKey>> {
         })
         .collect()
 }
+
+const PUBLIC_KEY_ARMOR: &str = "-----BEGIN PGP PUBLIC KEY BLOCK-----";
 
 fn is_armored(data: &[u8]) -> bool {
     data.iter()
@@ -196,6 +203,7 @@ fn split_armor_blocks(input: &str, label: &str) -> Vec<String> {
     let mut blocks = Vec::new();
     let mut current: Option<String> = None;
     for line in input.lines() {
+        let line = line.trim_start_matches('\u{feff}');
         let trimmed = line.trim();
         if trimmed == begin {
             current = Some(String::new());
@@ -246,6 +254,18 @@ mod tests {
             reparsed.iter().map(|k| &k.fingerprint).collect::<Vec<_>>(),
             armored.iter().map(|k| &k.fingerprint).collect::<Vec<_>>()
         );
+    }
+
+    #[test]
+    fn keyring_accepts_armor_after_a_comment_or_bom() {
+        let armored = include_str!("assets/gpg/swift.asc");
+        let expected = parse_keyring(armored.as_bytes()).unwrap().len();
+        for prefixed in [
+            format!("# Vendor signing key\n\n{armored}"),
+            format!("\u{feff}{armored}"),
+        ] {
+            assert_eq!(parse_keyring(prefixed.as_bytes()).unwrap().len(), expected);
+        }
     }
 
     #[test]
