@@ -1673,7 +1673,8 @@ type = "SetString"
 default = false
 description = "Ignore idiomatic version file fields that only declare a minimum compatible version."
 docs = """
-Affects `go.mod`'s `go X.Y` line (a `toolchain goX.Y.Z` line is still read) and
+Affects `go.mod`'s `go X.Y` line (a `toolchain goX.Y.Z` line, or an exact
+`go X.Y.Z` line with no `toolchain` line, is still read) and
 `CMakeLists.txt`'s `cmake_minimum_required`. mise still reads those minimums
 with a deprecation warning; this setting opts into the final behavior now and
 silences the warning. In mise 2026.11.0 that behavior becomes unconditional and

@@ -54,9 +54,27 @@ This changes your global config. Add `--local` to enable it in the project's
 `mise.toml` instead, so teammates get the same behavior. See
 [idiomatic version files](/dev-tools/versions.html#idiomatic-version-files).
 
-In `go.mod` and `go.work`, mise reads a `toolchain goX.Y.Z` directive as an
-exact version request. For example, this `go.work` selects Go 1.27.1 for a
-workspace containing the `api` and `worker` modules:
+In `go.mod` and `go.work`, mise reads the module's toolchain as an exact
+version request. That is a `toolchain goX.Y.Z` directive or, when the file has
+no `toolchain` line, a `go X.Y.Z` directive with a patch version. Go reads
+`go 1.27.1` without a `toolchain` line as `toolchain go1.27.1`, and
+`go mod tidy` removes a `toolchain` line that matches the `go` line, so both of
+these select Go 1.27.1:
+
+```text [go.mod]
+go 1.27.1
+```
+
+```text [go.mod]
+go 1.27.0
+
+toolchain go1.27.1
+```
+
+Go itself treats these lines as minimums and runs a newer local toolchain when
+one is installed. mise reads them as exact versions because the `go` command
+writes the version it runs into them. For example, this `go.work` selects
+Go 1.27.1 for a workspace containing the `api` and `worker` modules:
 
 ```text [go.work]
 go 1.27.0
@@ -69,9 +87,10 @@ use (
 )
 ```
 
-The `go` directive only declares the minimum Go version that the module
-supports. mise ignores it in `go.work`. Reading it from `go.mod` is deprecated
-and stops in mise 2026.11.0; add a `toolchain` line instead, or set
+A `go X.Y` directive without a patch version names no Go release and only
+declares the minimum Go version that the module supports. mise ignores it in
+`go.work`. Reading it from `go.mod` is deprecated and stops in mise 2026.11.0;
+add a `toolchain` line instead, or set
 `idiomatic_version_file_ignore_minimum_versions` to ignore it now. See
 [which fields mise reads](/dev-tools/versions.html#which-fields-mise-reads).
 
@@ -79,8 +98,8 @@ and stops in mise 2026.11.0; add a `toolchain` line instead, or set
 
 When a workspace is active, mise uses its `go.work` instead of the `go.mod`
 files beneath it, including when you run mise from a module subdirectory. If
-the workspace has no supported `toolchain` directive, neither file supplies a
-version. Use `toolchain goX.Y.Z` with a full release version; mise does not
+the workspace names no toolchain, neither file supplies a version. Use
+`toolchain goX.Y.Z` or `go X.Y.Z` with a full release version; mise does not
 read `toolchain default`, partial versions or release candidates.
 
 The `GOWORK` environment variable controls which workspace mise uses:

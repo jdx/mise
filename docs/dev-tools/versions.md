@@ -327,5 +327,8 @@ declarations, not `engines` compatibility ranges. See the
 [Bun](/lang/bun.html) and [Deno](/lang/deno.html) guides for theirs.
 
 For Go, mise reads the `toolchain goX.Y.Z` directive from `go.mod` or
-`go.work`, and an active workspace takes precedence over the modules beneath
-it. See the [Go guide](/lang/go.html) for examples and `GOWORK` behavior.
+`go.work`, or an exact `go X.Y.Z` directive when there is no `toolchain` line.
+Go treats both as minimums, but the `go` command writes the version it runs
+into them, so mise reads them as the version the project is built with. An
+active workspace takes precedence over the modules beneath it. See the
+[Go guide](/lang/go.html) for examples and `GOWORK` behavior.
