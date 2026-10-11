@@ -384,23 +384,21 @@ impl HttpBackend {
         request: Option<&ToolVersionOptions>,
         platform: &Platform,
     ) -> Vec<Platform> {
-        if platform.qualifier.as_deref() == Some("musl")
-            && platform.arch == "x64"
-            && self.template_uses(request, "avx2")
-            && self.template_uses(request, "libc")
-        {
-            // A musl x64 host without AVX2 installs the `musl-baseline` variant,
-            // so an explicit musl target needs that lock entry too.
-            return vec![
-                platform.clone(),
-                Platform {
-                    qualifier: Some("musl-baseline".to_string()),
+        if let Some(qualifier) = platform.qualifier.as_deref() {
+            // An explicit target keeps its own key. A no-AVX2 host installs the
+            // key `platform_key_for` builds, so lock that one as well.
+            let mut variants = vec![platform.clone()];
+            if platform.arch == "x64"
+                && !qualifier.split('-').any(|part| part == "baseline")
+                && self.template_uses(request, "avx2")
+            {
+                let musl = platform.libc() == Some("musl") && self.template_uses(request, "libc");
+                variants.push(Platform {
+                    qualifier: Some(if musl { "musl-baseline" } else { "baseline" }.to_string()),
                     ..platform.clone()
-                },
-            ];
-        }
-        if platform.qualifier.is_some() {
-            return vec![platform.clone()];
+                });
+            }
+            return variants;
         }
         let baseline = platform.arch == "x64" && self.template_uses(request, "avx2");
         let musl = platform.os == "linux" && self.template_uses(request, "libc");
