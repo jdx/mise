@@ -199,6 +199,9 @@ async fn run_manager(
         debug!("{name}: skipping, {reason}");
         return Ok(());
     }
+    // sources first: a package from a newly added repository is unknown
+    // until its lists are fetched
+    mp.manager.apply_sources(&mp.options, opts).await?;
     if !d.dry_run {
         mp.manager.prepare_mutation(&mp.requests).await?;
     }

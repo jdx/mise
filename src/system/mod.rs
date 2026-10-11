@@ -139,6 +139,9 @@ pub struct BootstrapTomlConfig {
     /// Homebrew-specific bootstrap package config.
     #[serde(default)]
     pub brew: SystemBrewTomlConfig,
+    /// apt-specific bootstrap package config.
+    #[serde(default)]
+    pub apt: SystemAptTomlConfig,
     /// Shell activation setup. Values stay raw TOML so future options can warn
     /// and be skipped without rejecting the whole config.
     #[serde(default)]
@@ -194,6 +197,7 @@ impl BootstrapTomlConfig {
         fill(&mut self.files, lower.files);
         fill(&mut self.directories, lower.directories);
         fill(&mut self.repos, lower.repos);
+        fill(&mut self.apt.sources, lower.apt.sources);
         fill(&mut self.mise_shell_activate, lower.mise_shell_activate);
         // hooks add up across files, the shared commands running first
         for (phase, shared) in lower.hooks {
@@ -550,6 +554,14 @@ pub struct SystemBrewTomlConfig {
     pub taps: IndexMap<String, String>,
 }
 
+#[derive(Debug, Default, Clone, Deserialize)]
+pub struct SystemAptTomlConfig {
+    /// `[bootstrap.apt.sources]`: source name -> PPA or repository, added
+    /// before apt packages are installed.
+    #[serde(default)]
+    pub sources: IndexMap<String, toml::Value>,
+}
+
 /// `[dotfiles]` as parsed from a single mise.toml.
 #[derive(Debug, Default, Clone, Deserialize)]
 #[serde(transparent)]
@@ -570,6 +582,10 @@ pub struct ManagerPackages {
 pub enum ManagerPackageOptions {
     #[default]
     None,
+    /// `[bootstrap.apt.sources]`, applied before apt queries its packages.
+    Apt {
+        sources: Vec<crate::system::packages::apt_sources::AptSource>,
+    },
     #[cfg(unix)]
     BrewCask {
         adopt: BTreeSet<String>,
@@ -589,7 +605,7 @@ impl ManagerPackageOptions {
     pub(crate) fn brew_cask_adopt(&self, name: &str) -> bool {
         match self {
             Self::BrewCask { adopt, .. } | Self::MacosApp { adopt, .. } => adopt.contains(name),
-            Self::None => false,
+            Self::None | Self::Apt { .. } => false,
         }
     }
 
@@ -1214,7 +1230,7 @@ fn package_requests_from_config_files(
         }
     }
     #[cfg(unix)]
-    let options = {
+    let mut options = {
         let mut options = IndexMap::new();
         if !cask_adopt.is_empty() || !cask_appdirs.is_empty() {
             options.insert(
@@ -1237,7 +1253,8 @@ fn package_requests_from_config_files(
         options
     };
     #[cfg(not(unix))]
-    let options = IndexMap::new();
+    let mut options = IndexMap::new();
+    insert_apt_sources(config_files, &mut options);
     (by_mgr, options)
 }
 
@@ -2412,7 +2429,7 @@ fn packages_from_specs_with_config_files(
         }
     }
     #[cfg(unix)]
-    let options = {
+    let mut options = {
         let mut options = IndexMap::new();
         if !cask_adopt.is_empty() || !cask_appdirs.is_empty() {
             options.insert(
@@ -2435,7 +2452,8 @@ fn packages_from_specs_with_config_files(
         options
     };
     #[cfg(not(unix))]
-    let options = IndexMap::new();
+    let mut options = IndexMap::new();
+    insert_apt_sources(config_files, &mut options);
     resolve_managers(
         by_mgr,
         options,
@@ -2525,6 +2543,62 @@ pub fn nix_packages_for_export(config: &Config) -> Vec<(String, PackageTomlConfi
 
 pub fn brew_taps_from_config(config: &Config) -> IndexMap<String, String> {
     brew_taps_from_config_files(&config.config_files)
+}
+
+/// `[bootstrap.apt.sources]` across `config_files`: a more local config
+/// replaces a source of the same name. An invalid entry warns and is skipped,
+/// as an invalid package entry is.
+fn apt_sources_from_config_files(
+    config_files: &ConfigMap,
+) -> Vec<packages::apt_sources::AptSource> {
+    let mut merged: IndexMap<String, toml::Value> = IndexMap::new();
+    for cf in config_files.values().rev() {
+        if let Some(sys) = cf.bootstrap_config() {
+            for (name, source) in sys.apt.sources {
+                merged.insert(name, source);
+            }
+        }
+    }
+    merged
+        .into_iter()
+        .filter_map(|(name, value)| {
+            let parsed = value
+                .try_into::<packages::apt_sources::AptSourceTomlConfig>()
+                .map_err(|err| eyre::eyre!("{name}: {err}"))
+                .and_then(|config| packages::apt_sources::AptSource::parse(&name, config));
+            match parsed {
+                Ok(source) => Some(source),
+                Err(err) => {
+                    warn!("[bootstrap.apt.sources]: {err:#}");
+                    None
+                }
+            }
+        })
+        .collect()
+}
+
+fn insert_apt_sources(
+    config_files: &ConfigMap,
+    options: &mut IndexMap<String, ManagerPackageOptions>,
+) {
+    let sources = apt_sources_from_config_files(config_files);
+    if !sources.is_empty() {
+        options.insert("apt".to_string(), ManagerPackageOptions::Apt { sources });
+    }
+}
+
+/// Give the apt entries of `mgrs` the `[bootstrap.apt.sources]` they install
+/// from, for callers that build requests without the config.
+pub fn attach_apt_sources(config: &Config, mgrs: &mut [ManagerPackages]) {
+    let sources = apt_sources_from_config_files(&config.config_files);
+    if sources.is_empty() {
+        return;
+    }
+    for mp in mgrs.iter_mut().filter(|mp| mp.manager.name() == "apt") {
+        mp.options = ManagerPackageOptions::Apt {
+            sources: sources.clone(),
+        };
+    }
 }
 
 fn brew_taps_from_config_files(config_files: &ConfigMap) -> IndexMap<String, String> {

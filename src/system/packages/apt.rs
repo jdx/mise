@@ -1,19 +1,27 @@
 use std::collections::HashMap;
 use std::path::Path;
 use std::process::Stdio;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use async_trait::async_trait;
 use eyre::bail;
 
 use super::{InstallOpts, PackageRequest, PackageState, PackageStatus, SystemPackageManager};
 use crate::result::Result;
+use crate::system::ManagerPackageOptions;
 use crate::system::sudo;
 
-pub(crate) struct AptManager {}
+pub(crate) struct AptManager {
+    /// `[bootstrap.apt.sources]` changed and the lists were refreshed for
+    /// them (or, in a dry run, would be), so this run needs no other refresh.
+    lists_refreshed: AtomicBool,
+}
 
 impl AptManager {
     pub(crate) fn new() -> Self {
-        Self {}
+        Self {
+            lists_refreshed: AtomicBool::new(false),
+        }
     }
 
     /// fresh container/VM case: no package lists at all, so any install would
@@ -208,6 +216,22 @@ impl SystemPackageManager for AptManager {
         }
     }
 
+    async fn apply_sources(
+        &self,
+        manager_options: &ManagerPackageOptions,
+        opts: &InstallOpts,
+    ) -> Result<()> {
+        match manager_options {
+            ManagerPackageOptions::Apt { sources } => {
+                if super::apt_sources::apply(sources, opts.dry_run).await? {
+                    self.lists_refreshed.store(true, Ordering::Relaxed);
+                }
+                Ok(())
+            }
+            _ => Ok(()),
+        }
+    }
+
     async fn installed(&self, pkgs: &[PackageRequest]) -> Result<Vec<PackageStatus>> {
         if pkgs.is_empty() {
             return Ok(vec![]);
@@ -271,7 +295,9 @@ impl SystemPackageManager for AptManager {
             Some(v) => format!("{}={v}", p.name),
             None => p.name.clone(),
         }));
-        if opts.update || self.lists_missing() || self.install_would_fail(&args).await {
+        if !self.lists_refreshed.load(Ordering::Relaxed)
+            && (opts.update || self.lists_missing() || self.install_would_fail(&args).await)
+        {
             self.update(opts)?;
         }
         if opts.dry_run {
@@ -286,7 +312,9 @@ impl SystemPackageManager for AptManager {
 
     async fn upgrade(&self, pkgs: &[PackageRequest], opts: &InstallOpts) -> Result<()> {
         // upgrading against stale lists is a no-op, so always refresh first
-        self.update(opts)?;
+        if !self.lists_refreshed.load(Ordering::Relaxed) {
+            self.update(opts)?;
+        }
         // `--only-upgrade` keeps a race (package removed between our status
         // check and this call) from turning an upgrade into a fresh install
         let mut args = vec![

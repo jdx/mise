@@ -35,7 +35,70 @@ prompt.
 Use the package name as `apt-get install` takes it. Append `:<arch>` to select
 an architecture, as in `gcc:arm64`. The machine's dpkg architectures and apt
 sources must already provide that architecture; the declaration does not enable
-multiarch or add a repository.
+multiarch. To install from another repository, declare it in
+[`[bootstrap.apt.sources]`](#sources).
+
+## Repositories and PPAs {#sources}
+
+Declare extra repositories in `[bootstrap.apt.sources]`. mise adds them before
+it installs or upgrades `apt:` packages, so a package can come from a vendor's
+repository or a newer release can come from a PPA:
+
+```toml
+[bootstrap.apt.sources]
+git-core = { ppa = "git-core/ppa" }
+fish = { ppa = "fish-shell/release-4" }
+
+[bootstrap.apt.sources.docker]
+uris = "https://download.docker.com/linux/ubuntu"
+components = "stable"
+key = "https://download.docker.com/linux/ubuntu/gpg"
+fingerprint = "9DC8 5822 9FC7 DD38 854A E2D8 8D81 803C 0EBF CD88"
+
+[bootstrap.packages]
+"apt:git" = "latest"
+"apt:fish" = "latest"
+"apt:docker-ce-cli" = "latest"
+```
+
+For each source, mise writes `/etc/apt/sources.list.d/mise-<name>.sources` and
+`/etc/apt/keyrings/mise-<name>.gpg`. The source file names that keyring in
+`Signed-By`, so apt trusts the key only for that repository. When it adds or
+changes a source, mise runs `apt-get update` once before installing. Names may
+contain letters, digits, `_`, `-`, and `.`.
+
+A `ppa` entry takes the PPA as `owner/archive`, with or without the `ppa:`
+prefix. mise reads the PPA's signing key fingerprint from Launchpad and
+downloads that key from `keyserver.ubuntu.com`. Add `fingerprint` to pin the key
+and skip the Launchpad lookup. PPAs are built for Ubuntu releases, so mise adds
+them only on Ubuntu and on distributions that set `UBUNTU_CODENAME` in
+`/etc/os-release`, such as Linux Mint. On other releases it skips them, so the
+same config also works on Debian.
+
+Any other repository needs `uris`, `key`, and `fingerprint`:
+
+| Field           | Value                                                                              |
+| --------------- | ---------------------------------------------------------------------------------- |
+| `uris`          | The repository URL, as the vendor's install instructions give it                   |
+| `suites`        | Defaults to the release codename from `/etc/os-release`, such as `noble`           |
+| `components`    | Defaults to `main`, or to none when `suites` is a path ending in `/`               |
+| `architectures` | Optional, such as `amd64`, for a repository that publishes only some architectures |
+| `key`           | An http(s) URL of the signing key, ASCII-armored or binary                         |
+| `fingerprint`   | The key's full fingerprint, or a list of them; spaces are ignored                  |
+
+mise keeps only the keys whose fingerprints you declared from what it
+downloads, and fails if one is missing. Once a matching key is in place, mise
+leaves it alone and does not download it again. If the keyring changes or no
+longer matches, the next apply replaces it.
+
+Adding a PPA does not by itself replace a package that is already installed.
+Run `mise bootstrap packages upgrade --manager apt` to move it to the newer
+version.
+
+mise does not remove sources. Deleting an entry leaves its files in place;
+delete `/etc/apt/sources.list.d/mise-<name>.sources` and its keyring yourself.
+To install a repository definition that mise should not generate, write it with
+[`[bootstrap.files]`](/bootstrap/files.html#files-before-packages) instead.
 
 ## Version pins
 
@@ -65,6 +128,7 @@ mise bootstrap packages apply --update
 | Check installed state (no sudo) | `dpkg-query -W <packages>`                                               |
 | Install                         | `apt-get install -y -- <packages>`, after `apt-get update` when needed   |
 | `apply --update`                | `apt-get update` first                                                   |
+| Add or change a source          | `install -m 0644 /dev/stdin <file>`, then `apt-get update`               |
 | Upgrade                         | `apt-get update`, then `apt-get install -y --only-upgrade -- <packages>` |
 
 `upgrade` acts only on configured packages that are installed. apt still
