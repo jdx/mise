@@ -1176,10 +1176,7 @@ fn host_libc_name() -> String {
 /// Whether the host CPU has AVX2, as `avx2()` reports it: `yes` or `no`.
 /// Only x86-64 can lack it, so every other CPU reports `yes`.
 fn host_avx2_name() -> String {
-    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-    let avx2 = std::arch::is_x86_feature_detected!("avx2");
-    #[cfg(not(any(target_arch = "x86", target_arch = "x86_64")))]
-    let avx2 = true;
+    let avx2 = crate::platform::host_has_avx2();
     if avx2 { "yes" } else { "no" }.to_string()
 }
 

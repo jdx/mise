@@ -18,6 +18,7 @@ use crate::config::Settings;
 use crate::http::{DownloadFileMetadata, HTTP};
 use crate::install_context::InstallContext;
 use crate::lockfile::PlatformInfo;
+use crate::platform::Platform;
 use crate::runtime_symlinks::is_runtime_symlink;
 use crate::toolset::ToolRequest;
 use crate::toolset::ToolVersion;
@@ -353,6 +354,13 @@ fn header_map(
 impl HttpBackend {
     pub(crate) fn from_arg(ba: BackendArg) -> Self {
         Self { ba: Arc::new(ba) }
+    }
+
+    /// Whether a configured option calls the template function `name`, which
+    /// makes the artifact depend on a host trait the platform key must carry.
+    fn template_uses(&self, name: &str) -> bool {
+        serde_json::to_string(&self.ba.opts().opts)
+            .is_ok_and(|opts| opts.contains(&format!("{name}(")))
     }
 
     /// Built in one place so the dry-run check and the install itself cannot drift apart.
@@ -1197,6 +1205,44 @@ impl Backend for HttpBackend {
 
     fn get_type(&self) -> BackendType {
         BackendType::Http
+    }
+
+    /// A URL template that picks its build with `avx2()` or `libc()` downloads a
+    /// different artifact on a no-AVX2 host, so the lockfile key carries the
+    /// `baseline` qualifier the way `mise lock` writes it for that variant.
+    fn get_platform_key(&self) -> String {
+        let mut platform = Platform::current();
+        if platform.arch == "x64" && !crate::platform::host_has_avx2() && self.template_uses("avx2")
+        {
+            platform.qualifier = Some(match platform.qualifier.as_deref() {
+                Some(q) => format!("{q}-baseline"),
+                None => "baseline".to_string(),
+            });
+        }
+        platform.to_key()
+    }
+
+    fn platform_variants(&self, platform: &Platform) -> Vec<Platform> {
+        if platform.qualifier.is_some() {
+            return vec![platform.clone()];
+        }
+        let baseline = platform.arch == "x64" && self.template_uses("avx2");
+        let musl = platform.os == "linux" && self.template_uses("libc");
+        let variant = |qualifier: &str| Platform {
+            qualifier: Some(qualifier.to_string()),
+            ..platform.clone()
+        };
+        let mut variants = vec![platform.clone()];
+        if baseline {
+            variants.push(variant("baseline"));
+        }
+        if musl {
+            variants.push(variant("musl"));
+        }
+        if baseline && musl {
+            variants.push(variant("musl-baseline"));
+        }
+        variants
     }
 
     fn ba(&self) -> &Arc<BackendArg> {
