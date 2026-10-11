@@ -46,6 +46,11 @@ struct Record {
     /// version when it stopped being selected.
     #[serde(default)]
     frozen: BTreeMap<String, Option<Object>>,
+    /// Streams whose live version `--keep-local` chose: the next capture
+    /// saves them, while a pull still compares them as not held, so a
+    /// later `--take-remote` can take the repository's version instead.
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    kept: BTreeSet<String>,
 }
 
 #[derive(Debug, Default)]
@@ -115,20 +120,35 @@ impl Held {
             next.frozen.insert(stream.clone(), saved(stream)?);
         }
         next.frozen.retain(|stream, _| !held.contains(stream));
+        next.kept.retain(|stream| !held.contains(stream));
         next.selected = held;
         self.record = Some(next);
         Ok(())
     }
 
-    /// Hold a stream as it is live here, so the next capture saves this
-    /// machine's version over the saved one: keeping the local side.
+    /// Whether a capture saves this stream's live version although it is
+    /// not held: `--keep-local` chose it.
+    pub(crate) fn kept(&self, stream: &str) -> bool {
+        self.record
+            .as_ref()
+            .is_some_and(|record| record.kept.contains(stream))
+    }
+
+    /// Choose a stream's live version, so the next capture saves it over
+    /// the saved one: keeping the local side. Until then, a pull still
+    /// treats the stream as not held.
     pub(crate) fn keep(&mut self, stream: &str) {
         // without a record every stream is held already
-        let Some(record) = &mut self.record else {
-            return;
-        };
-        record.selected.insert(stream.to_string());
-        record.frozen.remove(stream);
+        if let Some(record) = &mut self.record {
+            record.kept.insert(stream.to_string());
+        }
+    }
+
+    /// Withdraw a `--keep-local` choice: `--take-remote` decided instead.
+    pub(crate) fn unkeep(&mut self, stream: &str) {
+        if let Some(record) = &mut self.record {
+            record.kept.remove(stream);
+        }
     }
 
     pub(crate) fn save(&self, repo: &HistoryRepo) -> Result<()> {
@@ -165,6 +185,7 @@ pub(crate) fn streams(
             .transpose()?
             .flatten();
         if held.holds(&stream, saved.as_ref())
+            || held.kept(&stream)
             || live_matches_saved(repo, parent, walk, index, &stream)?
         {
             streams.held.insert(stream);
@@ -206,10 +227,14 @@ fn live_matches_saved(
     };
     let mut saved = 0;
     for path in paths {
-        saved += 1;
         let Some(local) = roots.locate(&path).path().map(Path::to_path_buf) else {
             return Ok(false);
         };
+        // a file a nested entry tracks is that entry's to compare
+        if super::tracked::owning_entry_index(&walk.entries, &local) != Some(index) {
+            continue;
+        }
+        saved += 1;
         if !live.contains(&local) {
             return Ok(false);
         }
@@ -275,6 +300,26 @@ mod tests {
         assert!(!held.holds("home@home/.h", Some(&obj("h"))));
         // held again
         held.observe(streams(&["home/.g", "home@work/.f"]), |_| Ok(None))?;
+        assert!(held.holds("home@work/.f", Some(&obj("b"))));
+        Ok(())
+    }
+
+    #[test]
+    fn a_kept_stream_is_saved_but_still_unheld_until_then() -> Result<()> {
+        let mut held = Held {
+            record: Some(Record::default()),
+            upstream: true,
+        };
+        held.keep("home@work/.f");
+        assert!(held.kept("home@work/.f"));
+        // a pull still compares it as not held
+        assert!(!held.holds("home@work/.f", Some(&obj("a"))));
+        held.unkeep("home@work/.f");
+        assert!(!held.kept("home@work/.f"));
+        held.keep("home@work/.f");
+        // the capture that saves it holds it
+        held.observe(streams(&["home@work/.f"]), |_| Ok(None))?;
+        assert!(!held.kept("home@work/.f"));
         assert!(held.holds("home@work/.f", Some(&obj("b"))));
         Ok(())
     }

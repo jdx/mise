@@ -97,8 +97,13 @@ export -f d
 assert_succeed "d bootstrap --adopt file://$origin --yes"
 echo fourth-machine >"$fourth/.work"
 assert_fail "d -E work dot pull --yes"
+# a keep-local choice withdrawn for the repository's version
+assert_fail "d -E work dot pull --keep-local $fourth/.work" "keeps this machine's version once it is saved"
 assert_succeed "d -E work dot pull --take-remote $fourth/.work"
 assert "cat $fourth/.work" "third-machine"
+assert_succeed "d -E work dot save"
+assert_succeed "d -E work dot sync"
+assert "git --git-dir=$origin show main:home@work/.work" "third-machine"
 echo fourth-edit >"$fourth/.work"
 assert_succeed "d -E work dot save"
 assert_succeed "d -E work dot sync"
@@ -161,3 +166,29 @@ assert_fail "f -E work dot pull --keep-local $sixth/.workdir/a" "cannot be kept 
 assert_succeed "f -E work dot pull --take-remote $sixth/.workdir/a"
 assert "cat $sixth/.workdir/a" "a-v1"
 assert "cat $sixth/.workdir/b" "b-v1"
+
+# a file a nested entry tracks keeps its own saves while the directory
+# around it is carried
+assert_succeed "mise dot sync"
+assert_succeed "mise -E work dot pull --yes"
+mkdir -p ~/.nest
+echo other-v1 >~/.nest/other
+echo child-v1 >~/.nest/child
+assert_succeed "mise dot track ~/.nest --profile work --yes"
+assert_succeed "mise dot track ~/.nest/child --profile work --yes"
+assert_succeed "mise -E work dot save"
+assert_succeed "mise -E work dot sync"
+assert "git --git-dir=$origin show main:home@work/.nest/child" "child-v1"
+seventh="$(dirname "$HOME")/seventh"
+mkdir -p "$seventh/.nest"
+export seventh
+g() { machine "$seventh" "$@"; }
+export -f g
+assert_succeed "g bootstrap --adopt file://$origin --yes"
+echo child-v1 >"$seventh/.nest/child"
+echo mine >"$seventh/.nest/other"
+assert_succeed "g -E work dot save"
+echo child-v2 >"$seventh/.nest/child"
+assert_succeed "g -E work dot save"
+assert "git --git-dir=$seventh/.local/state/mise/history/repo.git show main:home@work/.nest/child" "child-v2"
+assert "git --git-dir=$seventh/.local/state/mise/history/repo.git show main:home@work/.nest/other" "other-v1"

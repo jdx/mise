@@ -222,6 +222,17 @@ pub(crate) async fn apply_locked_with_scope(
                 }
                 Err(err) => return Err(err),
             };
+            // a repository choice withdraws an earlier keep-local one
+            if take_remote.contains(&local)
+                && !req.dry_run
+                && shared_report.unheld.contains_key(&conflict.branch_path)
+                && let Some(entry) = tracked.entry_for(&local)
+            {
+                let _store_lock = store.lock()?;
+                let mut held = crate::system::history::held::Held::load(repo)?;
+                held.unkeep(&entry.tree_path(&entry.path)?);
+                held.save(repo)?;
+            }
             // **Keeping this machine's version of a stream it never held
             // means saving it.** Its saved version is another machine's, so
             // there is nothing of this machine's to publish yet: hold the

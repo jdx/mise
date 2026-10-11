@@ -1128,7 +1128,20 @@ fn carry_streams(
             .map(|head| repo.object_at(head, &path))
             .transpose()?
             .flatten();
+        // an entry nested in the carried one, and captured itself, keeps
+        // what this capture saved for it; overlays apply in order
+        let mut nested = vec![];
+        for (other, child) in entries.iter().enumerate() {
+            let child_path = child.tree_path(&child.path)?;
+            if !carry.contains(&other) && child_path.starts_with(&format!("{path}/")) {
+                nested.push(Overlay {
+                    object: repo.object_at(tree, &child_path)?,
+                    path: child_path,
+                });
+            }
+        }
         overlays.push(Overlay { path, object });
+        overlays.extend(nested);
     }
     repo.compose(tree, &overlays)
 }
