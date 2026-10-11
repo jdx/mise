@@ -118,6 +118,7 @@ pub enum UsesFromMacosTags {
 }
 
 impl UsesFromMacosTags {
+    /// Whether the dependency has a given Homebrew dependency tag.
     fn contains(&self, tag: &str) -> bool {
         match self {
             Self::One(value) => value == tag,
@@ -127,6 +128,7 @@ impl UsesFromMacosTags {
 }
 
 impl UsesFromMacos {
+    /// Required runtime dependency name, excluding build, test, and optional tags.
     pub fn runtime_name(&self) -> Option<&String> {
         match self {
             Self::Name(name) => Some(name),
@@ -137,6 +139,7 @@ impl UsesFromMacos {
         }
     }
 
+    /// Required build dependency name, excluding optional dependencies.
     pub fn build_name(&self) -> Option<&String> {
         match self {
             Self::Name(_) => None,
