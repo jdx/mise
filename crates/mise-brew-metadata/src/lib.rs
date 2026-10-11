@@ -46,6 +46,10 @@ pub struct Formula {
     /// homebrew/core commit this API snapshot was generated from
     #[serde(default)]
     pub tap_git_head: Option<String>,
+    /// declarative post-install actions from the Homebrew API, kept raw
+    /// because the step vocabulary is large and grows with brew
+    #[serde(default)]
+    pub post_install_steps: Vec<serde_json::Value>,
 }
 
 #[derive(Debug, Clone, Deserialize)]

@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+installs_dir="$MISE_DATA_DIR/installs/dummy"
+
+mise install dummy@1.0.0 dummy@2.0.0
+
+# No global version selects dummy yet, so there is no link.
+assert "test ! -e '$installs_dir/global' && test ! -L '$installs_dir/global'"
+
+# `global` follows the version global config selects.
+mise use -g dummy@1.0.0
+assert "test \"\$(readlink '$installs_dir/global')\" = ./1.0.0"
+mise use -g dummy@2.0.0
+assert "test \"\$(readlink '$installs_dir/global')\" = ./2.0.0"
+
+# A project override leaves it alone.
+mkdir project
+cd project
+mise use dummy@1.0.0
+assert "test \"\$(readlink '$installs_dir/global')\" = ./2.0.0"
+cd ..
+
+# Dropping the global selection removes the link.
+mise unuse -g dummy
+assert "test ! -e '$installs_dir/global' && test ! -L '$installs_dir/global'"

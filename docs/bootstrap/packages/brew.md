@@ -229,6 +229,18 @@ rewrites Homebrew's placeholder paths, re-signs changed binaries on macOS,
 writes a Homebrew-compatible receipt, and links the keg into the prefix.
 Keg-only formulae get only the `opt` link. mise never runs `brew`.
 
+Like `brew install`, mise copies the `etc` and `var` files a bottle ships into
+the prefix. A file you already have there is never overwritten: the bottle's
+copy is written beside it as `<file>.default`. It then runs the formula's
+declarative `post_install_steps` from the Homebrew API, which is how
+`ca-certificates` builds `etc/ca-certificates/cert.pem` and `openssl@4` links
+its `cert.pem` to it. mise implements the generic step types (`symlink`,
+`copy`, `move`, `remove`, `mkdir_p`, `touch`, `write`, `set_permissions` and
+`run`). It skips a step for a tool-specific type, such as
+`compile_gsettings_schemas`, and warns; run `brew postinstall <formula>` if you
+have Homebrew and the formula needs it. A failing step is a warning, not an
+install failure, as in Homebrew.
+
 ## Troubleshooting
 
 | Symptom                                   | What to do                                                                                                                |

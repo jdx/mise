@@ -393,21 +393,23 @@ impl TestTool {
         test_tools: &[String],
     ) -> Result<String> {
         let mut config = config.clone();
+        let extra_tools = test_tools
+            .iter()
+            .map(|tool| tool.parse())
+            .collect::<Result<Vec<ToolArg>>>()?;
         let mut args = vec![tool.clone()];
+        // A test that names a dependency itself (e.g. `python@3.14`) picks its version;
+        // adding the unpinned dependency as well would install `latest` next to it.
         args.extend(
             tool.ba
                 .backend()?
                 .get_all_dependencies(false)?
                 .into_iter()
+                .filter(|ba| !extra_tools.iter().any(|extra| *extra.ba == *ba))
                 .map(|ba| ba.to_string().parse())
                 .collect::<Result<Vec<ToolArg>>>()?,
         );
-        args.extend(
-            test_tools
-                .iter()
-                .map(|tool| tool.parse())
-                .collect::<Result<Vec<ToolArg>>>()?,
-        );
+        args.extend(extra_tools);
         let mut ts = ToolsetBuilder::new()
             .with_args(&args)
             .with_default_to_latest(true)
