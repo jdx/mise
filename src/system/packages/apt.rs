@@ -15,17 +15,18 @@ pub(crate) struct AptManager {
     /// `[bootstrap.apt.sources]` changed and the lists were refreshed for
     /// them (or, in a dry run, would be), so this run needs no other refresh.
     lists_refreshed: AtomicBool,
-    /// Packages found installed from elsewhere while a declared source offers
-    /// them, with that source's URL: recorded once installed, see
-    /// [`MovedToSources`].
-    moving: std::sync::Mutex<Vec<(String, String)>>,
+    /// URLs of the declared sources, set only by a run that may change the
+    /// machine: packages seen installed from them are recorded in
+    /// [`MovedToSources`]. Status queries and dry runs leave it empty and
+    /// record nothing.
+    recording_uris: std::sync::Mutex<std::collections::HashSet<String>>,
 }
 
 impl AptManager {
     pub(crate) fn new() -> Self {
         Self {
             lists_refreshed: AtomicBool::new(false),
-            moving: Default::default(),
+            recording_uris: Default::default(),
         }
     }
 
@@ -131,22 +132,25 @@ impl AptManager {
         )))
     }
 
-    /// Remember the packages in `pkgs` that were just installed from a
-    /// declared source. A failure to record only means a later run checks
-    /// them again.
-    fn record_moved(&self, pkgs: &[PackageRequest]) {
-        let moving = std::mem::take(&mut *self.moving.lock().unwrap());
-        let installed = moving
-            .into_iter()
-            .filter(|(name, _)| pkgs.iter().any(|pkg| &pkg.name == name))
+    /// After an install or upgrade, remember which of `pkgs` now come from a
+    /// declared source, whether mise moved them there or installed them fresh.
+    async fn record_installed_from_sources(&self, pkgs: &[PackageRequest]) {
+        let uris = self.recording_uris.lock().unwrap().clone();
+        let names = pkgs
+            .iter()
+            .filter(|pkg| !pkg.name.contains(':'))
+            .map(|pkg| pkg.name.as_str())
             .collect::<Vec<_>>();
-        if installed.is_empty() {
+        if uris.is_empty() || names.is_empty() {
             return;
         }
-        let mut moved = MovedToSources::load();
-        moved.0.extend(installed);
-        if let Err(err) = moved.save() {
-            debug!("could not record packages moved to apt sources: {err:#}");
+        match self.policy_origins(&names).await {
+            Ok(policies) => MovedToSources::record(
+                policies
+                    .iter()
+                    .filter_map(|(name, policy)| Some((name, policy.installed_origin(&uris)?))),
+            ),
+            Err(err) => debug!("apt-cache policy failed, not recording sources: {err:#}"),
         }
     }
 
@@ -204,6 +208,22 @@ impl MovedToSources {
         Ok(())
     }
 
+    /// Add `entries`, writing only when one is new. A failure to record only
+    /// means a later run checks those packages again.
+    fn record<'a>(entries: impl Iterator<Item = (&'a String, &'a str)>) {
+        let mut moved = Self::load();
+        let before = moved.0.len();
+        moved
+            .0
+            .extend(entries.map(|(name, uri)| (name.clone(), uri.to_string())));
+        if moved.0.len() == before {
+            return;
+        }
+        if let Err(err) = moved.save() {
+            debug!("could not record packages installed from apt sources: {err:#}");
+        }
+    }
+
     fn contains(&self, name: &str, uri: &str) -> bool {
         self.0.contains(&(name.to_string(), uri.to_string()))
     }
@@ -219,24 +239,34 @@ struct PolicyOrigins {
 }
 
 impl PolicyOrigins {
+    /// The declared source offering the installed version.
+    fn installed_origin(&self, uris: &std::collections::HashSet<String>) -> Option<&str> {
+        self.declared_origin(self.installed.as_deref()?, uris)
+    }
+
+    fn declared_origin(
+        &self,
+        version: &str,
+        uris: &std::collections::HashSet<String>,
+    ) -> Option<&str> {
+        self.origins
+            .get(version)
+            .into_iter()
+            .flatten()
+            .find(|origin| uris.contains(*origin))
+            .map(String::as_str)
+    }
+
     /// The declared source offering the candidate, when the candidate is a
     /// different version and no declared source offers the installed one.
     fn declared_candidate_origin(&self, uris: &std::collections::HashSet<String>) -> Option<&str> {
         let (Some(installed), Some(candidate)) = (&self.installed, &self.candidate) else {
             return None;
         };
-        let declared = |version: &str| {
-            self.origins
-                .get(version)
-                .into_iter()
-                .flatten()
-                .find(|origin| uris.contains(*origin))
-                .map(String::as_str)
-        };
-        if installed == candidate || declared(installed).is_some() {
+        if installed == candidate || self.declared_origin(installed, uris).is_some() {
             return None;
         }
-        declared(candidate)
+        self.declared_origin(candidate, uris)
     }
 }
 
@@ -407,6 +437,10 @@ impl SystemPackageManager for AptManager {
                 if super::apt_sources::apply(sources, opts.dry_run).await? {
                     self.lists_refreshed.store(true, Ordering::Relaxed);
                 }
+                if !opts.dry_run {
+                    *self.recording_uris.lock().unwrap() =
+                        sources.iter().flat_map(|source| source.uris()).collect();
+                }
                 Ok(())
             }
             _ => Ok(()),
@@ -452,7 +486,16 @@ impl SystemPackageManager for AptManager {
                 return Ok(statuses);
             }
         };
-        let mut moving = self.moving.lock().unwrap();
+        // a package already on a declared source is recorded as well, so a
+        // later upload there is not mistaken for a move once the installed
+        // build drops out of the source's lists
+        if !self.recording_uris.lock().unwrap().is_empty() {
+            MovedToSources::record(
+                policies
+                    .iter()
+                    .filter_map(|(name, policy)| Some((name, policy.installed_origin(&uris)?))),
+            );
+        }
         for status in &mut statuses {
             let PackageState::Installed { version } = &status.state else {
                 continue;
@@ -470,7 +513,6 @@ impl SystemPackageManager for AptManager {
             if moved.contains(name, uri) {
                 continue;
             }
-            moving.push((name.clone(), uri.to_string()));
             status.state = PackageState::VersionMismatch {
                 installed: version.clone(),
             };
@@ -554,7 +596,7 @@ impl SystemPackageManager for AptManager {
             return Ok(());
         }
         sudo::run("apt-get", &args, &debian_frontend())?;
-        self.record_moved(pkgs);
+        self.record_installed_from_sources(pkgs).await;
         Ok(())
     }
 
@@ -583,7 +625,7 @@ impl SystemPackageManager for AptManager {
             return Ok(());
         }
         sudo::run("apt-get", &args, &debian_frontend())?;
-        self.record_moved(pkgs);
+        self.record_installed_from_sources(pkgs).await;
         Ok(())
     }
 }
@@ -681,6 +723,15 @@ git:
 ",
         );
         assert_eq!(policies["git"].declared_candidate_origin(&ppa_uris()), None);
+        assert_eq!(
+            policies["git"].installed_origin(&ppa_uris()),
+            Some("https://ppa.launchpadcontent.net/git-core/ppa/ubuntu")
+        );
+        // a distro build is not recorded as coming from the PPA
+        assert_eq!(
+            parse_policy_origins(GIT_POLICY)["git"].installed_origin(&ppa_uris()),
+            None
+        );
     }
 
     #[test]

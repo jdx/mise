@@ -97,10 +97,17 @@ longer matches, the next apply replaces it.
 A declared source also replaces a package that was already installed from
 somewhere else. If an image ships Ubuntu's `git` and you declare the `git-core`
 PPA, `mise bootstrap` installs the PPA's `git`, and status shows the old one as
-`version mismatch` until it does. mise moves each package to a source once per
-machine and records the move in its state directory. A later upload to the same
-source is left to `mise bootstrap packages upgrade`, as for any `latest`
-package. A version pin or an architecture-qualified name opts a package out.
+`version mismatch` until it does. mise records in its state directory which
+packages it has seen installed from a declared source, so each package moves
+once per machine and source. A later upload to the same source is left to
+`mise bootstrap packages upgrade`, as for any `latest` package. A version pin or
+an architecture-qualified name opts a package out. A dry run on a machine that
+does not have the source yet cannot show the move, because apt has no package
+lists for the source until it is added.
+
+When a tool's [system dependencies](/configuration/settings.html#system_deps)
+are installed automatically, mise adds declared sources only when it will not
+ask first. A prompted install uses the sources `mise bootstrap` already added.
 
 mise does not remove sources. Deleting an entry leaves its files in place;
 delete `/etc/apt/sources.list.d/mise-<name>.sources` and its keyring yourself.
