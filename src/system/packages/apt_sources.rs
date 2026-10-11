@@ -468,6 +468,9 @@ pub(crate) struct Applied {
 
 /// Bring every source to its declared state, then refresh package lists if
 /// anything changed so packages from the new sources can be installed.
+/// Failures, including a failed refresh, are collected in [`Applied`] rather
+/// than returned, so none of them hides another; only a failure to print a
+/// dry run's plan is returned.
 pub(crate) async fn apply(sources: &[AptSource], dry_run: bool) -> Result<Applied> {
     let mut applied = Applied {
         refreshed: false,
@@ -567,14 +570,18 @@ pub(crate) async fn apply(sources: &[AptSource], dry_run: bool) -> Result<Applie
     // A source whose lists were never fetched needs a refresh even though its
     // files are current: the run that wrote them may have failed, or stopped,
     // before its `apt-get update` finished.
-    applied.refreshed = changed || !sources_without_lists(&declared).is_empty();
-    if applied.refreshed {
+    if changed || !sources_without_lists(&declared).is_empty() {
         let args = vec!["update".to_string()];
         let env = vec![("DEBIAN_FRONTEND".to_string(), "noninteractive".to_string())];
         if dry_run {
             miseprintln!("{}", sudo::argv_with_env("apt-get", &args, &env).join(" "));
+            applied.refreshed = true;
+        } else if let Err(err) = sudo::run("apt-get", &args, &env) {
+            // the lists are not fresh, so the install's own refresh check
+            // still runs
+            applied.failures.push(err);
         } else {
-            sudo::run("apt-get", &args, &env)?;
+            applied.refreshed = true;
             // apt reports a repository it could not fetch as a warning and
             // still exits 0
             for name in sources_without_lists(&declared) {
