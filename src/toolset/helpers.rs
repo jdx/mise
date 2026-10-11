@@ -149,7 +149,8 @@ async fn preflight_system_deps_inner(
         return Ok(());
     }
 
-    let mgrs = crate::system::packages_from_requests(by_mgr)?;
+    let mut mgrs = crate::system::packages_from_requests(by_mgr)?;
+    crate::system::attach_apt_sources(config, &mut mgrs);
     let driver_opts = crate::system::driver::DriverOpts {
         manager: None,
         explicit: false,
