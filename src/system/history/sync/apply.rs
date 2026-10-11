@@ -1158,9 +1158,11 @@ fn saved_object(
     // the saved side as planning read it: see `super::share::current`
     let stream = entry.tree_path(&entry.path)?;
     let held = crate::system::history::held::Held::load(repo)?;
-    if !held.always_holds(&stream) && !held.holds(&stream, repo.object_at(&head, &stream)?.as_ref())
+    if !held.always_holds(&stream)
+        && !held.holds(&stream, repo.object_at(&head, &stream)?.as_ref())
+        && let Some(live) = super::share::usable_live(repo, path)?
     {
-        return live_object(repo, path);
+        return Ok(live);
     }
     repo.restored_object_at(&head, &entry.tree_path(path)?)
 }

@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+# An encrypted profile file edited elsewhere while the profile was inactive
+# here is an ordinary update when it is selected again: the version this
+# machine last held is compared by what it decrypts to.
+require_cmd git
+export MISE_HISTORY_NOTIFY=false
+export MISE_AGE_KEY=AGE-SECRET-KEY-142E7VJ8GUWR94MXDCYQJ7ZTQZRXKQSP9PUJU8HUQJ206QN7QPV4SM5QRL8
+origin="$PWD/encrypted-origin.git"
+git init -q --bare -b main "$origin"
+cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'
+[history.encryption]
+recipients = ["age1fuvsfq02qr5ju0nhh3rulrwracymjljlr5j49kres24ltd3fjq0s9z9d8l"]
+[dotfiles]
+"~/.secret" = { mode = "track", encrypt = true, variants = [{ profile = "work" }] }
+TOML
+echo secret-v1 >~/.secret
+assert_succeed "mise -E work dot save"
+assert_succeed "mise dot track ~/.config/mise/config.toml --yes"
+assert_succeed "mise dot origin set file://$origin --sync manual --yes"
+assert_succeed "mise -E work dot sync"
+
+second="$(dirname "$HOME")/second"
+mkdir -p "$second"
+export second
+b() {
+  (
+    cd "$second" || exit
+    env HOME="$second" XDG_CONFIG_HOME="$second/.config" MISE_CONFIG_DIR="$second/.config/mise" \
+      MISE_STATE_DIR="$second/.local/state/mise" MISE_DATA_DIR="$second/.local/share/mise" \
+      MISE_CACHE_DIR="$second/.cache/mise" MISE_TRUSTED_CONFIG_PATHS="$second" mise "$@"
+  )
+}
+export -f b
+assert_succeed "b -E work bootstrap --adopt file://$origin --yes"
+assert "cat $second/.secret" "secret-v1"
+# a fresh machine encrypts its first save again; share that before the
+# first machine edits, so the edit is the only change to the file
+assert_succeed "b -E work dot sync"
+assert_succeed "mise dot sync"
+assert_succeed "mise -E work dot pull --yes"
+# the profile goes inactive here, and the first machine edits the file
+assert_succeed "b dot save"
+echo secret-v2 >~/.secret
+assert_succeed "mise -E work dot save"
+assert_succeed "mise -E work dot sync"
+assert_succeed "b dot sync"
+assert_succeed "b dot pull --yes"
+assert "cat $second/.secret" "secret-v1"
+# selected again, the unchanged file takes the update without a conflict
+assert_succeed "b -E work dot pull --yes"
+assert "cat $second/.secret" "secret-v2"

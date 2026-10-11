@@ -120,3 +120,20 @@ assert_succeed "b dot pull --yes"
 assert_contains "b -E work dot status" "not applied here: ~/.work"
 assert_succeed "b -E work dot pull --yes"
 assert "cat $second/.work" "work-v4"
+
+# a directory where an unheld file belongs is left alone, and sync keeps
+# sharing every other file
+fifth="$(dirname "$HOME")/fifth"
+mkdir -p "$fifth"
+export fifth
+e() { machine "$fifth" "$@"; }
+export -f e
+assert_succeed "e bootstrap --adopt file://$origin --yes"
+mkdir "$fifth/.work"
+assert_succeed "e -E work dot pull --yes"
+assert_succeed "test -d $fifth/.work"
+echo shared-from-fifth >"$fifth/.shared"
+assert_succeed "e -E work dot save"
+assert_succeed "e -E work dot sync"
+assert "git --git-dir=$origin show main:home/.shared" "shared-from-fifth"
+assert "git --git-dir=$origin show main:home@work/.work" "work-v4"

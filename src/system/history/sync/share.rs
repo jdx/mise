@@ -77,8 +77,7 @@ pub(crate) fn current(repo: &HistoryRepo, tracked: &TrackedSet) -> Result<ShareR
         // the live file is what this machine has
         let object = if held {
             repo.restored_object_at(&head, &file.path)?
-        } else {
-            let live = super::apply::live_object(repo, &local)?;
+        } else if let Some(live) = usable_live(repo, &local)? {
             // a file missing here while its stream was not selected is not
             // a deletion this machine made: without a base, the pull
             // applies the saved version
@@ -88,6 +87,11 @@ pub(crate) fn current(repo: &HistoryRepo, tracked: &TrackedSet) -> Result<ShareR
             };
             report.unheld.insert(file.path.clone(), base);
             live
+        } else {
+            // a directory or unreadable path where the file belongs is that
+            // path's own conflict, decided when the pull plans it, not a
+            // reason to stop every other file
+            repo.restored_object_at(&head, &file.path)?
         };
         let Some((mode, oid)) = object else {
             continue;
@@ -100,8 +104,9 @@ pub(crate) fn current(repo: &HistoryRepo, tracked: &TrackedSet) -> Result<ShareR
 }
 
 /// The version of `path` this machine last held, from its stream's frozen
-/// version, to compare the live file with. An encrypted path has none: the
-/// frozen version is ciphertext, and the live file is not.
+/// version, to compare the live file with. An encrypted version is
+/// compared by what it decrypts to, like the live file; one that cannot be
+/// decrypted here gives no baseline, so the pull asks rather than guesses.
 fn held_base(
     repo: &HistoryRepo,
     head: &str,
@@ -110,6 +115,20 @@ fn held_base(
     path: &str,
 ) -> Result<Option<(String, String)>> {
     let Some(frozen) = held.frozen(stream) else {
+        return Ok(None);
+    };
+    let object = if path == stream {
+        Some(frozen.clone())
+    } else {
+        match path
+            .strip_prefix(stream)
+            .and_then(|rest| rest.strip_prefix('/'))
+        {
+            Some(relative) if frozen.0 == "040000" => repo.object_at(&frozen.1, relative)?,
+            _ => None,
+        }
+    };
+    let Some(object) = object else {
         return Ok(None);
     };
     let encrypted =
@@ -121,18 +140,22 @@ fn held_base(
                         .is_some_and(|rest| rest.starts_with('/'))
             })
         });
-    if encrypted {
-        return Ok(None);
+    if !encrypted {
+        return Ok(Some(object));
     }
-    if path == stream {
-        return Ok(Some(frozen.clone()));
-    }
-    match path
-        .strip_prefix(stream)
-        .and_then(|rest| rest.strip_prefix('/'))
-    {
-        Some(relative) if frozen.0 == "040000" => repo.object_at(&frozen.1, relative),
-        _ => Ok(None),
+    Ok(super::files::decrypt(repo, path, &object, console::user_attended_stderr()).ok())
+}
+
+/// The live object at `path`, or `None` when the path itself cannot stand
+/// in for a file (see [`super::apply::UnusableLive`]).
+pub(super) fn usable_live(
+    repo: &HistoryRepo,
+    path: &std::path::Path,
+) -> Result<Option<Option<(String, String)>>> {
+    match super::apply::live_object(repo, path) {
+        Ok(live) => Ok(Some(live)),
+        Err(err) if err.downcast_ref::<super::apply::UnusableLive>().is_some() => Ok(None),
+        Err(err) => Err(err),
     }
 }
 
