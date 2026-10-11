@@ -131,7 +131,10 @@ impl UsesFromMacos {
         match self {
             Self::Name(name) => Some(name),
             Self::Tagged(deps) => deps.iter().find_map(|(name, tags)| {
-                (!tags.contains("build") && !tags.contains("test")).then_some(name)
+                (!tags.contains("build")
+                    && !tags.contains("test")
+                    && !tags.contains("optional"))
+                .then_some(name)
             }),
         }
     }
@@ -141,7 +144,7 @@ impl UsesFromMacos {
             Self::Name(_) => None,
             Self::Tagged(deps) => deps
                 .iter()
-                .find_map(|(name, tags)| tags.contains("build").then_some(name)),
+                .find_map(|(name, tags)| (tags.contains("build") && !tags.contains("optional")).then_some(name)),
         }
     }
 }
@@ -352,7 +355,10 @@ mod tests {
                 "bzip2",
                 {"bison": "build"},
                 {"sqlite": "test"},
-                {"llvm": ["build", "test"]}
+                {"llvm": ["build", "test"]},
+                {"unneeded": "optional"},
+                {"suggested": "recommended"},
+                {"disabled-build": ["build", "optional"]}
             ],
             "variations": {
                 "arm64_linux": {"uses_from_macos": ["zlib"]},
@@ -368,6 +374,10 @@ mod tests {
         assert!(deps[2].runtime_name().is_none());
         assert!(deps[2].build_name().is_none());
         assert_eq!(deps[3].build_name().map(String::as_str), Some("llvm"));
+        assert!(deps[4].runtime_name().is_none());
+        assert!(deps[4].build_name().is_none());
+        assert_eq!(deps[5].runtime_name().map(String::as_str), Some("suggested"));
+        assert!(deps[6].build_name().is_none());
         assert_eq!(
             formula.uses_from_macos_for("arm64_linux")[0]
                 .runtime_name()

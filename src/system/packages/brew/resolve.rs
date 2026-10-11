@@ -421,37 +421,82 @@ mod tests {
     }
 
     #[test]
-    fn linux_uses_from_macos_dependencies_are_included_in_the_closure() {
+    fn linux_bottle_includes_uses_from_macos_runtime_dependencies_only() {
         let formula: Formula = serde_json::from_value(serde_json::json!({
             "name": "freetype",
             "versions": {"stable": "1.0"},
             "dependencies": ["libpng"],
             "build_dependencies": ["pkgconf"],
-            "uses_from_macos": ["bzip2", {"bison": "build"}, {"sqlite": "test"}],
+            "uses_from_macos": [
+                "bzip2",
+                {"bison": "build"},
+                {"sqlite": "test"},
+                {"optional-tool": "optional"},
+                {"recommended-tool": "recommended"}
+            ],
+            "bottle": {
+                "stable": {
+                    "files": {
+                        "x86_64_linux": {
+                            "cellar": ":any",
+                            "url": "https://example.com/freetype.tar.gz",
+                            "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+                        },
+                        "arm64_linux": {
+                            "cellar": ":any",
+                            "url": "https://example.com/freetype-arm64.tar.gz",
+                            "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+                        }
+                    }
+                }
+            },
             "variations": {
-                "x86_64_linux": {"dependencies": ["libpng", "zlib-ng-compat"]}
+                "x86_64_linux": {"dependencies": ["libpng", "zlib-ng-compat"]},
+                "arm64_linux": {"dependencies": ["libpng", "zlib-ng-compat"]}
             }
         }))
         .unwrap();
 
-        let runtime: Vec<&str> = runtime_deps(&formula, "x86_64_linux")
-            .iter()
-            .map(|name| name.as_str())
-            .collect();
-        let install: Vec<&str> = install_deps(&formula, "x86_64_linux")
+        if !cfg!(target_os = "linux") {
+            return;
+        }
+        assert!(super::super::source::has_bottle(&formula));
+        let tag = dep_tag(&formula, &tag::host_tag());
+        let install: Vec<&str> = install_deps(&formula, &tag)
             .iter()
             .map(|name| name.as_str())
             .collect();
 
+        assert_eq!(
+            install,
+            ["libpng", "zlib-ng-compat", "bzip2", "recommended-tool"]
+        );
+    }
+
+    #[test]
+    fn linux_source_build_includes_build_dependencies() {
+        let formula: Formula = serde_json::from_value(serde_json::json!({
+            "name": "freetype",
+            "versions": {"stable": "1.0"},
+            "dependencies": ["libpng"],
+            "build_dependencies": ["pkgconf"],
+            "uses_from_macos": [
+                "bzip2",
+                {"bison": "build"},
+                {"sqlite": "test"},
+                {"optional-tool": "optional"}
+            ]
+        }))
+        .unwrap();
+
+        let install: Vec<&str> = install_deps(&formula, &tag::host_tag())
+            .iter()
+            .map(|name| name.as_str())
+            .collect();
         if cfg!(target_os = "linux") {
-            assert_eq!(runtime, ["libpng", "zlib-ng-compat", "bzip2"]);
-            assert_eq!(
-                install,
-                ["libpng", "zlib-ng-compat", "bzip2", "pkgconf", "bison"]
-            );
+            assert_eq!(install, ["libpng", "bzip2", "pkgconf", "bison"]);
         } else {
-            assert_eq!(runtime, ["libpng", "zlib-ng-compat"]);
-            assert_eq!(install, ["libpng", "zlib-ng-compat", "pkgconf"]);
+            assert_eq!(install, ["libpng", "pkgconf"]);
         }
     }
 
