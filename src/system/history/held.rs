@@ -209,10 +209,15 @@ fn live_matches_saved(
         return Ok(false);
     };
     let roots = super::sync::layout::Roots::current();
+    // the files this entry owns itself, by the same rule as the saved ones
+    // below: a nested entry's files are that entry's to compare
     let live: BTreeSet<&PathBuf> = walk
         .files
         .iter()
-        .filter(|(_, (owner, _))| *owner == index)
+        .filter(|(path, (owner, _))| {
+            *owner == index
+                && super::tracked::owning_entry_index(&walk.entries, path) == Some(index)
+        })
         .map(|(path, _)| path)
         .collect();
     // only this stream's own files: a directory's subtree, or the one file

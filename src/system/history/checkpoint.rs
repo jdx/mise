@@ -570,17 +570,33 @@ impl Store {
         // contents is not a change this checkpoint made, and neither is an
         // unheld stream's
         if !carried.is_empty() {
+            let under = |path: &str, entry: &str| {
+                path == entry
+                    || path
+                        .strip_prefix(entry)
+                        .is_some_and(|rest| rest.starts_with('/'))
+            };
+            // an entry nested in a carried one and captured itself keeps
+            // its changes (see `carry_streams`)
+            let captured: Vec<String> = walk
+                .entries
+                .iter()
+                .enumerate()
+                .filter(|(index, _)| !carried.contains(index))
+                .map(|(_, entry)| entry.display())
+                .collect();
             let carried: Vec<String> = carried
                 .iter()
                 .map(|index| walk.entries[*index].display())
                 .collect();
             let keep = |path: &String| {
-                !carried.iter().any(|entry| {
-                    path == entry
-                        || path
-                            .strip_prefix(entry.as_str())
-                            .is_some_and(|rest| rest.starts_with('/'))
-                })
+                !carried.iter().any(|entry| under(path, entry))
+                    || captured.iter().any(|nested| {
+                        under(path, nested)
+                            && carried
+                                .iter()
+                                .any(|entry| under(nested, entry) && nested != entry)
+                    })
             };
             changes.added.retain(keep);
             changes.modified.retain(keep);
