@@ -296,6 +296,34 @@ pub(crate) fn decrypt(
     Ok(decrypted)
 }
 
+/// Whether `object` already holds `content` at `path` for the recipients
+/// `scheme` names, so a save can keep that ciphertext. Encryption is
+/// randomized: without this, a machine with no encryption cache, such as one
+/// that just adopted the setup, rewrites every encrypted file it saves, and
+/// that rewrite conflicts with the next real edit from another machine.
+pub(crate) fn holds(
+    repo: &HistoryRepo,
+    path: &str,
+    object: &Object,
+    mode: &str,
+    content: &[u8],
+    scheme: &str,
+) -> bool {
+    let Ok(Some(outer)) = envelope(repo, object, agecrypt::MAX_ENCRYPTED_BYTES) else {
+        return false;
+    };
+    if outer.scheme != scheme || outer.mode != mode {
+        return false;
+    }
+    let Ok(decrypted) = decrypt(repo, path, object, false) else {
+        return false;
+    };
+    decrypted.0 == mode
+        && repo
+            .transient_blob_id(content)
+            .is_ok_and(|oid| oid == decrypted.1)
+}
+
 fn encrypt(
     repo: &HistoryRepo,
     path: &str,

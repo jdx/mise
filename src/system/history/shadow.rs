@@ -444,6 +444,7 @@ impl HistoryRepo {
             .ok()
             .and_then(|bytes| serde_json::from_slice(&bytes).ok())
             .unwrap_or_default();
+        let head = self.ref_oid(Self::HISTORY_REF)?;
         let mut roots = walk.roots.clone();
         let mut overlays = vec![];
         let mut recipients = None;
@@ -503,26 +504,41 @@ impl HistoryRepo {
                         entry.oid.clone()
                     }
                     _ => {
-                        let recipients = match &recipients {
-                            Some(recipients) => recipients,
-                            None => recipients.insert(
-                                normalized
-                                    .iter()
-                                    .map(|recipient| {
-                                        crate::agecrypt::parse_recipient_mode(
-                                            recipient,
-                                            interactive,
-                                        )?
-                                        .ok_or_else(
-                                            || eyre::eyre!("invalid encrypted-file recipient"),
-                                        )
-                                    })
-                                    .collect::<Result<Vec<_>>>()?,
-                            ),
+                        // a fresh cache, as on a machine that just adopted
+                        // the setup, keeps what history already encrypts
+                        let previous = match &head {
+                            Some(head) => self.object_at(head, &path)?,
+                            None => None,
+                        }
+                        .filter(|previous| {
+                            super::sync::files::holds(self, &path, previous, mode, &bytes, &scheme)
+                        });
+                        let oid = match previous {
+                            Some((_, oid)) => oid,
+                            None => {
+                                let recipients = match &recipients {
+                                    Some(recipients) => recipients,
+                                    None => recipients.insert(
+                                        normalized
+                                            .iter()
+                                            .map(|recipient| {
+                                                crate::agecrypt::parse_recipient_mode(
+                                                    recipient,
+                                                    interactive,
+                                                )?
+                                                .ok_or_else(|| {
+                                                    eyre::eyre!("invalid encrypted-file recipient")
+                                                })
+                                            })
+                                            .collect::<Result<Vec<_>>>()?,
+                                    ),
+                                };
+                                let encoded = super::sync::files::encode(
+                                    &path, mode, &bytes, &scheme, recipients,
+                                )?;
+                                self.hash_blob(&encoded)?
+                            }
                         };
-                        let encoded =
-                            super::sync::files::encode(&path, mode, &bytes, &scheme, recipients)?;
-                        let oid = self.hash_blob(&encoded)?;
                         cache.insert(
                             path.clone(),
                             EncryptionCacheEntry {
