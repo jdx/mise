@@ -61,8 +61,8 @@ activation there would fix the tool versions of the directory the login shell
 started in. Shims choose the version each time a tool runs, from the directory
 it runs in. That is why the login files, `~/.zprofile` and `~/.bash_profile`,
 get shims, while `~/.zshrc` and `~/.bashrc`, which interactive shells read, get
-full activation. fish has one
-startup file, `config.fish`, and it gets full activation. See
+full activation. fish has one startup file, `config.fish`, so `fish = "auto"`
+splits it: full activation in interactive shells and shims everywhere else. See
 [Shims](/dev-tools/shims.html#overview) for how the two compare.
 
 Bash login shells read `~/.bash_profile` but not `~/.bashrc`. If your
