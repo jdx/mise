@@ -361,9 +361,19 @@ impl HttpBackend {
     /// `request` holds the options a tool request adds on top of the shorthand's
     /// own, such as a `url` written in `mise.toml`.
     fn template_uses(&self, request: Option<&ToolVersionOptions>, name: &str) -> bool {
-        let needle = format!("{name}(");
+        // Only URLs are templates that pick an artifact; other options can mention
+        // the function in plain text.
+        fn calls(value: &serde_json::Value, key: &str, call: &regex::Regex) -> bool {
+            match value {
+                serde_json::Value::String(s) => key.ends_with("url") && call.is_match(s),
+                serde_json::Value::Object(map) => map.iter().any(|(k, v)| calls(v, k, call)),
+                _ => false,
+            }
+        }
+        let call =
+            regex::Regex::new(&format!(r"\b{name}\s*\(")).expect("valid template call regex");
         let uses = |opts: &ToolVersionOptions| {
-            serde_json::to_string(&opts.opts).is_ok_and(|opts| opts.contains(&needle))
+            serde_json::to_value(&opts.opts).is_ok_and(|opts| calls(&opts, "", &call))
         };
         uses(&self.ba.opts()) || request.is_some_and(uses)
     }
@@ -388,7 +398,7 @@ impl HttpBackend {
     /// Names the platform it looked for and the ones the tool does declare, because the fix is
     /// usually to add that key rather than to pick a different tool.
     fn missing_url_error(&self, opts: &HttpOptions<'_>) -> eyre::Report {
-        let platform_key = self.get_platform_key();
+        let platform_key = self.platform_key_for(Some(opts.raw()));
         let available = opts.url_platforms();
         if available.is_empty() {
             eyre::eyre!("Http backend requires 'url' option")
@@ -850,7 +860,7 @@ impl HttpBackend {
             checksum: opts.checksum(),
             size: file_path.metadata()?.len(),
             extracted_at: SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs(),
-            platform: self.get_platform_key(),
+            platform: self.platform_key_for(Some(opts.raw())),
         };
 
         let json = serde_json::to_string_pretty(&metadata)?;
@@ -1299,7 +1309,11 @@ impl Backend for HttpBackend {
     async fn install_operation_count(&self, tv: &ToolVersion, _ctx: &InstallContext) -> usize {
         let raw_opts = tv.request.options();
         let opts = HttpOptions::new(&raw_opts);
-        super::http_install_operation_count(opts.checksum().is_some(), &self.get_platform_key(), tv)
+        super::http_install_operation_count(
+            opts.checksum().is_some(),
+            &self.platform_key_for(Some(&tv.request.options())),
+            tv,
+        )
     }
 
     /// Options that affect which artifact is downloaded, resolved for the target
