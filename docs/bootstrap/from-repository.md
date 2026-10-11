@@ -12,9 +12,24 @@ setup repository of tracked dotfiles.
 
 ## Choose `--from` or `--adopt`
 
+The two flags differ in what the repository becomes on this machine.
+
+Use `--from` for a setup project that you apply but do not make your own
+configuration. A typical case is a workstation setup repository that a team
+maintains: its `mise.toml` installs the team's packages and tools and writes
+the files every machine needs. mise keeps a checkout of the project, runs
+bootstrap from it, and leaves your global config directory as it was. Your own
+configuration stays wherever you keep it, and you can apply the project again
+later.
+
+Use `--adopt` when the repository should be this machine's own configuration
+from then on. That is either your global mise config, which every later mise
+command reads, or a setup repository of tracked dotfiles, which mise restores
+and keeps in sync with your other machines.
+
 | Repository holds                                       | Command                        | Where the repository goes                        | Afterwards                                                          |
 | ------------------------------------------------------ | ------------------------------ | ------------------------------------------------ | ------------------------------------------------------------------- |
-| A bootstrap project: `mise.toml` and the files it uses | `mise bootstrap --from <url>`  | `$MISE_DATA_DIR/bootstrap-repo`, or `--from-dir` | Rerun the same command to apply the project again                   |
+| A bootstrap project: `mise.toml` and the files it uses | `mise bootstrap --from <url>`  | `$MISE_DATA_DIR/bootstrap-repo`, or `--from-dir` | Rerun with `--update` to apply new commits                          |
 | Global mise config: `config.toml`, `conf.d/`, `tasks/` | `mise bootstrap --adopt <url>` | Your global config directory, `~/.config/mise`   | Every later mise command reads it as your global config             |
 | A setup repository created with `mise dot origin set`  | `mise bootstrap --adopt <url>` | mise's history store; files go to their paths    | Later changes arrive through the history watcher or `mise dot pull` |
 
@@ -40,8 +55,12 @@ mise -E work bootstrap --from git@github.com:you/workstation.git
 ```
 
 The checkout goes to `$MISE_DATA_DIR/bootstrap-repo`, normally
-`~/.local/share/mise/bootstrap-repo`. Use `--from-dir <DIR>` to choose another
-directory.
+`~/.local/share/mise/bootstrap-repo`, and stays there for later runs. Use
+`--from-dir <DIR>` to choose another directory.
+
+The project does not replace your global config. mise still loads it, as it
+does for any directory, so a bootstrap from the project also applies what your
+global config declares, such as its `[bootstrap.packages]` and hooks.
 
 To check out a branch, tag, or commit instead of the default branch, add
 `?ref=` to the URL. A `git::` prefix is accepted but not needed:
