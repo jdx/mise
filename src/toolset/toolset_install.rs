@@ -824,7 +824,10 @@ impl Toolset {
         .await?;
         let backend = tv.backend()?;
         backend::ensure_backend_enabled(&backend.get_type())?;
-        crate::lockfile::ensure_locked_url_matches_version(&tv, &backend.get_platform_key())?;
+        crate::lockfile::ensure_locked_url_matches_version(
+            &tv,
+            &backend.get_platform_key_for(&tv),
+        )?;
         tv.ba().warn_if_locked_backend_superseded(&tv.version);
         let install_dir = opts.install_dir.clone().or_else(|| {
             opts.scoped_install_dirs

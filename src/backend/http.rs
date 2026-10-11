@@ -1245,6 +1245,10 @@ impl Backend for HttpBackend {
         self.platform_key_for(None)
     }
 
+    fn get_platform_key_for(&self, tv: &ToolVersion) -> String {
+        self.platform_key_for(Some(&tv.request.options()))
+    }
+
     fn platform_variants(&self, platform: &Platform) -> Vec<Platform> {
         if platform.qualifier.as_deref() == Some("musl")
             && platform.arch == "x64"
