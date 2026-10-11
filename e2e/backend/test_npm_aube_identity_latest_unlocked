@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+
+# With the identity layout, a graph-locked npm install (made by a project with
+# a lockfile) lists as `<version>~aube~<digest>`. An unlocked `latest` elsewhere
+# must resolve to the npm version it stands for, not to that private name,
+# which no plain request can ever be installed as (discussion #14276).
+export MISE_EXPERIMENTAL=1
+export MISE_INSTALL_LAYOUT=identity
+
+install_path() {
+  mise ls --current --json npm:inflight | jq -r '.[0].install_path'
+}
+
+mkdir project global
+for dir in project global; do
+  cat >"$dir/mise.toml" <<'MISE_TOML'
+[tools]
+node = "20.11.1"
+"npm:inflight" = "latest"
+MISE_TOML
+done
+
+cd project
+mise lock
+assert_contains "cat mise.lock" 'aube = { path = ".mise/locks/npm-inflight/'
+mise install
+graph_dir="$(install_path)"
+[[ $graph_dir == "$MISE_DATA_DIR/installs/inflight-"* ]] || fail "no graph install: $graph_dir"
+version="$(mise ls --current --json npm:inflight | jq -r '.[0].version')"
+assert_contains "cat mise.lock" "version = \"$version\""
+
+cd ../global
+assert_succeed "mise install"
+assert_not_contains "mise ls npm:inflight 2>&1" "missing"
+assert_not_contains "mise ls npm:inflight 2>&1" "~aube~"
+assert "mise ls --current --json npm:inflight | jq -r '.[0].version'" "$version"
+plain_dir="$(install_path)"
+[[ $plain_dir == "$MISE_DATA_DIR/installs/inflight-"* ]] || fail "no plain install: $plain_dir"
+[[ $plain_dir != "$graph_dir" ]] || fail "the unlocked request runs the project's graph install"
+
+# The project keeps its own graph install.
+cd ../project
+[[ "$(install_path)" == "$graph_dir" ]] || fail "the project lost its graph install"

@@ -348,7 +348,18 @@ impl ToolVersion {
     /// version it stands for. Lockfiles and dependency resolvers must only
     /// ever see the logical version; the digest is a private path identity.
     pub fn strip_install_path_identity(&mut self) {
-        let version = if self.aube_lock.is_none() {
+        if let Some(version) = self.install_path_identity_version().map(str::to_string) {
+            // Keep pointing at the directory that was found.
+            self.install_path = Some(self.install_path());
+            self.version = version;
+        }
+    }
+
+    /// The logical version of a version named by an install directory with a
+    /// private dependency-graph suffix that this version's own graph does not
+    /// account for.
+    fn install_path_identity_version(&self) -> Option<&str> {
+        if self.aube_lock.is_none() {
             self.aube_install_path_version()
                 .or_else(|| self.legacy_aube_install_path_version())
         } else {
@@ -359,12 +370,22 @@ impl ToolVersion {
                 .is_none()
                 .then(|| self.uv_install_path_version())
                 .flatten()
-        });
-        if let Some(version) = version.map(str::to_string) {
-            // Keep pointing at the directory that was found.
-            self.install_path = Some(self.install_path());
-            self.version = version;
+        })
+    }
+
+    /// A version chosen from the installed versions of the request's tool. Under
+    /// the identity layout a graph install made from a lockfile lists as
+    /// `<version>~aube~<digest>` (or `~uv~`). A request without that graph
+    /// cannot be installed under that name, so it stands for the version
+    /// itself, and the layout finds the request's own installation of it.
+    fn from_installed(request: ToolRequest, name: String) -> Self {
+        let tv = Self::new(request, name);
+        if crate::install_layout::resolver::applies_to(&tv)
+            && let Some(version) = tv.install_path_identity_version().map(str::to_string)
+        {
+            return Self::new(tv.request, version);
         }
+        tv
     }
 
     pub(crate) fn aube_install_path_version(&self) -> Option<&str> {
@@ -832,7 +853,7 @@ impl ToolVersion {
                 && !should_filter_installed_versions
                 && let Some(v) = backend.latest_installed_version(None)?
             {
-                return build(v);
+                return Ok(Self::from_installed(request, v));
             }
             if defer_missing_lazy {
                 return build(v);
@@ -906,7 +927,7 @@ impl ToolVersion {
                 .as_ref()
                 .and_then(|matches| matches.last())
         {
-            return build(v.clone());
+            return Ok(Self::from_installed(request, v.clone()));
         }
         if defer_missing_lazy {
             return build(v);
@@ -923,7 +944,7 @@ impl ToolVersion {
                     crate::semver::npm_semver_range_filter(&installed_versions, &v)
                     && let Some(v) = matches.last()
                 {
-                    return build(v.clone());
+                    return Ok(Self::from_installed(request, v.clone()));
                 }
             }
             if !is_offline {
@@ -1102,7 +1123,7 @@ impl ToolVersion {
             && !should_filter_installed_versions
             && let Some(v) = backend.list_installed_versions_matching(prefix).last()
         {
-            return Ok(Self::new(request, v.to_string()));
+            return Ok(Self::from_installed(request, v.to_string()));
         }
         if opts.offline {
             return Ok(Self::new(request, prefix.to_string()));
