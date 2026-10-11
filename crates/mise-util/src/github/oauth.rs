@@ -517,6 +517,17 @@ fn pipe_to(cmd: &str, args: &[&str], text: &str) -> std::io::Result<()> {
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
         .spawn()?;
+    let result = feed_and_wait(&mut child, cmd, text);
+    if result.is_err() {
+        // Every failure path (write error, try_wait error, timeout) must not
+        // leave the tool running or unreaped.
+        let _ = child.kill();
+        let _ = child.wait();
+    }
+    result
+}
+
+fn feed_and_wait(child: &mut std::process::Child, cmd: &str, text: &str) -> std::io::Result<()> {
     child
         .stdin
         .take()
@@ -534,8 +545,6 @@ fn pipe_to(cmd: &str, args: &[&str], text: &str) -> std::io::Result<()> {
             };
         }
         if std::time::Instant::now() >= deadline {
-            let _ = child.kill();
-            let _ = child.wait();
             return Err(std::io::Error::new(
                 std::io::ErrorKind::TimedOut,
                 format!("{cmd} timed out"),
