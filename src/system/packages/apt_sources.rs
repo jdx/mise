@@ -165,11 +165,13 @@ impl AptSource {
     }
 
     fn sources_path(&self) -> PathBuf {
-        Path::new(SOURCES_DIR).join(format!("mise-{}.sources", self.name))
+        // apt paths are POSIX on every host that renders them, including
+        // Windows running the unit tests
+        PathBuf::from(format!("{SOURCES_DIR}/mise-{}.sources", self.name))
     }
 
     fn keyring_path(&self) -> PathBuf {
-        Path::new(KEYRINGS_DIR).join(format!("mise-{}.gpg", self.name))
+        PathBuf::from(format!("{KEYRINGS_DIR}/mise-{}.gpg", self.name))
     }
 
     fn describe(&self) -> String {
