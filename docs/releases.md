@@ -11,9 +11,16 @@ import Releases from '@jdxcode/docs-releases/Releases.vue';
 import { data } from './releases.data';
 </script>
 
-mise ships several releases a week, numbered by year and month, such as
-`2026.10.4`. To update, run `mise self-update` or use the package manager that
-installed mise; see [Updating mise](/installing-mise.html#updating).
+mise ships several releases a week. To update, run `mise self-update` or use the
+package manager that installed mise; see
+[Updating mise](/installing-mise.html#updating).
+
+## Release timeline {#timeline}
+
+Each bar is one release, oldest on the left. Click a bar or a release in the
+list to read its notes.
+
+<Releases :data="data" />
 
 ## Version numbers {#versioning}
 
@@ -30,18 +37,9 @@ describe each change in behavior. To require a minimum mise version for a
 project, set [`min_version`](/configuration.html#minimum-mise-version) in its
 `mise.toml`.
 
-## Release timeline {#timeline}
+## What the counts include {#counts}
 
-Each bar is one release, oldest on the left. Its height is the number of
-entries in that release's
-[changelog](https://github.com/jdx/mise/blob/main/CHANGELOG.md). Hover over or
-focus a bar to see its details. Click a bar or a release in the list to open its
-release notes, the same notes published on
-[GitHub](https://github.com/jdx/mise/releases).
-
-A change is one changelog entry: a feature, fix, registry addition, or
-dependency update. The count leaves out the New Contributors section and updates
-to the aqua registry that mise bundles. Releases since September 23, 2026, when
-GitHub Issues were turned back on, also show how many issues they resolved.
-
-<Releases :data="data" />
+A change is one entry in the
+[changelog](https://github.com/jdx/mise/blob/main/CHANGELOG.md): a feature, fix,
+registry addition, or dependency update. The count leaves out the New
+Contributors section and updates to the aqua registry that mise bundles.

@@ -348,18 +348,7 @@ impl ToolVersion {
     /// version it stands for. Lockfiles and dependency resolvers must only
     /// ever see the logical version; the digest is a private path identity.
     pub fn strip_install_path_identity(&mut self) {
-        if let Some(version) = self.install_path_identity_version().map(str::to_string) {
-            // Keep pointing at the directory that was found.
-            self.install_path = Some(self.install_path());
-            self.version = version;
-        }
-    }
-
-    /// The logical version of a version named by an install directory with a
-    /// private dependency-graph suffix that this version's own graph does not
-    /// account for.
-    fn install_path_identity_version(&self) -> Option<&str> {
-        if self.aube_lock.is_none() {
+        let version = if self.aube_lock.is_none() {
             self.aube_install_path_version()
                 .or_else(|| self.legacy_aube_install_path_version())
         } else {
@@ -370,21 +359,25 @@ impl ToolVersion {
                 .is_none()
                 .then(|| self.uv_install_path_version())
                 .flatten()
-        })
+        });
+        if let Some(version) = version.map(str::to_string) {
+            // Keep pointing at the directory that was found. In the identity
+            // layout that name is a compatibility link, and the version it
+            // carries would otherwise be hashed into an identity nothing has.
+            self.install_path = Some(
+                crate::install_layout::resolver::physical_dir(self.ba(), &self.version)
+                    .unwrap_or_else(|| self.install_path()),
+            );
+            self.version = version;
+        }
     }
 
-    /// A version chosen from the installed versions of the request's tool. Under
-    /// the identity layout a graph install made from a lockfile lists as
-    /// `<version>~aube~<digest>` (or `~uv~`). A request without that graph
-    /// cannot be installed under that name, so it stands for the version
-    /// itself, and the layout finds the request's own installation of it.
+    /// A version chosen from the installed versions of the request's tool. The
+    /// newest or best-matching install may be a graph-locked one, listed by its
+    /// private directory name (`3.9.9~aube~<digest>`).
     fn from_installed(request: ToolRequest, name: String) -> Self {
-        let tv = Self::new(request, name);
-        if crate::install_layout::resolver::applies_to(&tv)
-            && let Some(version) = tv.install_path_identity_version().map(str::to_string)
-        {
-            return Self::new(tv.request, version);
-        }
+        let mut tv = Self::new(request, name);
+        tv.strip_install_path_identity();
         tv
     }
 

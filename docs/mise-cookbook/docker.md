@@ -27,9 +27,9 @@ Replace the example version with the
 The scratch image contains `/usr/local/bin/mise`, which is its entrypoint, and
 CA certificates. It has no shell or package manager. The Debian image is based
 on Debian 13 (trixie) slim and includes the glibc mise binary,
-`ca-certificates`, `curl` and `git`. It has no `ENTRYPOINT`, so it works as a
-base image and CI runners can supply their own shell command. Neither image
-preinstalls tools.
+`ca-certificates`, `curl`, `git` and `libatomic1`, which Node.js 26 and later
+need. It has no `ENTRYPOINT`, so it works as a base image and CI runners can
+supply their own shell command. Neither image preinstalls tools.
 
 Both images set `MISE_DATA_DIR=/mise`, `MISE_CONFIG_DIR=/mise` and
 `MISE_CACHE_DIR=/mise/cache`, and add `/mise/shims` to `PATH`. The release

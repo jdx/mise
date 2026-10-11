@@ -17,6 +17,12 @@ on:
       MISE_VERSIONS_API_SECRET:
         required: false
 
+# Held by the caller, which only calls test-impl.yml: a group set inside the
+# called workflow would use this workflow's name too and wait for this run.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name != 'push' }}
+
 permissions: {}
 
 jobs:

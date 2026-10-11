@@ -13,7 +13,7 @@ importers:
     devDependencies:
       '@jdxcode/docs-releases':
         specifier: '0.1'
-        version: 0.1.1(vitepress@1.6.4)(vue@3.5.43(typescript@7.0.2))
+        version: 0.1.2(vitepress@1.6.4)(vue@3.5.43(typescript@7.0.2))
       '@resvg/resvg-js':
         specifier: ^2.6.2
         version: 2.6.2
@@ -380,8 +380,8 @@ packages:
   '@iconify/utils@3.1.7':
     resolution: {integrity: sha512-JZHlwdID+dy+lTgbYC8NEC4zeugqeYsc6jewvzb4c58kHauJn+X7rNwQjxz5p2qSjqaEeQoLkCIQ9v/H4PK0/w==}
 
-  '@jdxcode/docs-releases@0.1.1':
-    resolution: {integrity: sha512-Ru38zWyKxE0GXP6GnESZCJs9EI5stBWM92C1aV8mAa4/v42wdOh0eNpKkqCyWsIdmRFikh4hYhYa8IAghS2jwA==}
+  '@jdxcode/docs-releases@0.1.2':
+    resolution: {integrity: sha512-crpzBH0fu0sPa5JiaU/EJITUI1mYGkm4UM0yCTqQleRIrMOKXnAFYdBbflVAPwC+V95Wq2MXuHNeZj/vX4QpDg==}
     engines: {node: '>=22'}
     hasBin: true
     peerDependencies:
@@ -1862,7 +1862,7 @@ snapshots:
       '@iconify/types': 2.0.0
       import-meta-resolve: 4.2.0
 
-  '@jdxcode/docs-releases@0.1.1(vitepress@1.6.4)(vue@3.5.43(typescript@7.0.2))':
+  '@jdxcode/docs-releases@0.1.2(vitepress@1.6.4)(vue@3.5.43(typescript@7.0.2))':
     dependencies:
       vitepress: 1.6.4
       vue: 3.5.43(typescript@7.0.2)

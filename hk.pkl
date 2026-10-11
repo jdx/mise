@@ -117,13 +117,17 @@ fi
           effect = "write"
         }
     }
-    // lints GitHub Actions workflows (jdx/jactionlint, a maintained actionlint fork)
+    // lints GitHub Actions workflows (jdx/jactionlint, security and policy linter for workflows)
     ["jactionlint"] {
-        glob = List(".github/workflows/*.yml", ".github/workflows/*.yaml")
+        glob = List(".github/workflows/*.yml", ".github/workflows/*.yaml", ".github/actions/**/action.yml", ".github/actions/**/action.yaml", ".github/dependabot.yml", ".github/dependabot.yaml")
         batch = true
         check = new CommandSpec {
           command = "jactionlint {{ files }}"
           effect = "read"
+        }
+        fix = new CommandSpec {
+          command = "jactionlint --fix {{ files }}"
+          effect = "write"
         }
     }
     ["markdownlint"] {
