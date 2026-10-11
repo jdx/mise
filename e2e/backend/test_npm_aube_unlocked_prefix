@@ -23,7 +23,10 @@ for layout in identity legacy; do
   export MISE_INSTALL_LAYOUT=$layout
   rm -rf "$MISE_DATA_DIR/installs" locked/mise.lock locked/.mise
   MISE_LOCKFILE=1 mise -C locked install
-  graph_dir="$(find "$MISE_DATA_DIR/installs/npm-inflight" -mindepth 1 -maxdepth 1 -name '*~aube~*' -printf '%f\n')"
+  graph_dir=""
+  for dir in "$MISE_DATA_DIR/installs/npm-inflight/"*"~aube~"*; do
+    if [[ -e $dir ]]; then graph_dir="${dir##*/}"; fi
+  done
   [[ -n $graph_dir ]] || fail "no ~aube~ install for npm:inflight"
   version="${graph_dir%%"~aube~"*}"
   graph_path="$(realpath "$MISE_DATA_DIR/installs/npm-inflight/$graph_dir")"
