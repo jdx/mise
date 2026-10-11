@@ -130,6 +130,9 @@ impl AptSource {
                 );
             }
             let (owner, archive) = parse_ppa(&ppa).map_err(|err| eyre!("{name}: {err}"))?;
+            if fingerprints.len() > 1 {
+                bail!("{name}: a PPA has a single signing key; give one fingerprint");
+            }
             AptSourceKind::Ppa { owner, archive }
         } else {
             let Some(uris) = config.uris else {
@@ -450,9 +453,13 @@ pub(crate) async fn apply(sources: &[AptSource], dry_run: bool) -> Result<bool> 
         let sources_path = source.sources_path();
         let keyring_path = source.keyring_path();
         let keyring = std::fs::read(&keyring_path).ok();
-        let key_current = source.keyring_current(keyring.as_deref());
         let existing = std::fs::read_to_string(&sources_path).ok();
         let stanza_current = existing.as_deref() == Some(stanza.as_str());
+        // without a declared fingerprint, any key on disk passes the check, so
+        // a source that points somewhere new (another PPA under the same name)
+        // must fetch the key that goes with it
+        let key_current = source.keyring_current(keyring.as_deref())
+            && (stanza_current || !source.fingerprints.is_empty());
         if key_current && stanza_current {
             debug!("apt source {}: up to date", source.name);
             continue;
@@ -667,6 +674,17 @@ mod tests {
             .contains("cannot also set uris, components, key")
         );
         assert!(err("x", AptSourceTomlConfig::default()).contains("set either ppa or uris"));
+        assert!(
+            err(
+                "x",
+                AptSourceTomlConfig {
+                    ppa: Some("git-core/ppa".into()),
+                    fingerprint: Some(Fingerprints::Many(vec!["A".repeat(40), "B".repeat(40)])),
+                    ..Default::default()
+                }
+            )
+            .contains("single signing key")
+        );
         for bad in ["git-core", "Git-Core/ppa", "a/b/c", "/ppa"] {
             assert!(
                 AptSource::parse(

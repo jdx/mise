@@ -70,7 +70,8 @@ contain letters, digits, `_`, `-`, and `.`.
 A `ppa` entry takes the PPA as `owner/archive`, with or without the `ppa:`
 prefix. mise reads the PPA's signing key fingerprint from Launchpad and
 downloads that key from `keyserver.ubuntu.com`. Add `fingerprint` to pin the key
-and skip the Launchpad lookup. PPAs are built for Ubuntu releases, so mise adds
+and skip the Launchpad lookup. Without one, mise downloads the key again
+whenever the entry's source changes, such as when it points at another PPA. PPAs are built for Ubuntu releases, so mise adds
 them only on Ubuntu and on distributions that set `UBUNTU_CODENAME` in
 `/etc/os-release`, such as Linux Mint. On other releases it skips them, so the
 same config also works on Debian.
