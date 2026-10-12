@@ -77,3 +77,24 @@ assert "mise trust proj2/mise.toml"
 assert "mise ls -C proj2"
 cd other || exit 1
 assert_not_contains "mise prune --dry-run 2>&1" "tiny@1.0.0"
+
+# global configs layer too: config.local.toml overrides config.toml
+cd .. || exit 1
+mkdir -p proj3
+cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'
+[task_templates.gbase]
+tools = { tiny = "1.0.0" }
+TOML
+cat >"$MISE_CONFIG_DIR/config.local.toml" <<'TOML'
+[task_templates.gbase]
+tools = { tiny = "2.1.0" }
+TOML
+cat >proj3/mise.toml <<'TOML'
+[tasks.t]
+extends = "gbase"
+run = "true"
+TOML
+assert "mise trust proj3/mise.toml"
+assert "mise ls -C proj3"
+cd other || exit 1
+assert_not_contains "mise prune --dry-run 2>&1" "tiny@2.1.0"

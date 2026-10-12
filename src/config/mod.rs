@@ -10043,6 +10043,9 @@ pub(crate) fn task_tool_requests(
                     || dir.starts_with(config_file::config_root::config_root(other.get_path())))
         })
         .collect::<Vec<_>>();
+    // Config maps list the highest precedence first. The sort is stable, so configs that tie
+    // keep the lowest-first order that reversing gives, as `collect_task_definitions` has it.
+    project.reverse();
     project.sort_by_key(|other| {
         (
             !is_global_config(other.get_path()),
