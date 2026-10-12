@@ -8,10 +8,10 @@ use crate::system::history::sync::apply::{self, ApplyRequest};
 ///
 /// Writes the changes that the last `mise dot sync` fetched from your other
 /// machines. (`mise dot apply` deploys your own `[dotfiles]` entries; `pull`
-/// writes what other machines pushed.) `pull` never copies, links, or renders:
-/// when a tracked file is the source of a `copy` or `template` entry, `pull`
-/// updates the source, and `mise dot apply` then writes the target your
-/// application reads. mise saves a checkpoint first, so
+/// writes what other machines pushed.) `pull` restores tracked paths, including
+/// tracked symlinks, but never deploys `copy`, `symlink`, or `template`
+/// entries: when a tracked file is the source of one, `pull` updates the source,
+/// and `mise dot apply` then writes the target your application reads. mise saves a checkpoint first, so
 /// `mise dot undo` reverses the whole pull, and runs the matching
 /// `[history.reload]` commands after writing.
 ///

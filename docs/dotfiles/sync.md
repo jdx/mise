@@ -181,11 +181,11 @@ error.
 
 `sync`, `pull`, and `apply` each do one job, on different files:
 
-| Command          | Reads                              | Writes                                                         |
-| ---------------- | ---------------------------------- | -------------------------------------------------------------- |
-| `mise dot sync`  | The remote and your saved history  | Only saved history, never your files.                          |
-| `mise dot pull`  | The history that `sync` fetched    | Tracked files, including the source of a `copy` or `template`. |
-| `mise dot apply` | `[dotfiles]` and the files on disk | The targets of `symlink`, `copy`, and `template` entries.      |
+| Command          | Reads                              | Writes                                                                   |
+| ---------------- | ---------------------------------- | ------------------------------------------------------------------------ |
+| `mise dot sync`  | The remote and your saved history  | Only saved history, never your files.                                    |
+| `mise dot pull`  | The history that `sync` fetched    | Tracked files, including the source of a `copy` or `template`.           |
+| `mise dot apply` | `[dotfiles]` and the files on disk | `[dotfiles]` targets, including edits, permission changes, and removals. |
 
 How each entry mode behaves:
 
