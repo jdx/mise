@@ -244,10 +244,14 @@ pub(crate) fn output(program: &str, args: &[String], envs: &[(String, String)]) 
         let _progress_pause = pause_progress_for_child();
         CmdLineRunner::new(&argv[0]).arg("-v").raw(true).execute()?;
     }
+    // doas and run0 have no `-v`; they prompt on the terminal while the command
+    // runs, so keep the progress display off it and give them stdin
+    let _progress_pause = (interactive && !is_sudo(&argv[0]))
+        .then(pause_progress_for_child)
+        .flatten();
     info!("$ {}", argv.join(" "));
     let mut cmd = Command::new(&argv[0]);
     if interactive && !is_sudo(&argv[0]) {
-        // doas and run0 prompt through the terminal; give them stdin for it
         cmd.stdin(Stdio::inherit());
     }
     Ok(cmd
