@@ -10,11 +10,12 @@ use crate::ui::table::MiseTable;
 
 /// Show the state of your dotfiles and their history
 ///
-/// Lists each `[dotfiles]` entry with its state: `applied`, `missing`,
+/// Lists the `[dotfiles]` entries that need attention, and counts the rest;
+/// `--verbose` lists every entry. Each has a state: `applied`, `missing`,
 /// `differs`, `source missing`, `tracked`, or `absent` for a removal that is
 /// done. A tracked entry whose variants all select other machines, such as
-/// one for an inactive profile, says `not on this machine`. Then shows the history state: what is tracked, the latest checkpoint,
-/// unfinished operations, and whether edits are saved automatically.
+/// one for an inactive profile, says `not on this machine`. Then shows the history state in sections: Tracking, Repository,
+/// Conflicts, Automatic capture, and Bootstrap, ending with the next steps.
 ///
 /// Files a dotfile group deployed that no active entry deploys now are listed
 /// as `orphaned`: the group was deselected or removed, or a new `exclude` or a
@@ -30,7 +31,8 @@ use crate::ui::table::MiseTable;
 #[derive(Debug, usage_rs::Args)]
 #[usage(
     visible_alias = "ls",
-    example("mise dot status", help = "Show every dotfile"),
+    example("mise dot status", help = "Show what needs attention"),
+    example("mise dot status --verbose", help = "List every entry"),
     example("mise dot status ~/.zshrc", help = "Show one target"),
     example("mise dot status --json", help = "Print the state as JSON"),
     example(
@@ -54,6 +56,14 @@ pub(crate) struct DotfilesStatus {
     /// source missing, or differs)
     #[usage(long)]
     missing: bool,
+
+    /// List every entry, including those already applied or tracked
+    ///
+    /// By default the table lists only entries that need attention or have
+    /// omitted files, with a one-line summary of the rest. Naming targets
+    /// lists them regardless.
+    #[usage(long, short = 'v')]
+    verbose: bool,
 
     /// Prompt for `[bootstrap.secrets]` values that templates need and the
     /// environment does not set
@@ -80,6 +90,7 @@ impl DotfilesStatus {
         // tracked row can say how many of its files every save leaves out
         let history = super::history_status::report().await?;
         let mut file_rows: Vec<Vec<String>> = vec![];
+        let mut settled = 0usize;
         let mut json_files = vec![];
         for req in &files {
             // an absent entry that cannot be checked (a directory at the
@@ -167,6 +178,15 @@ impl DotfilesStatus {
                     entry["reason"] = json!(reason);
                 }
                 json_files.push(entry);
+            } else if !self.verbose
+                && self.targets.is_empty()
+                && omitted == 0
+                && nested == 0
+                && matches!(state, FileState::Applied | FileState::Tracked)
+                && unselected.is_none()
+                && absent.is_none()
+            {
+                settled += 1;
             } else {
                 file_rows.push(vec![
                     req.target_raw.clone(),
@@ -272,6 +292,11 @@ impl DotfilesStatus {
                         FileState::Tracked => "tracked",
                     },
                 }));
+            } else if !self.verbose
+                && self.targets.is_empty()
+                && matches!(state, FileState::Applied | FileState::Tracked)
+            {
+                settled += 1;
             } else {
                 edit_rows.push(vec![
                     req.path_raw.clone(),
@@ -302,8 +327,23 @@ impl DotfilesStatus {
             // entries tracked through history (on a machine that adopted a
             // shared setup, say) are reported by the history block below,
             // so "nothing configured" would read as "nothing tracked"
-            if file_rows.is_empty() && edit_rows.is_empty() && history.tracked_entries == 0 {
+            if file_rows.is_empty()
+                && edit_rows.is_empty()
+                && settled == 0
+                && history.tracked_entries == 0
+            {
                 info!("nothing configured in [dotfiles]");
+            }
+            if settled > 0 {
+                miseprintln!(
+                    "✓ {settled} {} up to date{}",
+                    if settled == 1 { "entry" } else { "entries" },
+                    if file_rows.is_empty() && edit_rows.is_empty() {
+                        " (`--verbose` lists them)"
+                    } else {
+                        " (`--verbose` lists them all)"
+                    }
+                );
             }
             if !file_rows.is_empty() {
                 let mut table =

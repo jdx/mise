@@ -50,7 +50,7 @@ assert_fail "test -L ~/.oldlink"
 assert "cat ~/.link-target" "elsewhere"
 assert_fail "test -e ~/.this-os-rc"
 assert "cat ~/.other-os-rc" "other os"
-assert_contains "mise dot status" "absent"
+assert_contains "mise dot status --verbose" "absent"
 assert_succeed "mise dot status --missing"
 assert "mise dot status --json | jq -r '.files[] | select(.target == \"~/.oldrc\") | .state'" "applied"
 

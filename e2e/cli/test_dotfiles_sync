@@ -47,6 +47,6 @@ assert_succeed 'mise bootstrap dotfiles sync'
 assert_succeed "git --git-dir=$origin merge-base --is-ancestor $head main"
 assert 'mise bootstrap dotfiles status --json | jq -r .history.sync.last_error' null
 assert_succeed 'mise bootstrap dotfiles origin --remove'
-assert_contains 'mise bootstrap dotfiles status' 'Setup repository: none'
+assert_contains 'mise bootstrap dotfiles status' 'mise dot origin set <url>'
 assert_succeed 'mise bootstrap dotfiles save --description disconnected'
 assert_fail 'mise bootstrap dotfiles sync'

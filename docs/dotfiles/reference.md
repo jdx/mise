@@ -211,10 +211,13 @@ the affected paths as skipped instead of deleting live files.
 
 ## Status states {#status-states}
 
-[`mise dot status`](/cli/dotfiles/status.html) prints one row per entry, edit,
-and orphaned group file, followed by the history state: what is tracked, the
-latest checkpoint, unfinished operations, whether edits are saved
-automatically, and the origin.
+[`mise dot status`](/cli/dotfiles/status.html) prints a row for each entry, edit,
+and orphaned group file that needs attention, and counts the ones that are
+applied or tracked; `--verbose` lists them all, and naming targets lists those
+targets. Sections follow for the history state: Tracking (entries, files, the
+latest checkpoint, unsaved changes), Repository (the origin, branch, mode, and
+sync times), Conflicts, Automatic capture, and Bootstrap. A Next steps list
+names the commands that clear whatever needs attention.
 
 | State                                              | Meaning                                                                                      | What to do                                                            |
 | -------------------------------------------------- | -------------------------------------------------------------------------------------------- | --------------------------------------------------------------------- |

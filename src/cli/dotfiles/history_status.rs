@@ -213,19 +213,62 @@ pub(crate) async fn report() -> Result<HistoryReport> {
     })
 }
 
+const OK: &str = "✓";
+const WARN: &str = "⚠";
+const BAD: &str = "✗";
+
+/// Prints the history half of `mise dot status` as sections, each led by its
+/// state, ending with the commands that would clear what needs attention.
 pub(crate) fn print(report: &HistoryReport) -> Result<()> {
     if !report.enabled {
         miseprintln!("History: disabled (history.enabled = false).");
         return Ok(());
     }
-    if let Some(reason) = &report.unavailable {
-        miseprintln!("History: capture is unavailable: {reason}");
+    let mut next: Vec<String> = vec![];
+    print_tracking(report, &mut next)?;
+    if let Some(sync) = &report.sync {
+        print_repository(sync, &mut next)?;
+        print_conflicts(sync, &mut next)?;
+    } else {
+        miseprintln!();
+        miseprintln!("Repository");
+        miseprintln!("  none (`mise dot origin set <url>` synchronizes committed history).");
     }
+    print_capture(report, &mut next)?;
+    if let Some(sync) = &report.sync
+        && sync.declarations_changed
+    {
+        miseprintln!();
+        miseprintln!("Bootstrap {WARN}");
+        miseprintln!("  declarations changed: run `mise bootstrap` (dry-run available)");
+        next.push("mise bootstrap".to_string());
+    }
+    if !next.is_empty() {
+        miseprintln!();
+        miseprintln!("Next steps");
+        for step in &next {
+            miseprintln!("  → {step}");
+        }
+    }
+    Ok(())
+}
+
+fn print_tracking(report: &HistoryReport, next: &mut Vec<String>) -> Result<()> {
+    miseprintln!();
+    miseprintln!("Tracking");
+    if let Some(reason) = &report.unavailable {
+        miseprintln!("  {BAD} capture is unavailable: {reason}");
+    }
+    let omitted = report.omitted.len();
     miseprintln!(
-        "History: tracking {} entries ({} files); {} checkpoints recorded.",
+        "  {OK} {} entries · {} files{}",
         report.tracked_entries,
         report.tracked_files,
-        report.checkpoints
+        if omitted > 0 {
+            format!(" · {omitted} omitted")
+        } else {
+            String::new()
+        }
     );
     if report.local_entries > 0 {
         miseprintln!(
@@ -235,13 +278,17 @@ pub(crate) fn print(report: &HistoryReport) -> Result<()> {
     }
     match &report.latest {
         Some(latest) => miseprintln!(
-            "  latest checkpoint {} ({}, {}): {}",
+            "  {OK} {} checkpoints · latest {} ({}, {}): {}",
+            report.checkpoints,
             latest.id,
             latest.trigger,
             local_time(&latest.created_at),
             latest.description
         ),
-        None => miseprintln!("  no checkpoint recorded yet; `mise dot save` records one."),
+        None => {
+            miseprintln!("  {WARN} no checkpoint recorded yet");
+            next.push("mise dot save".to_string());
+        }
     }
     if let Some(unsaved) = report
         .unsaved
@@ -254,18 +301,20 @@ pub(crate) fn print(report: &HistoryReport) -> Result<()> {
             listed.push(format!("and {} more", unsaved.len() - SHOWN));
         }
         miseprintln!(
-            "  unsaved changes: {} path(s) since the latest checkpoint ({}); `mise dot history diff` shows them, `mise dot save` records them.",
+            "  {WARN} unsaved changes: {} path(s) since the latest checkpoint ({}); `mise dot history diff` shows them",
             unsaved.len(),
             listed.join(", ")
         );
+        next.push("mise dot save".to_string());
     }
     if !report.not_applied.is_empty() {
         miseprintln!(
-            "  not applied here: {} (saved by another machine while not selected here); `mise dot pull` applies them, and saves resume after that.",
+            "  {WARN} not applied here: {} (saved by another machine while not selected here); saves resume after a pull applies them",
             report.not_applied.join(", ")
         );
+        next.push("mise dot pull".to_string());
     }
-    if !report.omitted.is_empty() || !report.nested.is_empty() {
+    if omitted > 0 || !report.nested.is_empty() {
         miseprintln!(
             "  {}.",
             crate::system::history::tracked::omission_summary(&report.omitted, &report.nested)
@@ -273,84 +322,115 @@ pub(crate) fn print(report: &HistoryReport) -> Result<()> {
     }
     if report.pending_operations > 0 {
         miseprintln!(
-            "  {} operation(s) did not finish; `mise dot history --pending` lists them; `mise dot recover` retries safe recovery.",
+            "  {WARN} {} operation(s) did not finish; `mise dot history --pending` lists them",
             report.pending_operations
         );
+        next.push("mise dot recover".to_string());
     }
+    Ok(())
+}
+
+fn print_repository(sync: &SyncReport, next: &mut Vec<String>) -> Result<()> {
+    let when = |at: &Option<String>| {
+        at.as_deref()
+            .map(local_time)
+            .unwrap_or_else(|| "never".into())
+    };
+    miseprintln!();
+    miseprintln!("Repository");
+    miseprintln!("  {}", sync.origin);
+    miseprintln!("  Branch: {} · Mode: {}", sync.branch, sync.mode);
+    miseprintln!("  ↑ Last published: {}", when(&sync.last_publish));
+    miseprintln!("  ↓ Last fetched: {}", when(&sync.last_fetch));
+    miseprintln!("  ↓ Last pulled: {}", when(&sync.last_apply));
+    miseprintln!("  notifications: {}", sync.notifications);
+    if !sync.pending_applications.is_empty() {
+        miseprintln!(
+            "  {WARN} {} incoming change(s) pending ({})",
+            sync.pending_applications.len(),
+            sync.pending_applications.join(", ")
+        );
+        next.push("mise dot pull".to_string());
+    }
+    if let Some(error) = &sync.last_error {
+        match &sync.failing_since {
+            Some(since) => miseprintln!(
+                "  {BAD} last error: {error} (failing since {}, {} attempt(s))",
+                local_time(since),
+                sync.consecutive_failures
+            ),
+            None => miseprintln!("  {BAD} last error: {error}"),
+        }
+    }
+    if let Some(error) = &sync.application_failure {
+        miseprintln!("  {BAD} sync paused: {error}");
+    }
+    if let Some(error) = &sync.validation_error {
+        miseprintln!("  {BAD} incoming setup is invalid: {error}");
+    }
+    for (path, reason) in &sync.skipped {
+        miseprintln!("  not shared: {path} ({reason})");
+    }
+    Ok(())
+}
+
+fn print_conflicts(sync: &SyncReport, next: &mut Vec<String>) -> Result<()> {
+    if sync.conflicts.is_empty() {
+        return Ok(());
+    }
+    miseprintln!();
+    miseprintln!("Conflicts ({}) {BAD}", sync.conflicts.len());
+    for (path, reason) in &sync.conflicts {
+        let advice = crate::system::history::sync::apply::resolution_advice(path, reason);
+        miseprintln!("  {BAD} {path}");
+        miseprintln!("    {reason}");
+        miseprintln!("    {advice}");
+    }
+    miseprintln!("  Sharing is paused for the entire setup; local history continues.");
+    next.insert(
+        0,
+        format!(
+            "Resolve {} conflict(s) (`mise dot conflicts`)",
+            sync.conflicts.len()
+        ),
+    );
+    Ok(())
+}
+
+fn print_capture(report: &HistoryReport, next: &mut Vec<String>) -> Result<()> {
+    use super::capture_health::Watcher;
     let failing = report
         .health
         .as_ref()
         .is_some_and(|health| health.failing_capture().is_some());
-    if failing && report.watcher == super::capture_health::Watcher::Running {
+    miseprintln!();
+    if failing && report.watcher == Watcher::Running {
+        miseprintln!("Automatic capture {BAD}");
         miseprintln!(
-            "  automatic capture: {} but failing (edits are not being saved until a capture succeeds).",
+            "  {}, but failing (edits are not being saved until a capture succeeds).",
             report.watcher.as_str()
         );
-    } else {
+    } else if report.watcher == Watcher::Running {
+        miseprintln!("Automatic capture {OK}");
         miseprintln!(
-            "  automatic capture: {} ({}).",
+            "  {} ({}).",
             report.watcher.as_str(),
             super::capture_health::advice(report.watcher)
         );
-    }
-    match &report.sync {
-        None => miseprintln!(
-            "Setup repository: none (`mise dot origin set <url>` synchronizes committed history)."
-        ),
-        Some(sync) => {
-            miseprintln!(
-                "Setup repository: {} (branch {}, mode {}).",
-                sync.origin,
-                sync.branch,
-                sync.mode,
+    } else {
+        miseprintln!("Automatic capture {WARN}");
+        miseprintln!(
+            "  {} ({}).",
+            report.watcher.as_str(),
+            super::capture_health::advice(report.watcher)
+        );
+        if report.watcher == Watcher::NotDeclared {
+            next.push(
+                "declare `history-watch` under [bootstrap.services] and run `mise bootstrap`"
+                    .to_string(),
             );
-            let when = |at: &Option<String>| {
-                at.as_deref()
-                    .map(local_time)
-                    .unwrap_or_else(|| "never".into())
-            };
-            miseprintln!(
-                "  last publish {}, last fetch {}, last pull {}.",
-                when(&sync.last_publish),
-                when(&sync.last_fetch),
-                when(&sync.last_apply)
-            );
-            miseprintln!("  notifications: {}", sync.notifications);
-            if !sync.pending_applications.is_empty() {
-                miseprintln!(
-                    "  {} incoming change(s) pending: `mise dot pull` ({})",
-                    sync.pending_applications.len(),
-                    sync.pending_applications.join(", ")
-                );
-            }
-            for (path, reason) in &sync.conflicts {
-                let advice = crate::system::history::sync::apply::resolution_advice(path, reason);
-                miseprintln!(
-                    "  sync paused: {path}: {reason}; sharing is paused for the entire setup; local history continues ({advice})"
-                );
-            }
-            if sync.declarations_changed {
-                miseprintln!("  declarations changed: run `mise bootstrap` (dry-run available)");
-            }
-            if let Some(error) = &sync.last_error {
-                match &sync.failing_since {
-                    Some(since) => miseprintln!(
-                        "  last error: {error} (failing since {}, {} attempt(s))",
-                        local_time(since),
-                        sync.consecutive_failures
-                    ),
-                    None => miseprintln!("  last error: {error}"),
-                }
-            }
-            if let Some(error) = &sync.application_failure {
-                miseprintln!("  sync paused: {error}");
-            }
-            if let Some(error) = &sync.validation_error {
-                miseprintln!("  incoming setup is invalid: {error}");
-            }
-            for (path, reason) in &sync.skipped {
-                miseprintln!("  not shared: {path} ({reason})");
-            }
+        } else {
+            next.push("mise bootstrap services apply".to_string());
         }
     }
     if let Some(health) = &report.health {
@@ -370,13 +450,13 @@ pub(crate) fn print(report: &HistoryReport) -> Result<()> {
                 .as_deref()
                 .map(local_time)
                 .unwrap_or_else(|| "never".into()),
-            if report.watcher == super::capture_health::Watcher::Running {
+            if report.watcher == Watcher::Running {
                 ""
             } else {
                 "; the watcher is not running now, so this is what it last reported"
             }
         );
-        let running = report.watcher == super::capture_health::Watcher::Running;
+        let running = report.watcher == Watcher::Running;
         // a running watcher starts from its predecessor's record: an error
         // dated before this run is not its failure
         let error = if running {

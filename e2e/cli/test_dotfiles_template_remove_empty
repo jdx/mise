@@ -18,7 +18,7 @@ EOF
 # a render with content writes the file as usual
 assert_succeed "WORK=1 mise dot apply --yes"
 assert_contains "cat $target" "work = true"
-assert_contains "WORK=1 mise dot status" "applied"
+assert_contains "WORK=1 mise dot status --verbose" "applied"
 
 # flipping the variable makes the render empty: status and diff show the removal
 assert_contains "mise dot status" "template renders empty, target will be removed"
@@ -31,7 +31,7 @@ assert_succeed "mise dot apply --dry-run"
 assert_succeed "test -f $target"
 assert_succeed "mise dot apply --yes"
 assert_fail "test -e $target"
-assert_contains "mise dot status" "applied"
+assert_contains "mise dot status --verbose" "applied"
 # applying again has nothing to do
 assert_succeed "mise dot apply --yes"
 assert_fail "test -e $target"
