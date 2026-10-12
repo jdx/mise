@@ -98,3 +98,26 @@ assert "mise trust proj3/mise.toml"
 assert "mise ls -C proj3"
 cd other || exit 1
 assert_not_contains "mise prune --dry-run 2>&1" "tiny@2.1.0"
+
+# configs that share a root have a precedence only a full load knows, so the
+# template versions of all of them are kept
+cd .. || exit 1
+mkdir -p proj4
+cat >proj4/mise.toml <<'TOML'
+[task_templates.tie]
+tools = { tiny = "3.1.0" }
+
+[tasks.t]
+extends = "tie"
+run = "true"
+TOML
+cat >proj4/mise.local.toml <<'TOML'
+[task_templates.tie]
+tools = { tiny = "2.1.0" }
+TOML
+assert "mise trust proj4/mise.toml"
+assert "mise trust proj4/mise.local.toml"
+assert "mise ls -C proj4"
+cd other || exit 1
+assert_not_contains "mise prune --dry-run 2>&1" "tiny@3.1.0"
+assert_not_contains "mise prune --dry-run 2>&1" "tiny@2.1.0"

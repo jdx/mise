@@ -10028,70 +10028,85 @@ pub(crate) fn task_tool_requests(
 ) -> (Vec<crate::toolset::ToolRequest>, Vec<String>) {
     // Templates come from this project: the tracked configs under the same roots and the
     // directories above it, plus the global configs, never from the directory prune happens to
-    // run in. The nearest config wins, so the farthest is inserted first and the file itself last.
+    // run in. A nearer root wins. Configs that share a root have a precedence that only a full
+    // load knows, so every one of them counts and the versions of all candidates are kept.
     let dir = config_file::config_root::config_root(cf.get_path());
     let globals = config
         .config_files
         .values()
         .filter(|other| is_global_config(other.get_path()));
-    // A global config can also be tracked. Keep one copy, the one in the loaded order, so
-    // configs that tie are never merged from a different order than the one they load in.
     let mut seen = std::collections::HashSet::new();
-    let mut project = globals
+    let mut layers: BTreeMap<(bool, usize), Vec<&Arc<dyn ConfigFile>>> = BTreeMap::new();
+    for other in globals
         .chain(tracked.values())
+        .chain([cf])
         .filter(|other| seen.insert(other.get_path().to_path_buf()))
         .filter(|other| {
-            other.get_path() != cf.get_path()
-                && (is_global_config(other.get_path())
-                    || dir.starts_with(config_file::config_root::config_root(other.get_path())))
+            other.get_path() == cf.get_path()
+                || is_global_config(other.get_path())
+                || dir.starts_with(config_file::config_root::config_root(other.get_path()))
         })
-        .collect::<Vec<_>>();
-    // Config maps list the highest precedence first. The sort is stable, so configs that tie
-    // keep the lowest-first order that reversing gives, as `collect_task_definitions` has it.
-    project.reverse();
-    project.sort_by_key(|other| {
-        (
+    {
+        let key = (
             !is_global_config(other.get_path()),
             config_file::config_root::config_root(other.get_path())
                 .components()
                 .count(),
-        )
-    });
-    let mut definitions = TaskDefinitions::default();
-    for other in project.into_iter().chain([cf]) {
-        for (name, template) in other.task_templates() {
-            definitions.templates.insert(
-                name,
-                SourcedTaskTemplate {
-                    template,
-                    source: other.get_path().to_path_buf(),
-                },
-            );
-        }
+        );
+        layers.entry(key).or_default().push(other);
     }
     let mut requests = vec![];
     let mut templated = vec![];
     for task in cf.tasks() {
-        let mut task = task.clone();
-        if let Err(err) = apply_named_template(&mut task, &definitions) {
-            warn!(
-                "error loading task {} in {}: {err:#}",
-                task.name,
-                display_path(cf.get_path())
-            );
-        }
-        for (tool, value) in &task.tools {
-            if value.has_template() {
-                templated.push(tool.clone());
-                continue;
+        let mut candidates = vec![];
+        match &task.extends {
+            None => candidates.push(task.clone()),
+            Some(name) => {
+                let layer = layers
+                    .values()
+                    .rev()
+                    .find(|layer| layer.iter().any(|f| f.task_templates().contains_key(name)));
+                for other in layer.into_iter().flatten() {
+                    let Some(template) = other.task_templates().get(name).cloned() else {
+                        continue;
+                    };
+                    let mut definitions = TaskDefinitions::default();
+                    definitions.templates.insert(
+                        name.clone(),
+                        SourcedTaskTemplate {
+                            template,
+                            source: other.get_path().to_path_buf(),
+                        },
+                    );
+                    let mut task = task.clone();
+                    if apply_named_template(&mut task, &definitions).is_ok() {
+                        candidates.push(task);
+                    }
+                }
+                if candidates.is_empty() {
+                    warn!(
+                        "task {} in {} extends template {name}, which was not found",
+                        task.name,
+                        display_path(cf.get_path())
+                    );
+                    candidates.push(task.clone());
+                }
             }
-            match value.to_tool_arg(tool) {
-                Ok(arg) => requests.extend(arg.tvr),
-                Err(err) => warn!(
-                    "error loading tool {tool} of task {} in {}: {err:#}",
-                    task.name,
-                    display_path(cf.get_path())
-                ),
+        }
+        for task in candidates {
+            for (tool, value) in &task.tools {
+                if value.has_template() {
+                    templated.push(tool.clone());
+                    continue;
+                }
+                match value.to_tool_arg(tool) {
+                    Ok(arg) => requests.extend(arg.tvr),
+                    Err(err) => warn!(
+                        "error loading tool {tool} of task {} in {}: {err:#}",
+                        task.name,
+                        display_path(cf.get_path())
+                    ),
+                }
             }
         }
     }
