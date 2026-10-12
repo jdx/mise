@@ -37,9 +37,9 @@ fn layering_on(ostree: bool) -> bool {
     ostree && Settings::get().system_packages.ostree == SystemPackagesOstree::Layer
 }
 
-fn ostree_error() -> eyre::Report {
+fn ostree_error(verb: &str) -> eyre::Report {
     eyre::eyre!(
-        "cannot install dnf packages: this host is booted from an ostree image, so /usr is read-only\n\
+        "cannot {verb} dnf packages: this host is booted from an ostree image, so /usr is read-only\n\
          Bake the packages into the image, install them in a toolbox, or let mise layer them with rpm-ostree:\n  \
          mise settings set system_packages.ostree layer"
     )
@@ -281,7 +281,20 @@ impl SystemPackageManager for DnfManager {
     }
 
     async fn remove(&self, pkgs: &[PackageRequest], opts: &InstallOpts) -> Result<()> {
-        let args = ostree_uninstall_args(pkgs);
+        // only packages layered for the next deployment can be uninstalled;
+        // packages in the base image are never touched
+        let layered = ostree_requests().await.next;
+        let (pkgs, base): (Vec<_>, Vec<_>) = pkgs
+            .iter()
+            .cloned()
+            .partition(|p| layered.contains(&p.name));
+        for p in &base {
+            warn!("dnf: not removing {p}: it is part of the base image, not a layered package");
+        }
+        if pkgs.is_empty() {
+            return Ok(());
+        }
+        let args = ostree_uninstall_args(&pkgs);
         if opts.dry_run {
             miseprintln!("{}", sudo::argv("rpm-ostree", &args).join(" "));
             return Ok(());
@@ -315,7 +328,7 @@ impl DnfManager {
 
     fn layer(pkgs: &[PackageRequest], opts: &InstallOpts) -> Result<()> {
         if !layering_on(true) {
-            return Err(ostree_error());
+            return Err(ostree_error("install"));
         }
         // the driver already skips pinned entries (supports_version_pins)
         let refresh = vec!["refresh-md".to_string()];
@@ -337,6 +350,9 @@ impl DnfManager {
 
     fn upgrade_on(&self, ostree: bool, pkgs: &[PackageRequest], opts: &InstallOpts) -> Result<()> {
         if ostree {
+            if !layering_on(true) {
+                return Err(ostree_error("upgrade"));
+            }
             miseprintln!(
                 "dnf: layered packages update together with the base image; run `rpm-ostree upgrade` to update this host"
             );
@@ -366,7 +382,7 @@ mod tests {
 
     #[test]
     fn test_ostree_error_names_the_setting() {
-        let msg = ostree_error().to_string();
+        let msg = ostree_error("install").to_string();
         assert!(msg.contains("ostree"));
         assert!(msg.contains("system_packages.ostree layer"));
     }
@@ -459,8 +475,9 @@ mod tests {
         };
         let err = mgr.install_on(true, &pkgs, &opts).unwrap_err().to_string();
         assert!(err.contains("system_packages.ostree layer"));
-        // upgrade only prints a hint: layered packages follow the base image
-        assert!(mgr.upgrade_on(true, &pkgs, &opts).is_ok());
+        // upgrade fails the same way, rather than reporting success
+        let err = mgr.upgrade_on(true, &pkgs, &opts).unwrap_err().to_string();
+        assert!(err.contains("cannot upgrade"));
         // without the marker, a dry run goes on to print the dnf command
         assert!(mgr.install_on(false, &pkgs, &opts).is_ok());
         assert!(mgr.upgrade_on(false, &pkgs, &opts).is_ok());
