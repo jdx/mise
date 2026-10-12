@@ -377,6 +377,25 @@ fn with_manual_hint(err: eyre::Report, manual_cmd: &str) -> eyre::Report {
     }
 }
 
+/// `manual_cmd` without its elevator, for running as root. run0's `--setenv`
+/// options become the `env` prefix a root shell understands.
+fn root_fallback(manual_cmd: &str, elevator: &str) -> String {
+    let rest = manual_cmd
+        .strip_prefix(&format!("{elevator} "))
+        .unwrap_or(manual_cmd);
+    let mut words = rest.split(' ').peekable();
+    let mut envs = vec![];
+    while let Some(word) = words.next_if(|w| w.starts_with("--setenv=")) {
+        envs.push(word.trim_start_matches("--setenv="));
+    }
+    let tail = words.collect::<Vec<_>>().join(" ");
+    if envs.is_empty() {
+        tail
+    } else {
+        format!("env {} {tail}", envs.join(" "))
+    }
+}
+
 /// Verify that a subprocess which performs its own sudo elevation can do so
 /// without violating mise's elevation policy or hanging without a TTY.
 pub(crate) fn ensure_elevation_available(manual_cmd: &str) -> Result<()> {
@@ -392,9 +411,7 @@ pub(crate) fn ensure_elevation_available(manual_cmd: &str) -> Result<()> {
     if crate::file::which(&elevator).is_none() {
         bail!(
             "{elevator} not found. Run as root:\n  {}",
-            manual_cmd
-                .strip_prefix(&format!("{elevator} "))
-                .unwrap_or(manual_cmd)
+            root_fallback(manual_cmd, &elevator)
         );
     }
     if !console::user_attended_stderr() {
@@ -423,6 +440,25 @@ pub(crate) fn ensure_elevation_available(manual_cmd: &str) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn root_fallback_turns_run0_setenv_into_env() {
+        assert_eq!(
+            root_fallback(
+                "run0 --setenv=A=1 --setenv=B=2 apt-get -y install x",
+                "run0"
+            ),
+            "env A=1 B=2 apt-get -y install x"
+        );
+        assert_eq!(
+            root_fallback("sudo env A=1 apt-get update", "sudo"),
+            "env A=1 apt-get update"
+        );
+        assert_eq!(
+            root_fallback("mise install --system", "sudo"),
+            "mise install --system"
+        );
+    }
 
     #[test]
     fn noninteractive_flag_knows_each_elevator() {
