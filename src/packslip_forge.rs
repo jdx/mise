@@ -642,6 +642,7 @@ mod tests {
             provenance: false,
             logged: true,
             forge: check,
+            listed: &[],
         };
         // A pin set under the new name, before mise recorded forge IDs.
         let hook = "https://github.com/jdx/hook/.github/workflows/release.yml@refs/tags/v3.0.0";
@@ -694,6 +695,7 @@ mod tests {
             provenance,
             logged: true,
             forge: check,
+            listed: &[],
         }
     }
 

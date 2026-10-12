@@ -1,10 +1,10 @@
 use crate::cmd::{RunningPidGuard, prepare_noninteractive_child};
 use crate::env;
+use crate::yaml::{self, Value};
 use eyre::{Result, eyre};
 use mise_settings::Settings;
 use reqwest::header::HeaderValue;
 use serde::Deserialize;
-use serde_yaml::Value;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::LazyLock as Lazy;
@@ -287,25 +287,25 @@ pub fn mask_token(token: &str) -> String {
 }
 
 pub fn yaml_hosts_to_tokens(contents: &str) -> Option<HashMap<String, String>> {
-    let yaml: Value = serde_yaml::from_str(contents).ok()?;
+    let doc: Value = yaml::from_str(contents).ok()?;
     let mut out = HashMap::new();
-    if let Some(map) = yaml.as_mapping() {
+    if let Some(map) = doc.as_mapping() {
         collect_mapping_tokens(map, &mut out);
 
-        if let Some(hosts_value) = map.get(Value::String("hosts".to_string()))
+        if let Some(hosts_value) = map.get(&Value::from("hosts"))
             && let Some(hosts) = hosts_value.as_mapping()
         {
             collect_mapping_tokens(hosts, &mut out);
         }
 
-        if let Some(logins_value) = map.get(Value::String("logins".to_string())) {
+        if let Some(logins_value) = map.get(&Value::from("logins")) {
             collect_list_tokens(logins_value, &mut out);
         }
     }
     if out.is_empty() { None } else { Some(out) }
 }
 
-fn collect_mapping_tokens(map: &serde_yaml::Mapping, out: &mut HashMap<String, String>) {
+fn collect_mapping_tokens(map: &yaml::Mapping, out: &mut HashMap<String, String>) {
     for (k, v) in map {
         let Some(host) = k.as_str() else {
             continue;
@@ -329,28 +329,22 @@ fn collect_list_tokens(v: &Value, out: &mut HashMap<String, String>) {
             continue;
         };
         let host = map
-            .get(Value::String("name".to_string()))
+            .get(&Value::from("name"))
             .and_then(Value::as_str)
-            .or_else(|| {
-                map.get(Value::String("host".to_string()))
-                    .and_then(Value::as_str)
-            })
-            .or_else(|| {
-                map.get(Value::String("url".to_string()))
-                    .and_then(Value::as_str)
-            });
+            .or_else(|| map.get(&Value::from("host")).and_then(Value::as_str))
+            .or_else(|| map.get(&Value::from("url")).and_then(Value::as_str));
         if let (Some(host), Some(token)) = (host, token_from_entry(map)) {
             out.insert(host.to_string(), token);
         }
     }
 }
 
-fn token_from_entry(entry: &serde_yaml::Mapping) -> Option<String> {
+fn token_from_entry(entry: &yaml::Mapping) -> Option<String> {
     ["oauth_token", "token", "access_token", "access-token"]
         .iter()
         .find_map(|k| {
             entry
-                .get(Value::String((*k).to_string()))
+                .get(&Value::from(*k))
                 .and_then(Value::as_str)
                 .map(str::trim)
                 .filter(|s| !s.is_empty())

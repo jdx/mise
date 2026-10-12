@@ -735,6 +735,19 @@ impl Pin {
         }
     }
 
+    /// The signers a `workflow` list names together, as the signer pin records
+    /// them: listing several says a release may move from one to another.
+    fn listed_signers(&self) -> Vec<String> {
+        let Pin::Identities(policies) = self else {
+            return Vec::new();
+        };
+        policies
+            .iter()
+            .filter_map(|policy| policy.identity.as_ref().or(policy.identity_prefix.as_ref()))
+            .map(|identity| packslip_pins::signer_of("sigstore-oidc", identity))
+            .collect()
+    }
+
     /// What may have signed: one trust, or one per accepted identity.
     fn trusts(&self) -> Vec<Trust<'_>> {
         match self {
@@ -1308,6 +1321,7 @@ impl PackslipBackend {
         }
         let scheme = verified.scheme.to_string();
         let attested_by = verified.attested_by.to_string();
+        let listed = pin.listed_signers();
         packslip_pins::check(
             project,
             Observed {
@@ -1318,6 +1332,7 @@ impl PackslipBackend {
                 provenance: verified.provenance_linked,
                 logged: verified.logged_at.is_some(),
                 forge: accepted.check.as_ref(),
+                listed: &listed,
             },
         )?;
         let payload = packslip::sigstore::peek_statement(&text).map_err(|e| eyre!("{e}"))?;
@@ -1534,6 +1549,7 @@ pub(crate) struct PendingPin {
     provenance: bool,
     logged: bool,
     forge: Option<Check>,
+    listed: Vec<String>,
 }
 
 impl PendingPin {
@@ -1548,6 +1564,7 @@ impl PendingPin {
                 provenance: self.provenance,
                 logged: self.logged,
                 forge: self.forge.as_ref(),
+                listed: &self.listed,
             },
         )?;
         Ok(())
@@ -1729,6 +1746,7 @@ impl PackslipBackend {
         let attested_by = verified.attested_by.to_string();
         // Nothing is recorded until the release is accepted in full, so a
         // refused install leaves no pin behind.
+        let listed = pin.listed_signers();
         let observed = Observed {
             scheme: &scheme,
             key_id: &verified.key_id,
@@ -1737,6 +1755,7 @@ impl PackslipBackend {
             provenance: verified.provenance_linked,
             logged: verified.logged_at.is_some(),
             forge: check,
+            listed: &listed,
         };
         packslip_pins::check(&project, observed)?;
         let signer = format!(
@@ -1907,6 +1926,7 @@ impl PackslipBackend {
                 provenance: observed.provenance,
                 logged: observed.logged,
                 forge: observed.forge.cloned(),
+                listed,
             },
         ))
     }

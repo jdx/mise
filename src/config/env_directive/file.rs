@@ -25,6 +25,107 @@ struct Env<V> {
     env: IndexMap<String, V>,
 }
 
+/// A YAML env file. Values are read as written, so `VERSION: 1.10` is `1.10`
+/// and `ZIP: 02134` keeps its leading zero; a null, list or mapping value is
+/// an error. `sops` is the encryption metadata of a sops-encrypted file.
+#[derive(Default)]
+struct YamlEnv {
+    sops: bool,
+    env: EnvMap,
+}
+
+impl<'de> serde::Deserialize<'de> for YamlEnv {
+    fn deserialize<D: serde::Deserializer<'de>>(
+        deserializer: D,
+    ) -> std::result::Result<Self, D::Error> {
+        struct EnvVisitor;
+
+        impl<'de> serde::de::Visitor<'de> for EnvVisitor {
+            type Value = YamlEnv;
+
+            fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                f.write_str("a mapping of environment variables")
+            }
+
+            fn visit_map<A: serde::de::MapAccess<'de>>(
+                self,
+                mut map: A,
+            ) -> std::result::Result<YamlEnv, A::Error> {
+                let mut out = YamlEnv::default();
+                while let Some(key) = map.next_key::<String>()? {
+                    if key == "sops" {
+                        let sops: IndexMap<String, mise_util::yaml::Value> = map.next_value()?;
+                        out.sops = !sops.is_empty();
+                    } else {
+                        let value: YamlEnvValue = map.next_value()?;
+                        out.env.insert(key, value.0);
+                    }
+                }
+                Ok(out)
+            }
+        }
+
+        deserializer.deserialize_map(EnvVisitor)
+    }
+}
+
+/// An env value asked for as a string, so the parser hands over the scalar's
+/// text instead of guessing a number or boolean from it.
+struct YamlEnvValue(String);
+
+impl<'de> serde::Deserialize<'de> for YamlEnvValue {
+    fn deserialize<D: serde::Deserializer<'de>>(
+        deserializer: D,
+    ) -> std::result::Result<Self, D::Error> {
+        struct ValueVisitor;
+
+        impl serde::de::Visitor<'_> for ValueVisitor {
+            type Value = YamlEnvValue;
+
+            fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                f.write_str("a string, number or boolean")
+            }
+
+            fn visit_str<E: serde::de::Error>(
+                self,
+                v: &str,
+            ) -> std::result::Result<YamlEnvValue, E> {
+                Ok(YamlEnvValue(v.to_string()))
+            }
+
+            fn visit_bool<E: serde::de::Error>(
+                self,
+                v: bool,
+            ) -> std::result::Result<YamlEnvValue, E> {
+                Ok(YamlEnvValue(v.to_string()))
+            }
+
+            fn visit_i64<E: serde::de::Error>(
+                self,
+                v: i64,
+            ) -> std::result::Result<YamlEnvValue, E> {
+                Ok(YamlEnvValue(v.to_string()))
+            }
+
+            fn visit_u64<E: serde::de::Error>(
+                self,
+                v: u64,
+            ) -> std::result::Result<YamlEnvValue, E> {
+                Ok(YamlEnvValue(v.to_string()))
+            }
+
+            fn visit_f64<E: serde::de::Error>(
+                self,
+                v: f64,
+            ) -> std::result::Result<YamlEnvValue, E> {
+                Ok(YamlEnvValue(mise_util::yaml::Number::from(v).to_string()))
+            }
+        }
+
+        deserializer.deserialize_str(ValueVisitor)
+    }
+}
+
 impl EnvResults {
     pub(super) async fn file(
         ctx: &mut EnvDirectiveContext<'_>,
@@ -144,8 +245,13 @@ impl EnvResults {
     {
         let errfn = || eyre!("failed to parse yaml file: {}", display_path(p));
         if let Ok(raw) = file::read_to_string(p) {
-            let mut f: Env<serde_yaml::Value> = serde_yaml::from_str(&raw).wrap_err_with(errfn)?;
-            if !f.sops.is_empty() {
+            let parse = |text: &str| {
+                mise_util::yaml::from_str::<Option<YamlEnv>>(text)
+                    .map(Option::unwrap_or_default)
+                    .wrap_err_with(errfn)
+            };
+            let mut f = parse(&raw)?;
+            if f.sops {
                 *sops_used = true;
                 let decrypted = sops::decrypt::<_, YamlFileFormat>(
                     config,
@@ -156,25 +262,12 @@ impl EnvResults {
                 )
                 .await?;
                 if !decrypted.is_empty() {
-                    f = serde_yaml::from_str(&decrypted).wrap_err_with(errfn)?;
+                    f = parse(&decrypted)?;
                 } else {
                     return Ok(EnvMap::new());
                 }
             }
-            f.env
-                .into_iter()
-                .map(|(k, v)| {
-                    Ok((
-                        k,
-                        match v {
-                            serde_yaml::Value::String(s) => s,
-                            serde_yaml::Value::Number(n) => n.to_string(),
-                            serde_yaml::Value::Bool(b) => b.to_string(),
-                            _ => bail!("unsupported yaml value: {v:?}"),
-                        },
-                    ))
-                })
-                .collect()
+            Ok(f.env)
         } else {
             Ok(EnvMap::new())
         }

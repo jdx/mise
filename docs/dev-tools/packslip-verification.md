@@ -115,7 +115,9 @@ mise keeps trust decisions in two places:
 
 For a keyless signer, continuity compares the workflow path without its tag or
 branch ref, so a new release tag of the same workflow is the same signer. A new
-workflow path or key needs an explicit trust decision. A change of signing
+workflow path or key needs an explicit trust decision. A
+[`workflow`](/dev-tools/backends/packslip.html#workflow) list is one: a release
+may move between the workflows it names. A change of signing
 scheme, a change from vendor to repackager, or provenance links that disappear
 can also be refused.
 

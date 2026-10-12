@@ -3,8 +3,8 @@ use std::path::{Path, PathBuf};
 
 use aube::embed::{ManifestError, PackageJson, WorkspaceDiscoveryOptions};
 use eyre::{Context, Result};
+use mise_util::yaml::{self, Value};
 use serde::Deserialize;
-use serde_yaml::Value;
 
 use super::{
     ProjectId, WorkspaceDiscoveryContext, WorkspaceProject, WorkspaceProjectGraph,
@@ -273,8 +273,8 @@ fn pnpm_affected_projects(
         return Ok(all_projects);
     };
     let (Ok(before), Ok(after)) = (
-        serde_yaml::from_str::<PnpmLockfile>(before),
-        serde_yaml::from_str::<PnpmLockfile>(after),
+        yaml::from_str::<PnpmLockfile>(before),
+        yaml::from_str::<PnpmLockfile>(after),
     ) else {
         return Ok(all_projects);
     };

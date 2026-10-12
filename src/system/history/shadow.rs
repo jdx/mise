@@ -803,13 +803,12 @@ impl HistoryRepo {
         let commits = gix::traverse::commit::topo::Builder::new(&repo)
             .with_tips([head])
             .sorting(gix::traverse::commit::topo::Sorting::TopoOrder)
-            .build()
-            .map_err(gix::Exn::into_error)?;
+            .build()?;
         let mut messages = vec![];
         for commit in commits {
-            let commit = commit.map_err(gix::Exn::into_error)?;
+            let commit = commit?;
             let object = repo.find_commit(commit.id)?;
-            let message = object.message_raw().map_err(gix::Exn::into_error)?;
+            let message = object.message_raw()?;
             let message = String::from_utf8_lossy(message.as_ref()).trim().to_string();
             messages.push((commit.id.to_string(), message));
         }
@@ -821,11 +820,11 @@ impl HistoryRepo {
         READ_META_CALLS.with(|count| count.set(count.get() + 1));
         let repo = gix::open_opts(self.dir(), gix::open::Options::isolated())
             .wrap_err_with(|| format!("opening {} with gix", display_path(self.dir())))?;
-        let id = gix::ObjectId::from_hex(commit.as_bytes()).map_err(gix::Exn::into_error)?;
+        let id = gix::ObjectId::from_hex(commit.as_bytes())?;
         let commit_object = repo.find_commit(id)?;
         let tree = commit_object.tree()?;
         let manifest = super::manifest::Manifest::read_gix(&tree)?;
-        let message = commit_object.message_raw().map_err(gix::Exn::into_error)?;
+        let message = commit_object.message_raw()?;
         let message = String::from_utf8_lossy(message.as_ref()).trim().to_string();
         let own_record = message
             .lines()

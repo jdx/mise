@@ -2774,12 +2774,18 @@ fn check_copy_dir(req: &FileRequest) -> Result<FileState> {
         return Ok(FileState::Differs("exists but is not a directory".into()));
     }
     for (source, target) in walk_source_files(req)? {
-        match check_content(&target, &file::read(&source)?)? {
-            FileState::Applied => {}
-            _ => {
-                let rel = target.strip_prefix(&req.target).unwrap_or(&target);
-                return Ok(FileState::Differs(format!("{} differs", rel.display())));
+        let rel = target.strip_prefix(&req.target).unwrap_or(&target);
+        // an unreadable target differs; `print_diff` reports it by name
+        match check_content(&target, &file::read(&source)?) {
+            Ok(FileState::Applied) => {}
+            Ok(_) => return Ok(FileState::Differs(format!("{} differs", rel.display()))),
+            Err(err) if is_permission_denied(&err) => {
+                return Ok(FileState::Differs(format!(
+                    "{} is not readable",
+                    rel.display()
+                )));
             }
+            Err(err) => return Err(err),
         }
     }
     Ok(FileState::Applied)
@@ -5297,6 +5303,9 @@ fn print_diff(config: &Config, req: &FileRequest, rendered: Option<&str>) -> Res
                 req.source.display_user(),
                 req.target.display_user()
             );
+            if req.mode == FileMode::Copy && (req.target.is_dir() || !req.target.exists()) {
+                print_dir_entry_diffs(config, req)?;
+            }
         }
         FileMode::Content => {
             let desired = req.content.as_deref().expect("inline content").as_bytes();
@@ -5375,21 +5384,32 @@ fn print_content_diff(
     current: &[u8],
     desired: &[u8],
 ) -> Result<()> {
-    let source = match req.mode {
-        FileMode::Content => "inline".to_string(),
-        _ => req.source.display_user(),
+    let desired_label = match req.mode {
+        FileMode::Content => None,
+        _ => Some(req.source.as_path()),
     };
+    print_file_diff(config, &req.target, desired_label, current, desired)
+}
+
+/// Print the content diff of one file; `source` is `None` for inline content.
+fn print_file_diff(
+    config: &Config,
+    target: &Path,
+    source: Option<&Path>,
+    current: &[u8],
+    desired: &[u8],
+) -> Result<()> {
     miseprintln!(
         "  content differs: {} -> {}",
-        source,
-        req.target.display_user()
+        source.map_or_else(|| "inline".to_string(), |s| s.display_user()),
+        target.display_user()
     );
     let mut opts = diffy::DiffOptions::new();
-    opts.set_original_filename(format!("{} (current)", req.target.display_user()))
-        .set_modified_filename(match req.mode {
-            FileMode::Content => format!("{} (desired)", req.target.display_user()),
-            _ => format!("{} (desired)", req.source.display_user()),
-        });
+    opts.set_original_filename(format!("{} (current)", target.display_user()))
+        .set_modified_filename(format!(
+            "{} (desired)",
+            source.unwrap_or(target).display_user()
+        ));
     match (str::from_utf8(current), str::from_utf8(desired)) {
         (Ok(current), Ok(desired)) => {
             let current = config.redact(current);
@@ -5398,6 +5418,51 @@ fn print_content_diff(
             miseprint!("{}", diffy::PatchFormatter::new().fmt_patch(&patch))?;
         }
         _ => miseprintln!("  binary content differs"),
+    }
+    Ok(())
+}
+
+/// Per-file changes of a directory copy: each file whose target is missing,
+/// replaced by another type, or different gets its own hunks.
+fn print_dir_entry_diffs(config: &Config, req: &FileRequest) -> Result<()> {
+    for (source, target) in walk_source_files(req)? {
+        let desired = file::read(&source)?;
+        if target.is_symlink() {
+            miseprintln!(
+                "  file type differs: {} is a symlink",
+                target.display_user()
+            );
+        } else if target.is_dir() {
+            miseprintln!(
+                "  file type differs: {} is a directory",
+                target.display_user()
+            );
+        } else if let Err(err) = std::fs::symlink_metadata(&target) {
+            match err.kind() {
+                std::io::ErrorKind::NotFound => {
+                    miseprintln!("  missing: {}", target.display_user())
+                }
+                std::io::ErrorKind::NotADirectory => miseprintln!(
+                    "  file type differs: a parent of {} is a file",
+                    target.display_user()
+                ),
+                std::io::ErrorKind::PermissionDenied => {
+                    miseprintln!("  current: {} is not accessible", target.display_user())
+                }
+                _ => return Err(err.into()),
+            }
+        } else {
+            match file::read(&target) {
+                Ok(current) if current != desired => {
+                    print_file_diff(config, &target, Some(&source), &current, &desired)?
+                }
+                Ok(_) => {}
+                Err(err) if is_permission_denied(&err) => {
+                    miseprintln!("  current: {} is not readable", target.display_user())
+                }
+                Err(err) => return Err(err),
+            }
+        }
     }
     Ok(())
 }

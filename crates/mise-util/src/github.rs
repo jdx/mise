@@ -1436,7 +1436,7 @@ fn read_gh_hosts() -> Option<HashMap<String, String>> {
             return None;
         }
     };
-    let hosts: HashMap<String, GhHostEntry> = match serde_yaml::from_str(&contents) {
+    let hosts: HashMap<String, GhHostEntry> = match crate::yaml::from_str(&contents) {
         Ok(h) => h,
         Err(e) => {
             debug!(
