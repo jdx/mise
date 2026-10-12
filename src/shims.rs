@@ -913,13 +913,29 @@ async fn tracked_command_wrappers(
             Err(err) => debug!("ignoring tools of {}: {err:#}", display_path(path)),
         }
     }
-    let requests = current_requests.into_iter().chain(
-        request_sets
+    // `add_rust_wrapper` decides per toolset, so judge each project's own `rust`; only the
+    // `mr-boxington` provider may come from another config (e.g. the global one).
+    let mbx = crate::args::BackendArg::from("mr-boxington");
+    let is_mbx = |tool: &crate::toolset::ToolRequest| {
+        tool.ba().short == mbx.short || tool.ba().full() == mbx.full()
+    };
+    let all: Vec<&crate::toolset::ToolRequest> = current_requests
+        .into_iter()
+        .chain(
+            request_sets
+                .iter()
+                .flat_map(|set| set.tools.values().flatten()),
+        )
+        .collect();
+    for set in &request_sets {
+        let own: Vec<&crate::toolset::ToolRequest> = set.tools.values().flatten().collect();
+        let requests = own
             .iter()
-            .flat_map(|set| set.tools.values().flatten()),
-    );
-    if let Err(err) = crate::config::command_wrapper::add_rust_wrapper(&mut out, requests) {
-        debug!("skipping tracked rust wrapper: {err:#}");
+            .copied()
+            .chain(all.iter().copied().filter(|tool| is_mbx(tool)));
+        if let Err(err) = crate::config::command_wrapper::add_rust_wrapper(&mut out, requests) {
+            debug!("skipping tracked rust wrapper: {err:#}");
+        }
     }
     Ok(out)
 }

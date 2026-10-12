@@ -12,7 +12,7 @@ use itertools::Itertools;
 #[cfg(windows)]
 use path_absolutize::Absolutize;
 use std::collections::BTreeMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 
@@ -135,6 +135,19 @@ fn invoked_shim_path() -> PathBuf {
         .ok()
         .or_else(|| std::env::current_exe().ok())
         .unwrap_or(argv0)
+}
+
+/// Whether this process was started through a shim in the command-wrappers dir: by its path when
+/// it has one, otherwise the first `PATH` entry that holds `bin_name`.
+fn invoked_from_wrapper_dir(bin_name: &str) -> bool {
+    let argv0 = Path::new(&*env::ARGV0);
+    if let Some(dir) = argv0.parent().filter(|dir| !dir.as_os_str().is_empty()) {
+        return file::is_command_wrapper_dir(dir);
+    }
+    env::PATH
+        .iter()
+        .find(|dir| dir.join(bin_name).is_file())
+        .is_some_and(|dir| file::is_command_wrapper_dir(dir))
 }
 
 /// Apply the command wrapper for `mise x -- <name>` run by a native Windows shim.
@@ -341,7 +354,7 @@ async fn which_shim(
     }
     // fallback for "system"
     // A wrapper shim left by another project must not turn a plain command into an error.
-    let inactive_wrapper = crate::dirs::COMMAND_WRAPPERS.join(bin_name).exists();
+    let inactive_wrapper = invoked_from_wrapper_dir(bin_name);
     if Settings::get().not_found_system_fallback || inactive_wrapper {
         let mise_bin = file::canonicalize_or_self(&env::MISE_BIN);
         for path in &*env::PATH {
