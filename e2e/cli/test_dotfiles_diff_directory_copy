@@ -27,10 +27,10 @@ assert_contains "mise dot diff" "missing: ~/.zshrc"
 
 # an unreadable target file is reported by name rather than failing the diff
 if [ "$(id -u)" != 0 ]; then
-	echo "one" >"$HOME/.zshrc"
-	chmod 000 "$HOME/.zshrc"
-	assert_contains "mise dot diff" ".zshrc is not readable"
-	chmod 644 "$HOME/.zshrc"
+  echo "one" >"$HOME/.zshrc"
+  chmod 000 "$HOME/.zshrc"
+  assert_contains "mise dot diff" ".zshrc is not readable"
+  chmod 644 "$HOME/.zshrc"
 fi
 
 # a directory that does not exist yet lists every file as missing
@@ -45,12 +45,12 @@ assert_contains "mise dot diff" "-drifted"
 
 # files behind a directory that denies access are not reported as missing
 if [ "$(id -u)" != 0 ]; then
-	rm "$HOME/.config/app"
-	mkdir -p "$HOME/.config/app"
-	echo "alpha" >"$HOME/.config/app/a.conf"
-	chmod 000 "$HOME/.config/app"
-	assert_not_contains "mise dot diff" "missing: ~/.config/app/a.conf"
-	chmod 755 "$HOME/.config/app"
+  rm "$HOME/.config/app"
+  mkdir -p "$HOME/.config/app"
+  echo "alpha" >"$HOME/.config/app/a.conf"
+  chmod 000 "$HOME/.config/app"
+  assert_not_contains "mise dot diff" "missing: ~/.config/app/a.conf"
+  chmod 755 "$HOME/.config/app"
 fi
 
 # a file where a source subdirectory belongs is reported, not a failure
