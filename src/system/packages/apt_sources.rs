@@ -12,11 +12,12 @@
 //! ```
 //!
 //! Each entry becomes `/etc/apt/sources.list.d/mise-<name>.sources`, a deb822
-//! file whose `Signed-By` names `/etc/apt/keyrings/mise-<name>.gpg`, so a key
-//! mise adds is trusted only for its own repository. A key is kept once it is
-//! on disk with the declared fingerprints; mise fetches one only when it is
-//! missing or does not match, and writes only the declared keys from what it
-//! fetched.
+//! file whose `Signed-By` embeds the repository's armored signing key, so a key
+//! mise adds is trusted only for its own repository and removing the file
+//! removes the key with it. Inline keys need apt 2.4 or newer. A key is kept
+//! once it is in the file with the declared fingerprints; mise fetches one only
+//! when it is missing or does not match, and embeds only the declared keys
+//! from what it fetched.
 
 use std::path::{Path, PathBuf};
 
@@ -28,6 +29,8 @@ use crate::result::Result;
 use crate::system::sudo;
 
 const SOURCES_DIR: &str = "/etc/apt/sources.list.d";
+/// Where earlier mise versions kept a source's key; removed once the key is
+/// embedded in the source file.
 const KEYRINGS_DIR: &str = "/etc/apt/keyrings";
 
 /// One `[bootstrap.apt.sources.<name>]` entry as written in mise.toml.
@@ -170,7 +173,7 @@ impl AptSource {
         PathBuf::from(format!("{SOURCES_DIR}/mise-{}.sources", self.name))
     }
 
-    fn keyring_path(&self) -> PathBuf {
+    fn legacy_keyring_path(&self) -> PathBuf {
         PathBuf::from(format!("{KEYRINGS_DIR}/mise-{}.gpg", self.name))
     }
 
@@ -202,16 +205,13 @@ impl AptSource {
 
     /// The deb822 stanza for this source on a release, or `None` when the
     /// source does not apply there (a PPA on a release not based on Ubuntu).
-    fn render(&self, release: &Release) -> Result<Option<String>> {
-        let Some(SourceFields {
+    fn render(&self, fields: &SourceFields, key: &str) -> String {
+        let SourceFields {
             uris,
             suites,
             components,
             architectures,
-        }) = self.fields(release)?
-        else {
-            return Ok(None);
-        };
+        } = fields;
         let mut out = format!(
             "# Written by mise for [bootstrap.apt.sources.{}]; changes here are overwritten.\n\
              Types: deb\n\
@@ -225,8 +225,8 @@ impl AptSource {
         if let Some(architectures) = architectures {
             out.push_str(&format!("Architectures: {architectures}\n"));
         }
-        out.push_str(&format!("Signed-By: {}\n", self.keyring_path().display()));
-        Ok(Some(out))
+        out.push_str(&inline_signed_by(key));
+        out
     }
 
     /// The deb822 fields for this source on `release`, defaults resolved, or
@@ -299,8 +299,9 @@ impl AptSource {
         }
     }
 
-    /// Download the signing key and keep only the declared certificates.
-    async fn fetch_keyring(&self) -> Result<Vec<u8>> {
+    /// Download the signing key and keep only the declared certificates,
+    /// armored for a `Signed-By` field.
+    async fn fetch_keyring(&self) -> Result<String> {
         let (url, fingerprints) = match &self.kind {
             AptSourceKind::Ppa { owner, archive } => {
                 let fingerprints = if self.fingerprints.is_empty() {
@@ -321,8 +322,65 @@ impl AptSource {
         let data = HTTP_FETCH.get_bytes(&url).await?;
         let keys = crate::gpg::parse_keyring(data.as_ref())
             .map_err(|err| eyre!("{}: reading the key from {url}: {err}", self.name))?;
-        select_keys(&self.name, &url, keys, &fingerprints)
+        Ok(armor(&select_keys(&self.name, &url, keys, &fingerprints)?))
     }
+}
+
+/// A `Signed-By` field holding `key` inline: deb822 continuation lines with one
+/// leading space, and `.` standing for a blank line.
+fn inline_signed_by(key: &str) -> String {
+    let mut out = String::from("Signed-By:\n");
+    for line in key.lines() {
+        out.push(' ');
+        out.push_str(if line.is_empty() { "." } else { line });
+        out.push('\n');
+    }
+    out
+}
+
+/// The armored key embedded in a source file's `Signed-By`, if any.
+fn inline_key(stanza: &str) -> Option<String> {
+    let mut lines = stanza
+        .lines()
+        .skip_while(|line| line.trim_end() != "Signed-By:");
+    lines.next()?;
+    let key = lines
+        .map_while(|line| line.strip_prefix(' '))
+        .map(|line| if line == "." { "" } else { line })
+        .collect::<Vec<_>>();
+    (!key.is_empty()).then(|| key.join("\n") + "\n")
+}
+
+/// ASCII-armor binary OpenPGP packets as a public key block.
+fn armor(data: &[u8]) -> String {
+    use base64::Engine;
+    let body = base64::engine::general_purpose::STANDARD.encode(data);
+    let mut out = String::from("-----BEGIN PGP PUBLIC KEY BLOCK-----\n\n");
+    for chunk in body.as_bytes().chunks(64) {
+        out.push_str(&String::from_utf8_lossy(chunk));
+        out.push('\n');
+    }
+    let crc = crc24(data).to_be_bytes();
+    out.push_str(&format!(
+        "={}\n-----END PGP PUBLIC KEY BLOCK-----\n",
+        base64::engine::general_purpose::STANDARD.encode(&crc[1..])
+    ));
+    out
+}
+
+/// The OpenPGP armor checksum (RFC 4880 section 6.1).
+fn crc24(data: &[u8]) -> u32 {
+    let mut crc: u32 = 0xB704CE;
+    for &byte in data {
+        crc ^= u32::from(byte) << 16;
+        for _ in 0..8 {
+            crc <<= 1;
+            if crc & 0x1000000 != 0 {
+                crc ^= 0x1864CFB;
+            }
+        }
+    }
+    crc & 0xFFFFFF
 }
 
 struct SourceFields {
@@ -536,8 +594,8 @@ pub(crate) async fn apply(sources: &[AptSource], dry_run: bool, ask: bool) -> Re
     let mut declared = vec![];
     let mut pending = vec![];
     for source in sources {
-        let stanza = match source.render(&release) {
-            Ok(Some(stanza)) => stanza,
+        let fields = match source.fields(&release) {
+            Ok(Some(fields)) => fields,
             Ok(None) => {
                 debug!(
                     "apt source {}: skipping {}, this release is not based on Ubuntu",
@@ -553,38 +611,40 @@ pub(crate) async fn apply(sources: &[AptSource], dry_run: bool, ask: bool) -> Re
         };
         let sources_path = source.sources_path();
         declared.push((source, sources_path.clone()));
-        let keyring = std::fs::read(source.keyring_path()).ok();
         let existing = std::fs::read_to_string(&sources_path).ok();
-        let stanza_current = existing.as_deref() == Some(stanza.as_str());
-        // without a declared fingerprint, any key on disk passes the check, so
-        // a source that points somewhere new (another PPA under the same name)
-        // must fetch the key that goes with it
-        let key_current = source.keyring_current(keyring.as_deref())
-            && (stanza_current || !source.fingerprints.is_empty());
-        if key_current && stanza_current {
+        let existing_key = existing.as_deref().and_then(inline_key);
+        let has_key = source.keyring_current(existing_key.as_deref().map(str::as_bytes));
+        let stanza_current = has_key
+            && existing_key.as_deref().is_some_and(|key| {
+                existing.as_deref() == Some(source.render(&fields, key).as_str())
+            });
+        // without a declared fingerprint, any key in the file passes the check,
+        // so a source that points somewhere new (another PPA under the same
+        // name) must fetch the key that goes with it
+        let key_current = has_key && (stanza_current || !source.fingerprints.is_empty());
+        if key_current && stanza_current && !source.legacy_keyring_path().exists() {
             debug!("apt source {}: up to date", source.name);
             continue;
         }
         pending.push(PendingSource {
             source,
-            stanza,
+            fields,
             existed: existing.is_some(),
-            key_current,
+            key: key_current.then_some(existing_key).flatten(),
             stanza_current,
         });
     }
     let mut changed = false;
     if dry_run {
         for p in &pending {
-            if !p.key_current {
-                miseprintln!(
-                    "fetch the signing key for {} into {}",
-                    p.source.describe(),
-                    p.source.keyring_path().display()
-                );
+            if p.key.is_none() {
+                miseprintln!("fetch the signing key for {}", p.source.describe());
             }
             if !p.stanza_current {
                 miseprintln!("write {}", p.source.sources_path().display());
+            }
+            if p.source.legacy_keyring_path().exists() {
+                miseprintln!("remove {}", p.source.legacy_keyring_path().display());
             }
         }
         changed = !pending.is_empty();
@@ -593,25 +653,20 @@ pub(crate) async fn apply(sources: &[AptSource], dry_run: bool, ask: bool) -> Re
         // a source left as it was must not be warned about for its lists
         declared.retain(|(source, _)| !pending.iter().any(|p| p.source.name == source.name));
     } else {
-        let mut keyrings_dir_ready = Path::new(KEYRINGS_DIR).is_dir();
         for p in &pending {
             let result: Result<()> = async {
-                if !p.key_current {
-                    let keys = p.source.fetch_keyring().await?;
-                    if !keyrings_dir_ready {
-                        sudo::run(
-                            "install",
-                            &["-d".into(), "-m".into(), "0755".into(), KEYRINGS_DIR.into()],
-                            &[],
-                        )?;
-                        keyrings_dir_ready = true;
-                    }
-                    write_root_file(&p.source.keyring_path(), &keys)?;
+                let key = match &p.key {
+                    Some(key) => key.clone(),
+                    None => p.source.fetch_keyring().await?,
+                };
+                if p.key.is_none() || !p.stanza_current {
+                    let stanza = p.source.render(&p.fields, &key);
+                    write_root_file(&p.source.sources_path(), stanza.as_bytes())?;
                     changed = true;
                 }
-                if !p.stanza_current {
-                    write_root_file(&p.source.sources_path(), p.stanza.as_bytes())?;
-                    changed = true;
+                let legacy = p.source.legacy_keyring_path();
+                if legacy.exists() {
+                    sudo::run("rm", &["-f".into(), legacy.display().to_string()], &[])?;
                 }
                 Ok(())
             }
@@ -666,9 +721,10 @@ pub(crate) async fn apply(sources: &[AptSource], dry_run: bool, ask: bool) -> Re
 /// A source whose files differ from its declaration.
 struct PendingSource<'a> {
     source: &'a AptSource,
-    stanza: String,
+    fields: SourceFields,
     existed: bool,
-    key_current: bool,
+    /// The armored key already in the source file, when it can stay.
+    key: Option<String>,
     stanza_current: bool,
 }
 
@@ -770,26 +826,58 @@ mod tests {
         "ID=linuxmint\nID_LIKE=\"ubuntu debian\"\nVERSION_CODENAME=wilma\nUBUNTU_CODENAME=noble\n";
     const BOOKWORM: &str = "ID=debian\nVERSION_CODENAME=bookworm\n";
 
+    const KEY: &str =
+        "-----BEGIN PGP PUBLIC KEY BLOCK-----\n\nAAAA\n-----END PGP PUBLIC KEY BLOCK-----\n";
+
+    fn render(source: &AptSource, release: &Release) -> Result<Option<String>> {
+        Ok(source
+            .fields(release)?
+            .map(|fields| source.render(&fields, KEY)))
+    }
+
+    #[test]
+    fn inline_key_round_trips_through_the_stanza() {
+        let source = ppa("git-core", "ppa:git-core/ppa");
+        let stanza = render(&source, &Release::parse(NOBLE)).unwrap().unwrap();
+        assert_eq!(inline_key(&stanza).as_deref(), Some(KEY));
+        assert_eq!(inline_key("Types: deb\nSigned-By: /x.gpg\n"), None);
+    }
+
+    #[test]
+    fn armor_is_readable_as_a_keyring() {
+        let keys = crate::gpg::parse_keyring(include_bytes!(
+            "../../../crates/mise-util/src/assets/gpg/swift.asc"
+        ))
+        .unwrap();
+        let bytes = keys
+            .iter()
+            .flat_map(|k| k.bytes.clone())
+            .collect::<Vec<_>>();
+        let reparsed = crate::gpg::parse_keyring(armor(&bytes).as_bytes()).unwrap();
+        assert_eq!(reparsed.len(), keys.len());
+    }
+
     #[test]
     fn ppa_renders_launchpad_stanza_for_ubuntu_release() {
         let source = ppa("git-core", "ppa:git-core/ppa");
         assert_eq!(
-            source.render(&Release::parse(NOBLE)).unwrap().unwrap(),
+            render(&source, &Release::parse(NOBLE)).unwrap().unwrap(),
             "# Written by mise for [bootstrap.apt.sources.git-core]; changes here are overwritten.\n\
              Types: deb\n\
              URIs: https://ppa.launchpadcontent.net/git-core/ppa/ubuntu/\n\
              Suites: noble\n\
              Components: main\n\
-             Signed-By: /etc/apt/keyrings/mise-git-core.gpg\n"
+             Signed-By:\n \
+             -----BEGIN PGP PUBLIC KEY BLOCK-----\n .\n AAAA\n -----END PGP PUBLIC KEY BLOCK-----\n"
         );
     }
 
     #[test]
     fn ppa_uses_ubuntu_base_on_derivatives_and_skips_debian() {
         let source = ppa("fish", "fish-shell/release-4");
-        let mint = source.render(&Release::parse(MINT)).unwrap().unwrap();
+        let mint = render(&source, &Release::parse(MINT)).unwrap().unwrap();
         assert!(mint.contains("Suites: noble\n"), "{mint}");
-        assert_eq!(source.render(&Release::parse(BOOKWORM)).unwrap(), None);
+        assert_eq!(render(&source, &Release::parse(BOOKWORM)).unwrap(), None);
     }
 
     #[test]
@@ -799,14 +887,14 @@ mod tests {
             source.fingerprints,
             vec!["9DC858229FC7DD38854AE2D88D81803C0EBFCD88"]
         );
-        let stanza = source.render(&Release::parse(BOOKWORM)).unwrap().unwrap();
+        let stanza = render(&source, &Release::parse(BOOKWORM)).unwrap().unwrap();
         assert!(
             stanza.contains("Suites: bookworm\nComponents: stable\n"),
             "{stanza}"
         );
-        assert!(stanza.ends_with("Signed-By: /etc/apt/keyrings/mise-docker.gpg\n"));
-        assert!(source.render(&Release::default()).is_err());
-        let mint = source.render(&Release::parse(MINT)).unwrap().unwrap();
+        assert!(stanza.contains("Signed-By:\n -----BEGIN PGP PUBLIC KEY BLOCK-----\n"));
+        assert!(render(&source, &Release::default()).is_err());
+        let mint = render(&source, &Release::parse(MINT)).unwrap().unwrap();
         assert!(mint.contains("Suites: noble\n"), "{mint}");
     }
 
@@ -862,7 +950,7 @@ mod tests {
             },
         )
         .unwrap();
-        let stanza = source.render(&Release::parse(NOBLE)).unwrap().unwrap();
+        let stanza = render(&source, &Release::parse(NOBLE)).unwrap().unwrap();
         assert!(!stanza.contains("Components:"), "{stanza}");
     }
 
