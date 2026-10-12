@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::path::Path;
 use std::process::Stdio;
 
 use async_trait::async_trait;
@@ -15,6 +16,23 @@ impl DnfManager {
     pub(crate) fn new() -> Self {
         Self {}
     }
+}
+
+/// Set by systemd's ostree integration on a host booted from an ostree image
+/// (Silverblue, Kinoite, Bazzite, secureblue, ...). It is absent inside a
+/// bootc/Containerfile build, where `dnf` works normally.
+const OSTREE_BOOTED: &str = "/run/ostree-booted";
+
+fn ostree_booted() -> bool {
+    Path::new(OSTREE_BOOTED).exists()
+}
+
+fn ostree_error(verb: &str) -> eyre::Report {
+    eyre::eyre!(
+        "cannot {verb} dnf packages: this host is booted from an ostree image, so /usr is read-only\n\
+         Bake the packages into the image, install them in a toolbox, or layer them yourself with\n  \
+         rpm-ostree install <packages>"
+    )
 }
 
 // Never add `--` here: DNF5 rejects it on subcommands like install/upgrade.
@@ -140,6 +158,9 @@ impl SystemPackageManager for DnfManager {
     }
 
     async fn install(&self, pkgs: &[PackageRequest], opts: &InstallOpts) -> Result<()> {
+        if ostree_booted() {
+            return Err(ostree_error("install"));
+        }
         let args = install_args(pkgs, opts);
         if opts.dry_run {
             miseprintln!("{}", sudo::argv("dnf", &args).join(" "));
@@ -149,6 +170,9 @@ impl SystemPackageManager for DnfManager {
     }
 
     async fn upgrade(&self, pkgs: &[PackageRequest], opts: &InstallOpts) -> Result<()> {
+        if ostree_booted() {
+            return Err(ostree_error("upgrade"));
+        }
         let args = upgrade_args(pkgs);
         if opts.dry_run {
             miseprintln!("{}", sudo::argv("dnf", &args).join(" "));
@@ -169,6 +193,13 @@ mod tests {
             tap_url: None,
             desired: crate::system::packages::PackageDesiredState::Present,
         }
+    }
+
+    #[test]
+    fn test_ostree_error_suggests_alternatives() {
+        let msg = ostree_error("install").to_string();
+        assert!(msg.contains("ostree"));
+        assert!(msg.contains("rpm-ostree install"));
     }
 
     #[test]

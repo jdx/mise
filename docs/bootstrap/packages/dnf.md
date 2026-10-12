@@ -51,6 +51,16 @@ repositories; mise does not add a repository or fetch an archived RPM.
 Without `--update`, dnf refreshes its metadata when its own cache expires.
 `upgrade` acts only on configured packages that are installed.
 
+## Fedora Atomic hosts
+
+On a host booted from an ostree image (Silverblue, Kinoite, Bazzite, Bluefin,
+secureblue), `/usr` is read-only, so `dnf install` cannot work. mise detects
+this from `/run/ostree-booted` and stops with an explanation instead of running
+`dnf`. Status checks still work, because `rpm -q` sees the packages in the booted
+image. Bake the packages into the image, install them in a toolbox, or layer them
+yourself with `rpm-ostree install`. Builds inside a bootc Containerfile are not
+booted from an image, so `dnf` runs normally there.
+
 ## Remove packages
 
 mise does not remove dnf packages. Deleting an entry leaves the package
