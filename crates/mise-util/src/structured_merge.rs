@@ -16,8 +16,8 @@
 //! - An empty target is an empty table.
 
 use crate::yaml;
-use crate::yaml_merge::{merge_yaml, root_mapping};
-use eyre::{Result, eyre};
+use crate::yaml_merge::{mapping_subset, merge_yaml, root_mapping};
+use eyre::{Result, bail, eyre};
 use indexmap::IndexMap;
 use serde_json::value::RawValue;
 use serde_json::{Map, Value};
@@ -54,16 +54,21 @@ impl Format {
 
 /// A parsed document in its format's own value type. JSON's cannot hold TOML
 /// datetimes or YAML's non-string keys, so each format is compared as itself.
-/// YAML is kept as its lossless syntax tree, so tags such as `!include` take
-/// part in comparisons and survive into [`missing`]'s output.
+///
+/// YAML comes in two forms, and both documents of a pair use the same one.
+/// The lossless syntax tree keeps tags such as `!include`, so they take part
+/// in comparisons and survive into [`missing`]'s output, but it does not
+/// resolve anchors, aliases or `<<` merge keys. Parsed values resolve those
+/// and drop tags. A pair that uses both is an error rather than a guess.
 enum Doc {
     Json(Value),
     Toml(toml::Table),
     /// `None` for an empty document.
-    Yaml(Option<YamlDoc>),
+    YamlTree(Option<YamlTree>),
+    YamlValues(yaml::Mapping),
 }
 
-struct YamlDoc {
+struct YamlTree {
     file: yaml_edit::YamlFile,
     root: yaml_edit::Mapping,
 }
@@ -72,17 +77,15 @@ struct YamlDoc {
 /// `target`.
 pub fn contains(format: Format, target: &str, source: &str) -> Result<bool> {
     Ok(
-        match (
-            parse(format, target, "target")?,
-            parse(format, source, "source")?,
-        ) {
+        match parse_pair(format, (target, "target"), (source, "source"))? {
             (Doc::Json(target), Doc::Json(source)) => json_subset(&source, &target),
             (Doc::Toml(target), Doc::Toml(source)) => toml_subset(&source, &target),
-            (Doc::Yaml(target), Doc::Yaml(source)) => match (source, target) {
+            (Doc::YamlTree(target), Doc::YamlTree(source)) => match (source, target) {
                 (None, _) => true,
                 (Some(_), None) => false,
                 (Some(source), Some(target)) => yaml_subset(&source.root, &target.root),
             },
+            (Doc::YamlValues(target), Doc::YamlValues(source)) => mapping_subset(&source, &target),
             _ => unreachable!("both sides are parsed as the same format"),
         },
     )
@@ -107,10 +110,7 @@ pub fn merge(format: Format, target: &str, source: &str) -> Result<String> {
 /// sides hold is compared key by key.
 pub fn missing(format: Format, target: &str, source: &str) -> Result<Option<String>> {
     Ok(
-        match (
-            parse(format, target, "target")?,
-            parse(format, source, "source")?,
-        ) {
+        match parse_pair(format, (target, "target"), (source, "source"))? {
             (Doc::Json(Value::Object(target)), Doc::Json(Value::Object(source))) => {
                 let missing = json_missing(&source, &target);
                 (!missing.is_empty())
@@ -123,7 +123,7 @@ pub fn missing(format: Format, target: &str, source: &str) -> Result<Option<Stri
                     .then(|| toml::to_string(&missing))
                     .transpose()?
             }
-            (Doc::Yaml(target), Doc::Yaml(source)) => match (source, target) {
+            (Doc::YamlTree(target), Doc::YamlTree(source)) => match (source, target) {
                 (None, _) => None,
                 (Some(source), None) => Some(source.file.to_string()),
                 (Some(source), Some(target)) => {
@@ -131,6 +131,13 @@ pub fn missing(format: Format, target: &str, source: &str) -> Result<Option<Stri
                     (!source.root.is_empty()).then(|| source.file.to_string())
                 }
             },
+            // written from parsed values, so no alias is left without its anchor
+            (Doc::YamlValues(target), Doc::YamlValues(source)) => {
+                let missing = yaml_values_missing(&source, &target);
+                (!missing.is_empty())
+                    .then(|| yaml::to_string(&missing))
+                    .transpose()?
+            }
             _ => unreachable!("both sides are parsed as the same format"),
         },
     )
@@ -207,6 +214,25 @@ fn yaml_remove_present(source: &yaml_edit::Mapping, target: &yaml_edit::Mapping)
     }
 }
 
+fn yaml_values_missing(source: &yaml::Mapping, target: &yaml::Mapping) -> yaml::Mapping {
+    let mut out = yaml::Mapping::new();
+    for (key, sv) in source {
+        match (sv, target.get(key)) {
+            (_, None) => {
+                out.insert(key.clone(), sv.clone());
+            }
+            (yaml::Value::Mapping(s), Some(yaml::Value::Mapping(t))) => {
+                let inner = yaml_values_missing(s, t);
+                if !inner.is_empty() {
+                    out.insert(key.clone(), yaml::Value::Mapping(inner));
+                }
+            }
+            _ => {}
+        }
+    }
+    out
+}
+
 /// Whether every key of `source` is set to the same value in `target`,
 /// mappings compared recursively. Values compare by YAML type, tag and value,
 /// not by spelling.
@@ -220,7 +246,49 @@ fn yaml_subset(source: &yaml_edit::Mapping, target: &yaml_edit::Mapping) -> bool
     })
 }
 
-fn parse(format: Format, text: &str, what: &str) -> Result<Doc> {
+/// Parse two documents of one format. A YAML pair is read as syntax trees
+/// unless either document uses anchors, aliases or merge keys; see [`Doc`].
+fn parse_pair(format: Format, a: (&str, &str), b: (&str, &str)) -> Result<(Doc, Doc)> {
+    if format != Format::Yaml {
+        return Ok((
+            parse(format, a.0, a.1, false)?,
+            parse(format, b.0, b.1, false)?,
+        ));
+    }
+    let (a_tags, a_aliases) = yaml_features(a.0);
+    let (b_tags, b_aliases) = yaml_features(b.0);
+    let values = a_aliases || b_aliases;
+    if values && (a_tags || b_tags) {
+        bail!(
+            "YAML that uses both tags and anchors or aliases cannot be merged; \
+             expand the aliases in the {} or the {}",
+            a.1,
+            b.1
+        );
+    }
+    Ok((
+        parse(format, a.0, a.1, values)?,
+        parse(format, b.0, b.1, values)?,
+    ))
+}
+
+/// Whether a YAML text uses tags, and whether it uses anchors, aliases or
+/// `<<` merge keys.
+fn yaml_features(text: &str) -> (bool, bool) {
+    use yaml_edit::SyntaxKind;
+    let tokens = yaml_edit::lex(text);
+    let has = |kinds: &[SyntaxKind]| tokens.iter().any(|(kind, _)| kinds.contains(kind));
+    (
+        has(&[SyntaxKind::TAG]),
+        has(&[
+            SyntaxKind::ANCHOR,
+            SyntaxKind::REFERENCE,
+            SyntaxKind::MERGE_KEY,
+        ]),
+    )
+}
+
+fn parse(format: Format, text: &str, what: &str, yaml_values: bool) -> Result<Doc> {
     // an empty file, or one holding only comments, is an empty table
     let blank = text.trim().is_empty() || (format != Format::Json && is_comments_only(text));
     let fail =
@@ -239,15 +307,20 @@ fn parse(format: Format, text: &str, what: &str) -> Result<Doc> {
         },
         Format::Toml if blank => Doc::Toml(toml::Table::new()),
         Format::Toml => Doc::Toml(toml::from_str(text).map_err(|e| fail(&e))?),
-        Format::Yaml if blank => Doc::Yaml(None),
+        Format::Yaml if blank && yaml_values => Doc::YamlValues(yaml::Mapping::new()),
+        Format::Yaml if blank => Doc::YamlTree(None),
         Format::Yaml => {
             // serde-saphyr checks the syntax; yaml-edit is lenient about errors
-            let yaml::Value::Mapping(_) = yaml::from_str(text).map_err(|e| fail(&e))? else {
+            let yaml::Value::Mapping(map) = yaml::from_str(text).map_err(|e| fail(&e))? else {
                 return Err(not_a_table());
             };
-            let file = yaml_edit::YamlFile::from_str(text).map_err(|e| fail(&e))?;
-            let root = root_mapping(&file, what, false)?.ok_or_else(not_a_table)?;
-            Doc::Yaml(Some(YamlDoc { file, root }))
+            if yaml_values {
+                Doc::YamlValues(map)
+            } else {
+                let file = yaml_edit::YamlFile::from_str(text).map_err(|e| fail(&e))?;
+                let root = root_mapping(&file, what, false)?.ok_or_else(not_a_table)?;
+                Doc::YamlTree(Some(YamlTree { file, root }))
+            }
         }
     })
 }
@@ -257,13 +330,14 @@ fn parse(format: Format, text: &str, what: &str) -> Result<Doc> {
 /// conflict.
 pub fn conflicts(format: Format, a: &str, b: &str) -> Result<Vec<String>> {
     let mut paths = vec![];
-    match (parse(format, a, "source")?, parse(format, b, "source")?) {
+    match parse_pair(format, (a, "source"), (b, "source"))? {
         (Doc::Json(a), Doc::Json(b)) => json_conflicts(&a, &b, "", &mut paths),
         (Doc::Toml(a), Doc::Toml(b)) => toml_conflicts(&a, &b, "", &mut paths),
-        (Doc::Yaml(Some(a)), Doc::Yaml(Some(b))) => {
+        (Doc::YamlTree(Some(a)), Doc::YamlTree(Some(b))) => {
             yaml_conflicts(&a.root, &b.root, "", &mut paths)
         }
-        (Doc::Yaml(_), Doc::Yaml(_)) => {}
+        (Doc::YamlTree(_), Doc::YamlTree(_)) => {}
+        (Doc::YamlValues(a), Doc::YamlValues(b)) => yaml_values_conflicts(&a, &b, "", &mut paths),
         _ => unreachable!("both sides are parsed as the same format"),
     }
     Ok(paths)
@@ -327,6 +401,32 @@ fn yaml_conflicts(
     }
 }
 
+fn yaml_values_conflicts(
+    a: &yaml::Mapping,
+    b: &yaml::Mapping,
+    prefix: &str,
+    paths: &mut Vec<String>,
+) {
+    for (key, av) in a {
+        let Some(bv) = b.get(key) else { continue };
+        let name = match key {
+            yaml::Value::String(name) => name.clone(),
+            other => yaml::to_string(other)
+                .unwrap_or_default()
+                .trim()
+                .to_string(),
+        };
+        let path = child_path(prefix, &name);
+        match (av, bv) {
+            (yaml::Value::Mapping(av), yaml::Value::Mapping(bv)) => {
+                yaml_values_conflicts(av, bv, &path, paths);
+            }
+            _ if av != bv => paths.push(path),
+            _ => {}
+        }
+    }
+}
+
 fn is_comments_only(text: &str) -> bool {
     text.lines()
         .all(|l| l.trim().is_empty() || l.trim_start().starts_with('#'))
@@ -350,7 +450,7 @@ fn toml_subset(source: &toml::Table, target: &toml::Table) -> bool {
 }
 
 fn merge_json(target: &str, source: &str) -> Result<String> {
-    let Doc::Json(Value::Object(source)) = parse(Format::Json, source, "source")? else {
+    let Doc::Json(Value::Object(source)) = parse(Format::Json, source, "source", false)? else {
         unreachable!("parsed as a JSON object");
     };
     // Values the source does not touch stay as the exact text they were parsed
@@ -755,6 +855,32 @@ path = \"/Applications/X.app\"
         assert_eq!(
             conflicts(Format::Yaml, "a: !secret x\n", "a: x\n").unwrap(),
             vec!["a".to_string()]
+        );
+    }
+
+    #[test]
+    fn yaml_punctuation_in_text_is_not_a_tag_or_anchor() {
+        let text = "a: 'x!y'\nb: hi!\nc: \"&x *y\"\nd: a&b # !c &d *e\n";
+        assert_eq!(yaml_features(text), (false, false));
+        assert_eq!(yaml_features("a: !t x\n"), (true, false));
+        assert_eq!(yaml_features("a: &x 1\nb: *x\n"), (false, true));
+    }
+
+    #[test]
+    fn yaml_aliases_resolve_against_their_anchors() {
+        let source = "a: &v default\nb: *v\n";
+        assert_eq!(
+            fill_missing(Format::Yaml, "a: mine\n", source).unwrap(),
+            "a: mine\nb: default\n"
+        );
+        assert!(contains(Format::Yaml, "a: default\nb: default\n", source).unwrap());
+        let merged = "base: &b {x: 1}\nkid:\n  <<: *b\n";
+        assert!(contains(Format::Yaml, "base: {x: 1}\nkid: {x: 1}\n", merged).unwrap());
+        assert!(
+            fill_missing(Format::Yaml, "a: 1\n", "a: &v !secret x\nb: *v\n")
+                .unwrap_err()
+                .to_string()
+                .contains("both tags and anchors")
         );
     }
 
