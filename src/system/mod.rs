@@ -273,7 +273,15 @@ impl BootstrapTomlConfig {
         });
         below(&mut self.macos.defaults_entries, shared_entries);
         fill(&mut self.macos.launchd.agents, macos.launchd.agents);
-        or(&mut self.macos.login_items, macos.login_items);
+        match (&mut self.macos.login_items, macos.login_items) {
+            (Some(own), Some(mut lower)) => {
+                lower.apps.append(&mut own.apps);
+                own.apps = lower.apps;
+                own.exclusive = own.exclusive.or(lower.exclusive);
+            }
+            (own @ None, lower) => *own = lower,
+            _ => {}
+        }
 
         or(&mut self.linux.firewall, lower.linux.firewall);
         fill(&mut self.linux.systemd.units, lower.linux.systemd.units);
@@ -1380,6 +1388,7 @@ pub fn login_items_from_config(config: &Config) -> login_items::LoginItemsReques
         }
     }
     let mut valid = vec![];
+    let mut invalid = false;
     let mut seen = std::collections::HashSet::new();
     for app in apps {
         match login_items::app_path(&app) {
@@ -1388,8 +1397,16 @@ pub fn login_items_from_config(config: &Config) -> login_items::LoginItemsReques
                     valid.push(path);
                 }
             }
-            Err(err) => warn!("{err}"),
+            Err(err) => {
+                warn!("{err}");
+                invalid = true;
+            }
         }
+    }
+    if invalid && exclusive {
+        // an incomplete declaration must not decide which items are undeclared
+        warn!("[bootstrap.macos.login_items]: ignoring exclusive because an entry is invalid");
+        exclusive = false;
     }
     login_items::LoginItemsRequest {
         apps: valid,
@@ -2757,6 +2774,24 @@ mod tests {
 
     fn tv(s: &str) -> toml::Value {
         s.parse().unwrap()
+    }
+
+    #[test]
+    fn merge_below_combines_login_items() {
+        let items = |apps: &[&str], exclusive| {
+            Some(login_items::LoginItemsTomlConfig {
+                apps: apps.iter().map(|a| a.to_string()).collect(),
+                exclusive,
+            })
+        };
+        let mut own = BootstrapTomlConfig::default();
+        own.macos.login_items = items(&["/Applications/B.app"], None);
+        let mut lower = BootstrapTomlConfig::default();
+        lower.macos.login_items = items(&["/Applications/A.app"], Some(true));
+        own.merge_below(lower);
+        let merged = own.macos.login_items.unwrap();
+        assert_eq!(merged.apps, ["/Applications/A.app", "/Applications/B.app"]);
+        assert_eq!(merged.exclusive, Some(true));
     }
 
     #[cfg(unix)]
