@@ -263,10 +263,19 @@ pub(crate) fn output(program: &str, args: &[String], envs: &[(String, String)]) 
     if interactive && !is_sudo(&argv[0]) {
         cmd.stdin(Stdio::inherit());
     }
-    Ok(cmd
+    let mut output = cmd
         .args(&argv[1..])
         .envs(envs.iter().map(|(key, value)| (key, value)))
-        .output()?)
+        .output()?;
+    if !output.status.success()
+        && let Some(hint) = manual_hint(&manual_cmd)
+    {
+        // callers report the captured stderr, so put the retry hint there
+        output
+            .stderr
+            .extend_from_slice(format!("\n{hint}").as_bytes());
+    }
+    Ok(output)
 }
 
 /// Run one elevated helper with its private payload on stdin.
@@ -358,14 +367,21 @@ fn attempt<T>(manual_cmd: &str, f: impl FnOnce() -> Result<T>) -> Result<T> {
 
 /// doas and run0 get a no-prompt flag on the real command when mise has no TTY,
 /// so a password requirement surfaces as the command failing. Say how to retry.
-fn with_manual_hint(err: eyre::Report, manual_cmd: &str) -> eyre::Report {
+fn manual_hint(manual_cmd: &str) -> Option<String> {
     let elevator = elevator();
     if is_root() || console::user_attended_stderr() || noninteractive_flag(&elevator).is_none() {
-        return err;
+        return None;
     }
-    err.wrap_err(format!(
+    Some(format!(
         "if {elevator} needs a password, run manually:\n  {manual_cmd}"
     ))
+}
+
+fn with_manual_hint(err: eyre::Report, manual_cmd: &str) -> eyre::Report {
+    match manual_hint(manual_cmd) {
+        Some(hint) => err.wrap_err(hint),
+        None => err,
+    }
 }
 
 /// Verify that a subprocess which performs its own sudo elevation can do so
