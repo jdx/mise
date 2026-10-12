@@ -135,6 +135,27 @@ fn writable(path: &Path) -> bool {
     ) && path.exists()
 }
 
+/// The owner of an existing, unwritable prefix when it is a non-root user other
+/// than the current one. Root-owned prefixes are the normal "needs chown" case.
+fn foreign_owner(prefix: &Path) -> Option<String> {
+    if writable(prefix) {
+        return None;
+    }
+    let uid = std::os::unix::fs::MetadataExt::uid(&prefix.metadata().ok()?);
+    let uid = foreign_uid(nix::unistd::geteuid().as_raw(), uid)?;
+    Some(
+        nix::unistd::User::from_uid(nix::unistd::Uid::from_raw(uid))
+            .ok()
+            .flatten()
+            .map_or_else(|| format!("uid {uid}"), |u| u.name),
+    )
+}
+
+/// The prefix owner's uid when it is neither root nor the current user.
+fn foreign_uid(euid: u32, owner: u32) -> Option<u32> {
+    (euid != 0 && owner != 0 && owner != euid).then_some(owner)
+}
+
 /// The invoking user when mise itself was run under sudo (root euid with
 /// SUDO_USER set). None for plain root (e.g. a container) and non-root runs.
 pub(super) fn sudo_invoking_user() -> Option<String> {
@@ -180,6 +201,19 @@ fn bootstrap_dirs(prefix: &Path) -> Vec<PathBuf> {
 
 pub(super) fn bootstrap(dry_run: bool) -> Result<()> {
     let prefix = prefix();
+    if let Some(owner) = foreign_owner(&prefix) {
+        // mise pours bottles itself, so it needs a prefix it can write. An
+        // existing prefix owned by another real user (e.g. a dedicated
+        // `linuxbrew` user behind a proxy) is that user's boundary — never
+        // mkdir/chown over it
+        bail!(
+            "{} is owned by {owner} and not writable by {}; mise will not change the \
+             ownership of another user's Homebrew prefix. Install the missing formulae with \
+             that prefix's own brew, or remove them from [bootstrap.packages]",
+            prefix.display(),
+            prefix_owner().unwrap_or_else(|| "the current user".to_string()),
+        );
+    }
     let dirs = bootstrap_dirs(&prefix);
     let needs_create = !prefix.exists();
     let needs_chown = !needs_create && !writable(&prefix);
@@ -241,4 +275,24 @@ pub(super) fn bootstrap(dry_run: bool) -> Result<()> {
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn foreign_owner_ignores_own_and_missing_prefixes() {
+        let dir = tempfile::tempdir().unwrap();
+        assert_eq!(foreign_owner(dir.path()), None);
+        assert_eq!(foreign_owner(&dir.path().join("missing")), None);
+    }
+
+    #[test]
+    fn foreign_uid_flags_only_other_non_root_owners() {
+        assert_eq!(foreign_uid(1000, 1001), Some(1001));
+        assert_eq!(foreign_uid(1000, 0), None);
+        assert_eq!(foreign_uid(1000, 1000), None);
+        assert_eq!(foreign_uid(0, 1001), None);
+    }
 }
