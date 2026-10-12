@@ -75,23 +75,25 @@ fn group_upgrade_args(pkgs: &[PackageRequest]) -> Vec<String> {
 
 /// Ids of installed groups from `dnf group list --installed`. dnf5 prints a
 /// table whose first column is the id; dnf4 with `-v` prints `Name (id)`.
-fn parse_group_list(output: &str) -> Vec<String> {
+fn parse_group_list(output: &str, dnf5: bool) -> Vec<String> {
     let mut ids = vec![];
-    for line in output.lines() {
+    for line in output.lines().skip(usize::from(dnf5)) {
         let line = line.trim();
-        if let Some(rest) = line.strip_suffix(')')
+        if dnf5 {
+            if let Some(first) = line.split_whitespace().next() {
+                ids.push(first.to_string());
+            }
+        } else if let Some(rest) = line.strip_suffix(')')
             && let Some((_, id)) = rest.rsplit_once('(')
         {
             ids.push(id.to_string());
-        } else if let Some(first) = line.split_whitespace().next() {
-            ids.push(first.to_string());
         }
     }
     ids
 }
 
-fn parse_group_query(output: &str, requests: &[PackageRequest]) -> Vec<PackageStatus> {
-    let installed = parse_group_list(output);
+fn parse_group_query(output: &str, requests: &[PackageRequest], dnf5: bool) -> Vec<PackageStatus> {
+    let installed = parse_group_list(output, dnf5);
     requests
         .iter()
         .map(|req| PackageStatus {
@@ -180,13 +182,18 @@ impl DnfManager {
     async fn installed_groups(&self, groups: &[PackageRequest]) -> Result<Vec<PackageStatus>> {
         // dnf4 only prints group ids with -v; dnf5 has no such flag and
         // always prints the id column
-        let dnf5 = tokio::process::Command::new("dnf")
+        let version = tokio::process::Command::new("dnf")
             .arg("--version")
             .stdin(Stdio::null())
             .output()
-            .await
-            .map(|o| String::from_utf8_lossy(&o.stdout).contains("dnf5"))
-            .unwrap_or(false);
+            .await?;
+        if !version.status.success() {
+            bail!(
+                "dnf --version failed: {}",
+                String::from_utf8_lossy(&version.stderr).trim()
+            );
+        }
+        let dnf5 = String::from_utf8_lossy(&version.stdout).contains("dnf5");
         let mut args = vec!["group", "list", "--installed", "--hidden"];
         if !dnf5 {
             args.push("-v");
@@ -208,6 +215,7 @@ impl DnfManager {
         Ok(parse_group_query(
             &String::from_utf8_lossy(&output.stdout),
             groups,
+            dnf5,
         ))
     }
 }
@@ -247,9 +255,19 @@ impl SystemPackageManager for DnfManager {
         if !plain.is_empty() {
             statuses.extend(self.installed_rpms(&plain).await?);
         }
-        // restore the caller's order
-        statuses.sort_by_key(|s| pkgs.iter().position(|p| p.name == s.request.name));
-        Ok(statuses)
+        // restore the caller's order, one status per request even with
+        // duplicate names
+        let mut by_name: HashMap<String, Vec<PackageStatus>> = HashMap::new();
+        for st in statuses {
+            by_name.entry(st.request.name.clone()).or_default().push(st);
+        }
+        Ok(pkgs
+            .iter()
+            .filter_map(|p| {
+                let list = by_name.get_mut(&p.name)?;
+                (!list.is_empty()).then(|| list.remove(0))
+            })
+            .collect())
     }
 
     async fn install(&self, pkgs: &[PackageRequest], opts: &InstallOpts) -> Result<()> {
@@ -362,12 +380,12 @@ mod tests {
         ];
         // dnf5 table
         let dnf5 = "ID                Name              Installed\ndevelopment-tools Development Tools yes\n";
-        let st = parse_group_query(dnf5, &requests);
+        let st = parse_group_query(dnf5, &requests, true);
         assert!(matches!(st[0].state, PackageState::Installed { .. }));
         assert_eq!(st[1].state, PackageState::Missing);
         // dnf4 -v
         let dnf4 = "Installed Groups:\n   Development Tools (development-tools)\n";
-        let st = parse_group_query(dnf4, &requests);
+        let st = parse_group_query(dnf4, &requests, false);
         assert!(matches!(st[0].state, PackageState::Installed { .. }));
         assert_eq!(st[1].state, PackageState::Missing);
     }
