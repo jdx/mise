@@ -1058,9 +1058,10 @@ or
 and reads the stored value from its stdout. It runs only when the access token
 has to be refreshed, not on every mise invocation. Empty output means nothing is
 stored yet. If the command fails when mise needs to refresh, mise skips the refresh and
-keeps the cached token, so a locked vault never costs you the session. A failure
-while storing a new token counts as an empty store, since many tools fail on an
-entry that does not exist yet.
+keeps the cached token, so a locked vault never costs you the session. While storing a new token, a failure counts as an empty store only if the
+cache file still holds every refresh token, since many tools fail on an entry
+that does not exist yet. The command gets no host, because one value holds the
+tokens for every host. It is stopped after 60 seconds.
 
 See [Keeping the refresh token out of the cache file](/dev-tools/github-tokens.html#keeping-the-refresh-token-out-of-the-cache-file).
 """

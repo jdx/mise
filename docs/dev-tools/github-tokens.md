@@ -293,7 +293,7 @@ The commands run only when the access token has to be refreshed, about once
 every eight hours, not on every mise invocation. If `oauth_cache_get` fails when
 mise needs to refresh, for example because the vault is locked, mise skips the
 refresh and keeps the cached token; it may fail on an entry that does not exist
-yet when mise stores the first token. If `oauth_cache_set` fails, mise warns and keeps the new refresh token in
+yet when mise stores the first token. Each command is stopped after 60 seconds. If `oauth_cache_set` fails, mise warns and keeps the new refresh token in
 the cache file rather than losing it. A cache file that already holds a refresh
 token moves into the store at the next refresh.
 
