@@ -267,28 +267,33 @@ installed or not active in the current directory, because the shim exists. A
 script that uses `command -v` as its installed check therefore gets a false
 positive. `which` and `whence` behave the same way.
 
-Keep `command -v`, and ask mise only when it finds a shim.
-`mise which` exits non-zero unless the tool resolves in the current directory:
+Keep `command -v`, and ask mise only when it finds a shim. A shim is a symlink
+to the `mise` binary, wherever [`shims_dir`](/configuration/settings.html#shims_dir)
+or `system_shims_dir` puts it. `mise which` exits non-zero unless the tool
+resolves in the current directory:
 
 ```sh [have.sh]
 have() {
     p=$(command -v "$1") || return 1
-    case $p in
-    */shims/*) mise which "$1" >/dev/null 2>&1 ;;
-    *) return 0 ;;
-    esac
+    if [ -L "$p" ] && [ "$(basename "$(readlink "$p")")" = mise ]; then
+        mise which "$1" >/dev/null 2>&1
+    else
+        return 0
+    fi
 }
 
 have prettier || echo "prettier is not installed"
 ```
 
 Users without mise never take the `mise which` branch, so the same script works
-for a team where only some people use mise.
+for a team where only some people use mise. This example assumes symlink shims,
+so it does not cover Windows.
 
 An unresolved shim can still run another executable with the same name later on
 `PATH`, so `have` may report a tool as missing that the shim would run anyway.
 Set `not_found_system_fallback` and `not_found_auto_install` to `false` to make
-the shim fail in those cases too. See [How shims work](#mise-activate-shims).
+the shim fail in those cases too, unless a [lazy tool](#lazy-tools) can supply
+it. See [How shims work](#mise-activate-shims).
 
 ### Performance {#performance}
 
