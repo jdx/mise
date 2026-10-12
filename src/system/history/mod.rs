@@ -13,6 +13,7 @@ pub mod config;
 pub(crate) mod describe_command;
 pub(crate) mod enrollment;
 pub mod health;
+pub mod held;
 pub mod journal;
 pub mod local;
 pub mod manifest;

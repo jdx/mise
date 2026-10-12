@@ -360,7 +360,7 @@ pub(crate) fn sync_locked(
                 repo,
                 state_dir,
                 tracked,
-                &shared.objects(),
+                &shared,
                 &upstream,
                 &unsaved,
                 &mut status,
@@ -437,7 +437,7 @@ pub(crate) fn sync_locked(
                         repo,
                         state_dir,
                         tracked,
-                        &shared.objects(),
+                        &shared,
                         &upstream,
                         &unsaved,
                         &mut status,
@@ -696,7 +696,7 @@ pub fn refresh_with_interaction(
         repo,
         store.state_dir(),
         tracked,
-        &shared.objects(),
+        &shared,
         &upstream,
         &unsaved_paths(repo, tracked, &shared)?,
         status,
@@ -712,11 +712,12 @@ fn prepare(
     repo: &crate::system::history::shadow::HistoryRepo,
     state_dir: &Path,
     tracked: &TrackedSet,
-    shared: &BTreeMap<String, Object>,
+    report: &share::ShareReport,
     upstream: &reconcile::Upstream,
     unsaved: &BTreeSet<String>,
     status: &mut SyncStatus,
 ) -> Result<Vec<PathPlan>> {
+    let shared = &report.objects();
     let incoming =
         incoming_tracking(repo, tracked).inspect_err(|error| repository_conflict(status, error))?;
     let tracked = &incoming;
@@ -753,21 +754,26 @@ fn prepare(
         .transpose()?
         .flatten()
         .unwrap_or_default();
-    let sync_state: state::SyncState = baseline
+    let record = |object: Object| state::SyncRecord {
+        acknowledged: Some(object.clone()),
+        reconciled: Some(object.clone()),
+        applied: Some(object),
+        upstream_commit: heads.base.clone(),
+    };
+    let mut sync_state: state::SyncState = baseline
         .files
         .into_iter()
-        .map(|(path, object)| {
-            (
-                path,
-                state::SyncRecord {
-                    acknowledged: Some(object.clone()),
-                    reconciled: Some(object.clone()),
-                    applied: Some(object),
-                    upstream_commit: heads.base.clone(),
-                },
-            )
-        })
+        .map(|(path, object)| (path, record(object)))
         .collect();
+    // a stream this machine does not hold shares no baseline with upstream:
+    // its baseline is the version it last held, and without one,
+    // reconciling it is adopting it
+    for (path, base) in &report.unheld {
+        match base {
+            Some(base) => sync_state.insert(path.clone(), record(base.clone())),
+            None => sync_state.remove(path),
+        };
+    }
     let reconcile_set = |set: &TrackedSet| {
         // one compiled exclude set for the whole pass: the question is
         // asked once per upstream path and the patterns do not change

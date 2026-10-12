@@ -185,7 +185,8 @@ pub(crate) async fn apply_locked_with_scope(
 
     // Store choices without publishing or applying any part of the setup.
     let mut sync_state = state::load(repo)?;
-    let shared = super::share::current(repo, tracked)?.objects();
+    let shared_report = super::share::current(repo, tracked)?;
+    let shared = shared_report.objects();
     let encrypted = super::files::encrypted_paths(repo, status.upstream_commit.as_deref())?;
     for conflict in &status.conflicts {
         let Some(local) = roots
@@ -221,6 +222,56 @@ pub(crate) async fn apply_locked_with_scope(
                 }
                 Err(err) => return Err(err),
             };
+            // a repository choice withdraws an earlier keep-local one
+            if take_remote.contains(&local)
+                && !req.dry_run
+                && shared_report.unheld.contains_key(&conflict.branch_path)
+                && let Some(entry) = tracked.entry_for(&local)
+            {
+                let _store_lock = store.lock()?;
+                let mut held = crate::system::history::held::Held::load(repo)?;
+                held.unkeep(&entry.tree_path(&entry.path)?);
+                held.save(repo)?;
+            }
+            // **Keeping this machine's version of a stream it never held
+            // means saving it.** Its saved version is another machine's, so
+            // there is nothing of this machine's to publish yet: hold the
+            // stream, and the next save records the live files over it.
+            if keep_local.contains(&local)
+                && shared_report.unheld.contains_key(&conflict.branch_path)
+            {
+                let entry = tracked
+                    .entry_for(&local)
+                    .ok_or_else(|| eyre::eyre!("{} is not tracked here", display_path(&local)))?;
+                // Holding a directory holds every file in it: a sibling
+                // missing here would be saved as a deletion, and a stale one
+                // over the newer shared version. Only a tracked file is
+                // kept on its own.
+                let advice = if entry.path != local {
+                    format!(
+                        "{path} is in a directory another machine saved while it was not selected here, so it cannot be kept on its own: take the repository's version with `mise dot pull --take-remote {path}`, then copy yours back and save it",
+                        path = display_path(&local)
+                    )
+                } else {
+                    if !req.dry_run {
+                        // captures update the same record under the store lock
+                        let _store_lock = store.lock()?;
+                        let mut held = crate::system::history::held::Held::load(repo)?;
+                        held.keep(&entry.tree_path(&entry.path)?);
+                        held.save(repo)?;
+                    }
+                    format!(
+                        "{path} keeps this machine's version once it is saved: run `mise dot save {path}`, then `mise dot sync` publishes it",
+                        path = display_path(&local)
+                    )
+                };
+                if blanket_chosen.contains(&local) {
+                    blanket_held.push(advice);
+                    keep_local.remove(&local);
+                    continue;
+                }
+                bail!("{advice}");
+            }
             let saved = shared.get(&conflict.branch_path).cloned();
             let saved_mode = permissions_at(
                 repo,
@@ -1083,7 +1134,7 @@ fn unusable(path: &Path, what: impl std::fmt::Display) -> eyre::Report {
     eyre::Report::new(UnusableLive(format!("{} {what}", display_path(path))))
 }
 
-pub(super) fn live_object(
+pub(crate) fn live_object(
     repo: &crate::system::history::shadow::HistoryRepo,
     path: &Path,
 ) -> Result<Option<Object>> {
@@ -1129,6 +1180,15 @@ fn saved_object(
     let Some(entry) = tracked.entry_for(path) else {
         return Ok(None);
     };
+    // the saved side as planning read it: see `super::share::current`
+    let stream = entry.tree_path(&entry.path)?;
+    let held = crate::system::history::held::Held::load(repo)?;
+    if !held.always_holds(&stream)
+        && !held.holds(&stream, repo.object_at(&head, &stream)?.as_ref())
+        && let Some(live) = super::share::usable_live(repo, path)?
+    {
+        return Ok(live);
+    }
     repo.restored_object_at(&head, &entry.tree_path(path)?)
 }
 
