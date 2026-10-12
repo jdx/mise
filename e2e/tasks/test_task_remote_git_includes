@@ -328,6 +328,5 @@ echo "hook" >hook-file.txt
 git add hook-file.txt
 assert_succeed "git commit -q -m 'commit from a hook'"
 assert "git ls-tree -r --name-only HEAD" "hook-file.txt"
-rm .git/hooks/pre-commit
 
 echo "All tests passed!"
