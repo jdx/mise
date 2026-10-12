@@ -29,6 +29,7 @@ use indexmap::IndexMap;
 use itertools::Itertools;
 use jiff::Timestamp;
 use regex::Regex;
+use reqwest::header::{ACCEPT, CONTENT_TYPE, HeaderMap, HeaderValue};
 use serde::Deserialize;
 use serde_json::Value;
 use std::collections::BTreeMap;
@@ -275,19 +276,9 @@ impl Backend for PIPXBackend {
 
                     Self::versions_from_pypi_package(data)
                 } else {
-                    debug!("Fetching HTML for {}", package);
+                    debug!("Fetching simple index for {}", package);
                     let url = registry_url.replace("{}", &package);
-                    let html = HTTP_FETCH.get_html(url).await?;
-
-                    // PEP-0503 (HTML format doesn't include timestamps)
-                    Self::versions_from_simple_index(&package, &html)
-                        .into_iter()
-                        .map(|version| VersionInfo {
-                            version,
-                            ..Default::default()
-                        })
-                        .sorted_by_cached_key(|v| Versioning::new(&v.version))
-                        .collect()
+                    Self::fetch_simple_index(&package, url).await?
                 }
             }
             PipxRequest::Git(source) => match PipxRequest::github_repo(&source.repo) {
@@ -324,12 +315,11 @@ impl Backend for PIPXBackend {
                             let pkg: PypiPackage = HTTP_FETCH.json(url).await?;
                             Ok(Self::latest_stable_from_pypi_package(pkg))
                         } else {
-                            debug!("Fetching HTML for {}", package);
+                            debug!("Fetching simple index for {}", package);
                             let url = registry_url.replace("{}", &package);
-                            let html = HTTP_FETCH.get_html(url).await?;
-
+                            let versions = Self::fetch_simple_index(&package, url).await?;
                             Ok(Self::latest_stable_from_simple_index(
-                                Self::versions_from_simple_index(&package, &html),
+                                versions.into_iter().map(|v| v.version).collect(),
                             ))
                         }
                     })
@@ -806,6 +796,76 @@ impl PIPXBackend {
             .unique()
             .map(|version| VersionInfo {
                 version: version.to_string(),
+                ..Default::default()
+            })
+            .collect()
+    }
+
+    /// Lists versions from a PEP 503/691 simple index. Asks for the PEP 691 JSON
+    /// form so PEP 700's `upload-time` is available for `minimum_release_age`,
+    /// and falls back to parsing HTML for indexes that only serve PEP 503.
+    async fn fetch_simple_index(package: &str, url: String) -> Result<Vec<VersionInfo>> {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            ACCEPT,
+            HeaderValue::from_static(
+                "application/vnd.pypi.simple.v1+json, application/vnd.pypi.simple.v1+html;q=0.2, text/html;q=0.01",
+            ),
+        );
+        let resp = HTTP_FETCH.get_async_with_headers(url, &headers).await?;
+        let content_type = resp
+            .headers()
+            .get(CONTENT_TYPE)
+            .and_then(|v| v.to_str().ok())
+            .map(|v| v.split(';').next().unwrap_or(v).trim().to_ascii_lowercase())
+            .unwrap_or_default();
+        let versions = if content_type.ends_with("+json") || content_type == "application/json" {
+            Self::versions_from_simple_json(package, resp.json().await?)
+        } else if content_type == "text/html" || content_type.ends_with("+html") {
+            // PEP-0503 (HTML format doesn't include timestamps)
+            let html = resp.text().await?;
+            Self::versions_from_simple_index(package, &html)
+                .into_iter()
+                .map(|version| VersionInfo {
+                    version,
+                    ..Default::default()
+                })
+                .collect()
+        } else {
+            bail!("Got unexpected content type {content_type:?} from simple index for {package}");
+        };
+        Ok(versions
+            .into_iter()
+            .sorted_by_cached_key(|v| Versioning::new(&v.version))
+            .collect())
+    }
+
+    fn versions_from_simple_json(package: &str, index: SimpleIndex) -> Vec<VersionInfo> {
+        let mut versions: IndexMap<String, Option<String>> = IndexMap::new();
+        for file in index.files.into_iter().filter(|f| !f.yanked) {
+            let Some(version) = Self::version_from_distribution_filename(package, &file.filename)
+            else {
+                continue;
+            };
+            let entry = versions.entry(version).or_default();
+            // Keep the earliest upload as a parsed instant, since RFC3339 strings
+            // with different offsets don't sort chronologically.
+            let Some(new) = file.upload_time else {
+                continue;
+            };
+            let is_earlier = entry.as_deref().is_none_or(|cur| {
+                parse_into_timestamp(&new).unwrap_or(Timestamp::MAX)
+                    < parse_into_timestamp(cur).unwrap_or(Timestamp::MAX)
+            });
+            if is_earlier {
+                *entry = Some(new);
+            }
+        }
+        versions
+            .into_iter()
+            .map(|(version, created_at)| VersionInfo {
+                version,
+                created_at,
                 ..Default::default()
             })
             .collect()
@@ -1364,6 +1424,22 @@ impl PipxRequest {
     }
 }
 
+/// PEP 691 project detail, with PEP 700's `upload-time`.
+#[derive(serde::Deserialize)]
+struct SimpleIndex {
+    #[serde(default)]
+    files: Vec<SimpleIndexFile>,
+}
+
+#[derive(serde::Deserialize)]
+struct SimpleIndexFile {
+    filename: String,
+    #[serde(rename = "upload-time")]
+    upload_time: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_pypi_yanked")]
+    yanked: bool,
+}
+
 #[derive(serde::Deserialize)]
 struct PypiPackage {
     releases: IndexMap<String, Vec<PypiRelease>>,
@@ -1605,6 +1681,30 @@ mod tests {
     use indexmap::IndexMap;
     use pretty_assertions::assert_eq;
     use std::ffi::OsString;
+
+    #[test]
+    fn parses_versions_from_simple_json_with_upload_times() {
+        let index: super::SimpleIndex = serde_json::from_str(
+            r#"{"meta":{"api-version":"1.1"},"name":"demo-pkg","files":[
+              {"filename":"demo_pkg-1.0.0-py3-none-any.whl","upload-time":"2024-01-02T00:00:00.000000Z","yanked":false},
+              {"filename":"demo-pkg-1.0.0.tar.gz","upload-time":"2024-01-01T00:00:00.000000Z"},
+              {"filename":"demo-pkg-2.0.0.tar.gz","upload-time":"2024-02-01T00:00:00Z","yanked":"broken"},
+              {"filename":"demo-pkg-3.0.0.tar.gz"}]}"#,
+        )
+        .unwrap();
+        let versions = PIPXBackend::versions_from_simple_json("demo-pkg", index);
+        let got = versions
+            .iter()
+            .map(|v| (v.version.as_str(), v.created_at.as_deref()))
+            .collect::<Vec<_>>();
+        assert_eq!(
+            got,
+            vec![
+                ("1.0.0", Some("2024-01-01T00:00:00.000000Z")),
+                ("3.0.0", None)
+            ]
+        );
+    }
 
     #[test]
     fn parses_versions_from_simple_index_artifacts() {
