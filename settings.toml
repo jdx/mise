@@ -3590,31 +3590,6 @@ global_only = true
 optional = true
 type = "Path"
 
-[system_packages.managers]
-description = "Package managers that mise may use for `[bootstrap.packages]` and missing plugin dependencies."
-docs = """
-When unset, mise uses every manager in `[bootstrap.packages]` that is available
-on the machine. Names match built-in managers and package manager plugins
-alike:
-
-```toml
-[settings]
-system_packages.managers = ["apt"]
-```
-
-Status lists packages of excluded managers as `skipped`, and naming an excluded
-manager with `--manager` is an error. For per-OS defaults, set it in a platform
-config file such as `mise.linux.toml`, which loads only when that environment
-is active, with `-E linux`, `MISE_ENV` or
-[`auto_env`](/configuration/settings.html#auto_env). See
-[By package manager](/bootstrap/packages/#choosing-which-managers-run).
-"""
-env = "MISE_SYSTEM_PACKAGES_MANAGERS"
-optional = true
-parse_env = "list_by_comma"
-rust_type = "Vec<String>"
-type = "ListString"
-
 [system_packages.elevate_with]
 description = "Command mise uses to get root instead of `sudo`, such as `run0` or `doas`."
 docs = """
@@ -3639,6 +3614,31 @@ elevation off entirely. See
 env = "MISE_SYSTEM_PACKAGES_ELEVATE_WITH"
 optional = true
 type = "String"
+
+[system_packages.managers]
+description = "Package managers that mise may use for `[bootstrap.packages]` and missing plugin dependencies."
+docs = """
+When unset, mise uses every manager in `[bootstrap.packages]` that is available
+on the machine. Names match built-in managers and package manager plugins
+alike:
+
+```toml
+[settings]
+system_packages.managers = ["apt"]
+```
+
+Status lists packages of excluded managers as `skipped`, and naming an excluded
+manager with `--manager` is an error. For per-OS defaults, set it in a platform
+config file such as `mise.linux.toml`, which loads only when that environment
+is active, with `-E linux`, `MISE_ENV` or
+[`auto_env`](/configuration/settings.html#auto_env). See
+[By package manager](/bootstrap/packages/#choosing-which-managers-run).
+"""
+env = "MISE_SYSTEM_PACKAGES_MANAGERS"
+optional = true
+parse_env = "list_by_comma"
+rust_type = "Vec<String>"
+type = "ListString"
 
 [system_packages.sudo]
 default = true

@@ -2202,16 +2202,16 @@
           "type": "object",
           "unevaluatedProperties": false,
           "properties": {
+            "elevate_with": {
+              "description": "Command mise uses to get root instead of `sudo`, such as `run0` or `doas`.",
+              "type": "string"
+            },
             "managers": {
               "description": "Package managers that mise may use for `[bootstrap.packages]` and missing plugin dependencies.",
               "type": "array",
               "items": {
                 "type": "string"
               }
-            },
-            "elevate_with": {
-              "description": "Command mise uses to get root instead of `sudo`, such as `run0` or `doas`.",
-              "type": "string"
             },
             "sudo": {
               "default": true,
