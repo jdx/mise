@@ -303,6 +303,10 @@ name several; a release signed by any one of them is accepted:
 "packslip:github.com/example/tool" = { version = "latest", workflow = ["release-plz.yml", "release.yml"] }
 ```
 
+The list also tells mise's [signer pin](#pinned-signers) that the project moved
+between those workflows, so a machine that accepted a release signed by one of
+them accepts the next one signed by another without `mise packslip forget`.
+
 A name may carry the ref the workflow runs on, for a project that signs from a
 branch rather than a tag: `workflow = "release.yml@refs/heads/main"` accepts
 only that branch. A ref ending in `/`, such as `@refs/tags/`, accepts that

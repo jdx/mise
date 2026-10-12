@@ -10014,3 +10014,106 @@ mod write_target_tests {
         assert!(!config_set_contains(&discovered, &ignored));
     }
 }
+
+/// The tools that the inline tasks of one config file scope to themselves: concrete requests,
+/// plus the tools whose version is a template. A template can only be rendered in the context
+/// of the project, which a prune run from elsewhere does not have.
+///
+/// Each task is resolved the way `mise run` resolves it, with `extends` templates merged in. A
+/// tool that fails to parse is skipped without hiding the others.
+pub(crate) fn task_tool_requests(
+    config: &Arc<Config>,
+    tracked: &ConfigMap,
+    cf: &Arc<dyn ConfigFile>,
+) -> (Vec<crate::toolset::ToolRequest>, Vec<String>) {
+    // Templates come from this project: the tracked configs under the same roots and the
+    // directories above it, plus the global configs, never from the directory prune happens to
+    // run in. A nearer root wins. Configs that share a root have a precedence that only a full
+    // load knows, so every one of them counts and the versions of all candidates are kept.
+    let dir = config_file::config_root::config_root(cf.get_path());
+    let globals = config
+        .config_files
+        .values()
+        .filter(|other| is_global_config(other.get_path()));
+    let mut seen = std::collections::HashSet::new();
+    let mut layers: BTreeMap<(bool, usize), Vec<&Arc<dyn ConfigFile>>> = BTreeMap::new();
+    for other in globals
+        .chain(tracked.values())
+        .chain([cf])
+        .filter(|other| seen.insert(other.get_path().to_path_buf()))
+        .filter(|other| {
+            other.get_path() == cf.get_path()
+                || is_global_config(other.get_path())
+                || dir.starts_with(config_file::config_root::config_root(other.get_path()))
+        })
+    {
+        // Global configs form one layer: their depth says nothing about their precedence.
+        let key = if is_global_config(other.get_path()) {
+            (false, 0)
+        } else {
+            (
+                true,
+                config_file::config_root::config_root(other.get_path())
+                    .components()
+                    .count(),
+            )
+        };
+        layers.entry(key).or_default().push(other);
+    }
+    let mut requests = vec![];
+    let mut templated = vec![];
+    for task in cf.tasks() {
+        let mut candidates = vec![];
+        match &task.extends {
+            None => candidates.push(task.clone()),
+            Some(name) => {
+                let layer = layers
+                    .values()
+                    .rev()
+                    .find(|layer| layer.iter().any(|f| f.task_templates().contains_key(name)));
+                for other in layer.into_iter().flatten() {
+                    let Some(template) = other.task_templates().get(name).cloned() else {
+                        continue;
+                    };
+                    let mut definitions = TaskDefinitions::default();
+                    definitions.templates.insert(
+                        name.clone(),
+                        SourcedTaskTemplate {
+                            template,
+                            source: other.get_path().to_path_buf(),
+                        },
+                    );
+                    let mut task = task.clone();
+                    if apply_named_template(&mut task, &definitions).is_ok() {
+                        candidates.push(task);
+                    }
+                }
+                if candidates.is_empty() {
+                    warn!(
+                        "task {} in {} extends template {name}, which was not found",
+                        task.name,
+                        display_path(cf.get_path())
+                    );
+                    candidates.push(task.clone());
+                }
+            }
+        }
+        for task in candidates {
+            for (tool, value) in &task.tools {
+                if value.has_template() {
+                    templated.push(tool.clone());
+                    continue;
+                }
+                match value.to_tool_arg(tool) {
+                    Ok(arg) => requests.extend(arg.tvr),
+                    Err(err) => warn!(
+                        "error loading tool {tool} of task {} in {}: {err:#}",
+                        task.name,
+                        display_path(cf.get_path())
+                    ),
+                }
+            }
+        }
+    }
+    (requests, templated)
+}

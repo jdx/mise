@@ -149,9 +149,10 @@ mise dot pull
 
 [`mise dot sync`](/cli/dotfiles/sync.html) fetches remote changes and, except
 in `fetch-only` mode, pushes saved commits. It never changes your files.
-[`mise dot pull`](/cli/dotfiles/pull.html) applies pending changes to your
-files. In `sync` mode, use them when you do not want to wait for the next
-scheduled run.
+[`mise dot pull`](/cli/dotfiles/pull.html) writes the fetched changes to your
+tracked files. In `sync` mode, use them when you do not want to wait for the
+next scheduled run. See [Pull and apply](#pull-and-apply) for when you also need
+`mise dot apply`.
 
 Each push includes all accumulated commits, including intermediate saves made
 in manual mode. Files waiting for a manual save or a delayed watcher save
@@ -175,6 +176,49 @@ all tracked files, while local saves and fetching continue. When a network or
 authentication attempt fails, automatic sync retries with delays that grow
 from one minute to one hour. `mise dot status` and `mise doctor` show the last
 error.
+
+## Pull and apply {#pull-and-apply}
+
+`sync`, `pull`, and `apply` each do one job, on different files:
+
+| Command          | Reads                              | Writes                                                                   |
+| ---------------- | ---------------------------------- | ------------------------------------------------------------------------ |
+| `mise dot sync`  | The remote and your saved history  | Only saved history, never your files.                                    |
+| `mise dot pull`  | The history that `sync` fetched    | Tracked files, including the source of a `copy` or `template`.           |
+| `mise dot apply` | `[dotfiles]` and the files on disk | `[dotfiles]` targets, including edits, permission changes, and removals. |
+
+How each entry mode behaves:
+
+| Entry mode         | `mise dot pull`                                 | `mise dot apply`                            |
+| ------------------ | ----------------------------------------------- | ------------------------------------------- |
+| `track`            | Writes the fetched version to the tracked path. | Does nothing for the file's contents.       |
+| `copy`, `template` | Does not copy or render.                        | Copies or renders the source to the target. |
+
+A tracked path is the file an application reads when it is tracked in place,
+such as `~/.bashrc`. A template or copy source is a different path from the
+file the application reads, even when it also lives under `~/`. Track the
+source to share it between machines, and `apply` turns it into the target:
+
+```toml
+[dotfiles]
+"~/.bashrc" = { mode = "track" }
+"~/.dotfiles" = { mode = "track" }
+"~/.gitconfig" = { mode = "template", source = "~/.dotfiles/gitconfig.tera" }
+```
+
+After a change to `~/.dotfiles/gitconfig.tera` is saved on another machine:
+
+```sh
+mise dot sync    # fetch the change
+mise dot pull    # update ~/.bashrc and ~/.dotfiles/gitconfig.tera
+mise dot apply   # render the template into ~/.gitconfig
+```
+
+`~/.gitconfig` is not tracked here, so its own history is a separate choice;
+see [what history saves](/dotfiles/history.html#explicit-tracking-and-exclusions).
+If you only edit a template on this machine, `mise dot apply` alone is enough.
+In `sync` mode the watcher fetches and pulls on its own, but it does not
+copy or render, so run `mise dot apply` after incoming sources change.
 
 ## Resolve a conflict {#resolve-a-conflict}
 

@@ -464,3 +464,28 @@ async fn test_download_total_timeout_bounds_trickling_response() {
     assert!(message.contains("MISE_HTTP_DOWNLOAD_TIMEOUT"));
     assert!(!path.exists());
 }
+
+/// `mise exec`/shims run under prefer-offline, which bounds remote-version
+/// lookups to one attempt, but an artifact download they trigger still honors
+/// `http_retries` like `mise install` does. See #14259.
+#[tokio::test(flavor = "current_thread")]
+async fn test_download_retries_under_prefer_offline() {
+    let _guard = set_test_prefer_offline(1);
+    let (port, count, _requests) = spawn_recording_server(vec![
+        truncated_download_response(),
+        resumed_download_response(),
+    ])
+    .await;
+    let url = format!("http://127.0.0.1:{port}/artifact");
+    let dir = tempfile::tempdir().unwrap();
+    let destination = dir.path().join("artifact");
+    let client = Client::new(Duration::from_secs(2), ClientKind::Http).unwrap();
+
+    client
+        .download_file_with_headers(&url, &destination, &HeaderMap::new(), None)
+        .await
+        .unwrap();
+
+    assert_eq!(std::fs::read(&destination).unwrap(), b"helloworld");
+    assert_eq!(count.load(Ordering::SeqCst), 2);
+}

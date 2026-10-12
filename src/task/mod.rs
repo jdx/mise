@@ -241,7 +241,7 @@ impl TaskToolValue {
         }
     }
 
-    fn has_template(&self) -> bool {
+    pub(crate) fn has_template(&self) -> bool {
         match self {
             Self::String(version) => contains_template_syntax(version),
             Self::Map(map) => {
