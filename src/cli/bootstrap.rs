@@ -4941,10 +4941,23 @@ pub(crate) async fn run_dotfiles_apply(cmd: DotfilesApply) -> Result<()> {
     let dry_run = cmd.dry_run();
     OperationScope::wrap("dotfiles apply", dry_run, async move {
         let mut config = Config::get().await?;
-        let (files, edits) = cmd.requests(&config)?;
         let hooks = system::hooks_from_config(&config);
         run_bootstrap_hooks(&config, &hooks, BootstrapHookPhase::PreDotfiles, dry_run).await?;
-        if !cmd.run_inner().await? {
+        // mise's own configuration is written first and read again, so a
+        // rule it adds applies in this run instead of the next one. A dry
+        // run reads the sources the apply would write instead.
+        let apply_config = if dry_run {
+            let (files, edits) = cmd.requests(&config)?;
+            let config_files = config_files_after_dotfiles_dry_run(&config, &files, &edits)?;
+            config.with_bootstrap_dry_run_config_files(config_files)?
+        } else {
+            if !cmd.run_config_entries(&config, is_mise_config_target)? {
+                return Ok(());
+            }
+            Config::reset().await?
+        };
+        let (files, edits) = cmd.requests(&apply_config)?;
+        if !cmd.run_inner(apply_config).await? {
             return Ok(());
         }
         let hooks = if dry_run {

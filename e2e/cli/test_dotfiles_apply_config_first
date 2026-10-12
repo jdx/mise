@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+# `mise dot apply` writes the entries that deploy mise's own configuration
+# first and reads it again, so a rule the new file adds applies in the same run.
+
+config="$MISE_CONFIG_DIR/config.toml"
+src="$HOME/dotfiles-checkout"
+mkdir -p "$src/home"
+echo 'hello' >"$src/home/greeting"
+
+# the live config only deploys itself; the checkout's copy also deploys a file
+cat <<EOF >"$config"
+[dotfiles]
+"$config" = { source = "$src/config.toml", mode = "copy" }
+EOF
+cat <<EOF >"$src/config.toml"
+[dotfiles]
+"$config" = { source = "$src/config.toml", mode = "copy" }
+"~/.greeting" = { source = "$src/home/greeting", mode = "copy" }
+EOF
+
+# a dry run plans the file the new config adds and writes nothing
+assert_contains "mise dot apply --dry-run" ".greeting"
+assert_fail "test -e ~/.greeting"
+assert_not_contains "cat $config" ".greeting"
+
+# one apply deploys the config and the file it declares
+assert_succeed "mise dot apply --yes"
+assert "cat ~/.greeting" "hello"
+assert_contains "cat $config" ".greeting"

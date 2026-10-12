@@ -1,4 +1,5 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use eyre::Result;
 
@@ -13,6 +14,10 @@ use crate::system;
 /// `content`, set `permissions`, or remove targets declared `mode = "absent"`.
 /// Edit entries manage a marker-delimited block, a single line, or merged keys
 /// in a file mise does not otherwise own.
+///
+/// Entries that deploy mise's own configuration are applied first and the
+/// configuration is read again, so a rule the new file adds applies in the same
+/// run.
 ///
 /// The `pre-dotfiles` and `post-dotfiles` bootstrap hooks run before and after
 /// the apply (with `--dry-run` they are printed, not run), and the matching
@@ -89,10 +94,29 @@ impl DotfilesApply {
         super::select_requests(config, &self.targets)
     }
 
+    /// Apply only the entries and edits that write mise's own configuration,
+    /// so the caller can reload before the rest are planned. Returns `false`
+    /// when a prompt was declined.
+    pub(crate) fn run_config_entries(
+        &self,
+        config: &Config,
+        is_config: impl Fn(&Path) -> bool,
+    ) -> Result<bool> {
+        let (mut files, mut edits) = self.requests(config)?;
+        files.retain(|req| is_config(&req.target));
+        edits.retain(|req| is_config(&req.path));
+        if files.is_empty() && edits.is_empty() {
+            return Ok(true);
+        }
+        let secrets = system::secrets::resolve(config, self.prompt_secrets)?;
+        write_and_reload(self.dry_run, |written| {
+            self.write(config, &files, &edits, &secrets, written)
+        })
+    }
+
     /// The apply without an operation of its own, for a caller that already
     /// opened one.
-    pub(crate) async fn run_inner(self) -> Result<bool> {
-        let config = Config::get().await?;
+    pub(crate) async fn run_inner(self, config: Arc<Config>) -> Result<bool> {
         let secrets = system::secrets::resolve(&config, self.prompt_secrets)?;
         let (files, edits) = self.requests(&config)?;
         if files.is_empty() && edits.is_empty() && !self.prune {

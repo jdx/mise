@@ -158,6 +158,12 @@ the hooks instead), and the [`[history.reload]` commands](/dotfiles/history.html
 that match the files they wrote. `mise dot add` and `mise dot edit --apply`
 do not run these hooks.
 
+When an entry deploys mise's own configuration, such as a copy of
+`~/.config/mise/config.toml` from a checkout, `mise dot apply` writes it first
+and reads the configuration again before it plans the other entries. A rule the
+new file adds takes effect in the same run, and `--dry-run` plans against the
+file it would write.
+
 ## Commands {#commands}
 
 | Task                          | Commands                                                                                                                                         |
