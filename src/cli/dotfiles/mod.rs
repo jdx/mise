@@ -37,6 +37,7 @@ pub(crate) use apply::{DotfilesApply, write_and_reload};
 fn select_requests(
     config: &crate::config::Config,
     targets: &[String],
+    strict: bool,
 ) -> Result<(
     Vec<crate::system::files::FileRequest>,
     Vec<crate::system::edits::EditRequest>,
@@ -56,6 +57,7 @@ fn select_requests(
         .collect::<Vec<_>>();
     if files.is_empty()
         && edits.is_empty()
+        && strict
         && !targets.is_empty()
         && (!all_files.is_empty() || !all_edits.is_empty())
     {

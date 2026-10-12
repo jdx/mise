@@ -27,3 +27,26 @@ assert_not_contains "cat $config" ".greeting"
 assert_succeed "mise dot apply --yes"
 assert "cat ~/.greeting" "hello"
 assert_contains "cat $config" ".greeting"
+
+# a target argument that only the first pass matched is not an error: the
+# replacement config no longer declares the live file, but it was written
+rm ~/.greeting
+printf '[dotfiles]\n"%s" = { source = "%s/config.toml", mode = "copy" }\n' "$config" "$src" >"$config"
+printf '[dotfiles]\n"~/.greeting" = { source = "%s/home/greeting", mode = "copy" }\n' "$src" >"$src/config.toml"
+assert_succeed "mise dot apply --yes $config"
+assert_contains "cat $config" ".greeting"
+assert_fail "test -e ~/.greeting"
+
+# a dry run previews the config write even when the replacement drops it
+printf '[dotfiles]\n"%s" = { source = "%s/config.toml", mode = "copy" }\n' "$config" "$src" >"$config"
+printf '[dotfiles]\n"~/.other" = { source = "%s/home/greeting", mode = "copy" }\n' "$src" >"$src/config.toml"
+assert_contains "mise dot apply --dry-run" "config.toml"
+assert_contains "mise dot apply --dry-run" ".other"
+
+# a config chosen with MISE_GLOBAL_CONFIG_FILE is written in the first pass too
+custom="$HOME/custom.toml"
+printf '[dotfiles]\n"%s" = { source = "%s/custom-src.toml", mode = "copy" }\n' "$custom" "$src" >"$custom"
+printf '[dotfiles]\n"%s" = { source = "%s/custom-src.toml", mode = "copy" }\n"~/.third" = { source = "%s/home/greeting", mode = "copy" }\n' "$custom" "$src" "$src" >"$src/custom-src.toml"
+export MISE_GLOBAL_CONFIG_FILE="$custom"
+assert_succeed "mise dot apply --yes"
+assert "cat ~/.third" "hello"

@@ -2969,7 +2969,13 @@ fn parse_mise_config_body(
 }
 
 fn is_mise_config_target(path: &std::path::Path) -> bool {
-    path.starts_with(*dirs::CONFIG)
+    [
+        &*crate::env::MISE_GLOBAL_CONFIG_FILE,
+        &*crate::env::MISE_SYSTEM_CONFIG_FILE,
+    ]
+    .into_iter()
+    .any(|file| file.as_deref() == Some(path))
+        || path.starts_with(*dirs::CONFIG)
         || path.starts_with(*dirs::SYSTEM_CONFIG)
         || config::DEFAULT_CONFIG_FILENAMES.iter().any(|filename| {
             filename.ends_with(".toml") && !filename.contains('*') && path.ends_with(filename)
@@ -4945,19 +4951,23 @@ pub(crate) async fn run_dotfiles_apply(cmd: DotfilesApply) -> Result<()> {
         run_bootstrap_hooks(&config, &hooks, BootstrapHookPhase::PreDotfiles, dry_run).await?;
         // mise's own configuration is written first and read again, so a
         // rule it adds applies in this run instead of the next one. A dry
-        // run reads the sources the apply would write instead.
+        // run previews that write, then plans the rest against the sources
+        // it would write.
+        let Some(done) = cmd.run_config_entries(&config, |path| {
+            is_mise_config_target(path) || config.config_files.contains_key(path)
+        })?
+        else {
+            return Ok(());
+        };
         let apply_config = if dry_run {
             let (files, edits) = cmd.requests(&config)?;
             let config_files = config_files_after_dotfiles_dry_run(&config, &files, &edits)?;
             config.with_bootstrap_dry_run_config_files(config_files)?
         } else {
-            if !cmd.run_config_entries(&config, is_mise_config_target)? {
-                return Ok(());
-            }
             Config::reset().await?
         };
-        let (files, edits) = cmd.requests(&apply_config)?;
-        if !cmd.run_inner(apply_config).await? {
+        let (files, edits) = cmd.requests_after_config(&apply_config)?;
+        if !cmd.run_inner(apply_config, Some(&done)).await? {
             return Ok(());
         }
         let hooks = if dry_run {
