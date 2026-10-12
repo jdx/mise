@@ -2849,7 +2849,7 @@ fn config_files_after_dotfiles_dry_run(
     let mut bodies = indexmap::IndexMap::new();
     let mut unavailable_bodies = HashSet::new();
     for file in files {
-        if !is_config_target(config, &file.target) {
+        if !is_simulated_config_target(config, &file.target) {
             continue;
         }
         if file.mode == FileMode::Absent {
@@ -2900,7 +2900,7 @@ fn config_files_after_dotfiles_dry_run(
         }
     }
     for edit in edits {
-        if !is_config_target(config, &edit.path) {
+        if !is_simulated_config_target(config, &edit.path) {
             continue;
         }
         if unavailable_bodies.contains(&edit.path) {
@@ -2972,6 +2972,14 @@ fn parse_mise_config_body(
 /// or a file this run already loaded.
 fn is_config_target(config: &Config, path: &std::path::Path) -> bool {
     is_mise_config_target(path) || config.config_files.contains_key(path)
+}
+
+/// A config target the dry-run simulation can parse as TOML: a loaded
+/// `.tool-versions` or idiomatic version file is not.
+fn is_simulated_config_target(config: &Config, path: &std::path::Path) -> bool {
+    is_config_target(config, path)
+        && (!config.config_files.contains_key(path)
+            || path.extension().is_some_and(|ext| ext == "toml"))
 }
 
 fn is_mise_config_target(path: &std::path::Path) -> bool {

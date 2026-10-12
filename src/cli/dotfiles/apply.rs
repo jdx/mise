@@ -115,6 +115,12 @@ impl DotfilesApply {
         let (mut files, mut edits) = self.requests(config)?;
         files.retain(|req| is_config(&req.target));
         edits.retain(|req| is_config(&req.path));
+        // a dry run reads the live file to check an edit, which the copy
+        // about to replace it may have changed; the edits the new config
+        // keeps are previewed against the simulated one instead
+        if self.dry_run {
+            edits.clear();
+        }
         let handled = files
             .iter()
             .map(|req| format!("{req:?}"))
