@@ -1040,6 +1040,54 @@ docs = "Change it for a GitHub Enterprise host that supports device flow."
 env = "MISE_GITHUB_OAUTH_AUTH_URL"
 type = "String"
 
+[github.oauth_cache_get]
+default = ""
+description = "Command that prints the native GitHub OAuth refresh tokens stored by github.oauth_cache_set."
+docs = """
+By default mise keeps the long-lived, rotating OAuth refresh token in
+`github-oauth-tokens.toml` in its state directory, readable by anything running
+as your user. Set this and
+[`github.oauth_cache_set`](#github.oauth_cache_set) together to keep the refresh
+token in a password manager or keychain instead; the file then holds only the
+short-lived access token.
+
+mise runs the command with the default inline shell
+([`unix_default_inline_shell_args`](/configuration/settings.html#unix_default_inline_shell_args)
+or
+[`windows_default_inline_shell_args`](/configuration/settings.html#windows_default_inline_shell_args))
+and reads the stored value from its stdout. It runs only when the access token
+has to be refreshed, not on every mise invocation. Empty output means nothing is
+stored yet. If the command fails when mise needs to refresh, mise skips the refresh and
+keeps the cached token, so a locked vault never costs you the session. A failure
+while storing a new token counts as an empty store, since many tools fail on an
+entry that does not exist yet.
+
+See [Keeping the refresh token out of the cache file](/dev-tools/github-tokens.html#keeping-the-refresh-token-out-of-the-cache-file).
+"""
+env = "MISE_GITHUB_OAUTH_CACHE_GET"
+global_only = true
+type = "String"
+
+[github.oauth_cache_set]
+default = ""
+description = "Command that stores the native GitHub OAuth refresh tokens, read from its stdin."
+docs = """
+The counterpart of [`github.oauth_cache_get`](#github.oauth_cache_get); set both
+or neither. mise writes the complete value to the command's stdin, never to its
+arguments, each time a refresh token is issued, because GitHub rotates it on
+every refresh. If the command fails, mise keeps the refresh token in the cache
+file instead of losing it, and warns.
+
+```toml [~/.config/mise/config.toml]
+[settings.github]
+oauth_cache_get = "pass show mise/github-oauth"
+oauth_cache_set = "pass insert -m -f mise/github-oauth"
+```
+"""
+env = "MISE_GITHUB_OAUTH_CACHE_SET"
+global_only = true
+type = "String"
+
 [github.oauth_client_id]
 default = ""
 description = "GitHub App client ID that turns on native OAuth device-flow tokens."
