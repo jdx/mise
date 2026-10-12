@@ -171,13 +171,17 @@ impl DotfilesApply {
         } else {
             self.requests(&config)?
         };
-        if self.dry_run
-            && let Some(done) = done
-        {
-            // only entries the first pass already previewed unchanged; one the
-            // new config adds or alters still shows
+        if let Some(done) = done {
+            // a file the first pass already wrote unchanged is not written
+            // again: a config edit that pass made would otherwise be copied
+            // back over. Only entries identical to the ones it handled are
+            // skipped, so one the new config adds or alters still shows.
             files.retain(|req| !done.contains(&format!("{req:?}")));
-            edits.retain(|req| !done.contains(&format!("{req:?}")));
+            // a real apply repeats edits, which are idempotent; a dry run
+            // already previewed them
+            if self.dry_run {
+                edits.retain(|req| !done.contains(&format!("{req:?}")));
+            }
         }
         if files.is_empty() && edits.is_empty() && !self.prune {
             // nothing was configured at all, not just nothing left after the
