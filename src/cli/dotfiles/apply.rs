@@ -127,15 +127,15 @@ impl DotfilesApply {
         if self.dry_run {
             edits.clear();
         }
-        let handled = files
-            .iter()
-            .map(|req| format!("{req:?}"))
-            .chain(edits.iter().map(|req| format!("{req:?}")))
-            .collect::<Vec<_>>();
-        if handled.is_empty() {
-            return Ok(Some(handled));
+        if files.is_empty() && edits.is_empty() {
+            return Ok(Some(vec![]));
         }
         let secrets = system::secrets::resolve(config, self.prompt_secrets)?;
+        // what this pass writes, so the second one does not repeat it. A
+        // template is not listed: the reloaded config may change what it
+        // renders. Nor is an entry already in place, which the second pass
+        // still has to record.
+        let mut handled = vec![];
         let done = write_and_reload_with(reload, self.dry_run, |written| {
             if !files.is_empty() {
                 let opts = self.file_opts();
@@ -143,8 +143,16 @@ impl DotfilesApply {
                 // an applied config reports nothing: the rest of the apply
                 // may still have work, and "all files are applied" would
                 // read as the end of the command
-                if !plan.is_noop() && !system::files::execute_apply(config, plan, &opts, written)? {
-                    return Ok(false);
+                if !plan.is_noop() {
+                    handled.extend(
+                        plan.planned_requests()
+                            .into_iter()
+                            .filter(|req| req.mode != system::files::FileMode::Template)
+                            .map(|req| format!("{req:?}")),
+                    );
+                    if !system::files::execute_apply(config, plan, &opts, written)? {
+                        return Ok(false);
+                    }
                 }
             }
             if edits.is_empty() {
@@ -157,7 +165,7 @@ impl DotfilesApply {
 
     /// The apply without an operation of its own, for a caller that already
     /// opened one. `done` describes the entries an earlier pass over mise's own
-    /// configuration handled (and, on a dry run, already previewed).
+    /// configuration handled (or, on a dry run, previewed).
     pub(crate) async fn run_inner(
         self,
         config: Arc<Config>,
@@ -166,22 +174,15 @@ impl DotfilesApply {
     ) -> Result<bool> {
         let secrets = system::secrets::resolve(&config, self.prompt_secrets)?;
         let after_config = done.is_some();
-        let (mut files, mut edits) = if after_config {
+        let (mut files, edits) = if after_config {
             self.requests_after_config(&config)?
         } else {
             self.requests(&config)?
         };
         if let Some(done) = done {
-            // a file the first pass already wrote unchanged is not written
-            // again: a config edit that pass made would otherwise be copied
-            // back over. Only entries identical to the ones it handled are
-            // skipped, so one the new config adds or alters still shows.
+            // a file the first pass wrote is not written again: a config edit
+            // that pass made would otherwise be copied back over
             files.retain(|req| !done.contains(&format!("{req:?}")));
-            // a real apply repeats edits, which are idempotent; a dry run
-            // already previewed them
-            if self.dry_run {
-                edits.retain(|req| !done.contains(&format!("{req:?}")));
-            }
         }
         if files.is_empty() && edits.is_empty() && !self.prune {
             // nothing was configured at all, not just nothing left after the

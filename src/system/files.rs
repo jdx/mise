@@ -4172,6 +4172,11 @@ pub fn apply(
 impl ApplyPlan<'_> {
     /// Nothing to write or reconcile: executing would only report that every
     /// file is applied.
+    /// The requests this plan would write.
+    pub fn planned_requests(&self) -> Vec<&FileRequest> {
+        self.todo.iter().map(|(req, _)| *req).collect()
+    }
+
     pub fn is_noop(&self) -> bool {
         self.todo.is_empty() && self.reconciliation.stale_links.is_empty()
     }
