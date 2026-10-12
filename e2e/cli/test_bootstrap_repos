@@ -294,3 +294,12 @@ EOF2
 assert_succeed "mise bootstrap repos apply --yes"
 assert "cat chosen-base/project/version.txt" "v5"
 assert_directory_not_exists "$PWD/default-base"
+
+# config_root is available, and exec() is not
+cat <<EOF2 >mise.toml
+[bootstrap.repos]
+"{{ config_root }}/rooted" = { url = "$SRC_URL", ref = "main" }
+"{{ exec(command='echo ran') }}/bad" = { url = "$SRC_URL", ref = "main" }
+EOF2
+assert_contains "mise bootstrap repos status" "rooted"
+assert_not_contains "mise bootstrap repos status" "ran/bad"
