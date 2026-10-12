@@ -679,10 +679,10 @@ fn store_command(cmd: &str) -> Result<std::process::Command> {
     Ok(command)
 }
 
-/// Run a store command to completion and return its stdout. The command runs
+/// Run a store command to completion and return its raw stdout. The command runs
 /// while mise holds the cache lock, so it is stopped and reaped when it fails
 /// or takes longer than `STORE_TIMEOUT`.
-fn run_store_command(name: &str, cmd: &str, input: Option<&str>) -> Result<String> {
+fn run_store_command(name: &str, cmd: &str, input: Option<&str>) -> Result<Vec<u8>> {
     use std::io::Read;
     use std::process::Stdio;
 
@@ -737,7 +737,7 @@ fn run_store_command(name: &str, cmd: &str, input: Option<&str>) -> Result<Strin
             String::from_utf8_lossy(&stderr).trim()
         );
     }
-    String::from_utf8(stdout).map_err(|_| eyre!("{name} did not print UTF-8"))
+    Ok(stdout)
 }
 
 /// Read the refresh tokens (cache key to token) from the external store.
@@ -745,7 +745,8 @@ fn store_read() -> Result<HashMap<String, String>> {
     let Some((get, _)) = store_commands() else {
         return Ok(HashMap::new());
     };
-    let stdout = run_store_command("github.oauth_cache_get", &get, None)?;
+    let stdout = String::from_utf8(run_store_command("github.oauth_cache_get", &get, None)?)
+        .map_err(|_| eyre!("github.oauth_cache_get did not print UTF-8"))?;
     if stdout.trim().is_empty() {
         return Ok(HashMap::new());
     }
