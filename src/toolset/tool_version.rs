@@ -348,7 +348,23 @@ impl ToolVersion {
     /// version it stands for. Lockfiles and dependency resolvers must only
     /// ever see the logical version; the digest is a private path identity.
     pub fn strip_install_path_identity(&mut self) {
-        let version = if self.aube_lock.is_none() {
+        if let Some(version) = self.install_path_identity_version().map(str::to_string) {
+            // Keep pointing at the directory that was found. In the identity
+            // layout that name is a compatibility link, and the version it
+            // carries would otherwise be hashed into an identity nothing has.
+            self.install_path = Some(
+                crate::install_layout::resolver::physical_dir(self.ba(), &self.version)
+                    .unwrap_or_else(|| self.install_path()),
+            );
+            self.version = version;
+        }
+    }
+
+    /// The logical version of a version named by an install directory with a
+    /// private dependency-graph suffix that this version's own graph does not
+    /// account for.
+    fn install_path_identity_version(&self) -> Option<&str> {
+        if self.aube_lock.is_none() {
             self.aube_install_path_version()
                 .or_else(|| self.legacy_aube_install_path_version())
         } else {
@@ -359,17 +375,25 @@ impl ToolVersion {
                 .is_none()
                 .then(|| self.uv_install_path_version())
                 .flatten()
-        });
-        if let Some(version) = version.map(str::to_string) {
-            // Keep pointing at the directory that was found. In the identity
-            // layout that name is a compatibility link, and the version it
-            // carries would otherwise be hashed into an identity nothing has.
-            self.install_path = Some(
-                crate::install_layout::resolver::physical_dir(self.ba(), &self.version)
-                    .unwrap_or_else(|| self.install_path()),
-            );
-            self.version = version;
+        })
+    }
+
+    /// A version chosen from the installed versions of the request's tool. A
+    /// graph install made from a lockfile lists as `<version>~aube~<digest>`
+    /// (or `~uv~`), which is never the version itself. The identity layout
+    /// keeps that installation to the lockfile that made it: a request without
+    /// the graph stands for the version, and gets its own installation of it.
+    /// The legacy layout keeps using the directory that was found.
+    fn from_installed(request: ToolRequest, name: String) -> Self {
+        let mut tv = Self::new(request, name);
+        let Some(version) = tv.install_path_identity_version().map(str::to_string) else {
+            return tv;
+        };
+        if crate::install_layout::resolver::applies_to(&tv) {
+            return Self::new(tv.request, version);
         }
+        tv.strip_install_path_identity();
+        tv
     }
 
     pub(crate) fn aube_install_path_version(&self) -> Option<&str> {
@@ -837,11 +861,7 @@ impl ToolVersion {
                 && !should_filter_installed_versions
                 && let Some(v) = backend.latest_installed_version(None)?
             {
-                // The newest install may be a graph-locked one, listed by its
-                // private directory name (`3.9.9~aube~<digest>`).
-                let mut tv = Self::new(request.clone(), v);
-                tv.strip_install_path_identity();
-                return Ok(tv);
+                return Ok(Self::from_installed(request, v));
             }
             if defer_missing_lazy {
                 return build(v);
@@ -915,7 +935,7 @@ impl ToolVersion {
                 .as_ref()
                 .and_then(|matches| matches.last())
         {
-            return build(v.clone());
+            return Ok(Self::from_installed(request, v.clone()));
         }
         if defer_missing_lazy {
             return build(v);
@@ -932,7 +952,7 @@ impl ToolVersion {
                     crate::semver::npm_semver_range_filter(&installed_versions, &v)
                     && let Some(v) = matches.last()
                 {
-                    return build(v.clone());
+                    return Ok(Self::from_installed(request, v.clone()));
                 }
             }
             if !is_offline {
@@ -1111,7 +1131,7 @@ impl ToolVersion {
             && !should_filter_installed_versions
             && let Some(v) = backend.list_installed_versions_matching(prefix).last()
         {
-            return Ok(Self::new(request, v.to_string()));
+            return Ok(Self::from_installed(request, v.to_string()));
         }
         if opts.offline {
             return Ok(Self::new(request, prefix.to_string()));
