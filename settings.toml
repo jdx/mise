@@ -2690,9 +2690,9 @@ description = "Package index URL that `pypi:` tools list versions from, with `{}
 docs = """
 Use a JSON API URL such as the default, or a simple index such as
 `https://pypi.org/simple/{}/`. A simple index is asked for its PEP 691 JSON
-form, which carries upload times for
-[`minimum_release_age`](/configuration/settings.html#minimum_release_age), and
-falls back to PEP 503 HTML. The URL must start with `http://` or `https://`
+form and falls back to PEP 503 HTML. [`minimum_release_age`](/configuration/settings.html#minimum_release_age)
+works when the index supplies PEP 700 `upload-time`; HTML responses have no
+timestamps. The URL must start with `http://` or `https://`
 and contain `{}`. mise also derives the index's simple URL from it and passes
 that to installs, as `UV_INDEX` for uv or `PIP_INDEX_URL` for pipx. A tool's
 [`registry_url`](/dev-tools/backends/pypi.html#registry-url) option overrides

@@ -1686,8 +1686,8 @@ mod tests {
     fn parses_versions_from_simple_json_with_upload_times() {
         let index: super::SimpleIndex = serde_json::from_str(
             r#"{"meta":{"api-version":"1.1"},"name":"demo-pkg","files":[
-              {"filename":"demo_pkg-1.0.0-py3-none-any.whl","upload-time":"2024-01-02T00:00:00.000000Z","yanked":false},
-              {"filename":"demo-pkg-1.0.0.tar.gz","upload-time":"2024-01-01T00:00:00.000000Z"},
+              {"filename":"demo_pkg-1.0.0-py3-none-any.whl","upload-time":"2024-01-01T23:00:00-05:00","yanked":false},
+              {"filename":"demo-pkg-1.0.0.tar.gz","upload-time":"2024-01-02T01:00:00+00:00"},
               {"filename":"demo-pkg-2.0.0.tar.gz","upload-time":"2024-02-01T00:00:00Z","yanked":"broken"},
               {"filename":"demo-pkg-3.0.0.tar.gz"}]}"#,
         )
@@ -1700,7 +1700,8 @@ mod tests {
         assert_eq!(
             got,
             vec![
-                ("1.0.0", Some("2024-01-01T00:00:00.000000Z")),
+                // the sdist is earlier as an instant although it sorts later as a string
+                ("1.0.0", Some("2024-01-02T01:00:00+00:00")),
                 ("3.0.0", None)
             ]
         );
@@ -1819,6 +1820,50 @@ cccccccccccccccccccccccccccccccccccccccc\trefs/heads/main\n";
                 .unwrap()
                 .as_deref(),
             Some("2.0.0")
+        );
+        index.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn simple_index_json_preserves_upload_times() {
+        use crate::backend::Backend;
+
+        let mut server = mockito::Server::new_async().await;
+        let index = server
+            .mock("GET", "/simple/json-tool/")
+            .match_header(
+                "accept",
+                mockito::Matcher::Regex("application/vnd.pypi.simple.v1\\+json".into()),
+            )
+            .with_status(200)
+            .with_header("content-type", "application/vnd.pypi.simple.v1+json")
+            .with_body(
+                r#"{"meta":{"api-version":"1.1"},"name":"json-tool","files":[
+                  {"filename":"json_tool-1.0.0-py3-none-any.whl","upload-time":"2024-01-01T00:00:00Z"},
+                  {"filename":"json_tool-2.0.0-py3-none-any.whl","upload-time":"2024-02-01T00:00:00Z"}]}"#,
+            )
+            .expect(1)
+            .create_async()
+            .await;
+        let config = crate::config::Config::get().await.unwrap();
+        let backend = PIPXBackend::from_arg(
+            format!(
+                "pipx:json-tool[registry_url='{}/simple/{{}}/']",
+                server.url()
+            )
+            .into(),
+        );
+
+        let versions = backend._list_remote_versions(&config).await.unwrap();
+        assert_eq!(
+            versions
+                .iter()
+                .map(|v| (v.version.as_str(), v.created_at.as_deref()))
+                .collect::<Vec<_>>(),
+            vec![
+                ("1.0.0", Some("2024-01-01T00:00:00Z")),
+                ("2.0.0", Some("2024-02-01T00:00:00Z"))
+            ]
         );
         index.assert_async().await;
     }
