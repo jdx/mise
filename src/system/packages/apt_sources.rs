@@ -32,6 +32,7 @@ const SOURCES_DIR: &str = "/etc/apt/sources.list.d";
 /// Where earlier mise versions kept a source's key; removed once the key is
 /// embedded in the source file.
 const KEYRINGS_DIR: &str = "/etc/apt/keyrings";
+crate::remove_by!("2027.10.0", "apt-legacy-keyring-cleanup");
 
 /// One `[bootstrap.apt.sources.<name>]` entry as written in mise.toml.
 #[derive(Debug, Default, Clone, Deserialize)]
@@ -326,6 +327,21 @@ impl AptSource {
     }
 }
 
+/// The installed apt's major and minor version, from `apt-get --version`.
+fn apt_version() -> Option<(u32, u32)> {
+    let output = std::process::Command::new("apt-get")
+        .arg("--version")
+        .output()
+        .ok()?;
+    parse_apt_version(&String::from_utf8_lossy(&output.stdout))
+}
+
+fn parse_apt_version(output: &str) -> Option<(u32, u32)> {
+    let version = output.lines().next()?.split_whitespace().nth(1)?;
+    let mut parts = version.split(['.', '~', '+']);
+    Some((parts.next()?.parse().ok()?, parts.next()?.parse().ok()?))
+}
+
 /// A `Signed-By` field holding `key` inline: deb822 continuation lines with one
 /// leading space, and `.` standing for a blank line.
 fn inline_signed_by(key: &str) -> String {
@@ -590,6 +606,15 @@ pub(crate) async fn apply(sources: &[AptSource], dry_run: bool, ask: bool) -> Re
     if sources.is_empty() {
         return Ok(applied);
     }
+    if let Some((major, minor)) = apt_version()
+        && (major, minor) < (2, 4)
+    {
+        applied.failures.push(eyre!(
+            "apt {major}.{minor} cannot read signing keys embedded in a source file; \
+             [bootstrap.apt.sources] needs apt 2.4 or newer"
+        ));
+        return Ok(applied);
+    }
     let release = Release::read();
     let mut declared = vec![];
     let mut pending = vec![];
@@ -647,7 +672,7 @@ pub(crate) async fn apply(sources: &[AptSource], dry_run: bool, ask: bool) -> Re
                 miseprintln!("remove {}", p.source.legacy_keyring_path().display());
             }
         }
-        changed = !pending.is_empty();
+        changed = pending.iter().any(|p| p.key.is_none() || !p.stanza_current);
     } else if !pending.is_empty() && ask && !confirm(&pending)? {
         info!("apt: sources left unchanged");
         // a source left as it was must not be warned about for its lists
@@ -833,6 +858,16 @@ mod tests {
         Ok(source
             .fields(release)?
             .map(|fields| source.render(&fields, KEY)))
+    }
+
+    #[test]
+    fn parses_apt_versions() {
+        assert_eq!(
+            parse_apt_version("apt 2.7.14 (amd64)\nLanguage: en\n"),
+            Some((2, 7))
+        );
+        assert_eq!(parse_apt_version("apt 2.2.4 (amd64)\n"), Some((2, 2)));
+        assert_eq!(parse_apt_version("garbage"), None);
     }
 
     #[test]
