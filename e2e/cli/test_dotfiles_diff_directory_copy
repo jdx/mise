@@ -24,3 +24,11 @@ assert_not_contains "mise dot diff" ".zshrc (current)"
 
 rm "$HOME/.zshrc"
 assert_contains "mise dot diff" "missing: ~/.zshrc"
+
+# an unreadable target file is reported by name rather than failing the diff
+if [ "$(id -u)" != 0 ]; then
+	echo "one" >"$HOME/.zshrc"
+	chmod 000 "$HOME/.zshrc"
+	assert_contains "mise dot diff" ".zshrc is not readable"
+	chmod 644 "$HOME/.zshrc"
+fi

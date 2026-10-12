@@ -2774,12 +2774,18 @@ fn check_copy_dir(req: &FileRequest) -> Result<FileState> {
         return Ok(FileState::Differs("exists but is not a directory".into()));
     }
     for (source, target) in walk_source_files(req)? {
-        match check_content(&target, &file::read(&source)?)? {
-            FileState::Applied => {}
-            _ => {
-                let rel = target.strip_prefix(&req.target).unwrap_or(&target);
-                return Ok(FileState::Differs(format!("{} differs", rel.display())));
+        let rel = target.strip_prefix(&req.target).unwrap_or(&target);
+        // an unreadable target differs; `print_diff` reports it by name
+        match check_content(&target, &file::read(&source)?) {
+            Ok(FileState::Applied) => {}
+            Ok(_) => return Ok(FileState::Differs(format!("{} differs", rel.display()))),
+            Err(err) if is_permission_denied(&err) => {
+                return Ok(FileState::Differs(format!(
+                    "{} is not readable",
+                    rel.display()
+                )));
             }
+            Err(err) => return Err(err),
         }
     }
     Ok(FileState::Applied)
