@@ -1001,6 +1001,12 @@ fn rustup_host_triple(settings: &Settings) -> String {
             other => other,
         };
         if let Some((_, rest)) = target.split_once('-') {
+            // `eabi`/`eabihf` belong to 32-bit ARM targets only.
+            let rest = if arch.starts_with("arm") {
+                rest
+            } else {
+                rest.trim_end_matches("eabihf").trim_end_matches("eabi")
+            };
             return format!("{arch}-{rest}");
         }
     }
