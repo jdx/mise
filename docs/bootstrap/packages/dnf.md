@@ -31,6 +31,14 @@ show as [`skipped`](/bootstrap/packages/#choose-platforms).
 Use the package name, such as `openssl-devel`, not a capability or file path.
 mise checks installed state with `rpm -q`, which looks up package names.
 
+## Package groups
+
+A name starting with `@`, such as `"dnf:@development-tools"`, is a dnf package
+group. mise checks it with `dnf group list --installed` instead of `rpm -q`,
+installs it with `dnf install -y @<group>`, and upgrades it with
+`dnf group upgrade`. Groups have no version, so use `"latest"`. Environment
+groups (`@^name`) are not supported.
+
 ## Version pins
 
 mise passes a pin to dnf as `name-version` or `name-version-release`. A
