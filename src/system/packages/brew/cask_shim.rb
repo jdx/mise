@@ -291,6 +291,7 @@ class CaskContext
   def bash_completion(*) nil end
   def zsh_completion(*) nil end
   def fish_completion(*) nil end
+  def generate_completions_from_executable(*, **) nil end
   def uninstall(*) nil end
   def zap(*) nil end
 

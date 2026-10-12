@@ -237,6 +237,18 @@ class CaskMetadata
   def zsh_completion(source, target: nil) = add_artifact("zsh_completion", source, target)
   def fish_completion(source, target: nil) = add_artifact("fish_completion", source, target)
 
+  def generate_completions_from_executable(*commands, **options)
+    value = commands.map(&:to_s)
+    unless options.empty?
+      value << options.each_with_object({}) do |(key, option), acc|
+        # Casks pass options as symbols (`shells: [:bash]`);
+        # stringify them here as the Rust side expects string.
+        acc[key.to_s] = option.is_a?(Array) ? option.map(&:to_s) : option.to_s
+      end
+    end
+    @artifacts << { "generate_completions_from_executable" => value }
+  end
+
   def installer(**values) = @artifacts << { "installer" => values }
   def artifact(source, target: nil) = add_artifact("artifact", source, target)
   def uninstall(**values) = @artifacts << { "uninstall" => values }

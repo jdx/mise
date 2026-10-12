@@ -4009,6 +4009,9 @@ fn cask_shim_supports_completion_stanzas_and_system_command() -> Result<()> {
   bash_completion "#{appdir}/Example.app/Contents/Resources/etc/example.bash-completion"
   zsh_completion "#{appdir}/Example.app/Contents/Resources/etc/example.zsh-completion"
   fish_completion "#{appdir}/Example.app/Contents/Resources/etc/example.fish-completion"
+  generate_completions_from_executable "#{appdir}/Example.app/Contents/Resources/bin/example", "completion",
+                                       shell_parameter_format: :cobra,
+                                       shells: [:bash, :zsh, :fish]
   manpage "#{appdir}/Example.app/Contents/Resources/man/example.1"
   preflight_steps do
     raise "structured steps must run only in Rust"
