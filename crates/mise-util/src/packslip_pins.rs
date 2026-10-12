@@ -606,14 +606,19 @@ mod tests {
         check_at(&path, project, moved).unwrap();
         assert_eq!(record_at(&path, project, moved).unwrap().signer, WORKFLOW);
 
-        // A list that names only one of them says nothing about the move.
-        let other = "https://github.com/o/r/.github/workflows/other.yml@refs/heads/main";
-        let listed = [WORKFLOW.to_string()];
-        let unlisted = Observed {
-            listed: &listed,
-            ..observed("sigstore-oidc", other)
-        };
-        assert!(check_at(&path, project, unlisted).is_err());
+        // A list that names only one of them, the pinned signer or the new
+        // one, says nothing about the move.
+        let other = "https://github.com/o/r/.github/workflows/other.yml";
+        let other_key = format!("{other}@refs/heads/main");
+        for listed in [[WORKFLOW.to_string()], [other.to_string()]] {
+            let unlisted = Observed {
+                listed: &listed,
+                ..observed("sigstore-oidc", &other_key)
+            };
+            assert!(check_at(&path, project, unlisted).is_err(), "{listed:?}");
+            assert!(record_at(&path, project, unlisted).is_err(), "{listed:?}");
+        }
+        assert_eq!(load(&path).unwrap().pins[project].signer, WORKFLOW);
     }
 
     #[test]
