@@ -435,6 +435,7 @@ impl Commands {
         match self {
             Self::Dotfiles(cmd) => cmd.is_watch(),
             Self::Bootstrap(cmd) => cmd.runs_unattended(),
+            Self::ToolUpdate(cmd) => cmd.is_watch(),
             _ => false,
         }
     }
@@ -1797,6 +1798,10 @@ mod tests {
             "--",
             "mise-history",
         ]));
+
+        // the tool-update service is a Scheduled Task on Windows too
+        assert!(unattended(&["mise", "__tool-update", "--watch"]));
+        assert!(!unattended(&["mise", "__tool-update", "node"]));
 
         // every other dotfiles command has a terminal reading it
         assert!(!unattended(&["mise", "dot", "status"]));
