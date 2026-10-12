@@ -370,6 +370,8 @@ mod tests {
         }
     }
 
+    // `/Applications/...` is not absolute on Windows
+    #[cfg(unix)]
     #[test]
     fn validate_app_paths() {
         let home = crate::env::HOME.join("Applications/Some.app");
