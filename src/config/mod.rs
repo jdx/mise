@@ -10034,9 +10034,12 @@ pub(crate) fn task_tool_requests(
         .config_files
         .values()
         .filter(|other| is_global_config(other.get_path()));
-    let mut project = tracked
-        .values()
-        .chain(globals)
+    // A global config can also be tracked. Keep one copy, the one in the loaded order, so
+    // configs that tie are never merged from a different order than the one they load in.
+    let mut seen = std::collections::HashSet::new();
+    let mut project = globals
+        .chain(tracked.values())
+        .filter(|other| seen.insert(other.get_path().to_path_buf()))
         .filter(|other| {
             other.get_path() != cf.get_path()
                 && (is_global_config(other.get_path())
@@ -10054,7 +10057,6 @@ pub(crate) fn task_tool_requests(
                 .count(),
         )
     });
-    project.dedup_by_key(|other| other.get_path().to_path_buf());
     let mut definitions = TaskDefinitions::default();
     for other in project.into_iter().chain([cf]) {
         for (name, template) in other.task_templates() {
