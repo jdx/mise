@@ -58,7 +58,7 @@ packages:
       - aliases:
           - name: example/nested-alias
 "#;
-    let registry = serde_yaml::from_str::<RegistryYaml>(yml).unwrap();
+    let registry = RegistryYaml::from_yaml(yml).unwrap();
     let row = registry.packages.into_iter().next().unwrap();
 
     assert_eq!(row.package.name.as_deref(), Some("example/canonical"));

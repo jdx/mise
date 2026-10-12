@@ -4,9 +4,11 @@ use eyre::{Result, eyre};
 use indexmap::IndexSet;
 use itertools::Itertools;
 use rkyv::{Archive, Deserialize as RkyvDeserialize, Serialize as RkyvSerialize};
+use serde::de::{self, IgnoredAny, Visitor};
 use serde::{Deserialize, Deserializer};
 use std::cmp::PartialEq;
 use std::collections::{BTreeSet, HashMap};
+use std::fmt;
 use versions::Versioning;
 
 /// Type of Aqua package
@@ -303,18 +305,31 @@ fn deserialize_registry_aliases<'de, D>(
 where
     D: Deserializer<'de>,
 {
-    let aliases = Option::<serde_yaml::Value>::deserialize(deserializer)?;
-    Ok(aliases
-        .and_then(|aliases| {
-            aliases
-                .as_sequence()
-                .map(|aliases| aliases.iter().filter_map(registry_alias_name).collect())
-        })
-        .unwrap_or_default())
-}
+    /// Anything that is not a list of `{name: ...}` entries is ignored.
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum Aliases {
+        List(Vec<AliasEntry>),
+        Other(IgnoredAny),
+    }
 
-fn registry_alias_name(alias: &serde_yaml::Value) -> Option<String> {
-    alias.get("name")?.as_str().map(str::to_string)
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum AliasEntry {
+        Named { name: String },
+        Other(IgnoredAny),
+    }
+
+    Ok(match Option::<Aliases>::deserialize(deserializer)? {
+        Some(Aliases::List(aliases)) => aliases
+            .into_iter()
+            .filter_map(|alias| match alias {
+                AliasEntry::Named { name } => Some(name),
+                AliasEntry::Other(_) => None,
+            })
+            .collect(),
+        Some(Aliases::Other(_)) | None => vec![],
+    })
 }
 
 fn deserialize_optional_scalar_string<'de, D>(
@@ -323,32 +338,7 @@ fn deserialize_optional_scalar_string<'de, D>(
 where
     D: Deserializer<'de>,
 {
-    let value = Option::<serde_yaml::Value>::deserialize(deserializer)?;
-    match value {
-        None | Some(serde_yaml::Value::Null) => Ok(None),
-        Some(value) => yaml_scalar_to_string(value).map(Some).ok_or_else(|| {
-            <D::Error as serde::de::Error>::custom("invalid type: expected a scalar string default")
-        }),
-    }
-}
-
-fn yaml_mapping_to_string_map<D: serde::de::Error>(
-    value: serde_yaml::Value,
-) -> std::result::Result<HashMap<String, String>, D> {
-    let serde_yaml::Value::Mapping(mapping) = value else {
-        return Err(D::custom("invalid type: expected a scalar string map"));
-    };
-
-    mapping
-        .into_iter()
-        .map(|(key, value)| {
-            let key = yaml_scalar_to_string(key)
-                .ok_or_else(|| D::custom("invalid type: expected a scalar string map key"))?;
-            let value = yaml_scalar_to_string(value)
-                .ok_or_else(|| D::custom("invalid type: expected a scalar string map value"))?;
-            Ok((key, value))
-        })
-        .collect()
+    Ok(Option::<ScalarString>::deserialize(deserializer)?.map(|s| s.0))
 }
 
 fn deserialize_string_map<'de, D>(
@@ -357,11 +347,7 @@ fn deserialize_string_map<'de, D>(
 where
     D: Deserializer<'de>,
 {
-    let value = Option::<serde_yaml::Value>::deserialize(deserializer)?;
-    let Some(value) = value else {
-        return Ok(HashMap::new());
-    };
-    yaml_mapping_to_string_map(value)
+    Ok(deserialize_optional_string_map(deserializer)?.unwrap_or_default())
 }
 
 fn deserialize_optional_string_map<'de, D>(
@@ -370,21 +356,74 @@ fn deserialize_optional_string_map<'de, D>(
 where
     D: Deserializer<'de>,
 {
-    let Some(value) = Option::<serde_yaml::Value>::deserialize(deserializer)? else {
-        return Ok(None);
-    };
-    if matches!(value, serde_yaml::Value::Null) {
-        return Ok(None);
-    }
-    yaml_mapping_to_string_map(value).map(Some)
+    let map = Option::<HashMap<ScalarString, ScalarString>>::deserialize(deserializer)?;
+    Ok(map.map(|map| map.into_iter().map(|(k, v)| (k.0, v.0)).collect()))
 }
 
-fn yaml_scalar_to_string(value: serde_yaml::Value) -> Option<String> {
-    match value {
-        serde_yaml::Value::String(value) => Some(value),
-        serde_yaml::Value::Bool(value) => Some(value.to_string()),
-        serde_yaml::Value::Number(value) => Some(value.to_string()),
-        _ => None,
+/// A YAML scalar as text: a string as written, a boolean or number printed.
+/// Registry keys and values such as `386: i686` are numbers to the parser.
+#[derive(PartialEq, Eq, Hash)]
+struct ScalarString(String);
+
+impl<'de> Deserialize<'de> for ScalarString {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> std::result::Result<Self, D::Error> {
+        struct ScalarVisitor;
+
+        impl Visitor<'_> for ScalarVisitor {
+            type Value = ScalarString;
+
+            fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                f.write_str("a scalar string")
+            }
+
+            fn visit_str<E: de::Error>(self, v: &str) -> std::result::Result<ScalarString, E> {
+                Ok(ScalarString(v.to_string()))
+            }
+
+            fn visit_string<E: de::Error>(self, v: String) -> std::result::Result<ScalarString, E> {
+                Ok(ScalarString(v))
+            }
+
+            fn visit_bool<E: de::Error>(self, v: bool) -> std::result::Result<ScalarString, E> {
+                Ok(ScalarString(v.to_string()))
+            }
+
+            fn visit_i64<E: de::Error>(self, v: i64) -> std::result::Result<ScalarString, E> {
+                Ok(ScalarString(v.to_string()))
+            }
+
+            fn visit_u64<E: de::Error>(self, v: u64) -> std::result::Result<ScalarString, E> {
+                Ok(ScalarString(v.to_string()))
+            }
+
+            fn visit_i128<E: de::Error>(self, v: i128) -> std::result::Result<ScalarString, E> {
+                Ok(ScalarString(v.to_string()))
+            }
+
+            fn visit_u128<E: de::Error>(self, v: u128) -> std::result::Result<ScalarString, E> {
+                Ok(ScalarString(v.to_string()))
+            }
+
+            fn visit_f64<E: de::Error>(self, v: f64) -> std::result::Result<ScalarString, E> {
+                Ok(ScalarString(format!("{v:?}")))
+            }
+        }
+
+        deserializer.deserialize_any(ScalarVisitor)
+    }
+}
+
+impl RegistryYaml {
+    /// Parse a merged registry file such as aqua-registry's `registry.yml`.
+    /// Only `true`/`false` are booleans unless a field's type says otherwise,
+    /// matching how mise reads YAML elsewhere.
+    pub fn from_yaml(text: &str) -> std::result::Result<Self, serde_saphyr::Error> {
+        serde_saphyr::from_str_with_options(
+            text,
+            serde_saphyr::options! {
+                strict_booleans: true,
+            },
+        )
     }
 }
 

@@ -52,6 +52,24 @@ assert "mise env | grep -v PATH" "export C=see
 export D=2
 export E=true"
 
+# YAML values are read as written; numbers and YAML 1.1 booleans are not reformatted.
+cat <<EOF >mise.toml
+[env]
+_.file = 'd.yaml'
+EOF
+cat <<EOF >d.yaml
+NAME: see
+VERSION: 1.10
+ZIP: 02134
+ENABLED: yes
+FLAG: true
+EOF
+assert "mise env | grep -v PATH" "export ENABLED=yes
+export FLAG=true
+export NAME=see
+export VERSION=1.10
+export ZIP=02134"
+
 cat <<EOF >mise.toml
 [env]
 _.file = 'nested.toml'

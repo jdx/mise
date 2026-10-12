@@ -55,7 +55,7 @@ impl CompiledRegistry {
 
 impl ParsedRegistry {
     pub fn parse_yaml(source: &str) -> Result<Self> {
-        let registry_yaml = serde_yaml::from_str::<RegistryYaml>(source)?;
+        let registry_yaml = RegistryYaml::from_yaml(source)?;
         Self::from_registry_yaml(registry_yaml)
     }
 

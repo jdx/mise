@@ -5,7 +5,7 @@ fn default_str(value: &str) -> Option<String> {
 }
 
 fn first_registry_package(yml: &str) -> AquaPackage {
-    serde_yaml::from_str::<RegistryYaml>(yml)
+    RegistryYaml::from_yaml(yml)
         .unwrap()
         .packages
         .into_iter()

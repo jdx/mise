@@ -87,7 +87,7 @@ packages:
         default: {yaml_default}
 "#
         );
-        let err = serde_yaml::from_str::<RegistryYaml>(&yml).unwrap_err();
+        let err = RegistryYaml::from_yaml(&yml).unwrap_err();
         assert!(
             err.to_string().contains("invalid type"),
             "unexpected error for {yaml_default}: {err}"

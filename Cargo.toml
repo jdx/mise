@@ -232,7 +232,6 @@ same-file = "1"
 serde = { version = "1", features = ["derive"] }
 serde_ignored = "0.1"
 serde_json = "1"
-serde_yaml = "0.9"
 semver = "1"
 sha2 = "0.11"
 blake3 = "1"
@@ -335,8 +334,8 @@ eyre = "0.6"
 phf_codegen = "0.14"
 regex = "1"
 semver = "1"
-serde = "1"
-serde_yaml = "0.9"
+serde = { version = "1", features = ["derive"] }
+serde-saphyr = "1"
 toml = "1"
 
 [dev-dependencies]
@@ -408,6 +407,7 @@ ignored = [
   "openssl",
   "phf_codegen",
   "rust-embed",
+  "serde-saphyr", # Used by build.rs to read the aqua registry metadata.
 ]
 
 [lints.rust]
