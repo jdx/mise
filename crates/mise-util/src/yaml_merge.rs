@@ -34,22 +34,47 @@ pub fn merge_yaml(target: &str, source: &str) -> Result<String> {
     };
     merge_mapping(&target_map, &source_map);
     let merged = target_file.to_string();
-    verify(&merged, source)?;
+    verify(target, &merged, source)?;
     Ok(merged)
 }
 
-/// Check the edited text still parses and holds every source key. The edits
-/// are surgical, so this guards against a syntax-tree edit that corrupts the
-/// document instead of trusting it.
-fn verify(merged: &str, source: &str) -> Result<()> {
+/// Check the edited text parses to exactly the target with the source merged
+/// in. The edits are surgical, so this guards against a syntax-tree edit that
+/// corrupts the document instead of trusting it. It also catches edits whose
+/// meaning reaches past their text: replacing an alias such as `kid: *b`
+/// drops the values it pointed at, and editing an anchored value changes every
+/// alias of it.
+fn verify(target: &str, merged: &str, source: &str) -> Result<()> {
     let parse = |text: &str| match yaml::from_str::<yaml::Value>(text) {
         Ok(yaml::Value::Mapping(map)) => Some(map),
         Ok(yaml::Value::Null) => Some(yaml::Mapping::new()),
         _ => None,
     };
-    match (parse(source), parse(merged)) {
-        (Some(source), Some(merged)) if mapping_subset(&source, &merged) => Ok(()),
-        _ => bail!("editing the YAML in place did not produce a document holding the merged keys"),
+    let (Some(mut expected), Some(source), Some(merged)) =
+        (parse(target), parse(source), parse(merged))
+    else {
+        bail!("editing the YAML in place did not produce a valid document");
+    };
+    merge_values(&mut expected, source);
+    if merged != expected {
+        bail!(
+            "editing the YAML in place would change values the merge does not set, \
+             for example through an anchor and its aliases; edit this file by hand"
+        );
+    }
+    Ok(())
+}
+
+/// The merge's semantics on parsed values: mappings on both sides merge
+/// recursively, anything else from `source` replaces the target's value.
+fn merge_values(target: &mut yaml::Mapping, source: yaml::Mapping) {
+    for (key, sv) in source {
+        match (target.get_mut(&key), sv) {
+            (Some(yaml::Value::Mapping(t)), yaml::Value::Mapping(s)) => merge_values(t, s),
+            (_, sv) => {
+                target.insert(key, sv);
+            }
+        }
     }
 }
 
@@ -111,6 +136,19 @@ fn replace_value(target: &Mapping, key: &YamlNode, existing: &YamlNode, value: &
 mod tests {
     use super::*;
     use pretty_assertions::assert_eq;
+
+    #[test]
+    fn edits_that_change_aliased_values_are_refused() {
+        // replacing the alias would drop kid.x
+        assert!(merge_yaml("base: &b {x: 1}\nkid: *b\n", "kid: {y: 2}\n").is_err());
+        // editing the anchor would also change kid
+        assert!(merge_yaml("base: &b {x: 1}\nkid: *b\n", "base: {x: 2}\n").is_err());
+        // an alias the merge does not reach is fine
+        assert_eq!(
+            merge_yaml("base: &b {x: 1}\nkid: *b\nother: 1\n", "other: 2\n").unwrap(),
+            "base: &b {x: 1}\nkid: *b\nother: 2\n"
+        );
+    }
 
     #[test]
     fn sets_keys_and_keeps_everything_else() {
