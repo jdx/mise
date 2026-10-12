@@ -277,6 +277,7 @@ mod sys {
                     LSSharedFileListItemCopyResolvedURL(item, RESOLVE_FLAGS, ptr::null_mut())
                 };
                 if url.is_null() {
+                    warn!("a macOS login item could not be resolved; leaving it alone");
                     continue;
                 }
                 let url = unsafe { CFURL::wrap_under_create_rule(url) };

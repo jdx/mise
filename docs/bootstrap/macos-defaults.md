@@ -153,7 +153,7 @@ apps = [
 Paths follow the same rules as [`dock.apps`](#dock-applications): absolute or
 starting with `~/`, ending in `.app`, no `..`, and no duplicates.
 
-By default the list is additive. `status` and `plan` report declared apps that
+By default the list is additive. `mise bootstrap status` reports declared apps that
 are missing and `apply` adds them, but entries you did not declare are left
 alone, because apps such as Rectangle register themselves. Set
 `exclusive = true` to make the config own the whole list, so `apply` also

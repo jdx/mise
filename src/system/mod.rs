@@ -1379,12 +1379,14 @@ pub fn login_items_from_config(config: &Config) -> login_items::LoginItemsReques
     let mut apps: Vec<String> = vec![];
     let mut exclusive = false;
     // config_files is ordered local -> global; reverse for global -> local
-    for cf in config.config_files.values().rev() {
-        if let Some(sys) = cf.bootstrap_config()
-            && let Some(items) = sys.macos.login_items
-        {
-            apps.extend(items.apps);
-            exclusive = items.exclusive.unwrap_or(exclusive);
+    for config_files in config.bootstrap_config_maps() {
+        for cf in config_files.values().rev() {
+            if let Some(sys) = cf.bootstrap_config()
+                && let Some(items) = sys.macos.login_items
+            {
+                apps.extend(items.apps);
+                exclusive = items.exclusive.unwrap_or(exclusive);
+            }
         }
     }
     let mut valid = vec![];
