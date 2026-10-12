@@ -30,4 +30,4 @@ export second
 assert_succeed "run_second bootstrap --adopt file://$origin --yes --only dotfiles"
 assert "cat $second/.shared-config" shared
 assert_not_contains 'run_second dot status 2>&1' 'nothing configured in [dotfiles]'
-assert_contains 'run_second dot status 2>&1' '1 entries · '
+assert_contains 'run_second dot status 2>&1' '1 entry · '

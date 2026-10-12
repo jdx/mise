@@ -213,6 +213,17 @@ pub(crate) async fn report() -> Result<HistoryReport> {
     })
 }
 
+fn plural(count: impl Into<u64>, noun: &str) -> String {
+    let count = count.into();
+    format!("{count} {noun}{}", if count == 1 { "" } else { "s" })
+}
+
+fn push_step(next: &mut Vec<String>, step: &str) {
+    if !next.iter().any(|existing| existing == step) {
+        next.push(step.to_string());
+    }
+}
+
 const OK: &str = "✓";
 const WARN: &str = "⚠";
 const BAD: &str = "✗";
@@ -241,7 +252,7 @@ pub(crate) fn print(report: &HistoryReport) -> Result<()> {
         miseprintln!();
         miseprintln!("Bootstrap {WARN}");
         miseprintln!("  declarations changed: run `mise bootstrap` (dry-run available)");
-        next.push("mise bootstrap".to_string());
+        push_step(&mut next, "mise bootstrap");
     }
     if !next.is_empty() {
         miseprintln!();
@@ -261,9 +272,13 @@ fn print_tracking(report: &HistoryReport, next: &mut Vec<String>) -> Result<()> 
     }
     let omitted = report.omitted.len();
     miseprintln!(
-        "  {OK} {} entries · {} files{}",
-        report.tracked_entries,
-        report.tracked_files,
+        "  {OK} {} · {}{}",
+        if report.tracked_entries == 1 {
+            "1 entry".to_string()
+        } else {
+            format!("{} entries", report.tracked_entries)
+        },
+        plural(report.tracked_files, "file"),
         if omitted > 0 {
             format!(" · {omitted} omitted")
         } else {
@@ -278,8 +293,8 @@ fn print_tracking(report: &HistoryReport, next: &mut Vec<String>) -> Result<()> 
     }
     match &report.latest {
         Some(latest) => miseprintln!(
-            "  {OK} {} checkpoints · latest {} ({}, {}): {}",
-            report.checkpoints,
+            "  {OK} {} · latest {} ({}, {}): {}",
+            plural(report.checkpoints as u64, "checkpoint"),
             latest.id,
             latest.trigger,
             local_time(&latest.created_at),
@@ -287,7 +302,9 @@ fn print_tracking(report: &HistoryReport, next: &mut Vec<String>) -> Result<()> 
         ),
         None => {
             miseprintln!("  {WARN} no checkpoint recorded yet");
-            next.push("mise dot save".to_string());
+            if report.tracked_entries > 0 {
+                push_step(next, "mise dot save");
+            }
         }
     }
     if let Some(unsaved) = report
@@ -305,14 +322,14 @@ fn print_tracking(report: &HistoryReport, next: &mut Vec<String>) -> Result<()> 
             unsaved.len(),
             listed.join(", ")
         );
-        next.push("mise dot save".to_string());
+        push_step(next, "mise dot save");
     }
     if !report.not_applied.is_empty() {
         miseprintln!(
             "  {WARN} not applied here: {} (saved by another machine while not selected here); saves resume after a pull applies them",
             report.not_applied.join(", ")
         );
-        next.push("mise dot pull".to_string());
+        push_step(next, "mise dot pull");
     }
     if omitted > 0 || !report.nested.is_empty() {
         miseprintln!(
@@ -325,7 +342,7 @@ fn print_tracking(report: &HistoryReport, next: &mut Vec<String>) -> Result<()> 
             "  {WARN} {} operation(s) did not finish; `mise dot history --pending` lists them",
             report.pending_operations
         );
-        next.push("mise dot recover".to_string());
+        push_step(next, "mise dot recover");
     }
     Ok(())
 }
@@ -350,7 +367,7 @@ fn print_repository(sync: &SyncReport, next: &mut Vec<String>) -> Result<()> {
             sync.pending_applications.len(),
             sync.pending_applications.join(", ")
         );
-        next.push("mise dot pull".to_string());
+        push_step(next, "mise dot pull");
     }
     if let Some(error) = &sync.last_error {
         match &sync.failing_since {
@@ -390,7 +407,7 @@ fn print_conflicts(sync: &SyncReport, next: &mut Vec<String>) -> Result<()> {
     next.insert(
         0,
         format!(
-            "Resolve {} conflict(s) (`mise dot conflicts`)",
+            "Resolve {} conflict(s) with `mise dot pull --take-remote <path>` or `--keep-local <path>` (`mise dot conflicts <path>` compares the sides)",
             sync.conflicts.len()
         ),
     );
