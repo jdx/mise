@@ -287,7 +287,9 @@ have prettier || echo "prettier is not installed"
 
 Users without mise never take the `mise which` branch, so the same script works
 for a team where only some people use mise. This example assumes symlink shims,
-so it does not cover Windows.
+so it does not cover Windows. [Command wrappers](#command-wrappers) are also
+symlinks to `mise`, and `mise which` does not resolve their names, so `have`
+reports a wrapped command as missing even though running it works.
 
 An unresolved shim can still run another executable with the same name later on
 `PATH`, so `have` may report a tool as missing that the shim would run anyway.
