@@ -238,7 +238,12 @@ impl Context<'_> {
         let source = self.path(step, "source")?;
         let target = self.path(step, "target")?;
         let destination = copy_destination(&source, &target)?;
-        if destination.exists() && !flag(step, "overwrite") {
+        // Homebrew serializes `overwrite: false` only; an absent key (the DSL
+        // default) allows overwriting, unlike `move`/`write` where `flag` applies.
+        let protected = step.get("overwrite").and_then(Value::as_bool) == Some(false);
+        // `exists()` follows symlinks, so a dangling link is not protected,
+        // matching Homebrew's `destination.exist?`.
+        if protected && destination.exists() {
             bail!("{} already exists", destination.display());
         }
         if let Some(parent) = destination.parent() {
@@ -752,6 +757,56 @@ mod tests {
             fs::read_to_string(directory_target.join("directory-source/nested/file"))?,
             "directory"
         );
+        Ok(())
+    }
+
+    #[test]
+    fn copy_defaults_to_overwriting_existing_destination() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let source = tmp.path().join("source");
+        let destination = tmp.path().join("destination");
+        fs::write(&source, "new")?;
+        fs::write(&destination, "old")?;
+
+        let step = json!({
+            "source": {"path": source},
+            "target": {"path": destination},
+        });
+        ctx(tmp.path()).copy(&step)?;
+        assert_eq!(fs::read_to_string(destination)?, "new");
+        Ok(())
+    }
+
+    #[test]
+    fn copy_without_overwrite_preserves_existing_child_of_directory_target() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let target = tmp.path().join("target");
+        fs::create_dir_all(&target)?;
+
+        let file_source = tmp.path().join("file-source");
+        fs::write(&file_source, "new")?;
+        fs::write(target.join("file-source"), "old")?;
+        let file_step = json!({
+            "source": {"path": file_source},
+            "target": {"path": target},
+            "overwrite": false,
+        });
+        assert!(ctx(tmp.path()).copy(&file_step).is_err());
+        assert_eq!(fs::read_to_string(target.join("file-source"))?, "old");
+
+        let dir_source = tmp.path().join("dir-source");
+        fs::create_dir_all(&dir_source)?;
+        fs::write(dir_source.join("a"), "new")?;
+        fs::create_dir_all(target.join("dir-source"))?;
+        fs::write(target.join("dir-source/a"), "old")?;
+        let dir_step = json!({
+            "source": {"path": dir_source},
+            "target": {"path": target},
+            "recursive": true,
+            "overwrite": false,
+        });
+        assert!(ctx(tmp.path()).copy(&dir_step).is_err());
+        assert_eq!(fs::read_to_string(target.join("dir-source/a"))?, "old");
         Ok(())
     }
 }
