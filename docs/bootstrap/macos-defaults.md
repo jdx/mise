@@ -135,6 +135,44 @@ a change. Moving a pinned app by hand does, and the next apply restores the
 declared order. mise has no command to capture your current Dock into the
 config.
 
+## Open apps at login {#login-items}
+
+`[bootstrap.macos.login_items]` declares the applications that open when you
+log in, the list under System Settings → General → Login Items & Extensions →
+Open at Login:
+
+```toml
+[bootstrap.macos.login_items]
+apps = [
+  "/Applications/Bitwarden.app",
+  "/Applications/Ghostty.app",
+  "~/Applications/Example.app",
+]
+```
+
+Paths follow the same rules as [`dock.apps`](#dock-applications): absolute or
+starting with `~/`, ending in `.app`, no `..`, and no duplicates.
+
+By default the list is additive. `status` and `plan` report declared apps that
+are missing and `apply` adds them, but entries you did not declare are left
+alone, because apps such as Rectangle register themselves. Set
+`exclusive = true` to make the config own the whole list, so `apply` also
+removes undeclared entries:
+
+```toml
+[bootstrap.macos.login_items]
+apps = ["/Applications/Ghostty.app"]
+exclusive = true
+```
+
+Across config files, `apps` are combined and the most local `exclusive` wins.
+
+mise manages the list with the `LSSharedFileList` API, because `SMAppService`
+can only register the calling app. Apple has deprecated that API since macOS
+10.11 but it still works. If a future macOS removes it, mise will report an
+error instead of changing anything. `mise bootstrap macos defaults
+apply` applies login items together with defaults.
+
 ## Raw defaults
 
 Each key under `[bootstrap.macos.defaults]` is a preferences domain, and each

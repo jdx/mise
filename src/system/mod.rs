@@ -60,6 +60,7 @@ pub mod git_prerequisites;
 pub mod history;
 pub mod hooks;
 pub mod launchd;
+pub mod login_items;
 pub mod login_shell;
 pub mod managed_files;
 pub mod packages;
@@ -272,6 +273,7 @@ impl BootstrapTomlConfig {
         });
         below(&mut self.macos.defaults_entries, shared_entries);
         fill(&mut self.macos.launchd.agents, macos.launchd.agents);
+        or(&mut self.macos.login_items, macos.login_items);
 
         or(&mut self.linux.firewall, lower.linux.firewall);
         fill(&mut self.linux.systemd.units, lower.linux.systemd.units);
@@ -500,6 +502,9 @@ pub struct BootstrapMacosTomlConfig {
     /// LaunchAgents rendered to ~/Library/LaunchAgents.
     #[serde(default)]
     pub launchd: BootstrapMacosLaunchdTomlConfig,
+    /// `[bootstrap.macos.login_items]`: applications to open at login.
+    #[serde(default)]
+    pub login_items: Option<login_items::LoginItemsTomlConfig>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -1356,6 +1361,40 @@ pub fn defaults_from_config(config: &Config) -> Vec<DefaultsRequest> {
         }
     }
     out
+}
+
+/// Aggregate `[bootstrap.macos.login_items]` across all loaded config files.
+///
+/// Apps union global -> local; `exclusive` takes the most local value that sets
+/// it. Invalid entries warn and are skipped.
+pub fn login_items_from_config(config: &Config) -> login_items::LoginItemsRequest {
+    let mut apps: Vec<String> = vec![];
+    let mut exclusive = false;
+    // config_files is ordered local -> global; reverse for global -> local
+    for cf in config.config_files.values().rev() {
+        if let Some(sys) = cf.bootstrap_config()
+            && let Some(items) = sys.macos.login_items
+        {
+            apps.extend(items.apps);
+            exclusive = items.exclusive.unwrap_or(exclusive);
+        }
+    }
+    let mut valid = vec![];
+    let mut seen = std::collections::HashSet::new();
+    for app in apps {
+        match login_items::app_path(&app) {
+            Ok(path) => {
+                if seen.insert(crate::file::canonicalize_or_self(&path)) {
+                    valid.push(path);
+                }
+            }
+            Err(err) => warn!("{err}"),
+        }
+    }
+    login_items::LoginItemsRequest {
+        apps: valid,
+        exclusive,
+    }
 }
 
 /// Aggregate `[bootstrap.macos.launchd.agents]` across all loaded config files.

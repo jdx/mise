@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+
+cat <<EOT >mise.toml
+[bootstrap.macos.login_items]
+apps = ["/Applications/Ghostty.app", "~/Applications/Example.app"]
+exclusive = false
+EOT
+
+# the status report renders on any platform; off macOS login items are skipped
+assert_succeed "mise bootstrap status --json"
+assert_contains "mise bootstrap status --json" '"macos_login_items"'
+if [[ $(uname) != "Darwin" ]]; then
+  assert_contains "mise bootstrap status --json" '"available": false'
+  assert_contains "mise bootstrap status" "Ghostty.app"
+  # inert off-macOS, so a cross-platform config still applies
+  assert_succeed "mise bootstrap macos defaults apply --yes"
+fi
+
+# a path that is not an application bundle is ignored with a warning
+cat <<EOT >mise.toml
+[bootstrap.macos.login_items]
+apps = ["/Applications/Ghostty"]
+EOT
+assert_succeed "mise bootstrap status --json"
