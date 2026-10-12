@@ -897,13 +897,13 @@ async fn tracked_command_wrappers(
         if config.config_files.contains_key(path) {
             continue;
         }
-        let requests = match cf.to_tool_request_set() {
-            Ok(set) => set,
-            Err(err) => {
-                debug!("skipping tools of {}: {err:#}", display_path(path));
-                continue;
-            }
-        };
+        // Tools only feed the built-in rust wrapper. When they fail to resolve
+        // here (e.g. templates that need that project's env), keep the file's
+        // explicit `[wrappers]`.
+        let requests = cf.to_tool_request_set().unwrap_or_else(|err| {
+            debug!("ignoring tools of {}: {err:#}", display_path(path));
+            Default::default()
+        });
         let one: ConfigMap = std::iter::once((path.clone(), cf.clone())).collect();
         match load_command_wrappers(&one, requests.tools.values().flatten()) {
             Ok(wrappers) => out.extend(wrappers),
@@ -927,10 +927,19 @@ async fn sync_command_wrapper_shims(
     // projects define, as it does for their tool shims (#14277). A shim left
     // behind for a project that is not active falls through to the next PATH
     // entry. Only wrapper names matter here, so the first definition wins.
-    for (name, wrapper) in tracked_command_wrappers(config).await? {
-        wrappers.entry(name).or_insert(wrapper);
-    }
     validate_wrapper_names(wrappers.keys())?;
+    for (name, wrapper) in tracked_command_wrappers(config).await? {
+        if wrappers.contains_key(&name) {
+            continue;
+        }
+        // Another project's bad name must not fail this project's reshim.
+        let candidate = wrappers.keys().chain(std::iter::once(&name));
+        if let Err(err) = validate_wrapper_names(candidate) {
+            debug!("skipping tracked command wrapper {name:?}: {err:#}");
+            continue;
+        }
+        wrappers.insert(name, wrapper);
+    }
     if wrappers.is_empty() {
         if cfg!(windows) {
             remove_shims_individually(&dirs::COMMAND_WRAPPERS)?;
