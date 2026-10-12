@@ -1,11 +1,11 @@
 use crate::tokens;
+use crate::yaml::{self, Value};
 use eyre::Result;
 use heck::ToKebabCase;
 use mise_settings::Settings;
 use reqwest::IntoUrl;
 use reqwest::header::HeaderMap;
 use serde::{Deserialize, Serialize};
-use serde_yaml::Value;
 use std::collections::HashMap;
 use std::fmt;
 use std::path::PathBuf;
@@ -548,10 +548,10 @@ fn warn_glab_expired_tokens(contents: &str) {
 
 /// Returns `(host, expiry_str)` pairs for every glab host whose OAuth2 token is expired.
 fn find_expired_glab_tokens(contents: &str) -> Vec<(String, String)> {
-    let Ok(yaml) = serde_yaml::from_str::<Value>(contents) else {
+    let Ok(doc) = yaml::from_str::<Value>(contents) else {
         return vec![];
     };
-    let Some(hosts) = yaml.get("hosts").and_then(Value::as_mapping) else {
+    let Some(hosts) = doc.get("hosts").and_then(Value::as_mapping) else {
         return vec![];
     };
 

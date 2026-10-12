@@ -15,6 +15,7 @@
 //! - Keys only the target has are never touched, and nothing is ever removed.
 //! - An empty target is an empty table.
 
+use crate::yaml;
 use crate::yaml_merge::{mapping_subset, merge_yaml};
 use eyre::{Result, eyre};
 use indexmap::IndexMap;
@@ -55,7 +56,7 @@ impl Format {
 enum Doc {
     Json(Value),
     Toml(toml::Table),
-    Yaml(serde_yaml::Mapping),
+    Yaml(yaml::Mapping),
 }
 
 /// Whether every key in `source` is already set to the same value in
@@ -112,7 +113,7 @@ pub fn missing(format: Format, target: &str, source: &str) -> Result<Option<Stri
             (Doc::Yaml(target), Doc::Yaml(source)) => {
                 let missing = yaml_missing(&source, &target);
                 (!missing.is_empty())
-                    .then(|| serde_yaml::to_string(&missing))
+                    .then(|| yaml::to_string(&missing))
                     .transpose()?
             }
             _ => unreachable!("both sides are parsed as the same format"),
@@ -168,17 +169,17 @@ fn toml_missing(source: &toml::Table, target: &toml::Table) -> toml::Table {
     out
 }
 
-fn yaml_missing(source: &serde_yaml::Mapping, target: &serde_yaml::Mapping) -> serde_yaml::Mapping {
-    let mut out = serde_yaml::Mapping::new();
+fn yaml_missing(source: &yaml::Mapping, target: &yaml::Mapping) -> yaml::Mapping {
+    let mut out = yaml::Mapping::new();
     for (key, sv) in source {
         match (sv, target.get(key)) {
             (_, None) => {
                 out.insert(key.clone(), sv.clone());
             }
-            (serde_yaml::Value::Mapping(s), Some(serde_yaml::Value::Mapping(t))) => {
+            (yaml::Value::Mapping(s), Some(yaml::Value::Mapping(t))) => {
                 let inner = yaml_missing(s, t);
                 if !inner.is_empty() {
-                    out.insert(key.clone(), serde_yaml::Value::Mapping(inner));
+                    out.insert(key.clone(), yaml::Value::Mapping(inner));
                 }
             }
             _ => {}
@@ -206,9 +207,9 @@ fn parse(format: Format, text: &str, what: &str) -> Result<Doc> {
         },
         Format::Toml if blank => Doc::Toml(toml::Table::new()),
         Format::Toml => Doc::Toml(toml::from_str(text).map_err(|e| fail(&e))?),
-        Format::Yaml if blank => Doc::Yaml(serde_yaml::Mapping::new()),
-        Format::Yaml => match serde_yaml::from_str(text).map_err(|e| fail(&e))? {
-            serde_yaml::Value::Mapping(map) => Doc::Yaml(map),
+        Format::Yaml if blank => Doc::Yaml(yaml::Mapping::new()),
+        Format::Yaml => match yaml::from_str(text).map_err(|e| fail(&e))? {
+            yaml::Value::Mapping(map) => Doc::Yaml(map),
             _ => return Err(not_a_table()),
         },
     })
@@ -265,24 +266,19 @@ fn toml_conflicts(a: &toml::Table, b: &toml::Table, prefix: &str, paths: &mut Ve
     }
 }
 
-fn yaml_conflicts(
-    a: &serde_yaml::Mapping,
-    b: &serde_yaml::Mapping,
-    prefix: &str,
-    paths: &mut Vec<String>,
-) {
+fn yaml_conflicts(a: &yaml::Mapping, b: &yaml::Mapping, prefix: &str, paths: &mut Vec<String>) {
     for (key, av) in a {
         let Some(bv) = b.get(key) else { continue };
         let name = match key {
-            serde_yaml::Value::String(name) => name.clone(),
-            other => serde_yaml::to_string(other)
+            yaml::Value::String(name) => name.clone(),
+            other => yaml::to_string(other)
                 .unwrap_or_default()
                 .trim()
                 .to_string(),
         };
         let path = child_path(prefix, &name);
         match (av, bv) {
-            (serde_yaml::Value::Mapping(av), serde_yaml::Value::Mapping(bv)) => {
+            (yaml::Value::Mapping(av), yaml::Value::Mapping(bv)) => {
                 yaml_conflicts(av, bv, &path, paths);
             }
             _ if av != bv => paths.push(path),

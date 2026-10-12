@@ -255,6 +255,8 @@ _.file = ".env"
 - The extension selects the format. `.json`, `.yaml` and `.toml` files are
   parsed as structured files whose top-level keys become variables. Any other
   name, including `.yml` and `.env`, is parsed as dotenv.
+- YAML values are read as written: `VERSION: 1.10` sets `1.10`, and
+  `ZIP: 02134` keeps its leading zero.
 - The path can be a glob pattern such as `.env.*`; every matching file is
   loaded.
 - A path that matches no file is skipped without an error, so `_.file` can

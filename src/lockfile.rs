@@ -19,6 +19,7 @@ use crate::toolset::{ToolRequest, ToolSource, ToolVersion, ToolVersionOptions, T
 use eyre::{Report, Result, bail, eyre};
 use indexmap::IndexSet;
 use itertools::Itertools;
+use mise_util::yaml;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::io::{ErrorKind, Write};
@@ -212,7 +213,7 @@ impl Eq for AubeLock {}
 
 impl AubeLock {
     pub(crate) fn from_yaml(contents: &str) -> Result<Self> {
-        let value: serde_yaml::Value = serde_yaml::from_str(contents)?;
+        let value: yaml::Value = yaml::from_str(contents)?;
         let toml::Value::Table(graph) = yaml_to_toml(value)? else {
             bail!("aube lockfile must contain a mapping");
         };
@@ -228,7 +229,7 @@ impl AubeLock {
             return Ok(self.graph_text.clone());
         }
         let value = toml_to_yaml(toml::Value::Table(self.graph.clone()));
-        Ok(serde_yaml::to_string(&value)?)
+        Ok(yaml::to_string(&value)?)
     }
 
     pub(crate) fn legacy_identity(&self) -> Result<String> {
@@ -286,20 +287,19 @@ fn hash_canonical_toml(hasher: &mut impl sha2::Digest, value: &toml::Value) {
     }
 }
 
-fn yaml_to_toml(value: serde_yaml::Value) -> Result<toml::Value> {
-    use serde_yaml::Value;
+fn yaml_to_toml(value: yaml::Value) -> Result<toml::Value> {
+    use yaml::Value;
     Ok(match value {
         Value::Bool(value) => toml::Value::Boolean(value),
         Value::Number(value) => {
             if let Some(value) = value.as_i64() {
                 toml::Value::Integer(value)
-            } else if let Some(value) = value.as_f64() {
+            } else {
+                let value = value.as_f64();
                 if !value.is_finite() {
                     bail!("non-finite numbers cannot be represented in mise.lock")
                 }
                 toml::Value::Float(value)
-            } else {
-                bail!("unsupported number in aube lockfile")
             }
         }
         Value::String(value) => toml::Value::String(value),
@@ -320,12 +320,11 @@ fn yaml_to_toml(value: serde_yaml::Value) -> Result<toml::Value> {
             toml::Value::Table(table)
         }
         Value::Null => bail!("null values cannot be represented in mise.lock"),
-        Value::Tagged(value) => yaml_to_toml(value.value)?,
     })
 }
 
-fn toml_to_yaml(value: toml::Value) -> serde_yaml::Value {
-    use serde_yaml::{Mapping, Number, Value};
+fn toml_to_yaml(value: toml::Value) -> yaml::Value {
+    use yaml::{Mapping, Number, Value};
     match value {
         toml::Value::String(value) => Value::String(value),
         toml::Value::Integer(value) => Value::Number(Number::from(value)),

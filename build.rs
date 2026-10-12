@@ -10,7 +10,6 @@ use std::{env, fs};
 use aqua_registry::encode_package_rkyv;
 use aqua_registry::types::{AquaPackage, AquaPackageType, RegistryPackageRow, RegistryYaml};
 use eyre::{Result, eyre};
-use serde_yaml::Value;
 
 #[path = "build/lockfile_rollout.rs"]
 mod lockfile_rollout;
@@ -641,7 +640,7 @@ fn phf_usize_map_code(entries: Vec<(String, String)>) -> String {
 fn load_aqua_registry() -> Result<RegistryYaml> {
     let registry_file = Path::new("vendor/aqua-registry/registry.yml");
     println!("cargo:rerun-if-changed={}", registry_file.display());
-    Ok(serde_yaml::from_str::<RegistryYaml>(&fs::read_to_string(
+    Ok(RegistryYaml::from_yaml(&fs::read_to_string(
         registry_file,
     )?)?)
 }
@@ -697,14 +696,20 @@ fn codegen_aqua_standard_registry(registry_yaml: &RegistryYaml) -> Result<()> {
     fs::write(aliases_dest_path, aqua_registry_aliases_code(&registries)?)?;
     fs::write(search_dest_path, aqua_registry_search_code(&registries))?;
 
-    let metadata = serde_yaml::from_str::<Value>(&fs::read_to_string(metadata_file)?)?;
-    let repository = yaml_string_field(&metadata, "repository").ok_or_else(|| {
+    #[derive(serde::Deserialize)]
+    struct AquaRegistryMetadata {
+        repository: Option<String>,
+        tag: Option<String>,
+    }
+    let metadata: AquaRegistryMetadata =
+        serde_saphyr::from_str(&fs::read_to_string(metadata_file)?)?;
+    let repository = metadata.repository.ok_or_else(|| {
         eyre!(
             "Aqua registry metadata file {} does not contain a repository",
             metadata_file.display()
         )
     })?;
-    let tag = yaml_string_field(&metadata, "tag").ok_or_else(|| {
+    let tag = metadata.tag.ok_or_else(|| {
         eyre!(
             "Aqua registry metadata file {} does not contain a tag",
             metadata_file.display()
@@ -960,10 +965,6 @@ fn aqua_canonical_package_id(package: &AquaPackage) -> Option<String> {
             }
         })
         .or_else(|| package.path.clone())
-}
-
-fn yaml_string_field(value: &Value, key: &str) -> Option<String> {
-    value.get(key)?.as_str().map(str::to_string)
 }
 
 /// Validate the declarative parts of a daemon preset: named ports, version

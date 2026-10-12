@@ -4701,7 +4701,7 @@ packages:
 
     #[test]
     fn test_resolved_package_without_tag_selects_codex_windows_archive() {
-        let pkg: AquaPackage = serde_yaml::from_str(
+        let pkg: AquaPackage = mise_util::yaml::from_str(
             r#"
 type: github_release
 repo_owner: openai
@@ -4739,7 +4739,7 @@ version_overrides:
 
     #[test]
     fn test_resolved_package_known_tag_preserves_override_prefix() {
-        let pkg: AquaPackage = serde_yaml::from_str(
+        let pkg: AquaPackage = mise_util::yaml::from_str(
             r#"
 version_constraint: "false"
 version_overrides:
@@ -4764,7 +4764,7 @@ version_overrides:
 
     #[test]
     fn test_lock_package_without_tag_rejects_ambiguous_override_prefixes() {
-        let pkg: AquaPackage = serde_yaml::from_str(
+        let pkg: AquaPackage = mise_util::yaml::from_str(
             r#"
 version_constraint: "false"
 version_overrides:
@@ -4785,7 +4785,7 @@ version_overrides:
 
     #[test]
     fn test_lock_package_prefixes_with_disjoint_constraints() {
-        let pkg: AquaPackage = serde_yaml::from_str(
+        let pkg: AquaPackage = mise_util::yaml::from_str(
             r#"
 version_constraint: "false"
 version_overrides:
@@ -4812,7 +4812,7 @@ version_overrides:
 
     #[test]
     fn test_lock_package_ignores_inactive_override_prefixes() {
-        let pkg: AquaPackage = serde_yaml::from_str(
+        let pkg: AquaPackage = mise_util::yaml::from_str(
             r#"
 asset: default.zip
 version_overrides:
@@ -6606,7 +6606,7 @@ version_overrides:
     }
 
     fn pkg_from_yaml(yaml: &str) -> AquaPackage {
-        let mut pkg: AquaPackage = serde_yaml::from_str(yaml).unwrap();
+        let mut pkg: AquaPackage = mise_util::yaml::from_str(yaml).unwrap();
         pkg.setup_version_filter().unwrap();
         pkg
     }

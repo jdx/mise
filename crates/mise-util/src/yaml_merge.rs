@@ -7,6 +7,7 @@
 //! key survive. [`merge_yaml`] does that on top of `yaml-edit`'s lossless
 //! syntax tree.
 
+use crate::yaml;
 use eyre::{Result, bail, eyre};
 use std::str::FromStr;
 use yaml_edit::{Mapping, YamlFile, YamlNode};
@@ -41,9 +42,9 @@ pub fn merge_yaml(target: &str, source: &str) -> Result<String> {
 /// are surgical, so this guards against a syntax-tree edit that corrupts the
 /// document instead of trusting it.
 fn verify(merged: &str, source: &str) -> Result<()> {
-    let parse = |text: &str| match serde_yaml::from_str::<serde_yaml::Value>(text) {
-        Ok(serde_yaml::Value::Mapping(map)) => Some(map),
-        Ok(serde_yaml::Value::Null) => Some(serde_yaml::Mapping::new()),
+    let parse = |text: &str| match yaml::from_str::<yaml::Value>(text) {
+        Ok(yaml::Value::Mapping(map)) => Some(map),
+        Ok(yaml::Value::Null) => Some(yaml::Mapping::new()),
         _ => None,
     };
     match (parse(source), parse(merged)) {
@@ -54,11 +55,9 @@ fn verify(merged: &str, source: &str) -> Result<()> {
 
 /// Whether every key of `source` is set to the same value in `target`, tables
 /// compared recursively.
-pub(crate) fn mapping_subset(source: &serde_yaml::Mapping, target: &serde_yaml::Mapping) -> bool {
+pub(crate) fn mapping_subset(source: &yaml::Mapping, target: &yaml::Mapping) -> bool {
     source.iter().all(|(key, sv)| match (sv, target.get(key)) {
-        (serde_yaml::Value::Mapping(s), Some(serde_yaml::Value::Mapping(t))) => {
-            mapping_subset(s, t)
-        }
+        (yaml::Value::Mapping(s), Some(yaml::Value::Mapping(t))) => mapping_subset(s, t),
         (sv, Some(tv)) => sv == tv,
         (_, None) => false,
     })
@@ -203,9 +202,13 @@ name: demo
         assert_eq!(merged, "top:\n    inner:\n        a: 1\n        b: 2\n");
         // a whole new sub-mapping still parses, with the right values
         let merged = merge_yaml("top:\n    a: 1\n", "top:\n  new:\n    deep: 2\n").unwrap();
-        let value: serde_yaml::Value = serde_yaml::from_str(&merged).unwrap();
-        assert_eq!(value["top"]["a"], serde_yaml::Value::from(1));
-        assert_eq!(value["top"]["new"]["deep"], serde_yaml::Value::from(2));
+        let value: yaml::Value = yaml::from_str(&merged).unwrap();
+        let top = value.get("top").unwrap();
+        assert_eq!(top.get("a"), Some(&yaml::Value::from(1)));
+        assert_eq!(
+            top.get("new").and_then(|v| v.get("deep")),
+            Some(&yaml::Value::from(2))
+        );
         assert!(merged.starts_with("top:\n    a: 1\n"));
     }
 
