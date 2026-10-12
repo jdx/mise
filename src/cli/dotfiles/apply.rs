@@ -111,14 +111,14 @@ impl DotfilesApply {
         &self,
         config: &Config,
         is_config: impl Fn(&Path) -> bool,
-    ) -> Result<Option<Vec<PathBuf>>> {
+    ) -> Result<Option<Vec<String>>> {
         let (mut files, mut edits) = self.requests(config)?;
         files.retain(|req| is_config(&req.target));
         edits.retain(|req| is_config(&req.path));
         let handled = files
             .iter()
-            .map(|req| req.target.clone())
-            .chain(edits.iter().map(|req| req.path.clone()))
+            .map(|req| format!("{req:?}"))
+            .chain(edits.iter().map(|req| format!("{req:?}")))
             .collect::<Vec<_>>();
         if handled.is_empty() {
             return Ok(Some(handled));
@@ -144,12 +144,12 @@ impl DotfilesApply {
     }
 
     /// The apply without an operation of its own, for a caller that already
-    /// opened one. `done` lists the targets an earlier pass over mise's own
+    /// opened one. `done` describes the entries an earlier pass over mise's own
     /// configuration handled (and, on a dry run, already previewed).
     pub(crate) async fn run_inner(
         self,
         config: Arc<Config>,
-        done: Option<&[PathBuf]>,
+        done: Option<&[String]>,
     ) -> Result<bool> {
         let secrets = system::secrets::resolve(&config, self.prompt_secrets)?;
         let after_config = done.is_some();
@@ -161,13 +161,15 @@ impl DotfilesApply {
         if self.dry_run
             && let Some(done) = done
         {
-            files.retain(|req| !done.contains(&req.target));
-            edits.retain(|req| !done.contains(&req.path));
+            // only entries the first pass already previewed unchanged; one the
+            // new config adds or alters still shows
+            files.retain(|req| !done.contains(&format!("{req:?}")));
+            edits.retain(|req| !done.contains(&format!("{req:?}")));
         }
         if files.is_empty() && edits.is_empty() && !self.prune {
             // nothing was configured at all, not just nothing left after the
             // config pass
-            if done.is_none_or(<[PathBuf]>::is_empty) {
+            if done.is_none_or(<[String]>::is_empty) {
                 super::warn_if_dotfiles_ignored(&config);
                 info!("no dotfiles configured in [dotfiles]");
             }
