@@ -138,19 +138,22 @@ fn writable(path: &Path) -> bool {
 /// The owner of an existing, unwritable prefix when it is a non-root user other
 /// than the current one. Root-owned prefixes are the normal "needs chown" case.
 fn foreign_owner(prefix: &Path) -> Option<String> {
-    if nix::unistd::geteuid().is_root() || writable(prefix) {
+    if writable(prefix) {
         return None;
     }
     let uid = std::os::unix::fs::MetadataExt::uid(&prefix.metadata().ok()?);
-    if uid == 0 {
-        return None;
-    }
+    let uid = foreign_uid(nix::unistd::geteuid().as_raw(), uid)?;
     Some(
         nix::unistd::User::from_uid(nix::unistd::Uid::from_raw(uid))
             .ok()
             .flatten()
             .map_or_else(|| format!("uid {uid}"), |u| u.name),
     )
+}
+
+/// The prefix owner's uid when it is neither root nor the current user.
+fn foreign_uid(euid: u32, owner: u32) -> Option<u32> {
+    (euid != 0 && owner != 0 && owner != euid).then_some(owner)
 }
 
 /// The invoking user when mise itself was run under sudo (root euid with
@@ -283,5 +286,13 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         assert_eq!(foreign_owner(dir.path()), None);
         assert_eq!(foreign_owner(&dir.path().join("missing")), None);
+    }
+
+    #[test]
+    fn foreign_uid_flags_only_other_non_root_owners() {
+        assert_eq!(foreign_uid(1000, 1001), Some(1001));
+        assert_eq!(foreign_uid(1000, 0), None);
+        assert_eq!(foreign_uid(1000, 1000), None);
+        assert_eq!(foreign_uid(0, 1001), None);
     }
 }
