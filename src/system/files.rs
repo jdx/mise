@@ -5295,7 +5295,7 @@ fn print_diff(config: &Config, req: &FileRequest, rendered: Option<&str>) -> Res
                 req.source.display_user(),
                 req.target.display_user()
             );
-            if req.mode == FileMode::Copy && req.target.is_dir() && !req.target.is_symlink() {
+            if req.mode == FileMode::Copy && (req.target.is_dir() || !req.target.exists()) {
                 print_dir_entry_diffs(config, req)?;
             }
         }
