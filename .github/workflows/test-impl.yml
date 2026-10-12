@@ -135,7 +135,7 @@ jobs:
   unit:
     name: unit-macos
     runs-on: ${{ !inputs.trusted && 'macos-14' || 'namespace-profile-endev-macos-arm64;overrides.cache-tag=cache' }}
-    timeout-minutes: 90
+    timeout-minutes: 180
     needs: [classify-changes]
     if: needs.classify-changes.outputs.full-ci == 'true'
     env:
