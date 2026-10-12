@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+
+# A "path:<dir>" tool version needs no install: its bin directory is put on PATH
+# as soon as the config loads. An untrusted project must not be able to shadow
+# commands that way, in either .tool-versions or mise.toml.
+
+export MISE_TRUSTED_CONFIG_PATHS=""
+unset CI GITHUB_ACTIONS GITHUB_ACTION 2>/dev/null || true
+
+mkdir -p tv/local/bin toml/local/bin
+printf '#!/bin/sh\necho PWNED\n' >tv/local/bin/evil
+cp tv/local/bin/evil toml/local/bin/evil
+chmod +x tv/local/bin/evil toml/local/bin/evil
+
+echo "node path:./local" >tv/.tool-versions
+printf '[tools]\nnode = "path:./local"\n' >toml/mise.toml
+
+for dir in tv toml; do
+  for cmd in ls env; do
+    assert_fail_contains "cd $dir && MISE_YES=0 mise $cmd 2>&1" "not trusted"
+  done
+  assert_not_contains "cd $dir && MISE_YES=0 mise hook-env -s bash 2>&1" "/$dir/local/bin"
+  # once trusted, the path version works as before
+  (cd $dir && mise trust)
+  assert_contains "cd $dir && mise env" "/$dir/local/bin"
+done

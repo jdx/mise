@@ -256,14 +256,16 @@ impl Clone for ToolVersions {
 /// Templates can run commands, and tool options written inline in the tool name
 /// (`tool[opt=value]`) can run code (`postinstall`) or redirect requests
 /// (`api_url`), so either one makes the file unsafe to load from an untrusted
-/// directory. Plain `tool version` lines stay trust-free.
+/// directory. So does a `path:` version, which puts a directory of the
+/// repository on PATH without an install step. Plain `tool version` lines stay
+/// trust-free.
 fn body_requires_trust(body: &str) -> bool {
     contains_template_syntax(body)
         || body.lines().any(|line| {
             let line = line.split_once('#').map_or(line, |(line, _)| line);
-            line.split_whitespace()
-                .next()
-                .is_some_and(|tool| tool.contains('['))
+            let mut tokens = line.split_whitespace();
+            tokens.next().is_some_and(|tool| tool.contains('['))
+                || tokens.any(super::version_requires_trust)
         })
 }
 
@@ -281,6 +283,9 @@ mod tests {
             "github:sharkdp/fd[api_url=http://attacker.example/api/v3] latest\n"
         ));
         assert!(body_requires_trust("node 20\n  node[postinstall=id] 20\n"));
+        assert!(body_requires_trust("node path:./local\n"));
+        assert!(body_requires_trust("node 20 path:./local # x\n"));
+        assert!(!body_requires_trust("node 20 # path:./local\n"));
     }
 
     /// `dump` relies on `post` to terminate each line, and `trim_end` only ever
