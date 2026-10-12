@@ -59,3 +59,21 @@ assert "mise ls -C proj/child"
 cd other || exit 1
 assert_not_contains "mise prune --dry-run 2>&1" "tiny@3.1.0"
 assert_contains "mise prune --dry-run 2>&1" "tiny@2.1.0"
+
+# a template can live in a sibling config under the project's .mise directory
+cd .. || exit 1
+mkdir -p proj2/.mise
+cat >proj2/.mise/config.toml <<'TOML'
+[task_templates.shared]
+tools = { tiny = "1.0.0" }
+TOML
+cat >proj2/mise.toml <<'TOML'
+[tasks.t]
+extends = "shared"
+run = "true"
+TOML
+assert "mise trust proj2/.mise/config.toml"
+assert "mise trust proj2/mise.toml"
+assert "mise ls -C proj2"
+cd other || exit 1
+assert_not_contains "mise prune --dry-run 2>&1" "tiny@1.0.0"

@@ -10022,24 +10022,36 @@ mod write_target_tests {
 /// Each task is resolved the way `mise run` resolves it, with `extends` templates merged in. A
 /// tool that fails to parse is skipped without hiding the others.
 pub(crate) fn task_tool_requests(
+    config: &Arc<Config>,
     tracked: &ConfigMap,
     cf: &Arc<dyn ConfigFile>,
 ) -> (Vec<crate::toolset::ToolRequest>, Vec<String>) {
-    // Templates come from this project: the tracked configs in its own directory and the
-    // directories above it, never from the directory prune happens to run in. The nearest
-    // config wins, so the farthest is inserted first and the file itself last.
-    let dir = cf.get_path().parent().map(Path::to_path_buf);
+    // Templates come from this project: the tracked configs under the same roots and the
+    // directories above it, plus the global configs, never from the directory prune happens to
+    // run in. The nearest config wins, so the farthest is inserted first and the file itself last.
+    let dir = config_file::config_root::config_root(cf.get_path());
+    let globals = config
+        .config_files
+        .values()
+        .filter(|other| is_global_config(other.get_path()));
     let mut project = tracked
         .values()
+        .chain(globals)
         .filter(|other| {
             other.get_path() != cf.get_path()
-                && match (dir.as_deref(), other.get_path().parent()) {
-                    (Some(dir), Some(other_dir)) => dir.starts_with(other_dir),
-                    _ => false,
-                }
+                && (is_global_config(other.get_path())
+                    || dir.starts_with(config_file::config_root::config_root(other.get_path())))
         })
         .collect::<Vec<_>>();
-    project.sort_by_key(|other| other.get_path().components().count());
+    project.sort_by_key(|other| {
+        (
+            !is_global_config(other.get_path()),
+            config_file::config_root::config_root(other.get_path())
+                .components()
+                .count(),
+        )
+    });
+    project.dedup_by_key(|other| other.get_path().to_path_buf());
     let mut definitions = TaskDefinitions::default();
     for other in project.into_iter().chain([cf]) {
         for (name, template) in other.task_templates() {

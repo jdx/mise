@@ -1063,7 +1063,8 @@ pub async fn get_versions_needed_by_tracked_configs_excluding_locks(
         let files = [(path.clone(), cf.clone())].into_iter().collect();
         crate::daemons::load(&files)?.add_tool_requests(&mut requests)?;
         // Tools scoped to a task are still referenced by the config.
-        let (task_requests, task_templated) = crate::config::task_tool_requests(&tracked, &cf);
+        let (task_requests, task_templated) =
+            crate::config::task_tool_requests(config, &tracked, &cf);
         for tvr in task_requests {
             requests.add_version(tvr, &cf.source());
         }
