@@ -1252,6 +1252,37 @@ fn is_named_in(names: &std::collections::BTreeSet<String>, ba: &BackendArg) -> b
     })
 }
 
+/// A `pipx:`/`pypi:` install made from a uv lock is named by a digest that includes
+/// the Python it was built with, and that Python comes from the directory the
+/// toolset is resolved in. A global tool therefore resolves to a different
+/// directory per project, so keep the installs of the same version built with
+/// any other Python as well.
+fn keep_uv_python_variants(tv: &ToolVersion, source: &Path, needed: &mut NeededVersions) {
+    if tv.uv_install_identity().is_none() {
+        return;
+    }
+    let prefix = format!("{}~uv~", tv.logical_pathname());
+    let Ok(backend) = tv.backend() else { return };
+    for v in backend.list_installed_versions() {
+        if v.starts_with(&prefix) {
+            needed
+                .entry((tv.ba().short.to_string(), v))
+                .or_default()
+                .insert(source.to_path_buf());
+        }
+    }
+    for (name, dir) in crate::install_layout::resolver::installs_of(tv.ba()) {
+        if name.starts_with(&prefix)
+            && let Some(dir) = crate::install_layout::resolver::dir_name_of(&dir)
+        {
+            needed
+                .entry((String::new(), dir))
+                .or_default()
+                .insert(source.to_path_buf());
+        }
+    }
+}
+
 fn collect_needed_versions(
     ts: &Toolset,
     offline: bool,
@@ -1263,6 +1294,7 @@ fn collect_needed_versions(
             .entry(needed_key(&tv))
             .or_default()
             .insert(source.to_path_buf());
+        keep_uv_python_variants(&tv, source, needed);
         // Offline can't resolve `sub-N:latest` to a concrete version
         // (no remote latest available). Conservatively protect every
         // installed version of this backend so we don't delete the
