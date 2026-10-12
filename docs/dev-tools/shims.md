@@ -268,14 +268,15 @@ script that uses `command -v` as its installed check therefore gets a false
 positive. `which` and `whence` behave the same way.
 
 Keep `command -v`, and ask mise only when it finds a shim. A shim is a symlink
-to the `mise` binary, wherever [`shims_dir`](/configuration/settings.html#shims_dir)
-or `system_shims_dir` puts it. `mise which` exits non-zero unless the tool
-resolves in the current directory:
+to the `mise` binary, so it is the same file as `mise`, wherever
+[`shims_dir`](/configuration/settings.html#shims_dir) or `system_shims_dir` puts
+it. `mise which` exits non-zero unless the tool resolves in the current
+directory:
 
 ```sh [have.sh]
 have() {
     p=$(command -v "$1") || return 1
-    if [ -L "$p" ] && [ "$(basename "$(readlink "$p")")" = mise ]; then
+    if [ "$p" -ef "$(command -v mise)" ]; then
         mise which "$1" >/dev/null 2>&1
     else
         return 0
@@ -286,8 +287,9 @@ have prettier || echo "prettier is not installed"
 ```
 
 Users without mise never take the `mise which` branch, so the same script works
-for a team where only some people use mise. This example assumes symlink shims,
-so it does not cover Windows. [Command wrappers](#command-wrappers) are also
+for a team where only some people use mise. The `-ef` test is not in POSIX but
+bash, zsh, dash, and BusyBox support it. This example assumes symlink shims, so
+it does not cover Windows. [Command wrappers](#command-wrappers) are also
 symlinks to `mise`, and `mise which` does not resolve their names, so `have`
 reports a wrapped command as missing even though running it works.
 
