@@ -3,15 +3,34 @@
 # a task-scoped tool. https://github.com/jdx/mise/issues/14325
 
 cat >mise.toml <<'TOML'
-[tasks.hello]
-run = "true"
+[task_templates.base]
 tools = { dummy = "1.0.0" }
+
+[tasks.templated]
+extends = "base"
+run = "true"
 TOML
 assert "mise trust"
-assert "mise install dummy@1.0.0 dummy@2.0.0"
+assert "mise install dummy@1.0.0 dummy@2.0.0 dummy@3.0.0"
 # track this config
 assert "mise ls"
 
 cd "$(mktemp -d)" || exit 1
 assert_not_contains "mise prune --dry-run 2>&1" "dummy@1.0.0"
 assert_contains "mise prune --dry-run 2>&1" "dummy@2.0.0"
+
+# a templated version cannot be rendered outside the project, so every
+# installation of the tool is kept
+cd - >/dev/null || exit 1
+cat >>mise.toml <<'TOML'
+
+[vars]
+ver = "3.0.0"
+
+[tasks.rendered]
+run = "true"
+tools = { dummy = "{{vars.ver}}" }
+TOML
+assert "mise ls"
+cd "$(mktemp -d)" || exit 1
+assert_not_contains "mise prune --dry-run 2>&1" "dummy@"

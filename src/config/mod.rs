@@ -10014,3 +10014,52 @@ mod write_target_tests {
         assert!(!config_set_contains(&discovered, &ignored));
     }
 }
+
+/// The tools that the inline tasks of one config file scope to themselves: concrete requests,
+/// plus the tools whose version is a template. A template can only be rendered in the context
+/// of the project, which a prune run from elsewhere does not have.
+///
+/// Each task is resolved the way `mise run` resolves it, with `extends` templates merged in. A
+/// tool that fails to parse is skipped without hiding the others.
+pub(crate) fn task_tool_requests(
+    config: &Arc<Config>,
+    cf: &Arc<dyn ConfigFile>,
+) -> (Vec<crate::toolset::ToolRequest>, Vec<String>) {
+    let mut definitions = collect_task_definitions(&config.config_files, None);
+    for (name, template) in cf.task_templates() {
+        definitions.templates.insert(
+            name,
+            SourcedTaskTemplate {
+                template,
+                source: cf.get_path().to_path_buf(),
+            },
+        );
+    }
+    let mut requests = vec![];
+    let mut templated = vec![];
+    for task in cf.tasks() {
+        let mut task = task.clone();
+        if let Err(err) = apply_named_template(&mut task, &definitions) {
+            warn!(
+                "error loading task {} in {}: {err:#}",
+                task.name,
+                display_path(cf.get_path())
+            );
+        }
+        for (tool, value) in &task.tools {
+            if value.has_template() {
+                templated.push(tool.clone());
+                continue;
+            }
+            match value.to_tool_arg(tool) {
+                Ok(arg) => requests.extend(arg.tvr),
+                Err(err) => warn!(
+                    "error loading tool {tool} of task {} in {}: {err:#}",
+                    task.name,
+                    display_path(cf.get_path())
+                ),
+            }
+        }
+    }
+    (requests, templated)
+}
