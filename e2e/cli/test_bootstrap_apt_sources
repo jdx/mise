@@ -7,6 +7,12 @@ if [[ "$(uname)" != "Linux" ]] || ! command -v apt-get >/dev/null; then
   exit 0
 fi
 
+# inline signing keys need apt 2.4 or newer; older apt is rejected by design
+apt_version="$(apt-get --version | awk 'NR==1 {print $2}')"
+if [[ "$(printf '%s\n2.4\n' "$apt_version" | sort -V | head -n1)" != "2.4" ]]; then
+  exit 0
+fi
+
 cat <<EOF >mise.toml
 [bootstrap.apt.sources]
 git-core = { ppa = "ppa:git-core/ppa" }
