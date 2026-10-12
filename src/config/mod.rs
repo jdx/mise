@@ -10047,12 +10047,17 @@ pub(crate) fn task_tool_requests(
                 || dir.starts_with(config_file::config_root::config_root(other.get_path()))
         })
     {
-        let key = (
-            !is_global_config(other.get_path()),
-            config_file::config_root::config_root(other.get_path())
-                .components()
-                .count(),
-        );
+        // Global configs form one layer: their depth says nothing about their precedence.
+        let key = if is_global_config(other.get_path()) {
+            (false, 0)
+        } else {
+            (
+                true,
+                config_file::config_root::config_root(other.get_path())
+                    .components()
+                    .count(),
+            )
+        };
         layers.entry(key).or_default().push(other);
     }
     let mut requests = vec![];

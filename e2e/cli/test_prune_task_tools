@@ -121,3 +121,25 @@ assert "mise ls -C proj4"
 cd other || exit 1
 assert_not_contains "mise prune --dry-run 2>&1" "tiny@3.1.0"
 assert_not_contains "mise prune --dry-run 2>&1" "tiny@2.1.0"
+
+# global configs in conf.d are as global as config.toml, whatever their depth
+cd .. || exit 1
+mkdir -p proj5 "$MISE_CONFIG_DIR/conf.d/foo"
+cat >"$MISE_CONFIG_DIR/conf.d/foo/mise.toml" <<'TOML'
+[task_templates.deep]
+tools = { tiny = "1.0.0" }
+TOML
+cat >>"$MISE_CONFIG_DIR/config.toml" <<'TOML'
+
+[task_templates.deep]
+tools = { tiny = "3.1.0" }
+TOML
+cat >proj5/mise.toml <<'TOML'
+[tasks.t]
+extends = "deep"
+run = "true"
+TOML
+assert "mise trust proj5/mise.toml"
+assert "mise ls -C proj5"
+cd other || exit 1
+assert_not_contains "mise prune --dry-run 2>&1" "tiny@3.1.0"
