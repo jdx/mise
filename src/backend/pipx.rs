@@ -812,6 +812,8 @@ impl PIPXBackend {
                 "application/vnd.pypi.simple.v1+json, application/vnd.pypi.simple.v1+html;q=0.2, text/html;q=0.01",
             ),
         );
+        let url = reqwest::Url::parse(&url)?;
+        let headers = crate::http::with_host_auth(&url, &headers)?;
         let resp = HTTP_FETCH.get_async_with_headers(url, &headers).await?;
         let content_type = resp
             .headers()
