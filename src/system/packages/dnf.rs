@@ -65,24 +65,43 @@ fn ostree_uninstall_args(pkgs: &[PackageRequest]) -> Vec<String> {
     args
 }
 
-/// The packages requested for the next deployment, from `rpm-ostree status
-/// --json`. The first deployment is the staged one when a reboot is pending,
-/// and the booted one otherwise.
-fn parse_requested_packages(json: &str) -> Vec<String> {
-    let Ok(status) = serde_json::from_str::<serde_json::Value>(json) else {
-        return vec![];
-    };
-    status["deployments"][0]["requested-packages"]
-        .as_array()
-        .map(|pkgs| {
-            pkgs.iter()
-                .filter_map(|p| p.as_str().map(str::to_string))
-                .collect()
-        })
-        .unwrap_or_default()
+/// Layered package requests from `rpm-ostree status --json`.
+#[derive(Debug, Default, PartialEq, Eq)]
+struct OstreeRequests {
+    /// requested by the booted deployment
+    booted: Vec<String>,
+    /// requested by the deployment the next boot uses: the staged one when a
+    /// reboot is pending, otherwise the booted one
+    next: Vec<String>,
 }
 
-async fn requested_packages() -> Vec<String> {
+fn parse_requests(json: &str) -> OstreeRequests {
+    let Ok(status) = serde_json::from_str::<serde_json::Value>(json) else {
+        return OstreeRequests::default();
+    };
+    let Some(deployments) = status["deployments"].as_array() else {
+        return OstreeRequests::default();
+    };
+    let requested = |d: &serde_json::Value| -> Vec<String> {
+        d["requested-packages"]
+            .as_array()
+            .map(|pkgs| {
+                pkgs.iter()
+                    .filter_map(|p| p.as_str().map(str::to_string))
+                    .collect()
+            })
+            .unwrap_or_default()
+    };
+    let flag = |d: &serde_json::Value, key: &str| d[key].as_bool().unwrap_or(false);
+    let booted = deployments.iter().find(|d| flag(d, "booted"));
+    let next = deployments.iter().find(|d| flag(d, "staged")).or(booted);
+    OstreeRequests {
+        booted: booted.map(requested).unwrap_or_default(),
+        next: next.map(requested).unwrap_or_default(),
+    }
+}
+
+async fn ostree_requests() -> OstreeRequests {
     let output = tokio::process::Command::new("rpm-ostree")
         .args(["status", "--json"])
         .stdin(Stdio::null())
@@ -91,21 +110,33 @@ async fn requested_packages() -> Vec<String> {
         .output()
         .await;
     match output {
-        Ok(o) if o.status.success() => {
-            parse_requested_packages(&String::from_utf8_lossy(&o.stdout))
-        }
-        _ => vec![],
+        Ok(o) if o.status.success() => parse_requests(&String::from_utf8_lossy(&o.stdout)),
+        _ => OstreeRequests::default(),
     }
 }
 
-/// Packages that are not in the booted image but are already requested for the
-/// next deployment count as installed, so every run does not request them again.
-fn mark_pending(statuses: &mut [PackageStatus], requested: &[String]) {
+/// `rpm -q` sees only the booted image, so fold in what the next deployment
+/// will hold:
+/// - a package requested for the next deployment but not yet booted counts as
+///   installed (`pending reboot`), so later runs do not request it again; a
+///   pinned request is left alone, since the pin cannot be checked or honored
+/// - a package layered in the booted deployment whose request was dropped is
+///   pending removal and counts as missing, so declaring it present requests
+///   it again and declaring it absent does not uninstall it twice
+fn apply_requests(statuses: &mut [PackageStatus], requests: &OstreeRequests) {
     for status in statuses {
-        if status.state == PackageState::Missing && requested.contains(&status.request.name) {
-            status.state = PackageState::Installed {
-                version: PENDING_REBOOT.to_string(),
-            };
+        let name = &status.request.name;
+        let wanted_next = requests.next.contains(name);
+        match &status.state {
+            PackageState::Missing if wanted_next && status.request.version.is_none() => {
+                status.state = PackageState::Installed {
+                    version: PENDING_REBOOT.to_string(),
+                };
+            }
+            PackageState::Installed { .. } if requests.booted.contains(name) && !wanted_next => {
+                status.state = PackageState::Missing;
+            }
+            _ => {}
         }
     }
 }
@@ -186,7 +217,10 @@ impl SystemPackageManager for DnfManager {
     }
 
     fn is_available(&self) -> bool {
-        cfg!(target_os = "linux") && crate::file::which("dnf").is_some()
+        cfg!(target_os = "linux")
+            && (crate::file::which("dnf").is_some()
+                // layering needs rpm-ostree, not dnf, which an atomic host may lack
+                || (layering_on(ostree_booted()) && crate::file::which("rpm-ostree").is_some()))
     }
 
     fn unavailable_reason(&self) -> String {
@@ -230,15 +264,16 @@ impl SystemPackageManager for DnfManager {
         }
         let stdout = String::from_utf8_lossy(&output.stdout);
         let mut statuses = parse_rpm_query(&stdout, pkgs);
-        if ostree_booted() && statuses.iter().any(|s| s.state == PackageState::Missing) {
-            mark_pending(&mut statuses, &requested_packages().await);
+        if ostree_booted() {
+            apply_requests(&mut statuses, &ostree_requests().await);
         }
         Ok(statuses)
     }
 
     fn supports_version_pins(&self) -> bool {
-        // rpm-ostree layering cannot pin: it would fight base-image updates
-        !ostree_booted()
+        // rpm-ostree layering cannot pin: it would fight base-image updates.
+        // Without layering, pins must reach `install` so it can explain the error.
+        !layering_on(ostree_booted())
     }
 
     fn supports_remove(&self) -> bool {
@@ -365,13 +400,39 @@ mod tests {
     }
 
     #[test]
-    fn test_pending_requested_packages_count_as_installed() {
-        let json =
-            r#"{"deployments":[{"requested-packages":["gimp"]},{"requested-packages":["old"]}]}"#;
-        let requested = parse_requested_packages(json);
-        assert_eq!(requested, vec!["gimp"]);
-        let mut statuses = parse_rpm_query("", &[req("gimp", None), req("htop", None)]);
-        mark_pending(&mut statuses, &requested);
+    fn test_requests_follow_the_staged_deployment() {
+        let json = r#"{"deployments":[
+            {"staged":true,"requested-packages":["gimp"]},
+            {"booted":true,"requested-packages":["old"]}]}"#;
+        assert_eq!(
+            parse_requests(json),
+            OstreeRequests {
+                booted: vec!["old".to_string()],
+                next: vec!["gimp".to_string()],
+            }
+        );
+        let json = r#"{"deployments":[{"booted":true,"requested-packages":["old"]}]}"#;
+        assert_eq!(parse_requests(json).next, vec!["old"]);
+        assert_eq!(parse_requests("not json"), OstreeRequests::default());
+    }
+
+    #[test]
+    fn test_pending_installs_and_removals() {
+        let requests = OstreeRequests {
+            booted: vec!["old".to_string()],
+            next: vec!["gimp".to_string(), "pinned".to_string()],
+        };
+        let mut statuses = parse_rpm_query(
+            "old\t1-1\nbase\t1-1\n",
+            &[
+                req("gimp", None),
+                req("htop", None),
+                req("old", None),
+                req("base", None),
+                req("pinned", Some("1.0")),
+            ],
+        );
+        apply_requests(&mut statuses, &requests);
         assert_eq!(
             statuses[0].state,
             PackageState::Installed {
@@ -379,7 +440,12 @@ mod tests {
             }
         );
         assert_eq!(statuses[1].state, PackageState::Missing);
-        assert!(parse_requested_packages("not json").is_empty());
+        // layered in the booted deployment, request dropped: pending removal
+        assert_eq!(statuses[2].state, PackageState::Missing);
+        // part of the base image: never touched
+        assert!(statuses[3].state.is_installed());
+        // a pinned request is not satisfied by a pending unpinned one
+        assert_eq!(statuses[4].state, PackageState::Missing);
     }
 
     #[test]
