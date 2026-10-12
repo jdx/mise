@@ -291,19 +291,26 @@ impl SystemPackageManager for DnfManager {
             .iter()
             .cloned()
             .partition(|p| layered.contains(&p.name));
-        for p in &base {
-            warn!("dnf: not removing {p}: it is part of the base image, not a layered package");
+        if !pkgs.is_empty() {
+            let args = ostree_uninstall_args(&pkgs);
+            if opts.dry_run {
+                miseprintln!("{}", sudo::argv("rpm-ostree", &args).join(" "));
+            } else {
+                sudo::run("rpm-ostree", &args, &[])?;
+                miseprintln!("dnf: reboot to finish removing the layered packages");
+            }
         }
-        if pkgs.is_empty() {
-            return Ok(());
+        // the layered packages above are already queued; report the rest
+        // rather than let the driver say they were removed
+        if !base.is_empty() {
+            bail!(
+                "cannot remove {}: part of the base image, not layered packages",
+                base.iter()
+                    .map(ToString::to_string)
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            );
         }
-        let args = ostree_uninstall_args(&pkgs);
-        if opts.dry_run {
-            miseprintln!("{}", sudo::argv("rpm-ostree", &args).join(" "));
-            return Ok(());
-        }
-        sudo::run("rpm-ostree", &args, &[])?;
-        miseprintln!("dnf: reboot to finish removing the layered packages");
         Ok(())
     }
 
