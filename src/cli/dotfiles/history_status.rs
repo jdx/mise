@@ -407,7 +407,7 @@ fn print_conflicts(sync: &SyncReport, next: &mut Vec<String>) -> Result<()> {
     next.insert(
         0,
         format!(
-            "Resolve {} conflict(s) with `mise dot pull --take-remote <path>` or `--keep-local <path>` (`mise dot conflicts <path>` compares the sides)",
+            "Resolve {} conflict(s) as described under Conflicts",
             sync.conflicts.len()
         ),
     );
