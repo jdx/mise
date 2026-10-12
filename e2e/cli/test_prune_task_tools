@@ -34,3 +34,28 @@ TOML
 assert "mise ls"
 cd "$(mktemp -d)" || exit 1
 assert_not_contains "mise prune --dry-run 2>&1" "dummy@"
+
+# a task extends a template from a parent config of its project, and a
+# same-named template in the directory prune runs from must not stand in for it
+mkdir -p proj/child other
+cat >proj/mise.toml <<'TOML'
+[task_templates.shared]
+tools = { tiny = "3.1.0" }
+TOML
+cat >proj/child/mise.toml <<'TOML'
+[tasks.t]
+extends = "shared"
+run = "true"
+TOML
+cat >other/mise.toml <<'TOML'
+[task_templates.shared]
+tools = { tiny = "2.1.0" }
+TOML
+for f in proj/mise.toml proj/child/mise.toml other/mise.toml; do
+  assert "mise trust $f"
+done
+assert "mise install tiny@3.1.0 tiny@2.1.0 tiny@1.0.0"
+assert "mise ls -C proj/child"
+cd other || exit 1
+assert_not_contains "mise prune --dry-run 2>&1" "tiny@3.1.0"
+assert_contains "mise prune --dry-run 2>&1" "tiny@2.1.0"

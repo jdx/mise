@@ -960,7 +960,8 @@ pub async fn get_versions_needed_by_tracked_configs_excluding_locks(
     // it just upgraded so stale locks there do not keep the old version alive.
     // Prune also passes offline=true: it only protects installed versions, so
     // remote resolution can never affect the outcome and just adds latency.
-    for (path, cf) in config.get_tracked_config_files().await? {
+    let tracked = config.get_tracked_config_files().await?;
+    for (path, cf) in tracked.clone() {
         let use_locked_version = use_locked_version && !exclude_locked_config_paths.contains(&path);
         let opts = ResolveOptions {
             use_locked_version,
@@ -1062,7 +1063,7 @@ pub async fn get_versions_needed_by_tracked_configs_excluding_locks(
         let files = [(path.clone(), cf.clone())].into_iter().collect();
         crate::daemons::load(&files)?.add_tool_requests(&mut requests)?;
         // Tools scoped to a task are still referenced by the config.
-        let (task_requests, task_templated) = crate::config::task_tool_requests(config, &cf);
+        let (task_requests, task_templated) = crate::config::task_tool_requests(&tracked, &cf);
         for tvr in task_requests {
             requests.add_version(tvr, &cf.source());
         }

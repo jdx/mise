@@ -10022,18 +10022,35 @@ mod write_target_tests {
 /// Each task is resolved the way `mise run` resolves it, with `extends` templates merged in. A
 /// tool that fails to parse is skipped without hiding the others.
 pub(crate) fn task_tool_requests(
-    config: &Arc<Config>,
+    tracked: &ConfigMap,
     cf: &Arc<dyn ConfigFile>,
 ) -> (Vec<crate::toolset::ToolRequest>, Vec<String>) {
-    let mut definitions = collect_task_definitions(&config.config_files, None);
-    for (name, template) in cf.task_templates() {
-        definitions.templates.insert(
-            name,
-            SourcedTaskTemplate {
-                template,
-                source: cf.get_path().to_path_buf(),
-            },
-        );
+    // Templates come from this project: the tracked configs in its own directory and the
+    // directories above it, never from the directory prune happens to run in. The nearest
+    // config wins, so the farthest is inserted first and the file itself last.
+    let dir = cf.get_path().parent().map(Path::to_path_buf);
+    let mut project = tracked
+        .values()
+        .filter(|other| {
+            other.get_path() != cf.get_path()
+                && match (dir.as_deref(), other.get_path().parent()) {
+                    (Some(dir), Some(other_dir)) => dir.starts_with(other_dir),
+                    _ => false,
+                }
+        })
+        .collect::<Vec<_>>();
+    project.sort_by_key(|other| other.get_path().components().count());
+    let mut definitions = TaskDefinitions::default();
+    for other in project.into_iter().chain([cf]) {
+        for (name, template) in other.task_templates() {
+            definitions.templates.insert(
+                name,
+                SourcedTaskTemplate {
+                    template,
+                    source: other.get_path().to_path_buf(),
+                },
+            );
+        }
     }
     let mut requests = vec![];
     let mut templated = vec![];
