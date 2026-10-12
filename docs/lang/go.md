@@ -98,8 +98,8 @@ add a `toolchain` line instead, or set
 
 When a workspace is active, mise uses its `go.work` instead of the `go.mod`
 files beneath it, including when you run mise from a module subdirectory. If
-the workspace names no toolchain, neither file supplies a version. Use
-`toolchain goX.Y.Z` or `go X.Y.Z` with a full release version; mise does not
+`go.work` has neither a `toolchain goX.Y.Z` line nor, without a `toolchain`
+line, an exact `go X.Y.Z` line, neither file supplies a version. mise does not
 read `toolchain default`, partial versions or release candidates.
 
 The `GOWORK` environment variable controls which workspace mise uses:
