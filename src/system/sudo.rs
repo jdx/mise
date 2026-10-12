@@ -154,18 +154,20 @@ pub(crate) fn run(program: &str, args: &[String], envs: &[(String, String)]) -> 
     manual.extend(args.iter().cloned());
     let manual_cmd = manual.join(" ");
     ensure_elevation_available(&manual_cmd)?;
-    let _progress_pause = pause_progress_for_child();
-    info!("$ {}", argv.join(" "));
-    let mut cmd = CmdLineRunner::new(&argv[0]);
-    for arg in &argv[1..] {
-        cmd = cmd.arg(arg);
-    }
-    for (k, v) in envs {
-        cmd = cmd.env(k, v);
-    }
-    // inherited stdio: sudo password prompts and apt progress go straight to
-    // the user's terminal
-    cmd.raw(true).execute()
+    attempt(&manual_cmd, || {
+        let _progress_pause = pause_progress_for_child();
+        info!("$ {}", argv.join(" "));
+        let mut cmd = CmdLineRunner::new(&argv[0]);
+        for arg in &argv[1..] {
+            cmd = cmd.arg(arg);
+        }
+        for (k, v) in envs {
+            cmd = cmd.env(k, v);
+        }
+        // inherited stdio: sudo password prompts and apt progress go straight to
+        // the user's terminal
+        cmd.raw(true).execute()
+    })
 }
 
 /// Run `program args...` elevated, with the child's working directory bound to
@@ -198,29 +200,31 @@ pub(crate) fn run_in_dir<Fd: std::os::fd::AsFd>(
         .collect::<Vec<_>>()
         .join(" ");
     ensure_elevation_available(&manual_cmd)?;
-    let _progress_pause = pause_progress_for_child();
-    info!("$ {}", argv.join(" "));
-    let raw = dir.as_fd().as_raw_fd();
-    let mut cmd = Command::new(&argv[0]);
-    cmd.args(&argv[1..]);
-    // SAFETY: `fchdir` is async-signal-safe and only alters the child's working
-    // directory. `raw` stays open in the parent across the spawn, and CLOEXEC
-    // (if set) only takes effect at exec, after pre_exec has run.
-    unsafe {
-        cmd.pre_exec(move || {
-            if nix::libc::fchdir(raw) == -1 {
-                return Err(std::io::Error::last_os_error());
-            }
-            Ok(())
-        });
-    }
-    let status = cmd
-        .status()
-        .wrap_err_with(|| format!("failed to run {}", argv.join(" ")))?;
-    if !status.success() {
-        bail!("{} failed", argv.join(" "));
-    }
-    Ok(())
+    attempt(&manual_cmd, || {
+        let _progress_pause = pause_progress_for_child();
+        info!("$ {}", argv.join(" "));
+        let raw = dir.as_fd().as_raw_fd();
+        let mut cmd = Command::new(&argv[0]);
+        cmd.args(&argv[1..]);
+        // SAFETY: `fchdir` is async-signal-safe and only alters the child's working
+        // directory. `raw` stays open in the parent across the spawn, and CLOEXEC
+        // (if set) only takes effect at exec, after pre_exec has run.
+        unsafe {
+            cmd.pre_exec(move || {
+                if nix::libc::fchdir(raw) == -1 {
+                    return Err(std::io::Error::last_os_error());
+                }
+                Ok(())
+            });
+        }
+        let status = cmd
+            .status()
+            .wrap_err_with(|| format!("failed to run {}", argv.join(" ")))?;
+        if !status.success() {
+            bail!("{} failed", argv.join(" "));
+        }
+        Ok(())
+    })
 }
 
 /// Run an elevated command and capture its output.
@@ -281,28 +285,30 @@ pub(crate) fn run_with_reader(
         .collect::<Vec<_>>()
         .join(" ");
     ensure_elevation_available(&manual_cmd)?;
-    let _progress_pause = pause_progress_for_child();
-    info!("$ {}", argv.join(" "));
-    let mut child = Command::new(&argv[0])
-        .args(&argv[1..])
-        .stdin(Stdio::piped())
-        .stdout(Stdio::inherit())
-        .stderr(Stdio::inherit())
-        .spawn()?;
-    let mut stdin = child.stdin.take().expect("piped stdin is available");
-    // The helper may exit (and close its stdin) before the payload is fully
-    // written; reap it and report its status ahead of the resulting copy error.
-    let copied = std::io::copy(&mut input, &mut stdin);
-    drop(stdin);
-    let status = child.wait()?;
-    if !status.success() {
-        bail!(
-            "elevated helper `{program} {}` failed with {status}",
-            args.join(" ")
-        );
-    }
-    copied?;
-    Ok(())
+    attempt(&manual_cmd, || {
+        let _progress_pause = pause_progress_for_child();
+        info!("$ {}", argv.join(" "));
+        let mut child = Command::new(&argv[0])
+            .args(&argv[1..])
+            .stdin(Stdio::piped())
+            .stdout(Stdio::inherit())
+            .stderr(Stdio::inherit())
+            .spawn()?;
+        let mut stdin = child.stdin.take().expect("piped stdin is available");
+        // The helper may exit (and close its stdin) before the payload is fully
+        // written; reap it and report its status ahead of the resulting copy error.
+        let copied = std::io::copy(&mut input, &mut stdin);
+        drop(stdin);
+        let status = child.wait()?;
+        if !status.success() {
+            bail!(
+                "elevated helper `{program} {}` failed with {status}",
+                args.join(" ")
+            );
+        }
+        copied?;
+        Ok(())
+    })
 }
 
 /// Run one elevated helper with a private stdin payload and capture stdout.
@@ -319,24 +325,42 @@ pub(crate) fn run_with_input_output(
         .collect::<Vec<_>>()
         .join(" ");
     ensure_elevation_available(&manual_cmd)?;
-    let _progress_pause = pause_progress_for_child();
-    info!("$ {}", argv.join(" "));
-    let mut child = Command::new(&argv[0])
-        .args(&argv[1..])
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::inherit())
-        .spawn()?;
-    child
-        .stdin
-        .take()
-        .expect("piped stdin is available")
-        .write_all(input)?;
-    let output = child.wait_with_output()?;
-    if !output.status.success() {
-        bail!("elevated bootstrap helper failed with {}", output.status);
+    attempt(&manual_cmd, || {
+        let _progress_pause = pause_progress_for_child();
+        info!("$ {}", argv.join(" "));
+        let mut child = Command::new(&argv[0])
+            .args(&argv[1..])
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::inherit())
+            .spawn()?;
+        child
+            .stdin
+            .take()
+            .expect("piped stdin is available")
+            .write_all(input)?;
+        let output = child.wait_with_output()?;
+        if !output.status.success() {
+            bail!("elevated bootstrap helper failed with {}", output.status);
+        }
+        Ok(output.stdout)
+    })
+}
+
+fn attempt<T>(manual_cmd: &str, f: impl FnOnce() -> Result<T>) -> Result<T> {
+    f().map_err(|err| with_manual_hint(err, manual_cmd))
+}
+
+/// doas and run0 get a no-prompt flag on the real command when mise has no TTY,
+/// so a password requirement surfaces as the command failing. Say how to retry.
+fn with_manual_hint(err: eyre::Report, manual_cmd: &str) -> eyre::Report {
+    let elevator = elevator();
+    if is_root() || console::user_attended_stderr() || noninteractive_flag(&elevator).is_none() {
+        return err;
     }
-    Ok(output.stdout)
+    err.wrap_err(format!(
+        "if {elevator} needs a password, run manually:\n  {manual_cmd}"
+    ))
 }
 
 /// Verify that a subprocess which performs its own sudo elevation can do so
