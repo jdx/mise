@@ -5434,6 +5434,10 @@ fn print_dir_entry_diffs(config: &Config, req: &FileRequest) -> Result<()> {
                 std::io::ErrorKind::NotFound => {
                     miseprintln!("  missing: {}", target.display_user())
                 }
+                std::io::ErrorKind::NotADirectory => miseprintln!(
+                    "  file type differs: a parent of {} is a file",
+                    target.display_user()
+                ),
                 std::io::ErrorKind::PermissionDenied => {
                     miseprintln!("  current: {} is not accessible", target.display_user())
                 }

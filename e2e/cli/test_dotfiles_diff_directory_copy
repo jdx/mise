@@ -52,3 +52,8 @@ if [ "$(id -u)" != 0 ]; then
 	assert_not_contains "mise dot diff" "missing: ~/.config/app/a.conf"
 	chmod 755 "$HOME/.config/app"
 fi
+
+# a file where a source subdirectory belongs is reported, not a failure
+rm -rf "$HOME/.config/app"
+echo "blocker" >"$HOME/.config/app"
+assert_contains "mise dot diff" "a parent of ~/.config/app/a.conf is a file"
