@@ -146,7 +146,10 @@ fn invoked_from_wrapper_dir(bin_name: &str) -> bool {
     }
     env::PATH
         .iter()
-        .find(|dir| dir.join(bin_name).is_file())
+        .find(|dir| {
+            let bin = dir.join(bin_name);
+            bin.is_file() && file::is_executable(&bin)
+        })
         .is_some_and(|dir| file::is_command_wrapper_dir(dir))
 }
 
