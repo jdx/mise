@@ -4968,23 +4968,33 @@ pub(crate) async fn run_dotfiles_apply(cmd: DotfilesApply) -> Result<()> {
         // rule it adds applies in this run instead of the next one. A dry
         // run previews that write, then plans the rest against the sources
         // it would write.
-        let Some(done) = cmd.run_config_entries(&config, |path| is_config_target(&config, path))?
+        // resolved once, before either pass writes, so the first pass cannot
+        // change which commands run
+        let reload = system::history::config::reload_commands()?;
+        let Some(done) =
+            cmd.run_config_entries(&config, &reload, |path| is_config_target(&config, path))?
         else {
             return Ok(());
         };
+        let mut first_pass_files = vec![];
         let apply_config = if dry_run {
             let (files, edits) = cmd.requests(&config)?;
+            first_pass_files = files.clone();
             let config_files = config_files_after_dotfiles_dry_run(&config, &files, &edits)?;
             config.with_bootstrap_dry_run_config_files(config_files)?
         } else {
             Config::reset().await?
         };
         let (files, edits) = cmd.requests_after_config(&apply_config)?;
-        if !cmd.run_inner(apply_config, Some(&done)).await? {
+        if !cmd.run_inner(apply_config, &reload, Some(&done)).await? {
             return Ok(());
         }
         let hooks = if dry_run {
-            let config_files = config_files_after_dotfiles_dry_run(&config, &files, &edits)?;
+            // the files the first pass would write count too, even when the
+            // new config no longer lists them
+            first_pass_files.extend(files);
+            let config_files =
+                config_files_after_dotfiles_dry_run(&config, &first_pass_files, &edits)?;
             config = config.with_bootstrap_dry_run_config_files(config_files)?;
             system::hooks_from_config(&config)
         } else {

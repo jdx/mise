@@ -2,6 +2,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use eyre::Result;
+use indexmap::IndexMap;
 
 use crate::config::{Config, Settings};
 use crate::path::PathExt;
@@ -114,6 +115,7 @@ impl DotfilesApply {
     pub(crate) fn run_config_entries(
         &self,
         config: &Config,
+        reload: &IndexMap<String, String>,
         is_config: impl Fn(&Path) -> bool,
     ) -> Result<Option<Vec<String>>> {
         let (mut files, mut edits) = self.requests(config)?;
@@ -134,7 +136,7 @@ impl DotfilesApply {
             return Ok(Some(handled));
         }
         let secrets = system::secrets::resolve(config, self.prompt_secrets)?;
-        let done = write_and_reload(self.dry_run, |written| {
+        let done = write_and_reload_with(reload, self.dry_run, |written| {
             if !files.is_empty() {
                 let opts = self.file_opts();
                 let plan = system::files::plan_apply(config, &files, &opts, &secrets)?;
@@ -159,6 +161,7 @@ impl DotfilesApply {
     pub(crate) async fn run_inner(
         self,
         config: Arc<Config>,
+        reload: &IndexMap<String, String>,
         done: Option<&[String]>,
     ) -> Result<bool> {
         let secrets = system::secrets::resolve(&config, self.prompt_secrets)?;
@@ -185,7 +188,7 @@ impl DotfilesApply {
             }
             return Ok(true);
         }
-        write_and_reload(self.dry_run, |written| {
+        write_and_reload_with(reload, self.dry_run, |written| {
             if !self.write(&config, &files, &edits, &secrets, written)? {
                 return Ok(false);
             }
@@ -288,6 +291,16 @@ pub(crate) fn write_and_reload(
     // resolved from the trusted layers before anything is written, so
     // nothing this apply writes can change which commands run afterwards
     let reload = system::history::config::reload_commands()?;
+    write_and_reload_with(&reload, dry_run, write)
+}
+
+/// [`write_and_reload`] with the reload commands resolved by the caller, for
+/// an apply that writes in more than one pass.
+pub(crate) fn write_and_reload_with(
+    reload: &IndexMap<String, String>,
+    dry_run: bool,
+    write: impl FnOnce(&mut Vec<PathBuf>) -> Result<bool>,
+) -> Result<bool> {
     let mut written = vec![];
     let result = write(&mut written);
     // a dry run writes nothing, so nothing is reloaded. A declined edit
@@ -298,7 +311,7 @@ pub(crate) fn write_and_reload(
             .iter()
             .map(|path| system::history::replay::reload_path(path))
             .collect::<Vec<_>>();
-        system::history::replay::run_reload(&reload, &touched);
+        system::history::replay::run_reload(reload, &touched);
     }
     result
 }
