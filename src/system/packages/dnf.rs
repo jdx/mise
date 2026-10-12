@@ -24,7 +24,11 @@ impl DnfManager {
 const OSTREE_BOOTED: &str = "/run/ostree-booted";
 
 fn ostree_booted() -> bool {
-    Path::new(OSTREE_BOOTED).exists()
+    ostree_booted_at(Path::new(OSTREE_BOOTED))
+}
+
+fn ostree_booted_at(marker: &Path) -> bool {
+    marker.exists()
 }
 
 fn ostree_error(verb: &str) -> eyre::Report {
@@ -158,7 +162,17 @@ impl SystemPackageManager for DnfManager {
     }
 
     async fn install(&self, pkgs: &[PackageRequest], opts: &InstallOpts) -> Result<()> {
-        if ostree_booted() {
+        self.install_on(ostree_booted(), pkgs, opts)
+    }
+
+    async fn upgrade(&self, pkgs: &[PackageRequest], opts: &InstallOpts) -> Result<()> {
+        self.upgrade_on(ostree_booted(), pkgs, opts)
+    }
+}
+
+impl DnfManager {
+    fn install_on(&self, ostree: bool, pkgs: &[PackageRequest], opts: &InstallOpts) -> Result<()> {
+        if ostree {
             return Err(ostree_error("install"));
         }
         let args = install_args(pkgs, opts);
@@ -169,8 +183,8 @@ impl SystemPackageManager for DnfManager {
         sudo::run("dnf", &args, &[])
     }
 
-    async fn upgrade(&self, pkgs: &[PackageRequest], opts: &InstallOpts) -> Result<()> {
-        if ostree_booted() {
+    fn upgrade_on(&self, ostree: bool, pkgs: &[PackageRequest], opts: &InstallOpts) -> Result<()> {
+        if ostree {
             return Err(ostree_error("upgrade"));
         }
         let args = upgrade_args(pkgs);
@@ -200,6 +214,33 @@ mod tests {
         let msg = ostree_error("install").to_string();
         assert!(msg.contains("ostree"));
         assert!(msg.contains("rpm-ostree install"));
+    }
+
+    #[test]
+    fn test_ostree_marker_decides_booted() {
+        let dir = tempfile::tempdir().unwrap();
+        let marker = dir.path().join("ostree-booted");
+        assert!(!ostree_booted_at(&marker));
+        std::fs::write(&marker, "").unwrap();
+        assert!(ostree_booted_at(&marker));
+    }
+
+    #[test]
+    fn test_ostree_host_rejects_install_and_upgrade() {
+        let mgr = DnfManager::new();
+        let pkgs = vec![req("gimp", None)];
+        let opts = InstallOpts {
+            dry_run: true,
+            update: false,
+            ask: false,
+        };
+        let err = mgr.install_on(true, &pkgs, &opts).unwrap_err().to_string();
+        assert!(err.contains("cannot install"));
+        let err = mgr.upgrade_on(true, &pkgs, &opts).unwrap_err().to_string();
+        assert!(err.contains("cannot upgrade"));
+        // without the marker, a dry run goes on to print the dnf command
+        assert!(mgr.install_on(false, &pkgs, &opts).is_ok());
+        assert!(mgr.upgrade_on(false, &pkgs, &opts).is_ok());
     }
 
     #[test]
