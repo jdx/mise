@@ -354,10 +354,10 @@ async fn which_shim(
     }
     // fallback for "system"
     // A wrapper shim left by another project must not turn a plain command into an error.
-    // Only for a command no selected tool provides: a missing tool version must still fail.
-    let inactive_wrapper = invoked_from_wrapper_dir(bin_name)
-        && ts.list_rtvs_with_bin(config, shim_name).await?.is_empty()
-        && (shim_name == bin_name || ts.list_rtvs_with_bin(config, bin_name).await?.is_empty());
+    // Only when nothing selected is missing: a missing tool version may be what provides this
+    // command, and that must still fail. Installed tools were tried above.
+    let inactive_wrapper =
+        invoked_from_wrapper_dir(bin_name) && ts.list_missing_versions(config).await.is_empty();
     if Settings::get().not_found_system_fallback || inactive_wrapper {
         let mise_bin = file::canonicalize_or_self(&env::MISE_BIN);
         for path in &*env::PATH {
