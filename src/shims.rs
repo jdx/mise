@@ -6,13 +6,14 @@ use std::sync::Arc;
 
 use crate::args::{BackendArg, ToolArg};
 use crate::backend::Backend;
-use crate::config::{Config, Settings, SettingsExt, load_command_wrappers};
+use crate::config::{Config, ConfigMap, Settings, SettingsExt, load_command_wrappers};
 use crate::file::display_path;
 use crate::lock_file::LockFile;
 use crate::toolset::{ToolVersion, Toolset};
 use crate::{backend, dirs, env, fake_asdf, file};
 use color_eyre::eyre::{Result, bail, eyre};
 use eyre::WrapErr;
+use indexmap::IndexMap;
 #[cfg(windows)]
 use indoc::formatdoc;
 use itertools::Itertools;
@@ -467,7 +468,7 @@ pub async fn reshim_for(
     )?;
 
     if matches!(requested_scope, ShimScope::User | ShimScope::Both) {
-        sync_command_wrapper_shims(config, ts, &mise_bin, full_rebuild)?;
+        sync_command_wrapper_shims(config, ts, &mise_bin, full_rebuild).await?;
     }
 
     Ok(())
@@ -884,16 +885,51 @@ pub fn ensure_command_wrapper_shims(config: &Config, ts: &Toolset) -> Result<()>
     Ok(())
 }
 
-fn sync_command_wrapper_shims(
+/// Wrappers defined by tracked configs outside the current directory. A tracked
+/// config that fails to load or has an invalid wrapper is skipped: it must not
+/// break a reshim run from somewhere else.
+async fn tracked_command_wrappers(
+    config: &Config,
+) -> Result<IndexMap<String, crate::config::CommandWrapper>> {
+    let tracked = config.get_tracked_config_files().await?;
+    let mut out = IndexMap::new();
+    for (path, cf) in &tracked {
+        if config.config_files.contains_key(path) {
+            continue;
+        }
+        let requests = match cf.to_tool_request_set() {
+            Ok(set) => set,
+            Err(err) => {
+                debug!("skipping tools of {}: {err:#}", display_path(path));
+                continue;
+            }
+        };
+        let one: ConfigMap = std::iter::once((path.clone(), cf.clone())).collect();
+        match load_command_wrappers(&one, requests.tools.values().flatten()) {
+            Ok(wrappers) => out.extend(wrappers),
+            Err(err) => debug!("skipping wrappers of {}: {err:#}", display_path(path)),
+        }
+    }
+    Ok(out)
+}
+
+async fn sync_command_wrapper_shims(
     config: &Config,
     ts: &Toolset,
     mise_bin: &Path,
     force: bool,
 ) -> Result<()> {
-    let wrappers = load_command_wrappers(
+    let mut wrappers = load_command_wrappers(
         &config.config_files,
         ts.versions.values().flat_map(|versions| &versions.requests),
     )?;
+    // Wrappers live in one shared directory, so a reshim must keep those other
+    // projects define, as it does for their tool shims (#14277). A shim left
+    // behind for a project that is not active falls through to the next PATH
+    // entry. Only wrapper names matter here, so the first definition wins.
+    for (name, wrapper) in tracked_command_wrappers(config).await? {
+        wrappers.entry(name).or_insert(wrapper);
+    }
     validate_wrapper_names(wrappers.keys())?;
     if wrappers.is_empty() {
         if cfg!(windows) {
