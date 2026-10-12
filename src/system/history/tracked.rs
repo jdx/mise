@@ -2313,10 +2313,14 @@ pub fn global_config_dir() -> PathBuf {
         .unwrap_or_else(|| dirs::CONFIG.to_path_buf())
 }
 
-/// Canonical when the path exists, lexically normalized otherwise.
+/// Canonical when the path exists; otherwise its existing ancestors are
+/// resolved and the missing tail is normalized lexically. A root that does
+/// not exist yet (an empty machine's `~/.config/mise`) must resolve through
+/// the same symlinked ancestors as one that does, or it stops being found
+/// under a home that was resolved.
 pub(crate) fn normalize(path: &Path) -> PathBuf {
     let expanded = file::replace_path(path);
-    dunce::canonicalize(&expanded).unwrap_or_else(|_| lexical(&expanded))
+    dunce::canonicalize(&expanded).unwrap_or_else(|_| normalize_target(&expanded))
 }
 
 /// Resolve existing ancestors consistently even when the leaf is missing.
@@ -4910,5 +4914,20 @@ mod tests {
         let walk = set.walk().unwrap();
         assert!(walk.files.contains_key(&link));
         assert!(!walk.files.contains_key(&target));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn normalize_resolves_symlinked_ancestors_of_a_missing_path() {
+        let temp = tempfile::tempdir().unwrap();
+        let real = dunce::canonicalize(temp.path()).unwrap().join("real");
+        std::fs::create_dir(&real).unwrap();
+        let link = temp.path().join("home");
+        std::os::unix::fs::symlink(&real, &link).unwrap();
+        // neither `.config` nor `mise` exists yet
+        assert_eq!(
+            normalize(&link.join(".config/mise")),
+            real.join(".config/mise")
+        );
     }
 }
