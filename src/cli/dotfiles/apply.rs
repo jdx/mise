@@ -126,6 +126,9 @@ impl DotfilesApply {
         // keeps are previewed against the simulated one instead
         if self.dry_run {
             edits.clear();
+            // a template is planned once, in the second pass, against the
+            // configuration it would render with
+            files.retain(|req| req.mode != system::files::FileMode::Template);
         }
         if files.is_empty() && edits.is_empty() {
             return Ok(Some(vec![]));
