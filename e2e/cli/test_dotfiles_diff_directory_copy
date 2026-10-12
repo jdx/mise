@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+
+# `mise dot diff` shows per-file hunks for a directory copy entry.
+
+DOTS="$HOME/.dotfiles"
+mkdir -p "$DOTS/home/dot-config/app"
+echo "one" >"$DOTS/home/dot-zshrc"
+echo "alpha" >"$DOTS/home/dot-config/app/a.conf"
+
+cat <<EOF2 >mise.toml
+[dotfile_groups.home]
+root = "home"
+dot_prefix = true
+mode = "copy"
+EOF2
+assert_succeed "mise dot apply --yes"
+assert_not_contains "mise dot diff" "content differs"
+
+echo "changed" >"$HOME/.config/app/a.conf"
+assert_contains "mise dot diff" "content differs"
+assert_contains "mise dot diff" "-changed"
+assert_contains "mise dot diff" "+alpha"
+assert_not_contains "mise dot diff" ".zshrc (current)"
+
+rm "$HOME/.zshrc"
+assert_contains "mise dot diff" "missing: ~/.zshrc"
