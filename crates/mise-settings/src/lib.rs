@@ -132,6 +132,29 @@ pub enum SystemDepsMode {
     Ignore,
 }
 
+/// What `[bootstrap.packages]` does with a `dnf:` package on an ostree-booted host.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    Serialize,
+    Deserialize,
+    Default,
+    strum::EnumString,
+    strum::Display,
+    PartialEq,
+    Eq,
+)]
+#[serde(rename_all = "snake_case")]
+#[strum(serialize_all = "snake_case")]
+pub enum SystemPackagesOstree {
+    /// refuse to change packages and explain why
+    #[default]
+    Error,
+    /// layer the packages with `rpm-ostree install`, which takes effect on the next boot
+    Layer,
+}
+
 /// How task output is presented. mise's task runner resolves it further; see
 /// `TaskOutputExt` there.
 #[derive(

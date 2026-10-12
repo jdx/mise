@@ -3615,6 +3615,24 @@ parse_env = "list_by_comma"
 rust_type = "Vec<String>"
 type = "ListString"
 
+[system_packages.ostree]
+default = "error"
+description = "What mise does with `dnf:` packages on an image-based Fedora host such as Silverblue or Bazzite."
+docs = """
+On a host booted from an ostree image, `/usr` is read-only and `dnf install`
+fails. Packages are layered with `rpm-ostree install` instead and take effect
+on the next boot. Layering is discouraged on these systems, so mise does it only
+when you opt in. See
+[Fedora Atomic hosts](/bootstrap/packages/dnf.html#fedora-atomic-hosts).
+"""
+enum = [
+  { value = "error", description = "stop and explain why the packages cannot be installed, and what to do instead" },
+  { value = "layer", description = "layer missing packages with `rpm-ostree install`; they take effect after a reboot" },
+]
+env = "MISE_SYSTEM_PACKAGES_OSTREE"
+rust_type = "SystemPackagesOstree"
+type = "String"
+
 [system_packages.sudo]
 default = true
 description = "Let mise run `sudo` for steps that need root, such as system packages and `mise install --system`."

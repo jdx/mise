@@ -6,6 +6,8 @@ use async_trait::async_trait;
 use eyre::bail;
 
 use super::{InstallOpts, PackageRequest, PackageState, PackageStatus, SystemPackageManager};
+use crate::config::Settings;
+use crate::config::settings::SystemPackagesOstree;
 use crate::result::Result;
 use crate::system::sudo;
 
@@ -27,12 +29,81 @@ fn ostree_booted() -> bool {
     Path::new(OSTREE_BOOTED).exists()
 }
 
-fn ostree_error(verb: &str) -> eyre::Report {
+fn layering() -> bool {
+    ostree_booted() && Settings::get().system_packages.ostree == SystemPackagesOstree::Layer
+}
+
+fn ostree_error() -> eyre::Report {
     eyre::eyre!(
-        "cannot {verb} dnf packages: this host is booted from an ostree image, so /usr is read-only\n\
-         Bake the packages into the image, install them in a toolbox, or layer them yourself with\n  \
-         rpm-ostree install <packages>"
+        "cannot install dnf packages: this host is booted from an ostree image, so /usr is read-only\n\
+         Bake the packages into the image, install them in a toolbox, or let mise layer them with rpm-ostree:\n  \
+         mise settings set system_packages.ostree layer"
     )
+}
+
+const PENDING_REBOOT: &str = "pending reboot";
+
+/// One transaction for the whole batch: each rpm-ostree call builds a new
+/// deployment. Pins do not apply (see [`SystemPackageManager::supports_version_pins`]).
+fn ostree_install_args(pkgs: &[PackageRequest]) -> Vec<String> {
+    let mut args = vec![
+        "install".to_string(),
+        "--idempotent".to_string(),
+        "--allow-inactive".to_string(),
+    ];
+    args.extend(pkgs.iter().map(|p| p.name.clone()));
+    args
+}
+
+fn ostree_uninstall_args(pkgs: &[PackageRequest]) -> Vec<String> {
+    let mut args = vec!["uninstall".to_string()];
+    args.extend(pkgs.iter().map(|p| p.name.clone()));
+    args
+}
+
+/// The packages requested for the next deployment, from `rpm-ostree status
+/// --json`. The first deployment is the staged one when a reboot is pending,
+/// and the booted one otherwise.
+fn parse_requested_packages(json: &str) -> Vec<String> {
+    let Ok(status) = serde_json::from_str::<serde_json::Value>(json) else {
+        return vec![];
+    };
+    status["deployments"][0]["requested-packages"]
+        .as_array()
+        .map(|pkgs| {
+            pkgs.iter()
+                .filter_map(|p| p.as_str().map(str::to_string))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+async fn requested_packages() -> Vec<String> {
+    let output = tokio::process::Command::new("rpm-ostree")
+        .args(["status", "--json"])
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .output()
+        .await;
+    match output {
+        Ok(o) if o.status.success() => {
+            parse_requested_packages(&String::from_utf8_lossy(&o.stdout))
+        }
+        _ => vec![],
+    }
+}
+
+/// Packages that are not in the booted image but are already requested for the
+/// next deployment count as installed, so every run does not request them again.
+fn mark_pending(statuses: &mut [PackageStatus], requested: &[String]) {
+    for status in statuses {
+        if status.state == PackageState::Missing && requested.contains(&status.request.name) {
+            status.state = PackageState::Installed {
+                version: PENDING_REBOOT.to_string(),
+            };
+        }
+    }
 }
 
 // Never add `--` here: DNF5 rejects it on subcommands like install/upgrade.
@@ -104,6 +175,30 @@ fn parse_rpm_query(output: &str, requests: &[PackageRequest]) -> Vec<PackageStat
         .collect()
 }
 
+impl DnfManager {
+    fn layer(&self, pkgs: &[PackageRequest], opts: &InstallOpts) -> Result<()> {
+        if !layering() {
+            return Err(ostree_error());
+        }
+        // the driver already skips pinned entries (supports_version_pins)
+        let refresh = vec!["refresh-md".to_string()];
+        let args = ostree_install_args(pkgs);
+        if opts.dry_run {
+            if opts.update {
+                miseprintln!("{}", sudo::argv("rpm-ostree", &refresh).join(" "));
+            }
+            miseprintln!("{}", sudo::argv("rpm-ostree", &args).join(" "));
+            return Ok(());
+        }
+        if opts.update {
+            sudo::run("rpm-ostree", &refresh, &[])?;
+        }
+        sudo::run("rpm-ostree", &args, &[])?;
+        miseprintln!("dnf: reboot to start using the layered packages");
+        Ok(())
+    }
+}
+
 #[async_trait(?Send)]
 impl SystemPackageManager for DnfManager {
     fn name(&self) -> &str {
@@ -154,12 +249,36 @@ impl SystemPackageManager for DnfManager {
             bail!("rpm -q failed: {}", stderr.trim());
         }
         let stdout = String::from_utf8_lossy(&output.stdout);
-        Ok(parse_rpm_query(&stdout, pkgs))
+        let mut statuses = parse_rpm_query(&stdout, pkgs);
+        if ostree_booted() && statuses.iter().any(|s| s.state == PackageState::Missing) {
+            mark_pending(&mut statuses, &requested_packages().await);
+        }
+        Ok(statuses)
+    }
+
+    fn supports_version_pins(&self) -> bool {
+        // rpm-ostree layering cannot pin: it would fight base-image updates
+        !ostree_booted()
+    }
+
+    fn supports_remove(&self) -> bool {
+        layering()
+    }
+
+    async fn remove(&self, pkgs: &[PackageRequest], opts: &InstallOpts) -> Result<()> {
+        let args = ostree_uninstall_args(pkgs);
+        if opts.dry_run {
+            miseprintln!("{}", sudo::argv("rpm-ostree", &args).join(" "));
+            return Ok(());
+        }
+        sudo::run("rpm-ostree", &args, &[])?;
+        miseprintln!("dnf: reboot to finish removing the layered packages");
+        Ok(())
     }
 
     async fn install(&self, pkgs: &[PackageRequest], opts: &InstallOpts) -> Result<()> {
         if ostree_booted() {
-            return Err(ostree_error("install"));
+            return self.layer(pkgs, opts);
         }
         let args = install_args(pkgs, opts);
         if opts.dry_run {
@@ -171,7 +290,10 @@ impl SystemPackageManager for DnfManager {
 
     async fn upgrade(&self, pkgs: &[PackageRequest], opts: &InstallOpts) -> Result<()> {
         if ostree_booted() {
-            return Err(ostree_error("upgrade"));
+            miseprintln!(
+                "dnf: layered packages update together with the base image; run `rpm-ostree upgrade` to update this host"
+            );
+            return Ok(());
         }
         let args = upgrade_args(pkgs);
         if opts.dry_run {
@@ -196,10 +318,47 @@ mod tests {
     }
 
     #[test]
-    fn test_ostree_error_suggests_alternatives() {
-        let msg = ostree_error("install").to_string();
+    fn test_ostree_error_names_the_setting() {
+        let msg = ostree_error().to_string();
         assert!(msg.contains("ostree"));
-        assert!(msg.contains("rpm-ostree install"));
+        assert!(msg.contains("system_packages.ostree layer"));
+    }
+
+    #[test]
+    fn test_ostree_args() {
+        let pkgs = vec![req("gimp", None), req("htop", None)];
+        assert_eq!(
+            ostree_install_args(&pkgs),
+            vec![
+                "install",
+                "--idempotent",
+                "--allow-inactive",
+                "gimp",
+                "htop"
+            ]
+        );
+        assert_eq!(
+            ostree_uninstall_args(&pkgs),
+            vec!["uninstall", "gimp", "htop"]
+        );
+    }
+
+    #[test]
+    fn test_pending_requested_packages_count_as_installed() {
+        let json =
+            r#"{"deployments":[{"requested-packages":["gimp"]},{"requested-packages":["old"]}]}"#;
+        let requested = parse_requested_packages(json);
+        assert_eq!(requested, vec!["gimp"]);
+        let mut statuses = parse_rpm_query("", &[req("gimp", None), req("htop", None)]);
+        mark_pending(&mut statuses, &requested);
+        assert_eq!(
+            statuses[0].state,
+            PackageState::Installed {
+                version: "pending reboot".to_string()
+            }
+        );
+        assert_eq!(statuses[1].state, PackageState::Missing);
+        assert!(parse_requested_packages("not json").is_empty());
     }
 
     #[test]

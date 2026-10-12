@@ -55,13 +55,41 @@ Without `--update`, dnf refreshes its metadata when its own cache expires.
 
 On a host booted from an ostree image (Silverblue, Kinoite, Bazzite, Bluefin,
 secureblue), `/usr` is read-only, so `dnf install` cannot work. mise detects
-this from `/run/ostree-booted` and stops with an explanation instead of running
-`dnf`. Status checks still work, because `rpm -q` sees the packages in the booted
-image. Bake the packages into the image, install them in a toolbox, or layer them
-yourself with `rpm-ostree install`. Builds inside a bootc Containerfile are not
+this from `/run/ostree-booted`. Builds inside a bootc Containerfile are not
 booted from an image, so `dnf` runs normally there.
+
+By default mise stops with an explanation, because layering packages is
+discouraged on these systems and a config written for Fedora Workstation should
+not silently layer dozens of them. Status checks still work, since `rpm -q` sees
+the packages in the booted image. To let mise layer packages with `rpm-ostree`,
+opt in:
+
+```toml
+[settings]
+system_packages.ostree = "layer"
+```
+
+With `layer`:
+
+- `apply` installs all missing packages in one `rpm-ostree install
+--idempotent --allow-inactive` transaction (each call builds a new
+  deployment), after `rpm-ostree refresh-md` with `--update`, and prints a
+  reboot notice. It uses [sudo](/bootstrap/packages/#sudo) as usual.
+- Packages already requested for the next deployment count as installed and show
+  `pending reboot`, so the next run does not request them again.
+- Version pins are skipped with a warning, since pinning a layered package works
+  against base-image updates.
+- `state = "absent"` runs `rpm-ostree uninstall`.
+- `upgrade` prints a hint instead of upgrading anything: layered packages only
+  update together with the base image, with `rpm-ostree upgrade`.
+
+| Operation (`layer`) | Command                                                       |
+| ------------------- | ------------------------------------------------------------- |
+| Install             | `rpm-ostree install --idempotent --allow-inactive <packages>` |
+| `apply --update`    | `rpm-ostree refresh-md`, then the install command             |
+| Remove              | `rpm-ostree uninstall <packages>`                             |
 
 ## Remove packages
 
-mise does not remove dnf packages. Deleting an entry leaves the package
+Outside layered ostree hosts, mise does not remove dnf packages. Deleting an entry leaves the package
 installed; run `dnf remove` yourself.
