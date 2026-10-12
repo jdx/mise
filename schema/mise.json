@@ -2209,6 +2209,10 @@
                 "type": "string"
               }
             },
+            "elevate_with": {
+              "description": "Command mise uses to get root instead of `sudo`, such as `run0` or `doas`.",
+              "type": "string"
+            },
             "sudo": {
               "default": true,
               "description": "Let mise run `sudo` for steps that need root, such as system packages and `mise install --system`.",

@@ -3615,6 +3615,29 @@ parse_env = "list_by_comma"
 rust_type = "Vec<String>"
 type = "ListString"
 
+[system_packages.elevate_with]
+description = "Command mise uses to get root instead of `sudo`, such as `run0` or `doas`."
+docs = """
+When unset, mise uses the first of `sudo`, `run0` and `doas` found on `PATH`,
+so hosts without sudo, such as secureblue (`run0`) or OpenBSD-style setups
+(`doas`), work with no configuration. Set it to pin one:
+
+```toml
+[settings]
+system_packages.elevate_with = "run0"
+```
+
+The command is run as `<command> <program> <args>...`. Without a terminal,
+mise checks for passwordless elevation with `sudo -n`, `doas -n` or
+`run0 --no-ask-password`; any other command is used only in an interactive
+terminal. [`system_packages.sudo`](#system_packages.sudo) still turns
+elevation off entirely. See
+[Root privileges and sudo](/bootstrap/packages/#sudo).
+"""
+env = "MISE_SYSTEM_PACKAGES_ELEVATE_WITH"
+optional = true
+type = "String"
+
 [system_packages.sudo]
 default = true
 description = "Let mise run `sudo` for steps that need root, such as system packages and `mise install --system`."

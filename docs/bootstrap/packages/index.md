@@ -369,7 +369,10 @@ not running as root, it runs their commands through `sudo` and logs each
 command first. In an interactive terminal, sudo can prompt for your password.
 Without a terminal, mise checks for passwordless sudo and, when there is none,
 fails and prints the command to run yourself. If `sudo` is not installed, mise
-asks you to run the command as root.
+falls back to `run0` (systemd 256+) and then `doas`; if none is installed, it
+asks you to run the command as root. Set
+[`system_packages.elevate_with`](/configuration/settings.html#system_packages.elevate_with)
+to pin one, such as `run0`.
 
 Set [`system_packages.sudo`](/configuration/settings.html#system_packages.sudo)
 to `false` to forbid elevation. Commands that need root then fail and print the
