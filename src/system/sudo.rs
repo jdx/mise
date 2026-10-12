@@ -75,23 +75,41 @@ pub(crate) fn argv_with_env(
     args: &[String],
     envs: &[(String, String)],
 ) -> Vec<String> {
-    let mut argv = vec![];
     if !is_root() && Settings::get().system_packages.sudo {
-        let elevator = elevator();
-        let flag = noninteractive_flag(&elevator).filter(|_| !console::user_attended_stderr());
-        let is_run0 = noninteractive_flag(&elevator) == Some("--no-ask-password");
-        argv.push(elevator);
-        argv.extend(flag.map(str::to_string));
-        if is_run0 {
-            // run0 passes env vars itself, so the authorized command stays
-            // the program rather than `env`
-            argv.extend(envs.iter().map(|(k, v)| format!("--setenv={k}={v}")));
-        } else if !envs.is_empty() {
-            // sudo and doas reset the environment by default; pass env vars
-            // through `env` so they reach the elevated command
-            argv.push("env".to_string());
-            argv.extend(envs.iter().map(|(k, v)| format!("{k}={v}")));
-        }
+        build_argv(program, args, envs, !console::user_attended_stderr())
+    } else {
+        std::iter::once(program.to_string())
+            .chain(args.iter().cloned())
+            .collect()
+    }
+}
+
+/// The command to give a user who must run it themselves: always elevated, and
+/// without the no-prompt flag so a password can be typed.
+fn manual_command(program: &str, args: &[String], envs: &[(String, String)]) -> String {
+    build_argv(program, args, envs, false).join(" ")
+}
+
+fn build_argv(
+    program: &str,
+    args: &[String],
+    envs: &[(String, String)],
+    noninteractive: bool,
+) -> Vec<String> {
+    let elevator = elevator();
+    let flag = noninteractive_flag(&elevator);
+    let is_run0 = flag == Some("--no-ask-password");
+    let mut argv = vec![elevator];
+    argv.extend(flag.filter(|_| noninteractive).map(str::to_string));
+    if is_run0 {
+        // run0 passes env vars itself, so the authorized command stays the
+        // program rather than `env`
+        argv.extend(envs.iter().map(|(k, v)| format!("--setenv={k}={v}")));
+    } else if !envs.is_empty() {
+        // sudo and doas reset the environment by default; pass env vars
+        // through `env` so they reach the elevated command
+        argv.push("env".to_string());
+        argv.extend(envs.iter().map(|(k, v)| format!("{k}={v}")));
     }
     argv.push(program.to_string());
     argv.extend(args.iter().cloned());
@@ -150,14 +168,7 @@ pub(crate) fn run(program: &str, args: &[String], envs: &[(String, String)]) -> 
     let argv = argv_with_env(program, args, envs);
     // the copy-pasteable fallback must include the env vars the automated
     // path would have set (e.g. DEBIAN_FRONTEND=noninteractive)
-    let mut manual = vec![elevator()];
-    if !envs.is_empty() {
-        manual.push("env".to_string());
-        manual.extend(envs.iter().map(|(k, v)| format!("{k}={v}")));
-    }
-    manual.push(program.to_string());
-    manual.extend(args.iter().cloned());
-    let manual_cmd = manual.join(" ");
+    let manual_cmd = manual_command(program, args, envs);
     ensure_elevation_available(&manual_cmd)?;
     attempt(&manual_cmd, || {
         let _progress_pause = pause_progress_for_child();
@@ -199,11 +210,7 @@ pub(crate) fn run_in_dir<Fd: std::os::fd::AsFd>(
     use eyre::WrapErr;
 
     let argv = argv_with_env(program, args, &[]);
-    let manual_cmd = std::iter::once(elevator())
-        .chain(std::iter::once(program.to_string()))
-        .chain(args.iter().cloned())
-        .collect::<Vec<_>>()
-        .join(" ");
+    let manual_cmd = manual_command(program, args, &[]);
     ensure_elevation_available(&manual_cmd)?;
     attempt(&manual_cmd, || {
         let _progress_pause = pause_progress_for_child();
@@ -239,13 +246,7 @@ pub(crate) fn run_in_dir<Fd: std::os::fd::AsFd>(
 /// callers retain [`ensure_elevation_available`]'s fail-fast `sudo -n` check.
 pub(crate) fn output(program: &str, args: &[String], envs: &[(String, String)]) -> Result<Output> {
     let argv = argv_with_env(program, args, envs);
-    let manual_cmd = std::iter::once(elevator())
-        .chain((!envs.is_empty()).then_some("env".to_string()))
-        .chain(envs.iter().map(|(key, value)| format!("{key}={value}")))
-        .chain(std::iter::once(program.to_string()))
-        .chain(args.iter().cloned())
-        .collect::<Vec<_>>()
-        .join(" ");
+    let manual_cmd = manual_command(program, args, envs);
     ensure_elevation_available(&manual_cmd)?;
     let interactive =
         !is_root() && Settings::get().system_packages.sudo && console::user_attended_stderr();
@@ -293,11 +294,7 @@ pub(crate) fn run_with_reader(
     mut input: impl std::io::Read,
 ) -> Result<()> {
     let argv = argv(program, args);
-    let manual_cmd = std::iter::once(elevator())
-        .chain(std::iter::once(program.to_string()))
-        .chain(args.iter().cloned())
-        .collect::<Vec<_>>()
-        .join(" ");
+    let manual_cmd = manual_command(program, args, &[]);
     ensure_elevation_available(&manual_cmd)?;
     attempt(&manual_cmd, || {
         let _progress_pause = pause_progress_for_child();
@@ -333,11 +330,7 @@ pub(crate) fn run_with_input_output(
     input: &[u8],
 ) -> Result<Vec<u8>> {
     let argv = argv(program, args);
-    let manual_cmd = std::iter::once(elevator())
-        .chain(std::iter::once(program.to_string()))
-        .chain(args.iter().cloned())
-        .collect::<Vec<_>>()
-        .join(" ");
+    let manual_cmd = manual_command(program, args, &[]);
     ensure_elevation_available(&manual_cmd)?;
     attempt(&manual_cmd, || {
         let _progress_pause = pause_progress_for_child();
