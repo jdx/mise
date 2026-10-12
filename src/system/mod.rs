@@ -1373,22 +1373,28 @@ pub fn defaults_from_config(config: &Config) -> Vec<DefaultsRequest> {
 
 /// Aggregate `[bootstrap.macos.login_items]` across all loaded config files.
 ///
-/// Apps union global -> local; `exclusive` takes the most local value that sets
-/// it. Invalid entries warn and are skipped.
+/// Apps union global -> local. Within one config hierarchy `exclusive` takes the
+/// most local value that sets it; across independent selected roots it applies
+/// only when every root that sets it says true. Invalid entries warn and are
+/// skipped.
 pub fn login_items_from_config(config: &Config) -> login_items::LoginItemsRequest {
     let mut apps: Vec<String> = vec![];
-    let mut exclusive = false;
-    // config_files is ordered local -> global; reverse for global -> local
+    let mut declared: Vec<bool> = vec![];
     for config_files in config.bootstrap_config_maps() {
+        // config_files is ordered local -> global; reverse for global -> local
+        let mut map_exclusive = None;
         for cf in config_files.values().rev() {
             if let Some(sys) = cf.bootstrap_config()
                 && let Some(items) = sys.macos.login_items
             {
                 apps.extend(items.apps);
-                exclusive = items.exclusive.unwrap_or(exclusive);
+                map_exclusive = items.exclusive.or(map_exclusive);
             }
         }
+        declared.extend(map_exclusive);
     }
+    // independent roots must all agree before undeclared items are removed
+    let mut exclusive = !declared.is_empty() && declared.iter().all(|e| *e);
     let mut valid = vec![];
     let mut invalid = false;
     let mut seen = std::collections::HashSet::new();
