@@ -42,3 +42,13 @@ mkdir -p "$HOME/real-app"
 echo "drifted" >"$HOME/real-app/a.conf"
 ln -s "$HOME/real-app" "$HOME/.config/app"
 assert_contains "mise dot diff" "-drifted"
+
+# files behind a directory that denies access are not reported as missing
+if [ "$(id -u)" != 0 ]; then
+	rm "$HOME/.config/app"
+	mkdir -p "$HOME/.config/app"
+	echo "alpha" >"$HOME/.config/app/a.conf"
+	chmod 000 "$HOME/.config/app"
+	assert_not_contains "mise dot diff" "missing: ~/.config/app/a.conf"
+	chmod 755 "$HOME/.config/app"
+fi

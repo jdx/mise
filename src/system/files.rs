@@ -5429,8 +5429,16 @@ fn print_dir_entry_diffs(config: &Config, req: &FileRequest) -> Result<()> {
                 "  file type differs: {} is a directory",
                 target.display_user()
             );
-        } else if !target.exists() {
-            miseprintln!("  missing: {}", target.display_user());
+        } else if let Err(err) = std::fs::symlink_metadata(&target) {
+            match err.kind() {
+                std::io::ErrorKind::NotFound => {
+                    miseprintln!("  missing: {}", target.display_user())
+                }
+                std::io::ErrorKind::PermissionDenied => {
+                    miseprintln!("  current: {} is not accessible", target.display_user())
+                }
+                _ => return Err(err.into()),
+            }
         } else {
             match file::read(&target) {
                 Ok(current) if current != desired => {
