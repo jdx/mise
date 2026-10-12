@@ -177,6 +177,7 @@ mod tests {
         let opts = InstallOpts {
             dry_run: false,
             update: false,
+            ask: false,
         };
         let args = install_args(&pkgs, &opts);
         // DNF5 rejects a bare `--` on subcommands; it must never appear
@@ -190,6 +191,7 @@ mod tests {
         let opts = InstallOpts {
             dry_run: false,
             update: true,
+            ask: false,
         };
         let args = install_args(&pkgs, &opts);
         assert!(args.iter().all(|a| a != "--"));

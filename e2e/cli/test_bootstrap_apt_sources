@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+
+# [bootstrap.apt.sources] in dry runs: what mise would write, and which entries
+# it rejects. A dry run fetches no keys and writes nothing.
+
+if [[ "$(uname)" != "Linux" ]] || ! command -v apt-get >/dev/null; then
+  exit 0
+fi
+
+cat <<EOF >mise.toml
+[bootstrap.apt.sources]
+git-core = { ppa = "ppa:git-core/ppa" }
+"bad name" = { ppa = "git-core/ppa" }
+typo = { ppa = "git-core/ppa", uri = "https://example.com" }
+nokey = { uris = "https://example.com/apt" }
+short = { uris = "https://example.com/apt", key = "https://example.com/key.asc", fingerprint = "0EBFCD88" }
+
+[bootstrap.apt.sources.vendor]
+uris = "https://example.com/apt"
+key = "https://example.com/key.asc"
+fingerprint = "9DC8 5822 9FC7 DD38 854A E2D8 8D81 803C 0EBF CD88"
+
+[bootstrap.packages]
+"apt:bc" = "latest"
+EOF
+
+mise bootstrap packages apply --dry-run >dry-run.log 2>&1
+cat dry-run.log
+
+assert_contains "cat dry-run.log" "fetch the signing key for https://example.com/apt into /etc/apt/keyrings/mise-vendor.gpg"
+assert_contains "cat dry-run.log" "write /etc/apt/sources.list.d/mise-vendor.sources"
+assert_contains "cat dry-run.log" "apt-get update"
+assert_contains "cat dry-run.log" "apt-get install -y -- bc"
+assert_not_contains "cat dry-run.log" "mise-bad name"
+
+# PPAs are only added on Ubuntu and Ubuntu-based releases
+if grep -Eq '^(ID=ubuntu|UBUNTU_CODENAME=)' /etc/os-release; then
+  assert_contains "cat dry-run.log" "fetch the signing key for ppa:git-core/ppa into /etc/apt/keyrings/mise-git-core.gpg"
+else
+  assert_not_contains "cat dry-run.log" "mise-git-core"
+fi
+
+# invalid entries warn and are skipped; the rest still apply
+assert_contains "cat dry-run.log" "'bad name' is not a valid source name"
+assert_contains "cat dry-run.log" "typo: unknown field"
+assert_contains "cat dry-run.log" "nokey: key is required"
+assert_contains "cat dry-run.log" "short key IDs are not accepted"
+
+# nothing was written
+assert_fail "test -e /etc/apt/sources.list.d/mise-vendor.sources"
+assert_fail "test -e /etc/apt/keyrings/mise-vendor.gpg"

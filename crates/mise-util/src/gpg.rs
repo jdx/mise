@@ -3,6 +3,7 @@ use eyre::Result;
 use eyre::{bail, eyre};
 use pgp::composed::{Deserializable, DetachedSignature, SignedPublicKey};
 use pgp::packet::Signature;
+use pgp::ser::Serialize;
 use pgp::types::{Fingerprint, KeyDetails, KeyId, VerifyingKey};
 use std::io::{Cursor, Read};
 use std::path::Path;
@@ -20,6 +21,48 @@ pub fn verify_swift(tarball_path: &Path, signature: &[u8]) -> Result<()> {
     verify_detached(include_str!("assets/gpg/swift.asc"), signature, || {
         Ok(std::io::BufReader::new(file::open(tarball_path)?))
     })
+}
+
+/// One certificate from an OpenPGP keyring: its primary key fingerprint, as
+/// uppercase hex, and its binary encoding.
+#[derive(Debug, Clone)]
+pub struct KeyringKey {
+    pub fingerprint: String,
+    pub bytes: Vec<u8>,
+}
+
+/// Parse an OpenPGP keyring, ASCII-armored or binary, in the forms vendors
+/// publish repository signing keys in.
+pub fn parse_keyring(data: &[u8]) -> Result<Vec<KeyringKey>> {
+    // armor may follow a comment or a byte order mark; binary keyrings never
+    // contain the header
+    let armored = data
+        .windows(PUBLIC_KEY_ARMOR.len())
+        .any(|window| window == PUBLIC_KEY_ARMOR.as_bytes());
+    let keys = if armored {
+        parse_public_keys(&String::from_utf8_lossy(data))?
+    } else {
+        SignedPublicKey::from_bytes_many(Cursor::new(data))
+            .map_err(|e| eyre!("parsing key: {e}"))?
+            .collect::<std::result::Result<Vec<_>, _>>()
+            .map_err(|e| eyre!("parsing key: {e}"))?
+    };
+    keys.into_iter()
+        .map(|key| {
+            Ok(KeyringKey {
+                fingerprint: format!("{:X}", key.fingerprint()),
+                bytes: key.to_bytes().map_err(|e| eyre!("encoding key: {e}"))?,
+            })
+        })
+        .collect()
+}
+
+const PUBLIC_KEY_ARMOR: &str = "-----BEGIN PGP PUBLIC KEY BLOCK-----";
+
+fn is_armored(data: &[u8]) -> bool {
+    data.iter()
+        .position(|b| !b.is_ascii_whitespace())
+        .is_some_and(|i| data[i..].starts_with(b"-----BEGIN"))
 }
 
 /// Verify a detached signature entirely in-process (no external `gpg` binary).
@@ -135,12 +178,8 @@ fn parse_public_keys(asc: &str) -> Result<Vec<SignedPublicKey>> {
 
 /// Parse detached signatures, accepting both ASCII-armored and binary encodings.
 fn parse_signatures(signature: &[u8]) -> Result<Vec<DetachedSignature>> {
-    let is_armored = signature
-        .iter()
-        .position(|b| !b.is_ascii_whitespace())
-        .is_some_and(|i| signature[i..].starts_with(b"-----BEGIN"));
     let mut signatures = Vec::new();
-    if is_armored {
+    if is_armored(signature) {
         let (iter, _headers) = DetachedSignature::from_armor_many(signature)
             .map_err(|e| eyre!("parsing signature: {e}"))?;
         for sig in iter {
@@ -164,6 +203,7 @@ fn split_armor_blocks(input: &str, label: &str) -> Vec<String> {
     let mut blocks = Vec::new();
     let mut current: Option<String> = None;
     for line in input.lines() {
+        let line = line.trim_start_matches('\u{feff}');
         let trimmed = line.trim();
         if trimmed == begin {
             current = Some(String::new());
@@ -192,6 +232,40 @@ mod tests {
             "expected many node keys, got {}",
             keys.len()
         );
+    }
+
+    #[test]
+    fn keyring_parses_armored_and_binary_forms_alike() {
+        let armored = parse_keyring(include_bytes!("assets/gpg/swift.asc")).unwrap();
+        assert!(!armored.is_empty());
+        assert!(armored.iter().all(|key| {
+            key.fingerprint.len() == 40
+                && key
+                    .fingerprint
+                    .chars()
+                    .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_lowercase())
+        }));
+        let binary = armored
+            .iter()
+            .flat_map(|key| key.bytes.clone())
+            .collect::<Vec<_>>();
+        let reparsed = parse_keyring(&binary).unwrap();
+        assert_eq!(
+            reparsed.iter().map(|k| &k.fingerprint).collect::<Vec<_>>(),
+            armored.iter().map(|k| &k.fingerprint).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn keyring_accepts_armor_after_a_comment_or_bom() {
+        let armored = include_str!("assets/gpg/swift.asc");
+        let expected = parse_keyring(armored.as_bytes()).unwrap().len();
+        for prefixed in [
+            format!("# Vendor signing key\n\n{armored}"),
+            format!("\u{feff}{armored}"),
+        ] {
+            assert_eq!(parse_keyring(prefixed.as_bytes()).unwrap().len(), expected);
+        }
     }
 
     #[test]

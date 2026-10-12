@@ -84,6 +84,7 @@ pub async fn run(mgrs: Vec<ManagerPackages>, action: Action, d: &DriverOpts) -> 
     let opts = InstallOpts {
         dry_run: d.dry_run,
         update: d.update,
+        ask: !d.dry_run && !d.yes && console::user_attended_stderr(),
     };
     // Each manager runs on its own: one that fails (a removal it refuses, a
     // package that does not exist, a broken repository) must not skip the
@@ -198,6 +199,13 @@ async fn run_manager(
         }
         debug!("{name}: skipping, {reason}");
         return Ok(());
+    }
+    // sources first: a package from a newly added repository is unknown
+    // until its lists are fetched. A source that fails is reported with the
+    // run's other failures, and the packages still get their turn: most do
+    // not come from it.
+    if let Err(err) = mp.manager.apply_sources(&mp.options, opts).await {
+        failures.push(err);
     }
     if !d.dry_run {
         mp.manager.prepare_mutation(&mp.requests).await?;

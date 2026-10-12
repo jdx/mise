@@ -12,6 +12,7 @@ use crate::system::ManagerPackageOptions;
 
 pub(crate) mod apk;
 pub(crate) mod apt;
+pub mod apt_sources;
 pub(crate) mod aur;
 #[cfg(unix)]
 pub mod brew;
@@ -147,6 +148,9 @@ pub struct InstallOpts {
     pub dry_run: bool,
     /// force a package manager metadata refresh before installing
     pub update: bool,
+    /// ask before changes the package prompt does not cover, such as
+    /// adding `[bootstrap.apt.sources]`
+    pub ask: bool,
 }
 
 // `?Send`: the brew manager's source-build path drives the toolset
@@ -177,6 +181,18 @@ pub trait SystemPackageManager: Send + Sync {
 
     /// Query installed state. Must be side-effect free and never elevate.
     async fn installed(&self, pkgs: &[PackageRequest]) -> Result<Vec<PackageStatus>>;
+
+    /// Bring the repositories this manager installs from to their declared
+    /// state, before installed state is queried. Runs for dry runs too, which
+    /// print what would change. Only apt declares sources today, in
+    /// `[bootstrap.apt.sources]`.
+    async fn apply_sources(
+        &self,
+        _manager_options: &ManagerPackageOptions,
+        _opts: &InstallOpts,
+    ) -> Result<()> {
+        Ok(())
+    }
 
     /// Prepare for a mutating package operation before querying installed state.
     ///

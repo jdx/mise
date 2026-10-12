@@ -578,6 +578,7 @@ fn uncovered_sections(config: &Config, environments: &[String]) -> Vec<Uncovered
     let mut packages = 0;
     let mut repos = 0;
     let mut compose = 0;
+    let mut apt_sources = 0;
     // Independent bootstrap roots keep their own config maps, and a module can
     // declare all of its packages in one of them.
     for config_files in config.bootstrap_config_maps() {
@@ -594,6 +595,7 @@ fn uncovered_sections(config: &Config, environments: &[String]) -> Vec<Uncovered
             packages += bootstrap.packages.len();
             repos += bootstrap.repos.len();
             compose += bootstrap.compose.len();
+            apt_sources += bootstrap.apt.sources.len();
         }
     }
     [
@@ -603,6 +605,11 @@ fn uncovered_sections(config: &Config, environments: &[String]) -> Vec<Uncovered
             "mise bootstrap packages prune --manager <manager>",
         ),
         ("bootstrap.repos", repos, "remove the checkout"),
+        (
+            "bootstrap.apt.sources",
+            apt_sources,
+            "delete /etc/apt/sources.list.d/mise-<name>.sources",
+        ),
         (
             "bootstrap.compose",
             compose,

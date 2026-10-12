@@ -223,6 +223,7 @@ impl SystemPackageManager for AurManager {
             &InstallOpts {
                 dry_run: opts.dry_run,
                 update: true,
+                ask: false,
             },
         )
         .await
@@ -270,6 +271,7 @@ mod tests {
             &InstallOpts {
                 dry_run: false,
                 update: true,
+                ask: false,
             },
         );
         assert_eq!(

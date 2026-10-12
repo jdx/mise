@@ -8383,6 +8383,98 @@
             }
           }
         },
+        "apt": {
+          "type": "object",
+          "description": "apt-specific bootstrap package config",
+          "properties": {
+            "sources": {
+              "type": "object",
+              "description": "apt repositories added before apt packages are installed, keyed by a name used in the files mise writes",
+              "propertyNames": {
+                "pattern": "^[A-Za-z0-9_-][A-Za-z0-9_.-]*$"
+              },
+              "additionalProperties": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "ppa": {
+                    "type": "string",
+                    "description": "Launchpad PPA as owner/archive, such as git-core/ppa; added on Ubuntu and Ubuntu-based releases only"
+                  },
+                  "uris": {
+                    "type": "string",
+                    "description": "repository URL(s), space-separated"
+                  },
+                  "suites": {
+                    "type": "string",
+                    "description": "suite(s), space-separated; defaults to the release codename"
+                  },
+                  "components": {
+                    "type": "string",
+                    "description": "component(s), space-separated; defaults to main, or none when suites is a path ending in /"
+                  },
+                  "architectures": {
+                    "type": "string",
+                    "description": "architecture(s) to fetch, space-separated"
+                  },
+                  "key": {
+                    "type": "string",
+                    "description": "http(s) URL of the repository's signing key, armored or binary"
+                  },
+                  "fingerprint": {
+                    "description": "full primary key fingerprint(s) the signing key must have; required with key",
+                    "oneOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      }
+                    ]
+                  }
+                },
+                "oneOf": [
+                  {
+                    "required": ["ppa"],
+                    "properties": {
+                      "fingerprint": {
+                        "type": "string"
+                      }
+                    },
+                    "not": {
+                      "anyOf": [
+                        {
+                          "required": ["uris"]
+                        },
+                        {
+                          "required": ["suites"]
+                        },
+                        {
+                          "required": ["components"]
+                        },
+                        {
+                          "required": ["architectures"]
+                        },
+                        {
+                          "required": ["key"]
+                        }
+                      ]
+                    }
+                  },
+                  {
+                    "required": ["uris", "key", "fingerprint"],
+                    "not": {
+                      "required": ["ppa"]
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        },
         "brew": {
           "type": "object",
           "description": "Homebrew-specific bootstrap package config",
