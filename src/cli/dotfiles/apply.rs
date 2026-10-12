@@ -126,9 +126,6 @@ impl DotfilesApply {
         // keeps are previewed against the simulated one instead
         if self.dry_run {
             edits.clear();
-            // a template is planned once, in the second pass, against the
-            // configuration it would render with
-            files.retain(|req| req.mode != system::files::FileMode::Template);
         }
         if files.is_empty() && edits.is_empty() {
             return Ok(Some(vec![]));
@@ -136,8 +133,9 @@ impl DotfilesApply {
         let secrets = system::secrets::resolve(config, self.prompt_secrets)?;
         // what this pass writes, so the second one does not repeat it. A
         // template is not listed: the reloaded config may change what it
-        // renders. Nor is an entry already in place, which the second pass
-        // still has to record.
+        // renders, though a dry run lists it because it never renders one.
+        // Nor is an entry already in place, which the second pass still has
+        // to record.
         let mut handled = vec![];
         let done = write_and_reload_with(reload, self.dry_run, |written| {
             if !files.is_empty() {
@@ -150,7 +148,9 @@ impl DotfilesApply {
                     handled.extend(
                         plan.planned_requests()
                             .into_iter()
-                            .filter(|req| req.mode != system::files::FileMode::Template)
+                            .filter(|req| {
+                                self.dry_run || req.mode != system::files::FileMode::Template
+                            })
                             .map(|req| format!("{req:?}")),
                     );
                     if !system::files::execute_apply(config, plan, &opts, written)? {
