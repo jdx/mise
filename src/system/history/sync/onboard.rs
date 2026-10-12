@@ -154,6 +154,10 @@ pub async fn from_git(
     replace_history: bool,
     take_remote_all: bool,
 ) -> Result<Option<Outcome>> {
+    // Fail on a credential-bearing URL here: probing treats an unusable URL as
+    // "not a setup repository", which would silently fall back to an ordinary
+    // clone that persists the secret in `.git/config`.
+    super::network::validate_url(url)?;
     // Detect marked repositories without creating persistent tracking state
     // for users of the released, ordinary --adopt workflow.
     let probe_dir = tempfile::tempdir()?;

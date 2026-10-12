@@ -407,9 +407,10 @@ async fn setup_requirements(tracked: &TrackedSet) -> Result<()> {
     }
     let roots = Roots::current();
     for path in required {
-        if !tracked.would_capture(&path)? {
+        let resolved = crate::system::history::tracked::normalize_target(&path);
+        if !tracked.would_capture(&resolved)? {
             let display = display_path(&path);
-            if roots.branch_path(&path, None).is_some() {
+            if roots.branch_path(&resolved, None).is_some() {
                 miseprintln!(
                     "Not enrolled for recreating this setup: {display}. To include it explicitly: mise dot track {}",
                     shell_escape::escape(display.as_str().into())
