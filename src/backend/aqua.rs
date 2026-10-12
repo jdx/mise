@@ -339,8 +339,8 @@ impl Backend for AquaBackend {
         };
 
         if pkg.repo_owner.is_empty() || pkg.repo_name.is_empty() {
-            warn!(
-                "aqua package {} does not have repo_owner and/or repo_name.",
+            warn_once!(
+                "aqua package {} has no repo_owner and/or repo_name, so its versions cannot be listed. Pin an exact version to install it.",
                 self.id
             );
             return Ok(vec![]);
@@ -2398,8 +2398,8 @@ impl AquaBackend {
         };
 
         if pkg.repo_owner.is_empty() || pkg.repo_name.is_empty() {
-            warn!(
-                "aqua package {} does not have repo_owner and/or repo_name.",
+            warn_once!(
+                "aqua package {} has no repo_owner and/or repo_name, so its versions cannot be listed. Pin an exact version to install it.",
                 self.id
             );
             return Ok(None);
