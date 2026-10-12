@@ -672,8 +672,8 @@ pub(crate) async fn apply(sources: &[AptSource], dry_run: bool, ask: bool) -> Re
                 miseprintln!("remove {}", p.source.legacy_keyring_path().display());
             }
         }
-        changed = pending.iter().any(|p| p.key.is_none() || !p.stanza_current);
-    } else if !pending.is_empty() && ask && !confirm(&pending)? {
+        changed = pending.iter().any(PendingSource::writes);
+    } else if ask && pending.iter().any(PendingSource::writes) && !confirm(&pending)? {
         info!("apt: sources left unchanged");
         // a source left as it was must not be warned about for its lists
         declared.retain(|(source, _)| !pending.iter().any(|p| p.source.name == source.name));
@@ -684,7 +684,7 @@ pub(crate) async fn apply(sources: &[AptSource], dry_run: bool, ask: bool) -> Re
                     Some(key) => key.clone(),
                     None => p.source.fetch_keyring().await?,
                 };
-                if p.key.is_none() || !p.stanza_current {
+                if p.writes() {
                     let stanza = p.source.render(&p.fields, &key);
                     write_root_file(&p.source.sources_path(), stanza.as_bytes())?;
                     changed = true;
@@ -753,9 +753,18 @@ struct PendingSource<'a> {
     stanza_current: bool,
 }
 
+impl PendingSource<'_> {
+    /// Whether the source file changes, as opposed to only a legacy keyring
+    /// being removed.
+    fn writes(&self) -> bool {
+        self.key.is_none() || !self.stanza_current
+    }
+}
+
 fn confirm(pending: &[PendingSource<'_>]) -> Result<bool> {
     let list = pending
         .iter()
+        .filter(|p| p.writes())
         .map(|p| format!("{} ({})", p.source.name, p.source.describe()))
         .collect::<Vec<_>>()
         .join(", ");
