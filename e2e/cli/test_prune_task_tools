@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+# `mise prune` must keep versions that a tracked config only references through
+# a task-scoped tool. https://github.com/jdx/mise/issues/14325
+
+cat >mise.toml <<'TOML'
+[tasks.hello]
+run = "true"
+tools = { dummy = "1.0.0" }
+TOML
+assert "mise trust"
+assert "mise install dummy@1.0.0 dummy@2.0.0"
+# track this config
+assert "mise ls"
+
+cd "$(mktemp -d)" || exit 1
+assert_not_contains "mise prune --dry-run 2>&1" "dummy@1.0.0"
+assert_contains "mise prune --dry-run 2>&1" "dummy@2.0.0"

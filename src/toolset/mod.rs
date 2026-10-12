@@ -1061,6 +1061,21 @@ pub async fn get_versions_needed_by_tracked_configs_excluding_locks(
         }
         let files = [(path.clone(), cf.clone())].into_iter().collect();
         crate::daemons::load(&files)?.add_tool_requests(&mut requests)?;
+        // Tools scoped to a task are still referenced by the config.
+        for task in cf.tasks() {
+            match task.tool_args() {
+                Ok(args) => {
+                    for tvr in args.into_iter().filter_map(|a| a.tvr) {
+                        requests.add_version(tvr, &cf.source());
+                    }
+                }
+                Err(err) => warn!(
+                    "error loading tools of task {} in {}: {err:#}",
+                    task.name,
+                    display_path(&path)
+                ),
+            }
+        }
         let mut ts = Toolset::from(requests);
         ts.resolve_with_opts(config, &opts).await?;
         collect_needed_versions(&ts, offline, &path, &mut needed);
