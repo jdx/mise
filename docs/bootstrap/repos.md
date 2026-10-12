@@ -49,6 +49,23 @@ that root: it cannot be empty or `.`, and it cannot leave the root with `..` or
 an absolute segment. Relative paths therefore work only in a project config,
 not in the global config `~/.config/mise/config.toml`.
 
+A key can use a [`[vars]`](/configuration/vars.html) value, for example
+`"{{ vars.repos_dir }}/project"`. Combined with a `prompt` on the var, each
+machine chooses its own base directory once while the declarations stay in the
+shared config:
+
+```toml
+[vars.repos_dir]
+default = "~/src"
+prompt = "Where should repositories be cloned?"
+
+[bootstrap.repos]
+"{{ vars.repos_dir }}/project-a" = { url = "git@github.com:example/project-a.git" }
+```
+
+Reading a var never prompts; an unanswered one uses its `default`. Run
+[`mise vars prompt`](/cli/vars/prompt.html) to answer it.
+
 The optional `ref` is a branch, a tag, or a full commit SHA. An invalid entry
 is reported with a warning and skipped.
 
