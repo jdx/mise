@@ -26,11 +26,15 @@ impl DnfManager {
 const OSTREE_BOOTED: &str = "/run/ostree-booted";
 
 fn ostree_booted() -> bool {
-    Path::new(OSTREE_BOOTED).exists()
+    ostree_booted_at(Path::new(OSTREE_BOOTED))
 }
 
-fn layering() -> bool {
-    ostree_booted() && Settings::get().system_packages.ostree == SystemPackagesOstree::Layer
+fn ostree_booted_at(marker: &Path) -> bool {
+    marker.exists()
+}
+
+fn layering_on(ostree: bool) -> bool {
+    ostree && Settings::get().system_packages.ostree == SystemPackagesOstree::Layer
 }
 
 fn ostree_error() -> eyre::Report {
@@ -175,30 +179,6 @@ fn parse_rpm_query(output: &str, requests: &[PackageRequest]) -> Vec<PackageStat
         .collect()
 }
 
-impl DnfManager {
-    fn layer(&self, pkgs: &[PackageRequest], opts: &InstallOpts) -> Result<()> {
-        if !layering() {
-            return Err(ostree_error());
-        }
-        // the driver already skips pinned entries (supports_version_pins)
-        let refresh = vec!["refresh-md".to_string()];
-        let args = ostree_install_args(pkgs);
-        if opts.dry_run {
-            if opts.update {
-                miseprintln!("{}", sudo::argv("rpm-ostree", &refresh).join(" "));
-            }
-            miseprintln!("{}", sudo::argv("rpm-ostree", &args).join(" "));
-            return Ok(());
-        }
-        if opts.update {
-            sudo::run("rpm-ostree", &refresh, &[])?;
-        }
-        sudo::run("rpm-ostree", &args, &[])?;
-        miseprintln!("dnf: reboot to start using the layered packages");
-        Ok(())
-    }
-}
-
 #[async_trait(?Send)]
 impl SystemPackageManager for DnfManager {
     fn name(&self) -> &str {
@@ -262,7 +242,7 @@ impl SystemPackageManager for DnfManager {
     }
 
     fn supports_remove(&self) -> bool {
-        layering()
+        layering_on(ostree_booted())
     }
 
     async fn remove(&self, pkgs: &[PackageRequest], opts: &InstallOpts) -> Result<()> {
@@ -277,8 +257,18 @@ impl SystemPackageManager for DnfManager {
     }
 
     async fn install(&self, pkgs: &[PackageRequest], opts: &InstallOpts) -> Result<()> {
-        if ostree_booted() {
-            return self.layer(pkgs, opts);
+        self.install_on(ostree_booted(), pkgs, opts)
+    }
+
+    async fn upgrade(&self, pkgs: &[PackageRequest], opts: &InstallOpts) -> Result<()> {
+        self.upgrade_on(ostree_booted(), pkgs, opts)
+    }
+}
+
+impl DnfManager {
+    fn install_on(&self, ostree: bool, pkgs: &[PackageRequest], opts: &InstallOpts) -> Result<()> {
+        if ostree {
+            return Self::layer(pkgs, opts);
         }
         let args = install_args(pkgs, opts);
         if opts.dry_run {
@@ -288,8 +278,30 @@ impl SystemPackageManager for DnfManager {
         sudo::run("dnf", &args, &[])
     }
 
-    async fn upgrade(&self, pkgs: &[PackageRequest], opts: &InstallOpts) -> Result<()> {
-        if ostree_booted() {
+    fn layer(pkgs: &[PackageRequest], opts: &InstallOpts) -> Result<()> {
+        if !layering_on(true) {
+            return Err(ostree_error());
+        }
+        // the driver already skips pinned entries (supports_version_pins)
+        let refresh = vec!["refresh-md".to_string()];
+        let args = ostree_install_args(pkgs);
+        if opts.dry_run {
+            if opts.update {
+                miseprintln!("{}", sudo::argv("rpm-ostree", &refresh).join(" "));
+            }
+            miseprintln!("{}", sudo::argv("rpm-ostree", &args).join(" "));
+            return Ok(());
+        }
+        if opts.update {
+            sudo::run("rpm-ostree", &refresh, &[])?;
+        }
+        sudo::run("rpm-ostree", &args, &[])?;
+        miseprintln!("dnf: reboot to start using the layered packages");
+        Ok(())
+    }
+
+    fn upgrade_on(&self, ostree: bool, pkgs: &[PackageRequest], opts: &InstallOpts) -> Result<()> {
+        if ostree {
             miseprintln!(
                 "dnf: layered packages update together with the base image; run `rpm-ostree upgrade` to update this host"
             );
@@ -322,6 +334,15 @@ mod tests {
         let msg = ostree_error().to_string();
         assert!(msg.contains("ostree"));
         assert!(msg.contains("system_packages.ostree layer"));
+    }
+
+    #[test]
+    fn test_ostree_marker_decides_booted() {
+        let dir = tempfile::tempdir().unwrap();
+        let marker = dir.path().join("ostree-booted");
+        assert!(!ostree_booted_at(&marker));
+        std::fs::write(&marker, "").unwrap();
+        assert!(ostree_booted_at(&marker));
     }
 
     #[test]
@@ -359,6 +380,24 @@ mod tests {
         );
         assert_eq!(statuses[1].state, PackageState::Missing);
         assert!(parse_requested_packages("not json").is_empty());
+    }
+
+    #[test]
+    fn test_ostree_host_rejects_install_unless_layering() {
+        let mgr = DnfManager::new();
+        let pkgs = vec![req("gimp", None)];
+        let opts = InstallOpts {
+            dry_run: true,
+            update: false,
+            ask: false,
+        };
+        let err = mgr.install_on(true, &pkgs, &opts).unwrap_err().to_string();
+        assert!(err.contains("system_packages.ostree layer"));
+        // upgrade only prints a hint: layered packages follow the base image
+        assert!(mgr.upgrade_on(true, &pkgs, &opts).is_ok());
+        // without the marker, a dry run goes on to print the dnf command
+        assert!(mgr.install_on(false, &pkgs, &opts).is_ok());
+        assert!(mgr.upgrade_on(false, &pkgs, &opts).is_ok());
     }
 
     #[test]
