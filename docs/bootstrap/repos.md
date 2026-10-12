@@ -50,7 +50,7 @@ an absolute segment. Relative paths therefore work only in a project config,
 not in the global config `~/.config/mise/config.toml`.
 
 A key can use a [`[vars]`](/configuration/vars.html) value, for example
-`"{{ vars.repos_dir }}/project"`. Combined with a `prompt` on the var, each
+<code v-pre>"{{ vars.repos_dir }}/project"</code>. Combined with a `prompt` on the var, each
 machine chooses its own base directory once while the declarations stay in the
 shared config:
 
