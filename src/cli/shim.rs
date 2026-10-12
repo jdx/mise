@@ -340,7 +340,9 @@ async fn which_shim(
         }
     }
     // fallback for "system"
-    if Settings::get().not_found_system_fallback {
+    // A wrapper shim left by another project must not turn a plain command into an error.
+    let inactive_wrapper = crate::dirs::COMMAND_WRAPPERS.join(bin_name).exists();
+    if Settings::get().not_found_system_fallback || inactive_wrapper {
         let mise_bin = file::canonicalize_or_self(&env::MISE_BIN);
         for path in &*env::PATH {
             if file::is_mise_shims_dir(path) || file::is_command_wrapper_dir(path) {

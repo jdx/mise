@@ -885,30 +885,41 @@ pub fn ensure_command_wrapper_shims(config: &Config, ts: &Toolset) -> Result<()>
     Ok(())
 }
 
-/// Wrappers defined by tracked configs outside the current directory. A tracked
-/// config that fails to load or has an invalid wrapper is skipped: it must not
-/// break a reshim run from somewhere else.
+/// Wrappers defined by tracked configs outside the current directory. Explicit
+/// `[wrappers]` are read per file. The built-in rust wrapper looks at the tool
+/// requests of every config together, since `mr-boxington` may be declared in a
+/// different file (e.g. globally) than `rust`. A tracked config that fails to
+/// load is skipped: it must not break a reshim run from somewhere else.
 async fn tracked_command_wrappers(
     config: &Config,
+    current_requests: Vec<&crate::toolset::ToolRequest>,
 ) -> Result<IndexMap<String, crate::config::CommandWrapper>> {
     let tracked = config.get_tracked_config_files().await?;
     let mut out = IndexMap::new();
+    let mut request_sets = vec![];
     for (path, cf) in &tracked {
         if config.config_files.contains_key(path) {
             continue;
         }
-        // Tools only feed the built-in rust wrapper. When they fail to resolve
-        // here (e.g. templates that need that project's env), keep the file's
-        // explicit `[wrappers]`.
-        let requests = cf.to_tool_request_set().unwrap_or_else(|err| {
-            debug!("ignoring tools of {}: {err:#}", display_path(path));
-            Default::default()
-        });
         let one: ConfigMap = std::iter::once((path.clone(), cf.clone())).collect();
-        match load_command_wrappers(&one, requests.tools.values().flatten()) {
+        match load_command_wrappers(&one, std::iter::empty()) {
             Ok(wrappers) => out.extend(wrappers),
             Err(err) => debug!("skipping wrappers of {}: {err:#}", display_path(path)),
         }
+        // Tools may fail to resolve here (e.g. templates that need that
+        // project's env); the explicit wrappers above are kept regardless.
+        match cf.to_tool_request_set() {
+            Ok(set) => request_sets.push(set),
+            Err(err) => debug!("ignoring tools of {}: {err:#}", display_path(path)),
+        }
+    }
+    let requests = current_requests.into_iter().chain(
+        request_sets
+            .iter()
+            .flat_map(|set| set.tools.values().flatten()),
+    );
+    if let Err(err) = crate::config::command_wrapper::add_rust_wrapper(&mut out, requests) {
+        debug!("skipping tracked rust wrapper: {err:#}");
     }
     Ok(out)
 }
@@ -928,7 +939,15 @@ async fn sync_command_wrapper_shims(
     // behind for a project that is not active falls through to the next PATH
     // entry. Only wrapper names matter here, so the first definition wins.
     validate_wrapper_names(wrappers.keys())?;
-    for (name, wrapper) in tracked_command_wrappers(config).await? {
+    for (name, wrapper) in tracked_command_wrappers(
+        config,
+        ts.versions
+            .values()
+            .flat_map(|versions| &versions.requests)
+            .collect(),
+    )
+    .await?
+    {
         if wrappers.contains_key(&name) {
             continue;
         }
