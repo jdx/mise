@@ -325,7 +325,7 @@
 - [mise doctor project](https://mise.jdx.dev/cli/doctor/project.html): Run the project's diagnostic checks
 - [mise dotfiles](https://mise.jdx.dev/cli/dotfiles.html): Deploy, track, and sync dotfiles
 - [mise dotfiles add](https://mise.jdx.dev/cli/dotfiles/add.html): Start deploying a file, or copy its edits back to the source
-- [mise dotfiles apply](https://mise.jdx.dev/cli/dotfiles/apply.html): Deploy [dotfiles] entries to their targets
+- [mise dotfiles apply](https://mise.jdx.dev/cli/dotfiles/apply.html): Link, copy, and render [dotfiles] entries into place
 - [mise dotfiles capture](https://mise.jdx.dev/cli/dotfiles/capture.html): Run a command and save tracked files before and after it
 - [mise dotfiles conflicts](https://mise.jdx.dev/cli/dotfiles/conflicts.html): Compare both sides of a sync conflict
 - [mise dotfiles diff](https://mise.jdx.dev/cli/dotfiles/diff.html): Show what mise dot apply would change
@@ -341,7 +341,7 @@
 - [mise dotfiles origin](https://mise.jdx.dev/cli/dotfiles/origin.html): Show, connect, or disconnect the origin repository
 - [mise dotfiles origin set](https://mise.jdx.dev/cli/dotfiles/origin/set.html): Connect an origin repository
 - [mise dotfiles paths](https://mise.jdx.dev/cli/dotfiles/paths.html): List tracked paths and how they are saved
-- [mise dotfiles pull](https://mise.jdx.dev/cli/dotfiles/pull.html): Apply incoming changes from the origin to your files
+- [mise dotfiles pull](https://mise.jdx.dev/cli/dotfiles/pull.html): Write fetched changes from other machines to tracked files
 - [mise dotfiles recover](https://mise.jdx.dev/cli/dotfiles/recover.html): Recover an interrupted dotfile operation
 - [mise dotfiles rollback](https://mise.jdx.dev/cli/dotfiles/rollback.html): Return files to the version a checkpoint holds
 - [mise dotfiles save](https://mise.jdx.dev/cli/dotfiles/save.html): Save a checkpoint of the tracked files now
