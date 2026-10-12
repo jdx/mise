@@ -27,7 +27,17 @@ GOMOD
 assert "mise current go" "1.21.4"
 assert_not_contains "mise current go 2>&1" "deprecated"
 
-# the `go` directive is only a minimum compatible version. Deprecated: it still
+# without a toolchain line, an exact `go` line implies `toolchain go1.21.4`. This is
+# what `go mod tidy` leaves when the two lines match, so it is read and does not warn.
+cat >go.mod <<GOMOD
+module example.com/m
+
+go 1.21.4
+GOMOD
+assert "mise current go" "1.21.4"
+assert_not_contains "mise current go 2>&1" "deprecated"
+
+# a `go X.Y` line is only a minimum compatible version. Deprecated: it still
 # resolves (to the latest matching patch) but warns. Removed in mise 2026.11.0,
 # along with this block.
 cat >go.mod <<GOMOD
@@ -45,7 +55,7 @@ module example.com/m
 GOMOD
 assert "mise current go" ""
 
-# projects can opt into the final behavior now: the `go` directive is not read and
+# projects can opt into the final behavior now: a `go X.Y` line is not read and
 # nothing warns
 mise settings set idiomatic_version_file_ignore_minimum_versions true
 
@@ -56,6 +66,14 @@ go 1.21
 GOMOD
 assert "mise current go" ""
 assert_not_contains "mise current go 2>&1" "deprecated"
+
+# ...an exact `go` line still resolves, since it is the module's implied toolchain
+cat >go.mod <<GOMOD
+module example.com/m
+
+go 1.21.4
+GOMOD
+assert "mise current go" "1.21.4"
 
 # ...and `toolchain` still resolves
 cat >go.mod <<GOMOD
