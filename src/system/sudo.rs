@@ -47,12 +47,13 @@ pub(crate) fn elevator() -> String {
         .to_string()
 }
 
-/// Args that make `elevator` fail instead of prompting, or `None` when mise
-/// does not know how to ask that of this command.
-fn noninteractive_args(elevator: &str) -> Option<&'static [&'static str]> {
+/// The flag that makes doas or run0 fail instead of prompting. mise adds it to
+/// the real command rather than probing with `true`, because a rule may allow
+/// the requested command without allowing anything else.
+fn noninteractive_flag(elevator: &str) -> Option<&'static str> {
     match std::path::Path::new(elevator).file_name()?.to_str()? {
-        "sudo" | "doas" => Some(&["-n", "true"]),
-        "run0" => Some(&["--no-ask-password", "true"]),
+        "doas" => Some("-n"),
+        "run0" => Some("--no-ask-password"),
         _ => None,
     }
 }
@@ -76,7 +77,10 @@ pub(crate) fn argv_with_env(
 ) -> Vec<String> {
     let mut argv = vec![];
     if !is_root() && Settings::get().system_packages.sudo {
-        argv.push(elevator());
+        let elevator = elevator();
+        let flag = noninteractive_flag(&elevator).filter(|_| !console::user_attended_stderr());
+        argv.push(elevator);
+        argv.extend(flag.map(str::to_string));
         // sudo resets the environment by default; pass env vars through
         // `env` so they reach the elevated command
         if !envs.is_empty() {
@@ -238,7 +242,7 @@ pub(crate) fn output(program: &str, args: &[String], envs: &[(String, String)]) 
         !is_root() && Settings::get().system_packages.sudo && console::user_attended_stderr();
     if interactive && is_sudo(&argv[0]) {
         let _progress_pause = pause_progress_for_child();
-        CmdLineRunner::new("sudo").arg("-v").raw(true).execute()?;
+        CmdLineRunner::new(&argv[0]).arg("-v").raw(true).execute()?;
     }
     info!("$ {}", argv.join(" "));
     let mut cmd = Command::new(&argv[0]);
@@ -352,16 +356,19 @@ pub(crate) fn ensure_elevation_available(manual_cmd: &str) -> Result<()> {
         );
     }
     if !console::user_attended_stderr() {
-        let ok = noninteractive_args(&elevator).is_some_and(|args| {
+        let ok = if is_sudo(&elevator) {
             Command::new(&elevator)
-                .args(args)
+                .args(["-n", "true"])
                 .stdin(Stdio::null())
                 .stdout(Stdio::null())
                 .stderr(Stdio::null())
                 .status()
                 .map(|status| status.success())
                 .unwrap_or(false)
-        });
+        } else {
+            // doas and run0 get a no-prompt flag on the real command instead
+            noninteractive_flag(&elevator).is_some()
+        };
         if !ok {
             bail!(
                 "{elevator} requires a password but no TTY is available. Run manually:\n  {manual_cmd}"
@@ -376,17 +383,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn noninteractive_check_knows_each_elevator() {
-        assert_eq!(noninteractive_args("sudo"), Some(&["-n", "true"][..]));
-        assert_eq!(
-            noninteractive_args("/usr/bin/doas"),
-            Some(&["-n", "true"][..])
-        );
-        assert_eq!(
-            noninteractive_args("run0"),
-            Some(&["--no-ask-password", "true"][..])
-        );
-        assert_eq!(noninteractive_args("pkexec"), None);
+    fn noninteractive_flag_knows_each_elevator() {
+        assert_eq!(noninteractive_flag("/usr/bin/doas"), Some("-n"));
+        assert_eq!(noninteractive_flag("run0"), Some("--no-ask-password"));
+        assert_eq!(noninteractive_flag("sudo"), None);
+        assert_eq!(noninteractive_flag("pkexec"), None);
         assert!(is_sudo("/usr/bin/sudo"));
         assert!(!is_sudo("run0"));
     }
