@@ -3,7 +3,7 @@ use std::path::Path;
 use std::process::Stdio;
 
 use async_trait::async_trait;
-use eyre::bail;
+use eyre::{WrapErr, bail};
 
 use super::{InstallOpts, PackageRequest, PackageState, PackageStatus, SystemPackageManager};
 use crate::config::Settings;
@@ -75,12 +75,11 @@ struct OstreeRequests {
     next: Vec<String>,
 }
 
-fn parse_requests(json: &str) -> OstreeRequests {
-    let Ok(status) = serde_json::from_str::<serde_json::Value>(json) else {
-        return OstreeRequests::default();
-    };
+fn parse_requests(json: &str) -> Result<OstreeRequests> {
+    let status = serde_json::from_str::<serde_json::Value>(json)
+        .wrap_err("could not parse `rpm-ostree status --json`")?;
     let Some(deployments) = status["deployments"].as_array() else {
-        return OstreeRequests::default();
+        bail!("`rpm-ostree status --json` listed no deployments");
     };
     let requested = |d: &serde_json::Value| -> Vec<String> {
         d["requested-packages"]
@@ -95,24 +94,28 @@ fn parse_requests(json: &str) -> OstreeRequests {
     let flag = |d: &serde_json::Value, key: &str| d[key].as_bool().unwrap_or(false);
     let booted = deployments.iter().find(|d| flag(d, "booted"));
     let next = deployments.iter().find(|d| flag(d, "staged")).or(booted);
-    OstreeRequests {
+    Ok(OstreeRequests {
         booted: booted.map(requested).unwrap_or_default(),
         next: next.map(requested).unwrap_or_default(),
-    }
+    })
 }
 
-async fn ostree_requests() -> OstreeRequests {
+async fn ostree_requests() -> Result<OstreeRequests> {
     let output = tokio::process::Command::new("rpm-ostree")
         .args(["status", "--json"])
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
-        .stderr(Stdio::null())
+        .stderr(Stdio::piped())
         .output()
-        .await;
-    match output {
-        Ok(o) if o.status.success() => parse_requests(&String::from_utf8_lossy(&o.stdout)),
-        _ => OstreeRequests::default(),
+        .await
+        .wrap_err("failed to run rpm-ostree status")?;
+    if !output.status.success() {
+        bail!(
+            "rpm-ostree status failed: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        );
     }
+    parse_requests(&String::from_utf8_lossy(&output.stdout))
 }
 
 /// `rpm -q` sees only the booted image, so fold in what the next deployment
@@ -265,7 +268,7 @@ impl SystemPackageManager for DnfManager {
         let stdout = String::from_utf8_lossy(&output.stdout);
         let mut statuses = parse_rpm_query(&stdout, pkgs);
         if ostree_booted() {
-            apply_requests(&mut statuses, &ostree_requests().await);
+            apply_requests(&mut statuses, &ostree_requests().await?);
         }
         Ok(statuses)
     }
@@ -283,7 +286,7 @@ impl SystemPackageManager for DnfManager {
     async fn remove(&self, pkgs: &[PackageRequest], opts: &InstallOpts) -> Result<()> {
         // only packages layered for the next deployment can be uninstalled;
         // packages in the base image are never touched
-        let layered = ostree_requests().await.next;
+        let layered = ostree_requests().await?.next;
         let (pkgs, base): (Vec<_>, Vec<_>) = pkgs
             .iter()
             .cloned()
@@ -421,15 +424,17 @@ mod tests {
             {"staged":true,"requested-packages":["gimp"]},
             {"booted":true,"requested-packages":["old"]}]}"#;
         assert_eq!(
-            parse_requests(json),
+            parse_requests(json).unwrap(),
             OstreeRequests {
                 booted: vec!["old".to_string()],
                 next: vec!["gimp".to_string()],
             }
         );
         let json = r#"{"deployments":[{"booted":true,"requested-packages":["old"]}]}"#;
-        assert_eq!(parse_requests(json).next, vec!["old"]);
-        assert_eq!(parse_requests("not json"), OstreeRequests::default());
+        assert_eq!(parse_requests(json).unwrap().next, vec!["old"]);
+        // unreadable state is an error, not an empty request list
+        assert!(parse_requests("not json").is_err());
+        assert!(parse_requests("{}").is_err());
     }
 
     #[test]
