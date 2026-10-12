@@ -70,8 +70,7 @@ fn ostree_uninstall_args(pkgs: &[PackageRequest]) -> Vec<String> {
 struct OstreeRequests {
     /// requested by the booted deployment
     booted: Vec<String>,
-    /// requested by the deployment the next boot uses: the staged one when a
-    /// reboot is pending, otherwise the booted one
+    /// requested by the deployment the next boot uses
     next: Vec<String>,
 }
 
@@ -93,7 +92,9 @@ fn parse_requests(json: &str) -> Result<OstreeRequests> {
     };
     let flag = |d: &serde_json::Value, key: &str| d[key].as_bool().unwrap_or(false);
     let booted = deployments.iter().find(|d| flag(d, "booted"));
-    let next = deployments.iter().find(|d| flag(d, "staged")).or(booted);
+    // deployments are listed in boot order, so the first one boots next: the
+    // staged deployment, or a rollback target that was never staged
+    let next = deployments.first().or(booted);
     Ok(OstreeRequests {
         booted: booted.map(requested).unwrap_or_default(),
         next: next.map(requested).unwrap_or_default(),
@@ -578,7 +579,7 @@ mod tests {
     }
 
     #[test]
-    fn test_requests_follow_the_staged_deployment() {
+    fn test_requests_follow_the_next_boot_deployment() {
         let json = r#"{"deployments":[
             {"staged":true,"requested-packages":["gimp"]},
             {"booted":true,"requested-packages":["old"]}]}"#;
@@ -589,6 +590,11 @@ mod tests {
                 next: vec!["gimp".to_string()],
             }
         );
+        // after a rollback the first deployment boots next without being staged
+        let json = r#"{"deployments":[
+            {"requested-packages":["rolled"]},
+            {"booted":true,"requested-packages":["old"]}]}"#;
+        assert_eq!(parse_requests(json).unwrap().next, vec!["rolled"]);
         let json = r#"{"deployments":[{"booted":true,"requested-packages":["old"]}]}"#;
         assert_eq!(parse_requests(json).unwrap().next, vec!["old"]);
         // unreadable state is an error, not an empty request list
