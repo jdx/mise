@@ -2979,7 +2979,8 @@ fn is_config_target(config: &Config, path: &std::path::Path) -> bool {
 fn is_simulated_config_target(config: &Config, path: &std::path::Path) -> bool {
     is_config_target(config, path)
         && (!config.config_files.contains_key(path)
-            || path.extension().is_some_and(|ext| ext == "toml"))
+            || path.extension().is_some_and(|ext| ext == "toml")
+            || config::config_file::is_mise_toml_filename(path))
 }
 
 fn is_mise_config_target(path: &std::path::Path) -> bool {

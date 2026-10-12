@@ -1230,6 +1230,15 @@ pub(super) fn detect_config_file_type_by_filename(path: &Path) -> Option<ConfigF
     None
 }
 
+/// Whether the filename alone marks the file as mise TOML configuration,
+/// including names chosen with `MISE_OVERRIDE_CONFIG_FILENAMES`.
+pub fn is_mise_toml_filename(path: &Path) -> bool {
+    matches!(
+        detect_config_file_type_by_filename(path),
+        Some(ConfigFileType::MiseToml)
+    )
+}
+
 /// Detect a config file while preserving disabled and backend-discovery outcomes.
 pub(super) async fn detect_config_file_with_settings(
     path: &Path,
