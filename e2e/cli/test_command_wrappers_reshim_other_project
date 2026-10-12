@@ -29,4 +29,4 @@ assert_fail "test -e '$MISE_DATA_DIR/command-wrappers/bin/uname'"
 # even when system fallback is disabled for tool shims
 printf '[wrappers.uname]\ncommand = "echo"\nargs = ["wrapped uname"]\n' >proj-a/mise.toml
 (cd proj-a && mise reshim)
-assert_contains "cd proj-b && MISE_NOT_FOUND_SYSTEM_FALLBACK=0 MISE_NOT_FOUND_AUTO_INSTALL=0 '$MISE_DATA_DIR/command-wrappers/bin/uname'" "Linux"
+assert_contains "cd proj-b && MISE_NOT_FOUND_SYSTEM_FALLBACK=0 MISE_NOT_FOUND_AUTO_INSTALL=0 '$MISE_DATA_DIR/command-wrappers/bin/uname'" "$(uname)"
