@@ -3235,8 +3235,7 @@ where
     F: FnMut() -> Fut,
     Fut: std::future::Future<Output = Result<T>>,
 {
-    retry_async_with_retries(verb_label, url, Settings::get().http_retries, f)
-    .await
+    retry_async_with_retries(verb_label, url, Settings::get().http_retries, f).await
 }
 
 pub async fn retry_async_with_retries<F, Fut, T>(
