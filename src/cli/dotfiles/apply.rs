@@ -165,7 +165,9 @@ impl DotfilesApply {
             edits.retain(|req| !done.contains(&req.path));
         }
         if files.is_empty() && edits.is_empty() && !self.prune {
-            if !after_config {
+            // nothing was configured at all, not just nothing left after the
+            // config pass
+            if done.is_none_or(<[PathBuf]>::is_empty) {
                 super::warn_if_dotfiles_ignored(&config);
                 info!("no dotfiles configured in [dotfiles]");
             }

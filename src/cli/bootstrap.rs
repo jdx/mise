@@ -2849,7 +2849,7 @@ fn config_files_after_dotfiles_dry_run(
     let mut bodies = indexmap::IndexMap::new();
     let mut unavailable_bodies = HashSet::new();
     for file in files {
-        if !is_mise_config_target(&file.target) {
+        if !is_config_target(config, &file.target) {
             continue;
         }
         if file.mode == FileMode::Absent {
@@ -2900,7 +2900,7 @@ fn config_files_after_dotfiles_dry_run(
         }
     }
     for edit in edits {
-        if !is_mise_config_target(&edit.path) {
+        if !is_config_target(config, &edit.path) {
             continue;
         }
         if unavailable_bodies.contains(&edit.path) {
@@ -2966,6 +2966,12 @@ fn parse_mise_config_body(
     Ok(Arc::new(
         config::config_file::mise_toml::MiseToml::from_str(body, path)?,
     ))
+}
+
+/// Whether a dotfile target is mise configuration: a conventional config path
+/// or a file this run already loaded.
+fn is_config_target(config: &Config, path: &std::path::Path) -> bool {
+    is_mise_config_target(path) || config.config_files.contains_key(path)
 }
 
 fn is_mise_config_target(path: &std::path::Path) -> bool {
@@ -4953,9 +4959,7 @@ pub(crate) async fn run_dotfiles_apply(cmd: DotfilesApply) -> Result<()> {
         // rule it adds applies in this run instead of the next one. A dry
         // run previews that write, then plans the rest against the sources
         // it would write.
-        let Some(done) = cmd.run_config_entries(&config, |path| {
-            is_mise_config_target(path) || config.config_files.contains_key(path)
-        })?
+        let Some(done) = cmd.run_config_entries(&config, |path| is_config_target(&config, path))?
         else {
             return Ok(());
         };
