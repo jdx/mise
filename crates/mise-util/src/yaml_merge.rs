@@ -65,7 +65,7 @@ pub(crate) fn mapping_subset(source: &yaml::Mapping, target: &yaml::Mapping) -> 
 
 /// The mapping at the root of a file's only document. An empty target gets a
 /// document created so keys have somewhere to go.
-fn root_mapping(file: &YamlFile, what: &str, create: bool) -> Result<Option<Mapping>> {
+pub(crate) fn root_mapping(file: &YamlFile, what: &str, create: bool) -> Result<Option<Mapping>> {
     if file.documents().count() > 1 {
         bail!("the YAML {what} holds several documents; only one is supported");
     }

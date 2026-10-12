@@ -3,7 +3,9 @@
 //!
 //! Every parse goes through [`options`] so mise reads YAML the same way
 //! everywhere: only `true`/`false` are booleans when the target type does not
-//! say otherwise, so `yes`, `on`, `y` and `no` stay strings.
+//! say otherwise, so `yes`, `on`, `y` and `no` stay strings. A non-finite
+//! float (`.inf`, `.nan`, `1e999`) with no declared type is an error rather
+//! than a value: serde-saphyr would otherwise hand it over as a string.
 
 use indexmap::IndexMap;
 use serde::de::{self, DeserializeOwned, MapAccess, SeqAccess, Visitor};
@@ -17,7 +19,6 @@ pub use serde_saphyr::Error;
 pub fn options() -> serde_saphyr::Options {
     serde_saphyr::options! {
         strict_booleans: true,
-        reject_non_finite_typeless_float: false,
     }
 }
 
@@ -371,6 +372,16 @@ mod tests {
         let v: Value = from_str("a: 'yes'\nb: '1.0'\nc: 'null'\nd: ''\ne: \"386\"\n").unwrap();
         let text = to_string(&v).unwrap();
         assert_eq!(from_str::<Value>(&text).unwrap(), v);
+    }
+
+    #[test]
+    fn untyped_non_finite_floats_are_rejected() {
+        for text in ["a: .inf\n", "a: -.inf\n", "a: .nan\n", "a: 1e999\n"] {
+            assert!(from_str::<Value>(text).is_err(), "{text}");
+        }
+        // a field that asks for a string still gets the text
+        let map: IndexMap<String, String> = from_str("a: .inf\n").unwrap();
+        assert_eq!(map["a"], ".inf");
     }
 
     #[test]

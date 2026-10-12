@@ -405,12 +405,7 @@ impl<'de> Deserialize<'de> for ScalarString {
             }
 
             fn visit_f64<E: de::Error>(self, v: f64) -> std::result::Result<ScalarString, E> {
-                Ok(ScalarString(match v {
-                    v if v.is_nan() => ".nan".to_string(),
-                    v if v.is_infinite() && v > 0.0 => ".inf".to_string(),
-                    v if v.is_infinite() => "-.inf".to_string(),
-                    v => format!("{v:?}"),
-                }))
+                Ok(ScalarString(format!("{v:?}")))
             }
         }
 
@@ -427,7 +422,6 @@ impl RegistryYaml {
             text,
             serde_saphyr::options! {
                 strict_booleans: true,
-                reject_non_finite_typeless_float: false,
             },
         )
     }

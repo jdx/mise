@@ -407,6 +407,7 @@ ignored = [
   "openssl",
   "phf_codegen",
   "rust-embed",
+  "serde-saphyr", # Used by build.rs to read the aqua registry metadata.
 ]
 
 [lints.rust]

@@ -16,12 +16,13 @@
 //! - An empty target is an empty table.
 
 use crate::yaml;
-use crate::yaml_merge::{mapping_subset, merge_yaml};
+use crate::yaml_merge::{merge_yaml, root_mapping};
 use eyre::{Result, eyre};
 use indexmap::IndexMap;
 use serde_json::value::RawValue;
 use serde_json::{Map, Value};
 use std::path::Path;
+use std::str::FromStr;
 use toml_edit::{DocumentMut, Item, TableLike};
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
@@ -53,10 +54,18 @@ impl Format {
 
 /// A parsed document in its format's own value type. JSON's cannot hold TOML
 /// datetimes or YAML's non-string keys, so each format is compared as itself.
+/// YAML is kept as its lossless syntax tree, so tags such as `!include` take
+/// part in comparisons and survive into [`missing`]'s output.
 enum Doc {
     Json(Value),
     Toml(toml::Table),
-    Yaml(yaml::Mapping),
+    /// `None` for an empty document.
+    Yaml(Option<YamlDoc>),
+}
+
+struct YamlDoc {
+    file: yaml_edit::YamlFile,
+    root: yaml_edit::Mapping,
 }
 
 /// Whether every key in `source` is already set to the same value in
@@ -69,7 +78,11 @@ pub fn contains(format: Format, target: &str, source: &str) -> Result<bool> {
         ) {
             (Doc::Json(target), Doc::Json(source)) => json_subset(&source, &target),
             (Doc::Toml(target), Doc::Toml(source)) => toml_subset(&source, &target),
-            (Doc::Yaml(target), Doc::Yaml(source)) => mapping_subset(&source, &target),
+            (Doc::Yaml(target), Doc::Yaml(source)) => match (source, target) {
+                (None, _) => true,
+                (Some(_), None) => false,
+                (Some(source), Some(target)) => yaml_subset(&source.root, &target.root),
+            },
             _ => unreachable!("both sides are parsed as the same format"),
         },
     )
@@ -110,12 +123,14 @@ pub fn missing(format: Format, target: &str, source: &str) -> Result<Option<Stri
                     .then(|| toml::to_string(&missing))
                     .transpose()?
             }
-            (Doc::Yaml(target), Doc::Yaml(source)) => {
-                let missing = yaml_missing(&source, &target);
-                (!missing.is_empty())
-                    .then(|| yaml::to_string(&missing))
-                    .transpose()?
-            }
+            (Doc::Yaml(target), Doc::Yaml(source)) => match (source, target) {
+                (None, _) => None,
+                (Some(source), None) => Some(source.file.to_string()),
+                (Some(source), Some(target)) => {
+                    yaml_remove_present(&source.root, &target.root);
+                    (!source.root.is_empty()).then(|| source.file.to_string())
+                }
+            },
             _ => unreachable!("both sides are parsed as the same format"),
         },
     )
@@ -169,23 +184,40 @@ fn toml_missing(source: &toml::Table, target: &toml::Table) -> toml::Table {
     out
 }
 
-fn yaml_missing(source: &yaml::Mapping, target: &yaml::Mapping) -> yaml::Mapping {
-    let mut out = yaml::Mapping::new();
-    for (key, sv) in source {
-        match (sv, target.get(key)) {
-            (_, None) => {
-                out.insert(key.clone(), sv.clone());
-            }
-            (yaml::Value::Mapping(s), Some(yaml::Value::Mapping(t))) => {
-                let inner = yaml_missing(s, t);
-                if !inner.is_empty() {
-                    out.insert(key.clone(), yaml::Value::Mapping(inner));
+/// Remove from `source` every key `target` already has a value for. A mapping
+/// both hold keeps only its missing keys and goes when none are left. Working
+/// on the source's own syntax tree keeps its tags and comments.
+fn yaml_remove_present(source: &yaml_edit::Mapping, target: &yaml_edit::Mapping) {
+    let keys: Vec<_> = source.keys().collect();
+    for key in keys {
+        let (Some(sv), Some(tv)) = (source.get(&key), target.get(&key)) else {
+            continue;
+        };
+        match (sv.as_mapping(), tv.as_mapping()) {
+            (Some(s), Some(t)) => {
+                yaml_remove_present(s, t);
+                if s.is_empty() {
+                    source.remove(&key);
                 }
             }
-            _ => {}
+            _ => {
+                source.remove(&key);
+            }
         }
     }
-    out
+}
+
+/// Whether every key of `source` is set to the same value in `target`,
+/// mappings compared recursively. Values compare by YAML type, tag and value,
+/// not by spelling.
+fn yaml_subset(source: &yaml_edit::Mapping, target: &yaml_edit::Mapping) -> bool {
+    source.iter().all(|(key, sv)| match target.get(&key) {
+        None => false,
+        Some(tv) => match (sv.as_mapping(), tv.as_mapping()) {
+            (Some(s), Some(t)) => yaml_subset(s, t),
+            _ => sv.yaml_eq(&tv),
+        },
+    })
 }
 
 fn parse(format: Format, text: &str, what: &str) -> Result<Doc> {
@@ -207,11 +239,16 @@ fn parse(format: Format, text: &str, what: &str) -> Result<Doc> {
         },
         Format::Toml if blank => Doc::Toml(toml::Table::new()),
         Format::Toml => Doc::Toml(toml::from_str(text).map_err(|e| fail(&e))?),
-        Format::Yaml if blank => Doc::Yaml(yaml::Mapping::new()),
-        Format::Yaml => match yaml::from_str(text).map_err(|e| fail(&e))? {
-            yaml::Value::Mapping(map) => Doc::Yaml(map),
-            _ => return Err(not_a_table()),
-        },
+        Format::Yaml if blank => Doc::Yaml(None),
+        Format::Yaml => {
+            // serde-saphyr checks the syntax; yaml-edit is lenient about errors
+            let yaml::Value::Mapping(_) = yaml::from_str(text).map_err(|e| fail(&e))? else {
+                return Err(not_a_table());
+            };
+            let file = yaml_edit::YamlFile::from_str(text).map_err(|e| fail(&e))?;
+            let root = root_mapping(&file, what, false)?.ok_or_else(not_a_table)?;
+            Doc::Yaml(Some(YamlDoc { file, root }))
+        }
     })
 }
 
@@ -223,7 +260,10 @@ pub fn conflicts(format: Format, a: &str, b: &str) -> Result<Vec<String>> {
     match (parse(format, a, "source")?, parse(format, b, "source")?) {
         (Doc::Json(a), Doc::Json(b)) => json_conflicts(&a, &b, "", &mut paths),
         (Doc::Toml(a), Doc::Toml(b)) => toml_conflicts(&a, &b, "", &mut paths),
-        (Doc::Yaml(a), Doc::Yaml(b)) => yaml_conflicts(&a, &b, "", &mut paths),
+        (Doc::Yaml(Some(a)), Doc::Yaml(Some(b))) => {
+            yaml_conflicts(&a.root, &b.root, "", &mut paths)
+        }
+        (Doc::Yaml(_), Doc::Yaml(_)) => {}
         _ => unreachable!("both sides are parsed as the same format"),
     }
     Ok(paths)
@@ -266,22 +306,22 @@ fn toml_conflicts(a: &toml::Table, b: &toml::Table, prefix: &str, paths: &mut Ve
     }
 }
 
-fn yaml_conflicts(a: &yaml::Mapping, b: &yaml::Mapping, prefix: &str, paths: &mut Vec<String>) {
-    for (key, av) in a {
-        let Some(bv) = b.get(key) else { continue };
-        let name = match key {
-            yaml::Value::String(name) => name.clone(),
-            other => yaml::to_string(other)
-                .unwrap_or_default()
-                .trim()
-                .to_string(),
+fn yaml_conflicts(
+    a: &yaml_edit::Mapping,
+    b: &yaml_edit::Mapping,
+    prefix: &str,
+    paths: &mut Vec<String>,
+) {
+    for (key, av) in a.iter() {
+        let Some(bv) = b.get(&key) else { continue };
+        let name = match key.as_scalar() {
+            Some(scalar) => scalar.as_string(),
+            None => key.to_string().trim().to_string(),
         };
         let path = child_path(prefix, &name);
-        match (av, bv) {
-            (yaml::Value::Mapping(av), yaml::Value::Mapping(bv)) => {
-                yaml_conflicts(av, bv, &path, paths);
-            }
-            _ if av != bv => paths.push(path),
+        match (av.as_mapping(), bv.as_mapping()) {
+            (Some(av), Some(bv)) => yaml_conflicts(av, bv, &path, paths),
+            _ if !av.yaml_eq(&bv) => paths.push(path),
             _ => {}
         }
     }
@@ -697,6 +737,24 @@ path = \"/Applications/X.app\"
         assert_eq!(
             conflicts(Format::Yaml, "a:\n  b: 1\n1: x\n", "a:\n  b: 2\n1: y\n").unwrap(),
             vec!["a.b".to_string(), "1".to_string()]
+        );
+    }
+
+    #[test]
+    fn yaml_tags_are_part_of_the_value() {
+        let target = "path: !include settings.yaml\n";
+        assert!(!contains(Format::Yaml, target, "path: settings.yaml\n").unwrap());
+        assert_eq!(
+            merge(Format::Yaml, target, "path: settings.yaml\n").unwrap(),
+            "path: settings.yaml\n"
+        );
+        assert_eq!(
+            fill_missing(Format::Yaml, "a: 1\n", "a: 2\nkey: !secret api_key\n").unwrap(),
+            "a: 1\nkey: !secret api_key\n"
+        );
+        assert_eq!(
+            conflicts(Format::Yaml, "a: !secret x\n", "a: x\n").unwrap(),
+            vec!["a".to_string()]
         );
     }
 
