@@ -237,8 +237,13 @@ impl RustPlugin {
             return Ok(());
         }
         ctx.pr.set_message("Downloading rustup-init".into());
-        HTTP.download_file(rustup_url(&settings), &rustup_path(), Some(ctx.pr.as_ref()))
-            .await?;
+        let config_env = ctx.config.env().await?;
+        HTTP.download_file(
+            rustup_url(&settings, &config_env),
+            &rustup_path(),
+            Some(ctx.pr.as_ref()),
+        )
+        .await?;
         file::make_executable(rustup_path())?;
         file::create_dir_all(&homes.rustup)?;
         let mut cmd = CmdLineRunner::new(rustup_path())
@@ -247,6 +252,11 @@ impl RustPlugin {
             .arg("--default-toolchain")
             .arg("none")
             .arg("-y")
+            .envs(
+                ["RUSTUP_DIST_SERVER", "RUSTUP_UPDATE_ROOT"]
+                    .iter()
+                    .filter_map(|k| config_env.get(*k).map(|v| (*k, v))),
+            )
             .env_values(tv.install_env())
             .envs(rustup_env(homes, &tv.version));
         if let Some(host) = settings.rust.default_host.as_ref() {
@@ -949,8 +959,11 @@ const CARGO_BIN: &str = "cargo.exe";
 /// Where to download `rustup-init` from. Honors `RUSTUP_UPDATE_ROOT`, the variable
 /// rustup itself uses to find its own releases, so a mirror such as panamax works
 /// for the bootstrap download as well as for the toolchains.
-fn rustup_url(settings: &Settings) -> String {
-    let root = std::env::var("RUSTUP_UPDATE_ROOT").ok();
+fn rustup_url(settings: &Settings, config_env: &IndexMap<String, String>) -> String {
+    let root = config_env
+        .get("RUSTUP_UPDATE_ROOT")
+        .cloned()
+        .or_else(|| std::env::var("RUSTUP_UPDATE_ROOT").ok());
     rustup_url_for(root.as_deref(), &rustup_host_triple(settings))
 }
 
@@ -975,24 +988,11 @@ fn default_rustup_url(triple: &str) -> String {
 }
 
 fn rustup_host_triple(settings: &Settings) -> String {
-    if let Some(host) = settings.rust.default_host.as_ref() {
-        return host.clone();
-    }
-    let arch = match settings.arch() {
-        "x64" => "x86_64",
-        "arm64" => "aarch64",
-        other => other,
-    };
-    let os = if cfg!(windows) {
-        "pc-windows-msvc"
-    } else if cfg!(target_os = "macos") {
-        "apple-darwin"
-    } else if cfg!(target_env = "musl") {
-        "unknown-linux-musl"
-    } else {
-        "unknown-linux-gnu"
-    };
-    format!("{arch}-{os}")
+    settings
+        .rust
+        .default_host
+        .clone()
+        .unwrap_or_else(|| crate::build_time::TARGET.to_string())
 }
 
 fn rustup_path() -> PathBuf {
