@@ -242,6 +242,15 @@ impl SystemPackageManager for DnfManager {
         if pkgs.is_empty() {
             return Ok(vec![]);
         }
+        if let Some(p) = pkgs
+            .iter()
+            .find(|p| group_id(p).is_some() && p.version.is_some())
+        {
+            bail!(
+                "dnf group {} cannot be pinned to a version; use \"latest\"",
+                p.name
+            );
+        }
         if pkgs.iter().any(|p| p.name.starts_with("@^")) {
             bail!("dnf environment groups (@^name) are not supported; use the group ids instead");
         }
