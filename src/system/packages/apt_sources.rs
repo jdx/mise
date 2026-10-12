@@ -606,16 +606,8 @@ pub(crate) async fn apply(sources: &[AptSource], dry_run: bool, ask: bool) -> Re
     if sources.is_empty() {
         return Ok(applied);
     }
-    if let Some((major, minor)) = apt_version()
-        && (major, minor) < (2, 4)
-    {
-        applied.failures.push(eyre!(
-            "apt {major}.{minor} cannot read signing keys embedded in a source file; \
-             [bootstrap.apt.sources] needs apt 2.4 or newer"
-        ));
-        return Ok(applied);
-    }
     let release = Release::read();
+    let mut apt_checked = false;
     let mut declared = vec![];
     let mut pending = vec![];
     for source in sources {
@@ -634,6 +626,25 @@ pub(crate) async fn apply(sources: &[AptSource], dry_run: bool, ask: bool) -> Re
                 continue;
             }
         };
+        // only a source that applies here needs an inline key; a PPA skipped
+        // on Debian must not fail on an old apt
+        if !apt_checked {
+            apt_checked = true;
+            match apt_version() {
+                Some(version) if version >= (2, 4) => {}
+                found => {
+                    let found = found
+                        .map_or("an unknown version of apt".to_string(), |(major, minor)| {
+                            format!("apt {major}.{minor}")
+                        });
+                    applied.failures.push(eyre!(
+                        "{found} cannot be relied on to read signing keys embedded in a source \
+                         file; [bootstrap.apt.sources] needs apt 2.4 or newer"
+                    ));
+                    return Ok(applied);
+                }
+            }
+        }
         let sources_path = source.sources_path();
         declared.push((source, sources_path.clone()));
         let existing = std::fs::read_to_string(&sources_path).ok();
