@@ -264,8 +264,8 @@ mod tests {
 
     #[test]
     fn test_baked_registry_numeric_replacement_keys() {
-        let package = package("sharkdp/hyperfine").unwrap().unwrap();
+        let package = package("ko-build/ko").unwrap().unwrap();
 
-        assert_eq!(package.replacements.get("386"), Some(&"i686".to_string()));
+        assert_eq!(package.replacements.get("386"), Some(&"i386".to_string()));
     }
 }
