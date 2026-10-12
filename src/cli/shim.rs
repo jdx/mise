@@ -137,35 +137,38 @@ fn invoked_shim_path() -> PathBuf {
         .unwrap_or(argv0)
 }
 
-/// Whether a selected but uninstalled tool version may provide `shim_name`, by registry bin
-/// metadata or because another installed version of the same tool does.
+/// Whether a selected but uninstalled tool version may provide `shim_name`: it is named after the
+/// command, the registry lists the command as one of its bins, or another installed version of
+/// the same tool provides it. Lookup errors count as "no" so a leftover wrapper still falls
+/// through.
 async fn missing_version_may_provide(
     config: &Arc<Config>,
     ts: &Toolset,
     shim_name: &str,
     bin_name: &str,
-) -> Result<bool> {
+) -> bool {
     let missing = ts.list_missing_versions(config).await;
     if missing.is_empty() {
-        return Ok(false);
+        return false;
     }
-    let installed = ts.list_installed_versions(config).await?;
+    let installed = ts.list_installed_versions(config).await.unwrap_or_default();
     for tv in &missing {
-        if crate::registry::REGISTRY
-            .get(&tv.ba().short)
-            .is_some_and(|tool| tool.provides_bin(shim_name))
+        if tv.ba().matches_bin_name(shim_name)
+            || crate::registry::REGISTRY
+                .get(&tv.ba().short)
+                .is_some_and(|tool| tool.provides_bin(shim_name))
         {
-            return Ok(true);
+            return true;
         }
         for (p, installed_tv) in installed.iter().filter(|(p, _)| **p.ba() == *tv.ba()) {
             for name in [shim_name, bin_name].into_iter().unique() {
-                if p.which(config, installed_tv, name).await?.is_some() {
-                    return Ok(true);
+                if matches!(p.which(config, installed_tv, name).await, Ok(Some(_))) {
+                    return true;
                 }
             }
         }
     }
-    Ok(false)
+    false
 }
 
 /// Whether this process was started through a shim in the command-wrappers dir: by its path when
@@ -391,7 +394,7 @@ async fn which_shim(
     // Only when no missing tool version could provide this command: that must still fail.
     // Installed tools were tried above.
     let inactive_wrapper = invoked_from_wrapper_dir(bin_name)
-        && !missing_version_may_provide(config, &ts, shim_name, bin_name).await?;
+        && !missing_version_may_provide(config, &ts, shim_name, bin_name).await;
     if Settings::get().not_found_system_fallback || inactive_wrapper {
         let mise_bin = file::canonicalize_or_self(&env::MISE_BIN);
         for path in &*env::PATH {
