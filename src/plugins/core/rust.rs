@@ -988,11 +988,23 @@ fn default_rustup_url(triple: &str) -> String {
 }
 
 fn rustup_host_triple(settings: &Settings) -> String {
-    settings
-        .rust
-        .default_host
-        .clone()
-        .unwrap_or_else(|| crate::build_time::TARGET.to_string())
+    if let Some(host) = settings.rust.default_host.as_ref() {
+        return host.clone();
+    }
+    let target = crate::build_time::TARGET;
+    // An explicit `arch` setting (e.g. x64 under emulation) swaps the architecture
+    // of the build target, keeping its vendor, OS and ABI.
+    if settings.arch.is_some() {
+        let arch = match settings.arch() {
+            "x64" => "x86_64",
+            "arm64" => "aarch64",
+            other => other,
+        };
+        if let Some((_, rest)) = target.split_once('-') {
+            return format!("{arch}-{rest}");
+        }
+    }
+    target.to_string()
 }
 
 fn rustup_path() -> PathBuf {
