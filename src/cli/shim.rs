@@ -137,6 +137,37 @@ fn invoked_shim_path() -> PathBuf {
         .unwrap_or(argv0)
 }
 
+/// Whether a selected but uninstalled tool version may provide `shim_name`, by registry bin
+/// metadata or because another installed version of the same tool does.
+async fn missing_version_may_provide(
+    config: &Arc<Config>,
+    ts: &Toolset,
+    shim_name: &str,
+    bin_name: &str,
+) -> Result<bool> {
+    let missing = ts.list_missing_versions(config).await;
+    if missing.is_empty() {
+        return Ok(false);
+    }
+    let installed = ts.list_installed_versions(config).await?;
+    for tv in &missing {
+        if crate::registry::REGISTRY
+            .get(&tv.ba().short)
+            .is_some_and(|tool| tool.provides_bin(shim_name))
+        {
+            return Ok(true);
+        }
+        for (p, installed_tv) in installed.iter().filter(|(p, _)| **p.ba() == *tv.ba()) {
+            for name in [shim_name, bin_name].into_iter().unique() {
+                if p.which(config, installed_tv, name).await?.is_some() {
+                    return Ok(true);
+                }
+            }
+        }
+    }
+    Ok(false)
+}
+
 /// Whether this process was started through a shim in the command-wrappers dir: by its path when
 /// it has one, otherwise the first `PATH` entry that holds `bin_name`.
 fn invoked_from_wrapper_dir(bin_name: &str) -> bool {
@@ -357,10 +388,10 @@ async fn which_shim(
     }
     // fallback for "system"
     // A wrapper shim left by another project must not turn a plain command into an error.
-    // Only when nothing selected is missing: a missing tool version may be what provides this
-    // command, and that must still fail. Installed tools were tried above.
-    let inactive_wrapper =
-        invoked_from_wrapper_dir(bin_name) && ts.list_missing_versions(config).await.is_empty();
+    // Only when no missing tool version could provide this command: that must still fail.
+    // Installed tools were tried above.
+    let inactive_wrapper = invoked_from_wrapper_dir(bin_name)
+        && !missing_version_may_provide(config, &ts, shim_name, bin_name).await?;
     if Settings::get().not_found_system_fallback || inactive_wrapper {
         let mise_bin = file::canonicalize_or_self(&env::MISE_BIN);
         for path in &*env::PATH {
