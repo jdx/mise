@@ -1599,8 +1599,9 @@ Retries back off with jitter, roughly 200ms, 1s, 4s and 15s. Set to `0` to turn
 retries off.
 
 Commands that prefer offline data, including shims and shell activation, never
-retry: they make one attempt when cached data is not enough, then fail or fall
-back. When a retry succeeds, mise logs a warning with the original error.
+retry remote lookups: they make one attempt when cached data is not enough, then
+fail or fall back. Downloading a tool they install, such as the first
+`mise exec`, still retries. When a retry succeeds, mise logs a warning with the original error.
 """
 env = "MISE_HTTP_RETRIES"
 type = "Integer"
