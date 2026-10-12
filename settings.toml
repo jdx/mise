@@ -3630,7 +3630,9 @@ system_packages.elevate_with = "run0"
 The command is run as `<command> <program> <args>...`. Without a terminal,
 mise checks for passwordless sudo with `sudo -n true`, and runs the command
 with `doas -n` or `run0 --no-ask-password` so it fails instead of prompting;
-any other command is used only in an interactive terminal. [`system_packages.sudo`](#system_packages.sudo) still turns
+any other command is used only in an interactive terminal. A `doas` rule that
+restricts commands must also allow `env`, which mise uses to pass variables
+such as `DEBIAN_FRONTEND` to apt. [`system_packages.sudo`](#system_packages.sudo) still turns
 elevation off entirely. See
 [Root privileges and sudo](/bootstrap/packages/#sudo).
 """

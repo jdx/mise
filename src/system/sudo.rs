@@ -79,11 +79,16 @@ pub(crate) fn argv_with_env(
     if !is_root() && Settings::get().system_packages.sudo {
         let elevator = elevator();
         let flag = noninteractive_flag(&elevator).filter(|_| !console::user_attended_stderr());
+        let is_run0 = noninteractive_flag(&elevator) == Some("--no-ask-password");
         argv.push(elevator);
         argv.extend(flag.map(str::to_string));
-        // sudo resets the environment by default; pass env vars through
-        // `env` so they reach the elevated command
-        if !envs.is_empty() {
+        if is_run0 {
+            // run0 passes env vars itself, so the authorized command stays
+            // the program rather than `env`
+            argv.extend(envs.iter().map(|(k, v)| format!("--setenv={k}={v}")));
+        } else if !envs.is_empty() {
+            // sudo and doas reset the environment by default; pass env vars
+            // through `env` so they reach the elevated command
             argv.push("env".to_string());
             argv.extend(envs.iter().map(|(k, v)| format!("{k}={v}")));
         }
