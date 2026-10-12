@@ -766,11 +766,17 @@ pub fn parse_use_spec(spec: &str) -> eyre::Result<(String, PackageRequest)> {
             },
         ));
     }
-    match rest.rsplit_once('@') {
+    // a leading `@` names a dnf group (`dnf:@development-tools`), not a version
+    let group_prefix = if mgr == "dnf" && rest.starts_with('@') {
+        "@"
+    } else {
+        ""
+    };
+    match rest[group_prefix.len()..].rsplit_once('@') {
         Some((name, version)) if !name.is_empty() && !version.is_empty() => Ok((
             mgr,
             PackageRequest {
-                name: name.to_string(),
+                name: format!("{group_prefix}{name}"),
                 version: (version != "latest").then(|| version.to_string()),
                 tap_url: None,
                 desired: packages::PackageDesiredState::Present,
@@ -3914,6 +3920,15 @@ mod tests {
         assert_eq!(mgr, "apt");
         assert_eq!(req.name, "curl");
         assert_eq!(req.version.as_deref(), Some("8.5.0-2"));
+
+        // a leading @ is a dnf group, not a version separator
+        let (mgr, req) = parse_use_spec("dnf:@development-tools").unwrap();
+        assert_eq!(mgr, "dnf");
+        assert_eq!(req.name, "@development-tools");
+        assert_eq!(req.version, None);
+        let (_, req) = parse_use_spec("dnf:@development-tools@latest").unwrap();
+        assert_eq!(req.name, "@development-tools");
+        assert_eq!(req.version, None);
 
         // @latest is the same as no pin
         let (_, req) = parse_use_spec("dnf:bash@latest").unwrap();

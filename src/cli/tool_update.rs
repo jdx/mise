@@ -114,6 +114,11 @@ fn spawn_detached(tool: &str, tool_id: &str) -> std::io::Result<()> {
 }
 
 impl ToolUpdate {
+    /// The watcher, which runs as a service and has no terminal reading it.
+    pub(crate) fn is_watch(&self) -> bool {
+        self.watch
+    }
+
     pub(crate) async fn run(self) -> Result<()> {
         if self.watch {
             return watch().await;
