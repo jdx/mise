@@ -72,6 +72,11 @@ struct OstreeRequests {
     booted: Vec<String>,
     /// requested by the deployment the next boot uses
     next: Vec<String>,
+    /// actually overlaid in the booted deployment; a request for a package
+    /// the base image already provides is inactive and not listed here
+    booted_layered: Vec<String>,
+    /// actually overlaid in the deployment the next boot uses
+    next_layered: Vec<String>,
 }
 
 fn parse_requests(json: &str) -> Result<OstreeRequests> {
@@ -80,8 +85,8 @@ fn parse_requests(json: &str) -> Result<OstreeRequests> {
     let Some(deployments) = status["deployments"].as_array() else {
         bail!("`rpm-ostree status --json` listed no deployments");
     };
-    let requested = |d: &serde_json::Value| -> Vec<String> {
-        d["requested-packages"]
+    let names = |d: &serde_json::Value, key: &str| -> Vec<String> {
+        d[key]
             .as_array()
             .map(|pkgs| {
                 pkgs.iter()
@@ -95,9 +100,13 @@ fn parse_requests(json: &str) -> Result<OstreeRequests> {
     // deployments are listed in boot order, so the first one boots next: the
     // staged deployment, or a rollback target that was never staged
     let next = deployments.first().or(booted);
+    let of =
+        |d: Option<&serde_json::Value>, key: &str| d.map(|d| names(d, key)).unwrap_or_default();
     Ok(OstreeRequests {
-        booted: booted.map(requested).unwrap_or_default(),
-        next: next.map(requested).unwrap_or_default(),
+        booted: of(booted, "requested-packages"),
+        next: of(next, "requested-packages"),
+        booted_layered: of(booted, "packages"),
+        next_layered: of(next, "packages"),
     })
 }
 
@@ -124,9 +133,10 @@ async fn ostree_requests() -> Result<OstreeRequests> {
 /// - a package requested for the next deployment but not yet booted counts as
 ///   installed (`pending reboot`), so later runs do not request it again; a
 ///   pinned request is left alone, since the pin cannot be checked or honored
-/// - a package layered in the booted deployment whose request was dropped is
+/// - a package overlaid in the booted deployment whose request was dropped is
 ///   pending removal and counts as missing, so declaring it present requests
-///   it again and declaring it absent does not uninstall it twice
+///   it again and declaring it absent does not uninstall it twice; an inactive
+///   request for a package the base provides stays installed
 fn apply_requests(statuses: &mut [PackageStatus], requests: &OstreeRequests) {
     for status in statuses {
         let name = &status.request.name;
@@ -137,7 +147,9 @@ fn apply_requests(statuses: &mut [PackageStatus], requests: &OstreeRequests) {
                     version: PENDING_REBOOT.to_string(),
                 };
             }
-            PackageState::Installed { .. } if requests.booted.contains(name) && !wanted_next => {
+            PackageState::Installed { .. }
+                if requests.booted_layered.contains(name) && !wanted_next =>
+            {
                 status.state = PackageState::Missing;
             }
             _ => {}
@@ -438,7 +450,7 @@ impl SystemPackageManager for DnfManager {
     async fn remove(&self, pkgs: &[PackageRequest], opts: &InstallOpts) -> Result<()> {
         // only packages layered for the next deployment can be uninstalled;
         // packages in the base image are never touched
-        let layered = ostree_requests().await?.next;
+        let layered = ostree_requests().await?.next_layered;
         let (pkgs, base): (Vec<_>, Vec<_>) = pkgs
             .iter()
             .cloned()
@@ -594,13 +606,15 @@ mod tests {
     #[test]
     fn test_requests_follow_the_next_boot_deployment() {
         let json = r#"{"deployments":[
-            {"staged":true,"requested-packages":["gimp"]},
-            {"booted":true,"requested-packages":["old"]}]}"#;
+            {"staged":true,"requested-packages":["gimp"],"packages":["gimp"]},
+            {"booted":true,"requested-packages":["old","inactive"],"packages":["old"]}]}"#;
         assert_eq!(
             parse_requests(json).unwrap(),
             OstreeRequests {
-                booted: vec!["old".to_string()],
+                booted: vec!["old".to_string(), "inactive".to_string()],
                 next: vec!["gimp".to_string()],
+                booted_layered: vec!["old".to_string()],
+                next_layered: vec!["gimp".to_string()],
             }
         );
         // after a rollback the first deployment boots next without being staged
@@ -618,8 +632,11 @@ mod tests {
     #[test]
     fn test_pending_installs_and_removals() {
         let requests = OstreeRequests {
-            booted: vec!["old".to_string()],
+            booted: vec!["old".to_string(), "base".to_string()],
             next: vec!["gimp".to_string(), "pinned".to_string()],
+            // "base" was requested inactively: the base image provides it
+            booted_layered: vec!["old".to_string()],
+            next_layered: vec!["gimp".to_string(), "pinned".to_string()],
         };
         let mut statuses = parse_rpm_query(
             "old\t1-1\nbase\t1-1\n",
@@ -641,7 +658,7 @@ mod tests {
         assert_eq!(statuses[1].state, PackageState::Missing);
         // layered in the booted deployment, request dropped: pending removal
         assert_eq!(statuses[2].state, PackageState::Missing);
-        // part of the base image: never touched
+        // an inactive request for a base-image package stays installed
         assert!(statuses[3].state.is_installed());
         // a pinned request is not satisfied by a pending unpinned one
         assert_eq!(statuses[4].state, PackageState::Missing);
