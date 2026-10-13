@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+
+# [bootstrap.dnf.repos] in dry runs: which entries it rejects and, where dnf
+# runs, what mise would write. A dry run fetches and writes nothing.
+
+if [[ "$(uname)" != "Linux" ]]; then
+  exit 0
+fi
+
+cat <<EOF >mise.toml
+[bootstrap.dnf.repos]
+ghostty = { copr = "scottames/ghostty" }
+"bad name" = { copr = "scottames/ghostty" }
+typo = { copr = "scottames/ghostty", baseurl = "https://example.com" }
+nocopr = {}
+notaproject = { copr = "ghostty" }
+
+[bootstrap.packages]
+"dnf:mise-dnf-repos-test-nonexistent" = "latest"
+EOF
+
+mise bootstrap packages apply --dry-run >dry-run.log 2>&1
+cat dry-run.log
+
+# invalid entries warn and are skipped, on every host
+assert_contains "cat dry-run.log" "'bad name' is not a valid repository name"
+assert_contains "cat dry-run.log" "typo: unknown field"
+assert_contains "cat dry-run.log" "nocopr: set copr"
+assert_contains "cat dry-run.log" "copr must be 'owner/project' or '@group/project'"
+
+repo_file="/etc/yum.repos.d/_copr:copr.fedorainfracloud.org:scottames:ghostty.repo"
+if ! command -v dnf >/dev/null; then
+  # without dnf the manager is skipped, and its repositories with it
+  assert_not_contains "cat dry-run.log" "copr:scottames/ghostty"
+elif grep -q '^ID=fedora' /etc/os-release && [[ ! -e /run/ostree-booted ]] && [[ ! -e $repo_file ]]; then
+  # the plan is only certain on Fedora proper: the COPR may not build for
+  # other releases, and an ostree host that does not layer skips it
+  assert_contains "cat dry-run.log" "repo file for copr:scottames/ghostty into $repo_file"
+  assert_contains "cat dry-run.log" "dnf install -y mise-dnf-repos-test-nonexistent"
+  assert_fail "test -e '$repo_file'"
+fi

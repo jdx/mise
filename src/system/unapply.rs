@@ -579,6 +579,7 @@ fn uncovered_sections(config: &Config, environments: &[String]) -> Vec<Uncovered
     let mut repos = 0;
     let mut compose = 0;
     let mut apt_sources = 0;
+    let mut dnf_repos = 0;
     // Independent bootstrap roots keep their own config maps, and a module can
     // declare all of its packages in one of them.
     for config_files in config.bootstrap_config_maps() {
@@ -596,6 +597,7 @@ fn uncovered_sections(config: &Config, environments: &[String]) -> Vec<Uncovered
             repos += bootstrap.repos.len();
             compose += bootstrap.compose.len();
             apt_sources += bootstrap.apt.sources.len();
+            dnf_repos += bootstrap.dnf.repos.len();
         }
     }
     [
@@ -609,6 +611,11 @@ fn uncovered_sections(config: &Config, environments: &[String]) -> Vec<Uncovered
             "bootstrap.apt.sources",
             apt_sources,
             "delete /etc/apt/sources.list.d/mise-<name>.sources",
+        ),
+        (
+            "bootstrap.dnf.repos",
+            dnf_repos,
+            "delete /etc/yum.repos.d/_copr:copr.fedorainfracloud.org:<owner>:<project>.repo",
         ),
         (
             "bootstrap.compose",

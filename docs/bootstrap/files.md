@@ -239,7 +239,9 @@ Put the vendor's key and repository definition in the source files. Changing
 repository files does not refresh package metadata, so run
 `mise bootstrap --update` to refresh it in the same run. For apt,
 [`[bootstrap.apt.sources]`](/bootstrap/packages/apt.html#sources) downloads and
-checks the key itself and refreshes the lists when a source changes.
+checks the key itself and refreshes the lists when a source changes. For dnf,
+[`[bootstrap.dnf.repos]`](/bootstrap/packages/dnf.html#copr) enables COPR
+repositories.
 
 `mise bootstrap` applies files with `phase = "pre-packages"` after accounts and
 package manager plugins and before the `pre-packages` hook. Files with the

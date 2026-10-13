@@ -39,13 +39,69 @@ installs it with `dnf install -y @<group>`, and upgrades it with
 `dnf group upgrade`. Groups have no version, so use `"latest"`. Environment
 groups (`@^name`) are not supported.
 
+## COPR repositories {#copr}
+
+Declare [COPR](https://copr.fedorainfracloud.org/) projects in
+`[bootstrap.dnf.repos]`. mise enables them before it installs or upgrades `dnf:`
+packages, so a package can come from a COPR without a `pre-packages` hook:
+
+```toml
+[bootstrap.dnf.repos]
+ghostty = { copr = "scottames/ghostty" }
+caddy = { copr = "@caddy/caddy" }
+
+[bootstrap.packages]
+"dnf:ghostty" = "latest"
+"dnf:caddy" = "latest"
+```
+
+`copr` takes the project as `owner/project`, or `@group/project` for a group,
+with or without a `copr:` prefix. The entry's name only identifies it, so a more
+local config can replace an entry of the same name. Names may contain letters,
+digits, `_`, `-`, and `.`.
+
+mise enables a COPR the way `dnf copr enable` does: it downloads the repo file
+COPR publishes for this release and writes it unchanged to
+`/etc/yum.repos.d/_copr:copr.fedorainfracloud.org:<owner>:<project>.repo`. A
+group owner is written `group_<name>` there. It is the same file the copr plugin
+writes, so:
+
+- a COPR you already enabled with `dnf copr enable` counts as enabled, and mise
+  leaves it alone
+- `dnf copr list`, `dnf copr disable`, and `dnf copr remove` work on COPRs mise
+  enabled
+- the copr plugin does not need to be installed, and the same config works on
+  [Fedora Atomic hosts](#fedora-atomic-hosts) that layer packages
+
+mise downloads the file only when it is missing or the repository in it is
+disabled, so a run where every COPR is already enabled does not use the network.
+The file names COPR's signing key, and dnf imports it the first time it installs
+a package from the repository. Without `--yes`, mise asks before it enables any
+COPR, as it does before installing packages.
+
+mise picks the COPR build target, the chroot, from `/etc/os-release`, the same
+way the copr plugin does, reading the base release from `PLATFORM_ID` when it is
+set. Fedora and distributions based on it, such as Bazzite, use
+`fedora-<version>`, and Rawhide uses `fedora-rawhide`. RHEL, CentOS Stream, and
+rebuilds such as Rocky Linux, AlmaLinux, Oracle Linux, and Alibaba Cloud Linux use
+`epel-<major version>`.
+Amazon Linux uses `amazonlinux-<version>`. If the project has no build for this
+release, mise names the chroots it does build for. A COPR that cannot be enabled
+is reported with the run's other failures, and the other repositories and
+packages are still applied. On an ostree host that does not
+[layer packages](#fedora-atomic-hosts), mise does not enable COPRs, since it
+installs nothing there.
+
+mise does not disable or remove repositories. Deleting an entry leaves the COPR
+enabled; run `dnf copr remove <owner>/<project>` or delete its file yourself.
+
 ## Version pins
 
 mise passes a pin to dnf as `name-version` or `name-version-release`. A
 version-only pin, such as `"5.2.26"`, accepts any release of that version. The
 Fedora pin above is only an example: release strings differ between
 distributions and releases. Pick a version from the target's enabled
-repositories; mise does not add a repository or fetch an archived RPM.
+repositories; mise does not fetch an archived RPM.
 
 ## What mise runs
 
