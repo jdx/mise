@@ -21,7 +21,7 @@ write_global_config() {
 lockfile = true
 locked = true
 [tools]
-"npm:mise-upgrade-fixture" = { version = "$1", allow_low_downloads = true }
+"${config_tool:-npm:mise-upgrade-fixture}" = { version = "$1", allow_low_downloads = true }
 EOF
 }
 
@@ -33,7 +33,7 @@ import json
 import sys
 from pathlib import Path
 listing, = json.loads(Path(sys.argv[1]).read_text())
-entry, = [item for item in listing['sidecars'] if item['tool'] == 'npm:mise-upgrade-fixture']
+entry, = [item for item in listing['sidecars'] if item['tool'] in ('npm:mise-upgrade-fixture', 'fixture')]
 version = sys.argv[3]
 assert entry['version'] == version, entry
 assert entry['graph'] == 'aube' and entry['exists'], entry
@@ -47,16 +47,27 @@ PY
 }
 
 # Cover both lock revisions, bare and named upgrades, and reuse of a newer
-# version-only installation. Graph preparation must precede the installed check.
-for scenario in bare-v3 bare-v2 named preinstalled; do
+# version-only installation, including exact pins changed by --bump. Graph
+# preparation must precede the installed check.
+for scenario in bare-v3 bare-v2 named preinstalled bump-v3 bump-v2 bump-named bump-global-env bump-preinstalled; do
   export MISE_CONFIG_DIR="$base_config/$scenario"
   export MISE_CACHE_DIR="$base_cache/$scenario"
   mkdir -p "$MISE_CONFIG_DIR"
-  rm -rf "$MISE_DATA_DIR/installs/npm-mise-upgrade-fixture"
+  rm -rf "$MISE_DATA_DIR/installs/npm-mise-upgrade-fixture" "$MISE_DATA_DIR/installs/fixture"
   echo 1.0.0 >"$FAKE_NPM_REGISTRY_DIR/latest"
-  write_global_config latest
-  mise -C "$HOME" lock --global npm:mise-upgrade-fixture
-  if [[ $scenario == bare-v2 ]]; then
+  selector=latest
+  config_tool=npm:mise-upgrade-fixture
+  [[ $scenario == bump-* ]] && selector=1.0.0
+  [[ $scenario == bump-global-env ]] && config_tool=fixture
+  write_global_config "$selector"
+  if [[ $scenario == bump-global-env ]]; then
+    cat >>"$MISE_CONFIG_DIR/config.toml" <<'EOF'
+[tool_alias]
+fixture = "npm:mise-upgrade-fixture"
+EOF
+  fi
+  mise -C "$HOME" lock --global "$config_tool"
+  if [[ $scenario == bare-v2 || $scenario == bump-v2 ]]; then
     sed -i.bak 's/lockfile_version = 3/lockfile_version = 2/' "$MISE_CONFIG_DIR/mise.lock"
   fi
   check_graph 1.0.0
@@ -64,26 +75,34 @@ for scenario in bare-v3 bare-v2 named preinstalled; do
   assert "mise -C '$HOME' exec -- mise-upgrade-fixture" "1.0.0:1.0.0"
   cp -R "$MISE_CONFIG_DIR" "$PWD/$scenario-before"
 
-  if [[ $scenario == preinstalled ]]; then
+  if [[ $scenario == preinstalled || $scenario == bump-preinstalled ]]; then
     # A global install without its explicit lock must stay version-only.
     mv "$MISE_CONFIG_DIR/mise.lock" "$PWD/saved.lock"
     write_global_config 2.0.0
     MISE_LOCKED=0 mise -C "$HOME" install
     assert_succeed "test -d '$MISE_DATA_DIR/installs/npm-mise-upgrade-fixture/2.0.0'"
-    write_global_config latest
+    write_global_config "$selector"
     mv "$PWD/saved.lock" "$MISE_CONFIG_DIR/mise.lock"
   fi
 
   echo 2.0.0 >"$FAKE_NPM_REGISTRY_DIR/latest"
   export MISE_CACHE_DIR="$base_cache/$scenario-upgrade"
-  if [[ $scenario == named ]]; then
-    mise -C "$HOME" --yes upgrade npm:mise-upgrade-fixture
+  upgrade_args=()
+  [[ $scenario == bump-* ]] && upgrade_args+=(--bump)
+  if [[ $scenario == named || $scenario == bump-named ]]; then
+    upgrade_args+=(npm:mise-upgrade-fixture)
+  fi
+  if [[ $scenario == bump-global-env ]]; then
+    MISE_FIXTURE_VERSION=1.0.0 mise -C "$HOME" --yes upgrade --global --bump
   else
-    mise -C "$HOME" --yes upgrade
+    mise -C "$HOME" --yes upgrade ${upgrade_args[@]+"${upgrade_args[@]}"}
   fi
   cp -R "$MISE_CONFIG_DIR" "$PWD/$scenario-after"
   check_graph 2.0.0
-  assert_succeed "find '$MISE_DATA_DIR/installs/npm-mise-upgrade-fixture' -maxdepth 1 -name '2.0.0~aube~*' | grep -q ."
+  if [[ $scenario == bump-* ]]; then
+    assert_contains "cat '$MISE_CONFIG_DIR/config.toml'" 'version = "2.0.0"'
+  fi
+  assert_contains "mise -C '$HOME' where '$config_tool'" '/2.0.0~aube~'
 
   # Fresh data forces an actual locked replay, including its transitive package.
   cp "$MISE_CONFIG_DIR/mise.lock" "$PWD/replay.lock"
@@ -110,6 +129,34 @@ MISE_LOCKED=0 mise -C "$HOME" --yes upgrade
 assert_succeed "test -d '$MISE_DATA_DIR/installs/npm-mise-upgrade-fixture/2.0.0'"
 assert_succeed "test ! -e '$MISE_CONFIG_DIR/mise.lock'"
 assert_succeed "test ! -e '$MISE_CONFIG_DIR/locks' && test ! -e '$MISE_CONFIG_DIR/.mise'"
+
+# Bumping an exact global request without a lock also stays version-only,
+# including when the newer version already exists.
+write_global_config 1.0.0
+MISE_LOCKED=0 mise -C "$HOME" --yes upgrade --bump
+assert_contains "cat '$MISE_CONFIG_DIR/config.toml'" 'version = "2.0.0"'
+assert_succeed "test ! -e '$MISE_CONFIG_DIR/mise.lock'"
+assert_fail "find '$MISE_DATA_DIR/installs/npm-mise-upgrade-fixture' -maxdepth 1 -name '*~aube~*' | grep -q ."
+
+# A graph for another global tool does not opt this request into graph installs.
+export MISE_CONFIG_DIR="$base_config/unrelated"
+export MISE_CACHE_DIR="$base_cache/unrelated"
+mkdir -p "$MISE_CONFIG_DIR"
+write_global_config 1.0.0
+echo '"npm:mise-upgrade-dep" = { version = "1.0.0", allow_low_downloads = true }' >>"$MISE_CONFIG_DIR/config.toml"
+mise -C "$HOME" lock --global npm:mise-upgrade-dep
+MISE_LOCKED=0 mise -C "$HOME" --yes upgrade --bump npm:mise-upgrade-fixture
+assert_contains "cat '$MISE_CONFIG_DIR/config.toml'" 'version = "2.0.0"'
+assert_fail "find '$MISE_DATA_DIR/installs/npm-mise-upgrade-fixture' -maxdepth 1 -name '*~aube~*' | grep -q ."
+mise -C "$HOME" lock --global --sidecars --json >"$PWD/unrelated-sidecars.json"
+python3 - "$PWD/unrelated-sidecars.json" <<'PY'
+import json
+import sys
+from pathlib import Path
+listing, = json.loads(Path(sys.argv[1]).read_text())
+entry, = listing['sidecars']
+assert entry['tool'] == 'npm:mise-upgrade-dep' and entry['exists'], entry
+PY
 
 # An exact global pin stays on its existing graph even when latest advances.
 export MISE_CONFIG_DIR="$base_config/exact"
