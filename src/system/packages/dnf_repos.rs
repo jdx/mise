@@ -234,6 +234,9 @@ struct Release {
     id: String,
     id_like: Vec<String>,
     version_id: Option<String>,
+    /// `platform:f42`, `platform:el9`, `platform:al2023`: the base release,
+    /// which a derivative's `ID` and `ID_LIKE` do not always reveal
+    platform_id: Option<String>,
     redhat_support_product_version: Option<String>,
 }
 
@@ -260,6 +263,7 @@ impl Release {
                         .collect()
                 }
                 "VERSION_ID" => release.version_id = value,
+                "PLATFORM_ID" => release.platform_id = value,
                 "REDHAT_SUPPORT_PRODUCT_VERSION" => release.redhat_support_product_version = value,
                 _ => {}
             }
@@ -271,6 +275,29 @@ impl Release {
     /// chosen as the copr plugin chooses it: Fedora and its derivatives by
     /// release, Amazon Linux by version, and RHEL and its rebuilds from EPEL.
     fn chroot(&self) -> Result<String> {
+        if self.redhat_support_product_version.as_deref() == Some("rawhide") {
+            return Ok("fedora-rawhide".to_string());
+        }
+        // Oracle Linux sets only ID_LIKE=fedora, so the platform decides
+        // first; ID and ID_LIKE are the fallback for releases without one
+        let platform = self
+            .platform_id
+            .as_deref()
+            .and_then(|p| p.strip_prefix("platform:"));
+        let numbered = |prefix: &str| {
+            platform
+                .and_then(|p| p.strip_prefix(prefix))
+                .filter(|v| !v.is_empty() && v.chars().all(|c| c.is_ascii_digit()))
+        };
+        if let Some(version) = numbered("al") {
+            return Ok(format!("amazonlinux-{version}"));
+        }
+        if let Some(major) = numbered("el") {
+            return Ok(format!("epel-{major}"));
+        }
+        if let Some(version) = numbered("f") {
+            return Ok(format!("fedora-{version}"));
+        }
         let like = |id: &str| self.id == id || self.id_like.iter().any(|l| l == id);
         let major = || {
             self.version_id
@@ -282,13 +309,10 @@ impl Release {
         if self.id == "amzn" {
             return Ok(format!("amazonlinux-{}", major()?));
         }
-        if like("rhel") || like("centos") {
+        if like("rhel") || like("centos") || self.id == "ol" {
             return Ok(format!("epel-{}", major()?));
         }
         if like("fedora") {
-            if self.redhat_support_product_version.as_deref() == Some("rawhide") {
-                return Ok("fedora-rawhide".to_string());
-            }
             return Ok(format!("fedora-{}", major()?));
         }
         bail!(
@@ -476,6 +500,33 @@ mod tests {
         assert_eq!(
             chroot("ID=\"amzn\"\nID_LIKE=\"fedora\"\nVERSION_ID=\"2023\"\n").unwrap(),
             "amazonlinux-2023"
+        );
+        // Oracle Linux claims only Fedora ancestry; its platform says EL
+        assert_eq!(
+            chroot(
+                "ID=\"ol\"\nID_LIKE=\"fedora\"\nVERSION_ID=\"9.8\"\nPLATFORM_ID=\"platform:el9\"\n"
+            )
+            .unwrap(),
+            "epel-9"
+        );
+        assert_eq!(
+            chroot("ID=\"ol\"\nID_LIKE=\"fedora\"\nVERSION_ID=\"8.10\"\n").unwrap(),
+            "epel-8"
+        );
+        assert_eq!(
+            chroot("ID=bazzite\nID_LIKE=\"fedora\"\nVERSION_ID=\"42.20250101\"\nPLATFORM_ID=\"platform:f42\"\n")
+                .unwrap(),
+            "fedora-42"
+        );
+        assert_eq!(
+            chroot("ID=\"amzn\"\nID_LIKE=\"fedora\"\nVERSION_ID=\"2023\"\nPLATFORM_ID=\"platform:al2023\"\n")
+                .unwrap(),
+            "amazonlinux-2023"
+        );
+        assert_eq!(
+            chroot("ID=fedora\nVERSION_ID=44\nPLATFORM_ID=\"platform:f44\"\nREDHAT_SUPPORT_PRODUCT_VERSION=rawhide\n")
+                .unwrap(),
+            "fedora-rawhide"
         );
         assert!(chroot("ID=ubuntu\nVERSION_ID=24.04\n").is_err());
         assert!(chroot("ID=fedora\n").is_err());

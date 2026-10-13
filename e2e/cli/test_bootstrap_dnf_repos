@@ -29,11 +29,13 @@ assert_contains "cat dry-run.log" "nocopr: set copr"
 assert_contains "cat dry-run.log" "copr must be 'owner/project' or '@group/project'"
 
 repo_file="/etc/yum.repos.d/_copr:copr.fedorainfracloud.org:scottames:ghostty.repo"
-# only Fedora is checked here: the COPR may not build for other releases
-if command -v dnf >/dev/null && grep -q '^ID=fedora' /etc/os-release && [[ ! -e $repo_file ]]; then
+if ! command -v dnf >/dev/null; then
+  # without dnf the manager is skipped, and its repositories with it
+  assert_not_contains "cat dry-run.log" "copr:scottames/ghostty"
+elif grep -q '^ID=fedora' /etc/os-release && [[ ! -e /run/ostree-booted ]] && [[ ! -e $repo_file ]]; then
+  # the plan is only certain on Fedora proper: the COPR may not build for
+  # other releases, and an ostree host that does not layer skips it
   assert_contains "cat dry-run.log" "repo file for copr:scottames/ghostty into $repo_file"
   assert_contains "cat dry-run.log" "dnf install -y mise-dnf-repos-test-nonexistent"
   assert_fail "test -e '$repo_file'"
-else
-  assert_not_contains "cat dry-run.log" "copr:scottames/ghostty"
 fi
