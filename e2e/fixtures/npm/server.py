@@ -6,6 +6,7 @@ publish dates for minimum_release_age, dist-tags that point past a cutoff, and
 deprecated releases. Point mise at it with NPM_CONFIG_REGISTRY; see start.sh.
 """
 import base64
+import gzip
 import hashlib
 import io
 import json
@@ -73,13 +74,14 @@ def tarball(name, version):
     else:
         files['index.js'] = f'module.exports = "{version}";\n'
     buffer = io.BytesIO()
-    with tarfile.open(fileobj=buffer, mode='w:gz') as archive:
-        for filename, text in files.items():
-            data = text.encode()
-            info = tarfile.TarInfo(f'package/{filename}')
-            info.size = len(data)
-            info.mode = 0o755 if filename == 'cli.js' else 0o644
-            archive.addfile(info, io.BytesIO(data))
+    with gzip.GzipFile(fileobj=buffer, mode='wb', mtime=0) as compressed:
+        with tarfile.open(fileobj=compressed, mode='w') as archive:
+            for filename, text in files.items():
+                data = text.encode()
+                info = tarfile.TarInfo(f'package/{filename}')
+                info.size = len(data)
+                info.mode = 0o755 if filename == 'cli.js' else 0o644
+                archive.addfile(info, io.BytesIO(data))
     return buffer.getvalue()
 
 
