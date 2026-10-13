@@ -2578,7 +2578,7 @@ impl UnifiedGitBackend {
                 if src.exists() {
                     let dst = symlink_dir.join(&bin_name);
                     if !dst.exists() {
-                        file::make_symlink_or_copy(&src, &dst)?;
+                        super::mise_bins::link(&src, &dst)?;
                     }
                     found = true;
                     break;

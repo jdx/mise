@@ -448,6 +448,14 @@ a name it cannot find.
 "github:owner/repo" = { version = "latest", filter_bins = ["tool", "helper"] }
 ```
 
+On Windows, name the file with its extension (`filter_bins = "pandoc.exe"`).
+The entries in `.mise-bins` are copies there, so `mise x` and shims start the
+installed file instead, and it finds the DLLs and data beside it. A shell that
+finds the copy on `PATH` by itself, as with `mise activate`, still runs the
+copy. Each copy records which file it came from when it is installed, so
+reinstall a tool installed by an older mise (`mise install --force`) to get
+this.
+
 ### Verification
 
 When GitHub reports a digest for the asset, or the release publishes a checksum

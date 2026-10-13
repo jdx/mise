@@ -3514,7 +3514,7 @@ impl AquaBackend {
             if let Some(bin_name) = link.dst.file_name() {
                 let symlink_path = symlink_dir.join(bin_name);
                 if !symlink_path.exists() {
-                    file::make_symlink_or_copy(&link.dst, &symlink_path)?;
+                    super::mise_bins::link(&link.dst, &symlink_path)?;
                 }
             }
         }

@@ -235,6 +235,7 @@ export const sidebar: SidebarItem[] = [
           { text: "nix", link: "/bootstrap/packages/nix" },
           { text: "pacman", link: "/bootstrap/packages/pacman" },
           { text: "scoop", link: "/bootstrap/packages/scoop" },
+          { text: "snap", link: "/bootstrap/packages/snap" },
           { text: "winget", link: "/bootstrap/packages/winget" },
           { text: "zypper", link: "/bootstrap/packages/zypper" },
           {

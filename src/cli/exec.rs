@@ -1074,6 +1074,9 @@ where
             return Err(err_cannot_find_binary_path(&program_name).await);
         }
     };
+    // A `.mise-bins` entry is a copy on Windows. Run the file it was copied from, so the program
+    // finds the DLLs and data beside it.
+    let program = crate::backend::mise_bins::source_of(&program).unwrap_or(program);
     env::remove_var(env::MISE_SHIM_PATH_ENV);
     if is_shim_dispatch {
         // A native shim that finds its own path here was picked instead of the tool.

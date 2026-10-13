@@ -986,6 +986,8 @@ impl Store {
                     .push(annotation.clone());
             }
         }
+        let gix = repo.gix()?;
+        let mut caches = store::CacheBatch::new(&self.state_dir);
         for (commit, annotation) in commits {
             // Annotation commits remain in Git ancestry, but are not new file
             // checkpoints and must not move `latest` in the history browser.
@@ -995,8 +997,8 @@ impl Store {
             let mut checkpoint = match store::read_commit_meta_cache_in(&self.state_dir, &commit)? {
                 Some(checkpoint) => checkpoint,
                 None => {
-                    let checkpoint = repo.read_meta(&commit)?;
-                    store::write_commit_meta_cache_in(&self.state_dir, &commit, &checkpoint)?;
+                    let checkpoint = HistoryRepo::read_meta_in(&gix, &commit)?;
+                    caches.write_commit_meta(&commit, &checkpoint)?;
                     checkpoint
                 }
             };
@@ -1005,10 +1007,11 @@ impl Store {
                     annotation.apply_to(&mut checkpoint);
                 }
             }
-            store::write_meta_cache_in(&self.state_dir, &checkpoint)?;
+            caches.write_meta(&checkpoint)?;
             let id = existing.by_uuid(&commit).map(|entry| entry.id);
             entries.push((id, checkpoint, commit));
         }
+        caches.finish()?;
         let mut next_id = existing.next_id.max(1);
         let mut index = Index {
             next_id,

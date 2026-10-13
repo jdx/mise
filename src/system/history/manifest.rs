@@ -3,7 +3,8 @@
 
 use eyre::{Result, bail};
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
+use std::ops::ControlFlow;
 
 use super::select::Variant;
 use super::shadow::{HistoryRepo, Overlay};
@@ -550,6 +551,41 @@ impl Manifest {
         let Some(entry) = tree.lookup_entry_by_path(PATH)? else {
             return Ok(None);
         };
+        Self::read_gix_entry(&entry).map(Some)
+    }
+
+    /// Visits the manifest of each of `commits` that has one, in order, but
+    /// each distinct manifest only once.
+    ///
+    /// **A manifest hardly ever changes, so a long history holds a handful of
+    /// them.** Reading each commit's through Git started three processes per
+    /// commit, and a pull over tens of thousands of checkpoints spent minutes
+    /// reading the same few blobs again.
+    pub(crate) fn read_distinct<'a>(
+        repo: &HistoryRepo,
+        commits: impl IntoIterator<Item = &'a String>,
+        mut visit: impl FnMut(Self) -> ControlFlow<()>,
+    ) -> Result<()> {
+        let gix = repo.gix()?;
+        let mut seen = HashSet::new();
+        for commit in commits {
+            let tree = gix
+                .find_commit(gix::ObjectId::from_hex(commit.as_bytes())?)?
+                .tree()?;
+            let Some(entry) = tree.lookup_entry_by_path(PATH)? else {
+                continue;
+            };
+            if !seen.insert((entry.mode().value(), entry.object_id())) {
+                continue;
+            }
+            if visit(Self::read_gix_entry(&entry)?).is_break() {
+                break;
+            }
+        }
+        Ok(())
+    }
+
+    fn read_gix_entry(entry: &gix::object::tree::Entry<'_>) -> Result<Self> {
         if entry.mode().value() != 0o100644 {
             bail!("dotfile enrollment metadata must be a regular file");
         }
@@ -557,7 +593,7 @@ impl Manifest {
             bail!("dotfile enrollment metadata is too large");
         }
         let object = entry.object()?;
-        Self::from_bytes(&object.data).map(Some)
+        Self::from_bytes(&object.data)
     }
 
     fn from_bytes(bytes: &[u8]) -> Result<Self> {
@@ -796,6 +832,44 @@ mod tests {
                 .to_string()
                 .contains("too large")
         );
+        Ok(())
+    }
+
+    /// A long history repeats a few manifests; each is read once.
+    #[test]
+    fn read_distinct_visits_each_manifest_once_in_order() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let repo = HistoryRepo::open_or_init_in(temp.path())?.unwrap();
+        let empty = repo.mktree("")?;
+        let manifest = |exclude: &str| Manifest {
+            exclude: vec![exclude.into()],
+            ..Default::default()
+        };
+        let mut commits = vec![];
+        let mut parent: Option<String> = None;
+        for exclude in ["a", "b", "a", "b", "c", "a"] {
+            let tree = manifest(exclude).write(&repo, &empty)?;
+            let commit =
+                repo.commit_tree(&tree, parent.iter().map(String::as_str).collect(), "x")?;
+            parent = Some(commit.clone());
+            commits.push(commit);
+        }
+        commits.push(repo.commit_tree(&empty, vec![parent.as_deref().unwrap()], "no manifest")?);
+        commits.reverse();
+
+        let mut seen = vec![];
+        Manifest::read_distinct(&repo, &commits, |manifest| {
+            seen.push(manifest.exclude[0].clone());
+            ControlFlow::Continue(())
+        })?;
+        assert_eq!(seen, ["a", "c", "b"]);
+
+        let mut first = vec![];
+        Manifest::read_distinct(&repo, &commits, |manifest| {
+            first.push(manifest.exclude[0].clone());
+            ControlFlow::Break(())
+        })?;
+        assert_eq!(first, ["a"]);
         Ok(())
     }
 

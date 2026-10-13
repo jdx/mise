@@ -1,0 +1,62 @@
+#!/usr/bin/env bash
+# Two machines that hold different ciphertext for the same encrypted content
+# settle on one of them. Encryption is randomized, so a machine that put its
+# own cached ciphertext back after every merge would publish a change the
+# other machine reverses, and their sync would never go quiet.
+require_cmd git
+export MISE_HISTORY_NOTIFY=false
+export MISE_AGE_KEY=AGE-SECRET-KEY-142E7VJ8GUWR94MXDCYQJ7ZTQZRXKQSP9PUJU8HUQJ206QN7QPV4SM5QRL8
+origin="$PWD/encrypted-origin.git"
+git init -q --bare -b main "$origin"
+cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'
+[history.encryption]
+recipients = ["age1fuvsfq02qr5ju0nhh3rulrwracymjljlr5j49kres24ltd3fjq0s9z9d8l"]
+[dotfiles]
+"~/.secret" = { mode = "track", encrypt = true }
+TOML
+echo secret >~/.secret
+assert_succeed "mise dot save"
+assert_succeed "mise dot track ~/.config/mise/config.toml --yes"
+assert_succeed "mise dot origin set file://$origin --sync manual --yes"
+assert_succeed "mise dot sync"
+
+second="$(dirname "$HOME")/second"
+mkdir -p "$second"
+export second
+b() {
+  (
+    cd "$second" || exit
+    env HOME="$second" XDG_CONFIG_HOME="$second/.config" MISE_CONFIG_DIR="$second/.config/mise" \
+      MISE_STATE_DIR="$second/.local/state/mise" MISE_DATA_DIR="$second/.local/share/mise" \
+      MISE_CACHE_DIR="$second/.cache/mise" MISE_TRUSTED_CONFIG_PATHS="$second" mise "$@"
+  )
+}
+export -f b
+assert_succeed "b bootstrap --adopt file://$origin --yes"
+first_blob="$(git --git-dir="$origin" rev-parse main:home/.secret)"
+
+# an edit and its revert leave the second machine with its own ciphertext for
+# the same content, as an older mise did when it joined
+echo edited >"$second/.secret"
+assert_succeed "b dot save"
+echo secret >"$second/.secret"
+assert_succeed "b dot save"
+assert_succeed "b dot sync"
+second_blob="$(git --git-dir="$origin" rev-parse main:home/.secret)"
+assert_not_contains "echo $second_blob" "$first_blob"
+
+# the first machine still caches its own ciphertext for this content
+assert_succeed "mise dot sync"
+assert_succeed "mise dot pull --yes"
+assert_succeed "mise dot save"
+assert_succeed "mise dot sync"
+assert "git --git-dir=$origin rev-parse main:home/.secret" "$second_blob"
+settled="$(git --git-dir="$origin" rev-parse main)"
+assert_succeed "b dot pull --yes"
+assert_succeed "b dot save"
+assert_succeed "b dot sync"
+assert_succeed "mise dot pull --yes"
+assert_succeed "mise dot save"
+assert_succeed "mise dot sync"
+assert "git --git-dir=$origin rev-parse main" "$settled"
+assert "cat $second/.secret" "secret"

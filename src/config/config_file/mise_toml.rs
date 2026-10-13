@@ -4156,6 +4156,8 @@ mod tests {
                         url: None,
                         sha256: None,
                         artifact: None,
+                        channel: None,
+                        classic: None,
                     });
                 cf.update_bootstrap_package_with_fallback(
                     "brew:tree",
@@ -4174,6 +4176,8 @@ mod tests {
                         url: None,
                         sha256: None,
                         artifact: None,
+                        channel: None,
+                        classic: None,
                     });
                 cf.update_bootstrap_package_with_fallback(
                     "brew-cask:1password",
