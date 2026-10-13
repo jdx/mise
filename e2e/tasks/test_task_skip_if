@@ -32,10 +32,15 @@ run = "echo slow-ran"
 TOML
 
 # The condition fails, so the task and its dependent run.
-assert_contains "mise run deploy 2>&1" "initializing"
-assert_contains "mise run deploy 2>&1" "skip_if condition met, skipping"
-assert_not_contains "mise run deploy 2>&1" "initializing"
-assert_contains "mise run deploy 2>&1" "deploying"
+first_run="$(mise run deploy 2>&1)"
+assert_contains_text "$first_run" "initializing"
+assert_contains_text "$first_run" "deploying"
+
+# Now the condition passes: setup is skipped and deploy still runs.
+second_run="$(mise run deploy 2>&1)"
+assert_contains_text "$second_run" "skip_if condition met, skipping"
+assert_not_contains_text "$second_run" "initializing"
+assert_contains_text "$second_run" "deploying"
 
 # The command sees the task's env and its arguments.
 assert_not_contains "mise run env-check 2>&1" "env-check-ran"
