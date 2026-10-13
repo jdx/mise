@@ -1,0 +1,68 @@
+#!/usr/bin/env bash
+
+# The native GitHub OAuth refresh token can live in an external store
+# (github.oauth_cache_get / github.oauth_cache_set) instead of the cache file.
+unset GITHUB_TOKEN GITHUB_API_TOKEN MISE_GITHUB_TOKEN MISE_GITHUB_ENTERPRISE_TOKEN
+
+# The mock rotates the refresh token on every refresh and rejects a stale one
+export MOCK_GITHUB_OAUTH_ROTATE=1
+start_http_server --handler "$ROOT/e2e/fixtures/mock-github-oauth.py"
+OAUTH_ENV="MISE_GITHUB_OAUTH_CLIENT_ID=Iv1.mock MISE_GITHUB_OAUTH_OPEN_BROWSER=false MISE_GITHUB_OAUTH_AUTH_URL=http://127.0.0.1:$HTTP_PORT/login MISE_GITHUB_OAUTH_API_URL=http://127.0.0.1:$HTTP_PORT/api"
+CACHE="$MISE_STATE_DIR/github-oauth-tokens.toml"
+STORE="$HOME/oauth-store"
+STORE_ENV="MISE_GITHUB_OAUTH_CACHE_GET='cat $STORE' MISE_GITHUB_OAUTH_CACHE_SET='cat > $STORE'"
+
+expire_cache() {
+  sed -i 's/^expires_at = .*/expires_at = "2000-01-01T00:00:00Z"/' "$CACHE"
+}
+
+# Authorize with the store configured: the refresh token goes to the store only
+assert_contains "$OAUTH_ENV $STORE_ENV mise token github 127.0.0.1 --oauth --raw" "ghu-native-oauth-token"
+assert_contains "cat $STORE" "ghr-native-refresh-token"
+assert_not_contains "cat $CACHE" "ghr-native-refresh-token"
+assert_contains "cat $CACHE" "ghu-native-oauth-token"
+
+# An expired token refreshes with the stored refresh token, and the rotated one
+# replaces it in the store, twice in a row (a stale token would be rejected)
+expire_cache
+assert_contains "$OAUTH_ENV $STORE_ENV mise token github 127.0.0.1 --raw" "ghu-native-oauth-token-refreshed"
+assert_contains "cat $STORE" "ghr-rotated-1"
+assert_not_contains "cat $STORE" "ghr-native-refresh-token"
+assert_not_contains "cat $CACHE" "ghr-"
+expire_cache
+assert_contains "$OAUTH_ENV $STORE_ENV mise token github 127.0.0.1 --raw" "ghu-native-oauth-token-refreshed"
+assert_contains "cat $STORE" "ghr-rotated-2"
+assert_not_contains "cat $CACHE" "ghr-"
+
+# A store that cannot be read skips the refresh and keeps the cached token intact
+expire_cache
+cp "$CACHE" "$HOME/cache-before"
+assert_fail "$OAUTH_ENV MISE_GITHUB_OAUTH_CACHE_GET=false MISE_GITHUB_OAUTH_CACHE_SET='cat > $STORE' mise token github 127.0.0.1 --raw"
+assert "diff $CACHE $HOME/cache-before"
+assert_contains "cat $STORE" "ghr-rotated-2"
+
+# A store that cannot be written keeps the rotated refresh token in the file
+assert_contains "$OAUTH_ENV MISE_GITHUB_OAUTH_CACHE_GET='cat $STORE' MISE_GITHUB_OAUTH_CACHE_SET=false mise token github 127.0.0.1 --raw 2>&1" "keeping it in the cache file"
+assert_contains "cat $CACHE" "ghr-rotated-3"
+
+# The next refresh uses the file's token and moves the rotated one into the store
+expire_cache
+assert_contains "$OAUTH_ENV $STORE_ENV mise token github 127.0.0.1 --raw" "ghu-native-oauth-token-refreshed"
+assert_contains "cat $STORE" "ghr-rotated-4"
+assert_not_contains "cat $CACHE" "ghr-"
+
+# A fresh token never runs the store commands
+assert_contains "$OAUTH_ENV MISE_GITHUB_OAUTH_CACHE_GET=false MISE_GITHUB_OAUTH_CACHE_SET=false mise token github 127.0.0.1 --raw" "ghu-native-oauth-token"
+
+# An unreadable store is not treated as empty once tokens have left the file, so
+# a failed read cannot overwrite what it holds
+expire_cache
+assert_fail "$OAUTH_ENV MISE_GITHUB_OAUTH_CACHE_GET=false MISE_GITHUB_OAUTH_CACHE_SET='cat > $STORE' mise token github 127.0.0.1 --raw"
+assert_contains "cat $STORE" "ghr-rotated-4"
+
+# Setting only one of the two commands keeps the refresh token in the file
+rm "$CACHE" "$STORE"
+assert_contains "$OAUTH_ENV MISE_GITHUB_OAUTH_CACHE_GET='cat $STORE' mise token github 127.0.0.1 --oauth --raw 2>&1" "must both be set"
+assert_contains "cat $CACHE" "ghr-native-refresh-token"
+
+kill "$HTTP_SERVER_PID"

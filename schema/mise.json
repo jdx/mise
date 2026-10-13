@@ -1060,6 +1060,16 @@
               "description": "GitHub OAuth endpoint base URL for the native device flow.",
               "type": "string"
             },
+            "oauth_cache_get": {
+              "default": "",
+              "description": "Command that prints the native GitHub OAuth refresh tokens stored by github.oauth_cache_set.",
+              "type": "string"
+            },
+            "oauth_cache_set": {
+              "default": "",
+              "description": "Command that stores the native GitHub OAuth refresh tokens, read from its stdin.",
+              "type": "string"
+            },
             "oauth_client_id": {
               "default": "",
               "description": "GitHub App client ID that turns on native OAuth device-flow tokens.",

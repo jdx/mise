@@ -12,6 +12,7 @@ const GRANT_DEVICE_CODE: &str = "urn:ietf:params:oauth:grant-type:device_code";
 const DEFAULT_TOKEN_SECS: i64 = 8 * 60 * 60;
 const REUSE_BUFFER_SECS: i64 = 300;
 const CLIPBOARD_TIMEOUT: Duration = Duration::from_secs(2);
+const STORE_TIMEOUT: Duration = Duration::from_secs(60);
 
 static REFRESH_TOKEN_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
@@ -187,10 +188,9 @@ async fn refresh_cached_token(
     // transaction across mise processes, then re-read after acquiring the
     // lock so a waiter observes any token minted by the previous holder.
     let (cache_lock, mut cache) = lock_and_read_cache(path).await?;
-    let Some(cached) = cache.tokens.get(cache_key).cloned() else {
+    let Some(mut cached) = cache.tokens.get(cache_key).cloned() else {
         return Ok(None);
     };
-
     let invalidate_on_none = if let Some(stale_access_token) = stale_access_token {
         if cached.access_token != stale_access_token {
             return Ok(Some(cached.access_token));
@@ -201,6 +201,18 @@ async fn refresh_cached_token(
     } else {
         false
     };
+
+    if cached.refresh_token.is_none() && store_commands().is_some() {
+        // The refresh token lives in the external store. Read it only now that
+        // a refresh is needed, and if it cannot be read stop here: refreshing
+        // without it would look like "no refresh token" and invalidate a token
+        // we merely could not unlock.
+        cached.refresh_token = tokio::task::spawn_blocking({
+            let key = cache_key.to_string();
+            move || store_read().map(|mut tokens| tokens.remove(&key))
+        })
+        .await??;
+    }
 
     let refreshed = match refresh_token(&cached).await {
         Ok(refreshed) => refreshed,
@@ -616,6 +628,8 @@ async fn read_cache_async() -> Result<TokenCache> {
 }
 
 fn write_cache(cache: &TokenCache) -> Result<()> {
+    let protected = protect_refresh_tokens(cache);
+    let cache = protected.as_ref().unwrap_or(cache);
     let path = cache_path();
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
@@ -635,6 +649,181 @@ fn write_cache(cache: &TokenCache) -> Result<()> {
     tmp.as_file_mut().sync_all()?;
     persist_cache_tmp(tmp, &path)?;
     Ok(())
+}
+
+/// The external store commands, when both are configured. Setting only one is
+/// a mistake that would silently leave the refresh token in the file.
+fn store_commands() -> Option<(String, String)> {
+    let settings = Settings::get();
+    let get = settings.github.oauth_cache_get.trim();
+    let set = settings.github.oauth_cache_set.trim();
+    match (get.is_empty(), set.is_empty()) {
+        (false, false) => Some((get.to_string(), set.to_string())),
+        (true, true) => None,
+        _ => {
+            warn_once!(
+                "github.oauth_cache_get and github.oauth_cache_set must both be set; \
+                 keeping the GitHub OAuth refresh token in the cache file"
+            );
+            None
+        }
+    }
+}
+
+fn store_command(cmd: &str) -> Result<std::process::Command> {
+    // The store holds every host's refresh tokens in one value, so the command
+    // must not see a host to pick an entry by.
+    let mut command = crate::tokens::credential_command_process("github", cmd, "")
+        .ok_or_else(|| eyre!("the default inline shell is empty"))?;
+    command.env_remove("MISE_CREDENTIAL_HOST");
+    Ok(command)
+}
+
+/// Run a store command to completion and return its raw stdout. The command runs
+/// while mise holds the cache lock, so it is stopped and reaped when it fails
+/// or takes longer than `STORE_TIMEOUT`.
+fn run_store_command(name: &str, cmd: &str, input: Option<&str>) -> Result<Vec<u8>> {
+    use std::io::Read;
+    use std::process::Stdio;
+
+    let mut command = store_command(cmd)?;
+    let mut child = command
+        .stdin(if input.is_some() {
+            Stdio::piped()
+        } else {
+            Stdio::null()
+        })
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|err| eyre!("failed to run {name}: {err}"))?;
+    // The readers are joined only on success. After a kill, a grandchild of the
+    // shell can still hold the pipes open, so joining on the failure paths could
+    // hang the call the timeout is there to bound. The threads end when the
+    // pipes close and own nothing but their buffers.
+    let mut stdout = child.stdout.take().expect("stdout is piped");
+    let mut stderr = child.stderr.take().expect("stderr is piped");
+    let out = std::thread::spawn(move || {
+        let mut buf = Vec::new();
+        let _ = stdout.read_to_end(&mut buf);
+        buf
+    });
+    let err = std::thread::spawn(move || {
+        let mut buf = Vec::new();
+        let _ = stderr.read_to_end(&mut buf);
+        buf
+    });
+    if let Some(input) = input {
+        let mut stdin = child.stdin.take().expect("stdin is piped");
+        if let Err(e) = stdin.write_all(input.as_bytes()) {
+            let _ = child.kill();
+            let _ = child.wait();
+            bail!("failed to write to {name}: {e}");
+        }
+        // Close stdin so a command that reads until EOF can finish.
+        drop(stdin);
+    }
+    let deadline = std::time::Instant::now() + STORE_TIMEOUT;
+    let status = loop {
+        if let Some(status) = child.try_wait()? {
+            break status;
+        }
+        if std::time::Instant::now() >= deadline {
+            let _ = child.kill();
+            let _ = child.wait();
+            bail!("{name} did not finish within {}s", STORE_TIMEOUT.as_secs());
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    };
+    let stdout = out.join().unwrap_or_default();
+    let stderr = err.join().unwrap_or_default();
+    if !status.success() {
+        bail!(
+            "{name} failed ({status}): {}",
+            String::from_utf8_lossy(&stderr).trim()
+        );
+    }
+    Ok(stdout)
+}
+
+/// Read the refresh tokens (cache key to token) from the external store.
+fn store_read() -> Result<HashMap<String, String>> {
+    let Some((get, _)) = store_commands() else {
+        return Ok(HashMap::new());
+    };
+    let stdout = String::from_utf8(run_store_command("github.oauth_cache_get", &get, None)?)
+        .map_err(|_| eyre!("github.oauth_cache_get did not print UTF-8"))?;
+    if stdout.trim().is_empty() {
+        return Ok(HashMap::new());
+    }
+    toml::from_str(&stdout).map_err(|_| {
+        eyre!("github.oauth_cache_get did not print what github.oauth_cache_set stored")
+    })
+}
+
+/// Hand the refresh tokens to the external store on its stdin.
+fn store_write(tokens: &HashMap<String, String>) -> Result<()> {
+    let Some((_, set)) = store_commands() else {
+        return Ok(());
+    };
+    let ordered: std::collections::BTreeMap<_, _> = tokens.iter().collect();
+    run_store_command(
+        "github.oauth_cache_set",
+        &set,
+        Some(&toml::to_string(&ordered)?),
+    )?;
+    Ok(())
+}
+
+/// When an external store is configured, move the refresh tokens in `cache`
+/// into it and return a copy without them for the file. Returns `None` to write
+/// `cache` unchanged: no store, nothing to protect, or the store failed.
+///
+/// A failure keeps the refresh token in the file: GitHub has already rotated
+/// it, so dropping it would end the session.
+fn protect_refresh_tokens(cache: &TokenCache) -> Option<TokenCache> {
+    store_commands()?;
+    if cache.tokens.values().all(|t| t.refresh_token.is_none()) {
+        return None;
+    }
+    // A store with nothing in it yet usually makes the read command fail
+    // (`pass show` on a missing entry), which is only safe to treat as empty
+    // while every refresh token is still in the file. If some were moved out
+    // earlier, an unreadable store may hold them, and replacing it would lose
+    // them.
+    let nothing_stored_yet = cache.tokens.values().all(|t| t.refresh_token.is_some());
+    let mut tokens = match store_read() {
+        Ok(tokens) => tokens,
+        Err(err) if nothing_stored_yet => {
+            debug!("treating the GitHub OAuth refresh token store as empty: {err:#}");
+            HashMap::new()
+        }
+        Err(err) => {
+            warn!(
+                "could not read the GitHub OAuth refresh token store; \
+                 keeping the new refresh token in the cache file: {err:#}"
+            );
+            return None;
+        }
+    };
+    for (key, cached) in &cache.tokens {
+        if let Some(refresh) = &cached.refresh_token {
+            tokens.insert(key.clone(), refresh.clone());
+        }
+    }
+    let result = store_write(&tokens);
+    if let Err(err) = result {
+        warn!(
+            "could not store the GitHub OAuth refresh token externally; \
+             keeping it in the cache file: {err:#}"
+        );
+        return None;
+    }
+    let mut stripped = cache.clone();
+    for cached in stripped.tokens.values_mut() {
+        cached.refresh_token = None;
+    }
+    Some(stripped)
 }
 
 async fn cache_token(cache_key: String, cached: CachedToken) -> Result<()> {

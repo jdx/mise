@@ -95,42 +95,10 @@ pub fn get_credential_command_token(provider: &str, cmd: &str, host: &str) -> Op
         return token.clone();
     }
 
-    let path_without_shims = path_env_without_shims();
-    let (program, args) = match credential_command_shell(cmd, host) {
-        Some(command) => command,
-        None => {
-            debug!("{provider} credential_command skipped: default inline shell is empty");
-            cache.insert(cache_key, None);
-            return None;
-        }
+    let Some(mut command) = credential_command_process(provider, cmd, host) else {
+        cache.insert(cache_key, None);
+        return None;
     };
-    let mut command = std::process::Command::new(&program);
-    command.args(&args);
-    // On Windows, route a `cmd /c <credential-command>` through the verbatim
-    // builder so inner double quotes survive (#9355). Other shells and Unix keep
-    // the plain Command::new(program).args(args). The command body is the last
-    // element of args (see credential_command_shell_from).
-    #[cfg(windows)]
-    if let Some((body, flags)) = args.split_last()
-        && let Some(c) = crate::path::cmd_verbatim_command(&program, flags, body)
-    {
-        command = c;
-    }
-    command
-        .env("PATH", &path_without_shims)
-        .env("GIT_TERMINAL_PROMPT", "0")
-        .env("MISE_CREDENTIAL_HOST", host)
-        .env("MISE_CREDENTIAL_PROVIDER", provider);
-    // The helper's $0/$1 belong to sh, not to a directly executed program.
-    if let Some(direct) = crate::inline_command::direct_command(
-        &command,
-        true,
-        cmd,
-        &[],
-        crate::shells::implicit_inline_shell(),
-    ) {
-        command = direct;
-    }
     let result = command
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::piped())
@@ -162,6 +130,52 @@ pub fn get_credential_command_token(provider: &str, cmd: &str, host: &str) -> Op
     );
     cache.insert(cache_key, result.clone());
     result
+}
+
+/// Build the process that runs a provider `credential_command` (or another
+/// user-supplied shell command) with the default inline shell, with the
+/// credential environment set. Returns `None` when no shell is configured.
+pub(crate) fn credential_command_process(
+    provider: &str,
+    cmd: &str,
+    host: &str,
+) -> Option<std::process::Command> {
+    let path_without_shims = path_env_without_shims();
+    let (program, args) = match credential_command_shell(cmd, host) {
+        Some(command) => command,
+        None => {
+            debug!("{provider} credential_command skipped: default inline shell is empty");
+            return None;
+        }
+    };
+    let mut command = std::process::Command::new(&program);
+    command.args(&args);
+    // On Windows, route a `cmd /c <credential-command>` through the verbatim
+    // builder so inner double quotes survive (#9355). Other shells and Unix keep
+    // the plain Command::new(program).args(args). The command body is the last
+    // element of args (see credential_command_shell_from).
+    #[cfg(windows)]
+    if let Some((body, flags)) = args.split_last()
+        && let Some(c) = crate::path::cmd_verbatim_command(&program, flags, body)
+    {
+        command = c;
+    }
+    command
+        .env("PATH", &path_without_shims)
+        .env("GIT_TERMINAL_PROMPT", "0")
+        .env("MISE_CREDENTIAL_HOST", host)
+        .env("MISE_CREDENTIAL_PROVIDER", provider);
+    // The helper's $0/$1 belong to sh, not to a directly executed program.
+    if let Some(direct) = crate::inline_command::direct_command(
+        &command,
+        true,
+        cmd,
+        &[],
+        crate::shells::implicit_inline_shell(),
+    ) {
+        command = direct;
+    }
+    Some(command)
 }
 
 fn credential_command_shell(cmd: &str, host: &str) -> Option<(String, Vec<String>)> {

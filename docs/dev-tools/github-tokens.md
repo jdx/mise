@@ -269,6 +269,36 @@ Leave [`github.oauth_scopes`](/configuration/settings.html#github.oauth_scopes)
 empty for a GitHub App: its user tokens get their access from the app's
 permissions and installations.
 
+#### Keeping the refresh token out of the cache file
+
+The cache file holds the 8-hour access token and the refresh token, which stays
+valid for six months. It is written with mode `0600`, which keeps other users
+out but not other programs running as you. To keep the refresh token in a
+password manager or keychain instead, give mise a command that reads it and a
+command that writes it:
+
+```toml [~/.config/mise/config.toml]
+[settings.github]
+oauth_cache_get = "pass show mise/github-oauth"
+oauth_cache_set = "pass insert -m -f mise/github-oauth"
+```
+
+`oauth_cache_set` receives the value on stdin and `oauth_cache_get` prints it
+back; mise treats the value as opaque, so any tool that stores a multi-line
+secret works, including `op`, `bw` and fnox. GitHub rotates the refresh token on
+every refresh, so both commands are required. Both are global-only settings: a
+project's `mise.toml` cannot set them.
+
+mise writes the refresh token with `oauth_cache_set` when you authorize and each
+time it is rotated, and reads it with `oauth_cache_get` when the access token
+has to be refreshed, about once every eight hours. Neither runs on every mise
+invocation. If `oauth_cache_get` fails when
+mise needs to refresh, for example because the vault is locked, mise skips the
+refresh and keeps the cached token; it may fail on an entry that does not exist
+yet when mise stores the first token. Each command is stopped after 60 seconds. If `oauth_cache_set` fails, mise warns and keeps the new refresh token in
+the cache file rather than losing it. A cache file that already holds a refresh
+token moves into the store at the next refresh.
+
 ### Git credential helpers
 
 With `use_git_credentials` on, mise runs `git credential fill` as the last
