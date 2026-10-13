@@ -1201,6 +1201,15 @@ impl HistoryRepo {
 
     /// Recursive listing of a tree (or a path inside it).
     pub fn ls_tree(&self, spec: &str) -> Result<Vec<TreeEntry>> {
+        if let Some(id) = Self::object_id(spec) {
+            let repo = self.gix()?;
+            let tree = repo
+                .find_object(id)
+                .wrap_err_with(|| format!("reading {spec}"))?
+                .peel_to_tree()?;
+            // sorted by full path, which is the order `ls-tree -r` walks in
+            return Self::gix_tree_entries(&repo, &tree);
+        }
         let out = self
             .git
             .output(PlumbingCall::new(["ls-tree", "-r", "-l", "-z", spec]))?;
@@ -1258,9 +1267,41 @@ impl HistoryRepo {
         if let Some(bytes) = self.transient_blob(oid) {
             return Ok(bytes);
         }
+        if let Some(id) = Self::object_id(oid) {
+            return self.gix_blob(id, u64::MAX);
+        }
         self.git
             .output(PlumbingCall::new(["cat-file", "blob", oid]))
             .wrap_err_with(|| format!("reading {oid}"))
+    }
+
+    /// A full object id, which gix reads without starting Git. Anything
+    /// else is a revision only Git resolves here.
+    fn object_id(spec: &str) -> Option<gix::ObjectId> {
+        spec.bytes()
+            .all(|byte| byte.is_ascii_hexdigit())
+            .then(|| gix::ObjectId::from_hex(spec.as_bytes()).ok())
+            .flatten()
+    }
+
+    /// The blob `id`, refusing anything over `limit` bytes before reading
+    /// it, as `cat-file blob` refuses an object that is not a blob.
+    fn gix_blob(&self, id: gix::ObjectId, limit: u64) -> Result<Vec<u8>> {
+        let repo = self.gix()?;
+        let header = repo
+            .find_header(id)
+            .wrap_err_with(|| format!("reading {id}"))?;
+        if header.kind() != gix::object::Kind::Blob {
+            bail!("reading {id}: a {} is not a blob", header.kind());
+        }
+        if header.size() > limit {
+            bail!("object exceeds the encrypted content size limit");
+        }
+        Ok(repo
+            .find_object(id)
+            .wrap_err_with(|| format!("reading {id}"))?
+            .detach()
+            .data)
     }
 
     pub(crate) fn blob_starts_with(&self, oid: &str, prefix: &[u8]) -> Result<bool> {
@@ -1276,6 +1317,9 @@ impl HistoryRepo {
                 bail!("object exceeds the encrypted content size limit");
             }
             return Ok(bytes);
+        }
+        if let Some(id) = Self::object_id(oid) {
+            return self.gix_blob(id, limit);
         }
         let size: u64 = self
             .output_str(PlumbingCall::new(["cat-file", "-s", oid]))?
@@ -1559,6 +1603,26 @@ impl HistoryRepo {
 
     /// The object at `path` inside `tree_ish`: its mode and oid.
     pub fn object_at(&self, tree_ish: &str, path: &str) -> Result<Option<(String, String)>> {
+        if let Some(id) = Self::object_id(tree_ish) {
+            let repo = self.gix()?;
+            // a missing object holds nothing, as `ls-tree` reports it
+            let Some(object) = repo.try_find_object(id)? else {
+                return Ok(None);
+            };
+            // a blob holds no paths; any other failure to reach a tree is
+            // the repository's, not an absence
+            if object.kind == gix::object::Kind::Blob {
+                return Ok(None);
+            }
+            let tree = object.peel_to_tree()?;
+            // as `ls-tree` prints it: six octal digits, so a tree is 040000
+            return Ok(tree.lookup_entry_by_path(path)?.map(|entry| {
+                (
+                    format!("{:06o}", entry.mode().value()),
+                    entry.object_id().to_string(),
+                )
+            }));
+        }
         let output = self
             .git
             .output_unchecked(PlumbingCall::new(["ls-tree", "-z", tree_ish, "--", path]))?;
@@ -1714,6 +1778,27 @@ impl HistoryRepo {
 
     /// The commit a ref points at, if the ref exists.
     pub(crate) fn ref_oid(&self, name: &str) -> Result<Option<String>> {
+        // **Every pull reads these refs dozens of times**, and a Git process
+        // apiece made them most of the processes a short pull started. A
+        // full ref name gix resolves itself; anything else is a revision
+        // only Git resolves here.
+        if name == "HEAD" || name.starts_with("refs/") {
+            // `rev-parse --verify` prints what the ref names without reading
+            // that object, so neither does this; a symbolic ref is followed
+            // as deep as Git follows one
+            let repo = self.gix()?;
+            let mut name = name.to_string();
+            for _ in 0..5 {
+                let Some(reference) = repo.try_find_reference(name.as_str())? else {
+                    return Ok(None);
+                };
+                match reference.target() {
+                    gix::refs::TargetRef::Object(id) => return Ok(Some(id.to_string())),
+                    gix::refs::TargetRef::Symbolic(target) => name = target.as_bstr().to_string(),
+                }
+            }
+            bail!("{name}: too many levels of symbolic refs");
+        }
         let output = self.git.output_unchecked(PlumbingCall::new([
             "rev-parse",
             "--verify",
@@ -2328,6 +2413,132 @@ mod tests {
             )])
             .unwrap();
         assert_eq!(again.tree, result.tree);
+    }
+
+    /// The reads gix serves answer exactly as the Git commands they replace.
+    #[test]
+    fn gix_reads_match_git() {
+        if crate::git::plumbing_binary().is_none() {
+            return;
+        }
+        let tmp = tempfile::tempdir().unwrap();
+        let repo = repo(tmp.path());
+        let file = repo.hash_blob(b"content").unwrap();
+        let tree = repo
+            .compose(
+                &repo.empty_object("tree").unwrap(),
+                &[
+                    Overlay {
+                        path: "home/dir/file".into(),
+                        object: Some(("100644".into(), file.clone())),
+                    },
+                    Overlay {
+                        path: "home/tool".into(),
+                        object: Some(("100755".into(), file.clone())),
+                    },
+                ],
+            )
+            .unwrap();
+        let commit = repo.commit_tree(&tree, vec![], "first").unwrap();
+        repo.update_history_head(&commit, None).unwrap();
+        let git = |args: &[&str]| {
+            let out = std::process::Command::new("git")
+                .arg(format!("--git-dir={}", repo.dir().display()))
+                .args(args)
+                .output()
+                .unwrap();
+            out.status
+                .success()
+                .then(|| String::from_utf8(out.stdout).unwrap())
+        };
+        let ls_tree = |tree_ish: &str, path: &str| {
+            git(&["ls-tree", tree_ish, "--", path]).and_then(|out| {
+                let (meta, _) = out.split_once('\t')?;
+                let fields: Vec<_> = meta.split_whitespace().collect();
+                Some((fields[0].to_string(), fields[2].to_string()))
+            })
+        };
+        let missing = "0".repeat(commit.len());
+        for tree_ish in [&commit, &tree, &file, &missing] {
+            for path in [
+                "home/dir/file",
+                "home/dir",
+                "home/tool",
+                "home/absent",
+                "absent/deeper",
+            ] {
+                assert_eq!(
+                    repo.object_at(tree_ish, path).unwrap(),
+                    ls_tree(tree_ish, path),
+                    "{tree_ish} {path}"
+                );
+            }
+        }
+        // a ref naming a missing object still resolves, as with Git
+        std::fs::write(
+            repo.dir().join("refs/heads/dangling"),
+            format!("{missing}\n"),
+        )
+        .unwrap();
+        for name in [
+            HistoryRepo::HISTORY_REF,
+            "HEAD",
+            "refs/heads/absent",
+            "refs/heads/dangling",
+        ] {
+            assert_eq!(
+                repo.ref_oid(name).unwrap(),
+                git(&["rev-parse", "--verify", "--quiet", name]).map(|out| out.trim().to_string()),
+                "{name}"
+            );
+        }
+        let mut deep = vec![];
+        for (index, path) in ["a-b", "a/x", "a.c", "ab/y", "a/z/w", "home/dir/file"]
+            .into_iter()
+            .enumerate()
+        {
+            deep.push(Overlay {
+                path: path.into(),
+                object: Some((
+                    "100644".into(),
+                    repo.hash_blob(format!("{index}").as_bytes()).unwrap(),
+                )),
+            });
+        }
+        let deep = repo.compose(&tree, &deep).unwrap();
+        for spec in [&deep, &commit] {
+            let listed: Vec<_> = repo
+                .ls_tree(spec)
+                .unwrap()
+                .into_iter()
+                .map(|entry| {
+                    format!(
+                        "{} {} {:?} {}",
+                        entry.mode, entry.oid, entry.size, entry.path
+                    )
+                })
+                .collect();
+            let expected: Vec<_> = git(&["ls-tree", "-r", "-l", spec])
+                .unwrap()
+                .lines()
+                .map(|line| {
+                    let (meta, path) = line.split_once('\t').unwrap();
+                    let fields: Vec<_> = meta.split_whitespace().collect();
+                    format!(
+                        "{} {} {:?} {path}",
+                        fields[0],
+                        fields[2],
+                        fields[3].parse::<u64>().ok()
+                    )
+                })
+                .collect();
+            assert_eq!(listed, expected);
+        }
+        assert_eq!(repo.cat_object(&file).unwrap(), b"content");
+        assert!(repo.cat_object(&tree).is_err());
+        assert!(repo.cat_object(&missing).is_err());
+        assert_eq!(repo.cat_object_bounded(&file, 7).unwrap(), b"content");
+        assert!(repo.cat_object_bounded(&file, 6).is_err());
     }
 
     #[test]
