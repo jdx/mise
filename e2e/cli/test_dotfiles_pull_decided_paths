@@ -9,11 +9,13 @@ cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'
 [dotfiles]
 "~/.same" = { mode = "track" }
 "~/.manual" = { mode = "track", autosave = false }
+"~/.mode" = { mode = "track" }
 "~/.one" = { mode = "track" }
 "~/.two" = { mode = "track" }
 TOML
-for file in same manual one two; do echo v1 >~/."$file"; done
-assert_succeed "mise dot save ~/.same ~/.manual ~/.one ~/.two"
+for file in same manual mode one two; do echo v1 >~/."$file"; done
+chmod 644 ~/.mode
+assert_succeed "mise dot save ~/.same ~/.manual ~/.mode ~/.one ~/.two"
 assert_succeed "mise dot track ~/.config/mise/config.toml --yes"
 assert_succeed "mise dot origin set file://$origin --sync manual --yes"
 assert_succeed "mise dot sync"
@@ -36,14 +38,19 @@ assert_succeed "b bootstrap --adopt file://$origin --yes"
 # that was interrupted before it recorded its writes leaves them
 echo v2 >~/.same
 echo v2 >~/.manual
-assert_succeed "mise dot save ~/.same ~/.manual"
+echo v2 >~/.mode
+chmod 600 ~/.mode
+assert_succeed "mise dot save ~/.same ~/.manual ~/.mode"
 assert_succeed "mise dot sync"
 echo v2 >"$second/.manual"
 assert_succeed "b dot sync"
 echo v2 >"$second/.same"
-assert_contains "b dot pull --yes 2>&1" "applied 2 incoming change(s)"
+echo v2 >"$second/.mode"
+chmod 600 "$second/.mode"
+assert_contains "b dot pull --yes 2>&1" "applied 3 incoming change(s)"
 assert "cat $second/.same" "v2"
 assert "cat $second/.manual" "v2"
+assert "cat $second/.mode" "v2"
 
 # two real conflicts, decided one path at a time
 echo remote >~/.one

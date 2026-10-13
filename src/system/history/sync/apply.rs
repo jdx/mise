@@ -678,9 +678,27 @@ pub(crate) async fn apply_locked_with_scope(
                     })
                 })
                 .collect::<Result<Vec<_>>>()?;
-            if repo.compose(&repo.output_tree_of(current)?, &restore_planned)?
-                != repo.output_tree_of(local)?
+            let planned_tree = repo.output_tree_of(local)?;
+            let mut restored = repo.compose(&repo.output_tree_of(current)?, &restore_planned)?;
+            // It records those paths' modes as well, in the manifest: restore
+            // them too, so a mode the incoming write sets anyway, as on a file
+            // an interrupted apply already wrote, is not a later save.
+            if restored != planned_tree
+                && let (Some(mut saved), Some(planned)) = (
+                    crate::system::history::manifest::Manifest::read(repo, current)?,
+                    crate::system::history::manifest::Manifest::read(repo, local)?,
+                )
             {
+                for step in &ready {
+                    let path = &step.pending.branch_path;
+                    match planned.permissions.get(path) {
+                        Some(bits) => saved.permissions.insert(path.clone(), *bits),
+                        None => saved.permissions.remove(path),
+                    };
+                }
+                restored = saved.write(repo, &restored)?;
+            }
+            if restored != planned_tree {
                 bail!("local files were saved after enrollment planning; retry pull");
             }
             // Do not let a divergent text merge or a stale resolution differ
@@ -1094,7 +1112,7 @@ fn hold_reason(
     Ok(None)
 }
 
-fn permissions_at(
+pub(super) fn permissions_at(
     repo: &crate::system::history::shadow::HistoryRepo,
     commit: Option<&str>,
     path: &str,
