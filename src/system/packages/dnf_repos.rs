@@ -185,7 +185,8 @@ fn repo_enabled(content: &str, repo_id: &str) -> bool {
 /// dnf's `$basearch` for this machine, as COPR names architectures.
 fn basearch() -> &'static str {
     match std::env::consts::ARCH {
-        "powerpc64" => "ppc64le",
+        "powerpc64" if cfg!(target_endian = "little") => "ppc64le",
+        "powerpc64" => "ppc64",
         "x86" => "i386",
         arch => arch,
     }
