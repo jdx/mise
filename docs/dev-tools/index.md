@@ -220,6 +220,9 @@ node = { version = "24", auto_update = "6h", minimum_release_age = "3d" }
 - Exact versions such as `node = "24.11.1"` are never updated. If a global
   lockfile (`mise lock --global`) pins the tool, the update moves the lock
   entry to the new version. A project's config and lockfile are never changed.
+- Only installed tools are updated. A tool with no installed version, such as a
+  [lazy tool](/dev-tools/shims.html#lazy-tools) nobody has run yet, is left
+  alone until something installs it.
 - No updates run offline, in CI, or with `locked = true`.
 - The previous version is pruned on the same schedule as after `mise upgrade`.
 - If the last update of a tool failed, `mise doctor` shows the error.
