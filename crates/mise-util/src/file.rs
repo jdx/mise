@@ -561,6 +561,49 @@ pub fn prepare_atomic_write<P: AsRef<Path>, C: AsRef<[u8]>>(
 ) -> Result<PreparedAtomicWrite> {
     let path = path.as_ref();
     trace!("prepare_atomic_write {}", display_path(path));
+    let mut prepared = prepare_replacement(path, contents)?;
+    prepared.temporary.as_file_mut().sync_all()?;
+    Ok(prepared)
+}
+
+/// Writes a complete replacement beside `path`, then renames it into place without syncing
+/// either. A crash of this process never leaves a partial file, but a power loss can lose the
+/// write. For derived files written in bulk, which [`sync_filesystem`] then makes durable at
+/// once: syncing each one costs a journal commit per file.
+pub fn write_atomic_unsynced<P: AsRef<Path>, C: AsRef<[u8]>>(path: P, contents: C) -> Result<()> {
+    let path = path.as_ref();
+    trace!("write_atomic_unsynced {}", display_path(path));
+    let prepared = prepare_replacement(path, contents)?;
+    persist_atomic(prepared.temporary, &prepared.target)
+        .wrap_err_with(|| format!("failed atomic write: {}", display_path(&prepared.target)))
+}
+
+/// Makes every write on the filesystem holding `path` durable, for a batch written with
+/// [`write_atomic_unsynced`].
+pub fn sync_filesystem<P: AsRef<Path>>(path: P) -> Result<()> {
+    let path = path.as_ref();
+    trace!("sync filesystem of {}", display_path(path));
+    #[cfg(any(target_os = "linux", target_os = "android"))]
+    {
+        let dir = File::open(path)
+            .wrap_err_with(|| format!("failed to open dir for sync: {}", display_path(path)))?;
+        nix::unistd::syncfs(&dir)
+            .wrap_err_with(|| format!("failed to sync filesystem of {}", display_path(path)))
+    }
+    #[cfg(all(unix, not(any(target_os = "linux", target_os = "android"))))]
+    {
+        nix::unistd::sync();
+        Ok(())
+    }
+    #[cfg(windows)]
+    {
+        // Windows has no per-filesystem flush short of opening the volume
+        let _ = path;
+        Ok(())
+    }
+}
+
+fn prepare_replacement<C: AsRef<[u8]>>(path: &Path, contents: C) -> Result<PreparedAtomicWrite> {
     let target = atomic_write_target(path)?;
     let path = target.as_path();
     let parent = path
@@ -594,7 +637,6 @@ pub fn prepare_atomic_write<P: AsRef<Path>, C: AsRef<[u8]>>(
 
     temporary.write_all(contents.as_ref())?;
 
-    temporary.as_file_mut().sync_all()?;
     let parent = parent.to_path_buf();
     Ok(PreparedAtomicWrite {
         temporary,

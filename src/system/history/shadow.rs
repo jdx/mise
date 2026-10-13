@@ -794,8 +794,7 @@ impl HistoryRepo {
     /// the repository for each walk so objects and refs written by Git are
     /// always visible.
     pub(crate) fn history_messages(&self) -> Result<Vec<(String, String)>> {
-        let repo = gix::open_opts(self.dir(), gix::open::Options::isolated())
-            .wrap_err_with(|| format!("opening {} with gix", display_path(self.dir())))?;
+        let repo = self.gix()?;
         let Some(mut head) = repo.try_find_reference(Self::HISTORY_REF)? else {
             return Ok(vec![]);
         };
@@ -815,11 +814,73 @@ impl HistoryRepo {
         Ok(messages)
     }
 
+    /// This repository through gix, for reads that would otherwise start a
+    /// Git process per commit. Open it for each walk so objects and refs
+    /// written by Git are always visible.
+    pub(crate) fn gix(&self) -> Result<gix::Repository> {
+        gix::open_opts(self.dir(), gix::open::Options::isolated())
+            .wrap_err_with(|| format!("opening {} with gix", display_path(self.dir())))
+    }
+
+    /// Visits every file at or under one of `paths` in each of `commits`, in
+    /// order. A subtree already visited at the same path is skipped, since
+    /// everything in it was visited with it.
+    pub(crate) fn visit_paths_in<'a>(
+        &self,
+        commits: impl IntoIterator<Item = &'a String>,
+        paths: &BTreeSet<String>,
+        mut visit: impl FnMut(&str, TreeEntry) -> Result<()>,
+    ) -> Result<()> {
+        let repo = self.gix()?;
+        let mut subtrees = BTreeSet::new();
+        for commit in commits {
+            let tree = repo
+                .find_commit(gix::ObjectId::from_hex(commit.as_bytes())?)?
+                .tree()?;
+            for path in paths {
+                let Some(entry) = tree.lookup_entry_by_path(path)? else {
+                    continue;
+                };
+                let mode = entry.mode();
+                if mode.is_tree() {
+                    if !subtrees.insert((path.clone(), entry.object_id())) {
+                        continue;
+                    }
+                    let subtree = entry.object()?.into_tree();
+                    for mut nested in Self::gix_tree_entries(&repo, &subtree)? {
+                        nested.path = format!("{path}/{}", nested.path);
+                        visit(commit, nested)?;
+                    }
+                } else {
+                    let mut bytes = [0; 6];
+                    let size = mode
+                        .is_blob_or_symlink()
+                        .then(|| repo.find_header(entry.object_id()).map(|h| h.size()))
+                        .transpose()?;
+                    visit(
+                        commit,
+                        TreeEntry {
+                            mode: std::str::from_utf8(mode.as_bytes(&mut bytes))?.to_string(),
+                            oid: entry.object_id().to_string(),
+                            size,
+                            path: path.clone(),
+                        },
+                    )?;
+                }
+            }
+        }
+        Ok(())
+    }
+
     pub(crate) fn read_meta(&self, commit: &str) -> Result<Checkpoint> {
+        Self::read_meta_in(&self.gix()?, commit)
+    }
+
+    /// [`Self::read_meta`] through an open repository, so a walk over many
+    /// commits opens it once rather than once per commit.
+    pub(crate) fn read_meta_in(repo: &gix::Repository, commit: &str) -> Result<Checkpoint> {
         #[cfg(test)]
         READ_META_CALLS.with(|count| count.set(count.get() + 1));
-        let repo = gix::open_opts(self.dir(), gix::open::Options::isolated())
-            .wrap_err_with(|| format!("opening {} with gix", display_path(self.dir())))?;
         let id = gix::ObjectId::from_hex(commit.as_bytes())?;
         let commit_object = repo.find_commit(id)?;
         let tree = commit_object.tree()?;
@@ -897,7 +958,7 @@ impl HistoryRepo {
             .transpose()?
             .map(|commit| commit.tree())
             .transpose()?;
-        for change in Self::gix_changes(&repo, parent_tree.as_ref(), &tree)? {
+        for change in Self::gix_changes(repo, parent_tree.as_ref(), &tree)? {
             if change.path.starts_with(".mise-history/") {
                 continue;
             }
@@ -973,7 +1034,7 @@ impl HistoryRepo {
             // nothing is written to the tree for it — so it has to be
             // carried forward like the other two
             coverage.nested.append(&mut record.tree.coverage.nested);
-            let files = Self::gix_tree_entries(&repo, &tree)?;
+            let files = Self::gix_tree_entries(repo, &tree)?;
             // **Another machine's checkpoint did not save this machine's
             // version of a per-machine file.** Its tree has no stream for
             // this machine, which must not read as a saved absence: a

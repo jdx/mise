@@ -93,11 +93,10 @@ fn audit_history_cached(
     }
     // Policy changes cannot hide older plaintext, including on a merge
     // parent or a platform that this machine never activates.
-    for commit in &commits {
-        if let Some(manifest) = crate::system::history::manifest::Manifest::read(repo, commit)? {
-            protected.extend(manifest.encrypted_paths());
-        }
-    }
+    crate::system::history::manifest::Manifest::read_distinct(repo, &commits, |manifest| {
+        protected.extend(manifest.encrypted_paths());
+        std::ops::ControlFlow::Continue(())
+    })?;
     // A newly protected path invalidates the old proof for that policy: its
     // plaintext may live anywhere in old ancestry, including a merge parent.
     if cached
@@ -108,32 +107,26 @@ fn audit_history_cached(
     }
     let inspected = commits.len();
     let mut checked = BTreeSet::new();
-    for commit in commits.into_iter().filter(|_| !protected.is_empty()) {
-        for entry in repo.ls_tree(&commit)? {
-            if !protected.iter().any(|path| {
-                entry.path == *path
-                    || entry
-                        .path
-                        .strip_prefix(path)
-                        .is_some_and(|rest| rest.starts_with('/'))
-            }) || !checked.insert((entry.path.clone(), entry.mode.clone(), entry.oid.clone()))
-            {
-                continue;
+    if !protected.is_empty() {
+        repo.visit_paths_in(&commits, &protected, |commit, entry| {
+            if !checked.insert((entry.path.clone(), entry.mode.clone(), entry.oid.clone())) {
+                return Ok(());
             }
+            let path = entry.path;
             let object = (entry.mode, entry.oid);
             let valid =
                 envelope(repo, &object, agecrypt::MAX_ENCRYPTED_BYTES)?.is_some_and(|outer| {
-                    outer.path == entry.path
+                    outer.path == path
                         && matches!(outer.mode.as_str(), "100644" | "100755" | "120000")
                         && outer.ciphertext.0.starts_with(b"age-encryption.org/v1\n")
                 });
             if !valid {
                 bail!(
-                    "cannot publish: encrypted path {} has an unencrypted or invalid version in commit {commit}; encrypting the latest version does not erase earlier plaintext. Remove that history before pushing, or use `mise dot sync --allow-plaintext-history` to publish it anyway",
-                    entry.path
+                    "cannot publish: encrypted path {path} has an unencrypted or invalid version in commit {commit}; encrypting the latest version does not erase earlier plaintext. Remove that history before pushing, or use `mise dot sync --allow-plaintext-history` to publish it anyway",
                 );
             }
-        }
+            Ok(())
+        })?;
     }
     if let Ok(mut cache) = AUDITS.lock() {
         // One watcher normally uses one repository. Bound temporary onboarding
