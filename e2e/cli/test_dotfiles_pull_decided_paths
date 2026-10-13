@@ -56,12 +56,16 @@ assert "cat $second/.mode" "v2"
 
 # two real conflicts, decided one path at a time
 echo remote >~/.one
+chmod 640 ~/.one
 echo remote >~/.two
 assert_succeed "mise dot save"
 assert_succeed "mise dot sync"
+assert_succeed "b dot sync"
+# unsaved edits, and an unsaved mode matching neither the saved (644) nor the
+# incoming (640) one, which taking the repository's version replaces too
 echo local >"$second/.one"
 echo local >"$second/.two"
-assert_succeed "b dot sync"
+chmod 600 "$second/.one"
 assert_contains "b dot pull --yes --take-remote $second/.one 2>&1" "1 conflict(s) remain"
 assert_contains "b dot pull --yes --take-remote $second/.one 2>&1" "1 conflict(s) remain"
 assert_contains "b dot pull --yes --take-remote $second/.two 2>&1" "applied 2 incoming change(s)"

@@ -684,10 +684,12 @@ pub(crate) async fn apply_locked_with_scope(
                 .collect::<Result<Vec<_>>>()?;
             let planned_tree = repo.output_tree_of(local)?;
             let mut restored = repo.compose(&repo.output_tree_of(current)?, &restore_planned)?;
-            // It records those paths' modes as well, in the manifest. A mode
-            // the incoming write sets anyway, as on a file an interrupted
-            // apply already wrote, is not a later save, so restore it too;
-            // any other saved mode is one, and must still stop the pull.
+            // It records those paths' modes as well, in the manifest. Two are
+            // not a later save, so restore them too: the live mode this pull
+            // preflighted, which its own protective commit just saved (an
+            // unsaved mode `--take-remote` replaces), and the mode the
+            // incoming write sets anyway (a file an interrupted apply already
+            // wrote). Any other saved mode is one, and must still stop it.
             if restored != planned_tree
                 && let (Some(mut saved), Some(planned)) = (
                     crate::system::history::manifest::Manifest::read(repo, current)?,
@@ -696,9 +698,11 @@ pub(crate) async fn apply_locked_with_scope(
             {
                 for step in &ready {
                     let path = &step.pending.branch_path;
-                    if saved.file_permissions(path, step.pending.object.as_ref())
-                        != step.desired_mode
-                    {
+                    let incoming = saved.file_permissions(path, step.pending.object.as_ref())
+                        == step.desired_mode;
+                    let preflighted =
+                        saved.file_permissions(path, step.before.as_ref()) == step.before_mode;
+                    if !incoming && !preflighted {
                         continue;
                     }
                     match planned.permissions.get(path) {
