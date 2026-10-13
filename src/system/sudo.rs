@@ -397,13 +397,13 @@ fn with_manual_hint(err: eyre::Report, manual_cmd: &str) -> eyre::Report {
 /// `manual_cmd` without its elevator, for running as root. run0's `--setenv`
 /// options become the `env` prefix a root shell understands.
 fn root_fallback(manual_cmd: &str, elevator: &str) -> String {
-    let rest = manual_cmd
-        .strip_prefix(&format!("{elevator} "))
-        .unwrap_or(manual_cmd);
     // keep the command untouched if it does not parse as shell words
-    let Ok(words) = shell_words::split(rest) else {
-        return rest.to_string();
+    let Ok(mut words) = shell_words::split(manual_cmd) else {
+        return manual_cmd.to_string();
     };
+    if words.first().is_some_and(|word| word == elevator) {
+        words.remove(0);
+    }
     let split = words
         .iter()
         .position(|w| !w.starts_with("--setenv="))
