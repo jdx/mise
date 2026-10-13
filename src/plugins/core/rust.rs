@@ -31,8 +31,7 @@ pub(super) struct RustPlugin {
     updatable_channels: std::sync::Mutex<BTreeSet<String>>,
 }
 
-const RUST_NIGHTLY_MANIFEST_URL: &str =
-    "https://static.rust-lang.org/dist/channel-rust-nightly.toml";
+const RUST_DEFAULT_DIST_SERVER: &str = "https://static.rust-lang.org";
 const RUST_DEFAULT_PROFILE_COMPONENTS: &[&str] = &["clippy", "rust-docs", "rustfmt"];
 
 fn parse_nightly_manifest(manifest: &str) -> Result<String> {
@@ -47,9 +46,28 @@ fn parse_nightly_manifest(manifest: &str) -> Result<String> {
     Ok(format!("nightly-{date}"))
 }
 
-async fn current_nightly_version() -> Result<String> {
+/// Where the nightly channel manifest lives. Honors `RUSTUP_DIST_SERVER`, the
+/// variable rustup uses to find toolchains, so a mirror serves the manifest too.
+fn nightly_manifest_url(config_env: &IndexMap<String, String>) -> String {
+    let server = config_env
+        .get("RUSTUP_DIST_SERVER")
+        .cloned()
+        .or_else(|| std::env::var("RUSTUP_DIST_SERVER").ok());
+    nightly_manifest_url_for(server.as_deref())
+}
+
+fn nightly_manifest_url_for(dist_server: Option<&str>) -> String {
+    let server = dist_server
+        .map(|s| s.trim_end_matches('/'))
+        .filter(|s| !s.is_empty())
+        .unwrap_or(RUST_DEFAULT_DIST_SERVER);
+    format!("{server}/dist/channel-rust-nightly.toml")
+}
+
+async fn current_nightly_version(config: &Arc<Config>) -> Result<String> {
+    let url = nightly_manifest_url(&config.env().await?);
     let manifest = HTTP_FETCH
-        .get_text_cached(RUST_NIGHTLY_MANIFEST_URL)
+        .get_text_cached(&url)
         .await
         .wrap_err("failed to fetch the Rust nightly channel manifest")?;
     parse_nightly_manifest(&manifest)
@@ -573,7 +591,7 @@ impl Backend for RustPlugin {
         Ok(RustOptions::new(&raw_opts).lockfile_options())
     }
 
-    async fn _list_remote_versions(&self, _config: &Arc<Config>) -> Result<Vec<VersionInfo>> {
+    async fn _list_remote_versions(&self, config: &Arc<Config>) -> Result<Vec<VersionInfo>> {
         let mut versions: Vec<VersionInfo> = github::list_releases("rust-lang/rust")
             .await?
             .into_iter()
@@ -588,7 +606,7 @@ impl Backend for RustPlugin {
             })
             .rev()
             .collect();
-        if let Ok(current_nightly) = current_nightly_version().await {
+        if let Ok(current_nightly) = current_nightly_version(config).await {
             versions.push(VersionInfo {
                 version: current_nightly,
                 ..Default::default()
@@ -628,13 +646,13 @@ impl Backend for RustPlugin {
 
     async fn resolve_channel_version(
         &self,
-        _config: &Arc<Config>,
+        config: &Arc<Config>,
         version: &str,
     ) -> Result<Option<String>> {
         if !self.is_rolling_channel(version) {
             return Ok(None);
         }
-        current_nightly_version().await.map(Some)
+        current_nightly_version(config).await.map(Some)
     }
 
     fn requires_concrete_channel_version(&self, version: &str) -> bool {
@@ -777,13 +795,13 @@ impl Backend for RustPlugin {
                 let oi = OutdatedInfo::new(config, tv.clone(), tv.version.clone())?;
                 return Ok((oi.current.as_ref() != Some(&tv.version)).then_some(oi));
             }
-            let latest = current_nightly_version().await?;
+            let latest = current_nightly_version(config).await?;
             let oi = OutdatedInfo::new(config, tv.clone(), latest.clone())?;
             return Ok((oi.current.as_ref() != Some(&latest)).then_some(oi));
         }
         if is_dated_nightly(&requested) {
             let latest = if bump && !Settings::get().offline() && !opts.offline {
-                current_nightly_version().await?
+                current_nightly_version(config).await?
             } else {
                 tv.version.clone()
             };
@@ -1446,6 +1464,20 @@ const RUST_TARGET_ARCHES: &[&str] = &[
 mod tests {
     use super::*;
     use confique::Layer;
+
+    #[test]
+    fn test_nightly_manifest_url_for_mirror() {
+        assert_eq!(
+            nightly_manifest_url_for(Some("https://m.example.com/")),
+            "https://m.example.com/dist/channel-rust-nightly.toml"
+        );
+        for unset in [None, Some("")] {
+            assert_eq!(
+                nightly_manifest_url_for(unset),
+                "https://static.rust-lang.org/dist/channel-rust-nightly.toml"
+            );
+        }
+    }
 
     #[test]
     fn test_rustup_url_for_mirror() {
