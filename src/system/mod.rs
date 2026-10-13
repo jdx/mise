@@ -2791,26 +2791,20 @@ fn configured_snap_options(
 
 /// Give the snap entries of `mgrs` the `channel` and `classic` options of the
 /// entry `use` writes, for `use`, which builds its requests without the config.
+/// `declared` is the `[bootstrap.packages]` table of the file `use` writes.
 ///
-/// `use` keeps a table entry's options when `target` already declares the
+/// `use` keeps a table entry's options when that file already declares the
 /// snap and writes a plain `"latest"` entry otherwise, so the options come
-/// from `target`'s own declaration and nothing else. Inheriting from other
+/// from the file's own declaration and nothing else. Inheriting from other
 /// configs would install with options the written entry does not carry.
 pub fn attach_snap_options(
-    config: &Config,
-    target: &Path,
+    declared: &IndexMap<String, PackageTomlConfig>,
     mgrs: &mut [ManagerPackages],
 ) -> eyre::Result<()> {
-    let package_configs = config
-        .config_files
-        .get(target)
-        .and_then(|cf| cf.bootstrap_config())
-        .map(|bootstrap| bootstrap.packages)
-        .unwrap_or_default();
     for mp in mgrs.iter_mut().filter(|mp| mp.manager.name() == "snap") {
         let mut packages = BTreeMap::new();
         for request in &mp.requests {
-            if let Some(options) = configured_snap_options(&package_configs, &request.name)? {
+            if let Some(options) = configured_snap_options(declared, &request.name)? {
                 packages.insert(request.name.clone(), options);
             }
         }
