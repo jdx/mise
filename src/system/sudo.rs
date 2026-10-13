@@ -84,10 +84,33 @@ pub(crate) fn argv_with_env(
     }
 }
 
+/// Quote words for a shell, leaving `NAME=value` assignments and `--opt=value`
+/// options readable by quoting only the value.
+fn join_quoted<S: AsRef<str>>(words: &[S]) -> String {
+    words
+        .iter()
+        .map(|word| {
+            let word = word.as_ref();
+            match word.split_once('=') {
+                Some((name, value))
+                    if !name.is_empty()
+                        && name
+                            .chars()
+                            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-')) =>
+                {
+                    format!("{name}={}", shell_words::quote(value))
+                }
+                _ => shell_words::quote(word).into_owned(),
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
 /// The command to give a user who must run it themselves: always elevated, and
 /// without the no-prompt flag so a password can be typed.
 fn manual_command(program: &str, args: &[String], envs: &[(String, String)]) -> String {
-    build_argv(program, args, envs, false).join(" ")
+    join_quoted(&build_argv(program, args, envs, false))
 }
 
 fn build_argv(
@@ -377,16 +400,21 @@ fn root_fallback(manual_cmd: &str, elevator: &str) -> String {
     let rest = manual_cmd
         .strip_prefix(&format!("{elevator} "))
         .unwrap_or(manual_cmd);
-    let mut words = rest.split(' ').peekable();
-    let mut envs = vec![];
-    while let Some(word) = words.next_if(|w| w.starts_with("--setenv=")) {
-        envs.push(word.trim_start_matches("--setenv="));
-    }
-    let tail = words.collect::<Vec<_>>().join(" ");
+    // keep the command untouched if it does not parse as shell words
+    let Ok(words) = shell_words::split(rest) else {
+        return rest.to_string();
+    };
+    let split = words
+        .iter()
+        .position(|w| !w.starts_with("--setenv="))
+        .unwrap_or(words.len());
+    let (envs, tail) = words.split_at(split);
+    let tail = join_quoted(tail);
     if envs.is_empty() {
         tail
     } else {
-        format!("env {} {tail}", envs.join(" "))
+        let envs = envs.iter().map(|w| w.trim_start_matches("--setenv="));
+        format!("env {} {tail}", join_quoted(&envs.collect::<Vec<_>>()))
     }
 }
 
