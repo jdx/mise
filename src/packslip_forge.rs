@@ -149,9 +149,38 @@ pub(crate) fn lock_entry_continues(
     };
     let ((previous_scheme, previous), (scheme, current)) =
         (split_signer(previous), split_signer(current));
-    let pin = |info: &PlatformInfo| project.and_then(|project| lock_pin(project, info));
+    // A lock entry does not record the name its project had when it was
+    // locked, only the signer, so each entry's pin is named for the repository
+    // of its own signer. `same_workflow` would otherwise read a renamed
+    // project's new signer as a shared workflow of another repository. The
+    // repository ID, which both entries must record, still ties them together.
+    let pin = |info: &PlatformInfo, signer: &str| {
+        let project = project?;
+        lock_pin(signer_project(signer).as_deref().unwrap_or(project), info)
+    };
     previous_scheme == scheme
-        && packslip::forge::same_workflow(previous, pin(old).as_ref(), current, pin(new).as_ref())
+        && packslip::forge::same_workflow(
+            previous,
+            pin(old, previous).as_ref(),
+            current,
+            pin(new, current).as_ref(),
+        )
+}
+
+/// The project a forge workflow signer belongs to (`github.com/owner/repo`),
+/// without its workflow path or ref. None for any other identity.
+fn signer_project(identity: &str) -> Option<String> {
+    let rest = identity.strip_prefix("https://")?;
+    let (host, path) = rest.split_once('/')?;
+    let repository = match host {
+        "github.com" => {
+            let mut parts = path.splitn(3, '/');
+            format!("{}/{}", parts.next()?, parts.next()?)
+        }
+        "gitlab.com" => path.split_once("//")?.0.to_string(),
+        _ => return None,
+    };
+    Some(format!("{host}/{repository}"))
 }
 
 /// A signer as a lock entry records it, `scheme:identity`, split in two.
@@ -516,6 +545,24 @@ mod tests {
             );
             let pinned = "sigstore-oidc:https://github.com/acme/hk/.github/workflows/release.yml";
             assert!(lock_signer_continues(pinned, HK_SIGNER, Some(&ok.check)));
+        }
+    }
+
+    #[test]
+    fn a_signer_names_the_project_it_belongs_to() {
+        for (identity, project) in [
+            (
+                "https://github.com/jdx/hk/.github/workflows/release.yml@refs/tags/v1",
+                Some("github.com/jdx/hk"),
+            ),
+            (
+                "https://gitlab.com/g/sub/tool//.gitlab-ci.yml@refs/heads/main",
+                Some("gitlab.com/g/sub/tool"),
+            ),
+            ("https://example.com/o/r/.github/workflows/x.yml", None),
+            ("someone@example.com", None),
+        ] {
+            assert_eq!(signer_project(identity).as_deref(), project);
         }
     }
 
