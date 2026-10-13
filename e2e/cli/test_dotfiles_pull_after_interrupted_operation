@@ -31,14 +31,17 @@ assert_succeed "mise dot save"
 assert_succeed "mise dot sync"
 assert_contains "b dot sync 2>&1" "1 incoming change(s) pending"
 
-# kill an operation on the second machine while it runs, leaving its record
-b dot capture -- sleep 60 >/dev/null 2>&1 &
+# kill an operation on the second machine while its command runs, leaving its
+# record; the command marks when it started, so no Git write is in flight
+ready="$PWD/ready"
+b dot capture -- sh -c "touch $ready; sleep 60" >/dev/null 2>&1 &
 pid=$!
-pending="$second/.local/state/mise/history/index/pending"
-for _ in $(seq 100); do
-  [ -n "$(ls -A "$pending" 2>/dev/null)" ] && break
+for _ in $(seq 300); do
+  [ -e "$ready" ] && break
   sleep 0.1
 done
+assert_succeed "test -e $ready"
+pending="$second/.local/state/mise/history/index/pending"
 # SIGKILL every process under the job, deepest first, so nothing cleans up
 descendants() {
   local child
@@ -47,7 +50,10 @@ descendants() {
     echo "$child"
   done
 }
-mapfile -t victims < <(descendants "$pid")
+victims=()
+while read -r victim; do
+  victims+=("$victim")
+done < <(descendants "$pid")
 kill -KILL "${victims[@]}" "$pid" 2>/dev/null || true
 wait "$pid" 2>/dev/null || true
 assert_succeed "test -n \"\$(ls -A $pending)\""
