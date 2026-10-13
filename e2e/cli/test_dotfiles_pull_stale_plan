@@ -4,6 +4,8 @@
 # for it, and the watcher's automatic apply must still go through afterwards.
 require_cmd git
 export MISE_HISTORY_NOTIFY=false
+# the assertions read info-level messages, whatever level the runner forwards
+export MISE_LOG_LEVEL=info
 origin="$PWD/stale-origin.git"
 git init -q --bare -b main "$origin"
 echo v1 >~/.native
@@ -48,8 +50,9 @@ for _ in $(seq 300); do
   grep -q "waiting for another history operation" "$pulled" && break
   sleep 0.1
 done
-assert_contains "cat $pulled" "waiting for another history operation"
+# release the capture before asserting, so a failure cannot leave it waiting
 touch "$go"
+assert_contains "cat $pulled" "waiting for another history operation"
 wait "$capture"
 status=0
 wait "$pull" || status=$?
