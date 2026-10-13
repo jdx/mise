@@ -508,10 +508,12 @@ impl DnfManager {
             if !layering_on(true) {
                 return Err(ostree_error("upgrade"));
             }
-            miseprintln!(
-                "dnf: layered packages update together with the base image; run `rpm-ostree upgrade` to update this host"
+            // an Ok here would make the driver report the packages as already
+            // up to date
+            bail!(
+                "cannot upgrade layered dnf packages one by one: they update together with the base image\n\
+                 Run `rpm-ostree upgrade` to update this host"
             );
-            return Ok(());
         }
         let mut runs = vec![];
         if pkgs.iter().any(|p| group_id(p).is_none()) {

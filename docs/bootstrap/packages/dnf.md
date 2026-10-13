@@ -88,8 +88,8 @@ With `layer`:
 - Version pins are skipped with a warning, since pinning a layered package works
   against base-image updates.
 - `state = "absent"` runs `rpm-ostree uninstall`.
-- `upgrade` prints a hint instead of upgrading anything: layered packages only
-  update together with the base image, with `rpm-ostree upgrade`.
+- `upgrade` fails with a hint to run `rpm-ostree upgrade`: layered packages only
+  update together with the base image, so mise cannot upgrade them one by one.
 
 | Operation (`layer`) | Command                                                       |
 | ------------------- | ------------------------------------------------------------- |
