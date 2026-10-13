@@ -11,6 +11,19 @@ pub struct Source {
     pub bundle: PathBuf,
     pub revision: String,
     pub origin: String,
+    /// `?ref=` named the bundled branch, so the target's checkout must be on
+    /// it rather than on whatever branch it already has.
+    pub requested_branch: bool,
+}
+
+/// How the target installs the transferred revision.
+pub struct InstallOptions {
+    pub update: bool,
+    pub yes: bool,
+    pub dry_run: bool,
+    /// An existing checkout must be on the transferred branch; `update`
+    /// switches it there.
+    pub require_branch: bool,
 }
 
 fn git(path: &Path, args: &[&str]) -> Result<String> {
@@ -77,6 +90,7 @@ impl Source {
     /// Clones `origin` and bundles one branch of it: `branch` when `?ref=`
     /// named one, else the repository's default branch.
     pub async fn fetch(origin: String, branch: Option<String>) -> Result<Self> {
+        let requested_branch = branch.is_some();
         validate_origin(&origin)?;
         let directory = tempfile::tempdir()?;
         let repo = directory.path().join("repo");
@@ -136,6 +150,7 @@ impl Source {
             bundle,
             revision,
             origin,
+            requested_branch,
         })
     }
 }
@@ -178,30 +193,24 @@ pub fn install(
     bundle: &Path,
     origin: &str,
     revision: &str,
-    update: bool,
-    yes: bool,
-    dry_run: bool,
+    options: &InstallOptions,
 ) -> Result<PathBuf> {
-    install_at(
-        bundle,
-        origin,
-        revision,
-        update,
-        yes,
-        dry_run,
-        &global_directory(),
-    )
+    install_at(bundle, origin, revision, options, &global_directory())
 }
 
 fn install_at(
     bundle: &Path,
     origin: &str,
     revision: &str,
-    update: bool,
-    yes: bool,
-    dry_run: bool,
+    options: &InstallOptions,
     destination: &Path,
 ) -> Result<PathBuf> {
+    let &InstallOptions {
+        update,
+        yes,
+        dry_run,
+        require_branch,
+    } = options;
     validate_origin(origin)?;
     if !matches!(revision.len(), 40 | 64) || !revision.bytes().all(|b| b.is_ascii_hexdigit()) {
         bail!("invalid pinned revision");
@@ -272,26 +281,50 @@ fn install_at(
         {
             bail!("global configuration has uncommitted changes");
         }
+        let current = git(destination, &["symbolic-ref", "--short", "HEAD"]).ok();
+        let on_branch = current.as_deref() == Some(branch.as_str());
+        if require_branch && !on_branch && !update {
+            let state = match &current {
+                Some(current) => format!("on branch {current:?}"),
+                None => "not on a branch".to_string(),
+            };
+            bail!(
+                "global configuration at {shown} is {state}, not {branch:?}; add --update to switch it"
+            );
+        }
         if update {
-            if git(destination, &["symbolic-ref", "--short", "HEAD"])? != branch {
+            if !on_branch && !require_branch {
                 bail!("global configuration branch differs from the transferred branch");
             }
+            // the commit the checkout moves on from: its own, or that of the
+            // local branch it switches to; a missing local branch is created
+            let from = if on_branch {
+                Some(git(destination, &["rev-parse", "HEAD"])?)
+            } else {
+                let local = format!("refs/heads/{branch}");
+                git(destination, &["rev-parse", "--verify", "--quiet", &local]).ok()
+            };
             if dry_run {
+                if !on_branch {
+                    miseprintln!("Would switch {shown} to branch {branch}");
+                }
                 // the bundle holds the history from the checkout's commit on,
                 // so the fast-forward is checked there without fetching into
                 // the destination
-                let head = git(destination, &["rev-parse", "HEAD"])?;
-                if head == revision {
-                    miseprintln!(
+                match &from {
+                    Some(head) if head == revision => miseprintln!(
                         "Would keep {shown} at {revision}, already the transferred revision"
-                    );
-                } else if git(&checkout, &["merge-base", "--is-ancestor", &head, revision]).is_ok()
-                {
-                    miseprintln!("Would fast-forward {shown} from {head} to {revision}");
-                } else {
-                    bail!(
+                    ),
+                    Some(head)
+                        if git(&checkout, &["merge-base", "--is-ancestor", head, revision])
+                            .is_ok() =>
+                    {
+                        miseprintln!("Would fast-forward {shown} from {head} to {revision}")
+                    }
+                    Some(_) => bail!(
                         "global configuration at {shown} cannot be fast-forwarded to the transferred revision"
-                    );
+                    ),
+                    None => miseprintln!("Would create branch {branch} in {shown} at {revision}"),
                 }
                 return Ok(destination.to_path_buf());
             }
@@ -306,10 +339,23 @@ fn install_at(
                     "HEAD",
                 ],
             )?;
-            git(
-                destination,
-                &["merge-base", "--is-ancestor", "HEAD", revision],
-            )?;
+            if let Some(from) = &from {
+                git(
+                    destination,
+                    &["merge-base", "--is-ancestor", from, revision],
+                )?;
+            }
+            if !on_branch {
+                let mut checkout = vec!["-c", "core.hooksPath=/dev/null", "checkout"];
+                if from.is_none() {
+                    checkout.push("-b");
+                }
+                checkout.push(&branch);
+                if from.is_none() {
+                    checkout.push(revision);
+                }
+                git(destination, &checkout)?;
+            }
             git(
                 destination,
                 &[
@@ -328,6 +374,10 @@ fn install_at(
                     revision,
                 ],
             )?;
+            if !on_branch {
+                let upstream = format!("--set-upstream-to=origin/{branch}");
+                git(destination, &["branch", &upstream, &branch])?;
+            }
         } else if dry_run {
             miseprintln!(
                 "Would keep the existing checkout of {origin} at {shown}; --update fast-forwards it"
@@ -429,9 +479,12 @@ mod tests {
             &source.bundle,
             &source.origin,
             &source.revision,
-            update,
-            true,
-            false,
+            &InstallOptions {
+                update,
+                yes: true,
+                dry_run: false,
+                require_branch: source.requested_branch,
+            },
             dest,
         )
     }
@@ -440,9 +493,12 @@ mod tests {
             &source.bundle,
             &source.origin,
             &source.revision,
-            update,
-            true,
-            true,
+            &InstallOptions {
+                update,
+                yes: true,
+                dry_run: true,
+                require_branch: source.requested_branch,
+            },
             dest,
         )
     }
@@ -468,6 +524,27 @@ mod tests {
             "laptop"
         );
         assert!(dest.join("laptop.toml").exists());
+
+        // a checkout on another branch is refused until --update switches it
+        let main = Source::fetch(origin.clone(), Some("main".into()))
+            .await
+            .unwrap();
+        let err = install_source(&main, &dest, false).err().unwrap();
+        assert!(err.to_string().contains("add --update"), "{err}");
+        preview_source(&main, &dest, true).unwrap();
+        assert_eq!(
+            git(&dest, &["symbolic-ref", "--short", "HEAD"]).unwrap(),
+            "laptop"
+        );
+        install_source(&main, &dest, true).unwrap();
+        assert_eq!(
+            git(&dest, &["symbolic-ref", "--short", "HEAD"]).unwrap(),
+            "main"
+        );
+        assert!(!dest.join("laptop.toml").exists());
+        // without ?ref=, the checkout's own branch is kept as before
+        let default = Source::fetch(origin.clone(), None).await.unwrap();
+        install_source(&default, &dest, false).unwrap();
 
         for git_ref in ["v1", "missing"] {
             let err = Source::fetch(origin.clone(), Some(git_ref.into()))

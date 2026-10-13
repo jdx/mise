@@ -6315,6 +6315,7 @@ See https://mise.jdx.dev/bootstrap/github-relay.html
         arg <REPOSITORY_REVISION>
     }
     flag --repository-update hide=#true
+    flag --repository-require-branch help="The bundled branch was requested with `?ref=`" hide=#true
     flag --repository-yes hide=#true
     flag --repository-dry-run help="Preview the transferred repository's installation without writing it" hide=#true
     flag --repository-preview-directory hide=#true {

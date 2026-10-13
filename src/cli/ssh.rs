@@ -73,6 +73,9 @@ pub(crate) struct Ssh {
     repository_revision: Option<String>,
     #[usage(long, hide = true)]
     repository_update: bool,
+    /// The bundled branch was requested with `?ref=`
+    #[usage(long, hide = true)]
+    repository_require_branch: bool,
     #[usage(long, hide = true)]
     repository_yes: bool,
     /// Preview the transferred repository's installation without writing it
@@ -160,9 +163,12 @@ impl Ssh {
                 &bundle,
                 &origin,
                 &revision,
-                self.repository_update,
-                self.repository_yes,
-                self.repository_dry_run,
+                &crate::system::remote_repository::InstallOptions {
+                    update: self.repository_update,
+                    yes: self.repository_yes,
+                    dry_run: self.repository_dry_run,
+                    require_branch: self.repository_require_branch,
+                },
             )?;
             return Ok(());
         }
