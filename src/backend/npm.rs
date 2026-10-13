@@ -4415,6 +4415,28 @@ pkg@1.2.0 '1.2.0'
         assert!(virtual_store_entry_links_dependencies(&hoisted));
     }
 
+    #[cfg(windows)]
+    #[test]
+    fn lost_dependency_junction_makes_aube_tree_broken() {
+        let tmp = tempfile::tempdir().unwrap();
+        let store = tmp.path().join("node_modules/.mise");
+        let pkg = store.join("pkg@1.0.0/node_modules");
+        let dep = store.join("dep@1.0.0/node_modules/dep");
+        std::fs::create_dir_all(pkg.join("pkg")).unwrap();
+        std::fs::create_dir_all(&dep).unwrap();
+        std::fs::write(
+            pkg.join("pkg/package.json"),
+            r#"{"dependencies":{"dep":"1"}}"#,
+        )
+        .unwrap();
+        junction::create(&dep, pkg.join("dep")).unwrap();
+        assert_ne!(aube_install_tree_health(tmp.path()), AubeTreeHealth::Broken);
+
+        // A tar round trip drops the junction.
+        std::fs::remove_dir(pkg.join("dep")).unwrap();
+        assert_eq!(aube_install_tree_health(tmp.path()), AubeTreeHealth::Broken);
+    }
+
     #[test]
     fn self_contained_aube_trees_are_cached() {
         let tmp = tempfile::tempdir().unwrap();
