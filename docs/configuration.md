@@ -38,47 +38,6 @@ Run [`mise config`](/cli/config.html) to list the config files mise loaded, and
 
 [Top-level keys](#top-level-keys) lists every section a `mise.toml` can contain.
 
-## Config file locations {#mise-toml}
-
-In each directory, mise reads these files. A file higher in the table overrides
-one lower down.
-
-| File                         | Use                                                                                    |
-| ---------------------------- | -------------------------------------------------------------------------------------- |
-| `mise.local.toml`            | Personal overrides. Keep it out of version control.                                    |
-| `mise.toml`                  | Shared project config                                                                  |
-| `mise/config.toml`           | Project config in a `mise/` directory                                                  |
-| `mise/conf.d/*.toml`         | Config fragments, loaded in alphabetical order; see [conf.d](#conf-d)                  |
-| `.mise/config.toml`          | Project config in a hidden `.mise/` directory                                          |
-| `.mise/conf.d/*.toml`        | Fragments in `.mise/`                                                                  |
-| `.config/mise.toml`          | Project config under `.config/`                                                        |
-| `.config/mise/config.toml`   | Project config in `.config/mise/`                                                      |
-| `.config/mise/conf.d/*.toml` | Fragments in `.config/mise/`                                                           |
-| `.tool-versions`             | Tool versions in the [`.tool-versions` format](/dev-tools/versions.html#tool-versions) |
-
-- `mise.toml` and `mise.local.toml` also work as dotfiles. `.mise.toml`
-  overrides `mise.toml`, and `.mise.local.toml` overrides `mise.local.toml`.
-- Each `config.toml` can have a `config.local.toml` beside it, such as
-  `.config/mise/config.local.toml`, and `.config/mise.toml` can have
-  `.config/mise.local.toml`. Every local file overrides every shared file in
-  the same directory.
-- Environment files such as `mise.production.toml` override the shared files
-  when their environment is selected, and the local files override them in
-  turn. Environment local files such as `mise.production.local.toml` override
-  all of these. With several environments selected, a later environment's file
-  overrides an earlier one's of the same kind. See
-  [Config environments](/configuration/environments.html#file-names-and-precedence).
-- The [`override_config_filenames`](/configuration/settings.html#override_config_filenames)
-  setting replaces the TOML names in this list with your own (environment files
-  still load), and
-  [`override_tool_versions_filenames`](/configuration/settings.html#override_tool_versions_filenames)
-  replaces `.tool-versions`.
-  [`default_config_filename`](/configuration/settings.html#default_config_filename)
-  changes the name mise creates.
-
-`mise config` lists the files mise loaded, lowest precedence first: later files
-override earlier ones.
-
 ## How config files combine {#configuration-hierarchy}
 
 mise loads config in this order, and a later file overrides an earlier one:
@@ -90,8 +49,9 @@ mise loads config in this order, and a later file overrides an earlier one:
    [`ceiling_paths`](/configuration/settings.html#ceiling_paths) directory when
    one is set; files in the ceiling directory itself are not loaded.
 
-So a file in a deeper directory overrides one in a parent directory. Within one
-directory, the order in [Config file locations](#mise-toml) applies. Selecting a
+So a file in a deeper directory overrides one in a parent directory. In each
+directory, mise reads the files in [Config file locations](#mise-toml), and
+that table's order decides which one wins. Selecting a
 [config environment](/configuration/environments.html) adds environment files
 at each level of this search. An environment file in a parent directory does not
 override an ordinary file in a child directory.
@@ -159,6 +119,53 @@ These are version requests, which mise then resolves to concrete versions.
 | `[secrets.*]`        | Per field; the nearest project file wins. Ignored in global config.                                                                                                                                                                                   |
 | `[daemons]`          | Per daemon. The nearest declaration replaces the whole daemon.                                                                                                                                                                                        |
 | `[daemons_settings]` | Per key, and inherited by child projects. Ignored in global and system config.                                                                                                                                                                        |
+
+## Config file locations {#mise-toml}
+
+These are the file names mise looks for in each directory it searches, from the
+filesystem root down to the current directory. Within one directory, a file
+higher in the table overrides one lower down. System and global config use the
+names in [Global and system config](#global-config).
+
+| File                              | Use                                                                                    |
+| --------------------------------- | -------------------------------------------------------------------------------------- |
+| `mise.local.toml`                 | Personal overrides. Keep it out of version control.                                    |
+| `mise.toml`                       | Shared project config                                                                  |
+| `mise/config.toml`                | Project config in a `mise/` directory                                                  |
+| `mise/conf.d/*/mise.toml`         | Folder fragments in `mise/`; see [conf.d folders](#conf-d-folders)                     |
+| `mise/conf.d/*.toml`              | Config fragments, loaded in alphabetical order; see [conf.d](#conf-d)                  |
+| `.mise/config.toml`               | Project config in a hidden `.mise/` directory                                          |
+| `.mise/conf.d/*/mise.toml`        | Folder fragments in `.mise/`                                                           |
+| `.mise/conf.d/*.toml`             | Fragments in `.mise/`                                                                  |
+| `.config/mise.toml`               | Project config under `.config/`                                                        |
+| `.config/mise/mise.toml`          | Project config in `.config/mise/`                                                      |
+| `.config/mise/config.toml`        | Project config in `.config/mise/`                                                      |
+| `.config/mise/conf.d/*/mise.toml` | Folder fragments in `.config/mise/`                                                    |
+| `.config/mise/conf.d/*.toml`      | Fragments in `.config/mise/`                                                           |
+| `.tool-versions`                  | Tool versions in the [`.tool-versions` format](/dev-tools/versions.html#tool-versions) |
+
+- `mise.toml` and `mise.local.toml` also work as dotfiles. `.mise.toml`
+  overrides `mise.toml`, and `.mise.local.toml` overrides `mise.local.toml`.
+- Each `config.toml` can have a `config.local.toml` beside it, such as
+  `.config/mise/config.local.toml`, and each other `mise.toml` can have a
+  `mise.local.toml`, such as `.config/mise.local.toml`. Every local file
+  overrides every shared file in the same directory.
+- Environment files such as `mise.production.toml` override the shared files
+  when their environment is selected, and the local files override them in
+  turn. Environment local files such as `mise.production.local.toml` override
+  all of these. With several environments selected, a later environment's file
+  overrides an earlier one's of the same kind. See
+  [Config environments](/configuration/environments.html#file-names-and-precedence).
+- The [`override_config_filenames`](/configuration/settings.html#override_config_filenames)
+  setting replaces the TOML names in this list with your own (environment files
+  still load), and
+  [`override_tool_versions_filenames`](/configuration/settings.html#override_tool_versions_filenames)
+  replaces `.tool-versions`.
+  [`default_config_filename`](/configuration/settings.html#default_config_filename)
+  changes the name mise creates.
+
+`mise config` lists the files mise loaded, lowest precedence first: later files
+override earlier ones.
 
 ## Split config with conf.d {#conf-d}
 
