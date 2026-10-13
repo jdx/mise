@@ -3402,13 +3402,13 @@ type = "Bool"
 
 [skills.auto_sync]
 default = false
-description = "Link the active tools' agent skills into the project after `mise install` and `mise use`."
+description = "Link the active tools' agent skills into the project after `mise install`, `mise use`, and `mise upgrade`."
 docs = """
-mise runs the equivalent of `mise skills sync` after every install and after
-`mise use` changes a version, so the links under [`skills.dir`](#skills.dir)
-point at the versions active in the project. Only projects with a mise config
-get links, and nothing is written outside a project root. mise touches only
-links it made, and removes stale ones only when [`skills.prune`](#skills.prune)
+mise runs the equivalent of `mise skills sync` after every install, after
+`mise use` changes a version, and after `mise upgrade`, so the links under
+[`skills.dir`](#skills.dir) point at the versions active in the project. Only
+projects with a mise config get links, and nothing is written outside a project
+root. mise touches only links it made, and removes stale ones only when [`skills.prune`](#skills.prune)
 is on. See
 [Keep project links up to date](/dev-tools/packslip-resources.html#keep-project-links-up-to-date).
 """

@@ -147,9 +147,10 @@ auto_sync = true
 prune = true
 ```
 
-With `auto_sync`, mise syncs after `mise install` and after `mise use` changes a
-version. `prune = true` removes links mise made for skills that are no longer
-active; without it, stale links stay. To prune on one manual run:
+With `auto_sync`, mise syncs after `mise install`, after `mise use` changes a
+version, and after `mise upgrade`. `prune = true` removes links mise made for
+skills that are no longer active; without it, stale links stay. To prune on one
+manual run:
 
 ```sh
 mise skills sync --dir .agents/skills --prune
@@ -164,7 +165,7 @@ trigger it. Reload skills in your agent if it does not notice the change.
 | ------------------------------------------------------------------- | ---------------- | ------------------------------------------------------------------ |
 | [`skills.fetch`](/configuration/settings.html#skills.fetch)         | `true`           | Fetch declared skills during tool installation.                    |
 | [`skills.dir`](/configuration/settings.html#skills.dir)             | `.claude/skills` | Choose the directory sync links into.                              |
-| [`skills.auto_sync`](/configuration/settings.html#skills.auto_sync) | `false`          | Sync after install and use within a mise project.                  |
+| [`skills.auto_sync`](/configuration/settings.html#skills.auto_sync) | `false`          | Sync after install, use, and upgrade within a mise project.        |
 | [`skills.prune`](/configuration/settings.html#skills.prune)         | `false`          | Remove stale mise-owned links during sync.                         |
 | [`packslip.exec`](/configuration/settings.html#packslip.exec)       | `false`          | Run the installed tool to generate a resource during installation. |
 

@@ -1,0 +1,55 @@
+#!/usr/bin/env bash
+
+# A tool that ships a skill, as a plugin whose install lays down a packslip
+# statement. `mise upgrade` must move the links it made to the new version.
+mkdir -p plugin/bin
+cat >plugin/bin/list-all <<'SH'
+#!/usr/bin/env bash
+echo "1.0.0 2.0.0"
+SH
+cat >plugin/bin/install <<'SH'
+#!/usr/bin/env bash
+set -e
+mkdir -p "$ASDF_INSTALL_PATH/bin" "$ASDF_INSTALL_PATH/skill"
+echo "# skilled $ASDF_INSTALL_VERSION" >"$ASDF_INSTALL_PATH/skill/SKILL.md"
+printf '#!/bin/sh\n' >"$ASDF_INSTALL_PATH/bin/skilled"
+chmod +x "$ASDF_INSTALL_PATH/bin/skilled"
+digest="$(printf 'a%.0s' $(seq 64))"
+cat >"$ASDF_INSTALL_PATH/.mise-packslip.json" <<JSON
+{"_type":"https://in-toto.io/Statement/v1","subject":[{"name":"skilled.tar.gz","digest":{"sha256":"$digest"}}],"predicateType":"https://packslip.dev/release/v1","predicate":{"project":"github.com/test/skilled","version":"$ASDF_INSTALL_VERSION","published_at":"2026-09-01T00:00:00Z","artifacts":[{"name":"skilled.tar.gz","size":1,"format":"tar.gz","bin":["bin/skilled"]}],"resources":[{"kind":"skill","name":"skilled","archive":"skill"}],"identity":{"scheme":"sigstore-oidc","key_id":"https://github.com/test/skilled/.github/workflows/release.yml@refs/tags/v$ASDF_INSTALL_VERSION","issuer":"https://token.actions.githubusercontent.com"}}}
+JSON
+SH
+chmod +x plugin/bin/list-all plugin/bin/install
+mise plugins link skilled "$PWD/plugin"
+export MISE_LOCKFILE=1
+touch mise.lock
+
+cat >mise.toml <<'EOF_TOML'
+[tools]
+skilled = "latest"
+
+[settings.skills]
+dir = ".agents/skills"
+auto_sync = true
+prune = true
+EOF_TOML
+
+mise install skilled@1.0.0
+assert_contains "cat .agents/skills/skilled/SKILL.md" "# skilled 1.0.0"
+
+# `latest` is moved by the upgrade itself, after the install-time sync ran.
+mise upgrade skilled
+assert_contains "cat .agents/skills/skilled/SKILL.md" "# skilled 2.0.0"
+assert_contains "cat .agents/skills/.mise-skills.json" "skilled/2.0.0/skill"
+
+# A bump to a version that is already installed upgrades nothing, only the
+# config, and the skill must still follow it.
+mise install skilled@1.0.0
+sed -i.bak 's/skilled = "latest"/skilled = "1.0.0"/' mise.toml
+rm mise.toml.bak
+mise install
+assert_contains "cat .agents/skills/skilled/SKILL.md" "# skilled 1.0.0"
+mise upgrade --bump skilled@2.0.0
+assert_contains "cat mise.toml" 'skilled = "2.0.0"'
+assert_contains "cat .agents/skills/skilled/SKILL.md" "# skilled 2.0.0"
+assert_contains "cat mise.lock" "2.0.0"
