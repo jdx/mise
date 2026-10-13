@@ -8,7 +8,7 @@
 
 use std::path::{Path, PathBuf};
 
-use eyre::Result;
+use eyre::{Result, WrapErr};
 
 use crate::file;
 
@@ -42,7 +42,12 @@ pub fn source_of(program: &Path) -> Option<PathBuf> {
         return None;
     }
     let source = root.join(relative);
-    source.is_file().then_some(source)
+    // The writer records only an original of the same name; anything else is not this entry's.
+    let same_name = source
+        .file_name()
+        .zip(program.file_name())
+        .is_some_and(|(source, entry)| source.eq_ignore_ascii_case(entry));
+    (same_name && source.is_file()).then_some(source)
 }
 
 /// Write the path of `src`, relative to the directory holding `.mise-bins`, beside `dst`. It is
@@ -50,23 +55,25 @@ pub fn source_of(program: &Path) -> Option<PathBuf> {
 ///
 /// A source outside that directory is not recorded, and neither is one with another file name:
 /// running it would change the name the program sees itself called by, which a multi-call binary
-/// such as uutils coreutils dispatches on. Either entry keeps running as it is.
+/// such as uutils coreutils dispatches on. Either entry keeps running as it is, and a record left
+/// by an earlier entry of that name is removed.
 fn record_source(src: &Path, dst: &Path) -> Result<()> {
+    let Some(record) = source_file(dst) else {
+        return Ok(());
+    };
     let same_name = match (src.file_name(), dst.file_name()) {
         (Some(src), Some(dst)) => src.eq_ignore_ascii_case(dst),
         _ => false,
     };
-    if !same_name {
-        return Ok(());
-    }
-    let Some(root) = dst.parent().and_then(Path::parent) else {
-        return Ok(());
-    };
-    let Ok(relative) = src.strip_prefix(root) else {
-        return Ok(());
-    };
-    let Some(record) = source_file(dst) else {
-        return Ok(());
+    let root = dst.parent().and_then(Path::parent);
+    let relative = root.and_then(|root| src.strip_prefix(root).ok());
+    let (true, Some(relative)) = (same_name, relative) else {
+        return match std::fs::remove_file(&record) {
+            Err(err) if err.kind() != std::io::ErrorKind::NotFound => {
+                Err(err).wrap_err_with(|| format!("failed rm: {}", file::display_path(&record)))
+            }
+            _ => Ok(()),
+        };
     };
     let relative = relative
         .components()
@@ -132,8 +139,16 @@ mod tests {
         // a source outside the install is not recorded
         record_source(&tmp.path().join("outside.exe"), &bins.join("outside.exe")).unwrap();
         assert!(!bins.join(".outside.exe.source").exists());
-        // nor is one the entry renames
+        // nor is one the entry renames, and it replaces an earlier record
+        std::fs::write(bins.join(".renamed.exe.source"), "bin/renamed.exe").unwrap();
         record_source(&bin.join("tool.exe"), &bins.join("renamed.exe")).unwrap();
         assert!(!bins.join(".renamed.exe.source").exists());
+
+        // a record naming another file is not this entry's
+        std::fs::write(bins.join(".tool.exe.source"), "bin/tool.exe").unwrap();
+        assert_eq!(source_of(&entry), Some(bin.join("tool.exe")));
+        std::fs::write(bin.join("other.exe"), "").unwrap();
+        std::fs::write(bins.join(".tool.exe.source"), "bin/other.exe").unwrap();
+        assert_eq!(source_of(&entry), None);
     }
 }
