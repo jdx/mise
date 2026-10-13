@@ -682,7 +682,10 @@ impl TaskExecutor {
 
         // Checked before confirmation so nobody is asked about a task that then does nothing,
         // and before the artifact cache so a skipped task neither restores nor records outputs.
-        if let Some(skip_if) = &task.skip_if {
+        // `--force` runs the task without asking, as it does for fresh sources.
+        if let Some(skip_if) = &task.skip_if
+            && !self.force
+        {
             if self.dry_run {
                 if !self.quiet(Some(task)) {
                     self.eprint(
@@ -2386,15 +2389,18 @@ impl TaskExecutor {
         };
         #[cfg(not(windows))]
         let runner = runner.args(&args);
+        // `optimize_inline` resets stdio, so the null streams come after it. `never_raw` keeps
+        // `raw = true` from handing the check mise's own terminal.
         let mut runner = runner
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
             .current_dir(&root)
             .env_clear()
             .envs(&filtered_env)
             .with_sandbox(sandbox)
-            .optimize_inline(&command, &[], self.implicit_inline_shell(task));
+            .optimize_inline(&command, &[], self.implicit_inline_shell(task))
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .never_raw();
         if let Some(timeout) = task.timeout.as_ref().and_then(|value| {
             duration::parse_duration(value)
                 .inspect_err(|err| {
@@ -2405,8 +2411,10 @@ impl TaskExecutor {
             runner = runner.with_timeout(timeout);
         }
         runner.apply_sandbox().await?;
-        match runner.read().await {
-            Ok(_) => Ok(true),
+        // `execute_async` rather than `read`: its timeout stops the whole process tree, where
+        // `read` kills only the shell and leaves the command it started running.
+        match runner.execute_async().await {
+            Ok(()) => Ok(true),
             Err(err) if crate::errors::ProcessError::get_exit_status(&err).is_some() => Ok(false),
             Err(err) => {
                 Err(err.wrap_err(format!("task {} skip_if failed: {command:?}", task.name)))

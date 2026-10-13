@@ -627,11 +627,13 @@ run = "examplectl workspace init"
 The command runs in the task's directory with the task's shell, environment,
 and sandbox, after its [`depends`](#depends) and before
 [`confirm`](#confirm). Its output is discarded and it gets no stdin, so it
-cannot prompt. A command that cannot start, times out (it shares the task's
-[`timeout`](#timeout)), or is killed by a signal fails the task. It supports
+cannot prompt. It does not receive the task's
+[`secrets`](/tasks/task-configuration.html#secrets), which mise resolves only
+for a task that runs. A command that cannot start, times out (it shares the
+task's [`timeout`](#timeout)), or is killed by a signal fails the task. It supports
 Tera templates and the task's arguments, like `confirm`, and works in file
-tasks as `#MISE skip_if="..."`. `mise run --dry-run` prints the command
-without running it.
+tasks as `#MISE skip_if="..."`. `mise run --force` runs the task without
+checking, and `mise run --dry-run` prints the command without running it.
 
 A skipped task does not count as having done work, so a dependent task with
 fresh [`sources`](#sources) still skips. To make a task fail rather than skip

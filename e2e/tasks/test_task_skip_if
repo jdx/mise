@@ -29,6 +29,19 @@ run = "echo dry-ran"
 timeout = "1s"
 skip_if = "sleep 10"
 run = "echo slow-ran"
+
+[tasks.binary-check]
+skip_if = "cat binary.out"
+run = "echo binary-check-ran"
+
+[tasks.noisy-check]
+skip_if = "ls missing-file"
+run = "echo noisy-check-ran"
+
+[tasks.slow-child]
+timeout = "1s"
+skip_if = "sh -c 'sleep 3; touch late'"
+run = "echo slow-child-ran"
 TOML
 
 # The condition fails, so the task and its dependent run.
@@ -42,6 +55,9 @@ assert_contains_text "$second_run" "skip_if condition met, skipping"
 assert_not_contains_text "$second_run" "initializing"
 assert_contains_text "$second_run" "deploying"
 
+# --force runs the task without checking.
+assert_contains "mise run --force setup 2>&1" "initializing"
+
 # The command sees the task's env and its arguments.
 assert_not_contains "mise run env-check 2>&1" "env-check-ran"
 assert_not_contains "mise run arg-check skip 2>&1" "arg-check-ran"
@@ -53,6 +69,18 @@ assert_fail "test -f condition-ran"
 
 # A condition that times out fails the task instead of choosing for it.
 assert_fail "mise run slow 2>&1" "skip_if failed"
+
+# The timeout stops the processes the check started, not just its shell.
+assert_fail "mise run slow-child 2>&1" "skip_if failed"
+sleep 4
+assert_fail "test -f late"
+
+# The check's output is discarded: binary stdout still skips, and a failing check prints nothing.
+printf '\377\376' >binary.out
+assert_not_contains "mise run binary-check 2>&1" "binary-check-ran"
+noisy="$(mise run noisy-check 2>&1)"
+assert_contains_text "$noisy" "noisy-check-ran"
+assert_not_contains_text "$noisy" "missing-file"
 
 assert_contains "mise tasks info setup" "Skip if: test -f initialized"
 
