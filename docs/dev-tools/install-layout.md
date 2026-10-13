@@ -16,8 +16,8 @@ The identity layout gives each installation its own directory,
 `installs/<tool>/<version>` path stays, as a link to that directory.
 
 ::: warning Experimental
-The identity layout needs `experimental = true` and
-`install_layout = "identity"`; `experimental` alone does not turn it on.
+The identity layout needs `experimental = true`. On Windows, that alone turns
+it on; elsewhere it also needs `install_layout = "identity"`.
 Directory names, receipts, and the catalog format can change between releases
 while the layout is experimental. Try it where reinstalling tools is cheap, and
 read [Turn it off or downgrade](#downgrading-and-compatibility) first.
@@ -38,7 +38,7 @@ age = "1.2.1"
 
 To turn it on everywhere, run `mise settings experimental=true` and
 `mise settings install_layout=identity`, or export `MISE_EXPERIMENTAL=1` and
-`MISE_INSTALL_LAYOUT=identity`. See
+`MISE_INSTALL_LAYOUT=identity`. On Windows, `experimental = true` is enough. See
 [`install_layout`](/configuration/settings.html#install_layout).
 
 Install the tool and see where it went:
@@ -450,6 +450,12 @@ from where it runs and can fail.
 
 The identity layout works the same way on Windows, with these differences:
 
+- `experimental = true` turns it on without `install_layout = "identity"`,
+  because Windows benefits most from the shorter install store described below.
+  Installations that already exist stay where they are. To keep installing
+  into the legacy layout, set `install_layout = "legacy"` or
+  `MISE_INSTALL_LAYOUT=legacy`.
+
 - The version link is a directory junction with an absolute target, which IDE
   SDK selectors and other programs can follow. mise never substitutes a text
   file for a link. Junctions do not need administrator rights. A directory on a
@@ -490,7 +496,8 @@ The identity layout works the same way on Windows, with these differences:
 
 ## Turn it off or downgrade {#downgrading-and-compatibility}
 
-To turn the identity layout off, remove `install_layout = "identity"`. mise then
+To turn the identity layout off, remove `install_layout = "identity"` (on
+Windows with `experimental = true`, set `install_layout = "legacy"`). mise then
 installs new versions into `installs/<tool>/<version>` again and leaves hashed
 directories where they are. While it is off:
 
