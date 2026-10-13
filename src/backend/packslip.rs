@@ -1468,7 +1468,7 @@ impl PackslipBackend {
             if dst.exists() || dst.is_symlink() {
                 file::remove_all(&dst)?;
             }
-            file::make_symlink_or_copy(&src, &dst)?;
+            super::mise_bins::link(&src, &dst)?;
         }
         Ok(())
     }
