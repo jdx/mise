@@ -223,12 +223,7 @@ pub(crate) fn run_with_reader(
     mut input: impl std::io::Read,
 ) -> Result<()> {
     let argv = argv(program, args);
-    let manual_cmd = std::iter::once("sudo".to_string())
-        .chain(std::iter::once(program.to_string()))
-        .chain(args.iter().cloned())
-        .collect::<Vec<_>>()
-        .join(" ");
-    ensure_elevation_available(&manual_cmd)?;
+    ensure_stdin_elevation_available()?;
     let _progress_pause = pause_progress_for_child();
     info!("$ {}", argv.join(" "));
     let mut child = Command::new(&argv[0])
@@ -261,12 +256,7 @@ pub(crate) fn run_with_input_output(
     input: &[u8],
 ) -> Result<Vec<u8>> {
     let argv = argv(program, args);
-    let manual_cmd = std::iter::once("sudo".to_string())
-        .chain(std::iter::once(program.to_string()))
-        .chain(args.iter().cloned())
-        .collect::<Vec<_>>()
-        .join(" ");
-    ensure_elevation_available(&manual_cmd)?;
+    ensure_stdin_elevation_available()?;
     let _progress_pause = pause_progress_for_child();
     info!("$ {}", argv.join(" "));
     let mut child = Command::new(&argv[0])
@@ -290,19 +280,30 @@ pub(crate) fn run_with_input_output(
 /// Verify that a subprocess which performs its own sudo elevation can do so
 /// without violating mise's elevation policy or hanging without a TTY.
 pub(crate) fn ensure_elevation_available(manual_cmd: &str) -> Result<()> {
+    check_elevation(
+        &format!("Run manually:\n  {manual_cmd}"),
+        &format!("Run as root:\n  {}", manual_cmd.trim_start_matches("sudo ")),
+    )
+}
+
+/// Like [`ensure_elevation_available`] for helpers that read their payload
+/// from stdin. The helper cannot be run on its own, so the hint is to rerun
+/// the mise command that needs it as root instead of printing its argv.
+fn ensure_stdin_elevation_available() -> Result<()> {
+    const HINT: &str = "Re-run this mise command as root. The privileged helper \
+        receives its plan on stdin, so it cannot be run by itself.";
+    check_elevation(HINT, HINT)
+}
+
+fn check_elevation(manual_hint: &str, root_hint: &str) -> Result<()> {
     if is_root() {
         return Ok(());
     }
     if !Settings::get().system_packages.sudo {
-        bail!(
-            "not running as root and system_packages.sudo is disabled. Run manually:\n  {manual_cmd}"
-        );
+        bail!("not running as root and system_packages.sudo is disabled. {manual_hint}");
     }
     if crate::file::which("sudo").is_none() {
-        bail!(
-            "sudo not found. Run as root:\n  {}",
-            manual_cmd.trim_start_matches("sudo ")
-        );
+        bail!("sudo not found. {root_hint}");
     }
     if !console::user_attended_stderr() {
         let ok = Command::new("sudo")
@@ -314,9 +315,7 @@ pub(crate) fn ensure_elevation_available(manual_cmd: &str) -> Result<()> {
             .map(|status| status.success())
             .unwrap_or(false);
         if !ok {
-            bail!(
-                "sudo requires a password but no TTY is available. Run manually:\n  {manual_cmd}"
-            );
+            bail!("sudo requires a password but no TTY is available. {manual_hint}");
         }
     }
     Ok(())
