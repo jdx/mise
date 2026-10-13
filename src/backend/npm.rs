@@ -1015,11 +1015,9 @@ impl Backend for NPMBackend {
         {
             tv.version = version;
         }
-        let source_lockfile_version = if tv.resolved_from_lockfile() {
-            crate::lockfile::version_for_request(&ctx.config, &tv.request)?
-        } else {
-            None
-        };
+        // An upgrade resolves a new version outside the lockfile, but must
+        // still satisfy the graph requirements of the entry it will replace.
+        let source_lockfile_version = self.aube_lockfile_version(&ctx.config, &tv.request)?;
         if tv.aube_lock.is_some() && package_manager != NpmPackageManager::Aube {
             eyre::bail!(
                 "npm:{} is locked with an embedded-aube dependency graph, but npm.package_manager is set to {}; use the embedded aube package manager or refresh the lockfile",
@@ -1067,11 +1065,7 @@ impl Backend for NPMBackend {
             return Ok(false);
         }
         if Self::uses_embedded_aube() && tv.aube_lock.is_none() {
-            let source_lockfile_version = if tv.resolved_from_lockfile() {
-                crate::lockfile::version_for_request(config, &tv.request)?
-            } else {
-                None
-            };
+            let source_lockfile_version = self.aube_lockfile_version(config, &tv.request)?;
             if source_lockfile_version.is_some_and(|version| version >= 2)
                 || Self::aube_lock_creation_enabled(tv)
             {
@@ -1282,6 +1276,82 @@ impl Backend for NPMBackend {
 }
 
 impl NPMBackend {
+    /// The lockfile revision that governs this request's dependency graph.
+    ///
+    /// An upgrade resolves its new version outside the lockfile, so the request
+    /// is matched by selector rather than by `resolved_from_lockfile()`. A bump
+    /// rewrites the selector itself, which needs `bumped_lockfile_version`.
+    fn aube_lockfile_version(&self, config: &Config, request: &ToolRequest) -> Result<Option<u32>> {
+        match crate::lockfile::version_for_request(config, request)? {
+            Some(revision) => Ok(Some(revision)),
+            None => self.bumped_lockfile_version(config, request),
+        }
+    }
+
+    /// The revision of the global request that `request` was bumped from.
+    ///
+    /// `upgrade --bump` replaces the selector (`1.0.0` -> `2.0.0`) before the
+    /// install, so no lockfile entry matches it. The owning global config still
+    /// holds the original request, and a request with the same owner, backend
+    /// and options is that original. Anything other than exactly one such
+    /// request stays version-only; graph creation for global tools is never
+    /// implicit.
+    fn bumped_lockfile_version(
+        &self,
+        config: &Config,
+        request: &ToolRequest,
+    ) -> Result<Option<u32>> {
+        if !Settings::get().lockfile_enabled() {
+            return Ok(None);
+        }
+        let Some(owner) = request.lockfile_source() else {
+            return Ok(None);
+        };
+        let Some(path) = owner
+            .path()
+            .filter(|path| crate::config::is_global_config(path))
+        else {
+            return Ok(None);
+        };
+        // Cheap exit before parsing the config: only a tool the lockfile
+        // already records can have had a graph.
+        if !request
+            .read_lockfile(config)?
+            .tools()
+            .contains_key(&request.ba().short)
+        {
+            return Ok(None);
+        }
+        let Some(cf) = config.config_files.get(path) else {
+            return Ok(None);
+        };
+        // Read the owner itself, not the effective requests: project or
+        // environment overrides can hide the original during `upgrade --global`.
+        let requests = cf.to_tool_request_set()?;
+        let target = PlatformTarget::from_current();
+        let options = self.resolve_lockfile_options(request, &target)?;
+        let full = request.ba().full();
+        let mut original = None;
+        for candidate in requests.tools.values().flatten() {
+            if !candidate.is_os_supported()
+                || candidate.source() != owner
+                || candidate.ba().short != request.ba().short
+                || candidate.ba().full() != full
+                || self.resolve_lockfile_options(candidate, &target)? != options
+            {
+                continue;
+            }
+            if original.is_some() {
+                return Ok(None);
+            }
+            original = Some(candidate);
+        }
+        match original {
+            Some(original) => crate::lockfile::version_for_request(config, original),
+            None => Ok(None),
+        }
+    }
+
     /// A credential-safe identifier for diagnostics. Keep `tool_name()` for
     /// install and Git operations, which need the original source URL.
     fn display_tool_name(&self) -> String {
