@@ -5160,15 +5160,24 @@ fn bootstrap_git_succeeds<const N: usize>(checkout: &Path, args: [&str; N]) -> R
 /// Switches to the local branch `git_ref`, creating it from `origin/<ref>` when
 /// it does not exist, even next to a same-named tag.
 fn switch_to_bootstrap_branch(checkout: &Path, git_ref: &str) -> Result<()> {
+    // an ignored local file stops the switch instead of being replaced by one
+    // the branch tracks
     let branch = format!("refs/heads/{git_ref}");
     if bootstrap_git_succeeds(checkout, ["show-ref", "--verify", "--quiet", &branch])? {
-        run_bootstrap_git(checkout, ["switch", git_ref])
+        run_bootstrap_git(checkout, ["switch", "--no-overwrite-ignore", git_ref])
     } else {
         // fully qualified so a local ref named `origin/<ref>` cannot shadow it
         let remote_branch = format!("refs/remotes/origin/{git_ref}");
         run_bootstrap_git(
             checkout,
-            ["switch", "--create", git_ref, "--track", &remote_branch],
+            [
+                "switch",
+                "--no-overwrite-ignore",
+                "--create",
+                git_ref,
+                "--track",
+                &remote_branch,
+            ],
         )
     }
 }
@@ -5225,7 +5234,15 @@ fn update_bootstrap_ref(checkout: &Path, git_ref: &str) -> Result<()> {
         // from origin itself, whatever upstream the local branch tracks
         // fully qualified so a local ref named `origin/<ref>` cannot shadow it
         let remote_branch = format!("refs/remotes/origin/{git_ref}");
-        run_bootstrap_git(checkout, ["merge", "--ff-only", &remote_branch])
+        run_bootstrap_git(
+            checkout,
+            [
+                "merge",
+                "--ff-only",
+                "--no-overwrite-ignore",
+                &remote_branch,
+            ],
+        )
     } else if on_origin(&tag) {
         run_bootstrap_git(checkout, ["checkout", &tag, "--"])
     } else if bootstrap_git_succeeds(checkout, ["show-ref", "--verify", "--quiet", &branch])?

@@ -20,7 +20,8 @@ cat <<'EOF' >"$work/config.toml"
 [tasks.bootstrap]
 run = 'printf main > "$HOME/adopted-branch"'
 EOF
-git -C "$work" add config.toml
+echo notes.txt >"$work/.gitignore"
+git -C "$work" add config.toml .gitignore
 git -C "$work" commit -qm 'test: main config'
 git -C "$work" tag v1
 git -C "$work" switch -qc laptop
@@ -29,6 +30,12 @@ cat <<'EOF' >"$work/config.toml"
 run = 'printf laptop > "$HOME/adopted-branch"'
 EOF
 git -C "$work" commit -qam 'test: laptop config'
+git -C "$work" switch -q main
+# the notes branch tracks a file that main ignores
+git -C "$work" switch -qc notes
+echo tracked >"$work/notes.txt"
+git -C "$work" add -f notes.txt
+git -C "$work" commit -qm 'test: tracked notes'
 git -C "$work" switch -q main
 # a tag that shares the branch's name must not hide the branch
 git -C "$work" tag laptop
@@ -49,6 +56,12 @@ assert "git -C '$laptop_config' symbolic-ref HEAD" "refs/heads/laptop"
 assert_succeed "MISE_CONFIG_DIR='$laptop_config' mise bootstrap --adopt '$config?ref=main' --update --yes --only task"
 assert "git -C '$laptop_config' symbolic-ref HEAD" "refs/heads/main"
 assert "cat ~/adopted-branch" "main"
+
+# switching never replaces an ignored local file with one the branch tracks
+echo local >"$laptop_config/notes.txt"
+assert_fail "MISE_CONFIG_DIR='$laptop_config' mise bootstrap --adopt '$config?ref=notes' --update --yes --only task"
+assert "cat '$laptop_config/notes.txt'" "local"
+assert "git -C '$laptop_config' symbolic-ref HEAD" "refs/heads/main"
 
 # a tag or a branch the repository lacks is refused before anything is cloned
 assert_fail "MISE_CONFIG_DIR='$PWD/tag-config' mise bootstrap --adopt '$config?ref=v1' --yes --only task" "is not a branch"

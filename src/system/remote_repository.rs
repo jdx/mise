@@ -349,7 +349,14 @@ fn install_at(
                 )?;
             }
             if !on_branch {
-                let mut checkout = vec!["-c", "core.hooksPath=/dev/null", "checkout"];
+                // an ignored local file stops the switch instead of being
+                // replaced by one the branch tracks
+                let mut checkout = vec![
+                    "-c",
+                    "core.hooksPath=/dev/null",
+                    "checkout",
+                    "--no-overwrite-ignore",
+                ];
                 if from.is_none() {
                     checkout.push("-b");
                 }
@@ -366,6 +373,7 @@ fn install_at(
                     "core.hooksPath=/dev/null",
                     "merge",
                     "--ff-only",
+                    "--no-overwrite-ignore",
                     revision,
                 ],
             )?;
@@ -504,6 +512,40 @@ mod tests {
             },
             dest,
         )
+    }
+    #[tokio::test]
+    async fn switching_branches_keeps_ignored_local_files() {
+        let repo = repository();
+        commit(repo.path(), ".gitignore", "notes.txt\n");
+        git(repo.path(), &["switch", "-c", "notes"]).unwrap();
+        std::fs::write(repo.path().join("notes.txt"), "tracked\n").unwrap();
+        git(repo.path(), &["add", "-f", "notes.txt"]).unwrap();
+        git(
+            repo.path(),
+            &["-c", "core.hooksPath=/dev/null", "commit", "-m", "test"],
+        )
+        .unwrap();
+        git(repo.path(), &["switch", "main"]).unwrap();
+        let origin: String = repo.path().to_str().unwrap().into();
+
+        let main = Source::fetch(origin.clone(), Some("main".into()))
+            .await
+            .unwrap();
+        let target = tempfile::tempdir().unwrap();
+        let dest = target.path().join("mise");
+        install_source(&main, &dest, false).unwrap();
+        std::fs::write(dest.join("notes.txt"), "local\n").unwrap();
+
+        let notes = Source::fetch(origin, Some("notes".into())).await.unwrap();
+        assert!(install_source(&notes, &dest, true).is_err());
+        assert_eq!(
+            std::fs::read_to_string(dest.join("notes.txt")).unwrap(),
+            "local\n"
+        );
+        assert_eq!(
+            git(&dest, &["symbolic-ref", "HEAD"]).unwrap(),
+            "refs/heads/main"
+        );
     }
     #[tokio::test]
     async fn fetches_the_requested_branch_only_when_it_is_a_branch() {
