@@ -868,9 +868,10 @@ impl ToolVersion {
             }
             if !is_offline
                 && let Some(v) = backend
-                    .latest_version_with_refresh(
+                    .latest_version_with_selection_options(
                         config,
                         None,
+                        &request.options(),
                         opts.before_date,
                         opts.refresh_remote_versions,
                     )
