@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::path::Path;
 use std::process::Stdio;
 
 use async_trait::async_trait;
@@ -15,6 +16,27 @@ impl DnfManager {
     pub(crate) fn new() -> Self {
         Self {}
     }
+}
+
+/// Set by systemd's ostree integration on a host booted from an ostree image
+/// (Silverblue, Kinoite, Bazzite, secureblue, ...). It is absent inside a
+/// bootc/Containerfile build, where `dnf` works normally.
+const OSTREE_BOOTED: &str = "/run/ostree-booted";
+
+fn ostree_booted() -> bool {
+    ostree_booted_at(Path::new(OSTREE_BOOTED))
+}
+
+fn ostree_booted_at(marker: &Path) -> bool {
+    marker.exists()
+}
+
+fn ostree_error(verb: &str) -> eyre::Report {
+    eyre::eyre!(
+        "cannot {verb} dnf packages: this host is booted from an ostree image, so /usr is read-only\n\
+         Bake the packages into the image, install them in a toolbox, or layer them yourself with\n  \
+         rpm-ostree install <packages>"
+    )
 }
 
 // Never add `--` here: DNF5 rejects it on subcommands like install/upgrade.
@@ -280,6 +302,19 @@ impl SystemPackageManager for DnfManager {
     }
 
     async fn install(&self, pkgs: &[PackageRequest], opts: &InstallOpts) -> Result<()> {
+        self.install_on(ostree_booted(), pkgs, opts)
+    }
+
+    async fn upgrade(&self, pkgs: &[PackageRequest], opts: &InstallOpts) -> Result<()> {
+        self.upgrade_on(ostree_booted(), pkgs, opts)
+    }
+}
+
+impl DnfManager {
+    fn install_on(&self, ostree: bool, pkgs: &[PackageRequest], opts: &InstallOpts) -> Result<()> {
+        if ostree {
+            return Err(ostree_error("install"));
+        }
         let args = install_args(pkgs, opts);
         if opts.dry_run {
             miseprintln!("{}", sudo::argv("dnf", &args).join(" "));
@@ -288,7 +323,10 @@ impl SystemPackageManager for DnfManager {
         sudo::run("dnf", &args, &[])
     }
 
-    async fn upgrade(&self, pkgs: &[PackageRequest], opts: &InstallOpts) -> Result<()> {
+    fn upgrade_on(&self, ostree: bool, pkgs: &[PackageRequest], opts: &InstallOpts) -> Result<()> {
+        if ostree {
+            return Err(ostree_error("upgrade"));
+        }
         let mut runs = vec![];
         if pkgs.iter().any(|p| group_id(p).is_none()) {
             runs.push(upgrade_args(pkgs));
@@ -318,6 +356,40 @@ mod tests {
             tap_url: None,
             desired: crate::system::packages::PackageDesiredState::Present,
         }
+    }
+
+    #[test]
+    fn test_ostree_error_suggests_alternatives() {
+        let msg = ostree_error("install").to_string();
+        assert!(msg.contains("ostree"));
+        assert!(msg.contains("rpm-ostree install"));
+    }
+
+    #[test]
+    fn test_ostree_marker_decides_booted() {
+        let dir = tempfile::tempdir().unwrap();
+        let marker = dir.path().join("ostree-booted");
+        assert!(!ostree_booted_at(&marker));
+        std::fs::write(&marker, "").unwrap();
+        assert!(ostree_booted_at(&marker));
+    }
+
+    #[test]
+    fn test_ostree_host_rejects_install_and_upgrade() {
+        let mgr = DnfManager::new();
+        let pkgs = vec![req("gimp", None)];
+        let opts = InstallOpts {
+            dry_run: true,
+            update: false,
+            ask: false,
+        };
+        let err = mgr.install_on(true, &pkgs, &opts).unwrap_err().to_string();
+        assert!(err.contains("cannot install"));
+        let err = mgr.upgrade_on(true, &pkgs, &opts).unwrap_err().to_string();
+        assert!(err.contains("cannot upgrade"));
+        // without the marker, a dry run goes on to print the dnf command
+        assert!(mgr.install_on(false, &pkgs, &opts).is_ok());
+        assert!(mgr.upgrade_on(false, &pkgs, &opts).is_ok());
     }
 
     #[test]
