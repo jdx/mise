@@ -138,32 +138,30 @@ column works with `--only` and `--skip`, and a part's hooks run only when the
 part runs. The older names in parentheses still work but print a deprecation
 warning. They will be removed in mise 2027.10.4.
 
-| Step | Part (`--only`, `--skip`)          | Applies                                                                                                 | Hooks                           |
-| ---- | ---------------------------------- | ------------------------------------------------------------------------------------------------------- | ------------------------------- |
-| 1    | `accounts`                         | [`[bootstrap.users]` and `[bootstrap.groups]`](/bootstrap/accounts.html)                                |                                 |
-| 2    | `plugins`                          | [`[bootstrap.plugins]`](/bootstrap/packages/plugins.html)                                               |                                 |
-| 3    | `files`                            | Files and directories with [`phase = "pre-packages"`](/bootstrap/files.html)                            |                                 |
-| 4    | `packages`                         | [`[bootstrap.packages]`](/bootstrap/packages/) from built-in package managers                           | `pre-packages`, `post-packages` |
-| 5    | `files`                            | The remaining [`[bootstrap.files]` and `[bootstrap.directories]`](/bootstrap/files.html)                |                                 |
-| 6    | `services`                         | [`[bootstrap.services]`](/bootstrap/services.html), except user services with `requires_tools = true`   |                                 |
-| 7    | `firewall`                         | [`[bootstrap.linux.firewall]`](/bootstrap/firewall.html)                                                |                                 |
-| 8    | `compose`                          | [`[bootstrap.compose]`](/bootstrap/compose.html)                                                        |                                 |
-| 9    | `repos`                            | [`[bootstrap.repos]`](/bootstrap/repos.html)                                                            | `pre-repos`, `post-repos`       |
-| 10   | `dotfiles`                         | [`[dotfiles]`](/dotfiles.html)                                                                          | `pre-dotfiles`, `post-dotfiles` |
-| 11   | `mise-shell-activate` (`shell`)    | [`[bootstrap.mise_shell_activate]`](/bootstrap/shell.html)                                              |                                 |
-| 12   | `macos-defaults` (`defaults`)      | [`[bootstrap.macos.defaults]`](/bootstrap/macos-defaults.html) and the other `[bootstrap.macos.*]` keys | `pre-defaults`, `post-defaults` |
-| 13   | `macos-launchd-agents` (`launchd`) | [`[bootstrap.macos.launchd.agents]`](/bootstrap/launchd.html)                                           |                                 |
-| 14   | `linux-systemd-units` (`systemd`)  | [`[bootstrap.linux.systemd.units]`](/bootstrap/systemd.html)                                            |                                 |
-| 15   | `user`                             | [`[bootstrap.user]`](/bootstrap/shell.html#set-your-login-shell)                                        | `pre-user`, `post-user`         |
-| 16   | `tools`                            | `[tools]`, as `mise install` would                                                                      | `pre-tools`, `post-tools`       |
-| 17   | `packages`                         | Packages from [package manager plugins](/bootstrap/packages/plugins.html)                               |                                 |
-| 18   | `services`                         | User services with `requires_tools = true`                                                              |                                 |
-| 19   | `task`                             | The [`bootstrap` task](#the-bootstrap-task), if one exists                                              |                                 |
-| 20   | `final-hook`                       |                                                                                                         | `final`                         |
+| Step | Part (`--only`, `--skip`)          | Applies                                                                                                                                               | Hooks                           |
+| ---- | ---------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------- |
+| 1    | `accounts`                         | [`[bootstrap.users]` and `[bootstrap.groups]`](/bootstrap/accounts.html)                                                                              |                                 |
+| 2    | `plugins`                          | [`[bootstrap.plugins]`](/bootstrap/packages/plugins.html)                                                                                             |                                 |
+| 3    | `files`                            | Files and directories with [`phase = "pre-packages"`](/bootstrap/files.html)                                                                          |                                 |
+| 4    | `packages`                         | [`[bootstrap.apt.sources]`](/bootstrap/packages/apt.html#sources), then [`[bootstrap.packages]`](/bootstrap/packages/) from built-in package managers | `pre-packages`, `post-packages` |
+| 5    | `files`                            | The remaining [`[bootstrap.files]` and `[bootstrap.directories]`](/bootstrap/files.html)                                                              |                                 |
+| 6    | `services`                         | [`[bootstrap.services]`](/bootstrap/services.html), except user services with `requires_tools = true`                                                 |                                 |
+| 7    | `firewall`                         | [`[bootstrap.linux.firewall]`](/bootstrap/firewall.html)                                                                                              |                                 |
+| 8    | `compose`                          | [`[bootstrap.compose]`](/bootstrap/compose.html)                                                                                                      |                                 |
+| 9    | `repos`                            | [`[bootstrap.repos]`](/bootstrap/repos.html)                                                                                                          | `pre-repos`, `post-repos`       |
+| 10   | `dotfiles`                         | [`[dotfiles]`](/dotfiles.html)                                                                                                                        | `pre-dotfiles`, `post-dotfiles` |
+| 11   | `mise-shell-activate` (`shell`)    | [`[bootstrap.mise_shell_activate]`](/bootstrap/shell.html)                                                                                            |                                 |
+| 12   | `macos-defaults` (`defaults`)      | [`[bootstrap.macos.defaults]`](/bootstrap/macos-defaults.html) and the other `[bootstrap.macos.*]` keys                                               | `pre-defaults`, `post-defaults` |
+| 13   | `macos-launchd-agents` (`launchd`) | [`[bootstrap.macos.launchd.agents]`](/bootstrap/launchd.html)                                                                                         |                                 |
+| 14   | `linux-systemd-units` (`systemd`)  | [`[bootstrap.linux.systemd.units]`](/bootstrap/systemd.html)                                                                                          |                                 |
+| 15   | `user`                             | [`[bootstrap.user]`](/bootstrap/shell.html#set-your-login-shell)                                                                                      | `pre-user`, `post-user`         |
+| 16   | `tools`                            | `[tools]`, as `mise install` would                                                                                                                    | `pre-tools`, `post-tools`       |
+| 17   | `packages`                         | Packages from [package manager plugins](/bootstrap/packages/plugins.html)                                                                             |                                 |
+| 18   | `services`                         | User services with `requires_tools = true`                                                                                                            |                                 |
+| 19   | `task`                             | The [`bootstrap` task](#the-bootstrap-task), if one exists                                                                                            |                                 |
+| 20   | `final-hook`                       |                                                                                                                                                       | `final`                         |
 
-Step 4 adds [`[bootstrap.apt.sources]`](/bootstrap/packages/apt.html#sources)
-after the `pre-packages` hook and before it installs `apt:` packages, so a
-package can come from a repository declared in the same config.
+In step 4, the `pre-packages` hook runs before mise adds apt sources.
 
 The `post-packages` hook runs right after step 4, unless a package in
 `[bootstrap.packages]` comes from a package manager plugin. Then it runs after
