@@ -806,6 +806,7 @@ pinned_at = "2026-09-01T00:00:00Z"
         ForgePin::of(project, id)
     }
 
+    /// Model a shared workflow's verified certificate source for pin checks.
     fn shared_check(identity: &str, id: &str) -> Check {
         let source =
             packslip::sigstore::SourceRepository::new("https://github.com/o/r").with_id(id);
