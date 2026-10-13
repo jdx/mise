@@ -684,16 +684,25 @@ impl TaskExecutor {
         // and before the artifact cache so a skipped task neither restores nor records outputs.
         if let Some(skip_if) = &task.skip_if {
             if self.dry_run {
-                self.eprint(
-                    task,
-                    &prefix,
-                    &format!("skip_if: {skip_if} (not checked: dry run)"),
-                );
-            } else if self.skip_if_met(config, task, &env).await? {
                 if !self.quiet(Some(task)) {
-                    self.eprint(task, &prefix, "skip_if condition met, skipping");
+                    self.eprint(
+                        task,
+                        &prefix,
+                        &format!("skip_if: {skip_if} (not checked: dry run)"),
+                    );
                 }
-                return Ok(TaskRunOutcome::default());
+            } else {
+                let met = self.skip_if_met(config, task, &env).await;
+                // A Ctrl-C can end the check with an ordinary exit status (a shell reports
+                // 130, Windows reports STATUS_CONTROL_C_EXIT), which would read as "run the
+                // task". Stop here instead, before confirmation or a cache restore.
+                Self::check_interruption(allow_during_interruption)?;
+                if met? {
+                    if !self.quiet(Some(task)) {
+                        self.eprint(task, &prefix, "skip_if condition met, skipping");
+                    }
+                    return Ok(TaskRunOutcome::default());
+                }
             }
         }
 
