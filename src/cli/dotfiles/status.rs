@@ -12,8 +12,8 @@ use crate::ui::table::MiseTable;
 ///
 /// Lists the `[dotfiles]` entries that need attention, and counts the rest;
 /// `--verbose` lists every entry. Each has a state: `applied`, `missing`,
-/// `differs`, `source missing`, `tracked`, or `absent` for a removal that is
-/// done. A tracked entry whose variants all select other machines, such as
+/// `differs`, `source missing`, `tracked`, `would remove` for an `absent` entry
+/// whose target is still there, or `absent` for a removal that is done. A tracked entry whose variants all select other machines, such as
 /// one for an inactive profile, says `not on this machine`. Then shows the history state in sections: Tracking, Repository,
 /// Conflicts, Automatic capture, and Bootstrap, ending with the next steps.
 ///
