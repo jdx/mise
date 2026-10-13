@@ -146,6 +146,15 @@ zshrc = true
 github_token = "GITHUB_TOKEN"
 "deploy.key" = { env = "DEPLOY_KEY", description = "Deploy key", allow_empty = true }
 
+[bootstrap.groups]
+deploy = { gid = 2000 }
+ops = {}
+old-team = { state = "absent" }
+
+[bootstrap.users]
+deploy = { group = "deploy", groups = ["ops"], exclusive_groups = true, home = "/srv/deploy", move_home = true, shell = "/bin/bash", comment = "Deploy user", create_home = true }
+olduser = { state = "absent", remove_home = true }
+
 [[oci.copy]]
 host = "dist/my-app"
 image = "/usr/local/bin/my-app"
@@ -266,7 +275,7 @@ strict = true
 
 [[schemas]]
 path = "file://$SCHEMA_PATH"
-include = ["mise-bad.toml", "mise-bad-age.toml", "mise-bad-dotfiles.toml", "mise-bad-dotfiles-manifest.toml", "mise-bad-dotfiles-position.toml", "mise-bad-env-default.toml", "mise-bad-env-directive.toml", "mise-bad-env-value-required.toml", "mise-bad-env-value-required-help.toml", "mise-bad-env-required-false.toml", "mise-bad-env-float.toml", "mise-bad-install-env-float.toml", "mise-bad-minimum-release-age-array.toml", "mise-bad-minimum-release-age-table.toml", "mise-bad-package-state.toml", "mise-bad-postinstall.toml", "mise-bad-vars.toml", "mise-bad-tmpl.toml", "mise-bad-tmpl-output-flag.toml", "mise-bad-os.toml", "mise-bad-watch-files.toml", "mise-bad-launchd-calendar.toml", "mise-bad-launchd-queue.toml", "mise-bad-launchd-throttle.toml", "mise-bad-systemd.toml", "mise-bad-oci-copy.toml", "mise-bad-shell-activate.toml", "mise-bad-bootstrap-secret-key.toml", "mise-bad-bootstrap-secret-env.toml", "mise-bad-bootstrap-secret-name.toml", "mise-bad-backend-options.toml", "mise-bad-core-options.toml", "mise-bad-task-deps-empty.toml"]
+include = ["mise-bad.toml", "mise-bad-age.toml", "mise-bad-dotfiles.toml", "mise-bad-dotfiles-manifest.toml", "mise-bad-dotfiles-position.toml", "mise-bad-env-default.toml", "mise-bad-env-directive.toml", "mise-bad-env-value-required.toml", "mise-bad-env-value-required-help.toml", "mise-bad-env-required-false.toml", "mise-bad-env-float.toml", "mise-bad-install-env-float.toml", "mise-bad-minimum-release-age-array.toml", "mise-bad-minimum-release-age-table.toml", "mise-bad-package-state.toml", "mise-bad-postinstall.toml", "mise-bad-vars.toml", "mise-bad-tmpl.toml", "mise-bad-tmpl-output-flag.toml", "mise-bad-os.toml", "mise-bad-watch-files.toml", "mise-bad-launchd-calendar.toml", "mise-bad-launchd-queue.toml", "mise-bad-launchd-throttle.toml", "mise-bad-systemd.toml", "mise-bad-oci-copy.toml", "mise-bad-shell-activate.toml", "mise-bad-bootstrap-absent-group-gid.toml", "mise-bad-bootstrap-user-no-group.toml", "mise-bad-bootstrap-user-remove-home.toml", "mise-bad-bootstrap-absent-user-uid.toml", "mise-bad-bootstrap-exclusive-groups.toml", "mise-bad-bootstrap-move-home.toml", "mise-bad-bootstrap-relative-home.toml", "mise-bad-bootstrap-user-name.toml", "mise-bad-bootstrap-secret-key.toml", "mise-bad-bootstrap-secret-env.toml", "mise-bad-bootstrap-secret-name.toml", "mise-bad-backend-options.toml", "mise-bad-core-options.toml", "mise-bad-task-deps-empty.toml"]
 
 [[schemas]]
 path = "file://$TASK_SCHEMA_PATH"
@@ -716,3 +725,17 @@ cat >"$HOME/workdir/mise-bad-bootstrap-secret-name.toml" <<'TOML'
 "bad name" = "TOKEN"
 TOML
 assert_fail "$TOMBI_LINT mise-bad-bootstrap-secret-name.toml"
+
+# Bootstrap accounts follow the rules mise applies when it reads them.
+bad_account() {
+  printf '%s\n' "$2" >"$HOME/workdir/mise-bad-bootstrap-$1.toml"
+  assert_fail "$TOMBI_LINT mise-bad-bootstrap-$1.toml"
+}
+bad_account absent-group-gid $'[bootstrap.groups]\nold = { state = "absent", gid = 2000 }'
+bad_account user-no-group $'[bootstrap.users]\ndeploy = { home = "/srv/deploy" }'
+bad_account user-remove-home $'[bootstrap.users]\ndeploy = { group = "deploy", remove_home = true }'
+bad_account absent-user-uid $'[bootstrap.users]\nold = { state = "absent", uid = 2000 }'
+bad_account exclusive-groups $'[bootstrap.users]\ndeploy = { group = "deploy", exclusive_groups = true }'
+bad_account move-home $'[bootstrap.users]\ndeploy = { group = "deploy", move_home = true }'
+bad_account relative-home $'[bootstrap.users]\ndeploy = { group = "deploy", home = "srv/deploy" }'
+bad_account user-name $'[bootstrap.users]\n"bad name" = { group = "deploy" }'
