@@ -293,7 +293,9 @@ fn install_at(
             );
         }
         if update {
-            if git(destination, &["symbolic-ref", "--short", "HEAD"])? != branch {
+            // the full name, since `--short` prints `heads/<name>` when a tag
+            // shares it
+            if git(destination, &["symbolic-ref", "HEAD"])? != format!("refs/heads/{branch}") {
                 bail!("global configuration branch differs from the transferred branch");
             }
             if dry_run {
@@ -494,6 +496,9 @@ mod tests {
             "laptop"
         );
         assert!(dest.join("laptop.toml").exists());
+        // a tag that shares the branch's name does not hide the branch
+        git(&dest, &["tag", "laptop"]).unwrap();
+        install_source(&source, &dest, true).unwrap();
 
         // a checkout on another branch is refused, with or without --update,
         // and stays where it is
