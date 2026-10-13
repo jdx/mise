@@ -7,7 +7,7 @@
 # of what a deterministic benchmark needs.
 [tools]
 node = "24.21.0"
-python = "3.14.7"
+python = "3.14.8"
 go = "1.27.1"
 
 [env]
