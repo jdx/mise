@@ -662,11 +662,13 @@ enum Store {
 
 type EnclaveHelper = fn() -> Result<PathBuf>;
 
-/// The refresh tokens as last unsealed or sealed by this process. A refresh reads
-/// the store to refresh and again to merge the rotated token, and each unseal is
-/// a Touch ID prompt, so the second read must not unseal again. The tokens are
-/// already in this process's memory at that point.
-static ENCLAVE_TOKENS: std::sync::Mutex<Option<HashMap<String, String>>> =
+/// The refresh tokens as last unsealed or sealed by this process, with the sealed
+/// bytes they match. A refresh reads the store to refresh and again to merge the
+/// rotated token, and each unseal is a Touch ID prompt, so the second read must
+/// not unseal again. The copy is used only while the sealed file still holds
+/// those exact bytes, so a token rotated by another mise process is never
+/// replaced with a stale one.
+static ENCLAVE_TOKENS: std::sync::Mutex<Option<(String, HashMap<String, String>)>> =
     std::sync::Mutex::new(None);
 
 static ENCLAVE_HELPER: std::sync::OnceLock<EnclaveHelper> = std::sync::OnceLock::new();
@@ -816,6 +818,7 @@ fn run_store_process(
 
 /// Read the refresh tokens (cache key to token) from the external store.
 fn store_read() -> Result<HashMap<String, String>> {
+    let mut sealed_input = None;
     let (stdout, name) = match store() {
         None => return Ok(HashMap::new()),
         Some(Store::Commands { get, .. }) => (
@@ -823,9 +826,6 @@ fn store_read() -> Result<HashMap<String, String>> {
             "github.oauth_cache_get",
         ),
         Some(Store::Enclave { helper }) => {
-            if let Some(tokens) = ENCLAVE_TOKENS.lock().unwrap().clone() {
-                return Ok(tokens);
-            }
             let sealed = match std::fs::read_to_string(sealed_path()) {
                 Ok(sealed) => sealed,
                 Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
@@ -833,14 +833,19 @@ fn store_read() -> Result<HashMap<String, String>> {
                 }
                 Err(err) => bail!("failed to read {}: {err}", sealed_path().display()),
             };
+            if let Some((bytes, tokens)) = &*ENCLAVE_TOKENS.lock().unwrap()
+                && *bytes == sealed
+            {
+                return Ok(tokens.clone());
+            }
             let mut command = std::process::Command::new(helper);
             command.arg("unseal");
-            (
-                run_store_process(ENCLAVE_NAME, command, Some(&sealed))?,
-                ENCLAVE_NAME,
-            )
+            let out = run_store_process(ENCLAVE_NAME, command, Some(&sealed))?;
+            sealed_input = Some(sealed);
+            (out, ENCLAVE_NAME)
         }
     };
+    let sealed = sealed_input;
     let stdout = String::from_utf8(stdout).map_err(|_| eyre!("{name} did not print UTF-8"))?;
     let tokens: HashMap<String, String> = if stdout.trim().is_empty() {
         HashMap::new()
@@ -848,8 +853,8 @@ fn store_read() -> Result<HashMap<String, String>> {
         toml::from_str(&stdout)
             .map_err(|_| eyre!("{name} did not print what the refresh token store was given"))?
     };
-    if name == ENCLAVE_NAME {
-        *ENCLAVE_TOKENS.lock().unwrap() = Some(tokens.clone());
+    if let Some(sealed) = sealed {
+        *ENCLAVE_TOKENS.lock().unwrap() = Some((sealed, tokens.clone()));
     }
     Ok(tokens)
 }
@@ -870,7 +875,10 @@ fn store_write(tokens: &HashMap<String, String>) -> Result<()> {
             command.arg("seal");
             let sealed = run_store_process(ENCLAVE_NAME, command, Some(&value))?;
             write_private_file(&sealed_path(), &sealed)?;
-            *ENCLAVE_TOKENS.lock().unwrap() = Some(tokens.clone());
+            *ENCLAVE_TOKENS.lock().unwrap() = Some((
+                String::from_utf8_lossy(&sealed).into_owned(),
+                tokens.clone(),
+            ));
         }
     }
     Ok(())
@@ -1204,6 +1212,22 @@ mod tests {
         let tokens = store_read().unwrap();
         assert_eq!(tokens.get("a").map(String::as_str), Some("ghr-a2"));
         assert_eq!(tokens.get("b").map(String::as_str), Some("ghr-b"));
+
+        // Another mise process rotating the sealed file invalidates this process's copy.
+        let before = unseals();
+        let mut other = HashMap::new();
+        other.insert("a".to_string(), "ghr-a-rotated-elsewhere".to_string());
+        let mut command = std::process::Command::new(&helper);
+        command.arg("seal");
+        let sealed =
+            run_store_process("fake", command, Some(&toml::to_string(&other).unwrap())).unwrap();
+        write_private_file(&sealed_path(), &sealed).unwrap();
+        let tokens = store_read().unwrap();
+        assert_eq!(
+            tokens.get("a").map(String::as_str),
+            Some("ghr-a-rotated-elsewhere")
+        );
+        assert_eq!(unseals(), before + 1);
 
         // A cancelled prompt is an error, never an empty store, so nothing is dropped.
         std::fs::write(dir.path().join("cancel"), "").unwrap();
