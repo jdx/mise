@@ -8,8 +8,10 @@ use std::{
 use crate::args::BackendArg;
 use crate::backend::Backend;
 use crate::backend::VersionInfo;
+use crate::backend::default_operation_weights;
 use crate::backend::platform_target::PlatformTarget;
 use crate::backend::static_helpers::lock_checksum;
+use crate::cmd::CmdLineRunner;
 use crate::config::{CompilePurpose, Config, Settings, SettingsExt};
 #[cfg(unix)]
 use crate::file::ExtractOptions;
@@ -27,8 +29,6 @@ use indexmap::IndexMap;
 use xx::regex;
 
 #[cfg(linux)]
-use crate::cmd::CmdLineRunner;
-#[cfg(linux)]
 use std::fs;
 
 #[derive(Debug)]
@@ -38,6 +38,9 @@ pub(super) struct ErlangPlugin {
 
 const KERL_VERSION: &str = "4.4.0";
 const ERLANG_PRECOMPILED_OS_OPTION: &str = "precompiled_os";
+/// Download, checksum, and kerl build. Compiling OTP takes minutes, so the
+/// build gets nearly all of the bar.
+const SOURCE_BUILD_OPERATION_WEIGHTS: [f64; 3] = [0.1, 0.02, 0.88];
 
 impl ErlangPlugin {
     pub(super) fn new() -> Self {
@@ -52,6 +55,24 @@ impl ErlangPlugin {
 
     fn kerl_base_dir(&self) -> PathBuf {
         self.ba.cache_path().join("kerl")
+    }
+
+    /// Whether this install goes straight to a kerl source build. A
+    /// precompiled install that finds no matching build can still fall back to
+    /// kerl, so `false` does not rule a build out.
+    fn installs_from_source(&self, ctx: &InstallContext, tv: &ToolVersion) -> bool {
+        let settings = Settings::get();
+        let erlang_compile = if ctx.locked {
+            settings.erlang_compile(CompilePurpose::Inspect)
+        } else {
+            settings.erlang_compile(CompilePurpose::Install)
+        };
+        should_install_from_source(
+            ctx.locked,
+            &tv.lock_platforms,
+            &self.get_platform_key(),
+            erlang_compile,
+        )
     }
 
     fn lock_build_tool(&self) -> Result<fslock::LockFile> {
@@ -576,7 +597,9 @@ impl ErlangPlugin {
             HTTP.download_file(source_url, &source_path, Some(ctx.pr.as_ref()))
                 .await?;
         }
+        ctx.pr.next_operation();
         self.verify_checksum(ctx, &mut tv, &source_path)?;
+        ctx.pr.next_operation();
 
         let kerl_base_dir = self.kerl_base_dir();
         let kerl_source_path = kerl_base_dir
@@ -591,21 +614,21 @@ impl ErlangPlugin {
                 unimplemented!("erlang does not yet support refs");
             }
             _ => {
-                let mut cmd = cmd!(
-                    self.kerl_path(),
-                    "build-install",
-                    &tv.version,
-                    &tv.version,
-                    tv.install_path()
-                )
-                .env("MAKEFLAGS", format!("-j{}", num_cpus::get()));
+                ctx.pr.set_message("compiling with kerl".into());
+                let mut cmd = CmdLineRunner::new(self.kerl_path())
+                    .with_pr(ctx.pr.as_ref())
+                    .arg("build-install")
+                    .arg(&tv.version)
+                    .arg(&tv.version)
+                    .arg(tv.install_path())
+                    .env("MAKEFLAGS", format!("-j{}", num_cpus::get()));
                 for (key, value) in source_build_kerl_env(tv.install_env(), &kerl_base_dir) {
                     cmd = match value {
                         Some(value) => cmd.env(key, value),
                         None => cmd.env_remove(key),
                     };
                 }
-                cmd.run()?;
+                cmd.execute()?;
             }
         }
 
@@ -662,20 +685,16 @@ impl Backend for ErlangPlugin {
         Ok(versions)
     }
 
-    async fn install_version_(&self, ctx: &InstallContext, tv: ToolVersion) -> Result<ToolVersion> {
-        let platform_key = self.get_platform_key();
-        let settings = Settings::get();
-        let erlang_compile = if ctx.locked {
-            settings.erlang_compile(CompilePurpose::Inspect)
+    async fn install_operation_weights(&self, tv: &ToolVersion, ctx: &InstallContext) -> Vec<f64> {
+        if self.installs_from_source(ctx, tv) {
+            SOURCE_BUILD_OPERATION_WEIGHTS.to_vec()
         } else {
-            settings.erlang_compile(CompilePurpose::Install)
-        };
-        if should_install_from_source(
-            ctx.locked,
-            &tv.lock_platforms,
-            &platform_key,
-            erlang_compile,
-        ) {
+            default_operation_weights(self.install_operation_count(tv, ctx).await)
+        }
+    }
+
+    async fn install_version_(&self, ctx: &InstallContext, tv: ToolVersion) -> Result<ToolVersion> {
+        if self.installs_from_source(ctx, &tv) {
             return self.install_via_kerl(ctx, tv).await;
         }
         if let Some(tv) = self.install_precompiled(ctx, tv.clone()).await? {
