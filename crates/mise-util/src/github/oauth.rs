@@ -1143,6 +1143,83 @@ mod tests {
         }
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn enclave_store_unseals_once_per_refresh_and_survives_a_cancelled_prompt() {
+        use std::os::unix::fs::PermissionsExt;
+
+        static HELPER_PATH: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
+        let dir = tempfile::tempdir().unwrap();
+        let cache_path = dir.path().join("github-oauth-tokens.toml");
+        let _guard = OAuthEnvGuard::new("http://127.0.0.1:1/login".into(), cache_path.clone());
+        crate::env::set_var("MISE_GITHUB_OAUTH_CACHE_SECURE_ENCLAVE", "1");
+        crate::testing::reset_settings(None);
+
+        // Stands in for the Touch ID helper: "sealing" is base64, each unseal is
+        // counted, and an unseal fails while `cancel` exists.
+        let helper = dir.path().join("mise-enclave");
+        std::fs::write(
+            &helper,
+            "#!/bin/sh\nd=$(dirname \"$0\")\ncase $1 in\nseal) base64;;\nunseal)\n  echo x >> \"$d/unseals\"\n  [ -e \"$d/cancel\" ] && { echo cancelled >&2; exit 1; }\n  base64 -d;;\nesac\n",
+        )
+        .unwrap();
+        std::fs::set_permissions(&helper, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let _ = HELPER_PATH.set(helper.clone());
+        set_enclave_helper(|| Ok(HELPER_PATH.get().unwrap().clone()));
+        *ENCLAVE_TOKENS.lock().unwrap() = None;
+        let unseals = || {
+            std::fs::read_to_string(dir.path().join("unseals"))
+                .map(|s| s.lines().count())
+                .unwrap_or(0)
+        };
+
+        let token = |refresh: &str| CachedToken {
+            access_token: "ghu".into(),
+            expires_at: chrono::Utc::now() + chrono::Duration::hours(8),
+            refresh_token: Some(refresh.into()),
+            refresh_expires_at: None,
+        };
+        let mut cache = TokenCache::default();
+        cache.tokens.insert("a".into(), token("ghr-a"));
+        cache.tokens.insert("b".into(), token("ghr-b"));
+
+        // Storing a fresh authorization seals both tokens and keeps them out of the file.
+        write_cache(&cache).unwrap();
+        assert_eq!(unseals(), 0);
+        let content = std::fs::read_to_string(&cache_path).unwrap();
+        assert!(!content.contains("ghr-"), "{content}");
+        assert!(sealed_path().exists());
+
+        // A refresh in a new process: one unseal to read, none to save the rotated token.
+        *ENCLAVE_TOKENS.lock().unwrap() = None;
+        let mut tokens = store_read().unwrap();
+        assert_eq!(tokens.remove("a").as_deref(), Some("ghr-a"));
+        let mut cache = read_cache().unwrap();
+        cache.tokens.get_mut("a").unwrap().refresh_token = Some("ghr-a2".into());
+        write_cache(&cache).unwrap();
+        assert_eq!(unseals(), 1);
+
+        // The other entry's token survives, and the rotated one replaced the old.
+        *ENCLAVE_TOKENS.lock().unwrap() = None;
+        let tokens = store_read().unwrap();
+        assert_eq!(tokens.get("a").map(String::as_str), Some("ghr-a2"));
+        assert_eq!(tokens.get("b").map(String::as_str), Some("ghr-b"));
+
+        // A cancelled prompt is an error, never an empty store, so nothing is dropped.
+        std::fs::write(dir.path().join("cancel"), "").unwrap();
+        *ENCLAVE_TOKENS.lock().unwrap() = None;
+        assert!(store_read().is_err());
+        let sealed_before = std::fs::read(sealed_path()).unwrap();
+        let mut cache = read_cache().unwrap();
+        cache.tokens.get_mut("a").unwrap().refresh_token = Some("ghr-a3".into());
+        cache.tokens.get_mut("b").unwrap().refresh_token = None;
+        write_cache(&cache).unwrap();
+        assert_eq!(std::fs::read(sealed_path()).unwrap(), sealed_before);
+
+        crate::env::remove_var("MISE_GITHUB_OAUTH_CACHE_SECURE_ENCLAVE");
+        *ENCLAVE_TOKENS.lock().unwrap() = None;
+    }
+
     #[tokio::test]
     async fn refresh_error_preserves_cached_token() {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
