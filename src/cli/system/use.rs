@@ -117,7 +117,7 @@ impl SystemUse {
         // resolve managers before touching the config file so a typo'd
         // manager doesn't get written
         let mut mgrs = system::packages_from_requests(by_mgr)?;
-        system::attach_apt_sources(&config, &mut mgrs);
+        system::attach_package_sources(&config, &mut mgrs);
 
         let (existing_global_paths, has_new_global_entries) =
             self.global_write_paths(&config, &entries)?;

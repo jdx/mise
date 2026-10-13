@@ -8533,6 +8533,30 @@
             }
           }
         },
+        "dnf": {
+          "type": "object",
+          "description": "dnf-specific bootstrap package config",
+          "properties": {
+            "repos": {
+              "type": "object",
+              "description": "dnf repositories enabled before dnf packages are installed, keyed by a name for the entry",
+              "propertyNames": {
+                "pattern": "^[A-Za-z0-9_-][A-Za-z0-9_.-]*$"
+              },
+              "additionalProperties": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["copr"],
+                "properties": {
+                  "copr": {
+                    "type": "string",
+                    "description": "COPR project as owner/project or @group/project, such as scottames/ghostty; enabled as dnf copr enable would"
+                  }
+                }
+              }
+            }
+          }
+        },
         "brew": {
           "type": "object",
           "description": "Homebrew-specific bootstrap package config",

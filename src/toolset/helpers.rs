@@ -153,10 +153,10 @@ async fn preflight_system_deps_inner(
     let mut mgrs = crate::system::packages_from_requests(by_mgr)?;
     // Sources are applied before the driver asks about packages, so only a
     // run that will not ask may add them; otherwise declining the prompt
-    // would still have written to /etc/apt. A prompted run installs from
-    // the sources `mise bootstrap` already added.
+    // would still have written to /etc/apt or /etc/yum.repos.d. A prompted
+    // run installs from the sources `mise bootstrap` already added.
     if yes {
-        crate::system::attach_apt_sources(config, &mut mgrs);
+        crate::system::attach_package_sources(config, &mut mgrs);
     }
     let driver_opts = crate::system::driver::DriverOpts {
         manager: None,

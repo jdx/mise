@@ -143,6 +143,9 @@ pub struct BootstrapTomlConfig {
     /// apt-specific bootstrap package config.
     #[serde(default)]
     pub apt: SystemAptTomlConfig,
+    /// dnf-specific bootstrap package config.
+    #[serde(default)]
+    pub dnf: SystemDnfTomlConfig,
     /// Shell activation setup. Values stay raw TOML so future options can warn
     /// and be skipped without rejecting the whole config.
     #[serde(default)]
@@ -199,6 +202,7 @@ impl BootstrapTomlConfig {
         fill(&mut self.directories, lower.directories);
         fill(&mut self.repos, lower.repos);
         fill(&mut self.apt.sources, lower.apt.sources);
+        fill(&mut self.dnf.repos, lower.dnf.repos);
         fill(&mut self.mise_shell_activate, lower.mise_shell_activate);
         // hooks add up across files, the shared commands running first
         for (phase, shared) in lower.hooks {
@@ -575,6 +579,14 @@ pub struct SystemAptTomlConfig {
     pub sources: IndexMap<String, toml::Value>,
 }
 
+#[derive(Debug, Default, Clone, Deserialize)]
+pub struct SystemDnfTomlConfig {
+    /// `[bootstrap.dnf.repos]`: repository name -> COPR project, enabled
+    /// before dnf packages are installed.
+    #[serde(default)]
+    pub repos: IndexMap<String, toml::Value>,
+}
+
 /// `[dotfiles]` as parsed from a single mise.toml.
 #[derive(Debug, Default, Clone, Deserialize)]
 #[serde(transparent)]
@@ -599,6 +611,10 @@ pub enum ManagerPackageOptions {
     Apt {
         sources: Vec<crate::system::packages::apt_sources::AptSource>,
     },
+    /// `[bootstrap.dnf.repos]`, enabled before dnf installs its packages.
+    Dnf {
+        repos: Vec<crate::system::packages::dnf_repos::DnfRepo>,
+    },
     #[cfg(unix)]
     BrewCask {
         adopt: BTreeSet<String>,
@@ -618,7 +634,7 @@ impl ManagerPackageOptions {
     pub(crate) fn brew_cask_adopt(&self, name: &str) -> bool {
         match self {
             Self::BrewCask { adopt, .. } | Self::MacosApp { adopt, .. } => adopt.contains(name),
-            Self::None | Self::Apt { .. } => false,
+            Self::None | Self::Apt { .. } | Self::Dnf { .. } => false,
         }
     }
 
@@ -1273,7 +1289,7 @@ fn package_requests_from_config_files(
     };
     #[cfg(not(unix))]
     let mut options = IndexMap::new();
-    insert_apt_sources(config_files, &mut options);
+    insert_package_sources(config_files, &mut options);
     (by_mgr, options)
 }
 
@@ -2547,7 +2563,7 @@ fn packages_from_specs_with_config_files(
     };
     #[cfg(not(unix))]
     let mut options = IndexMap::new();
-    insert_apt_sources(config_files, &mut options);
+    insert_package_sources(config_files, &mut options);
     resolve_managers(
         by_mgr,
         options,
@@ -2671,27 +2687,69 @@ fn apt_sources_from_config_files(
         .collect()
 }
 
-fn insert_apt_sources(
+/// `[bootstrap.dnf.repos]` across `config_files`: a more local config replaces
+/// a repository of the same name. An invalid entry warns and is skipped.
+fn dnf_repos_from_config_files(config_files: &ConfigMap) -> Vec<packages::dnf_repos::DnfRepo> {
+    let mut merged: IndexMap<String, toml::Value> = IndexMap::new();
+    for cf in config_files.values().rev() {
+        if let Some(sys) = cf.bootstrap_config() {
+            for (name, repo) in sys.dnf.repos {
+                merged.insert(name, repo);
+            }
+        }
+    }
+    merged
+        .into_iter()
+        .filter_map(|(name, value)| {
+            let parsed = value
+                .try_into::<packages::dnf_repos::DnfRepoTomlConfig>()
+                .map_err(|err| eyre::eyre!("{name}: {err}"))
+                .and_then(|config| packages::dnf_repos::DnfRepo::parse(&name, config));
+            match parsed {
+                Ok(repo) => Some(repo),
+                Err(err) => {
+                    warn!("[bootstrap.dnf.repos]: {err:#}");
+                    None
+                }
+            }
+        })
+        .collect()
+}
+
+/// The repository options of each manager that declares repositories:
+/// `[bootstrap.apt.sources]` and `[bootstrap.dnf.repos]`.
+fn package_sources_from_config_files(
+    config_files: &ConfigMap,
+) -> Vec<(&'static str, ManagerPackageOptions)> {
+    let mut out = vec![];
+    let sources = apt_sources_from_config_files(config_files);
+    if !sources.is_empty() {
+        out.push(("apt", ManagerPackageOptions::Apt { sources }));
+    }
+    let repos = dnf_repos_from_config_files(config_files);
+    if !repos.is_empty() {
+        out.push(("dnf", ManagerPackageOptions::Dnf { repos }));
+    }
+    out
+}
+
+fn insert_package_sources(
     config_files: &ConfigMap,
     options: &mut IndexMap<String, ManagerPackageOptions>,
 ) {
-    let sources = apt_sources_from_config_files(config_files);
-    if !sources.is_empty() {
-        options.insert("apt".to_string(), ManagerPackageOptions::Apt { sources });
+    for (manager, sources) in package_sources_from_config_files(config_files) {
+        options.insert(manager.to_string(), sources);
     }
 }
 
-/// Give the apt entries of `mgrs` the `[bootstrap.apt.sources]` they install
-/// from, for callers that build requests without the config.
-pub fn attach_apt_sources(config: &Config, mgrs: &mut [ManagerPackages]) {
-    let sources = apt_sources_from_config_files(&config.config_files);
-    if sources.is_empty() {
-        return;
-    }
-    for mp in mgrs.iter_mut().filter(|mp| mp.manager.name() == "apt") {
-        mp.options = ManagerPackageOptions::Apt {
-            sources: sources.clone(),
-        };
+/// Give the apt and dnf entries of `mgrs` the `[bootstrap.apt.sources]` and
+/// `[bootstrap.dnf.repos]` they install from, for callers that build requests
+/// without the config.
+pub fn attach_package_sources(config: &Config, mgrs: &mut [ManagerPackages]) {
+    for (manager, sources) in package_sources_from_config_files(&config.config_files) {
+        for mp in mgrs.iter_mut().filter(|mp| mp.manager.name() == manager) {
+            mp.options = sources.clone();
+        }
     }
 }
 

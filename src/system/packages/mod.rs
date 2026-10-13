@@ -17,6 +17,7 @@ pub(crate) mod aur;
 #[cfg(unix)]
 pub mod brew;
 pub(crate) mod dnf;
+pub mod dnf_repos;
 pub(crate) mod flatpak;
 pub(crate) mod mas;
 pub mod nix;
@@ -149,7 +150,7 @@ pub struct InstallOpts {
     /// force a package manager metadata refresh before installing
     pub update: bool,
     /// ask before changes the package prompt does not cover, such as
-    /// adding `[bootstrap.apt.sources]`
+    /// adding `[bootstrap.apt.sources]` or `[bootstrap.dnf.repos]`
     pub ask: bool,
 }
 
@@ -184,8 +185,8 @@ pub trait SystemPackageManager: Send + Sync {
 
     /// Bring the repositories this manager installs from to their declared
     /// state, before installed state is queried. Runs for dry runs too, which
-    /// print what would change. Only apt declares sources today, in
-    /// `[bootstrap.apt.sources]`.
+    /// print what would change. apt declares them in `[bootstrap.apt.sources]`
+    /// and dnf in `[bootstrap.dnf.repos]`.
     async fn apply_sources(
         &self,
         _manager_options: &ManagerPackageOptions,
