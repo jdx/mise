@@ -11,13 +11,14 @@ cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'
 [dotfiles]
 "~/.same" = { mode = "track" }
 "~/.manual" = { mode = "track", autosave = false }
+"~/.gone" = { mode = "track", autosave = false }
 "~/.mode" = { mode = "track" }
 "~/.one" = { mode = "track" }
 "~/.two" = { mode = "track" }
 TOML
-for file in same manual mode one two; do echo v1 >~/."$file"; done
+for file in same manual gone mode one two; do echo v1 >~/."$file"; done
 chmod 644 ~/.mode
-assert_succeed "mise dot save ~/.same ~/.manual ~/.mode ~/.one ~/.two"
+assert_succeed "mise dot save ~/.same ~/.manual ~/.gone ~/.mode ~/.one ~/.two"
 assert_succeed "mise dot track ~/.config/mise/config.toml --yes"
 assert_succeed "mise dot origin set file://$origin --sync manual --yes"
 assert_succeed "mise dot sync"
@@ -42,14 +43,16 @@ echo v2 >~/.same
 echo v2 >~/.manual
 echo v2 >~/.mode
 chmod 600 ~/.mode
-assert_succeed "mise dot save ~/.same ~/.manual ~/.mode"
+rm ~/.gone
+assert_succeed "mise dot save ~/.same ~/.manual ~/.gone ~/.mode"
 assert_succeed "mise dot sync"
 echo v2 >"$second/.manual"
+rm "$second/.gone"
 assert_succeed "b dot sync"
 echo v2 >"$second/.same"
 echo v2 >"$second/.mode"
 chmod 600 "$second/.mode"
-assert_contains "b dot pull --yes 2>&1" "applied 3 incoming change(s)"
+assert_contains "b dot pull --yes 2>&1" "applied 4 incoming change(s)"
 assert "cat $second/.same" "v2"
 assert "cat $second/.manual" "v2"
 assert "cat $second/.mode" "v2"
