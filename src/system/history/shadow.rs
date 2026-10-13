@@ -448,17 +448,43 @@ impl HistoryRepo {
         let mut roots = walk.roots.clone();
         let mut overlays = vec![];
         let mut recipients = None;
-        for root in &mut roots {
-            let encrypted: Vec<_> = root
-                .files
-                .iter()
-                .filter(|rel| {
-                    walk.files
-                        .get(&root.path.join(rel))
-                        .is_some_and(|(_, policy)| policy.encrypt)
-                })
-                .cloned()
-                .collect();
+        let encrypted_by_root: Vec<Vec<PathBuf>> = roots
+            .iter()
+            .map(|root| {
+                root.files
+                    .iter()
+                    .filter(|rel| {
+                        walk.files
+                            .get(&root.path.join(rel))
+                            .is_some_and(|(_, policy)| policy.encrypt)
+                    })
+                    .cloned()
+                    .collect()
+            })
+            .collect();
+        let history_path = |label: &str, rel: &Path| -> Result<String> {
+            Ok(format!(
+                "{label}/{}",
+                rel.to_str()
+                    .ok_or_else(|| eyre::eyre!("non-UTF-8 tracked path"))?
+                    .replace('\\', "/")
+            ))
+        };
+        // one lookup for every encrypted path rather than a git process each
+        let mut in_history = match &head {
+            Some(head) => {
+                let paths = roots
+                    .iter()
+                    .zip(&encrypted_by_root)
+                    .flat_map(|(root, encrypted)| {
+                        encrypted.iter().map(|rel| history_path(&root.label, rel))
+                    })
+                    .collect::<Result<Vec<_>>>()?;
+                self.objects_at(head, &paths)?
+            }
+            None => BTreeMap::new(),
+        };
+        for (root, encrypted) in roots.iter_mut().zip(encrypted_by_root) {
             root.files.retain(|rel| !encrypted.contains(rel));
             for rel in encrypted {
                 let live = root.path.join(&rel);
@@ -484,38 +510,36 @@ impl HistoryRepo {
                 } else {
                     bail!("cannot encrypt non-file {}", display_path(&live));
                 };
-                let path = format!(
-                    "{}/{}",
-                    root.label,
-                    rel.to_str()
-                        .ok_or_else(|| eyre::eyre!("non-UTF-8 tracked path"))?
-                        .replace('\\', "/")
-                );
+                let path = history_path(&root.label, &rel)?;
                 let fingerprint = blake3::keyed_hash(&cache_key, &bytes).to_hex().to_string();
-                let cached = cache.get(&path).filter(|entry| {
-                    entry.fingerprint == fingerprint && entry.mode == mode && entry.scheme == scheme
-                });
+                let cached = cache
+                    .get(&path)
+                    .filter(|entry| {
+                        entry.fingerprint == fingerprint
+                            && entry.mode == mode
+                            && entry.scheme == scheme
+                    })
+                    .filter(|entry| {
+                        self.blob_starts_with(&entry.oid, b"mise-encrypted-file-v1\n")
+                            .unwrap_or(false)
+                    });
+                let previous = in_history.remove(&path);
                 let oid = match cached {
-                    Some(entry)
-                        if self
-                            .blob_starts_with(&entry.oid, b"mise-encrypted-file-v1\n")
-                            .unwrap_or(false) =>
-                    {
+                    Some(entry) if previous.as_ref().is_none_or(|(_, oid)| *oid == entry.oid) => {
                         entry.oid.clone()
                     }
                     _ => {
-                        // a fresh cache, as on a machine that just adopted
-                        // the setup, keeps what history already encrypts
-                        let previous = match &head {
-                            Some(head) => self.object_at(head, &path)?,
-                            None => None,
-                        }
-                        .filter(|previous| {
+                        // keep what history already encrypts for this content:
+                        // a fresh cache (a machine that just adopted the setup)
+                        // or a merge that took another machine's envelope would
+                        // otherwise publish a new envelope for the same plaintext
+                        let previous = previous.filter(|previous| {
                             super::sync::files::holds(self, &path, previous, mode, &bytes, &scheme)
                         });
-                        let oid = match previous {
-                            Some((_, oid)) => oid,
-                            None => {
+                        let oid = match (previous, cached) {
+                            (Some((_, oid)), _) => oid,
+                            (None, Some(entry)) => entry.oid.clone(),
+                            (None, None) => {
                                 let recipients = match &recipients {
                                     Some(recipients) => recipients,
                                     None => recipients.insert(
@@ -1493,6 +1517,47 @@ impl HistoryRepo {
             return Ok(None);
         };
         Ok(Some((mode.to_string(), oid.to_string())))
+    }
+
+    /// [`Self::object_at`] for several paths, in as few git calls as the
+    /// command-line limit allows; paths absent from `tree_ish` are left out,
+    /// and a failed lookup is an error rather than an absent path.
+    pub(crate) fn objects_at(
+        &self,
+        tree_ish: &str,
+        paths: &[String],
+    ) -> Result<BTreeMap<String, (String, String)>> {
+        // keep each command line well under Windows' 32,767-character limit
+        const MAX_ARGS_LEN: usize = 16 * 1024;
+        let mut objects = BTreeMap::new();
+        let mut batch: Vec<&str> = vec![];
+        let mut batch_len = 0;
+        for (i, path) in paths.iter().enumerate() {
+            batch.push(path);
+            batch_len += path.len() + 1;
+            if batch_len < MAX_ARGS_LEN && i + 1 < paths.len() {
+                continue;
+            }
+            // never call ls-tree with no paths, which lists the whole tree
+            let mut args = vec!["ls-tree", "-z", tree_ish, "--"];
+            args.append(&mut batch);
+            batch_len = 0;
+            let output = self.git.output(PlumbingCall::new(args))?;
+            for record in output.split(|byte| *byte == 0) {
+                let record = String::from_utf8_lossy(record);
+                let Some((meta, path)) = record.split_once('\t') else {
+                    continue;
+                };
+                let mut fields = meta.split_whitespace();
+                let (Some(mode), Some(_kind), Some(oid)) =
+                    (fields.next(), fields.next(), fields.next())
+                else {
+                    continue;
+                };
+                objects.insert(path.to_string(), (mode.to_string(), oid.to_string()));
+            }
+        }
+        Ok(objects)
     }
 
     /// Read live-file contents for restoration. Decrypted objects exist only
@@ -2631,6 +2696,37 @@ mod tests {
             )
             .unwrap_err();
         assert!(missing.to_string().contains("not in either snapshot"));
+    }
+
+    #[test]
+    fn objects_at_finds_paths_across_several_git_calls() {
+        if crate::git::plumbing_binary().is_none() {
+            return;
+        }
+        let tmp = tempfile::tempdir().unwrap();
+        let repo = repo(tmp.path());
+        let blob = repo.hash_blob(b"secret").unwrap();
+        // about 40k characters of paths, more than one command line holds
+        let paths: Vec<String> = (0..1200)
+            .map(|i| format!("home/.config/encrypted/file-{i:05}.json"))
+            .collect();
+        let overlays: Vec<Overlay> = paths
+            .iter()
+            .map(|path| Overlay {
+                path: path.clone(),
+                object: Some(("100644".into(), blob.clone())),
+            })
+            .collect();
+        let empty = repo.empty_object("tree").unwrap();
+        let tree = repo.compose(&empty, &overlays).unwrap();
+        let mut wanted = paths.clone();
+        wanted.push("home/absent".into());
+        let objects = repo.objects_at(&tree, &wanted).unwrap();
+        assert_eq!(objects.len(), paths.len());
+        for path in &paths {
+            assert_eq!(objects[path], ("100644".to_string(), blob.clone()));
+        }
+        assert!(repo.objects_at(&tree, &[]).unwrap().is_empty());
     }
 
     #[test]
