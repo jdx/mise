@@ -62,15 +62,33 @@ fn rustup_dist_server(config_env: &IndexMap<String, String>) -> Option<String> {
         .filter(|server| !server.is_empty())
 }
 
-/// The `RUSTUP_DIST_SERVER` and `RUSTUP_UPDATE_ROOT` mirror variables set in the
-/// config `[env]`. A `mise install` outside an activated shell does not see them
-/// in its own environment, so rustup is handed them explicitly.
+const RUSTUP_MIRROR_VARS: [&str; 2] = ["RUSTUP_DIST_SERVER", "RUSTUP_UPDATE_ROOT"];
+
+/// The non-empty `RUSTUP_DIST_SERVER` and `RUSTUP_UPDATE_ROOT` mirror variables
+/// set in the config `[env]`. A `mise install` outside an activated shell does
+/// not see them in its own environment, so rustup is handed them explicitly.
 fn rustup_mirror_env(
     config_env: &IndexMap<String, String>,
 ) -> impl Iterator<Item = (&str, &String)> {
-    ["RUSTUP_DIST_SERVER", "RUSTUP_UPDATE_ROOT"]
+    RUSTUP_MIRROR_VARS
         .into_iter()
         .filter_map(|k| config_env.get(k).map(|v| (k, v)))
+        .filter(|(_, v)| !v.is_empty())
+}
+
+/// Hands rustup the config's mirror variables. One the config sets to an empty
+/// string is removed, so an inherited value is masked and older rustup releases
+/// never see an empty URL.
+fn apply_rustup_mirror_env<'a>(
+    mut cmd: CmdLineRunner<'a>,
+    config_env: &IndexMap<String, String>,
+) -> CmdLineRunner<'a> {
+    for key in RUSTUP_MIRROR_VARS {
+        if config_env.get(key).is_some_and(String::is_empty) {
+            cmd = cmd.env_remove(key);
+        }
+    }
+    cmd.envs(rustup_mirror_env(config_env))
 }
 
 fn nightly_manifest_url_for(dist_server: Option<&str>) -> String {
@@ -286,8 +304,8 @@ impl RustPlugin {
             .arg("--no-modify-path")
             .arg("--default-toolchain")
             .arg("none")
-            .arg("-y")
-            .envs(rustup_mirror_env(&config_env))
+            .arg("-y");
+        cmd = apply_rustup_mirror_env(cmd, &config_env)
             .env_values(tv.install_env())
             .envs(rustup_env(homes, &tv.version));
         if let Some(host) = settings.rust.default_host.as_ref() {
@@ -740,15 +758,15 @@ impl Backend for RustPlugin {
         }
 
         let config_env = ctx.config.env().await?;
-        let mut cmd = CmdLineRunner::new(runtime.bin_dir.join(RUSTUP_BIN))
+        let cmd = CmdLineRunner::new(runtime.bin_dir.join(RUSTUP_BIN))
             .with_pr(ctx.pr.as_ref())
             .arg("toolchain")
             .arg("install")
             .arg(&tv.version)
             .opt_args("--component", Some(components))
             .opt_args("--target", targets)
-            .prepend_path(vec![runtime.bin_dir.clone()])?
-            .envs(rustup_mirror_env(&config_env))
+            .prepend_path(vec![runtime.bin_dir.clone()])?;
+        let mut cmd = apply_rustup_mirror_env(cmd, &config_env)
             .env_values(tv.install_env())
             .envs(rustup_env(&runtime.homes, &tv.version));
         if let Some(profile) = profile.as_ref() {
@@ -1506,6 +1524,7 @@ mod tests {
     fn test_rustup_mirror_env_forwards_only_mirror_vars() {
         let config_env: IndexMap<String, String> = [
             ("RUSTUP_DIST_SERVER", "https://m.example.com"),
+            ("RUSTUP_UPDATE_ROOT", ""),
             ("RUSTUP_HOME", "/elsewhere"),
         ]
         .into_iter()
