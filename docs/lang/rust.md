@@ -123,8 +123,9 @@ RUSTUP_UPDATE_ROOT = "https://mirror.example.com/rustup"
 `RUSTUP_DIST_SERVER` is where rustup downloads toolchains from. When
 `RUSTUP_UPDATE_ROOT` is set, mise also downloads `rustup-init` from
 `$RUSTUP_UPDATE_ROOT/dist/<host-triple>/rustup-init` instead of
-`https://sh.rustup.rs`, using [`rust.default_host`](#settings) as the triple when
-it is set.
+`https://sh.rustup.rs`. The triple is the one mise was built for, or the
+architecture from the [`arch`](/configuration/settings.html#arch) setting when
+you set it.
 
 ## Cache Cargo builds with Mr Boxington {#share-cargo-builds-with-mr-boxington}
 

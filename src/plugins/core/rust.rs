@@ -987,10 +987,9 @@ fn default_rustup_url(triple: &str) -> String {
     format!("https://win.rustup.rs/{arch}")
 }
 
+/// The triple of the machine `rustup-init` runs on. `rust.default_host` is the
+/// toolchain host rustup is told to install, which may differ, so it is not used here.
 fn rustup_host_triple(settings: &Settings) -> String {
-    if let Some(host) = settings.rust.default_host.as_ref() {
-        return host.clone();
-    }
     let target = crate::build_time::TARGET;
     // An explicit `arch` setting (e.g. x64 under emulation) swaps the architecture
     // of the build target, keeping its vendor, OS and ABI.
