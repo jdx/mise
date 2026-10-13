@@ -492,30 +492,37 @@ impl HistoryRepo {
                         .replace('\\', "/")
                 );
                 let fingerprint = blake3::keyed_hash(&cache_key, &bytes).to_hex().to_string();
-                let cached = cache.get(&path).filter(|entry| {
-                    entry.fingerprint == fingerprint && entry.mode == mode && entry.scheme == scheme
-                });
+                let cached = cache
+                    .get(&path)
+                    .filter(|entry| {
+                        entry.fingerprint == fingerprint
+                            && entry.mode == mode
+                            && entry.scheme == scheme
+                    })
+                    .filter(|entry| {
+                        self.blob_starts_with(&entry.oid, b"mise-encrypted-file-v1\n")
+                            .unwrap_or(false)
+                    });
+                let previous = match &head {
+                    Some(head) => self.object_at(head, &path)?,
+                    None => None,
+                };
                 let oid = match cached {
-                    Some(entry)
-                        if self
-                            .blob_starts_with(&entry.oid, b"mise-encrypted-file-v1\n")
-                            .unwrap_or(false) =>
-                    {
+                    Some(entry) if previous.as_ref().is_none_or(|(_, oid)| *oid == entry.oid) => {
                         entry.oid.clone()
                     }
                     _ => {
-                        // a fresh cache, as on a machine that just adopted
-                        // the setup, keeps what history already encrypts
-                        let previous = match &head {
-                            Some(head) => self.object_at(head, &path)?,
-                            None => None,
-                        }
-                        .filter(|previous| {
+                        // keep what history already encrypts for this content:
+                        // a fresh cache (a machine that just adopted the setup)
+                        // or a merge that took another machine's envelope would
+                        // otherwise publish a new envelope for the same plaintext
+                        let previous = previous.filter(|previous| {
                             super::sync::files::holds(self, &path, previous, mode, &bytes, &scheme)
                         });
-                        let oid = match previous {
-                            Some((_, oid)) => oid,
-                            None => {
+                        let oid = match (previous, cached) {
+                            (Some((_, oid)), _) => oid,
+                            (None, Some(entry)) => entry.oid.clone(),
+                            (None, None) => {
                                 let recipients = match &recipients {
                                     Some(recipients) => recipients,
                                     None => recipients.insert(
