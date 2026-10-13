@@ -95,3 +95,18 @@ SCRIPT
 chmod +x mise-tasks/file-task
 assert_contains "mise run file-task 2>&1" "file-task-ran"
 assert_not_contains "mise run file-task 2>&1" "file-task-ran"
+
+# The dry-run line is redacted like the task's command header.
+cat <<'TOML' >mise.toml
+redactions = ["SKIP_SECRET"]
+
+[env]
+SKIP_SECRET = "hunter2-skip"
+
+[tasks.redacted]
+skip_if = "test hunter2-skip = x"
+run = "echo redacted-ran"
+TOML
+dry="$(mise run --dry-run redacted 2>&1)"
+assert_contains_text "$dry" "(not checked: dry run)"
+assert_not_contains_text "$dry" "hunter2-skip"

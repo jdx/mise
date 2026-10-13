@@ -691,7 +691,7 @@ impl TaskExecutor {
                     self.eprint(
                         task,
                         &prefix,
-                        &format!("skip_if: {skip_if} (not checked: dry run)"),
+                        &format!("skip_if: {} (not checked: dry run)", config.redact(skip_if)),
                     );
                 }
             } else {
