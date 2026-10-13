@@ -7550,7 +7550,7 @@
                   },
                   "state": {
                     "type": "string",
-                    "description": "desired package state; only pacman currently supports absent",
+                    "description": "desired package state; pacman, scoop, snap, and zypper support absent",
                     "enum": ["present", "absent"],
                     "default": "present"
                   }
