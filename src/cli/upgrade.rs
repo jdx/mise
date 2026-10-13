@@ -519,6 +519,9 @@ impl Upgrade {
                         crate::lockfile::LockfileUpdateMode::AllowLocked,
                     )
                     .await?;
+                    // The bump moved the active version without an install,
+                    // so nothing else relinks the skills.
+                    crate::packslip::auto_sync_skills(&config).await;
                 }
             }
             let bump_outdated = if self.bump {
