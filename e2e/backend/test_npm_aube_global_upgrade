@@ -26,20 +26,20 @@ EOF
 }
 
 check_graph() {
-  python3 - "$MISE_CONFIG_DIR/mise.lock" "$1" <<'PY'
+  mise -C "$HOME" lock --global --sidecars --json >"$PWD/sidecars.json"
+  python3 - "$PWD/sidecars.json" "$HOME" "$1" <<'PY'
 import hashlib
 import json
 import sys
-import tomllib
 from pathlib import Path
-path = Path(sys.argv[1])
-entry, = tomllib.loads(path.read_text())['tools']['npm:mise-upgrade-fixture']
-version = sys.argv[2]
+listing, = json.loads(Path(sys.argv[1]).read_text())
+entry, = [item for item in listing['sidecars'] if item['tool'] == 'npm:mise-upgrade-fixture']
+version = sys.argv[3]
 assert entry['version'] == version, entry
-graph = entry['aube']
-sidecar = path.parent / graph['path']
+assert entry['graph'] == 'aube' and entry['exists'], entry
+sidecar = Path(sys.argv[2]) / entry['path']
 text = (sidecar / 'aube-lock.yaml').read_text()
-assert graph['digest'] == 'sha256:' + hashlib.sha256(text.encode()).hexdigest()
+assert entry['digest'] == 'sha256:' + hashlib.sha256(text.encode()).hexdigest()
 assert f'mise-upgrade-fixture@{version}' in text, text
 assert f'mise-upgrade-dep@{version}' in text, text
 assert json.loads((sidecar / 'package.json').read_text())['dependencies']['mise-upgrade-fixture'] == version
