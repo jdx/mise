@@ -1067,6 +1067,11 @@
               "description": "Command that prints the native GitHub OAuth refresh tokens stored by github.oauth_cache_set.",
               "type": "string"
             },
+            "oauth_cache_secure_enclave": {
+              "default": false,
+              "description": "Keep the native GitHub OAuth refresh token behind Touch ID in the macOS Secure Enclave.",
+              "type": "boolean"
+            },
             "oauth_cache_set": {
               "default": "",
               "description": "Command that stores the native GitHub OAuth refresh tokens, read from its stdin.",

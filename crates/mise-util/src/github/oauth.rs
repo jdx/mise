@@ -202,7 +202,7 @@ async fn refresh_cached_token(
         false
     };
 
-    if cached.refresh_token.is_none() && store_commands().is_some() {
+    if cached.refresh_token.is_none() && store().is_some() {
         // The refresh token lives in the external store. Read it only now that
         // a refresh is needed, and if it cannot be read stop here: refreshing
         // without it would look like "no refresh token" and invalidate a token
@@ -651,14 +651,58 @@ fn write_cache(cache: &TokenCache) -> Result<()> {
     Ok(())
 }
 
-/// The external store commands, when both are configured. Setting only one is
-/// a mistake that would silently leave the refresh token in the file.
-fn store_commands() -> Option<(String, String)> {
+/// Where the refresh tokens live when they are kept out of the cache file.
+enum Store {
+    /// User-supplied `oauth_cache_get` / `oauth_cache_set` commands.
+    Commands { get: String, set: String },
+    /// A file sealed by the macOS Secure Enclave helper; unsealing needs Touch ID.
+    Enclave { helper: PathBuf },
+}
+
+type EnclaveHelper = fn() -> Result<PathBuf>;
+
+static ENCLAVE_HELPER: std::sync::OnceLock<EnclaveHelper> = std::sync::OnceLock::new();
+
+/// Register how to find the Secure Enclave helper. The helper is embedded in the
+/// mise binary, so mise supplies it. Without one, `oauth_cache_secure_enclave`
+/// warns and the refresh token stays in the cache file.
+pub fn set_enclave_helper(f: EnclaveHelper) {
+    let _ = ENCLAVE_HELPER.set(f);
+}
+
+/// The configured store, if any. Setting only one command is a mistake that
+/// would silently leave the refresh token in the file.
+fn store() -> Option<Store> {
     let settings = Settings::get();
     let get = settings.github.oauth_cache_get.trim();
     let set = settings.github.oauth_cache_set.trim();
+    if settings.github.oauth_cache_secure_enclave {
+        if !get.is_empty() || !set.is_empty() {
+            warn_once!(
+                "github.oauth_cache_secure_enclave overrides github.oauth_cache_get and \
+                 github.oauth_cache_set"
+            );
+        }
+        let helper = ENCLAVE_HELPER
+            .get()
+            .ok_or_else(|| eyre!("the Secure Enclave is only available on macOS"))
+            .and_then(|f| f());
+        match helper {
+            Ok(helper) => return Some(Store::Enclave { helper }),
+            Err(err) => {
+                warn_once!(
+                    "github.oauth_cache_secure_enclave is unavailable ({err:#}); \
+                     keeping the GitHub OAuth refresh token in the cache file"
+                );
+                return None;
+            }
+        }
+    }
     match (get.is_empty(), set.is_empty()) {
-        (false, false) => Some((get.to_string(), set.to_string())),
+        (false, false) => Some(Store::Commands {
+            get: get.to_string(),
+            set: set.to_string(),
+        }),
         (true, true) => None,
         _ => {
             warn_once!(
@@ -668,6 +712,15 @@ fn store_commands() -> Option<(String, String)> {
             None
         }
     }
+}
+
+fn sealed_path() -> PathBuf {
+    let mut name = cache_path()
+        .file_stem()
+        .map(|s| s.to_os_string())
+        .unwrap_or_default();
+    name.push(".sealed");
+    cache_path().with_file_name(name)
 }
 
 fn store_command(cmd: &str) -> Result<std::process::Command> {
@@ -683,10 +736,17 @@ fn store_command(cmd: &str) -> Result<std::process::Command> {
 /// while mise holds the cache lock, so it is stopped and reaped when it fails
 /// or takes longer than `STORE_TIMEOUT`.
 fn run_store_command(name: &str, cmd: &str, input: Option<&str>) -> Result<Vec<u8>> {
+    run_store_process(name, store_command(cmd)?, input)
+}
+
+fn run_store_process(
+    name: &str,
+    mut command: std::process::Command,
+    input: Option<&str>,
+) -> Result<Vec<u8>> {
     use std::io::Read;
     use std::process::Stdio;
 
-    let mut command = store_command(cmd)?;
     let mut child = command
         .stdin(if input.is_some() {
             Stdio::piped()
@@ -748,30 +808,73 @@ fn run_store_command(name: &str, cmd: &str, input: Option<&str>) -> Result<Vec<u
 
 /// Read the refresh tokens (cache key to token) from the external store.
 fn store_read() -> Result<HashMap<String, String>> {
-    let Some((get, _)) = store_commands() else {
-        return Ok(HashMap::new());
+    let (stdout, name) = match store() {
+        None => return Ok(HashMap::new()),
+        Some(Store::Commands { get, .. }) => (
+            run_store_command("github.oauth_cache_get", &get, None)?,
+            "github.oauth_cache_get",
+        ),
+        Some(Store::Enclave { helper }) => {
+            let sealed = match std::fs::read_to_string(sealed_path()) {
+                Ok(sealed) => sealed,
+                Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+                    return Ok(HashMap::new());
+                }
+                Err(err) => bail!("failed to read {}: {err}", sealed_path().display()),
+            };
+            let mut command = std::process::Command::new(helper);
+            command.arg("unseal");
+            (
+                run_store_process("the Secure Enclave helper", command, Some(&sealed))?,
+                "the Secure Enclave helper",
+            )
+        }
     };
-    let stdout = String::from_utf8(run_store_command("github.oauth_cache_get", &get, None)?)
-        .map_err(|_| eyre!("github.oauth_cache_get did not print UTF-8"))?;
+    let stdout = String::from_utf8(stdout).map_err(|_| eyre!("{name} did not print UTF-8"))?;
     if stdout.trim().is_empty() {
         return Ok(HashMap::new());
     }
-    toml::from_str(&stdout).map_err(|_| {
-        eyre!("github.oauth_cache_get did not print what github.oauth_cache_set stored")
-    })
+    toml::from_str(&stdout)
+        .map_err(|_| eyre!("{name} did not print what the refresh token store was given"))
 }
 
 /// Hand the refresh tokens to the external store on its stdin.
 fn store_write(tokens: &HashMap<String, String>) -> Result<()> {
-    let Some((_, set)) = store_commands() else {
+    let Some(store) = store() else {
         return Ok(());
     };
     let ordered: std::collections::BTreeMap<_, _> = tokens.iter().collect();
-    run_store_command(
-        "github.oauth_cache_set",
-        &set,
-        Some(&toml::to_string(&ordered)?),
-    )?;
+    let value = toml::to_string(&ordered)?;
+    match store {
+        Store::Commands { set, .. } => {
+            run_store_command("github.oauth_cache_set", &set, Some(&value))?;
+        }
+        Store::Enclave { helper } => {
+            let mut command = std::process::Command::new(helper);
+            command.arg("seal");
+            let sealed = run_store_process("the Secure Enclave helper", command, Some(&value))?;
+            write_private_file(&sealed_path(), &sealed)?;
+        }
+    }
+    Ok(())
+}
+
+/// Write `content` to `path` through a temp file, readable only by the user.
+fn write_private_file(path: &Path, content: &[u8]) -> Result<()> {
+    let parent = path
+        .parent()
+        .ok_or_else(|| eyre!("{} has no parent", path.display()))?;
+    std::fs::create_dir_all(parent)?;
+    let mut tmp = tempfile::NamedTempFile::with_prefix_in(".github-oauth-sealed.", parent)?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        tmp.as_file()
+            .set_permissions(std::fs::Permissions::from_mode(0o600))?;
+    }
+    tmp.write_all(content)?;
+    tmp.as_file_mut().sync_all()?;
+    persist_cache_tmp(tmp, path)?;
     Ok(())
 }
 
@@ -782,7 +885,7 @@ fn store_write(tokens: &HashMap<String, String>) -> Result<()> {
 /// A failure keeps the refresh token in the file: GitHub has already rotated
 /// it, so dropping it would end the session.
 fn protect_refresh_tokens(cache: &TokenCache) -> Option<TokenCache> {
-    store_commands()?;
+    store()?;
     if cache.tokens.values().all(|t| t.refresh_token.is_none()) {
         return None;
     }
