@@ -356,10 +356,20 @@ pub(crate) async fn apply_locked_with_scope(
         }
     }
     for path in take_remote.iter().chain(keep_local.iter()) {
-        if !status
-            .conflicts
-            .iter()
-            .any(|conflict| roots.locate(&conflict.branch_path).path() == Some(path.as_path()))
+        let located = |branch_path: &String| roots.locate(branch_path).path() == Some(path);
+        // **A choice an earlier pull recorded stands, and naming it again
+        // is not an error.** Taking the repository's version exempts the
+        // path from the conflict check, so when that pull then failed for
+        // another reason the path was no longer listed, and repeating the
+        // command that decided it said it "is not a conflict".
+        let decided = status.resolutions.iter().any(|(branch_path, choice)| {
+            located(branch_path) && choice.take_remote == take_remote.contains(path)
+        });
+        if !decided
+            && !status
+                .conflicts
+                .iter()
+                .any(|conflict| located(&conflict.branch_path))
         {
             bail!("{} is not a conflict", display_path(path));
         }
@@ -1035,11 +1045,13 @@ fn hold_reason(
         ));
     }
     let live = live_object(repo, &step.path)?;
-    let identical_adoption = repo
-        .ref_oid(crate::system::history::shadow::HistoryRepo::HISTORY_REF)?
-        .is_none()
-        && live == step.pending.object;
     let local_head = repo.ref_oid(crate::system::history::shadow::HistoryRepo::HISTORY_REF)?;
+    // A live file that already is the incoming version has nothing for the
+    // write to lose: a fresh adoption of files this machine already has,
+    // or an apply interrupted after its write but before it was recorded.
+    // Outside an adoption its mode must match too, or the write changes it.
+    let already_incoming = live == step.pending.object
+        && (local_head.is_none() || live_permissions(&step.path)? == step.desired_mode);
     let expected_mode = permissions_at(
         repo,
         local_head.as_deref(),
@@ -1048,7 +1060,7 @@ fn hold_reason(
     )?;
     if !take_remote
         && (live != expected || live_permissions(&step.path)? != expected_mode)
-        && !identical_adoption
+        && !already_incoming
     {
         return Ok(Some(
             "local file changed since planning; save or resolve it first".into(),
