@@ -1300,13 +1300,16 @@ fn write_json_if_changed<T: Serialize>(path: &Path, value: &T) -> Result<()> {
 /// that fetched thousands of checkpoints spent minutes here. Each record is
 /// still renamed into place whole, so a crash never leaves a torn one, and
 /// [`Self::finish`] syncs the batch before the index that names them is
-/// written.
+/// written. That needs `syncfs`, which only Linux has: elsewhere nothing
+/// flushes a batch, so each record is synced as it is written.
 pub(crate) struct CacheBatch<'a> {
     state_dir: &'a Path,
     written: bool,
 }
 
 impl<'a> CacheBatch<'a> {
+    const DEFERS_SYNC: bool = cfg!(any(target_os = "linux", target_os = "android"));
+
     pub(crate) fn new(state_dir: &'a Path) -> Self {
         Self {
             state_dir,
@@ -1316,7 +1319,7 @@ impl<'a> CacheBatch<'a> {
 
     pub(crate) fn write_meta(&mut self, checkpoint: &Checkpoint) -> Result<()> {
         let path = meta_cache_path_in(self.state_dir, &checkpoint.uuid);
-        self.written |= write_json_text(&path, checkpoint, true, false)?;
+        self.written |= write_json_text(&path, checkpoint, true, !Self::DEFERS_SYNC)?;
         Ok(())
     }
 
@@ -1326,12 +1329,13 @@ impl<'a> CacheBatch<'a> {
         checkpoint: &Checkpoint,
     ) -> Result<()> {
         let path = commit_meta_cache_path_in(self.state_dir, commit);
-        self.written |=
-            write_json_text(&path, &commit_meta_cache(commit, checkpoint), false, false)?;
+        let cache = commit_meta_cache(commit, checkpoint);
+        self.written |= write_json_text(&path, &cache, false, !Self::DEFERS_SYNC)?;
         Ok(())
     }
 
     pub(crate) fn finish(self) -> Result<()> {
+        #[cfg(any(target_os = "linux", target_os = "android"))]
         if self.written {
             file::sync_filesystem(index_dir_in(self.state_dir))?;
         }
