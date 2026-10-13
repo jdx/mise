@@ -648,7 +648,11 @@ pub(crate) async fn apply_locked_with_scope(
     // the repository's head, once a fresh adoption made it this machine's
     let mut adopted_head: Option<String> = None;
     let result = (|| -> Result<()> {
-        scope.validate_starting_head(planned_head.as_deref())?;
+        if !scope.starting_head_is(planned_head.as_deref())? {
+            return Err(stale(
+                "local saved history changed since planning; nothing was applied; run pull again",
+            ));
+        }
         if let (Some(tree), Some(local)) = (&inventory_tree, &planned_head) {
             let heads = super::graph::Heads::read(repo)?;
             let current = heads
@@ -671,17 +675,19 @@ pub(crate) async fn apply_locked_with_scope(
             if repo.compose(&repo.output_tree_of(current)?, &restore_planned)?
                 != repo.output_tree_of(local)?
             {
-                bail!("local files were saved after enrollment planning; retry pull");
+                return Err(stale(
+                    "local files were saved after enrollment planning; retry pull",
+                ));
             }
             // Do not let a divergent text merge or a stale resolution differ
             // from the complete tree that will be adopted.
             for step in &ready {
                 if repo.restored_object_at(tree, &step.pending.branch_path)? != step.pending.object
                 {
-                    bail!(
+                    return Err(stale(format!(
                         "{} changed in the complete repository merge; reconcile again",
                         display_path(&step.path)
-                    );
+                    )));
                 }
             }
             let candidate = heads
@@ -839,6 +845,25 @@ pub(crate) async fn apply_locked_with_scope(
         }
         Ok(())
     })();
+    if let Err(error) = &result
+        && !fresh_adoption
+        && touched.is_empty()
+        && error.downcast_ref::<StalePlan>().is_some()
+    {
+        // **A plan that went stale before its first write is planned again,
+        // not a failed application.** Nothing was written, so there is
+        // nothing to restore and nothing to pause sharing over. Recording it
+        // as a failure stopped the watcher's automatic applies until someone
+        // pulled by hand, though all it had hit was a save landing while it
+        // planned.
+        scope.finish(
+            Some(format!("{error:#}")),
+            Some(Summary {
+                message: Some("apply planned again: history changed while planning".into()),
+            }),
+        );
+        return result.map(|()| ApplyOutcome::default());
+    }
     if let Err(error) = &result {
         let mut recovery_errors = vec![];
         for step in ready
@@ -1127,6 +1152,23 @@ impl std::fmt::Display for UnusableLive {
 }
 
 impl std::error::Error for UnusableLive {}
+
+/// The plan no longer matches local history, found before anything was
+/// written: planning again is the whole remedy.
+#[derive(Debug)]
+pub(super) struct StalePlan(String);
+
+impl std::fmt::Display for StalePlan {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl std::error::Error for StalePlan {}
+
+fn stale(reason: impl Into<String>) -> eyre::Report {
+    eyre::Report::new(StalePlan(reason.into()))
+}
 
 /// Each of these names the path, because a blanket resolution repeats the
 /// reason it could not decide one and by then the path is all it still has.
