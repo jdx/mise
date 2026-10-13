@@ -281,53 +281,37 @@ fn install_at(
         {
             bail!("global configuration has uncommitted changes");
         }
-        // the full name: `--short` prints `heads/<name>` when a tag shares it
-        let current = git(destination, &["symbolic-ref", "HEAD"])
-            .ok()
-            .and_then(|head| head.strip_prefix("refs/heads/").map(str::to_string));
-        let on_branch = current.as_deref() == Some(branch.as_str());
-        if require_branch && !on_branch && !update {
-            let state = match &current {
-                Some(current) => format!("on branch {current:?}"),
-                None => "not on a branch".to_string(),
-            };
+        // mise only ever fast-forwards the branch a checkout is on, and never
+        // moves it to another one; the full name, since `--short` prints
+        // `heads/<name>` when a tag shares it
+        if require_branch
+            && git(destination, &["symbolic-ref", "HEAD"]).ok().as_deref()
+                != Some(format!("refs/heads/{branch}").as_str())
+        {
             bail!(
-                "global configuration at {shown} is {state}, not {branch:?}; add --update to switch it"
+                "global configuration at {shown} is not on branch {branch:?}; switch it with git, then run this again"
             );
         }
         if update {
-            if !on_branch && !require_branch {
+            if git(destination, &["symbolic-ref", "--short", "HEAD"])? != branch {
                 bail!("global configuration branch differs from the transferred branch");
             }
-            // the commit the checkout moves on from: its own, or that of the
-            // local branch it switches to; a missing local branch is created
-            let from = if on_branch {
-                Some(git(destination, &["rev-parse", "HEAD"])?)
-            } else {
-                let local = format!("refs/heads/{branch}");
-                git(destination, &["rev-parse", "--verify", "--quiet", &local]).ok()
-            };
             if dry_run {
-                if !on_branch {
-                    miseprintln!("Would switch {shown} to branch {branch}");
-                }
                 // the bundle holds the history from the checkout's commit on,
                 // so the fast-forward is checked there without fetching into
                 // the destination
-                match &from {
-                    Some(head) if head == revision => miseprintln!(
+                let head = git(destination, &["rev-parse", "HEAD"])?;
+                if head == revision {
+                    miseprintln!(
                         "Would keep {shown} at {revision}, already the transferred revision"
-                    ),
-                    Some(head)
-                        if git(&checkout, &["merge-base", "--is-ancestor", head, revision])
-                            .is_ok() =>
-                    {
-                        miseprintln!("Would fast-forward {shown} from {head} to {revision}")
-                    }
-                    Some(_) => bail!(
+                    );
+                } else if git(&checkout, &["merge-base", "--is-ancestor", &head, revision]).is_ok()
+                {
+                    miseprintln!("Would fast-forward {shown} from {head} to {revision}");
+                } else {
+                    bail!(
                         "global configuration at {shown} cannot be fast-forwarded to the transferred revision"
-                    ),
-                    None => miseprintln!("Would create branch {branch} in {shown} at {revision}"),
+                    );
                 }
                 return Ok(destination.to_path_buf());
             }
@@ -342,44 +326,10 @@ fn install_at(
                     "HEAD",
                 ],
             )?;
-            if let Some(from) = &from {
-                git(
-                    destination,
-                    &["merge-base", "--is-ancestor", from, revision],
-                )?;
-            }
-            if !on_branch {
-                // the branch must still be where the ancestry check saw it:
-                // `checkout -B` takes no old commit, so a move by another
-                // process since then would otherwise be overwritten
-                if let Some(from) = &from {
-                    let local = format!("refs/heads/{branch}");
-                    let now = git(destination, &["rev-parse", "--verify", "--quiet", &local]).ok();
-                    if now.as_deref() != Some(from.as_str()) {
-                        bail!(
-                            "branch {branch:?} in {shown} changed during the update; run the bootstrap again"
-                        );
-                    }
-                }
-                // one checkout creates the branch or moves it to the
-                // transferred revision, after the ancestry check above; it
-                // either completes or leaves the checkout and its branches as
-                // they were, refusing a branch another worktree has checked
-                // out, and an ignored local file stops it instead of being
-                // replaced by one the branch tracks
-                git(
-                    destination,
-                    &[
-                        "-c",
-                        "core.hooksPath=/dev/null",
-                        "checkout",
-                        "--no-overwrite-ignore",
-                        "-B",
-                        &branch,
-                        revision,
-                    ],
-                )?;
-            }
+            git(
+                destination,
+                &["merge-base", "--is-ancestor", "HEAD", revision],
+            )?;
             git(
                 destination,
                 &[
@@ -387,7 +337,6 @@ fn install_at(
                     "core.hooksPath=/dev/null",
                     "merge",
                     "--ff-only",
-                    "--no-overwrite-ignore",
                     revision,
                 ],
             )?;
@@ -399,10 +348,6 @@ fn install_at(
                     revision,
                 ],
             )?;
-            if !on_branch {
-                let upstream = format!("--set-upstream-to=origin/{branch}");
-                git(destination, &["branch", &upstream, &branch])?;
-            }
         } else if dry_run {
             miseprintln!(
                 "Would keep the existing checkout of {origin} at {shown}; --update fast-forwards it"
@@ -528,119 +473,6 @@ mod tests {
         )
     }
     #[tokio::test]
-    async fn switching_branches_keeps_ignored_local_files() {
-        let repo = repository();
-        commit(repo.path(), ".gitignore", "notes.txt\n");
-        git(repo.path(), &["switch", "-c", "notes"]).unwrap();
-        std::fs::write(repo.path().join("notes.txt"), "tracked\n").unwrap();
-        git(repo.path(), &["add", "-f", "notes.txt"]).unwrap();
-        git(
-            repo.path(),
-            &["-c", "core.hooksPath=/dev/null", "commit", "-m", "test"],
-        )
-        .unwrap();
-        git(repo.path(), &["switch", "main"]).unwrap();
-        let origin: String = repo.path().to_str().unwrap().into();
-
-        let main = Source::fetch(origin.clone(), Some("main".into()))
-            .await
-            .unwrap();
-        let target = tempfile::tempdir().unwrap();
-        let dest = target.path().join("mise");
-        install_source(&main, &dest, false).unwrap();
-        std::fs::write(dest.join("notes.txt"), "local\n").unwrap();
-
-        let notes = Source::fetch(origin, Some("notes".into())).await.unwrap();
-        assert!(install_source(&notes, &dest, true).is_err());
-        assert_eq!(
-            std::fs::read_to_string(dest.join("notes.txt")).unwrap(),
-            "local\n"
-        );
-        assert_eq!(
-            git(&dest, &["symbolic-ref", "HEAD"]).unwrap(),
-            "refs/heads/main"
-        );
-    }
-    #[tokio::test]
-    async fn a_refused_switch_leaves_head_where_it_was() {
-        let repo = repository();
-        commit(repo.path(), ".gitignore", "notes.txt\n");
-        git(repo.path(), &["branch", "notes"]).unwrap();
-        let origin: String = repo.path().to_str().unwrap().into();
-        let target = tempfile::tempdir().unwrap();
-        let dest = target.path().join("mise");
-        // the target has a local `notes` branch, then moves to main
-        let notes = Source::fetch(origin.clone(), Some("notes".into()))
-            .await
-            .unwrap();
-        install_source(&notes, &dest, false).unwrap();
-        let main = Source::fetch(origin.clone(), Some("main".into()))
-            .await
-            .unwrap();
-        install_source(&main, &dest, true).unwrap();
-        // origin's `notes` then starts tracking a file the target ignores
-        git(repo.path(), &["switch", "notes"]).unwrap();
-        std::fs::write(repo.path().join("notes.txt"), "tracked\n").unwrap();
-        git(repo.path(), &["add", "-f", "notes.txt"]).unwrap();
-        git(
-            repo.path(),
-            &["-c", "core.hooksPath=/dev/null", "commit", "-m", "test"],
-        )
-        .unwrap();
-        git(repo.path(), &["switch", "main"]).unwrap();
-        std::fs::write(dest.join("notes.txt"), "local\n").unwrap();
-
-        let notes = Source::fetch(origin, Some("notes".into())).await.unwrap();
-        assert!(install_source(&notes, &dest, true).is_err());
-        assert_eq!(
-            git(&dest, &["symbolic-ref", "HEAD"]).unwrap(),
-            "refs/heads/main"
-        );
-        assert_eq!(
-            std::fs::read_to_string(dest.join("notes.txt")).unwrap(),
-            "local\n"
-        );
-    }
-    #[tokio::test]
-    async fn a_branch_another_worktree_has_is_left_alone() {
-        let repo = repository();
-        git(repo.path(), &["branch", "notes"]).unwrap();
-        let origin: String = repo.path().to_str().unwrap().into();
-        let target = tempfile::tempdir().unwrap();
-        let dest = target.path().join("mise");
-        let notes = Source::fetch(origin.clone(), Some("notes".into()))
-            .await
-            .unwrap();
-        install_source(&notes, &dest, false).unwrap();
-        let main = Source::fetch(origin.clone(), Some("main".into()))
-            .await
-            .unwrap();
-        install_source(&main, &dest, true).unwrap();
-        let worktree = target.path().join("notes-worktree");
-        git(
-            &dest,
-            &["worktree", "add", worktree.to_str().unwrap(), "notes"],
-        )
-        .unwrap();
-        let before = git(&dest, &["rev-parse", "refs/heads/notes"]).unwrap();
-        // origin's `notes` moves on, so the target's copy is behind
-        git(repo.path(), &["switch", "notes"]).unwrap();
-        commit(repo.path(), "notes.toml", "[tools]\n");
-        git(repo.path(), &["switch", "main"]).unwrap();
-
-        let notes = Source::fetch(origin, Some("notes".into())).await.unwrap();
-        assert!(install_source(&notes, &dest, true).is_err());
-        assert_eq!(
-            git(&dest, &["symbolic-ref", "HEAD"]).unwrap(),
-            "refs/heads/main"
-        );
-        assert_eq!(
-            git(&dest, &["rev-parse", "refs/heads/notes"]).unwrap(),
-            before
-        );
-        assert_eq!(git(&worktree, &["rev-parse", "HEAD"]).unwrap(), before);
-    }
-    #[tokio::test]
     async fn fetches_the_requested_branch_only_when_it_is_a_branch() {
         let repo = repository();
         git(repo.path(), &["switch", "-c", "laptop"]).unwrap();
@@ -663,23 +495,19 @@ mod tests {
         );
         assert!(dest.join("laptop.toml").exists());
 
-        // a checkout on another branch is refused until --update switches it
+        // a checkout on another branch is refused, with or without --update,
+        // and stays where it is
         let main = Source::fetch(origin.clone(), Some("main".into()))
             .await
             .unwrap();
-        let err = install_source(&main, &dest, false).err().unwrap();
-        assert!(err.to_string().contains("add --update"), "{err}");
-        preview_source(&main, &dest, true).unwrap();
-        assert_eq!(
-            git(&dest, &["symbolic-ref", "--short", "HEAD"]).unwrap(),
-            "laptop"
-        );
-        install_source(&main, &dest, true).unwrap();
-        assert_eq!(
-            git(&dest, &["symbolic-ref", "--short", "HEAD"]).unwrap(),
-            "main"
-        );
-        assert!(!dest.join("laptop.toml").exists());
+        for update in [false, true] {
+            let err = install_source(&main, &dest, update).err().unwrap();
+            assert!(err.to_string().contains("switch it with git"), "{err}");
+            assert_eq!(
+                git(&dest, &["symbolic-ref", "HEAD"]).unwrap(),
+                "refs/heads/laptop"
+            );
+        }
         // without ?ref=, the checkout's own branch is kept as before
         let default = Source::fetch(origin.clone(), None).await.unwrap();
         install_source(&default, &dest, false).unwrap();

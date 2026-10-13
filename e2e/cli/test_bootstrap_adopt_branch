@@ -20,8 +20,7 @@ cat <<'EOF' >"$work/config.toml"
 [tasks.bootstrap]
 run = 'printf main > "$HOME/adopted-branch"'
 EOF
-echo notes.txt >"$work/.gitignore"
-git -C "$work" add config.toml .gitignore
+git -C "$work" add config.toml
 git -C "$work" commit -qm 'test: main config'
 git -C "$work" tag v1
 git -C "$work" switch -qc laptop
@@ -30,12 +29,6 @@ cat <<'EOF' >"$work/config.toml"
 run = 'printf laptop > "$HOME/adopted-branch"'
 EOF
 git -C "$work" commit -qam 'test: laptop config'
-git -C "$work" switch -q main
-# the notes branch tracks a file that main ignores
-git -C "$work" switch -qc notes
-echo tracked >"$work/notes.txt"
-git -C "$work" add -f notes.txt
-git -C "$work" commit -qm 'test: tracked notes'
 git -C "$work" switch -q main
 # a tag that shares the branch's name must not hide the branch
 git -C "$work" tag laptop
@@ -50,51 +43,16 @@ assert "cat ~/adopted-branch" "laptop"
 # a rerun finds the checkout already on the branch
 assert_succeed "MISE_CONFIG_DIR='$laptop_config' mise bootstrap --adopt '$config?ref=laptop' --yes --only task"
 
-# an existing checkout on another branch is refused until --update switches it
-assert_fail "MISE_CONFIG_DIR='$laptop_config' mise bootstrap --adopt '$config?ref=main' --yes --only task" "add --update"
+# mise never moves an existing checkout to another branch: one on another
+# branch is refused, with or without --update, and left where it is
+assert_fail "MISE_CONFIG_DIR='$laptop_config' mise bootstrap --adopt '$config?ref=main' --yes --only task" "switch it with git"
+assert_fail "MISE_CONFIG_DIR='$laptop_config' mise bootstrap --adopt '$config?ref=main' --update --yes --only task" "switch it with git"
 assert "git -C '$laptop_config' symbolic-ref HEAD" "refs/heads/laptop"
+# switched by hand, it is used, and --update fast-forwards that branch
+git -C "$laptop_config" switch -q main
 assert_succeed "MISE_CONFIG_DIR='$laptop_config' mise bootstrap --adopt '$config?ref=main' --update --yes --only task"
 assert "git -C '$laptop_config' symbolic-ref HEAD" "refs/heads/main"
 assert "cat ~/adopted-branch" "main"
-
-# switching never replaces an ignored local file with one the branch tracks
-echo local >"$laptop_config/notes.txt"
-assert_fail "MISE_CONFIG_DIR='$laptop_config' mise bootstrap --adopt '$config?ref=notes' --update --yes --only task"
-assert "cat '$laptop_config/notes.txt'" "local"
-assert "git -C '$laptop_config' symbolic-ref HEAD" "refs/heads/main"
-
-# a local branch that is behind is fast-forwarded before the switch, so a
-# refused switch leaves the checkout where it was
-git -C "$work" switch -q laptop
-echo tracked >"$work/notes.txt"
-git -C "$work" add -f notes.txt
-git -C "$work" commit -qm 'test: laptop tracks notes'
-git -C "$work" switch -q main
-git -C "$work" push -q "$config" refs/heads/laptop:refs/heads/laptop
-assert_fail "MISE_CONFIG_DIR='$laptop_config' mise bootstrap --adopt '$config?ref=laptop' --update --yes --only task"
-assert "git -C '$laptop_config' symbolic-ref HEAD" "refs/heads/main"
-assert "cat '$laptop_config/notes.txt'" "local"
-
-# without the ignored file, the behind branch moves to origin's commit
-rm "$laptop_config/notes.txt"
-assert_succeed "MISE_CONFIG_DIR='$laptop_config' mise bootstrap --adopt '$config?ref=laptop' --update --yes --only task"
-assert "git -C '$laptop_config' symbolic-ref HEAD" "refs/heads/laptop"
-assert "cat '$laptop_config/notes.txt'" "tracked"
-
-# local commits on the requested branch are kept
-git -C "$laptop_config" -c user.name=Test -c user.email=test@example.invalid commit -q --allow-empty -m 'test: local change'
-local_commit=$(git -C "$laptop_config" rev-parse HEAD)
-git -C "$laptop_config" switch -q main
-assert_succeed "MISE_CONFIG_DIR='$laptop_config' mise bootstrap --adopt '$config?ref=laptop' --update --yes --only task"
-assert "git -C '$laptop_config' rev-parse HEAD" "$local_commit"
-
-# a branch another worktree has checked out is refused and left alone
-git -C "$laptop_config" switch -q main
-git -C "$laptop_config" worktree add -q "$PWD/laptop-worktree" laptop
-assert_fail "MISE_CONFIG_DIR='$laptop_config' mise bootstrap --adopt '$config?ref=laptop' --update --yes --only task"
-assert "git -C '$laptop_config' symbolic-ref HEAD" "refs/heads/main"
-assert "git -C '$laptop_config' rev-parse refs/heads/laptop" "$local_commit"
-git -C "$laptop_config" worktree remove "$PWD/laptop-worktree"
 
 # a tag or a branch the repository lacks is refused before anything is cloned
 assert_fail "MISE_CONFIG_DIR='$PWD/tag-config' mise bootstrap --adopt '$config?ref=v1' --yes --only task" "is not a branch"
@@ -169,11 +127,11 @@ export PATH="$PWD/fakebin:$PATH"
 assert_succeed "mise bootstrap remote --host laptop --adopt 'file://$config?ref=laptop' --remote-mise '$binary' --only task --yes"
 assert "git -C remotes/laptop/.config/mise symbolic-ref HEAD" "refs/heads/laptop"
 assert "cat remotes/laptop/adopted-branch" "laptop"
-assert_fail "mise bootstrap remote --host laptop --adopt 'file://$config?ref=main' --remote-mise '$binary' --only task --yes" "add --update"
+assert_fail "mise bootstrap remote --host laptop --adopt 'file://$config?ref=main' --remote-mise '$binary' --only task --yes" "switch it with git"
+assert_fail "mise bootstrap remote --host laptop --adopt 'file://$config?ref=main' --remote-mise '$binary' --only task --update --yes" "switch it with git"
 assert "git -C remotes/laptop/.config/mise symbolic-ref HEAD" "refs/heads/laptop"
-assert_succeed "mise bootstrap remote --host laptop --adopt 'file://$config?ref=main' --remote-mise '$binary' --only task --update --yes"
-assert "git -C remotes/laptop/.config/mise symbolic-ref HEAD" "refs/heads/main"
-assert "cat remotes/laptop/adopted-branch" "main"
+assert_succeed "mise bootstrap remote --host laptop --adopt 'file://$config?ref=laptop' --remote-mise '$binary' --only task --update --yes"
+assert "cat remotes/laptop/adopted-branch" "laptop"
 
 assert_succeed "mise bootstrap remote --host setup --adopt 'file://$config?ref=history' --remote-mise '$binary' --only dotfiles --yes"
 assert "cat remotes/setup/.config/hypr/bindings.lua" "bind = SUPER, Q, exec, kitty"

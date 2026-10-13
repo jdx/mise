@@ -106,10 +106,10 @@ mise bootstrap --adopt 'you/mise-config?ref=laptop'
 ```
 
 The ref must be a branch, because you keep pulling and committing in the
-checkout; a tag or a commit is refused. An existing checkout on another branch
-is refused too, and `--update` switches it to the branch you name. The same
-works for a setup repository and with
-[`mise bootstrap remote`](/bootstrap/remote.html).
+checkout; a tag or a commit is refused. mise never moves an existing checkout
+to another branch: if it is on a different one, switch it with Git first.
+`--update` then fast-forwards the branch it is on. The same works for a setup
+repository and with [`mise bootstrap remote`](/bootstrap/remote.html).
 
 Cloning needs `git`, and an SSH URL such as `git@github.com:you/setup.git` also
 needs `ssh`. On a fresh machine that lacks them, mise offers to install them with

@@ -389,8 +389,9 @@ fn require_adopt_branch(url: &str, branch: &str) -> Result<()> {
     Ok(())
 }
 
-/// An existing global config checkout is used as it is unless `--update`
-/// moves it, so it must already be on the branch `?ref=` names.
+/// An existing global config checkout must already be on the branch `?ref=`
+/// names: mise only ever fast-forwards the branch a checkout is on, and never
+/// moves it to another one.
 fn require_checkout_on_branch(checkout: &Path, branch: &str) -> Result<()> {
     let mut command = Command::new("git");
     command
@@ -406,13 +407,13 @@ fn require_checkout_on_branch(checkout: &Path, branch: &str) -> Result<()> {
         .filter(|_| output.status.success())
     else {
         bail!(
-            "{} is not on a branch; add --update to switch it to {branch:?}",
+            "{} is not on a branch; switch it to {branch:?} with git, then run this again",
             checkout.display_user()
         );
     };
     if current != branch {
         bail!(
-            "{} is on branch {current:?}, not {branch:?}; add --update to switch it",
+            "{} is on branch {current:?}, not {branch:?}; switch it with git, then run this again",
             checkout.display_user()
         );
     }
@@ -2542,9 +2543,7 @@ impl Bootstrap {
         let reuse_checkout = checkout.exists() && !checkout_is_empty;
         if reuse_checkout {
             validate_bootstrap_checkout(&checkout, &url)?;
-            if !self.update
-                && let Some(branch) = adopt_branch.as_deref()
-            {
+            if let Some(branch) = adopt_branch.as_deref() {
                 require_checkout_on_branch(&checkout, branch)?;
             }
         }
@@ -5157,39 +5156,18 @@ fn bootstrap_git_succeeds<const N: usize>(checkout: &Path, args: [&str; N]) -> R
     Ok(command.status()?.success())
 }
 
-/// Whether `HEAD` is the branch `refs/heads/<name>`.
-fn bootstrap_head_is(checkout: &Path, branch: &str) -> Result<bool> {
-    let mut command = Command::new("git");
-    command
-        .arg("-C")
-        .arg(checkout)
-        .args(["symbolic-ref", "--quiet", "HEAD"]);
-    crate::git::sanitize_git_command(&mut command);
-    let output = command.output()?;
-    Ok(output.status.success() && String::from_utf8_lossy(&output.stdout).trim() == branch)
-}
-
 /// Switches to the local branch `git_ref`, creating it from `origin/<ref>` when
 /// it does not exist, even next to a same-named tag.
 fn switch_to_bootstrap_branch(checkout: &Path, git_ref: &str) -> Result<()> {
-    // an ignored local file stops the switch instead of being replaced by one
-    // the branch tracks
     let branch = format!("refs/heads/{git_ref}");
     if bootstrap_git_succeeds(checkout, ["show-ref", "--verify", "--quiet", &branch])? {
-        run_bootstrap_git(checkout, ["switch", "--no-overwrite-ignore", git_ref])
+        run_bootstrap_git(checkout, ["switch", git_ref])
     } else {
         // fully qualified so a local ref named `origin/<ref>` cannot shadow it
         let remote_branch = format!("refs/remotes/origin/{git_ref}");
         run_bootstrap_git(
             checkout,
-            [
-                "switch",
-                "--no-overwrite-ignore",
-                "--create",
-                git_ref,
-                "--track",
-                &remote_branch,
-            ],
+            ["switch", "--create", git_ref, "--track", &remote_branch],
         )
     }
 }
@@ -5242,46 +5220,11 @@ fn update_bootstrap_ref(checkout: &Path, git_ref: &str) -> Result<()> {
     let listed = String::from_utf8_lossy(&output.stdout);
     let on_origin = |name: &str| listed.lines().any(|l| l.split('\t').nth(1) == Some(name));
     if on_origin(&branch) {
+        switch_to_bootstrap_branch(checkout, git_ref)?;
         // from origin itself, whatever upstream the local branch tracks
         // fully qualified so a local ref named `origin/<ref>` cannot shadow it
         let remote_branch = format!("refs/remotes/origin/{git_ref}");
-        let ancestor = |older: &str, newer: &str| {
-            bootstrap_git_succeeds(checkout, ["merge-base", "--is-ancestor", older, newer])
-        };
-        // every move is one git command that either completes or leaves the
-        // checkout and its branches as they were; git also refuses a branch
-        // that another worktree has checked out, and an ignored local file
-        // stops it instead of being replaced by one the branch tracks
-        if bootstrap_head_is(checkout, &branch)? {
-            run_bootstrap_git(
-                checkout,
-                [
-                    "merge",
-                    "--ff-only",
-                    "--no-overwrite-ignore",
-                    &remote_branch,
-                ],
-            )
-        } else if !bootstrap_git_succeeds(checkout, ["show-ref", "--verify", "--quiet", &branch])? {
-            switch_to_bootstrap_branch(checkout, git_ref)
-        } else if ancestor(&branch, &remote_branch)? {
-            // behind or level with origin: switch to origin's commit
-            run_bootstrap_git(
-                checkout,
-                [
-                    "switch",
-                    "--no-overwrite-ignore",
-                    "-C",
-                    git_ref,
-                    &remote_branch,
-                ],
-            )
-        } else if ancestor(&remote_branch, &branch)? {
-            // ahead of origin: its local commits are kept
-            run_bootstrap_git(checkout, ["switch", "--no-overwrite-ignore", git_ref])
-        } else {
-            bail!("local branch {git_ref:?} has diverged from origin/{git_ref}")
-        }
+        run_bootstrap_git(checkout, ["merge", "--ff-only", &remote_branch])
     } else if on_origin(&tag) {
         run_bootstrap_git(checkout, ["checkout", &tag, "--"])
     } else if bootstrap_git_succeeds(checkout, ["show-ref", "--verify", "--quiet", &branch])?
