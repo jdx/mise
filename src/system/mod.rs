@@ -1345,6 +1345,7 @@ fn package_configs_from_config_files(
     merge_package_configs(config_files.values())
 }
 
+#[cfg(unix)]
 fn package_configs_from_config_files_for_target(
     config_files: &ConfigMap,
     target: &Path,
@@ -2788,31 +2789,24 @@ fn configured_snap_options(
     }
 }
 
-/// Give the snap entries of `mgrs` the `channel` and `classic` options that
-/// `target` declares or inherits, for `use`, which builds its requests without
-/// the config. Options come from the file `use` writes to rather than the
-/// merged view, so `use --global` installs what the global entry declares
-/// even when a project config sets another channel.
+/// Give the snap entries of `mgrs` the `channel` and `classic` options of the
+/// entry `use` writes, for `use`, which builds its requests without the config.
+///
+/// `use` keeps a table entry's options when `target` already declares the
+/// snap and writes a plain `"latest"` entry otherwise, so the options come
+/// from `target`'s own declaration and nothing else. Inheriting from other
+/// configs would install with options the written entry does not carry.
 pub fn attach_snap_options(
     config: &Config,
     target: &Path,
     mgrs: &mut [ManagerPackages],
 ) -> eyre::Result<()> {
-    let package_configs = if config.config_files.contains_key(target) {
-        package_configs_from_config_files_for_target(&config.config_files, target)
-    } else if target.starts_with(*crate::dirs::CONFIG) || crate::config::is_global_config(target) {
-        // A global config `use` is about to create declares nothing yet, so
-        // only the other global and system configs can apply to it.
-        merge_package_configs(
-            config
-                .config_files
-                .iter()
-                .filter(|(path, _)| crate::config::is_global_config(path))
-                .map(|(_, cf)| cf),
-        )
-    } else {
-        package_configs_from_config_files(&config.config_files)
-    };
+    let package_configs = config
+        .config_files
+        .get(target)
+        .and_then(|cf| cf.bootstrap_config())
+        .map(|bootstrap| bootstrap.packages)
+        .unwrap_or_default();
     for mp in mgrs.iter_mut().filter(|mp| mp.manager.name() == "snap") {
         let mut packages = BTreeMap::new();
         for request in &mp.requests {
