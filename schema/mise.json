@@ -7750,6 +7750,24 @@
                 }
               }
             },
+            "login_items": {
+              "type": "object",
+              "description": "applications to open at login (System Settings > General > Login Items & Extensions)",
+              "properties": {
+                "apps": {
+                  "type": "array",
+                  "description": "application bundles to open at login: absolute or `~/` paths ending in `.app`",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "exclusive": {
+                  "type": "boolean",
+                  "description": "also remove login items that are not declared (default: false, so apps that register themselves are left alone)"
+                }
+              },
+              "additionalProperties": false
+            },
             "launchd": {
               "type": "object",
               "description": "macOS launchd bootstrap config",

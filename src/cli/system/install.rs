@@ -174,6 +174,56 @@ pub(crate) async fn apply_defaults_with_report(
     })
 }
 
+/// Apply `[bootstrap.macos.login_items]`: add the declared apps that are not
+/// login items and, with `exclusive`, remove the undeclared ones. Inert
+/// off-macOS.
+pub(crate) async fn apply_login_items(
+    request: system::login_items::LoginItemsRequest,
+    dry_run: bool,
+    yes: bool,
+) -> Result<BootstrapApplyReport> {
+    use crate::system::login_items;
+    if request.is_empty() {
+        return Ok(BootstrapApplyReport::default());
+    }
+    if !login_items::is_available() {
+        let reason = login_items::unavailable_reason();
+        debug!("login items: skipping, {reason}");
+        return Ok(BootstrapApplyReport {
+            needs_follow_up: false,
+            skipped_reason: Some(reason),
+        });
+    }
+    let targets: Vec<_> = login_items::status(&request)
+        .await?
+        .into_iter()
+        .filter(|s| s.state.needs_apply())
+        .collect();
+    if targets.is_empty() {
+        info!("login items: already set");
+        return Ok(BootstrapApplyReport::default());
+    }
+    let list = targets
+        .iter()
+        .map(|s| match s.state {
+            login_items::LoginItemState::Undeclared => format!("remove {}", s.path.display()),
+            _ => format!("add {}", s.path.display()),
+        })
+        .collect::<Vec<_>>();
+    if !dry_run && !yes && console::user_attended_stderr() {
+        let msg = format!("login items: {}?", list.join(", "));
+        if !crate::ui::prompt::confirm(msg)?.is_yes() {
+            info!("login items: skipped");
+            return Ok(BootstrapApplyReport::default());
+        }
+    }
+    login_items::apply(&targets, dry_run).await?;
+    if !dry_run {
+        info!("login items: {}", list.join(", "));
+    }
+    Ok(BootstrapApplyReport::default())
+}
+
 /// Apply `[bootstrap.user].login_shell` when it differs for `mise bootstrap`.
 /// Inert off-Unix or when `chsh` is missing.
 pub(crate) fn apply_login_shell(

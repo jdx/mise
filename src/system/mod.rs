@@ -60,6 +60,7 @@ pub mod git_prerequisites;
 pub mod history;
 pub mod hooks;
 pub mod launchd;
+pub mod login_items;
 pub mod login_shell;
 pub mod managed_files;
 pub mod packages;
@@ -272,6 +273,15 @@ impl BootstrapTomlConfig {
         });
         below(&mut self.macos.defaults_entries, shared_entries);
         fill(&mut self.macos.launchd.agents, macos.launchd.agents);
+        match (&mut self.macos.login_items, macos.login_items) {
+            (Some(own), Some(mut lower)) => {
+                lower.apps.append(&mut own.apps);
+                own.apps = lower.apps;
+                own.exclusive = own.exclusive.or(lower.exclusive);
+            }
+            (own @ None, lower) => *own = lower,
+            _ => {}
+        }
 
         or(&mut self.linux.firewall, lower.linux.firewall);
         fill(&mut self.linux.systemd.units, lower.linux.systemd.units);
@@ -500,6 +510,9 @@ pub struct BootstrapMacosTomlConfig {
     /// LaunchAgents rendered to ~/Library/LaunchAgents.
     #[serde(default)]
     pub launchd: BootstrapMacosLaunchdTomlConfig,
+    /// `[bootstrap.macos.login_items]`: applications to open at login.
+    #[serde(default)]
+    pub login_items: Option<login_items::LoginItemsTomlConfig>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -1362,6 +1375,57 @@ pub fn defaults_from_config(config: &Config) -> Vec<DefaultsRequest> {
         }
     }
     out
+}
+
+/// Aggregate `[bootstrap.macos.login_items]` across all loaded config files.
+///
+/// Apps union global -> local. Within one config hierarchy `exclusive` takes the
+/// most local value that sets it; across independent selected roots it applies
+/// only when every root that sets it says true. Invalid entries warn and are
+/// skipped.
+pub fn login_items_from_config(config: &Config) -> login_items::LoginItemsRequest {
+    let mut apps: Vec<String> = vec![];
+    let mut declared: Vec<bool> = vec![];
+    for config_files in config.bootstrap_config_maps() {
+        // config_files is ordered local -> global; reverse for global -> local
+        let mut map_exclusive = None;
+        for cf in config_files.values().rev() {
+            if let Some(sys) = cf.bootstrap_config()
+                && let Some(items) = sys.macos.login_items
+            {
+                apps.extend(items.apps);
+                map_exclusive = items.exclusive.or(map_exclusive);
+            }
+        }
+        declared.extend(map_exclusive);
+    }
+    // independent roots must all agree before undeclared items are removed
+    let mut exclusive = !declared.is_empty() && declared.iter().all(|e| *e);
+    let mut valid = vec![];
+    let mut invalid = false;
+    let mut seen = std::collections::HashSet::new();
+    for app in apps {
+        match login_items::app_path(&app) {
+            Ok(path) => {
+                if seen.insert(crate::file::canonicalize_or_self(&path)) {
+                    valid.push(path);
+                }
+            }
+            Err(err) => {
+                warn!("{err}");
+                invalid = true;
+            }
+        }
+    }
+    if invalid && exclusive {
+        // an incomplete declaration must not decide which items are undeclared
+        warn!("[bootstrap.macos.login_items]: ignoring exclusive because an entry is invalid");
+        exclusive = false;
+    }
+    login_items::LoginItemsRequest {
+        apps: valid,
+        exclusive,
+    }
 }
 
 /// Aggregate `[bootstrap.macos.launchd.agents]` across all loaded config files.
@@ -2748,6 +2812,24 @@ mod tests {
 
     fn tv(s: &str) -> toml::Value {
         s.parse().unwrap()
+    }
+
+    #[test]
+    fn merge_below_combines_login_items() {
+        let items = |apps: &[&str], exclusive| {
+            Some(login_items::LoginItemsTomlConfig {
+                apps: apps.iter().map(|a| a.to_string()).collect(),
+                exclusive,
+            })
+        };
+        let mut own = BootstrapTomlConfig::default();
+        own.macos.login_items = items(&["/Applications/B.app"], None);
+        let mut lower = BootstrapTomlConfig::default();
+        lower.macos.login_items = items(&["/Applications/A.app"], Some(true));
+        own.merge_below(lower);
+        let merged = own.macos.login_items.unwrap();
+        assert_eq!(merged.apps, ["/Applications/A.app", "/Applications/B.app"]);
+        assert_eq!(merged.exclusive, Some(true));
     }
 
     #[cfg(unix)]

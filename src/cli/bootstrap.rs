@@ -2211,6 +2211,15 @@ impl Bootstrap {
                     ));
                 }
             }
+            let login_items = system::login_items_from_config(&config);
+            if !login_items.is_empty() {
+                info!("bootstrap: login items");
+                let report =
+                    install::apply_login_items(login_items, self.dry_run, self.yes).await?;
+                if let Some(reason) = report.skipped_reason {
+                    follow_up.add_skipped(format!("macOS login items: skipped ({reason})"));
+                }
+            }
             self.run_hooks(&config, &hooks, BootstrapHookPhase::PostDefaults)
                 .await?;
         }
@@ -4614,6 +4623,7 @@ impl BootstrapStatus {
         config: &Arc<Config>,
         report: &mut BootstrapStatusReport,
     ) -> Result<()> {
+        self.collect_login_items(config, report).await?;
         let defaults = system::defaults_from_config(config);
         if defaults.is_empty() {
             report
@@ -4666,6 +4676,55 @@ impl BootstrapStatus {
         report.json.insert(
             "macos_defaults".to_string(),
             json!({ "available": true, "entries": json_entries }),
+        );
+        Ok(())
+    }
+
+    async fn collect_login_items(
+        &self,
+        config: &Arc<Config>,
+        report: &mut BootstrapStatusReport,
+    ) -> Result<()> {
+        use crate::system::login_items;
+        let request = system::login_items_from_config(config);
+        if request.is_empty() {
+            report
+                .json
+                .insert("macos_login_items".to_string(), json!({ "entries": [] }));
+            return Ok(());
+        }
+        if !login_items::is_available() {
+            let reason = login_items::unavailable_reason();
+            for app in &request.apps {
+                report.row(
+                    "login items",
+                    app.display().to_string(),
+                    "",
+                    format!("skipped ({reason})"),
+                    false,
+                );
+            }
+            report.json.insert(
+                "macos_login_items".to_string(),
+                json!({ "available": false, "reason": reason }),
+            );
+            return Ok(());
+        }
+        let mut json_entries = vec![];
+        for s in login_items::status(&request).await? {
+            let path = s.path.display().to_string();
+            report.row(
+                "login items",
+                path.clone(),
+                "",
+                s.state.as_str(),
+                s.state.needs_apply(),
+            );
+            json_entries.push(json!({ "path": path, "state": s.state.as_str() }));
+        }
+        report.json.insert(
+            "macos_login_items".to_string(),
+            json!({ "available": true, "exclusive": request.exclusive, "entries": json_entries }),
         );
         Ok(())
     }
@@ -5655,7 +5714,14 @@ impl BootstrapMacosDefaultsApply {
             self.dry_run,
             self.yes,
         )
-        .await
+        .await?;
+        install::apply_login_items(
+            system::login_items_from_config(&config),
+            self.dry_run,
+            self.yes,
+        )
+        .await?;
+        Ok(())
     }
 }
 
