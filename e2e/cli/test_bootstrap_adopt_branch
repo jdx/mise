@@ -39,6 +39,13 @@ assert "git -C '$laptop_config' symbolic-ref --short HEAD" "laptop"
 assert "git -C '$laptop_config' remote get-url origin" "$config"
 assert "cat ~/adopted-branch" "laptop"
 
+# an existing checkout on another branch is refused until --update switches it
+assert_fail "MISE_CONFIG_DIR='$laptop_config' mise bootstrap --adopt '$config?ref=main' --yes --only task" "add --update"
+assert "git -C '$laptop_config' symbolic-ref --short HEAD" "laptop"
+assert_succeed "MISE_CONFIG_DIR='$laptop_config' mise bootstrap --adopt '$config?ref=main' --update --yes --only task"
+assert "git -C '$laptop_config' symbolic-ref --short HEAD" "main"
+assert "cat ~/adopted-branch" "main"
+
 # a tag or a branch the repository lacks is refused before anything is cloned
 assert_fail "MISE_CONFIG_DIR='$PWD/tag-config' mise bootstrap --adopt '$config?ref=v1' --yes --only task" "is not a branch"
 assert_fail "MISE_CONFIG_DIR='$PWD/missing-config' mise bootstrap --adopt '$config?ref=missing' --yes --only task" "is not a branch"

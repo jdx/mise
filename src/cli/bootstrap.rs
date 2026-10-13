@@ -363,6 +363,13 @@ fn parse_adopt_source(value: &str) -> Result<(String, Option<String>)> {
 fn require_adopt_branch(url: &str, branch: &str) -> Result<()> {
     let head = format!("refs/heads/{branch}");
     let mut command = Command::new("git");
+    // the same credentials the setup repository's history fetch uses
+    command.args([
+        "-c",
+        &crate::git::github_credential_config("github.com"),
+        "-c",
+        &crate::git::github_credential_config("github.com:443"),
+    ]);
     command.args(["ls-remote", "--", url, &head]);
     crate::git::sanitize_git_command(&mut command);
     let output = command.output()?;
@@ -378,6 +385,32 @@ fn require_adopt_branch(url: &str, branch: &str) -> Result<()> {
         .any(|l| l.split('\t').nth(1) == Some(head.as_str()))
     {
         bail!("--adopt takes a branch, and {branch:?} is not a branch of {url}");
+    }
+    Ok(())
+}
+
+/// An existing global config checkout is used as it is unless `--update`
+/// moves it, so it must already be on the branch `?ref=` names.
+fn require_checkout_on_branch(checkout: &Path, branch: &str) -> Result<()> {
+    let mut command = Command::new("git");
+    command
+        .arg("-C")
+        .arg(checkout)
+        .args(["symbolic-ref", "--quiet", "--short", "HEAD"]);
+    crate::git::sanitize_git_command(&mut command);
+    let output = command.output()?;
+    let current = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    if !output.status.success() || current.is_empty() {
+        bail!(
+            "{} is not on a branch; add --update to switch it to {branch:?}",
+            checkout.display_user()
+        );
+    }
+    if current != branch {
+        bail!(
+            "{} is on branch {current:?}, not {branch:?}; add --update to switch it",
+            checkout.display_user()
+        );
     }
     Ok(())
 }
@@ -2505,6 +2538,11 @@ impl Bootstrap {
         let reuse_checkout = checkout.exists() && !checkout_is_empty;
         if reuse_checkout {
             validate_bootstrap_checkout(&checkout, &url)?;
+            if !self.update
+                && let Some(branch) = adopt_branch.as_deref()
+            {
+                require_checkout_on_branch(&checkout, branch)?;
+            }
         }
         // The clone or pull changes the config checkout before the child
         // process records the bootstrap itself, so it is a generation of its
