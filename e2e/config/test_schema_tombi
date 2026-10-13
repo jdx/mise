@@ -28,7 +28,7 @@ strict = true
 
 [[schemas]]
 path = "file://$SCHEMA_PATH"
-include = ["mise.toml", "mise-age.toml", "mise-env-directives.toml", "mise-os.toml", "mise-vars.toml", "mise-backend-options.toml", "mise-task-array.toml"]
+include = ["mise.toml", "mise-age.toml", "mise-env-directives.toml", "mise-os.toml", "mise-vars.toml", "mise-vars-directives.toml", "mise-backend-options.toml", "mise-task-array.toml"]
 
 [[schemas]]
 path = "file://$TASK_SCHEMA_PATH"
@@ -199,6 +199,13 @@ _.file = ".env"
 _.source = ["env.sh"]
 TOML
 
+# The directive forms `[env]` accepts: a table, and an array that holds tables.
+cat >"$HOME/workdir/mise-vars-directives.toml" <<'TOML'
+[vars]
+_.file = { path = ".env", redact = true }
+_.source = [{ path = "env.sh" }, "more.sh"]
+TOML
+
 cat >"$HOME/workdir/mise-os.toml" <<'TOML'
 [tools]
 node = { version = "latest", os = ["linux", "macos/arm64", "darwin/aarch64", "win/amd64"], install_env = { KEEP = "value", REMOVE = false, RETRIES = 2 }, backend_options = { nested = true } }
@@ -252,6 +259,7 @@ assert_succeed "$TOMBI_LINT mise.toml"
 assert_succeed "$TOMBI_LINT mise-age.toml"
 assert_succeed "$TOMBI_LINT mise-env-directives.toml"
 assert_succeed "$TOMBI_LINT mise-vars.toml"
+assert_succeed "$TOMBI_LINT mise-vars-directives.toml"
 assert_succeed "$TOMBI_LINT mise-os.toml"
 assert_succeed "$TOMBI_LINT mise-task-os.toml"
 assert_succeed "$TOMBI_LINT mise-task-deps.toml"
