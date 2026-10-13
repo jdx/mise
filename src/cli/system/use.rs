@@ -118,7 +118,6 @@ impl SystemUse {
         // manager doesn't get written
         let mut mgrs = system::packages_from_requests(by_mgr)?;
         system::attach_apt_sources(&config, &mut mgrs);
-        system::attach_snap_options(&config, &mut mgrs)?;
 
         let (existing_global_paths, has_new_global_entries) =
             self.global_write_paths(&config, &entries)?;
@@ -133,6 +132,7 @@ impl SystemUse {
             existing_global_paths,
             has_new_global_entries,
         })?;
+        system::attach_snap_options(&config, &path, &mut mgrs)?;
         if self.dry_run {
             for (key, version) in &entries {
                 miseprintln!("{}: \"{key}\" = \"{version}\"", display_path(&path));

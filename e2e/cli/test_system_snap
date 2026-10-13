@@ -77,6 +77,16 @@ assert_succeed "test ! -s '$HOME/snap-log'"
 grep -v '^node ' "$HOME/snap-state" >"$HOME/snap-state.new"
 mv "$HOME/snap-state.new" "$HOME/snap-state"
 assert_contains "mise bootstrap packages use snap:node --dry-run" "snap install --channel=22/stable --classic node"
+
+# use --global installs what the global entry declares, not the project's.
+touch "$MISE_CONFIG_DIR/config.toml"
+cp "$MISE_CONFIG_DIR/config.toml" "$HOME/global-config.bak"
+cat >>"$MISE_CONFIG_DIR/config.toml" <<'TOML'
+[bootstrap.packages]
+"snap:node" = { channel = "20/stable", classic = true }
+TOML
+assert_contains "mise bootstrap packages use --global snap:node --dry-run" "snap install --channel=20/stable --classic node"
+mv "$HOME/global-config.bak" "$MISE_CONFIG_DIR/config.toml"
 echo 'node      22.11.0   9257  22/stable       iojs**      classic' >>"$HOME/snap-state"
 
 # Upgrade refreshes now, keeping each declared channel.

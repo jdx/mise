@@ -158,10 +158,6 @@ async fn preflight_system_deps_inner(
     if yes {
         crate::system::attach_apt_sources(config, &mut mgrs);
     }
-    // A snap the config also declares installs from its declared channel.
-    if let Err(err) = crate::system::attach_snap_options(config, &mut mgrs) {
-        warn!("[bootstrap.packages]: {err}");
-    }
     let driver_opts = crate::system::driver::DriverOpts {
         manager: None,
         explicit: false,

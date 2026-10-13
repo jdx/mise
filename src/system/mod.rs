@@ -1345,7 +1345,6 @@ fn package_configs_from_config_files(
     merge_package_configs(config_files.values())
 }
 
-#[cfg(unix)]
 fn package_configs_from_config_files_for_target(
     config_files: &ConfigMap,
     target: &Path,
@@ -2789,11 +2788,18 @@ fn configured_snap_options(
     }
 }
 
-/// Give the snap entries of `mgrs` the `channel` and `classic` options their
-/// `[bootstrap.packages]` entries declare, for callers that build requests
-/// without the config.
-pub fn attach_snap_options(config: &Config, mgrs: &mut [ManagerPackages]) -> eyre::Result<()> {
-    let package_configs = package_configs_from_config_files(&config.config_files);
+/// Give the snap entries of `mgrs` the `channel` and `classic` options that
+/// `target` declares or inherits, for `use`, which builds its requests without
+/// the config. Options come from the file `use` writes to rather than the
+/// merged view, so `use --global` installs what the global entry declares
+/// even when a project config sets another channel.
+pub fn attach_snap_options(
+    config: &Config,
+    target: &Path,
+    mgrs: &mut [ManagerPackages],
+) -> eyre::Result<()> {
+    let package_configs =
+        package_configs_from_config_files_for_target(&config.config_files, target);
     for mp in mgrs.iter_mut().filter(|mp| mp.manager.name() == "snap") {
         let mut packages = BTreeMap::new();
         for request in &mp.requests {
