@@ -3594,6 +3594,31 @@ global_only = true
 optional = true
 type = "Path"
 
+[system_packages.elevate_with]
+description = "Command mise uses to get root instead of `sudo`, such as `run0` or `doas`."
+docs = """
+When unset, mise uses the first of `sudo`, `run0` and `doas` found on `PATH`,
+so hosts without sudo, such as secureblue (`run0`) or OpenBSD-style setups
+(`doas`), work with no configuration. Set it to pin one:
+
+```toml
+[settings]
+system_packages.elevate_with = "run0"
+```
+
+The command is run as `<command> <program> <args>...`. Without a terminal,
+mise checks for passwordless sudo with `sudo -n true`, and runs the command
+with `doas -n` or `run0 --no-ask-password` so it fails instead of prompting;
+any other command is used only in an interactive terminal. A `doas` rule that
+restricts commands must also allow `env`, which mise uses to pass variables
+such as `DEBIAN_FRONTEND` to apt. [`system_packages.sudo`](#system_packages.sudo) still turns
+elevation off entirely. See
+[Root privileges and sudo](/bootstrap/packages/#sudo).
+"""
+env = "MISE_SYSTEM_PACKAGES_ELEVATE_WITH"
+optional = true
+type = "String"
+
 [system_packages.managers]
 description = "Package managers that mise may use for `[bootstrap.packages]` and missing plugin dependencies."
 docs = """

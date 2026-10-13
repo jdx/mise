@@ -27,6 +27,43 @@ pub(crate) fn is_root() -> bool {
     }
 }
 
+/// The command used to elevate: `system_packages.elevate_with` when set,
+/// otherwise the first of `sudo`, `run0` and `doas` on `PATH`. Falls back to
+/// `sudo` when none is installed so errors name the conventional tool.
+pub(crate) fn elevator() -> String {
+    if let Some(cmd) = Settings::get()
+        .system_packages
+        .elevate_with
+        .as_deref()
+        .map(str::trim)
+        .filter(|cmd| !cmd.is_empty())
+    {
+        return cmd.to_string();
+    }
+    ["sudo", "run0", "doas"]
+        .into_iter()
+        .find(|cmd| crate::file::which(cmd).is_some())
+        .unwrap_or("sudo")
+        .to_string()
+}
+
+/// The flag that makes doas or run0 fail instead of prompting. mise adds it to
+/// the real command rather than probing with `true`, because a rule may allow
+/// the requested command without allowing anything else.
+fn noninteractive_flag(elevator: &str) -> Option<&'static str> {
+    match std::path::Path::new(elevator).file_name()?.to_str()? {
+        "doas" => Some("-n"),
+        "run0" => Some("--no-ask-password"),
+        _ => None,
+    }
+}
+
+fn is_sudo(elevator: &str) -> bool {
+    std::path::Path::new(elevator)
+        .file_name()
+        .is_some_and(|name| name == "sudo")
+}
+
 /// The argv that [`run`] would execute, including the `sudo` prefix when
 /// elevation would be used. For logging and `--dry-run`.
 pub(crate) fn argv(program: &str, args: &[String]) -> Vec<String> {
@@ -38,15 +75,64 @@ pub(crate) fn argv_with_env(
     args: &[String],
     envs: &[(String, String)],
 ) -> Vec<String> {
-    let mut argv = vec![];
     if !is_root() && Settings::get().system_packages.sudo {
-        argv.push("sudo".to_string());
-        // sudo resets the environment by default; pass env vars through
-        // `env` so they reach the elevated command
-        if !envs.is_empty() {
-            argv.push("env".to_string());
-            argv.extend(envs.iter().map(|(k, v)| format!("{k}={v}")));
-        }
+        build_argv(program, args, envs, !console::user_attended_stderr())
+    } else {
+        std::iter::once(program.to_string())
+            .chain(args.iter().cloned())
+            .collect()
+    }
+}
+
+/// Quote words for a shell, leaving `NAME=value` assignments and `--opt=value`
+/// options readable by quoting only the value.
+fn join_quoted<S: AsRef<str>>(words: &[S]) -> String {
+    words
+        .iter()
+        .map(|word| {
+            let word = word.as_ref();
+            match word.split_once('=') {
+                Some((name, value))
+                    if !name.is_empty()
+                        && name
+                            .chars()
+                            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-')) =>
+                {
+                    format!("{name}={}", shell_words::quote(value))
+                }
+                _ => shell_words::quote(word).into_owned(),
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+/// The command to give a user who must run it themselves: always elevated, and
+/// without the no-prompt flag so a password can be typed.
+fn manual_command(program: &str, args: &[String], envs: &[(String, String)]) -> String {
+    join_quoted(&build_argv(program, args, envs, false))
+}
+
+fn build_argv(
+    program: &str,
+    args: &[String],
+    envs: &[(String, String)],
+    noninteractive: bool,
+) -> Vec<String> {
+    let elevator = elevator();
+    let flag = noninteractive_flag(&elevator);
+    let is_run0 = flag == Some("--no-ask-password");
+    let mut argv = vec![elevator];
+    argv.extend(flag.filter(|_| noninteractive).map(str::to_string));
+    if is_run0 {
+        // run0 passes env vars itself, so the authorized command stays the
+        // program rather than `env`
+        argv.extend(envs.iter().map(|(k, v)| format!("--setenv={k}={v}")));
+    } else if !envs.is_empty() {
+        // sudo and doas reset the environment by default; pass env vars
+        // through `env` so they reach the elevated command
+        argv.push("env".to_string());
+        argv.extend(envs.iter().map(|(k, v)| format!("{k}={v}")));
     }
     argv.push(program.to_string());
     argv.extend(args.iter().cloned());
@@ -65,6 +151,7 @@ pub(crate) fn subprocess_mode() -> &'static str {
     if is_root() {
         "interactive"
     } else if !Settings::get().system_packages.sudo || crate::file::which("sudo").is_none() {
+        // the brew cask shim only knows how to call sudo
         "deny"
     } else if console::user_attended_stderr() {
         "interactive"
@@ -104,27 +191,22 @@ pub(crate) fn run(program: &str, args: &[String], envs: &[(String, String)]) -> 
     let argv = argv_with_env(program, args, envs);
     // the copy-pasteable fallback must include the env vars the automated
     // path would have set (e.g. DEBIAN_FRONTEND=noninteractive)
-    let mut manual = vec!["sudo".to_string()];
-    if !envs.is_empty() {
-        manual.push("env".to_string());
-        manual.extend(envs.iter().map(|(k, v)| format!("{k}={v}")));
-    }
-    manual.push(program.to_string());
-    manual.extend(args.iter().cloned());
-    let manual_cmd = manual.join(" ");
+    let manual_cmd = manual_command(program, args, envs);
     ensure_elevation_available(&manual_cmd)?;
-    let _progress_pause = pause_progress_for_child();
-    info!("$ {}", argv.join(" "));
-    let mut cmd = CmdLineRunner::new(&argv[0]);
-    for arg in &argv[1..] {
-        cmd = cmd.arg(arg);
-    }
-    for (k, v) in envs {
-        cmd = cmd.env(k, v);
-    }
-    // inherited stdio: sudo password prompts and apt progress go straight to
-    // the user's terminal
-    cmd.raw(true).execute()
+    attempt(&manual_cmd, || {
+        let _progress_pause = pause_progress_for_child();
+        info!("$ {}", argv.join(" "));
+        let mut cmd = CmdLineRunner::new(&argv[0]);
+        for arg in &argv[1..] {
+            cmd = cmd.arg(arg);
+        }
+        for (k, v) in envs {
+            cmd = cmd.env(k, v);
+        }
+        // inherited stdio: sudo password prompts and apt progress go straight to
+        // the user's terminal
+        cmd.raw(true).execute()
+    })
 }
 
 /// Run `program args...` elevated, with the child's working directory bound to
@@ -151,35 +233,33 @@ pub(crate) fn run_in_dir<Fd: std::os::fd::AsFd>(
     use eyre::WrapErr;
 
     let argv = argv_with_env(program, args, &[]);
-    let manual_cmd = std::iter::once("sudo".to_string())
-        .chain(std::iter::once(program.to_string()))
-        .chain(args.iter().cloned())
-        .collect::<Vec<_>>()
-        .join(" ");
+    let manual_cmd = manual_command(program, args, &[]);
     ensure_elevation_available(&manual_cmd)?;
-    let _progress_pause = pause_progress_for_child();
-    info!("$ {}", argv.join(" "));
-    let raw = dir.as_fd().as_raw_fd();
-    let mut cmd = Command::new(&argv[0]);
-    cmd.args(&argv[1..]);
-    // SAFETY: `fchdir` is async-signal-safe and only alters the child's working
-    // directory. `raw` stays open in the parent across the spawn, and CLOEXEC
-    // (if set) only takes effect at exec, after pre_exec has run.
-    unsafe {
-        cmd.pre_exec(move || {
-            if nix::libc::fchdir(raw) == -1 {
-                return Err(std::io::Error::last_os_error());
-            }
-            Ok(())
-        });
-    }
-    let status = cmd
-        .status()
-        .wrap_err_with(|| format!("failed to run {}", argv.join(" ")))?;
-    if !status.success() {
-        bail!("{} failed", argv.join(" "));
-    }
-    Ok(())
+    attempt(&manual_cmd, || {
+        let _progress_pause = pause_progress_for_child();
+        info!("$ {}", argv.join(" "));
+        let raw = dir.as_fd().as_raw_fd();
+        let mut cmd = Command::new(&argv[0]);
+        cmd.args(&argv[1..]);
+        // SAFETY: `fchdir` is async-signal-safe and only alters the child's working
+        // directory. `raw` stays open in the parent across the spawn, and CLOEXEC
+        // (if set) only takes effect at exec, after pre_exec has run.
+        unsafe {
+            cmd.pre_exec(move || {
+                if nix::libc::fchdir(raw) == -1 {
+                    return Err(std::io::Error::last_os_error());
+                }
+                Ok(())
+            });
+        }
+        let status = cmd
+            .status()
+            .wrap_err_with(|| format!("failed to run {}", argv.join(" ")))?;
+        if !status.success() {
+            bail!("{} failed", argv.join(" "));
+        }
+        Ok(())
+    })
 }
 
 /// Run an elevated command and capture its output.
@@ -189,23 +269,37 @@ pub(crate) fn run_in_dir<Fd: std::os::fd::AsFd>(
 /// callers retain [`ensure_elevation_available`]'s fail-fast `sudo -n` check.
 pub(crate) fn output(program: &str, args: &[String], envs: &[(String, String)]) -> Result<Output> {
     let argv = argv_with_env(program, args, envs);
-    let manual_cmd = std::iter::once("sudo".to_string())
-        .chain((!envs.is_empty()).then_some("env".to_string()))
-        .chain(envs.iter().map(|(key, value)| format!("{key}={value}")))
-        .chain(std::iter::once(program.to_string()))
-        .chain(args.iter().cloned())
-        .collect::<Vec<_>>()
-        .join(" ");
+    let manual_cmd = manual_command(program, args, envs);
     ensure_elevation_available(&manual_cmd)?;
-    if !is_root() && Settings::get().system_packages.sudo && console::user_attended_stderr() {
+    let interactive =
+        !is_root() && Settings::get().system_packages.sudo && console::user_attended_stderr();
+    if interactive && is_sudo(&argv[0]) {
         let _progress_pause = pause_progress_for_child();
-        CmdLineRunner::new("sudo").arg("-v").raw(true).execute()?;
+        CmdLineRunner::new(&argv[0]).arg("-v").raw(true).execute()?;
     }
+    // doas and run0 have no `-v`; they prompt on the terminal while the command
+    // runs, so keep the progress display off it and give them stdin
+    let _progress_pause = (interactive && !is_sudo(&argv[0]))
+        .then(pause_progress_for_child)
+        .flatten();
     info!("$ {}", argv.join(" "));
-    Ok(Command::new(&argv[0])
+    let mut cmd = Command::new(&argv[0]);
+    if interactive && !is_sudo(&argv[0]) {
+        cmd.stdin(Stdio::inherit());
+    }
+    let mut output = cmd
         .args(&argv[1..])
         .envs(envs.iter().map(|(key, value)| (key, value)))
-        .output()?)
+        .output()?;
+    if !output.status.success()
+        && let Some(hint) = manual_hint(&manual_cmd)
+    {
+        // callers report the captured stderr, so put the retry hint there
+        output
+            .stderr
+            .extend_from_slice(format!("\n{hint}").as_bytes());
+    }
+    Ok(output)
 }
 
 /// Run one elevated helper with its private payload on stdin.
@@ -277,12 +371,72 @@ pub(crate) fn run_with_input_output(
     Ok(output.stdout)
 }
 
-/// Verify that a subprocess which performs its own sudo elevation can do so
+fn attempt<T>(manual_cmd: &str, f: impl FnOnce() -> Result<T>) -> Result<T> {
+    f().map_err(|err| with_manual_hint(err, manual_cmd))
+}
+
+/// doas and run0 get a no-prompt flag on the real command when mise has no TTY,
+/// so a password requirement surfaces as the command failing. Say how to retry.
+fn manual_hint(manual_cmd: &str) -> Option<String> {
+    let elevator = elevator();
+    if is_root() || console::user_attended_stderr() || noninteractive_flag(&elevator).is_none() {
+        return None;
+    }
+    Some(format!(
+        "if {elevator} needs a password, run manually:\n  {manual_cmd}"
+    ))
+}
+
+fn with_manual_hint(err: eyre::Report, manual_cmd: &str) -> eyre::Report {
+    match manual_hint(manual_cmd) {
+        Some(hint) => err.wrap_err(hint),
+        None => err,
+    }
+}
+
+/// `manual_cmd` without its elevator, for running as root. run0's `--setenv`
+/// options become the `env` prefix a root shell understands.
+fn root_fallback(manual_cmd: &str, elevator: &str) -> String {
+    // keep the command untouched if it does not parse as shell words
+    let Ok(mut words) = shell_words::split(manual_cmd) else {
+        return manual_cmd.to_string();
+    };
+    if words.first().is_some_and(|word| word == elevator) {
+        words.remove(0);
+    }
+    let split = words
+        .iter()
+        .position(|w| !w.starts_with("--setenv="))
+        .unwrap_or(words.len());
+    let (envs, tail) = words.split_at(split);
+    let tail = join_quoted(tail);
+    if envs.is_empty() {
+        tail
+    } else {
+        let envs = envs.iter().map(|w| w.trim_start_matches("--setenv="));
+        format!("env {} {tail}", join_quoted(&envs.collect::<Vec<_>>()))
+    }
+}
+
+/// Verify that the elevation command mise is configured to use can run
 /// without violating mise's elevation policy or hanging without a TTY.
 pub(crate) fn ensure_elevation_available(manual_cmd: &str) -> Result<()> {
+    let elevator = elevator();
     check_elevation(
+        &elevator,
         &format!("Run manually:\n  {manual_cmd}"),
-        &format!("Run as root:\n  {}", manual_cmd.trim_start_matches("sudo ")),
+        &format!("Run as root:\n  {}", root_fallback(manual_cmd, &elevator)),
+    )
+}
+
+/// Like [`ensure_elevation_available`] for a subprocess that calls `sudo`
+/// itself and never sees `system_packages.elevate_with`, such as an AUR
+/// helper. Only `sudo` is checked, because only `sudo` will be used.
+pub(crate) fn ensure_sudo_available(manual_cmd: &str) -> Result<()> {
+    check_elevation(
+        "sudo",
+        &format!("Run manually:\n  {manual_cmd}"),
+        &format!("Run as root:\n  {manual_cmd}"),
     )
 }
 
@@ -292,30 +446,35 @@ pub(crate) fn ensure_elevation_available(manual_cmd: &str) -> Result<()> {
 fn ensure_stdin_elevation_available() -> Result<()> {
     const HINT: &str = "Re-run this mise command as root. The privileged helper \
         receives its plan on stdin, so it cannot be run by itself.";
-    check_elevation(HINT, HINT)
+    check_elevation(&elevator(), HINT, HINT)
 }
 
-fn check_elevation(manual_hint: &str, root_hint: &str) -> Result<()> {
+fn check_elevation(elevator: &str, manual_hint: &str, root_hint: &str) -> Result<()> {
     if is_root() {
         return Ok(());
     }
     if !Settings::get().system_packages.sudo {
         bail!("not running as root and system_packages.sudo is disabled. {manual_hint}");
     }
-    if crate::file::which("sudo").is_none() {
-        bail!("sudo not found. {root_hint}");
+    if crate::file::which(elevator).is_none() {
+        bail!("{elevator} not found. {root_hint}");
     }
     if !console::user_attended_stderr() {
-        let ok = Command::new("sudo")
-            .args(["-n", "true"])
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status()
-            .map(|status| status.success())
-            .unwrap_or(false);
+        let ok = if is_sudo(elevator) {
+            Command::new(elevator)
+                .args(["-n", "true"])
+                .stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .status()
+                .map(|status| status.success())
+                .unwrap_or(false)
+        } else {
+            // doas and run0 get a no-prompt flag on the real command instead
+            noninteractive_flag(elevator).is_some()
+        };
         if !ok {
-            bail!("sudo requires a password but no TTY is available. {manual_hint}");
+            bail!("{elevator} requires a password but no TTY is available. {manual_hint}");
         }
     }
     Ok(())
@@ -324,6 +483,35 @@ fn check_elevation(manual_hint: &str, root_hint: &str) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn root_fallback_turns_run0_setenv_into_env() {
+        assert_eq!(
+            root_fallback(
+                "run0 --setenv=A=1 --setenv=B=2 apt-get -y install x",
+                "run0"
+            ),
+            "env A=1 B=2 apt-get -y install x"
+        );
+        assert_eq!(
+            root_fallback("sudo env A=1 apt-get update", "sudo"),
+            "env A=1 apt-get update"
+        );
+        assert_eq!(
+            root_fallback("mise install --system", "sudo"),
+            "mise install --system"
+        );
+    }
+
+    #[test]
+    fn noninteractive_flag_knows_each_elevator() {
+        assert_eq!(noninteractive_flag("/usr/bin/doas"), Some("-n"));
+        assert_eq!(noninteractive_flag("run0"), Some("--no-ask-password"));
+        assert_eq!(noninteractive_flag("sudo"), None);
+        assert_eq!(noninteractive_flag("pkexec"), None);
+        assert!(is_sudo("/usr/bin/sudo"));
+        assert!(!is_sudo("run0"));
+    }
 
     /// Each elevated helper binds the guard for the rest of its body, so the
     /// renderer stays suspended until the child exits rather than only while
