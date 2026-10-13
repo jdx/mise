@@ -919,6 +919,23 @@ pub(crate) fn try_operation_lock(
     Ok(Some(lock))
 }
 
+/// Closes the records of operations that died, before a pull plans.
+///
+/// **Recovery records a dead operation's outcome as a commit**, and taking
+/// the lock to start the pull's own operation is what ran it: after the
+/// plan was made. The pull then saw that commit as saved history changing
+/// since planning and refused, so every pull after an interrupted one failed
+/// with "local saved history changed since planning". Recovering first puts
+/// the commit under the plan. A process already inside an operation, or one
+/// that cannot take the lock, has nothing it may recover; starting the
+/// operation reports a held lock as before.
+pub(crate) fn recover_before_planning(store: &Store, tracked: &TrackedSet) -> Result<()> {
+    if std::env::var_os(ENV_VAR).is_some() || lock_unpoisoned(&CURRENT).is_some() {
+        return Ok(());
+    }
+    try_operation_lock(store, tracked).map(drop)
+}
+
 fn take_operation_lock_with_wait(
     store: &Store,
     tracked: &TrackedSet,
