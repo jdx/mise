@@ -305,7 +305,8 @@ impl DnfManager {
         }
         let stdout = String::from_utf8_lossy(&output.stdout);
         let mut statuses = parse_rpm_query(&stdout, pkgs);
-        if ostree_booted() {
+        // without layering, status stays on `rpm -q` and needs no rpm-ostree
+        if layering_on(ostree_booted()) {
             apply_requests(&mut statuses, &ostree_requests().await?);
         }
         Ok(statuses)
