@@ -274,12 +274,13 @@ pub fn check_at(path: &Path, project: &str, observed: Observed<'_>) -> Result<()
 fn check_against(pin: &Pin, key: &str, project: &str, observed: Observed<'_>) -> Result<()> {
     // A pin found under another name holds the release to the repository
     // it recorded, as one found by name does. The pin's repository ID is
-    // what shows the release is that repository, so the signer is compared
-    // with it: the same workflow path, whatever the repository is called now.
+    // what shows the release is that repository. Check the certificate's
+    // source separately from its signer, which can be a shared workflow;
+    // signer continuity is still required below.
     let by_pin = match (&pin.forge, observed.forge) {
         (Some(pinned), Some(check)) => match &check.pin {
             Some(signed) => Some(
-                forge::check(
+                forge::check_source(
                     &Expected::new(project).pinned(Some(pinned)),
                     &signed.project,
                     observed.key_id,
@@ -803,6 +804,129 @@ pinned_at = "2026-09-01T00:00:00Z"
 
     fn repo(project: &str, id: &str) -> ForgePin {
         ForgePin::of(project, id)
+    }
+
+    fn shared_check(identity: &str, id: &str) -> Check {
+        let source =
+            packslip::sigstore::SourceRepository::new("https://github.com/o/r").with_id(id);
+        forge::check_source(
+            &Expected::new("github.com/o/r"),
+            "github.com/o/r",
+            identity,
+            Some("https://token.actions.githubusercontent.com"),
+            Some(&source),
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn a_shared_workflow_keeps_its_saved_pin_on_reinstall_and_update() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("pins.toml");
+        let project = "github.com/o/r";
+        let workflow = "https://github.com/o/shared/.github/workflows/release.yml";
+        let first = format!("{workflow}@refs/tags/v1");
+        let check = shared_check(&first, "42");
+        let pin = record_at(
+            &path,
+            project,
+            Observed {
+                forge: Some(&check),
+                ..observed("sigstore-oidc", &first)
+            },
+        )
+        .unwrap();
+        let saved = file::read_to_string(&path).unwrap();
+        for tag in ["v1", "v2"] {
+            let identity = format!("{workflow}@refs/tags/{tag}");
+            let check = shared_check(&identity, "42");
+            let incoming = Observed {
+                forge: Some(&check),
+                ..observed("sigstore-oidc", &identity)
+            };
+            check_at(&path, project, incoming).unwrap();
+            assert_eq!(record_at(&path, project, incoming).unwrap(), pin);
+            assert_eq!(file::read_to_string(&path).unwrap(), saved);
+        }
+        assert_eq!(pin.signer, workflow);
+        assert_eq!(pin.forge, Some(repo(project, "42")));
+    }
+
+    #[test]
+    fn a_shared_workflow_pin_still_refuses_changed_signers_and_source_ids() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("pins.toml");
+        let project = "github.com/o/r";
+        let workflow = "https://github.com/o/shared/.github/workflows/release.yml";
+        let first = format!("{workflow}@refs/tags/v1");
+        let check = shared_check(&first, "42");
+        record_at(
+            &path,
+            project,
+            Observed {
+                forge: Some(&check),
+                ..observed("sigstore-oidc", &first)
+            },
+        )
+        .unwrap();
+        let saved = file::read_to_string(&path).unwrap();
+        for (signer, id) in [
+            (
+                "https://github.com/o/other/.github/workflows/release.yml",
+                "42",
+            ),
+            (
+                "https://github.com/o/shared/.github/workflows/other.yml",
+                "42",
+            ),
+            (workflow, "43"),
+        ] {
+            let identity = format!("{signer}@refs/tags/v2");
+            let check = shared_check(&identity, id);
+            let incoming = Observed {
+                forge: Some(&check),
+                ..observed("sigstore-oidc", &identity)
+            };
+            let err = check_at(&path, project, incoming).unwrap_err().to_string();
+            if id == "42" {
+                assert!(err.contains(signer) && err.contains(workflow), "{err}");
+                assert!(err.contains("signed what mise accepted before"), "{err}");
+            } else {
+                assert!(err.contains("42") && err.contains("43"), "{err}");
+                assert!(err.contains("not from the repository mise pinned"), "{err}");
+            }
+            assert!(record_at(&path, project, incoming).is_err());
+            assert_eq!(file::read_to_string(&path).unwrap(), saved);
+        }
+    }
+
+    #[test]
+    fn a_shared_workflow_pin_requires_source_evidence_and_the_forge_issuer() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("pins.toml");
+        let project = "github.com/o/r";
+        let identity = "https://github.com/o/shared/.github/workflows/release.yml@refs/tags/v1";
+        let mut check = shared_check(identity, "42");
+        let incoming = Observed {
+            forge: Some(&check),
+            ..observed("sigstore-oidc", identity)
+        };
+        record_at(&path, project, incoming).unwrap();
+        let saved = file::read_to_string(&path).unwrap();
+        let wrong_issuer = Observed {
+            issuer: Some("https://other.example.com"),
+            ..incoming
+        };
+        assert!(check_at(&path, project, wrong_issuer).is_err());
+        assert!(record_at(&path, project, wrong_issuer).is_err());
+        check.source = None;
+        let missing_source = Observed {
+            forge: Some(&check),
+            ..observed("sigstore-oidc", identity)
+        };
+        assert!(check_at(&path, project, missing_source).is_err());
+        assert!(record_at(&path, project, missing_source).is_err());
+        assert_eq!(file::read_to_string(&path).unwrap(), saved);
     }
 
     #[test]
