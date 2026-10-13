@@ -1295,6 +1295,12 @@ pub fn sync_skills(
     if made != current {
         persist(&made)?;
     }
+    if dir.is_dir()
+        && let Err(err) =
+            crate::packslip_exclude::exclude_links(dir, made.keys().map(String::as_str), SYNC_STATE)
+    {
+        warn!("could not keep the skill links out of git: {err:#}");
+    }
     Ok(report)
 }
 
