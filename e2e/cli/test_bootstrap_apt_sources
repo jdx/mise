@@ -27,7 +27,7 @@ key = "https://example.com/key.asc"
 fingerprint = "9DC8 5822 9FC7 DD38 854A E2D8 8D81 803C 0EBF CD88"
 
 [bootstrap.packages]
-"apt:bc" = "latest"
+"apt:mise-apt-sources-test-nonexistent" = "latest"
 EOF
 
 mise bootstrap packages apply --dry-run >dry-run.log 2>&1
@@ -36,7 +36,7 @@ cat dry-run.log
 assert_contains "cat dry-run.log" "fetch the signing key for https://example.com/apt"
 assert_contains "cat dry-run.log" "write /etc/apt/sources.list.d/mise-vendor.sources"
 assert_contains "cat dry-run.log" "apt-get update"
-assert_contains "cat dry-run.log" "apt-get install -y -- bc"
+assert_contains "cat dry-run.log" "apt-get install -y -- mise-apt-sources-test-nonexistent"
 assert_not_contains "cat dry-run.log" "mise-bad name"
 
 # PPAs are only added on Ubuntu and Ubuntu-based releases
