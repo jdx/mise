@@ -590,7 +590,9 @@ fn aube_install_tree_health(install_path: &Path) -> AubeTreeHealth {
 fn virtual_store_entry_links_dependencies(entry: &Path) -> bool {
     let modules = entry.join("node_modules");
     let Ok(children) = std::fs::read_dir(&modules) else {
-        return true;
+        // Every package entry holds `node_modules`; only the hoisted-deps dir
+        // (`.mise/node_modules`) legitimately lacks one.
+        return entry.file_name().is_some_and(|name| name == "node_modules");
     };
     for child in children.flatten() {
         let mut package = child.path();
@@ -4404,6 +4406,13 @@ pkg@1.2.0 '1.2.0'
         assert!(!virtual_store_entry_links_dependencies(&entry));
         std::fs::create_dir_all(modules.join("dep")).unwrap();
         assert!(virtual_store_entry_links_dependencies(&entry));
+
+        let empty = tmp.path().join("empty@1.0.0");
+        std::fs::create_dir_all(&empty).unwrap();
+        assert!(!virtual_store_entry_links_dependencies(&empty));
+        let hoisted = tmp.path().join("node_modules");
+        std::fs::create_dir_all(&hoisted).unwrap();
+        assert!(virtual_store_entry_links_dependencies(&hoisted));
     }
 
     #[test]
