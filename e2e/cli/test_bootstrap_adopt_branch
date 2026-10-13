@@ -30,20 +30,24 @@ run = 'printf laptop > "$HOME/adopted-branch"'
 EOF
 git -C "$work" commit -qam 'test: laptop config'
 git -C "$work" switch -q main
+# a tag that shares the branch's name must not hide the branch
+git -C "$work" tag laptop
 git clone -q --bare "$work" "$config"
 
 # ---- global config from a branch, cloned and left on that branch
 laptop_config="$PWD/laptop-config"
 assert_succeed "MISE_CONFIG_DIR='$laptop_config' mise bootstrap --adopt '$config?ref=laptop' --yes --only task"
-assert "git -C '$laptop_config' symbolic-ref --short HEAD" "laptop"
+assert "git -C '$laptop_config' symbolic-ref HEAD" "refs/heads/laptop"
 assert "git -C '$laptop_config' remote get-url origin" "$config"
 assert "cat ~/adopted-branch" "laptop"
+# a rerun finds the checkout already on the branch
+assert_succeed "MISE_CONFIG_DIR='$laptop_config' mise bootstrap --adopt '$config?ref=laptop' --yes --only task"
 
 # an existing checkout on another branch is refused until --update switches it
 assert_fail "MISE_CONFIG_DIR='$laptop_config' mise bootstrap --adopt '$config?ref=main' --yes --only task" "add --update"
-assert "git -C '$laptop_config' symbolic-ref --short HEAD" "laptop"
+assert "git -C '$laptop_config' symbolic-ref HEAD" "refs/heads/laptop"
 assert_succeed "MISE_CONFIG_DIR='$laptop_config' mise bootstrap --adopt '$config?ref=main' --update --yes --only task"
-assert "git -C '$laptop_config' symbolic-ref --short HEAD" "main"
+assert "git -C '$laptop_config' symbolic-ref HEAD" "refs/heads/main"
 assert "cat ~/adopted-branch" "main"
 
 # a tag or a branch the repository lacks is refused before anything is cloned
@@ -117,12 +121,12 @@ chmod +x fakebin/ssh
 export PATH="$PWD/fakebin:$PATH"
 
 assert_succeed "mise bootstrap remote --host laptop --adopt 'file://$config?ref=laptop' --remote-mise '$binary' --only task --yes"
-assert "git -C remotes/laptop/.config/mise symbolic-ref --short HEAD" "laptop"
+assert "git -C remotes/laptop/.config/mise symbolic-ref HEAD" "refs/heads/laptop"
 assert "cat remotes/laptop/adopted-branch" "laptop"
 assert_fail "mise bootstrap remote --host laptop --adopt 'file://$config?ref=main' --remote-mise '$binary' --only task --yes" "add --update"
-assert "git -C remotes/laptop/.config/mise symbolic-ref --short HEAD" "laptop"
+assert "git -C remotes/laptop/.config/mise symbolic-ref HEAD" "refs/heads/laptop"
 assert_succeed "mise bootstrap remote --host laptop --adopt 'file://$config?ref=main' --remote-mise '$binary' --only task --update --yes"
-assert "git -C remotes/laptop/.config/mise symbolic-ref --short HEAD" "main"
+assert "git -C remotes/laptop/.config/mise symbolic-ref HEAD" "refs/heads/main"
 assert "cat remotes/laptop/adopted-branch" "main"
 
 assert_succeed "mise bootstrap remote --host setup --adopt 'file://$config?ref=history' --remote-mise '$binary' --only dotfiles --yes"

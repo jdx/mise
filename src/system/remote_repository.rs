@@ -281,7 +281,10 @@ fn install_at(
         {
             bail!("global configuration has uncommitted changes");
         }
-        let current = git(destination, &["symbolic-ref", "--short", "HEAD"]).ok();
+        // the full name: `--short` prints `heads/<name>` when a tag shares it
+        let current = git(destination, &["symbolic-ref", "HEAD"])
+            .ok()
+            .and_then(|head| head.strip_prefix("refs/heads/").map(str::to_string));
         let on_branch = current.as_deref() == Some(branch.as_str());
         if require_branch && !on_branch && !update {
             let state = match &current {

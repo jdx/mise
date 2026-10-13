@@ -396,16 +396,20 @@ fn require_checkout_on_branch(checkout: &Path, branch: &str) -> Result<()> {
     command
         .arg("-C")
         .arg(checkout)
-        .args(["symbolic-ref", "--quiet", "--short", "HEAD"]);
+        .args(["symbolic-ref", "--quiet", "HEAD"]);
     crate::git::sanitize_git_command(&mut command);
     let output = command.output()?;
-    let current = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    if !output.status.success() || current.is_empty() {
+    // the full name: `--short` prints `heads/<name>` when a tag shares it
+    let head = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    let Some(current) = head
+        .strip_prefix("refs/heads/")
+        .filter(|_| output.status.success())
+    else {
         bail!(
             "{} is not on a branch; add --update to switch it to {branch:?}",
             checkout.display_user()
         );
-    }
+    };
     if current != branch {
         bail!(
             "{} is on branch {current:?}, not {branch:?}; add --update to switch it",
