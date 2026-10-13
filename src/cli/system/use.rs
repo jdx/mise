@@ -134,14 +134,7 @@ impl SystemUse {
         })?;
         // Read the file being written, loaded or not (`--path`, `--env`):
         // its own entry is what keeps snap options.
-        let declared = if path.exists() {
-            MiseToml::from_file(&path)?
-                .bootstrap_config()
-                .map(|bootstrap| bootstrap.packages)
-                .unwrap_or_default()
-        } else {
-            IndexMap::new()
-        };
+        let declared = system::declared_packages_in_file(&path)?;
         system::attach_snap_options(&declared, &mut mgrs)?;
         if self.dry_run {
             for (key, version) in &entries {

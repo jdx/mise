@@ -2789,6 +2789,34 @@ fn configured_snap_options(
     }
 }
 
+/// The `[bootstrap.packages]` table written in the config file at `path`, or
+/// an empty one when the file does not exist.
+///
+/// Reads the TOML directly instead of loading the config: loading runs the
+/// trust check, which a dry run must not prompt for or record. Nothing here
+/// acts on the file; a real `use` loads it, trust check included, before it
+/// installs.
+pub fn declared_packages_in_file(path: &Path) -> eyre::Result<IndexMap<String, PackageTomlConfig>> {
+    #[derive(Default, Deserialize)]
+    struct File {
+        #[serde(default)]
+        bootstrap: Bootstrap,
+    }
+    #[derive(Default, Deserialize)]
+    struct Bootstrap {
+        #[serde(default)]
+        packages: IndexMap<String, PackageTomlConfig>,
+    }
+    use eyre::WrapErr;
+
+    if !path.exists() {
+        return Ok(IndexMap::new());
+    }
+    let file: File = toml::from_str(&crate::file::read_to_string(path)?)
+        .wrap_err_with(|| format!("failed to parse {}", crate::file::display_path(path)))?;
+    Ok(file.bootstrap.packages)
+}
+
 /// Give the snap entries of `mgrs` the `channel` and `classic` options of the
 /// entry `use` writes, for `use`, which builds its requests without the config.
 /// `declared` is the `[bootstrap.packages]` table of the file `use` writes.

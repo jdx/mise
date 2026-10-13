@@ -93,6 +93,11 @@ cat >other-packages.toml <<'TOML'
 "snap:node" = { channel = "18/stable", classic = true }
 TOML
 assert_contains "mise bootstrap packages use --path other-packages.toml snap:node --dry-run" "snap install --channel=18/stable --classic node"
+# Reading those options for a dry run neither needs nor records trust.
+mkdir -p "$HOME/untrusted"
+cp other-packages.toml "$HOME/untrusted/packages.toml"
+assert_contains "env -u CI -u GITHUB_ACTIONS MISE_YES=0 MISE_TRUSTED_CONFIG_PATHS=$PWD mise bootstrap packages use --path '$HOME/untrusted/packages.toml' snap:node --dry-run" "snap install --channel=18/stable --classic node"
+assert_fail "find '$MISE_STATE_DIR/trusted-configs' -mindepth 1 2>/dev/null | grep -q untrusted"
 
 # A global config that does not exist yet takes no options from the project.
 mv "$MISE_CONFIG_DIR/config.toml" "$HOME/global-config.bak"
