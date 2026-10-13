@@ -568,6 +568,11 @@ fn aube_install_tree_health(install_path: &Path) -> AubeTreeHealth {
                 .file_type()
                 .is_ok_and(|file_type| !file_type.is_symlink())
             {
+                // Windows junctions do not survive a tar round trip (CI caches of the
+                // installs dir), leaving the package dir without its dependency links.
+                if cfg!(windows) && !virtual_store_entry_links_dependencies(&entry.path()) {
+                    return AubeTreeHealth::Broken;
+                }
                 continue;
             }
             if !entry.path().try_exists().unwrap_or(false) {
@@ -577,6 +582,62 @@ fn aube_install_tree_health(install_path: &Path) -> AubeTreeHealth {
         }
     }
     health
+}
+
+/// Whether every runtime dependency of the package in a virtual-store entry
+/// (`<entry>/node_modules/<name>`) is linked beside it or bundled inside it.
+/// The package is the one real directory there; its dependencies are links.
+fn virtual_store_entry_links_dependencies(entry: &Path) -> bool {
+    let modules = entry.join("node_modules");
+    let Ok(children) = std::fs::read_dir(&modules) else {
+        return true;
+    };
+    for child in children.flatten() {
+        let mut package = child.path();
+        let is_real_dir = |path: &Path| {
+            path.symlink_metadata()
+                .is_ok_and(|meta| meta.is_dir() && !meta.is_symlink())
+        };
+        if child.file_name().to_string_lossy().starts_with('@') {
+            // A scope dir holds the real package when it is not a link itself.
+            let Ok(scoped) = std::fs::read_dir(&package) else {
+                continue;
+            };
+            let Some(inner) = scoped.flatten().map(|e| e.path()).find(|p| is_real_dir(p)) else {
+                continue;
+            };
+            package = inner;
+        } else if !is_real_dir(&package) {
+            continue;
+        }
+        let Ok(manifest) = std::fs::read(package.join("package.json")) else {
+            continue;
+        };
+        let Ok(manifest) = serde_json::from_slice::<serde_json::Value>(&manifest) else {
+            continue;
+        };
+        let Some(deps) = manifest.get("dependencies").and_then(|d| d.as_object()) else {
+            continue;
+        };
+        let optional = manifest
+            .get("optionalDependencies")
+            .and_then(|d| d.as_object());
+        for dep in deps.keys() {
+            if optional.is_some_and(|o| o.contains_key(dep)) {
+                continue;
+            }
+            let present = modules.join(dep).try_exists().unwrap_or(false)
+                || package
+                    .join("node_modules")
+                    .join(dep)
+                    .try_exists()
+                    .unwrap_or(false);
+            if !present {
+                return false;
+            }
+        }
+    }
+    true
 }
 
 /// Whether `path` is the running mise binary: a symlink to it, or a hard link that shares
@@ -4327,6 +4388,22 @@ pkg@1.2.0 '1.2.0'
         )
         .unwrap();
         assert!(!aube_install_tree_is_healthy_cached(tmp.path()));
+    }
+
+    #[test]
+    fn virtual_store_entry_without_dependency_links_is_detected() {
+        let tmp = tempfile::tempdir().unwrap();
+        let modules = tmp.path().join("pkg@1.0.0/node_modules");
+        std::fs::create_dir_all(modules.join("@scope/pkg")).unwrap();
+        std::fs::write(
+            modules.join("@scope/pkg/package.json"),
+            r#"{"dependencies":{"dep":"1","opt":"1"},"optionalDependencies":{"opt":"1"}}"#,
+        )
+        .unwrap();
+        let entry = tmp.path().join("pkg@1.0.0");
+        assert!(!virtual_store_entry_links_dependencies(&entry));
+        std::fs::create_dir_all(modules.join("dep")).unwrap();
+        assert!(virtual_store_entry_links_dependencies(&entry));
     }
 
     #[test]
