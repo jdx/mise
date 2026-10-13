@@ -5,6 +5,8 @@
 # pull that followed an interrupted one could never succeed.
 require_cmd git
 export MISE_HISTORY_NOTIFY=false
+# the assertions read info-level messages, whatever level the runner forwards
+export MISE_LOG_LEVEL=info
 origin="$PWD/interrupted-origin.git"
 git init -q --bare -b main "$origin"
 echo v1 >~/.native
