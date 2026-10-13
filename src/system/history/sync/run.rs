@@ -722,6 +722,17 @@ fn prepare(
         incoming_tracking(repo, tracked).inspect_err(|error| repository_conflict(status, error))?;
     let tracked = &incoming;
     let roots = Roots::current();
+    // **A live file that already holds the incoming version has no edit
+    // for the incoming write to overwrite.** An apply interrupted after its
+    // write leaves exactly that: the file is the incoming version, its
+    // checkpoint was never recorded, and holding it as an unsaved edit
+    // paused sharing over a change nobody made.
+    let unsaved: BTreeSet<String> = unsaved
+        .iter()
+        .filter(|branch_path| !holds_incoming(repo, &roots, upstream, branch_path))
+        .cloned()
+        .collect();
+    let unsaved = &unsaved;
     // Git ancestry, not a machine's replaceable acknowledgement cache,
     // determines the shared baseline. Losing local bookkeeping must not
     // turn an ordinary incoming edit into an unrelated adoption conflict.
@@ -858,6 +869,20 @@ fn prepare(
     Ok(plans)
 }
 
+/// Whether the live file at `branch_path` already is its incoming version.
+fn holds_incoming(
+    repo: &crate::system::history::shadow::HistoryRepo,
+    roots: &Roots,
+    upstream: &reconcile::Upstream,
+    branch_path: &str,
+) -> bool {
+    let located = roots.locate(branch_path);
+    let (Some(path), Some(incoming)) = (located.path(), upstream.files.get(branch_path)) else {
+        return false;
+    };
+    super::apply::live_object(repo, path).is_ok_and(|live| live.as_ref() == Some(incoming))
+}
+
 fn repository_conflict(status: &mut SyncStatus, error: &eyre::Report) {
     status.pending_repository = true;
     status.validation_error = Some(format!("{error:#}"));
@@ -977,10 +1002,15 @@ fn apply_resolutions(
         {
             kind = Some(reconcile::ConflictKind::InvalidIncoming);
         }
-        match super::apply::live_object(repo, path) {
+        let live = super::apply::live_object(repo, path);
+        let live_is_incoming = live.as_ref().is_ok_and(|live| live == incoming);
+        match live {
+            // a live file that already is the incoming version loses
+            // nothing to its write: a machine adopting files it already
+            // has, or an apply interrupted before it was recorded
             Ok(live)
                 if live.as_ref() != shared.get(&plan.branch_path)
-                    && !(fresh && live == *incoming)
+                    && !live_is_incoming
                     && !status
                         .resolutions
                         .get(&plan.branch_path)
@@ -998,9 +1028,25 @@ fn apply_resolutions(
             Err(err) => return Err(err),
             _ => {}
         }
+        // and the same for its mode: one the incoming write would set
+        // anyway is not an edit, while a mode matching neither side is
+        let mode_edited = || -> Result<bool> {
+            let live_mode = super::apply::live_permissions(path)?;
+            if live_mode
+                == saved_manifest.file_permissions(&plan.branch_path, shared.get(&plan.branch_path))
+            {
+                return Ok(false);
+            }
+            let incoming_mode = super::apply::permissions_at(
+                repo,
+                upstream.commit.as_deref(),
+                &plan.branch_path,
+                incoming.as_ref(),
+            )?;
+            Ok(!(live_is_incoming && live_mode == incoming_mode))
+        };
         if !fresh
-            && super::apply::live_permissions(path)?
-                != saved_manifest.file_permissions(&plan.branch_path, shared.get(&plan.branch_path))
+            && mode_edited()?
             && !status
                 .resolutions
                 .get(&plan.branch_path)

@@ -1,0 +1,76 @@
+#!/usr/bin/env bash
+# A live file that already holds the incoming version is not an unsaved edit,
+# and a path an earlier pull already decided can be named again.
+require_cmd git
+export MISE_HISTORY_NOTIFY=false
+# the assertions read info-level messages, whatever level the runner forwards
+export MISE_LOG_LEVEL=info
+origin="$PWD/decided-origin.git"
+git init -q --bare -b main "$origin"
+cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'
+[dotfiles]
+"~/.same" = { mode = "track" }
+"~/.manual" = { mode = "track", autosave = false }
+"~/.gone" = { mode = "track", autosave = false }
+"~/.mode" = { mode = "track" }
+"~/.one" = { mode = "track" }
+"~/.two" = { mode = "track" }
+TOML
+for file in same manual gone mode one two; do echo v1 >~/."$file"; done
+chmod 644 ~/.mode
+assert_succeed "mise dot save ~/.same ~/.manual ~/.gone ~/.mode ~/.one ~/.two"
+assert_succeed "mise dot track ~/.config/mise/config.toml --yes"
+assert_succeed "mise dot origin set file://$origin --sync manual --yes"
+assert_succeed "mise dot sync"
+
+second="$(dirname "$HOME")/second"
+mkdir -p "$second"
+export second
+b() {
+  (
+    cd "$second" || exit
+    env HOME="$second" XDG_CONFIG_HOME="$second/.config" MISE_CONFIG_DIR="$second/.config/mise" \
+      MISE_STATE_DIR="$second/.local/state/mise" MISE_DATA_DIR="$second/.local/share/mise" \
+      MISE_CACHE_DIR="$second/.cache/mise" MISE_TRUSTED_CONFIG_PATHS="$second" mise "$@"
+  )
+}
+export -f b
+assert_succeed "b bootstrap --adopt file://$origin --yes"
+
+# the second machine already has the incoming versions, unsaved, as an apply
+# that was interrupted before it recorded its writes leaves them
+echo v2 >~/.same
+echo v2 >~/.manual
+echo v2 >~/.mode
+chmod 600 ~/.mode
+rm ~/.gone
+assert_succeed "mise dot save ~/.same ~/.manual ~/.gone ~/.mode"
+assert_succeed "mise dot sync"
+echo v2 >"$second/.manual"
+rm "$second/.gone"
+assert_succeed "b dot sync"
+echo v2 >"$second/.same"
+echo v2 >"$second/.mode"
+chmod 600 "$second/.mode"
+assert_contains "b dot pull --yes 2>&1" "applied 4 incoming change(s)"
+assert "cat $second/.same" "v2"
+assert "cat $second/.manual" "v2"
+assert "cat $second/.mode" "v2"
+
+# two real conflicts, decided one path at a time
+echo remote >~/.one
+chmod 640 ~/.one
+echo remote >~/.two
+assert_succeed "mise dot save"
+assert_succeed "mise dot sync"
+assert_succeed "b dot sync"
+# unsaved edits, and an unsaved mode matching neither the saved (644) nor the
+# incoming (640) one, which taking the repository's version replaces too
+echo local >"$second/.one"
+echo local >"$second/.two"
+chmod 600 "$second/.one"
+assert_contains "b dot pull --yes --take-remote $second/.one 2>&1" "1 conflict(s) remain"
+assert_contains "b dot pull --yes --take-remote $second/.one 2>&1" "1 conflict(s) remain"
+assert_contains "b dot pull --yes --take-remote $second/.two 2>&1" "applied 2 incoming change(s)"
+assert "cat $second/.one" "remote"
+assert "cat $second/.two" "remote"
