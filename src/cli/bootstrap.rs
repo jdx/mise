@@ -5245,30 +5245,43 @@ fn update_bootstrap_ref(checkout: &Path, git_ref: &str) -> Result<()> {
         // from origin itself, whatever upstream the local branch tracks
         // fully qualified so a local ref named `origin/<ref>` cannot shadow it
         let remote_branch = format!("refs/remotes/origin/{git_ref}");
-        // another local branch is fast-forwarded before the switch, so the
-        // checkout moves in one step that either completes or leaves HEAD
-        // where it was
-        if !bootstrap_head_is(checkout, &branch)?
-            && bootstrap_git_succeeds(checkout, ["show-ref", "--verify", "--quiet", &branch])?
-        {
-            if !bootstrap_git_succeeds(
+        let ancestor = |older: &str, newer: &str| {
+            bootstrap_git_succeeds(checkout, ["merge-base", "--is-ancestor", older, newer])
+        };
+        // every move is one git command that either completes or leaves the
+        // checkout and its branches as they were; git also refuses a branch
+        // that another worktree has checked out, and an ignored local file
+        // stops it instead of being replaced by one the branch tracks
+        if bootstrap_head_is(checkout, &branch)? {
+            run_bootstrap_git(
                 checkout,
-                ["merge-base", "--is-ancestor", &branch, &remote_branch],
-            )? {
-                bail!("local branch {git_ref:?} cannot be fast-forwarded to origin/{git_ref}");
-            }
-            run_bootstrap_git(checkout, ["update-ref", &branch, &remote_branch])?;
+                [
+                    "merge",
+                    "--ff-only",
+                    "--no-overwrite-ignore",
+                    &remote_branch,
+                ],
+            )
+        } else if !bootstrap_git_succeeds(checkout, ["show-ref", "--verify", "--quiet", &branch])? {
+            switch_to_bootstrap_branch(checkout, git_ref)
+        } else if ancestor(&branch, &remote_branch)? {
+            // behind or level with origin: switch to origin's commit
+            run_bootstrap_git(
+                checkout,
+                [
+                    "switch",
+                    "--no-overwrite-ignore",
+                    "-C",
+                    git_ref,
+                    &remote_branch,
+                ],
+            )
+        } else if ancestor(&remote_branch, &branch)? {
+            // ahead of origin: its local commits are kept
+            run_bootstrap_git(checkout, ["switch", "--no-overwrite-ignore", git_ref])
+        } else {
+            bail!("local branch {git_ref:?} has diverged from origin/{git_ref}")
         }
-        switch_to_bootstrap_branch(checkout, git_ref)?;
-        run_bootstrap_git(
-            checkout,
-            [
-                "merge",
-                "--ff-only",
-                "--no-overwrite-ignore",
-                &remote_branch,
-            ],
-        )
     } else if on_origin(&tag) {
         run_bootstrap_git(checkout, ["checkout", &tag, "--"])
     } else if bootstrap_git_succeeds(checkout, ["show-ref", "--verify", "--quiet", &branch])?

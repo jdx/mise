@@ -349,25 +349,24 @@ fn install_at(
                 )?;
             }
             if !on_branch {
-                // the local branch is fast-forwarded first, so the checkout
-                // moves to the transferred revision in one step that either
-                // completes or leaves HEAD where it was; an ignored local file
-                // stops it instead of being replaced by one the branch tracks
-                let local = format!("refs/heads/{branch}");
-                let mut checkout = vec![
-                    "-c",
-                    "core.hooksPath=/dev/null",
-                    "checkout",
-                    "--no-overwrite-ignore",
-                ];
-                match &from {
-                    Some(from) => {
-                        git(destination, &["update-ref", &local, revision, from])?;
-                        checkout.push(&branch);
-                    }
-                    None => checkout.extend(["-b", branch.as_str(), revision]),
-                }
-                git(destination, &checkout)?;
+                // one checkout creates the branch or moves it to the
+                // transferred revision, after the ancestry check above; it
+                // either completes or leaves the checkout and its branches as
+                // they were, refusing a branch another worktree has checked
+                // out, and an ignored local file stops it instead of being
+                // replaced by one the branch tracks
+                git(
+                    destination,
+                    &[
+                        "-c",
+                        "core.hooksPath=/dev/null",
+                        "checkout",
+                        "--no-overwrite-ignore",
+                        "-B",
+                        &branch,
+                        revision,
+                    ],
+                )?;
             }
             git(
                 destination,
@@ -589,6 +588,45 @@ mod tests {
             std::fs::read_to_string(dest.join("notes.txt")).unwrap(),
             "local\n"
         );
+    }
+    #[tokio::test]
+    async fn a_branch_another_worktree_has_is_left_alone() {
+        let repo = repository();
+        git(repo.path(), &["branch", "notes"]).unwrap();
+        let origin: String = repo.path().to_str().unwrap().into();
+        let target = tempfile::tempdir().unwrap();
+        let dest = target.path().join("mise");
+        let notes = Source::fetch(origin.clone(), Some("notes".into()))
+            .await
+            .unwrap();
+        install_source(&notes, &dest, false).unwrap();
+        let main = Source::fetch(origin.clone(), Some("main".into()))
+            .await
+            .unwrap();
+        install_source(&main, &dest, true).unwrap();
+        let worktree = target.path().join("notes-worktree");
+        git(
+            &dest,
+            &["worktree", "add", worktree.to_str().unwrap(), "notes"],
+        )
+        .unwrap();
+        let before = git(&dest, &["rev-parse", "refs/heads/notes"]).unwrap();
+        // origin's `notes` moves on, so the target's copy is behind
+        git(repo.path(), &["switch", "notes"]).unwrap();
+        commit(repo.path(), "notes.toml", "[tools]\n");
+        git(repo.path(), &["switch", "main"]).unwrap();
+
+        let notes = Source::fetch(origin, Some("notes".into())).await.unwrap();
+        assert!(install_source(&notes, &dest, true).is_err());
+        assert_eq!(
+            git(&dest, &["symbolic-ref", "HEAD"]).unwrap(),
+            "refs/heads/main"
+        );
+        assert_eq!(
+            git(&dest, &["rev-parse", "refs/heads/notes"]).unwrap(),
+            before
+        );
+        assert_eq!(git(&worktree, &["rev-parse", "HEAD"]).unwrap(), before);
     }
     #[tokio::test]
     async fn fetches_the_requested_branch_only_when_it_is_a_branch() {

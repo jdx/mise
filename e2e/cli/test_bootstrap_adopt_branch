@@ -75,6 +75,27 @@ assert_fail "MISE_CONFIG_DIR='$laptop_config' mise bootstrap --adopt '$config?re
 assert "git -C '$laptop_config' symbolic-ref HEAD" "refs/heads/main"
 assert "cat '$laptop_config/notes.txt'" "local"
 
+# without the ignored file, the behind branch moves to origin's commit
+rm "$laptop_config/notes.txt"
+assert_succeed "MISE_CONFIG_DIR='$laptop_config' mise bootstrap --adopt '$config?ref=laptop' --update --yes --only task"
+assert "git -C '$laptop_config' symbolic-ref HEAD" "refs/heads/laptop"
+assert "cat '$laptop_config/notes.txt'" "tracked"
+
+# local commits on the requested branch are kept
+git -C "$laptop_config" -c user.name=Test -c user.email=test@example.invalid commit -q --allow-empty -m 'test: local change'
+local_commit=$(git -C "$laptop_config" rev-parse HEAD)
+git -C "$laptop_config" switch -q main
+assert_succeed "MISE_CONFIG_DIR='$laptop_config' mise bootstrap --adopt '$config?ref=laptop' --update --yes --only task"
+assert "git -C '$laptop_config' rev-parse HEAD" "$local_commit"
+
+# a branch another worktree has checked out is refused and left alone
+git -C "$laptop_config" switch -q main
+git -C "$laptop_config" worktree add -q "$PWD/laptop-worktree" laptop
+assert_fail "MISE_CONFIG_DIR='$laptop_config' mise bootstrap --adopt '$config?ref=laptop' --update --yes --only task"
+assert "git -C '$laptop_config' symbolic-ref HEAD" "refs/heads/main"
+assert "git -C '$laptop_config' rev-parse refs/heads/laptop" "$local_commit"
+git -C "$laptop_config" worktree remove "$PWD/laptop-worktree"
+
 # a tag or a branch the repository lacks is refused before anything is cloned
 assert_fail "MISE_CONFIG_DIR='$PWD/tag-config' mise bootstrap --adopt '$config?ref=v1' --yes --only task" "is not a branch"
 assert_fail "MISE_CONFIG_DIR='$PWD/missing-config' mise bootstrap --adopt '$config?ref=missing' --yes --only task" "is not a branch"
