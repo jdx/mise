@@ -716,6 +716,8 @@ fn run_store_command(name: &str, cmd: &str, input: Option<&str>) -> Result<Vec<u
             let _ = child.wait();
             bail!("failed to write to {name}: {e}");
         }
+        // Close stdin so a command that reads until EOF can finish.
+        drop(stdin);
     }
     let deadline = std::time::Instant::now() + STORE_TIMEOUT;
     let status = loop {
