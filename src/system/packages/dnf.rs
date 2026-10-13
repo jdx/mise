@@ -448,9 +448,10 @@ impl SystemPackageManager for DnfManager {
     }
 
     async fn remove(&self, pkgs: &[PackageRequest], opts: &InstallOpts) -> Result<()> {
-        // only packages layered for the next deployment can be uninstalled;
-        // packages in the base image are never touched
-        let layered = ostree_requests().await?.next_layered;
+        // only packages requested for the next deployment can be uninstalled,
+        // which includes an inactive request for a package the base image
+        // provides; a base package with no request is never touched
+        let layered = ostree_requests().await?.next;
         let (pkgs, base): (Vec<_>, Vec<_>) = pkgs
             .iter()
             .cloned()
@@ -468,7 +469,7 @@ impl SystemPackageManager for DnfManager {
         // rather than let the driver say they were removed
         if !base.is_empty() {
             bail!(
-                "cannot remove {}: part of the base image, not layered packages",
+                "cannot remove {}: part of the base image and not requested as a layered package",
                 base.iter()
                     .map(ToString::to_string)
                     .collect::<Vec<_>>()
