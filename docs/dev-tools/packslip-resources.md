@@ -119,12 +119,21 @@ mise skills sync --dir .agents/skills
 ```
 
 These are symlinks into the active tool version's install directory, not
-portable copies. Keep the generated links out of version control and have each
-developer run sync on their own machine. mise records the links it owns in
-`.mise-skills.json` in the same directory; ignore that file too. The directory
-can also hold handwritten skills: mise leaves user-created directories and
-unrelated links alone and reports any conflicting names as skipped. Run sync
-again after a version change to update the links.
+portable copies, so they should not be committed; have each developer run sync
+on their own machine. mise records the links it owns in `.mise-skills.json` in
+the same directory.
+
+Inside a git repository, sync lists those links and `.mise-skills.json` in the
+repository's `.git/info/exclude`, in a block marked `mise skills` that it keeps
+up to date. That file belongs to your clone alone, so nothing in the repository
+changes and `git status` does not offer the links for commit. Outside a git
+repository, and in a linked `git worktree` (which shares that file with every
+other worktree), sync does not do this.
+
+The directory can also hold handwritten skills: mise leaves user-created
+directories and unrelated links alone, reports any conflicting names as skipped,
+and git still sees them. Run sync again after a version change to update the
+links.
 
 ### Choose a skill directory
 
