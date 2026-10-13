@@ -5752,6 +5752,10 @@
           "description": "timeout for this task",
           "type": "string"
         },
+        "skip_if": {
+          "description": "shell command checked before the task runs; if it exits 0, the task is skipped and counts as successful",
+          "type": "string"
+        },
         "deny_all": {
           "default": false,
           "description": "block reads, writes, network, and env vars",

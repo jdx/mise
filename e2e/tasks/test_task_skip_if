@@ -1,0 +1,64 @@
+#!/usr/bin/env bash
+
+# skip_if runs a shell command before the task; exit 0 skips it, anything else runs it.
+# https://github.com/jdx/mise/discussions/14389
+cat <<'TOML' >mise.toml
+[tasks.setup]
+skip_if = "test -f initialized"
+run = "echo initializing && touch initialized"
+
+[tasks.deploy]
+depends = ["setup"]
+run = "echo deploying"
+
+[tasks.env-check]
+env = { DONE = "1" }
+skip_if = 'test "$DONE" = 1'
+run = "echo env-check-ran"
+
+[tasks.arg-check]
+usage = 'arg "<target>"'
+skip_if = 'test "{{ usage.target }}" = skip'
+run = "echo arg-check-ran"
+
+[tasks.dry]
+skip_if = "touch condition-ran"
+run = "echo dry-ran"
+
+[tasks.slow]
+timeout = "1s"
+skip_if = "sleep 10"
+run = "echo slow-ran"
+TOML
+
+# The condition fails, so the task and its dependent run.
+assert_contains "mise run deploy 2>&1" "initializing"
+assert_contains "mise run deploy 2>&1" "skip_if condition met, skipping"
+assert_not_contains "mise run deploy 2>&1" "initializing"
+assert_contains "mise run deploy 2>&1" "deploying"
+
+# The command sees the task's env and its arguments.
+assert_not_contains "mise run env-check 2>&1" "env-check-ran"
+assert_not_contains "mise run arg-check skip 2>&1" "arg-check-ran"
+assert_contains "mise run arg-check prod 2>&1" "arg-check-ran"
+
+# --dry-run reports the condition without running it.
+assert_contains "mise run --dry-run dry 2>&1" "skip_if: touch condition-ran (not checked: dry run)"
+assert_fail "test -f condition-ran"
+
+# A condition that times out fails the task instead of choosing for it.
+assert_fail "mise run slow 2>&1" "skip_if failed"
+
+assert_contains "mise tasks info setup" "Skip if: test -f initialized"
+
+# File tasks take it as a #MISE header.
+mkdir -p mise-tasks
+cat <<'SCRIPT' >mise-tasks/file-task
+#!/usr/bin/env bash
+#MISE skip_if="test -f file-task-done"
+echo file-task-ran
+touch file-task-done
+SCRIPT
+chmod +x mise-tasks/file-task
+assert_contains "mise run file-task 2>&1" "file-task-ran"
+assert_not_contains "mise run file-task 2>&1" "file-task-ran"

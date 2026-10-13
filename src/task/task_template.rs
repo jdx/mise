@@ -65,6 +65,8 @@ pub struct TaskTemplate {
     pub usage: String,
     #[serde(default)]
     pub timeout: Option<String>,
+    #[serde(default)]
+    pub skip_if: Option<String>,
     #[serde(default, deserialize_with = "deserialize_arr")]
     pub run: Vec<RunEntry>,
     #[serde(default, deserialize_with = "deserialize_arr")]
@@ -292,6 +294,11 @@ impl Task {
         // timeout: use template only if local not set
         if self.timeout.is_none() {
             self.timeout = template.timeout.clone();
+        }
+
+        // skip_if: use template only if local not set
+        if self.skip_if.is_none() {
+            self.skip_if = template.skip_if.clone();
         }
 
         // file: use template only if local not set

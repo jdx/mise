@@ -40,7 +40,7 @@ experimental = true
 | [Description and visibility](#description-and-visibility) | [`description`](#description), [`alias`](#alias), [`hide`](#hide), [`confirm`](#confirm)                                                                                                                                       |
 | [Ordering](#ordering)                                     | [`depends`](#depends), [`depends_post`](/tasks/task-configuration.html#depends-post), [`wait_for`](/tasks/task-configuration.html#wait-for), [`daemons`](/tasks/task-configuration.html#daemons)                               |
 | [Environment and tools](#environment-and-tools)           | [`env`](#env), [`vars`](#task-vars), [`secrets`](/tasks/task-configuration.html#secrets), [`tools`](#tools)                                                                                                                    |
-| [Skipping work](#skipping-work)                           | [`sources`](#sources), [`outputs`](#outputs), [`watch`](#watch), [`cache`](/tasks/task-configuration.html#cache)                                                                                                               |
+| [Skipping work](#skipping-work)                           | [`skip_if`](/tasks/task-configuration.html#skip-if), [`sources`](#sources), [`outputs`](#outputs), [`watch`](#watch), [`cache`](/tasks/task-configuration.html#cache)                                                          |
 | [Execution](#execution)                                   | [`timeout`](#timeout), [`raw`](#raw), [`interactive`](#interactive)                                                                                                                                                            |
 | [Output](#output-properties)                              | [`output`](#output), [`quiet`](#quiet), [`silent`](#silent)                                                                                                                                                                    |
 | [Sandbox](#sandbox)                                       | `deny_all`, `deny_read`, `deny_write`, `deny_net`, `deny_env`, `allow_read`, `allow_write`, `allow_net`, `allow_env`, `pass_through_env`                                                                                       |
@@ -608,6 +608,35 @@ the current scope without running any task. Use it to prepare CI caches or
 container images; add `--monorepo` to include every configured monorepo root.
 
 ## Skipping work
+
+### `skip_if`
+
+- **Type**: `string`
+
+A shell command mise runs before the task. If it exits 0, mise skips the task,
+prints `skip_if condition met, skipping`, and counts the task as successful;
+any other exit status runs the task. Use it for work that depends on state no
+file records, such as whether another tool is already set up:
+
+```mise-toml
+[tasks.setup]
+skip_if = "examplectl workspace show"
+run = "examplectl workspace init"
+```
+
+The command runs in the task's directory with the task's shell, environment,
+and sandbox, after its [`depends`](#depends) and before
+[`confirm`](#confirm). Its output is discarded and it gets no stdin, so it
+cannot prompt. A command that cannot start, times out (it shares the task's
+[`timeout`](#timeout)), or is killed by a signal fails the task. It supports
+Tera templates and the task's arguments, like `confirm`, and works in file
+tasks as `#MISE skip_if="..."`. `mise run --dry-run` prints the command
+without running it.
+
+A skipped task does not count as having done work, so a dependent task with
+fresh [`sources`](#sources) still skips. To make a task fail rather than skip
+when something is missing, check for it in `run`, for example
+`examplectl auth status || { echo "run examplectl login first" >&2; exit 1; }`.
 
 ### `sources`
 
