@@ -1458,7 +1458,7 @@ The checkout is reused on later runs; add `\-\-update` to fast\-forward it first
 \fB\-\-adopt\fR \fI<GIT_URL|OWNER/REPO>\fR
 Clone a repository of global mise config or dotfile history, then apply it
 
-A repository of global config (`config.toml`, `conf.d/`, `tasks/`) is cloned into the global config directory, normally ~/.config/mise. A setup repository shared with `mise dotfiles origin set` restores its tracked files instead. `OWNER/REPO` is short for `https://github.com/OWNER/REPO.git`.
+A repository of global config (`config.toml`, `conf.d/`, `tasks/`) is cloned into the global config directory, normally ~/.config/mise. A setup repository shared with `mise dotfiles origin set` restores its tracked files instead. `OWNER/REPO` is short for `https://github.com/OWNER/REPO.git`. Append `?ref=<branch>` to adopt a branch other than the default branch.
 .TP
 \fB\-\-replace\-history\fR
 Discard this machine's dotfile history and adopt the repository's
@@ -4788,6 +4788,8 @@ mise dot origin \-\-remove
 Connect an origin repository
 
 Use a private repository: every saved checkpoint is shared, including those saved before you connect. mise shows the sync mode and the tracked files before you confirm, then runs the first sync. It never replaces a repository that has unrelated history, and it refuses to push older plaintext versions of files you now encrypt. The connection is written to `[history.origin]` in `config.local.toml` next to your global config, so it stays on this machine.
+
+The origin holds tracked\-file history, not a checkout of your global config: connect a repository of its own, or a separate branch (`\-\-branch`) of the one you adopt as global config with `mise bootstrap \-\-adopt`.
 .PP
 \fBUsage:\fR mise dotfiles origin set [OPTIONS] <URL>
 .PP
@@ -9520,6 +9522,9 @@ Internal session adapter
 \fB\-\-repository\-revision\fR \fI<REPOSITORY_REVISION>\fR
 .TP
 \fB\-\-repository\-update\fR
+.TP
+\fB\-\-repository\-require\-branch\fR
+The bundled branch was requested with `?ref=`
 .TP
 \fB\-\-repository\-yes\fR
 .TP

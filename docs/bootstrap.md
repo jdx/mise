@@ -95,35 +95,24 @@ subcommands.
 
 ## Start from a repository {#starting-from-a-repository}
 
-To set up a machine from configuration you keep in Git, choose by what the
-repository should become on this machine:
-
-- `--from` runs a setup project that stays apart from your own configuration,
-  such as a team's workstation setup repository. mise keeps a checkout of it,
-  runs bootstrap from that checkout, and does not clone anything into your
-  global config directory.
-- `--adopt` makes the repository this machine's own configuration from then on:
-  your global mise config, or a setup repository of tracked dotfiles that mise
-  restores and keeps in sync.
-
-Then pick the command that matches what the repository holds:
-
-| Repository holds                                       | Command                        | Where the files go                                       |
-| ------------------------------------------------------ | ------------------------------ | -------------------------------------------------------- |
-| A bootstrap project: `mise.toml` and the files it uses | `mise bootstrap --from <url>`  | A separate checkout, then wherever the project puts them |
-| Global mise config: `config.toml`, `conf.d/`, `tasks/` | `mise bootstrap --adopt <url>` | Your global config directory, `~/.config/mise`           |
-| A setup repository created with `mise dot origin set`  | `mise bootstrap --adopt <url>` | Each tracked file's path on this machine                 |
+To set up a machine from configuration you keep in Git, pass the repository to
+`mise bootstrap`. Use `--from` for a setup project that stays apart from your
+own configuration, such as a team's workstation repository, and `--adopt` for a
+repository that becomes this machine's own configuration:
 
 ```sh
+# a bootstrap project: a mise.toml and the files it uses
 mise bootstrap --from https://github.com/you/workstation.git
+# global mise config, cloned as a Git checkout into ~/.config/mise
 mise bootstrap --adopt you/mise-config
+# a setup repository from `mise dot origin set`: tracked files go to their paths
 mise bootstrap --adopt you/setup
 ```
 
-`--adopt` also accepts `OWNER/REPO` for a GitHub repository. See
-[Bootstrap from a repository](/bootstrap/from-repository.html) for refs,
-existing checkouts, and `--update`, and [Set up a machine](/bootstrap/setup.html)
-for a walkthrough that ends with adopting a setup repository.
+[Bootstrap from a repository](/bootstrap/from-repository.html) explains where
+each kind goes, how `--adopt` tells them apart, refs, and `--update`.
+[Set up a machine](/bootstrap/setup.html) walks through adopting a setup
+repository.
 
 ## Run order {#how-it-runs}
 

@@ -1,0 +1,141 @@
+#!/usr/bin/env bash
+# `mise bootstrap --adopt <url>?ref=<branch>` adopts a branch other than the
+# default one, locally and through `mise bootstrap remote`. One repository
+# keeps global config on `main`, a machine's variant on `laptop`, and a
+# setup repository's history on `history`; a tag or a missing branch is
+# refused, because an adopted repository is followed by pulling or syncing.
+# shellcheck disable=SC2016
+
+require_cmd git
+
+binary=$(command -v mise)
+
+# ---- the shared repository: global config on main and laptop
+config="$PWD/config.git"
+work="$PWD/config-work"
+git init -q -b main "$work"
+git -C "$work" config user.email test@example.invalid
+git -C "$work" config user.name Test
+cat <<'EOF' >"$work/config.toml"
+[tasks.bootstrap]
+run = 'printf main > "$HOME/adopted-branch"'
+EOF
+git -C "$work" add config.toml
+git -C "$work" commit -qm 'test: main config'
+git -C "$work" tag v1
+git -C "$work" switch -qc laptop
+cat <<'EOF' >"$work/config.toml"
+[tasks.bootstrap]
+run = 'printf laptop > "$HOME/adopted-branch"'
+EOF
+git -C "$work" commit -qam 'test: laptop config'
+git -C "$work" switch -q main
+# a tag that shares the branch's name must not hide the branch
+git -C "$work" tag laptop
+git clone -q --bare "$work" "$config"
+
+# ---- global config from a branch, cloned and left on that branch
+laptop_config="$PWD/laptop-config"
+assert_succeed "MISE_CONFIG_DIR='$laptop_config' mise bootstrap --adopt '$config?ref=laptop' --yes --only task"
+assert "git -C '$laptop_config' symbolic-ref HEAD" "refs/heads/laptop"
+assert "git -C '$laptop_config' remote get-url origin" "$config"
+assert "cat ~/adopted-branch" "laptop"
+# a rerun finds the checkout already on the branch
+assert_succeed "MISE_CONFIG_DIR='$laptop_config' mise bootstrap --adopt '$config?ref=laptop' --yes --only task"
+
+# mise never moves an existing checkout to another branch: one on another
+# branch is refused, with or without --update, and left where it is
+assert_fail "MISE_CONFIG_DIR='$laptop_config' mise bootstrap --adopt '$config?ref=main' --yes --only task" "switch it with git"
+assert_fail "MISE_CONFIG_DIR='$laptop_config' mise bootstrap --adopt '$config?ref=main' --update --yes --only task" "switch it with git"
+assert "git -C '$laptop_config' symbolic-ref HEAD" "refs/heads/laptop"
+# switched by hand, it is used, and --update fast-forwards that branch
+git -C "$laptop_config" switch -q main
+assert_succeed "MISE_CONFIG_DIR='$laptop_config' mise bootstrap --adopt '$config?ref=main' --update --yes --only task"
+assert "git -C '$laptop_config' symbolic-ref HEAD" "refs/heads/main"
+assert "cat ~/adopted-branch" "main"
+
+# a tag or a branch the repository lacks is refused before anything is cloned
+assert_fail "MISE_CONFIG_DIR='$PWD/tag-config' mise bootstrap --adopt '$config?ref=v1' --yes --only task" "is not a branch"
+assert_fail "MISE_CONFIG_DIR='$PWD/missing-config' mise bootstrap --adopt '$config?ref=missing' --yes --only task" "is not a branch"
+assert_fail "test -e '$PWD/tag-config'"
+assert_fail "test -e '$PWD/missing-config'"
+
+# ---- setup history published to an empty repository, then kept on the
+# `history` branch of the config repository
+history="$PWD/history.git"
+git init -q --bare -b main "$history"
+mkdir -p ~/.config/hypr
+echo 'bind = SUPER, Q, exec, kitty' >~/.config/hypr/bindings.lua
+assert_succeed "mise bootstrap dotfiles track ~/.config/hypr"
+assert_succeed "mise bootstrap dotfiles origin set file://$history --yes"
+git --git-dir="$history" push -q "$config" main:history
+
+# other machines are other HOMEs reached through wrapper scripts
+wrapper() {
+  local home="$1" script="$2"
+  mkdir -p "$home"
+  cat <<EOF2 >"$script"
+#!/usr/bin/env bash
+export HOME="$home" XDG_CONFIG_HOME="$home/.config" MISE_CONFIG_DIR="$home/.config/mise" \\
+  MISE_STATE_DIR="$home/.local/state/mise" MISE_DATA_DIR="$home/.local/share/mise" \\
+  MISE_CACHE_DIR="$home/.cache/mise" MISE_TRUSTED_CONFIG_PATHS="$home"
+cd "\$HOME" && exec mise "\$@"
+EOF2
+  chmod +x "$script"
+}
+
+C="$(dirname "$HOME")/branch-setup-home"
+wrapper "$C" "$PWD/c"
+assert_succeed "$PWD/c bootstrap --adopt 'file://$config?ref=history' --yes --only dotfiles"
+assert "cat '$C/.config/hypr/bindings.lua'" "bind = SUPER, Q, exec, kitty"
+assert_fail "test -e '$C/.config/mise/.git'"
+assert_contains "cat '$C/.config/mise/config.local.toml'" 'branch = "history"'
+assert_contains "cat '$C/.config/mise/config.local.toml'" "file://$config"
+
+# ---- the same through `mise bootstrap remote`
+mkdir -p fakebin remotes
+export FAKE_REMOTE_BASE="$PWD/remotes"
+# the fake ssh runs the remote command locally under a per-host HOME
+cat >fakebin/ssh <<'EOF2'
+#!/bin/sh
+while test "$#" -gt 0; do
+  case "$1" in
+    -o|-p|-i|-S) shift 2 ;;
+    -tt) shift ;;
+    -O) exit 0 ;;
+    *)
+      destination=$1
+      shift
+      export HOME="$FAKE_REMOTE_BASE/$destination"
+      export XDG_CONFIG_HOME="$HOME/.config" XDG_STATE_HOME="$HOME/.local/state"
+      export MISE_CONFIG_DIR="$HOME/.config/mise"
+      unset MISE_GLOBAL_CONFIG_FILE
+      export MISE_DATA_DIR="$HOME/.local/share/mise"
+      export MISE_CACHE_DIR="$HOME/.cache/mise"
+      export MISE_STATE_DIR="$HOME/.local/state/mise"
+      unset MISE_GITHUB_TOKEN MISE_GITHUB_API_TOKEN GITHUB_TOKEN GH_TOKEN
+      mkdir -p "$HOME"
+      cd "$HOME" || exit 1
+      exec sh -c "$1"
+      ;;
+  esac
+done
+EOF2
+chmod +x fakebin/ssh
+export PATH="$PWD/fakebin:$PATH"
+
+assert_succeed "mise bootstrap remote --host laptop --adopt 'file://$config?ref=laptop' --remote-mise '$binary' --only task --yes"
+assert "git -C remotes/laptop/.config/mise symbolic-ref HEAD" "refs/heads/laptop"
+assert "cat remotes/laptop/adopted-branch" "laptop"
+assert_fail "mise bootstrap remote --host laptop --adopt 'file://$config?ref=main' --remote-mise '$binary' --only task --yes" "switch it with git"
+assert_fail "mise bootstrap remote --host laptop --adopt 'file://$config?ref=main' --remote-mise '$binary' --only task --update --yes" "switch it with git"
+assert "git -C remotes/laptop/.config/mise symbolic-ref HEAD" "refs/heads/laptop"
+assert_succeed "mise bootstrap remote --host laptop --adopt 'file://$config?ref=laptop' --remote-mise '$binary' --only task --update --yes"
+assert "cat remotes/laptop/adopted-branch" "laptop"
+
+assert_succeed "mise bootstrap remote --host setup --adopt 'file://$config?ref=history' --remote-mise '$binary' --only dotfiles --yes"
+assert "cat remotes/setup/.config/hypr/bindings.lua" "bind = SUPER, Q, exec, kitty"
+assert_fail "test -e remotes/setup/.config/mise/.git"
+assert_contains "cat remotes/setup/.config/mise/config.local.toml" 'branch = "history"'
+
+assert_fail "mise bootstrap remote --host tagged --adopt 'file://$config?ref=v1' --remote-mise '$binary' --only task --yes" "is not a branch"

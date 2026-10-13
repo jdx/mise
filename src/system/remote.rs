@@ -600,6 +600,9 @@ async fn run_staged(
         if options.update {
             install.push("--repository-update");
         }
+        if repository.requested_branch {
+            install.push("--repository-require-branch");
+        }
         if options.yes {
             install.push("--repository-yes");
         }

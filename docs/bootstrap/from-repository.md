@@ -30,11 +30,12 @@ and keeps in sync with your other machines.
 | Repository holds                                       | Command                        | Where the repository goes                        | Afterwards                                                          |
 | ------------------------------------------------------ | ------------------------------ | ------------------------------------------------ | ------------------------------------------------------------------- |
 | A bootstrap project: `mise.toml` and the files it uses | `mise bootstrap --from <url>`  | `$MISE_DATA_DIR/bootstrap-repo`, or `--from-dir` | Rerun with `--update` to apply new commits                          |
-| Global mise config: `config.toml`, `conf.d/`, `tasks/` | `mise bootstrap --adopt <url>` | Your global config directory, `~/.config/mise`   | Every later mise command reads it as your global config             |
+| Global mise config: `config.toml`, `conf.d/`, `tasks/` | `mise bootstrap --adopt <url>` | A Git checkout at `~/.config/mise`               | Every later mise command reads it as your global config             |
 | A setup repository created with `mise dot origin set`  | `mise bootstrap --adopt <url>` | mise's history store; files go to their paths    | Later changes arrive through the history watcher or `mise dot pull` |
 
 `--adopt` detects a setup repository by the `.mise-history/format.toml` file
-that `mise dot origin set` writes, so the same flag covers both kinds. `--from`
+that `mise dot origin set` writes on the branch it adopts, so the same flag
+covers both kinds. `--from`
 and `--adopt` cannot be combined.
 
 Either way, the bootstrap runs from the repository's configuration, and mise
@@ -97,6 +98,19 @@ files stay in place, so every later mise command reads them as your global
 config. If you set `$MISE_GLOBAL_CONFIG_FILE`, mise clones into that file's
 directory and loads that file.
 
+To adopt another branch, such as one that holds a laptop's variant of your
+config, add `?ref=` to the repository:
+
+```sh
+mise bootstrap --adopt 'you/mise-config?ref=laptop'
+```
+
+The ref must be a branch, because you keep pulling and committing in the
+checkout; a tag or a commit is refused. mise never moves an existing checkout
+to another branch: if it is on a different one, switch it with Git first.
+`--update` then fast-forwards the branch it is on. The same works for a setup
+repository and with [`mise bootstrap remote`](/bootstrap/remote.html).
+
 Cloning needs `git`, and an SSH URL such as `git@github.com:you/setup.git` also
 needs `ssh`. On a fresh machine that lacks them, mise offers to install them with
 the host package manager (apt, dnf, pacman, apk, zypper, Homebrew, scoop, or
@@ -111,6 +125,10 @@ before adopting into it. With an existing checkout, `--update` fast-forwards it
 before the bootstrap runs. The checkout is an ordinary Git repository: commit
 and pull in it as you would anywhere else.
 
+[`mise dot origin set`](/cli/dotfiles/origin/set.html) does not sync this
+checkout. It needs a repository of its own, or a separate branch of this one;
+see [The origin and your global config](/dotfiles/sync.html#origin-and-global-config).
+
 ## Setup repository (`--adopt`) {#shared-dotfile-history}
 
 A setup repository holds the history of your tracked dotfiles, shared with
@@ -123,7 +141,8 @@ mise bootstrap --adopt you/setup
 
 mise does the following:
 
-1. Fetches the repository's default branch into its own history store.
+1. Fetches the repository's default branch, or the branch `?ref=` names, into
+   its own history store.
 2. Restores each tracked file to its path on this machine.
 3. Remembers the repository as the origin for later synchronization.
 4. Runs bootstrap from the restored mise configuration.

@@ -11,6 +11,19 @@ pub struct Source {
     pub bundle: PathBuf,
     pub revision: String,
     pub origin: String,
+    /// `?ref=` named the bundled branch, so the target's checkout must be on
+    /// it rather than on whatever branch it already has.
+    pub requested_branch: bool,
+}
+
+/// How the target installs the transferred revision.
+pub struct InstallOptions {
+    pub update: bool,
+    pub yes: bool,
+    pub dry_run: bool,
+    /// An existing checkout must be on the transferred branch; `update`
+    /// switches it there.
+    pub require_branch: bool,
 }
 
 fn git(path: &Path, args: &[&str]) -> Result<String> {
@@ -74,7 +87,10 @@ pub fn validate_origin(origin: &str) -> Result<()> {
 }
 
 impl Source {
-    pub async fn fetch(origin: String) -> Result<Self> {
+    /// Clones `origin` and bundles one branch of it: `branch` when `?ref=`
+    /// named one, else the repository's default branch.
+    pub async fn fetch(origin: String, branch: Option<String>) -> Result<Self> {
+        let requested_branch = branch.is_some();
         validate_origin(&origin)?;
         let directory = tempfile::tempdir()?;
         let repo = directory.path().join("repo");
@@ -99,6 +115,20 @@ impl Source {
         if !output.status.success() {
             bail!("could not fetch setup repository using local Git authentication");
         }
+        if let Some(branch) = &branch {
+            // the clone has every branch of origin; without a checkout, HEAD
+            // is moved to the requested one by its refs alone
+            let tracking = format!("refs/remotes/origin/{branch}");
+            if git_async(&repo, &["show-ref", "--verify", "--quiet", &tracking])
+                .await
+                .is_err()
+            {
+                bail!("--adopt takes a branch, and {branch:?} is not a branch of {origin}");
+            }
+            let head = format!("refs/heads/{branch}");
+            git_async(&repo, &["update-ref", &head, &tracking]).await?;
+            git_async(&repo, &["symbolic-ref", "HEAD", &head]).await?;
+        }
         let revision = git_async(&repo, &["rev-parse", "HEAD"]).await?;
         let branch = git_async(&repo, &["symbolic-ref", "HEAD"]).await?;
         let bundle = directory.path().join("repository.bundle");
@@ -120,6 +150,7 @@ impl Source {
             bundle,
             revision,
             origin,
+            requested_branch,
         })
     }
 }
@@ -162,30 +193,24 @@ pub fn install(
     bundle: &Path,
     origin: &str,
     revision: &str,
-    update: bool,
-    yes: bool,
-    dry_run: bool,
+    options: &InstallOptions,
 ) -> Result<PathBuf> {
-    install_at(
-        bundle,
-        origin,
-        revision,
-        update,
-        yes,
-        dry_run,
-        &global_directory(),
-    )
+    install_at(bundle, origin, revision, options, &global_directory())
 }
 
 fn install_at(
     bundle: &Path,
     origin: &str,
     revision: &str,
-    update: bool,
-    yes: bool,
-    dry_run: bool,
+    options: &InstallOptions,
     destination: &Path,
 ) -> Result<PathBuf> {
+    let &InstallOptions {
+        update,
+        yes,
+        dry_run,
+        require_branch,
+    } = options;
     validate_origin(origin)?;
     if !matches!(revision.len(), 40 | 64) || !revision.bytes().all(|b| b.is_ascii_hexdigit()) {
         bail!("invalid pinned revision");
@@ -256,8 +281,21 @@ fn install_at(
         {
             bail!("global configuration has uncommitted changes");
         }
+        // mise only ever fast-forwards the branch a checkout is on, and never
+        // moves it to another one; the full name, since `--short` prints
+        // `heads/<name>` when a tag shares it
+        if require_branch
+            && git(destination, &["symbolic-ref", "HEAD"]).ok().as_deref()
+                != Some(format!("refs/heads/{branch}").as_str())
+        {
+            bail!(
+                "global configuration at {shown} is not on branch {branch:?}; switch it with git, then run this again"
+            );
+        }
         if update {
-            if git(destination, &["symbolic-ref", "--short", "HEAD"])? != branch {
+            // the full name, since `--short` prints `heads/<name>` when a tag
+            // shares it
+            if git(destination, &["symbolic-ref", "HEAD"])? != format!("refs/heads/{branch}") {
                 bail!("global configuration branch differs from the transferred branch");
             }
             if dry_run {
@@ -413,9 +451,12 @@ mod tests {
             &source.bundle,
             &source.origin,
             &source.revision,
-            update,
-            true,
-            false,
+            &InstallOptions {
+                update,
+                yes: true,
+                dry_run: false,
+                require_branch: source.requested_branch,
+            },
             dest,
         )
     }
@@ -424,16 +465,70 @@ mod tests {
             &source.bundle,
             &source.origin,
             &source.revision,
-            update,
-            true,
-            true,
+            &InstallOptions {
+                update,
+                yes: true,
+                dry_run: true,
+                require_branch: source.requested_branch,
+            },
             dest,
         )
     }
     #[tokio::test]
+    async fn fetches_the_requested_branch_only_when_it_is_a_branch() {
+        let repo = repository();
+        git(repo.path(), &["switch", "-c", "laptop"]).unwrap();
+        commit(repo.path(), "laptop.toml", "[tools]\n");
+        let laptop = git(repo.path(), &["rev-parse", "HEAD"]).unwrap();
+        git(repo.path(), &["tag", "v1"]).unwrap();
+        git(repo.path(), &["switch", "main"]).unwrap();
+        let origin: String = repo.path().to_str().unwrap().into();
+
+        let source = Source::fetch(origin.clone(), Some("laptop".into()))
+            .await
+            .unwrap();
+        assert_eq!(source.revision, laptop);
+        let target = tempfile::tempdir().unwrap();
+        let dest = target.path().join("mise");
+        install_source(&source, &dest, false).unwrap();
+        assert_eq!(
+            git(&dest, &["symbolic-ref", "--short", "HEAD"]).unwrap(),
+            "laptop"
+        );
+        assert!(dest.join("laptop.toml").exists());
+        // a tag that shares the branch's name does not hide the branch
+        git(&dest, &["tag", "laptop"]).unwrap();
+        install_source(&source, &dest, true).unwrap();
+
+        // a checkout on another branch is refused, with or without --update,
+        // and stays where it is
+        let main = Source::fetch(origin.clone(), Some("main".into()))
+            .await
+            .unwrap();
+        for update in [false, true] {
+            let err = install_source(&main, &dest, update).err().unwrap();
+            assert!(err.to_string().contains("switch it with git"), "{err}");
+            assert_eq!(
+                git(&dest, &["symbolic-ref", "HEAD"]).unwrap(),
+                "refs/heads/laptop"
+            );
+        }
+        // without ?ref=, the checkout's own branch is kept as before
+        let default = Source::fetch(origin.clone(), None).await.unwrap();
+        install_source(&default, &dest, false).unwrap();
+
+        for git_ref in ["v1", "missing"] {
+            let err = Source::fetch(origin.clone(), Some(git_ref.into()))
+                .await
+                .err()
+                .unwrap();
+            assert!(err.to_string().contains("is not a branch"), "{err}");
+        }
+    }
+    #[tokio::test]
     async fn dry_run_previews_without_writing() {
         let repo = repository();
-        let source = Source::fetch(repo.path().to_str().unwrap().into())
+        let source = Source::fetch(repo.path().to_str().unwrap().into(), None)
             .await
             .unwrap();
         let target = tempfile::tempdir().unwrap();
@@ -450,7 +545,7 @@ mod tests {
             "config.toml",
             "[settings]\nexperimental = true\n",
         );
-        let next = Source::fetch(source.origin.clone()).await.unwrap();
+        let next = Source::fetch(source.origin.clone(), None).await.unwrap();
         preview_source(&next, &dest, false).unwrap();
         preview_source(&next, &dest, true).unwrap();
         assert_eq!(git(&dest, &["rev-parse", "HEAD"]).unwrap(), source.revision);
@@ -478,7 +573,7 @@ mod tests {
     #[tokio::test]
     async fn pinned_install_and_safe_updates() {
         let repo = repository();
-        let source = Source::fetch(repo.path().to_str().unwrap().into())
+        let source = Source::fetch(repo.path().to_str().unwrap().into(), None)
             .await
             .unwrap();
         let target = tempfile::tempdir().unwrap();
@@ -499,7 +594,7 @@ mod tests {
             "config.toml",
             "[settings]\nexperimental = true\n",
         );
-        let next = Source::fetch(source.origin.clone()).await.unwrap();
+        let next = Source::fetch(source.origin.clone(), None).await.unwrap();
         install_source(&next, &dest, false).unwrap();
         assert_eq!(git(&dest, &["rev-parse", "HEAD"]).unwrap(), source.revision);
         install_source(&next, &dest, true).unwrap();
@@ -518,7 +613,7 @@ mod tests {
     #[tokio::test]
     async fn adoption_preserves_files_and_rejects_conflicts() {
         let repo = repository();
-        let source = Source::fetch(repo.path().to_str().unwrap().into())
+        let source = Source::fetch(repo.path().to_str().unwrap().into(), None)
             .await
             .unwrap();
         let target = tempfile::tempdir().unwrap();
@@ -548,7 +643,7 @@ mod tests {
     async fn rejects_source_local_overrides_and_credential_urls() {
         let repo = repository();
         commit(repo.path(), "config.local.toml", "secret");
-        let source = Source::fetch(repo.path().to_str().unwrap().into())
+        let source = Source::fetch(repo.path().to_str().unwrap().into(), None)
             .await
             .unwrap();
         let target = tempfile::tempdir().unwrap();
@@ -590,7 +685,7 @@ mod tests {
         let target = tempfile::tempdir().unwrap();
         std::fs::create_dir(target.path().join("conf.d")).unwrap();
         std::fs::write(target.path().join("conf.d/private.local.toml"), "private").unwrap();
-        let source = Source::fetch(repo.path().to_str().unwrap().into())
+        let source = Source::fetch(repo.path().to_str().unwrap().into(), None)
             .await
             .unwrap();
         install_source(&source, target.path(), false).unwrap();
@@ -600,7 +695,7 @@ mod tests {
         );
         assert!(target.path().join("conf.d/shared.toml").is_file());
         commit(repo.path(), "conf.d/config.local.toml", "secret");
-        let source = Source::fetch(source.origin.clone()).await.unwrap();
+        let source = Source::fetch(source.origin.clone(), None).await.unwrap();
         let fresh = tempfile::tempdir().unwrap();
         assert!(install_source(&source, &fresh.path().join("mise"), false).is_err());
         assert!(!fresh.path().join("mise").exists());

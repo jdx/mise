@@ -120,7 +120,8 @@ pub(crate) struct Bootstrap {
     /// cloned into the global config directory, normally ~/.config/mise. A setup
     /// repository shared with `mise dotfiles origin set` restores its tracked
     /// files instead. `OWNER/REPO` is short for
-    /// `https://github.com/OWNER/REPO.git`.
+    /// `https://github.com/OWNER/REPO.git`. Append `?ref=<branch>` to adopt a
+    /// branch other than the default branch.
     #[usage(long, value_name = "GIT_URL|OWNER/REPO", conflicts = "from")]
     adopt: Option<String>,
 
@@ -343,6 +344,76 @@ fn validate_bootstrap_checkout(checkout: &Path, url: &str) -> Result<()> {
     if origin != url {
         bail!(
             "{} has origin {origin:?}, expected {url:?}",
+            checkout.display_user()
+        );
+    }
+    Ok(())
+}
+
+/// The repository `--adopt` names, expanded from `OWNER/REPO`, and the branch
+/// its `?ref=` selects.
+fn parse_adopt_source(value: &str) -> Result<(String, Option<String>)> {
+    let (repository, branch) = mise_util::remote_source::RemoteSource::parse_git_repo(value)?;
+    Ok((crate::github_relay::expand_repository(&repository)?, branch))
+}
+
+/// `--adopt` keeps following what it adopts, by pulling into the global
+/// config checkout or by syncing dotfile history, so its `?ref=` must name a
+/// branch on the repository rather than a tag or a commit.
+fn require_adopt_branch(url: &str, branch: &str) -> Result<()> {
+    let head = format!("refs/heads/{branch}");
+    let mut command = Command::new("git");
+    // the same credentials the setup repository's history fetch uses
+    command.args([
+        "-c",
+        &crate::git::github_credential_config("github.com"),
+        "-c",
+        &crate::git::github_credential_config("github.com:443"),
+    ]);
+    command.args(["ls-remote", "--", url, &head]);
+    crate::git::sanitize_git_command(&mut command);
+    let output = command.output()?;
+    if !output.status.success() {
+        bail!(
+            "could not look up branch {branch:?} on {url}: git ls-remote failed with {}",
+            output.status
+        );
+    }
+    let listed = String::from_utf8_lossy(&output.stdout);
+    if !listed
+        .lines()
+        .any(|l| l.split('\t').nth(1) == Some(head.as_str()))
+    {
+        bail!("--adopt takes a branch, and {branch:?} is not a branch of {url}");
+    }
+    Ok(())
+}
+
+/// An existing global config checkout must already be on the branch `?ref=`
+/// names: mise only ever fast-forwards the branch a checkout is on, and never
+/// moves it to another one.
+fn require_checkout_on_branch(checkout: &Path, branch: &str) -> Result<()> {
+    let mut command = Command::new("git");
+    command
+        .arg("-C")
+        .arg(checkout)
+        .args(["symbolic-ref", "--quiet", "HEAD"]);
+    crate::git::sanitize_git_command(&mut command);
+    let output = command.output()?;
+    // the full name: `--short` prints `heads/<name>` when a tag shares it
+    let head = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    let Some(current) = head
+        .strip_prefix("refs/heads/")
+        .filter(|_| output.status.success())
+    else {
+        bail!(
+            "{} is not on a branch; switch it to {branch:?} with git, then run this again",
+            checkout.display_user()
+        );
+    };
+    if current != branch {
+        bail!(
+            "{} is on branch {current:?}, not {branch:?}; switch it with git, then run this again",
             checkout.display_user()
         );
     }
@@ -2385,13 +2456,18 @@ impl Bootstrap {
     }
 
     async fn run_from(&self) -> Result<()> {
-        let expanded = self
-            .adopt
-            .as_deref()
-            .map(crate::github_relay::expand_repository)
-            .transpose()?;
+        let (expanded, adopt_branch) = match self.adopt.as_deref() {
+            Some(adopt) => {
+                let (url, branch) = parse_adopt_source(adopt)?;
+                (Some(url), branch)
+            }
+            None => (None, None),
+        };
         if let Some(url) = expanded.as_deref() {
             system::git_prerequisites::ensure(url, self.yes, self.dry_run).await?;
+            if let Some(branch) = adopt_branch.as_deref() {
+                require_adopt_branch(url, branch)?;
+            }
         }
         // A setup repository must not bypass the released checkout-origin
         // guard and install its files inside another repository's checkout.
@@ -2408,6 +2484,7 @@ impl Bootstrap {
         if let Some(url) = expanded.as_deref()
             && let Some(outcome) = system::history::sync::onboard::from_git(
                 url,
+                adopt_branch.as_deref(),
                 self.yes,
                 self.dry_run,
                 self.replace_history,
@@ -2447,7 +2524,7 @@ impl Bootstrap {
                 })
                 .unwrap_or(*dirs::CONFIG)
                 .to_path_buf();
-            (url.to_string(), None, checkout)
+            (url.to_string(), adopt_branch.clone(), checkout)
         } else {
             let (url, git_ref) = mise_util::remote_source::RemoteSource::parse_git_repo(
                 self.from.as_deref().expect("--from was provided"),
@@ -2466,6 +2543,9 @@ impl Bootstrap {
         let reuse_checkout = checkout.exists() && !checkout_is_empty;
         if reuse_checkout {
             validate_bootstrap_checkout(&checkout, &url)?;
+            if let Some(branch) = adopt_branch.as_deref() {
+                require_checkout_on_branch(&checkout, branch)?;
+            }
         }
         // The clone or pull changes the config checkout before the child
         // process records the bootstrap itself, so it is a generation of its
@@ -3900,20 +3980,18 @@ impl BootstrapRemote {
             );
         }
         let mut failures = vec![];
-        let repository = self
-            .adopt
-            .as_deref()
-            .map(crate::github_relay::expand_repository)
-            .transpose()?;
-        if let Some(origin) = &repository {
+        let repository = self.adopt.as_deref().map(parse_adopt_source).transpose()?;
+        if let Some((origin, _)) = &repository {
             system::remote_repository::validate_origin(origin)?;
         }
         // a dry run fetches and transfers like a real one: the preview comes
         // from the target, which inspects itself and the repository
-        let repository = if let Some(origin) = repository {
+        let repository = if let Some((origin, branch)) = repository {
             Some(
-                system::remote::interruptible(system::remote_repository::Source::fetch(origin))
-                    .await?,
+                system::remote::interruptible(system::remote_repository::Source::fetch(
+                    origin, branch,
+                ))
+                .await?,
             )
         } else {
             None
@@ -6094,7 +6172,9 @@ mod tests {
     use std::ffi::{OsStr, OsString};
     use std::path::Path;
 
-    use super::{bootstrap_from_child_args, select_remote_inventory, unapply_child_args};
+    use super::{
+        bootstrap_from_child_args, parse_adopt_source, select_remote_inventory, unapply_child_args,
+    };
     use crate::cli::{Cli, Commands};
     use crate::system::remote;
 
@@ -6170,6 +6250,29 @@ mod tests {
             .map(OsStr::new);
             assert!(Cli::parse_from_argv(&argv).is_err(), "{archive_flag}");
         }
+    }
+
+    #[test]
+    fn adopt_source_separates_the_branch() {
+        assert_eq!(
+            parse_adopt_source("you/mise-config?ref=laptop").unwrap(),
+            (
+                "https://github.com/you/mise-config.git".to_string(),
+                Some("laptop".to_string())
+            )
+        );
+        assert_eq!(
+            parse_adopt_source("git@github.com:you/setup.git?ref=history").unwrap(),
+            (
+                "git@github.com:you/setup.git".to_string(),
+                Some("history".to_string())
+            )
+        );
+        assert_eq!(
+            parse_adopt_source("you/mise-config").unwrap(),
+            ("https://github.com/you/mise-config.git".to_string(), None)
+        );
+        assert!(parse_adopt_source("you/mise-config?ref=HEAD").is_err());
     }
 
     #[test]

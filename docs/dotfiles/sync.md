@@ -98,6 +98,23 @@ To bring another machine into the same setup, follow
 the repository with
 [`mise bootstrap --adopt`](/bootstrap/from-repository.html#shared-dotfile-history).
 
+### The origin and your global config {#origin-and-global-config}
+
+The origin holds mise's history of your tracked files. `origin set` never pulls
+or pushes a Git checkout on this machine, such as a `~/.config/mise` that you
+adopted with
+[`mise bootstrap --adopt`](/bootstrap/from-repository.html#global-mise-configuration);
+keep that checkout in sync with Git yourself.
+
+Give the origin a repository of its own. Connecting your global config
+repository can put mise's history on its default branch, and from then on
+`mise bootstrap --adopt` restores it as a setup repository instead of cloning
+it into `~/.config/mise`. To keep the history in that repository anyway, put it
+on a branch of its own as in [Keep your local checkpoints](#keep-local-checkpoints),
+and adopt it on other machines with `mise bootstrap --adopt '<url>?ref=<branch>'`.
+To share your global config through the origin instead, track it:
+`mise dot track ~/.config/mise/config.toml`.
+
 ### Repository authentication {#repository-authentication}
 
 Network commands use your Git configuration, including credential helpers,
