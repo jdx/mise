@@ -2795,7 +2795,8 @@ fn configured_snap_options(
 /// Reads the TOML directly instead of loading the config: loading runs the
 /// trust check, which a dry run must not prompt for or record. Nothing here
 /// acts on the file; a real `use` loads it, trust check included, before it
-/// installs.
+/// installs. Safe mode skips that trust check, so a project file's packages
+/// are dropped here as loading would drop its `[bootstrap]` section.
 pub fn declared_packages_in_file(path: &Path) -> eyre::Result<IndexMap<String, PackageTomlConfig>> {
     #[derive(Default, Deserialize)]
     struct File {
@@ -2809,7 +2810,7 @@ pub fn declared_packages_in_file(path: &Path) -> eyre::Result<IndexMap<String, P
     }
     use eyre::WrapErr;
 
-    if !path.exists() {
+    if !path.exists() || crate::config::safe_mode_ignores_bootstrap(path) {
         return Ok(IndexMap::new());
     }
     let file: File = toml::from_str(&crate::file::read_to_string(path)?)

@@ -99,6 +99,10 @@ cp other-packages.toml "$HOME/untrusted/packages.toml"
 assert_contains "env -u CI -u GITHUB_ACTIONS MISE_YES=0 MISE_TRUSTED_CONFIG_PATHS=$PWD mise bootstrap packages use --path '$HOME/untrusted/packages.toml' snap:node --dry-run" "snap install --channel=18/stable --classic node"
 assert_fail "find '$MISE_STATE_DIR/trusted-configs' -mindepth 1 2>/dev/null | grep -q untrusted"
 
+# Safe mode ignores a project's [bootstrap] section, its snap options included.
+assert_contains "MISE_SAFE=1 mise bootstrap packages use snap:node --dry-run" "snap install node"
+assert_not_contains "MISE_SAFE=1 mise bootstrap packages use snap:node --dry-run" "--channel"
+
 # A global config that does not exist yet takes no options from the project.
 mv "$MISE_CONFIG_DIR/config.toml" "$HOME/global-config.bak"
 assert_contains "mise bootstrap packages use --global snap:node --dry-run" "snap install node"
