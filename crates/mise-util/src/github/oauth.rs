@@ -828,9 +828,10 @@ fn store_read() -> Result<HashMap<String, String>> {
         Some(Store::Enclave { helper }) => {
             let sealed = match std::fs::read_to_string(sealed_path()) {
                 Ok(sealed) => sealed,
-                Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
-                    return Ok(HashMap::new());
-                }
+                // A missing file is an error, like a failing `oauth_cache_get`:
+                // callers treat it as an empty store only while every refresh
+                // token is still in the cache file, so tokens that were moved
+                // out are never replaced by a store that lost them.
                 Err(err) => bail!("failed to read {}: {err}", sealed_path().display()),
             };
             if let Some((bytes, tokens)) = &*ENCLAVE_TOKENS.lock().unwrap()
@@ -1228,6 +1229,22 @@ mod tests {
             Some("ghr-a-rotated-elsewhere")
         );
         assert_eq!(unseals(), before + 1);
+
+        // A lost sealed file must not be replaced by a store holding only the new token.
+        let backup = dir.path().join("sealed.bak");
+        std::fs::rename(sealed_path(), &backup).unwrap();
+        *ENCLAVE_TOKENS.lock().unwrap() = None;
+        assert!(store_read().is_err());
+        let mut cache = read_cache().unwrap();
+        cache.tokens.get_mut("a").unwrap().refresh_token = Some("ghr-a4".into());
+        write_cache(&cache).unwrap();
+        assert!(!sealed_path().exists());
+        assert!(
+            std::fs::read_to_string(&cache_path)
+                .unwrap()
+                .contains("ghr-a4")
+        );
+        std::fs::rename(&backup, sealed_path()).unwrap();
 
         // A cancelled prompt is an error, never an empty store, so nothing is dropped.
         std::fs::write(dir.path().join("cancel"), "").unwrap();
