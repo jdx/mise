@@ -628,10 +628,16 @@ fn virtual_store_entry_links_dependencies(entry: &Path) -> bool {
             if optional.is_some_and(|o| o.contains_key(dep)) {
                 continue;
             }
-            let present = modules.join(dep).try_exists().unwrap_or(false)
+            // An empty dir left where a link was lost does not count.
+            let present = modules
+                .join(dep)
+                .join("package.json")
+                .try_exists()
+                .unwrap_or(false)
                 || package
                     .join("node_modules")
                     .join(dep)
+                    .join("package.json")
                     .try_exists()
                     .unwrap_or(false);
             if !present {
@@ -4378,7 +4384,7 @@ pkg@1.2.0 '1.2.0'
     fn forgetting_a_cached_aube_tree_checks_it_again() {
         let tmp = tempfile::tempdir().unwrap();
         let virtual_store = tmp.path().join("node_modules/.mise");
-        std::fs::create_dir_all(virtual_store.join("pkg@1.0.0")).unwrap();
+        std::fs::create_dir_all(virtual_store.join("pkg@1.0.0/node_modules/pkg")).unwrap();
         assert!(aube_install_tree_is_healthy_cached(tmp.path()));
 
         // A reinstall replaces the prefix with a tree that links to a missing store.
@@ -4405,6 +4411,8 @@ pkg@1.2.0 '1.2.0'
         let entry = tmp.path().join("pkg@1.0.0");
         assert!(!virtual_store_entry_links_dependencies(&entry));
         std::fs::create_dir_all(modules.join("dep")).unwrap();
+        assert!(!virtual_store_entry_links_dependencies(&entry));
+        std::fs::write(modules.join("dep/package.json"), "{}").unwrap();
         assert!(virtual_store_entry_links_dependencies(&entry));
 
         let empty = tmp.path().join("empty@1.0.0");
@@ -4424,6 +4432,7 @@ pkg@1.2.0 '1.2.0'
         let dep = store.join("dep@1.0.0/node_modules/dep");
         std::fs::create_dir_all(pkg.join("pkg")).unwrap();
         std::fs::create_dir_all(&dep).unwrap();
+        std::fs::write(dep.join("package.json"), "{}").unwrap();
         std::fs::write(
             pkg.join("pkg/package.json"),
             r#"{"dependencies":{"dep":"1"}}"#,
@@ -4440,7 +4449,11 @@ pkg@1.2.0 '1.2.0'
     #[test]
     fn self_contained_aube_trees_are_cached() {
         let tmp = tempfile::tempdir().unwrap();
-        std::fs::create_dir_all(tmp.path().join("node_modules/.mise/pkg@1.0.0")).unwrap();
+        std::fs::create_dir_all(
+            tmp.path()
+                .join("node_modules/.mise/pkg@1.0.0/node_modules/pkg"),
+        )
+        .unwrap();
 
         assert_eq!(
             aube_install_tree_health(tmp.path()),
