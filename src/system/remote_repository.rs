@@ -349,6 +349,18 @@ fn install_at(
                 )?;
             }
             if !on_branch {
+                // the branch must still be where the ancestry check saw it:
+                // `checkout -B` takes no old commit, so a move by another
+                // process since then would otherwise be overwritten
+                if let Some(from) = &from {
+                    let local = format!("refs/heads/{branch}");
+                    let now = git(destination, &["rev-parse", "--verify", "--quiet", &local]).ok();
+                    if now.as_deref() != Some(from.as_str()) {
+                        bail!(
+                            "branch {branch:?} in {shown} changed during the update; run the bootstrap again"
+                        );
+                    }
+                }
                 // one checkout creates the branch or moves it to the
                 // transferred revision, after the ancestry check above; it
                 // either completes or leaves the checkout and its branches as
