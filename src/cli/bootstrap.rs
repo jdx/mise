@@ -2858,7 +2858,7 @@ fn config_files_after_dotfiles_dry_run(
     let mut bodies = indexmap::IndexMap::new();
     let mut unavailable_bodies = HashSet::new();
     for file in files {
-        if !is_mise_config_target(&file.target) {
+        if !is_simulated_config_target(config, &file.target) {
             continue;
         }
         if file.mode == FileMode::Absent {
@@ -2909,7 +2909,7 @@ fn config_files_after_dotfiles_dry_run(
         }
     }
     for edit in edits {
-        if !is_mise_config_target(&edit.path) {
+        if !is_simulated_config_target(config, &edit.path) {
             continue;
         }
         if unavailable_bodies.contains(&edit.path) {
@@ -2977,8 +2977,29 @@ fn parse_mise_config_body(
     ))
 }
 
+/// Whether a dotfile target is mise configuration: a conventional config path
+/// or a file this run already loaded.
+fn is_config_target(config: &Config, path: &std::path::Path) -> bool {
+    is_mise_config_target(path) || config.config_files.contains_key(path)
+}
+
+/// A config target the dry-run simulation can parse as TOML: a loaded
+/// `.tool-versions` or idiomatic version file is not.
+fn is_simulated_config_target(config: &Config, path: &std::path::Path) -> bool {
+    is_config_target(config, path)
+        && (!config.config_files.contains_key(path)
+            || path.extension().is_some_and(|ext| ext == "toml")
+            || config::config_file::is_mise_toml_filename(path))
+}
+
 fn is_mise_config_target(path: &std::path::Path) -> bool {
-    path.starts_with(*dirs::CONFIG)
+    [
+        &*crate::env::MISE_GLOBAL_CONFIG_FILE,
+        &*crate::env::MISE_SYSTEM_CONFIG_FILE,
+    ]
+    .into_iter()
+    .any(|file| file.as_deref() == Some(path))
+        || path.starts_with(*dirs::CONFIG)
         || path.starts_with(*dirs::SYSTEM_CONFIG)
         || config::DEFAULT_CONFIG_FILENAMES.iter().any(|filename| {
             filename.ends_with(".toml") && !filename.contains('*') && path.ends_with(filename)
@@ -5000,14 +5021,39 @@ pub(crate) async fn run_dotfiles_apply(cmd: DotfilesApply) -> Result<()> {
     let dry_run = cmd.dry_run();
     OperationScope::wrap("dotfiles apply", dry_run, async move {
         let mut config = Config::get().await?;
-        let (files, edits) = cmd.requests(&config)?;
         let hooks = system::hooks_from_config(&config);
         run_bootstrap_hooks(&config, &hooks, BootstrapHookPhase::PreDotfiles, dry_run).await?;
-        if !cmd.run_inner().await? {
+        // mise's own configuration is written first and read again, so a
+        // rule it adds applies in this run instead of the next one. A dry
+        // run previews that write, then plans the rest against the sources
+        // it would write.
+        // resolved once, before either pass writes, so the first pass cannot
+        // change which commands run
+        let reload = system::history::config::reload_commands()?;
+        let Some(done) =
+            cmd.run_config_entries(&config, &reload, |path| is_config_target(&config, path))?
+        else {
+            return Ok(());
+        };
+        let mut first_pass_files = vec![];
+        let apply_config = if dry_run {
+            let (files, edits) = cmd.requests(&config)?;
+            first_pass_files = files.clone();
+            let config_files = config_files_after_dotfiles_dry_run(&config, &files, &edits)?;
+            config.with_bootstrap_dry_run_config_files(config_files)?
+        } else {
+            Config::reset().await?
+        };
+        let (files, edits) = cmd.requests_after_config(&apply_config)?;
+        if !cmd.run_inner(apply_config, &reload, Some(&done)).await? {
             return Ok(());
         }
         let hooks = if dry_run {
-            let config_files = config_files_after_dotfiles_dry_run(&config, &files, &edits)?;
+            // the files the first pass would write count too, even when the
+            // new config no longer lists them
+            first_pass_files.extend(files);
+            let config_files =
+                config_files_after_dotfiles_dry_run(&config, &first_pass_files, &edits)?;
             config = config.with_bootstrap_dry_run_config_files(config_files)?;
             system::hooks_from_config(&config)
         } else {

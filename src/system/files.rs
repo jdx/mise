@@ -4169,6 +4169,19 @@ pub fn apply(
     )
 }
 
+impl ApplyPlan<'_> {
+    /// Nothing to write or reconcile: executing would only report that every
+    /// file is applied.
+    /// The requests this plan would write.
+    pub fn planned_requests(&self) -> Vec<&FileRequest> {
+        self.todo.iter().map(|(req, _)| *req).collect()
+    }
+
+    pub fn is_noop(&self) -> bool {
+        self.todo.is_empty() && self.reconciliation.stale_links.is_empty()
+    }
+}
+
 pub fn execute_apply(
     config: &Config,
     plan: ApplyPlan<'_>,
@@ -4333,7 +4346,7 @@ pub fn execute_apply(
 
 /// Plan and validate an apply without changing targets. Templates are rendered
 /// here so execution writes exactly the content that was validated.
-pub(crate) fn plan_apply<'a>(
+pub fn plan_apply<'a>(
     config: &Config,
     requests: &'a [FileRequest],
     opts: &ApplyOpts,

@@ -1,6 +1,8 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use eyre::Result;
+use indexmap::IndexMap;
 
 use crate::config::{Config, Settings};
 use crate::path::PathExt;
@@ -13,6 +15,10 @@ use crate::system;
 /// `content`, set `permissions`, or remove targets declared `mode = "absent"`.
 /// Edit entries manage a marker-delimited block, a single line, or merged keys
 /// in a file mise does not otherwise own.
+///
+/// Entries that deploy mise's own configuration are applied first and the
+/// configuration is read again, so a rule the new file adds applies in the same
+/// run.
 ///
 /// `apply` works from the files on this machine. It never fetches or pulls: to
 /// bring in changes from other machines, run `mise dot sync`, `mise dot pull`,
@@ -67,19 +73,29 @@ pub(crate) struct DotfilesApply {
     prompt_secrets: bool,
 }
 
+type Requests = (
+    Vec<system::files::FileRequest>,
+    Vec<system::edits::EditRequest>,
+);
+
 impl DotfilesApply {
     pub(crate) fn dry_run(&self) -> bool {
         self.dry_run
     }
 
     /// Load and filter the configured whole-file and edit requests.
-    pub(crate) fn requests(
-        &self,
-        config: &Config,
-    ) -> Result<(
-        Vec<system::files::FileRequest>,
-        Vec<system::edits::EditRequest>,
-    )> {
+    pub(crate) fn requests(&self, config: &Config) -> Result<Requests> {
+        self.select(config, true)
+    }
+
+    /// Like [`Self::requests`], but a target argument that no entry matches
+    /// is not an error: the configuration was rewritten after the arguments
+    /// matched, so the entry that named them may be gone.
+    pub(crate) fn requests_after_config(&self, config: &Config) -> Result<Requests> {
+        self.select(config, false)
+    }
+
+    fn select(&self, config: &Config, strict: bool) -> Result<Requests> {
         // orphans belong to no configured target, so a prune cannot be
         // narrowed to some; like `unapply --group`, it refuses targets
         if self.prune && !self.targets.is_empty() {
@@ -90,21 +106,97 @@ impl DotfilesApply {
         if self.prune {
             super::ensure_prune_sees_every_group(config)?;
         }
-        super::select_requests(config, &self.targets)
+        super::select_requests(config, &self.targets, strict)
+    }
+
+    /// Apply only the entries and edits that write mise's own configuration,
+    /// so the caller can reload before the rest are planned. Returns the
+    /// targets it handled, or `None` when a prompt was declined.
+    pub(crate) fn run_config_entries(
+        &self,
+        config: &Config,
+        reload: &IndexMap<String, String>,
+        is_config: impl Fn(&Path) -> bool,
+    ) -> Result<Option<Vec<String>>> {
+        let (mut files, mut edits) = self.requests(config)?;
+        files.retain(|req| is_config(&req.target));
+        edits.retain(|req| is_config(&req.path));
+        // a dry run reads the live file to check an edit, which the copy
+        // about to replace it may have changed; the edits the new config
+        // keeps are previewed against the simulated one instead
+        if self.dry_run {
+            edits.clear();
+        }
+        if files.is_empty() && edits.is_empty() {
+            return Ok(Some(vec![]));
+        }
+        let secrets = system::secrets::resolve(config, self.prompt_secrets)?;
+        // what this pass writes, so the second one does not repeat it. A
+        // template is not listed: the reloaded config may change what it
+        // renders, though a dry run lists it because it never renders one.
+        // Nor is an entry already in place, which the second pass still has
+        // to record.
+        let mut handled = vec![];
+        let done = write_and_reload_with(reload, self.dry_run, |written| {
+            if !files.is_empty() {
+                let opts = self.file_opts();
+                let plan = system::files::plan_apply(config, &files, &opts, &secrets)?;
+                // an applied config reports nothing: the rest of the apply
+                // may still have work, and "all files are applied" would
+                // read as the end of the command
+                if !plan.is_noop() {
+                    handled.extend(
+                        plan.planned_requests()
+                            .into_iter()
+                            .filter(|req| {
+                                self.dry_run || req.mode != system::files::FileMode::Template
+                            })
+                            .map(|req| format!("{req:?}")),
+                    );
+                    if !system::files::execute_apply(config, plan, &opts, written)? {
+                        return Ok(false);
+                    }
+                }
+            }
+            if edits.is_empty() {
+                return Ok(true);
+            }
+            system::edits::apply(config, &edits, &self.edit_opts(), written)
+        })?;
+        Ok(done.then_some(handled))
     }
 
     /// The apply without an operation of its own, for a caller that already
-    /// opened one.
-    pub(crate) async fn run_inner(self) -> Result<bool> {
-        let config = Config::get().await?;
+    /// opened one. `done` describes the entries an earlier pass over mise's own
+    /// configuration handled (or, on a dry run, previewed).
+    pub(crate) async fn run_inner(
+        self,
+        config: Arc<Config>,
+        reload: &IndexMap<String, String>,
+        done: Option<&[String]>,
+    ) -> Result<bool> {
         let secrets = system::secrets::resolve(&config, self.prompt_secrets)?;
-        let (files, edits) = self.requests(&config)?;
+        let after_config = done.is_some();
+        let (mut files, edits) = if after_config {
+            self.requests_after_config(&config)?
+        } else {
+            self.requests(&config)?
+        };
+        if let Some(done) = done {
+            // a file the first pass wrote is not written again: a config edit
+            // that pass made would otherwise be copied back over
+            files.retain(|req| !done.contains(&format!("{req:?}")));
+        }
         if files.is_empty() && edits.is_empty() && !self.prune {
-            super::warn_if_dotfiles_ignored(&config);
-            info!("no dotfiles configured in [dotfiles]");
+            // nothing was configured at all, not just nothing left after the
+            // config pass
+            if done.is_none_or(<[String]>::is_empty) {
+                super::warn_if_dotfiles_ignored(&config);
+                info!("no dotfiles configured in [dotfiles]");
+            }
             return Ok(true);
         }
-        write_and_reload(self.dry_run, |written| {
+        write_and_reload_with(reload, self.dry_run, |written| {
             if !self.write(&config, &files, &edits, &secrets, written)? {
                 return Ok(false);
             }
@@ -151,6 +243,25 @@ impl DotfilesApply {
         Ok(())
     }
 
+    fn file_opts(&self) -> system::files::ApplyOpts {
+        system::files::ApplyOpts {
+            dry_run: self.dry_run,
+            verbose: Settings::get().verbose,
+            force: self.force,
+            force_hint: "use --force",
+            yes: self.yes,
+        }
+    }
+
+    fn edit_opts(&self) -> system::edits::ApplyOpts {
+        system::edits::ApplyOpts {
+            part: "dotfiles",
+            dry_run: self.dry_run,
+            verbose: Settings::get().verbose,
+            yes: self.yes,
+        }
+    }
+
     /// Apply the whole-file entries, then the edits, appending each written
     /// target to `written` as it goes. Returns `false` when a prompt was
     /// declined.
@@ -163,24 +274,13 @@ impl DotfilesApply {
         written: &mut Vec<PathBuf>,
     ) -> Result<bool> {
         if !files.is_empty() {
-            let opts = system::files::ApplyOpts {
-                dry_run: self.dry_run,
-                verbose: Settings::get().verbose,
-                force: self.force,
-                force_hint: "use --force",
-                yes: self.yes,
-            };
+            let opts = self.file_opts();
             if !system::files::apply(config, files, &opts, secrets, written)? {
                 return Ok(false);
             }
         }
         if !edits.is_empty() {
-            let opts = system::edits::ApplyOpts {
-                part: "dotfiles",
-                dry_run: self.dry_run,
-                verbose: Settings::get().verbose,
-                yes: self.yes,
-            };
+            let opts = self.edit_opts();
             if !system::edits::apply(config, edits, &opts, written)? {
                 return Ok(false);
             }
@@ -199,6 +299,16 @@ pub(crate) fn write_and_reload(
     // resolved from the trusted layers before anything is written, so
     // nothing this apply writes can change which commands run afterwards
     let reload = system::history::config::reload_commands()?;
+    write_and_reload_with(&reload, dry_run, write)
+}
+
+/// [`write_and_reload`] with the reload commands resolved by the caller, for
+/// an apply that writes in more than one pass.
+pub(crate) fn write_and_reload_with(
+    reload: &IndexMap<String, String>,
+    dry_run: bool,
+    write: impl FnOnce(&mut Vec<PathBuf>) -> Result<bool>,
+) -> Result<bool> {
     let mut written = vec![];
     let result = write(&mut written);
     // a dry run writes nothing, so nothing is reloaded. A declined edit
@@ -209,7 +319,7 @@ pub(crate) fn write_and_reload(
             .iter()
             .map(|path| system::history::replay::reload_path(path))
             .collect::<Vec<_>>();
-        system::history::replay::run_reload(&reload, &touched);
+        system::history::replay::run_reload(reload, &touched);
     }
     result
 }
