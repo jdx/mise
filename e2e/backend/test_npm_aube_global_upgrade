@@ -152,6 +152,9 @@ export MISE_CACHE_DIR="$base_cache/unlocked"
 mkdir -p "$MISE_CONFIG_DIR"
 rm -rf "$MISE_DATA_DIR/installs/npm-mise-upgrade-fixture"
 echo 1.0.0 >"$FAKE_NPM_REGISTRY_DIR/latest"
+# Earlier scenarios leave a different setting behind.
+config_tool=npm:mise-upgrade-fixture
+lockfile_setting='lockfile = true'
 write_global_config latest
 MISE_LOCKED=0 mise -C "$HOME" install
 assert_succeed "test -d '$MISE_DATA_DIR/installs/npm-mise-upgrade-fixture/1.0.0'"
@@ -189,6 +192,15 @@ listing, = json.loads(Path(sys.argv[1]).read_text())
 entry, = listing['sidecars']
 assert entry['tool'] == 'npm:mise-upgrade-dep' and entry['exists'], entry
 PY
+# The version-only entry that upgrade recorded must not turn the next bump of
+# that tool into a graph upgrade.
+echo 3.0.0 >"$FAKE_NPM_REGISTRY_DIR/latest"
+export MISE_CACHE_DIR="$base_cache/unrelated-again"
+MISE_LOCKED=0 mise -C "$HOME" --yes upgrade --bump npm:mise-upgrade-fixture
+assert_contains "cat '$MISE_CONFIG_DIR/config.toml'" 'version = "3.0.0"'
+assert_succeed "test -d '$MISE_DATA_DIR/installs/npm-mise-upgrade-fixture/3.0.0'"
+assert_fail "find '$MISE_DATA_DIR/installs/npm-mise-upgrade-fixture' -maxdepth 1 -name '*~aube~*' | grep -q ."
+echo 2.0.0 >"$FAKE_NPM_REGISTRY_DIR/latest"
 
 # An exact global pin stays on its existing graph even when latest advances.
 export MISE_CONFIG_DIR="$base_config/exact"

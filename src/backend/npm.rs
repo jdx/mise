@@ -1017,7 +1017,7 @@ impl Backend for NPMBackend {
         }
         // An upgrade resolves a new version outside the lockfile, but must
         // still satisfy the graph requirements of the entry it will replace.
-        let source_lockfile_version = self.aube_lockfile_version(&ctx.config, &tv.request)?;
+        let source_lockfile_version = self.aube_lockfile_version(&ctx.config, &tv)?;
         if tv.aube_lock.is_some() && package_manager != NpmPackageManager::Aube {
             eyre::bail!(
                 "npm:{} is locked with an embedded-aube dependency graph, but npm.package_manager is set to {}; use the embedded aube package manager or refresh the lockfile",
@@ -1065,7 +1065,7 @@ impl Backend for NPMBackend {
             return Ok(false);
         }
         if Self::uses_embedded_aube() && tv.aube_lock.is_none() {
-            let source_lockfile_version = self.aube_lockfile_version(config, &tv.request)?;
+            let source_lockfile_version = self.aube_lockfile_version(config, tv)?;
             if source_lockfile_version.is_some_and(|version| version >= 2)
                 || Self::aube_lock_creation_enabled(tv)
             {
@@ -1276,15 +1276,34 @@ impl Backend for NPMBackend {
 }
 
 impl NPMBackend {
-    /// The lockfile revision that governs this request's dependency graph.
+    /// The lockfile revision that governs this tool version's dependency graph.
     ///
-    /// An upgrade resolves its new version outside the lockfile, so the request
-    /// is matched by selector rather than by `resolved_from_lockfile()`. A bump
-    /// rewrites the selector itself, which needs `bumped_lockfile_version`.
-    fn aube_lockfile_version(&self, config: &Config, request: &ToolRequest) -> Result<Option<u32>> {
-        match crate::lockfile::version_for_request(config, request)? {
+    /// A version resolved from the lockfile answers to its entry, graph or not.
+    /// An upgrade resolves outside the lockfile, so it only inherits the
+    /// requirement from a recorded graph: version-only entries (which an
+    /// upgrade of a graphless global tool writes) must stay version-only. A
+    /// bump rewrites the selector itself, which needs `bumped_lockfile_version`.
+    fn aube_lockfile_version(&self, config: &Config, tv: &ToolVersion) -> Result<Option<u32>> {
+        if tv.resolved_from_lockfile() {
+            return crate::lockfile::version_for_request(config, &tv.request);
+        }
+        match Self::graph_lockfile_version(config, &tv.request)? {
             Some(revision) => Ok(Some(revision)),
-            None => self.bumped_lockfile_version(config, request),
+            None => self.bumped_lockfile_version(config, &tv.request),
+        }
+    }
+
+    /// The lockfile revision of the entry matching `request`, if that entry
+    /// records a dependency graph.
+    fn graph_lockfile_version(config: &Config, request: &ToolRequest) -> Result<Option<u32>> {
+        if !Settings::get().lockfile_enabled() {
+            return Ok(None);
+        }
+        match request.lockfile_resolve(config)? {
+            Some(entry) if entry.aube.is_some() => {
+                crate::lockfile::version_for_request(config, request)
+            }
+            _ => Ok(None),
         }
     }
 
@@ -1347,7 +1366,7 @@ impl NPMBackend {
             original = Some(candidate);
         }
         match original {
-            Some(original) => crate::lockfile::version_for_request(config, original),
+            Some(original) => Self::graph_lockfile_version(config, original),
             None => Ok(None),
         }
     }

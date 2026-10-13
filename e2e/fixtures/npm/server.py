@@ -86,7 +86,7 @@ def tarball(name, version):
 
 
 ARCHIVES = {(name, version): tarball(name, version)
-            for name in INSTALLABLE_PACKAGES for version in ['1.0.0', '2.0.0']}
+            for name in INSTALLABLE_PACKAGES for version in ['1.0.0', '2.0.0', '3.0.0']}
 
 
 def packument(name, base):
@@ -94,7 +94,7 @@ def packument(name, base):
         latest_path = root / 'latest'
         latest = latest_path.read_text().strip() if latest_path.exists() else '2.0.0'
         versions = {}
-        for version in ['1.0.0', '2.0.0']:
+        for version in ['1.0.0', '2.0.0', '3.0.0']:
             data = ARCHIVES[name, version]
             versions[version] = manifest(name, version) | {'dist': {
                 'tarball': f'{base}/{name}/-/{name}-{version}.tgz',
@@ -103,7 +103,8 @@ def packument(name, base):
             }}
         return {'name': name, 'dist-tags': {'latest': latest}, 'versions': versions,
                 'time': {'1.0.0': '2020-01-01T00:00:00.000Z',
-                         '2.0.0': '2021-01-01T00:00:00.000Z'}}
+                         '2.0.0': '2021-01-01T00:00:00.000Z',
+                         '3.0.0': '2022-01-01T00:00:00.000Z'}}
     latest, releases = PACKAGES[name]
     versions = {}
     for version, (_, deprecated) in releases.items():
@@ -139,7 +140,8 @@ class Handler(BaseHTTPRequestHandler):
         if '/-/' in name:
             package, filename = name.split('/-/', 1)
             version = filename.removeprefix(package + '-').removesuffix('.tgz')
-            archive = ARCHIVES.get((package, version))
+            if filename == f'{package}-{version}.tgz':
+                archive = ARCHIVES.get((package, version))
         if name not in PACKAGES and name not in INSTALLABLE_PACKAGES and archive is None:
             self.send_error(404)
             return
