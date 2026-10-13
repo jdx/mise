@@ -1520,7 +1520,8 @@ impl HistoryRepo {
     }
 
     /// [`Self::object_at`] for several paths, in as few git calls as the
-    /// command-line limit allows; paths absent from `tree_ish` are left out.
+    /// command-line limit allows; paths absent from `tree_ish` are left out,
+    /// and a failed lookup is an error rather than an absent path.
     pub(crate) fn objects_at(
         &self,
         tree_ish: &str,
@@ -1541,11 +1542,8 @@ impl HistoryRepo {
             let mut args = vec!["ls-tree", "-z", tree_ish, "--"];
             args.append(&mut batch);
             batch_len = 0;
-            let output = self.git.output_unchecked(PlumbingCall::new(args))?;
-            if !output.status.success() {
-                continue;
-            }
-            for record in output.stdout.split(|byte| *byte == 0) {
+            let output = self.git.output(PlumbingCall::new(args))?;
+            for record in output.split(|byte| *byte == 0) {
                 let record = String::from_utf8_lossy(record);
                 let Some((meta, path)) = record.split_once('\t') else {
                     continue;
