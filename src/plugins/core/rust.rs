@@ -237,8 +237,13 @@ impl RustPlugin {
             return Ok(());
         }
         ctx.pr.set_message("Downloading rustup-init".into());
-        HTTP.download_file(rustup_url(&settings), &rustup_path(), Some(ctx.pr.as_ref()))
-            .await?;
+        let config_env = ctx.config.env().await?;
+        HTTP.download_file(
+            rustup_url(&settings, &config_env),
+            &rustup_path(),
+            Some(ctx.pr.as_ref()),
+        )
+        .await?;
         file::make_executable(rustup_path())?;
         file::create_dir_all(&homes.rustup)?;
         let mut cmd = CmdLineRunner::new(rustup_path())
@@ -247,6 +252,11 @@ impl RustPlugin {
             .arg("--default-toolchain")
             .arg("none")
             .arg("-y")
+            .envs(
+                ["RUSTUP_DIST_SERVER", "RUSTUP_UPDATE_ROOT"]
+                    .iter()
+                    .filter_map(|k| config_env.get(*k).map(|v| (*k, v))),
+            )
             .env_values(tv.install_env())
             .envs(rustup_env(homes, &tv.version));
         if let Some(host) = settings.rust.default_host.as_ref() {
@@ -946,19 +956,60 @@ const CARGO_BIN: &str = "cargo";
 #[cfg(windows)]
 const CARGO_BIN: &str = "cargo.exe";
 
+/// Where to download `rustup-init` from. Honors `RUSTUP_UPDATE_ROOT`, the variable
+/// rustup itself uses to find its own releases, so a mirror such as panamax works
+/// for the bootstrap download as well as for the toolchains.
+fn rustup_url(settings: &Settings, config_env: &IndexMap<String, String>) -> String {
+    let root = config_env
+        .get("RUSTUP_UPDATE_ROOT")
+        .cloned()
+        .or_else(|| std::env::var("RUSTUP_UPDATE_ROOT").ok());
+    rustup_url_for(root.as_deref(), &rustup_host_triple(settings))
+}
+
+fn rustup_url_for(update_root: Option<&str>, triple: &str) -> String {
+    match update_root.map(|r| r.trim_end_matches('/')) {
+        Some(root) if !root.is_empty() => {
+            format!("{root}/dist/{triple}/{RUSTUP_INIT_BIN}")
+        }
+        _ => default_rustup_url(triple),
+    }
+}
+
 #[cfg(unix)]
-fn rustup_url(_settings: &Settings) -> String {
+fn default_rustup_url(_triple: &str) -> String {
     "https://sh.rustup.rs".to_string()
 }
 
 #[cfg(windows)]
-fn rustup_url(settings: &Settings) -> String {
-    let arch = match settings.arch() {
-        "x64" => "x86_64",
-        "arm64" => "aarch64",
-        other => other,
-    };
+fn default_rustup_url(triple: &str) -> String {
+    let arch = triple.split('-').next().unwrap_or(triple);
     format!("https://win.rustup.rs/{arch}")
+}
+
+/// The triple of the machine `rustup-init` runs on. `rust.default_host` is the
+/// toolchain host rustup is told to install, which may differ, so it is not used here.
+fn rustup_host_triple(settings: &Settings) -> String {
+    let target = crate::build_time::TARGET;
+    // An explicit `arch` setting (e.g. x64 under emulation) swaps the architecture
+    // of the build target, keeping its vendor, OS and ABI.
+    if settings.arch.is_some() {
+        let arch = match settings.arch() {
+            "x64" => "x86_64",
+            "arm64" => "aarch64",
+            other => other,
+        };
+        if let Some((_, rest)) = target.split_once('-') {
+            // `eabi`/`eabihf` belong to 32-bit ARM targets only.
+            let rest = if arch.starts_with("arm") {
+                rest
+            } else {
+                rest.trim_end_matches("eabihf").trim_end_matches("eabi")
+            };
+            return format!("{arch}-{rest}");
+        }
+    }
+    target.to_string()
 }
 
 fn rustup_path() -> PathBuf {
@@ -1395,6 +1446,17 @@ const RUST_TARGET_ARCHES: &[&str] = &[
 mod tests {
     use super::*;
     use confique::Layer;
+
+    #[test]
+    fn test_rustup_url_for_mirror() {
+        let triple = "x86_64-unknown-linux-gnu";
+        assert_eq!(
+            rustup_url_for(Some("https://m.example.com/rustup/"), triple),
+            format!("https://m.example.com/rustup/dist/{triple}/{RUSTUP_INIT_BIN}")
+        );
+        assert_eq!(rustup_url_for(Some(""), triple), default_rustup_url(triple));
+        assert_eq!(rustup_url_for(None, triple), default_rustup_url(triple));
+    }
 
     fn rust_homes_at(root: &Path, explicit: bool) -> RustHomes {
         RustHomes {

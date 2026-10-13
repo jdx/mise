@@ -108,6 +108,25 @@ shared by every toolchain. To pin a Rust CLI per project, install it with the
 mise also puts `$CARGO_HOME/bin`, or the package manager's proxy directory, on
 `PATH`.
 
+## Install from a mirror
+
+mise passes your environment through to rustup, so a rustup mirror such as
+[panamax](https://github.com/panamax-rs/panamax) works by setting rustup's own
+variables:
+
+```toml
+[env]
+RUSTUP_DIST_SERVER = "https://mirror.example.com"
+RUSTUP_UPDATE_ROOT = "https://mirror.example.com/rustup"
+```
+
+`RUSTUP_DIST_SERVER` is where rustup downloads toolchains from. When
+`RUSTUP_UPDATE_ROOT` is set, mise also downloads `rustup-init` from
+`$RUSTUP_UPDATE_ROOT/dist/<host-triple>/rustup-init` instead of
+`https://sh.rustup.rs`. The triple is the one mise was built for, or the
+architecture from the [`arch`](/configuration/settings.html#arch) setting when
+you set it.
+
 ## Cache Cargo builds with Mr Boxington {#share-cargo-builds-with-mr-boxington}
 
 [Mr Boxington](https://mr-boxington.jdx.dev/) (`mbx`) caches Rust compilations
