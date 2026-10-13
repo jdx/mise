@@ -1,0 +1,123 @@
+#!/usr/bin/env bash
+
+source "$ROOT/e2e/fixtures/npm/start.sh"
+export MISE_NPM_PACKAGE_MANAGER=auto MISE_NPM_SHELL_OUT=0
+
+# The harness redirects HOME and all mise state. Verify the redirects before
+# any install: these commands must never touch the user's global installation.
+for path in "$MISE_CONFIG_DIR" "$MISE_DATA_DIR" "$MISE_CACHE_DIR" "$MISE_STATE_DIR"; do
+  [[ $path == "$HOME/"* ]] || fail "mise state is outside the isolated home: $path"
+done
+base_config="$MISE_CONFIG_DIR"
+base_cache="$MISE_CACHE_DIR"
+base_data="$MISE_DATA_DIR"
+mise install node@20.11.1
+# Keep a runtime on the isolated PATH when replaying into fresh mise data.
+ln -s "$(mise where node@20.11.1)/bin/node" "$HOME/bin/node"
+
+write_global_config() {
+  cat >"$MISE_CONFIG_DIR/config.toml" <<EOF
+[settings]
+lockfile = true
+locked = true
+[tools]
+"npm:mise-upgrade-fixture" = { version = "$1", allow_low_downloads = true }
+EOF
+}
+
+check_graph() {
+  python3 - "$MISE_CONFIG_DIR/mise.lock" "$1" <<'PY'
+import hashlib
+import json
+import sys
+import tomllib
+from pathlib import Path
+path = Path(sys.argv[1])
+entry, = tomllib.loads(path.read_text())['tools']['npm:mise-upgrade-fixture']
+version = sys.argv[2]
+assert entry['version'] == version, entry
+graph = entry['aube']
+sidecar = path.parent / graph['path']
+text = (sidecar / 'aube-lock.yaml').read_text()
+assert graph['digest'] == 'sha256:' + hashlib.sha256(text.encode()).hexdigest()
+assert f'mise-upgrade-fixture@{version}' in text, text
+assert f'mise-upgrade-dep@{version}' in text, text
+assert json.loads((sidecar / 'package.json').read_text())['dependencies']['mise-upgrade-fixture'] == version
+PY
+}
+
+# Cover both lock revisions, bare and named upgrades, and reuse of a newer
+# version-only installation. Graph preparation must precede the installed check.
+for scenario in bare-v3 bare-v2 named preinstalled; do
+  export MISE_CONFIG_DIR="$base_config/$scenario"
+  export MISE_CACHE_DIR="$base_cache/$scenario"
+  mkdir -p "$MISE_CONFIG_DIR"
+  rm -rf "$MISE_DATA_DIR/installs/npm-mise-upgrade-fixture"
+  echo 1.0.0 >"$FAKE_NPM_REGISTRY_DIR/latest"
+  write_global_config latest
+  mise -C "$HOME" lock --global npm:mise-upgrade-fixture
+  if [[ $scenario == bare-v2 ]]; then
+    sed -i.bak 's/lockfile_version = 3/lockfile_version = 2/' "$MISE_CONFIG_DIR/mise.lock"
+  fi
+  check_graph 1.0.0
+  mise -C "$HOME" install --locked
+  assert "mise -C '$HOME' exec -- mise-upgrade-fixture" "1.0.0:1.0.0"
+  cp -R "$MISE_CONFIG_DIR" "$PWD/$scenario-before"
+
+  if [[ $scenario == preinstalled ]]; then
+    # A global install without its explicit lock must stay version-only.
+    mv "$MISE_CONFIG_DIR/mise.lock" "$PWD/saved.lock"
+    write_global_config 2.0.0
+    MISE_LOCKED=0 mise -C "$HOME" install
+    assert_succeed "test -d '$MISE_DATA_DIR/installs/npm-mise-upgrade-fixture/2.0.0'"
+    write_global_config latest
+    mv "$PWD/saved.lock" "$MISE_CONFIG_DIR/mise.lock"
+  fi
+
+  echo 2.0.0 >"$FAKE_NPM_REGISTRY_DIR/latest"
+  export MISE_CACHE_DIR="$base_cache/$scenario-upgrade"
+  if [[ $scenario == named ]]; then
+    mise -C "$HOME" --yes upgrade npm:mise-upgrade-fixture
+  else
+    mise -C "$HOME" --yes upgrade
+  fi
+  cp -R "$MISE_CONFIG_DIR" "$PWD/$scenario-after"
+  check_graph 2.0.0
+  assert_succeed "find '$MISE_DATA_DIR/installs/npm-mise-upgrade-fixture' -maxdepth 1 -name '2.0.0~aube~*' | grep -q ."
+
+  # Fresh data forces an actual locked replay, including its transitive package.
+  cp "$MISE_CONFIG_DIR/mise.lock" "$PWD/replay.lock"
+  export MISE_DATA_DIR="$HOME/$scenario-replay-data"
+  mise -C "$HOME" install --locked
+  assert "mise -C '$HOME' exec -- mise-upgrade-fixture" "2.0.0:2.0.0"
+  assert_succeed "cmp '$PWD/replay.lock' '$MISE_CONFIG_DIR/mise.lock'"
+  export MISE_DATA_DIR="$base_data"
+done
+
+# Enabling lockfiles globally still does not opt ordinary global requests into
+# creating a lockfile, sidecars, or graph-specific installations.
+export MISE_CONFIG_DIR="$base_config/unlocked"
+export MISE_CACHE_DIR="$base_cache/unlocked"
+mkdir -p "$MISE_CONFIG_DIR"
+rm -rf "$MISE_DATA_DIR/installs/npm-mise-upgrade-fixture"
+echo 1.0.0 >"$FAKE_NPM_REGISTRY_DIR/latest"
+write_global_config latest
+MISE_LOCKED=0 mise -C "$HOME" install
+assert_succeed "test -d '$MISE_DATA_DIR/installs/npm-mise-upgrade-fixture/1.0.0'"
+echo 2.0.0 >"$FAKE_NPM_REGISTRY_DIR/latest"
+export MISE_CACHE_DIR="$base_cache/unlocked-upgrade"
+MISE_LOCKED=0 mise -C "$HOME" --yes upgrade
+assert_succeed "test -d '$MISE_DATA_DIR/installs/npm-mise-upgrade-fixture/2.0.0'"
+assert_succeed "test ! -e '$MISE_CONFIG_DIR/mise.lock'"
+assert_succeed "test ! -e '$MISE_CONFIG_DIR/locks' && test ! -e '$MISE_CONFIG_DIR/.mise'"
+
+# An exact global pin stays on its existing graph even when latest advances.
+export MISE_CONFIG_DIR="$base_config/exact"
+mkdir -p "$MISE_CONFIG_DIR"
+write_global_config 1.0.0
+mise -C "$HOME" lock --global npm:mise-upgrade-fixture
+cp "$MISE_CONFIG_DIR/mise.lock" "$PWD/exact.lock"
+mise -C "$HOME" --yes upgrade
+check_graph 1.0.0
+assert_succeed "cmp '$PWD/exact.lock' '$MISE_CONFIG_DIR/mise.lock'"
+assert_fake_npm_registry_used mise mise-upgrade-fixture

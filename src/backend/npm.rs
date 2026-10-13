@@ -946,11 +946,10 @@ impl Backend for NPMBackend {
         {
             tv.version = version;
         }
-        let source_lockfile_version = if tv.resolved_from_lockfile() {
-            crate::lockfile::version_for_request(&ctx.config, &tv.request)?
-        } else {
-            None
-        };
+        // An upgrade resolves a new version outside the lockfile, but must
+        // still satisfy the graph requirements of the entry it will replace.
+        let source_lockfile_version =
+            crate::lockfile::version_for_request(&ctx.config, &tv.request)?;
         if tv.aube_lock.is_some() && package_manager != NpmPackageManager::Aube {
             eyre::bail!(
                 "npm:{} is locked with an embedded-aube dependency graph, but npm.package_manager is set to {}; use the embedded aube package manager or refresh the lockfile",
@@ -998,11 +997,8 @@ impl Backend for NPMBackend {
             return Ok(false);
         }
         if Self::uses_embedded_aube() && tv.aube_lock.is_none() {
-            let source_lockfile_version = if tv.resolved_from_lockfile() {
-                crate::lockfile::version_for_request(config, &tv.request)?
-            } else {
-                None
-            };
+            let source_lockfile_version =
+                crate::lockfile::version_for_request(config, &tv.request)?;
             if source_lockfile_version.is_some_and(|version| version >= 2)
                 || Self::aube_lock_creation_enabled(tv)
             {
