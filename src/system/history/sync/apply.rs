@@ -680,9 +680,10 @@ pub(crate) async fn apply_locked_with_scope(
                 .collect::<Result<Vec<_>>>()?;
             let planned_tree = repo.output_tree_of(local)?;
             let mut restored = repo.compose(&repo.output_tree_of(current)?, &restore_planned)?;
-            // It records those paths' modes as well, in the manifest: restore
-            // them too, so a mode the incoming write sets anyway, as on a file
-            // an interrupted apply already wrote, is not a later save.
+            // It records those paths' modes as well, in the manifest. A mode
+            // the incoming write sets anyway, as on a file an interrupted
+            // apply already wrote, is not a later save, so restore it too;
+            // any other saved mode is one, and must still stop the pull.
             if restored != planned_tree
                 && let (Some(mut saved), Some(planned)) = (
                     crate::system::history::manifest::Manifest::read(repo, current)?,
@@ -691,6 +692,11 @@ pub(crate) async fn apply_locked_with_scope(
             {
                 for step in &ready {
                     let path = &step.pending.branch_path;
+                    if saved.file_permissions(path, step.pending.object.as_ref())
+                        != step.desired_mode
+                    {
+                        continue;
+                    }
                     match planned.permissions.get(path) {
                         Some(bits) => saved.permissions.insert(path.clone(), *bits),
                         None => saved.permissions.remove(path),
