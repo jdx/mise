@@ -5157,6 +5157,18 @@ fn bootstrap_git_succeeds<const N: usize>(checkout: &Path, args: [&str; N]) -> R
     Ok(command.status()?.success())
 }
 
+/// Whether `HEAD` is the branch `refs/heads/<name>`.
+fn bootstrap_head_is(checkout: &Path, branch: &str) -> Result<bool> {
+    let mut command = Command::new("git");
+    command
+        .arg("-C")
+        .arg(checkout)
+        .args(["symbolic-ref", "--quiet", "HEAD"]);
+    crate::git::sanitize_git_command(&mut command);
+    let output = command.output()?;
+    Ok(output.status.success() && String::from_utf8_lossy(&output.stdout).trim() == branch)
+}
+
 /// Switches to the local branch `git_ref`, creating it from `origin/<ref>` when
 /// it does not exist, even next to a same-named tag.
 fn switch_to_bootstrap_branch(checkout: &Path, git_ref: &str) -> Result<()> {
@@ -5230,10 +5242,24 @@ fn update_bootstrap_ref(checkout: &Path, git_ref: &str) -> Result<()> {
     let listed = String::from_utf8_lossy(&output.stdout);
     let on_origin = |name: &str| listed.lines().any(|l| l.split('\t').nth(1) == Some(name));
     if on_origin(&branch) {
-        switch_to_bootstrap_branch(checkout, git_ref)?;
         // from origin itself, whatever upstream the local branch tracks
         // fully qualified so a local ref named `origin/<ref>` cannot shadow it
         let remote_branch = format!("refs/remotes/origin/{git_ref}");
+        // another local branch is fast-forwarded before the switch, so the
+        // checkout moves in one step that either completes or leaves HEAD
+        // where it was
+        if !bootstrap_head_is(checkout, &branch)?
+            && bootstrap_git_succeeds(checkout, ["show-ref", "--verify", "--quiet", &branch])?
+        {
+            if !bootstrap_git_succeeds(
+                checkout,
+                ["merge-base", "--is-ancestor", &branch, &remote_branch],
+            )? {
+                bail!("local branch {git_ref:?} cannot be fast-forwarded to origin/{git_ref}");
+            }
+            run_bootstrap_git(checkout, ["update-ref", &branch, &remote_branch])?;
+        }
+        switch_to_bootstrap_branch(checkout, git_ref)?;
         run_bootstrap_git(
             checkout,
             [

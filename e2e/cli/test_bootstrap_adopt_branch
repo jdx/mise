@@ -63,6 +63,18 @@ assert_fail "MISE_CONFIG_DIR='$laptop_config' mise bootstrap --adopt '$config?re
 assert "cat '$laptop_config/notes.txt'" "local"
 assert "git -C '$laptop_config' symbolic-ref HEAD" "refs/heads/main"
 
+# a local branch that is behind is fast-forwarded before the switch, so a
+# refused switch leaves the checkout where it was
+git -C "$work" switch -q laptop
+echo tracked >"$work/notes.txt"
+git -C "$work" add -f notes.txt
+git -C "$work" commit -qm 'test: laptop tracks notes'
+git -C "$work" switch -q main
+git -C "$work" push -q "$config" refs/heads/laptop:refs/heads/laptop
+assert_fail "MISE_CONFIG_DIR='$laptop_config' mise bootstrap --adopt '$config?ref=laptop' --update --yes --only task"
+assert "git -C '$laptop_config' symbolic-ref HEAD" "refs/heads/main"
+assert "cat '$laptop_config/notes.txt'" "local"
+
 # a tag or a branch the repository lacks is refused before anything is cloned
 assert_fail "MISE_CONFIG_DIR='$PWD/tag-config' mise bootstrap --adopt '$config?ref=v1' --yes --only task" "is not a branch"
 assert_fail "MISE_CONFIG_DIR='$PWD/missing-config' mise bootstrap --adopt '$config?ref=missing' --yes --only task" "is not a branch"

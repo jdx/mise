@@ -349,20 +349,23 @@ fn install_at(
                 )?;
             }
             if !on_branch {
-                // an ignored local file stops the switch instead of being
-                // replaced by one the branch tracks
+                // the local branch is fast-forwarded first, so the checkout
+                // moves to the transferred revision in one step that either
+                // completes or leaves HEAD where it was; an ignored local file
+                // stops it instead of being replaced by one the branch tracks
+                let local = format!("refs/heads/{branch}");
                 let mut checkout = vec![
                     "-c",
                     "core.hooksPath=/dev/null",
                     "checkout",
                     "--no-overwrite-ignore",
                 ];
-                if from.is_none() {
-                    checkout.push("-b");
-                }
-                checkout.push(&branch);
-                if from.is_none() {
-                    checkout.push(revision);
+                match &from {
+                    Some(from) => {
+                        git(destination, &["update-ref", &local, revision, from])?;
+                        checkout.push(&branch);
+                    }
+                    None => checkout.extend(["-b", branch.as_str(), revision]),
                 }
                 git(destination, &checkout)?;
             }
@@ -545,6 +548,46 @@ mod tests {
         assert_eq!(
             git(&dest, &["symbolic-ref", "HEAD"]).unwrap(),
             "refs/heads/main"
+        );
+    }
+    #[tokio::test]
+    async fn a_refused_switch_leaves_head_where_it_was() {
+        let repo = repository();
+        commit(repo.path(), ".gitignore", "notes.txt\n");
+        git(repo.path(), &["branch", "notes"]).unwrap();
+        let origin: String = repo.path().to_str().unwrap().into();
+        let target = tempfile::tempdir().unwrap();
+        let dest = target.path().join("mise");
+        // the target has a local `notes` branch, then moves to main
+        let notes = Source::fetch(origin.clone(), Some("notes".into()))
+            .await
+            .unwrap();
+        install_source(&notes, &dest, false).unwrap();
+        let main = Source::fetch(origin.clone(), Some("main".into()))
+            .await
+            .unwrap();
+        install_source(&main, &dest, true).unwrap();
+        // origin's `notes` then starts tracking a file the target ignores
+        git(repo.path(), &["switch", "notes"]).unwrap();
+        std::fs::write(repo.path().join("notes.txt"), "tracked\n").unwrap();
+        git(repo.path(), &["add", "-f", "notes.txt"]).unwrap();
+        git(
+            repo.path(),
+            &["-c", "core.hooksPath=/dev/null", "commit", "-m", "test"],
+        )
+        .unwrap();
+        git(repo.path(), &["switch", "main"]).unwrap();
+        std::fs::write(dest.join("notes.txt"), "local\n").unwrap();
+
+        let notes = Source::fetch(origin, Some("notes".into())).await.unwrap();
+        assert!(install_source(&notes, &dest, true).is_err());
+        assert_eq!(
+            git(&dest, &["symbolic-ref", "HEAD"]).unwrap(),
+            "refs/heads/main"
+        );
+        assert_eq!(
+            std::fs::read_to_string(dest.join("notes.txt")).unwrap(),
+            "local\n"
         );
     }
     #[tokio::test]

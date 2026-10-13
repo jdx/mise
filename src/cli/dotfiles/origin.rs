@@ -46,8 +46,8 @@ enum DotfilesOriginCommands {
 /// `config.local.toml` next to your global config, so it stays on this machine.
 ///
 /// The origin holds tracked-file history, not a checkout of your global config:
-/// connect a repository of its own, not the one you adopt as global config with
-/// `mise bootstrap --adopt`.
+/// connect a repository of its own, or a separate branch (`--branch`) of the one
+/// you adopt as global config with `mise bootstrap --adopt`.
 #[derive(Debug, usage_rs::Args)]
 #[usage(
     example(

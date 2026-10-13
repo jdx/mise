@@ -126,8 +126,8 @@ before the bootstrap runs. The checkout is an ordinary Git repository: commit
 and pull in it as you would anywhere else.
 
 [`mise dot origin set`](/cli/dotfiles/origin/set.html) does not sync this
-checkout and needs a repository of its own; see
-[The origin and your global config](/dotfiles/sync.html#origin-and-global-config).
+checkout. It needs a repository of its own, or a separate branch of this one;
+see [The origin and your global config](/dotfiles/sync.html#origin-and-global-config).
 
 ## Setup repository (`--adopt`) {#shared-dotfile-history}
 
