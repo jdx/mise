@@ -138,7 +138,7 @@ touch ~/.local/mybin/unmanaged
 
 # idempotent: everything reports applied and re-running is a no-op
 assert_succeed "mise dotfiles status --missing"
-assert_contains "mise dotfiles status" "applied"
+assert_contains "mise dotfiles status --verbose" "applied"
 assert_contains "mise dotfiles apply --yes 2>&1" "all files are applied"
 assert "ls ~/.local/mybin/unmanaged" "$HOME/.local/mybin/unmanaged"
 

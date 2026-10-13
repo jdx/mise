@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+# `mise dot status` lists only entries that need attention and counts the
+# rest; --verbose or a named target lists every one.
+mkdir -p dotfiles
+echo a >dotfiles/a
+echo b >dotfiles/b
+cat <<'EOF2' >mise.toml
+[dotfiles]
+"~/.status-a" = "dotfiles/a"
+"~/.status-b" = "dotfiles/b"
+EOF2
+
+assert_succeed "mise dot apply --yes"
+assert_contains "mise dot status" "2 entries up to date"
+assert_not_contains "mise dot status" ".status-a"
+assert_contains "mise dot status --verbose" ".status-a"
+assert_contains "mise dot status ~/.status-a" ".status-a"
+
+rm -f ~/.status-b
+assert_contains "mise dot status" "1 entry up to date"
+assert_contains "mise dot status" ".status-b"
+assert_not_contains "mise dot status" ".status-a"
+assert_fail "mise dot status --missing"

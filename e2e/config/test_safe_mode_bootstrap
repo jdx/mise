@@ -28,14 +28,14 @@ EOF
 
 echo "=== project bootstrap and dotfiles config apply outside safe mode ==="
 assert_contains "mise bootstrap repos status" "~/src/project-repo"
-assert_contains "mise dotfiles status" "~/.project-dotfile"
-assert_contains "mise dotfiles status" "project-group-root"
+assert_contains "mise dotfiles status --verbose" "~/.project-dotfile"
+assert_contains "mise dotfiles status --verbose" "project-group-root"
 
 echo "=== safe mode ignores project bootstrap and dotfiles config ==="
 assert_not_contains "MISE_SAFE=1 mise bootstrap repos status" "project-repo"
-assert_not_contains "MISE_SAFE=1 mise dotfiles status" "project-dotfile"
-assert_not_contains "MISE_SAFE=1 mise dotfiles status" "project-group-root"
-assert_contains "MISE_SAFE=1 mise dotfiles status 2>&1" "skipped because safe mode (MISE_SAFE=1) ignores project config"
+assert_not_contains "MISE_SAFE=1 mise dotfiles status --verbose" "project-dotfile"
+assert_not_contains "MISE_SAFE=1 mise dotfiles status --verbose" "project-group-root"
+assert_contains "MISE_SAFE=1 mise dotfiles status --verbose 2>&1" "skipped because safe mode (MISE_SAFE=1) ignores project config"
 assert_contains "MISE_SAFE=1 mise bootstrap --yes 2>&1" "skipped because safe mode (MISE_SAFE=1) ignores project config"
 assert_contains "MISE_SAFE=1 mise bootstrap repos status 2>&1" "skipped because safe mode (MISE_SAFE=1) ignores project config"
 assert_directory_not_exists "$HOME/src/project-repo"
@@ -53,8 +53,8 @@ cat <<EOF >"$MISE_CONFIG_DIR/config.toml"
 EOF
 assert_succeed "MISE_SAFE=1 mise bootstrap --yes"
 # The warning shows even when global entries remain.
-assert_contains "MISE_SAFE=1 mise dotfiles status 2>&1" "~/.global-dotfile"
-assert_contains "MISE_SAFE=1 mise dotfiles status 2>&1" "skipped because safe mode (MISE_SAFE=1) ignores project config"
+assert_contains "MISE_SAFE=1 mise dotfiles status --verbose 2>&1" "~/.global-dotfile"
+assert_contains "MISE_SAFE=1 mise dotfiles status --verbose 2>&1" "skipped because safe mode (MISE_SAFE=1) ignores project config"
 assert "readlink $HOME/.global-dotfile" "$PWD/global-source"
 assert "cat $HOME/src/global-repo/version.txt" "v1"
 assert_directory_not_exists "$HOME/src/project-repo"
@@ -72,7 +72,7 @@ cat <<EOF >"$MISE_CONFIG_DIR/config.toml"
 [bootstrap]
 config_roots = ["dots/bundles/*"]
 EOF
-assert_contains "MISE_SAFE=1 mise dotfiles status" "~/.root-dotfile"
+assert_contains "MISE_SAFE=1 mise dotfiles status --verbose" "~/.root-dotfile"
 assert_succeed "MISE_SAFE=1 mise bootstrap --yes"
 assert "readlink $HOME/.root-dotfile" "$HOME/dots/bundles/gitcfg/root-source"
 assert_fail "test -e $HOME/.project-dotfile"
@@ -101,8 +101,8 @@ cat <<EOF >roots-project/mise.toml
 config_roots = ["roots/*"]
 EOF
 cd roots-project
-assert_contains "mise dotfiles status" "~/.project-root-dotfile"
-assert_not_contains "MISE_SAFE=1 mise dotfiles status" "project-root-dotfile"
+assert_contains "mise dotfiles status --verbose" "~/.project-root-dotfile"
+assert_not_contains "MISE_SAFE=1 mise dotfiles status --verbose" "project-root-dotfile"
 assert_succeed "MISE_SAFE=1 mise bootstrap --yes"
 assert_fail "test -e $HOME/.project-root-dotfile"
 
@@ -141,4 +141,4 @@ cat <<EOF >>"$HOME/dots/bundles/gitcfg/mise.toml"
 EOF
 cd "$HOME/dots/bundles/gitcfg"
 assert_contains "MISE_SAFE=1 mise bootstrap repos status" "~/src/root-repo"
-assert_contains "MISE_SAFE=1 mise dotfiles status" "~/.root-dotfile"
+assert_contains "MISE_SAFE=1 mise dotfiles status --verbose" "~/.root-dotfile"

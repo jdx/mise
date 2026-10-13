@@ -60,8 +60,8 @@ assert_fail "test -e ~/.windows-settings.json"
 assert_fail "test -e ~/.work-settings.json"
 assert_succeed "MISE_ENV=work mise bootstrap dotfiles apply --yes"
 assert "readlink ~/.work-settings.json" "$PWD/dotfiles/settings.json"
-assert_contains "MISE_ENV=work mise bootstrap dotfiles status" ".work-settings.json"
-assert_not_contains "MISE_ENV=work mise bootstrap dotfiles status" ".default-settings.json"
+assert_contains "MISE_ENV=work mise bootstrap dotfiles status --verbose" ".work-settings.json"
+assert_not_contains "MISE_ENV=work mise bootstrap dotfiles status --verbose" ".default-settings.json"
 
 # Commands filter and operate on the resolved destination.
 echo changed >~/.config/code/settings.json
@@ -80,7 +80,7 @@ TOML
 assert_succeed "mise bootstrap dotfiles apply --yes"
 assert "cat ~/.local-settings.json" '{"shared":true}'
 assert_fail "test -e ~/.config/code/settings.json"
-assert_not_contains "mise bootstrap dotfiles status" ".config/code/settings.json"
+assert_not_contains "mise bootstrap dotfiles status --verbose" ".config/code/settings.json"
 
 # Invalid local overrides preserve the valid inherited declaration.
 cat >mise.local.toml <<'TOML'

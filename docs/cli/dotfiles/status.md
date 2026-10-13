@@ -12,7 +12,7 @@ description: "Show the state of your dotfiles and their history"
 
 Show the state of your dotfiles and their history
 
-Lists each `[dotfiles]` entry with its state: `applied`, `missing`, `differs`, `source missing`, `tracked`, or `absent` for a removal that is done. A tracked entry whose variants all select other machines, such as one for an inactive profile, says `not on this machine`. Then shows the history state: what is tracked, the latest checkpoint, unfinished operations, and whether edits are saved automatically.
+Lists the `[dotfiles]` entries that need attention, and counts the rest; `--verbose` lists every entry. Each has a state: `applied`, `missing`, `differs`, `source missing`, `tracked`, `would remove` for an `absent` entry whose target is still there, or `absent` for a removal that is done. A tracked entry whose variants all select other machines, such as one for an inactive profile, says `not on this machine`. Then shows the history state in sections: Tracking, Repository, Conflicts, Automatic capture, and Bootstrap, ending with the next steps.
 
 Files a dotfile group deployed that no active entry deploys now are listed as `orphaned`: the group was deselected or removed, or a new `exclude` or a deleted source dropped them. `mise dot apply --prune` removes them.
 
@@ -27,15 +27,24 @@ Template entries are rendered to compare their output, so trusted template funct
   **Default:** `true`
 - **`-J --json`** — Output in JSON format
 - **`--missing`** — Exit with code 1 if any dotfile is not in its desired state (missing, source missing, or differs)
+- **`-v --verbose`** — List every entry, including those already applied or tracked
+
+  By default the table lists only entries that need attention or have omitted files, with a one-line summary of the rest. Naming targets lists them regardless.
 - **`--prompt-secrets`** — Prompt for `[bootstrap.secrets]` values that templates need and the environment does not set
 - **`-h --help`** — Print help
 
 ## Examples
 
-Show every dotfile
+Show what needs attention
 
 ```
 mise dot status
+```
+
+List every entry
+
+```
+mise dot status --verbose
 ```
 
 Show one target

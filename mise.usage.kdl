@@ -1250,7 +1250,7 @@ A save re-encrypts the files it captures to the current `[history.encryption] re
             long_help #"""
 Show the state of your dotfiles and their history
 
-Lists each `[dotfiles]` entry with its state: `applied`, `missing`, `differs`, `source missing`, `tracked`, or `absent` for a removal that is done. A tracked entry whose variants all select other machines, such as one for an inactive profile, says `not on this machine`. Then shows the history state: what is tracked, the latest checkpoint, unfinished operations, and whether edits are saved automatically.
+Lists the `[dotfiles]` entries that need attention, and counts the rest; `--verbose` lists every entry. Each has a state: `applied`, `missing`, `differs`, `source missing`, `tracked`, `would remove` for an `absent` entry whose target is still there, or `absent` for a removal that is done. A tracked entry whose variants all select other machines, such as one for an inactive profile, says `not on this machine`. Then shows the history state in sections: Tracking, Repository, Conflicts, Automatic capture, and Bootstrap, ending with the next steps.
 
 Files a dotfile group deployed that no active entry deploys now are listed as `orphaned`: the group was deselected or removed, or a new `exclude` or a deleted source dropped them. `mise dot apply --prune` removes them.
 
@@ -1259,10 +1259,18 @@ Template entries are rendered to compare their output, so trusted template funct
             flag --truncate help="Truncate long terminal output to fit the available width" negate=--no-truncate default="true"
             flag "-J --json" help="Output in JSON format"
             flag --missing help="Exit with code 1 if any dotfile is not in its desired state (missing, source missing, or differs)"
+            flag "-v --verbose" help="List every entry, including those already applied or tracked" {
+                long_help #"""
+List every entry, including those already applied or tracked
+
+By default the table lists only entries that need attention or have omitted files, with a one-line summary of the rest. Naming targets lists them regardless.
+"""#
+            }
             flag --prompt-secrets help="Prompt for `[bootstrap.secrets]` values that templates need and the environment does not set"
             flag "-h --help" help="Print help" action=help builtin=#true
             arg "[TARGET]…" help="Only show these targets" required=#false var=#true
-            example "mise dot status" help="Show every dotfile"
+            example "mise dot status" help="Show what needs attention"
+            example "mise dot status --verbose" help="List every entry"
             example "mise dot status ~/.zshrc" help="Show one target"
             example "mise dot status --json" help="Print the state as JSON"
             example "mise dot status --missing" help="Exit 1 if anything is out of date, for scripts and CI"
@@ -3294,7 +3302,7 @@ A save re-encrypts the files it captures to the current `[history.encryption] re
         long_help #"""
 Show the state of your dotfiles and their history
 
-Lists each `[dotfiles]` entry with its state: `applied`, `missing`, `differs`, `source missing`, `tracked`, or `absent` for a removal that is done. A tracked entry whose variants all select other machines, such as one for an inactive profile, says `not on this machine`. Then shows the history state: what is tracked, the latest checkpoint, unfinished operations, and whether edits are saved automatically.
+Lists the `[dotfiles]` entries that need attention, and counts the rest; `--verbose` lists every entry. Each has a state: `applied`, `missing`, `differs`, `source missing`, `tracked`, `would remove` for an `absent` entry whose target is still there, or `absent` for a removal that is done. A tracked entry whose variants all select other machines, such as one for an inactive profile, says `not on this machine`. Then shows the history state in sections: Tracking, Repository, Conflicts, Automatic capture, and Bootstrap, ending with the next steps.
 
 Files a dotfile group deployed that no active entry deploys now are listed as `orphaned`: the group was deselected or removed, or a new `exclude` or a deleted source dropped them. `mise dot apply --prune` removes them.
 
@@ -3303,10 +3311,18 @@ Template entries are rendered to compare their output, so trusted template funct
         flag --truncate help="Truncate long terminal output to fit the available width" negate=--no-truncate default="true"
         flag "-J --json" help="Output in JSON format"
         flag --missing help="Exit with code 1 if any dotfile is not in its desired state (missing, source missing, or differs)"
+        flag "-v --verbose" help="List every entry, including those already applied or tracked" {
+            long_help #"""
+List every entry, including those already applied or tracked
+
+By default the table lists only entries that need attention or have omitted files, with a one-line summary of the rest. Naming targets lists them regardless.
+"""#
+        }
         flag --prompt-secrets help="Prompt for `[bootstrap.secrets]` values that templates need and the environment does not set"
         flag "-h --help" help="Print help" action=help builtin=#true
         arg "[TARGET]…" help="Only show these targets" required=#false var=#true
-        example "mise dot status" help="Show every dotfile"
+        example "mise dot status" help="Show what needs attention"
+        example "mise dot status --verbose" help="List every entry"
         example "mise dot status ~/.zshrc" help="Show one target"
         example "mise dot status --json" help="Print the state as JSON"
         example "mise dot status --missing" help="Exit 1 if anything is out of date, for scripts and CI"

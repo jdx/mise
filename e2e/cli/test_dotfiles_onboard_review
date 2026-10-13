@@ -10,7 +10,7 @@ assert_succeed "mise bootstrap dotfiles origin set file://$origin --sync fetch-o
 assert 'mise settings get history.sync' 'fetch-only'
 assert_succeed 'mise settings set history.sync manual'
 assert 'mise settings get history.sync' 'manual'
-assert_contains 'mise bootstrap dotfiles status' 'mode manual'
+assert_contains 'mise bootstrap dotfiles status' 'Mode: manual'
 assert_succeed 'mise settings set history.sync sync'
 assert 'mise settings get history.sync' 'sync'
 assert_succeed 'mise settings unset history.sync'
