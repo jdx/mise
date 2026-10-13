@@ -1097,19 +1097,12 @@ pub(crate) fn read_commit_meta_cache_in(
     Ok(Some(cache.checkpoint))
 }
 
-pub(crate) fn write_commit_meta_cache_in(
-    state_dir: &Path,
-    commit: &str,
-    checkpoint: &Checkpoint,
-) -> Result<()> {
-    write_json(
-        &commit_meta_cache_path_in(state_dir, commit),
-        &CommitMetaCache {
-            context: CommitMetaContext::current(),
-            commit: commit.to_string(),
-            checkpoint: checkpoint.clone(),
-        },
-    )
+fn commit_meta_cache(commit: &str, checkpoint: &Checkpoint) -> CommitMetaCache {
+    CommitMetaCache {
+        context: CommitMetaContext::current(),
+        commit: commit.to_string(),
+        checkpoint: checkpoint.clone(),
+    }
 }
 
 pub(crate) fn pending_path_in(state_dir: &Path, uuid: &str) -> PathBuf {
@@ -1289,17 +1282,74 @@ pub(crate) fn new_uuid() -> String {
 }
 
 pub(crate) fn write_json<T: Serialize>(path: &Path, value: &T) -> Result<()> {
-    write_json_text(path, value, false)
+    write_json_text(path, value, false, true).map(|_| ())
 }
 
 /// [`write_json`], leaving a file that already holds these bytes alone. An
 /// index rebuild visits every checkpoint, and rewriting each one through a
 /// temporary file and an fsync costs I/O proportional to the whole history.
 fn write_json_if_changed<T: Serialize>(path: &Path, value: &T) -> Result<()> {
-    write_json_text(path, value, true)
+    write_json_text(path, value, true, true).map(|_| ())
 }
 
-fn write_json_text<T: Serialize>(path: &Path, value: &T, skip_unchanged: bool) -> Result<()> {
+/// The cache records an index rebuild writes, made durable together.
+///
+/// **A rebuild over newly fetched history writes two records per commit,
+/// and syncing each one cost a journal commit apiece:** about 18ms on
+/// ext4, so 37ms a commit, against 1.5ms to read the commit itself. A pull
+/// that fetched thousands of checkpoints spent minutes here. Each record is
+/// still renamed into place whole, so a crash never leaves a torn one, and
+/// [`Self::finish`] syncs the batch before the index that names them is
+/// written. That needs `syncfs`, which only Linux has: elsewhere nothing
+/// flushes a batch, so each record is synced as it is written.
+pub(crate) struct CacheBatch<'a> {
+    state_dir: &'a Path,
+    written: bool,
+}
+
+impl<'a> CacheBatch<'a> {
+    const DEFERS_SYNC: bool = cfg!(any(target_os = "linux", target_os = "android"));
+
+    pub(crate) fn new(state_dir: &'a Path) -> Self {
+        Self {
+            state_dir,
+            written: false,
+        }
+    }
+
+    pub(crate) fn write_meta(&mut self, checkpoint: &Checkpoint) -> Result<()> {
+        let path = meta_cache_path_in(self.state_dir, &checkpoint.uuid);
+        self.written |= write_json_text(&path, checkpoint, true, !Self::DEFERS_SYNC)?;
+        Ok(())
+    }
+
+    pub(crate) fn write_commit_meta(
+        &mut self,
+        commit: &str,
+        checkpoint: &Checkpoint,
+    ) -> Result<()> {
+        let path = commit_meta_cache_path_in(self.state_dir, commit);
+        let cache = commit_meta_cache(commit, checkpoint);
+        self.written |= write_json_text(&path, &cache, false, !Self::DEFERS_SYNC)?;
+        Ok(())
+    }
+
+    pub(crate) fn finish(self) -> Result<()> {
+        #[cfg(any(target_os = "linux", target_os = "android"))]
+        if self.written {
+            file::sync_filesystem(index_dir_in(self.state_dir))?;
+        }
+        Ok(())
+    }
+}
+
+/// Writes `value` as JSON, saying whether the file was written.
+fn write_json_text<T: Serialize>(
+    path: &Path,
+    value: &T,
+    skip_unchanged: bool,
+    synced: bool,
+) -> Result<bool> {
     let mut text = serde_json::to_string_pretty(value)?;
     text.push('\n');
     let unchanged =
@@ -1308,8 +1358,12 @@ fn write_json_text<T: Serialize>(path: &Path, value: &T, skip_unchanged: bool) -
         if let Some(parent) = path.parent() {
             file::create_dir_all(parent)?;
         }
-        file::write_atomic(path, text)
-            .wrap_err_with(|| format!("writing {}", display_path(path)))?;
+        if synced {
+            file::write_atomic(path, text)
+        } else {
+            file::write_atomic_unsynced(path, text)
+        }
+        .wrap_err_with(|| format!("writing {}", display_path(path)))?;
     }
     // a rebuild still heals a file whose mode drifted, but a file already at
     // 0600 is not touched: a chmod writes the inode too
@@ -1322,7 +1376,7 @@ fn write_json_text<T: Serialize>(path: &Path, value: &T, skip_unchanged: bool) -
             let _ = std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600));
         }
     }
-    Ok(())
+    Ok(!unchanged)
 }
 
 #[cfg(test)]
@@ -1334,7 +1388,9 @@ mod commit_cache_tests {
         let temp = tempfile::tempdir()?;
         ensure_store_dir_in(temp.path())?;
         let checkpoint = super::super::checkpoint::test_checkpoint("abc123", None);
-        write_commit_meta_cache_in(temp.path(), "abc123", &checkpoint)?;
+        let mut batch = CacheBatch::new(temp.path());
+        batch.write_commit_meta("abc123", &checkpoint)?;
+        batch.finish()?;
         assert_eq!(
             read_commit_meta_cache_in(temp.path(), "abc123")?
                 .unwrap()

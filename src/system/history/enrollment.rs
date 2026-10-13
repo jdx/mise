@@ -1,6 +1,7 @@
 //! Reconcile explicit local declaration edits with the repository's inventory.
 //! The observation cache is replaceable bookkeeping, never file history.
 
+use std::ops::ControlFlow;
 use std::path::{Path, PathBuf};
 
 use eyre::Result;
@@ -59,10 +60,8 @@ pub(crate) fn resolve(
     let mut historical = vec![];
     if previous.is_none() && !current.enrollment.is_empty() {
         let mut undecided: Vec<_> = current.enrollment.iter().collect();
-        for commit in repo.rev_list(&head, usize::MAX)? {
-            let Some(manifest) = Manifest::read(repo, &commit)? else {
-                continue;
-            };
+        let commits = repo.rev_list(&head, usize::MAX)?;
+        Manifest::read_distinct(repo, &commits, |manifest| {
             let matched: Vec<_> = undecided
                 .iter()
                 .filter(|entry| manifest.enrollment.contains(entry))
@@ -78,9 +77,11 @@ pub(crate) fn resolve(
                 });
             }
             if undecided.is_empty() {
-                break;
+                ControlFlow::Break(())
+            } else {
+                ControlFlow::Continue(())
             }
-        }
+        })?;
     }
     let mut manifest = reconcile(&saved, current, previous.as_ref(), &historical);
     let roots = super::sync::layout::Roots::current();
