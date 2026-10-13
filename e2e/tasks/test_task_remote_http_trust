@@ -31,11 +31,15 @@ cat <<EOF >mise.toml
 file = "http://localhost:${HTTP_PORT}/evil.sh"
 EOF
 
-for cmd in "tasks ls" "tasks info evil" "tasks validate"; do
-  output=$(MISE_YES=0 mise $cmd 2>&1 || true)
-  [[ ! -f $marker ]] || fail "remote task template executed by untrusted 'mise $cmd'"
-  echo "$output" | grep -qi "not trusted" || fail "expected trust error from 'mise $cmd', got: $output"
-done
+assert_untrusted() {
+  local output
+  output=$(MISE_YES=0 mise "$@" 2>&1 || true)
+  [[ ! -f $marker ]] || fail "remote task template executed by untrusted 'mise $*'"
+  echo "$output" | grep -qi "not trusted" || fail "expected trust error from 'mise $*', got: $output"
+}
+assert_untrusted tasks ls
+assert_untrusted tasks info evil
+assert_untrusted tasks validate
 
 # A template-free remote file still loads without trust.
 cat <<EOF >mise.toml

@@ -7232,10 +7232,24 @@ fn trust_check_task_include(path: &Path, require_trust: bool) -> Result<()> {
 /// A downloaded remote task file renders like a local one, so it needs the
 /// trust of the config that names it under the same rule as a local include.
 pub(crate) fn trust_check_remote_task_file(config_source: &Path, file: &Path) -> Result<()> {
-    if !is_path_trusted(config_source) && task_include_requires_trust(file) {
+    if !is_path_trusted(config_source) && remote_task_file_requires_trust(file) {
         trust_check(config_source)?;
     }
     Ok(())
+}
+
+/// [`task_include_requires_trust`], reading the file the way the remote loader
+/// does: through its `#MISE` headers only, even when its name ends in `.toml`.
+fn remote_task_file_requires_trust(path: &Path) -> bool {
+    if Settings::try_get().is_ok_and(|settings| settings.paranoid) {
+        return true;
+    }
+    let Ok(body) = file::read_to_string(path) else {
+        return true;
+    };
+    contains_template_syntax(&body)
+        || crate::task::header_has_decoded_template(&body)
+        || crate::task::header_declares_secrets(&body)
 }
 
 /// Template-free task files are inert at load time: TOML and `#MISE` headers
