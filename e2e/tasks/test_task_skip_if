@@ -38,6 +38,10 @@ run = "echo binary-check-ran"
 skip_if = "ls missing-file"
 run = "echo noisy-check-ran"
 
+[tasks.loud-check]
+skip_if = "echo loud-output"
+run = "echo loud-check-ran"
+
 [tasks.slow-child]
 timeout = "1s"
 skip_if = "sh -c 'sleep 3; touch late'"
@@ -81,6 +85,14 @@ assert_not_contains "mise run binary-check 2>&1" "binary-check-ran"
 noisy="$(mise run noisy-check 2>&1)"
 assert_contains_text "$noisy" "noisy-check-ran"
 assert_not_contains_text "$noisy" "missing-file"
+
+# --raw hands tasks the terminal, but never the check: its output stays hidden.
+raw_noisy="$(mise run --raw noisy-check 2>&1)"
+assert_contains_text "$raw_noisy" "noisy-check-ran"
+assert_not_contains_text "$raw_noisy" "missing-file"
+raw_loud="$(mise run --raw loud-check 2>&1)"
+assert_contains_text "$raw_loud" "skip_if condition met, skipping"
+assert_not_contains_text "$raw_loud" "loud-output"
 
 assert_contains "mise tasks info setup" "Skip if: test -f initialized"
 
