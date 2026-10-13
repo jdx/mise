@@ -125,6 +125,9 @@ pub(crate) async fn apply_locked_with_scope(
         .repo()
         .ok_or_else(|| eyre::eyre!("applying requires git"))?;
     let state_dir = store.state_dir();
+    if operation_scope.is_none() && !req.dry_run {
+        crate::system::history::scope::recover_before_planning(store, tracked)?;
+    }
     let planned_head = repo.ref_oid(crate::system::history::shadow::HistoryRepo::HISTORY_REF)?;
     let incoming = run::incoming_tracking(repo, tracked)?;
     let tracked = &incoming;
