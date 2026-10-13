@@ -1519,36 +1519,45 @@ impl HistoryRepo {
         Ok(Some((mode.to_string(), oid.to_string())))
     }
 
-    /// [`Self::object_at`] for several paths in one git call; paths absent
-    /// from `tree_ish` are left out of the map.
+    /// [`Self::object_at`] for several paths, in as few git calls as the
+    /// command-line limit allows; paths absent from `tree_ish` are left out.
     pub(crate) fn objects_at(
         &self,
         tree_ish: &str,
         paths: &[String],
     ) -> Result<BTreeMap<String, (String, String)>> {
+        // keep each command line well under Windows' 32,767-character limit
+        const MAX_ARGS_LEN: usize = 16 * 1024;
         let mut objects = BTreeMap::new();
-        // with no paths, ls-tree would list the whole tree
-        if paths.is_empty() {
-            return Ok(objects);
-        }
-        let mut args = vec!["ls-tree", "-z", tree_ish, "--"];
-        args.extend(paths.iter().map(String::as_str));
-        let output = self.git.output_unchecked(PlumbingCall::new(args))?;
-        if !output.status.success() {
-            return Ok(objects);
-        }
-        for record in output.stdout.split(|byte| *byte == 0) {
-            let record = String::from_utf8_lossy(record);
-            let Some((meta, path)) = record.split_once('\t') else {
+        let mut batch: Vec<&str> = vec![];
+        let mut batch_len = 0;
+        for (i, path) in paths.iter().enumerate() {
+            batch.push(path);
+            batch_len += path.len() + 1;
+            if batch_len < MAX_ARGS_LEN && i + 1 < paths.len() {
                 continue;
-            };
-            let mut fields = meta.split_whitespace();
-            let (Some(mode), Some(_kind), Some(oid)) =
-                (fields.next(), fields.next(), fields.next())
-            else {
+            }
+            // never call ls-tree with no paths, which lists the whole tree
+            let mut args = vec!["ls-tree", "-z", tree_ish, "--"];
+            args.append(&mut batch);
+            batch_len = 0;
+            let output = self.git.output_unchecked(PlumbingCall::new(args))?;
+            if !output.status.success() {
                 continue;
-            };
-            objects.insert(path.to_string(), (mode.to_string(), oid.to_string()));
+            }
+            for record in output.stdout.split(|byte| *byte == 0) {
+                let record = String::from_utf8_lossy(record);
+                let Some((meta, path)) = record.split_once('\t') else {
+                    continue;
+                };
+                let mut fields = meta.split_whitespace();
+                let (Some(mode), Some(_kind), Some(oid)) =
+                    (fields.next(), fields.next(), fields.next())
+                else {
+                    continue;
+                };
+                objects.insert(path.to_string(), (mode.to_string(), oid.to_string()));
+            }
         }
         Ok(objects)
     }
@@ -2689,6 +2698,37 @@ mod tests {
             )
             .unwrap_err();
         assert!(missing.to_string().contains("not in either snapshot"));
+    }
+
+    #[test]
+    fn objects_at_finds_paths_across_several_git_calls() {
+        if crate::git::plumbing_binary().is_none() {
+            return;
+        }
+        let tmp = tempfile::tempdir().unwrap();
+        let repo = repo(tmp.path());
+        let blob = repo.hash_blob(b"secret").unwrap();
+        // about 40k characters of paths, more than one command line holds
+        let paths: Vec<String> = (0..1200)
+            .map(|i| format!("home/.config/encrypted/file-{i:05}.json"))
+            .collect();
+        let overlays: Vec<Overlay> = paths
+            .iter()
+            .map(|path| Overlay {
+                path: path.clone(),
+                object: Some(("100644".into(), blob.clone())),
+            })
+            .collect();
+        let empty = repo.empty_object("tree").unwrap();
+        let tree = repo.compose(&empty, &overlays).unwrap();
+        let mut wanted = paths.clone();
+        wanted.push("home/absent".into());
+        let objects = repo.objects_at(&tree, &wanted).unwrap();
+        assert_eq!(objects.len(), paths.len());
+        for path in &paths {
+            assert_eq!(objects[path], ("100644".to_string(), blob.clone()));
+        }
+        assert!(repo.objects_at(&tree, &[]).unwrap().is_empty());
     }
 
     #[test]
