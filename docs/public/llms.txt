@@ -129,6 +129,7 @@
 - [nix](https://mise.jdx.dev/bootstrap/packages/nix.html): The nix manager installs packages into your user's Nix profile with nix profile install. It works on Linux and macOS, on NixOS or not.
 - [pacman](https://mise.jdx.dev/bootstrap/packages/pacman.html): The pacman manager installs and removes packages on Arch Linux, Manjaro, EndeavourOS, and other Arch-based distributions. It uses sudo when mise is not running as root. For AUR packages, use aur.
 - [scoop](https://mise.jdx.dev/bootstrap/packages/scoop.html): The scoop manager installs, pins, and removes Windows apps with Scoop in your user scope.
+- [snap](https://mise.jdx.dev/bootstrap/packages/snap.html): The snap manager installs and removes snaps from the Snap Store with the snap command. Snaps are installed system-wide, and mise uses sudo when it is not running as root.
 - [winget](https://mise.jdx.dev/bootstrap/packages/winget.html): The winget manager installs and upgrades Windows packages with the Windows Package Manager, winget.
 - [zypper](https://mise.jdx.dev/bootstrap/packages/zypper.html): The zypper manager installs and removes packages on openSUSE and SUSE Linux Enterprise with zypper. It uses sudo when mise is not running as root.
 - [Package manager plugins](https://mise.jdx.dev/bootstrap/packages/plugins.html): Package manager plugins add managers to [bootstrap.packages] for machine-wide state that another program owns, such as VS Code extensions, Helm plugins, krew plugins, and GitHub CLI extensions.

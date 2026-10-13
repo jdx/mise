@@ -17,7 +17,7 @@ pub(crate) struct BootstrapApplyReport {
 ///
 /// Installs each configured package that is missing or does not match its
 /// declared version, and removes packages declared `state = "absent"` on the
-/// managers that support removal (pacman, scoop, and zypper). On other
+/// managers that support removal (pacman, scoop, snap, and zypper). On other
 /// managers, an installed package declared absent is left in place with a
 /// warning; `apply` fails for it only when you pass `--manager` or name the
 /// package.
@@ -74,7 +74,7 @@ pub(crate) struct SystemInstall {
     /// Refresh package manager metadata first, where the manager supports it
     ///
     /// For example, apt runs `apt-get update` and dnf adds `--refresh`. brew,
-    /// brew-cask, flatpak, flatpak-user, macos-app, and mas ignore this flag.
+    /// brew-cask, flatpak, flatpak-user, macos-app, mas, and snap ignore this flag.
     #[usage(long)]
     update: bool,
 }

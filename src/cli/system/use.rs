@@ -25,8 +25,8 @@ use crate::system::packages::PackageRequest;
 /// cask names (`brew:postgresql@17`, `brew-cask:temurin@17`), so there `@` is
 /// part of the name. mas takes numeric App Store IDs and nix takes attribute
 /// paths or flake references, so neither accepts `@version`. aur, flatpak,
-/// flatpak-user, and pacman accept `@version` but cannot install a pin, so
-/// installing skips those entries with a warning.
+/// flatpak-user, pacman, and snap accept `@version` but cannot install a pin,
+/// so installing skips those entries with a warning.
 #[derive(Debug, usage_rs::Args)]
 #[usage(
     visible_alias = "u",
@@ -132,6 +132,10 @@ impl SystemUse {
             existing_global_paths,
             has_new_global_entries,
         })?;
+        // Read the file being written, loaded or not (`--path`, `--env`):
+        // its own entry is what keeps snap options.
+        let declared = system::declared_packages_in_file(&path)?;
+        system::attach_snap_options(&declared, &mut mgrs)?;
         if self.dry_run {
             for (key, version) in &entries {
                 miseprintln!("{}: \"{key}\" = \"{version}\"", display_path(&path));

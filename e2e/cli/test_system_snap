@@ -1,0 +1,154 @@
+#!/usr/bin/env bash
+
+if [[ "$(uname)" != "Linux" ]]; then
+  exit 0
+fi
+
+# Exercise the real CLI and subprocess boundary without a running snapd.
+mkdir -p "$HOME/snap-bin"
+export PATH="$HOME/snap-bin:$PATH"
+export MISE_SYSTEM_PACKAGES_SUDO=true
+touch "$HOME/snap-log"
+cat >"$HOME/snap-bin/snap" <<'SH'
+#!/bin/sh
+if [ "$1" = list ]; then
+  [ "$LC_ALL" = C ] || exit 2
+  if [ -f "$HOME/snapd-down" ]; then
+    echo 'error: cannot communicate with server: connection refused' >&2
+    exit 1
+  fi
+  echo 'Name      Version   Rev   Tracking        Publisher   Notes'
+  cat "$HOME/snap-state"
+  exit 0
+fi
+echo "$*" >>"$HOME/snap-log"
+exit "${SNAP_EXIT:-0}"
+SH
+cat >"$HOME/snap-bin/sudo" <<'SH'
+#!/bin/sh
+if [ "$1" = -n ] && [ "$2" = true ]; then
+  exit 0
+fi
+[ "$1" = snap ] || exit 99
+shift
+exec "$HOME/snap-bin/snap" "$@"
+SH
+chmod +x "$HOME/snap-bin/"*
+
+cat >mise.toml <<'TOML'
+[bootstrap.packages]
+"snap:jq" = "latest"
+"snap:yq" = "latest"
+"snap:code" = { classic = true }
+"snap:node" = { channel = "22/stable", classic = true }
+"snap:hello" = { channel = "stable" }
+TOML
+cat >"$HOME/snap-state" <<'TXT'
+jq        1.5       6     latest/stable   mvo         -
+node      20.18.0   9001  20/stable       iojs**      classic
+hello     2.10      42    latest/stable   canonical** -
+TXT
+
+# A snap on another channel is drift; a bare risk matches latest/<risk>.
+assert_contains "mise bootstrap packages status" "20.18.0 from 20/stable"
+assert_fail "mise bootstrap packages status --missing"
+assert_contains "mise bootstrap packages apply --dry-run" "snap install yq"
+assert_contains "mise bootstrap packages apply --dry-run" "snap install --classic code"
+assert_contains "mise bootstrap packages apply --dry-run" "snap refresh --channel=22/stable --classic node"
+assert_succeed "test ! -s '$HOME/snap-log'"
+
+# Plain snaps share one command; flags go to one snap at a time.
+assert_succeed "mise bootstrap packages apply --yes"
+assert "sort '$HOME/snap-log'" $'install --classic code\ninstall yq\nrefresh --channel=22/stable --classic node'
+
+cat >"$HOME/snap-state" <<'TXT'
+jq        1.5       6     latest/stable   mvo         -
+yq        4.44.3    2634  latest/stable   mikefarah   -
+code      1.95.3    178   latest/stable   vscode**    classic
+node      22.11.0   9257  22/stable       iojs**      classic
+hello     2.10      42    latest/stable   canonical** -
+TXT
+: >"$HOME/snap-log"
+assert_succeed "mise bootstrap packages status --missing"
+assert_succeed "mise bootstrap packages apply --yes"
+assert_succeed "test ! -s '$HOME/snap-log'"
+
+# use keeps the options an existing entry declares and installs with them.
+grep -v '^node ' "$HOME/snap-state" >"$HOME/snap-state.new"
+mv "$HOME/snap-state.new" "$HOME/snap-state"
+assert_contains "mise bootstrap packages use snap:node --dry-run" "snap install --channel=22/stable --classic node"
+
+# use --global installs what the global entry declares, not the project's.
+touch "$MISE_CONFIG_DIR/config.toml"
+cp "$MISE_CONFIG_DIR/config.toml" "$HOME/global-config.bak"
+cat >>"$MISE_CONFIG_DIR/config.toml" <<'TOML'
+[bootstrap.packages]
+"snap:node" = { channel = "20/stable", classic = true }
+TOML
+assert_contains "mise bootstrap packages use --global snap:node --dry-run" "snap install --channel=20/stable --classic node"
+mv "$HOME/global-config.bak" "$MISE_CONFIG_DIR/config.toml"
+# use --path reads the options of a file mise has not loaded.
+cat >other-packages.toml <<'TOML'
+[bootstrap.packages]
+"snap:node" = { channel = "18/stable", classic = true }
+TOML
+assert_contains "mise bootstrap packages use --path other-packages.toml snap:node --dry-run" "snap install --channel=18/stable --classic node"
+# Reading those options for a dry run neither needs nor records trust.
+mkdir -p "$HOME/untrusted"
+cp other-packages.toml "$HOME/untrusted/packages.toml"
+assert_contains "env -u CI -u GITHUB_ACTIONS MISE_YES=0 MISE_TRUSTED_CONFIG_PATHS=$PWD mise bootstrap packages use --path '$HOME/untrusted/packages.toml' snap:node --dry-run" "snap install --channel=18/stable --classic node"
+assert_fail "find '$MISE_STATE_DIR/trusted-configs' -mindepth 1 2>/dev/null | grep -q untrusted"
+
+# Safe mode ignores a project's [bootstrap] section, its snap options included.
+assert_contains "MISE_SAFE=1 mise bootstrap packages use snap:node --dry-run" "snap install node"
+assert_not_contains "MISE_SAFE=1 mise bootstrap packages use snap:node --dry-run" "--channel"
+
+# A global config that does not exist yet takes no options from the project.
+mv "$MISE_CONFIG_DIR/config.toml" "$HOME/global-config.bak"
+assert_contains "mise bootstrap packages use --global snap:node --dry-run" "snap install node"
+assert_not_contains "mise bootstrap packages use --global snap:node --dry-run" "--channel"
+mv "$HOME/global-config.bak" "$MISE_CONFIG_DIR/config.toml"
+echo 'node      22.11.0   9257  22/stable       iojs**      classic' >>"$HOME/snap-state"
+
+# Upgrade refreshes now, keeping each declared channel.
+assert_succeed "mise bootstrap packages upgrade --yes snap:jq snap:node"
+assert "sort '$HOME/snap-log'" $'refresh --channel=22/stable --classic node\nrefresh jq'
+
+# A version pin is drift that apply cannot fix, so it is skipped.
+cat >mise.toml <<'TOML'
+[bootstrap.packages]
+"snap:jq" = "1.6"
+TOML
+: >"$HOME/snap-log"
+assert_contains "mise bootstrap packages status" "version mismatch"
+assert_contains "mise bootstrap packages apply --yes 2>&1" "snap: cannot install pinned version 'jq@1.6', skipping"
+assert_succeed "test ! -s '$HOME/snap-log'"
+
+# Malformed names and channels are rejected.
+assert_fail_contains "mise bootstrap packages apply --yes snap:--classic" "invalid snap name"
+cat >mise.toml <<'TOML'
+[bootstrap.packages]
+"snap:node" = { channel = "22 stable" }
+"snap:jq" = { channel = "latest/stabel" }
+"apt:curl" = { classic = true }
+TOML
+assert_contains "mise bootstrap packages status 2>&1" "snap:node: invalid channel '22 stable'"
+assert_contains "mise bootstrap packages status 2>&1" "snap:jq: invalid channel 'latest/stabel'"
+assert_contains "mise bootstrap packages status 2>&1" "channel and classic are only supported for snap entries"
+
+# Declarative removal.
+cat >mise.toml <<'TOML'
+[bootstrap.packages]
+"snap:hello" = { state = "absent" }
+"snap:missing" = { state = "absent" }
+TOML
+: >"$HOME/snap-log"
+assert_contains "mise bootstrap packages apply --dry-run" "snap remove hello"
+assert_succeed "mise bootstrap packages apply --yes"
+assert "cat '$HOME/snap-log'" 'remove hello'
+
+# A failed query is an error, not a list of missing snaps to install.
+touch "$HOME/snapd-down"
+: >"$HOME/snap-log"
+assert_fail_contains "mise bootstrap packages apply --yes snap:jq" "cannot communicate with server"
+assert_succeed "test ! -s '$HOME/snap-log'"

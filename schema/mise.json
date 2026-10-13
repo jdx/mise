@@ -7541,9 +7541,18 @@
                     "pattern": ".*\\S.*",
                     "description": "macos-app only: app bundle to install from the archive, e.g. Nuvio.app; required with url"
                   },
+                  "channel": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9._][A-Za-z0-9._-]*(/[A-Za-z0-9._][A-Za-z0-9._-]*){0,2}$",
+                    "description": "snap only: channel to install from and track, e.g. latest/stable or 22/edge"
+                  },
+                  "classic": {
+                    "type": "boolean",
+                    "description": "snap only: install with classic confinement"
+                  },
                   "state": {
                     "type": "string",
-                    "description": "desired package state; only pacman currently supports absent",
+                    "description": "desired package state; pacman, scoop, snap, and zypper support absent",
                     "enum": ["present", "absent"],
                     "default": "present"
                   }
