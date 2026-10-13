@@ -30,7 +30,7 @@ and keeps in sync with your other machines.
 | Repository holds                                       | Command                        | Where the repository goes                        | Afterwards                                                          |
 | ------------------------------------------------------ | ------------------------------ | ------------------------------------------------ | ------------------------------------------------------------------- |
 | A bootstrap project: `mise.toml` and the files it uses | `mise bootstrap --from <url>`  | `$MISE_DATA_DIR/bootstrap-repo`, or `--from-dir` | Rerun with `--update` to apply new commits                          |
-| Global mise config: `config.toml`, `conf.d/`, `tasks/` | `mise bootstrap --adopt <url>` | Your global config directory, `~/.config/mise`   | Every later mise command reads it as your global config             |
+| Global mise config: `config.toml`, `conf.d/`, `tasks/` | `mise bootstrap --adopt <url>` | A Git checkout at `~/.config/mise`               | Every later mise command reads it as your global config             |
 | A setup repository created with `mise dot origin set`  | `mise bootstrap --adopt <url>` | mise's history store; files go to their paths    | Later changes arrive through the history watcher or `mise dot pull` |
 
 `--adopt` detects a setup repository by the `.mise-history/format.toml` file
@@ -111,9 +111,8 @@ before adopting into it. With an existing checkout, `--update` fast-forwards it
 before the bootstrap runs. The checkout is an ordinary Git repository: commit
 and pull in it as you would anywhere else.
 
-mise does not sync this checkout.
-[`mise dot origin set`](/cli/dotfiles/origin/set.html) shares something else,
-the history of your tracked files, and needs a repository of its own; see
+[`mise dot origin set`](/cli/dotfiles/origin/set.html) does not sync this
+checkout and needs a repository of its own; see
 [The origin and your global config](/dotfiles/sync.html#origin-and-global-config).
 
 ## Setup repository (`--adopt`) {#shared-dotfile-history}
