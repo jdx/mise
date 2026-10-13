@@ -401,6 +401,33 @@ packages:
           - goos: windows
             format: zip
   - type: github_release
+    repo_owner: Alice39s
+    repo_name: xmtr
+    description: Concurrent traceroute built on trippy that publishes routes
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: "true"
+        asset: xmtr-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: zip
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-gnu
+        checksum:
+          type: github_release
+          asset: SHA256SUMS
+          algorithm: sha256
+        overrides:
+          - goos: linux
+            format: tar.gz
+          - goos: darwin
+            format: tar.gz
+          - goos: windows
+            goarch: arm64
+            asset: xmtr-{{.Arch}}-{{.OS}}llvm.{{.Format}}
+  - type: github_release
     repo_owner: Aloxaf
     repo_name: silicon
     description: Create beautiful image of your source code
@@ -21993,7 +22020,7 @@ packages:
           - darwin
           - windows
           - amd64
-      - version_constraint: "true"
+      - version_constraint: semver("<= 1.2.4")
         asset: dust-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
         format: tar.gz
         rosetta2: true
@@ -22012,6 +22039,21 @@ packages:
               arm64: aarch64
           - goos: windows
             format: zip
+      - version_constraint: "true"
+        asset: dust-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-msvc
+        overrides:
+          - goos: windows
+            format: zip
+        files:
+          - name: dust
+            src: "{{.AssetWithoutExt}}/dust"
   - type: github_release
     repo_owner: borgbackup
     repo_name: borg
@@ -22928,6 +22970,15 @@ packages:
           type: github_release
           asset: protoc-gen-validate_{{trimV .Version}}_checksums.txt
           algorithm: sha256
+  - name: bufbuild/protoschema-plugins/protoc-gen-jsonschema
+    type: go_install
+    path: github.com/bufbuild/protoschema-plugins/cmd/protoc-gen-jsonschema
+    repo_owner: bufbuild
+    repo_name: protoschema-plugins
+    description: "Protobuf plugin that generate JSON Schema from protobuf files"
+    version_source: github_tag
+    files:
+      - name: protoc-gen-jsonschema
   - type: github_release
     repo_owner: buildkite
     repo_name: agent
@@ -29848,7 +29899,12 @@ packages:
     repo_owner: connectrpc
     repo_name: connect-go
     description: Simple, reliable, interoperable. A better gRPC
-    path: connectrpc.com/connect/cmd/protoc-gen-connect-go
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("< 2.0.0")
+        path: connectrpc.com/connect/cmd/protoc-gen-connect-go
+      - version_constraint: "true"
+        path: connectrpc.com/connect/v{{(semver .Version).Major}}/cmd/protoc-gen-connect-go
     files:
       - name: protoc-gen-connect-go
   - type: github_release
@@ -87194,30 +87250,108 @@ packages:
     repo_owner: sharkdp
     repo_name: hyperfine
     description: A command-line benchmarking tool
-    supported_envs:
-      - darwin
-      - linux
-      - amd64
-    asset: hyperfine-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
-    format: tar.gz
-    overrides:
-      - goos: windows
-        format: zip
-      - goos: linux
-        goarch: arm64
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.2.0")
+        error_message: The version is too old.
+      - version_constraint: semver("<= 1.2.0")
+        asset: hyperfine-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
         replacements:
-          linux: unknown-linux-gnu
-    rosetta2: true
-    replacements:
-      amd64: x86_64
-      arm64: aarch64
-      darwin: apple-darwin
-      linux: unknown-linux-musl
-      windows: pc-windows-msvc
-      386: i686
-    files:
-      - name: hyperfine
-        src: hyperfine-{{.Version}}-{{.Arch}}-{{.OS}}/hyperfine
+          amd64: x86_64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+        supported_envs:
+          - linux/amd64
+          - darwin
+        files:
+          - name: hyperfine
+            src: "{{.AssetWithoutExt}}/hyperfine"
+      - version_constraint: semver("<= 1.11.0")
+        asset: hyperfine-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-msvc
+        overrides:
+          - goos: windows
+            format: zip
+            files:
+              - name: hyperfine
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+        files:
+          - name: hyperfine
+            src: "{{.AssetWithoutExt}}/hyperfine"
+      - version_constraint: semver("<= 1.18.0")
+        asset: hyperfine-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+          windows: pc-windows-msvc
+        overrides:
+          - goos: linux
+            goarch: amd64
+            replacements:
+              linux: unknown-linux-musl
+          - goos: linux
+            goarch: arm64
+            replacements:
+              arm64: aarch64
+              linux: unknown-linux-gnu
+          - goos: windows
+            format: zip
+        files:
+          - name: hyperfine
+            src: "{{.AssetWithoutExt}}/hyperfine"
+      - version_constraint: semver("<= 1.20.0")
+        asset: hyperfine-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          windows: pc-windows-msvc
+        overrides:
+          - goos: linux
+            goarch: amd64
+            replacements:
+              linux: unknown-linux-musl
+          - goos: linux
+            goarch: arm64
+            replacements:
+              linux: unknown-linux-gnu
+          - goos: windows
+            format: zip
+        files:
+          - name: hyperfine
+            src: "{{.AssetWithoutExt}}/hyperfine"
+      - version_constraint: "true"
+        asset: hyperfine-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-msvc
+        overrides:
+          - goos: windows
+            format: zip
+        files:
+          - name: hyperfine
+            src: "{{.AssetWithoutExt}}/hyperfine"
   - type: github_release
     repo_owner: sharkdp
     repo_name: numbat
@@ -96930,6 +97064,76 @@ packages:
               asset: SHA256SUMS.sigstore.json
         github_artifact_attestations:
           signer_workflow: takumin/passt-bin/.github/workflows/wc-sign.yml
+        supported_envs:
+          - linux
+  - type: github_release
+    repo_owner: takumin
+    repo_name: qemu-bin
+    description: Prebuilt binaries of `qemu` built with zig cc
+    files:
+      - name: qemu-edid
+        src: bin/qemu-edid
+      - name: qemu-img
+        src: bin/qemu-img
+      - name: qemu-io
+        src: bin/qemu-io
+      - name: qemu-nbd
+        src: bin/qemu-nbd
+      - name: qemu-pr-helper
+        src: bin/qemu-pr-helper
+      - name: qemu-storage-daemon
+        src: bin/qemu-storage-daemon
+      - name: qemu-system-aarch64
+        src: bin/qemu-system-aarch64
+      - name: qemu-system-x86_64
+        src: bin/qemu-system-x86_64
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: "true"
+        asset: qemu-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          linux: linux-gnu
+        checksum:
+          type: github_release
+          asset: SHA256SUMS
+          algorithm: sha256
+          cosign:
+            opts:
+              - --certificate-identity
+              - https://github.com/takumin/qemu-bin/.github/workflows/wc-sign.yml@refs/heads/main
+              - --certificate-oidc-issuer
+              - https://token.actions.githubusercontent.com
+              - --certificate-github-workflow-repository
+              - takumin/qemu-bin
+            bundle:
+              type: github_release
+              asset: SHA256SUMS.sigstore.json
+        github_artifact_attestations:
+          signer_workflow: takumin/qemu-bin/.github/workflows/wc-sign.yml
+        overrides:
+          - goarch: amd64
+            files:
+              - name: qemu-edid
+                src: bin/qemu-edid
+              - name: qemu-img
+                src: bin/qemu-img
+              - name: qemu-io
+                src: bin/qemu-io
+              - name: qemu-nbd
+                src: bin/qemu-nbd
+              - name: qemu-pr-helper
+                src: bin/qemu-pr-helper
+              - name: qemu-storage-daemon
+                src: bin/qemu-storage-daemon
+              - name: qemu-system-aarch64
+                src: bin/qemu-system-aarch64
+              - name: qemu-system-x86_64
+                src: bin/qemu-system-x86_64
+              - name: qemu-vmsr-helper
+                src: bin/qemu-vmsr-helper
         supported_envs:
           - linux
   - type: github_release
