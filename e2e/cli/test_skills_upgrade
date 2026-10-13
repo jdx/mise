@@ -39,3 +39,13 @@ assert_contains "cat .agents/skills/skilled/SKILL.md" "# skilled 1.0.0"
 mise upgrade skilled
 assert_contains "cat .agents/skills/skilled/SKILL.md" "# skilled 2.0.0"
 assert_contains "cat .agents/skills/.mise-skills.json" "skilled/2.0.0/skill"
+
+# A bump to a version that is already installed upgrades nothing, only the
+# config, and the skill must still follow it.
+mise install skilled@1.0.0
+sed -i 's/skilled = "latest"/skilled = "1.0.0"/' mise.toml
+mise install
+assert_contains "cat .agents/skills/skilled/SKILL.md" "# skilled 1.0.0"
+mise upgrade --bump skilled@2.0.0
+assert_contains "cat mise.toml" 'skilled = "2.0.0"'
+assert_contains "cat .agents/skills/skilled/SKILL.md" "# skilled 2.0.0"
