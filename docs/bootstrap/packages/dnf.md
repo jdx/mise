@@ -83,7 +83,7 @@ mise picks the COPR build target, the chroot, from `/etc/os-release`, the same
 way the copr plugin does, reading the base release from `PLATFORM_ID` when it is
 set. Fedora and distributions based on it, such as Bazzite, use
 `fedora-<version>`, and Rawhide uses `fedora-rawhide`. RHEL, CentOS Stream, and
-rebuilds such as Rocky Linux, AlmaLinux, and Oracle Linux use
+rebuilds such as Rocky Linux, AlmaLinux, Oracle Linux, and Alibaba Cloud Linux use
 `epel-<major version>`.
 Amazon Linux uses `amazonlinux-<version>`. If the project has no build for this
 release, mise names the chroots it does build for. A COPR that cannot be enabled

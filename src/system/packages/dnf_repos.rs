@@ -289,10 +289,14 @@ impl Release {
                 .and_then(|p| p.strip_prefix(prefix))
                 .filter(|v| !v.is_empty() && v.chars().all(|c| c.is_ascii_digit()))
         };
-        if let Some(version) = numbered("al") {
+        // `al` is Amazon Linux's platform, and also Alibaba Cloud Linux's,
+        // whose `platform:al8` names the EL release it is compatible with
+        if let Some(version) = numbered("al")
+            && self.id == "amzn"
+        {
             return Ok(format!("amazonlinux-{version}"));
         }
-        if let Some(major) = numbered("el") {
+        if let Some(major) = numbered("el").or(numbered("al")) {
             return Ok(format!("epel-{major}"));
         }
         if let Some(version) = numbered("f") {
@@ -527,6 +531,11 @@ mod tests {
             chroot("ID=fedora\nVERSION_ID=44\nPLATFORM_ID=\"platform:f44\"\nREDHAT_SUPPORT_PRODUCT_VERSION=rawhide\n")
                 .unwrap(),
             "fedora-rawhide"
+        );
+        assert_eq!(
+            chroot("ID=\"alinux\"\nID_LIKE=\"rhel fedora centos anolis\"\nVERSION_ID=\"3\"\nPLATFORM_ID=\"platform:al8\"\n")
+                .unwrap(),
+            "epel-8"
         );
         assert!(chroot("ID=ubuntu\nVERSION_ID=24.04\n").is_err());
         assert!(chroot("ID=fedora\n").is_err());
