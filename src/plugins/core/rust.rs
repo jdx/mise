@@ -31,8 +31,7 @@ pub(super) struct RustPlugin {
     updatable_channels: std::sync::Mutex<BTreeSet<String>>,
 }
 
-const RUST_NIGHTLY_MANIFEST_URL: &str =
-    "https://static.rust-lang.org/dist/channel-rust-nightly.toml";
+const RUST_DEFAULT_DIST_SERVER: &str = "https://static.rust-lang.org";
 const RUST_DEFAULT_PROFILE_COMPONENTS: &[&str] = &["clippy", "rust-docs", "rustfmt"];
 
 fn parse_nightly_manifest(manifest: &str) -> Result<String> {
@@ -47,9 +46,63 @@ fn parse_nightly_manifest(manifest: &str) -> Result<String> {
     Ok(format!("nightly-{date}"))
 }
 
-async fn current_nightly_version() -> Result<String> {
+/// Where the nightly channel manifest lives. Honors `RUSTUP_DIST_SERVER`, the
+/// variable rustup uses to find toolchains, so a mirror serves the manifest too.
+fn nightly_manifest_url(config_env: &IndexMap<String, String>) -> String {
+    nightly_manifest_url_for(rustup_dist_server(config_env).as_deref())
+}
+
+/// The `RUSTUP_DIST_SERVER` mirror, from the config `[env]` or else the process
+/// environment, when one is set.
+fn rustup_dist_server(config_env: &IndexMap<String, String>) -> Option<String> {
+    config_env
+        .get("RUSTUP_DIST_SERVER")
+        .cloned()
+        .or_else(|| std::env::var("RUSTUP_DIST_SERVER").ok())
+        .filter(|server| !server.is_empty())
+}
+
+const RUSTUP_MIRROR_VARS: [&str; 2] = ["RUSTUP_DIST_SERVER", "RUSTUP_UPDATE_ROOT"];
+
+/// The non-empty `RUSTUP_DIST_SERVER` and `RUSTUP_UPDATE_ROOT` mirror variables
+/// set in the config `[env]`. A `mise install` outside an activated shell does
+/// not see them in its own environment, so rustup is handed them explicitly.
+fn rustup_mirror_env(
+    config_env: &IndexMap<String, String>,
+) -> impl Iterator<Item = (&str, &String)> {
+    RUSTUP_MIRROR_VARS
+        .into_iter()
+        .filter_map(|k| config_env.get(k).map(|v| (k, v)))
+        .filter(|(_, v)| !v.is_empty())
+}
+
+/// Hands rustup the config's mirror variables. One the config sets to an empty
+/// string is removed, so an inherited value is masked and older rustup releases
+/// never see an empty URL.
+fn apply_rustup_mirror_env<'a>(
+    mut cmd: CmdLineRunner<'a>,
+    config_env: &IndexMap<String, String>,
+) -> CmdLineRunner<'a> {
+    for key in RUSTUP_MIRROR_VARS {
+        if config_env.get(key).is_some_and(String::is_empty) {
+            cmd = cmd.env_remove(key);
+        }
+    }
+    cmd.envs(rustup_mirror_env(config_env))
+}
+
+fn nightly_manifest_url_for(dist_server: Option<&str>) -> String {
+    let server = dist_server
+        .map(|s| s.trim_end_matches('/'))
+        .filter(|s| !s.is_empty())
+        .unwrap_or(RUST_DEFAULT_DIST_SERVER);
+    format!("{server}/dist/channel-rust-nightly.toml")
+}
+
+async fn current_nightly_version(config: &Arc<Config>) -> Result<String> {
+    let url = nightly_manifest_url(&config.env().await?);
     let manifest = HTTP_FETCH
-        .get_text_cached(RUST_NIGHTLY_MANIFEST_URL)
+        .get_text_cached(&url)
         .await
         .wrap_err("failed to fetch the Rust nightly channel manifest")?;
     parse_nightly_manifest(&manifest)
@@ -251,12 +304,8 @@ impl RustPlugin {
             .arg("--no-modify-path")
             .arg("--default-toolchain")
             .arg("none")
-            .arg("-y")
-            .envs(
-                ["RUSTUP_DIST_SERVER", "RUSTUP_UPDATE_ROOT"]
-                    .iter()
-                    .filter_map(|k| config_env.get(*k).map(|v| (*k, v))),
-            )
+            .arg("-y");
+        cmd = apply_rustup_mirror_env(cmd, &config_env)
             .env_values(tv.install_env())
             .envs(rustup_env(homes, &tv.version));
         if let Some(host) = settings.rust.default_host.as_ref() {
@@ -573,7 +622,15 @@ impl Backend for RustPlugin {
         Ok(RustOptions::new(&raw_opts).lockfile_options())
     }
 
-    async fn _list_remote_versions(&self, _config: &Arc<Config>) -> Result<Vec<VersionInfo>> {
+    async fn remote_version_cache_context(&self, config: &Arc<Config>) -> Result<Option<String>> {
+        // The nightly entry comes from the mirror's manifest, so a listing cached
+        // for one mirror must not serve another. The default server keeps the
+        // shared cache and versions host.
+        Ok(rustup_dist_server(&config.env().await?)
+            .map(|server| crate::hash::hash_to_str(&server.trim_end_matches('/'))))
+    }
+
+    async fn _list_remote_versions(&self, config: &Arc<Config>) -> Result<Vec<VersionInfo>> {
         let mut versions: Vec<VersionInfo> = github::list_releases("rust-lang/rust")
             .await?
             .into_iter()
@@ -588,7 +645,7 @@ impl Backend for RustPlugin {
             })
             .rev()
             .collect();
-        if let Ok(current_nightly) = current_nightly_version().await {
+        if let Ok(current_nightly) = current_nightly_version(config).await {
             versions.push(VersionInfo {
                 version: current_nightly,
                 ..Default::default()
@@ -628,13 +685,13 @@ impl Backend for RustPlugin {
 
     async fn resolve_channel_version(
         &self,
-        _config: &Arc<Config>,
+        config: &Arc<Config>,
         version: &str,
     ) -> Result<Option<String>> {
         if !self.is_rolling_channel(version) {
             return Ok(None);
         }
-        current_nightly_version().await.map(Some)
+        current_nightly_version(config).await.map(Some)
     }
 
     fn requires_concrete_channel_version(&self, version: &str) -> bool {
@@ -700,14 +757,16 @@ impl Backend for RustPlugin {
             components.dedup();
         }
 
-        let mut cmd = CmdLineRunner::new(runtime.bin_dir.join(RUSTUP_BIN))
+        let config_env = ctx.config.env().await?;
+        let cmd = CmdLineRunner::new(runtime.bin_dir.join(RUSTUP_BIN))
             .with_pr(ctx.pr.as_ref())
             .arg("toolchain")
             .arg("install")
             .arg(&tv.version)
             .opt_args("--component", Some(components))
             .opt_args("--target", targets)
-            .prepend_path(vec![runtime.bin_dir.clone()])?
+            .prepend_path(vec![runtime.bin_dir.clone()])?;
+        let mut cmd = apply_rustup_mirror_env(cmd, &config_env)
             .env_values(tv.install_env())
             .envs(rustup_env(&runtime.homes, &tv.version));
         if let Some(profile) = profile.as_ref() {
@@ -777,13 +836,13 @@ impl Backend for RustPlugin {
                 let oi = OutdatedInfo::new(config, tv.clone(), tv.version.clone())?;
                 return Ok((oi.current.as_ref() != Some(&tv.version)).then_some(oi));
             }
-            let latest = current_nightly_version().await?;
+            let latest = current_nightly_version(config).await?;
             let oi = OutdatedInfo::new(config, tv.clone(), latest.clone())?;
             return Ok((oi.current.as_ref() != Some(&latest)).then_some(oi));
         }
         if is_dated_nightly(&requested) {
             let latest = if bump && !Settings::get().offline() && !opts.offline {
-                current_nightly_version().await?
+                current_nightly_version(config).await?
             } else {
                 tv.version.clone()
             };
@@ -1446,6 +1505,41 @@ const RUST_TARGET_ARCHES: &[&str] = &[
 mod tests {
     use super::*;
     use confique::Layer;
+
+    #[test]
+    fn test_nightly_manifest_url_for_mirror() {
+        assert_eq!(
+            nightly_manifest_url_for(Some("https://m.example.com/")),
+            "https://m.example.com/dist/channel-rust-nightly.toml"
+        );
+        for unset in [None, Some("")] {
+            assert_eq!(
+                nightly_manifest_url_for(unset),
+                "https://static.rust-lang.org/dist/channel-rust-nightly.toml"
+            );
+        }
+    }
+
+    #[test]
+    fn test_rustup_mirror_env_forwards_only_mirror_vars() {
+        let config_env: IndexMap<String, String> = [
+            ("RUSTUP_DIST_SERVER", "https://m.example.com"),
+            ("RUSTUP_UPDATE_ROOT", ""),
+            ("RUSTUP_HOME", "/elsewhere"),
+        ]
+        .into_iter()
+        .map(|(k, v)| (k.to_string(), v.to_string()))
+        .collect();
+        let forwarded: Vec<_> = rustup_mirror_env(&config_env).collect();
+        assert_eq!(
+            forwarded,
+            [("RUSTUP_DIST_SERVER", &"https://m.example.com".to_string())]
+        );
+        assert_eq!(
+            rustup_dist_server(&config_env).as_deref(),
+            Some("https://m.example.com")
+        );
+    }
 
     #[test]
     fn test_rustup_url_for_mirror() {

@@ -120,7 +120,9 @@ RUSTUP_DIST_SERVER = "https://mirror.example.com"
 RUSTUP_UPDATE_ROOT = "https://mirror.example.com/rustup"
 ```
 
-`RUSTUP_DIST_SERVER` is where rustup downloads toolchains from. When
+`RUSTUP_DIST_SERVER` is where rustup downloads toolchains from. mise also reads
+the `nightly` channel manifest from `$RUSTUP_DIST_SERVER/dist/channel-rust-nightly.toml`
+to resolve `rust@nightly`. When
 `RUSTUP_UPDATE_ROOT` is set, mise also downloads `rustup-init` from
 `$RUSTUP_UPDATE_ROOT/dist/<host-triple>/rustup-init` instead of
 `https://sh.rustup.rs`. The triple is the one mise was built for, or the
