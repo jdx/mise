@@ -12,6 +12,7 @@ const GRANT_DEVICE_CODE: &str = "urn:ietf:params:oauth:grant-type:device_code";
 const DEFAULT_TOKEN_SECS: i64 = 8 * 60 * 60;
 const REUSE_BUFFER_SECS: i64 = 300;
 const CLIPBOARD_TIMEOUT: Duration = Duration::from_secs(2);
+const ENCLAVE_NAME: &str = "the Secure Enclave helper";
 const STORE_TIMEOUT: Duration = Duration::from_secs(60);
 
 static REFRESH_TOKEN_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
@@ -661,6 +662,13 @@ enum Store {
 
 type EnclaveHelper = fn() -> Result<PathBuf>;
 
+/// The refresh tokens as last unsealed or sealed by this process. A refresh reads
+/// the store to refresh and again to merge the rotated token, and each unseal is
+/// a Touch ID prompt, so the second read must not unseal again. The tokens are
+/// already in this process's memory at that point.
+static ENCLAVE_TOKENS: std::sync::Mutex<Option<HashMap<String, String>>> =
+    std::sync::Mutex::new(None);
+
 static ENCLAVE_HELPER: std::sync::OnceLock<EnclaveHelper> = std::sync::OnceLock::new();
 
 /// Register how to find the Secure Enclave helper. The helper is embedded in the
@@ -815,6 +823,9 @@ fn store_read() -> Result<HashMap<String, String>> {
             "github.oauth_cache_get",
         ),
         Some(Store::Enclave { helper }) => {
+            if let Some(tokens) = ENCLAVE_TOKENS.lock().unwrap().clone() {
+                return Ok(tokens);
+            }
             let sealed = match std::fs::read_to_string(sealed_path()) {
                 Ok(sealed) => sealed,
                 Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
@@ -825,17 +836,22 @@ fn store_read() -> Result<HashMap<String, String>> {
             let mut command = std::process::Command::new(helper);
             command.arg("unseal");
             (
-                run_store_process("the Secure Enclave helper", command, Some(&sealed))?,
-                "the Secure Enclave helper",
+                run_store_process(ENCLAVE_NAME, command, Some(&sealed))?,
+                ENCLAVE_NAME,
             )
         }
     };
     let stdout = String::from_utf8(stdout).map_err(|_| eyre!("{name} did not print UTF-8"))?;
-    if stdout.trim().is_empty() {
-        return Ok(HashMap::new());
+    let tokens: HashMap<String, String> = if stdout.trim().is_empty() {
+        HashMap::new()
+    } else {
+        toml::from_str(&stdout)
+            .map_err(|_| eyre!("{name} did not print what the refresh token store was given"))?
+    };
+    if name == ENCLAVE_NAME {
+        *ENCLAVE_TOKENS.lock().unwrap() = Some(tokens.clone());
     }
-    toml::from_str(&stdout)
-        .map_err(|_| eyre!("{name} did not print what the refresh token store was given"))
+    Ok(tokens)
 }
 
 /// Hand the refresh tokens to the external store on its stdin.
@@ -852,8 +868,9 @@ fn store_write(tokens: &HashMap<String, String>) -> Result<()> {
         Store::Enclave { helper } => {
             let mut command = std::process::Command::new(helper);
             command.arg("seal");
-            let sealed = run_store_process("the Secure Enclave helper", command, Some(&value))?;
+            let sealed = run_store_process(ENCLAVE_NAME, command, Some(&value))?;
             write_private_file(&sealed_path(), &sealed)?;
+            *ENCLAVE_TOKENS.lock().unwrap() = Some(tokens.clone());
         }
     }
     Ok(())
