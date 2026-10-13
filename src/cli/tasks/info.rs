@@ -131,6 +131,9 @@ impl TasksInfo {
         if let Some(dir) = &task.dir {
             info::inline_section("Directory", display_path(dir))?;
         }
+        if let Some(skip_if) = &task.skip_if {
+            info::inline_section("Skip if", skip_if)?;
+        }
         if !task.sources.is_empty() {
             info::inline_section("Sources", task.sources.join(", "))?;
         }
@@ -199,6 +202,7 @@ impl TasksInfo {
             "outputs": task.outputs,
             "cache": task.cache.clone().unwrap_or_default(),
             "shell": task.shell,
+            "skip_if": task.skip_if,
             "quiet": task.quiet,
             "silent": task.silent,
             "tools": task.tools,

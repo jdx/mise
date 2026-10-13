@@ -799,6 +799,9 @@ pub struct Task {
     pub usage: String,
     #[serde(default)]
     pub timeout: Option<String>,
+    /// A shell command checked before the task runs; exiting 0 skips the task.
+    #[serde(default)]
+    pub skip_if: Option<String>,
 
     // normal type
     #[serde(default, deserialize_with = "deserialize_arr")]
@@ -1593,6 +1596,7 @@ impl Task {
                     .map_err(|e| eyre!("failed to parse confirm field in task header: {e}"))
             })
             .transpose()?;
+        task.skip_if = p.parse_str("skip_if");
         task.depends = parse_task_dependencies(&mut p, "depends")?;
         task.daemons = p
             .get_raw("daemons")
@@ -3099,6 +3103,9 @@ impl Task {
         if other.timeout.is_some() {
             self.timeout = other.timeout;
         }
+        if other.skip_if.is_some() {
+            self.skip_if = other.skip_if;
+        }
         if other.confirm.is_some() {
             self.confirm = other.confirm;
         }
@@ -3891,6 +3898,7 @@ impl Default for Task {
             tools: Default::default(),
             usage: "".to_string(),
             timeout: None,
+            skip_if: None,
             remote_file_source: None,
             deny_all: false,
             deny_read: false,
@@ -6785,6 +6793,7 @@ echo "hello world"
 #MISE output="prefix"
 #MISE tools={node={prefix="20"}, python="3.11"}
 #MISE confirm="Are you sure?"
+#MISE skip_if="test -f done.txt"
 echo "test"
 "#;
         fs::write(&task_file, script_content).unwrap();
@@ -6847,6 +6856,7 @@ echo "test"
             task.confirm,
             Some(TaskConfirm::Message("Are you sure?".to_string()))
         );
+        assert_eq!(task.skip_if, Some("test -f done.txt".to_string()));
 
         let mut parsed_fields =
             take_captured_fields().expect("Parser fields should have been captured");

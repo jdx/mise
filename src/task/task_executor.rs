@@ -680,6 +680,35 @@ impl TaskExecutor {
             .parse_task_usage(config, task, &mut env, extra_vars.clone())
             .await?;
 
+        // Checked before confirmation so nobody is asked about a task that then does nothing,
+        // and before the artifact cache so a skipped task neither restores nor records outputs.
+        // `--force` runs the task without asking, as it does for fresh sources.
+        if let Some(skip_if) = &task.skip_if
+            && !self.force
+        {
+            if self.dry_run {
+                if !self.quiet(Some(task)) {
+                    self.eprint(
+                        task,
+                        &prefix,
+                        &format!("skip_if: {} (not checked: dry run)", config.redact(skip_if)),
+                    );
+                }
+            } else {
+                let met = self.skip_if_met(config, task, &env).await;
+                // A Ctrl-C can end the check with an ordinary exit status (a shell reports
+                // 130, Windows reports STATUS_CONTROL_C_EXIT), which would read as "run the
+                // task". Stop here instead, before confirmation or a cache restore.
+                Self::check_interruption(allow_during_interruption)?;
+                if met? {
+                    if !self.quiet(Some(task)) {
+                        self.eprint(task, &prefix, "skip_if condition met, skipping");
+                    }
+                    return Ok(TaskRunOutcome::default());
+                }
+            }
+        }
+
         // Confirmation must happen before a cache restore because restoring
         // outputs mutates the working tree just like executing the task.
         let confirm_guard = if task.interactive {
@@ -2285,6 +2314,114 @@ impl TaskExecutor {
         }
     }
 
+    /// The template engine and context for task text rendered at run time, after the task's
+    /// arguments are parsed: `{{ usage.* }}` reads the values `parse_task_usage` put in `env`.
+    async fn usage_tera(
+        config: &Arc<Config>,
+        task: &Task,
+        env: &BTreeMap<String, String>,
+    ) -> Result<(crate::tera::TeraEngine, tera::Context)> {
+        let config_root = task.config_root.clone().unwrap_or_default();
+        let tera = crate::tera::get_tera(Some(&config_root));
+        let mut tera_ctx = task.tera_ctx_for_usage(config).await?;
+        let mut usage_ctx = std::collections::HashMap::new();
+        for (key, value) in env {
+            if let Some(usage_key) = key.strip_prefix("usage_") {
+                usage_ctx.insert(usage_key.to_string(), tera::Value::from(value.clone()));
+            }
+        }
+        tera_ctx.insert("usage", &usage_ctx);
+        Ok((tera, tera_ctx))
+    }
+
+    /// Run the task's `skip_if` command and report whether it exited 0.
+    ///
+    /// Any other exit status means the task runs, like the condition of a shell `if`. A command
+    /// that cannot start, times out, or ends on a signal fails the task: none of those says
+    /// whether the work is already done. The command runs where the task would, under its shell,
+    /// env and sandbox, with its output discarded and no stdin, so it cannot prompt.
+    async fn skip_if_met(
+        &self,
+        config: &Arc<Config>,
+        task: &Task,
+        env: &BTreeMap<String, String>,
+    ) -> Result<bool> {
+        let Some(command) = &task.skip_if else {
+            return Ok(false);
+        };
+        let command = if contains_template_syntax(command) {
+            let (mut tera, tera_ctx) = Self::usage_tera(config, task, env).await?;
+            render_str(&mut tera, command, &tera_ctx)?
+        } else {
+            command.clone()
+        };
+        if command.trim().is_empty() {
+            eyre::bail!("task {} skip_if must not be empty", task.name);
+        }
+        let root = task_cwd(task, config).await?;
+        let sandbox = self.build_sandbox_for_task(task, config).await?;
+        let filtered_env = if sandbox.is_active() {
+            let mut filtered = sandbox.filter_env(env);
+            // The same strip as for cache command inputs: filter_env reads allowed names back
+            // from mise's own environment, which still holds inherited secrets.
+            mise_util::env::strip_inherited_secrets_for_child(&mut filtered, &mut BTreeSet::new());
+            filtered
+        } else {
+            env.clone()
+        };
+        let (program, args, cmd_verbatim) = self.get_cmd_program_and_args(&command, task, &[])?;
+        #[cfg(windows)]
+        if cmd_shell_cannot_use_dir(&program, &root) {
+            eyre::bail!("{}", unc_working_dir_error(&root));
+        }
+        #[cfg(not(windows))]
+        let _ = cmd_verbatim;
+        let program = program.to_executable();
+        #[cfg(windows)]
+        let program = crate::path::resolve_posix_shell_program_path(&program, &filtered_env)
+            .unwrap_or(program);
+        let runner = CmdLineRunner::new(program);
+        #[cfg(windows)]
+        let runner = if cmd_verbatim {
+            args.iter().fold(runner, |runner, arg| runner.raw_arg(arg))
+        } else {
+            runner.args(&args)
+        };
+        #[cfg(not(windows))]
+        let runner = runner.args(&args);
+        // `optimize_inline` resets stdio, so the null streams come after it. `never_raw` keeps
+        // `raw = true` from handing the check mise's own terminal.
+        let mut runner = runner
+            .current_dir(&root)
+            .env_clear()
+            .envs(&filtered_env)
+            .with_sandbox(sandbox)
+            .optimize_inline(&command, &[], self.implicit_inline_shell(task))
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .never_raw();
+        if let Some(timeout) = task.timeout.as_ref().and_then(|value| {
+            duration::parse_duration(value)
+                .inspect_err(|err| {
+                    warn!("invalid timeout {:?} for task {}: {err}", value, task.name)
+                })
+                .ok()
+        }) {
+            runner = runner.with_timeout(timeout);
+        }
+        runner.apply_sandbox().await?;
+        // `execute_async` rather than `read`: its timeout stops the whole process tree, where
+        // `read` kills only the shell and leaves the command it started running.
+        match runner.execute_async().await {
+            Ok(()) => Ok(true),
+            Err(err) if crate::errors::ProcessError::get_exit_status(&err).is_some() => Ok(false),
+            Err(err) => {
+                Err(err.wrap_err(format!("task {} skip_if failed: {command:?}", task.name)))
+            }
+        }
+    }
+
     async fn check_confirmation(
         &self,
         config: &Arc<Config>,
@@ -2302,18 +2439,7 @@ impl TaskExecutor {
             let mut rendered: Vec<Option<String>> =
                 texts.iter().map(|t| t.map(str::to_string)).collect();
             if texts.iter().flatten().any(|t| contains_template_syntax(t)) {
-                let config_root = task.config_root.clone().unwrap_or_default();
-                let mut tera = crate::tera::get_tera(Some(&config_root));
-                let mut tera_ctx = task.tera_ctx_for_usage(config).await?;
-
-                // Add usage values from parsed environment
-                let mut usage_ctx = std::collections::HashMap::new();
-                for (key, value) in env {
-                    if let Some(usage_key) = key.strip_prefix("usage_") {
-                        usage_ctx.insert(usage_key.to_string(), tera::Value::from(value.clone()));
-                    }
-                }
-                tera_ctx.insert("usage", &usage_ctx);
+                let (mut tera, tera_ctx) = Self::usage_tera(config, task, env).await?;
                 for (slot, text) in rendered.iter_mut().zip(texts) {
                     if let Some(text) = text
                         && contains_template_syntax(text)

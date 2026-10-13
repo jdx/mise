@@ -1,0 +1,124 @@
+#!/usr/bin/env bash
+
+# skip_if runs a shell command before the task; exit 0 skips it, anything else runs it.
+# https://github.com/jdx/mise/discussions/14389
+cat <<'TOML' >mise.toml
+[tasks.setup]
+skip_if = "test -f initialized"
+run = "echo initializing && touch initialized"
+
+[tasks.deploy]
+depends = ["setup"]
+run = "echo deploying"
+
+[tasks.env-check]
+env = { DONE = "1" }
+skip_if = 'test "$DONE" = 1'
+run = "echo env-check-ran"
+
+[tasks.arg-check]
+usage = 'arg "<target>"'
+skip_if = 'test "{{ usage.target }}" = skip'
+run = "echo arg-check-ran"
+
+[tasks.dry]
+skip_if = "touch condition-ran"
+run = "echo dry-ran"
+
+[tasks.slow]
+timeout = "1s"
+skip_if = "sleep 10"
+run = "echo slow-ran"
+
+[tasks.binary-check]
+skip_if = "cat binary.out"
+run = "echo binary-check-ran"
+
+[tasks.noisy-check]
+skip_if = "ls missing-file"
+run = "echo noisy-check-ran"
+
+[tasks.loud-check]
+skip_if = "echo loud-output"
+run = "echo loud-check-ran"
+
+[tasks.slow-child]
+timeout = "1s"
+skip_if = "sh -c 'sleep 3; touch late'"
+run = "echo slow-child-ran"
+TOML
+
+# The condition fails, so the task and its dependent run.
+first_run="$(mise run deploy 2>&1)"
+assert_contains_text "$first_run" "initializing"
+assert_contains_text "$first_run" "deploying"
+
+# Now the condition passes: setup is skipped and deploy still runs.
+second_run="$(mise run deploy 2>&1)"
+assert_contains_text "$second_run" "skip_if condition met, skipping"
+assert_not_contains_text "$second_run" "initializing"
+assert_contains_text "$second_run" "deploying"
+
+# --force runs the task without checking.
+assert_contains "mise run --force setup 2>&1" "initializing"
+
+# The command sees the task's env and its arguments.
+assert_not_contains "mise run env-check 2>&1" "env-check-ran"
+assert_not_contains "mise run arg-check skip 2>&1" "arg-check-ran"
+assert_contains "mise run arg-check prod 2>&1" "arg-check-ran"
+
+# --dry-run reports the condition without running it.
+assert_contains "mise run --dry-run dry 2>&1" "skip_if: touch condition-ran (not checked: dry run)"
+assert_fail "test -f condition-ran"
+
+# A condition that times out fails the task instead of choosing for it.
+assert_fail "mise run slow 2>&1" "skip_if failed"
+
+# The timeout stops the processes the check started, not just its shell.
+assert_fail "mise run slow-child 2>&1" "skip_if failed"
+sleep 4
+assert_fail "test -f late"
+
+# The check's output is discarded: binary stdout still skips, and a failing check prints nothing.
+printf '\377\376' >binary.out
+assert_not_contains "mise run binary-check 2>&1" "binary-check-ran"
+noisy="$(mise run noisy-check 2>&1)"
+assert_contains_text "$noisy" "noisy-check-ran"
+assert_not_contains_text "$noisy" "missing-file"
+
+# --raw hands tasks the terminal, but never the check: its output stays hidden.
+raw_noisy="$(mise run --raw noisy-check 2>&1)"
+assert_contains_text "$raw_noisy" "noisy-check-ran"
+assert_not_contains_text "$raw_noisy" "missing-file"
+raw_loud="$(mise run --raw loud-check 2>&1)"
+assert_contains_text "$raw_loud" "skip_if condition met, skipping"
+assert_not_contains_text "$raw_loud" "loud-output"
+
+assert_contains "mise tasks info setup" "Skip if: test -f initialized"
+
+# File tasks take it as a #MISE header.
+mkdir -p mise-tasks
+cat <<'SCRIPT' >mise-tasks/file-task
+#!/usr/bin/env bash
+#MISE skip_if="test -f file-task-done"
+echo file-task-ran
+touch file-task-done
+SCRIPT
+chmod +x mise-tasks/file-task
+assert_contains "mise run file-task 2>&1" "file-task-ran"
+assert_not_contains "mise run file-task 2>&1" "file-task-ran"
+
+# The dry-run line is redacted like the task's command header.
+cat <<'TOML' >mise.toml
+redactions = ["SKIP_SECRET"]
+
+[env]
+SKIP_SECRET = "hunter2-skip"
+
+[tasks.redacted]
+skip_if = "test hunter2-skip = x"
+run = "echo redacted-ran"
+TOML
+dry="$(mise run --dry-run redacted 2>&1)"
+assert_contains_text "$dry" "(not checked: dry run)"
+assert_not_contains_text "$dry" "hunter2-skip"
