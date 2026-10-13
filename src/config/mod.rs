@@ -7229,6 +7229,15 @@ fn trust_check_task_include(path: &Path, require_trust: bool) -> Result<()> {
     Ok(())
 }
 
+/// A downloaded remote task file renders like a local one, so it needs the
+/// trust of the config that names it under the same rule as a local include.
+pub(crate) fn trust_check_remote_task_file(config_source: &Path, file: &Path) -> Result<()> {
+    if !is_path_trusted(config_source) && task_include_requires_trust(file) {
+        trust_check(config_source)?;
+    }
+    Ok(())
+}
+
 /// Template-free task files are inert at load time: TOML and `#MISE` headers
 /// are only parsed, and the scripts themselves only run on an explicit
 /// `mise run`. Templates are what can execute code while tasks load (via
