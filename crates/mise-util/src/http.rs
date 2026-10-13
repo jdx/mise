@@ -3225,18 +3225,17 @@ pub fn is_transient(err: &Report) -> bool {
 /// infrastructure as it's happening, instead of waiting through the backoff
 /// schedule. Successful rescues and final exhaustion don't get extra warnings
 /// — the caller surfaces the outcome.
+///
+/// Uses the configured `http_retries` rather than `network::http_retries`: the
+/// prefer-offline zero-retry budget bounds remote-version lookups, but an
+/// artifact download that `mise exec`/a shim triggered is an install and must
+/// retry like `mise install` does.
 pub async fn retry_async<F, Fut, T>(verb_label: &str, url: &Url, f: F) -> Result<T>
 where
     F: FnMut() -> Fut,
     Fut: std::future::Future<Output = Result<T>>,
 {
-    retry_async_with_retries(
-        verb_label,
-        url,
-        crate::network::http_retries(&Settings::get()),
-        f,
-    )
-    .await
+    retry_async_with_retries(verb_label, url, Settings::get().http_retries, f).await
 }
 
 pub async fn retry_async_with_retries<F, Fut, T>(

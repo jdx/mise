@@ -6,13 +6,17 @@ use crate::config::{Config, Settings};
 use crate::path::PathExt;
 use crate::system;
 
-/// Deploy `[dotfiles]` entries to their targets
+/// Link, copy, and render `[dotfiles]` entries into place
 ///
 /// Applies the whole-file entries and edits that are not in their desired
 /// state. Whole-file entries symlink, copy, render templates, write inline
 /// `content`, set `permissions`, or remove targets declared `mode = "absent"`.
 /// Edit entries manage a marker-delimited block, a single line, or merged keys
 /// in a file mise does not otherwise own.
+///
+/// `apply` works from the files on this machine. It never fetches or pulls: to
+/// bring in changes from other machines, run `mise dot sync`, `mise dot pull`,
+/// then `mise dot apply`.
 ///
 /// The `pre-dotfiles` and `post-dotfiles` bootstrap hooks run before and after
 /// the apply (with `--dry-run` they are printed, not run), and the matching

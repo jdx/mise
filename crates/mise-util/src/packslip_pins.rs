@@ -200,6 +200,10 @@ pub struct Observed<'a> {
     /// verified by repository ID. With it, a signer is the pinned one when it
     /// is the same workflow of the same repository under a new name.
     pub forge: Option<&'a Check>,
+    /// Signers the tool options name together, as a `workflow` list does for
+    /// a project that moved its signing workflow: a person's say-so that a
+    /// release may move from one of them to another.
+    pub listed: &'a [String],
 }
 
 /// The signer a pin records for a key id. For a workflow identity that is
@@ -292,7 +296,9 @@ fn check_against(pin: &Pin, key: &str, project: &str, observed: Observed<'_>) ->
     let mut problems = Vec::new();
     // A check made from the pin always holds the workflow; going through
     // `continues_signer` keeps both arms on mise's one rule regardless.
+    let listed = |signer: &str| observed.listed.iter().any(|listed| listed == signer);
     let same_signer = pin.signer == signer
+        || (listed(&pin.signer) && listed(&signer))
         || by_pin
             .as_ref()
             .or(observed.forge)
@@ -374,13 +380,10 @@ pub fn record_at(path: &Path, project: &str, observed: Observed<'_>) -> Result<P
     let pin = &pins.pins[first];
     let any = |floor: fn(&Pin) -> bool| keys.iter().any(|key| floor(&pins.pins[key]));
     let updated = Pin {
-        // A forge check that passed says this is the pinned workflow, perhaps
-        // under the repository's new name: remember it as it is called now.
-        signer: if forge.is_some() {
-            signer
-        } else {
-            pin.signer.clone()
-        },
+        // The release passed every pin, so its signer is the pinned one, the
+        // pinned workflow under the repository's new name, or one the tool
+        // options list beside the pinned one: remember it as it is now.
+        signer,
         issuer: observed.issuer.map(str::to_string).or(pin.issuer.clone()),
         attested_by: observed.attested_by.to_string(),
         provenance: observed.provenance || any(|pin| pin.provenance),
@@ -534,6 +537,7 @@ mod tests {
             provenance: false,
             logged: true,
             forge: None,
+            listed: &[],
         }
     }
 
@@ -578,6 +582,43 @@ mod tests {
                 .unwrap()
                 .contains("[pins.\"github.com/o/r\"]")
         );
+    }
+
+    #[test]
+    fn a_workflow_the_options_list_beside_the_pinned_one_continues_it() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("pins.toml");
+        let project = "github.com/o/r";
+        let old = "https://github.com/o/r/.github/workflows/release-plz.yml";
+        let old_key = format!("{old}@refs/heads/main");
+        let new_key = format!("{WORKFLOW}@refs/heads/main");
+        record_at(&path, project, observed("sigstore-oidc", &old_key)).unwrap();
+
+        // Without the list, the move is a signer change.
+        let err = check_at(&path, project, observed("sigstore-oidc", &new_key)).unwrap_err();
+        assert!(err.to_string().contains("mise packslip forget"), "{err}");
+
+        let listed = [old.to_string(), WORKFLOW.to_string()];
+        let moved = Observed {
+            listed: &listed,
+            ..observed("sigstore-oidc", &new_key)
+        };
+        check_at(&path, project, moved).unwrap();
+        assert_eq!(record_at(&path, project, moved).unwrap().signer, WORKFLOW);
+
+        // A list that names only one of them, the pinned signer or the new
+        // one, says nothing about the move.
+        let other = "https://github.com/o/r/.github/workflows/other.yml";
+        let other_key = format!("{other}@refs/heads/main");
+        for listed in [[WORKFLOW.to_string()], [other.to_string()]] {
+            let unlisted = Observed {
+                listed: &listed,
+                ..observed("sigstore-oidc", &other_key)
+            };
+            assert!(check_at(&path, project, unlisted).is_err(), "{listed:?}");
+            assert!(record_at(&path, project, unlisted).is_err(), "{listed:?}");
+        }
+        assert_eq!(load(&path).unwrap().pins[project].signer, WORKFLOW);
     }
 
     #[test]

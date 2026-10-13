@@ -61,9 +61,12 @@ fingerprint = "9DC8 5822 9FC7 DD38 854A E2D8 8D81 803C 0EBF CD88"
 "apt:docker-ce-cli" = "latest"
 ```
 
-For each source, mise writes `/etc/apt/sources.list.d/mise-<name>.sources` and
-`/etc/apt/keyrings/mise-<name>.gpg`. The source file names that keyring in
-`Signed-By`, so apt trusts the key only for that repository. When it adds or
+For each source, mise writes `/etc/apt/sources.list.d/mise-<name>.sources`
+with the signing key embedded in its `Signed-By` field, so apt trusts the key
+only for that repository and deleting the file removes both. Inline keys need
+apt 2.4 or newer (Ubuntu 22.04, Debian 12). A key mise wrote to
+`/etc/apt/keyrings/mise-<name>.gpg` in an earlier version is removed the next
+time the source is applied. When it adds or
 changes a source, mise runs `apt-get update` once before installing. Without
 `--yes`, mise asks before it adds or changes any source, as it does before
 installing packages. If apt
@@ -92,8 +95,8 @@ Any other repository needs `uris`, `key`, and `fingerprint`:
 | `fingerprint`   | The key's full fingerprint, or a list of them; spaces are ignored                                                       |
 
 mise keeps only the keys whose fingerprints you declared from what it
-downloads, and fails if one is missing. Once a matching key is in place, mise
-leaves it alone and does not download it again. If the keyring changes or no
+downloads, and fails if one is missing. Once a matching key is in the source file, mise
+leaves it alone and does not download it again. If the key changes or no
 longer matches, the next apply replaces it.
 
 A declared source also replaces a package that was already installed from
@@ -113,7 +116,7 @@ are installed automatically, mise adds declared sources only when it will not
 ask first. A prompted install uses the sources `mise bootstrap` already added.
 
 mise does not remove sources. Deleting an entry leaves its files in place;
-delete `/etc/apt/sources.list.d/mise-<name>.sources` and its keyring yourself.
+delete `/etc/apt/sources.list.d/mise-<name>.sources` yourself.
 To install a repository definition that mise should not generate, write it with
 [`[bootstrap.files]`](/bootstrap/files.html#files-before-packages) instead.
 

@@ -7,6 +7,12 @@ if [[ "$(uname)" != "Linux" ]] || ! command -v apt-get >/dev/null; then
   exit 0
 fi
 
+# inline signing keys need apt 2.4 or newer; older apt is rejected by design
+apt_version="$(apt-get --version | awk 'NR==1 {print $2}')"
+if [[ "$(printf '%s\n2.4\n' "$apt_version" | sort -V | head -n1)" != "2.4" ]]; then
+  exit 0
+fi
+
 cat <<EOF >mise.toml
 [bootstrap.apt.sources]
 git-core = { ppa = "ppa:git-core/ppa" }
@@ -27,7 +33,7 @@ EOF
 mise bootstrap packages apply --dry-run >dry-run.log 2>&1
 cat dry-run.log
 
-assert_contains "cat dry-run.log" "fetch the signing key for https://example.com/apt into /etc/apt/keyrings/mise-vendor.gpg"
+assert_contains "cat dry-run.log" "fetch the signing key for https://example.com/apt"
 assert_contains "cat dry-run.log" "write /etc/apt/sources.list.d/mise-vendor.sources"
 assert_contains "cat dry-run.log" "apt-get update"
 assert_contains "cat dry-run.log" "apt-get install -y -- bc"
@@ -35,7 +41,7 @@ assert_not_contains "cat dry-run.log" "mise-bad name"
 
 # PPAs are only added on Ubuntu and Ubuntu-based releases
 if grep -Eq '^(ID=ubuntu|UBUNTU_CODENAME=)' /etc/os-release; then
-  assert_contains "cat dry-run.log" "fetch the signing key for ppa:git-core/ppa into /etc/apt/keyrings/mise-git-core.gpg"
+  assert_contains "cat dry-run.log" "fetch the signing key for ppa:git-core/ppa"
 else
   assert_not_contains "cat dry-run.log" "mise-git-core"
 fi

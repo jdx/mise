@@ -294,32 +294,29 @@ pub(crate) fn run_with_reader(
     mut input: impl std::io::Read,
 ) -> Result<()> {
     let argv = argv(program, args);
-    let manual_cmd = manual_command(program, args, &[]);
-    ensure_elevation_available(&manual_cmd)?;
-    attempt(&manual_cmd, || {
-        let _progress_pause = pause_progress_for_child();
-        info!("$ {}", argv.join(" "));
-        let mut child = Command::new(&argv[0])
-            .args(&argv[1..])
-            .stdin(Stdio::piped())
-            .stdout(Stdio::inherit())
-            .stderr(Stdio::inherit())
-            .spawn()?;
-        let mut stdin = child.stdin.take().expect("piped stdin is available");
-        // The helper may exit (and close its stdin) before the payload is fully
-        // written; reap it and report its status ahead of the resulting copy error.
-        let copied = std::io::copy(&mut input, &mut stdin);
-        drop(stdin);
-        let status = child.wait()?;
-        if !status.success() {
-            bail!(
-                "elevated helper `{program} {}` failed with {status}",
-                args.join(" ")
-            );
-        }
-        copied?;
-        Ok(())
-    })
+    ensure_stdin_elevation_available()?;
+    let _progress_pause = pause_progress_for_child();
+    info!("$ {}", argv.join(" "));
+    let mut child = Command::new(&argv[0])
+        .args(&argv[1..])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::inherit())
+        .stderr(Stdio::inherit())
+        .spawn()?;
+    let mut stdin = child.stdin.take().expect("piped stdin is available");
+    // The helper may exit (and close its stdin) before the payload is fully
+    // written; reap it and report its status ahead of the resulting copy error.
+    let copied = std::io::copy(&mut input, &mut stdin);
+    drop(stdin);
+    let status = child.wait()?;
+    if !status.success() {
+        bail!(
+            "elevated helper `{program} {}` failed with {status}",
+            args.join(" ")
+        );
+    }
+    copied?;
+    Ok(())
 }
 
 /// Run one elevated helper with a private stdin payload and capture stdout.
@@ -330,28 +327,25 @@ pub(crate) fn run_with_input_output(
     input: &[u8],
 ) -> Result<Vec<u8>> {
     let argv = argv(program, args);
-    let manual_cmd = manual_command(program, args, &[]);
-    ensure_elevation_available(&manual_cmd)?;
-    attempt(&manual_cmd, || {
-        let _progress_pause = pause_progress_for_child();
-        info!("$ {}", argv.join(" "));
-        let mut child = Command::new(&argv[0])
-            .args(&argv[1..])
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::inherit())
-            .spawn()?;
-        child
-            .stdin
-            .take()
-            .expect("piped stdin is available")
-            .write_all(input)?;
-        let output = child.wait_with_output()?;
-        if !output.status.success() {
-            bail!("elevated bootstrap helper failed with {}", output.status);
-        }
-        Ok(output.stdout)
-    })
+    ensure_stdin_elevation_available()?;
+    let _progress_pause = pause_progress_for_child();
+    info!("$ {}", argv.join(" "));
+    let mut child = Command::new(&argv[0])
+        .args(&argv[1..])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::inherit())
+        .spawn()?;
+    child
+        .stdin
+        .take()
+        .expect("piped stdin is available")
+        .write_all(input)?;
+    let output = child.wait_with_output()?;
+    if !output.status.success() {
+        bail!("elevated bootstrap helper failed with {}", output.status);
+    }
+    Ok(output.stdout)
 }
 
 fn attempt<T>(manual_cmd: &str, f: impl FnOnce() -> Result<T>) -> Result<T> {
@@ -399,20 +393,32 @@ fn root_fallback(manual_cmd: &str, elevator: &str) -> String {
 /// Verify that a subprocess which performs its own sudo elevation can do so
 /// without violating mise's elevation policy or hanging without a TTY.
 pub(crate) fn ensure_elevation_available(manual_cmd: &str) -> Result<()> {
+    let elevator = elevator();
+    check_elevation(
+        &format!("Run manually:\n  {manual_cmd}"),
+        &format!("Run as root:\n  {}", root_fallback(manual_cmd, &elevator)),
+    )
+}
+
+/// Like [`ensure_elevation_available`] for helpers that read their payload
+/// from stdin. The helper cannot be run on its own, so the hint is to rerun
+/// the mise command that needs it as root instead of printing its argv.
+fn ensure_stdin_elevation_available() -> Result<()> {
+    const HINT: &str = "Re-run this mise command as root. The privileged helper \
+        receives its plan on stdin, so it cannot be run by itself.";
+    check_elevation(HINT, HINT)
+}
+
+fn check_elevation(manual_hint: &str, root_hint: &str) -> Result<()> {
     if is_root() {
         return Ok(());
     }
     if !Settings::get().system_packages.sudo {
-        bail!(
-            "not running as root and system_packages.sudo is disabled. Run manually:\n  {manual_cmd}"
-        );
+        bail!("not running as root and system_packages.sudo is disabled. {manual_hint}");
     }
     let elevator = elevator();
     if crate::file::which(&elevator).is_none() {
-        bail!(
-            "{elevator} not found. Run as root:\n  {}",
-            root_fallback(manual_cmd, &elevator)
-        );
+        bail!("{elevator} not found. {root_hint}");
     }
     if !console::user_attended_stderr() {
         let ok = if is_sudo(&elevator) {
@@ -429,9 +435,7 @@ pub(crate) fn ensure_elevation_available(manual_cmd: &str) -> Result<()> {
             noninteractive_flag(&elevator).is_some()
         };
         if !ok {
-            bail!(
-                "{elevator} requires a password but no TTY is available. Run manually:\n  {manual_cmd}"
-            );
+            bail!("{elevator} requires a password but no TTY is available. {manual_hint}");
         }
     }
     Ok(())
