@@ -2798,8 +2798,21 @@ pub fn attach_snap_options(
     target: &Path,
     mgrs: &mut [ManagerPackages],
 ) -> eyre::Result<()> {
-    let package_configs =
-        package_configs_from_config_files_for_target(&config.config_files, target);
+    let package_configs = if config.config_files.contains_key(target) {
+        package_configs_from_config_files_for_target(&config.config_files, target)
+    } else if target.starts_with(*crate::dirs::CONFIG) || crate::config::is_global_config(target) {
+        // A global config `use` is about to create declares nothing yet, so
+        // only the other global and system configs can apply to it.
+        merge_package_configs(
+            config
+                .config_files
+                .iter()
+                .filter(|(path, _)| crate::config::is_global_config(path))
+                .map(|(_, cf)| cf),
+        )
+    } else {
+        package_configs_from_config_files(&config.config_files)
+    };
     for mp in mgrs.iter_mut().filter(|mp| mp.manager.name() == "snap") {
         let mut packages = BTreeMap::new();
         for request in &mp.requests {

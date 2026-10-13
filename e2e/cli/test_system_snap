@@ -87,6 +87,11 @@ cat >>"$MISE_CONFIG_DIR/config.toml" <<'TOML'
 TOML
 assert_contains "mise bootstrap packages use --global snap:node --dry-run" "snap install --channel=20/stable --classic node"
 mv "$HOME/global-config.bak" "$MISE_CONFIG_DIR/config.toml"
+# A global config that does not exist yet takes no options from the project.
+mv "$MISE_CONFIG_DIR/config.toml" "$HOME/global-config.bak"
+assert_contains "mise bootstrap packages use --global snap:node --dry-run" "snap install node"
+assert_not_contains "mise bootstrap packages use --global snap:node --dry-run" "--channel"
+mv "$HOME/global-config.bak" "$MISE_CONFIG_DIR/config.toml"
 echo 'node      22.11.0   9257  22/stable       iojs**      classic' >>"$HOME/snap-state"
 
 # Upgrade refreshes now, keeping each declared channel.
