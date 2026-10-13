@@ -1632,7 +1632,7 @@ or pass `--manager`, an unavailable manager is an error instead of a skip.
                 long_help #"""
 Refresh package manager metadata first, where the manager supports it
 
-For example, apt runs `apt-get update` and dnf adds `--refresh`. brew, brew-cask, flatpak, flatpak-user, macos-app, and mas ignore this flag.
+For example, apt runs `apt-get update` and dnf adds `--refresh`. brew, brew-cask, flatpak, flatpak-user, macos-app, mas, and snap ignore this flag.
 """#
             }
             flag "-h --help" help="Print help" action=help builtin=#true
@@ -1814,8 +1814,8 @@ Pin a version with `@`, as in `apt:curl@8.5.0-2`; without `@`, or with
 cask names (`brew:postgresql@17`, `brew-cask:temurin@17`), so there `@` is
 part of the name. mas takes numeric App Store IDs and nix takes attribute
 paths or flake references, so neither accepts `@version`. aur, flatpak,
-flatpak-user, and pacman accept `@version` but cannot install a pin, so
-installing skips those entries with a warning.
+flatpak-user, pacman, and snap accept `@version` but cannot install a pin,
+so installing skips those entries with a warning.
 """#
             flag "-e --env" help="Write to the config file for this environment (mise.<ENV>.toml)" {
                 conflicts "--global" "--path"

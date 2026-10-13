@@ -36,7 +36,7 @@ or pass `--manager`, an unavailable manager is an error instead of a skip.
 - **`-y --yes`** — Skip the confirmation prompt
 - **`--update`** — Refresh package manager metadata first, where the manager supports it
 
-  For example, apt runs `apt-get update` and dnf adds `--refresh`. brew, brew-cask, flatpak, flatpak-user, macos-app, and mas ignore this flag.
+  For example, apt runs `apt-get update` and dnf adds `--refresh`. brew, brew-cask, flatpak, flatpak-user, macos-app, mas, and snap ignore this flag.
 - **`-h --help`** — Print help
 
 ## Examples

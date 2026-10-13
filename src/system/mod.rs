@@ -18,8 +18,9 @@
 //! These are intentionally not part of `[tools]`: they're unversioned,
 //! machine-global settings and resources, not mise's per-project toolset.
 
+use std::collections::BTreeMap;
 #[cfg(unix)]
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -326,6 +327,12 @@ pub struct PackageOptionsTomlConfig {
     /// `macos-app` only: bundle to install out of the archive, e.g. "Nuvio.app".
     #[serde(default)]
     pub artifact: Option<String>,
+    /// `snap` only: channel to install from and track, e.g. "latest/stable".
+    #[serde(default)]
+    pub channel: Option<String>,
+    /// `snap` only: install with classic confinement.
+    #[serde(default)]
+    pub classic: Option<bool>,
     #[serde(default)]
     pub state: PackageDesiredStateTomlConfig,
 }
@@ -357,6 +364,19 @@ impl PackageTomlConfig {
         match self {
             Self::Options(options) => options.appdir.as_deref(),
             Self::Version(_) => None,
+        }
+    }
+
+    /// The `channel` and `classic` options on this entry, if it sets either.
+    fn snap_options(&self) -> Option<packages::snap::SnapOptions> {
+        match self {
+            Self::Options(options) if options.channel.is_some() || options.classic.is_some() => {
+                Some(packages::snap::SnapOptions {
+                    channel: options.channel.clone(),
+                    classic: options.classic.unwrap_or(false),
+                })
+            }
+            _ => None,
         }
     }
 
@@ -611,6 +631,11 @@ pub enum ManagerPackageOptions {
         specs: BTreeMap<String, AppSpec>,
         adopt: BTreeSet<String>,
     },
+    /// `channel` and `classic`, keyed by snap name. Snaps without either are
+    /// absent.
+    Snap {
+        packages: BTreeMap<String, packages::snap::SnapOptions>,
+    },
 }
 
 impl ManagerPackageOptions {
@@ -618,7 +643,7 @@ impl ManagerPackageOptions {
     pub(crate) fn brew_cask_adopt(&self, name: &str) -> bool {
         match self {
             Self::BrewCask { adopt, .. } | Self::MacosApp { adopt, .. } => adopt.contains(name),
-            Self::None | Self::Apt { .. } => false,
+            Self::None | Self::Apt { .. } | Self::Snap { .. } => false,
         }
     }
 
@@ -1039,6 +1064,10 @@ fn merge_manager_packages(
                 .brew_cask_appdir(&request.name)
                 .map(PathBuf::from);
             let app_spec = mp.options.macos_app_spec(&request.name).cloned();
+            let snap = match &mp.options {
+                ManagerPackageOptions::Snap { packages } => packages.get(&request.name).cloned(),
+                _ => None,
+            };
             match requests.iter_mut().find(|existing| {
                 existing.name == request.name && existing.version == request.version
             }) {
@@ -1086,6 +1115,18 @@ fn merge_manager_packages(
                                 if adopt {
                                     app_adopt.insert(request.name.clone());
                                 }
+                            }
+                        }
+                        "snap" if snap.is_some() => {
+                            let options = manager_options
+                                .entry(manager_name.clone())
+                                .or_insert_with(|| ManagerPackageOptions::Snap {
+                                    packages: BTreeMap::new(),
+                                });
+                            if let (ManagerPackageOptions::Snap { packages }, Some(snap)) =
+                                (options, snap)
+                            {
+                                packages.entry(request.name.clone()).or_insert(snap);
                             }
                         }
                         _ => {}
@@ -1140,6 +1181,7 @@ fn package_requests_from_config_files(
     let mut app_specs: BTreeMap<String, AppSpec> = BTreeMap::new();
     #[cfg(unix)]
     let mut app_adopt = BTreeSet::new();
+    let mut snap_options = BTreeMap::new();
     for (spec, package) in merged {
         if !package.is_os_supported() {
             debug!("[bootstrap.packages]: skipping '{spec}', not enabled for this platform");
@@ -1238,6 +1280,16 @@ fn package_requests_from_config_files(
                         }
                     }
                 }
+                match snap_options_for(&mgr, &name, &package) {
+                    Ok(Some(options)) => {
+                        snap_options.insert(name.clone(), options);
+                    }
+                    Ok(None) => {}
+                    Err(err) => {
+                        warn!("[bootstrap.packages]: {err}");
+                        continue;
+                    }
+                }
                 by_mgr.entry(mgr).or_default().push(PackageRequest {
                     name,
                     version,
@@ -1274,7 +1326,17 @@ fn package_requests_from_config_files(
     #[cfg(not(unix))]
     let mut options = IndexMap::new();
     insert_apt_sources(config_files, &mut options);
+    insert_snap_options(snap_options, &mut options);
     (by_mgr, options)
+}
+
+fn insert_snap_options(
+    packages: BTreeMap<String, packages::snap::SnapOptions>,
+    options: &mut IndexMap<String, ManagerPackageOptions>,
+) {
+    if !packages.is_empty() {
+        options.insert("snap".to_string(), ManagerPackageOptions::Snap { packages });
+    }
 }
 
 fn package_configs_from_config_files(
@@ -2400,8 +2462,8 @@ fn packages_from_specs_with_config_files(
     let brew_taps = brew_taps_from_config_files(config_files);
     #[cfg(unix)]
     let brew_adopt = brew_adopt_from_config_files(config_files);
-    #[cfg(unix)]
     let package_configs = package_configs_from_config_files(config_files);
+    let mut snap_options = BTreeMap::new();
     #[cfg(unix)]
     let mut cask_adopt = BTreeSet::new();
     #[cfg(unix)]
@@ -2439,6 +2501,14 @@ fn packages_from_specs_with_config_files(
     for spec in specs {
         let (mgr, name) = parse_spec(spec)?;
         validate_package_name(&mgr, &name)?;
+        // An explicit `snap:<name>` installs from the channel the config
+        // declares, the same as a full `mise bootstrap` would.
+        if mgr == "snap"
+            && let Some(configured) = package_configs.get(&format!("{mgr}:{name}"))
+            && let Some(options) = snap_options_for(&mgr, &name, configured)?
+        {
+            snap_options.insert(name.clone(), options);
+        }
         // An explicit `macos-app:<name>` still needs its declaration, which
         // only the config carries. Without it there is no URL to install from,
         // and no Homebrew cask to fall back to.
@@ -2548,6 +2618,7 @@ fn packages_from_specs_with_config_files(
     #[cfg(not(unix))]
     let mut options = IndexMap::new();
     insert_apt_sources(config_files, &mut options);
+    insert_snap_options(snap_options, &mut options);
     resolve_managers(
         by_mgr,
         options,
@@ -2617,7 +2688,34 @@ fn validate_package_name(mgr: &str, name: &str) -> eyre::Result<()> {
     if mgr == "mas" && !packages::mas::is_adam_id(name) {
         bail!("mas app IDs must be numeric ADAM IDs (e.g. \"mas:497799835\")");
     }
+    if mgr == "snap" {
+        packages::snap::validate_name(name)?;
+    }
     Ok(())
+}
+
+/// The snap options on a `[bootstrap.packages]` entry, checked. Options on
+/// another manager's entry warn and are ignored. A bad channel is an error
+/// rather than ignored, because installing from the default channel instead
+/// would put the wrong build on the machine.
+fn snap_options_for(
+    mgr: &str,
+    name: &str,
+    package: &PackageTomlConfig,
+) -> eyre::Result<Option<packages::snap::SnapOptions>> {
+    let Some(options) = package.snap_options() else {
+        return Ok(None);
+    };
+    if mgr != "snap" {
+        warn!(
+            "[bootstrap.packages]: channel and classic are only supported for snap entries; ignoring them for '{mgr}:{name}'"
+        );
+        return Ok(None);
+    }
+    if let Some(channel) = &options.channel {
+        packages::snap::validate_channel(name, channel)?;
+    }
+    Ok(Some(options))
 }
 
 /// Collect export declarations before manager validation can warn and skip an
@@ -3969,6 +4067,8 @@ mod tests {
             url: None,
             sha256: None,
             artifact: None,
+            channel: None,
+            classic: None,
         });
 
         assert!(package.is_env_supported(&["work".to_string()]));

@@ -74,7 +74,7 @@ pub(crate) struct SystemInstall {
     /// Refresh package manager metadata first, where the manager supports it
     ///
     /// For example, apt runs `apt-get update` and dnf adds `--refresh`. brew,
-    /// brew-cask, flatpak, flatpak-user, macos-app, and mas ignore this flag.
+    /// brew-cask, flatpak, flatpak-user, macos-app, mas, and snap ignore this flag.
     #[usage(long)]
     update: bool,
 }
