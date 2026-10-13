@@ -49,6 +49,7 @@ use crate::{env, file};
 
 use super::diagnostic::toml_parse_error;
 use super::min_version::MinVersionSpec;
+use super::version_requires_trust;
 
 const LEGACY_ENV_KEYS_DEPRECATED_WARN_AT: &str = "2026.4.17";
 const LEGACY_ENV_KEYS_DEPRECATED_REMOVE_AT: &str = "2027.4.0";
@@ -3311,7 +3312,9 @@ impl<'de> de::Deserialize<'de> for Alias {
 ///   excluded because options like `postinstall` and `install_env` run code
 ///   or alter the install environment. Options can also ride in the key
 ///   (`"tool[postinstall=...]" = "1"`), so keys with inline options are
-///   excluded too.
+///   excluded too. A `path:` version is excluded as well: it needs no install,
+///   so it would put a directory of the repository on PATH as soon as the
+///   config loads.
 /// - `[tasks]` definitions are inert until the user explicitly runs one
 /// - no Tera template syntax anywhere — templates render while config and
 ///   tasks load and can run arbitrary commands via exec()
@@ -3344,10 +3347,10 @@ fn is_safe_config_body(body: &str) -> bool {
             tools.iter().all(|(tool, version)| {
                 !tool.contains('[')
                     && match version {
-                        toml::Value::String(_) => true,
-                        toml::Value::Array(versions) => {
-                            versions.iter().all(|v| matches!(v, toml::Value::String(_)))
-                        }
+                        toml::Value::String(v) => !version_requires_trust(v),
+                        toml::Value::Array(versions) => versions.iter().all(
+                            |v| matches!(v, toml::Value::String(v) if !version_requires_trust(v)),
+                        ),
                         _ => false,
                     }
             })
@@ -5324,6 +5327,12 @@ run = "cargo build"
         depends = ["build"]
         run = ["cargo test"]
         "#}));
+
+        // a path: version puts a repository directory on PATH without an install
+        assert!(!is_safe_config_body("[tools]\nnode = \"path:./local\"\n"));
+        assert!(!is_safe_config_body(
+            "[tools]\nnode = [\"20\", \"path:./local\"]\n"
+        ));
 
         // templates can execute commands
         assert!(!is_safe_config_body(indoc! {r#"

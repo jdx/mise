@@ -505,6 +505,15 @@ pub(super) async fn parse_detected(
     }
 }
 
+/// Whether a tool version string only takes effect once the config is trusted.
+///
+/// A `path:<dir>` version names a directory that is already on disk, so it needs
+/// no install step: its `bin` is put on PATH as soon as the config loads, which
+/// would let an untrusted repository shadow any command.
+fn version_requires_trust(version: &str) -> bool {
+    version.starts_with("path:")
+}
+
 /// Whether a detected config requires trust before tracked loading may parse it.
 pub(super) fn detection_requires_trust(path: &Path, detection: &ConfigFileDetection) -> bool {
     if Settings::safe_mode() {
