@@ -49,11 +49,28 @@ fn parse_nightly_manifest(manifest: &str) -> Result<String> {
 /// Where the nightly channel manifest lives. Honors `RUSTUP_DIST_SERVER`, the
 /// variable rustup uses to find toolchains, so a mirror serves the manifest too.
 fn nightly_manifest_url(config_env: &IndexMap<String, String>) -> String {
-    let server = config_env
+    nightly_manifest_url_for(rustup_dist_server(config_env).as_deref())
+}
+
+/// The `RUSTUP_DIST_SERVER` mirror, from the config `[env]` or else the process
+/// environment, when one is set.
+fn rustup_dist_server(config_env: &IndexMap<String, String>) -> Option<String> {
+    config_env
         .get("RUSTUP_DIST_SERVER")
         .cloned()
-        .or_else(|| std::env::var("RUSTUP_DIST_SERVER").ok());
-    nightly_manifest_url_for(server.as_deref())
+        .or_else(|| std::env::var("RUSTUP_DIST_SERVER").ok())
+        .filter(|server| !server.is_empty())
+}
+
+/// The `RUSTUP_DIST_SERVER` and `RUSTUP_UPDATE_ROOT` mirror variables set in the
+/// config `[env]`. A `mise install` outside an activated shell does not see them
+/// in its own environment, so rustup is handed them explicitly.
+fn rustup_mirror_env(
+    config_env: &IndexMap<String, String>,
+) -> impl Iterator<Item = (&str, &String)> {
+    ["RUSTUP_DIST_SERVER", "RUSTUP_UPDATE_ROOT"]
+        .into_iter()
+        .filter_map(|k| config_env.get(k).map(|v| (k, v)))
 }
 
 fn nightly_manifest_url_for(dist_server: Option<&str>) -> String {
@@ -270,11 +287,7 @@ impl RustPlugin {
             .arg("--default-toolchain")
             .arg("none")
             .arg("-y")
-            .envs(
-                ["RUSTUP_DIST_SERVER", "RUSTUP_UPDATE_ROOT"]
-                    .iter()
-                    .filter_map(|k| config_env.get(*k).map(|v| (*k, v))),
-            )
+            .envs(rustup_mirror_env(&config_env))
             .env_values(tv.install_env())
             .envs(rustup_env(homes, &tv.version));
         if let Some(host) = settings.rust.default_host.as_ref() {
@@ -591,6 +604,14 @@ impl Backend for RustPlugin {
         Ok(RustOptions::new(&raw_opts).lockfile_options())
     }
 
+    async fn remote_version_cache_context(&self, config: &Arc<Config>) -> Result<Option<String>> {
+        // The nightly entry comes from the mirror's manifest, so a listing cached
+        // for one mirror must not serve another. The default server keeps the
+        // shared cache and versions host.
+        Ok(rustup_dist_server(&config.env().await?)
+            .map(|server| crate::hash::hash_to_str(&server.trim_end_matches('/'))))
+    }
+
     async fn _list_remote_versions(&self, config: &Arc<Config>) -> Result<Vec<VersionInfo>> {
         let mut versions: Vec<VersionInfo> = github::list_releases("rust-lang/rust")
             .await?
@@ -718,6 +739,7 @@ impl Backend for RustPlugin {
             components.dedup();
         }
 
+        let config_env = ctx.config.env().await?;
         let mut cmd = CmdLineRunner::new(runtime.bin_dir.join(RUSTUP_BIN))
             .with_pr(ctx.pr.as_ref())
             .arg("toolchain")
@@ -726,6 +748,7 @@ impl Backend for RustPlugin {
             .opt_args("--component", Some(components))
             .opt_args("--target", targets)
             .prepend_path(vec![runtime.bin_dir.clone()])?
+            .envs(rustup_mirror_env(&config_env))
             .env_values(tv.install_env())
             .envs(rustup_env(&runtime.homes, &tv.version));
         if let Some(profile) = profile.as_ref() {
@@ -1477,6 +1500,26 @@ mod tests {
                 "https://static.rust-lang.org/dist/channel-rust-nightly.toml"
             );
         }
+    }
+
+    #[test]
+    fn test_rustup_mirror_env_forwards_only_mirror_vars() {
+        let config_env: IndexMap<String, String> = [
+            ("RUSTUP_DIST_SERVER", "https://m.example.com"),
+            ("RUSTUP_HOME", "/elsewhere"),
+        ]
+        .into_iter()
+        .map(|(k, v)| (k.to_string(), v.to_string()))
+        .collect();
+        let forwarded: Vec<_> = rustup_mirror_env(&config_env).collect();
+        assert_eq!(
+            forwarded,
+            [("RUSTUP_DIST_SERVER", &"https://m.example.com".to_string())]
+        );
+        assert_eq!(
+            rustup_dist_server(&config_env).as_deref(),
+            Some("https://m.example.com")
+        );
     }
 
     #[test]
