@@ -448,17 +448,43 @@ impl HistoryRepo {
         let mut roots = walk.roots.clone();
         let mut overlays = vec![];
         let mut recipients = None;
-        for root in &mut roots {
-            let encrypted: Vec<_> = root
-                .files
-                .iter()
-                .filter(|rel| {
-                    walk.files
-                        .get(&root.path.join(rel))
-                        .is_some_and(|(_, policy)| policy.encrypt)
-                })
-                .cloned()
-                .collect();
+        let encrypted_by_root: Vec<Vec<PathBuf>> = roots
+            .iter()
+            .map(|root| {
+                root.files
+                    .iter()
+                    .filter(|rel| {
+                        walk.files
+                            .get(&root.path.join(rel))
+                            .is_some_and(|(_, policy)| policy.encrypt)
+                    })
+                    .cloned()
+                    .collect()
+            })
+            .collect();
+        let history_path = |label: &str, rel: &Path| -> Result<String> {
+            Ok(format!(
+                "{label}/{}",
+                rel.to_str()
+                    .ok_or_else(|| eyre::eyre!("non-UTF-8 tracked path"))?
+                    .replace('\\', "/")
+            ))
+        };
+        // one lookup for every encrypted path rather than a git process each
+        let mut in_history = match &head {
+            Some(head) => {
+                let paths = roots
+                    .iter()
+                    .zip(&encrypted_by_root)
+                    .flat_map(|(root, encrypted)| {
+                        encrypted.iter().map(|rel| history_path(&root.label, rel))
+                    })
+                    .collect::<Result<Vec<_>>>()?;
+                self.objects_at(head, &paths)?
+            }
+            None => BTreeMap::new(),
+        };
+        for (root, encrypted) in roots.iter_mut().zip(encrypted_by_root) {
             root.files.retain(|rel| !encrypted.contains(rel));
             for rel in encrypted {
                 let live = root.path.join(&rel);
@@ -484,13 +510,7 @@ impl HistoryRepo {
                 } else {
                     bail!("cannot encrypt non-file {}", display_path(&live));
                 };
-                let path = format!(
-                    "{}/{}",
-                    root.label,
-                    rel.to_str()
-                        .ok_or_else(|| eyre::eyre!("non-UTF-8 tracked path"))?
-                        .replace('\\', "/")
-                );
+                let path = history_path(&root.label, &rel)?;
                 let fingerprint = blake3::keyed_hash(&cache_key, &bytes).to_hex().to_string();
                 let cached = cache
                     .get(&path)
@@ -503,10 +523,7 @@ impl HistoryRepo {
                         self.blob_starts_with(&entry.oid, b"mise-encrypted-file-v1\n")
                             .unwrap_or(false)
                     });
-                let previous = match &head {
-                    Some(head) => self.object_at(head, &path)?,
-                    None => None,
-                };
+                let previous = in_history.remove(&path);
                 let oid = match cached {
                     Some(entry) if previous.as_ref().is_none_or(|(_, oid)| *oid == entry.oid) => {
                         entry.oid.clone()
@@ -1500,6 +1517,40 @@ impl HistoryRepo {
             return Ok(None);
         };
         Ok(Some((mode.to_string(), oid.to_string())))
+    }
+
+    /// [`Self::object_at`] for several paths in one git call; paths absent
+    /// from `tree_ish` are left out of the map.
+    pub(crate) fn objects_at(
+        &self,
+        tree_ish: &str,
+        paths: &[String],
+    ) -> Result<BTreeMap<String, (String, String)>> {
+        let mut objects = BTreeMap::new();
+        // with no paths, ls-tree would list the whole tree
+        if paths.is_empty() {
+            return Ok(objects);
+        }
+        let mut args = vec!["ls-tree", "-z", tree_ish, "--"];
+        args.extend(paths.iter().map(String::as_str));
+        let output = self.git.output_unchecked(PlumbingCall::new(args))?;
+        if !output.status.success() {
+            return Ok(objects);
+        }
+        for record in output.stdout.split(|byte| *byte == 0) {
+            let record = String::from_utf8_lossy(record);
+            let Some((meta, path)) = record.split_once('\t') else {
+                continue;
+            };
+            let mut fields = meta.split_whitespace();
+            let (Some(mode), Some(_kind), Some(oid)) =
+                (fields.next(), fields.next(), fields.next())
+            else {
+                continue;
+            };
+            objects.insert(path.to_string(), (mode.to_string(), oid.to_string()));
+        }
+        Ok(objects)
     }
 
     /// Read live-file contents for restoration. Decrypted objects exist only
