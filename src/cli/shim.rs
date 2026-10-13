@@ -12,7 +12,7 @@ use itertools::Itertools;
 #[cfg(windows)]
 use path_absolutize::Absolutize;
 use std::collections::BTreeMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 
@@ -135,6 +135,56 @@ fn invoked_shim_path() -> PathBuf {
         .ok()
         .or_else(|| std::env::current_exe().ok())
         .unwrap_or(argv0)
+}
+
+/// Whether a selected but uninstalled tool version may provide `shim_name`: it is named after the
+/// command, the registry lists the command as one of its bins, or another installed version of
+/// the same tool provides it. Lookup errors count as "no" so a leftover wrapper still falls
+/// through.
+async fn missing_version_may_provide(
+    config: &Arc<Config>,
+    ts: &Toolset,
+    shim_name: &str,
+    bin_name: &str,
+) -> bool {
+    let missing = ts.list_missing_versions(config).await;
+    if missing.is_empty() {
+        return false;
+    }
+    let installed = ts.list_installed_versions(config).await.unwrap_or_default();
+    for tv in &missing {
+        if tv.ba().matches_bin_name(shim_name)
+            || crate::registry::REGISTRY
+                .get(&tv.ba().short)
+                .is_some_and(|tool| tool.provides_bin(shim_name))
+        {
+            return true;
+        }
+        for (p, installed_tv) in installed.iter().filter(|(p, _)| **p.ba() == *tv.ba()) {
+            for name in [shim_name, bin_name].into_iter().unique() {
+                if matches!(p.which(config, installed_tv, name).await, Ok(Some(_))) {
+                    return true;
+                }
+            }
+        }
+    }
+    false
+}
+
+/// Whether this process was started through a shim in the command-wrappers dir: by its path when
+/// it has one, otherwise the first `PATH` entry that holds `bin_name`.
+fn invoked_from_wrapper_dir(bin_name: &str) -> bool {
+    let argv0 = Path::new(&*env::ARGV0);
+    if let Some(dir) = argv0.parent().filter(|dir| !dir.as_os_str().is_empty()) {
+        return file::is_command_wrapper_dir(dir);
+    }
+    env::PATH
+        .iter()
+        .find(|dir| {
+            let bin = dir.join(bin_name);
+            bin.is_file() && file::is_executable(&bin)
+        })
+        .is_some_and(|dir| file::is_command_wrapper_dir(dir))
 }
 
 /// Apply the command wrapper for `mise x -- <name>` run by a native Windows shim.
@@ -340,7 +390,12 @@ async fn which_shim(
         }
     }
     // fallback for "system"
-    if Settings::get().not_found_system_fallback {
+    // A wrapper shim left by another project must not turn a plain command into an error.
+    // Only when no missing tool version could provide this command: that must still fail.
+    // Installed tools were tried above.
+    let inactive_wrapper = invoked_from_wrapper_dir(bin_name)
+        && !missing_version_may_provide(config, &ts, shim_name, bin_name).await;
+    if Settings::get().not_found_system_fallback || inactive_wrapper {
         let mise_bin = file::canonicalize_or_self(&env::MISE_BIN);
         for path in &*env::PATH {
             if file::is_mise_shims_dir(path) || file::is_command_wrapper_dir(path) {

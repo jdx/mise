@@ -6,13 +6,14 @@ use std::sync::Arc;
 
 use crate::args::{BackendArg, ToolArg};
 use crate::backend::Backend;
-use crate::config::{Config, Settings, SettingsExt, load_command_wrappers};
+use crate::config::{Config, ConfigMap, Settings, SettingsExt, load_command_wrappers};
 use crate::file::display_path;
 use crate::lock_file::LockFile;
 use crate::toolset::{ToolVersion, Toolset};
 use crate::{backend, dirs, env, fake_asdf, file};
 use color_eyre::eyre::{Result, bail, eyre};
 use eyre::WrapErr;
+use indexmap::IndexMap;
 #[cfg(windows)]
 use indoc::formatdoc;
 use itertools::Itertools;
@@ -467,7 +468,7 @@ pub async fn reshim_for(
     )?;
 
     if matches!(requested_scope, ShimScope::User | ShimScope::Both) {
-        sync_command_wrapper_shims(config, ts, &mise_bin, full_rebuild)?;
+        sync_command_wrapper_shims(config, ts, &mise_bin, full_rebuild).await?;
     }
 
     Ok(())
@@ -884,17 +885,96 @@ pub fn ensure_command_wrapper_shims(config: &Config, ts: &Toolset) -> Result<()>
     Ok(())
 }
 
-fn sync_command_wrapper_shims(
+/// Wrappers defined by tracked configs outside the current directory. Explicit
+/// `[wrappers]` are read per file. The built-in rust wrapper looks at the tool
+/// requests of every config together, since `mr-boxington` may be declared in a
+/// different file (e.g. globally) than `rust`. A tracked config that fails to
+/// load is skipped: it must not break a reshim run from somewhere else.
+async fn tracked_command_wrappers(
+    config: &Config,
+    current_requests: Vec<&crate::toolset::ToolRequest>,
+) -> Result<IndexMap<String, crate::config::CommandWrapper>> {
+    let tracked = config.get_tracked_config_files().await?;
+    let mut out = IndexMap::new();
+    let mut request_sets = vec![];
+    for (path, cf) in &tracked {
+        if config.config_files.contains_key(path) {
+            continue;
+        }
+        let one: ConfigMap = std::iter::once((path.clone(), cf.clone())).collect();
+        match load_command_wrappers(&one, std::iter::empty()) {
+            Ok(wrappers) => out.extend(wrappers),
+            Err(err) => debug!("skipping wrappers of {}: {err:#}", display_path(path)),
+        }
+        // Tools may fail to resolve here (e.g. templates that need that
+        // project's env); the explicit wrappers above are kept regardless.
+        match cf.to_tool_request_set() {
+            Ok(set) => request_sets.push(set),
+            Err(err) => debug!("ignoring tools of {}: {err:#}", display_path(path)),
+        }
+    }
+    // `add_rust_wrapper` decides per toolset, so judge each project's own `rust`; only the
+    // `mr-boxington` provider may come from another config (e.g. the global one).
+    let mbx = crate::args::BackendArg::from("mr-boxington");
+    let is_mbx = |tool: &crate::toolset::ToolRequest| {
+        tool.ba().short == mbx.short || tool.ba().full() == mbx.full()
+    };
+    let all: Vec<&crate::toolset::ToolRequest> = current_requests
+        .into_iter()
+        .chain(
+            request_sets
+                .iter()
+                .flat_map(|set| set.tools.values().flatten()),
+        )
+        .collect();
+    for set in &request_sets {
+        let own: Vec<&crate::toolset::ToolRequest> = set.tools.values().flatten().collect();
+        let requests = own
+            .iter()
+            .copied()
+            .chain(all.iter().copied().filter(|tool| is_mbx(tool)));
+        if let Err(err) = crate::config::command_wrapper::add_rust_wrapper(&mut out, requests) {
+            debug!("skipping tracked rust wrapper: {err:#}");
+        }
+    }
+    Ok(out)
+}
+
+async fn sync_command_wrapper_shims(
     config: &Config,
     ts: &Toolset,
     mise_bin: &Path,
     force: bool,
 ) -> Result<()> {
-    let wrappers = load_command_wrappers(
+    let mut wrappers = load_command_wrappers(
         &config.config_files,
         ts.versions.values().flat_map(|versions| &versions.requests),
     )?;
+    // Wrappers live in one shared directory, so a reshim must keep those other
+    // projects define, as it does for their tool shims (#14277). A shim left
+    // behind for a project that is not active falls through to the next PATH
+    // entry. Only wrapper names matter here, so the first definition wins.
     validate_wrapper_names(wrappers.keys())?;
+    for (name, wrapper) in tracked_command_wrappers(
+        config,
+        ts.versions
+            .values()
+            .flat_map(|versions| &versions.requests)
+            .collect(),
+    )
+    .await?
+    {
+        if wrappers.contains_key(&name) {
+            continue;
+        }
+        // Another project's bad name must not fail this project's reshim.
+        let candidate = wrappers.keys().chain(std::iter::once(&name));
+        if let Err(err) = validate_wrapper_names(candidate) {
+            debug!("skipping tracked command wrapper {name:?}: {err:#}");
+            continue;
+        }
+        wrappers.insert(name, wrapper);
+    }
     if wrappers.is_empty() {
         if cfg!(windows) {
             remove_shims_individually(&dirs::COMMAND_WRAPPERS)?;

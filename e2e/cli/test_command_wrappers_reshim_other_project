@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+
+# A reshim in one project must not delete wrappers another project defines (#14277).
+mkdir -p proj-a proj-b
+cat >proj-a/mise.toml <<'EOF2'
+[wrappers.uname]
+command = "echo"
+args = ["wrapped uname"]
+EOF2
+cat >proj-b/mise.toml <<'EOF2'
+[settings]
+experimental = true
+EOF2
+mise trust proj-a/mise.toml
+mise trust proj-b/mise.toml
+
+(cd proj-a && mise reshim)
+assert_succeed "test -e '$MISE_DATA_DIR/command-wrappers/bin/uname'"
+
+(cd proj-b && mise reshim)
+assert_succeed "test -e '$MISE_DATA_DIR/command-wrappers/bin/uname'"
+
+# removing the wrapper from its own project still cleans it up
+printf '[settings]\nexperimental = true\n' >proj-a/mise.toml
+(cd proj-a && mise reshim)
+assert_fail "test -e '$MISE_DATA_DIR/command-wrappers/bin/uname'"
+
+# an inactive project's wrapper shim still falls through to the system command,
+# even when system fallback is disabled for tool shims
+printf '[wrappers.uname]\ncommand = "echo"\nargs = ["wrapped uname"]\n' >proj-a/mise.toml
+(cd proj-a && mise reshim)
+assert_contains "cd proj-b && MISE_NOT_FOUND_SYSTEM_FALLBACK=0 MISE_NOT_FOUND_AUTO_INSTALL=0 '$MISE_DATA_DIR/command-wrappers/bin/uname'" "$(uname)"

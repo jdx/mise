@@ -222,7 +222,7 @@ impl Toolset {
     }
 
     /// Lists missing install markers without invoking backend-specific checks.
-    pub(crate) async fn list_missing_versions(&self, config: &Arc<Config>) -> Vec<ToolVersion> {
+    pub async fn list_missing_versions(&self, config: &Arc<Config>) -> Vec<ToolVersion> {
         trace!("list_missing_versions");
         measure!("toolset::list_missing_versions", {
             self.list_current_versions()
