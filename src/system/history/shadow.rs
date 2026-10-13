@@ -1605,14 +1605,16 @@ impl HistoryRepo {
     pub fn object_at(&self, tree_ish: &str, path: &str) -> Result<Option<(String, String)>> {
         if let Some(id) = Self::object_id(tree_ish) {
             let repo = self.gix()?;
-            // `ls-tree` fails for an object that is missing or holds no tree,
-            // which reads as nothing there
-            let Some(tree) = repo
-                .try_find_object(id)?
-                .and_then(|object| object.peel_to_tree().ok())
-            else {
+            // a missing object holds nothing, as `ls-tree` reports it
+            let Some(object) = repo.try_find_object(id)? else {
                 return Ok(None);
             };
+            // a blob holds no paths; any other failure to reach a tree is
+            // the repository's, not an absence
+            if object.kind == gix::object::Kind::Blob {
+                return Ok(None);
+            }
+            let tree = object.peel_to_tree()?;
             // as `ls-tree` prints it: six octal digits, so a tree is 040000
             return Ok(tree.lookup_entry_by_path(path)?.map(|entry| {
                 (
@@ -1781,11 +1783,21 @@ impl HistoryRepo {
         // full ref name gix resolves itself; anything else is a revision
         // only Git resolves here.
         if name == "HEAD" || name.starts_with("refs/") {
+            // `rev-parse --verify` prints what the ref names without reading
+            // that object, so neither does this; a symbolic ref is followed
+            // as deep as Git follows one
             let repo = self.gix()?;
-            let Some(mut reference) = repo.try_find_reference(name)? else {
-                return Ok(None);
-            };
-            return Ok(reference.peel_to_id().ok().map(|id| id.to_string()));
+            let mut name = name.to_string();
+            for _ in 0..5 {
+                let Some(reference) = repo.try_find_reference(name.as_str())? else {
+                    return Ok(None);
+                };
+                match reference.target() {
+                    gix::refs::TargetRef::Object(id) => return Ok(Some(id.to_string())),
+                    gix::refs::TargetRef::Symbolic(target) => name = target.as_bstr().to_string(),
+                }
+            }
+            bail!("{name}: too many levels of symbolic refs");
         }
         let output = self.git.output_unchecked(PlumbingCall::new([
             "rev-parse",
@@ -2462,7 +2474,18 @@ mod tests {
                 );
             }
         }
-        for name in [HistoryRepo::HISTORY_REF, "HEAD", "refs/heads/absent"] {
+        // a ref naming a missing object still resolves, as with Git
+        std::fs::write(
+            repo.dir().join("refs/heads/dangling"),
+            format!("{missing}\n"),
+        )
+        .unwrap();
+        for name in [
+            HistoryRepo::HISTORY_REF,
+            "HEAD",
+            "refs/heads/absent",
+            "refs/heads/dangling",
+        ] {
             assert_eq!(
                 repo.ref_oid(name).unwrap(),
                 git(&["rev-parse", "--verify", "--quiet", name]).map(|out| out.trim().to_string()),
