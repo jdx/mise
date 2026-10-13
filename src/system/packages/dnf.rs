@@ -275,6 +275,16 @@ fn parse_rpm_query(output: &str, requests: &[PackageRequest]) -> Vec<PackageStat
 }
 
 impl DnfManager {
+    /// The tool that changes packages here: rpm-ostree when layering on an
+    /// ostree host, dnf everywhere else.
+    fn backend(&self) -> &'static str {
+        if layering_on(ostree_booted()) {
+            "rpm-ostree"
+        } else {
+            "dnf"
+        }
+    }
+
     async fn installed_rpms(&self, pkgs: &[PackageRequest]) -> Result<Vec<PackageStatus>> {
         let mut args = vec![
             "-q".to_string(),
@@ -360,15 +370,12 @@ impl SystemPackageManager for DnfManager {
     }
 
     fn is_available(&self) -> bool {
-        cfg!(target_os = "linux")
-            && (crate::file::which("dnf").is_some()
-                // layering needs rpm-ostree, not dnf, which an atomic host may lack
-                || (layering_on(ostree_booted()) && crate::file::which("rpm-ostree").is_some()))
+        cfg!(target_os = "linux") && crate::file::which(self.backend()).is_some()
     }
 
     fn unavailable_reason(&self) -> String {
         if cfg!(target_os = "linux") {
-            "dnf not found".to_string()
+            format!("{} not found", self.backend())
         } else {
             "only available on linux".to_string()
         }
@@ -394,6 +401,9 @@ impl SystemPackageManager for DnfManager {
             pkgs.iter().cloned().partition(|p| group_id(p).is_some());
         let mut statuses = if groups.is_empty() {
             vec![]
+        } else if layering_on(ostree_booted()) {
+            // rpm-ostree has no groups, and dnf may not even be installed
+            bail!("rpm-ostree cannot layer the dnf group {}", groups[0].name);
         } else {
             self.installed_groups(&groups).await?
         };
