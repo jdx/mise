@@ -286,6 +286,75 @@ def test_install_tool_unknown(proc):
     return 0
 
 
+def spawn(mise_path):
+    return subprocess.Popen(
+        [mise_path, "mcp"],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        env=dict(os.environ),
+    )
+
+
+INLINE_META = {
+    "io.modelcontextprotocol/protocolVersion": "2026-07-28",
+    "io.modelcontextprotocol/clientCapabilities": {},
+    "io.modelcontextprotocol/clientInfo": {"name": "test-client", "version": "1.0.0"},
+}
+
+
+def test_discover_then_initialize(mise_path):
+    """Claude Code probes with server/discover before falling back to initialize."""
+    proc = spawn(mise_path)
+    try:
+        send(proc, {
+            "jsonrpc": "2.0", "id": "p",
+            "method": "server/discover",
+            "params": {"_meta": INLINE_META},
+        })
+        resp = recv(proc)
+        assert resp and "result" in resp, f"bad server/discover response: {resp}"
+        assert "tools" in resp["result"]["capabilities"], resp
+        print("✓ server/discover answered")
+
+        # The probe must not end the session: the legacy lifecycle still works.
+        if not handshake(proc):
+            return 1
+        send(proc, {"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}})
+        resp = recv(proc)
+        assert resp and "result" in resp, f"tools/list hung after server/discover: {resp}"
+        assert "run_task" in {t["name"] for t in resp["result"]["tools"]}, resp
+        print("✓ tools/list answered after server/discover + initialize")
+        return 0
+    finally:
+        proc.terminate()
+        proc.wait()
+
+
+def test_inline_cache_hints(mise_path):
+    """2026-07-28 requires ttlMs and cacheScope on cacheable list results."""
+    proc = spawn(mise_path)
+    try:
+        for i, method in enumerate(["tools/list", "resources/list"], start=1):
+            send(proc, {
+                "jsonrpc": "2.0", "id": i,
+                "method": method,
+                "params": {"_meta": INLINE_META},
+            })
+            resp = recv(proc)
+            assert resp and "result" in resp, f"bad {method} response: {resp}"
+            result = resp["result"]
+            assert isinstance(result.get("ttlMs"), int), f"{method} missing ttlMs: {result}"
+            assert result.get("cacheScope") in ("public", "private"), (
+                f"{method} missing cacheScope: {result}"
+            )
+            print(f"✓ {method} carries ttlMs and cacheScope")
+        return 0
+    finally:
+        proc.terminate()
+        proc.wait()
+
+
 def main():
     mise_path = find_mise()
     if not mise_path:
@@ -293,13 +362,7 @@ def main():
         return 1
     print(f"Using mise binary: {mise_path}")
 
-    proc = subprocess.Popen(
-        [mise_path, "mcp"],
-        stdin=subprocess.PIPE,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        env=dict(os.environ),
-    )
+    proc = spawn(mise_path)
 
     try:
         tests = [
@@ -316,6 +379,14 @@ def main():
             print(f"\n--- {name} ---")
             rc = test_fn(proc)
             if rc != 0:
+                print(f"FAIL: {name}")
+                return 1
+        for name, test_fn in [
+            ("server/discover before initialize", test_discover_then_initialize),
+            ("inline 2026-07-28 cache hints", test_inline_cache_hints),
+        ]:
+            print(f"\n--- {name} ---")
+            if test_fn(mise_path) != 0:
                 print(f"FAIL: {name}")
                 return 1
         print("\n✓ All MCP protocol tests passed!")
