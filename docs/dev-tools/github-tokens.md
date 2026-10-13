@@ -289,8 +289,10 @@ secret works, including `op`, `bw` and fnox. GitHub rotates the refresh token on
 every refresh, so both commands are required. Both are global-only settings: a
 project's `mise.toml` cannot set them.
 
-The commands run only when the access token has to be refreshed, about once
-every eight hours, not on every mise invocation. If `oauth_cache_get` fails when
+mise writes the refresh token with `oauth_cache_set` when you authorize and each
+time it is rotated, and reads it with `oauth_cache_get` when the access token
+has to be refreshed, about once every eight hours. Neither runs on every mise
+invocation. If `oauth_cache_get` fails when
 mise needs to refresh, for example because the vault is locked, mise skips the
 refresh and keeps the cached token; it may fail on an entry that does not exist
 yet when mise stores the first token. Each command is stopped after 60 seconds. If `oauth_cache_set` fails, mise warns and keeps the new refresh token in
