@@ -1610,7 +1610,7 @@ Install or remove packages to match `[bootstrap.packages]`
 
 Installs each configured package that is missing or does not match its
 declared version, and removes packages declared `state = "absent"` on the
-managers that support removal (pacman, scoop, and zypper). On other
+managers that support removal (pacman, scoop, snap, and zypper). On other
 managers, an installed package declared absent is left in place with a
 warning; `apply` fails for it only when you pass `--manager` or name the
 package.
