@@ -12,6 +12,7 @@ const GRANT_DEVICE_CODE: &str = "urn:ietf:params:oauth:grant-type:device_code";
 const DEFAULT_TOKEN_SECS: i64 = 8 * 60 * 60;
 const REUSE_BUFFER_SECS: i64 = 300;
 const CLIPBOARD_TIMEOUT: Duration = Duration::from_secs(2);
+const ENCLAVE_NAME: &str = "the Secure Enclave helper";
 const STORE_TIMEOUT: Duration = Duration::from_secs(60);
 
 static REFRESH_TOKEN_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
@@ -202,7 +203,7 @@ async fn refresh_cached_token(
         false
     };
 
-    if cached.refresh_token.is_none() && store_commands().is_some() {
+    if cached.refresh_token.is_none() && store().is_some() {
         // The refresh token lives in the external store. Read it only now that
         // a refresh is needed, and if it cannot be read stop here: refreshing
         // without it would look like "no refresh token" and invalidate a token
@@ -651,14 +652,67 @@ fn write_cache(cache: &TokenCache) -> Result<()> {
     Ok(())
 }
 
-/// The external store commands, when both are configured. Setting only one is
-/// a mistake that would silently leave the refresh token in the file.
-fn store_commands() -> Option<(String, String)> {
+/// Where the refresh tokens live when they are kept out of the cache file.
+enum Store {
+    /// User-supplied `oauth_cache_get` / `oauth_cache_set` commands.
+    Commands { get: String, set: String },
+    /// A file sealed by the macOS Secure Enclave helper; unsealing needs Touch ID.
+    Enclave { helper: PathBuf },
+}
+
+type EnclaveHelper = fn() -> Result<PathBuf>;
+
+/// The refresh tokens as last unsealed or sealed by this process, with the sealed
+/// bytes they match. A refresh reads the store to refresh and again to merge the
+/// rotated token, and each unseal is a Touch ID prompt, so the second read must
+/// not unseal again. The copy is used only while the sealed file still holds
+/// those exact bytes, so a token rotated by another mise process is never
+/// replaced with a stale one.
+static ENCLAVE_TOKENS: std::sync::Mutex<Option<(String, HashMap<String, String>)>> =
+    std::sync::Mutex::new(None);
+
+static ENCLAVE_HELPER: std::sync::OnceLock<EnclaveHelper> = std::sync::OnceLock::new();
+
+/// Register how to find the Secure Enclave helper. The helper is embedded in the
+/// mise binary, so mise supplies it. Without one, `oauth_cache_secure_enclave`
+/// warns and the refresh token stays in the cache file.
+pub fn set_enclave_helper(f: EnclaveHelper) {
+    let _ = ENCLAVE_HELPER.set(f);
+}
+
+/// The configured store, if any. Setting only one command is a mistake that
+/// would silently leave the refresh token in the file.
+fn store() -> Option<Store> {
     let settings = Settings::get();
     let get = settings.github.oauth_cache_get.trim();
     let set = settings.github.oauth_cache_set.trim();
+    if settings.github.oauth_cache_secure_enclave {
+        if !get.is_empty() || !set.is_empty() {
+            warn_once!(
+                "github.oauth_cache_secure_enclave overrides github.oauth_cache_get and \
+                 github.oauth_cache_set"
+            );
+        }
+        let helper = ENCLAVE_HELPER
+            .get()
+            .ok_or_else(|| eyre!("the Secure Enclave is only available on macOS"))
+            .and_then(|f| f());
+        match helper {
+            Ok(helper) => return Some(Store::Enclave { helper }),
+            Err(err) => {
+                warn_once!(
+                    "github.oauth_cache_secure_enclave is unavailable ({err:#}); \
+                     keeping the GitHub OAuth refresh token in the cache file"
+                );
+                return None;
+            }
+        }
+    }
     match (get.is_empty(), set.is_empty()) {
-        (false, false) => Some((get.to_string(), set.to_string())),
+        (false, false) => Some(Store::Commands {
+            get: get.to_string(),
+            set: set.to_string(),
+        }),
         (true, true) => None,
         _ => {
             warn_once!(
@@ -668,6 +722,15 @@ fn store_commands() -> Option<(String, String)> {
             None
         }
     }
+}
+
+fn sealed_path() -> PathBuf {
+    let mut name = cache_path()
+        .file_stem()
+        .map(|s| s.to_os_string())
+        .unwrap_or_default();
+    name.push(".sealed");
+    cache_path().with_file_name(name)
 }
 
 fn store_command(cmd: &str) -> Result<std::process::Command> {
@@ -683,10 +746,17 @@ fn store_command(cmd: &str) -> Result<std::process::Command> {
 /// while mise holds the cache lock, so it is stopped and reaped when it fails
 /// or takes longer than `STORE_TIMEOUT`.
 fn run_store_command(name: &str, cmd: &str, input: Option<&str>) -> Result<Vec<u8>> {
+    run_store_process(name, store_command(cmd)?, input)
+}
+
+fn run_store_process(
+    name: &str,
+    mut command: std::process::Command,
+    input: Option<&str>,
+) -> Result<Vec<u8>> {
     use std::io::Read;
     use std::process::Stdio;
 
-    let mut command = store_command(cmd)?;
     let mut child = command
         .stdin(if input.is_some() {
             Stdio::piped()
@@ -748,30 +818,89 @@ fn run_store_command(name: &str, cmd: &str, input: Option<&str>) -> Result<Vec<u
 
 /// Read the refresh tokens (cache key to token) from the external store.
 fn store_read() -> Result<HashMap<String, String>> {
-    let Some((get, _)) = store_commands() else {
-        return Ok(HashMap::new());
+    let mut sealed_input = None;
+    let (stdout, name) = match store() {
+        None => return Ok(HashMap::new()),
+        Some(Store::Commands { get, .. }) => (
+            run_store_command("github.oauth_cache_get", &get, None)?,
+            "github.oauth_cache_get",
+        ),
+        Some(Store::Enclave { helper }) => {
+            let sealed = match std::fs::read_to_string(sealed_path()) {
+                Ok(sealed) => sealed,
+                // A missing file is an error, like a failing `oauth_cache_get`:
+                // callers treat it as an empty store only while every refresh
+                // token is still in the cache file, so tokens that were moved
+                // out are never replaced by a store that lost them.
+                Err(err) => bail!("failed to read {}: {err}", sealed_path().display()),
+            };
+            if let Some((bytes, tokens)) = &*ENCLAVE_TOKENS.lock().unwrap()
+                && *bytes == sealed
+            {
+                return Ok(tokens.clone());
+            }
+            let mut command = std::process::Command::new(helper);
+            command.arg("unseal");
+            let out = run_store_process(ENCLAVE_NAME, command, Some(&sealed))?;
+            sealed_input = Some(sealed);
+            (out, ENCLAVE_NAME)
+        }
     };
-    let stdout = String::from_utf8(run_store_command("github.oauth_cache_get", &get, None)?)
-        .map_err(|_| eyre!("github.oauth_cache_get did not print UTF-8"))?;
-    if stdout.trim().is_empty() {
-        return Ok(HashMap::new());
+    let sealed = sealed_input;
+    let stdout = String::from_utf8(stdout).map_err(|_| eyre!("{name} did not print UTF-8"))?;
+    let tokens: HashMap<String, String> = if stdout.trim().is_empty() {
+        HashMap::new()
+    } else {
+        toml::from_str(&stdout)
+            .map_err(|_| eyre!("{name} did not print what the refresh token store was given"))?
+    };
+    if let Some(sealed) = sealed {
+        *ENCLAVE_TOKENS.lock().unwrap() = Some((sealed, tokens.clone()));
     }
-    toml::from_str(&stdout).map_err(|_| {
-        eyre!("github.oauth_cache_get did not print what github.oauth_cache_set stored")
-    })
+    Ok(tokens)
 }
 
 /// Hand the refresh tokens to the external store on its stdin.
 fn store_write(tokens: &HashMap<String, String>) -> Result<()> {
-    let Some((_, set)) = store_commands() else {
+    let Some(store) = store() else {
         return Ok(());
     };
     let ordered: std::collections::BTreeMap<_, _> = tokens.iter().collect();
-    run_store_command(
-        "github.oauth_cache_set",
-        &set,
-        Some(&toml::to_string(&ordered)?),
-    )?;
+    let value = toml::to_string(&ordered)?;
+    match store {
+        Store::Commands { set, .. } => {
+            run_store_command("github.oauth_cache_set", &set, Some(&value))?;
+        }
+        Store::Enclave { helper } => {
+            let mut command = std::process::Command::new(helper);
+            command.arg("seal");
+            let sealed = run_store_process(ENCLAVE_NAME, command, Some(&value))?;
+            write_private_file(&sealed_path(), &sealed)?;
+            *ENCLAVE_TOKENS.lock().unwrap() = Some((
+                String::from_utf8_lossy(&sealed).into_owned(),
+                tokens.clone(),
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// Write `content` to `path` through a temp file, readable only by the user.
+fn write_private_file(path: &Path, content: &[u8]) -> Result<()> {
+    let parent = path
+        .parent()
+        .ok_or_else(|| eyre!("{} has no parent", path.display()))?;
+    std::fs::create_dir_all(parent)?;
+    let mut tmp = tempfile::NamedTempFile::with_prefix_in(".github-oauth-sealed.", parent)?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        tmp.as_file()
+            .set_permissions(std::fs::Permissions::from_mode(0o600))?;
+    }
+    tmp.write_all(content)?;
+    tmp.as_file_mut().sync_all()?;
+    persist_cache_tmp(tmp, path)?;
     Ok(())
 }
 
@@ -782,7 +911,7 @@ fn store_write(tokens: &HashMap<String, String>) -> Result<()> {
 /// A failure keeps the refresh token in the file: GitHub has already rotated
 /// it, so dropping it would end the session.
 fn protect_refresh_tokens(cache: &TokenCache) -> Option<TokenCache> {
-    store_commands()?;
+    store()?;
     if cache.tokens.values().all(|t| t.refresh_token.is_none()) {
         return None;
     }
@@ -1021,6 +1150,115 @@ mod tests {
             test_support::clear_cache_path();
             crate::testing::reset_settings(None);
         }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn enclave_store_unseals_once_per_refresh_and_survives_a_cancelled_prompt() {
+        use std::os::unix::fs::PermissionsExt;
+
+        static HELPER_PATH: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
+        let dir = tempfile::tempdir().unwrap();
+        let cache_path = dir.path().join("github-oauth-tokens.toml");
+        let _guard = OAuthEnvGuard::new("http://127.0.0.1:1/login".into(), cache_path.clone());
+        crate::env::set_var("MISE_GITHUB_OAUTH_CACHE_SECURE_ENCLAVE", "1");
+        crate::testing::reset_settings(None);
+
+        // Stands in for the Touch ID helper: "sealing" is base64, each unseal is
+        // counted, and an unseal fails while `cancel` exists.
+        let helper = dir.path().join("mise-enclave");
+        std::fs::write(
+            &helper,
+            "#!/bin/sh\nd=$(dirname \"$0\")\ncase $1 in\nseal) base64;;\nunseal)\n  echo x >> \"$d/unseals\"\n  [ -e \"$d/cancel\" ] && { echo cancelled >&2; exit 1; }\n  base64 -d;;\nesac\n",
+        )
+        .unwrap();
+        std::fs::set_permissions(&helper, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let _ = HELPER_PATH.set(helper.clone());
+        set_enclave_helper(|| Ok(HELPER_PATH.get().unwrap().clone()));
+        *ENCLAVE_TOKENS.lock().unwrap() = None;
+        let unseals = || {
+            std::fs::read_to_string(dir.path().join("unseals"))
+                .map(|s| s.lines().count())
+                .unwrap_or(0)
+        };
+
+        let token = |refresh: &str| CachedToken {
+            access_token: "ghu".into(),
+            expires_at: chrono::Utc::now() + chrono::Duration::hours(8),
+            refresh_token: Some(refresh.into()),
+            refresh_expires_at: None,
+        };
+        let mut cache = TokenCache::default();
+        cache.tokens.insert("a".into(), token("ghr-a"));
+        cache.tokens.insert("b".into(), token("ghr-b"));
+
+        // Storing a fresh authorization seals both tokens and keeps them out of the file.
+        write_cache(&cache).unwrap();
+        assert_eq!(unseals(), 0);
+        let content = std::fs::read_to_string(&cache_path).unwrap();
+        assert!(!content.contains("ghr-"), "{content}");
+        assert!(sealed_path().exists());
+
+        // A refresh in a new process: one unseal to read, none to save the rotated token.
+        *ENCLAVE_TOKENS.lock().unwrap() = None;
+        let mut tokens = store_read().unwrap();
+        assert_eq!(tokens.remove("a").as_deref(), Some("ghr-a"));
+        let mut cache = read_cache().unwrap();
+        cache.tokens.get_mut("a").unwrap().refresh_token = Some("ghr-a2".into());
+        write_cache(&cache).unwrap();
+        assert_eq!(unseals(), 1);
+
+        // The other entry's token survives, and the rotated one replaced the old.
+        *ENCLAVE_TOKENS.lock().unwrap() = None;
+        let tokens = store_read().unwrap();
+        assert_eq!(tokens.get("a").map(String::as_str), Some("ghr-a2"));
+        assert_eq!(tokens.get("b").map(String::as_str), Some("ghr-b"));
+
+        // Another mise process rotating the sealed file invalidates this process's copy.
+        let before = unseals();
+        let mut other = HashMap::new();
+        other.insert("a".to_string(), "ghr-a-rotated-elsewhere".to_string());
+        let mut command = std::process::Command::new(&helper);
+        command.arg("seal");
+        let sealed =
+            run_store_process("fake", command, Some(&toml::to_string(&other).unwrap())).unwrap();
+        write_private_file(&sealed_path(), &sealed).unwrap();
+        let tokens = store_read().unwrap();
+        assert_eq!(
+            tokens.get("a").map(String::as_str),
+            Some("ghr-a-rotated-elsewhere")
+        );
+        assert_eq!(unseals(), before + 1);
+
+        // A lost sealed file must not be replaced by a store holding only the new token.
+        let backup = dir.path().join("sealed.bak");
+        std::fs::rename(sealed_path(), &backup).unwrap();
+        *ENCLAVE_TOKENS.lock().unwrap() = None;
+        assert!(store_read().is_err());
+        let mut cache = read_cache().unwrap();
+        cache.tokens.get_mut("a").unwrap().refresh_token = Some("ghr-a4".into());
+        write_cache(&cache).unwrap();
+        assert!(!sealed_path().exists());
+        assert!(
+            std::fs::read_to_string(&cache_path)
+                .unwrap()
+                .contains("ghr-a4")
+        );
+        std::fs::rename(&backup, sealed_path()).unwrap();
+
+        // A cancelled prompt is an error, never an empty store, so nothing is dropped.
+        std::fs::write(dir.path().join("cancel"), "").unwrap();
+        *ENCLAVE_TOKENS.lock().unwrap() = None;
+        assert!(store_read().is_err());
+        let sealed_before = std::fs::read(sealed_path()).unwrap();
+        let mut cache = read_cache().unwrap();
+        cache.tokens.get_mut("a").unwrap().refresh_token = Some("ghr-a3".into());
+        cache.tokens.get_mut("b").unwrap().refresh_token = None;
+        write_cache(&cache).unwrap();
+        assert_eq!(std::fs::read(sealed_path()).unwrap(), sealed_before);
+
+        crate::env::remove_var("MISE_GITHUB_OAUTH_CACHE_SECURE_ENCLAVE");
+        *ENCLAVE_TOKENS.lock().unwrap() = None;
     }
 
     #[tokio::test]

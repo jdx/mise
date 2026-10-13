@@ -1070,6 +1070,32 @@ env = "MISE_GITHUB_OAUTH_CACHE_GET"
 global_only = true
 type = "String"
 
+[github.oauth_cache_secure_enclave]
+default = false
+description = "Keep the native GitHub OAuth refresh token behind Touch ID in the macOS Secure Enclave."
+docs = """
+macOS only. mise seals the long-lived, rotating OAuth refresh token to the
+Secure Enclave and keeps the sealed value in `github-oauth-tokens.sealed` in its
+state directory; the cache file then holds only the short-lived access token.
+Unsealing needs Touch ID, so mise asks for it only when the access token has to
+be refreshed, about once every eight hours, and never on other invocations. The
+sealed value works only on this Mac and stops working if the enrolled
+fingerprints change, in which case `mise token github --oauth` authorizes again.
+
+It needs a Mac with Touch ID and the Developer ID signed binary from mise's own
+releases. Other builds, such as Homebrew, and machines without Touch ID warn and
+keep the refresh token in the cache file. A failed or cancelled prompt never
+discards the cached token: mise skips the refresh and tries again later. When
+set, it takes precedence over
+[`github.oauth_cache_get`](#github.oauth_cache_get) and
+[`github.oauth_cache_set`](#github.oauth_cache_set).
+
+See [Keeping the refresh token out of the cache file](/dev-tools/github-tokens.html#keeping-the-refresh-token-out-of-the-cache-file).
+"""
+env = "MISE_GITHUB_OAUTH_CACHE_SECURE_ENCLAVE"
+global_only = true
+type = "Bool"
+
 [github.oauth_cache_set]
 default = ""
 description = "Command that stores the native GitHub OAuth refresh tokens, read from its stdin."

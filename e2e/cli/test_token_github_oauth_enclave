@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+
+# github.oauth_cache_secure_enclave needs the Developer ID signed macOS release
+# binary, which CI builds are not. There mise warns and keeps the refresh token in the cache
+# file instead of losing it.
+unset GITHUB_TOKEN GITHUB_API_TOKEN MISE_GITHUB_TOKEN MISE_GITHUB_ENTERPRISE_TOKEN
+
+export MOCK_GITHUB_OAUTH_ROTATE=1
+start_http_server --handler "$ROOT/e2e/fixtures/mock-github-oauth.py"
+OAUTH_ENV="MISE_GITHUB_OAUTH_CLIENT_ID=Iv1.mock MISE_GITHUB_OAUTH_OPEN_BROWSER=false MISE_GITHUB_OAUTH_AUTH_URL=http://127.0.0.1:$HTTP_PORT/login MISE_GITHUB_OAUTH_API_URL=http://127.0.0.1:$HTTP_PORT/api"
+CACHE="$MISE_STATE_DIR/github-oauth-tokens.toml"
+
+assert_contains "$OAUTH_ENV MISE_GITHUB_OAUTH_CACHE_SECURE_ENCLAVE=1 mise token github 127.0.0.1 --oauth --raw 2>&1" "oauth_cache_secure_enclave is unavailable"
+assert_contains "cat $CACHE" "ghr-native-refresh-token"

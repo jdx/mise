@@ -45,6 +45,7 @@ pub(crate) mod deps_graph;
 pub mod direnv;
 pub mod dirs;
 pub mod duration;
+pub mod enclave;
 pub mod env;
 pub mod env_diff;
 pub mod errors;
@@ -136,6 +137,7 @@ pub use crate::result::Result;
 /// registers its [`frontend`] there.
 pub fn register_util_hooks() {
     config::settings::register_loader();
+    enclave::register();
     cache::register_base_cache_keys();
     let shell = env::MISE_SHELL.map(|s| s.to_string()).unwrap_or_default();
     mise_util::user_agent::set(
