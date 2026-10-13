@@ -127,7 +127,8 @@ Inside a git repository, sync lists those links and `.mise-skills.json` in the
 repository's `.git/info/exclude`, in a block marked `mise skills` that it keeps
 up to date. That file belongs to your clone alone, so nothing in the repository
 changes and `git status` does not offer the links for commit. Outside a git
-repository, sync does not do this.
+repository, and in a linked `git worktree` (which shares that file with every
+other worktree), sync does not do this.
 
 The directory can also hold handwritten skills: mise leaves user-created
 directories and unrelated links alone, reports any conflicting names as skipped,

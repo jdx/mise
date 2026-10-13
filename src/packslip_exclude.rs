@@ -6,10 +6,15 @@
 //! `info/exclude`, which belongs to this clone alone, in a block mise owns and
 //! rewrites. Nothing in the working tree changes, and the skills beside them
 //! that people wrote stay visible to git.
+//!
+//! A linked worktree is left alone: it shares `info/exclude` with the main
+//! checkout and every other worktree, and a pattern there applies to all of
+//! them. One worktree's links could then hide another's handwritten skills,
+//! and each sync would rewrite the others' entries.
 
 use std::path::{Component, Path, PathBuf};
 
-use eyre::Result;
+use eyre::{Result, bail};
 
 use crate::file;
 
@@ -21,9 +26,10 @@ struct Repo {
     exclude: PathBuf,
 }
 
-/// The directory git keeps shared state in for the repository at `dot_git`,
-/// a `.git` directory or the file a linked worktree or submodule has instead.
-fn common_dir(dot_git: &Path) -> Option<PathBuf> {
+/// The git directory of the repository at `dot_git`, a `.git` directory or
+/// the file a submodule or linked worktree has instead. `None` for a linked
+/// worktree, whose `info/exclude` is not its own.
+fn own_git_dir(dot_git: &Path) -> Option<PathBuf> {
     let git_dir = if dot_git.is_dir() {
         dot_git.to_path_buf()
     } else {
@@ -31,42 +37,58 @@ fn common_dir(dot_git: &Path) -> Option<PathBuf> {
         let target = text.trim().strip_prefix("gitdir:")?.trim();
         dot_git.parent()?.join(target)
     };
-    // A linked worktree has its own git dir and shares the main one's
-    // `info/`, named relative to itself by `commondir`.
-    match std::fs::read_to_string(git_dir.join("commondir")) {
-        Ok(common) => Some(git_dir.join(common.trim())),
-        Err(_) => Some(git_dir),
-    }
+    (!git_dir.join("commondir").exists()).then_some(git_dir)
 }
 
-fn repo_of(dir: &Path) -> Option<Repo> {
-    let dir = dunce::canonicalize(dir).ok()?;
-    let root = dir.ancestors().find(|p| p.join(".git").exists())?;
-    let common = common_dir(&root.join(".git"))?;
+fn repo_of(dir: &Path) -> Result<Option<Repo>> {
+    let Ok(dir) = dunce::canonicalize(dir) else {
+        return Ok(None);
+    };
+    let Some(root) = dir.ancestors().find(|p| p.join(".git").exists()) else {
+        return Ok(None);
+    };
+    let Some(git_dir) = own_git_dir(&root.join(".git")) else {
+        return Ok(None);
+    };
+    let Ok(rel) = dir.strip_prefix(root) else {
+        return Ok(None);
+    };
     let mut prefix = String::new();
-    for part in dir.strip_prefix(root).ok()?.components() {
+    for part in rel.components() {
         let Component::Normal(part) = part else {
-            return None;
+            return Ok(None);
+        };
+        let Some(part) = part.to_str() else {
+            return Ok(None);
         };
         prefix.push('/');
-        prefix.push_str(&escape(part.to_str()?));
+        prefix.push_str(&escape(part)?);
     }
-    Some(Repo {
+    Ok(Some(Repo {
         prefix,
-        exclude: common.join("info").join("exclude"),
-    })
+        exclude: git_dir.join("info").join("exclude"),
+    }))
 }
 
-/// A name as a literal gitignore pattern.
-fn escape(name: &str) -> String {
+/// A name as a literal gitignore pattern. A line break would end the pattern
+/// and start another, so a name holding one is refused.
+fn escape(name: &str) -> Result<String> {
+    if name.contains(['\n', '\r']) {
+        bail!("{name:?} has a line break and cannot be written as an ignore pattern");
+    }
     let mut out = String::with_capacity(name.len());
+    let last = name.chars().count().saturating_sub(1);
     for (i, c) in name.chars().enumerate() {
-        if matches!(c, '\\' | '*' | '?' | '[' | ']') || (i == 0 && matches!(c, '#' | '!' | ' ')) {
+        // Git drops trailing spaces from a pattern unless they are escaped.
+        if matches!(c, '\\' | '*' | '?' | '[' | ']')
+            || (i == 0 && matches!(c, '#' | '!' | ' '))
+            || (i == last && c == ' ')
+        {
             out.push('\\');
         }
         out.push(c);
     }
-    out
+    Ok(out)
 }
 
 fn markers(prefix: &str) -> (String, String) {
@@ -113,23 +135,34 @@ pub(crate) fn exclude_links<'a>(
     names: impl IntoIterator<Item = &'a str>,
     state_file: &str,
 ) -> Result<()> {
-    let Some(repo) = repo_of(dir) else {
+    let Some(repo) = repo_of(dir)? else {
         return Ok(());
     };
-    let mut entries: Vec<String> = names
+    let mut entries = names
         .into_iter()
-        .map(|name| format!("{}/{}", repo.prefix, escape(name)))
-        .collect();
+        .map(|name| Ok(format!("{}/{}", repo.prefix, escape(name)?)))
+        .collect::<Result<Vec<_>>>()?;
     if !entries.is_empty() {
-        entries.push(format!("{}/{}", repo.prefix, escape(state_file)));
+        entries.push(format!("{}/{}", repo.prefix, escape(state_file)?));
     }
     let (begin, end) = markers(&repo.prefix);
-    let before = std::fs::read_to_string(&repo.exclude).unwrap_or_default();
+    if let Some(parent) = repo.exclude.parent() {
+        file::create_dir_all(parent)?;
+    }
+    // Two syncs, each for its own directory, would otherwise both read the
+    // old file and the later write would drop the other's block.
+    let mut lock = fslock::LockFile::open(&repo.exclude.with_extension("mise-lock"))?;
+    lock.lock()?;
+    // Only a file that is not there is empty. One that cannot be read, for
+    // instance because a pattern in it is not UTF-8, is somebody's rules, and
+    // writing over it would lose them.
+    let before = match std::fs::read_to_string(&repo.exclude) {
+        Ok(text) => text,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => String::new(),
+        Err(err) => return Err(err.into()),
+    };
     let after = with_block(&before, &begin, &end, &entries);
     if after != before {
-        if let Some(parent) = repo.exclude.parent() {
-            file::create_dir_all(parent)?;
-        }
         file::write_atomic(&repo.exclude, after)?;
     }
     Ok(())
@@ -211,13 +244,29 @@ mod tests {
 
     #[test]
     fn names_are_literal_patterns() {
-        assert_eq!(escape("a*b"), "a\\*b");
-        assert_eq!(escape("!bang"), "\\!bang");
-        assert_eq!(escape("plain-name_1"), "plain-name_1");
+        assert_eq!(escape("a*b").unwrap(), "a\\*b");
+        assert_eq!(escape("!bang").unwrap(), "\\!bang");
+        assert_eq!(escape("plain-name_1").unwrap(), "plain-name_1");
+        // Git drops a trailing space unless it is escaped.
+        assert_eq!(escape("demo ").unwrap(), "demo\\ ");
+        // A line break would start another pattern.
+        assert!(escape("demo\n*").is_err());
+        assert!(escape("demo\r").is_err());
     }
 
     #[test]
-    fn a_linked_worktree_writes_to_the_shared_info_directory() {
+    fn an_exclude_file_that_cannot_be_read_is_left_as_it_is() {
+        let root = repo();
+        std::fs::create_dir_all(root.path().join(".git/info")).unwrap();
+        let exclude = root.path().join(".git/info/exclude");
+        std::fs::write(&exclude, b"caf\xe9\n").unwrap();
+        let dir = root.path().join("app/.agents/skills");
+        assert!(exclude_links(&dir, ["a"], ".mise-skills.json").is_err());
+        assert_eq!(std::fs::read(&exclude).unwrap(), b"caf\xe9\n");
+    }
+
+    #[test]
+    fn a_linked_worktree_is_left_alone() {
         let main = tempfile::tempdir().unwrap();
         let wt_git = main.path().join(".git/worktrees/wt");
         std::fs::create_dir_all(&wt_git).unwrap();
@@ -231,9 +280,20 @@ mod tests {
         let dir = work.path().join("skills");
         std::fs::create_dir_all(&dir).unwrap();
         exclude_links(&dir, ["a"], ".mise-skills.json").unwrap();
-        let text =
-            std::fs::read_to_string(main.path().join(".git/worktrees/wt/../../info/exclude"))
-                .unwrap();
+        assert!(!main.path().join(".git/info").exists());
+        assert!(!wt_git.join("info").exists());
+    }
+
+    #[test]
+    fn a_submodule_keeps_its_own_exclude() {
+        let super_repo = tempfile::tempdir().unwrap();
+        let modules = super_repo.path().join(".git/modules/sub");
+        std::fs::create_dir_all(&modules).unwrap();
+        let work = super_repo.path().join("sub");
+        std::fs::create_dir_all(work.join("skills")).unwrap();
+        std::fs::write(work.join(".git"), "gitdir: ../.git/modules/sub\n").unwrap();
+        exclude_links(&work.join("skills"), ["a"], ".mise-skills.json").unwrap();
+        let text = std::fs::read_to_string(modules.join("info/exclude")).unwrap();
         assert!(text.contains("/skills/a\n"));
     }
 
