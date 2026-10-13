@@ -107,11 +107,11 @@ repository should become on this machine:
 
 Then pick the command that matches what the repository holds:
 
-| Repository holds                                       | Command                        | Where the files go                                       |
-| ------------------------------------------------------ | ------------------------------ | -------------------------------------------------------- |
-| A bootstrap project: `mise.toml` and the files it uses | `mise bootstrap --from <url>`  | A separate checkout, then wherever the project puts them |
-| Global mise config: `config.toml`, `conf.d/`, `tasks/` | `mise bootstrap --adopt <url>` | Your global config directory, `~/.config/mise`           |
-| A setup repository created with `mise dot origin set`  | `mise bootstrap --adopt <url>` | Each tracked file's path on this machine                 |
+| Repository holds                                       | Command                        | Where the files go                                             |
+| ------------------------------------------------------ | ------------------------------ | -------------------------------------------------------------- |
+| A bootstrap project: `mise.toml` and the files it uses | `mise bootstrap --from <url>`  | A separate checkout, then wherever the project puts them       |
+| Global mise config: `config.toml`, `conf.d/`, `tasks/` | `mise bootstrap --adopt <url>` | A Git checkout at `~/.config/mise`, read as your global config |
+| A setup repository created with `mise dot origin set`  | `mise bootstrap --adopt <url>` | mise's history store; each tracked file goes to its path       |
 
 ```sh
 mise bootstrap --from https://github.com/you/workstation.git
@@ -119,10 +119,16 @@ mise bootstrap --adopt you/mise-config
 mise bootstrap --adopt you/setup
 ```
 
-`--adopt` also accepts `OWNER/REPO` for a GitHub repository. See
-[Bootstrap from a repository](/bootstrap/from-repository.html) for refs,
-existing checkouts, and `--update`, and [Set up a machine](/bootstrap/setup.html)
-for a walkthrough that ends with adopting a setup repository.
+`--adopt` tells the two kinds apart by the `.mise-history/format.toml` file
+that `mise dot origin set` writes, and also accepts `OWNER/REPO` for a GitHub
+repository. See [Bootstrap from a repository](/bootstrap/from-repository.html)
+for refs, existing checkouts, and `--update`, and
+[Set up a machine](/bootstrap/setup.html) for a walkthrough that ends with
+adopting a setup repository.
+
+A global config checkout is an ordinary Git repository: commit and pull in it
+yourself. `mise dot origin set` does not sync it; see
+[The origin and your global config](/dotfiles/sync.html#origin-and-global-config).
 
 ## Run order {#how-it-runs}
 

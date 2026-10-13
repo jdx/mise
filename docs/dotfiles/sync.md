@@ -98,6 +98,41 @@ To bring another machine into the same setup, follow
 the repository with
 [`mise bootstrap --adopt`](/bootstrap/from-repository.html#shared-dotfile-history).
 
+### The origin and your global config {#origin-and-global-config}
+
+The origin holds mise's history of your tracked files, not a copy of a
+directory on disk. `origin set` connects that history, which mise keeps in its
+own store, and never pulls or pushes a Git checkout on this machine. If you
+adopted your global config with
+[`mise bootstrap --adopt`](/bootstrap/from-repository.html#global-mise-configuration),
+`~/.config/mise` is such a checkout, and you keep it in sync with Git yourself.
+When a pull restores a tracked file inside it, the change appears there as an
+ordinary uncommitted edit.
+
+mise lays out the origin itself: it writes the `.mise-history/format.toml`
+marker with every commit and stores tracked files as described in
+[How shared history is stored](#how-shared-history-is-stored). Start from an
+empty repository rather than one whose files you arranged by hand.
+
+Keep the origin apart from the repository you adopt as global config:
+
+- On a machine with no checkpoints yet, connecting a repository that already
+  has commits continues its branch as the history, and the next push adds the
+  marker to it. From then on, `mise bootstrap --adopt` restores that
+  repository as a setup repository instead of cloning it into
+  `~/.config/mise`. On a machine that has checkpoints, mise refuses to connect
+  the unrelated history; see
+  [Resolve unrelated histories](#resolve-unrelated-histories).
+- `--branch` connects a branch other than the default, but
+  `mise bootstrap --adopt` reads only the default branch, so another machine
+  cannot adopt a setup history kept on a second branch of your global config
+  repository.
+
+To share your global config through the origin instead of a Git checkout,
+track it, for example with `mise dot track ~/.config/mise/config.toml`. The
+setup repository then carries it, and `mise bootstrap --adopt` restores it with
+your other tracked files.
+
 ### Repository authentication {#repository-authentication}
 
 Network commands use your Git configuration, including credential helpers,

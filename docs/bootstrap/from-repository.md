@@ -111,6 +111,11 @@ before adopting into it. With an existing checkout, `--update` fast-forwards it
 before the bootstrap runs. The checkout is an ordinary Git repository: commit
 and pull in it as you would anywhere else.
 
+mise does not sync this checkout.
+[`mise dot origin set`](/cli/dotfiles/origin/set.html) shares something else,
+the history of your tracked files, and needs a repository of its own; see
+[The origin and your global config](/dotfiles/sync.html#origin-and-global-config).
+
 ## Setup repository (`--adopt`) {#shared-dotfile-history}
 
 A setup repository holds the history of your tracked dotfiles, shared with

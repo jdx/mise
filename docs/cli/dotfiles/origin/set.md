@@ -13,6 +13,8 @@ Connect an origin repository
 
 Use a private repository: every saved checkpoint is shared, including those saved before you connect. mise shows the sync mode and the tracked files before you confirm, then runs the first sync. It never replaces a repository that has unrelated history, and it refuses to push older plaintext versions of files you now encrypt. The connection is written to `[history.origin]` in `config.local.toml` next to your global config, so it stays on this machine.
 
+The origin holds the history of your tracked files in mise's own layout. It is not a Git checkout of your global config, and mise never pulls or pushes one: connect an empty repository, not the one you adopt as global config with `mise bootstrap --adopt`.
+
 ## Arguments
 - **`<URL>`** — The repository URL (any Git URL; use a private repository)
 
