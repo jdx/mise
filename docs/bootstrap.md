@@ -71,6 +71,7 @@ subcommands.
 | Config                                                                    | Use for                                                                                     |
 | ------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
 | [`[bootstrap.packages]`](/bootstrap/packages/)                            | Host packages from apt, dnf, pacman, Homebrew, WinGet, and other package managers           |
+| [`[bootstrap.apt.sources]`](/bootstrap/packages/apt.html#sources)         | apt repositories and PPAs that `apt:` packages install from                                 |
 | [`[bootstrap.plugins]`](/bootstrap/packages/plugins.html)                 | Package manager plugins that add more package sources                                       |
 | [`[bootstrap.users]`, `[bootstrap.groups]`](/bootstrap/accounts.html)     | Linux users and groups                                                                      |
 | [`[bootstrap.files]`, `[bootstrap.directories]`](/bootstrap/files.html)   | System files and directories, with their content, owner, and permissions                    |
@@ -159,6 +160,10 @@ warning. They will be removed in mise 2027.10.4.
 | 18   | `services`                         | User services with `requires_tools = true`                                                              |                                 |
 | 19   | `task`                             | The [`bootstrap` task](#the-bootstrap-task), if one exists                                              |                                 |
 | 20   | `final-hook`                       |                                                                                                         | `final`                         |
+
+Step 4 adds [`[bootstrap.apt.sources]`](/bootstrap/packages/apt.html#sources)
+after the `pre-packages` hook and before it installs `apt:` packages, so a
+package can come from a repository declared in the same config.
 
 The `post-packages` hook runs right after step 4, unless a package in
 `[bootstrap.packages]` comes from a package manager plugin. Then it runs after
