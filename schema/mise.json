@@ -2209,6 +2209,12 @@
                 "type": "string"
               }
             },
+            "ostree": {
+              "default": "error",
+              "description": "What mise does with `dnf:` packages on an image-based Fedora host such as Silverblue or Bazzite.",
+              "type": "string",
+              "enum": ["error", "layer"]
+            },
             "sudo": {
               "default": true,
               "description": "Let mise run `sudo` for steps that need root, such as system packages and `mise install --system`.",
