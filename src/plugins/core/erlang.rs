@@ -615,8 +615,17 @@ impl ErlangPlugin {
             }
             _ => {
                 ctx.pr.set_message("compiling with kerl".into());
+                let pr = ctx.pr.as_ref();
+                // kerl prints a few status lines and sends the compiler output
+                // to its build log. Print them above the row: by default stdout
+                // becomes the row's message and would replace the phase.
                 let mut cmd = CmdLineRunner::new(self.kerl_path())
-                    .with_pr(ctx.pr.as_ref())
+                    .with_pr(pr)
+                    .with_on_stdout(move |line| {
+                        if !line.trim().is_empty() {
+                            pr.println(line);
+                        }
+                    })
                     .arg("build-install")
                     .arg(&tv.version)
                     .arg(&tv.version)
