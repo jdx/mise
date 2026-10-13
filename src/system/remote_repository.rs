@@ -74,7 +74,9 @@ pub fn validate_origin(origin: &str) -> Result<()> {
 }
 
 impl Source {
-    pub async fn fetch(origin: String) -> Result<Self> {
+    /// Clones `origin` and bundles one branch of it: `branch` when `?ref=`
+    /// named one, else the repository's default branch.
+    pub async fn fetch(origin: String, branch: Option<String>) -> Result<Self> {
         validate_origin(&origin)?;
         let directory = tempfile::tempdir()?;
         let repo = directory.path().join("repo");
@@ -98,6 +100,20 @@ impl Source {
             .await?;
         if !output.status.success() {
             bail!("could not fetch setup repository using local Git authentication");
+        }
+        if let Some(branch) = &branch {
+            // the clone has every branch of origin; without a checkout, HEAD
+            // is moved to the requested one by its refs alone
+            let tracking = format!("refs/remotes/origin/{branch}");
+            if git_async(&repo, &["show-ref", "--verify", "--quiet", &tracking])
+                .await
+                .is_err()
+            {
+                bail!("--adopt takes a branch, and {branch:?} is not a branch of {origin}");
+            }
+            let head = format!("refs/heads/{branch}");
+            git_async(&repo, &["update-ref", &head, &tracking]).await?;
+            git_async(&repo, &["symbolic-ref", "HEAD", &head]).await?;
         }
         let revision = git_async(&repo, &["rev-parse", "HEAD"]).await?;
         let branch = git_async(&repo, &["symbolic-ref", "HEAD"]).await?;
@@ -431,9 +447,40 @@ mod tests {
         )
     }
     #[tokio::test]
+    async fn fetches_the_requested_branch_only_when_it_is_a_branch() {
+        let repo = repository();
+        git(repo.path(), &["switch", "-c", "laptop"]).unwrap();
+        commit(repo.path(), "laptop.toml", "[tools]\n");
+        let laptop = git(repo.path(), &["rev-parse", "HEAD"]).unwrap();
+        git(repo.path(), &["tag", "v1"]).unwrap();
+        git(repo.path(), &["switch", "main"]).unwrap();
+        let origin: String = repo.path().to_str().unwrap().into();
+
+        let source = Source::fetch(origin.clone(), Some("laptop".into()))
+            .await
+            .unwrap();
+        assert_eq!(source.revision, laptop);
+        let target = tempfile::tempdir().unwrap();
+        let dest = target.path().join("mise");
+        install_source(&source, &dest, false).unwrap();
+        assert_eq!(
+            git(&dest, &["symbolic-ref", "--short", "HEAD"]).unwrap(),
+            "laptop"
+        );
+        assert!(dest.join("laptop.toml").exists());
+
+        for git_ref in ["v1", "missing"] {
+            let err = Source::fetch(origin.clone(), Some(git_ref.into()))
+                .await
+                .err()
+                .unwrap();
+            assert!(err.to_string().contains("is not a branch"), "{err}");
+        }
+    }
+    #[tokio::test]
     async fn dry_run_previews_without_writing() {
         let repo = repository();
-        let source = Source::fetch(repo.path().to_str().unwrap().into())
+        let source = Source::fetch(repo.path().to_str().unwrap().into(), None)
             .await
             .unwrap();
         let target = tempfile::tempdir().unwrap();
@@ -450,7 +497,7 @@ mod tests {
             "config.toml",
             "[settings]\nexperimental = true\n",
         );
-        let next = Source::fetch(source.origin.clone()).await.unwrap();
+        let next = Source::fetch(source.origin.clone(), None).await.unwrap();
         preview_source(&next, &dest, false).unwrap();
         preview_source(&next, &dest, true).unwrap();
         assert_eq!(git(&dest, &["rev-parse", "HEAD"]).unwrap(), source.revision);
@@ -478,7 +525,7 @@ mod tests {
     #[tokio::test]
     async fn pinned_install_and_safe_updates() {
         let repo = repository();
-        let source = Source::fetch(repo.path().to_str().unwrap().into())
+        let source = Source::fetch(repo.path().to_str().unwrap().into(), None)
             .await
             .unwrap();
         let target = tempfile::tempdir().unwrap();
@@ -499,7 +546,7 @@ mod tests {
             "config.toml",
             "[settings]\nexperimental = true\n",
         );
-        let next = Source::fetch(source.origin.clone()).await.unwrap();
+        let next = Source::fetch(source.origin.clone(), None).await.unwrap();
         install_source(&next, &dest, false).unwrap();
         assert_eq!(git(&dest, &["rev-parse", "HEAD"]).unwrap(), source.revision);
         install_source(&next, &dest, true).unwrap();
@@ -518,7 +565,7 @@ mod tests {
     #[tokio::test]
     async fn adoption_preserves_files_and_rejects_conflicts() {
         let repo = repository();
-        let source = Source::fetch(repo.path().to_str().unwrap().into())
+        let source = Source::fetch(repo.path().to_str().unwrap().into(), None)
             .await
             .unwrap();
         let target = tempfile::tempdir().unwrap();
@@ -548,7 +595,7 @@ mod tests {
     async fn rejects_source_local_overrides_and_credential_urls() {
         let repo = repository();
         commit(repo.path(), "config.local.toml", "secret");
-        let source = Source::fetch(repo.path().to_str().unwrap().into())
+        let source = Source::fetch(repo.path().to_str().unwrap().into(), None)
             .await
             .unwrap();
         let target = tempfile::tempdir().unwrap();
@@ -590,7 +637,7 @@ mod tests {
         let target = tempfile::tempdir().unwrap();
         std::fs::create_dir(target.path().join("conf.d")).unwrap();
         std::fs::write(target.path().join("conf.d/private.local.toml"), "private").unwrap();
-        let source = Source::fetch(repo.path().to_str().unwrap().into())
+        let source = Source::fetch(repo.path().to_str().unwrap().into(), None)
             .await
             .unwrap();
         install_source(&source, target.path(), false).unwrap();
@@ -600,7 +647,7 @@ mod tests {
         );
         assert!(target.path().join("conf.d/shared.toml").is_file());
         commit(repo.path(), "conf.d/config.local.toml", "secret");
-        let source = Source::fetch(source.origin.clone()).await.unwrap();
+        let source = Source::fetch(source.origin.clone(), None).await.unwrap();
         let fresh = tempfile::tempdir().unwrap();
         assert!(install_source(&source, &fresh.path().join("mise"), false).is_err());
         assert!(!fresh.path().join("mise").exists());

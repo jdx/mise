@@ -581,7 +581,7 @@ The checkout is reused on later runs; add `--update` to fast-forward it first. A
         long_help #"""
 Clone a repository of global mise config or dotfile history, then apply it
 
-A repository of global config (`config.toml`, `conf.d/`, `tasks/`) is cloned into the global config directory, normally ~/.config/mise. A setup repository shared with `mise dotfiles origin set` restores its tracked files instead. `OWNER/REPO` is short for `https://github.com/OWNER/REPO.git`.
+A repository of global config (`config.toml`, `conf.d/`, `tasks/`) is cloned into the global config directory, normally ~/.config/mise. A setup repository shared with `mise dotfiles origin set` restores its tracked files instead. `OWNER/REPO` is short for `https://github.com/OWNER/REPO.git`. Append `?ref=<branch>` to adopt a branch other than the default branch.
 """#
         arg "<GIT_URL|OWNER/REPO>"
     }

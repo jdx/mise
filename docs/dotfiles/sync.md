@@ -109,10 +109,11 @@ keep that checkout in sync with Git yourself.
 Give the origin a repository of its own. Connecting your global config
 repository can put mise's history on its default branch, and from then on
 `mise bootstrap --adopt` restores it as a setup repository instead of cloning
-it into `~/.config/mise`. Connecting a second branch with `--branch` keeps the
-history off the default branch, but other machines cannot adopt it, because
-`--adopt` reads only the default branch. To share your global config through
-the origin, track it: `mise dot track ~/.config/mise/config.toml`.
+it into `~/.config/mise`. To keep the history in that repository anyway, put it
+on a branch of its own as in [Keep your local checkpoints](#keep-local-checkpoints),
+and adopt it on other machines with `mise bootstrap --adopt '<url>?ref=<branch>'`.
+To share your global config through the origin instead, track it:
+`mise dot track ~/.config/mise/config.toml`.
 
 ### Repository authentication {#repository-authentication}
 

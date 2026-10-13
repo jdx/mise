@@ -44,7 +44,7 @@ resource-level changes.
   The checkout is reused on later runs; add `--update` to fast-forward it first. Append `?ref=<branch|tag|commit>` to check out a ref instead of the default branch, for example `https://github.com/example/workstation.git?ref=v1`. See <https://mise.jdx.dev/bootstrap/from-repository.html>.
 - **`--adopt <GIT_URL|OWNER/REPO>`** — Clone a repository of global mise config or dotfile history, then apply it
 
-  A repository of global config (`config.toml`, `conf.d/`, `tasks/`) is cloned into the global config directory, normally ~/.config/mise. A setup repository shared with `mise dotfiles origin set` restores its tracked files instead. `OWNER/REPO` is short for `https://github.com/OWNER/REPO.git`.
+  A repository of global config (`config.toml`, `conf.d/`, `tasks/`) is cloned into the global config directory, normally ~/.config/mise. A setup repository shared with `mise dotfiles origin set` restores its tracked files instead. `OWNER/REPO` is short for `https://github.com/OWNER/REPO.git`. Append `?ref=<branch>` to adopt a branch other than the default branch.
 - **`--replace-history`** — Discard this machine's dotfile history and adopt the repository's
 
   Use it with `--adopt` when the two histories are unrelated. Files that differ from the repository still stop the adoption until you resolve them, or add `--take-remote-all` to take the repository's version of each.
