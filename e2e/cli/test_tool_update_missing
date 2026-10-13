@@ -30,20 +30,28 @@ assert_stays_missing() {
   assert_empty "mise ls --installed dummy"
 }
 
+# A prompt claims a tool's check, writing its marker (the undotted file), before
+# it starts an update. No marker means no process or version lookup started,
+# which the upgrade dropping a missing tool on its own would hide.
+markers="find '$MISE_STATE_DIR/tool-update' -type f ! -name '*.*' ! -name prompt-next-check"
+
 # A lazy tool nobody has run yet stays missing at a prompt.
 printf '[tools]\ndummy = { version = "latest", lazy = true, auto_update = true }\n' >"$MISE_CONFIG_DIR/config.toml"
 prompt
+assert_empty "$markers"
 assert_stays_missing
 
 # So does a missing tool without lazy.
 printf '[tools]\ndummy = { version = "latest", auto_update = true }\n' >"$MISE_CONFIG_DIR/config.toml"
 prompt
+assert_empty "$markers"
 assert_stays_missing
 
 # And one declared in system config, which counts as global for auto_update.
 rm "$MISE_CONFIG_DIR/config.toml"
 printf '[tools]\ndummy = { version = "latest", lazy = true, auto_update = true }\n' >"$MISE_SYSTEM_DIR/config.toml"
 prompt
+assert_empty "$markers"
 assert_stays_missing
 
 # A tool-update service pass leaves it missing too.
@@ -54,6 +62,7 @@ assert_stays_missing
 # Once the tool is installed, the prompt updates it as before.
 mise install dummy@1.0.0
 prompt
+assert_not_empty "$markers"
 for _ in {1..300}; do
   mise ls --installed dummy | grep -q 2.0.0 && break
   sleep 0.1
