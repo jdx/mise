@@ -1096,6 +1096,13 @@ impl Upgrade {
             crate::lockfile::LockfileUpdateMode::AllowLocked,
         )
         .await?;
+        // The sync inside install ran before the `latest` links moved, and this
+        // config memoized its toolset from then, so both resolved `latest` to
+        // the version just replaced.
+        if Settings::get().skills.auto_sync {
+            *config = Config::reset().await?;
+            crate::packslip::auto_sync_skills(config).await;
+        }
 
         if successful_versions.iter().any(|v| v.short() == "python") {
             PIPXBackend::reinstall_all(

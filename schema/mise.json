@@ -2085,7 +2085,7 @@
           "properties": {
             "auto_sync": {
               "default": false,
-              "description": "Link the active tools' agent skills into the project after `mise install` and `mise use`.",
+              "description": "Link the active tools' agent skills into the project after `mise install`, `mise use`, and `mise upgrade`.",
               "type": "boolean"
             },
             "dir": {
