@@ -3,6 +3,8 @@
 # and a path an earlier pull already decided can be named again.
 require_cmd git
 export MISE_HISTORY_NOTIFY=false
+# the assertions read info-level messages, whatever level the runner forwards
+export MISE_LOG_LEVEL=info
 origin="$PWD/decided-origin.git"
 git init -q --bare -b main "$origin"
 cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'
