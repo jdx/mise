@@ -21,6 +21,8 @@ JSON
 SH
 chmod +x plugin/bin/list-all plugin/bin/install
 mise plugins link skilled "$PWD/plugin"
+export MISE_LOCKFILE=1
+touch mise.lock
 
 cat >mise.toml <<'EOF_TOML'
 [tools]
@@ -43,9 +45,11 @@ assert_contains "cat .agents/skills/.mise-skills.json" "skilled/2.0.0/skill"
 # A bump to a version that is already installed upgrades nothing, only the
 # config, and the skill must still follow it.
 mise install skilled@1.0.0
-sed -i 's/skilled = "latest"/skilled = "1.0.0"/' mise.toml
+sed -i.bak 's/skilled = "latest"/skilled = "1.0.0"/' mise.toml
+rm mise.toml.bak
 mise install
 assert_contains "cat .agents/skills/skilled/SKILL.md" "# skilled 1.0.0"
 mise upgrade --bump skilled@2.0.0
 assert_contains "cat mise.toml" 'skilled = "2.0.0"'
 assert_contains "cat .agents/skills/skilled/SKILL.md" "# skilled 2.0.0"
+assert_contains "cat mise.lock" "2.0.0"
