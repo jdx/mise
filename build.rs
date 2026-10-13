@@ -31,6 +31,7 @@ fn main() -> Result<()> {
     built::write_built_file()?;
     link_without_pie();
     build_notification_helper()?;
+    build_enclave_helper()?;
 
     let aqua_registry = load_aqua_registry()?;
     codegen_daemon_presets()?;
@@ -128,6 +129,81 @@ fn build_notification_helper() -> Result<()> {
         return Err(eyre!(
             "failed to sign the macOS notification helper: {}",
             String::from_utf8_lossy(&signed.stderr).trim()
+        ));
+    }
+    Ok(())
+}
+
+/// The Secure Enclave helper (`src/enclave/macos.swift`) keeps the GitHub OAuth
+/// refresh token behind Touch ID. Persisting an enclave key outside the keychain
+/// needs CryptoKit, so unlike the notification helper it is Swift. A build
+/// without `swiftc` still works: the helper is then reported as unavailable and
+/// the token stays in the cache file.
+fn build_enclave_helper() -> Result<()> {
+    let source = "src/enclave/macos.swift";
+    let info = "src/enclave/macos.plist";
+    println!("cargo:rerun-if-changed={source}");
+    println!("cargo:rerun-if-changed={info}");
+    println!("cargo:rerun-if-env-changed=MISE_NOTIFICATION_SIGN_IDENTITY");
+    if env::var("CARGO_CFG_TARGET_OS").as_deref() != Ok("macos") {
+        return Ok(());
+    }
+    let app = PathBuf::from(env::var_os("OUT_DIR").unwrap()).join("mise-enclave.app");
+    let contents = app.join("Contents");
+    let output = contents.join("MacOS/mise-enclave");
+    fs::create_dir_all(contents.join("MacOS"))?;
+    fs::create_dir_all(contents.join("_CodeSignature"))?;
+    fs::copy(info, contents.join("Info.plist"))?;
+    let identity = env::var("MISE_NOTIFICATION_SIGN_IDENTITY").unwrap_or_else(|_| "-".into());
+    let built = Command::new("swiftc")
+        .args(["-O", "-target"])
+        .arg(format!(
+            "{}-apple-macosx13.0",
+            env::var("CARGO_CFG_TARGET_ARCH")?.replace("aarch64", "arm64")
+        ))
+        .arg(source)
+        .arg("-o")
+        .arg(&output)
+        .output();
+    let ok = match &built {
+        Ok(out) if out.status.success() => true,
+        Ok(out) => {
+            println!(
+                "cargo:warning=failed to build the macOS Secure Enclave helper: {}",
+                String::from_utf8_lossy(&out.stderr).trim()
+            );
+            false
+        }
+        Err(err) => {
+            println!("cargo:warning=swiftc unavailable, skipping the Secure Enclave helper: {err}");
+            false
+        }
+    };
+    // Releases are the only builds whose helper is signed with an identity the
+    // enclave accepts, so an ad-hoc signed helper is reported as unavailable.
+    let signed = ok && identity != "-";
+    println!(
+        "cargo:rustc-env=MISE_ENCLAVE_RELEASE_SIGNED={}",
+        if signed { "1" } else { "0" }
+    );
+    if !ok {
+        fs::write(&output, b"")?;
+        fs::write(contents.join("_CodeSignature/CodeResources"), b"")?;
+        return Ok(());
+    }
+    let mut codesign = Command::new("/usr/bin/codesign");
+    codesign
+        .args(["--force", "--sign"])
+        .arg(&identity)
+        .args(["--identifier", "dev.jdx.mise.enclave"]);
+    if identity != "-" {
+        codesign.args(["--options", "runtime", "--timestamp"]);
+    }
+    let signed_out = codesign.arg(&app).output()?;
+    if !signed_out.status.success() {
+        return Err(eyre!(
+            "failed to sign the macOS Secure Enclave helper: {}",
+            String::from_utf8_lossy(&signed_out.stderr).trim()
         ));
     }
     Ok(())

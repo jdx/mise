@@ -9,6 +9,7 @@ use super::{InstallOpts, PackageRequest, PackageState, PackageStatus, SystemPack
 use crate::config::Settings;
 use crate::config::settings::SystemPackagesOstree;
 use crate::result::Result;
+use crate::system::ManagerPackageOptions;
 use crate::system::sudo;
 
 /// RedHat-family (Fedora, RHEL, CentOS, Rocky, Alma) via dnf
@@ -390,6 +391,34 @@ impl SystemPackageManager for DnfManager {
             format!("{} not found", self.backend())
         } else {
             "only available on linux".to_string()
+        }
+    }
+
+    async fn apply_sources(
+        &self,
+        manager_options: &ManagerPackageOptions,
+        opts: &InstallOpts,
+    ) -> Result<()> {
+        let ManagerPackageOptions::Dnf { repos } = manager_options else {
+            return Ok(());
+        };
+        // an ostree host that does not layer packages refuses to install
+        // them, so nothing would use the repositories
+        let ostree = ostree_booted();
+        if ostree && !layering_on(ostree) {
+            return Ok(());
+        }
+        let mut failures = super::dnf_repos::apply(repos, opts.dry_run, opts.ask).await?;
+        match failures.len() {
+            0 => Ok(()),
+            1 => Err(failures.remove(0)),
+            count => {
+                let details = failures
+                    .iter()
+                    .map(|err| format!("  {err:#}"))
+                    .collect::<Vec<_>>();
+                bail!("{count} dnf repositories failed:\n{}", details.join("\n"))
+            }
         }
     }
 

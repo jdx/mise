@@ -299,6 +299,24 @@ yet when mise stores the first token. Each command is stopped after 60 seconds. 
 the cache file rather than losing it. A cache file that already holds a refresh
 token moves into the store at the next refresh.
 
+##### Touch ID on macOS
+
+On a Mac with Touch ID, mise can keep the refresh token in the Secure Enclave
+itself:
+
+```toml [~/.config/mise/config.toml]
+[settings.github]
+oauth_cache_secure_enclave = true
+```
+
+The refresh token is then sealed to the enclave and unsealing needs your
+fingerprint, once per refresh. This needs the official release binary; Homebrew
+and source builds warn and keep the token in the cache file. A cancelled prompt
+or an SSH session without Touch ID skips the refresh and keeps the cached token.
+Elsewhere, use `oauth_cache_get` and `oauth_cache_set` with `pass`, `secret-tool`,
+1Password, `cmdkey` or whichever store your platform has; that covers Linux, WSL
+and Windows.
+
 ### Git credential helpers
 
 With `use_git_credentials` on, mise runs `git credential fill` as the last

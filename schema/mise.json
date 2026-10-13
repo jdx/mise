@@ -1067,6 +1067,11 @@
               "description": "Command that prints the native GitHub OAuth refresh tokens stored by github.oauth_cache_set.",
               "type": "string"
             },
+            "oauth_cache_secure_enclave": {
+              "default": false,
+              "description": "Keep the native GitHub OAuth refresh token behind Touch ID in the macOS Secure Enclave.",
+              "type": "boolean"
+            },
             "oauth_cache_set": {
               "default": "",
               "description": "Command that stores the native GitHub OAuth refresh tokens, read from its stdin.",
@@ -8544,6 +8549,30 @@
                     }
                   }
                 ]
+              }
+            }
+          }
+        },
+        "dnf": {
+          "type": "object",
+          "description": "dnf-specific bootstrap package config",
+          "properties": {
+            "repos": {
+              "type": "object",
+              "description": "dnf repositories enabled before dnf packages are installed, keyed by a name for the entry",
+              "propertyNames": {
+                "pattern": "^[A-Za-z0-9_-][A-Za-z0-9_.-]*$"
+              },
+              "additionalProperties": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["copr"],
+                "properties": {
+                  "copr": {
+                    "type": "string",
+                    "description": "COPR project as owner/project or @group/project, such as scottames/ghostty; enabled as dnf copr enable would"
+                  }
+                }
               }
             }
           }

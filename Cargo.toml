@@ -46,6 +46,8 @@ include = [
   "/src/**/*.rs",
   "/src/system/history/notify/macos.m",
   "/src/system/history/notify/macos.plist",
+  "/src/enclave/macos.swift",
+  "/src/enclave/macos.plist",
   "/src/assets/**",
   "/src/plugins/core/assets/**",
   "/src/system/packages/brew/*.rb",
