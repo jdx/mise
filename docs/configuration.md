@@ -127,25 +127,29 @@ filesystem root down to the current directory. Within one directory, a file
 higher in the table overrides one lower down. System and global config use the
 names in [Global and system config](#global-config).
 
-| File                         | Use                                                                                    |
-| ---------------------------- | -------------------------------------------------------------------------------------- |
-| `mise.local.toml`            | Personal overrides. Keep it out of version control.                                    |
-| `mise.toml`                  | Shared project config                                                                  |
-| `mise/config.toml`           | Project config in a `mise/` directory                                                  |
-| `mise/conf.d/*.toml`         | Config fragments, loaded in alphabetical order; see [conf.d](#conf-d)                  |
-| `.mise/config.toml`          | Project config in a hidden `.mise/` directory                                          |
-| `.mise/conf.d/*.toml`        | Fragments in `.mise/`                                                                  |
-| `.config/mise.toml`          | Project config under `.config/`                                                        |
-| `.config/mise/config.toml`   | Project config in `.config/mise/`                                                      |
-| `.config/mise/conf.d/*.toml` | Fragments in `.config/mise/`                                                           |
-| `.tool-versions`             | Tool versions in the [`.tool-versions` format](/dev-tools/versions.html#tool-versions) |
+| File                              | Use                                                                                    |
+| --------------------------------- | -------------------------------------------------------------------------------------- |
+| `mise.local.toml`                 | Personal overrides. Keep it out of version control.                                    |
+| `mise.toml`                       | Shared project config                                                                  |
+| `mise/config.toml`                | Project config in a `mise/` directory                                                  |
+| `mise/conf.d/*/mise.toml`         | Folder fragments in `mise/`; see [conf.d folders](#conf-d-folders)                     |
+| `mise/conf.d/*.toml`              | Config fragments, loaded in alphabetical order; see [conf.d](#conf-d)                  |
+| `.mise/config.toml`               | Project config in a hidden `.mise/` directory                                          |
+| `.mise/conf.d/*/mise.toml`        | Folder fragments in `.mise/`                                                           |
+| `.mise/conf.d/*.toml`             | Fragments in `.mise/`                                                                  |
+| `.config/mise.toml`               | Project config under `.config/`                                                        |
+| `.config/mise/mise.toml`          | Project config in `.config/mise/`                                                      |
+| `.config/mise/config.toml`        | Project config in `.config/mise/`                                                      |
+| `.config/mise/conf.d/*/mise.toml` | Folder fragments in `.config/mise/`                                                    |
+| `.config/mise/conf.d/*.toml`      | Fragments in `.config/mise/`                                                           |
+| `.tool-versions`                  | Tool versions in the [`.tool-versions` format](/dev-tools/versions.html#tool-versions) |
 
 - `mise.toml` and `mise.local.toml` also work as dotfiles. `.mise.toml`
   overrides `mise.toml`, and `.mise.local.toml` overrides `mise.local.toml`.
 - Each `config.toml` can have a `config.local.toml` beside it, such as
-  `.config/mise/config.local.toml`, and `.config/mise.toml` can have
-  `.config/mise.local.toml`. Every local file overrides every shared file in
-  the same directory.
+  `.config/mise/config.local.toml`, and each other `mise.toml` can have a
+  `mise.local.toml`, such as `.config/mise.local.toml`. Every local file
+  overrides every shared file in the same directory.
 - Environment files such as `mise.production.toml` override the shared files
   when their environment is selected, and the local files override them in
   turn. Environment local files such as `mise.production.local.toml` override
