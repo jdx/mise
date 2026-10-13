@@ -697,6 +697,10 @@ fn run_store_command(name: &str, cmd: &str, input: Option<&str>) -> Result<Vec<u
         .stderr(Stdio::piped())
         .spawn()
         .map_err(|err| eyre!("failed to run {name}: {err}"))?;
+    // The readers are joined only on success. After a kill, a grandchild of the
+    // shell can still hold the pipes open, so joining on the failure paths could
+    // hang the call the timeout is there to bound. The threads end when the
+    // pipes close and own nothing but their buffers.
     let mut stdout = child.stdout.take().expect("stdout is piped");
     let mut stderr = child.stderr.take().expect("stderr is piped");
     let out = std::thread::spawn(move || {
