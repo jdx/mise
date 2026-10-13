@@ -5,8 +5,9 @@
 //! (without writing anything), allocates one when installing, and keeps the
 //! compatibility links, receipt and unlocked selection in step.
 //!
-//! The layout is gated behind `experimental`. With it off nothing here is
-//! consulted and every path is the legacy `installs/<short>/<version>`.
+//! The layout is gated behind `experimental`, and on Windows `experimental`
+//! turns it on unless `install_layout` says otherwise. With it off nothing here
+//! is consulted and every path is the legacy `installs/<short>/<version>`.
 //! Legacy installations stay where they are and keep working: a version that
 //! exists in the legacy location and has no identity-layout counterpart is used
 //! in place, never moved.
@@ -25,14 +26,14 @@ use crate::file;
 use crate::toolset::{ToolRequest, ToolVersion};
 use crate::{dirs, env};
 
-/// Whether the identity layout is on: `install_layout = "identity"`, which is
-/// opt-in even with `experimental` on and requires it. (Later, `experimental` will
-/// include it.)
+/// Whether the identity layout is on: `install_layout = "identity"`, which
+/// requires `experimental`. On Windows, where the shorter install store helps
+/// most, `experimental` alone turns it on when `install_layout` is unset.
 pub fn enabled() -> bool {
     let Ok(settings) = crate::config::Settings::try_get() else {
         return false;
     };
-    if settings.install_layout.as_deref() != Some("identity") {
+    if !requested(settings.install_layout.as_deref(), settings.experimental) {
         return false;
     }
     if !settings.experimental {
@@ -43,6 +44,16 @@ pub fn enabled() -> bool {
         return false;
     }
     true
+}
+
+/// Whether the settings ask for the identity layout, before `experimental` is
+/// checked: explicitly, or on Windows by leaving `install_layout` unset with
+/// `experimental` on.
+fn requested(install_layout: Option<&str>, experimental: bool) -> bool {
+    match install_layout {
+        Some(layout) => layout == "identity",
+        None => cfg!(windows) && experimental,
+    }
 }
 
 /// Backends whose installs are not a plain directory mise owns, so a receipt and
@@ -2126,6 +2137,15 @@ pub fn dir_name_of(path: &Path) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn requested_follows_install_layout_and_windows_experimental() {
+        assert!(super::requested(Some("identity"), true));
+        assert!(super::requested(Some("identity"), false));
+        assert!(!super::requested(Some("legacy"), true));
+        assert!(!super::requested(None, false));
+        assert_eq!(super::requested(None, true), cfg!(windows));
+    }
+
     #[test]
     fn clear_leftover_removes_only_what_a_failed_install_left() {
         let tmp = tempfile::tempdir().unwrap();
