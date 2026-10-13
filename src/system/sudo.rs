@@ -390,13 +390,25 @@ fn root_fallback(manual_cmd: &str, elevator: &str) -> String {
     }
 }
 
-/// Verify that a subprocess which performs its own sudo elevation can do so
+/// Verify that the elevation command mise is configured to use can run
 /// without violating mise's elevation policy or hanging without a TTY.
 pub(crate) fn ensure_elevation_available(manual_cmd: &str) -> Result<()> {
     let elevator = elevator();
     check_elevation(
+        &elevator,
         &format!("Run manually:\n  {manual_cmd}"),
         &format!("Run as root:\n  {}", root_fallback(manual_cmd, &elevator)),
+    )
+}
+
+/// Like [`ensure_elevation_available`] for a subprocess that calls `sudo`
+/// itself and never sees `system_packages.elevate_with`, such as an AUR
+/// helper. Only `sudo` is checked, because only `sudo` will be used.
+pub(crate) fn ensure_sudo_available(manual_cmd: &str) -> Result<()> {
+    check_elevation(
+        "sudo",
+        &format!("Run manually:\n  {manual_cmd}"),
+        &format!("Run as root:\n  {manual_cmd}"),
     )
 }
 
@@ -406,23 +418,22 @@ pub(crate) fn ensure_elevation_available(manual_cmd: &str) -> Result<()> {
 fn ensure_stdin_elevation_available() -> Result<()> {
     const HINT: &str = "Re-run this mise command as root. The privileged helper \
         receives its plan on stdin, so it cannot be run by itself.";
-    check_elevation(HINT, HINT)
+    check_elevation(&elevator(), HINT, HINT)
 }
 
-fn check_elevation(manual_hint: &str, root_hint: &str) -> Result<()> {
+fn check_elevation(elevator: &str, manual_hint: &str, root_hint: &str) -> Result<()> {
     if is_root() {
         return Ok(());
     }
     if !Settings::get().system_packages.sudo {
         bail!("not running as root and system_packages.sudo is disabled. {manual_hint}");
     }
-    let elevator = elevator();
-    if crate::file::which(&elevator).is_none() {
+    if crate::file::which(elevator).is_none() {
         bail!("{elevator} not found. {root_hint}");
     }
     if !console::user_attended_stderr() {
-        let ok = if is_sudo(&elevator) {
-            Command::new(&elevator)
+        let ok = if is_sudo(elevator) {
+            Command::new(elevator)
                 .args(["-n", "true"])
                 .stdin(Stdio::null())
                 .stdout(Stdio::null())
@@ -432,7 +443,7 @@ fn check_elevation(manual_hint: &str, root_hint: &str) -> Result<()> {
                 .unwrap_or(false)
         } else {
             // doas and run0 get a no-prompt flag on the real command instead
-            noninteractive_flag(&elevator).is_some()
+            noninteractive_flag(elevator).is_some()
         };
         if !ok {
             bail!("{elevator} requires a password but no TTY is available. {manual_hint}");
