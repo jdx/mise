@@ -73,6 +73,12 @@ assert_succeed "mise bootstrap packages status --missing"
 assert_succeed "mise bootstrap packages apply --yes"
 assert_succeed "test ! -s '$HOME/snap-log'"
 
+# use keeps the options an existing entry declares and installs with them.
+grep -v '^node ' "$HOME/snap-state" >"$HOME/snap-state.new"
+mv "$HOME/snap-state.new" "$HOME/snap-state"
+assert_contains "mise bootstrap packages use snap:node --dry-run" "snap install --channel=22/stable --classic node"
+echo 'node      22.11.0   9257  22/stable       iojs**      classic' >>"$HOME/snap-state"
+
 # Upgrade refreshes now, keeping each declared channel.
 assert_succeed "mise bootstrap packages upgrade --yes snap:jq snap:node"
 assert "sort '$HOME/snap-log'" $'refresh --channel=22/stable --classic node\nrefresh jq'
@@ -92,9 +98,11 @@ assert_fail_contains "mise bootstrap packages apply --yes snap:--classic" "inval
 cat >mise.toml <<'TOML'
 [bootstrap.packages]
 "snap:node" = { channel = "22 stable" }
+"snap:jq" = { channel = "latest/stabel" }
 "apt:curl" = { classic = true }
 TOML
 assert_contains "mise bootstrap packages status 2>&1" "snap:node: invalid channel '22 stable'"
+assert_contains "mise bootstrap packages status 2>&1" "snap:jq: invalid channel 'latest/stabel'"
 assert_contains "mise bootstrap packages status 2>&1" "channel and classic are only supported for snap entries"
 
 # Declarative removal.

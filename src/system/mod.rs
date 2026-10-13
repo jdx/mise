@@ -2504,8 +2504,7 @@ fn packages_from_specs_with_config_files(
         // An explicit `snap:<name>` installs from the channel the config
         // declares, the same as a full `mise bootstrap` would.
         if mgr == "snap"
-            && let Some(configured) = package_configs.get(&format!("{mgr}:{name}"))
-            && let Some(options) = snap_options_for(&mgr, &name, configured)?
+            && let Some(options) = configured_snap_options(&package_configs, &name)?
         {
             snap_options.insert(name.clone(), options);
         }
@@ -2777,6 +2776,36 @@ fn insert_apt_sources(
     if !sources.is_empty() {
         options.insert("apt".to_string(), ManagerPackageOptions::Apt { sources });
     }
+}
+
+/// The checked snap options that the config declares for `snap:<name>`.
+fn configured_snap_options(
+    package_configs: &IndexMap<String, PackageTomlConfig>,
+    name: &str,
+) -> eyre::Result<Option<packages::snap::SnapOptions>> {
+    match package_configs.get(&format!("snap:{name}")) {
+        Some(configured) => snap_options_for("snap", name, configured),
+        None => Ok(None),
+    }
+}
+
+/// Give the snap entries of `mgrs` the `channel` and `classic` options their
+/// `[bootstrap.packages]` entries declare, for callers that build requests
+/// without the config.
+pub fn attach_snap_options(config: &Config, mgrs: &mut [ManagerPackages]) -> eyre::Result<()> {
+    let package_configs = package_configs_from_config_files(&config.config_files);
+    for mp in mgrs.iter_mut().filter(|mp| mp.manager.name() == "snap") {
+        let mut packages = BTreeMap::new();
+        for request in &mp.requests {
+            if let Some(options) = configured_snap_options(&package_configs, &request.name)? {
+                packages.insert(request.name.clone(), options);
+            }
+        }
+        if !packages.is_empty() {
+            mp.options = ManagerPackageOptions::Snap { packages };
+        }
+    }
+    Ok(())
 }
 
 /// Give the apt entries of `mgrs` the `[bootstrap.apt.sources]` they install

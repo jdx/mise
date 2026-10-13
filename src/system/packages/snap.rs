@@ -69,33 +69,44 @@ pub(crate) fn validate_name(name: &str) -> eyre::Result<()> {
 }
 
 /// Check a channel's shape: `[<track>/]<risk>[/<branch>]`, or a bare track.
+/// A misspelled risk is caught here, so the entry is skipped with a warning
+/// rather than failing inside snap. A bare track cannot be checked: track
+/// names are the publisher's.
 pub(crate) fn validate_channel(name: &str, channel: &str) -> eyre::Result<()> {
     let segments = channel.split('/').collect::<Vec<_>>();
-    let valid = segments.len() <= 3
-        && segments.iter().all(|segment| {
-            !segment.is_empty()
-                && !segment.starts_with('-')
-                && segment
-                    .chars()
-                    .all(|c| c.is_ascii_alphanumeric() || "-._".contains(c))
-        });
+    let well_formed = segments.iter().all(|segment| {
+        !segment.is_empty()
+            && !segment.starts_with('-')
+            && segment
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || "-._".contains(c))
+    });
+    let has_risk = match segments.as_slice() {
+        [_] => true,
+        [first, second] => RISKS.contains(first) || RISKS.contains(second),
+        [_, risk, _] => RISKS.contains(risk),
+        _ => false,
+    };
+    let valid = well_formed && has_risk;
     if !valid {
         bail!(
-            "snap:{name}: invalid channel '{channel}'; use <track>/<risk>, such as \"latest/stable\" or \"22/edge\""
+            "snap:{name}: invalid channel '{channel}'; use <track>/<risk>, such as \"latest/stable\" or \"22/edge\", where the risk is stable, candidate, beta, or edge"
         );
     }
     Ok(())
 }
 
-/// Expand a channel to the `<track>/<risk>[/<branch>]` form that `snap list`
-/// prints under Tracking, so that `stable`, `latest`, and `latest/stable` all
-/// compare equal.
-fn normalize_channel(channel: &str) -> String {
+/// Expand a channel to the form that `snap list` prints under Tracking, so
+/// that `stable`, `latest`, and `latest/stable` all compare equal. snap list
+/// prints a branch as `…` (`22/edge/fix-1` is `22/edge/…`), so a snap on
+/// another branch of the same track and risk is not reported as drift.
+fn listed_channel(channel: &str) -> String {
     let segments = channel.split('/').collect::<Vec<_>>();
     match segments.as_slice() {
         [risk] if RISKS.contains(risk) => format!("latest/{risk}"),
         [track] => format!("{track}/stable"),
-        [risk, branch] if RISKS.contains(risk) => format!("latest/{risk}/{branch}"),
+        [risk, _branch] if RISKS.contains(risk) => format!("latest/{risk}/…"),
+        [track, risk, _branch] => format!("{track}/{risk}/…"),
         _ => channel.to_string(),
     }
 }
@@ -141,7 +152,7 @@ fn statuses(
         .map(|request| {
             let channel = snap_options(options, &request.name)
                 .and_then(|options| options.channel.as_deref())
-                .map(normalize_channel);
+                .map(listed_channel);
             let state = match installed.get(request.name.as_str()) {
                 None => PackageState::Missing,
                 Some(snap) => match &channel {
@@ -398,14 +409,30 @@ hello     2.10             42     -                -           -
     }
 
     #[test]
-    fn test_normalize_channel() {
-        assert_eq!(normalize_channel("stable"), "latest/stable");
-        assert_eq!(normalize_channel("edge"), "latest/edge");
-        assert_eq!(normalize_channel("22"), "22/stable");
-        assert_eq!(normalize_channel("22/beta"), "22/beta");
-        assert_eq!(normalize_channel("beta/fix-1"), "latest/beta/fix-1");
-        assert_eq!(normalize_channel("latest/stable"), "latest/stable");
-        assert_eq!(normalize_channel("22/edge/fix-1"), "22/edge/fix-1");
+    fn test_listed_channel() {
+        assert_eq!(listed_channel("stable"), "latest/stable");
+        assert_eq!(listed_channel("edge"), "latest/edge");
+        assert_eq!(listed_channel("22"), "22/stable");
+        assert_eq!(listed_channel("22/beta"), "22/beta");
+        assert_eq!(listed_channel("beta/fix-1"), "latest/beta/…");
+        assert_eq!(listed_channel("latest/stable"), "latest/stable");
+        assert_eq!(listed_channel("22/edge/fix-1"), "22/edge/…");
+    }
+
+    #[test]
+    fn test_branch_channels_match_snap_list() {
+        let installed = parse_snap_list(
+            "Name  Version  Rev  Tracking   Publisher  Notes\nnode  23.0.0   9300 22/edge/…  iojs**     classic\n",
+        );
+        let pkgs = [req("node")];
+        let branch = options(&[("node", Some("22/edge/fix-1"), true)]);
+        assert!(statuses(&installed, &pkgs, &branch)[0].state.is_installed());
+        let other_risk = options(&[("node", Some("22/beta/fix-1"), true)]);
+        assert!(
+            !statuses(&installed, &pkgs, &other_risk)[0]
+                .state
+                .is_installed()
+        );
     }
 
     #[test]
@@ -503,10 +530,26 @@ hello     2.10             42     -                -           -
 
     #[test]
     fn test_validate_channel() {
-        for channel in ["stable", "22", "latest/stable", "22/edge/fix-1", "1.x/beta"] {
+        for channel in [
+            "stable",
+            "22",
+            "latest/stable",
+            "22/edge/fix-1",
+            "1.x/beta",
+            "edge/fix-1",
+        ] {
             assert!(validate_channel("node", channel).is_ok(), "{channel}");
         }
-        for channel in ["", "a//b", "a/b/c/d", "--edge", "latest stable"] {
+        for channel in [
+            "",
+            "a//b",
+            "a/b/c/d",
+            "--edge",
+            "latest stable",
+            "latest/stabel",
+            "22/unknown/branch",
+            "latest/22",
+        ] {
             assert!(validate_channel("node", channel).is_err(), "{channel}");
         }
     }

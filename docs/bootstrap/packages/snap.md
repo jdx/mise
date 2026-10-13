@@ -46,8 +46,14 @@ snap  node  20.18.0 from 20/stable  version mismatch
 
 `apply` moves it with `snap refresh --channel=<channel>`, which also replaces
 the installed revision with that channel's. A channel is
-`<track>/<risk>[/<branch>]`. A risk alone, such as `edge`, means
-`latest/edge`, and a track alone, such as `22`, means `22/stable`.
+`<track>/<risk>[/<branch>]`, where the risk is `stable`, `candidate`, `beta`,
+or `edge`. A risk alone, such as `edge`, means `latest/edge`, and a track
+alone, such as `22`, means `22/stable`. An entry with a misspelled risk is
+skipped with a warning.
+
+`snap list` does not show branch names, so for a branch channel such as
+`22/edge/fix-1`, mise checks the track and risk only. A snap on another branch
+of `22/edge` is not reported as drift.
 
 ## Classic confinement
 
