@@ -1212,8 +1212,10 @@ impl NPMBackend {
         if revision.is_some() || !Settings::get().lockfile_enabled() {
             return Ok(revision);
         }
-        let Some(path) = request
-            .source()
+        let Some(owner) = request.lockfile_source() else {
+            return Ok(None);
+        };
+        let Some(path) = owner
             .path()
             .filter(|path| crate::config::is_global_config(path))
         else {
@@ -1230,6 +1232,8 @@ impl NPMBackend {
         // forward so the new version gets a fresh graph, not the old graph.
         // Read this owner, rather than effective requests that project or
         // environment overrides can hide during `upgrade --global`.
+        // Explicit CLI selectors borrow this owner without changing their
+        // argument provenance.
         let requests = cf.to_tool_request_set()?;
         let target = PlatformTarget::from_current();
         let options = self.resolve_lockfile_options(request, &target)?;
@@ -1237,7 +1241,8 @@ impl NPMBackend {
         let mut original = None;
         for candidate in requests.tools.values().flatten() {
             if !candidate.is_os_supported()
-                || candidate.source() != request.source()
+                || candidate.source() != owner
+                || candidate.ba().short != request.ba().short
                 || candidate.ba().full() != full
                 || self.resolve_lockfile_options(candidate, &target)? != options
             {

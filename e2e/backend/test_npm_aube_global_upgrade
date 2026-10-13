@@ -18,7 +18,7 @@ ln -s "$(mise where node@20.11.1)/bin/node" "$HOME/bin/node"
 write_global_config() {
   cat >"$MISE_CONFIG_DIR/config.toml" <<EOF
 [settings]
-lockfile = true
+${lockfile_setting:-lockfile = true}
 locked = true
 [tools]
 "${config_tool:-npm:mise-upgrade-fixture}" = { version = "$1", allow_low_downloads = true }
@@ -27,13 +27,13 @@ EOF
 
 check_graph() {
   mise -C "$HOME" lock --global --sidecars --json >"$PWD/sidecars.json"
-  python3 - "$PWD/sidecars.json" "$HOME" "$1" <<'PY'
+  python3 - "$PWD/sidecars.json" "$HOME" "$1" "${2:-$config_tool}" <<'PY'
 import hashlib
 import json
 import sys
 from pathlib import Path
 listing, = json.loads(Path(sys.argv[1]).read_text())
-entry, = [item for item in listing['sidecars'] if item['tool'] in ('npm:mise-upgrade-fixture', 'fixture')]
+entry, = [item for item in listing['sidecars'] if item['tool'] == sys.argv[4]]
 version = sys.argv[3]
 assert entry['version'] == version, entry
 assert entry['graph'] == 'aube' and entry['exists'], entry
@@ -49,7 +49,7 @@ PY
 # Cover both lock revisions, bare and named upgrades, and reuse of a newer
 # version-only installation, including exact pins changed by --bump. Graph
 # preparation must precede the installed check.
-for scenario in bare-v3 bare-v2 named preinstalled bump-v3 bump-v2 bump-named bump-global-env bump-preinstalled; do
+for scenario in bare-v3 bare-v2 named preinstalled bump-v3 bump-v2 bump-named bump-global-env bump-aliases bump-explicit-default bump-preinstalled; do
   export MISE_CONFIG_DIR="$base_config/$scenario"
   export MISE_CACHE_DIR="$base_cache/$scenario"
   mkdir -p "$MISE_CONFIG_DIR"
@@ -57,20 +57,35 @@ for scenario in bare-v3 bare-v2 named preinstalled bump-v3 bump-v2 bump-named bu
   echo 1.0.0 >"$FAKE_NPM_REGISTRY_DIR/latest"
   selector=latest
   config_tool=npm:mise-upgrade-fixture
+  lockfile_setting='lockfile = true'
   [[ $scenario == bump-* ]] && selector=1.0.0
-  [[ $scenario == bump-global-env ]] && config_tool=fixture
+  [[ $scenario == bump-global-env || $scenario == bump-aliases ]] && config_tool=fixture
+  [[ $scenario == bump-explicit-default ]] && lockfile_setting='# automatic lock generation left unset'
   write_global_config "$selector"
-  if [[ $scenario == bump-global-env ]]; then
+  if [[ $scenario == bump-aliases ]]; then
+    echo 'fixture-other = { version = "2.0.0", allow_low_downloads = true }' >>"$MISE_CONFIG_DIR/config.toml"
+  fi
+  if [[ $config_tool == fixture ]]; then
     cat >>"$MISE_CONFIG_DIR/config.toml" <<'EOF'
 [tool_alias]
 fixture = "npm:mise-upgrade-fixture"
 EOF
+    [[ $scenario == bump-aliases ]] && echo 'fixture-other = "npm:mise-upgrade-fixture"' >>"$MISE_CONFIG_DIR/config.toml"
   fi
-  mise -C "$HOME" lock --global "$config_tool"
+  if [[ $scenario == bump-aliases ]]; then
+    # Different selectors keep both aliases distinct during lock generation.
+    mise -C "$HOME" lock --global fixture fixture-other
+  else
+    mise -C "$HOME" lock --global "$config_tool"
+  fi
   if [[ $scenario == bare-v2 || $scenario == bump-v2 ]]; then
     sed -i.bak 's/lockfile_version = 3/lockfile_version = 2/' "$MISE_CONFIG_DIR/mise.lock"
   fi
   check_graph 1.0.0
+  if [[ $scenario == bump-aliases ]]; then
+    check_graph 2.0.0 fixture-other
+    cp "$PWD/sidecars.json" "$PWD/aliases-before.json"
+  fi
   mise -C "$HOME" install --locked
   assert "mise -C '$HOME' exec -- mise-upgrade-fixture" "1.0.0:1.0.0"
   cp -R "$MISE_CONFIG_DIR" "$PWD/$scenario-before"
@@ -94,13 +109,33 @@ EOF
   fi
   if [[ $scenario == bump-global-env ]]; then
     MISE_FIXTURE_VERSION=1.0.0 mise -C "$HOME" --yes upgrade --global --bump
+  elif [[ $scenario == bump-explicit-default ]]; then
+    # Allow the new CLI selector through initial resolution; the existing
+    # global graph must still be maintained, without automatic lock creation.
+    MISE_LOCKED=0 mise -C "$HOME" --yes upgrade --global --bump "$config_tool@2.0.0"
   else
     mise -C "$HOME" --yes upgrade ${upgrade_args[@]+"${upgrade_args[@]}"}
   fi
   cp -R "$MISE_CONFIG_DIR" "$PWD/$scenario-after"
   check_graph 2.0.0
+  if [[ $scenario == bump-aliases ]]; then
+    check_graph 2.0.0 fixture-other
+    python3 - "$PWD/aliases-before.json" "$PWD/sidecars.json" <<'PY'
+import json
+import sys
+from pathlib import Path
+def other(path):
+    listing, = json.loads(Path(path).read_text())
+    entry, = [item for item in listing['sidecars'] if item['tool'] == 'fixture-other']
+    return entry
+assert other(sys.argv[1]) == other(sys.argv[2])
+PY
+  fi
   if [[ $scenario == bump-* ]]; then
     assert_contains "cat '$MISE_CONFIG_DIR/config.toml'" 'version = "2.0.0"'
+    if [[ $scenario == bump-aliases ]]; then
+      assert_contains "cat '$MISE_CONFIG_DIR/config.toml'" 'fixture = { version = "2.0.0"'
+    fi
   fi
   assert_contains "mise -C '$HOME' where '$config_tool'" '/2.0.0~aube~'
 
@@ -167,4 +202,25 @@ cp "$MISE_CONFIG_DIR/mise.lock" "$PWD/exact.lock"
 mise -C "$HOME" --yes upgrade
 check_graph 1.0.0
 assert_succeed "cmp '$PWD/exact.lock' '$MISE_CONFIG_DIR/mise.lock'"
+
+# A temporary CLI request with no owner must not borrow a different alias's
+# graph, even when it uses the same backend as that explicitly locked alias.
+export MISE_CONFIG_DIR="$base_config/unowned"
+export MISE_CACHE_DIR="$base_cache/unowned"
+export MISE_DATA_DIR="$HOME/unowned-data"
+mkdir -p "$MISE_CONFIG_DIR"
+config_tool=fixture
+lockfile_setting='# automatic lock generation left unset'
+write_global_config 1.0.0
+cat >>"$MISE_CONFIG_DIR/config.toml" <<'EOF'
+[tool_alias]
+fixture = "npm:mise-upgrade-fixture"
+EOF
+mise -C "$HOME" lock --global fixture
+cp "$MISE_CONFIG_DIR/mise.lock" "$PWD/unowned.lock"
+MISE_LOCKED=0 mise -C "$HOME" install 'npm:mise-upgrade-fixture[allow_low_downloads=true]@2.0.0'
+assert_succeed "test -d '$MISE_DATA_DIR/installs/npm-mise-upgrade-fixture/2.0.0'"
+assert_fail "find '$MISE_DATA_DIR/installs/npm-mise-upgrade-fixture' -maxdepth 1 -name '*~aube~*' | grep -q ."
+assert_succeed "cmp '$PWD/unowned.lock' '$MISE_CONFIG_DIR/mise.lock'"
+check_graph 1.0.0
 assert_fake_npm_registry_used mise mise-upgrade-fixture
