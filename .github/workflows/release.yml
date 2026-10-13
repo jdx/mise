@@ -383,7 +383,7 @@ jobs:
     if: needs.gate.outputs.build == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    container: ghcr.io/jdx/mise:rpm@sha256:65f2d1c7143fcf67752ce9a87c413eb67b73f260e6465b2bbbcaae884fa6c85a
+    container: ghcr.io/jdx/mise:rpm@sha256:b9604d5797e4a70268e1437017f67bcda236171d880ca055b9c12490a4a28230
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -409,7 +409,7 @@ jobs:
     needs: [gate, build-tarball-linux]
     if: needs.gate.outputs.build == 'true'
     runs-on: ubuntu-latest
-    container: ghcr.io/jdx/mise:deb@sha256:f10c17ab7c8f078be131778525bcaf63844e0bf9ba19c9d41e87e918e44e7507
+    container: ghcr.io/jdx/mise:deb@sha256:c75c4f18a22118d17136698b0c053db59b97f0c9a48da9ee9d5ceab41065fa6e
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -712,7 +712,7 @@ jobs:
       # writing it under packslip/, and an artifact holding files at two
       # depths keeps the directory, which the flat `sha256sum ./*` below
       # would then choke on.
-      - uses: jdx/packslip@87479dfc6443253dff69601cace5fc6ea07e6df5 # v1.4.0
+      - uses: jdx/packslip@2af36e792faa28130987c8af509e475c7458405d # v1.6.0
         with:
           artifacts: release-assets/mise-*
           bin: mise
@@ -887,7 +887,7 @@ jobs:
           GH_REPO: ${{ github.repository }}
           TAG: ${{ needs.finish-draft-resolve.outputs.tag }}
         run: gh release upload "$TAG" mise.usage.kdl mise.bash mise.zsh mise.fish mise.powershell --clobber
-      - uses: jdx/packslip@87479dfc6443253dff69601cace5fc6ea07e6df5 # v1.4.0
+      - uses: jdx/packslip@2af36e792faa28130987c8af509e475c7458405d # v1.6.0
         with:
           artifacts: release-assets/mise-*
           bin: mise

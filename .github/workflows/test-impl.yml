@@ -171,7 +171,7 @@ jobs:
       # Namespace builds reuse local objects. Main also publishes a target/registry
       # archive so GitHub-hosted untrusted builds have a cache to restore.
       # Install mbx before bootstrapping this checkout's mise.
-      - uses: jdx/mr-boxington-action@9df1d4b18b2147788a7ee7a2c7b84ecf62fd89d3 # v1.5.0
+      - uses: jdx/mr-boxington-action@d0825fbaf3cc36ca2609aa38e71046265a1f1e37 # v1.7.1
         with:
           backend: ${{ inputs.trusted && !(github.event_name == 'push' && github.ref == 'refs/heads/main') && 'local' || 'github' }}
           cache-generation: unit-macos-v1
