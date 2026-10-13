@@ -1404,6 +1404,23 @@ pub fn launchd_from_config(config: &Config) -> Vec<LaunchdRequest> {
     out
 }
 
+/// Render a `[bootstrap.repos]` key as a template, so a checkout path can use
+/// `{{ vars.name }}`, without `exec()` so a preview cannot run commands. Reading
+/// a var never prompts: an unanswered one resolves to
+/// its `default`.
+fn render_repo_path(config: &Config, config_path: &Path, path_raw: &str) -> Result<String> {
+    if !mise_util::tera::contains_template_syntax(path_raw) {
+        return Ok(path_raw.to_string());
+    }
+    let mut ctx = config.bootstrap_tera_ctx(config_path).clone();
+    if ctx.get("config_root").is_none() {
+        let config_root = crate::config::config_file::config_root::config_root(config_path);
+        ctx.insert("config_root", &config_root);
+    }
+    let mut tera = crate::tera::get_tera_without_exec(config_path.parent());
+    Ok(crate::tera::render_str(&mut tera, path_raw, &ctx)?)
+}
+
 /// Aggregate `[bootstrap.repos]` across all loaded config files.
 ///
 /// Repo paths union global -> local; a more local config replaces the full
@@ -1415,6 +1432,13 @@ pub fn repos_from_config(config: &Config) -> Vec<RepoRequest> {
     for cf in config.config_files.values().rev() {
         if let Some(sys) = cf.bootstrap_config() {
             for (path_raw, repo) in sys.repos {
+                let path_raw = match render_repo_path(config, cf.get_path(), &path_raw) {
+                    Ok(path_raw) => path_raw,
+                    Err(err) => {
+                        warn!("[bootstrap.repos].\"{path_raw}\": {err}");
+                        continue;
+                    }
+                };
                 match RepoRequest::from_toml(path_raw.clone(), repo, cf.project_root().as_deref()) {
                     Ok(request) => {
                         merged.insert(request.path.clone(), request);

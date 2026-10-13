@@ -274,3 +274,32 @@ assert_contains "mise bootstrap repos status" "current"
 mkdir -p nested
 assert_succeed "cd nested && mise bootstrap repos status --missing"
 assert_directory_not_exists "$PWD/nested/vendor"
+
+# a key can use a [vars] answer, so each machine picks its own base directory
+export MISE_STATE_DIR="$PWD/state"
+mkdir -p "$MISE_STATE_DIR"
+cat <<EOF2 >mise.toml
+[vars.repos_dir]
+default = "$PWD/default-base"
+prompt = "Where should repositories be cloned?"
+
+[bootstrap.repos]
+"{{ vars.repos_dir }}/project" = { url = "$SRC_URL", ref = "main" }
+EOF2
+assert_contains "mise bootstrap repos status" "default-base/project"
+cat <<EOF2 >"$MISE_STATE_DIR/vars.toml"
+[vars]
+repos_dir = "$PWD/chosen-base"
+EOF2
+assert_succeed "mise bootstrap repos apply --yes"
+assert "cat chosen-base/project/version.txt" "v5"
+assert_directory_not_exists "$PWD/default-base"
+
+# config_root is available, and exec() is not
+cat <<EOF2 >mise.toml
+[bootstrap.repos]
+"{{ config_root }}/rooted" = { url = "$SRC_URL", ref = "main" }
+"{{ exec(command='echo ran') }}/bad" = { url = "$SRC_URL", ref = "main" }
+EOF2
+assert_contains "mise bootstrap repos status" "rooted"
+assert_not_contains "mise bootstrap repos status" "ran/bad"
