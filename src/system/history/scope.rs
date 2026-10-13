@@ -426,17 +426,14 @@ impl OperationScope {
             .map(|shared| lock_unpoisoned(&shared).pending.id)
     }
 
-    pub(crate) fn validate_starting_head(&self, expected: Option<&str>) -> Result<()> {
+    /// Whether local history is still at `expected`, the head the caller
+    /// planned against, as this operation began.
+    pub(crate) fn starting_head_is(&self, expected: Option<&str>) -> Result<bool> {
         let Some(shared) = self.writer() else {
             eyre::bail!("incoming application requires an active recovery operation");
         };
         let writer = lock_unpoisoned(&shared);
-        if writer.starting_head.as_deref() != expected {
-            eyre::bail!(
-                "local saved history changed since planning; nothing was applied; run pull again"
-            );
-        }
-        Ok(())
+        Ok(writer.starting_head.as_deref() == expected)
     }
 
     /// Retakes the protective checkpoint, replacing the earlier one, when
@@ -1337,8 +1334,8 @@ mod tests {
             shared: Some(Arc::new(Mutex::new(writer))),
             lazy: false,
         };
-        assert!(scope.validate_starting_head(Some(&planned)).is_err());
-        assert!(scope.validate_starting_head(Some(&saved)).is_ok());
+        assert!(!scope.starting_head_is(Some(&planned))?);
+        assert!(scope.starting_head_is(Some(&saved))?);
         assert_ne!(
             repo.ref_oid(super::super::shadow::HistoryRepo::HISTORY_REF)?
                 .as_deref(),

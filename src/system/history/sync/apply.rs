@@ -648,9 +648,11 @@ pub(crate) async fn apply_locked_with_scope(
     // the repository's head, once a fresh adoption made it this machine's
     let mut adopted_head: Option<String> = None;
     let result = (|| -> Result<()> {
-        scope
-            .validate_starting_head(planned_head.as_deref())
-            .map_err(|error| stale(format!("{error:#}")))?;
+        if !scope.starting_head_is(planned_head.as_deref())? {
+            return Err(stale(
+                "local saved history changed since planning; nothing was applied; run pull again",
+            ));
+        }
         if let (Some(tree), Some(local)) = (&inventory_tree, &planned_head) {
             let heads = super::graph::Heads::read(repo)?;
             let current = heads
