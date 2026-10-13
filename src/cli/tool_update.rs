@@ -70,7 +70,13 @@ fn start_due_updates(ts: &Toolset) {
     // pin beside them does not claim the check and leave them waiting.
     let mut versions = ts.list_current_versions();
     versions.sort_by_key(|(_, tv)| !tool_update::updatable(tv));
-    for (_, tv) in versions {
+    for (backend, tv) in versions {
+        // An update moves an installed tool forward. A missing one, lazy or not,
+        // is left to the install paths: like the rest of hook-env, a prompt
+        // never installs. Skipped before the claim, so no process or lookup starts.
+        if backend.list_installed_versions().is_empty() {
+            continue;
+        }
         if !tool_update::is_due(&tv.request, Updater::Launch) {
             continue;
         }

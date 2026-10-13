@@ -455,8 +455,13 @@ impl Upgrade {
         }
         if self.for_auto_update {
             // Another version of the same tool can opt out: `auto_update` upgrades
-            // only the requests that enable it.
-            outdated.retain(|o| crate::tool_update::enabled(&o.tool_version.request));
+            // only the requests that enable it. It also only moves an installed
+            // version forward: a request with nothing installed is missing, not
+            // outdated, and installing it is for `mise install` or a lazy tool's
+            // first run, whichever updater (prompt, service, launch) asked.
+            outdated.retain(|o| {
+                o.current.is_some() && crate::tool_update::enabled(&o.tool_version.request)
+            });
             if outdated.is_empty() {
                 // Nothing outdated can also mean a lookup failed and was only
                 // warned about. Check again so a failure isn't taken as "up to
