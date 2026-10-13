@@ -187,7 +187,7 @@ pathdiff = "0.2"
 petgraph = "0.8"
 phf = "0.14"
 rand = "0.10"
-rattler = { version = "0.52", default-features = false }
+rattler = { version = "0.53", default-features = false }
 rattler_conda_types = { version = "0.56", default-features = false }
 rattler_repodata_gateway = { version = "0.36", default-features = false, features = [
   "gateway",
