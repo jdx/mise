@@ -4463,9 +4463,9 @@ Using it avoids GitHub's anonymous rate limit in normal installs, including
 Docker builds and CI jobs without a GitHub token.
 
 When the host does not list a registry tool's versions, mise lists them from
-the tool's own source. GitHub release data, tags and attestations for public
-repositories come only from the host: if it fails, mise reports the error
-rather than spend GitHub's anonymous rate limit. mise asks GitHub directly only
+the tool's own source. GitHub release data for public repositories comes only
+from the host: if it fails, mise reports the error rather than spend GitHub's
+anonymous rate limit. mise asks GitHub directly only
 for a repository the host does not know, which may be private, and only with
 GitHub credentials. Private repositories, GitHub Enterprise, custom GitHub API
 URLs, and installs with this setting off need normal
