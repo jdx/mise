@@ -26,5 +26,9 @@ no_github_api install github:BurntSushi/ripgrep@14.1.1
 assert_contains "mise x github:BurntSushi/ripgrep@14.1.1 -- rg --version" "ripgrep 14.1.1"
 # terraform's GitHub releases have no assets.
 no_github_api latest aqua:hashicorp/terraform
+# fnox's packslip declares a skill that lives in its repository: listed by
+# mise-versions, fetched from raw.githubusercontent.com.
+no_github_api use fnox@1.39.0
+assert_contains "mise skills ls" "fnox"
 # tomcat is `version_source: github_tag`: its versions are git tags.
 no_github_api latest aqua:apache/tomcat@10

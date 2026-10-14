@@ -68,6 +68,15 @@ pub struct GithubMirroredTag {
     pub date: Option<String>,
 }
 
+/// One entry of a repository directory, as GitHub's contents API lists it.
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct GithubContentsEntry {
+    pub name: String,
+    /// `file`, `dir`, `symlink` or `submodule`.
+    #[serde(rename = "type")]
+    pub kind: String,
+}
+
 #[derive(serde::Deserialize)]
 struct AttestationsResponse {
     attestations: Vec<Attestation>,
@@ -133,6 +142,19 @@ impl<'a> VersionsHostLogContext<'a> {
             tag: None,
             digest: None,
             page: Some(page),
+            full: None,
+            version: None,
+        }
+    }
+
+    fn github_repo(endpoint: &'static str, repo: &'a str) -> Self {
+        Self {
+            endpoint,
+            tool: None,
+            repo: Some(repo),
+            tag: None,
+            digest: None,
+            page: None,
             full: None,
             version: None,
         }
@@ -368,6 +390,45 @@ fn github_tags_url(owner: &str, repo: &str, page: u32, dates: bool) -> String {
         encode_path_segment(owner),
         encode_path_segment(repo),
         if dates { "&dates=1" } else { "" }
+    )
+}
+
+/// List the directory `path` of a public repository at `commit`, a full
+/// commit SHA, from the versions host. `Ok(None)` and errors as in
+/// [`github_release`]; a `path` naming a file is a 404.
+pub async fn github_contents(
+    repo: &str,
+    commit: &str,
+    path: &str,
+) -> eyre::Result<Option<Vec<GithubContentsEntry>>> {
+    if !enabled_for_github_repo(repo) {
+        return Ok(None);
+    }
+    let Some((owner, repo_name)) = split_github_repo(repo) else {
+        return Ok(None);
+    };
+    let url = github_contents_url(owner, repo_name, commit, path);
+    let ctx = VersionsHostLogContext::github_repo("github_contents", repo);
+    let entries = fetch_json_unless_not_found(&url, ctx).await?;
+    if let Some(entries) = &entries {
+        let entries: &Vec<GithubContentsEntry> = entries;
+        log_versions_host_trace(ctx, "success", &format!("entries={}", entries.len()));
+    }
+    Ok(entries)
+}
+
+fn github_contents_url(owner: &str, repo: &str, commit: &str, path: &str) -> String {
+    let path = path
+        .split('/')
+        .filter(|segment| !segment.is_empty())
+        .map(encode_path_segment)
+        .collect::<Vec<_>>()
+        .join("/");
+    format!(
+        "https://mise-versions.jdx.dev/api/github/repos/{}/{}/contents/{path}?ref={}",
+        encode_path_segment(owner),
+        encode_path_segment(repo),
+        encode_path_segment(commit),
     )
 }
 
@@ -922,6 +983,24 @@ mod tests {
         assert_eq!(page.tags[0].date.as_deref(), Some("2026-10-06T18:22:36Z"));
         assert_eq!(page.tags[1].date, None);
         assert_eq!(page.next_page, Some(2));
+    }
+
+    #[test]
+    fn test_github_contents_url_encodes_each_segment() {
+        assert_eq!(
+            github_contents_url("jdx", "fnox", "cc06c75", "skills/fnox tool/"),
+            "https://mise-versions.jdx.dev/api/github/repos/jdx/fnox/contents/skills/fnox%20tool?ref=cc06c75"
+        );
+    }
+
+    #[test]
+    fn test_github_contents_deserialize() {
+        let entries: Vec<GithubContentsEntry> = serde_json::from_str(
+            r#"[{"name":"SKILL.md","path":"skills/fnox/SKILL.md","type":"file","size":12,"sha":"a"},{"name":"refs","path":"skills/fnox/refs","type":"dir","sha":"b"}]"#,
+        )
+        .unwrap();
+        assert_eq!(entries[1].name, "refs");
+        assert_eq!(entries[1].kind, "dir");
     }
 
     #[test]

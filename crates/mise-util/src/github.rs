@@ -95,11 +95,6 @@ pub struct GithubAsset {
     pub from_versions_host: bool,
 }
 
-#[derive(Debug, Deserialize)]
-struct GithubRepository {
-    full_name: String,
-}
-
 type CacheGroup<T> = HashMap<String, CacheManager<T>>;
 
 static RELEASES_CACHE: Lazy<RwLock<CacheGroup<Vec<GithubRelease>>>> = Lazy::new(Default::default);
@@ -717,11 +712,7 @@ pub async fn repository_identity(repo: &str) -> Result<RepositoryIdentity> {
     let cache = caches.get(&key).unwrap();
     Ok(cache
         .get_or_try_init_async(async || {
-            let url = format!("{API_URL}/repos/{repo}");
-            let headers = get_headers(&url)?;
-            let repository: GithubRepositoryIds = crate::http::HTTP_FETCH
-                .json_with_headers(url, &headers)
-                .await?;
+            let repository = fetch_repository(repo).await?;
             Ok(RepositoryIdentity {
                 id: repository.id.to_string(),
                 full_name: repository.full_name,
@@ -735,12 +726,89 @@ pub async fn repository_identity(repo: &str) -> Result<RepositoryIdentity> {
 /// Resolve a repository name through GitHub so callers can follow repository
 /// transfers without weakening identity checks to the former owner/name.
 pub async fn canonical_repo(repo: &str) -> Result<String> {
+    Ok(fetch_repository(repo).await?.full_name)
+}
+
+/// `GET /repos/{repo}`, which follows a rename's redirect.
+///
+/// Always asked of GitHub, never mise-versions: both callers decide trust
+/// with the answer. Attestations made under another repository's name and
+/// a packslip claiming a renamed project are accepted only when GitHub says
+/// the names are one repository, and a mirror that could answer that could
+/// vouch for any repository. Only renamed or transferred repositories reach
+/// this, so it costs little of the API's rate limit.
+async fn fetch_repository(repo: &str) -> Result<GithubRepositoryIds> {
     let url = format!("{API_URL}/repos/{repo}");
     let headers = get_headers(&url)?;
-    let repository: GithubRepository = crate::http::HTTP_FETCH
+    crate::http::HTTP_FETCH
         .json_with_headers(url, &headers)
+        .await
+}
+
+/// A directory of a GitHub repository at a commit.
+pub struct RepoDir {
+    pub entries: Vec<crate::versions_host::GithubContentsEntry>,
+    /// Listed by api.github.com because mise-versions doesn't know the
+    /// repository: a private one, whose files must be fetched with the
+    /// user's token from the contents API too, since raw.githubusercontent.com
+    /// answers 404 for them.
+    pub private: bool,
+}
+
+/// List `path` in `repo` at `commit`, a full commit SHA. From mise-versions
+/// whenever it applies; the files themselves are on raw.githubusercontent.com.
+pub async fn list_repo_dir(repo: &str, commit: &str, path: &str) -> Result<RepoDir> {
+    let url = format!(
+        "{API_URL}/repos/{repo}/contents/{}?ref={commit}",
+        url_path(path)
+    );
+    // A `url_replacements` rule for this listing makes it the source, with
+    // the files fetched as for a private repository.
+    if mirrors_github_metadata(API_URL, repo)
+        && !crate::versions_host::github_api_url_is_replaced(&url)
+    {
+        let what = format!("{path} in {repo} at {commit}");
+        let listed = crate::versions_host::github_contents(repo, commit, path)
+            .await
+            .wrap_err_with(|| versions_host_failure(&what))?;
+        match listed {
+            Some(entries) => {
+                return Ok(RepoDir {
+                    entries,
+                    private: false,
+                });
+            }
+            None => ensure_private_repo_lookup(repo, &what)?,
+        }
+    }
+    // `get_headers` asks for the raw media type on contents URLs, which is
+    // right for a file body and wrong for a directory listing.
+    let mut headers = get_headers(&url)?;
+    headers.insert(
+        reqwest::header::ACCEPT,
+        HeaderValue::from_static("application/vnd.github+json"),
+    );
+    let listing: serde_json::Value = crate::http::HTTP_FETCH
+        .json_with_headers(&url, &headers)
         .await?;
-    Ok(repository.full_name)
+    let Some(entries) = listing.as_array() else {
+        bail!("{path} is not a directory of {repo}");
+    };
+    Ok(RepoDir {
+        entries: entries
+            .iter()
+            .filter_map(|entry| serde_json::from_value(entry.clone()).ok())
+            .collect(),
+        private: true,
+    })
+}
+
+/// `path` with each segment percent-encoded and the separators kept.
+fn url_path(path: &str) -> String {
+    path.split('/')
+        .map(|segment| urlencoding::encode(segment).into_owned())
+        .collect::<Vec<_>>()
+        .join("/")
 }
 
 pub async fn get_release_with_versions_host(
