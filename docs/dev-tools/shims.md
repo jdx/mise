@@ -399,15 +399,9 @@ joins `PATH`, so excluded names are still found there.
 :::
 
 ::: warning
-Do not install a shell such as `bash` or `zsh` with mise. Scripts, task runners,
-and `#!/usr/bin/env bash` shebangs all invoke the shell by name, so a shim
-for it sits in the path of nearly every command and changes which shell
-runs them. Shells that exec their final command (`bash -c 'bash ...'`) can also
-re-enter the shim. Install shells with your system package manager, which
-[`mise bootstrap`](/bootstrap.html) can manage from your config. If you already
-installed one with mise, remove it. If you use shims without `mise activate`
-adding tool `bin` directories to `PATH`, you can instead add it to
-`shims.exclude` and run `mise reshim`.
+Do not install shells such as `bash` or `zsh` with mise. Nearly every script
+runs them by name, so a shim for one affects everything. Install them with your
+system package manager, which [`mise bootstrap`](/bootstrap.html) can manage.
 :::
 
 ## Keep shims out of mise activate {#activate-shims}
