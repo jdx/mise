@@ -964,13 +964,14 @@ async fn get_versions_needed_by_tracked_configs_with_progress(
     // Prune also passes offline=true: it only protects installed versions, so
     // remote resolution can never affect the outcome and just adds latency.
     let tracked = config.get_tracked_config_files().await?;
-    if let Some(progress) = progress {
-        progress.set_items(0, tracked.len() as u64);
-    }
     for (done, (path, cf)) in tracked.clone().into_iter().enumerate() {
         if let Some(progress) = progress {
-            progress.set_message(display_path(&path));
-            progress.set_items(done as u64, tracked.len() as u64);
+            progress.set_message(format!(
+                "{}/{} {}",
+                done + 1,
+                tracked.len(),
+                display_path(&path)
+            ));
         }
         let use_locked_version = use_locked_version && !exclude_locked_config_paths.contains(&path);
         let opts = ResolveOptions {
