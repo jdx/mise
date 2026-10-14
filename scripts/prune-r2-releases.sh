@@ -37,13 +37,36 @@ dry-run | delete) ;;
 	exit 1
 	;;
 esac
+# Decimal integers only: a leading zero would make bash arithmetic read the
+# value as octal (and 08 or 09 as an error).
+int_re='^-?(0|[1-9][0-9]*)$'
+
+# int A OP B: compare two decimal integers with -lt, -gt or -ne. Anything else
+# aborts the script, because a failed comparison inside `if` would otherwise
+# read as false and skip a gate.
+int() {
+	if ! [[ $1 =~ $int_re && $3 =~ $int_re ]]; then
+		echo "internal error: cannot compare '$1' $2 '$3' as integers" >&2
+		exit 1
+	fi
+	case $2 in
+	-lt) [ "$1" -lt "$3" ] ;;
+	-gt) [ "$1" -gt "$3" ] ;;
+	-ne) [ "$1" -ne "$3" ] ;;
+	*)
+		echo "internal error: unsupported comparison $2" >&2
+		exit 1
+		;;
+	esac
+}
+
 for var in window_days min_covered_days max_stats_age_days min_age_days keep_newest max_delete; do
-	if ! [[ ${!var} =~ ^[0-9]+$ ]]; then
-		echo "$var must be a non-negative integer, got '${!var}'" >&2
+	if ! [[ ${!var} =~ ^(0|[1-9][0-9]*)$ ]]; then
+		echo "$var must be a non-negative decimal integer without leading zeros, got '${!var}'" >&2
 		exit 1
 	fi
 done
-if ((min_covered_days < 1 || keep_newest < 1)); then
+if int "$min_covered_days" -lt 1 || int "$keep_newest" -lt 1; then
 	echo "PRUNE_MIN_COVERED_DAYS and PRUNE_KEEP_NEWEST must be at least 1" >&2
 	exit 1
 fi
@@ -90,19 +113,18 @@ stats_days=$(jq -r '.days' "$tmp/stats.json")
 covered_days=$(jq -r '.covered_days' "$tmp/stats.json")
 first_day=$(jq -r '.first_covered_date // "?"' "$tmp/stats.json")
 last_day=$(jq -r '.last_covered_date // "?"' "$tmp/stats.json")
-# jq can print a valid integer as 1E+2, which bash arithmetic rejects; a failed
-# (( )) inside `if` reads as false and would fall through the gates below.
-if ! [[ $stats_days =~ ^[0-9]+$ && $covered_days =~ ^[0-9]+$ ]]; then
+# jq can print a valid integer as 1E+2, which is not a decimal integer to bash.
+if ! [[ $stats_days =~ ^(0|[1-9][0-9]*)$ && $covered_days =~ ^(0|[1-9][0-9]*)$ ]]; then
 	skip "download stats have non-integer days ($stats_days) or covered_days ($covered_days)."
 fi
 echo "download stats cover $covered_days day(s): $first_day .. $last_day"
-if ((stats_days != window_days)); then
+if int "$stats_days" -ne "$window_days"; then
 	skip "download stats are for a $stats_days-day window, not the requested $window_days days ($first_day .. $last_day)."
 fi
-if ((covered_days < stats_days)); then
+if int "$covered_days" -lt "$stats_days"; then
 	skip "download stats cover only $covered_days of their $stats_days-day window ($first_day .. $last_day)."
 fi
-if ((covered_days < min_covered_days)); then
+if int "$covered_days" -lt "$min_covered_days"; then
 	skip "download stats cover only $covered_days of the required $min_covered_days days ($first_day .. $last_day)."
 fi
 # The rollup runs daily (~02:20 UTC) for the previous day. A stale window means
@@ -116,10 +138,10 @@ if ! stats_age_days=$(jq -n --arg d "$last_day" --argjson now "$(date -u +%s)" '
 	| if ($t | strftime("%Y-%m-%d")) != $d then error("not a calendar date") else . end
 	| (($now - $t) / 86400) | floor
 ' 2>/dev/null) ||
-	[[ ! $stats_age_days =~ ^[0-9]+$ ]]; then
+	[[ ! $stats_age_days =~ ^(0|[1-9][0-9]*)$ ]]; then
 	skip "download stats have an invalid last_covered_date: $last_day."
 fi
-if ((stats_age_days > max_stats_age_days)); then
+if int "$stats_age_days" -gt "$max_stats_age_days"; then
 	skip "download stats end on $last_day, $stats_age_days days ago (limit $max_stats_age_days), so they are stale."
 fi
 # All-zero stats mean the log pipeline is broken, not that nobody downloads mise.
@@ -246,7 +268,7 @@ jq -r '.[] | "\(.folder)/\tage=\(.age_days)d\tuploaded=\(.uploaded)\tfiles=\(.fi
 	echo "| Kept because | Folders |"
 	echo "| --- | ---: |"
 	jq -r 'map(select(.keep != null)) | group_by(.keep) | .[] | "| \(.[0].keep) | \(length) |"' "$tmp/folders.json"
-	if ((selected > 0)); then
+	if int "$selected" -gt 0; then
 		echo
 		echo "| Folder | Uploaded | Age (days) | Files | Size (MB) | Binary | Other |"
 		echo "| --- | --- | ---: | ---: | ---: | ---: | ---: |"
@@ -290,11 +312,11 @@ while IFS=$'\t' read -r folder bytes; do
 			| [.Contents[]?.LastModified | epoch] | if length == 0 then error("empty") else max end
 			| (($now - .) / 86400) | floor
 		' "$tmp/folder.json" 2>/dev/null) ||
-		[[ ! $folder_age_days =~ ^-?[0-9]+$ ]]; then
+		[[ ! $folder_age_days =~ $int_re ]]; then
 		echo "skipping $folder/: could not list it again before deleting, or it is now empty"
 		continue
 	fi
-	if ((folder_age_days < min_age_days)); then
+	if int "$folder_age_days" -lt "$min_age_days"; then
 		echo "skipping $folder/: newest object is now $folder_age_days days old (minimum $min_age_days)"
 		continue
 	fi
