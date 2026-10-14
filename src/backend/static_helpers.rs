@@ -272,7 +272,11 @@ where
 /// digit. Any other version already carries its tag's own decoration
 /// (`cli-2.6.0`, `kustomize/v5.8.1`), and guessing `vcli-2.6.0` first costs a
 /// 404 from mise-versions and another from GitHub before the real tag is tried.
-fn tag_candidates(version: &str, version_prefix: Option<&str>, repo: Option<&str>) -> Vec<String> {
+pub(crate) fn tag_candidates(
+    version: &str,
+    version_prefix: Option<&str>,
+    repo: Option<&str>,
+) -> Vec<String> {
     let mut candidates = if let Some(prefix) = version_prefix {
         // If a custom prefix is configured, try both prefixed and non-prefixed versions
         let mut candidates = vec![format!("{prefix}{version}"), version.to_string()];

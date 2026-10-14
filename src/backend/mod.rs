@@ -155,6 +155,23 @@ pub(crate) fn release_tag_from_url(url: &str, repo_web_url: &str) -> Option<Stri
     (head.eq_ignore_ascii_case(&prefix) && !tag.is_empty()).then(|| tag.to_string())
 }
 
+/// The tag in a release asset's download URL,
+/// `<repo_web_url>/releases/download/<tag>/<asset>`, as GitHub serves it and
+/// lockfiles record it. The repository must match, ignoring case; the tag may
+/// hold slashes or be percent-encoded.
+pub(crate) fn release_tag_from_download_url(url: &str, repo_web_url: &str) -> Option<String> {
+    let prefix = format!("{}/releases/download/", repo_web_url.trim_end_matches('/'));
+    let head = url.get(..prefix.len())?;
+    if !head.eq_ignore_ascii_case(&prefix) {
+        return None;
+    }
+    let (tag, asset) = url[prefix.len()..].rsplit_once('/')?;
+    if tag.is_empty() || asset.is_empty() {
+        return None;
+    }
+    urlencoding::decode(tag).ok().map(|tag| tag.into_owned())
+}
+
 /// Whether the versions host may serve this backend type's remote version list.
 ///
 /// Only a subset of backends benefit from the versions host cache — those

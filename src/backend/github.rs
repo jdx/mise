@@ -5,9 +5,9 @@ use crate::backend::backend_type::BackendType;
 use crate::backend::options::{BackendOptions, VersionOrder};
 use crate::backend::platform_target::PlatformTarget;
 use crate::backend::static_helpers::{
-    ArchiveLayout, get_filename_from_url, install_artifact, lookup_platform_key,
-    lookup_with_fallback, pinned_checksum, template_string, try_release_tags, try_with_v_prefix,
-    verify_artifact,
+    ArchiveLayout, VerifiableError, get_filename_from_url, install_artifact, lookup_platform_key,
+    lookup_with_fallback, pinned_checksum, tag_candidates, template_string, try_release_tags,
+    try_with_v_prefix, verify_artifact,
 };
 use crate::backend::{MISE_BINS_DIR, SecurityFeature, runtime_path_for_install_path};
 use crate::config::{Config, Settings, SettingsExt};
@@ -1289,36 +1289,52 @@ impl UnifiedGitBackend {
     }
 
     /// The release provenance for an asset lives on: the one the asset was
-    /// picked from, or, for an asset that didn't come from a release lookup in
-    /// this command (a lockfile URL), the release `version` resolves to.
+    /// picked from, or for an asset reused from a lockfile, the one its
+    /// download URL names.
     ///
-    /// Not the tag remembered for the version: `mise lock` selects assets for
-    /// several platforms at once, and where two tags spell one version
-    /// (`1.2.3`, `v1.2.3`) with different assets, each job may pick a
-    /// different one.
+    /// Never the tag remembered for the version (`RESOLVED_TAGS`): `mise lock`
+    /// selects assets for several platforms at once, and an install resolves
+    /// its additional assets before the main one, so where two tags spell one
+    /// version (`1.2.3`, `v1.2.3`) with different assets, the remembered tag
+    /// can be the other release. An asset whose release can't be named either
+    /// way is looked up without that memory, preferring the release that
+    /// holds it.
     async fn release_for_asset(
         &self,
         api_url: &str,
         repo: &str,
         version: &str,
         version_prefix: Option<&str>,
-        release_tag: Option<&str>,
+        asset: &ReleaseAsset,
     ) -> Result<github::GithubRelease> {
-        if let Some(tag) = release_tag {
-            return github::get_release_for_url_with_versions_host(api_url, repo, tag, true).await;
+        let tag = asset.release_tag.clone().or_else(|| {
+            crate::backend::release_tag_from_download_url(
+                &asset.url,
+                &self.web_url_base(api_url, repo),
+            )
+        });
+        if let Some(tag) = tag {
+            return github::get_release_for_url_with_versions_host(api_url, repo, &tag, true).await;
         }
-        try_release_tags(
-            version,
-            version_prefix,
-            Some(repo),
-            Some(api_url),
-            None,
-            |candidate| async move {
-                github::get_release_for_url_with_versions_host(api_url, repo, &candidate, true)
-                    .await
-            },
-        )
-        .await
+        let mut first_release = None;
+        let mut not_found = None;
+        for candidate in tag_candidates(version, version_prefix, Some(repo)) {
+            match github::get_release_for_url_with_versions_host(api_url, repo, &candidate, true)
+                .await
+            {
+                Ok(release) if release.assets.iter().any(|a| a.name == asset.name) => {
+                    return Ok(release);
+                }
+                Ok(release) => {
+                    first_release.get_or_insert(release);
+                }
+                Err(e) if e.is_not_found() => not_found = Some(e),
+                Err(e) => return first_release.ok_or(e),
+            }
+        }
+        first_release.ok_or_else(|| {
+            not_found.unwrap_or_else(|| eyre::eyre!("No matching release found for {version}"))
+        })
     }
 
     /// Detect what provenance type is available for a release by checking its assets
@@ -1338,13 +1354,7 @@ impl UnifiedGitBackend {
         let version_prefix = opts.version_prefix();
 
         let release = self
-            .release_for_asset(
-                &api_url,
-                &repo,
-                version,
-                version_prefix,
-                asset.release_tag.as_deref(),
-            )
+            .release_for_asset(&api_url, &repo, version, version_prefix, asset)
             .await
             .ok();
         let Some(release) = release else {
@@ -1534,13 +1544,7 @@ impl UnifiedGitBackend {
             let version = &tv.version;
             let version_prefix = opts.version_prefix();
             let release = self
-                .release_for_asset(
-                    &api_url,
-                    &repo,
-                    version,
-                    version_prefix,
-                    asset.release_tag.as_deref(),
-                )
+                .release_for_asset(&api_url, &repo, version, version_prefix, asset)
                 .await?;
 
             let asset_names: Vec<String> = release.assets.iter().map(|a| a.name.clone()).collect();
@@ -3051,13 +3055,7 @@ impl UnifiedGitBackend {
         // Try to get the release (with version prefix support)
         let version_prefix = opts.version_prefix();
         let release = match self
-            .release_for_asset(
-                api_url,
-                &repo,
-                version,
-                version_prefix,
-                asset.release_tag.as_deref(),
-            )
+            .release_for_asset(api_url, &repo, version, version_prefix, asset)
             .await
         {
             Ok(r) => r,
@@ -3384,9 +3382,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_provenance_release_is_the_one_the_asset_came_from() {
-        // `1.2.3` and `v1.2.3` both name version 1.2.3, with different assets.
-        // The version's remembered tag is `v1.2.3`, but an asset picked from
-        // `1.2.3` must have its provenance looked up on `1.2.3`.
+        // `1.2.3` and `v1.2.3` both name version 1.2.3, with different assets,
+        // and `v1.2.3` is the tag remembered for the version. An asset from
+        // `1.2.3` must have its provenance looked up on `1.2.3`, whether it
+        // was just selected, reused from a lockfile URL, or can't be placed.
         let mut server = mockito::Server::new_async().await;
         let repo = "owner/two-tags-provenance";
         let v_tag = server
@@ -3406,23 +3405,94 @@ mod tests {
             .expect(1)
             .create_async()
             .await;
-
-        let backend = create_test_backend();
         let api_url = server.url();
-        let remembered = backend
-            .release_for_asset(&api_url, repo, "1.2.3", None, None)
-            .await
-            .unwrap();
+
+        let remembered = try_release_tags(
+            "1.2.3",
+            None,
+            Some(repo),
+            Some(&api_url),
+            None,
+            |candidate| {
+                let api_url = api_url.clone();
+                async move {
+                    github::get_release_for_url_with_versions_host(&api_url, repo, &candidate, true)
+                        .await
+                }
+            },
+        )
+        .await
+        .unwrap();
         assert_eq!(remembered.tag_name, "v1.2.3");
 
-        let from_asset = backend
-            .release_for_asset(&api_url, repo, "1.2.3", None, Some("1.2.3"))
-            .await
-            .unwrap();
-        assert_eq!(from_asset.tag_name, "1.2.3");
-        assert_eq!(from_asset.assets[0].name, "tool-linux.tar.gz");
+        let backend = create_test_backend();
+        let linux_asset = |url: String, release_tag: Option<&str>| ReleaseAsset {
+            name: "tool-linux.tar.gz".to_string(),
+            url,
+            url_api: String::new(),
+            digest: None,
+            release_tag: release_tag.map(str::to_string),
+        };
+        for (case, asset) in [
+            (
+                "selected",
+                linux_asset(
+                    "https://example.com/tool-linux.tar.gz".into(),
+                    Some("1.2.3"),
+                ),
+            ),
+            (
+                "lockfile URL",
+                linux_asset(
+                    format!("{api_url}/{repo}/releases/download/1.2.3/tool-linux.tar.gz"),
+                    None,
+                ),
+            ),
+            (
+                "unplaced",
+                linux_asset("https://example.com/tool-linux.tar.gz".into(), None),
+            ),
+        ] {
+            let release = backend
+                .release_for_asset(&api_url, repo, "1.2.3", None, &asset)
+                .await
+                .unwrap();
+            assert_eq!(release.tag_name, "1.2.3", "{case}");
+        }
         v_tag.assert_async().await;
         bare_tag.assert_async().await;
+    }
+
+    #[test]
+    fn test_release_tag_from_download_url() {
+        let repo = "https://github.com/kubernetes-sigs/kustomize";
+        assert_eq!(
+            crate::backend::release_tag_from_download_url(
+                "https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize/v5.8.1/kustomize_v5.8.1_linux_amd64.tar.gz",
+                repo
+            )
+            .as_deref(),
+            Some("kustomize/v5.8.1")
+        );
+        assert_eq!(
+            crate::backend::release_tag_from_download_url(
+                "https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize%2Fv5.8.1/k.tar.gz",
+                repo
+            )
+            .as_deref(),
+            Some("kustomize/v5.8.1")
+        );
+        for url in [
+            "https://github.com/someone/kustomize/releases/download/v1/k.tar.gz",
+            "https://github.com/kubernetes-sigs/kustomize/releases/download/k.tar.gz",
+            "https://api.github.com/repos/kubernetes-sigs/kustomize/releases/assets/1",
+        ] {
+            assert_eq!(
+                crate::backend::release_tag_from_download_url(url, repo),
+                None,
+                "{url}"
+            );
+        }
     }
 
     fn create_test_backend() -> UnifiedGitBackend {
