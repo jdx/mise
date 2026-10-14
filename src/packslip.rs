@@ -14,7 +14,7 @@ use std::sync::Arc;
 use eyre::{Result, WrapErr, bail, eyre};
 use itertools::Itertools;
 use packslip::model::{Artifact, Resource, ResourceSource, Statement, resource_fits};
-use reqwest::header::{HeaderMap, HeaderValue};
+use reqwest::header::HeaderMap;
 
 use crate::backend::packslip::{
     STATEMENT_FILE, is_safe_relative, locate_dir_in_install, locate_in_install, selected_artifact,
@@ -670,9 +670,14 @@ fn into_place(staging: &Path, dir: &Path, built: Result<()>) -> Result<()> {
     })
 }
 
-/// Fetch a directory of the source repository at `commit` into `dest`,
-/// through the GitHub contents API. Entries that are not plain files or
-/// directories (symlinks, submodules) are left out.
+/// Fetch a directory of the source repository at `commit` into `dest`.
+/// Entries that are not plain files or directories (symlinks, submodules)
+/// are left out.
+///
+/// The listing comes from mise-versions and the files from
+/// raw.githubusercontent.com, neither of which spends the GitHub API's rate
+/// limit. A private repository, which only the user's token can read, is
+/// listed and fetched through the contents API instead.
 async fn fetch_repo_dir(
     repo: &str,
     commit: &str,
@@ -680,53 +685,35 @@ async fn fetch_repo_dir(
     dest: &Path,
     pr: &dyn SingleReport,
 ) -> Result<()> {
-    let url = format!(
-        "https://api.github.com/repos/{repo}/contents/{}?ref={commit}",
-        url_path(rel)
-    );
-    // The client asks for the raw media type on every contents URL, which
-    // is right for a file body and wrong for a directory listing.
-    let mut headers = github::get_headers(&url)?;
-    headers.insert(
-        reqwest::header::ACCEPT,
-        HeaderValue::from_static("application/vnd.github+json"),
-    );
-    let listing: serde_json::Value = HTTP_FETCH.json_with_headers(&url, &headers).await?;
-    let Some(entries) = listing.as_array() else {
-        bail!("{rel} is not a directory of the repository");
-    };
+    let listing = github::list_repo_dir(repo, commit, rel).await?;
     file::create_dir_all(dest)?;
-    for entry in entries {
-        let Some(name) = entry["name"].as_str() else {
-            continue;
-        };
-        if !file::is_plain_file_name(name) {
+    for entry in listing.entries {
+        let name = entry.name;
+        if !file::is_plain_file_name(&name) {
             continue;
         }
-        match entry["type"].as_str() {
-            Some("dir") => {
-                Box::pin(fetch_repo_dir(
-                    repo,
-                    commit,
-                    &format!("{rel}/{name}"),
-                    &dest.join(name),
-                    pr,
-                ))
-                .await?;
+        let path = format!("{rel}/{name}");
+        match entry.kind.as_str() {
+            "dir" => {
+                Box::pin(fetch_repo_dir(repo, commit, &path, &dest.join(&name), pr)).await?;
             }
-            Some("file") => {
-                // Through the contents API rather than the entry's raw
-                // download URL: the client's token, and the raw media type it
-                // sets on contents URLs, apply there, so a private repository
-                // works the same as a public one.
-                let file_url = format!(
-                    "https://api.github.com/repos/{repo}/contents/{}?ref={commit}",
-                    url_path(&format!("{rel}/{name}"))
-                );
-                pr.set_message(format!("download {rel}/{name}"));
+            "file" => {
+                let file_url = if listing.private {
+                    // The client sets the raw media type on contents URLs.
+                    format!(
+                        "https://api.github.com/repos/{repo}/contents/{}?ref={commit}",
+                        url_path(&path)
+                    )
+                } else {
+                    format!(
+                        "https://raw.githubusercontent.com/{repo}/{commit}/{}",
+                        url_path(&path)
+                    )
+                };
+                pr.set_message(format!("download {path}"));
                 HTTP.download_file_with_headers(
                     &file_url,
-                    &dest.join(name),
+                    &dest.join(&name),
                     &github::get_headers(&file_url)?,
                     Some(pr),
                 )
