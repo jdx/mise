@@ -192,6 +192,7 @@ impl TaskFetcher {
                     provider.get_local_artifact(&source).await?
                 };
                 let local_path = artifact.path;
+                crate::config::trust_check_remote_task_file(&original.config_source, &local_path)?;
                 let config_root = original
                     .config_root
                     .clone()

@@ -197,7 +197,7 @@ async fn verify_attestation_uncached(
     let mut digest = None;
     if use_versions_host_for_attestations(api_url, use_versions_host) {
         let artifact_digest = mise_sigstore::calculate_file_digest(artifact_path).await?;
-        match crate::versions_host::github_attestations(
+        match mirrored_attestations(
             &format!("{owner}/{repo}"),
             &format!("sha256:{artifact_digest}"),
         )
@@ -381,7 +381,7 @@ pub async fn detect_attestations(
     use_versions_host: bool,
 ) -> Result<bool, DetectError> {
     if use_versions_host_for_attestations(Some(api_url), use_versions_host) {
-        match crate::versions_host::github_attestations(&format!("{owner}/{repo}"), digest).await {
+        match mirrored_attestations(&format!("{owner}/{repo}"), digest).await {
             Ok(Some(attestations)) if !attestations.is_empty() || mirror_may_answer_none() => {
                 trace!(
                     "got {} GitHub attestation probes for {owner}/{repo}@{digest} from mise-versions",
@@ -449,6 +449,65 @@ pub async fn detect_attestations_with_predicate_type(
 /// records no provenance, so paranoid mode confirms it with GitHub instead,
 /// at the cost of one API call per unattested artifact. "Yes" needs no
 /// confirmation: it only leads to verification.
+/// How long a set of attestations from mise-versions is kept on disk.
+const MIRRORED_ATTESTATIONS_TTL: std::time::Duration =
+    std::time::Duration::from_secs(7 * 24 * 60 * 60);
+
+type MirroredAttestations = Option<Vec<mise_sigstore::Attestation>>;
+type MirroredAttestationsCell = std::sync::Arc<tokio::sync::OnceCell<MirroredAttestations>>;
+static MIRRORED_ATTESTATIONS: std::sync::LazyLock<
+    std::sync::Mutex<std::collections::HashMap<String, MirroredAttestationsCell>>,
+> = std::sync::LazyLock::new(Default::default);
+
+/// mise-versions' attestations for `repo` at `digest`, asked for once per
+/// command and kept in the cache dir.
+///
+/// The set for a digest only grows, and every caller verifies what it gets
+/// against the artifact and asks GitHub when that fails, so a kept set
+/// answers as well as a fresh one. `mise lock` asks for one digest to detect
+/// provenance and again to verify it, and again for every platform sharing
+/// the artifact; reinstalling a build asks again. Within a command every
+/// answer is shared; only a non-empty set is written to disk, since an empty
+/// one may predate the attestation. Paranoid mode always asks.
+///
+/// Routing is checked before either cache is read: once `url_replacements`
+/// sends this repository's endpoints elsewhere, that replacement is the only
+/// source, and a set kept from mise-versions earlier must not answer for it.
+async fn mirrored_attestations(repo: &str, digest: &str) -> eyre::Result<MirroredAttestations> {
+    if !crate::versions_host::enabled_for_github_repo(repo) {
+        return Ok(None);
+    }
+    if mise_settings::Settings::get().paranoid {
+        return crate::versions_host::github_attestations(repo, digest).await;
+    }
+    let key = format!(
+        "attestations-{}",
+        crate::hash::hash_to_str(&(repo.to_ascii_lowercase(), digest))
+    );
+    let cell = MIRRORED_ATTESTATIONS
+        .lock()
+        .unwrap()
+        .entry(key.clone())
+        .or_default()
+        .clone();
+    cell.get_or_try_init(async || {
+        crate::cache::CacheManagerBuilder::new(
+            crate::dirs::CACHE
+                .join("github")
+                .join(format!("{key}.msgpack.z")),
+        )
+        .with_fresh_duration(Some(MIRRORED_ATTESTATIONS_TTL))
+        .build::<MirroredAttestations>()
+        .get_or_try_init_async_if(
+            || crate::versions_host::github_attestations(repo, digest),
+            |attestations| attestations.as_ref().is_some_and(|a| !a.is_empty()),
+        )
+        .await
+    })
+    .await
+    .cloned()
+}
+
 fn mirror_may_answer_none() -> bool {
     !mise_settings::Settings::get().paranoid
 }
@@ -727,6 +786,47 @@ mod tests {
         )));
     }
 
+    #[tokio::test]
+    async fn test_mirrored_attestations_survive_the_disk_cache() {
+        // The bundle is arbitrary JSON; it has to come back out of the
+        // msgpack cache file as the same value for verification to use it.
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("attestations.msgpack.z");
+        let bundle = serde_json::json!({
+            "mediaType": "application/vnd.dev.sigstore.bundle.v0.3+json",
+            "verificationMaterial": {"tlogEntries": [{"logIndex": "1", "integratedTime": 2}]},
+            "dsseEnvelope": {"payload": "e30=", "signatures": [{"sig": "AA=="}]},
+        });
+        let attestation: mise_sigstore::Attestation =
+            serde_json::from_value(serde_json::json!({"bundle": bundle, "bundle_url": null}))
+                .unwrap();
+        let write = crate::cache::CacheManagerBuilder::new(&path)
+            .with_fresh_duration(Some(MIRRORED_ATTESTATIONS_TTL))
+            .build::<MirroredAttestations>();
+        write.write(&Some(vec![attestation])).unwrap();
+
+        let read = crate::cache::CacheManagerBuilder::new(&path)
+            .with_fresh_duration(Some(MIRRORED_ATTESTATIONS_TTL))
+            .build::<MirroredAttestations>();
+        let cached = read
+            .get_or_try_init_async_if(
+                async || -> eyre::Result<MirroredAttestations> {
+                    panic!("a fresh cached set must not be fetched again")
+                },
+                |a| a.as_ref().is_some_and(|a| !a.is_empty()),
+            )
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(cached.len(), 1);
+        assert!(cached[0].has_inline_bundle());
+        assert_eq!(
+            serde_json::to_value(&cached[0]).unwrap()["bundle"],
+            bundle,
+            "the bundle changed on its way through the cache"
+        );
+    }
+
     #[test]
     fn test_cached_attestation_verification_accepts_only_success() {
         assert!(matches!(
@@ -855,6 +955,29 @@ mod tests {
             Some(crate::github::API_URL),
             true
         ));
+    }
+
+    #[tokio::test]
+    async fn test_mirrored_attestations_defer_to_a_repository_url_replacement() {
+        // A set this command already got from mise-versions, then a rule that
+        // reroutes only this repository: the kept set must not answer for it.
+        let repo = "acme/attested-tool";
+        let digest = "sha256:0";
+        let key = format!(
+            "attestations-{}",
+            crate::hash::hash_to_str(&(repo.to_ascii_lowercase(), digest))
+        );
+        let attestation: mise_sigstore::Attestation =
+            serde_json::from_value(serde_json::json!({"bundle": {}, "bundle_url": null})).unwrap();
+        let cell = MirroredAttestationsCell::default();
+        cell.set(Some(vec![attestation])).unwrap();
+        MIRRORED_ATTESTATIONS.lock().unwrap().insert(key, cell);
+
+        let _settings = SettingsGuard::new(Some(indexmap::indexmap! {
+            "https://api.github.com/repos/acme/attested-tool/".to_string()
+                => "https://github-proxy.example.com/repos/acme/attested-tool/".to_string(),
+        }));
+        assert!(mirrored_attestations(repo, digest).await.unwrap().is_none());
     }
 
     #[test]

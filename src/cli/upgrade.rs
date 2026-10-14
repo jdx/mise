@@ -107,6 +107,17 @@ pub(crate) struct Upgrade {
     #[usage(long)]
     dry_run_code: bool,
 
+    /// Skip confirmation when installing missing plugin system dependencies.
+    /// Set internally by `mise bootstrap --yes`; not a user-facing flag.
+    #[usage(skip)]
+    yes: bool,
+
+    /// Only upgrade installed tools; leave missing ones to `mise install`.
+    /// Set internally by `mise bootstrap --upgrade`, which installs first, so a
+    /// dry run would otherwise preview each missing tool twice.
+    #[usage(skip)]
+    installed_only: bool,
+
     /// Also upgrade installed tools that the current config does not request
     #[usage(long, verbatim_doc_comment, conflicts = "local")]
     inactive: bool,
@@ -180,6 +191,17 @@ enum PruneMode {
 }
 
 impl Upgrade {
+    /// a bare `mise upgrade` (every configured tool within its range, no
+    /// `--bump`), as run by `mise bootstrap --upgrade`
+    pub(crate) fn new_bare(dry_run: bool, yes: bool) -> Self {
+        Self {
+            dry_run,
+            yes,
+            installed_only: true,
+            ..Default::default()
+        }
+    }
+
     pub(super) fn is_dry_run(&self) -> bool {
         self.dry_run || self.dry_run_code
     }
@@ -540,6 +562,9 @@ impl Upgrade {
                 }
             }
         }
+        if self.installed_only {
+            outdated.retain(|o| o.current.is_some());
+        }
         if self.for_auto_update {
             // Another version of the same tool can opt out: `auto_update` upgrades
             // only the requests that enable it. It also only moves an installed
@@ -635,7 +660,7 @@ impl Upgrade {
                 )
                 .await
                 .into_iter()
-                .filter(|o| o.bump.is_some())
+                .filter(|o| o.bump.is_some() && (!self.installed_only || o.current.is_some()))
                 .collect::<Vec<_>>()
             };
             if bump_outdated.is_empty() && !has_explicit_config_bumps {
@@ -846,6 +871,8 @@ impl Upgrade {
                 ..Default::default()
             },
             locked: false,
+            yes: self.yes || Settings::get().yes,
+            explicit_yes: self.yes || Settings::cli_yes(),
             ..Default::default()
         };
 

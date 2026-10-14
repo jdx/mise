@@ -16,6 +16,7 @@ use super::install::Install;
 use super::plugins::install::install_plugin;
 use super::run;
 use super::system::{export, import, install, prune, status, upgrade, r#use};
+use super::upgrade::Upgrade;
 use crate::config::{self, Config, Settings, SettingsExt};
 use crate::dirs;
 use crate::path::PathExt;
@@ -199,6 +200,17 @@ pub(crate) struct Bootstrap {
     /// `--update`, a reused checkout stays at its current commit.
     #[usage(long)]
     update: bool,
+
+    /// Upgrade installed packages and tools as well as installing missing ones
+    ///
+    /// In the packages phase, runs the equivalent of `mise bootstrap packages
+    /// upgrade` after installing; in the tools phase, runs `mise upgrade`
+    /// (without `--bump`) after installing. Package pins and tool version
+    /// ranges are respected. Does not update mise itself, repositories, or
+    /// container images, and does not restart services; see `--update` for
+    /// repositories and `mise self-update` for mise.
+    #[usage(long)]
+    upgrade: bool,
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, usage_rs::ValueEnum)]
@@ -2087,15 +2099,7 @@ impl Bootstrap {
             } else {
                 info!("bootstrap: system packages");
                 follow_up.add_package_skips(&mgrs).await;
-                let opts = DriverOpts {
-                    manager: None,
-                    explicit: false,
-                    allow_unavailable_manager: false,
-                    dry_run: self.dry_run,
-                    update: self.update,
-                    yes: self.yes,
-                };
-                driver::run(mgrs, Action::Install, &opts).await?;
+                self.run_package_actions(mgrs).await?;
             }
             if !has_plugin_packages {
                 self.run_hooks(&config, &hooks, BootstrapHookPhase::PostPackages)
@@ -2370,6 +2374,10 @@ impl Bootstrap {
                 .await?;
             info!("bootstrap: tools");
             Install::new_bare(self.dry_run, self.yes).run().await?;
+            if self.upgrade {
+                info!("bootstrap: upgrading tools");
+                Upgrade::new_bare(self.dry_run, self.yes).run().await?;
+            }
             if !self.dry_run {
                 config = Config::reset().await?;
                 hooks = system::hooks_from_config(&config);
@@ -2386,19 +2394,7 @@ impl Bootstrap {
             if !mgrs.is_empty() {
                 info!("bootstrap: plugin packages");
                 follow_up.add_package_skips(&mgrs).await;
-                driver::run(
-                    mgrs,
-                    Action::Install,
-                    &DriverOpts {
-                        manager: None,
-                        explicit: false,
-                        allow_unavailable_manager: false,
-                        dry_run: self.dry_run,
-                        update: self.update,
-                        yes: self.yes,
-                    },
-                )
-                .await?;
+                self.run_package_actions(mgrs).await?;
             }
             if self.dry_run {
                 for (name, requests) in system::pending_plugin_packages_from_config(&config) {
@@ -2668,6 +2664,31 @@ impl Bootstrap {
             }
         }
         Ok(true)
+    }
+
+    /// Installs missing packages, then with `--upgrade` upgrades installed ones.
+    /// `Action::Upgrade` skips packages that are not installed and refreshes
+    /// metadata itself, so it needs neither a prior install nor `update`.
+    async fn run_package_actions(&self, mgrs: Vec<system::ManagerPackages>) -> Result<()> {
+        let opts = |update: bool| DriverOpts {
+            manager: None,
+            explicit: false,
+            allow_unavailable_manager: false,
+            dry_run: self.dry_run,
+            update,
+            yes: self.yes,
+            install_previewed: false,
+        };
+        if self.upgrade {
+            driver::run(mgrs.clone(), Action::Install, &opts(self.update)).await?;
+            info!("bootstrap: upgrading packages");
+            let upgrade_opts = DriverOpts {
+                install_previewed: self.dry_run,
+                ..opts(false)
+            };
+            return driver::run(mgrs, Action::Upgrade, &upgrade_opts).await;
+        }
+        driver::run(mgrs, Action::Install, &opts(self.update)).await
     }
 
     async fn run_hooks(

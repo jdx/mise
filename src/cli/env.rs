@@ -35,6 +35,10 @@ use indexmap::IndexSet;
     example("execx($(mise env -s xonsh))", help = "Same, for xonsh"),
     example("mise env --json", help = "Print the variables as JSON"),
     example(
+        "mise env --paths",
+        help = "List the PATH entries mise manages, such as tool bin directories"
+    ),
+    example(
         "mise env --dotenv > .env",
         help = "Write a dotenv file; it contains secret values"
     )
@@ -67,6 +71,10 @@ pub(crate) struct Env {
     /// Only show values of environment variables
     #[usage(long)]
     values: bool,
+
+    /// Print the PATH entries mise manages, in PATH order, one per line
+    #[usage(long)]
+    paths: bool,
 }
 
 impl Env {
@@ -90,6 +98,13 @@ impl Env {
             warn!("failed to create shims for lazy tools: {err:#}");
         }
         ts.notify_missing_versions(missing);
+
+        if self.paths {
+            for path in ts.managed_path_entries(&config).await? {
+                miseprintln!("{}", path.display());
+            }
+            return Ok(());
+        }
 
         // Pre-compute final_env when needed by --redacted or --dotenv to
         // avoid calling it twice. final_env includes the tools-only pass

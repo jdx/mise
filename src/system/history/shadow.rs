@@ -2978,9 +2978,12 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let repo = repo(tmp.path());
         let blob = repo.hash_blob(b"secret").unwrap();
-        // about 40k characters of paths, more than one command line holds
-        let paths: Vec<String> = (0..1200)
-            .map(|i| format!("home/.config/encrypted/file-{i:05}.json"))
+        // about 24k characters of paths, more than one command line holds.
+        // `compose` spawns git a couple of times per overlay, so long paths
+        // keep the process count (and the macOS runtime) low.
+        let dir = ["a", "b", "c"].map(|c| c.repeat(60)).join("/");
+        let paths: Vec<String> = (0..120)
+            .map(|i| format!("home/{dir}/file-{i:05}.json"))
             .collect();
         let overlays: Vec<Overlay> = paths
             .iter()
