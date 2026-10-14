@@ -29,7 +29,7 @@ use crate::platform::Platform;
 use crate::plugins::core::CORE_PLUGINS;
 use crate::plugins::{PluginType, VERSION_REGEX, is_python_prerelease};
 use crate::registry::{
-    REGISTRY, RegistryIdiomaticFile, full_to_url, normalize_remote, tool_enabled,
+    REGISTRY, RegistryIdiomaticFile, RegistryTool, full_to_url, normalize_remote, tool_enabled,
 };
 use crate::runtime_symlinks::is_runtime_symlink;
 use crate::semver::semver_triplet;
@@ -142,6 +142,71 @@ pub(crate) fn backend_arg_is_preferred_registry_backend(ba: &BackendArg) -> bool
     REGISTRY
         .get(ba.short.as_str())
         .is_some_and(|rt| rt.backends.first().is_some_and(|b| b.full == full))
+}
+
+/// A backend as the registry spells it, so an explicit backend arg can be
+/// matched with the registry tool that prefers it: a packslip project with its
+/// forge host (`jdx/fnox` is `github.com/jdx/fnox`), an aqua alias as the
+/// package it stands for, and a forge repository without case, which the forge
+/// ignores too.
+fn registry_backend_key(full: &str) -> String {
+    match full.split_once(':') {
+        Some(("packslip", project)) => packslip::project_name(project)
+            .map(|project| format!("packslip:{project}"))
+            .unwrap_or_else(|_| full.to_string()),
+        Some(("aqua", id)) => format!(
+            "aqua:{}",
+            crate::aqua::standard_registry::canonical_package_id(id)
+        ),
+        Some(("github" | "gitlab" | "forgejo", _)) => full.to_ascii_lowercase(),
+        _ => full.to_string(),
+    }
+}
+
+/// The registry tool whose mise-versions list is `ba`'s remote version list.
+///
+/// A registry tool reads the list published under its own short name, when it
+/// is on its preferred backend. A backend arg with no registry entry of its
+/// own, like `aqua:jqlang/jq`, reads the list of the tool whose preferred
+/// backend it names, since that list is generated from the same listing.
+/// Not when several tools prefer that backend, which leaves no one list to
+/// pick, and not when the registry sets options on it: the arg does not
+/// inherit them, so a list generated with them (a `version_prefix`, a direct
+/// `url` that keeps asset-less releases) need not describe the arg's own.
+/// Nor for an aqua package while a custom aqua registry, searched before the
+/// official one the list was generated from, may define it differently.
+/// `registry_options_shape_listing = false` is for a caller whose use of the
+/// list no registry option changes.
+pub(crate) fn versions_host_tool(
+    ba: &BackendArg,
+    registry_options_shape_listing: bool,
+) -> Option<&'static str> {
+    if let Some(rt) = REGISTRY.get(ba.short.as_str()) {
+        return backend_arg_is_preferred_registry_backend(ba).then_some(rt.short);
+    }
+    static PREFERRED_BY: Lazy<HashMap<String, Vec<&'static RegistryTool>>> = Lazy::new(|| {
+        let mut map: HashMap<String, Vec<&'static RegistryTool>> = HashMap::new();
+        // An alias is stored as a copy of its tool: index each tool once.
+        for (_, rt) in REGISTRY.iter().filter(|(name, rt)| *name == rt.short) {
+            if let Some(backend) = rt.backends.first() {
+                map.entry(registry_backend_key(backend.full))
+                    .or_default()
+                    .push(rt);
+            }
+        }
+        map
+    });
+    let full = ba.full_without_opts();
+    if full.starts_with("aqua:")
+        && !crate::aqua::aqua_registry_wrapper::searches_only_official_registries(&Settings::get())
+    {
+        return None;
+    }
+    let [rt] = PREFERRED_BY.get(&registry_backend_key(&full))?.as_slice() else {
+        return None;
+    };
+    let options = rt.backends.first().map_or(&[][..], |b| b.options);
+    (!registry_options_shape_listing || options.is_empty()).then_some(rt.short)
 }
 
 /// The tag in a release page URL, `<repo_web_url>/releases/tag/<tag>`, as the
@@ -1680,6 +1745,49 @@ mod tests {
     }
 
     #[test]
+    fn test_explicit_backend_arg_reads_the_list_of_the_registry_tool_preferring_it() {
+        let tool = |arg: &str| versions_host_tool(&BackendArg::from(arg), true);
+
+        assert_eq!(tool("jq"), Some("jq"));
+        assert_eq!(tool("aqua:jqlang/jq"), Some("jq"));
+        // An aqua alias names the package it stands for.
+        assert_eq!(tool("aqua:stedolan/jq"), Some("jq"));
+        // Inline options are local options, which callers check themselves.
+        assert_eq!(tool("aqua:jqlang/jq[symlink_bins=true]"), Some("jq"));
+        // A tool's aliases are copies of it, not other tools preferring its backend.
+        assert_eq!(
+            tool("aqua:google-antigravity/antigravity-cli"),
+            Some("antigravity-cli")
+        );
+        // GitHub ignores the case of a repository.
+        assert_eq!(tool("github:allure-framework/allure2"), Some("allure"));
+        assert_eq!(tool("github:Allure-Framework/Allure2"), Some("allure"));
+
+        // A later backend of an entry lists other versions than the published list.
+        assert_eq!(tool("asdf:mise-plugins/asdf-jq"), None);
+        assert_eq!(tool("github:jdx/fnox"), None);
+        // crane and go-containerregistry both prefer this backend: no one list to pick.
+        assert_eq!(tool("aqua:google/go-containerregistry"), None);
+        // The list was generated with `version_prefix = "libsql-server-v"`, which an
+        // explicit arg does not inherit.
+        assert_eq!(tool("github:tursodatabase/libsql"), None);
+        assert_eq!(tool("aqua:example/not-in-the-registry"), None);
+    }
+
+    #[test]
+    fn test_explicit_packslip_arg_reads_the_catalog_of_the_registry_tool_preferring_it() {
+        let tool = |arg: &str, shape: bool| versions_host_tool(&BackendArg::from(arg), shape);
+
+        // The registry spells the project with its forge host; the arg need not.
+        assert_eq!(tool("packslip:github.com/jdx/fnox", false), Some("fnox"));
+        assert_eq!(tool("packslip:jdx/fnox", false), Some("fnox"));
+        // fnox's preferred backend sets `workflow`, which shapes a generic listing.
+        assert_eq!(tool("packslip:jdx/fnox", true), None);
+        // The registry entry itself inherits that option, so it keeps its list.
+        assert_eq!(tool("fnox", true), Some("fnox"));
+    }
+
+    #[test]
     fn test_runtime_path_for_install_path_remaps_install_subpath() -> Result<()> {
         let temp_dir = tempfile::tempdir()?;
         let short = format!(
@@ -2890,12 +2998,12 @@ pub trait Backend: Debug + Send + Sync {
         let ba = self.ba().clone();
         let id = self.id();
 
-        let use_versions_host = if !Settings::get().use_versions_host {
+        let versions_host_tool = if !Settings::get().use_versions_host {
             trace!(
                 "Skipping versions host for {} because use_versions_host is off",
                 ba.short
             );
-            false
+            None
         } else if has_local_version_listing_override {
             // Checked before the context: an option override now also produces a cache
             // context, and this is the message that names the actual cause.
@@ -2903,18 +3011,21 @@ pub trait Backend: Debug + Send + Sync {
                 "Skipping versions host for {} because local backend opts affect remote version listing",
                 ba.short,
             );
-            false
+            None
         } else if cache_context.is_some() {
             trace!(
                 "Skipping versions host for {} because local context affects remote version listing",
                 ba.short,
             );
-            false
-        } else if let Some(reason) = self.versions_host_skip_reason(listing_opts) {
-            trace!("Skipping versions host for {} because {reason}", ba.short);
-            false
+            None
         } else {
-            true
+            match self.versions_host_tool(listing_opts) {
+                Ok(tool) => Some(tool),
+                Err(reason) => {
+                    trace!("Skipping versions host for {} because {reason}", ba.short);
+                    None
+                }
+            }
         };
 
         // Read-time filter: cache stores the pre-release superset for backends
@@ -2933,8 +3044,8 @@ pub trait Backend: Debug + Send + Sync {
         let fetch = || async {
             trace!("Listing remote versions for {}", ba.to_string());
             // Try versions host first (now returns VersionInfo with timestamps)
-            if use_versions_host {
-                match versions_host::list_versions(&ba.short).await {
+            if let Some(tool) = &versions_host_tool {
+                match versions_host::list_versions(tool).await {
                     Ok(Some(versions)) => {
                         trace!(
                             "Got {} versions from versions host for {}",
@@ -3028,12 +3139,12 @@ pub trait Backend: Debug + Send + Sync {
             return None;
         }
         let opts = resolved_opts.effective();
-        if self.versions_host_skip_reason(opts).is_some()
-            || self
-                .remote_version_cache_context_for(config, opts, false)
-                .await
-                .ok()?
-                .is_some()
+        let tool = self.versions_host_tool(opts).ok()?;
+        if self
+            .remote_version_cache_context_for(config, opts, false)
+            .await
+            .ok()?
+            .is_some()
         {
             return None;
         }
@@ -3041,7 +3152,7 @@ pub trait Backend: Debug + Send + Sync {
         // miss that falls through to the backend's own listing, the paginated
         // release list this hint exists to avoid, and a failure there would be
         // recorded against the tool for the rest of the command.
-        versions_host::list_versions(&ba.short)
+        versions_host::list_versions(&tool)
             .await
             .ok()??
             .into_iter()
@@ -5316,11 +5427,22 @@ pub trait Backend: Debug + Send + Sync {
     /// or `None` when it can. Ignores `use_versions_host` and cache contexts,
     /// which callers check themselves.
     fn versions_host_skip_reason(&self, listing_opts: &ToolVersionOptions) -> Option<String> {
+        self.versions_host_tool(listing_opts).err()
+    }
+
+    /// The tool whose list on the versions host is this backend's remote
+    /// version list, or why the versions host cannot serve it. Ignores
+    /// `use_versions_host` and cache contexts, which callers check themselves.
+    fn versions_host_tool(
+        &self,
+        listing_opts: &ToolVersionOptions,
+    ) -> std::result::Result<String, String> {
         let ba = self.ba();
         let backend_type = self.get_type();
         if !versions_host_applies(&backend_type, listing_opts) {
-            return Some(format!("{backend_type} backend has a direct source"));
+            return Err(format!("{backend_type} backend has a direct source"));
         }
+        let tool;
         if let Some(plugin) = self.plugin()
             && let Ok(Some(remote_url)) = plugin.get_remote_url()
         {
@@ -5332,22 +5454,28 @@ pub trait Backend: Debug + Send + Sync {
                 .and_then(|rt| rt.backends().first().map(|b| full_to_url(b)))
                 .unwrap_or_default();
             if normalized_remote != normalize_remote(&shorthand_remote).unwrap_or_default() {
-                return Some("it has a non-default remote".to_string());
+                return Err("it has a non-default remote".to_string());
             }
+            tool = ba.short.clone();
+        } else if let Some(registry_tool) = versions_host_tool(ba, true) {
+            tool = registry_tool.to_string();
         } else if !REGISTRY.contains_key(ba.short.as_str()) {
-            return Some("it is not in the registry".to_string());
-        } else if !backend_arg_is_preferred_registry_backend(ba) {
+            return Err(format!(
+                "it is not in the registry, and {} is not the option-free preferred backend of exactly one registry tool",
+                ba.full_without_opts()
+            ));
+        } else {
             // For non-plugin backends (e.g. github:, cargo:), check if the backend is the
             // registry's preferred one. When a user aliases a tool to a different backend
             // (e.g. `php = "github:verzly/php"`), or a `min_version` boundary routes an
             // older request to a later backend, the versions host would return the
             // preferred backend's versions, which do not describe the resolved backend.
-            return Some(format!("backend {} is not the registry default", ba.full()));
+            return Err(format!("backend {} is not the registry default", ba.full()));
         }
-        if !versions_host::lists_versions_for(&ba.short) {
-            return Some("the versions host does not list it".to_string());
+        if !versions_host::lists_versions_for(&tool) {
+            return Err("the versions host does not list it".to_string());
         }
-        None
+        Ok(tool)
     }
 
     /// The key of the remote-version cache entry these listing options select.

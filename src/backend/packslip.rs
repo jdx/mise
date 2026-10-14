@@ -1032,27 +1032,36 @@ impl PackslipBackend {
         repository(project).map(|(_, owner, repo)| format!("{owner}/{repo}"))
     }
 
-    /// Whether mise-versions stands in for api.github.com. It catalogs the
-    /// versions of a registry tool's preferred backend, which for a packslip
-    /// tool is the same listing [`Self::vendor_versions`] makes (its update
-    /// job runs `mise ls-remote`), and it mirrors that repository's releases.
-    /// Which of those versions this client accepts is still decided here:
-    /// the signed list, stamps and every manifest are read and verified on
-    /// each resolution, so a stale catalog can only hold back a new release,
-    /// never admit one that policy refuses.
-    fn versions_host_applies(&self) -> bool {
-        Settings::get().use_versions_host
-            && crate::backend::backend_arg_is_preferred_registry_backend(&self.ba)
+    /// The tool whose catalog on mise-versions stands in for api.github.com,
+    /// if there is one. mise-versions catalogs the versions of a registry
+    /// tool's preferred backend, which for a packslip tool is the same listing
+    /// [`Self::vendor_versions`] makes (its update job runs `mise ls-remote`),
+    /// and it mirrors that repository's releases. Which of those versions this
+    /// client accepts is still decided here: the signed list, stamps and every
+    /// manifest are read and verified on each resolution, so a stale catalog
+    /// can only hold back a new release, never admit one that policy refuses.
+    ///
+    /// The tool is this arg's own registry entry, or the one registry tool
+    /// whose preferred backend an explicit `packslip:jdx/fnox` names. Registry
+    /// options the explicit arg does not inherit (fnox's `workflow`) do not
+    /// rule it out, by the same argument: a version they kept out of the
+    /// catalog is only held back, and every version in it is still verified
+    /// with this arg's own options.
+    fn versions_host_tool(&self) -> Option<&'static str> {
+        if !Settings::get().use_versions_host {
+            return None;
+        }
+        crate::backend::versions_host_tool(&self.ba, false)
     }
 
     /// Every release carrying a packslip, oldest first, from mise-versions.
     /// `None` sends the caller to GitHub, for a tool the host does not
     /// describe or has nothing for.
     async fn mirrored_versions(&self) -> Result<Option<Vec<VersionInfo>>> {
-        if !self.versions_host_applies() {
+        let Some(tool) = self.versions_host_tool() else {
             return Ok(None);
-        }
-        let versions = match crate::versions_host::list_versions(&self.ba.short).await {
+        };
+        let versions = match crate::versions_host::list_versions(tool).await {
             Ok(Some(versions)) => versions,
             Ok(None) => return Ok(None),
             Err(err) => {
@@ -1358,7 +1367,7 @@ impl PackslipBackend {
             return Ok(Some(latest.clone()));
         }
         // The release mirror serves any public repo, unlike the per-tool
-        // catalog `versions_host_applies` guards.
+        // catalog `versions_host_tool` guards.
         let release = match github::get_release_with_versions_host(&repo, "latest", true).await {
             Ok(release) => release,
             Err(err) if crate::http::error_code(&err) == Some(404) => return Ok(None),
