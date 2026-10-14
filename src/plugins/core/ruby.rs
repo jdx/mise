@@ -278,9 +278,10 @@ impl RubyPlugin {
     }
 
     async fn latest_ruby_build_version(&self) -> Result<String> {
-        let release: GithubRelease = HTTP_FETCH
-            .json("https://api.github.com/repos/rbenv/ruby-build/releases/latest")
-            .await?;
+        // Through mise-versions, like every GitHub release lookup: asked on
+        // every `ls-remote ruby`, this would otherwise spend the GitHub API's
+        // 60 unauthenticated requests an hour.
+        let release = github::get_release("rbenv/ruby-build", "latest").await?;
         Ok(release.tag_name.trim_start_matches('v').to_string())
     }
 
