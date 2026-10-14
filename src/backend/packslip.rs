@@ -376,13 +376,38 @@ where
     Ok(None)
 }
 
-/// Drop the matches after `eligible` from an oldest-first list, or every
-/// match when none is eligible.
-fn keep_through(versions: &mut Vec<String>, eligible: Option<&str>) {
-    let keep = eligible
-        .and_then(|eligible| versions.iter().position(|v| v == eligible))
+/// The oldest-first `matches` for `query`, ending at the newest one `admits`
+/// accepts, which is the one a resolution takes. The matches are tried newest
+/// first, as `latest` tries its candidates. An exact version is left alone: it
+/// names its release, and install says why that release is refused. When
+/// every match is refused this is an error, since an empty answer would send
+/// resolution on to install `query` as written, which fails for want of a
+/// release by that name.
+async fn eligible_matches<F, Fut>(
+    project: &str,
+    query: &str,
+    mut matches: Vec<String>,
+    admits: F,
+) -> Result<Vec<String>>
+where
+    F: FnMut(String) -> Fut,
+    Fut: std::future::Future<Output = Result<bool>>,
+{
+    if matches.is_empty() || matches.iter().any(|v| v == query) {
+        return Ok(matches);
+    }
+    let newest_first = matches.iter().rev().cloned().collect();
+    let Some(eligible) = first_eligible(newest_first, admits).await? else {
+        bail!(
+            "no release of packslip:{project} matching {query} can be installed; the warnings above say why each was skipped"
+        );
+    };
+    let keep = matches
+        .iter()
+        .position(|v| *v == eligible)
         .map_or(0, |index| index + 1);
-    versions.truncate(keep);
+    matches.truncate(keep);
+    Ok(matches)
 }
 
 fn github_recommendation(
@@ -1830,29 +1855,26 @@ impl PackslipBackend {
             .await
     }
 
-    /// The first of `candidates` that verifies and that policy admits on this
-    /// host, warning about each one skipped. A verification failure is an
-    /// error, not a reason to try the next.
-    async fn first_eligible_candidate(
+    /// Whether `version` verifies and policy admits it on this host, warning
+    /// when it is skipped. A verification failure is an error, not a reason to
+    /// try the next candidate.
+    async fn admits(
         &self,
         project: &str,
+        version: String,
         opts: &PackslipOptions<'_>,
         pin: &Pin,
         before: Option<jiff::Timestamp>,
         stamps: Option<&crate::packslip_stamps::Stamps>,
-        candidates: Vec<String>,
-    ) -> Result<Option<String>> {
-        first_eligible(candidates, |version| async move {
-            if let Some(reason) = self
-                .candidate_exclusion(project, &version, opts, pin, before, stamps)
-                .await?
-            {
-                warn!("packslip:{project}: skipping {version}: {reason}");
-                return Ok(false);
-            }
-            Ok(true)
-        })
-        .await
+    ) -> Result<bool> {
+        if let Some(reason) = self
+            .candidate_exclusion(project, &version, opts, pin, before, stamps)
+            .await?
+        {
+            warn!("packslip:{project}: skipping {version}: {reason}");
+            return Ok(false);
+        }
+        Ok(true)
     }
 
     async fn policy_versions(
@@ -2496,8 +2518,11 @@ impl Backend for PackslipBackend {
                 "packslip:{project}: skipping recommended {preferred}: absent, withdrawn, or excluded prerelease"
             );
         }
-        self.first_eligible_candidate(&project, &opts, &pin, before, stamps.as_ref(), candidates)
-            .await
+        let stamps = stamps.as_ref();
+        first_eligible(candidates, |version| {
+            self.admits(&project, version, &opts, &pin, before, stamps)
+        })
+        .await
     }
 
     /// The matches for a request such as `1` or `1.2`, oldest first. Every
@@ -2528,8 +2553,9 @@ impl Backend for PackslipBackend {
         let versions = versions.into_iter().map(|v| v.version).collect();
         let filter = !self.include_prereleases(selection_opts);
         let versions = self.fuzzy_match_filter(versions, query, filter);
-        let mut versions = self.version_order(selection_opts)?.order(versions);
-        // Offline, policy cannot be read, as for `latest`.
+        let versions = self.version_order(selection_opts)?.order(versions);
+        // Offline, policy cannot be read, as for `latest`. An exact version
+        // needs no stamps fetched to be left alone.
         if versions.iter().any(|v| v == query) || Settings::get().offline() {
             return Ok(versions);
         }
@@ -2539,19 +2565,11 @@ impl Backend for PackslipBackend {
         let opts = PackslipOptions::new(selection_opts);
         let pin = pin(&project, &opts)?;
         let stamps = crate::packslip_stamps::fetch(&project, selection_opts).await?;
-        let newest_first = versions.iter().rev().cloned().collect();
-        let eligible = self
-            .first_eligible_candidate(&project, &opts, &pin, before, stamps.as_ref(), newest_first)
-            .await?;
-        if eligible.is_none() && !versions.is_empty() {
-            // An empty answer would send resolution on to install `query` as
-            // written, which fails for want of a release by that name.
-            bail!(
-                "no release of packslip:{project} matching {query} can be installed; the warnings above say why each was skipped"
-            );
-        }
-        keep_through(&mut versions, eligible.as_deref());
-        Ok(versions)
+        let stamps = stamps.as_ref();
+        eligible_matches(&project, query, versions, |version| {
+            self.admits(&project, version, &opts, &pin, before, stamps)
+        })
+        .await
     }
 
     async fn install_operation_count(&self, _tv: &ToolVersion, _ctx: &InstallContext) -> usize {
@@ -3221,13 +3239,13 @@ mod tests {
     }
 
     /// `latest` and a prefix such as `1` skip the same refused releases: a
-    /// prefix's matches end at the newest one `latest` would also accept.
+    /// prefix resolves to the newest match `latest` would also accept, older
+    /// than the refused newest one.
     #[tokio::test]
     async fn a_prefix_skips_what_latest_skips() {
-        let listed = ["1.0.0", "1.1.0", "1.2.0", "2.0.0"];
         let refused = ["2.0.0", "1.2.0"];
         let check = |v: String| async move { Ok(!refused.contains(&v.as_str())) };
-        let versions = listed
+        let versions = ["1.0.0", "1.1.0", "1.2.0", "2.0.0"]
             .iter()
             .map(|v| version_info(Some(v.to_string()), None, None).unwrap())
             .collect();
@@ -3239,20 +3257,45 @@ mod tests {
         .unwrap();
         assert_eq!(latest.as_deref(), Some("1.1.0"));
 
-        let mut matches: Vec<String> = listed[..3].iter().map(|v| v.to_string()).collect();
-        let eligible = first_eligible(matches.iter().rev().cloned().collect(), check)
-            .await
-            .unwrap();
-        keep_through(&mut matches, eligible.as_deref());
-        assert_eq!(matches, ["1.0.0", "1.1.0"]);
-        assert_eq!(matches.last(), latest.as_ref());
+        let matches = |list: &[&str]| list.iter().map(|v| v.to_string()).collect::<Vec<_>>();
+        let resolved = eligible_matches(
+            "github.com/example/walk",
+            "1",
+            matches(&["1.0.0", "1.1.0", "1.2.0"]),
+            check,
+        )
+        .await
+        .unwrap();
+        assert_eq!(resolved, ["1.0.0", "1.1.0"]);
+        assert_eq!(resolved.last(), latest.as_ref());
 
-        let mut matches: Vec<String> = vec!["2.0.0".into()];
-        let eligible = first_eligible(matches.iter().rev().cloned().collect(), check)
+        // An exact version is not checked; install says why it is refused.
+        let unchecked = |_: String| async { bail!("an exact version is not walked") };
+        let exact = matches(&["1.2.0"]);
+        assert_eq!(
+            eligible_matches("github.com/example/walk", "1.2.0", exact.clone(), unchecked)
+                .await
+                .unwrap(),
+            exact
+        );
+        // No match is not a refusal.
+        assert!(
+            eligible_matches("github.com/example/walk", "3", vec![], unchecked)
+                .await
+                .unwrap()
+                .is_empty()
+        );
+        // Every match refused is an error rather than an empty answer.
+        let err = eligible_matches("github.com/example/walk", "2", matches(&["2.0.0"]), check)
             .await
-            .unwrap();
-        keep_through(&mut matches, eligible.as_deref());
-        assert!(matches.is_empty());
+            .unwrap_err();
+        assert!(err.to_string().contains("matching 2 can be installed"));
+        // A verification failure stops the walk.
+        let failing = |_: String| async { bail!("signature failure") };
+        let err = eligible_matches("github.com/example/walk", "1", matches(&["1.0.0"]), failing)
+            .await
+            .unwrap_err();
+        assert!(err.to_string().contains("signature failure"));
     }
 
     #[tokio::test]
