@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+
+# A github: tool's versions come from mise-versions' whole release list, one
+# request however many releases the repository has, not from paging.
+
+output="$(MISE_DEBUG=1 mise ls-remote github:cli/cli 2>&1)" || {
+  echo "$output"
+  fail "mise ls-remote failed"
+}
+if [[ $output != *"GET https://mise-versions.jdx.dev/data/github/cli/cli/releases.json"* ]]; then
+  echo "$output"
+  fail "the whole release list was not used"
+fi
+if [[ $output == *"/api/github/repos/cli/cli/releases?page="* ]] || [[ $output == *"GET https://api.github.com/"* ]]; then
+  echo "$output"
+  fail "mise paged through the release list"
+fi
+assert_contains "mise ls-remote github:cli/cli" "2.62.0"

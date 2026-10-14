@@ -39,6 +39,40 @@ impl GithubRelease {
     }
 }
 
+/// What listing versions needs from a release, without its assets: what
+/// mise-versions' whole release list carries, so one request answers for a
+/// repository with any number of releases.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ReleaseVersion {
+    pub tag_name: String,
+    /// See [`GithubRelease::released_at`].
+    pub released_at: String,
+    pub prerelease: bool,
+    pub has_assets: bool,
+}
+
+impl From<GithubRelease> for ReleaseVersion {
+    fn from(release: GithubRelease) -> Self {
+        Self {
+            released_at: release.released_at().to_string(),
+            has_assets: !release.assets.is_empty(),
+            tag_name: release.tag_name,
+            prerelease: release.prerelease,
+        }
+    }
+}
+
+impl From<crate::versions_host::GithubListedRelease> for ReleaseVersion {
+    fn from(release: crate::versions_host::GithubListedRelease) -> Self {
+        Self {
+            released_at: release.date.unwrap_or_default(),
+            has_assets: release.asset_count > 0,
+            tag_name: release.tag,
+            prerelease: release.prerelease,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GithubTag {
     pub name: String,
@@ -102,6 +136,9 @@ static RELEASES_CACHE: Lazy<RwLock<CacheGroup<Vec<GithubRelease>>>> = Lazy::new(
 static RELEASE_CACHE: Lazy<RwLock<CacheGroup<GithubRelease>>> = Lazy::new(Default::default);
 
 static TAGS_CACHE: Lazy<RwLock<CacheGroup<Vec<String>>>> = Lazy::new(Default::default);
+
+static RELEASE_VERSIONS_CACHE: Lazy<RwLock<CacheGroup<Vec<ReleaseVersion>>>> =
+    Lazy::new(Default::default);
 
 static REPOSITORY_CACHE: Lazy<RwLock<CacheGroup<RepositoryIdentity>>> = Lazy::new(Default::default);
 
@@ -439,6 +476,130 @@ fn tags_cache_key(api_url: &str, repo: &str) -> String {
     )
 }
 
+/// `repo`'s whole release or tag list from mise-versions, one request for
+/// any number of entries. `None` sends the caller to the paged mirror
+/// endpoints, never to GitHub: they decide what a 404 means (a private
+/// repository) and report failures. A truncated list is a newest-first
+/// prefix of up to 2,000 entries; the paged endpoints serve fewer, so it is
+/// used as it is.
+async fn whole_list(
+    repo: &str,
+    list: crate::versions_host::GithubList<'_>,
+) -> Option<crate::versions_host::GithubVersionsList> {
+    match crate::versions_host::github_versions_list(repo, list).await {
+        Ok(Some(found)) => {
+            if found.truncated {
+                debug!(
+                    "mise-versions lists the newest entries of {repo}'s {list:?}; older ones are not listed"
+                );
+            }
+            Some(found)
+        }
+        Ok(None) => None,
+        Err(err) => {
+            debug!("mise-versions' whole {list:?} list for {repo} failed, paging instead: {err:#}");
+            None
+        }
+    }
+}
+
+/// `repo`'s releases as listing versions needs them, newest first in
+/// GitHub's order. From mise-versions' whole list when it applies, otherwise
+/// (and for a repository it doesn't list) from the paged release listing,
+/// with `require_assets` as for [`list_releases_including_prereleases_from_url`].
+/// Cached like a release listing.
+pub async fn list_release_versions(
+    api_url: &str,
+    repo: &str,
+    require_assets: bool,
+) -> Result<Vec<ReleaseVersion>> {
+    let key = format!(
+        "{}-versions-{}",
+        format!("{api_url}-{repo}").to_kebab_case(),
+        crate::hash::hash_to_str(&(
+            api_url,
+            repo,
+            require_assets,
+            RELEASE_LIST_CACHE_VERSION,
+            is_public_github_api_base(api_url) && mirror_source(repo)
+        ))
+    );
+    RELEASE_VERSIONS_CACHE
+        .write()
+        .await
+        .entry(key.clone())
+        .or_insert_with(|| {
+            CacheManagerBuilder::new(cache_dir().join(format!("{key}.msgpack.z")))
+                .with_fresh_duration(crate::network::fetch_remote_versions_cache(&Settings::get()))
+                .build()
+        });
+    let caches = RELEASE_VERSIONS_CACHE.read().await;
+    let cache = caches.get(&key).unwrap();
+    Ok(cache
+        .get_or_try_init_async(async || {
+            if mirrors_github_metadata(api_url, repo)
+                && let Some(list) =
+                    whole_list(repo, crate::versions_host::GithubList::Releases).await
+            {
+                return Ok(list.releases.into_iter().map(Into::into).collect());
+            }
+            Ok(
+                list_releases_including_prereleases_from_url(api_url, repo, require_assets)
+                    .await?
+                    .into_iter()
+                    .map(Into::into)
+                    .collect(),
+            )
+        })
+        .await?
+        .clone())
+}
+
+/// [`list_release_versions`] limited to the releases carrying an asset named
+/// `asset`, which mise-versions filters for itself.
+pub async fn list_release_versions_with_asset(
+    repo: &str,
+    asset: &str,
+) -> Result<Vec<ReleaseVersion>> {
+    if mirrors_github_metadata(API_URL, repo)
+        && let Some(list) = whole_list(
+            repo,
+            crate::versions_host::GithubList::ReleasesWithAsset(asset),
+        )
+        .await
+    {
+        return Ok(list.releases.into_iter().map(Into::into).collect());
+    }
+    Ok(list_releases_including_prereleases(repo)
+        .await?
+        .into_iter()
+        .filter(|r| r.assets.iter().any(|a| a.name == asset))
+        .map(Into::into)
+        .collect())
+}
+
+/// The newest stable release in mise-versions' whole list of `repo`'s
+/// releases, when that list was read from GitHub within
+/// `fetch_remote_versions_cache`. It stands in for GitHub's "latest" mark
+/// when that can't be read, as for a release without assets, which
+/// mise-versions doesn't serve; GitHub's mark is the newest stable release
+/// unless a maintainer moved it.
+pub async fn newest_listed_stable_release(repo: &str) -> Option<ReleaseVersion> {
+    let list = whole_list(repo, crate::versions_host::GithubList::Releases).await?;
+    let max_age =
+        crate::duration::parse_duration(&Settings::get().fetch_remote_versions_cache).ok()?;
+    let fetched_at = chrono::DateTime::parse_from_rfc3339(list.fetched_at.as_deref()?).ok()?;
+    let age = chrono::Utc::now().signed_duration_since(fetched_at);
+    if age.to_std().is_ok_and(|age| age > max_age) {
+        debug!("mise-versions' release list for {repo} is {age} old; not taking latest from it");
+        return None;
+    }
+    list.releases
+        .into_iter()
+        .find(|r| !r.prerelease)
+        .map(Into::into)
+}
+
 /// A repository's tags from mise-versions: the first page, or with `list_all`
 /// every page it serves. `Ok(None)` when mise-versions doesn't list the
 /// repository.
@@ -609,6 +770,9 @@ pub async fn list_tags_from_url(api_url: &str, repo: &str) -> Result<Vec<String>
 /// modules' tests have already forced by the time this one runs.
 async fn list_tags_(api_url: &str, repo: &str, list_all: bool) -> Result<Vec<String>> {
     if mirrors_github_tags(api_url, repo) {
+        if let Some(list) = whole_list(repo, crate::versions_host::GithubList::Tags).await {
+            return Ok(list.tags.into_iter().map(|t| t.tag).collect());
+        }
         match list_mirrored_tags(repo, list_all, false).await? {
             Some(tags) => return Ok(tags.into_iter().map(|t| t.name).collect()),
             None => ensure_private_repo_lookup(repo, &format!("GitHub repository {repo}"))?,
@@ -643,6 +807,16 @@ pub async fn list_tags_with_dates(repo: &str) -> Result<Vec<GithubTagWithDate>> 
 
 async fn list_tags_with_dates_(api_url: &str, repo: &str) -> Result<Vec<GithubTagWithDate>> {
     if mirrors_github_tags(api_url, repo) {
+        if let Some(list) = whole_list(repo, crate::versions_host::GithubList::Tags).await {
+            return Ok(list
+                .tags
+                .into_iter()
+                .map(|t| GithubTagWithDate {
+                    name: t.tag,
+                    date: t.date,
+                })
+                .collect());
+        }
         match list_mirrored_tags(repo, true, true).await? {
             Some(tags) => {
                 return Ok(tags

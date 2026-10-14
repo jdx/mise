@@ -32,3 +32,6 @@ no_github_api use fnox@1.39.0
 assert_contains "mise skills ls" "fnox"
 # tomcat is `version_source: github_tag`: its versions are git tags.
 no_github_api latest aqua:apache/tomcat@10
+# kubectl's aqua package reads kubernetes/kubernetes, whose releases have no
+# assets: `latest` comes from mise-versions' whole release list.
+no_github_api latest aqua:kubernetes/kubectl

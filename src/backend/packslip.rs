@@ -1376,21 +1376,21 @@ impl PackslipBackend {
         }
         let asset_name = bundle_name(project);
         // GitHub's prerelease flag is not consulted: the version says.
-        let mut versions: Vec<VersionInfo> = github::list_releases_including_prereleases(repo)
-            .await?
-            .into_iter()
-            .filter(|r| r.assets.iter().any(|a| a.name == asset_name))
-            .filter_map(|r| {
-                version_info(
-                    tag_version(&r.tag_name, project),
-                    Some(r.released_at().to_string()),
-                    Some(format!(
-                        "https://github.com/{repo}/releases/tag/{}",
-                        r.tag_name
-                    )),
-                )
-            })
-            .collect();
+        let mut versions: Vec<VersionInfo> =
+            github::list_release_versions_with_asset(repo, &asset_name)
+                .await?
+                .into_iter()
+                .filter_map(|r| {
+                    version_info(
+                        tag_version(&r.tag_name, project),
+                        Some(r.released_at),
+                        Some(format!(
+                            "https://github.com/{repo}/releases/tag/{}",
+                            r.tag_name
+                        )),
+                    )
+                })
+                .collect();
         versions.reverse();
         Ok(versions)
     }
