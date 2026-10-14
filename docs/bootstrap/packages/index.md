@@ -321,6 +321,11 @@ Missing packages are skipped with a warning; use `apply` to install them. The
 manager decides which version is current. Managers that honor pins upgrade a
 pinned entry to its pin, and each manager's page says what it runs.
 
+To install missing packages and upgrade installed ones in one run, use
+`mise bootstrap --upgrade`. It upgrades packages in the packages phase and
+tools (as `mise upgrade` does, without `--bump`) in the tools phase, before the
+post hooks. It does not update mise itself, repositories, or container images.
+
 ### Import and prune
 
 [`mise bootstrap packages import`](/cli/bootstrap/packages/import.html) records

@@ -178,6 +178,15 @@ enum PruneMode {
 }
 
 impl Upgrade {
+    /// a bare `mise upgrade` (every configured tool within its range, no
+    /// `--bump`), as run by `mise bootstrap --upgrade`
+    pub(crate) fn new_bare(dry_run: bool) -> Self {
+        Self {
+            dry_run,
+            ..Default::default()
+        }
+    }
+
     pub(super) fn is_dry_run(&self) -> bool {
         self.dry_run || self.dry_run_code
     }
