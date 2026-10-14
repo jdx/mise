@@ -251,6 +251,37 @@ impl ToolVersion {
         Ok(tv)
     }
 
+    /// `opts` without the install-time refresh, when `backend` (the one the
+    /// request resolves through, after aliases and registry `min_version`
+    /// boundaries) has a cached list that already holds every release the
+    /// cutoff admits.
+    ///
+    /// The refresh keeps a cached list from hiding a release newer than the
+    /// cache. A cutoff well older than the list (24h by default, against a list
+    /// at most an hour old) already hides every such release, so the cached
+    /// list gives the same answer a refetch would. See
+    /// `Backend::adopt_cached_remote_versions_for_cutoff` for when that holds.
+    async fn without_covered_refresh(
+        config: &Arc<Config>,
+        request: &ToolRequest,
+        backend: &ABackend,
+        opts: &ResolveOptions,
+    ) -> ResolveOptions {
+        let mut opts = opts.clone();
+        if opts.refresh_remote_versions
+            && let Some(before) = opts.before_date
+            && backend
+                .adopt_cached_remote_versions_for_cutoff(config, before)
+                .await
+        {
+            trace!(
+                "not refreshing remote versions for {request}: the release-age cutoff predates the cache"
+            );
+            opts.refresh_remote_versions = false;
+        }
+        opts
+    }
+
     /// Whether a command that runs tools may leave this lazy request unresolved
     /// rather than wait on remote version lists for a tool nobody has run yet.
     /// Installing the tool resolves the request then.
@@ -765,6 +796,7 @@ impl ToolVersion {
         let v = config.resolve_alias(&backend, v).await?;
         let request = request.with_registry_version(&v);
         let backend = request.backend()?;
+        let opts = &Self::without_covered_refresh(config, &request, &backend, opts).await;
 
         // Re-check the lockfile after alias resolution (e.g., "lts" → "24")
         // The initial lockfile check in resolve() uses the unresolved alias which
@@ -1107,6 +1139,7 @@ impl ToolVersion {
     ) -> Result<Self> {
         let request = request.with_registry_version(v);
         let backend = request.backend()?;
+        let opts = &Self::without_covered_refresh(config, &request, &backend, opts).await;
         if v == "latest" && opts.offline {
             let pathname = request.version().replace([':', '/'], "-");
             let path = backend.ba().installs_path().join(&pathname);
@@ -1145,6 +1178,7 @@ impl ToolVersion {
     ) -> Result<Self> {
         let request = request.with_registry_version(prefix);
         let backend = request.backend()?;
+        let opts = &Self::without_covered_refresh(config, &request, &backend, opts).await;
         let settings = Settings::get();
         let is_offline = settings.offline() || opts.offline;
         let prefer_offline =

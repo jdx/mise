@@ -55,6 +55,23 @@ impl SelfUpdateSource {
             && self.repository == DEFAULT_SELF_UPDATE_REPOSITORY
     }
 
+    /// Whether mise's own releases are read from mise-versions instead of
+    /// api.github.com: the default source, unless `use_versions_host` is off.
+    pub(crate) fn uses_versions_host(&self) -> bool {
+        self.is_default() && mise_util::versions_host::enabled_for_github_repo(&self.repository)
+    }
+
+    /// Where to download `asset` from: github.com's release download URL for
+    /// a release read from mise-versions, which isn't API-rate-limited, and
+    /// the API asset endpoint otherwise, which also serves private releases.
+    pub(crate) fn asset_url<'a>(&self, asset: &'a crate::github::GithubAsset) -> &'a str {
+        if self.uses_versions_host() {
+            &asset.browser_download_url
+        } else {
+            &asset.url
+        }
+    }
+
     fn cache_path(&self) -> std::path::PathBuf {
         if self.is_default() {
             dirs::CACHE.join("latest-version")
