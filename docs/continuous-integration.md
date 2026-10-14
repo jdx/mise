@@ -9,11 +9,21 @@ same tools. Run commands with `mise exec` or [`mise run`](/tasks/) to load those
 tools and the project's [environment variables](/environments/). CI does not
 need shell activation.
 
-For reproducible installs, commit a [lockfile](/dev-tools/mise-lock.html) and
-install with `mise install --locked`, which fails when a tool has no recorded
-download for the platform; see
-[strict lockfile mode](/dev-tools/mise-lock.html#strict-lockfile-mode). Pin the
-mise version separately if the pipeline also needs to control updates to mise
+Commit a [lockfile](/dev-tools/mise-lock.html) and install with
+`mise install --locked`. Every job then installs the same versions, and mise
+reads them from `mise.lock` instead of fetching each tool's list of available
+versions, which a fresh runner would otherwise do on every run. Create it with
+an entry for each runner platform:
+
+```sh
+mise lock --platform linux-x64,linux-arm64,macos-arm64
+```
+
+`--locked` fails when a tool has no lockfile entry, instead of looking it up.
+For backends that record download URLs, the entry also needs a URL for the
+current platform; see
+[strict lockfile mode](/dev-tools/mise-lock.html#strict-lockfile-mode). Pin the mise
+version separately if the pipeline also needs to control updates to mise
 itself.
 
 ## GitHub Actions {#github-actions}
@@ -246,7 +256,11 @@ lockfile in the cache key, and use separate caches for jobs that use different
 [config environments](/configuration/environments.html) or install options.
 
 Still run `mise install` after restoring a cache: it installs anything missing,
-and the job must also succeed with an empty cache. See
+and the job must also succeed with an empty cache. Cached version lists count as
+stale after
+[`fetch_remote_versions_cache`](/configuration/settings.html#fetch_remote_versions_cache)
+(1 hour by default), so a restored cache does not save version lookups the way
+a lockfile does. See
 [Directories](/directories.html) for where mise keeps installs and metadata.
 
 ## Trust and untrusted branches {#safe-mode}
