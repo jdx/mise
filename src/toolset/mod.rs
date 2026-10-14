@@ -965,7 +965,11 @@ async fn get_versions_needed_by_tracked_configs_with_progress(
     // remote resolution can never affect the outcome and just adds latency.
     let tracked = config.get_tracked_config_files().await?;
     for (done, (path, cf)) in tracked.clone().into_iter().enumerate() {
-        if let Some(progress) = progress {
+        // Without the animated display each message is a separate log line, so
+        // a long list of configs would flood CI logs and piped output.
+        if let Some(progress) = progress.filter(|_| {
+            crate::ui::multi_progress_report::MultiProgressReport::get().use_tty_install_output()
+        }) {
             progress.set_message(format!(
                 "{}/{} {}",
                 done + 1,
