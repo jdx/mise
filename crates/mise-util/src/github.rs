@@ -411,8 +411,20 @@ where
 fn mirrors_github_tags(api_url: &str, repo: &str) -> bool {
     mirrors_github_metadata(api_url, repo)
         && !crate::versions_host::github_api_url_is_replaced(&format!(
-            "{API_URL}/repos/{repo}/tags?per_page=100"
+            "{}/repos/{repo}/tags?per_page=100",
+            api_url.trim_end_matches('/')
         ))
+}
+
+/// Part of every tag cache key: which source answers for `repo`'s tags, so
+/// turning `use_versions_host` off or adding a `url_replacements` rule starts
+/// from a fresh cache, as release lists do (see [`mirror_source`]).
+fn tags_cache_key(api_url: &str, repo: &str) -> String {
+    format!(
+        "{}-{}",
+        format!("{api_url}-{repo}").to_kebab_case(),
+        crate::hash::hash_to_str(&(api_url, repo, mirrors_github_tags(api_url, repo)))
+    )
 }
 
 /// A repository's tags from mise-versions: the first page, or with `list_all`
@@ -543,7 +555,7 @@ pub async fn attested_by_repository(owner: &str, repo: &str, attested: &[String]
 }
 
 pub async fn list_tags(repo: &str) -> Result<Vec<String>> {
-    let key = repo.to_kebab_case();
+    let key = tags_cache_key(API_URL, repo);
     let cache = get_tags_cache(&key).await;
     let cache = cache.get(&key).unwrap();
     Ok(cache
@@ -555,7 +567,7 @@ pub async fn list_tags(repo: &str) -> Result<Vec<String>> {
 }
 
 pub async fn list_tags_from_url(api_url: &str, repo: &str) -> Result<Vec<String>> {
-    let key = format!("{api_url}-{repo}").to_kebab_case();
+    let key = tags_cache_key(api_url, repo);
     let cache = get_tags_cache(&key).await;
     let cache = cache.get(&key).unwrap();
     Ok(cache
