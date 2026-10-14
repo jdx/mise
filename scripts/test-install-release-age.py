@@ -309,6 +309,31 @@ class DownloadSourceTests(unittest.TestCase):
                     f"{GITHUB}/v2026.1.0/SHASUMS256.txt",
                 ])
 
+    def assert_refused(self, result, installed, message):
+        self.assertNotEqual(result.returncode, 0, result.stderr)
+        self.assertFalse(installed, result.stderr)
+        self.assertIn(message, result.stderr)
+
+    def test_no_checksum_from_any_host_fails(self):
+        sums = [MIRROR + "/v{v}/SHASUMS256.txt", GITHUB + "/v{v}/SHASUMS256.txt"]
+        for case, kwargs in [
+            ("downloads fail", dict(fail_urls=sums)),
+            ("asset not listed", dict(other_asset_sum_urls=sums)),
+        ]:
+            with self.subTest(case=case):
+                result, urls, installed = self.install(**kwargs)
+                self.assert_refused(result, installed, "no checksum found")
+                self.assertEqual(urls[-1], f"{GITHUB}/v2026.1.0/SHASUMS256.txt")
+
+    def test_builtin_version_without_static_checksum_fails(self):
+        empty = {name: "" for name in re.findall(r"\$(MISE_CHECKSUM_\w+)", SCRIPT)}
+        result, urls, installed = self.install(version="2026.10.0", **empty)
+        self.assert_refused(result, installed, "no checksum found")
+
+    def test_checksum_mismatch_fails(self):
+        result, urls, installed = self.install(SUM="0" * 64)
+        self.assert_refused(result, installed, "checksum mismatch")
+
     def test_both_hosts_fail(self):
         result, urls, installed = self.install(
             fail_urls=[MIRROR + "/v{v}/{a}", GITHUB + "/v{v}/{a}"]

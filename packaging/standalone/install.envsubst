@@ -145,14 +145,24 @@ fetch_text() {
   fi
 }
 
+# Reads SHASUMS256.txt lines on stdin and prints the first well-formed SHA-256
+# line for exactly file $1 (listed as "$1" or "./$1"). Prints nothing if
+# there is none.
+select_checksum() {
+  awk -v f="$1" '
+    NF == 2 && length($1) == 64 && $1 ~ /^[0-9a-f]+$/ {
+      name = $2
+      sub(/^\*/, "", name)
+      if (name == f || name == "./" f) { print $1 "  ./" f; exit }
+    }
+  '
+}
+
 # Prints the line for asset $2 from SHASUMS256.txt in the release directory at
 # $1. Prints nothing if the file cannot be fetched or has no valid line for it.
 fetch_checksum() {
-  checksum="$(fetch_text "$1/SHASUMS256.txt" | grep "$2" || true)"
   # TODO: verify with minisign or gpg if available
-  if echo "$checksum" | grep -Eq "^([0-9a-f]{32}|[0-9a-f]{64})"; then
-    echo "$checksum"
-  fi
+  fetch_text "$1/SHASUMS256.txt" | select_checksum "$2" || true
 }
 
 get_checksum() {
@@ -247,10 +257,11 @@ get_checksum() {
     # Read checksums from the host the tarball came from, falling back to
     # GitHub Releases when that host does not have them.
     github_url="$(github_release_url "$version")"
-    checksum="$(fetch_checksum "$release_url" "$os-$arch.$ext")"
+    asset="mise-v${version}-${os}-${arch}.${ext}"
+    checksum="$(fetch_checksum "$release_url" "$asset")"
     if [ -z "$checksum" ] && [ "$release_url" != "$github_url" ]; then
       debug "no checksum at $release_url, trying $github_url"
-      checksum="$(fetch_checksum "$github_url" "$os-$arch.$ext")"
+      checksum="$(fetch_checksum "$github_url" "$asset")"
     fi
     if [ -z "$checksum" ]; then
       warn "no checksum for mise $version and $os-$arch"
@@ -413,7 +424,13 @@ install_mise() {
   debug "mise-setup: tarball=$cache_file"
 
   debug "validating checksum"
-  cd "$(dirname "$cache_file")" && get_checksum "$version" "$os" "$arch" "$ext" "$release_url" | "$(shasum_bin)" -c >/dev/null
+  # Never extract an archive without a checksum for exactly that file: an empty
+  # or unrelated line must not reach `shasum -c`, whose handling of it varies.
+  cache_name="$(basename "$cache_file")"
+  checksum="$(get_checksum "$version" "$os" "$arch" "$ext" "$release_url" | select_checksum "$cache_name")"
+  [ -n "$checksum" ] || error "mise: no checksum found for $cache_name, refusing to install it unverified"
+  cd "$(dirname "$cache_file")"
+  printf '%s\n' "$checksum" | "$(shasum_bin)" -c >/dev/null || error "mise: checksum mismatch for $cache_name"
 
   # extract tarball
   if [ -d "$install_path" ]; then
