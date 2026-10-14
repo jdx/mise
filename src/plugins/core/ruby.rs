@@ -113,8 +113,12 @@ impl RubyPlugin {
                 (cur, Ok(latest)) if cur == latest => return Ok(()),
                 // ruby-build is not up-to-date
                 (_cur, Ok(_latest)) => {}
-                // error getting latest ruby-build version (usually github rate limit)
-                (_cur, Err(err)) => warn!("failed to get latest ruby-build version: {}", err),
+                // error getting latest ruby-build version: keep the one
+                // installed rather than reinstalling it on every check
+                (_cur, Err(err)) => {
+                    warn!("failed to get latest ruby-build version: {}", err);
+                    return Ok(());
+                }
             }
         }
         debug!(
