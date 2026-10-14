@@ -325,6 +325,9 @@ To install missing packages and upgrade installed ones in one run, use
 `mise bootstrap --upgrade`. It upgrades packages in the packages phase and
 tools (as `mise upgrade` does, without `--bump`) in the tools phase, before the
 post hooks. It does not update mise itself, repositories, or container images.
+`--dry-run` previews upgrades only for packages and tools that are already
+installed; what the upgrade would do to something the run is about to install
+cannot be known until it is installed.
 
 ### Import and prune
 
