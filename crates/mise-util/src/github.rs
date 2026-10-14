@@ -647,27 +647,15 @@ pub async fn canonical_repo(repo: &str) -> Result<String> {
     Ok(fetch_repository(repo).await?.full_name)
 }
 
-/// `GET /repos/{repo}`, which follows a rename's redirect: from mise-versions
-/// whenever it applies, see [`mirrors_github_metadata`].
+/// `GET /repos/{repo}`, which follows a rename's redirect.
+///
+/// Always asked of GitHub, never mise-versions: both callers decide trust
+/// with the answer. Attestations made under another repository's name and
+/// a packslip claiming a renamed project are accepted only when GitHub says
+/// the names are one repository, and a mirror that could answer that could
+/// vouch for any repository. Only renamed or transferred repositories reach
+/// this, so it costs little of the API's rate limit.
 async fn fetch_repository(repo: &str) -> Result<GithubRepositoryIds> {
-    if mirrors_github_metadata(API_URL, repo) {
-        let what = format!("GitHub repository {repo}");
-        let found = crate::versions_host::github_repository(repo)
-            .await
-            .wrap_err_with(|| versions_host_failure(&what))?;
-        match found {
-            Some(found) => {
-                return Ok(GithubRepositoryIds {
-                    id: found.id,
-                    full_name: found.full_name,
-                    owner: found
-                        .owner
-                        .map(|owner| GithubRepositoryOwner { id: owner.id }),
-                });
-            }
-            None => ensure_private_repo_lookup(repo, &what)?,
-        }
-    }
     let url = format!("{API_URL}/repos/{repo}");
     let headers = get_headers(&url)?;
     crate::http::HTTP_FETCH
@@ -688,7 +676,15 @@ pub struct RepoDir {
 /// List `path` in `repo` at `commit`, a full commit SHA. From mise-versions
 /// whenever it applies; the files themselves are on raw.githubusercontent.com.
 pub async fn list_repo_dir(repo: &str, commit: &str, path: &str) -> Result<RepoDir> {
-    if mirrors_github_metadata(API_URL, repo) {
+    let url = format!(
+        "{API_URL}/repos/{repo}/contents/{}?ref={commit}",
+        url_path(path)
+    );
+    // A `url_replacements` rule for this listing makes it the source, with
+    // the files fetched as for a private repository.
+    if mirrors_github_metadata(API_URL, repo)
+        && !crate::versions_host::github_api_url_is_replaced(&url)
+    {
         let what = format!("{path} in {repo} at {commit}");
         let listed = crate::versions_host::github_contents(repo, commit, path)
             .await
@@ -703,10 +699,6 @@ pub async fn list_repo_dir(repo: &str, commit: &str, path: &str) -> Result<RepoD
             None => ensure_private_repo_lookup(repo, &what)?,
         }
     }
-    let url = format!(
-        "{API_URL}/repos/{repo}/contents/{}?ref={commit}",
-        url_path(path)
-    );
     // `get_headers` asks for the raw media type on contents URLs, which is
     // right for a file body and wrong for a directory listing.
     let mut headers = get_headers(&url)?;

@@ -28,5 +28,5 @@ assert_contains "mise x github:BurntSushi/ripgrep@14.1.1 -- rg --version" "ripgr
 no_github_api latest aqua:hashicorp/terraform
 # fnox's packslip declares a skill that lives in its repository: listed by
 # mise-versions, fetched from raw.githubusercontent.com.
-no_github_api install fnox@1.39.0
+no_github_api use fnox@1.39.0
 assert_contains "mise skills ls" "fnox"

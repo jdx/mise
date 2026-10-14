@@ -58,19 +58,6 @@ pub struct GithubContentsEntry {
     pub kind: String,
 }
 
-/// What GitHub says a repository name stands for now, following a rename.
-#[derive(Debug, Clone, serde::Deserialize)]
-pub struct GithubRepository {
-    pub id: u64,
-    pub full_name: String,
-    pub owner: Option<GithubRepositoryOwner>,
-}
-
-#[derive(Debug, Clone, serde::Deserialize)]
-pub struct GithubRepositoryOwner {
-    pub id: u64,
-}
-
 #[derive(serde::Deserialize)]
 struct AttestationsResponse {
     attestations: Vec<Attestation>,
@@ -377,34 +364,6 @@ fn github_contents_url(owner: &str, repo: &str, commit: &str, path: &str) -> Str
     )
 }
 
-/// What GitHub says the public repository `repo` is called now, and its
-/// IDs. `Ok(None)` and errors as in [`github_release`].
-pub async fn github_repository(repo: &str) -> eyre::Result<Option<GithubRepository>> {
-    if !enabled_for_github_repo(repo) {
-        return Ok(None);
-    }
-    let Some((owner, repo_name)) = split_github_repo(repo) else {
-        return Ok(None);
-    };
-    let url = format!(
-        "https://mise-versions.jdx.dev/api/github/repos/{}/{}",
-        encode_path_segment(owner),
-        encode_path_segment(repo_name),
-    );
-    let ctx = VersionsHostLogContext::github_repo("github_repository", repo);
-    let found: Option<GithubRepository> = fetch_json_unless_not_found(&url, ctx).await?;
-    if let Some(found) = &found {
-        if split_github_repo(&found.full_name).is_none() {
-            bail!(
-                "mise-versions named {repo} {:?}, which is not a GitHub repository",
-                found.full_name
-            );
-        }
-        log_versions_host_trace(ctx, "success", &format!("full_name={}", found.full_name));
-    }
-    Ok(found)
-}
-
 fn github_releases_url(owner: &str, repo: &str, page: u32) -> String {
     format!(
         "https://mise-versions.jdx.dev/api/github/repos/{}/{}/releases?page={page}",
@@ -650,6 +609,22 @@ pub fn github_is_url_replaced(repo: Option<&str>) -> bool {
         debug!("url_replacements reroutes GitHub; not using mise-versions for GitHub metadata");
     }
     replaced
+}
+
+/// Whether `url_replacements` reroutes `url`, the api.github.com request mise
+/// would make without this host. A rule can name one endpoint (a repository's
+/// tags, say) without touching any URL [`github_is_url_replaced`] tries; the
+/// replacement is then the source for that endpoint.
+pub fn github_api_url_is_replaced(url: &str) -> bool {
+    if Settings::get().url_replacements.is_none() {
+        return false;
+    }
+    let Ok(original) = url::Url::parse(url) else {
+        return false;
+    };
+    let mut replaced = original.clone();
+    http::apply_url_replacements(&mut replaced);
+    replaced != original
 }
 
 /// Whether `url_replacements` reroutes the GitHub API URL for this exact
@@ -926,18 +901,13 @@ mod tests {
     }
 
     #[test]
-    fn test_github_contents_and_repository_deserialize() {
+    fn test_github_contents_deserialize() {
         let entries: Vec<GithubContentsEntry> = serde_json::from_str(
             r#"[{"name":"SKILL.md","path":"skills/fnox/SKILL.md","type":"file","size":12,"sha":"a"},{"name":"refs","path":"skills/fnox/refs","type":"dir","sha":"b"}]"#,
         )
         .unwrap();
         assert_eq!(entries[1].name, "refs");
         assert_eq!(entries[1].kind, "dir");
-        let repo: GithubRepository =
-            serde_json::from_str(r#"{"id":123,"full_name":"jdx/mise","owner":{"id":456}}"#)
-                .unwrap();
-        assert_eq!(repo.full_name, "jdx/mise");
-        assert_eq!(repo.owner.unwrap().id, 456);
     }
 
     #[test]
