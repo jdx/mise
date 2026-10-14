@@ -3,6 +3,7 @@
 use crate::github::GithubRelease;
 use crate::http;
 use crate::http::HTTP_FETCH;
+use eyre::bail;
 use mise_settings::Settings;
 use mise_sigstore::Attestation;
 use reqwest::header::{HeaderMap, HeaderValue, USER_AGENT};
@@ -226,6 +227,12 @@ pub fn log_versions_host_warn(ctx: VersionsHostLogContext<'_>, outcome: &str, ex
 ///
 /// This endpoint is intentionally shaped like GitHub's release object so the
 /// normal backend asset-selection code remains authoritative on the client.
+///
+/// `Ok(None)` when the mirror does not apply to `repo`, or answered 404 (a
+/// private or missing repository, or no such tag). A failed request or an
+/// answer that does not check out is an error: the caller must not take it
+/// as "not found". A release without assets is returned as it is; GitHub
+/// returns those too (kubernetes and terraform publish binaries elsewhere).
 pub async fn github_release(repo: &str, tag: &str) -> eyre::Result<Option<GithubRelease>> {
     if !enabled_for_github_repo(repo) || github_release_is_url_replaced(repo, tag) {
         return Ok(None);
@@ -242,31 +249,27 @@ pub async fn github_release(repo: &str, tag: &str) -> eyre::Result<Option<Github
     );
 
     let ctx = VersionsHostLogContext::github_release(repo, tag);
-    let Some(mut release) = fetch_optional_json::<GithubRelease>(&url, ctx).await? else {
+    let Some(mut release) = fetch_json_unless_not_found::<GithubRelease>(&url, ctx).await? else {
         return Ok(None);
     };
-    if release.assets.is_empty() {
-        log_versions_host_warn(ctx, "no_assets", "fallback=true");
-        return Ok(None);
-    }
     if !valid_github_release_tag(&release, tag) {
-        log_versions_host_warn(
+        log_versions_host_trace(
             ctx,
             "tag_mismatch",
-            &format!(
-                "returned_tag={} fallback=true",
-                log_value(&release.tag_name)
-            ),
+            &format!("returned_tag={}", log_value(&release.tag_name)),
         );
-        return Ok(None);
+        bail!(
+            "mise-versions answered for {repo}@{tag} with release {}",
+            release.tag_name
+        );
     }
     if let Err(asset) = pin_github_release_assets(&mut release, owner, repo_name) {
-        log_versions_host_warn(
+        log_versions_host_trace(
             ctx,
             "invalid_asset_url",
-            &format!("asset={} fallback=true", log_value(&asset)),
+            &format!("asset={}", log_value(&asset)),
         );
-        return Ok(None);
+        bail!("mise-versions listed asset {asset} of {repo}@{tag} at an unexpected URL");
     }
     log_versions_host_trace(ctx, "success", "");
     Ok(Some(release))
@@ -274,7 +277,7 @@ pub async fn github_release(repo: &str, tag: &str) -> eyre::Result<Option<Github
 
 /// Fetch one page (100 releases) of a public repository's release list from
 /// the versions host, shaped like GitHub's so the caller's filtering stays
-/// authoritative.
+/// authoritative. `Ok(None)` and errors as in [`github_release`].
 pub async fn github_releases(repo: &str, page: u32) -> eyre::Result<Option<GithubReleasesPage>> {
     if !enabled_for_github_repo(repo) {
         return Ok(None);
@@ -285,20 +288,16 @@ pub async fn github_releases(repo: &str, page: u32) -> eyre::Result<Option<Githu
     };
     let url = github_releases_url(owner, repo_name, page);
     let ctx = VersionsHostLogContext::github_releases(repo, page);
-    let Some(mut list) = fetch_optional_json::<GithubReleasesPage>(&url, ctx).await? else {
+    let Some(mut list) = fetch_json_unless_not_found::<GithubReleasesPage>(&url, ctx).await? else {
         return Ok(None);
     };
     if list.next_page.is_some_and(|next| next != page + 1) {
-        log_versions_host_warn(ctx, "invalid_next_page", "fallback=true");
-        return Ok(None);
+        log_versions_host_trace(ctx, "invalid_next_page", "");
+        bail!("mise-versions pointed page {page} of {repo}'s releases at an unexpected next page");
     }
     if let Err(tag) = pin_listed_releases(&mut list, owner, repo_name) {
-        log_versions_host_warn(
-            ctx,
-            "invalid_release",
-            &format!("tag={} fallback=true", log_value(&tag)),
-        );
-        return Ok(None);
+        log_versions_host_trace(ctx, "invalid_release", &format!("tag={}", log_value(&tag)));
+        bail!("mise-versions listed release {tag} of {repo} with an unexpected asset URL");
     }
     log_versions_host_trace(ctx, "success", &format!("releases={}", list.releases.len()));
     Ok(Some(list))
@@ -431,6 +430,57 @@ where
             Ok(None)
         }
     }
+}
+
+/// GET `url` from the versions host for data mise would otherwise ask
+/// api.github.com for. `Ok(None)` is a 404 and nothing else; every other
+/// failure is an error, so that it is never mistaken for "not found" and
+/// never sends the caller to GitHub.
+async fn fetch_json_unless_not_found<T>(
+    url: &str,
+    ctx: VersionsHostLogContext<'_>,
+) -> eyre::Result<Option<T>>
+where
+    T: serde::de::DeserializeOwned,
+{
+    if crate::network::offline(&Settings::get()) {
+        bail!("offline mode is enabled");
+    }
+    debug!("GET {url}");
+    let resp = HTTP_FETCH
+        .get_async_with_headers_allow_error_status(url, &VERSIONS_HOST_HEADERS)
+        .await
+        .inspect_err(|err| {
+            log_versions_host_trace(
+                ctx,
+                "failed",
+                &format!(
+                    "status={} error={}",
+                    http::error_code(err).unwrap_or(0),
+                    log_value(&err.to_string())
+                ),
+            );
+        })?;
+    let status = resp.status();
+    debug!("GET {url} {status}");
+    if status == reqwest::StatusCode::NOT_FOUND {
+        log_versions_host_trace(ctx, "not_found", "status=404");
+        return Ok(None);
+    }
+    if !status.is_success() {
+        let body = resp.text().await.unwrap_or_default();
+        let message = versions_host_error_message(status.as_u16(), &body);
+        log_versions_host_trace(
+            ctx,
+            "failed",
+            &format!("status={} error={}", status.as_u16(), log_value(&message)),
+        );
+        bail!(message);
+    }
+    resp.json()
+        .await
+        .map(Some)
+        .map_err(|err| eyre::eyre!("invalid response from {url}: {err}"))
 }
 
 fn versions_host_error_message(status: u16, body: &str) -> String {
