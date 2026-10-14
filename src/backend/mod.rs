@@ -3867,12 +3867,14 @@ pub trait Backend: Debug + Send + Sync {
     /// for `query`.
     ///
     /// A plain `latest` without prereleases came from the stable-latest
-    /// shortcut, which carries the release URL and which resolution has just
-    /// fetched (and cached). The remote listing has not been read at all on
-    /// that path, so asking it first costs a request (for `github:` a page of
-    /// releases) to learn what the shortcut already says, and it can trail the
-    /// shortcut and miss the freshest release. Every other query was resolved
-    /// from the listing, which is then cached, so that is asked first.
+    /// shortcut, which carries the release URL. The remote listing has not
+    /// been read on that path, so fetching it first costs a request (for
+    /// `github:` a page of releases) to learn what the shortcut already says,
+    /// and it can trail the shortcut and miss the freshest release. A listing
+    /// some earlier command cached is still read first, since that costs no
+    /// request where asking the shortcut again might (`go:` does not cache
+    /// it). Every other query was resolved from the listing, which is then
+    /// cached, so that is asked first.
     async fn resolved_release_url(
         &self,
         config: &Arc<Config>,
@@ -3895,6 +3897,9 @@ pub trait Backend: Debug + Send + Sync {
                 .map(|info| info.release_url)
         };
         if self.should_use_latest_stable_fast_path(query, selection_opts) {
+            if let Some(release_url) = self.cached_version_info(config, version).await {
+                return release_url.release_url;
+            }
             match shortcut().await {
                 Some(release_url) => release_url,
                 None => listed().await.flatten(),
@@ -3905,6 +3910,37 @@ pub trait Backend: Debug + Send + Sync {
                 None => shortcut().await.flatten(),
             }
         }
+    }
+
+    /// `version` from the remote listing as already cached, stale or not,
+    /// without fetching anything.
+    async fn cached_version_info(
+        &self,
+        config: &Arc<Config>,
+        version: &str,
+    ) -> Option<VersionInfo> {
+        let resolved_opts = config
+            .resolve_tool_opts_with_overrides(self.ba())
+            .await
+            .ok()?;
+        let has_local_version_listing_override = has_local_version_listing_option_override(
+            &resolved_opts,
+            self.remote_version_listing_tool_option_keys(),
+        );
+        let cache_context = self
+            .remote_version_cache_context_for(
+                config,
+                resolved_opts.effective(),
+                has_local_version_listing_override,
+            )
+            .await
+            .ok()?;
+        let cache = match cache_context.as_deref() {
+            Some(context) => self.get_remote_version_cache_with_context(Some(context)),
+            None => self.get_remote_version_cache(),
+        };
+        let versions = cache.lock().await.get_cached().ok()?;
+        versions.into_iter().find(|v| v.version == version)
     }
 
     /// Whether the backend's installer updates an already installed rolling
@@ -6583,6 +6619,39 @@ mod latest_version_tests {
             release_url("2.0.0")
         );
         assert_eq!(backend.list_calls(), 1);
+    }
+
+    /// A listing an earlier command cached answers for free, so the shortcut
+    /// (which `go:` does not cache) is not asked again.
+    #[tokio::test]
+    async fn test_release_url_for_latest_prefers_a_cached_listing() {
+        let _settings = crate::test::SettingsGuard::lock();
+        let config = Config::get().await.unwrap();
+        let backend =
+            LatestBackend::new("test-release-url-cached-listing").with_stable_info(VersionInfo {
+                version: "3.0.0".to_string(),
+                release_url: release_url("3.0.0"),
+                ..Default::default()
+            });
+        backend
+            .get_remote_version_cache()
+            .lock()
+            .await
+            .write(&vec![VersionInfo {
+                version: "3.0.0".to_string(),
+                release_url: release_url("3.0.0"),
+                ..Default::default()
+            }])
+            .unwrap();
+
+        assert_eq!(
+            backend
+                .resolved_release_url(&config, "3.0.0", "latest", &Default::default())
+                .await,
+            release_url("3.0.0")
+        );
+        assert_eq!(backend.stable_info_calls(), 0);
+        assert_eq!(backend.list_calls(), 0);
     }
 
     /// Any other query was resolved from the listing, so that is read first

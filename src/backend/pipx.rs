@@ -1984,6 +1984,7 @@ cccccccccccccccccccccccccccccccccccccccc\trefs/heads/main\n";
     /// a second fetch of the same document to list versions.
     #[tokio::test]
     async fn latest_older_than_cutoff_reads_registry_once() {
+        let _settings = crate::test::SettingsGuard::lock();
         let mut server = mockito::Server::new_async().await;
         let registry = dated_registry(&mut server, "dated-old", 1).await;
         let config = crate::config::Config::get().await.unwrap();
@@ -2012,6 +2013,7 @@ cccccccccccccccccccccccccccccccccccccccc\trefs/heads/main\n";
     /// which is what picks the older release.
     #[tokio::test]
     async fn latest_newer_than_cutoff_falls_back_to_listing() {
+        let _settings = crate::test::SettingsGuard::lock();
         let mut server = mockito::Server::new_async().await;
         let registry = dated_registry(&mut server, "dated-new", 2).await;
         let config = crate::config::Config::get().await.unwrap();
