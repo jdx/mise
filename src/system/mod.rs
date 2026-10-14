@@ -613,6 +613,7 @@ pub struct SystemDnfTomlConfig {
 pub struct DotfilesTomlConfig(pub IndexMap<String, toml::Value>);
 
 /// Packages for one manager, aggregated across the config hierarchy
+#[derive(Clone)]
 pub struct ManagerPackages {
     pub manager: Arc<dyn SystemPackageManager>,
     pub requests: Vec<PackageRequest>,
