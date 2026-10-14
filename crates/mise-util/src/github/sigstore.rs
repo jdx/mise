@@ -460,7 +460,13 @@ async fn mirrored_attestations(repo: &str, digest: &str) -> eyre::Result<Mirrore
         .build::<MirroredAttestations>()
         .get_or_try_init_async_if(
             || crate::versions_host::github_attestations(repo, digest),
-            |attestations| attestations.as_ref().is_some_and(|a| !a.is_empty()),
+            // Only a complete set is kept: one missing a bundle is asked
+            // for again next time rather than failing for a week.
+            |attestations| {
+                attestations
+                    .as_ref()
+                    .is_some_and(|a| !a.is_empty() && a.iter().all(|a| a.has_inline_bundle()))
+            },
         )
         .await
     })
@@ -523,6 +529,9 @@ async fn verify_with_mirror(
         // Before the predicate filter, which can't read a missing bundle and
         // would pass it off as "no attestations".
         if attestations.iter().any(|a| !a.has_inline_bundle()) {
+            if !fresh {
+                continue;
+            }
             return MirrorVerdict::Done(Err(AttestationError::Api(format!(
                 "mise-versions returned attestations for {full} without their bundles"
             ))));
@@ -628,6 +637,9 @@ async fn detect_with_mirror(
             attestations.len()
         );
         if attestations.iter().any(|a| !a.has_inline_bundle()) {
+            if !fresh {
+                continue;
+            }
             return Some(Err(DetectError::Fetch(AttestationError::Api(format!(
                 "mise-versions returned attestations for {full} without their bundles"
             )))));
