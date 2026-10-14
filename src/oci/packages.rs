@@ -888,6 +888,7 @@ mod tests {
         file::write(path, contents).unwrap();
     }
 
+    #[cfg(unix)]
     #[test]
     fn apt_failure_output_includes_stdout_tail_and_stderr() {
         use std::os::unix::process::ExitStatusExt;
