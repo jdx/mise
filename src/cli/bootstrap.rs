@@ -2677,18 +2677,16 @@ impl Bootstrap {
             dry_run: self.dry_run,
             update,
             yes: self.yes,
+            after_install: false,
         };
         if self.upgrade {
             driver::run(mgrs.clone(), Action::Install, &opts(self.update)).await?;
-            if self.dry_run {
-                // the install pass above installed nothing, so the upgrade
-                // pass would report packages it just previewed installing as
-                // not installed
-                info!("bootstrap: would upgrade installed packages");
-                return Ok(());
-            }
             info!("bootstrap: upgrading packages");
-            return driver::run(mgrs, Action::Upgrade, &opts(false)).await;
+            let upgrade_opts = DriverOpts {
+                after_install: true,
+                ..opts(false)
+            };
+            return driver::run(mgrs, Action::Upgrade, &upgrade_opts).await;
         }
         driver::run(mgrs, Action::Install, &opts(self.update)).await
     }
