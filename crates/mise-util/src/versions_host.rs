@@ -5,7 +5,7 @@ use crate::http;
 use crate::http::HTTP_FETCH;
 use mise_settings::Settings;
 use mise_sigstore::Attestation;
-use reqwest::header::{HeaderMap, HeaderValue};
+use reqwest::header::{HeaderMap, HeaderValue, USER_AGENT};
 use std::{
     collections::HashSet,
     sync::{
@@ -14,14 +14,22 @@ use std::{
     },
 };
 
-/// Headers for requests to mise-versions, including CI detection
-pub static VERSIONS_HOST_HEADERS: LazyLock<HeaderMap> = LazyLock::new(|| {
+/// Headers for every request to mise-versions. In CI they add `x-mise-ci: true`
+/// and a trailing ` ci` token on the User-Agent, which the host's request logs
+/// record so CI traffic can be left out of usage counts.
+pub static VERSIONS_HOST_HEADERS: LazyLock<HeaderMap> =
+    LazyLock::new(|| versions_host_headers(ci_info::is_ci(), crate::user_agent::get()));
+
+fn versions_host_headers(ci: bool, user_agent: &str) -> HeaderMap {
     let mut headers = HeaderMap::new();
-    if ci_info::is_ci() {
+    if ci {
         headers.insert("x-mise-ci", HeaderValue::from_static("true"));
+        if let Ok(user_agent) = HeaderValue::from_str(&format!("{user_agent} ci")) {
+            headers.insert(USER_AGENT, user_agent);
+        }
     }
     headers
-});
+}
 
 /// The most release-list pages mise-versions serves.
 pub const GITHUB_RELEASES_MAX_PAGES: usize = 10;
@@ -164,7 +172,8 @@ pub fn log_value(value: &str) -> String {
     }
 }
 
-fn sanitize_full_for_log(full: &str) -> String {
+/// `full` without URL credentials, query, or fragment, for logs and request URLs.
+pub fn sanitize_full_for_log(full: &str) -> String {
     let Some((backend, value)) = full.split_once(':') else {
         return full.to_string();
     };
@@ -647,6 +656,21 @@ fn path_segments_match(segments: &[&str], expected: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_versions_host_headers_mark_ci() {
+        let headers = versions_host_headers(true, "mise/2026.10.10 linux-x64 (2026-10-11) bash");
+        assert_eq!(headers["x-mise-ci"], "true");
+        assert_eq!(
+            headers[USER_AGENT],
+            "mise/2026.10.10 linux-x64 (2026-10-11) bash ci"
+        );
+    }
+
+    #[test]
+    fn test_versions_host_headers_outside_ci_are_empty() {
+        assert!(versions_host_headers(false, "mise/2026.10.10").is_empty());
+    }
 
     #[test]
     fn test_versions_host_log_context_fields_quotes_spaces() {

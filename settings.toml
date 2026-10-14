@@ -4474,6 +4474,11 @@ that GitHub metadata; the replacement is the only source, because this host
 describes only github.com. Rules that reroute only release downloads do not
 change this, and version lists for registry tools still come from this host.
 
+Every request to the host sends the mise version and invoking shell in the
+User-Agent. When mise runs in CI, these requests also send an
+`x-mise-ci: true` header and end the User-Agent with ` ci`, for example
+`mise/2026.10.10 linux-x64 (2026-10-11) bash ci`.
+
 `mise ls-remote --no-versions-host` skips the host for one command. See
 [A new release is not listed](/troubleshooting.html#new-version-of-a-tool-is-not-available).
 """
@@ -4486,13 +4491,16 @@ description = "Send anonymous download statistics to mise-versions after install
 docs = """
 After a successful install of a core or registry tool, mise reports it to
 [mise-versions](https://mise-versions.jdx.dev), which shows tool popularity.
-mise sends:
+The report is a `GET https://mise-versions.jdx.dev/t` request whose query
+parameters carry:
 
-- the tool name, its full backend identifier such as `aqua:BurntSushi/ripgrep`,
-  and the version
+- the tool name, its full backend identifier such as `aqua:BurntSushi/ripgrep`
+  (with any URL credentials, query string, and fragment removed), and the
+  version
 - the OS and architecture
-- the mise version and invoking shell, in the User-Agent, and whether it runs
-  in CI
+
+The request also sends the mise version and invoking shell, in the User-Agent,
+and whether it runs in CI.
 
 The server hashes your IP address for daily deduplication and does not store it
 raw. Nothing is sent when [`use_versions_host`](#use_versions_host) is `false`.
