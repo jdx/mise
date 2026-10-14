@@ -70,8 +70,9 @@ assert "cat '$HOME/zypper-log'" $'--non-interactive install -- ripgrep\n--non-in
 : >"$HOME/zypper-log"
 assert_succeed "mise bootstrap --yes --upgrade --dry-run"
 assert_succeed "test ! -s '$HOME/zypper-log'"
+assert_not_contains "mise ls --installed tiny" "1.1.0"
 
-# --dry-run and --skip tools leave the older tool alone
+# --skip tools leaves the older tool alone
 assert_succeed "mise bootstrap --yes --upgrade --skip tools"
 assert_not_contains "mise ls --installed tiny" "1.1.0"
 
