@@ -105,6 +105,11 @@ pub(crate) struct Upgrade {
     #[usage(long)]
     dry_run_code: bool,
 
+    /// Skip confirmation when installing missing plugin system dependencies.
+    /// Set internally by `mise bootstrap --yes`; not a user-facing flag.
+    #[usage(skip)]
+    yes: bool,
+
     /// Also upgrade installed tools that the current config does not request
     #[usage(long, verbatim_doc_comment, conflicts = "local")]
     inactive: bool,
@@ -180,9 +185,10 @@ enum PruneMode {
 impl Upgrade {
     /// a bare `mise upgrade` (every configured tool within its range, no
     /// `--bump`), as run by `mise bootstrap --upgrade`
-    pub(crate) fn new_bare(dry_run: bool) -> Self {
+    pub(crate) fn new_bare(dry_run: bool, yes: bool) -> Self {
         Self {
             dry_run,
+            yes,
             ..Default::default()
         }
     }
@@ -761,6 +767,8 @@ impl Upgrade {
                 ..Default::default()
             },
             locked: false,
+            yes: self.yes || Settings::get().yes,
+            explicit_yes: self.yes || Settings::cli_yes(),
             ..Default::default()
         };
 

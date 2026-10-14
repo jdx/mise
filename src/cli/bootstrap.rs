@@ -2376,7 +2376,7 @@ impl Bootstrap {
             Install::new_bare(self.dry_run, self.yes).run().await?;
             if self.upgrade {
                 info!("bootstrap: upgrading tools");
-                Upgrade::new_bare(self.dry_run).run().await?;
+                Upgrade::new_bare(self.dry_run, self.yes).run().await?;
             }
             if !self.dry_run {
                 config = Config::reset().await?;
