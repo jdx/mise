@@ -5,7 +5,7 @@ use crate::http;
 use crate::http::HTTP_FETCH;
 use mise_settings::Settings;
 use mise_sigstore::Attestation;
-use reqwest::header::{HeaderMap, HeaderValue};
+use reqwest::header::{HeaderMap, HeaderValue, USER_AGENT};
 use std::{
     collections::HashSet,
     sync::{
@@ -14,14 +14,22 @@ use std::{
     },
 };
 
-/// Headers for requests to mise-versions, including CI detection
-pub static VERSIONS_HOST_HEADERS: LazyLock<HeaderMap> = LazyLock::new(|| {
+/// Headers for every request to mise-versions. In CI they add `x-mise-ci: true`
+/// and a trailing ` ci` token on the User-Agent, which the host's request logs
+/// record so CI traffic can be left out of usage counts.
+pub static VERSIONS_HOST_HEADERS: LazyLock<HeaderMap> =
+    LazyLock::new(|| versions_host_headers(ci_info::is_ci(), crate::user_agent::get()));
+
+fn versions_host_headers(ci: bool, user_agent: &str) -> HeaderMap {
     let mut headers = HeaderMap::new();
-    if ci_info::is_ci() {
+    if ci {
         headers.insert("x-mise-ci", HeaderValue::from_static("true"));
+        if let Ok(user_agent) = HeaderValue::from_str(&format!("{user_agent} ci")) {
+            headers.insert(USER_AGENT, user_agent);
+        }
     }
     headers
-});
+}
 
 /// The most release-list pages mise-versions serves.
 pub const GITHUB_RELEASES_MAX_PAGES: usize = 10;
@@ -164,18 +172,38 @@ pub fn log_value(value: &str) -> String {
     }
 }
 
-fn sanitize_full_for_log(full: &str) -> String {
-    let Some((backend, value)) = full.split_once(':') else {
-        return full.to_string();
-    };
-    if let Ok(mut url) = url::Url::parse(value) {
+/// `full` for logs, with any URL credentials, query, and fragment removed
+/// (see [`sanitize_full`]).
+pub fn sanitize_full_for_log(full: &str) -> String {
+    sanitize_full(full).unwrap_or_else(|| "[redacted]".to_string())
+}
+
+/// `full` without URL credentials, query, or fragment, for logs and request
+/// URLs. The URL may follow a backend prefix (`http:https://…`) or be the
+/// whole value (`https://…`). `None` when `full` holds a `://` URL that cannot
+/// be parsed, so it cannot be cleaned and must not be sent.
+pub fn sanitize_full(full: &str) -> Option<String> {
+    fn strip(mut url: url::Url) -> url::Url {
         let _ = url.set_username("");
         let _ = url.set_password(None);
         url.set_query(None);
         url.set_fragment(None);
-        return format!("{backend}:{url}");
+        url
     }
-    full.to_string()
+    let with_host = |s: &str| url::Url::parse(s).ok().filter(|url| url.has_host());
+    if let Some((backend, value)) = full.split_once(':') {
+        // `full` is itself a URL: its scheme looks like a backend prefix.
+        if value.starts_with("//") {
+            return with_host(full).map(|url| strip(url).to_string());
+        }
+        if let Some(url) = with_host(value) {
+            return Some(format!("{backend}:{}", strip(url)));
+        }
+    }
+    if full.contains("://") {
+        return None;
+    }
+    Some(full.to_string())
 }
 
 pub fn log_versions_host_trace(ctx: VersionsHostLogContext<'_>, outcome: &str, extra: &str) {
@@ -649,6 +677,21 @@ mod tests {
     use super::*;
 
     #[test]
+    fn test_versions_host_headers_mark_ci() {
+        let headers = versions_host_headers(true, "mise/2026.10.10 linux-x64 (2026-10-11) bash");
+        assert_eq!(headers["x-mise-ci"], "true");
+        assert_eq!(
+            headers[USER_AGENT],
+            "mise/2026.10.10 linux-x64 (2026-10-11) bash ci"
+        );
+    }
+
+    #[test]
+    fn test_versions_host_headers_outside_ci_are_empty() {
+        assert!(versions_host_headers(false, "mise/2026.10.10").is_empty());
+    }
+
+    #[test]
     fn test_versions_host_log_context_fields_quotes_spaces() {
         let fields =
             VersionsHostLogContext::install_track("some tool", "github:jdx/mise", "1.2.3").fields();
@@ -669,6 +712,28 @@ mod tests {
         assert_eq!(
             fields,
             r#"endpoint=install_track tool=private full=github:https://example.com/org/repo version=1.2.3"#
+        );
+    }
+
+    #[test]
+    fn test_sanitize_full() {
+        assert_eq!(
+            sanitize_full("aqua:BurntSushi/ripgrep").unwrap(),
+            "aqua:BurntSushi/ripgrep"
+        );
+        assert_eq!(sanitize_full("npm:@scope/pkg").unwrap(), "npm:@scope/pkg");
+        assert_eq!(
+            sanitize_full("http:https://user:pass@example.com/a.tar.gz?token=x#f").unwrap(),
+            "http:https://example.com/a.tar.gz"
+        );
+        assert_eq!(
+            sanitize_full("https://user:pass@example.com/a.tar.gz?token=x").unwrap(),
+            "https://example.com/a.tar.gz"
+        );
+        assert_eq!(sanitize_full("http:https://user:pass@[bad/a"), None);
+        assert_eq!(
+            sanitize_full_for_log("http:https://user:pass@[bad/a"),
+            "[redacted]"
         );
     }
 

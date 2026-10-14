@@ -17,7 +17,7 @@ use crate::platform::Platform;
 use crate::toolset::{ToolRequest, ToolVersion, ToolVersionOptions, Toolset};
 use crate::ui::progress_report::SingleReport;
 use crate::{Result, lock_file::LockFile};
-use crate::{dirs, file, plugins, sysconfig};
+use crate::{dirs, file, plugins, sysconfig, versions_host};
 use async_trait::async_trait;
 use eyre::{bail, eyre};
 use flate2::read::GzDecoder;
@@ -296,9 +296,7 @@ impl PythonPlugin {
             .get_or_try_init_async(async || {
                 let settings = Settings::get();
                 let url_path = python_precompiled_url_path(&settings);
-                let rsp = HTTP_FETCH
-                    .get_bytes(format!("https://mise-versions.jdx.dev/tools/{url_path}"))
-                    .await?;
+                let rsp = versions_host::python_precompiled(&url_path).await?;
                 let mut decoder = GzDecoder::new(rsp.as_ref());
                 let mut raw = String::new();
                 decoder.read_to_string(&mut raw)?;
@@ -818,9 +816,7 @@ impl PythonPlugin {
 
         let platform = format!("{arch}-{os}");
         let url_path = format!("python-precompiled-{arch}-{os}.gz");
-        let rsp = HTTP_FETCH
-            .get_bytes(format!("https://mise-versions.jdx.dev/tools/{url_path}"))
-            .await?;
+        let rsp = versions_host::python_precompiled(&url_path).await?;
         let mut decoder = GzDecoder::new(rsp.as_ref());
         let mut raw = String::new();
         decoder.read_to_string(&mut raw)?;
