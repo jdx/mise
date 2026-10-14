@@ -23,11 +23,10 @@ use packslip::model::{ReleaseListStatement, ReleaseRef};
 use packslip::sigstore::Policy;
 use serde::{Deserialize, Serialize};
 
-use crate::backend::packslip::{Pin, verify_release_list};
+use crate::backend::packslip::{Pin, fetch_policy_text, verify_release_list};
 use crate::config::Settings;
 use crate::dirs;
 use crate::file;
-use crate::http::HTTP_FETCH;
 use crate::toolset::ToolVersionOptions;
 
 /// GitHub's OIDC issuer, for a stamper pinned by a workflow identity.
@@ -283,17 +282,16 @@ pub(crate) async fn fetch(project: &str, opts: &ToolVersionOptions) -> Result<Op
     let mut stamps = Stamps::default();
     for stamper in &stampers {
         let url = stamper.url(project);
-        let text = match HTTP_FETCH.get_text(&url).await {
-            Ok(text) => text,
-            Err(err) if is_not_found(&err) => {
+        let text = match fetch_policy_text(&url)
+            .await
+            .wrap_err_with(|| format!("fetching the stamp list for {project} from {url}"))?
+        {
+            Some(text) => text,
+            None => {
                 missing_list(&stamper.host, project, &url)?;
                 debug!("{}: no stamp list for {project} at {url}", stamper.host);
                 stamps.hosts.push(stamper.host.clone());
                 continue;
-            }
-            Err(err) => {
-                return Err(err)
-                    .wrap_err_with(|| format!("fetching the stamp list for {project} from {url}"));
             }
         };
         let list = verify_release_list(&text, &stamper.pin, true)
@@ -308,10 +306,6 @@ pub(crate) async fn fetch(project: &str, opts: &ToolVersionOptions) -> Result<Op
         stamps.add(&stamper.host, &list);
     }
     Ok(Some(stamps))
-}
-
-fn is_not_found(err: &eyre::Report) -> bool {
-    crate::http::error_code(err) == Some(404)
 }
 
 #[cfg(test)]
