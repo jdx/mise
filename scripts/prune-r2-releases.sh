@@ -12,7 +12,7 @@ set -euo pipefail
 #   - its newest object is older than PRUNE_MIN_AGE_DAYS
 #   - it had zero downloads (binary + other) during the stats window
 #   - it is not among the PRUNE_KEEP_NEWEST most recently uploaded folders
-#   - it is not the version in s3://mise/VERSION
+#   - it is not the version in s3://mise/VERSION (re-read before each removal)
 # and at most PRUNE_MAX_DELETE folders (oldest first) are removed per run.
 #
 # Dry run unless PRUNE_RELEASES=delete. Anything that prevents a trustworthy
@@ -69,10 +69,20 @@ if ! jq -e '
 	(.days | type == "number") and
 	(.covered_days | type == "number") and
 	(.last_covered_date | type == "string" and test("^[0-9]{4}-[0-9]{2}-[0-9]{2}$")) and
-	(.versions | type == "object") and
-	all(.versions[]; (.binary // 0 | type == "number") and (.other // 0 | type == "number"))
+	(.versions | type == "object")
 ' "$tmp/stats.json" >/dev/null 2>&1; then
 	skip "download stats response is not in the expected format ($stats_url)."
+fi
+# Only an absent version means zero downloads. A present entry without valid
+# counts must not be read as zero, so one bad entry skips the whole run.
+bad_entries=$(jq -r '
+	def count: type == "number" and . >= 0 and . == floor;
+	.versions | to_entries
+	| map(select((.value | type == "object" and (.binary | count) and (.other | count)) | not) | .key)
+	| join(", ")
+' "$tmp/stats.json")
+if [[ -n $bad_entries ]]; then
+	skip "download stats have entries without non-negative integer binary/other counts: $bad_entries."
 fi
 stats_days=$(jq -r '.days' "$tmp/stats.json")
 covered_days=$(jq -r '.covered_days' "$tmp/stats.json")
@@ -93,7 +103,7 @@ if ((stats_age_days > max_stats_age_days)); then
 	skip "download stats end on $last_day, $stats_age_days days ago (limit $max_stats_age_days), so they are stale."
 fi
 # All-zero stats mean the log pipeline is broken, not that nobody downloads mise.
-if ! jq -e '([.versions[] | (.binary // 0) + (.other // 0)] | add // 0) > 0' "$tmp/stats.json" >/dev/null; then
+if ! jq -e '([.versions[] | .binary + .other] | add // 0) > 0' "$tmp/stats.json" >/dev/null; then
 	skip "download stats report zero downloads for every version, which looks like a broken log pipeline."
 fi
 
@@ -106,13 +116,27 @@ export AWS_SECRET_ACCESS_KEY=${CLOUDFLARE_SECRET_ACCESS_KEY:?CLOUDFLARE_SECRET_A
 export AWS_RETRY_MODE=adaptive
 export AWS_MAX_ATTEMPTS=10
 
-aws s3 cp "s3://$bucket/VERSION" "$tmp/VERSION" --no-progress >/dev/null
-current_version=$(tr -d '[:space:]' <"$tmp/VERSION")
-current_version=${current_version#v}
-if ! [[ $current_version =~ ^[0-9]{4}\.[0-9]{1,2}\.[0-9]+$ ]]; then
-	echo "unexpected VERSION in bucket: '$current_version'" >&2
-	exit 1
-fi
+# Prints the version in s3://mise/VERSION, or exits the script if it cannot be
+# read or does not look like a release version.
+read_current_version() {
+	local version
+	# Command substitution does not inherit errexit, so fail explicitly and never
+	# fall back to a VERSION file left over from an earlier read.
+	rm -f "$tmp/VERSION"
+	if ! aws s3 cp "s3://$bucket/VERSION" "$tmp/VERSION" --no-progress </dev/null >/dev/null; then
+		echo "could not read s3://$bucket/VERSION" >&2
+		exit 1
+	fi
+	version=$(tr -d '[:space:]' <"$tmp/VERSION")
+	version=${version#v}
+	if ! [[ $version =~ ^[0-9]{4}\.[0-9]{1,2}\.[0-9]+$ ]]; then
+		echo "unexpected VERSION in bucket: '$version'" >&2
+		exit 1
+	fi
+	printf '%s\n' "$version"
+}
+
+current_version=$(read_current_version)
 echo "current VERSION: $current_version"
 
 # Every release folder starts with "v"; the strict folder regex below drops any
@@ -209,13 +233,26 @@ if [[ $mode != delete ]]; then
 	exit 0
 fi
 
-jq -r '.[].folder' "$tmp/candidates.json" | while read -r folder; do
+deleted=0
+deleted_bytes=0
+while IFS=$'\t' read -r folder bytes; do
 	# Re-check right before deleting so a bug above can never widen the prefix.
-	if ! [[ $folder =~ ^v[0-9]{4}\.[0-9]{1,2}\.[0-9]+$ ]] || [[ $folder == "v$current_version" ]]; then
+	if ! [[ $folder =~ ^v[0-9]{4}\.[0-9]{1,2}\.[0-9]+$ ]]; then
 		echo "refusing to delete unexpected folder '$folder'" >&2
 		exit 1
 	fi
+	# A release may have been published since the listing; never remove the
+	# folder VERSION points at now. A failed read aborts the run.
+	if ! latest_version=$(read_current_version); then
+		exit 1
+	fi
+	if [[ $folder == "v$latest_version" ]]; then
+		echo "skipping $folder/: it is the current VERSION"
+		continue
+	fi
 	echo "deleting s3://$bucket/$folder/"
-	aws s3 rm "s3://$bucket/$folder/" --recursive --only-show-errors
-done
-echo "deleted $selected folder(s), $(gb "$selected_bytes")"
+	aws s3 rm "s3://$bucket/$folder/" --recursive --only-show-errors </dev/null
+	deleted=$((deleted + 1))
+	deleted_bytes=$((deleted_bytes + bytes))
+done < <(jq -r '.[] | [.folder, .bytes] | @tsv' "$tmp/candidates.json")
+echo "deleted $deleted folder(s), $(gb "$deleted_bytes")"
