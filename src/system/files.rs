@@ -4202,7 +4202,8 @@ fn confirmation_lines(req: &FileRequest, rendered: Option<&str>) -> Result<Vec<S
                 }
                 "overwrite"
             }
-            Ok(_) => "replace",
+            // apply cannot copy a file over a directory and stops with an error
+            Ok(_) => "conflict (not a file):",
         };
         lines.push(format!("{verb} {}", tgt.display_user()));
     }
