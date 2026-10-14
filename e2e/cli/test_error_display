@@ -10,7 +10,7 @@ export NO_COLOR=1
 
 # Local assert_fail function that doesn't force MISE_FRIENDLY_ERROR
 # Every source of GitHub credentials, unset for one command.
-NO_GITHUB_CREDENTIALS="env -u GITHUB_TOKEN -u GH_TOKEN -u MISE_GITHUB_TOKEN -u GITHUB_API_TOKEN MISE_GITHUB_GH_CLI_TOKENS=false MISE_GITHUB_USE_GIT_CREDENTIALS=false"
+NO_GITHUB_CREDENTIALS="env -u GITHUB_TOKEN -u GH_TOKEN -u MISE_GITHUB_TOKEN -u GITHUB_API_TOKEN MISE_GITHUB_GH_CLI_TOKENS=false MISE_GITHUB_USE_GIT_CREDENTIALS=false MISE_NETRC=false"
 
 local_assert_fail() {
   local cmd="$1"
