@@ -218,14 +218,15 @@ impl ToolVersion {
             return Ok(tv.with_before_date(opts.before_date));
         }
         // The refresh keeps a cached list from hiding a release newer than the
-        // cache. A cutoff older than the list (24h by default, against a list at
-        // most an hour old) already hides every such release, so the cached list
-        // gives the same answer a refetch would. See
-        // `Backend::cached_remote_versions_cover` for when that holds.
+        // cache. A cutoff well older than the list (24h by default, against a
+        // list at most an hour old) already hides every such release, so the
+        // cached list gives the same answer a refetch would. See
+        // `Backend::adopt_cached_remote_versions_for_cutoff` for when that holds.
         if opts.refresh_remote_versions
-            && remote_versions_cache_enabled()
             && let Some(before) = opts.before_date
-            && backend.cached_remote_versions_cover(config, before).await
+            && backend
+                .adopt_cached_remote_versions_for_cutoff(config, before)
+                .await
         {
             trace!(
                 "not refreshing remote versions for {request}: the release-age cutoff predates the cache"
@@ -1422,14 +1423,6 @@ impl ResolveOptions {
     }
 }
 
-/// `fetch_remote_versions_cache = "0"` asks for a fetch every time, so a
-/// cached list never stands in for the install-time refresh.
-fn remote_versions_cache_enabled() -> bool {
-    Settings::get()
-        .fetch_remote_versions_cache()
-        .is_some_and(|max_age| !max_age.is_zero())
-}
-
 /// Check if a tool has any user-linked versions (created by `mise link`).
 /// A linked version is an installed version whose path is a symlink to an external
 /// absolute path, as opposed to runtime symlinks or mise-managed install/cache links.
@@ -1567,19 +1560,6 @@ mod tests {
     use crate::args::BackendResolution;
     use crate::toolset::{CoreToolOptions, ToolOptionSource, ToolVersionOptions};
     use std::time::{SystemTime, UNIX_EPOCH};
-
-    #[test]
-    fn a_zero_cache_duration_keeps_the_install_refresh() {
-        let _settings = crate::test::SettingsGuard::lock();
-        use confique::Layer;
-        assert!(remote_versions_cache_enabled());
-        let mut partial = crate::config::settings::SettingsPartial::empty();
-        partial.fetch_remote_versions_cache = Some("0".to_string());
-        Settings::reset(Some(partial));
-        let enabled = remote_versions_cache_enabled();
-        Settings::reset(None);
-        assert!(!enabled);
-    }
 
     fn unique_name(prefix: &str) -> String {
         format!(

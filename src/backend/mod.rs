@@ -94,14 +94,20 @@ pub(crate) type VersionCacheManager = CacheManager<Vec<VersionInfo>>;
 
 pub(crate) const MISE_BINS_DIR: &str = ".mise-bins";
 
+/// How much older a cached remote-version list's contents can be than the file
+/// holding them. mise-versions republishes its lists about every 30 minutes;
+/// this leaves room for that and for the CDN in front of it.
+const LISTED_SNAPSHOT_LAG: std::time::Duration = std::time::Duration::from_secs(60 * 60);
+
 /// How old a cached remote version list may be for an install-time refresh
 /// (which `latest` gets when nothing installed satisfies it) to reuse it
 /// instead of fetching again.
 ///
 /// The refresh exists so a list cached up to `fetch_remote_versions_cache`
 /// (1h) ago does not hide a newer release. Resolution already skips it when the
-/// release-age cutoff is older than that (the 24h default), so this applies to
-/// shorter cutoffs such as `minimum_release_age = 0`. Even then, a list written
+/// release-age cutoff makes the cached list sufficient (the 24h default; see
+/// `Backend::adopt_cached_remote_versions_for_cutoff`), so this applies to
+/// short cutoffs such as `minimum_release_age = 0`. Even then, a list written
 /// in the last few minutes cannot hide much: mise-versions itself republishes
 /// about every 30 minutes, and the stable-latest shortcuts (`/releases/latest`,
 /// dist tags) are already reused for the whole cache duration.
@@ -3025,14 +3031,29 @@ pub trait Backend: Debug + Send + Sync {
         Ok(filter_cached_prereleases(versions, want_prereleases))
     }
 
-    /// Whether the cached remote-version list already holds every version a
-    /// release-age cutoff of `before` admits, read without fetching anything.
+    /// Use the cached remote-version list in place of an install-time refresh,
+    /// when it already holds every version a release-age cutoff of `before`
+    /// admits. Read without fetching anything; on `true` the list is loaded
+    /// into memory, so resolution uses exactly the copy that was checked.
     ///
-    /// A list written after `before` holds every release made before it. That
-    /// settles what a refetch could add only if the list dates every version:
-    /// a backend that dates its listing dates new releases too, while a version
-    /// with no date (or one that does not parse) passes any cutoff.
-    async fn cached_remote_versions_cover(&self, config: &Arc<Config>, before: Timestamp) -> bool {
+    /// The list's contents can be older than the file: mise-versions serves
+    /// snapshots it republishes periodically. So the file must be younger than
+    /// the cutoff by `LISTED_SNAPSHOT_LAG`, which the 24h default is and a
+    /// cutoff of minutes is not. It must also be fresh, and date every version
+    /// in a form that parses: a backend that dates its listing dates new
+    /// releases too, while a version without a usable date passes any cutoff.
+    async fn adopt_cached_remote_versions_for_cutoff(
+        &self,
+        config: &Arc<Config>,
+        before: Timestamp,
+    ) -> bool {
+        let Ok(cutoff_age) = std::time::Duration::try_from(Timestamp::now().duration_since(before))
+        else {
+            return false;
+        };
+        let Some(max_age) = cutoff_age.checked_sub(LISTED_SNAPSHOT_LAG) else {
+            return false;
+        };
         let Ok(resolved_opts) = config.resolve_tool_opts_with_overrides(self.ba()).await else {
             return false;
         };
@@ -3054,21 +3075,15 @@ pub trait Backend: Debug + Send + Sync {
             Some(context) => self.get_remote_version_cache_with_context(Some(context)),
             None => self.get_remote_version_cache(),
         };
-        let cache = cache.lock().await;
-        let written_after_cutoff = cache
-            .modified()
-            .and_then(|modified| Timestamp::try_from(modified).ok())
-            .is_some_and(|written| written >= before);
-        let Ok(versions) = cache.get_cached() else {
-            return false;
-        };
-        written_after_cutoff
-            && !versions.is_empty()
-            && versions.iter().all(|v| {
-                v.created_at
-                    .as_deref()
-                    .is_some_and(|created_at| parse_into_timestamp(created_at).is_ok())
-            })
+        cache.lock().await.adopt_file_if(|age, versions| {
+            age <= max_age
+                && !versions.is_empty()
+                && versions.iter().all(|v| {
+                    v.created_at
+                        .as_deref()
+                        .is_some_and(|created_at| parse_into_timestamp(created_at).is_ok())
+                })
+        })
     }
 
     /// The `release_url` the remote version list gives `version`, when the
@@ -6640,22 +6655,26 @@ mod latest_version_tests {
     }
 
     /// A release-age cutoff can stand in for an install-time refresh only when
-    /// the cached list was written after it and dates every version: an
-    /// undated (or unparseable) one passes any cutoff.
+    /// the cached list is younger than the cutoff by the snapshot lag and
+    /// dates every version: an undated (or unparseable) one passes any cutoff.
     #[tokio::test]
-    async fn test_cached_remote_versions_cover() {
+    async fn test_adopt_cached_remote_versions_for_cutoff() {
         let _settings = crate::test::SettingsGuard::lock();
         let config = Config::get().await.unwrap();
-        let backend = LatestBackend::new("test-cached-remote-versions-cover");
+        let backend = LatestBackend::new("test-adopt-cached-remote-versions");
         let cache = backend.get_remote_version_cache();
-        let now = crate::duration::process_now();
+        let now = Timestamp::now();
         let ago = |secs: i64| {
             now.checked_sub(jiff::SignedDuration::from_secs(secs))
                 .unwrap()
         };
         let day_ago = ago(24 * 60 * 60);
         cache.lock().await.clear().unwrap();
-        assert!(!backend.cached_remote_versions_cover(&config, day_ago).await);
+        assert!(
+            !backend
+                .adopt_cached_remote_versions_for_cutoff(&config, day_ago)
+                .await
+        );
 
         let dated = |version: &str, created_at: Option<&str>| VersionInfo {
             version: version.to_string(),
@@ -6671,10 +6690,20 @@ mod latest_version_tests {
             dated("2.0.0", Some("2025-01-01")),
         ])
         .await;
-        assert!(backend.cached_remote_versions_cover(&config, day_ago).await);
+        assert!(
+            backend
+                .adopt_cached_remote_versions_for_cutoff(&config, day_ago)
+                .await
+        );
+        // A just-written list can still hold a snapshot too old for a short
+        // cutoff.
+        assert!(
+            !backend
+                .adopt_cached_remote_versions_for_cutoff(&config, ago(10 * 60))
+                .await
+        );
 
-        // Written two hours ago: it holds everything a day-old cutoff admits,
-        // but not what a one-hour cutoff does.
+        // Past `fetch_remote_versions_cache`, a list is not used at all.
         let two_hours_ago = filetime::FileTime::from_system_time(
             std::time::SystemTime::now() - std::time::Duration::from_secs(2 * 60 * 60),
         );
@@ -6684,10 +6713,9 @@ mod latest_version_tests {
                 filetime::set_file_mtime(&path, two_hours_ago).unwrap();
             }
         }
-        assert!(backend.cached_remote_versions_cover(&config, day_ago).await);
         assert!(
             !backend
-                .cached_remote_versions_cover(&config, ago(60 * 60))
+                .adopt_cached_remote_versions_for_cutoff(&config, day_ago)
                 .await
         );
 
@@ -6696,14 +6724,22 @@ mod latest_version_tests {
             dated("2.0.0", None),
         ])
         .await;
-        assert!(!backend.cached_remote_versions_cover(&config, day_ago).await);
+        assert!(
+            !backend
+                .adopt_cached_remote_versions_for_cutoff(&config, day_ago)
+                .await
+        );
 
         write(vec![
             dated("1.0.0", Some("2024-01-01")),
             dated("2.0.0", Some("not-a-date")),
         ])
         .await;
-        assert!(!backend.cached_remote_versions_cover(&config, day_ago).await);
+        assert!(
+            !backend
+                .adopt_cached_remote_versions_for_cutoff(&config, day_ago)
+                .await
+        );
 
         cache.lock().await.clear().unwrap();
         assert_eq!(backend.list_calls(), 0);

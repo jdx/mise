@@ -312,9 +312,37 @@ where
         self.refresh_async(fetch).await
     }
 
-    /// When the cache file was last written, if it exists.
-    pub fn modified(&self) -> Option<std::time::SystemTime> {
-        self.cache_file_path.metadata().ok()?.modified().ok()
+    /// Load the cache file into memory when it is still fresh and `accept`
+    /// approves its contents given its age, and say whether it did.
+    ///
+    /// The file rather than any value already in memory, which another command
+    /// may have rewritten since, so the age and the contents `accept` judges
+    /// come from the same copy, and later reads use exactly that copy.
+    pub fn adopt_file_if(&mut self, accept: impl FnOnce(Duration, &T) -> bool) -> bool
+    where
+        T: Clone,
+    {
+        let Some(age) = self
+            .cache_file_path
+            .metadata()
+            .and_then(|metadata| metadata.modified())
+            .ok()
+            .and_then(|modified| modified.elapsed().ok())
+        else {
+            return false;
+        };
+        if self.freshest_duration().is_some_and(|fresh| age >= fresh) {
+            return false;
+        }
+        let Ok(val) = self.parse() else {
+            return false;
+        };
+        if !accept(age, &val) {
+            return false;
+        }
+        *self.cache = OnceCell::with_value(val.clone());
+        *self.cache_async = tokio::sync::OnceCell::new_with(Some(val));
+        true
     }
 
     /// Read the cache file without checking freshness and without fetching or writing.
@@ -764,6 +792,34 @@ mod tests {
             .unwrap();
 
         assert_eq!(val, "fetched");
+    }
+
+    #[tokio::test]
+    async fn adopt_file_if_loads_the_approved_file_over_memory() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut cache = refresh_cache(dir.path(), Duration::from_secs(3600));
+        // An older value in memory, and a newer file another command wrote.
+        cache
+            .get_or_try_init(|| Ok("in memory".to_string()))
+            .unwrap();
+        refresh_cache(dir.path(), Duration::from_secs(3600))
+            .write(&"on disk".to_string())
+            .unwrap();
+
+        assert!(!cache.adopt_file_if(|_, val| val == "in memory"));
+        assert!(cache.adopt_file_if(|age, val| age < Duration::from_secs(60) && val == "on disk"));
+        assert_eq!(
+            cache.get_or_try_init(|| Ok("fetched".to_string())).unwrap(),
+            "on disk"
+        );
+    }
+
+    #[tokio::test]
+    async fn adopt_file_if_rejects_a_stale_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut cache = refresh_cache(dir.path(), Duration::ZERO);
+        cache.write(&"written".to_string()).unwrap();
+        assert!(!cache.adopt_file_if(|_, _| true));
     }
 
     fn environment(values: &[(&str, &str)]) -> impl Fn(&str) -> Option<String> {
