@@ -592,6 +592,9 @@ pub fn github_is_url_replaced(repo: Option<&str>) -> bool {
     if let Some(repo) = repo {
         urls.extend([
             format!("https://api.github.com/repos/{repo}/releases"),
+            // The listing request as mise makes it, for rules written with
+            // its query.
+            format!("https://api.github.com/repos/{repo}/releases?per_page=100"),
             format!("https://api.github.com/repos/{repo}/releases/latest"),
             format!("https://api.github.com/repos/{repo}/releases/tags/v1.0.0"),
             format!("https://api.github.com/repos/{repo}/attestations/sha256:0"),
