@@ -26,3 +26,7 @@ no_github_api install github:BurntSushi/ripgrep@14.1.1
 assert_contains "mise x github:BurntSushi/ripgrep@14.1.1 -- rg --version" "ripgrep 14.1.1"
 # terraform's GitHub releases have no assets.
 no_github_api latest aqua:hashicorp/terraform
+# Attestations come from mise-versions too. foundry's are filtered by
+# predicate type (SPDX), which mise-versions leaves to the client.
+no_github_api install aqua:goreleaser/goreleaser@2.14.1
+no_github_api install aqua:foundry-rs/foundry@1.8.5

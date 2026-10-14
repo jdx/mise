@@ -197,66 +197,18 @@ async fn verify_attestation_uncached(
     let mut digest = None;
     if use_versions_host_for_attestations(api_url, use_versions_host) {
         let artifact_digest = mise_sigstore::calculate_file_digest(artifact_path).await?;
-        match mirrored_attestations(
-            &format!("{owner}/{repo}"),
-            &format!("sha256:{artifact_digest}"),
+        match verify_with_mirror(
+            artifact_path,
+            owner,
+            repo,
+            expected_workflow,
+            None,
+            &artifact_digest,
         )
         .await
         {
-            Ok(Some(attestations)) => {
-                trace!(
-                    "got {} GitHub attestations for {owner}/{repo}@sha256:{artifact_digest} from mise-versions",
-                    attestations.len()
-                );
-                if attestations.is_empty() {
-                    if !mirror_may_answer_none() {
-                        debug!(
-                            "mise-versions has no GitHub attestations for {owner}/{repo}; paranoid mode asks GitHub"
-                        );
-                    } else {
-                        return Err(AttestationError::NoAttestations);
-                    }
-                } else if attestations.iter().any(|a| !a.has_inline_bundle()) {
-                    debug!(
-                        "mise-versions returned GitHub attestations without inline bundles; falling back to GitHub API"
-                    );
-                } else {
-                    // GitHub may append attestations for a digest after mise-versions first
-                    // caches it. Treat only a successful verification as authoritative so an
-                    // incomplete cached set can still be refreshed from GitHub directly.
-                    match classify_cached_attestation_verification(
-                        mise_sigstore::verify_github_attestation_sources(
-                            artifact_path,
-                            &attestations,
-                            expected_workflow,
-                        )
-                        .await,
-                    ) {
-                        // Anyone can attest any digest from their own
-                        // repository; GitHub's API only lists the requested
-                        // repository's, but a mirror could list anyone's.
-                        CachedAttestationVerification::Verified(sources)
-                            if crate::github::attested_by_repository(owner, repo, &sources)
-                                .await =>
-                        {
-                            return Ok(true);
-                        }
-                        CachedAttestationVerification::Verified(sources) => warn!(
-                            "mise-versions returned attestations for {owner}/{repo} made by {}; verifying with GitHub instead",
-                            sources.join(", ")
-                        ),
-                        CachedAttestationVerification::Retry(None) => debug!(
-                            "mise-versions GitHub attestations did not verify for {owner}/{repo}; falling back to GitHub API"
-                        ),
-                        CachedAttestationVerification::Retry(Some(err)) => debug!(
-                            "mise-versions GitHub attestation verification failed overall for {owner}/{repo}; falling back to GitHub API: {}",
-                            err.diagnostic_summary()
-                        ),
-                    }
-                }
-            }
-            Ok(None) => {}
-            Err(err) => debug!("mise-versions GitHub attestations lookup failed: {err:#}"),
+            MirrorVerdict::Done(result) => return result,
+            MirrorVerdict::AskGithub => {}
         }
         digest = Some(artifact_digest);
     }
@@ -293,8 +245,8 @@ async fn verify_attestation_uncached(
 
 /// Verify a GitHub artifact attestation filtered by predicate type.
 ///
-/// The versions-host cache is keyed by digest only, so predicate-filtered
-/// requests go directly to the GitHub attestations API.
+/// mise-versions serves every attestation for a digest, so the filter is
+/// applied here, the way GitHub's `predicate_type` parameter applies it.
 pub async fn verify_attestation_with_predicate_type(
     artifact_path: &Path,
     owner: &str,
@@ -318,6 +270,21 @@ pub async fn verify_attestation_with_predicate_type(
     };
 
     let artifact_digest = mise_sigstore::calculate_file_digest(artifact_path).await?;
+    if use_versions_host_for_attestations(api_url, use_versions_host) {
+        match verify_with_mirror(
+            artifact_path,
+            owner,
+            repo,
+            expected_workflow,
+            Some(predicate_type),
+            &artifact_digest,
+        )
+        .await
+        {
+            MirrorVerdict::Done(result) => return result,
+            MirrorVerdict::AskGithub => {}
+        }
+    }
     let client = attestation_client(api_url.unwrap_or(crate::github::API_URL))?;
     let attestations = client
         .fetch_attestations(FetchParams {
@@ -380,21 +347,10 @@ pub async fn detect_attestations(
     digest: &str,
     use_versions_host: bool,
 ) -> Result<bool, DetectError> {
-    if use_versions_host_for_attestations(Some(api_url), use_versions_host) {
-        match mirrored_attestations(&format!("{owner}/{repo}"), digest).await {
-            Ok(Some(attestations)) if !attestations.is_empty() || mirror_may_answer_none() => {
-                trace!(
-                    "got {} GitHub attestation probes for {owner}/{repo}@{digest} from mise-versions",
-                    attestations.len()
-                );
-                return Ok(!attestations.is_empty());
-            }
-            Ok(Some(_)) => debug!(
-                "mise-versions has no attestations for {owner}/{repo}@{digest}; paranoid mode asks GitHub"
-            ),
-            Ok(None) => {}
-            Err(err) => debug!("mise-versions GitHub attestation probe failed: {err:#}"),
-        }
+    if use_versions_host_for_attestations(Some(api_url), use_versions_host)
+        && let Some(found) = detect_with_mirror(owner, repo, digest, None).await
+    {
+        return found;
     }
 
     let token = resolve_token_for_wrapper(Some(api_url));
@@ -410,9 +366,8 @@ pub async fn detect_attestations(
 }
 
 /// Probe the GitHub attestation API for the given digest and predicate type.
-///
-/// The versions-host cache is keyed by digest only, so predicate-filtered
-/// requests go directly to the GitHub attestations API.
+/// From mise-versions, filtered here, as in
+/// [`verify_attestation_with_predicate_type`].
 pub async fn detect_attestations_with_predicate_type(
     owner: &str,
     repo: &str,
@@ -424,6 +379,11 @@ pub async fn detect_attestations_with_predicate_type(
     let Some(predicate_type) = predicate_type else {
         return detect_attestations(owner, repo, api_url, digest, use_versions_host).await;
     };
+    if use_versions_host_for_attestations(Some(api_url), use_versions_host)
+        && let Some(found) = detect_with_mirror(owner, repo, digest, Some(predicate_type)).await
+    {
+        return found;
+    }
 
     let client = attestation_client(api_url).map_err(DetectError::SourceCreation)?;
     let digest = if digest.contains(':') {
@@ -506,6 +466,186 @@ async fn mirrored_attestations(repo: &str, digest: &str) -> eyre::Result<Mirrore
     })
     .await
     .cloned()
+}
+
+/// What mise-versions settled about an artifact's attestations.
+enum MirrorVerdict {
+    /// The answer: verified, or why not.
+    Done(AttestationResult<bool>),
+    /// GitHub has to answer: paranoid mode confirming what mise-versions
+    /// said, or a repository mise-versions doesn't know (a private one) while
+    /// the user has a token to read it with.
+    AskGithub,
+}
+
+/// Verify `artifact_path` against mise-versions' attestations for `owner/repo`,
+/// keeping only those of `predicate_type` when it is set.
+///
+/// Normal usage never falls back to api.github.com, whose rate limit is 60
+/// requests an hour without a token. A set kept from an earlier command may
+/// predate an attestation GitHub added since, so one that doesn't verify is
+/// asked for again before the failure stands; mise-versions refreshes its own
+/// copy within half an hour of a release.
+async fn verify_with_mirror(
+    artifact_path: &Path,
+    owner: &str,
+    repo: &str,
+    expected_workflow: Option<&str>,
+    predicate_type: Option<&str>,
+    artifact_digest: &str,
+) -> MirrorVerdict {
+    let full = format!("{owner}/{repo}");
+    let digest = format!("sha256:{artifact_digest}");
+    for fresh in [false, true] {
+        let found = if fresh {
+            crate::versions_host::github_attestations(&full, &digest).await
+        } else {
+            mirrored_attestations(&full, &digest).await
+        };
+        let attestations = match found {
+            Ok(Some(attestations)) => attestations,
+            Ok(None) => return unknown_repo_verdict(&full),
+            Err(err) => return MirrorVerdict::Done(Err(mirror_failure(&full, &err))),
+        };
+        trace!(
+            "got {} GitHub attestations for {full}@{digest} from mise-versions",
+            attestations.len()
+        );
+        if attestations.is_empty() {
+            // Not kept on disk, so already as fresh as mise-versions has it.
+            return no_attestations_verdict(&full);
+        }
+        let selected: Vec<_> = attestations
+            .into_iter()
+            .filter(|a| predicate_type.is_none_or(|p| a.matches_predicate_type(p)))
+            .collect();
+        if selected.is_empty() {
+            if fresh {
+                return no_attestations_verdict(&full);
+            }
+            continue;
+        }
+        if selected.iter().any(|a| !a.has_inline_bundle()) {
+            return MirrorVerdict::Done(Err(AttestationError::Api(format!(
+                "mise-versions returned attestations for {full} without their bundles"
+            ))));
+        }
+        match classify_cached_attestation_verification(
+            mise_sigstore::verify_github_attestation_sources(
+                artifact_path,
+                &selected,
+                expected_workflow,
+            )
+            .await,
+        ) {
+            // Anyone can attest any digest from their own repository;
+            // GitHub's API only lists the requested repository's, but a
+            // mirror could list anyone's.
+            CachedAttestationVerification::Verified(sources)
+                if crate::github::attested_by_repository(owner, repo, &sources).await =>
+            {
+                return MirrorVerdict::Done(Ok(true));
+            }
+            CachedAttestationVerification::Verified(sources) => {
+                let made_by = sources.join(", ");
+                if !mirror_may_answer_none() {
+                    warn!(
+                        "mise-versions returned attestations for {full} made by {made_by}; verifying with GitHub instead"
+                    );
+                    return MirrorVerdict::AskGithub;
+                }
+                return MirrorVerdict::Done(Err(AttestationError::Verification(format!(
+                    "the attestations mise-versions has for {full} were made by {made_by}"
+                ))));
+            }
+            CachedAttestationVerification::Retry(err) if fresh => {
+                if !mirror_may_answer_none() {
+                    debug!(
+                        "mise-versions GitHub attestations did not verify for {full}; paranoid mode asks GitHub"
+                    );
+                    return MirrorVerdict::AskGithub;
+                }
+                return MirrorVerdict::Done(Err(err.unwrap_or_else(|| {
+                    AttestationError::Verification(format!(
+                        "no attestation mise-versions has for {full} verified this artifact"
+                    ))
+                })));
+            }
+            CachedAttestationVerification::Retry(_) => debug!(
+                "GitHub attestations kept for {full} did not verify; asking mise-versions again"
+            ),
+        }
+    }
+    unreachable!("the second pass always returns")
+}
+
+/// Whether mise-versions' attestations for `owner/repo` at `digest` include
+/// any of `predicate_type` (any at all when `None`). `None` sends the caller
+/// to GitHub, as [`MirrorVerdict::AskGithub`] does.
+async fn detect_with_mirror(
+    owner: &str,
+    repo: &str,
+    digest: &str,
+    predicate_type: Option<&str>,
+) -> Option<Result<bool, DetectError>> {
+    let full = format!("{owner}/{repo}");
+    let digest = if digest.contains(':') {
+        digest.to_string()
+    } else {
+        format!("sha256:{digest}")
+    };
+    let attestations = match mirrored_attestations(&full, &digest).await {
+        Ok(Some(attestations)) => attestations,
+        Ok(None) => {
+            return match unknown_repo_verdict(&full) {
+                MirrorVerdict::AskGithub => None,
+                MirrorVerdict::Done(result) => Some(result.map_err(DetectError::Fetch)),
+            };
+        }
+        Err(err) => return Some(Err(DetectError::Fetch(mirror_failure(&full, &err)))),
+    };
+    let found = attestations
+        .iter()
+        .any(|a| predicate_type.is_none_or(|p| a.matches_predicate_type(p)));
+    trace!(
+        "got {} GitHub attestation probes for {full}@{digest} from mise-versions",
+        attestations.len()
+    );
+    if !found && !mirror_may_answer_none() {
+        debug!("mise-versions has no attestations for {full}@{digest}; paranoid mode asks GitHub");
+        return None;
+    }
+    Some(Ok(found))
+}
+
+fn no_attestations_verdict(full: &str) -> MirrorVerdict {
+    if mirror_may_answer_none() {
+        MirrorVerdict::Done(Err(AttestationError::NoAttestations))
+    } else {
+        debug!("mise-versions has no GitHub attestations for {full}; paranoid mode asks GitHub");
+        MirrorVerdict::AskGithub
+    }
+}
+
+/// mise-versions answered 404: it doesn't serve `full`, which is private or
+/// gone. Only the user's token can read a private repository's attestations.
+fn unknown_repo_verdict(full: &str) -> MirrorVerdict {
+    if resolve_token_for_wrapper(None).is_some() {
+        debug!("mise-versions does not know {full}; asking GitHub, which may hold it privately");
+        return MirrorVerdict::AskGithub;
+    }
+    MirrorVerdict::Done(Err(AttestationError::Api(format!(
+        "GitHub repository {full} not found (404 from mise-versions.jdx.dev, which mise asks \
+         instead of api.github.com). If the repository is private, set GITHUB_TOKEN; to ask \
+         GitHub directly, set use_versions_host = false."
+    ))))
+}
+
+fn mirror_failure(full: &str, err: &eyre::Report) -> AttestationError {
+    AttestationError::Api(format!(
+        "{} {err:#}",
+        crate::github::versions_host_failure(&format!("GitHub attestations of {full}"))
+    ))
 }
 
 fn mirror_may_answer_none() -> bool {

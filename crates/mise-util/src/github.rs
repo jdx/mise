@@ -437,7 +437,7 @@ fn ensure_private_repo_lookup(repo: &str, what: &str) -> Result<()> {
     )
 }
 
-fn versions_host_failure(what: &str) -> String {
+pub(crate) fn versions_host_failure(what: &str) -> String {
     format!(
         "failed to read {what} from mise-versions.jdx.dev, which mise asks instead of \
          api.github.com. Try again later, or set use_versions_host = false to ask GitHub \
