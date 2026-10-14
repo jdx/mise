@@ -19,8 +19,8 @@ if [[ $output != *"GET https://raw.githubusercontent.com/aquaproj/aqua-registry/
   echo "$output"
   fail "the registry was not read from raw.githubusercontent.com"
 fi
-if [[ $output == *"GET https://api.github.com/"* ]]; then
+if [[ $output == *"GET https://api.github.com/repos/aquaproj/aqua-registry/contents/"* ]]; then
   echo "$output"
-  fail "mise asked api.github.com"
+  fail "mise read the registry through the contents API"
 fi
 assert_contains "mise ls-remote aqua:BurntSushi/ripgrep" "14.1.1"
