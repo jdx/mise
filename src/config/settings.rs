@@ -717,6 +717,10 @@ pub trait SettingsExt: Sized {
     fn all_compile(&self) -> bool;
 
     fn node_compile(&self, purpose: CompilePurpose) -> Option<bool>;
+    /// The `compile` setting for a lock target that is not the current platform. The distro
+    /// default of `all_compile` describes the host generating the lock, not the target, so only
+    /// explicit settings apply.
+    fn explicit_compile(&self, compile: Option<bool>) -> Option<bool>;
 
     fn python_compile(&self, purpose: CompilePurpose) -> Option<bool>;
 
@@ -910,6 +914,10 @@ impl SettingsExt for Settings {
 
     fn node_compile(&self, purpose: CompilePurpose) -> Option<bool> {
         self.compile_setting(purpose, "node", self.node.compile)
+    }
+
+    fn explicit_compile(&self, compile: Option<bool>) -> Option<bool> {
+        effective_compile_setting(self.all_compile == Some(true), compile)
     }
 
     fn python_compile(&self, purpose: CompilePurpose) -> Option<bool> {
@@ -1986,6 +1994,16 @@ mod tests {
             settings.as_dict().unwrap().get("all_compile"),
             Some(&toml::Value::Boolean(false))
         );
+    }
+
+    #[test]
+    fn explicit_compile_ignores_the_implicit_distro_default() {
+        let mut settings = Settings::default();
+        assert_eq!(settings.explicit_compile(None), None);
+        assert_eq!(settings.explicit_compile(Some(false)), Some(false));
+        settings.all_compile = Some(true);
+        assert_eq!(settings.explicit_compile(None), Some(true));
+        assert_eq!(settings.explicit_compile(Some(false)), Some(false));
     }
 
     #[test]
