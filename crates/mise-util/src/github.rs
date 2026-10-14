@@ -426,7 +426,7 @@ fn mirrors_github_metadata(api_url: &str, repo: &str) -> bool {
 /// repository, which mise-versions never serves. Asking needs the user's
 /// token, so without one the 404 is the answer.
 fn ensure_private_repo_lookup(repo: &str, what: &str) -> Result<()> {
-    if resolve_token("api.github.com").is_some() {
+    if has_github_api_credentials() {
         debug!("mise-versions does not know {repo}; asking GitHub, which may hold it privately");
         return Ok(());
     }
@@ -435,6 +435,16 @@ fn ensure_private_repo_lookup(repo: &str, what: &str) -> Result<()> {
          api.github.com). If the repository is private, set GITHUB_TOKEN; to ask GitHub \
          directly, set use_versions_host = false."
     )
+}
+
+/// Whether requests to api.github.com would carry the user's credentials: a
+/// token, or a `~/.netrc` entry for the host, which the HTTP client applies
+/// when no token does.
+fn has_github_api_credentials() -> bool {
+    resolve_token("api.github.com").is_some()
+        || url::Url::parse(API_URL).is_ok_and(|url| {
+            crate::http::netrc_headers(&url).contains_key(reqwest::header::AUTHORIZATION)
+        })
 }
 
 fn versions_host_failure(what: &str) -> String {
@@ -814,13 +824,15 @@ async fn get_release_with_options(
                 // try `v1.2.3` and then `1.2.3`, and those guesses must not
                 // reach GitHub. Only a repository mise-versions doesn't list
                 // at all may be private.
-                let listed = crate::versions_host::github_releases(repo, 1)
-                    .await
-                    .wrap_err_with(|| versions_host_failure(&what))?;
-                if listed.is_some() {
-                    bail!("{what} not found (404 from mise-versions.jdx.dev)");
+                match crate::versions_host::github_releases(repo, 1).await {
+                    Ok(None) => ensure_private_repo_lookup(repo, &what)?,
+                    // A listing that failed can't say the repository is
+                    // private; the tag lookup's 404 stands, so callers still
+                    // try their next spelling of the tag.
+                    Ok(Some(_)) | Err(_) => {
+                        bail!("{what} not found (404 from mise-versions.jdx.dev)")
+                    }
                 }
-                ensure_private_repo_lookup(repo, &what)?;
             }
         }
     }
