@@ -1425,7 +1425,11 @@ impl ResolveOptions {
 /// Whether every release `before` admits is old enough that any cached
 /// remote-version list, at most `fetch_remote_versions_cache` old, includes it.
 fn cutoff_predates_cache(before: Timestamp) -> bool {
-    let Some(max_age) = Settings::get().fetch_remote_versions_cache() else {
+    // `fetch_remote_versions_cache = "0"` asks for a fetch every time.
+    let Some(max_age) = Settings::get()
+        .fetch_remote_versions_cache()
+        .filter(|max_age| !max_age.is_zero())
+    else {
         return false;
     };
     let Ok(max_age) = jiff::SignedDuration::try_from(max_age) else {
@@ -1590,6 +1594,21 @@ mod tests {
         assert!(cutoff_predates_cache(ago(60 * 60)));
         assert!(!cutoff_predates_cache(ago(10 * 60)));
         assert!(!cutoff_predates_cache(now));
+    }
+
+    #[test]
+    fn cutoff_never_predates_a_cache_that_is_never_fresh() {
+        let _settings = crate::test::SettingsGuard::lock();
+        use confique::Layer;
+        let mut partial = crate::config::settings::SettingsPartial::empty();
+        partial.fetch_remote_versions_cache = Some("0".to_string());
+        Settings::reset(Some(partial));
+        let day_ago = crate::duration::process_now()
+            .checked_sub(jiff::SignedDuration::from_secs(24 * 60 * 60))
+            .unwrap();
+        let predates = cutoff_predates_cache(day_ago);
+        Settings::reset(None);
+        assert!(!predates);
     }
 
     fn unique_name(prefix: &str) -> String {
