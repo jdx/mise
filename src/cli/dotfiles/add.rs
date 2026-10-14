@@ -153,24 +153,42 @@ impl DotfilesAdd {
         let managed = system::files::files_from_config(&config)?;
         if self.changed {
             for req in &managed {
-                if req.mode == FileMode::Copy
-                    && req.target.is_file()
+                if req.mode != FileMode::Copy {
+                    continue;
+                }
+                let mut changed = vec![];
+                if req.source.is_dir() {
+                    // a group's tree captures file by file; other directory
+                    // copies are not captured by --changed
+                    if req.group.is_some() && req.target.is_dir() {
+                        for (source, target) in system::files::directory_source_files(req)? {
+                            if target.is_file()
+                                && !target.is_symlink()
+                                && is_changed(&source, &target)?
+                            {
+                                changed.push(target.to_string_lossy().to_string());
+                            }
+                        }
+                    }
+                } else if req.target.is_file()
                     && !req.target.is_symlink()
-                    && !req.source.is_dir()
                     && matches!(
                         system::files::check(&config, req, &secrets)?,
                         system::files::FileState::Differs(_)
                     )
                 {
-                    if !is_global_config(&req.origin.config) && !is_path_trusted(&req.origin.config)
-                    {
-                        bail!(
-                            "--changed requires trusted configuration: {}",
-                            req.origin.config.display_user()
-                        );
-                    }
-                    self.targets.push(req.target_raw.clone());
+                    changed.push(req.target_raw.clone());
                 }
+                if changed.is_empty() {
+                    continue;
+                }
+                if !is_global_config(&req.origin.config) && !is_path_trusted(&req.origin.config) {
+                    bail!(
+                        "--changed requires trusted configuration: {}",
+                        req.origin.config.display_user()
+                    );
+                }
+                self.targets.extend(changed);
             }
             if self.targets.is_empty() {
                 super::warn_if_dotfiles_ignored(&config);
@@ -633,6 +651,11 @@ impl DotfilesAdd {
         }
         Ok(())
     }
+}
+
+/// Whether a live copy-mode file no longer matches its source.
+fn is_changed(source: &std::path::Path, target: &std::path::Path) -> Result<bool> {
+    Ok(file::read(source)? != file::read(target)?)
 }
 
 #[derive(Debug)]

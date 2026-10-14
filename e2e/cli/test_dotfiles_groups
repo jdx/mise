@@ -260,3 +260,22 @@ EOF
 assert_not_contains "mise dot status 2>&1" ".keeprc"
 assert_succeed "mise dot apply --prune --yes"
 assert "readlink $HOME/.keeprc" "$DOTS/keep/.keeprc"
+
+# --changed captures files a copy-mode group discovers, not just its entries.
+mkdir -p "$DOTS/chg/nested"
+echo "one" >"$DOTS/chg/nested/config.txt"
+echo "two" >"$DOTS/chg/explicit.txt"
+cat <<EOF2 >mise.toml
+[dotfile_groups.chg]
+root = "chg"
+target = "~/.chg"
+mode = "copy"
+entries."~/.chg/explicit.txt" = { mode = "copy" }
+EOF2
+assert_succeed "mise dot apply --yes"
+echo "one edited" >"$HOME/.chg/nested/config.txt"
+echo "two edited" >"$HOME/.chg/explicit.txt"
+assert_succeed "mise dot add --changed --yes"
+assert "cat $DOTS/chg/nested/config.txt" "one edited"
+assert "cat $DOTS/chg/explicit.txt" "two edited"
+assert_contains "mise dot add --changed --yes 2>&1" "no changed copy-mode files"
