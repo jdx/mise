@@ -2790,11 +2790,13 @@ fn tools_by_source_for_update(
     // Collect tools by source (config file)
     let mut tools_by_source: HashMap<ToolSource, HashMap<String, Vec<ToolVersion>>> =
         HashMap::new();
+    // A lazy request left unresolved has no release to lock. The merge replaces a
+    // tool's entries as a whole, so a tool with one is left as the lockfile has it.
+    let mut left_alone: HashSet<(ToolSource, String)> = HashSet::new();
     for (ba, tvl) in &ts.versions {
         for tv in &tvl.versions {
-            // A lazy request left unresolved has no release to lock, and its existing
-            // entry stays as it is.
             if tv.is_deferred() {
+                left_alone.insert((tv.request.source().clone(), ba.short.to_string()));
                 continue;
             }
             // An installed `latest` resolves to its install directory name;
@@ -2824,6 +2826,11 @@ fn tools_by_source_for_update(
         existing_versions.push(new_tv);
     }
 
+    for (source, short) in left_alone {
+        if let Some(tools) = tools_by_source.get_mut(&source) {
+            tools.remove(&short);
+        }
+    }
     tools_by_source
 }
 

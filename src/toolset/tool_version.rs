@@ -332,9 +332,6 @@ impl ToolVersion {
     }
 
     pub(crate) fn request_pinned_this_version(&self) -> bool {
-        if self.deferred {
-            return false;
-        }
         let ToolRequest::Version { version, .. } = &self.request else {
             return false;
         };
