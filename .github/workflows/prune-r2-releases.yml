@@ -26,8 +26,10 @@ concurrency:
 jobs:
   prune:
     # The job gets R2 credentials, so only run the reviewed script and workflow
-    # from main, never from a branch picked in a manual dispatch.
+    # from main, never from a branch picked in a manual dispatch. The r2-prune
+    # environment (deployable only from main) holds a dedicated R2 token.
     if: github.repository == 'jdx/mise' && github.ref == 'refs/heads/main'
+    environment: r2-prune
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     permissions:
@@ -39,12 +41,16 @@ jobs:
 
       - name: Prune unused release folders
         env:
-          CLOUDFLARE_ACCESS_KEY_ID: ${{ secrets.CLOUDFLARE_ACCESS_KEY_ID }}
-          CLOUDFLARE_SECRET_ACCESS_KEY: ${{ secrets.CLOUDFLARE_SECRET_ACCESS_KEY }}
+          CLOUDFLARE_ACCESS_KEY_ID: ${{ secrets.R2_PRUNE_ACCESS_KEY_ID }}
+          CLOUDFLARE_SECRET_ACCESS_KEY: ${{ secrets.R2_PRUNE_SECRET_ACCESS_KEY }}
           EVENT_NAME: ${{ github.event_name }}
           INPUT_DRY_RUN: ${{ inputs.dry_run }}
           REPO_MODE: ${{ vars.PRUNE_R2_RELEASES }}
         run: |
+          if [[ -z "$CLOUDFLARE_ACCESS_KEY_ID" || -z "$CLOUDFLARE_SECRET_ACCESS_KEY" ]]; then
+            echo "::error::R2_PRUNE_ACCESS_KEY_ID and R2_PRUNE_SECRET_ACCESS_KEY must be set as secrets of the r2-prune environment"
+            exit 1
+          fi
           PRUNE_RELEASES=dry-run
           if [[ "$REPO_MODE" == "delete" ]]; then
             if [[ "$EVENT_NAME" == "schedule" || "$INPUT_DRY_RUN" == "false" ]]; then
