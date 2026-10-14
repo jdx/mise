@@ -4507,8 +4507,8 @@ The report is a `GET https://mise-versions.jdx.dev/t` request whose query
 parameters carry:
 
 - the tool name, its full backend identifier such as `aqua:BurntSushi/ripgrep`
-  (with any URL credentials, query string, and fragment removed), and the
-  version
+  (with any URL credentials, query string, and fragment removed, and left out
+  when a URL in it cannot be parsed), and the version
 - the OS and architecture
 
 The request also sends the mise version and invoking shell, in the User-Agent,

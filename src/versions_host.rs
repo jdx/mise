@@ -207,14 +207,16 @@ async fn track_install_async(tool: &str, full: &str, version: &str) -> eyre::Res
 
     Ok(())
 }
-/// The static install beacon. Every value is a query parameter; `full` has
-/// any URL credentials, query, and fragment removed first because request
-/// URLs are logged.
+/// The static install beacon. Every value is a query parameter. `full` has
+/// any URL credentials, query, and fragment removed first because request URLs
+/// are logged, and is left out when it cannot be cleaned.
 fn track_install_url(tool: &str, full: &str, version: &str, os: &str, arch: &str) -> String {
+    let full = sanitize_full(full)
+        .map(|full| format!("&full={}", urlencoding::encode(&full)))
+        .unwrap_or_default();
     format!(
-        "https://mise-versions.jdx.dev/t?tool={}&full={}&version={}&os={}&arch={}",
+        "https://mise-versions.jdx.dev/t?tool={}{full}&version={}&os={}&arch={}",
         urlencoding::encode(tool),
-        urlencoding::encode(&sanitize_full_for_log(full)),
         urlencoding::encode(version),
         urlencoding::encode(os),
         urlencoding::encode(arch),
@@ -222,28 +224,12 @@ fn track_install_url(tool: &str, full: &str, version: &str, os: &str, arch: &str
 }
 /// Fetch a gzipped python-build-standalone index (`python-precompiled-<arch>-<os>.gz`).
 pub(crate) async fn python_precompiled(file: &str) -> eyre::Result<impl AsRef<[u8]>> {
-    match HTTP_FETCH
+    HTTP_FETCH
         .get_bytes_with_headers(python_precompiled_url(file), VERSIONS_HOST_HEADERS.clone())
         .await
-    {
-        Err(err) if http::error_code(&err) == Some(404) => {
-            // The host published these under /tools/ before /data/.
-            crate::remove_by!("2027.4.0", "python-precompiled-tools-path");
-            HTTP_FETCH
-                .get_bytes_with_headers(
-                    python_precompiled_legacy_url(file),
-                    VERSIONS_HOST_HEADERS.clone(),
-                )
-                .await
-        }
-        rsp => rsp,
-    }
 }
 fn python_precompiled_url(file: &str) -> String {
     format!("https://mise-versions.jdx.dev/data/{file}")
-}
-fn python_precompiled_legacy_url(file: &str) -> String {
-    format!("https://mise-versions.jdx.dev/tools/{file}")
 }
 fn version_list_url(tool: &str) -> String {
     format!("https://mise-versions.jdx.dev/data/{}.toml", tool)
@@ -281,14 +267,23 @@ mod tests {
         );
     }
     #[test]
-    fn test_python_precompiled_urls() {
+    fn test_track_install_url_omits_full_it_cannot_clean() {
+        assert_eq!(
+            track_install_url(
+                "foo",
+                "http:https://user:secret@[bad/a",
+                "1.0.0",
+                "linux",
+                "x64"
+            ),
+            "https://mise-versions.jdx.dev/t?tool=foo&version=1.0.0&os=linux&arch=x64"
+        );
+    }
+    #[test]
+    fn test_python_precompiled_url_uses_static_data_path() {
         assert_eq!(
             python_precompiled_url("python-precompiled-aarch64-apple-darwin.gz"),
             "https://mise-versions.jdx.dev/data/python-precompiled-aarch64-apple-darwin.gz"
-        );
-        assert_eq!(
-            python_precompiled_legacy_url("python-precompiled-aarch64-apple-darwin.gz"),
-            "https://mise-versions.jdx.dev/tools/python-precompiled-aarch64-apple-darwin.gz"
         );
     }
     #[test]
