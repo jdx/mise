@@ -5657,6 +5657,9 @@ Only include variables marked for redaction; their values are printed unmasked
 \fB\-\-values\fR
 Only show values of environment variables
 .TP
+\fB\-\-paths\fR
+Print the PATH entries mise manages, in PATH order, one per line
+.TP
 \fB\-h, \-\-help\fR
 Print help
 \fBArguments:\fR
@@ -5694,6 +5697,12 @@ Print the variables as JSON
 .PP
 .RS 4
 mise env \-\-json
+.RE
+.PP
+List the PATH entries mise manages, such as tool bin directories
+.PP
+.RS 4
+mise env \-\-paths
 .RE
 .PP
 Write a dotenv file; it contains secret values

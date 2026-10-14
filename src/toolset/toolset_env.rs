@@ -44,7 +44,7 @@ impl Toolset {
     /// directories first. A farm already on the pristine PATH keeps its place: `PathEnv`
     /// already puts tool paths ahead of it, and a shared directory such as
     /// `~/.local/bin` must not be reordered.
-    fn child_path(&self, paths: impl IntoIterator<Item = PathBuf>) -> String {
+    fn child_path_env(&self, paths: impl IntoIterator<Item = PathBuf>) -> PathEnv {
         let mut pristine = pristine_path_without_install_dirs();
         let mut shim_farms = Vec::new();
         let mut shim_boundary = None;
@@ -81,7 +81,23 @@ impl Toolset {
                 path_env.add(dir);
             }
         }
-        path_env.to_string()
+        path_env
+    }
+
+    fn child_path(&self, paths: impl IntoIterator<Item = PathBuf>) -> String {
+        self.child_path_env(paths).to_string()
+    }
+
+    /// The entries mise puts on PATH ahead of the inherited ones, in the order
+    /// they take in the PATH `env_with_path` returns. A directory the inherited
+    /// PATH already had, such as `~/.cargo/bin`, is included when mise moves it
+    /// forward.
+    pub async fn managed_path_entries(&self, config: &Arc<Config>) -> Result<Vec<PathBuf>> {
+        let (_, env_results) = self.final_env(config).await?;
+        let (user_paths, tool_paths) = self.list_final_paths_split(config, env_results).await?;
+        Ok(self
+            .child_path_env(user_paths.into_iter().chain(tool_paths))
+            .managed_entries())
     }
 
     pub async fn full_env(&self, config: &Arc<Config>) -> Result<EnvMap> {

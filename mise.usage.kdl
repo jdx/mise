@@ -3560,6 +3560,7 @@ missing tools from the config are reported, not installed.
     flag --json-extended help="Output in JSON format with additional information (source, tool)" overrides=--shell
     flag --redacted help="Only include variables marked for redaction; their values are printed unmasked"
     flag --values help="Only show values of environment variables"
+    flag --paths help="Print the PATH entries mise manages, in PATH order, one per line"
     flag "-h --help" help="Print help" action=help builtin=#true
     arg "[TOOL@VERSION]…" help="Tools to include in addition to those in the config, such as `node@24`" required=#false var=#true
     example "eval \"$(mise env -s bash)\"" help="Load the environment once into the current bash session"
@@ -3567,6 +3568,7 @@ missing tools from the config are reported, not installed.
     example "mise env -s fish | source" help="Same, for fish"
     example "execx($(mise env -s xonsh))" help="Same, for xonsh"
     example "mise env --json" help="Print the variables as JSON"
+    example "mise env --paths" help="List the PATH entries mise manages, such as tool bin directories"
     example "mise env --dotenv > .env" help="Write a dotenv file; it contains secret values"
 }
 cmd exec help="Run a command with mise's tools and environment" {

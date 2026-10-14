@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+
+# mise env --paths lists the PATH entries mise manages, in the order they take in
+# the PATH mise env prints, including a directory the inherited PATH already had.
+mkdir -p promoted added
+cat <<EOF2 >mise.toml
+[env]
+_.path = ["{{config_root}}/promoted", "{{config_root}}/added"]
+EOF2
+
+# The inherited PATH has "promoted" behind another entry, as ~/.cargo/bin is on a runner.
+export PATH="$PWD/other:$PWD/promoted:$PATH"
+
+assert "mise env --paths" "$PWD/promoted
+$PWD/added"
+assert_contains "mise env --json" "$PWD/promoted:$PWD/added:$PWD/other"
+assert_not_contains "mise env --paths" "$PWD/other"

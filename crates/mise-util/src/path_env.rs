@@ -60,6 +60,17 @@ impl PathEnv {
             .collect()
     }
 
+    /// The entries added through [`Self::add`], in the order they appear in
+    /// [`Self::to_vec`]. An entry that was already on the PATH keeps its place
+    /// in the result, so a directory mise moved forward is still reported.
+    pub fn managed_entries(&self) -> Vec<PathBuf> {
+        let managed: HashSet<&PathBuf> = self.mise.iter().collect();
+        self.to_vec()
+            .into_iter()
+            .filter(|p| managed.contains(p))
+            .collect()
+    }
+
     pub fn join(&self) -> OsString {
         let joined = join_paths(self.to_vec()).unwrap();
         warn_if_cmd_ignores_path(&joined);
