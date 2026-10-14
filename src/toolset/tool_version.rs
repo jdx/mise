@@ -1074,7 +1074,7 @@ impl ToolVersion {
                 // The answer the matches below would give, when the versions
                 // index can prove it without the full list.
                 let selection_opts = config.get_tool_opts_with_overrides(backend.ba()).await?;
-                if let Some(version) = backend::resolve_from_versions_index(
+                if let Some(version) = Box::pin(backend::resolve_from_versions_index(
                     backend.as_ref(),
                     config,
                     v,
@@ -1082,7 +1082,7 @@ impl ToolVersion {
                     &selection_opts,
                     opts.before_date,
                     opts.refresh_remote_versions,
-                )
+                ))
                 .await
                 {
                     return Ok(version);
@@ -1182,7 +1182,7 @@ impl ToolVersion {
             return Ok(Self::new(request, prefix.to_string()));
         }
         let selection_opts = config.get_tool_opts_with_overrides(backend.ba()).await?;
-        if let Some(v) = backend::resolve_from_versions_index(
+        if let Some(v) = Box::pin(backend::resolve_from_versions_index(
             backend.as_ref(),
             config,
             prefix,
@@ -1190,7 +1190,7 @@ impl ToolVersion {
             &selection_opts,
             opts.before_date,
             opts.refresh_remote_versions,
-        )
+        ))
         .await
         {
             return Ok(Self::new(request, v));

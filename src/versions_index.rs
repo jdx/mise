@@ -242,17 +242,31 @@ pub(crate) async fn get(tool: &str, refresh: bool) -> Option<Arc<VersionsIndex>>
     FETCHED.get_or_init(fetch).await.clone()
 }
 
+/// The cached response: its `ETag` on the first line, then the body. One
+/// file, replaced atomically, so a body is never paired with the `ETag` of
+/// another deploy that a concurrent command fetched.
 fn cache_path() -> PathBuf {
-    dirs::CACHE.join("versions-index").join("index.v1.json")
+    dirs::CACHE.join("versions-index").join("index.v1")
 }
 
-/// Stores the `ETag`; its mtime is when the copy was last validated.
-fn etag_path() -> PathBuf {
-    dirs::CACHE.join("versions-index").join("index.v1.etag")
+/// Its mtime is when the cached response was last validated.
+fn validated_path() -> PathBuf {
+    dirs::CACHE
+        .join("versions-index")
+        .join("index.v1.validated")
 }
 
 fn validated_at() -> Option<SystemTime> {
-    etag_path().metadata().ok()?.modified().ok()
+    validated_path().metadata().ok()?.modified().ok()
+}
+
+/// The cached `ETag` and body.
+fn read_cached() -> Result<(String, String)> {
+    let cached = file::read_to_string(cache_path())?;
+    let Some((etag, body)) = cached.split_once('\n') else {
+        bail!("malformed cached versions index");
+    };
+    Ok((etag.to_string(), body.to_string()))
 }
 
 async fn read_fresh_copy() -> Option<Arc<VersionsIndex>> {
@@ -261,7 +275,7 @@ async fn read_fresh_copy() -> Option<Arc<VersionsIndex>> {
     if age >= max_age {
         return None;
     }
-    match read_copy() {
+    match read_cached().and_then(|(_, body)| VersionsIndex::parse(&body)) {
         Ok(index) => {
             trace!("versions index: using the copy validated {age:?} ago");
             Some(Arc::new(index))
@@ -271,10 +285,6 @@ async fn read_fresh_copy() -> Option<Arc<VersionsIndex>> {
             None
         }
     }
-}
-
-fn read_copy() -> Result<VersionsIndex> {
-    VersionsIndex::parse(&file::read_to_string(cache_path())?)
 }
 
 /// Fetch the index, revalidating the copy on disk when there is one. A failure
@@ -292,23 +302,24 @@ async fn fetch() -> Option<Arc<VersionsIndex>> {
 
 async fn fetch_() -> Result<VersionsIndex> {
     let mut headers = VERSIONS_HOST_HEADERS.clone();
-    let etag = file::read_to_string(etag_path()).unwrap_or_default();
-    let have_copy = cache_path().exists();
-    if have_copy && !etag.is_empty() {
-        headers.insert(IF_NONE_MATCH, HeaderValue::from_str(&etag)?);
+    // Read once: a 304 vouches for the body this `ETag` came with.
+    let cached = read_cached().ok().filter(|(etag, _)| !etag.is_empty());
+    if let Some((etag, _)) = &cached {
+        headers.insert(IF_NONE_MATCH, HeaderValue::from_str(etag)?);
     }
     let resp = HTTP_FETCH
         .get_async_with_headers_allow_error_status(INDEX_URL, &headers)
         .await?;
-    match resp.status() {
-        StatusCode::NOT_MODIFIED if have_copy => {
-            let index = read_copy()?;
-            // Rewritten to mark when the copy was validated.
-            file::write(etag_path(), &etag)?;
+    match (resp.status(), cached) {
+        (StatusCode::NOT_MODIFIED, Some((_, body))) => {
+            let index = VersionsIndex::parse(&body)?;
+            if let Err(err) = file::write(validated_path(), "") {
+                debug!("versions index: cannot mark the copy validated: {err:#}");
+            }
             trace!("versions index: not modified");
             Ok(index)
         }
-        StatusCode::OK => {
+        (StatusCode::OK, _) => {
             let etag = resp
                 .headers()
                 .get(ETAG)
@@ -318,24 +329,24 @@ async fn fetch_() -> Result<VersionsIndex> {
             let body = resp.text().await?;
             let index = VersionsIndex::parse(&body)?;
             // A copy that cannot be written only costs the next command a fetch.
-            if let Err(err) = write_copy(&body, &etag) {
+            if let Err(err) = write_copy(&etag, &body) {
                 debug!("versions index: cannot cache the copy: {err:#}");
             }
             trace!("versions index: fetched {} tools", index.tools.len());
             Ok(index)
         }
-        status => bail!("{INDEX_URL} returned {status}"),
+        (status, _) => bail!("{INDEX_URL} returned {status}"),
     }
 }
 
-fn write_copy(body: &str, etag: &str) -> Result<()> {
+fn write_copy(etag: &str, body: &str) -> Result<()> {
     let path = cache_path();
     file::create_dir_all(path.parent().unwrap())?;
     let partial = path.with_extension(format!("part-{}", std::process::id()));
-    file::write(&partial, body)?;
+    file::write(&partial, format!("{etag}\n{body}"))?;
     file::rename(&partial, &path)?;
     // Last, so a copy is never marked validated before it is in place.
-    file::write(etag_path(), etag)?;
+    file::write(validated_path(), "")?;
     Ok(())
 }
 

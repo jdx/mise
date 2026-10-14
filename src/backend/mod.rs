@@ -3632,7 +3632,7 @@ pub trait Backend: Debug + Send + Sync {
         before_date: Option<Timestamp>,
         refresh: bool,
     ) -> eyre::Result<Option<String>> {
-        if let Some(version) = resolve_from_versions_index(
+        if let Some(version) = Box::pin(resolve_from_versions_index(
             self,
             config,
             query,
@@ -3640,7 +3640,7 @@ pub trait Backend: Debug + Send + Sync {
             selection_opts,
             before_date,
             refresh,
-        )
+        ))
         .await
         {
             return Ok(Some(version));
