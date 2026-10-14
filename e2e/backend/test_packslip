@@ -20,11 +20,15 @@ cat >mise.toml <<'EOF'
 packslip = "latest"
 EOF
 # Latest resolves and verifies the vendor recommendation without installing it.
+assert_contains "MISE_DEBUG=1 mise latest packslip 2>&1" "verifying for resolution"
 latest=$(mise latest packslip) || exit 1
 [[ -n $latest ]] || exit 1
 assert_contains "mise ls-remote packslip" "$latest"
+# What resolution verified is kept, so resolving again asks only for the
+# vendor's list, while installing what it picked verifies the release again.
+assert_not_contains "MISE_DEBUG=1 mise latest packslip 2>&1" "verifying for resolution"
 # The quickstart works with no explicit signer options in the user's config.
-MISE_GLOBAL_CONFIG_FILE="$PWD/global.toml" mise use -g packslip
+assert_contains "MISE_DEBUG=1 MISE_GLOBAL_CONFIG_FILE=$PWD/global.toml mise use -g packslip 2>&1" "packslip signed by"
 assert_contains "cat global.toml" 'packslip ='
 assert_contains "mise exec -- packslip version" "packslip $latest"
 canonical_install_path="$(mise where packslip)"

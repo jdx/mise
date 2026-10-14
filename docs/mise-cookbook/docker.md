@@ -67,19 +67,29 @@ own layer, so Docker rebuilds the tools only when the config changes.
 
 ### Build on the Debian image {#use-the-debian-image-as-a-base}
 
-This example assumes `mise.toml` declares Node.js and the application starts
-with `node server.js`:
+This example assumes `mise.toml` declares Node.js, the application starts
+with `node server.js`, and the project commits a `mise.lock`:
 
 ```Dockerfile [Dockerfile]
 FROM ghcr.io/jdx/mise:2026.10.4-debian
 
 WORKDIR /app
-# Also copy mise.lock if the project has one.
-COPY mise.toml ./
-RUN mise trust && mise install
+COPY mise.toml mise.lock ./
+RUN mise trust && mise install --locked
 COPY . .
 CMD ["mise", "exec", "--", "node", "server.js"]
 ```
+
+With the lockfile, the build installs the recorded versions without fetching
+any tool's list of available versions; the layer has no cached lists, so
+without one mise looks up every tool on each rebuild. Lock the image's
+platforms, such as `mise lock --platform linux-x64,linux-arm64`; see
+[lockfiles in CI and Docker](/dev-tools/mise-lock.html#ci-cd). If the project
+has npm or PyPI tools whose
+[dependency graphs](/dev-tools/mise-lock.html#dependency-graphs) are locked in
+`.mise/locks/`, also add `COPY .mise/locks .mise/locks` before the install.
+Without a lockfile, drop `mise.lock` from `COPY` and `--locked` from the
+install.
 
 Add OS packages your tools need with `apt-get`. For GitLab CI, see the
 [CI image example](/continuous-integration.html#use-the-official-image).
@@ -114,8 +124,9 @@ COPY . .
 
 ### What to copy into the build {#build-context}
 
-Copy `mise.lock` along with `mise.toml` when the project uses a lockfile, plus
-any files the config reads. If an install hook needs application files, copy
+Copy `mise.lock` along with `mise.toml` when the project uses a lockfile, along
+with its `.mise/locks/` directory if it has one, plus any files the config
+reads. If an install hook needs application files, copy
 those before `mise install`.
 
 Exclude local credentials and mise's personal config files from the build
