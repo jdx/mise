@@ -217,6 +217,15 @@ impl Upgrade {
         }
     }
 
+    /// A lazy tool with nothing installed is waiting for its first run, so a bare
+    /// upgrade leaves it alone, as a bare `mise install` does. Naming the tool
+    /// installs it, as `mise install node` does.
+    fn leaves_missing_lazy(&self, o: &OutdatedInfo) -> bool {
+        self.tool.is_empty()
+            && o.current.is_none()
+            && o.tool_version.request.options().lazy == Some(true)
+    }
+
     fn scope(&self) -> ConfigScope {
         if self.for_auto_update || self.global {
             ConfigScope::GlobalOnly
@@ -453,6 +462,7 @@ impl Upgrade {
                 }
             }
         }
+        outdated.retain(|o| !self.leaves_missing_lazy(o));
         if self.for_auto_update {
             // Another version of the same tool can opt out: `auto_update` upgrades
             // only the requests that enable it. It also only moves an installed
@@ -541,7 +551,7 @@ impl Upgrade {
                 )
                 .await
                 .into_iter()
-                .filter(|o| o.bump.is_some())
+                .filter(|o| o.bump.is_some() && !self.leaves_missing_lazy(o))
                 .collect::<Vec<_>>()
             };
             if bump_outdated.is_empty() && !has_explicit_config_bumps {

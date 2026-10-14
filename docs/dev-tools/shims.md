@@ -435,8 +435,9 @@ command. Nothing else is installed. This works even when
 `not_found_auto_install` is off. A lazy declaration never overrides a
 higher-precedence config that selects the same tool without `lazy`.
 
-A bare `mise install` skips lazy tools. `mise install --include-lazy` installs
-them all now, and `mise install node` installs one. After installation,
+A bare `mise install` skips lazy tools, and a bare `mise upgrade` skips the ones
+that are not installed yet. `mise install --include-lazy` installs them all now,
+and `mise install node` or `mise upgrade node` installs one. After installation,
 `mise activate` puts the real tool ahead of its shim, so later calls cost
 nothing extra. `mise activate --shims` keeps dispatching every call through
 mise.
