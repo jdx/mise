@@ -391,17 +391,6 @@ In a Dockerfile, copy `mise.lock` with `mise.toml` before `mise install`, and
 `.mise/locks/` too if the lockfile records dependency graphs; see
 [Docker](/mise-cookbook/docker.html#installing-project-tools).
 
-A lockfile does not make the run offline. These still use the network:
-
-- Downloading tools that are not already installed or in the
-  [download cache](/continuous-integration.html#trusted-cache).
-- Tools the lockfile does not cover, such as a tool added to `mise.toml`
-  without running `mise lock`. Plain `mise install` looks up their versions as
-  usual; `mise install --locked` fails instead, which shows the lockfile is out
-  of date.
-- Commands that look for newer versions on purpose: `mise outdated`,
-  `mise upgrade` and `mise lock --bump`.
-
 See [Continuous integration](/continuous-integration.html) for complete
 workflows.
 
