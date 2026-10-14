@@ -230,7 +230,7 @@ impl Upgrade {
                     || o.tool_version.request.options().lazy != Some(true)
                     || o.tool_version
                         .backend()
-                        .is_ok_and(|backend| !backend.list_installed_versions().is_empty())
+                        .map_or(true, |backend| !backend.list_installed_versions().is_empty())
             })
             .collect::<Vec<_>>();
         if keep.iter().all(|keep| *keep) {
@@ -586,6 +586,8 @@ impl Upgrade {
                     .into_iter()
                     .filter(|o| o.bump.is_some())
                     .collect::<Vec<_>>();
+                // Only the note about out-of-range versions follows, so there is no
+                // release-age warning to feed the requests left alone.
                 self.leave_missing_lazy(&mut bump_outdated);
                 bump_outdated
             };
