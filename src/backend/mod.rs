@@ -5934,14 +5934,15 @@ async fn versions_index_tool<B: Backend + ?Sized>(
         return Err(unavailable);
     }
     let listing_opts = resolved_opts.effective();
-    if backend.versions_host_skip_reason(listing_opts).is_some()
-        || !matches!(
-            backend
-                .remote_version_cache_context_for(config, listing_opts, false)
-                .await,
-            Ok(None)
-        )
-    {
+    let tool = backend
+        .versions_host_tool(listing_opts)
+        .map_err(|_| unavailable)?;
+    if !matches!(
+        backend
+            .remote_version_cache_context_for(config, listing_opts, false)
+            .await,
+        Ok(None)
+    ) {
         return Err(unavailable);
     }
     // A list that costs no request is the whole list: use it.
@@ -5954,7 +5955,7 @@ async fn versions_index_tool<B: Backend + ?Sized>(
     {
         return Err("its full list is cached");
     }
-    Ok(ba.short.clone())
+    Ok(tool)
 }
 
 /// [`IndexTool::resolve`] over this backend's own selection from `entry`'s

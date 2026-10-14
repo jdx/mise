@@ -31,9 +31,9 @@ use serde::de::{self, IgnoredAny, SeqAccess, Visitor};
 use serde::{Deserialize, Deserializer};
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, LazyLock, Mutex};
-use std::time::SystemTime;
-use tokio::sync::OnceCell;
+use std::time::{Duration, Instant, SystemTime};
 
 /// The only `format` this client understands.
 const INDEX_FORMAT: u64 = 1;
@@ -211,24 +211,57 @@ impl<'de> Deserialize<'de> for IndexEntry {
     }
 }
 
+/// How old a copy a `refresh` lookup accepts. A refreshed version list reuses
+/// one this recent too, and without it every tool resolving at once would
+/// refetch the index.
+const REFRESH_REUSES_COPIES_NEWER_THAN: Duration = Duration::from_secs(5 * 60);
+
+struct Loaded {
+    index: Arc<VersionsIndex>,
+    validated: Instant,
+}
+
+impl Loaded {
+    fn usable(&self, refresh: bool) -> bool {
+        is_usable(self.validated.elapsed(), refresh)
+    }
+}
+
+fn is_usable(age: Duration, refresh: bool) -> bool {
+    let max_age = Settings::get()
+        .fetch_remote_versions_cache()
+        .unwrap_or_default();
+    age < max_age && (!refresh || age < REFRESH_REUSES_COPIES_NEWER_THAN)
+}
+
 /// The index for this process, when using it costs at most one request that
 /// would not otherwise replace several. `tool` is the tool asking, and
-/// `refresh` asks for a copy validated by this process, as a refreshed version
-/// list would be. `None` means read the tool's own list.
+/// `refresh` asks for a recently validated copy, as a refreshed version list
+/// would be. `None` means read the tool's own list.
 pub(crate) async fn get(tool: &str, refresh: bool) -> Option<Arc<VersionsIndex>> {
-    // Loaded from the network by this process: as fresh as it gets.
-    static FETCHED: OnceCell<Option<Arc<VersionsIndex>>> = OnceCell::const_new();
-    // The copy on disk, when it is still fresh.
-    static ON_DISK: OnceCell<Option<Arc<VersionsIndex>>> = OnceCell::const_new();
+    // The copy in use, and when it was last validated. Held across loading,
+    // so tools resolving at once share one read or fetch.
+    static LOADED: tokio::sync::Mutex<Option<Loaded>> = tokio::sync::Mutex::const_new(None);
+    // A failed fetch is not retried: every tool reads its own list instead.
+    static FAILED: AtomicBool = AtomicBool::new(false);
     // The tools that asked. The first reads its own list; any later one means
     // the index replaces several requests.
     static ASKED: LazyLock<Mutex<HashSet<String>>> = LazyLock::new(Default::default);
 
-    if let Some(index) = FETCHED.get() {
-        return index.clone();
+    if FAILED.load(Ordering::Relaxed) {
+        return None;
     }
-    if !refresh && let Some(index) = ON_DISK.get_or_init(read_fresh_copy).await {
-        return Some(index.clone());
+    let mut loaded = LOADED.lock().await;
+    if let Some(l) = loaded.as_ref().filter(|l| l.usable(refresh)) {
+        return Some(l.index.clone());
+    }
+    if let Some((index, age)) = read_fresh_copy(refresh) {
+        let validated = Instant::now().checked_sub(age).unwrap_or_else(Instant::now);
+        *loaded = Some(Loaded {
+            index: index.clone(),
+            validated,
+        });
+        return Some(index);
     }
     let several = {
         let mut asked = ASKED.lock().unwrap();
@@ -239,7 +272,19 @@ pub(crate) async fn get(tool: &str, refresh: bool) -> Option<Arc<VersionsIndex>>
         trace!("versions index: {tool} is the first tool to need a version list, reading its own");
         return None;
     }
-    FETCHED.get_or_init(fetch).await.clone()
+    match fetch().await {
+        Some(index) => {
+            *loaded = Some(Loaded {
+                index: index.clone(),
+                validated: Instant::now(),
+            });
+            Some(index)
+        }
+        None => {
+            FAILED.store(true, Ordering::Relaxed);
+            None
+        }
+    }
 }
 
 /// The cached response: its `ETag` on the first line, then the body. One
@@ -269,16 +314,16 @@ fn read_cached() -> Result<(String, String)> {
     Ok((etag.to_string(), body.to_string()))
 }
 
-async fn read_fresh_copy() -> Option<Arc<VersionsIndex>> {
-    let max_age = Settings::get().fetch_remote_versions_cache()?;
+/// The copy on disk and its age, when it is recent enough to use as it is.
+fn read_fresh_copy(refresh: bool) -> Option<(Arc<VersionsIndex>, Duration)> {
     let age = validated_at()?.elapsed().ok()?;
-    if age >= max_age {
+    if !is_usable(age, refresh) {
         return None;
     }
     match read_cached().and_then(|(_, body)| VersionsIndex::parse(&body)) {
         Ok(index) => {
             trace!("versions index: using the copy validated {age:?} ago");
-            Some(Arc::new(index))
+            Some((Arc::new(index), age))
         }
         Err(err) => {
             debug!("versions index: cannot read the cached copy: {err:#}");
@@ -288,8 +333,8 @@ async fn read_fresh_copy() -> Option<Arc<VersionsIndex>> {
 }
 
 /// Fetch the index, revalidating the copy on disk when there is one. A failure
-/// is remembered for the rest of the process by the caller's `OnceCell`, and
-/// every tool then reads its own list, as before the index existed.
+/// is remembered for the rest of the process by the caller, and every tool
+/// then reads its own list, as before the index existed.
 async fn fetch() -> Option<Arc<VersionsIndex>> {
     match fetch_().await {
         Ok(index) => Some(Arc::new(index)),
