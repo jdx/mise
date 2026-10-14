@@ -124,6 +124,12 @@ fn compile_inherits_distro_all_compile_default(
     linux_distro == Some(distro) && explicit_all_compile.is_none() && compile.is_none()
 }
 
+/// Like [`effective_compile_setting`], but only an explicit `all_compile` counts, never the
+/// distro default.
+fn explicit_compile_setting(all_compile: Option<bool>, compile: Option<bool>) -> Option<bool> {
+    effective_compile_setting(all_compile == Some(true), compile)
+}
+
 fn effective_compile_setting(all_compile: bool, compile: Option<bool>) -> Option<bool> {
     compile.or_else(|| all_compile.then_some(true))
 }
@@ -917,7 +923,7 @@ impl SettingsExt for Settings {
     }
 
     fn explicit_compile(&self, compile: Option<bool>) -> Option<bool> {
-        effective_compile_setting(self.all_compile == Some(true), compile)
+        explicit_compile_setting(self.all_compile, compile)
     }
 
     fn python_compile(&self, purpose: CompilePurpose) -> Option<bool> {
@@ -1998,12 +2004,18 @@ mod tests {
 
     #[test]
     fn explicit_compile_ignores_the_implicit_distro_default() {
-        let mut settings = Settings::default();
-        assert_eq!(settings.explicit_compile(None), None);
-        assert_eq!(settings.explicit_compile(Some(false)), Some(false));
-        settings.all_compile = Some(true);
-        assert_eq!(settings.explicit_compile(None), Some(true));
-        assert_eq!(settings.explicit_compile(Some(false)), Some(false));
+        // The distro default is a resolved `all_compile` of true with nothing set explicitly.
+        let distro_default = default_all_compile(Some("alpine"));
+        assert!(distro_default);
+        assert_eq!(effective_compile_setting(distro_default, None), Some(true));
+        assert_eq!(explicit_compile_setting(None, None), None);
+        assert_eq!(explicit_compile_setting(None, Some(false)), Some(false));
+        assert_eq!(explicit_compile_setting(Some(true), None), Some(true));
+        assert_eq!(
+            explicit_compile_setting(Some(true), Some(false)),
+            Some(false)
+        );
+        assert_eq!(explicit_compile_setting(Some(false), None), None);
     }
 
     #[test]

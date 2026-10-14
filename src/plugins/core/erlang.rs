@@ -745,12 +745,7 @@ impl Backend for ErlangPlugin {
         tv: &ToolVersion,
         target: &PlatformTarget,
     ) -> Result<PlatformInfo> {
-        let settings = Settings::get();
-        let compile = if target.is_current() {
-            settings.erlang_compile(CompilePurpose::Inspect)
-        } else {
-            settings.explicit_compile(settings.erlang.compile)
-        };
+        let compile = Settings::get().erlang_compile(CompilePurpose::Inspect);
         if compile == Some(true) {
             return self.resolve_source_lock_info(&tv.version).await;
         }
