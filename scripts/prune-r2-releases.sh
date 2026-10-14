@@ -148,8 +148,15 @@ current_version=$(read_current_version)
 echo "current VERSION: $current_version"
 
 # Every release folder starts with "v"; the strict folder regex below drops any
-# other top-level key that happens to share the prefix.
+# other top-level key that happens to share the prefix. This relies on the AWS
+# CLI's automatic pagination, which merges every page (the bucket has ~21k
+# objects under v*) into one .Contents; never pass --no-paginate or --max-items.
+# A truncated result would hide objects, so refuse it.
 aws s3api list-objects-v2 --bucket "$bucket" --prefix v >"$tmp/listing.json"
+if jq -e '.IsTruncated == true' "$tmp/listing.json" >/dev/null; then
+	echo "bucket listing is truncated; refusing to continue" >&2
+	exit 1
+fi
 
 # Age comes from the newest object in each folder. Uploads happen at release
 # time and re-uploads only make a folder look younger, so this never makes a
@@ -260,13 +267,15 @@ while IFS=$'\t' read -r folder bytes; do
 	fi
 	# The folder may have been re-uploaded since the bucket listing. List it again
 	# and keep it if its newest object is now too young or the listing fails.
+	# This listing is auto-paginated too.
 	# (Newest-N needs no recheck: new uploads only make other folders older in
 	# rank. An upload racing the rm itself is not prevented; GitHub Releases
 	# still has every file.)
 	if ! aws s3api list-objects-v2 --bucket "$bucket" --prefix "$folder/" </dev/null >"$tmp/folder.json" ||
 		! folder_age_days=$(jq --argjson now "$(date -u +%s)" '
 			def epoch: sub("\\.[0-9]+"; "") | sub("\\+00:00$"; "Z") | fromdateiso8601;
-			[.Contents[]?.LastModified | epoch] | if length == 0 then error("empty") else max end
+			if .IsTruncated == true then error("truncated") else . end
+			| [.Contents[]?.LastModified | epoch] | if length == 0 then error("empty") else max end
 			| (($now - .) / 86400) | floor
 		' "$tmp/folder.json" 2>/dev/null) ||
 		[[ ! $folder_age_days =~ ^-?[0-9]+$ ]]; then
