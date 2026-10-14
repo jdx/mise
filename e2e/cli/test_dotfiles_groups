@@ -284,9 +284,12 @@ assert "cat $DOTS/chg/explicit.txt" "two edited"
 assert "cat $DOTS/chg/excluded.txt" "excluded"
 assert_contains "mise dot add --changed --yes 2>&1" "no changed copy-mode files"
 
-# --changed does not reapply the group, so a second edit is never overwritten.
+# --changed does not reapply the group: a source file added since the last
+# apply is not deployed, so a declined capture could not be overwritten either.
+echo "late" >"$DOTS/chg/late.txt"
 echo "one again" >"$HOME/.chg/nested/config.txt"
 echo "two again" >"$HOME/.chg/explicit.txt"
 assert_succeed "mise dot add --changed --yes"
 assert "cat $HOME/.chg/nested/config.txt" "one again"
 assert "cat $DOTS/chg/explicit.txt" "two again"
+assert_fail "test -e $HOME/.chg/late.txt"
