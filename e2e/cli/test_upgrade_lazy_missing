@@ -38,6 +38,9 @@ assert_contains_text "$upgrade_output" "All tools are up to date"
 assert_not_contains_text "$upgrade_output" "configured version ranges"
 assert_empty "mise ls --installed dummy"
 
+# `mise outdated` still lists it, marked so it is clear `mise upgrade` skips it.
+assert_contains "mise outdated" "[MISSING] (lazy)"
+
 # `--bump` leaves it alone too.
 assert_not_contains "mise upgrade --bump --dry-run 2>&1" "Would install"
 assert_empty "mise ls --installed dummy"

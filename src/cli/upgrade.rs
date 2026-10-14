@@ -225,13 +225,7 @@ impl Upgrade {
     fn leave_missing_lazy(&self, outdated: &mut Vec<OutdatedInfo>) -> Vec<ToolRequest> {
         let mut keep = outdated
             .iter()
-            .map(|o| {
-                !self.tool.is_empty()
-                    || o.tool_version.request.options().lazy != Some(true)
-                    || o.tool_version
-                        .backend()
-                        .map_or(true, |backend| !backend.list_installed_versions().is_empty())
-            })
+            .map(|o| !self.tool.is_empty() || !o.is_unrun_lazy())
             .collect::<Vec<_>>();
         if keep.iter().all(|keep| *keep) {
             return vec![];

@@ -437,7 +437,8 @@ higher-precedence config that selects the same tool without `lazy`.
 
 A bare `mise install` skips lazy tools, and a bare `mise upgrade` skips the ones
 that are not installed yet. `mise install --include-lazy` installs them all now,
-and `mise install node` or `mise upgrade node` installs one. After installation,
+and `mise install node` or `mise upgrade node` installs one. `mise outdated`
+still lists them, marked `[MISSING] (lazy)`. After installation,
 `mise activate` puts the real tool ahead of its shim, so later calls cost
 nothing extra. `mise activate --shims` keeps dispatching every call through
 mise.
