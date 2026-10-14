@@ -15,9 +15,12 @@ set -euo pipefail
 #   - it is not the version in s3://mise/VERSION (re-read before each removal)
 # and at most PRUNE_MAX_DELETE folders (oldest first) are removed per run.
 #
-# Dry run unless PRUNE_RELEASES=delete. Anything that prevents a trustworthy
-# decision (stats endpoint missing, partial coverage, stale or empty stats) skips the run
-# with exit 0 and deletes nothing.
+# Dry run unless PRUNE_RELEASES=delete. Every run first checks that the R2
+# credentials can read s3://mise/VERSION and fails (exit 1) if they cannot, so a
+# broken token shows up even while the stats gates below skip every run.
+# Anything that prevents a trustworthy decision (stats endpoint missing, no or
+# partial coverage, stale or empty stats) skips the run with exit 0 and deletes
+# nothing.
 
 mode=${PRUNE_RELEASES:-dry-run}
 window_days=${PRUNE_WINDOW_DAYS:-30}
@@ -82,11 +85,47 @@ skip() {
 
 echo "mode=$mode window=${window_days}d min_covered=${min_covered_days}d max_stats_age=${max_stats_age_days}d min_age=${min_age_days}d keep_newest=$keep_newest max_delete=$max_delete"
 
+# --- R2 credentials -------------------------------------------------------------
+export AWS_REGION=auto
+export AWS_DEFAULT_OUTPUT=json
+export AWS_ENDPOINT_URL=https://6e243906ff257b965bcae8025c2fc344.r2.cloudflarestorage.com
+export AWS_ACCESS_KEY_ID=${CLOUDFLARE_ACCESS_KEY_ID:?CLOUDFLARE_ACCESS_KEY_ID is required}
+export AWS_SECRET_ACCESS_KEY=${CLOUDFLARE_SECRET_ACCESS_KEY:?CLOUDFLARE_SECRET_ACCESS_KEY is required}
+export AWS_RETRY_MODE=adaptive
+export AWS_MAX_ATTEMPTS=10
+
+# The stats gates below skip most runs (every run until the stats cover a full
+# window), so check the token on every run, before any of them. Use an object
+# read, which a token scoped to Object Read & Write on this bucket can always
+# do (bucket-level calls such as head-bucket may be denied). This fails the
+# job in dry-run mode too.
+if ! aws s3api head-object --bucket "$bucket" --key VERSION </dev/null >/dev/null 2>"$tmp/auth.err"; then
+	sed 's/^/  /' "$tmp/auth.err" >&2
+	echo "::error::R2 credentials check failed: could not read s3://$bucket/VERSION. Check the R2_PRUNE_ACCESS_KEY_ID and R2_PRUNE_SECRET_ACCESS_KEY secrets of the r2-prune environment (the token needs Object Read & Write on bucket $bucket)."
+	printf '## Prune R2 releases: failed\n\nThe R2 credentials could not read s3://%s/VERSION. Nothing was deleted.\n' "$bucket" >>"$summary"
+	exit 1
+fi
+echo "R2 credentials can read s3://$bucket/VERSION"
+
 # --- download stats -----------------------------------------------------------
 status=$(curl -sS --retry 3 --max-time 60 -o "$tmp/stats.json" -w '%{http_code}' "$stats_url") ||
 	skip "could not reach the download stats endpoint ($stats_url)."
 if [[ $status != 200 ]]; then
 	skip "download stats endpoint returned HTTP $status ($stats_url)."
+fi
+# Before the first complete day is rolled up, the endpoint reports no coverage
+# and null dates. Only that exact shape gets its own message; any other null or
+# missing field still fails the format check below.
+if jq -e '
+	def days: type == "number" and . >= 0 and . == floor and . <= 100000;
+	type == "object" and
+	(.days | days) and
+	.covered_days == 0 and
+	has("first_covered_date") and .first_covered_date == null and
+	has("last_covered_date") and .last_covered_date == null and
+	((has("versions") | not) or .versions == {})
+' "$tmp/stats.json" >/dev/null 2>&1; then
+	skip "download stats have no covered days yet ($stats_url)."
 fi
 if ! jq -e '
 	def days: type == "number" and . >= 0 and . == floor and . <= 100000;
@@ -150,14 +189,6 @@ if ! jq -e '([.versions[] | .binary + .other] | add // 0) > 0' "$tmp/stats.json"
 fi
 
 # --- bucket listing -------------------------------------------------------------
-export AWS_REGION=auto
-export AWS_DEFAULT_OUTPUT=json
-export AWS_ENDPOINT_URL=https://6e243906ff257b965bcae8025c2fc344.r2.cloudflarestorage.com
-export AWS_ACCESS_KEY_ID=${CLOUDFLARE_ACCESS_KEY_ID:?CLOUDFLARE_ACCESS_KEY_ID is required}
-export AWS_SECRET_ACCESS_KEY=${CLOUDFLARE_SECRET_ACCESS_KEY:?CLOUDFLARE_SECRET_ACCESS_KEY is required}
-export AWS_RETRY_MODE=adaptive
-export AWS_MAX_ATTEMPTS=10
-
 # Prints the version in s3://mise/VERSION, or exits the script if it cannot be
 # read or does not look like a release version.
 read_current_version() {
