@@ -161,7 +161,18 @@ impl DotfilesAdd {
                     // a group's tree captures file by file; other directory
                     // copies are not captured by --changed
                     if req.group.is_some() && req.target.is_dir() {
-                        for (source, target) in system::files::directory_source_files(req)? {
+                        // a group that cannot be walked must not hide the others
+                        let files = match system::files::directory_source_files(req) {
+                            Ok(files) => files,
+                            Err(err) => {
+                                warn!(
+                                    "dotfiles: skipped group {}: {err}",
+                                    req.group.as_deref().unwrap_or_default()
+                                );
+                                vec![]
+                            }
+                        };
+                        for (source, target) in files {
                             if target.is_file()
                                 && !target.is_symlink()
                                 && is_changed(&source, &target)?
