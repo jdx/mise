@@ -160,7 +160,9 @@ pub(crate) struct AttestationsResponse {
     attestations: Vec<Attestation>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+/// Serializable so a caller can keep attestations it fetched (they are
+/// verified again on every use, so a kept copy vouches for nothing by itself).
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct Attestation {
     pub(crate) bundle: Option<serde_json::Value>,
     bundle_url: Option<String>,

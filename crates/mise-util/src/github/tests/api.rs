@@ -131,3 +131,20 @@ async fn test_release_lookup_encodes_the_tag_as_one_path_segment() {
     assert_eq!(release.tag_name, tag);
     mock.assert_async().await;
 }
+
+#[tokio::test]
+async fn test_asset_less_latest_is_remembered_only_for_latest() {
+    // A fixed tag without assets is usually still uploading them, so only a
+    // repository's latest release is remembered as one mise-versions can't serve.
+    assert!(asset_less_latest_cache("owner/asset-less-test", "v1.0.0").is_none());
+
+    let repo = "owner/asset-less-latest-test";
+    let cache = asset_less_latest_cache(repo, "latest").unwrap();
+    cache.write(&true).unwrap();
+    let remembered = asset_less_latest_cache(repo, "latest")
+        .unwrap()
+        .get_or_try_init_async_if(async || Ok(false), |miss| *miss)
+        .await
+        .unwrap();
+    assert!(remembered);
+}

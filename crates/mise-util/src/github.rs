@@ -746,14 +746,78 @@ async fn get_release_with_options(
     tag: &str,
     use_versions_host: bool,
 ) -> Result<GithubRelease> {
-    if use_versions_host
-        && is_public_github_api_base(api_url)
+    let ask_mirror = use_versions_host && is_public_github_api_base(api_url);
+    let mirror_misses = ask_mirror
+        .then(|| asset_less_latest_cache(repo, tag))
+        .flatten();
+    let known_miss = match &mirror_misses {
+        Some(cache) => cache
+            .get_or_try_init_async_if(async || Ok(false), |miss| *miss)
+            .await
+            .unwrap_or(false),
+        None => false,
+    };
+    if ask_mirror
+        && !known_miss
         && let Ok(Some(release)) = crate::versions_host::github_release(repo, tag).await
     {
         trace!("got GitHub release {repo}@{tag} from mise-versions");
         return Ok(release);
     }
 
+    let release = get_release_from_api(api_url, repo, tag).await?;
+    if let Some(cache) = mirror_misses
+        && release.assets.is_empty()
+        && let Err(err) = cache.write(&true)
+    {
+        debug!("failed to remember that mise-versions lacks {repo}@{tag}: {err:#}");
+    }
+    Ok(release)
+}
+
+/// How long to skip mise-versions for a repository whose latest release has
+/// no assets.
+const ASSET_LESS_LATEST_TTL: std::time::Duration = std::time::Duration::from_secs(24 * 60 * 60);
+
+static ASSET_LESS_LATEST: Lazy<Mutex<HashMap<String, std::sync::Arc<CacheManager<bool>>>>> =
+    Lazy::new(Default::default);
+
+/// Whether `repo`'s latest release was found without assets, kept in the
+/// cache dir. Some repositories publish binaries elsewhere and their GitHub
+/// releases only mark versions (kubernetes, terraform, vault, npm); aqua asks
+/// for their latest release to resolve `latest`. mise-versions answers 404 for
+/// a release without assets, and would be refused if it didn't, so each such
+/// lookup made a request that could not succeed before going to GitHub. A miss
+/// is remembered only after GitHub itself returned the release without assets,
+/// so skipping mise-versions leaves the answer to the same source that gave it
+/// before. Only `latest` is remembered: a fixed tag without assets is usually
+/// a release still uploading them, which mise-versions can serve soon after.
+fn asset_less_latest_cache(repo: &str, tag: &str) -> Option<std::sync::Arc<CacheManager<bool>>> {
+    if tag != "latest" {
+        return None;
+    }
+    let key = format!(
+        "{}-latest-without-assets-{}",
+        repo.to_kebab_case(),
+        crate::hash::hash_to_str(&repo.to_ascii_lowercase())
+    );
+    Some(
+        ASSET_LESS_LATEST
+            .lock()
+            .unwrap()
+            .entry(key.clone())
+            .or_insert_with(|| {
+                std::sync::Arc::new(
+                    CacheManagerBuilder::new(cache_dir().join(format!("{key}.msgpack.z")))
+                        .with_fresh_duration(Some(ASSET_LESS_LATEST_TTL))
+                        .build(),
+                )
+            })
+            .clone(),
+    )
+}
+
+async fn get_release_from_api(api_url: &str, repo: &str, tag: &str) -> Result<GithubRelease> {
     let url = if tag == "latest" {
         format!("{api_url}/repos/{repo}/releases/latest")
     } else {
