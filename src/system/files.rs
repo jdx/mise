@@ -4208,6 +4208,17 @@ fn confirmation_lines(req: &FileRequest, rendered: Option<&str>) -> Result<Vec<S
         }
         Ok(_) => {}
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+            // Windows reports a file used as a parent as not found too
+            if let Some(blocker) = root
+                .ancestors()
+                .skip(1)
+                .find(|dir| dir.exists() && !dir.is_dir())
+            {
+                return Ok(vec![format!(
+                    "conflict (not a directory): {}",
+                    blocker.display_user()
+                )]);
+            }
             lines.push(format!("create {}", root.display_user()));
         }
         // e.g. a parent that is a file, or a path that cannot be read
