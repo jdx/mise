@@ -793,22 +793,32 @@ static ASSET_LESS_LATEST: Lazy<Mutex<HashMap<String, std::sync::Arc<CacheManager
 /// before. Only `latest` is remembered: a fixed tag without assets is usually
 /// a release still uploading them, which mise-versions can serve soon after.
 fn asset_less_latest_cache(repo: &str, tag: &str) -> Option<std::sync::Arc<CacheManager<bool>>> {
+    asset_less_latest_cache_in(&cache_dir(), repo, tag)
+}
+
+/// [`asset_less_latest_cache`] kept in `dir`, which tests point at a
+/// temporary directory.
+fn asset_less_latest_cache_in(
+    dir: &Path,
+    repo: &str,
+    tag: &str,
+) -> Option<std::sync::Arc<CacheManager<bool>>> {
     if tag != "latest" {
         return None;
     }
-    let key = format!(
-        "{}-latest-without-assets-{}",
+    let path = dir.join(format!(
+        "{}-latest-without-assets-{}.msgpack.z",
         repo.to_kebab_case(),
         crate::hash::hash_to_str(&repo.to_ascii_lowercase())
-    );
+    ));
     Some(
         ASSET_LESS_LATEST
             .lock()
             .unwrap()
-            .entry(key.clone())
+            .entry(path.to_string_lossy().into_owned())
             .or_insert_with(|| {
                 std::sync::Arc::new(
-                    CacheManagerBuilder::new(cache_dir().join(format!("{key}.msgpack.z")))
+                    CacheManagerBuilder::new(&path)
                         .with_fresh_duration(Some(ASSET_LESS_LATEST_TTL))
                         .build(),
                 )
