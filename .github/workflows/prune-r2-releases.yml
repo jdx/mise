@@ -25,7 +25,9 @@ concurrency:
 
 jobs:
   prune:
-    if: github.repository == 'jdx/mise'
+    # The job gets R2 credentials, so only run the reviewed script and workflow
+    # from main, never from a branch picked in a manual dispatch.
+    if: github.repository == 'jdx/mise' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     permissions:

@@ -89,6 +89,9 @@ covered_days=$(jq -r '.covered_days' "$tmp/stats.json")
 first_day=$(jq -r '.first_covered_date // "?"' "$tmp/stats.json")
 last_day=$(jq -r '.last_covered_date // "?"' "$tmp/stats.json")
 echo "download stats cover $covered_days day(s): $first_day .. $last_day"
+if ((stats_days != window_days)); then
+	skip "download stats are for a $stats_days-day window, not the requested $window_days days ($first_day .. $last_day)."
+fi
 if ((covered_days < stats_days)); then
 	skip "download stats cover only $covered_days of their $stats_days-day window ($first_day .. $last_day)."
 fi
@@ -253,6 +256,25 @@ while IFS=$'\t' read -r folder bytes; do
 	fi
 	if [[ $folder == "v$latest_version" ]]; then
 		echo "skipping $folder/: it is the current VERSION"
+		continue
+	fi
+	# The folder may have been re-uploaded since the bucket listing. List it again
+	# and keep it if its newest object is now too young or the listing fails.
+	# (Newest-N needs no recheck: new uploads only make other folders older in
+	# rank. An upload racing the rm itself is not prevented; GitHub Releases
+	# still has every file.)
+	if ! aws s3api list-objects-v2 --bucket "$bucket" --prefix "$folder/" </dev/null >"$tmp/folder.json" ||
+		! folder_age_days=$(jq --argjson now "$(date -u +%s)" '
+			def epoch: sub("\\.[0-9]+"; "") | sub("\\+00:00$"; "Z") | fromdateiso8601;
+			[.Contents[]?.LastModified | epoch] | if length == 0 then error("empty") else max end
+			| (($now - .) / 86400) | floor
+		' "$tmp/folder.json" 2>/dev/null) ||
+		[[ ! $folder_age_days =~ ^-?[0-9]+$ ]]; then
+		echo "skipping $folder/: could not list it again before deleting, or it is now empty"
+		continue
+	fi
+	if ((folder_age_days < min_age_days)); then
+		echo "skipping $folder/: newest object is now $folder_age_days days old (minimum $min_age_days)"
 		continue
 	fi
 	echo "deleting s3://$bucket/$folder/"
