@@ -751,7 +751,7 @@ impl Backend for AquaBackend {
         let (target_os, target_arch) = Self::to_aqua_platform(target);
 
         // Get version tag
-        let tag = match self.listed_release_tag(tv).await {
+        let tag = match self.listed_release_tag(tv, target).await {
             Some(tag) => Some(tag),
             None => match self.get_version_tags().await {
                 Ok(tags) => tags
@@ -1054,7 +1054,10 @@ impl AquaBackend {
             Some(tag)
         } else if existing_platform.is_some() {
             None
-        } else if let Some(tag) = self.listed_release_tag(tv).await {
+        } else if let Some(tag) = self
+            .listed_release_tag(tv, &PlatformTarget::from_current())
+            .await
+        {
             Some(tag)
         } else {
             match self.get_version_tags().await {
@@ -2448,38 +2451,62 @@ impl AquaBackend {
     }
 
     /// The release tag the versions host's list records for `tv`'s version, so
-    /// installing or locking a registry tool doesn't fetch the whole release
-    /// list (`get_version_tags`) just to find it. Accepted only when this
-    /// package maps the tag back to the version, which is the test
+    /// installing or locking a registry tool for `target` doesn't fetch the
+    /// whole release list (`get_version_tags`) just to find it. Accepted only
+    /// when this package maps the tag back to the version, which is the test
     /// `get_version_tags` applies to the tags it lists.
     ///
     /// Only a hint: the host's list can trail a retag upstream, and a tag
-    /// returned here is the only spelling installing tries, without the `v`
-    /// alternative or the URL probe it would otherwise get. So the tag is
-    /// confirmed first, never with a GitHub API request beyond the one
-    /// installing makes anyway (see [`ListedTagCheck`]); `None` sends the
-    /// caller down the old path, alternatives and probe included.
-    async fn listed_release_tag(&self, tv: &ToolVersion) -> Option<String> {
+    /// returned here is the only spelling tried for `target`, without the
+    /// `v` alternative or the URL probe it would otherwise get. So it is
+    /// confirmed for `target` first (see [`Self::confirm_listed_tag`]); `None`
+    /// sends that target down the old path, alternatives and probe included.
+    async fn listed_release_tag(
+        &self,
+        tv: &ToolVersion,
+        target: &PlatformTarget,
+    ) -> Option<String> {
         let version = tv.version.as_str();
         let config = Config::get().await.ok()?;
         let url = self.listed_release_url(&config, version).await?;
         let pkg = AQUA_REGISTRY.package(&self.id).await.ok()?;
         let repo_url = format!("https://github.com/{}/{}", pkg.repo_owner, pkg.repo_name);
         let tag = backend::release_tag_from_url(&url, &repo_url)?;
-        let target = PlatformTarget::from_current();
-        let (target_os, target_arch) = Self::to_aqua_platform(&target);
-        let target_libc = Self::target_variant_libc(&target, None);
+        let (target_os, target_arch) = Self::to_aqua_platform(target);
+        // Mapped as `get_version_tags` maps the tags it lists.
+        let target_libc = Self::target_variant_libc(target, None);
         let (listed, _) =
             versioned_package_from_tag(&pkg, &tag, target_os, target_arch, target_libc.as_deref())
                 .ok()??;
         if listed != version {
             return None;
         }
+        let raw_opts = tv.request.options();
+        let opts = AquaOptions::new(&raw_opts);
+        self.confirm_listed_tag(pkg, &tag, target, &opts)
+            .await
+            .then_some(tag)
+    }
+
+    /// Whether `tag` installs `pkg` for `target`, checked without a GitHub
+    /// API request beyond the one installing makes anyway (see
+    /// [`ListedTagCheck`]). URL packages probe `target`'s own artifact: the
+    /// host's may not exist, or may exist where `target`'s doesn't.
+    async fn confirm_listed_tag(
+        &self,
+        pkg: AquaPackage,
+        tag: &str,
+        target: &PlatformTarget,
+        opts: &AquaOptions<'_>,
+    ) -> bool {
         let repo = format!("{}/{}", pkg.repo_owner, pkg.repo_name);
-        let pkg = Self::package_with_options_for_pkg(tv, pkg, &[tag.as_str()]).ok()?;
-        let v = version_with_prefix(&tag, pkg.version_prefix.as_deref());
-        let confirmed = match self.listed_tag_check(&pkg, &v) {
-            ListedTagCheck::Release => match self.get_github_release(&repo, &tag).await {
+        let Ok(pkg) = Self::package_for_target(target, pkg, &[tag], opts) else {
+            return false;
+        };
+        let v = version_with_prefix(tag, pkg.version_prefix.as_deref());
+        let (target_os, target_arch) = Self::to_aqua_platform(target);
+        let confirmed = match self.listed_tag_check(&pkg, &v, target_os, target_arch) {
+            ListedTagCheck::Release => match self.get_github_release(&repo, tag).await {
                 Ok(_) => true,
                 Err(e) => {
                     debug!("[{}] listed tag {tag} did not resolve: {e:#}", self.id);
@@ -2490,21 +2517,31 @@ impl AquaBackend {
             ListedTagCheck::Unconfirmable => false,
         };
         if !confirmed {
-            debug!("[{}] not relying on listed tag {tag}", self.id);
+            debug!(
+                "[{}] not relying on listed tag {tag} for {}",
+                self.id,
+                target.to_key()
+            );
         }
-        confirmed.then_some(tag)
+        confirmed
     }
 
-    /// How [`Self::listed_release_tag`] confirms a listed tag for `pkg`,
-    /// installed as version `v`.
-    fn listed_tag_check(&self, pkg: &AquaPackage, v: &str) -> ListedTagCheck {
+    /// How [`Self::confirm_listed_tag`] confirms a listed tag for `pkg`,
+    /// installed as version `v` on `target_os`/`target_arch`.
+    fn listed_tag_check(
+        &self,
+        pkg: &AquaPackage,
+        v: &str,
+        target_os: &str,
+        target_arch: &str,
+    ) -> ListedTagCheck {
         match pkg.package_type() {
             // The release lookup installing makes next; it is cached.
             AquaPackageType::GithubRelease => ListedTagCheck::Release,
             // A private repository's browser URLs need the API to reach.
             _ if pkg.private => ListedTagCheck::Unconfirmable,
             AquaPackageType::Http => pkg
-                .url(v, os(), arch())
+                .url(v, target_os, target_arch)
                 .map_or(ListedTagCheck::Unconfirmable, ListedTagCheck::ArtifactUrl),
             AquaPackageType::GithubArchive => {
                 ListedTagCheck::ArtifactUrl(self.github_archive_url(pkg, v))
@@ -4556,7 +4593,7 @@ packages:
         ));
         let release = listed_tag_test_package(AquaPackageType::GithubRelease, "");
         assert_eq!(
-            backend.listed_tag_check(&release, "v1.2.3"),
+            backend.listed_tag_check(&release, "v1.2.3", "linux", "amd64"),
             ListedTagCheck::Release
         );
 
@@ -4565,13 +4602,13 @@ packages:
             "https://releases.example.com/tool/{{.Version}}/tool.zip",
         );
         assert_eq!(
-            backend.listed_tag_check(&http, "1.2.3"),
+            backend.listed_tag_check(&http, "1.2.3", "linux", "amd64"),
             ListedTagCheck::ArtifactUrl("https://releases.example.com/tool/1.2.3/tool.zip".into())
         );
 
         let archive = listed_tag_test_package(AquaPackageType::GithubArchive, "");
         assert_eq!(
-            backend.listed_tag_check(&archive, "v1.2.3"),
+            backend.listed_tag_check(&archive, "v1.2.3", "linux", "amd64"),
             ListedTagCheck::ArtifactUrl(
                 "https://github.com/owner/repo/archive/refs/tags/v1.2.3.tar.gz".into()
             )
@@ -4580,7 +4617,7 @@ packages:
         let mut content = listed_tag_test_package(AquaPackageType::GithubContent, "");
         content.path = Some("bin/tool".to_string());
         assert_eq!(
-            backend.listed_tag_check(&content, "v1.2.3"),
+            backend.listed_tag_check(&content, "v1.2.3", "linux", "amd64"),
             ListedTagCheck::ArtifactUrl(
                 "https://raw.githubusercontent.com/owner/repo/v1.2.3/bin/tool".into()
             )
@@ -4589,9 +4626,61 @@ packages:
         let mut private = http.clone();
         private.private = true;
         assert_eq!(
-            backend.listed_tag_check(&private, "1.2.3"),
+            backend.listed_tag_check(&private, "1.2.3", "linux", "amd64"),
             ListedTagCheck::Unconfirmable
         );
+    }
+
+    #[tokio::test]
+    async fn test_a_listed_tag_is_confirmed_for_the_platform_being_locked() {
+        // The tag's artifact exists for linux-x64 but not for macos-arm64.
+        // Locking linux-x64 keeps the hint whatever the host is; macos-arm64
+        // drops it, so that target alone goes back to the old lookup, `v`
+        // alternative included.
+        let mut server = mockito::Server::new_async().await;
+        let linux = server
+            .mock("HEAD", "/dl/1.2.3/tool_linux_amd64.zip")
+            .with_status(200)
+            .expect(1)
+            .create_async()
+            .await;
+        let _darwin = server
+            .mock("HEAD", "/dl/1.2.3/tool_darwin_arm64.zip")
+            .with_status(404)
+            .create_async()
+            .await;
+        let _darwin_get = server
+            .mock("GET", "/dl/1.2.3/tool_darwin_arm64.zip")
+            .with_status(404)
+            .create_async()
+            .await;
+        let backend = AquaBackend::from_arg(BackendArg::new(
+            "tool".to_string(),
+            Some("aqua:owner/repo".to_string()),
+        ));
+        let pkg = listed_tag_test_package(
+            AquaPackageType::Http,
+            &format!(
+                "{}/dl/{{{{.Version}}}}/tool_{{{{.OS}}}}_{{{{.Arch}}}}.zip",
+                server.url()
+            ),
+        );
+        let raw_opts = ToolVersionOptions::default();
+        let opts = AquaOptions::new(&raw_opts);
+        let target =
+            |key: &str| PlatformTarget::new(crate::platform::Platform::parse(key).unwrap());
+
+        assert!(
+            backend
+                .confirm_listed_tag(pkg.clone(), "1.2.3", &target("linux-x64"), &opts)
+                .await
+        );
+        assert!(
+            !backend
+                .confirm_listed_tag(pkg, "1.2.3", &target("macos-arm64"), &opts)
+                .await
+        );
+        linux.assert_async().await;
     }
 
     #[tokio::test]
