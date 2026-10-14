@@ -71,7 +71,7 @@ local_assert_fail "mise install nonexistent-tool@1.0.0" \
 # Test 5: Multiple tool failures (could be single or multiple depending on timing)
 echo "Test 5: Multiple tool failures"
 local_assert_fail "mise install tiny@999.999.999 jq@999.999.999" \
-  "mise ERROR Failed to install aqua:jqlang/jq@999.999.999: HTTP status client error (404 Not Found) for url (https://api.github.com/repos/jqlang/jq/releases/tags/jq-999.999.999)"
+  "mise ERROR Failed to install aqua:jqlang/jq@999.999.999: GitHub release jqlang/jq@jq-999.999.999 not found (404 from mise-versions.jdx.dev)"
 
 # =============================================================================
 # PART 2: Testing with DETAILED errors (full error chains)
@@ -100,7 +100,7 @@ local_assert_fail "mise install github:nonexistent-org/nonexistent-repo@latest" 
 # Test 4: Multiple tool failures - check for error format
 echo "Test 4: Multiple tool failures"
 local_assert_fail "mise install tiny@999.999.999 jq@999.999.999" \
-  "0: Failed to install aqua:jqlang/jq@999.999.999: HTTP status client error (404 Not Found) for url (https://api.github.com/repos/jqlang/jq/releases/tags/jq-999.999.999)"
+  "0: Failed to install aqua:jqlang/jq@999.999.999: GitHub release jqlang/jq@jq-999.999.999 not found (404 from mise-versions.jdx.dev)"
 
 # Test 5: Error with backtrace enabled - check for proper backtrace format
 echo "Test 5: Error with backtrace"
