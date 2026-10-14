@@ -169,7 +169,7 @@ pub(crate) fn eval_checksum_expr(
     }
 
     let env = Environment::new();
-    match stacker::maybe_grow(128 * 1024, 1024 * 1024, || env.eval(expr_str, &ctx)) {
+    match env.eval(expr_str, &ctx) {
         Ok(Value::String(s)) => normalize_checksum(&s),
         Ok(other) => {
             debug!("checksum_expr did not evaluate to a string: {other:?}");

@@ -4,7 +4,7 @@ impl AquaPackage {
     /// Set up version filter expression if configured
     pub fn setup_version_filter(&mut self) -> Result<()> {
         if let Some(version_filter) = &self.version_filter {
-            self.version_filter_expr = Some(compile_expr(version_filter)?);
+            self.version_filter_expr = Some(expr::compile(version_filter)?);
         }
         Ok(())
     }
@@ -66,11 +66,4 @@ impl AquaPackage {
         ctx.insert("Version", v);
         ctx
     }
-}
-
-// pest 2.9.3+ refuses to parse when `stacker::remaining_stack()` reports < 64 KiB, and on some
-// platforms (Ubuntu 26.04, mise#14449) that is wrong. `maybe_grow` runs on a fresh stack with a
-// known bound when the detected space looks too small.
-fn compile_expr(src: &str) -> Result<Program> {
-    stacker::maybe_grow(128 * 1024, 1024 * 1024, || expr::compile(src)).map_err(|e| eyre!(e))
 }
