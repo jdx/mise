@@ -416,6 +416,18 @@ fn mirrors_github_tags(api_url: &str, repo: &str) -> bool {
         ))
 }
 
+/// Whether mise-versions is the source of `repo`'s tags, as [`mirror_source`]
+/// is for releases: from configuration alone, not whether this command may go
+/// online, so prefer-offline and offline runs still find what was cached.
+fn tags_mirror_source(api_url: &str, repo: &str) -> bool {
+    is_public_github_api_base(api_url)
+        && mirror_source(repo)
+        && !crate::versions_host::github_api_url_is_replaced(&format!(
+            "{}/repos/{repo}/tags?per_page=100",
+            api_url.trim_end_matches('/')
+        ))
+}
+
 /// Part of every tag cache key: which source answers for `repo`'s tags, so
 /// turning `use_versions_host` off or adding a `url_replacements` rule starts
 /// from a fresh cache, as release lists do (see [`mirror_source`]).
@@ -423,7 +435,7 @@ fn tags_cache_key(api_url: &str, repo: &str) -> String {
     format!(
         "{}-{}",
         format!("{api_url}-{repo}").to_kebab_case(),
-        crate::hash::hash_to_str(&(api_url, repo, mirrors_github_tags(api_url, repo)))
+        crate::hash::hash_to_str(&(api_url, repo, tags_mirror_source(api_url, repo)))
     )
 }
 
