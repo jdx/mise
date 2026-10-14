@@ -23,7 +23,7 @@ pub struct OutdatedInfo {
     #[tabled(skip)]
     pub tool_version: ToolVersion,
     pub requested: String,
-    #[tabled(display("Self::display_current"))]
+    #[tabled(display("Self::display_current", self))]
     pub current: Option<String>,
     #[tabled(display("Self::display_bump"))]
     pub bump: Option<String>,
@@ -245,11 +245,22 @@ impl OutdatedInfo {
         Ok(Some(oi))
     }
 
-    fn display_current(current: &Option<String>) -> String {
-        if let Some(current) = current {
-            current.to_string()
-        } else {
-            "[MISSING]".to_string()
+    /// A lazy request with no version of the tool installed: it is waiting for
+    /// its first run, so a bare `mise upgrade` leaves it alone. A backend that
+    /// fails to resolve is not waiting for anything, so it reports `false`.
+    pub fn is_unrun_lazy(&self) -> bool {
+        self.tool_version.request.options().lazy == Some(true)
+            && self
+                .tool_version
+                .backend()
+                .is_ok_and(|backend| backend.list_installed_versions().is_empty())
+    }
+
+    fn display_current(current: &Option<String>, oi: &Self) -> String {
+        match current {
+            Some(current) => current.to_string(),
+            None if oi.is_unrun_lazy() => "[MISSING] (lazy)".to_string(),
+            None => "[MISSING]".to_string(),
         }
     }
 

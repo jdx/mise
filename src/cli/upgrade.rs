@@ -12,6 +12,7 @@ use crate::install_before::{
     effective_minimum_release_age_for_tool, format_hidden_release_details,
     resolve_cli_minimum_release_age,
 };
+use crate::install_context::install_dependency_declarations;
 use crate::semver::split_version_prefix;
 use crate::toolset::is_outdated_version;
 use crate::toolset::outdated_info::OutdatedInfo;
@@ -237,6 +238,40 @@ impl Upgrade {
         } else {
             builder
         }
+    }
+
+    /// A lazy tool with no version installed is waiting for its first run, so a
+    /// bare upgrade leaves it alone, as a bare `mise install` does, unless a tool
+    /// it upgrades depends on it. Naming the tool installs it, as `mise install
+    /// node` does. Returns the requests left alone as configured, since
+    /// `tool_request` may already name the version it would move to.
+    fn leave_missing_lazy(&self, outdated: &mut Vec<OutdatedInfo>) -> Vec<ToolRequest> {
+        let mut keep = outdated
+            .iter()
+            .map(|o| !self.tool.is_empty() || !o.is_unrun_lazy())
+            .collect::<Vec<_>>();
+        if keep.iter().all(|keep| *keep) {
+            return vec![];
+        }
+        let mut pending = (0..outdated.len()).filter(|&i| keep[i]).collect::<Vec<_>>();
+        while let Some(i) = pending.pop() {
+            let declarations = install_dependency_declarations(&outdated[i].tool_version.request);
+            for (j, o) in outdated.iter().enumerate() {
+                if !keep[j] && declarations.matches(o.tool_version.ba()) {
+                    keep[j] = true;
+                    pending.push(j);
+                }
+            }
+        }
+        let (kept, left_alone): (Vec<_>, Vec<_>) = std::mem::take(outdated)
+            .into_iter()
+            .zip(keep)
+            .partition(|(_, keep)| *keep);
+        *outdated = kept.into_iter().map(|(o, _)| o).collect();
+        left_alone
+            .into_iter()
+            .map(|(o, _)| o.tool_version.request)
+            .collect()
     }
 
     fn scope(&self) -> ConfigScope {
@@ -475,6 +510,7 @@ impl Upgrade {
                 }
             }
         }
+        let left_alone = self.leave_missing_lazy(&mut outdated);
         if self.installed_only {
             outdated.retain(|o| o.current.is_some());
         }
@@ -512,6 +548,7 @@ impl Upgrade {
                 &opts,
                 filter_tools,
                 exclude_tools,
+                &left_alone,
             )
             .await;
         }
@@ -557,17 +594,24 @@ impl Upgrade {
             let bump_outdated = if self.bump {
                 Vec::new()
             } else {
-                ts.list_outdated_versions_filtered(
-                    &config,
-                    true,
-                    &opts,
-                    filter_tools,
-                    exclude_tools,
-                )
-                .await
-                .into_iter()
-                .filter(|o| o.bump.is_some() && (!self.installed_only || o.current.is_some()))
-                .collect::<Vec<_>>()
+                let mut bump_outdated = ts
+                    .list_outdated_versions_filtered(
+                        &config,
+                        true,
+                        &opts,
+                        filter_tools,
+                        exclude_tools,
+                    )
+                    .await
+                    .into_iter()
+                    .filter(|o| o.bump.is_some() && (!self.installed_only || o.current.is_some()))
+                    .collect::<Vec<_>>();
+                // The note only reports, and installs nothing, so a missing lazy tool
+                // is dropped even when a reported tool depends on it.
+                if self.tool.is_empty() {
+                    bump_outdated.retain(|o| !o.is_unrun_lazy());
+                }
+                bump_outdated
             };
             if bump_outdated.is_empty() && !has_explicit_config_bumps {
                 info!("All tools are up to date");
@@ -1237,6 +1281,7 @@ impl Upgrade {
         opts: &ResolveOptions,
         filter_tools: Option<&[ToolArg]>,
         exclude_tools: Option<&[ToolArg]>,
+        left_alone: &[ToolRequest],
     ) {
         let list_versions = if opts.inactive {
             match ts.list_all_versions(config).await {
@@ -1254,6 +1299,9 @@ impl Upgrade {
             if let Some(exclude) = exclude_tools
                 && exclude.iter().any(|t| t.ba.as_ref() == tv.ba())
             {
+                continue;
+            }
+            if left_alone.contains(&tv.request) {
                 continue;
             }
             if let Some(tools) = filter_tools
