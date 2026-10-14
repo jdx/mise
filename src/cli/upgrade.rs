@@ -221,7 +221,8 @@ impl Upgrade {
     /// A lazy tool with no version installed is waiting for its first run, so a
     /// bare upgrade leaves it alone, as a bare `mise install` does, unless a tool
     /// it upgrades depends on it. Naming the tool installs it, as `mise install
-    /// node` does. Returns the requests left alone.
+    /// node` does. Returns the requests left alone as configured, since
+    /// `tool_request` may already name the version it would move to.
     fn leave_missing_lazy(&self, outdated: &mut Vec<OutdatedInfo>) -> Vec<ToolRequest> {
         let mut keep = outdated
             .iter()
@@ -247,7 +248,7 @@ impl Upgrade {
         *outdated = kept.into_iter().map(|(o, _)| o).collect();
         left_alone
             .into_iter()
-            .map(|(o, _)| o.tool_request)
+            .map(|(o, _)| o.tool_version.request)
             .collect()
     }
 
@@ -580,9 +581,11 @@ impl Upgrade {
                     .into_iter()
                     .filter(|o| o.bump.is_some())
                     .collect::<Vec<_>>();
-                // Only the note about out-of-range versions follows, so there is no
-                // release-age warning to feed the requests left alone.
-                self.leave_missing_lazy(&mut bump_outdated);
+                // The note only reports, and installs nothing, so a missing lazy tool
+                // is dropped even when a reported tool depends on it.
+                if self.tool.is_empty() {
+                    bump_outdated.retain(|o| !o.is_unrun_lazy());
+                }
                 bump_outdated
             };
             if bump_outdated.is_empty() && !has_explicit_config_bumps {
