@@ -495,6 +495,11 @@ async fn verify_with_mirror(
     artifact_digest: &str,
 ) -> MirrorVerdict {
     let full = format!("{owner}/{repo}");
+    if !crate::versions_host::enabled_for_github_repo(&full) {
+        // url_replacements reroutes this repository's attestations; the
+        // replacement answers, not mise-versions.
+        return MirrorVerdict::AskGithub;
+    }
     let digest = format!("sha256:{artifact_digest}");
     for fresh in [false, true] {
         let found = if fresh {
@@ -515,6 +520,13 @@ async fn verify_with_mirror(
             // Not kept on disk, so already as fresh as mise-versions has it.
             return no_attestations_verdict(&full);
         }
+        // Before the predicate filter, which can't read a missing bundle and
+        // would pass it off as "no attestations".
+        if attestations.iter().any(|a| !a.has_inline_bundle()) {
+            return MirrorVerdict::Done(Err(AttestationError::Api(format!(
+                "mise-versions returned attestations for {full} without their bundles"
+            ))));
+        }
         let selected: Vec<_> = attestations
             .into_iter()
             .filter(|a| predicate_type.is_none_or(|p| a.matches_predicate_type(p)))
@@ -524,11 +536,6 @@ async fn verify_with_mirror(
                 return no_attestations_verdict(&full);
             }
             continue;
-        }
-        if selected.iter().any(|a| !a.has_inline_bundle()) {
-            return MirrorVerdict::Done(Err(AttestationError::Api(format!(
-                "mise-versions returned attestations for {full} without their bundles"
-            ))));
         }
         match classify_cached_attestation_verification(
             mise_sigstore::verify_github_attestation_sources(
@@ -589,33 +596,57 @@ async fn detect_with_mirror(
     predicate_type: Option<&str>,
 ) -> Option<Result<bool, DetectError>> {
     let full = format!("{owner}/{repo}");
+    if !crate::versions_host::enabled_for_github_repo(&full) {
+        // Rerouted by url_replacements, as in `verify_with_mirror`.
+        return None;
+    }
     let digest = if digest.contains(':') {
         digest.to_string()
     } else {
         format!("sha256:{digest}")
     };
-    let attestations = match mirrored_attestations(&full, &digest).await {
-        Ok(Some(attestations)) => attestations,
-        Ok(None) => {
-            return match unknown_repo_verdict(&full) {
-                MirrorVerdict::AskGithub => None,
-                MirrorVerdict::Done(result) => Some(result.map_err(DetectError::Fetch)),
-            };
+    // As in `verify_with_mirror`: a set kept from earlier may predate the
+    // attestation looked for, so a miss is asked of mise-versions again.
+    for fresh in [false, true] {
+        let found = if fresh {
+            crate::versions_host::github_attestations(&full, &digest).await
+        } else {
+            mirrored_attestations(&full, &digest).await
+        };
+        let attestations = match found {
+            Ok(Some(attestations)) => attestations,
+            Ok(None) => {
+                return match unknown_repo_verdict(&full) {
+                    MirrorVerdict::AskGithub => None,
+                    MirrorVerdict::Done(result) => Some(result.map_err(DetectError::Fetch)),
+                };
+            }
+            Err(err) => return Some(Err(DetectError::Fetch(mirror_failure(&full, &err)))),
+        };
+        trace!(
+            "got {} GitHub attestation probes for {full}@{digest} from mise-versions",
+            attestations.len()
+        );
+        if attestations.iter().any(|a| !a.has_inline_bundle()) {
+            return Some(Err(DetectError::Fetch(AttestationError::Api(format!(
+                "mise-versions returned attestations for {full} without their bundles"
+            )))));
         }
-        Err(err) => return Some(Err(DetectError::Fetch(mirror_failure(&full, &err)))),
-    };
-    let found = attestations
-        .iter()
-        .any(|a| predicate_type.is_none_or(|p| a.matches_predicate_type(p)));
-    trace!(
-        "got {} GitHub attestation probes for {full}@{digest} from mise-versions",
-        attestations.len()
-    );
-    if !found && !mirror_may_answer_none() {
-        debug!("mise-versions has no attestations for {full}@{digest}; paranoid mode asks GitHub");
-        return None;
+        let found = attestations
+            .iter()
+            .any(|a| predicate_type.is_none_or(|p| a.matches_predicate_type(p)));
+        // An empty set is never kept on disk, so it is already fresh.
+        if found || attestations.is_empty() || fresh {
+            if !found && !mirror_may_answer_none() {
+                debug!(
+                    "mise-versions has no attestations for {full}@{digest}; paranoid mode asks GitHub"
+                );
+                return None;
+            }
+            return Some(Ok(found));
+        }
     }
-    Some(Ok(found))
+    unreachable!("the second pass always returns")
 }
 
 fn no_attestations_verdict(full: &str) -> MirrorVerdict {
@@ -630,7 +661,7 @@ fn no_attestations_verdict(full: &str) -> MirrorVerdict {
 /// mise-versions answered 404: it doesn't serve `full`, which is private or
 /// gone. Only the user's token can read a private repository's attestations.
 fn unknown_repo_verdict(full: &str) -> MirrorVerdict {
-    if resolve_token_for_wrapper(None).is_some() {
+    if crate::github::has_github_api_credentials() {
         debug!("mise-versions does not know {full}; asking GitHub, which may hold it privately");
         return MirrorVerdict::AskGithub;
     }
