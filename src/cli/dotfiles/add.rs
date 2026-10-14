@@ -173,7 +173,9 @@ impl DotfilesAdd {
                             }
                         };
                         for (source, target) in files {
-                            if target.is_file()
+                            if source.is_file()
+                                && !source.is_symlink()
+                                && target.is_file()
                                 && !target.is_symlink()
                                 && is_changed(&source, &target)?
                             {
