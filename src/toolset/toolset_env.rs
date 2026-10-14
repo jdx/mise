@@ -111,8 +111,8 @@ impl Toolset {
     /// PATH already had, such as `~/.cargo/bin`, is included when mise moves it
     /// forward.
     pub async fn managed_path_entries(&self, config: &Arc<Config>) -> Result<Vec<PathBuf>> {
-        let (_, env_results) = self.final_env(config).await?;
-        let (user_paths, tool_paths) = self.list_final_paths_split(config, env_results).await?;
+        // The cache-aware lookup `mise env` uses, so the two cannot disagree.
+        let (_, _, user_paths, tool_paths, _) = self.env_with_path_and_split(config).await?;
         Ok(self
             .child_path_env(user_paths.into_iter().chain(tool_paths))
             .managed_entries())

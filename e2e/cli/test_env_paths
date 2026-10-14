@@ -15,3 +15,11 @@ assert "mise env --paths" "$PWD/promoted
 $PWD/added"
 assert_contains "mise env --json" "$PWD/promoted:$PWD/added:$PWD/other"
 assert_not_contains "mise env --paths" "$PWD/other"
+
+# With the env cache on, --paths reads the same cached paths as mise env --json.
+export MISE_ENV_CACHE=1
+export __MISE_ENV_CACHE_KEY="dGVzdGtleXRlc3RrZXl0ZXN0a2V5dGVzdGtleXRlc3Q="
+mise env --json >/dev/null
+assert "mise env --paths" "$PWD/promoted
+$PWD/added"
+assert_contains "mise env --json" "$PWD/promoted:$PWD/added:$PWD/other"
