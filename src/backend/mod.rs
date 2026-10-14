@@ -3863,6 +3863,90 @@ pub trait Backend: Debug + Send + Sync {
         versions.into_iter().find(|v| v.version == version)
     }
 
+    /// Where to read about `version`, which `latest_version` just resolved
+    /// for `query`.
+    ///
+    /// A plain `latest` without prereleases came from the stable-latest
+    /// shortcut, which carries the release URL. The remote listing has not
+    /// been read on that path, so fetching it first costs a request (for
+    /// `github:` a page of releases) to learn what the shortcut already says,
+    /// and it can trail the shortcut and miss the freshest release. A URL in a
+    /// listing some earlier command cached is still read first, since that
+    /// costs no request where asking the shortcut again might (`go:` does not
+    /// cache it). Every other query was resolved from the listing, which is
+    /// then cached, so that is asked first.
+    async fn resolved_release_url(
+        &self,
+        config: &Arc<Config>,
+        version: &str,
+        query: &str,
+        selection_opts: &ToolVersionOptions,
+    ) -> Option<String> {
+        let shortcut = async || {
+            self.latest_stable_version_info(config)
+                .await
+                .ok()
+                .flatten()
+                // Only if it is describing the version actually being reported.
+                .filter(|info| info.version == version)
+                .map(|info| info.release_url)
+        };
+        let listed = async || {
+            self.get_version_info(config, version)
+                .await
+                .map(|info| info.release_url)
+        };
+        if self.should_use_latest_stable_fast_path(query, selection_opts) {
+            if let Some(release_url) = self
+                .cached_version_info(config, version)
+                .await
+                .and_then(|info| info.release_url)
+            {
+                return Some(release_url);
+            }
+            match shortcut().await {
+                Some(release_url) => release_url,
+                None => listed().await.flatten(),
+            }
+        } else {
+            match listed().await {
+                Some(release_url) => release_url,
+                None => shortcut().await.flatten(),
+            }
+        }
+    }
+
+    /// `version` from the remote listing as already cached, stale or not,
+    /// without fetching anything.
+    async fn cached_version_info(
+        &self,
+        config: &Arc<Config>,
+        version: &str,
+    ) -> Option<VersionInfo> {
+        let resolved_opts = config
+            .resolve_tool_opts_with_overrides(self.ba())
+            .await
+            .ok()?;
+        let has_local_version_listing_override = has_local_version_listing_option_override(
+            &resolved_opts,
+            self.remote_version_listing_tool_option_keys(),
+        );
+        let cache_context = self
+            .remote_version_cache_context_for(
+                config,
+                resolved_opts.effective(),
+                has_local_version_listing_override,
+            )
+            .await
+            .ok()?;
+        let cache = match cache_context.as_deref() {
+            Some(context) => self.get_remote_version_cache_with_context(Some(context)),
+            None => self.get_remote_version_cache(),
+        };
+        let versions = cache.lock().await.get_cached().ok()?;
+        versions.into_iter().find(|v| v.version == version)
+    }
+
     /// Whether the backend's installer updates an already installed rolling
     /// version in place. When it does, a rolling reinstall skips the uninstall
     /// that would otherwise precede it, so a failed install leaves the old
@@ -3877,6 +3961,16 @@ pub trait Backend: Debug + Send + Sync {
         use crate::toolset::install_state;
 
         let version = tv.request.version();
+
+        // A rolling release keeps its name, so it resolves to itself (`nightly`
+        // installs as `nightly`). A request that resolved to some other
+        // version (`latest` to `1.8.2`) is not one: the checksum below would
+        // compare `1.8.2`'s install against whatever `latest` names upstream.
+        // Answer that without the listing, which a `latest` resolved by the
+        // stable-latest shortcut has not otherwise fetched.
+        if tv.version != version {
+            return false;
+        }
 
         // Get the latest version info
         let version_info = match self.get_version_info(config, &version).await {
@@ -6464,6 +6558,221 @@ mod latest_version_tests {
 
         assert!(!outdated);
         assert_eq!(backend.list_calls(), 0);
+    }
+
+    fn release_url(version: &str) -> Option<String> {
+        Some(format!("https://example.com/releases/tag/v{version}"))
+    }
+
+    /// `outdated` reports where to read about a plain `latest`. The shortcut
+    /// that resolved it already says, so the listing is not fetched for it.
+    #[tokio::test]
+    async fn test_release_url_for_latest_comes_from_the_shortcut() {
+        let _settings = crate::test::SettingsGuard::lock();
+        let config = Config::get().await.unwrap();
+        let backend =
+            LatestBackend::new("test-release-url-shortcut").with_stable_info(VersionInfo {
+                version: "3.0.0".to_string(),
+                release_url: release_url("3.0.0"),
+                ..Default::default()
+            });
+        backend
+            .get_remote_version_cache()
+            .lock()
+            .await
+            .clear()
+            .unwrap();
+
+        assert_eq!(
+            backend
+                .resolved_release_url(&config, "3.0.0", "latest", &Default::default())
+                .await,
+            release_url("3.0.0")
+        );
+        assert_eq!(backend.list_calls(), 0);
+    }
+
+    /// A shortcut that names some other version (the cutoff hid it, so the
+    /// listing picked an older one) does not answer, and the listing does.
+    #[tokio::test]
+    async fn test_release_url_for_latest_falls_back_to_the_listing() {
+        let _settings = crate::test::SettingsGuard::lock();
+        let config = Config::get().await.unwrap();
+        let backend = LatestBackend::new("test-release-url-shortcut-miss")
+            .with_stable_info(VersionInfo {
+                version: "3.0.0".to_string(),
+                release_url: release_url("3.0.0"),
+                ..Default::default()
+            })
+            .with_remote_versions(vec![VersionInfo {
+                version: "2.0.0".to_string(),
+                release_url: release_url("2.0.0"),
+                ..Default::default()
+            }]);
+        backend
+            .get_remote_version_cache()
+            .lock()
+            .await
+            .clear()
+            .unwrap();
+
+        assert_eq!(
+            backend
+                .resolved_release_url(&config, "2.0.0", "latest", &Default::default())
+                .await,
+            release_url("2.0.0")
+        );
+        assert_eq!(backend.list_calls(), 1);
+    }
+
+    /// A listing an earlier command cached answers for free, so the shortcut
+    /// (which `go:` does not cache) is not asked again.
+    #[tokio::test]
+    async fn test_release_url_for_latest_prefers_a_cached_listing() {
+        let _settings = crate::test::SettingsGuard::lock();
+        let config = Config::get().await.unwrap();
+        let backend =
+            LatestBackend::new("test-release-url-cached-listing").with_stable_info(VersionInfo {
+                version: "3.0.0".to_string(),
+                release_url: release_url("3.0.0"),
+                ..Default::default()
+            });
+        backend
+            .get_remote_version_cache()
+            .lock()
+            .await
+            .write(&vec![VersionInfo {
+                version: "3.0.0".to_string(),
+                release_url: release_url("3.0.0"),
+                ..Default::default()
+            }])
+            .unwrap();
+
+        assert_eq!(
+            backend
+                .resolved_release_url(&config, "3.0.0", "latest", &Default::default())
+                .await,
+            release_url("3.0.0")
+        );
+        assert_eq!(backend.stable_info_calls(), 0);
+        assert_eq!(backend.list_calls(), 0);
+    }
+
+    /// A cached entry without a URL does not hide the one the shortcut has.
+    #[tokio::test]
+    async fn test_release_url_for_latest_skips_a_cached_entry_without_one() {
+        let _settings = crate::test::SettingsGuard::lock();
+        let config = Config::get().await.unwrap();
+        let backend = LatestBackend::new("test-release-url-cached-without-url").with_stable_info(
+            VersionInfo {
+                version: "3.0.0".to_string(),
+                release_url: release_url("3.0.0"),
+                ..Default::default()
+            },
+        );
+        backend
+            .get_remote_version_cache()
+            .lock()
+            .await
+            .write(&vec![VersionInfo {
+                version: "3.0.0".to_string(),
+                ..Default::default()
+            }])
+            .unwrap();
+
+        assert_eq!(
+            backend
+                .resolved_release_url(&config, "3.0.0", "latest", &Default::default())
+                .await,
+            release_url("3.0.0")
+        );
+        assert_eq!(backend.stable_info_calls(), 1);
+        assert_eq!(backend.list_calls(), 0);
+    }
+
+    /// Any other query was resolved from the listing, so that is read first
+    /// and the shortcut is not asked.
+    #[tokio::test]
+    async fn test_release_url_for_a_prefix_comes_from_the_listing() {
+        let _settings = crate::test::SettingsGuard::lock();
+        let config = Config::get().await.unwrap();
+        let backend =
+            LatestBackend::new("test-release-url-prefix").with_remote_versions(vec![VersionInfo {
+                version: "2.0.0".to_string(),
+                release_url: release_url("2.0.0"),
+                ..Default::default()
+            }]);
+        backend
+            .get_remote_version_cache()
+            .lock()
+            .await
+            .clear()
+            .unwrap();
+
+        assert_eq!(
+            backend
+                .resolved_release_url(&config, "2.0.0", "2", &Default::default())
+                .await,
+            release_url("2.0.0")
+        );
+        assert_eq!(backend.list_calls(), 1);
+        assert_eq!(backend.stable_info_calls(), 0);
+    }
+
+    fn tool_version_for(backend: &LatestBackend, request: &str, version: &str) -> ToolVersion {
+        let request = ToolRequest::Version {
+            backend: backend.ba.clone(),
+            version: request.to_string(),
+            options: ResolvedToolOptions::default(),
+            source: ToolSource::Argument,
+            lockfile_scope: Default::default(),
+        };
+        ToolVersion::new(request, version.to_string())
+    }
+
+    /// `latest` resolved to `2.0.0` is not a rolling release, so checking
+    /// whether one changed does not list versions to find out.
+    #[tokio::test]
+    async fn test_rolling_check_skips_a_resolved_request() {
+        let _settings = crate::test::SettingsGuard::lock();
+        let config = Config::get().await.unwrap();
+        let backend = LatestBackend::new("test-rolling-check-resolved");
+        backend
+            .get_remote_version_cache()
+            .lock()
+            .await
+            .clear()
+            .unwrap();
+
+        let tv = tool_version_for(&backend, "latest", "2.0.0");
+        assert!(!backend.is_rolling_version_outdated(&config, &tv).await);
+        assert_eq!(backend.list_calls(), 0);
+    }
+
+    /// A rolling release resolves to its own name and is still checked.
+    #[tokio::test]
+    async fn test_rolling_check_reads_a_rolling_release() {
+        let _settings = crate::test::SettingsGuard::lock();
+        let config = Config::get().await.unwrap();
+        let backend = LatestBackend::new("test-rolling-check-nightly").with_remote_versions(vec![
+            VersionInfo {
+                version: "nightly".to_string(),
+                rolling: true,
+                checksum: Some("sha256:new".to_string()),
+                ..Default::default()
+            },
+        ]);
+        backend
+            .get_remote_version_cache()
+            .lock()
+            .await
+            .clear()
+            .unwrap();
+
+        let tv = tool_version_for(&backend, "nightly", "nightly");
+        // Nothing records a checksum for this install, so it counts as changed.
+        assert!(backend.is_rolling_version_outdated(&config, &tv).await);
+        assert_eq!(backend.list_calls(), 1);
     }
 
     #[tokio::test]
