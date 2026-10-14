@@ -6492,6 +6492,38 @@ mod latest_version_tests {
         assert_eq!(backend.list_calls(), 0);
     }
 
+    #[tokio::test]
+    async fn test_remote_version_cache_contexts_are_isolated() {
+        let _settings = crate::test::SettingsGuard::lock();
+        let _config = Config::get().await.unwrap();
+        let backend = LatestBackend::new("test-context-cache");
+        let first = backend.get_remote_version_cache_with_context(Some("first"));
+        let second = backend.get_remote_version_cache_with_context(Some("second"));
+
+        first
+            .lock()
+            .await
+            .write(&vec![VersionInfo {
+                version: "1.0.0".to_string(),
+                ..Default::default()
+            }])
+            .unwrap();
+        second
+            .lock()
+            .await
+            .write(&vec![VersionInfo {
+                version: "2.0.0".to_string(),
+                ..Default::default()
+            }])
+            .unwrap();
+
+        assert_eq!(first.lock().await.get_cached().unwrap()[0].version, "1.0.0");
+        assert_eq!(
+            second.lock().await.get_cached().unwrap()[0].version,
+            "2.0.0"
+        );
+    }
+
     /// An install-time refresh of `latest` reuses a list written moments ago
     /// (by this command's own first resolution, or by `mise outdated` just
     /// before) instead of fetching it again.
@@ -6582,38 +6614,6 @@ mod latest_version_tests {
         let listed = backend.listed_release_url(&config, "0.0.0-cached").await;
         cache.lock().await.clear().unwrap();
         assert_eq!(listed.as_deref(), Some(url));
-    }
-
-    #[tokio::test]
-    async fn test_remote_version_cache_contexts_are_isolated() {
-        let _settings = crate::test::SettingsGuard::lock();
-        let _config = Config::get().await.unwrap();
-        let backend = LatestBackend::new("test-context-cache");
-        let first = backend.get_remote_version_cache_with_context(Some("first"));
-        let second = backend.get_remote_version_cache_with_context(Some("second"));
-
-        first
-            .lock()
-            .await
-            .write(&vec![VersionInfo {
-                version: "1.0.0".to_string(),
-                ..Default::default()
-            }])
-            .unwrap();
-        second
-            .lock()
-            .await
-            .write(&vec![VersionInfo {
-                version: "2.0.0".to_string(),
-                ..Default::default()
-            }])
-            .unwrap();
-
-        assert_eq!(first.lock().await.get_cached().unwrap()[0].version, "1.0.0");
-        assert_eq!(
-            second.lock().await.get_cached().unwrap()[0].version,
-            "2.0.0"
-        );
     }
 
     #[tokio::test]
