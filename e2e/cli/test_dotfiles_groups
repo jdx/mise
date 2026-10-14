@@ -260,3 +260,36 @@ EOF
 assert_not_contains "mise dot status 2>&1" ".keeprc"
 assert_succeed "mise dot apply --prune --yes"
 assert "readlink $HOME/.keeprc" "$DOTS/keep/.keeprc"
+
+# --changed captures files a copy-mode group discovers, not just its entries.
+mkdir -p "$DOTS/chg/nested"
+echo "one" >"$DOTS/chg/nested/config.txt"
+echo "two" >"$DOTS/chg/explicit.txt"
+echo "excluded" >"$DOTS/chg/excluded.txt"
+cat <<EOF2 >mise.toml
+[dotfile_groups.chg]
+root = "chg"
+target = "~/.chg"
+mode = "copy"
+exclude = ["excluded.txt"]
+entries."~/.chg/explicit.txt" = { mode = "copy" }
+EOF2
+assert_succeed "mise dot apply --yes"
+echo "one edited" >"$HOME/.chg/nested/config.txt"
+echo "two edited" >"$HOME/.chg/explicit.txt"
+echo "excluded edited" >"$HOME/.chg/excluded.txt"
+assert_succeed "mise dot add --changed --yes"
+assert "cat $DOTS/chg/nested/config.txt" "one edited"
+assert "cat $DOTS/chg/explicit.txt" "two edited"
+assert "cat $DOTS/chg/excluded.txt" "excluded"
+assert_contains "mise dot add --changed --yes 2>&1" "no changed copy-mode files"
+
+# --changed does not reapply the group: a source file added since the last
+# apply is not deployed, so a declined capture could not be overwritten either.
+echo "late" >"$DOTS/chg/late.txt"
+echo "one again" >"$HOME/.chg/nested/config.txt"
+echo "two again" >"$HOME/.chg/explicit.txt"
+assert_succeed "mise dot add --changed --yes"
+assert "cat $HOME/.chg/nested/config.txt" "one again"
+assert "cat $DOTS/chg/explicit.txt" "two again"
+assert_fail "test -e $HOME/.chg/late.txt"
