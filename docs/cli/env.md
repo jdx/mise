@@ -33,6 +33,7 @@ missing tools from the config are reported, not installed.
 - **`--json-extended`** — Output in JSON format with additional information (source, tool)
 - **`--redacted`** — Only include variables marked for redaction; their values are printed unmasked
 - **`--values`** — Only show values of environment variables
+- **`--paths`** — Print the PATH entries mise manages, in PATH order, one per line
 - **`-h --help`** — Print help
 
 ## Examples
@@ -65,6 +66,12 @@ Print the variables as JSON
 
 ```
 mise env --json
+```
+
+List the PATH entries mise manages, such as tool bin directories
+
+```
+mise env --paths
 ```
 
 Write a dotenv file; it contains secret values
