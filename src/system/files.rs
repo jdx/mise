@@ -4207,7 +4207,13 @@ fn confirmation_lines(req: &FileRequest, rendered: Option<&str>) -> Result<Vec<S
             lines.push(format!("replace {} with a directory", root.display_user()));
         }
         Ok(_) => {}
-        Err(_) => lines.push(format!("create {}", root.display_user())),
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+            lines.push(format!("create {}", root.display_user()));
+        }
+        // e.g. a parent that is a file, or a path that cannot be read
+        Err(err) => {
+            return Ok(vec![format!("conflict ({err}): {}", root.display_user())]);
+        }
     }
     for (src, tgt) in walk_source_files(req)? {
         // a file where a parent directory belongs blocks everything below it
@@ -8578,6 +8584,11 @@ source = "oldrc""#,
         let lines = confirmation_lines(&link_req(&src, &tgt, FileMode::Copy), None)?;
         assert_eq!(lines.len(), 1, "{lines:?}");
         assert!(lines[0].starts_with("conflict (not a directory): ") && lines[0].ends_with("sub"));
+
+        let under_file = tgt.join("sub").join("deeper");
+        let lines = confirmation_lines(&link_req(&src, &under_file, FileMode::Copy), None)?;
+        assert_eq!(lines.len(), 1, "{lines:?}");
+        assert!(lines[0].starts_with("conflict ("), "{lines:?}");
 
         #[cfg(unix)]
         {
