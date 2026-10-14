@@ -588,10 +588,24 @@ pub async fn newest_listed_stable_release(repo: &str) -> Option<ReleaseVersion> 
     let list = whole_list(repo, crate::versions_host::GithubList::Releases).await?;
     let max_age =
         crate::duration::parse_duration(&Settings::get().fetch_remote_versions_cache).ok()?;
+    let newest = newest_stable_if_fresh(list, chrono::Utc::now(), max_age);
+    if newest.is_none() {
+        debug!("mise-versions' release list for {repo} is too old or has no stable release");
+    }
+    newest
+}
+
+/// The first stable release in `list` (GitHub's order, newest first), if the
+/// list was read from GitHub no more than `max_age` before `now`. A list
+/// without a readable `fetched_at` is not trusted for this.
+fn newest_stable_if_fresh(
+    list: crate::versions_host::GithubVersionsList,
+    now: chrono::DateTime<chrono::Utc>,
+    max_age: std::time::Duration,
+) -> Option<ReleaseVersion> {
     let fetched_at = chrono::DateTime::parse_from_rfc3339(list.fetched_at.as_deref()?).ok()?;
-    let age = chrono::Utc::now().signed_duration_since(fetched_at);
+    let age = now.signed_duration_since(fetched_at);
     if age.to_std().is_ok_and(|age| age > max_age) {
-        debug!("mise-versions' release list for {repo} is {age} old; not taking latest from it");
         return None;
     }
     list.releases

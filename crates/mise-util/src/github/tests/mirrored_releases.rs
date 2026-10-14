@@ -253,3 +253,61 @@ async fn test_mirrored_tags_stop_at_the_served_pages() {
         crate::versions_host::GITHUB_RELEASES_MAX_PAGES
     );
 }
+
+fn listed(
+    fetched_at: Option<&str>,
+    releases: &[(&str, bool)],
+) -> crate::versions_host::GithubVersionsList {
+    crate::versions_host::GithubVersionsList {
+        source: "releases".to_string(),
+        fetched_at: fetched_at.map(str::to_string),
+        releases: releases
+            .iter()
+            .map(
+                |(tag, prerelease)| crate::versions_host::GithubListedRelease {
+                    tag: tag.to_string(),
+                    date: Some("2026-10-01T00:00:00Z".to_string()),
+                    prerelease: *prerelease,
+                    asset_count: 0,
+                },
+            )
+            .collect(),
+        tags: vec![],
+        truncated: false,
+    }
+}
+
+#[test]
+fn test_newest_stable_if_fresh() {
+    let now = chrono::DateTime::parse_from_rfc3339("2026-10-14T12:00:00Z")
+        .unwrap()
+        .with_timezone(&chrono::Utc);
+    let hour = std::time::Duration::from_secs(3600);
+    let releases = [
+        ("v1.38.0-alpha.1", true),
+        ("v1.37.1", false),
+        ("v1.37.0", false),
+    ];
+
+    // A fresh list: the first release that isn't a prerelease, in list order.
+    let newest = newest_stable_if_fresh(listed(Some("2026-10-14T11:30:00Z"), &releases), now, hour);
+    assert_eq!(newest.unwrap().tag_name, "v1.37.1");
+
+    // Older than allowed, or with no readable fetch time: not trusted.
+    assert!(
+        newest_stable_if_fresh(listed(Some("2026-10-14T10:00:00Z"), &releases), now, hour)
+            .is_none()
+    );
+    assert!(newest_stable_if_fresh(listed(None, &releases), now, hour).is_none());
+    assert!(newest_stable_if_fresh(listed(Some("yesterday"), &releases), now, hour).is_none());
+
+    // Only prereleases: nothing to stand in for the latest mark.
+    assert!(
+        newest_stable_if_fresh(
+            listed(Some("2026-10-14T11:30:00Z"), &[("v2.0.0-rc.1", true)]),
+            now,
+            hour
+        )
+        .is_none()
+    );
+}
