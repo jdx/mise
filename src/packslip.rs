@@ -698,12 +698,17 @@ async fn fetch_repo_dir(
                 Box::pin(fetch_repo_dir(repo, commit, &path, &dest.join(&name), pr)).await?;
             }
             "file" => {
-                let file_url = if listing.private {
-                    // The client sets the raw media type on contents URLs.
-                    format!(
-                        "https://api.github.com/repos/{repo}/contents/{}?ref={commit}",
-                        url_path(&path)
-                    )
+                let contents_url = format!(
+                    "https://api.github.com/repos/{repo}/contents/{}?ref={commit}",
+                    url_path(&path)
+                );
+                // The contents API for a private repository, or for a file a
+                // `url_replacements` rule reroutes; the client sets the raw
+                // media type on contents URLs.
+                let file_url = if listing.private
+                    || crate::versions_host::github_api_url_is_replaced(&contents_url)
+                {
+                    contents_url
                 } else {
                     format!(
                         "https://raw.githubusercontent.com/{repo}/{commit}/{}",

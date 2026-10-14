@@ -417,6 +417,20 @@ fn mirrors_github_metadata(api_url: &str, repo: &str) -> bool {
     is_public_github_api_base(api_url) && crate::versions_host::enabled_for_github_repo(repo)
 }
 
+/// After mise-versions answered 404 for `what` in `repo` (a release tag, a
+/// directory): only a repository mise-versions doesn't list at all may be
+/// private. A public repository's missing tag or path is a plain 404, which
+/// must not reach GitHub: callers try `v1.2.3` and then `1.2.3`, and a
+/// missing skill directory would cost an API request every install.
+async fn after_mirror_404(repo: &str, what: &str) -> Result<()> {
+    match crate::versions_host::github_releases(repo, 1).await {
+        Ok(None) => ensure_private_repo_lookup(repo, what),
+        // A listing that failed can't say the repository is private; the 404
+        // stands, so callers still try their next spelling of the tag.
+        Ok(Some(_)) | Err(_) => bail!("{what} not found (404 from mise-versions.jdx.dev)"),
+    }
+}
+
 /// After mise-versions answered 404: GitHub may still hold `what` in a private
 /// repository, which mise-versions never serves. Asking needs the user's
 /// token, so without one the 404 is the answer.
@@ -696,7 +710,7 @@ pub async fn list_repo_dir(repo: &str, commit: &str, path: &str) -> Result<RepoD
                     private: false,
                 });
             }
-            None => ensure_private_repo_lookup(repo, &what)?,
+            None => after_mirror_404(repo, &what).await?,
         }
     }
     // `get_headers` asks for the raw media type on contents URLs, which is
@@ -715,8 +729,9 @@ pub async fn list_repo_dir(repo: &str, commit: &str, path: &str) -> Result<RepoD
     Ok(RepoDir {
         entries: entries
             .iter()
-            .filter_map(|entry| serde_json::from_value(entry.clone()).ok())
-            .collect(),
+            .map(|entry| serde_json::from_value(entry.clone()))
+            .collect::<std::result::Result<_, _>>()
+            .wrap_err_with(|| format!("unexpected listing of {path} in {repo}"))?,
         private: true,
     })
 }
@@ -886,22 +901,7 @@ async fn get_release_with_options(
                 trace!("got GitHub release {repo}@{tag} from mise-versions");
                 return Ok(release);
             }
-            None => {
-                let what = format!("GitHub release {repo}@{tag}");
-                // A public repository's missing tag is a plain 404: callers
-                // try `v1.2.3` and then `1.2.3`, and those guesses must not
-                // reach GitHub. Only a repository mise-versions doesn't list
-                // at all may be private.
-                match crate::versions_host::github_releases(repo, 1).await {
-                    Ok(None) => ensure_private_repo_lookup(repo, &what)?,
-                    // A listing that failed can't say the repository is
-                    // private; the tag lookup's 404 stands, so callers still
-                    // try their next spelling of the tag.
-                    Ok(Some(_)) | Err(_) => {
-                        bail!("{what} not found (404 from mise-versions.jdx.dev)")
-                    }
-                }
-            }
+            None => after_mirror_404(repo, &format!("GitHub release {repo}@{tag}")).await?,
         }
     }
 
