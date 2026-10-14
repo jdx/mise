@@ -177,3 +177,79 @@ async fn test_mirrored_releases_end_at_the_served_pages() {
     let (releases, _) = paginate_canned(pages, false, false).await;
     assert_eq!(releases.unwrap().unwrap(), ["v1"]);
 }
+
+fn tags_page(names: &[&str], next_page: Option<u32>) -> crate::versions_host::GithubTagsPage {
+    crate::versions_host::GithubTagsPage {
+        tags: names
+            .iter()
+            .map(|name| crate::versions_host::GithubMirroredTag {
+                name: name.to_string(),
+                date: None,
+            })
+            .collect(),
+        next_page,
+        truncated: false,
+    }
+}
+
+async fn paginate_tags_canned(
+    pages: Vec<Option<crate::versions_host::GithubTagsPage>>,
+    list_all: bool,
+) -> (eyre::Result<Option<Vec<String>>>, Vec<u32>) {
+    let pages = std::sync::Mutex::new(pages.into_iter().map(Some).collect::<Vec<_>>());
+    let requested = std::sync::Mutex::new(vec![]);
+    let tags = paginate_mirrored_tags(list_all, |page| {
+        requested.lock().unwrap().push(page);
+        let list = pages.lock().unwrap()[page as usize - 1].take().unwrap();
+        async move { Ok(list) }
+    })
+    .await;
+    (
+        tags.map(|t| t.map(|t| t.into_iter().map(|t| t.name).collect())),
+        requested.into_inner().unwrap(),
+    )
+}
+
+#[tokio::test]
+async fn test_mirrored_tags_read_one_page_unless_listing_all() {
+    let pages = || {
+        vec![
+            Some(tags_page(&["v2", "v1"], Some(2))),
+            Some(tags_page(&["v0"], None)),
+        ]
+    };
+    let (tags, requested) = paginate_tags_canned(pages(), false).await;
+    assert_eq!(tags.unwrap().unwrap(), ["v2", "v1"]);
+    assert_eq!(requested, [1]);
+
+    let (tags, requested) = paginate_tags_canned(pages(), true).await;
+    assert_eq!(tags.unwrap().unwrap(), ["v2", "v1", "v0"]);
+    assert_eq!(requested, [1, 2]);
+}
+
+#[tokio::test]
+async fn test_mirrored_tags_404_only_on_the_first_page() {
+    let (tags, _) = paginate_tags_canned(vec![None], true).await;
+    assert!(tags.unwrap().is_none());
+
+    let (tags, _) = paginate_tags_canned(vec![Some(tags_page(&["v2"], Some(2))), None], true).await;
+    assert!(tags.is_err());
+}
+
+#[tokio::test]
+async fn test_mirrored_tags_stop_at_the_served_pages() {
+    let requested = std::sync::Mutex::new(0);
+    let tags = paginate_mirrored_tags(true, |page| {
+        *requested.lock().unwrap() += 1;
+        async move { Ok(Some(tags_page(&["v1"], Some(page + 1)))) }
+    })
+    .await;
+    assert_eq!(
+        tags.unwrap().unwrap().len(),
+        crate::versions_host::GITHUB_RELEASES_MAX_PAGES
+    );
+    assert_eq!(
+        requested.into_inner().unwrap(),
+        crate::versions_host::GITHUB_RELEASES_MAX_PAGES
+    );
+}
