@@ -215,7 +215,11 @@ GITHUB = "https://github.com/jdx/mise/releases/download"
 
 
 class DownloadSourceTests(unittest.TestCase):
-    """Runs install_mise offline against a fake curl that serves a real tarball."""
+    """Runs install_mise offline against a fake curl that serves a real tarball.
+
+    mise.jdx.dev URLs serve MIRROR_TARBALL and MIRROR_SUM, which differ from the
+    genuine GitHub ones when a test simulates a compromised mirror.
+    """
 
     CURL_STUB = r"""
         curl() {
@@ -226,30 +230,44 @@ class DownloadSourceTests(unittest.TestCase):
                 printf '%064d  ./mise-v0-macos-arm64.tar.gz\n' 0
                 return ;;
             esac
+            stub_tarball="$TARBALL" stub_sum="$SUM"
+            case "$u" in https://mise.jdx.dev/*)
+                stub_tarball="$MIRROR_TARBALL" stub_sum="$MIRROR_SUM" ;;
+            esac
             case "$1" in
-                -\#fLo) cp "$TARBALL" "$2" ;;
-                *) printf '%s  ./%s\n' "$SUM" "$(basename "$TARBALL")" ;;
+                -\#fLo) cp "$stub_tarball" "$2" ;;
+                *) printf '%s  ./%s\n' "$stub_sum" "$(basename "$TARBALL")" ;;
             esac
         }
         install_mise
     """
 
-    def install(self, version="2026.1.0", fail_urls=(), other_asset_sum_urls=(), **variables):
+    @staticmethod
+    def make_tarball(root, asset, output):
+        binary = root / "mise/bin/mise"
+        binary.parent.mkdir(parents=True)
+        binary.write_text(f"#!/bin/sh\necho {output}\n")
+        binary.chmod(0o755)
+        tarball = root / asset
+        subprocess.run(["tar", "-czf", str(tarball), "-C", str(root), "mise"], check=True)
+        return tarball, hashlib.sha256(tarball.read_bytes()).hexdigest()
+
+    def install(self, version="2026.1.0", fail_urls=(), other_asset_sum_urls=(),
+                tampered_mirror=False, **variables):
         with tempfile.TemporaryDirectory() as tmp:
             tmp = Path(tmp)
             asset = f"mise-v{version}-linux-x64.tar.gz"
-            binary = tmp / "src/mise/bin/mise"
-            binary.parent.mkdir(parents=True)
-            binary.write_text(f"#!/bin/sh\necho {version}\n")
-            binary.chmod(0o755)
-            tarball = tmp / asset
-            subprocess.run(["tar", "-czf", str(tarball), "-C", str(tmp / "src"), "mise"], check=True)
-            digest = hashlib.sha256(tarball.read_bytes()).hexdigest()
+            tarball, digest = self.make_tarball(tmp / "genuine", asset, version)
+            mirror_tarball, mirror_digest = tarball, digest
+            if tampered_mirror:
+                # a self-consistent archive and checksum served by mise.jdx.dev
+                mirror_tarball, mirror_digest = self.make_tarball(tmp / "tampered", asset, "evil")
             log = tmp / "curl.log"
             log.touch()
             env = {k: v for k, v in os.environ.items() if not k.startswith("MISE_")}
             env.update(
                 CURL_LOG=str(log), TARBALL=str(tarball), SUM=digest,
+                MIRROR_TARBALL=str(mirror_tarball), MIRROR_SUM=mirror_digest,
                 FAIL_URLS=" ".join(u.format(v=version, a=asset) for u in fail_urls),
                 # these serve a SHASUMS256.txt that only lists an unrelated asset
                 OTHER_ASSET_SUM_URLS=" ".join(
@@ -274,18 +292,16 @@ class DownloadSourceTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertTrue(installed, result.stderr)
 
-    def test_pinned_version_uses_mirror(self):
+    def test_pinned_version_uses_mirror_verified_against_github(self):
         result, urls, installed = self.install()
         self.assert_installed(result, installed)
         self.assertEqual(urls, [
             f"{MIRROR}/v2026.1.0/mise-v2026.1.0-linux-x64.tar.gz",
-            f"{MIRROR}/v2026.1.0/SHASUMS256.txt",
+            f"{GITHUB}/v2026.1.0/SHASUMS256.txt",
         ])
 
     def test_pinned_version_falls_back_to_github(self):
-        result, urls, installed = self.install(
-            fail_urls=[MIRROR + "/v{v}/{a}", MIRROR + "/v{v}/SHASUMS256.txt"]
-        )
+        result, urls, installed = self.install(fail_urls=[MIRROR + "/v{v}/{a}"])
         self.assert_installed(result, installed)
         self.assertIn("trying GitHub Releases", result.stderr)
         self.assertEqual(urls, [
@@ -294,36 +310,36 @@ class DownloadSourceTests(unittest.TestCase):
             f"{GITHUB}/v2026.1.0/SHASUMS256.txt",
         ])
 
-    def test_checksums_fall_back_to_github(self):
-        mirror_sums = MIRROR + "/v{v}/SHASUMS256.txt"
-        for case, kwargs in [
-            ("download fails", dict(fail_urls=[mirror_sums])),
-            ("asset not listed", dict(other_asset_sum_urls=[mirror_sums])),
-        ]:
-            with self.subTest(case=case):
-                result, urls, installed = self.install(**kwargs)
-                self.assert_installed(result, installed)
-                self.assertEqual(urls, [
-                    f"{MIRROR}/v2026.1.0/mise-v2026.1.0-linux-x64.tar.gz",
-                    f"{MIRROR}/v2026.1.0/SHASUMS256.txt",
-                    f"{GITHUB}/v2026.1.0/SHASUMS256.txt",
-                ])
-
     def assert_refused(self, result, installed, message):
         self.assertNotEqual(result.returncode, 0, result.stderr)
         self.assertFalse(installed, result.stderr)
         self.assertIn(message, result.stderr)
 
-    def test_no_checksum_from_any_host_fails(self):
-        sums = [MIRROR + "/v{v}/SHASUMS256.txt", GITHUB + "/v{v}/SHASUMS256.txt"]
+    def test_tampered_mirror_archive_fails(self):
+        # mise.jdx.dev's own SHASUMS256.txt would match its archive, but only
+        # GitHub's is consulted
+        result, urls, installed = self.install(tampered_mirror=True)
+        self.assert_refused(result, installed, "checksum mismatch")
+        self.assertNotIn(f"{MIRROR}/v2026.1.0/SHASUMS256.txt", urls)
+
+        # the built-in version is checked against the checksums embedded in the script
+        result, urls, installed = self.install(version="2026.10.0", tampered_mirror=True)
+        self.assert_refused(result, installed, "checksum mismatch")
+        self.assertEqual(urls, [f"{MIRROR}/v2026.10.0/mise-v2026.10.0-linux-x64.tar.gz"])
+
+    def test_no_github_checksum_fails_without_mirror_fallback(self):
+        github_sums = GITHUB + "/v{v}/SHASUMS256.txt"
         for case, kwargs in [
-            ("downloads fail", dict(fail_urls=sums)),
-            ("asset not listed", dict(other_asset_sum_urls=sums)),
+            ("download fails", dict(fail_urls=[github_sums])),
+            ("asset not listed", dict(other_asset_sum_urls=[github_sums])),
         ]:
             with self.subTest(case=case):
                 result, urls, installed = self.install(**kwargs)
                 self.assert_refused(result, installed, "no checksum found")
-                self.assertEqual(urls[-1], f"{GITHUB}/v2026.1.0/SHASUMS256.txt")
+                self.assertEqual(urls, [
+                    f"{MIRROR}/v2026.1.0/mise-v2026.1.0-linux-x64.tar.gz",
+                    f"{GITHUB}/v2026.1.0/SHASUMS256.txt",
+                ])
 
     def test_builtin_version_without_static_checksum_fails(self):
         empty = {name: "" for name in re.findall(r"\$(MISE_CHECKSUM_\w+)", SCRIPT)}

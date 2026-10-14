@@ -52,9 +52,13 @@ a reproducible install:
 curl -fsSL https://mise.run | MISE_VERSION=v2026.10.4 sh
 ```
 
-The script downloads the release archive and its checksum from mise.jdx.dev.
-If mise.jdx.dev does not have that release or cannot be reached, it downloads
-them from [GitHub Releases](https://github.com/jdx/mise/releases) instead.
+The script downloads the release archive from mise.jdx.dev. If mise.jdx.dev
+does not have that release or cannot be reached, it downloads the archive from
+[GitHub Releases](https://github.com/jdx/mise/releases) instead. Checksums never
+come from mise.jdx.dev. The release the script was published with uses checksums
+embedded in the script. Any other `MISE_VERSION` is checked against
+`SHASUMS256.txt` from GitHub Releases. The script stops without installing if it
+cannot get that checksum or if the archive does not match it.
 
 #### Install and activate in one step {#shell-specific-installation-activation}
 
