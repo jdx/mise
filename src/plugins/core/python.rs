@@ -1303,7 +1303,15 @@ fn python_build_definitions_from_versions_host(
     host: eyre::Result<Option<Vec<VersionInfo>>>,
 ) -> Option<Vec<VersionInfo>> {
     match host {
-        Ok(Some(versions)) => Some(python_build_version_infos(versions)),
+        // Keep only what a pyenv clone gives, so the list cannot depend on where it came from:
+        // a host `prerelease` flag would drop entries python leaves to PEP 440 matching.
+        Ok(Some(versions)) => Some(python_build_version_infos(versions.into_iter().map(|v| {
+            VersionInfo {
+                version: v.version,
+                created_at: v.created_at,
+                ..Default::default()
+            }
+        }))),
         Ok(None) => None,
         Err(err) => {
             debug!("failed to list python-build definitions from the versions host: {err:#}");
@@ -2078,32 +2086,38 @@ cpython-3.12.13+20260805-x86_64-unknown-linux-gnu-install_only_stripped.tar.gz
     fn test_python_build_definitions_from_versions_host_are_shaped_like_pyenv() {
         let host = vec![
             python_build_definition("3.13.0", "2024-10-07T00:00:00.000Z"),
+            VersionInfo {
+                prerelease: Some(true),
+                rolling: true,
+                release_url: Some("https://example.com/3.14.0a1".to_string()),
+                ..python_build_definition("3.14.0a1", "2024-10-15T00:00:00.000Z")
+            },
             python_build_definition("3.13t-dev", "2024-05-08T00:00:00.000Z"),
             python_build_definition("miniconda3-latest", "2019-01-01T00:00:00.000Z"),
             python_build_definition("3.13.0t", "2024-10-07T00:00:00.000Z"),
             python_build_definition("pypy3.10-7.3.17", "2024-08-29T00:00:00.000Z"),
         ];
-        let listed = |versions: Vec<VersionInfo>| {
+        let versions = python_build_definitions_from_versions_host(Ok(Some(host)))
+            .expect("a host list is used");
+        // The filter, order and fields a pyenv clone's `python-build --definitions` gives.
+        assert_eq!(
             versions
                 .into_iter()
-                .map(|v| (v.version, v.created_at))
-                .collect::<Vec<_>>()
-        };
-        let versions = python_build_definitions_from_versions_host(Ok(Some(host.clone())))
-            .expect("a host list is used");
-        // The same filter and order a pyenv clone's `python-build --definitions` goes through.
-        assert_eq!(
-            listed(versions.clone()),
-            listed(python_build_version_infos(host))
-        );
-        assert_eq!(
-            listed(versions),
+                .map(|v| (
+                    v.version,
+                    v.created_at,
+                    v.prerelease,
+                    v.rolling,
+                    v.release_url
+                ))
+                .collect::<Vec<_>>(),
             [
                 ("pypy3.10-7.3.17", "2024-08-29T00:00:00.000Z"),
                 ("miniconda3-latest", "2019-01-01T00:00:00.000Z"),
                 ("3.13.0", "2024-10-07T00:00:00.000Z"),
+                ("3.14.0a1", "2024-10-15T00:00:00.000Z"),
             ]
-            .map(|(v, at)| (v.to_string(), Some(at.to_string())))
+            .map(|(v, at)| (v.to_string(), Some(at.to_string()), None, false, None))
         );
     }
 
