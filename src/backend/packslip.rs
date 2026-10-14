@@ -1318,7 +1318,7 @@ impl PackslipBackend {
         let Some(repo) = Self::repo(project) else {
             return Ok(None);
         };
-        if !self.versions_host_applies() {
+        if self.versions_host_tool().is_none() {
             return Ok(None);
         }
         let tag = |versions: &[VersionInfo]| {
@@ -1350,7 +1350,7 @@ impl PackslipBackend {
     ) -> Result<Vec<VersionInfo>> {
         // A listing from the versions host lags GitHub, so it is not reused
         // once the host is turned off.
-        let context = if self.versions_host_applies() {
+        let context = if self.versions_host_tool().is_some() {
             "packslip-vendor-listing"
         } else {
             "packslip-vendor-listing-direct"
