@@ -2584,7 +2584,7 @@
         },
         "use_versions_host_track": {
           "default": true,
-          "description": "Send anonymous download statistics to mise-versions after installing a tool.",
+          "description": "Send download statistics to mise-versions after installing a tool.",
           "type": "boolean"
         },
         "verbose": {
