@@ -398,6 +398,12 @@ shims: under `mise activate` without `--shims`, a tool's whole `bin` directory
 joins `PATH`, so excluded names are still found there.
 :::
 
+::: warning
+Do not install shells such as `bash` or `zsh` with mise. Nearly every script
+runs them by name, so a shim for one affects everything. Install them with your
+system package manager, which [`mise bootstrap`](/bootstrap.html) can manage.
+:::
+
 ## Keep shims out of mise activate {#activate-shims}
 
 PATH activation puts real tool directories first. When the toolset has a
