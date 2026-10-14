@@ -311,6 +311,9 @@ impl AttestationClient {
 
     pub async fn fetch_attestations(&self, params: FetchParams) -> Result<Vec<Attestation>> {
         let url = self.attestations_url(&params)?;
+        // In mise's debug log, like its own requests, so a GitHub API call
+        // made here is visible.
+        log::debug!("GET {url}");
 
         let request = self
             .client
@@ -346,6 +349,7 @@ impl AttestationClient {
     }
 
     async fn fetch_bundle_url(&self, bundle_url: &str) -> Result<serde_json::Value> {
+        log::debug!("GET {bundle_url}");
         let request = self
             .client
             .get(bundle_url)
