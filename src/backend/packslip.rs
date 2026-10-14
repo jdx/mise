@@ -2564,9 +2564,12 @@ impl Backend for PackslipBackend {
         let filter = !self.include_prereleases(selection_opts);
         let versions = self.fuzzy_match_filter(versions, query, filter);
         let mut versions = self.version_order(selection_opts)?.order(versions);
-        // Offline, policy cannot be read, as for `latest`. No match and an
-        // exact version need no pin built or stamps fetched to be left alone.
-        if versions.is_empty() || ends_at_exact(&mut versions, query) || Settings::get().offline() {
+        // No match and an exact version need no pin built or stamps fetched
+        // to be left alone. Offline, policy cannot be read, as for `latest`.
+        if ends_at_exact(&mut versions, query) {
+            return Ok(versions);
+        }
+        if versions.is_empty() || Settings::get().offline() {
             return Ok(versions);
         }
         let before =
