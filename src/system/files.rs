@@ -4191,21 +4191,45 @@ fn confirmation_lines(req: &FileRequest, rendered: Option<&str>) -> Result<Vec<S
     if req.mode != FileMode::Copy || !req.source.is_dir() {
         return Ok(vec![describe(req)?]);
     }
+    let root = &req.target;
     let mut lines = vec![];
-    // a file (or a link to one) at the root is replaced by the directory under
-    // `--force`, even when the source directory is empty
-    if req.target.exists() && !req.target.is_dir() {
-        lines.push(format!(
-            "replace {} with a directory",
-            req.target.display_user()
-        ));
+    match std::fs::symlink_metadata(root) {
+        // a dangling link stays in place and the copy into it fails
+        Ok(_) if !root.exists() => {
+            return Ok(vec![format!(
+                "conflict (dangling symlink): {}",
+                root.display_user()
+            )]);
+        }
+        // a file (or a link to one) at the root is replaced by the directory
+        // under `--force`, even when the source directory is empty
+        Ok(_) if !root.is_dir() => {
+            lines.push(format!("replace {} with a directory", root.display_user()));
+        }
+        Ok(_) => {}
+        Err(_) => lines.push(format!("create {}", root.display_user())),
     }
     for (src, tgt) in walk_source_files(req)? {
+        // a file where a parent directory belongs blocks everything below it
+        let blocker = tgt
+            .ancestors()
+            .skip(1)
+            .take_while(|dir| dir.starts_with(root) && *dir != root.as_path())
+            .find(|dir| dir.exists() && !dir.is_dir());
+        if let Some(blocker) = blocker {
+            let line = format!("conflict (not a directory): {}", blocker.display_user());
+            if !lines.contains(&line) {
+                lines.push(line);
+            }
+            continue;
+        }
         let verb = match std::fs::symlink_metadata(&tgt) {
             Err(_) => "create",
             Ok(meta) if meta.file_type().is_symlink() => "replace symlink",
             Ok(meta) if meta.is_file() => {
-                if matches!((std::fs::read(&tgt), std::fs::read(&src)), (Ok(a), Ok(b)) if a == b) {
+                // apply rewrites every existing file with the source's content
+                // and mode, so only a file that already matches both is skipped
+                if file_matches(&src, &tgt, &meta) {
                     continue;
                 }
                 "overwrite"
@@ -4216,6 +4240,22 @@ fn confirmation_lines(req: &FileRequest, rendered: Option<&str>) -> Result<Vec<S
         lines.push(format!("{verb} {}", tgt.display_user()));
     }
     Ok(lines)
+}
+
+fn file_matches(src: &Path, tgt: &Path, tgt_meta: &std::fs::Metadata) -> bool {
+    let Ok(src_meta) = std::fs::metadata(src) else {
+        return false;
+    };
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        if src_meta.permissions().mode() & 0o7777 != tgt_meta.permissions().mode() & 0o7777 {
+            return false;
+        }
+    }
+    #[cfg(not(unix))]
+    let _ = (&src_meta, tgt_meta);
+    matches!((std::fs::read(tgt), std::fs::read(src)), (Ok(a), Ok(b)) if a == b)
 }
 
 pub fn execute_apply(
@@ -8516,6 +8556,37 @@ source = "oldrc""#,
         assert_eq!(lines.len(), 2, "{lines:?}");
         assert!(lines[0].starts_with("overwrite ") && lines[0].ends_with("changed"));
         assert!(lines[1].starts_with("create ") && lines[1].ends_with("fresh"));
+        Ok(())
+    }
+
+    #[test]
+    fn confirmation_lines_cover_directory_copy_edge_cases() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let empty = dir.path().join("empty");
+        file::create_dir_all(&empty)?;
+        let missing = dir.path().join("missing");
+        let lines = confirmation_lines(&link_req(&empty, &missing, FileMode::Copy), None)?;
+        assert_eq!(lines.len(), 1, "{lines:?}");
+        assert!(lines[0].starts_with("create ") && lines[0].ends_with("missing"));
+
+        let src = dir.path().join("src");
+        file::create_dir_all(src.join("sub"))?;
+        file::write(src.join("sub/config"), "x")?;
+        let tgt = dir.path().join("tgt");
+        file::create_dir_all(&tgt)?;
+        file::write(tgt.join("sub"), "a file")?;
+        let lines = confirmation_lines(&link_req(&src, &tgt, FileMode::Copy), None)?;
+        assert_eq!(lines.len(), 1, "{lines:?}");
+        assert!(lines[0].starts_with("conflict (not a directory): ") && lines[0].ends_with("sub"));
+
+        #[cfg(unix)]
+        {
+            let dangling = dir.path().join("dangling");
+            std::os::unix::fs::symlink(dir.path().join("nowhere"), &dangling)?;
+            let lines = confirmation_lines(&link_req(&src, &dangling, FileMode::Copy), None)?;
+            assert_eq!(lines.len(), 1, "{lines:?}");
+            assert!(lines[0].starts_with("conflict (dangling symlink): "));
+        }
         Ok(())
     }
 
