@@ -4192,6 +4192,14 @@ fn confirmation_lines(req: &FileRequest, rendered: Option<&str>) -> Result<Vec<S
         return Ok(vec![describe(req)?]);
     }
     let mut lines = vec![];
+    // a file (or a link to one) at the root is replaced by the directory under
+    // `--force`, even when the source directory is empty
+    if std::fs::symlink_metadata(&req.target).is_ok() && !req.target.is_dir() {
+        lines.push(format!(
+            "replace {} with a directory",
+            req.target.display_user()
+        ));
+    }
     for (src, tgt) in walk_source_files(req)? {
         let verb = match std::fs::symlink_metadata(&tgt) {
             Err(_) => "create",
@@ -8497,6 +8505,10 @@ source = "oldrc""#,
             std::os::unix::fs::symlink(tgt.join("same"), tgt.join("link"))?;
         }
         let lines = confirmation_lines(&req, None)?;
+        let blocked = dir.path().join("blocked");
+        file::write(&blocked, "file")?;
+        let root = confirmation_lines(&link_req(&src, &blocked, FileMode::Copy), None)?;
+        assert!(root[0].starts_with("replace ") && root[0].ends_with("with a directory"));
         #[cfg(unix)]
         assert!(lines[2].starts_with("replace symlink ") && lines[2].ends_with("link"));
         #[cfg(unix)]
