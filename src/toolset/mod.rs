@@ -94,6 +94,14 @@ pub struct Toolset {
     tera_ctx: OnceCell<tera::Context>,
 }
 
+/// Which versions `Toolset::list_outdated_versions_selecting` looks up.
+pub struct OutdatedSelection<'a> {
+    pub filter_tools: Option<&'a [crate::args::ToolArg]>,
+    pub exclude_tools: Option<&'a [crate::args::ToolArg]>,
+    pub show_progress: bool,
+    pub select: &'a dyn Fn(&ToolVersion) -> bool,
+}
+
 impl Toolset {
     pub fn new(source: ToolSource) -> Self {
         Self {
@@ -500,6 +508,36 @@ impl Toolset {
         exclude_tools: Option<&[crate::args::ToolArg]>,
         show_progress: bool,
     ) -> Vec<OutdatedInfo> {
+        self.list_outdated_versions_selecting(
+            config,
+            bump,
+            opts,
+            OutdatedSelection {
+                filter_tools,
+                exclude_tools,
+                show_progress,
+                select: &|_| true,
+            },
+        )
+        .await
+    }
+
+    /// Like `list_outdated_versions_with_progress`, but only looks up the
+    /// versions `select` accepts, so a caller that will discard a request
+    /// does not pay for resolving its latest version.
+    pub async fn list_outdated_versions_selecting(
+        &self,
+        config: &Arc<Config>,
+        bump: bool,
+        opts: &ResolveOptions,
+        selection: OutdatedSelection<'_>,
+    ) -> Vec<OutdatedInfo> {
+        let OutdatedSelection {
+            filter_tools,
+            exclude_tools,
+            show_progress,
+            select,
+        } = selection;
         let list_versions = if opts.inactive {
             match self.list_all_versions(config).await {
                 Ok(v) => v,
@@ -522,11 +560,12 @@ impl Toolset {
                     return false;
                 }
                 // Include only specified tools if provided
-                if let Some(tools) = filter_tools {
-                    tools.iter().any(|t| t.ba.as_ref() == tv.ba())
-                } else {
-                    true
+                if let Some(tools) = filter_tools
+                    && !tools.iter().any(|t| t.ba.as_ref() == tv.ba())
+                {
+                    return false;
                 }
+                select(tv)
             })
             .map(|(t, tv)| (config.clone(), t, tv, bump, opts.clone()))
             .collect::<Vec<_>>();

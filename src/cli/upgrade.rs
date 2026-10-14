@@ -14,6 +14,7 @@ use crate::install_before::{
 };
 use crate::install_context::install_dependency_declarations;
 use crate::semver::split_version_prefix;
+use crate::toolset::OutdatedSelection;
 use crate::toolset::is_outdated_version;
 use crate::toolset::outdated_info::OutdatedInfo;
 use crate::toolset::outdated_info::prefixed_latest_query;
@@ -207,12 +208,20 @@ impl Upgrade {
     /// environment doesn't replace the request it was asked to upgrade.
     fn toolset_builder(&self) -> ToolsetBuilder {
         let builder = ToolsetBuilder::new().with_scope(self.scope());
-        if self.for_auto_update {
+        let builder = if self.for_auto_update {
             builder
                 .without_runtime_env()
                 .with_deferred_lazy_resolution_online()
         } else if self.global {
             builder.without_runtime_env()
+        } else {
+            builder
+        };
+        // A bare upgrade leaves a lazy tool with nothing installed alone, so it does
+        // not wait on that tool's remote version list either. Naming a tool resolves
+        // it in full.
+        if self.tool.is_empty() && !self.for_auto_update {
+            builder.with_deferred_lazy_resolution_online()
         } else {
             builder
         }
@@ -221,35 +230,72 @@ impl Upgrade {
     /// A lazy tool with no version installed is waiting for its first run, so a
     /// bare upgrade leaves it alone, as a bare `mise install` does, unless a tool
     /// it upgrades depends on it. Naming the tool installs it, as `mise install
-    /// node` does. Returns the requests left alone as configured, since
-    /// `tool_request` may already name the version it would move to.
-    fn leave_missing_lazy(&self, outdated: &mut Vec<OutdatedInfo>) -> Vec<ToolRequest> {
-        let mut keep = outdated
-            .iter()
-            .map(|o| !self.tool.is_empty() || !o.is_unrun_lazy())
-            .collect::<Vec<_>>();
-        if keep.iter().all(|keep| *keep) {
-            return vec![];
-        }
-        let mut pending = (0..outdated.len()).filter(|&i| keep[i]).collect::<Vec<_>>();
-        while let Some(i) = pending.pop() {
-            let declarations = install_dependency_declarations(&outdated[i].tool_version.request);
-            for (j, o) in outdated.iter().enumerate() {
-                if !keep[j] && declarations.matches(o.tool_version.ba()) {
-                    keep[j] = true;
-                    pending.push(j);
-                }
+    /// node` does. A tool left alone is not looked up at all, so a slow or
+    /// failing backend cannot hold up the upgrade. Returns the outdated tools
+    /// and the requests left alone, as configured, since `tool_request` may
+    /// already name the version it would move to.
+    async fn list_outdated_leaving_missing_lazy(
+        &self,
+        ts: &Toolset,
+        config: &Arc<Config>,
+        opts: &ResolveOptions,
+        filter_tools: Option<&[ToolArg]>,
+        exclude_tools: Option<&[ToolArg]>,
+    ) -> (Vec<OutdatedInfo>, Vec<ToolRequest>) {
+        let mut unrun = if self.tool.is_empty() {
+            ts.list_current_versions()
+                .into_iter()
+                .map(|(_, tv)| tv)
+                .filter(ToolVersion::is_unrun_lazy)
+                .map(|tv| tv.request)
+                .collect::<Vec<_>>()
+        } else {
+            vec![]
+        };
+        let mut outdated = ts
+            .list_outdated_versions_selecting(
+                config,
+                self.bump,
+                opts,
+                OutdatedSelection {
+                    filter_tools,
+                    exclude_tools,
+                    show_progress: self.show_resolution_progress(),
+                    select: &|tv| !unrun.contains(&tv.request),
+                },
+            )
+            .await;
+        // Put back what an upgraded tool depends on, and what that depends on.
+        let mut scanned = 0;
+        while scanned < outdated.len() && !unrun.is_empty() {
+            let declarations =
+                install_dependency_declarations(&outdated[scanned].tool_version.request);
+            scanned += 1;
+            let needed = unrun
+                .iter()
+                .filter(|request| declarations.matches(request.ba()))
+                .cloned()
+                .collect::<Vec<_>>();
+            if needed.is_empty() {
+                continue;
             }
+            unrun.retain(|request| !needed.contains(request));
+            outdated.extend(
+                ts.list_outdated_versions_selecting(
+                    config,
+                    self.bump,
+                    opts,
+                    OutdatedSelection {
+                        filter_tools,
+                        exclude_tools,
+                        show_progress: false,
+                        select: &|tv| needed.contains(&tv.request),
+                    },
+                )
+                .await,
+            );
         }
-        let (kept, left_alone): (Vec<_>, Vec<_>) = std::mem::take(outdated)
-            .into_iter()
-            .zip(keep)
-            .partition(|(_, keep)| *keep);
-        *outdated = kept.into_iter().map(|(o, _)| o).collect();
-        left_alone
-            .into_iter()
-            .map(|(o, _)| o.tool_version.request)
-            .collect()
+        (outdated, unrun)
     }
 
     fn scope(&self) -> ConfigScope {
@@ -423,7 +469,7 @@ impl Upgrade {
             })
             .filter(|tools| !tools.is_empty())
             .unwrap_or_default();
-        let mut outdated = if !explicit_filter_tools.is_empty() {
+        let (mut outdated, left_alone) = if !explicit_filter_tools.is_empty() {
             let mut explicit = ts
                 .list_outdated_versions_with_progress(
                     &config,
@@ -453,15 +499,14 @@ impl Upgrade {
                     .await,
                 );
             }
-            explicit
+            (explicit, vec![])
         } else {
-            ts.list_outdated_versions_with_progress(
+            self.list_outdated_leaving_missing_lazy(
+                &ts,
                 &config,
-                self.bump,
                 &opts,
                 filter_tools,
                 exclude_tools,
-                self.show_resolution_progress(),
             )
             .await
         };
@@ -488,7 +533,6 @@ impl Upgrade {
                 }
             }
         }
-        let left_alone = self.leave_missing_lazy(&mut outdated);
         if self.for_auto_update {
             // Another version of the same tool can opt out: `auto_update` upgrades
             // only the requests that enable it. It also only moves an installed
@@ -569,24 +613,23 @@ impl Upgrade {
             let bump_outdated = if self.bump {
                 Vec::new()
             } else {
-                let mut bump_outdated = ts
-                    .list_outdated_versions_filtered(
-                        &config,
-                        true,
-                        &opts,
+                // The note only reports, and installs nothing, so a missing lazy tool
+                // is left out even when a reported tool depends on it.
+                ts.list_outdated_versions_selecting(
+                    &config,
+                    true,
+                    &opts,
+                    OutdatedSelection {
                         filter_tools,
                         exclude_tools,
-                    )
-                    .await
-                    .into_iter()
-                    .filter(|o| o.bump.is_some())
-                    .collect::<Vec<_>>();
-                // The note only reports, and installs nothing, so a missing lazy tool
-                // is dropped even when a reported tool depends on it.
-                if self.tool.is_empty() {
-                    bump_outdated.retain(|o| !o.is_unrun_lazy());
-                }
-                bump_outdated
+                        show_progress: false,
+                        select: &|tv| !(self.tool.is_empty() && tv.is_unrun_lazy()),
+                    },
+                )
+                .await
+                .into_iter()
+                .filter(|o| o.bump.is_some())
+                .collect::<Vec<_>>()
             };
             if bump_outdated.is_empty() && !has_explicit_config_bumps {
                 info!("All tools are up to date");

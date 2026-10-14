@@ -66,6 +66,16 @@ pub struct ToolVersion {
 }
 
 impl ToolVersion {
+    /// A lazy request with no version of the tool installed: it is waiting for
+    /// its first run, so a bare `mise upgrade` leaves it alone. A backend that
+    /// fails to resolve is not waiting for anything, so it reports `false`.
+    pub fn is_unrun_lazy(&self) -> bool {
+        self.request.options().lazy == Some(true)
+            && self
+                .backend()
+                .is_ok_and(|backend| backend.list_installed_versions().is_empty())
+    }
+
     /// The error raised when resolution found no usable version.
     ///
     /// `minimum_release_age` applies by default, so "no versions found" is

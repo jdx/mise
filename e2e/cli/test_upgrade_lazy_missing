@@ -86,6 +86,15 @@ EOF
 mise upgrade
 assert_contains "mise ls --installed dummy" "2.0.0"
 
+# A tool the upgrade leaves alone is not looked up either, so a backend that
+# cannot resolve it neither delays the upgrade nor warns. Naming it does look it up.
+cat >"$MISE_SYSTEM_DIR/config.toml" <<'EOF2'
+[tools]
+"github:mise-test/no-such-repo" = { version = "latest", lazy = true }
+EOF2
+assert_not_contains "mise upgrade --dry-run 2>&1" "no-such-repo"
+assert_contains "mise upgrade github:mise-test/no-such-repo --dry-run 2>&1" "no-such-repo"
+
 # A tool the upgrade leaves alone gets no minimum_release_age warning; naming it
 # still shows one. jq has release dates, which the dummy backend lacks.
 cat >"$MISE_SYSTEM_DIR/config.toml" <<'EOF'
