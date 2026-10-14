@@ -12,6 +12,7 @@ use crate::toolset::{
 };
 use crate::ui::install_progress::removal_progress;
 use crate::ui::multi_progress_report::MultiProgressReport;
+use crate::ui::progress_report::ProgressIcon;
 use crate::ui::prompt::{self, Confirmation};
 use crate::{backend::Backend, config, exit};
 use console::style;
@@ -167,7 +168,10 @@ pub(super) async fn prune(
 async fn scan_prunable(config: &Arc<Config>, tools: Vec<&BackendArg>) -> Result<PrunableTools> {
     let pr = MultiProgressReport::get().add("scanning tracked configs");
     let result = prunable_tools_with_sources(config, tools, Some(pr.as_ref())).await;
-    pr.finish();
+    match &result {
+        Ok(_) => pr.finish(),
+        Err(_) => pr.finish_with_icon(String::new(), ProgressIcon::Error),
+    }
     result
 }
 
