@@ -68,7 +68,8 @@ assert "cat '$HOME/zypper-log'" $'--non-interactive install -- ripgrep\n--non-in
 
 # --dry-run previews without running the package manager
 : >"$HOME/zypper-log"
-assert_succeed "mise bootstrap --yes --upgrade --dry-run"
+assert_contains "mise bootstrap --yes --upgrade --dry-run 2>&1" "would upgrade installed packages"
+assert_not_contains "mise bootstrap --yes --upgrade --dry-run 2>&1" "not installed"
 assert_succeed "test ! -s '$HOME/zypper-log'"
 assert_not_contains "mise ls --installed tiny" "1.1.0"
 
