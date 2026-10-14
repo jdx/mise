@@ -97,8 +97,13 @@ if ((covered_days < min_covered_days)); then
 fi
 # The rollup runs daily (~02:20 UTC) for the previous day. A stale window means
 # the pipeline stopped, so recent downloads would be missing from the counts.
-stats_age_days=$(jq -n --arg d "$last_day" --argjson now "$(date -u +%s)" \
-	'(($now - ($d | strptime("%Y-%m-%d") | mktime)) / 86400) | floor')
+# A date that matches the shape but isn't a real day (such as 2026-99-99) makes
+# strptime fail; treat that, and any date in the future, as a bad response.
+if ! stats_age_days=$(jq -n --arg d "$last_day" --argjson now "$(date -u +%s)" \
+	'(($now - ($d | strptime("%Y-%m-%d") | mktime)) / 86400) | floor' 2>/dev/null) ||
+	[[ ! $stats_age_days =~ ^[0-9]+$ ]]; then
+	skip "download stats have an invalid last_covered_date: $last_day."
+fi
 if ((stats_age_days > max_stats_age_days)); then
 	skip "download stats end on $last_day, $stats_age_days days ago (limit $max_stats_age_days), so they are stale."
 fi
