@@ -1,0 +1,40 @@
+# conda-forge splits GDAL into several outputs: `libgdal-core` ships the shared
+# library and the command-line tools, `libgdal` is a metapackage that only pulls
+# in the optional format plugins, and `gdal` is the Python bindings.
+backends = ["conda:libgdal-core"]
+bins = [
+  "gdal",
+  "gdal-config",
+  "gdal_contour",
+  "gdal_create",
+  "gdal_footprint",
+  "gdal_grid",
+  "gdal_rasterize",
+  "gdal_translate",
+  "gdal_viewshed",
+  "gdaladdo",
+  "gdalbuildvrt",
+  "gdaldem",
+  "gdalenhance",
+  "gdalinfo",
+  "gdallocationinfo",
+  "gdalmanage",
+  "gdalmdiminfo",
+  "gdalmdimtranslate",
+  "gdalsrsinfo",
+  "gdaltindex",
+  "gdaltransform",
+  "gdalwarp",
+  "gnmanalyse",
+  "gnmmanage",
+  "nearblack",
+  "ogr2ogr",
+  "ogrinfo",
+  "ogrlineref",
+  "ogrtindex",
+  "sozip",
+]
+description = "GDAL is a translator library for raster and vector geospatial data formats"
+test = { cmd = "gdalinfo --version", expected = "GDAL {{version}}" }
+url = "https://gdal.org"
+version_order = "semver"
