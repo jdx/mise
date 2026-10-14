@@ -119,13 +119,16 @@ fn configured_registry_urls(settings: &Settings) -> Vec<String> {
     registries
 }
 
-/// Whether every aqua registry mise searches is the official one, built in or
-/// downloaded. A custom registry is searched first and may define a package ID
-/// differently: another repository, or other version filters.
+/// Whether mise searches the official aqua registry, built in or downloaded,
+/// and no other. A custom registry is searched first and may define a package
+/// ID differently: another repository, or other version filters. With no
+/// registry at all, no package resolves.
 pub(crate) fn searches_only_official_registries(settings: &Settings) -> bool {
-    configured_registry_urls(settings)
-        .iter()
-        .all(|registry| is_official_aqua_registry(registry))
+    let registries = configured_registry_urls(settings);
+    (settings.aqua.baked_registry || !registries.is_empty())
+        && registries
+            .iter()
+            .all(|registry| is_official_aqua_registry(registry))
 }
 
 fn is_official_aqua_registry(registry_url: &str) -> bool {
@@ -672,6 +675,11 @@ mod tests {
         settings.registry_floating = true;
         assert!(searches_only_official_registries(&settings));
         settings.aqua.registries = Some(vec!["https://example.com/custom".into()]);
+        assert!(!searches_only_official_registries(&settings));
+
+        let mut settings = Settings::default();
+        settings.aqua.baked_registry = false;
+        settings.aqua.registries = Some(Vec::new());
         assert!(!searches_only_official_registries(&settings));
     }
 
