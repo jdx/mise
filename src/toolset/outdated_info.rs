@@ -174,18 +174,21 @@ impl OutdatedInfo {
             );
         }
         // Asked for after the up-to-date checks above, so a tool that is not
-        // going to be reported does not pay for the lookup.
+        // going to be reported does not pay for the lookup, and only by callers
+        // that report it: it can read a version list resolution did not need.
         //
         // `oi.latest` rather than the requested version: what is wanted is where
         // to read about the version being offered, not the one already pinned.
-        oi.release_url = t
-            .resolved_release_url(
-                config,
-                &oi.latest,
-                &latest_query,
-                &oi.tool_request.options(),
-            )
-            .await;
+        if opts.outdated_release_urls {
+            oi.release_url = t
+                .resolved_release_url(
+                    config,
+                    &oi.latest,
+                    &latest_query,
+                    &oi.tool_request.options(),
+                )
+                .await;
+        }
         if bump {
             let old = oi.tool_version.request.version();
             let old = old.strip_prefix(&prefix).unwrap_or(old.as_str());

@@ -311,6 +311,7 @@ impl Use {
             offline: false,
             refresh_remote_versions: false,
             inactive: false,
+            outdated_release_urls: false,
             warn_not_in_lockfile: true,
             defer_missing_lazy_tools: false,
             defer_missing_lazy_online: false,

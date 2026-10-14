@@ -104,6 +104,35 @@ impl<'a> UbiOptions<'a> {
     }
 }
 
+/// The versions a ubi fuzzy `query` selects: the query, optionally followed by
+/// `-` or `.` and more.
+pub(crate) fn ubi_fuzzy_match(
+    versions: Vec<String>,
+    query: &str,
+    filter_prereleases: bool,
+) -> Vec<String> {
+    let escaped_query = regex::escape(query);
+    let query = if query == "latest" {
+        "\\D*[0-9].*"
+    } else {
+        &escaped_query
+    };
+    let query_regex = Regex::new(&format!("^{query}([-.].+)?$")).unwrap();
+
+    versions
+        .into_iter()
+        .filter(|v| {
+            if query == v {
+                return true;
+            }
+            if filter_prereleases && VERSION_REGEX.is_match(v) {
+                return false;
+            }
+            query_regex.is_match(v)
+        })
+        .collect()
+}
+
 #[async_trait]
 impl Backend for UbiBackend {
     fn get_type(&self) -> BackendType {
@@ -362,26 +391,7 @@ impl Backend for UbiBackend {
         query: &str,
         filter_prereleases: bool,
     ) -> Vec<String> {
-        let escaped_query = regex::escape(query);
-        let query = if query == "latest" {
-            "\\D*[0-9].*"
-        } else {
-            &escaped_query
-        };
-        let query_regex = Regex::new(&format!("^{query}([-.].+)?$")).unwrap();
-
-        versions
-            .into_iter()
-            .filter(|v| {
-                if query == v {
-                    return true;
-                }
-                if filter_prereleases && VERSION_REGEX.is_match(v) {
-                    return false;
-                }
-                query_regex.is_match(v)
-            })
-            .collect()
+        ubi_fuzzy_match(versions, query, filter_prereleases)
     }
 
     fn verify_checksum(

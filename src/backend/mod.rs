@@ -40,6 +40,7 @@ use crate::toolset::{
     install_state, is_outdated_version,
 };
 use crate::ui::progress_report::SingleReport;
+use crate::versions_index::{self, IndexPick, IndexTool};
 use crate::{
     cache::{CacheManager, CacheManagerBuilder},
     plugins::PluginEnum,
@@ -3631,6 +3632,19 @@ pub trait Backend: Debug + Send + Sync {
         before_date: Option<Timestamp>,
         refresh: bool,
     ) -> eyre::Result<Option<String>> {
+        if let Some(version) = resolve_from_versions_index(
+            self,
+            config,
+            query,
+            IndexPick::Request,
+            selection_opts,
+            before_date,
+            refresh,
+        )
+        .await
+        {
+            return Ok(Some(version));
+        }
         let mut matches = self
             .list_versions_matching_with_selection_options(
                 config,
@@ -5411,6 +5425,15 @@ pub trait Backend: Debug + Send + Sync {
         fuzzy_match_versions(versions, query, filter_prereleases)
     }
 
+    /// Whether [`Self::fuzzy_match_filter`] selects, for any query but
+    /// `latest`, only versions the shared `fuzzy_version_matches` selects too,
+    /// apart from the query itself. The versions index guarantees its coverage
+    /// of a prefix in terms of that matcher, so a broader override must return
+    /// `false` here, which makes such queries read the full list.
+    fn fuzzy_match_stays_within_shared_matcher(&self) -> bool {
+        true
+    }
+
     /// Select the ordering policy supported by this backend.
     ///
     /// Backends must opt in explicitly before `version_order` can affect remote
@@ -5825,6 +5848,138 @@ pub(crate) fn is_active_postinstall_install(tv: &ToolVersion, install_path: &Pat
 /// The token a tool-level postinstall hook receives; see
 /// [`install_state::PostinstallToken`].
 const POSTINSTALL_TOKEN_ENV: &str = "MISE_TOOL_INSTALL_TOKEN";
+
+/// Resolve `query` from the versions index, so resolving many tools takes
+/// one request instead of one version list each. `None` means resolve from
+/// the full list as before: the index cannot prove its answer, or the full
+/// list would not come from the versions host, or it costs no request.
+///
+/// Selection is the full-list path's own: the same prerelease and
+/// release-date filters and the same `fuzzy_match_filter`, run over the
+/// index's subset of the list. See [`versions_index`] for when the index
+/// is fetched.
+pub(crate) async fn resolve_from_versions_index<B: Backend + ?Sized>(
+    backend: &B,
+    config: &Arc<Config>,
+    query: &str,
+    pick: IndexPick,
+    selection_opts: &ToolVersionOptions,
+    before_date: Option<Timestamp>,
+    refresh: bool,
+) -> Option<String> {
+    let tool = match versions_index_tool(backend, config, query, selection_opts, refresh).await {
+        Ok(tool) => tool,
+        Err(reason) => {
+            trace!(
+                "versions index: not used for {}@{query}: {reason}",
+                backend.id()
+            );
+            return None;
+        }
+    };
+    let index = versions_index::get(&tool, refresh).await?;
+    let Some(entry) = index.tool(&tool) else {
+        trace!("versions index: {tool} is not listed");
+        return None;
+    };
+    let version =
+        resolve_in_versions_index(backend, entry, query, pick, selection_opts, before_date);
+    match &version {
+        Some(version) => trace!("versions index: {tool}@{query} is {version}"),
+        None => trace!("versions index: {tool}@{query} needs the full list"),
+    }
+    version
+}
+
+/// The versions-host name of this backend's list, when the versions index
+/// may stand in for it in resolving `query`. The gates are the full-list
+/// path's for reading the versions host, plus the index's own: source
+/// order, a matcher the index's coverage applies to, and no list that is
+/// already available without a request.
+async fn versions_index_tool<B: Backend + ?Sized>(
+    backend: &B,
+    config: &Arc<Config>,
+    query: &str,
+    selection_opts: &ToolVersionOptions,
+    refresh: bool,
+) -> Result<String, &'static str> {
+    let settings = Settings::get();
+    if !settings.use_versions_host || settings.offline() || settings.prefer_offline() {
+        return Err("the versions host is off");
+    }
+    // Another order reorders matches, so "later in the list" stops meaning newer.
+    if !matches!(
+        backend.version_order(selection_opts),
+        Ok(VersionOrder::Source)
+    ) {
+        return Err("it is not in source order");
+    }
+    if query != "latest" && !backend.fuzzy_match_stays_within_shared_matcher() {
+        return Err("its matcher selects more than the shared one");
+    }
+    let ba = backend.ba();
+    // The full list would be empty after a failure, and resolution fail with it.
+    if version_listing_failure(ba).is_some() {
+        return Err("listing its versions failed");
+    }
+    let unavailable = "the versions host does not serve its list";
+    let resolved_opts = config
+        .resolve_tool_opts_with_overrides(ba)
+        .await
+        .map_err(|_| unavailable)?;
+    if has_local_version_listing_option_override(
+        &resolved_opts,
+        backend.remote_version_listing_tool_option_keys(),
+    ) {
+        return Err(unavailable);
+    }
+    let listing_opts = resolved_opts.effective();
+    if backend.versions_host_skip_reason(listing_opts).is_some()
+        || !matches!(
+            backend
+                .remote_version_cache_context_for(config, listing_opts, false)
+                .await,
+            Ok(None)
+        )
+    {
+        return Err(unavailable);
+    }
+    // A list that costs no request is the whole list: use it.
+    if !refresh
+        && backend
+            .get_remote_version_cache()
+            .lock()
+            .await
+            .has_fresh_value()
+    {
+        return Err("its full list is cached");
+    }
+    Ok(ba.short.clone())
+}
+
+/// [`IndexTool::resolve`] over this backend's own selection from `entry`'s
+/// subset, filtered as `list_versions_matching_with_selection_options`
+/// filters the full list.
+pub(crate) fn resolve_in_versions_index<B: Backend + ?Sized>(
+    backend: &B,
+    entry: &IndexTool,
+    query: &str,
+    pick: IndexPick,
+    selection_opts: &ToolVersionOptions,
+    before_date: Option<Timestamp>,
+) -> Option<String> {
+    let want_prereleases = backend.include_prereleases(selection_opts);
+    let mut versions = filter_cached_prereleases(entry.version_infos(), want_prereleases);
+    if let Some(before) = before_date {
+        versions = VersionInfo::filter_by_date(versions, before);
+    }
+    let matches = backend.fuzzy_match_filter(
+        versions.into_iter().map(|v| v.version).collect(),
+        query,
+        !want_prereleases,
+    );
+    entry.resolve(query, pick, &matches)
+}
 
 fn effective_latest_before_date<B: Backend + ?Sized>(
     backend: &B,
