@@ -2995,8 +2995,8 @@ pub trait Backend: Debug + Send + Sync {
     /// `v`). The versions host already lists every registry tool with each
     /// release's URL, so reading the tag from there replaces fetching the
     /// release list from the GitHub mirror, or guessing spellings that 404.
-    /// `None` whenever the versions host would not serve this backend's list:
-    /// the backend's own source is then no cheaper than what it would replace.
+    /// `None` whenever the versions host would not serve this backend's list,
+    /// or doesn't have it: the caller then looks the tag up as it did before.
     async fn listed_release_url(&self, config: &Arc<Config>, version: &str) -> Option<String> {
         let settings = Settings::get();
         if !settings.use_versions_host || settings.offline() || settings.prefer_offline() {
@@ -3020,9 +3020,13 @@ pub trait Backend: Debug + Send + Sync {
         {
             return None;
         }
-        self.list_remote_versions_with_info(config)
+        // The versions host alone, never `list_remote_versions_with_info`: on a
+        // miss that falls through to the backend's own listing, the paginated
+        // release list this hint exists to avoid, and a failure there would be
+        // recorded against the tool for the rest of the command.
+        versions_host::list_versions(&ba.short)
             .await
-            .ok()?
+            .ok()??
             .into_iter()
             .find(|v| v.version == version)?
             .release_url

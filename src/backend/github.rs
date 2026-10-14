@@ -7,7 +7,7 @@ use crate::backend::platform_target::PlatformTarget;
 use crate::backend::static_helpers::{
     ArchiveLayout, get_filename_from_url, install_artifact, lookup_platform_key,
     lookup_with_fallback, pinned_checksum, template_string, try_release_tags, try_with_v_prefix,
-    try_with_v_prefix_and_repo, verify_artifact,
+    verify_artifact,
 };
 use crate::backend::{MISE_BINS_DIR, SecurityFeature, runtime_path_for_install_path};
 use crate::config::{Config, Settings, SettingsExt};
@@ -863,6 +863,7 @@ impl Backend for UnifiedGitBackend {
             version,
             version_prefix,
             Some(&repo),
+            Some(&api_url),
             listed_tag.as_deref(),
             |candidate| {
                 let api_url = api_url.clone();
@@ -1297,8 +1298,13 @@ impl UnifiedGitBackend {
         let version = &tv.version;
         let version_prefix = opts.version_prefix();
 
-        let release =
-            try_with_v_prefix_and_repo(version, version_prefix, Some(&repo), |candidate| {
+        let release = try_release_tags(
+            version,
+            version_prefix,
+            Some(&repo),
+            Some(&api_url),
+            None,
+            |candidate| {
                 let api_url = api_url.to_string();
                 let repo = repo.to_string();
                 async move {
@@ -1307,9 +1313,10 @@ impl UnifiedGitBackend {
                     )
                     .await
                 }
-            })
-            .await
-            .ok();
+            },
+        )
+        .await
+        .ok();
         let Some(release) = release else {
             return Ok(None);
         };
@@ -1496,8 +1503,13 @@ impl UnifiedGitBackend {
             };
             let version = &tv.version;
             let version_prefix = opts.version_prefix();
-            let release =
-                try_with_v_prefix_and_repo(version, version_prefix, Some(&repo), |candidate| {
+            let release = try_release_tags(
+                version,
+                version_prefix,
+                Some(&repo),
+                Some(&api_url),
+                None,
+                |candidate| {
                     let api_url = api_url.to_string();
                     let repo = repo.to_string();
                     async move {
@@ -1506,8 +1518,9 @@ impl UnifiedGitBackend {
                         )
                         .await
                     }
-                })
-                .await?;
+                },
+            )
+            .await?;
 
             let asset_names: Vec<String> = release.assets.iter().map(|a| a.name.clone()).collect();
             // Keep provenance aligned with the matching-selected binary, unless
@@ -2158,10 +2171,12 @@ impl UnifiedGitBackend {
         } else {
             // Pass full repo for trying reponame@version formats
             let listed_tag = self.listed_release_tag(opts, version).await;
+            let api_url = opts.api_url();
             try_release_tags(
                 version,
                 version_prefix,
                 Some(repo),
+                Some(&api_url),
                 listed_tag.as_deref(),
                 |candidate| async move {
                     self.resolve_github_asset_url_for_target(
@@ -3006,8 +3021,13 @@ impl UnifiedGitBackend {
 
         // Try to get the release (with version prefix support)
         let version_prefix = opts.version_prefix();
-        let release =
-            match try_with_v_prefix_and_repo(version, version_prefix, Some(&repo), |candidate| {
+        let release = match try_release_tags(
+            version,
+            version_prefix,
+            Some(&repo),
+            Some(api_url),
+            None,
+            |candidate| {
                 let api_url = api_url.to_string();
                 let repo = repo.clone();
                 async move {
@@ -3016,16 +3036,17 @@ impl UnifiedGitBackend {
                     )
                     .await
                 }
-            })
-            .await
-            {
-                Ok(r) => r,
-                Err(e) => {
-                    return Err(VerificationStatus::ApiError(format!(
-                        "Failed to get release: {e}"
-                    )));
-                }
-            };
+            },
+        )
+        .await
+        {
+            Ok(r) => r,
+            Err(e) => {
+                return Err(VerificationStatus::ApiError(format!(
+                    "Failed to get release: {e}"
+                )));
+            }
+        };
 
         // Find the best provenance asset for the current platform
         let asset_names: Vec<String> = release.assets.iter().map(|a| a.name.clone()).collect();

@@ -2461,10 +2461,28 @@ impl AquaBackend {
         let target = PlatformTarget::from_current();
         let (target_os, target_arch) = Self::to_aqua_platform(&target);
         let target_libc = Self::target_variant_libc(&target, None);
-        let (listed, _) =
+        let (listed, versioned_pkg) =
             versioned_package_from_tag(&pkg, &tag, target_os, target_arch, target_libc.as_deref())
                 .ok()??;
-        (listed == version).then_some(tag)
+        if listed != version {
+            return None;
+        }
+        // Only a hint: the host's list can trail a retag upstream. Confirm the
+        // release exists, so a stale tag falls back to the listing instead of
+        // being the only tag tried. That is the lookup installing makes next
+        // (it is cached), which is why other package types, which install from
+        // URLs and never fetch the release, keep using the listing.
+        if versioned_pkg.package_type() != AquaPackageType::GithubRelease {
+            return None;
+        }
+        let repo = format!("{}/{}", pkg.repo_owner, pkg.repo_name);
+        match self.get_github_release(&repo, &tag).await {
+            Ok(_) => Some(tag),
+            Err(e) => {
+                debug!("[{}] listed tag {tag} did not resolve: {e:#}", self.id);
+                None
+            }
+        }
     }
 
     async fn get_version_tags(&self) -> Result<Vec<(String, String)>> {
