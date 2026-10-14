@@ -66,6 +66,10 @@ assert "cat '$HOME/zypper-log'" '--non-interactive install -- ripgrep'
 assert_succeed "mise bootstrap --yes --upgrade --skip tools"
 assert "cat '$HOME/zypper-log'" $'--non-interactive install -- ripgrep\n--non-interactive refresh\n--non-interactive install -- git'
 
+# a real run still warns about a package that stayed missing after the install
+# (the fake rpm never reports ripgrep as installed)
+assert_contains "mise bootstrap --yes --upgrade --skip tools 2>&1" "not installed"
+
 # --dry-run previews without running the package manager
 : >"$HOME/zypper-log"
 assert_contains "mise bootstrap --yes --upgrade --dry-run 2>&1" "install -- git"

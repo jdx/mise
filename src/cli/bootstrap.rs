@@ -2677,13 +2677,13 @@ impl Bootstrap {
             dry_run: self.dry_run,
             update,
             yes: self.yes,
-            after_install: false,
+            install_previewed: false,
         };
         if self.upgrade {
             driver::run(mgrs.clone(), Action::Install, &opts(self.update)).await?;
             info!("bootstrap: upgrading packages");
             let upgrade_opts = DriverOpts {
-                after_install: true,
+                install_previewed: self.dry_run,
                 ..opts(false)
             };
             return driver::run(mgrs, Action::Upgrade, &upgrade_opts).await;
