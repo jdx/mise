@@ -12,6 +12,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 pub struct PathEnv {
     pre: Vec<PathBuf>,
     mise: Vec<PathBuf>,
+    marked: Vec<PathBuf>,
     post: Vec<PathBuf>,
     seen_shims: bool,
 }
@@ -27,6 +28,7 @@ impl PathEnv {
         Self {
             pre: Vec::new(),
             mise: Vec::new(),
+            marked: Vec::new(),
             post: Vec::new(),
             seen_shims: false,
         }
@@ -57,6 +59,23 @@ impl PathEnv {
             .chain(self.post.iter())
             .filter(|p| seen.insert(*p))
             .map(|p| p.to_path_buf())
+            .collect()
+    }
+
+    /// Report an entry that was placed among the inherited ones, rather than added
+    /// ahead of them, as mise-managed. Its position is unchanged.
+    pub fn mark_managed(&mut self, path: PathBuf) {
+        self.marked.push(path);
+    }
+
+    /// The entries added through [`Self::add`] or reported through [`Self::mark_managed`], in the order they appear in
+    /// [`Self::to_vec`]. An entry that was already on the PATH keeps its place
+    /// in the result, so a directory mise moved forward is still reported.
+    pub fn managed_entries(&self) -> Vec<PathBuf> {
+        let managed: HashSet<&PathBuf> = self.mise.iter().chain(self.marked.iter()).collect();
+        self.to_vec()
+            .into_iter()
+            .filter(|p| managed.contains(p))
             .collect()
     }
 

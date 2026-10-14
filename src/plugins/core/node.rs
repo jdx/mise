@@ -921,7 +921,11 @@ impl Backend for NodePlugin {
             .join(&format!("v{version}/{filename}"))
             .map_err(|e| eyre::eyre!("Failed to construct Node.js download URL: {e}"))?;
 
-        let node_compile = settings.node_compile(CompilePurpose::Inspect);
+        let node_compile = if target.is_current() {
+            settings.node_compile(CompilePurpose::Inspect)
+        } else {
+            settings.explicit_compile(settings.node.compile)
+        };
         if node_compile == Some(true) && target.os_name() != "windows" {
             return self.resolve_source_lock_info(version).await;
         }
