@@ -4237,7 +4237,17 @@ pub fn execute_apply(
             .unique()
             .collect::<Vec<_>>()
             .join(", ");
-        if !prompt::confirm(format!("files: apply {list}?"))?.is_yes() {
+        for link in &plan.reconciliation.stale_links {
+            eprintln!("  rm {}", link.target.display_user());
+        }
+        for (req, _) in &plan.todo {
+            eprintln!("  {}", describe(req)?);
+        }
+        eprintln!(
+            "files: applying copies the repository versions over the live targets, replacing local edits.\n\
+             files: run `mise dot diff` to review the differences first."
+        );
+        if !prompt::confirm_with_default(format!("files: apply {list}?"), false)?.is_yes() {
             info!("files: skipped");
             return Ok(false);
         }
