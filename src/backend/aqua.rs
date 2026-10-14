@@ -2467,13 +2467,16 @@ impl AquaBackend {
         if listed != version {
             return None;
         }
-        // Only a hint: the host's list can trail a retag upstream. Confirm the
-        // release exists, so a stale tag falls back to the listing instead of
-        // being the only tag tried. That is the lookup installing makes next
-        // (it is cached), which is why other package types, which install from
-        // URLs and never fetch the release, keep using the listing.
-        if versioned_pkg.package_type() != AquaPackageType::GithubRelease {
-            return None;
+        // Only a hint: the host's list can trail a retag upstream. For a package
+        // installed from release assets, confirm the release exists, so a stale
+        // tag falls back to the listing instead of being the only tag tried;
+        // that is the lookup installing makes next, and it is cached. Other
+        // package types install from URLs and never fetch the release, and
+        // confirming would cost what the hint saves (their releases often have
+        // no assets, which mise-versions doesn't serve), so the mapped tag is
+        // used as listed, as `get_version_tags` would use its own.
+        if !listed_tag_needs_release(&versioned_pkg.package_type()) {
+            return Some(tag);
         }
         let repo = format!("{}/{}", pkg.repo_owner, pkg.repo_name);
         match self.get_github_release(&repo, &tag).await {
@@ -4029,6 +4032,13 @@ fn lock_package_for_version(
     Ok(pkg.with_version_libc(&versions, os, arch, libc))
 }
 
+/// Whether a tag from the versions host must be confirmed by fetching its
+/// release before installing this package type relies on it. Only a package
+/// installed from release assets fetches the release anyway.
+fn listed_tag_needs_release(package_type: &AquaPackageType) -> bool {
+    *package_type == AquaPackageType::GithubRelease
+}
+
 fn github_release_tag_from_url(url: &str) -> Option<String> {
     let url = Url::parse(url).ok()?;
     if url.host_str()? != "github.com" {
@@ -4490,6 +4500,20 @@ packages:
             signer_workflow: None,
         });
         assert!(AquaBackend::has_github_attestations_config(&pkg));
+    }
+
+    #[test]
+    fn test_only_release_asset_packages_confirm_a_listed_tag() {
+        // terraform, kubectl and vault install from URLs; confirming their
+        // tag would cost a release lookup they otherwise never make.
+        assert!(listed_tag_needs_release(&AquaPackageType::GithubRelease));
+        for package_type in [
+            AquaPackageType::Http,
+            AquaPackageType::GithubArchive,
+            AquaPackageType::GithubContent,
+        ] {
+            assert!(!listed_tag_needs_release(&package_type), "{package_type:?}");
+        }
     }
 
     #[test]
