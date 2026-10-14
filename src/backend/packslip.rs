@@ -376,6 +376,16 @@ where
     Ok(None)
 }
 
+/// Cut `matches` after `query` when it names one of them, so that a caller
+/// taking the last match gets that exact version, whatever else matched.
+fn ends_at_exact(matches: &mut Vec<String>, query: &str) -> bool {
+    let Some(index) = matches.iter().position(|v| v == query) else {
+        return false;
+    };
+    matches.truncate(index + 1);
+    true
+}
+
 /// The oldest-first `matches` for `query`, ending at the newest one `admits`
 /// accepts, which is the one a resolution takes. The matches are tried newest
 /// first, as `latest` tries its candidates. An exact version is left alone: it
@@ -393,7 +403,7 @@ where
     F: FnMut(String) -> Fut,
     Fut: std::future::Future<Output = Result<bool>>,
 {
-    if matches.is_empty() || matches.iter().any(|v| v == query) {
+    if matches.is_empty() || ends_at_exact(&mut matches, query) {
         return Ok(matches);
     }
     let newest_first = matches.iter().rev().cloned().collect();
@@ -2553,10 +2563,10 @@ impl Backend for PackslipBackend {
         let versions = versions.into_iter().map(|v| v.version).collect();
         let filter = !self.include_prereleases(selection_opts);
         let versions = self.fuzzy_match_filter(versions, query, filter);
-        let versions = self.version_order(selection_opts)?.order(versions);
+        let mut versions = self.version_order(selection_opts)?.order(versions);
         // Offline, policy cannot be read, as for `latest`. No match and an
         // exact version need no pin built or stamps fetched to be left alone.
-        if versions.is_empty() || versions.iter().any(|v| v == query) || Settings::get().offline() {
+        if versions.is_empty() || ends_at_exact(&mut versions, query) || Settings::get().offline() {
             return Ok(versions);
         }
         let before =
@@ -3271,12 +3281,17 @@ mod tests {
 
         // An exact version is not checked; install says why it is refused.
         let unchecked = |_: String| async { bail!("an exact version is not walked") };
-        let exact = matches(&["1.2.0"]);
+        // Whatever else matched it, the exact version is the one taken.
         assert_eq!(
-            eligible_matches("github.com/example/walk", "1.2.0", exact.clone(), unchecked)
-                .await
-                .unwrap(),
-            exact
+            eligible_matches(
+                "github.com/example/walk",
+                "1.2.0",
+                matches(&["1.1.0", "1.2.0", "1.2.1"]),
+                unchecked
+            )
+            .await
+            .unwrap(),
+            ["1.1.0", "1.2.0"]
         );
         // No match is not a refusal.
         assert!(
