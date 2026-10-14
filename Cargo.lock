@@ -6796,6 +6796,7 @@ dependencies = [
  "shell-escape",
  "shell-words",
  "signal-hook",
+ "stacker",
  "strum 0.28.0",
  "supports-hyperlinks",
  "tabled",
