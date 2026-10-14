@@ -7239,7 +7239,8 @@ pub(crate) fn trust_check_remote_task_file(config_source: &Path, file: &Path) ->
 }
 
 /// [`task_include_requires_trust`], reading the file the way the remote loader
-/// does: through its `#MISE` headers only, even when its name ends in `.toml`.
+/// does: only its `#MISE` headers render, even when its name ends in `.toml`,
+/// so a template elsewhere in the script needs no trust.
 fn remote_task_file_requires_trust(path: &Path) -> bool {
     if Settings::try_get().is_ok_and(|settings| settings.paranoid) {
         return true;
@@ -7247,9 +7248,7 @@ fn remote_task_file_requires_trust(path: &Path) -> bool {
     let Ok(body) = file::read_to_string(path) else {
         return true;
     };
-    contains_template_syntax(&body)
-        || crate::task::header_has_decoded_template(&body)
-        || crate::task::header_declares_secrets(&body)
+    crate::task::header_has_decoded_template(&body) || crate::task::header_declares_secrets(&body)
 }
 
 /// Template-free task files are inert at load time: TOML and `#MISE` headers

@@ -5111,6 +5111,13 @@ rust_cache = { unknown = true }
         assert!(!header_has_decoded_template(
             "#MISE description=\"a plain task\"\necho hi\n"
         ));
+        // a raw template in a header counts; one in the script body never renders
+        assert!(header_has_decoded_template(
+            "#MISE description=\"{{ exec(command='x') }}\"\necho hi\n"
+        ));
+        assert!(!header_has_decoded_template(
+            "#MISE description=\"plain\"\ndocker ps --format '{{.Names}}'\n"
+        ));
         assert!(header_declares_secrets("#MISE secrets={}\necho hi\n"));
         assert!(!header_declares_secrets(
             "#MISE description=\"x\"\necho hi\n"

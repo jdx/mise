@@ -17,7 +17,7 @@ EOF
 cat <<'EOF' >srv/plain.sh
 #!/usr/bin/env bash
 #MISE description="a plain remote task"
-echo plain
+docker ps --format '{{.Names}}'
 EOF
 cat <<'EOF' >srv/templated.sh
 #!/usr/bin/env bash
@@ -41,7 +41,8 @@ assert_untrusted tasks ls
 assert_untrusted tasks info evil
 assert_untrusted tasks validate
 
-# A template-free remote file still loads without trust.
+# A remote file with no template in its headers still loads without trust. Only the
+# headers render, so braces in the script itself do not count.
 cat <<EOF >mise.toml
 [tasks.plain]
 file = "http://localhost:${HTTP_PORT}/plain.sh"
