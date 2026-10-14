@@ -2506,8 +2506,10 @@ impl AquaBackend {
         let v = version_with_prefix(tag, pkg.version_prefix.as_deref());
         let (target_os, target_arch) = Self::to_aqua_platform(target);
         let confirmed = match self.listed_tag_check(&pkg, &v, target_os, target_arch) {
-            ListedTagCheck::Release => match self.get_github_release(&repo, tag).await {
-                Ok(_) => true,
+            // The same release fetch installing makes for this tag (cached),
+            // and the asset it would pick for `target` must be on it.
+            ListedTagCheck::Release => match self.get_github_release(&repo, &v).await {
+                Ok(release) => self.release_has_target_asset(&pkg, &v, &release, target),
                 Err(e) => {
                     debug!("[{}] listed tag {tag} did not resolve: {e:#}", self.id);
                     false
@@ -2524,6 +2526,28 @@ impl AquaBackend {
             );
         }
         confirmed
+    }
+
+    /// Whether `release` holds the asset installing `pkg` as `v` would select
+    /// for `target`. A release that exists without it is the wrong spelling
+    /// for this target (`1.2.3` and `v1.2.3` can carry different assets).
+    fn release_has_target_asset(
+        &self,
+        pkg: &AquaPackage,
+        v: &str,
+        release: &github::GithubRelease,
+        target: &PlatformTarget,
+    ) -> bool {
+        let (target_os, target_arch) = Self::to_aqua_platform(target);
+        pkg.asset_strs(v, target_os, target_arch)
+            .is_ok_and(|asset_strs| {
+                select_github_release_asset(
+                    &release.assets,
+                    &asset_strs,
+                    libc_asset_preference(target, self.tool_libc),
+                )
+                .is_some()
+            })
     }
 
     /// How [`Self::confirm_listed_tag`] confirms a listed tag for `pkg`,
@@ -4681,6 +4705,46 @@ packages:
                 .await
         );
         linux.assert_async().await;
+    }
+
+    #[test]
+    fn test_a_listed_release_must_hold_the_targets_asset() {
+        // `1.2.3` and `v1.2.3` both exist, but only `v1.2.3` ships the linux
+        // asset. A hint naming `1.2.3` is rejected for linux-x64, so that
+        // target falls back to the old lookup and its `v` alternative.
+        let backend = AquaBackend::from_arg(BackendArg::new(
+            "tool".to_string(),
+            Some("aqua:owner/repo".to_string()),
+        ));
+        let mut pkg = listed_tag_test_package(AquaPackageType::GithubRelease, "");
+        pkg.asset = "tool_{{.OS}}_{{.Arch}}.tar.gz".to_string();
+        let release = |tag: &str, assets: &[&str]| github::GithubRelease {
+            tag_name: tag.to_string(),
+            draft: false,
+            prerelease: false,
+            created_at: "2026-01-01T00:00:00Z".to_string(),
+            published_at: None,
+            assets: assets
+                .iter()
+                .map(|name| github::GithubAsset {
+                    from_versions_host: false,
+                    name: name.to_string(),
+                    browser_download_url: String::new(),
+                    url: String::new(),
+                    digest: None,
+                    updated_at: None,
+                })
+                .collect(),
+        };
+        let linux = PlatformTarget::new(crate::platform::Platform::parse("linux-x64").unwrap());
+        let darwin = PlatformTarget::new(crate::platform::Platform::parse("macos-arm64").unwrap());
+
+        let bare = release("1.2.3", &["tool_darwin_arm64.tar.gz"]);
+        assert!(!backend.release_has_target_asset(&pkg, "1.2.3", &bare, &linux));
+        assert!(backend.release_has_target_asset(&pkg, "1.2.3", &bare, &darwin));
+
+        let prefixed = release("v1.2.3", &["tool_linux_amd64.tar.gz"]);
+        assert!(backend.release_has_target_asset(&pkg, "v1.2.3", &prefixed, &linux));
     }
 
     #[tokio::test]
