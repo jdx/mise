@@ -131,9 +131,10 @@ assert_contains "cat outdated.txt" "1.25.1"
 assert_contains "cat outdated.txt" "0.14.1"
 assert_empty "cat requests.log"
 
-# Once stale, the copy is revalidated with its ETag.
+# Once stale, the copy is revalidated with its ETag, once for the command.
 assert_contains "MISE_FETCH_REMOTE_VERSIONS_CACHE=0s mise outdated" "0.14.1"
 assert_contains "cat requests.log" '/versions/data/index.v1.json "index-1"'
+assert "grep -c index.v1.json requests.log" "1"
 : >requests.log
 
 # A copy that no longer parses is fetched again rather than revalidated, and

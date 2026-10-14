@@ -222,11 +222,15 @@ struct Loaded {
 }
 
 impl Loaded {
+    /// Whether this copy can answer for the rest of the command. A version
+    /// list it read is kept the same way, whatever `fetch_remote_versions_cache`
+    /// says, until a `refresh` asks for a recent one.
     fn usable(&self, refresh: bool) -> bool {
-        is_usable(self.validated.elapsed(), refresh)
+        !refresh || self.validated.elapsed() < REFRESH_REUSES_COPIES_NEWER_THAN
     }
 }
 
+/// Whether the copy on disk, validated `age` ago, can be used without a request.
 fn is_usable(age: Duration, refresh: bool) -> bool {
     let max_age = Settings::get()
         .fetch_remote_versions_cache()
@@ -252,6 +256,10 @@ pub(crate) async fn get(tool: &str, refresh: bool) -> Option<Arc<VersionsIndex>>
         return None;
     }
     let mut loaded = LOADED.lock().await;
+    // Again: a fetch that failed while this caller waited for the lock.
+    if FAILED.load(Ordering::Relaxed) {
+        return None;
+    }
     if let Some(l) = loaded.as_ref().filter(|l| l.usable(refresh)) {
         return Some(l.index.clone());
     }
