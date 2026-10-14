@@ -202,13 +202,6 @@ impl ToolVersion {
         let minimum_release_age = request.options().minimum_release_age().map(str::to_string);
         let mut opts = opts.clone();
         opts.apply_before_date_for_tool(request.ba(), minimum_release_age.as_deref())?;
-        // The refresh keeps a cached list from hiding a release newer than the
-        // cache. A cutoff at least as old as the cache can be (24h by default,
-        // against an hour) already hides every such release, so the cached list
-        // gives the same answer a refetch would.
-        if opts.refresh_remote_versions && opts.before_date.is_some_and(cutoff_predates_cache) {
-            opts.refresh_remote_versions = false;
-        }
 
         trace!("resolving {} {}", &request, opts);
         if opts.use_locked_version
@@ -223,6 +216,21 @@ impl ToolVersion {
         {
             let tv = Self::new(request.clone(), request.version());
             return Ok(tv.with_before_date(opts.before_date));
+        }
+        // The refresh keeps a cached list from hiding a release newer than the
+        // cache. A cutoff at least as old as the cache can be (24h by default,
+        // against an hour) already hides every such release, so the cached list
+        // gives the same answer a refetch would. Only when the list dates its
+        // versions, though: an undated version passes any cutoff, so a backend
+        // that cannot date them keeps the refresh.
+        if opts.refresh_remote_versions
+            && opts.before_date.is_some_and(cutoff_predates_cache)
+            && backend.cached_remote_versions_are_dated(config).await
+        {
+            trace!(
+                "not refreshing remote versions for {request}: the release-age cutoff predates the cache"
+            );
+            opts.refresh_remote_versions = false;
         }
         if Self::defers_missing_lazy(&request, &opts)
             && backend.list_installed_versions().is_empty()

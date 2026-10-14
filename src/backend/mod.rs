@@ -3025,6 +3025,40 @@ pub trait Backend: Debug + Send + Sync {
         Ok(filter_cached_prereleases(versions, want_prereleases))
     }
 
+    /// Whether the remote-version list is cached and dates every version it
+    /// lists, read without fetching anything.
+    ///
+    /// A backend that dates its listing dates new releases too, so a release-age
+    /// cutoff can then say what a refetch would add. A version with no date
+    /// passes any cutoff, so a list with undated versions cannot.
+    async fn cached_remote_versions_are_dated(&self, config: &Arc<Config>) -> bool {
+        let Ok(resolved_opts) = config.resolve_tool_opts_with_overrides(self.ba()).await else {
+            return false;
+        };
+        let has_local_version_listing_override = has_local_version_listing_option_override(
+            &resolved_opts,
+            self.remote_version_listing_tool_option_keys(),
+        );
+        let Ok(cache_context) = self
+            .remote_version_cache_context_for(
+                config,
+                resolved_opts.effective(),
+                has_local_version_listing_override,
+            )
+            .await
+        else {
+            return false;
+        };
+        let cache = match cache_context.as_deref() {
+            Some(context) => self.get_remote_version_cache_with_context(Some(context)),
+            None => self.get_remote_version_cache(),
+        };
+        let Ok(versions) = cache.lock().await.get_cached() else {
+            return false;
+        };
+        !versions.is_empty() && versions.iter().all(|v| v.created_at.is_some())
+    }
+
     /// The `release_url` the remote version list gives `version`, when the
     /// versions host serves that list.
     ///
@@ -6591,6 +6625,45 @@ mod latest_version_tests {
             vec!["1.0.0".to_string(), "2.0.0".to_string()]
         );
         assert_eq!(backend.list_calls(), 1);
+    }
+
+    /// A release-age cutoff can stand in for an install-time refresh only when
+    /// the cached list dates its versions: an undated one passes any cutoff.
+    #[tokio::test]
+    async fn test_cached_remote_versions_are_dated() {
+        let _settings = crate::test::SettingsGuard::lock();
+        let config = Config::get().await.unwrap();
+        let backend = LatestBackend::new("test-cached-remote-versions-dated");
+        let cache = backend.get_remote_version_cache();
+        cache.lock().await.clear().unwrap();
+        assert!(!backend.cached_remote_versions_are_dated(&config).await);
+
+        let dated = |version: &str, created_at: Option<&str>| VersionInfo {
+            version: version.to_string(),
+            created_at: created_at.map(str::to_string),
+            ..Default::default()
+        };
+        cache
+            .lock()
+            .await
+            .write(&vec![
+                dated("1.0.0", Some("2024-01-01")),
+                dated("2.0.0", Some("2025-01-01")),
+            ])
+            .unwrap();
+        assert!(backend.cached_remote_versions_are_dated(&config).await);
+
+        cache
+            .lock()
+            .await
+            .write(&vec![
+                dated("1.0.0", Some("2024-01-01")),
+                dated("2.0.0", None),
+            ])
+            .unwrap();
+        assert!(!backend.cached_remote_versions_are_dated(&config).await);
+        cache.lock().await.clear().unwrap();
+        assert_eq!(backend.list_calls(), 0);
     }
 
     /// Installing a registry tool looks up its release tag in the versions
