@@ -123,12 +123,45 @@ shasum_bin() {
   fi
 }
 
+github_release_url() {
+  echo "https://github.com/jdx/mise/releases/download/v$1"
+}
+
+mirror_release_url() {
+  echo "https://mise.jdx.dev/v$1"
+}
+
+# Prints the remote file at $1 to stdout. Returns non-zero on any failure.
+fetch_text() {
+  url="$1"
+  if command -v curl >/dev/null 2>&1; then
+    debug ">" curl --compressed -fsSL "$url"
+    curl --compressed -fsSL "$url"
+  elif command -v wget >/dev/null 2>&1; then
+    debug ">" wget -qO - "$url"
+    wget -qO - "$url"
+  else
+    error "mise standalone install specific version requires curl or wget but neither is installed. Aborting."
+  fi
+}
+
+# Prints the line for asset $2 from SHASUMS256.txt in the release directory at
+# $1. Prints nothing if the file cannot be fetched or has no valid line for it.
+fetch_checksum() {
+  checksum="$(fetch_text "$1/SHASUMS256.txt" | grep "$2" || true)"
+  # TODO: verify with minisign or gpg if available
+  if echo "$checksum" | grep -Eq "^([0-9a-f]{32}|[0-9a-f]{64})"; then
+    echo "$checksum"
+  fi
+}
+
 get_checksum() {
   version=$1
   os=$2
   arch=$3
   ext=$4
-  url="https://github.com/jdx/mise/releases/download/v${version}/SHASUMS256.txt"
+  # release directory the tarball came from; defaults to GitHub Releases
+  release_url="${5:-$(github_release_url "$version")}"
   current_version="$MISE_CURRENT_VERSION"
   current_version="${current_version#v}"
 
@@ -211,21 +244,15 @@ get_checksum() {
       fi
     fi
   else
-    if command -v curl >/dev/null 2>&1; then
-      debug ">" curl -fsSL "$url"
-      checksums="$(curl --compressed -fsSL "$url")"
-    else
-      if command -v wget >/dev/null 2>&1; then
-        debug ">" wget -qO - "$url"
-        checksums="$(wget -qO - "$url")"
-      else
-        error "mise standalone install specific version requires curl or wget but neither is installed. Aborting."
-      fi
+    # Read checksums from the host the tarball came from, falling back to
+    # GitHub Releases when that host does not have them.
+    github_url="$(github_release_url "$version")"
+    checksum="$(fetch_checksum "$release_url" "$os-$arch.$ext")"
+    if [ -z "$checksum" ] && [ "$release_url" != "$github_url" ]; then
+      debug "no checksum at $release_url, trying $github_url"
+      checksum="$(fetch_checksum "$github_url" "$os-$arch.$ext")"
     fi
-    # TODO: verify with minisign or gpg if available
-
-    checksum="$(echo "$checksums" | grep "$os-$arch.$ext")"
-    if ! echo "$checksum" | grep -Eq "^([0-9a-f]{32}|[0-9a-f]{64})"; then
+    if [ -z "$checksum" ]; then
       warn "no checksum for mise $version and $os-$arch"
     else
       echo "$checksum"
@@ -235,22 +262,26 @@ get_checksum() {
 
 #endregion
 
+# Downloads $1 into directory $2 and prints the path of the downloaded file.
+# Returns non-zero if the download fails.
 download_file() {
   url="$1"
   download_dir="$2"
   filename="$(basename "$url")"
   file="$download_dir/$filename"
 
-  info "mise: installing mise..."
-
   if command -v curl >/dev/null 2>&1; then
     debug ">" curl -#fLo "$file" "$url"
-    curl -#fLo "$file" "$url"
+    curl -#fLo "$file" "$url" || return 1
   else
     if command -v wget >/dev/null 2>&1; then
       debug ">" wget -qO "$file" "$url"
       stderr=$(mktemp)
-      wget -O "$file" "$url" >"$stderr" 2>&1 || error "wget failed: $(cat "$stderr")"
+      if ! wget -O "$file" "$url" >"$stderr" 2>&1; then
+        warn "wget failed: $(cat "$stderr")"
+        rm -f "$stderr"
+        return 1
+      fi
       rm "$stderr"
     else
       error "mise standalone install requires curl or wget but neither is installed. Aborting."
@@ -353,20 +384,36 @@ install_mise() {
       fi
     fi
   fi
-  if [ "$version" != "$current_version" ] || [ "$install_from_github" = "1" ] || [ "$install_from_github" = "true" ]; then
-    tarball_url="https://github.com/jdx/mise/releases/download/v${version}/mise-v${version}-${os}-${arch}.${ext}"
-  elif [ -n "${MISE_TARBALL_URL-}" ]; then
+  # Download from mise.jdx.dev first and fall back to GitHub Releases when that
+  # fails, for example because mise.jdx.dev no longer hosts an older release.
+  asset="mise-v${version}-${os}-${arch}.${ext}"
+  github_url="$(github_release_url "$version")"
+  if [ "$install_from_github" = "1" ] || [ "$install_from_github" = "true" ]; then
+    release_url="$github_url"
+    tarball_url="$release_url/$asset"
+    fallback_url=""
+  elif [ "$version" = "$current_version" ] && [ -n "${MISE_TARBALL_URL-}" ]; then
+    release_url=""
     tarball_url="$MISE_TARBALL_URL"
+    fallback_url=""
   else
-    tarball_url="https://mise.jdx.dev/v${version}/mise-v${version}-${os}-${arch}.${ext}"
+    release_url="$(mirror_release_url "$version")"
+    tarball_url="$release_url/$asset"
+    fallback_url="$github_url/$asset"
   fi
 
+  info "mise: installing mise..."
   download_dir="$(mktemp -d)"
-  cache_file=$(download_file "$tarball_url" "$download_dir")
+  if ! cache_file=$(download_file "$tarball_url" "$download_dir"); then
+    [ -n "$fallback_url" ] || error "mise: failed to download $tarball_url"
+    info "mise: could not download from mise.jdx.dev, trying GitHub Releases"
+    release_url="$github_url"
+    cache_file=$(download_file "$fallback_url" "$download_dir") || error "mise: failed to download $fallback_url"
+  fi
   debug "mise-setup: tarball=$cache_file"
 
   debug "validating checksum"
-  cd "$(dirname "$cache_file")" && get_checksum "$version" "$os" "$arch" "$ext" | "$(shasum_bin)" -c >/dev/null
+  cd "$(dirname "$cache_file")" && get_checksum "$version" "$os" "$arch" "$ext" "$release_url" | "$(shasum_bin)" -c >/dev/null
 
   # extract tarball
   if [ -d "$install_path" ]; then

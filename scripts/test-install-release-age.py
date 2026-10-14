@@ -1,8 +1,10 @@
 """Offline regression tests for the bootstrap installer's release-age policy."""
 
+import hashlib
 import json
 import os
 from pathlib import Path
+import re
 import subprocess
 import tempfile
 import unittest
@@ -131,11 +133,11 @@ class ReleaseAgeTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
 
     def test_existing_versions(self):
-        for version, expected_status in [
-            ("2026.10.0", 0),
-            ("2026.10.0-DEBUG", 0),
-            ("2026.9.29-DEBUG", 77),
-            ("", 1),
+        for version, expected_status, downloads in [
+            ("2026.10.0", 0, False),
+            ("2026.10.0-DEBUG", 0, False),
+            ("2026.9.29-DEBUG", 1, True),
+            ("", 1, False),
         ]:
             with self.subTest(version=version), tempfile.TemporaryDirectory() as tmp:
                 binary = Path(tmp) / "mise"
@@ -144,7 +146,7 @@ class ReleaseAgeTests(unittest.TestCase):
                 result = self.run_shell(
                     """
                     resolve_release() { echo 2026.9.30; }
-                    download_file() { exit 77; }
+                    download_file() { echo DOWNLOAD_ATTEMPTED >&2; return 1; }
                     install_mise
                     """,
                     MISE_INSTALL_PATH=str(binary),
@@ -154,6 +156,7 @@ class ReleaseAgeTests(unittest.TestCase):
                     MISE_CURRENT_VERSION="v2026.10.0",
                 )
                 self.assertEqual(result.returncode, expected_status, result.stderr)
+                self.assertEqual("DOWNLOAD_ATTEMPTED" in result.stderr, downloads, result.stderr)
                 if expected_status == 0:
                     self.assertIn("keeping installed version", result.stderr)
 
@@ -205,6 +208,139 @@ class ReleaseAgeTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual(result.stdout.strip(), "complete pages")
             self.assertIn("sleep 15", result.stderr)
+
+
+MIRROR = "https://mise.jdx.dev"
+GITHUB = "https://github.com/jdx/mise/releases/download"
+
+
+class DownloadSourceTests(unittest.TestCase):
+    """Runs install_mise offline against a fake curl that serves a real tarball."""
+
+    CURL_STUB = r"""
+        curl() {
+            eval "u=\${$#}"
+            echo "$u" >>"$CURL_LOG"
+            case " $FAIL_URLS " in *" $u "*) return 22 ;; esac
+            case "$1" in
+                -\#fLo) cp "$TARBALL" "$2" ;;
+                *) printf '%s  ./%s\n' "$SUM" "$(basename "$TARBALL")" ;;
+            esac
+        }
+        install_mise
+    """
+
+    def install(self, version="2026.1.0", fail_urls=(), **variables):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp)
+            asset = f"mise-v{version}-linux-x64.tar.gz"
+            binary = tmp / "src/mise/bin/mise"
+            binary.parent.mkdir(parents=True)
+            binary.write_text(f"#!/bin/sh\necho {version}\n")
+            binary.chmod(0o755)
+            tarball = tmp / asset
+            subprocess.run(["tar", "-czf", str(tarball), "-C", str(tmp / "src"), "mise"], check=True)
+            digest = hashlib.sha256(tarball.read_bytes()).hexdigest()
+            log = tmp / "curl.log"
+            log.touch()
+            env = {k: v for k, v in os.environ.items() if not k.startswith("MISE_")}
+            env.update(
+                CURL_LOG=str(log), TARBALL=str(tarball), SUM=digest,
+                FAIL_URLS=" ".join(u.format(v=version, a=asset) for u in fail_urls),
+                MISE_INSTALL_PATH=str(tmp / "bin/mise"), MISE_INSTALL_OS="linux",
+                MISE_INSTALL_ARCH="x64", MISE_INSTALL_EXT="tar.gz",
+                MISE_CURRENT_VERSION="v2026.10.0", MISE_VERSION=version, MISE_INSTALL_HELP="0",
+            )
+            # static checksums baked into the rendered script for the built-in version
+            for name in re.findall(r"\$(MISE_CHECKSUM_\w+)", SCRIPT):
+                env[name] = f"{digest}  ./{asset}"
+            env.update(variables)
+            result = subprocess.run(
+                ["sh", "-c", SCRIPT + "\n" + self.CURL_STUB],
+                env=env, text=True, capture_output=True, check=False,
+            )
+            installed = (tmp / "bin/mise").exists()
+            return result, log.read_text().splitlines(), installed
+
+    def assert_installed(self, result, installed):
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue(installed, result.stderr)
+
+    def test_pinned_version_uses_mirror(self):
+        result, urls, installed = self.install()
+        self.assert_installed(result, installed)
+        self.assertEqual(urls, [
+            f"{MIRROR}/v2026.1.0/mise-v2026.1.0-linux-x64.tar.gz",
+            f"{MIRROR}/v2026.1.0/SHASUMS256.txt",
+        ])
+
+    def test_pinned_version_falls_back_to_github(self):
+        result, urls, installed = self.install(
+            fail_urls=[MIRROR + "/v{v}/{a}", MIRROR + "/v{v}/SHASUMS256.txt"]
+        )
+        self.assert_installed(result, installed)
+        self.assertIn("trying GitHub Releases", result.stderr)
+        self.assertEqual(urls, [
+            f"{MIRROR}/v2026.1.0/mise-v2026.1.0-linux-x64.tar.gz",
+            f"{GITHUB}/v2026.1.0/mise-v2026.1.0-linux-x64.tar.gz",
+            f"{GITHUB}/v2026.1.0/SHASUMS256.txt",
+        ])
+
+    def test_checksums_fall_back_to_github(self):
+        result, urls, installed = self.install(fail_urls=[MIRROR + "/v{v}/SHASUMS256.txt"])
+        self.assert_installed(result, installed)
+        self.assertEqual(urls, [
+            f"{MIRROR}/v2026.1.0/mise-v2026.1.0-linux-x64.tar.gz",
+            f"{MIRROR}/v2026.1.0/SHASUMS256.txt",
+            f"{GITHUB}/v2026.1.0/SHASUMS256.txt",
+        ])
+
+    def test_both_hosts_fail(self):
+        result, urls, installed = self.install(
+            fail_urls=[MIRROR + "/v{v}/{a}", GITHUB + "/v{v}/{a}"]
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse(installed)
+        self.assertIn(f"failed to download {GITHUB}/v2026.1.0/", result.stderr)
+
+    def test_install_from_github(self):
+        for value in ["1", "true"]:
+            with self.subTest(value=value):
+                result, urls, installed = self.install(MISE_INSTALL_FROM_GITHUB=value)
+                self.assert_installed(result, installed)
+                self.assertEqual(urls, [
+                    f"{GITHUB}/v2026.1.0/mise-v2026.1.0-linux-x64.tar.gz",
+                    f"{GITHUB}/v2026.1.0/SHASUMS256.txt",
+                ])
+
+    def test_builtin_version_uses_static_checksum_and_falls_back(self):
+        result, urls, installed = self.install(version="2026.10.0")
+        self.assert_installed(result, installed)
+        self.assertEqual(urls, [f"{MIRROR}/v2026.10.0/mise-v2026.10.0-linux-x64.tar.gz"])
+
+        result, urls, installed = self.install(version="2026.10.0", fail_urls=[MIRROR + "/v{v}/{a}"])
+        self.assert_installed(result, installed)
+        self.assertEqual(urls, [
+            f"{MIRROR}/v2026.10.0/mise-v2026.10.0-linux-x64.tar.gz",
+            f"{GITHUB}/v2026.10.0/mise-v2026.10.0-linux-x64.tar.gz",
+        ])
+
+    def test_tarball_url_override_has_no_fallback(self):
+        custom = "https://example.invalid/mise-v2026.10.0-linux-x64.tar.gz"
+        result, urls, installed = self.install(version="2026.10.0", MISE_TARBALL_URL=custom)
+        self.assert_installed(result, installed)
+        self.assertEqual(urls, [custom])
+
+        result, urls, installed = self.install(
+            version="2026.10.0", MISE_TARBALL_URL=custom, fail_urls=[custom]
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(urls, [custom])
+
+        # the override only applies to the built-in version, as before
+        result, urls, installed = self.install(MISE_TARBALL_URL=custom)
+        self.assert_installed(result, installed)
+        self.assertEqual(urls[0], f"{MIRROR}/v2026.1.0/mise-v2026.1.0-linux-x64.tar.gz")
 
 
 if __name__ == "__main__":
