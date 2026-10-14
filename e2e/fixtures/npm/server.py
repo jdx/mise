@@ -1,13 +1,18 @@
-"""A metadata-only npm registry for tests that resolve versions but never install.
+"""A local npm registry for version resolution and small installation fixtures.
 
 Serves full packuments at `/<name>` (scoped names as `/@scope%2fname`). Each
 package mirrors the real registry's shape closely enough to pin a behavior:
 publish dates for minimum_release_age, dist-tags that point past a cutoff, and
 deprecated releases. Point mise at it with NPM_CONFIG_REGISTRY; see start.sh.
 """
+import base64
+import gzip
+import hashlib
+import io
 import json
 import pathlib
 import sys
+import tarfile
 import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -45,8 +50,61 @@ PACKAGES = {
     }),
 }
 
+# These packages have real tarballs, a CLI, and a dependency whose version
+# changes with the root. Tests can advance the dist-tag without the network.
+INSTALLABLE_PACKAGES = ['mise-upgrade-fixture', 'mise-upgrade-dep']
+
+
+def manifest(name, version):
+    result = {'name': name, 'version': version}
+    if name == 'mise-upgrade-fixture':
+        result.update(bin={'mise-upgrade-fixture': 'cli.js'},
+                      dependencies={'mise-upgrade-dep': version})
+    else:
+        result['main'] = 'index.js'
+    return result
+
+
+def tarball(name, version):
+    files = {'package.json': json.dumps(manifest(name, version))}
+    if name == 'mise-upgrade-fixture':
+        files['cli.js'] = ('#!/usr/bin/env node\n'
+                           'console.log(require("./package.json").version + ":" + '
+                           'require("mise-upgrade-dep"));\n')
+    else:
+        files['index.js'] = f'module.exports = "{version}";\n'
+    buffer = io.BytesIO()
+    with gzip.GzipFile(fileobj=buffer, mode='wb', mtime=0) as compressed:
+        with tarfile.open(fileobj=compressed, mode='w') as archive:
+            for filename, text in files.items():
+                data = text.encode()
+                info = tarfile.TarInfo(f'package/{filename}')
+                info.size = len(data)
+                info.mode = 0o755 if filename == 'cli.js' else 0o644
+                archive.addfile(info, io.BytesIO(data))
+    return buffer.getvalue()
+
+
+ARCHIVES = {(name, version): tarball(name, version)
+            for name in INSTALLABLE_PACKAGES for version in ['1.0.0', '2.0.0', '3.0.0']}
+
 
 def packument(name, base):
+    if name in INSTALLABLE_PACKAGES:
+        latest_path = root / 'latest'
+        latest = latest_path.read_text().strip() if latest_path.exists() else '2.0.0'
+        versions = {}
+        for version in ['1.0.0', '2.0.0', '3.0.0']:
+            data = ARCHIVES[name, version]
+            versions[version] = manifest(name, version) | {'dist': {
+                'tarball': f'{base}/{name}/-/{name}-{version}.tgz',
+                'shasum': hashlib.sha1(data).hexdigest(),
+                'integrity': 'sha512-' + base64.b64encode(hashlib.sha512(data).digest()).decode(),
+            }}
+        return {'name': name, 'dist-tags': {'latest': latest}, 'versions': versions,
+                'time': {'1.0.0': '2020-01-01T00:00:00.000Z',
+                         '2.0.0': '2021-01-01T00:00:00.000Z',
+                         '3.0.0': '2022-01-01T00:00:00.000Z'}}
     latest, releases = PACKAGES[name]
     versions = {}
     for version, (_, deprecated) in releases.items():
@@ -78,7 +136,13 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         name = urllib.parse.unquote(self.path.split('?')[0].strip('/'))
-        if name not in PACKAGES:
+        archive = None
+        if '/-/' in name:
+            package, filename = name.split('/-/', 1)
+            version = filename.removeprefix(package + '-').removesuffix('.tgz')
+            if filename == f'{package}-{version}.tgz':
+                archive = ARCHIVES.get((package, version))
+        if name not in PACKAGES and name not in INSTALLABLE_PACKAGES and archive is None:
             self.send_error(404)
             return
         # Log the client (`mise` or `npm`, from the User-Agent) with the package
@@ -87,9 +151,9 @@ class Handler(BaseHTTPRequestHandler):
         with (root / 'requests').open('a') as log:
             log.write(f'{client} {name}\n')
         host, port = self.server.server_address[:2]
-        body = json.dumps(packument(name, f'http://{host}:{port}')).encode()
+        body = archive if archive is not None else json.dumps(packument(name, f'http://{host}:{port}')).encode()
         self.send_response(200)
-        self.send_header('Content-Type', 'application/json')
+        self.send_header('Content-Type', 'application/octet-stream' if archive is not None else 'application/json')
         self.send_header('Content-Length', str(len(body)))
         self.end_headers()
         if self.command != 'HEAD':
