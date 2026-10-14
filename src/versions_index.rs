@@ -302,8 +302,13 @@ async fn fetch() -> Option<Arc<VersionsIndex>> {
 
 async fn fetch_() -> Result<VersionsIndex> {
     let mut headers = VERSIONS_HOST_HEADERS.clone();
-    // Read once: a 304 vouches for the body this `ETag` came with.
-    let cached = read_cached().ok().filter(|(etag, _)| !etag.is_empty());
+    // Read once: a 304 vouches for the body this `ETag` came with. Only a copy
+    // that parses is revalidated; a corrupt or outdated one would otherwise get
+    // a 304 on every command and never be replaced.
+    let cached = read_cached().ok().and_then(|(etag, body)| {
+        let index = VersionsIndex::parse(&body).ok()?;
+        (!etag.is_empty()).then_some((etag, index))
+    });
     if let Some((etag, _)) = &cached {
         headers.insert(IF_NONE_MATCH, HeaderValue::from_str(etag)?);
     }
@@ -311,8 +316,7 @@ async fn fetch_() -> Result<VersionsIndex> {
         .get_async_with_headers_allow_error_status(INDEX_URL, &headers)
         .await?;
     match (resp.status(), cached) {
-        (StatusCode::NOT_MODIFIED, Some((_, body))) => {
-            let index = VersionsIndex::parse(&body)?;
+        (StatusCode::NOT_MODIFIED, Some((_, index))) => {
             if let Err(err) = file::write(validated_path(), "") {
                 debug!("versions index: cannot mark the copy validated: {err:#}");
             }

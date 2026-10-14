@@ -136,6 +136,16 @@ assert_contains "MISE_FETCH_REMOTE_VERSIONS_CACHE=0s mise outdated" "0.14.1"
 assert_contains "cat requests.log" '/versions/data/index.v1.json "index-1"'
 : >requests.log
 
+# A copy that no longer parses is fetched again rather than revalidated, and
+# the copy that replaces it is revalidated next time.
+printf '"index-1"\n{"format": 1, "tools":' >"$MISE_CACHE_DIR/versions-index/index.v1"
+assert_contains "MISE_FETCH_REMOTE_VERSIONS_CACHE=0s mise outdated" "0.14.1"
+assert_contains "cat requests.log" "/versions/data/index.v1.json -"
+: >requests.log
+assert_contains "MISE_FETCH_REMOTE_VERSIONS_CACHE=0s mise outdated" "0.14.1"
+assert_contains "cat requests.log" '/versions/data/index.v1.json "index-1"'
+: >requests.log
+
 # Offline reads nothing.
 mise cache clear
 assert_succeed "MISE_OFFLINE=1 mise outdated"
