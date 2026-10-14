@@ -4209,11 +4209,7 @@ fn confirmation_lines(req: &FileRequest, rendered: Option<&str>) -> Result<Vec<S
         Ok(_) => {}
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
             // Windows reports a file used as a parent as not found too
-            if let Some(blocker) = root
-                .ancestors()
-                .skip(1)
-                .find(|dir| dir.exists() && !dir.is_dir())
-            {
+            if let Some(blocker) = root.ancestors().skip(1).find(|dir| is_blocking_dir(dir)) {
                 return Ok(vec![format!(
                     "conflict (not a directory): {}",
                     blocker.display_user()
@@ -4232,7 +4228,7 @@ fn confirmation_lines(req: &FileRequest, rendered: Option<&str>) -> Result<Vec<S
             .ancestors()
             .skip(1)
             .take_while(|dir| dir.starts_with(root) && *dir != root.as_path())
-            .find(|dir| dir.exists() && !dir.is_dir());
+            .find(|dir| is_blocking_dir(dir));
         if let Some(blocker) = blocker {
             let line = format!("conflict (not a directory): {}", blocker.display_user());
             if !lines.contains(&line) {
@@ -4257,6 +4253,12 @@ fn confirmation_lines(req: &FileRequest, rendered: Option<&str>) -> Result<Vec<S
         lines.push(format!("{verb} {}", tgt.display_user()));
     }
     Ok(lines)
+}
+
+/// Something sits at `dir` that is not a directory, a dangling symlink
+/// included, so nothing can be created below it.
+fn is_blocking_dir(dir: &Path) -> bool {
+    std::fs::symlink_metadata(dir).is_ok() && !dir.is_dir()
 }
 
 fn file_matches(src: &Path, tgt: &Path, tgt_meta: &std::fs::Metadata) -> bool {
@@ -8600,6 +8602,19 @@ source = "oldrc""#,
         let lines = confirmation_lines(&link_req(&src, &under_file, FileMode::Copy), None)?;
         assert_eq!(lines.len(), 1, "{lines:?}");
         assert!(lines[0].starts_with("conflict ("), "{lines:?}");
+
+        #[cfg(unix)]
+        {
+            let sub_link = tgt.join("sub");
+            file::remove_file(&sub_link)?;
+            std::os::unix::fs::symlink(dir.path().join("nowhere"), &sub_link)?;
+            let lines = confirmation_lines(&link_req(&src, &tgt, FileMode::Copy), None)?;
+            assert_eq!(lines.len(), 1, "{lines:?}");
+            assert!(
+                lines[0].starts_with("conflict (not a directory): "),
+                "{lines:?}"
+            );
+        }
 
         #[cfg(unix)]
         {
