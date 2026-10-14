@@ -136,6 +136,7 @@ mise-dotenv = { path = "crates/mise-dotenv", version = "0.1" }
 duct = "1"
 dunce = "1"
 expr-lang = "2"
+stacker = "0.1"
 eyre = "0.6"
 file-id = "0.2"
 filetime = "0.2"

@@ -34,6 +34,7 @@ tempfile = "3"
 
 # Template parsing and evaluation
 expr-lang = "2"
+stacker = "0.1"
 heck = "0.5"
 versions = { version = "8", features = ["serde"] }
 

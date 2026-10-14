@@ -172,7 +172,7 @@ fn eval_version_expr(expr_str: &str, body: &str, versions: &[String]) -> Result<
         ))
     });
 
-    let result = env.eval(expr_str, &ctx)?;
+    let result = stacker::maybe_grow(128 * 1024, 1024 * 1024, || env.eval(expr_str, &ctx))?;
     value_to_strings(result)
 }
 
