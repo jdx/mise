@@ -202,6 +202,13 @@ impl ToolVersion {
         let minimum_release_age = request.options().minimum_release_age().map(str::to_string);
         let mut opts = opts.clone();
         opts.apply_before_date_for_tool(request.ba(), minimum_release_age.as_deref())?;
+        // The refresh keeps a cached list from hiding a release newer than the
+        // cache. A cutoff at least as old as the cache can be (24h by default,
+        // against an hour) already hides every such release, so the cached list
+        // gives the same answer a refetch would.
+        if opts.refresh_remote_versions && opts.before_date.is_some_and(cutoff_predates_cache) {
+            opts.refresh_remote_versions = false;
+        }
 
         trace!("resolving {} {}", &request, opts);
         if opts.use_locked_version
@@ -1407,6 +1414,20 @@ impl ResolveOptions {
     }
 }
 
+/// Whether every release `before` admits is old enough that any cached
+/// remote-version list, at most `fetch_remote_versions_cache` old, includes it.
+fn cutoff_predates_cache(before: Timestamp) -> bool {
+    let Some(max_age) = Settings::get().fetch_remote_versions_cache() else {
+        return false;
+    };
+    let Ok(max_age) = jiff::SignedDuration::try_from(max_age) else {
+        return false;
+    };
+    crate::duration::process_now()
+        .checked_sub(max_age)
+        .is_ok_and(|oldest_cache| before <= oldest_cache)
+}
+
 /// Check if a tool has any user-linked versions (created by `mise link`).
 /// A linked version is an installed version whose path is a symlink to an external
 /// absolute path, as opposed to runtime symlinks or mise-managed install/cache links.
@@ -1544,6 +1565,24 @@ mod tests {
     use crate::args::BackendResolution;
     use crate::toolset::{CoreToolOptions, ToolOptionSource, ToolVersionOptions};
     use std::time::{SystemTime, UNIX_EPOCH};
+
+    /// The default 24h cutoff predates any list cached within the default
+    /// hour, so install-time resolution skips its refresh; a cutoff of minutes
+    /// (or none at all) does not.
+    #[test]
+    fn cutoff_predates_cache_compares_with_the_cache_duration() {
+        let _settings = crate::test::SettingsGuard::lock();
+        let now = crate::duration::process_now();
+        let ago = |secs: i64| {
+            now.checked_sub(jiff::SignedDuration::from_secs(secs))
+                .unwrap()
+        };
+
+        assert!(cutoff_predates_cache(ago(24 * 60 * 60)));
+        assert!(cutoff_predates_cache(ago(60 * 60)));
+        assert!(!cutoff_predates_cache(ago(10 * 60)));
+        assert!(!cutoff_predates_cache(now));
+    }
 
     fn unique_name(prefix: &str) -> String {
         format!(

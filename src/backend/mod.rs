@@ -99,10 +99,12 @@ pub(crate) const MISE_BINS_DIR: &str = ".mise-bins";
 /// instead of fetching again.
 ///
 /// The refresh exists so a list cached up to `fetch_remote_versions_cache`
-/// (1h) ago does not hide a newer release. A list written in the last few
-/// minutes cannot hide much: mise-versions itself republishes about every 30
-/// minutes, and the stable-latest shortcuts (`/releases/latest`, dist tags) are
-/// already reused for the whole cache duration.
+/// (1h) ago does not hide a newer release. Resolution already skips it when the
+/// release-age cutoff is older than that (the 24h default), so this applies to
+/// shorter cutoffs such as `minimum_release_age = 0`. Even then, a list written
+/// in the last few minutes cannot hide much: mise-versions itself republishes
+/// about every 30 minutes, and the stable-latest shortcuts (`/releases/latest`,
+/// dist tags) are already reused for the whole cache duration.
 const REFRESH_REUSES_LISTS_NEWER_THAN: std::time::Duration = std::time::Duration::from_secs(5 * 60);
 
 /// Why a backend's remote version listing failed.
