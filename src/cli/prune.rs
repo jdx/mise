@@ -12,6 +12,7 @@ use crate::toolset::{
 };
 use crate::ui::install_progress::removal_progress;
 use crate::ui::multi_progress_report::MultiProgressReport;
+use crate::ui::progress_report::ProgressIcon;
 use crate::ui::prompt::{self, Confirmation};
 use crate::{backend::Backend, config, exit};
 use console::style;
@@ -98,7 +99,7 @@ impl Prune {
                 to_delete,
                 needed,
                 running,
-            } = prunable_tools_with_sources(&config, tools).await?;
+            } = scan_prunable(&config, tools).await?;
             explain_running(&running);
             let has_work = !to_delete.is_empty();
             let explain = self.is_dry_run().then_some(&needed);
@@ -150,7 +151,7 @@ pub(super) async fn prune(
     let _suspended = crate::install_layout::snapshots::suspend();
     let PrunableTools {
         to_delete, running, ..
-    } = prunable_tools_with_sources(config, tools).await?;
+    } = scan_prunable(config, tools).await?;
     explain_running(&running);
     delete(
         config,
@@ -160,6 +161,18 @@ pub(super) async fn prune(
         UnavailableConfirmation::Decline,
     )
     .await
+}
+
+/// Find the prunable versions behind a progress line, since resolving every
+/// tracked config can take a while and nothing else is on screen yet.
+async fn scan_prunable(config: &Arc<Config>, tools: Vec<&BackendArg>) -> Result<PrunableTools> {
+    let pr = MultiProgressReport::get().add("scanning tracked configs");
+    let result = prunable_tools_with_sources(config, tools, Some(pr.as_ref())).await;
+    match &result {
+        Ok(_) => pr.finish(),
+        Err(_) => pr.finish_with_icon(String::new(), ProgressIcon::Error),
+    }
+    result
 }
 
 /// How a caller wants to handle a confirmation prompt that nobody can answer.
