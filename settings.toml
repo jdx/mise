@@ -4474,6 +4474,21 @@ that GitHub metadata; the replacement is the only source, because this host
 describes only github.com. Rules that reroute only release downloads do not
 change this, and version lists for registry tools still come from this host.
 
+Every request to the host sends the mise version and invoking shell in the
+User-Agent. When mise runs in CI, these requests also send an
+`x-mise-ci: true` header and end the User-Agent with ` ci`, for example
+`mise/2026.10.10 linux-x64 (2026-10-11) bash ci`.
+
+The host's request logs record each request's IP address, path and query,
+User-Agent, and time. They are kept in private storage for up to 35 days and
+then deleted automatically. A nightly job turns them into usage counts, such
+as monthly active users and installs per tool, keyed by a salted hash of the IP
+address.
+
+Set this to `false` to stop these requests. mise still downloads Python's list
+of precompiled builds from this host; see
+[How mise installs Python](/lang/python.html#precompiled-python-binaries).
+
 `mise ls-remote --no-versions-host` skips the host for one command. See
 [A new release is not listed](/troubleshooting.html#new-version-of-a-tool-is-not-available).
 """
@@ -4482,21 +4497,28 @@ type = "Bool"
 
 [use_versions_host_track]
 default = true
-description = "Send anonymous download statistics to mise-versions after installing a tool."
+description = "Send download statistics to mise-versions after installing a tool."
 docs = """
 After a successful install of a core or registry tool, mise reports it to
 [mise-versions](https://mise-versions.jdx.dev), which shows tool popularity.
-mise sends:
+Set this to `false` to opt out. Nothing is sent when
+[`use_versions_host`](#use_versions_host) is `false`.
 
-- the tool name, its full backend identifier such as `aqua:BurntSushi/ripgrep`,
-  and the version
+The report is a `GET https://mise-versions.jdx.dev/t` request whose query
+parameters carry:
+
+- the tool name, its full backend identifier such as `aqua:BurntSushi/ripgrep`
+  (with any URL credentials, query string, and fragment removed, and left out
+  when a URL in it cannot be parsed), and the version
 - the OS and architecture
-- the mise version and invoking shell, in the User-Agent, and whether it runs
-  in CI
 
-The server hashes your IP address for daily deduplication and does not store it
-raw. Nothing is sent when [`use_versions_host`](#use_versions_host) is `false`.
-Set this to `false` to opt out.
+The request also sends the mise version and invoking shell, in the User-Agent,
+and whether it runs in CI.
+
+The host's request logs store the report with your raw IP address, User-Agent,
+and time in private storage for up to 35 days, then delete it automatically. A
+nightly job counts installs from these logs, keyed by a salted hash of the IP
+address.
 """
 env = "MISE_USE_VERSIONS_HOST_TRACK"
 type = "Bool"

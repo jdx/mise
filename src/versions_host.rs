@@ -181,31 +181,21 @@ pub(crate) fn track_install(tool: &str, full: &str, version: &str) {
 async fn track_install_async(tool: &str, full: &str, version: &str) -> eyre::Result<()> {
     use crate::platform::{ARCH, OS};
 
-    let url = track_install_url(tool);
+    let ctx = VersionsHostLogContext::install_track(tool, full, version);
+    let url = track_install_url(tool, full, version, &OS, &ARCH);
 
-    let body = serde_json::json!({
-        "full": full,
-        "version": version,
-        "os": *OS,
-        "arch": *ARCH
-    });
-
+    // The beacon is a static asset: usage is counted from the CDN's request
+    // logs, so only the status matters and the body is ignored.
     match HTTP_FETCH
-        .post_json_with_headers(url, &body, &VERSIONS_HOST_HEADERS)
+        .get_async_with_headers_allow_error_status(url, &VERSIONS_HOST_HEADERS)
         .await
     {
-        Ok(true) => log_versions_host_trace(
-            VersionsHostLogContext::install_track(tool, full, version),
-            "success",
-            "",
-        ),
-        Ok(false) => log_versions_host_trace(
-            VersionsHostLogContext::install_track(tool, full, version),
-            "failed",
-            "status=unknown",
-        ),
+        Ok(resp) if resp.status().is_success() => log_versions_host_trace(ctx, "success", ""),
+        Ok(resp) => {
+            log_versions_host_trace(ctx, "failed", &format!("status={}", resp.status().as_u16()))
+        }
         Err(err) => log_versions_host_trace(
-            VersionsHostLogContext::install_track(tool, full, version),
+            ctx,
             "failed",
             &format!(
                 "status={} error={}",
@@ -217,11 +207,29 @@ async fn track_install_async(tool: &str, full: &str, version: &str) -> eyre::Res
 
     Ok(())
 }
-fn track_install_url(tool: &str) -> String {
+/// The static install beacon. Every value is a query parameter. `full` has
+/// any URL credentials, query, and fragment removed first because request URLs
+/// are logged, and is left out when it cannot be cleaned.
+fn track_install_url(tool: &str, full: &str, version: &str, os: &str, arch: &str) -> String {
+    let full = sanitize_full(full)
+        .map(|full| format!("&full={}", urlencoding::encode(&full)))
+        .unwrap_or_default();
     format!(
-        "https://mise-versions.jdx.dev/api/tools/{}",
-        urlencoding::encode(tool)
+        "https://mise-versions.jdx.dev/t?tool={}{full}&version={}&os={}&arch={}",
+        urlencoding::encode(tool),
+        urlencoding::encode(version),
+        urlencoding::encode(os),
+        urlencoding::encode(arch),
     )
+}
+/// Fetch a gzipped python-build-standalone index (`python-precompiled-<arch>-<os>.gz`).
+pub(crate) async fn python_precompiled(file: &str) -> eyre::Result<impl AsRef<[u8]>> {
+    HTTP_FETCH
+        .get_bytes_with_headers(python_precompiled_url(file), VERSIONS_HOST_HEADERS.clone())
+        .await
+}
+fn python_precompiled_url(file: &str) -> String {
+    format!("https://mise-versions.jdx.dev/data/{file}")
 }
 fn version_list_url(tool: &str) -> String {
     format!("https://mise-versions.jdx.dev/data/{}.toml", tool)
@@ -232,17 +240,50 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_track_install_url_encodes_tool_path_segment() {
+    fn test_track_install_url_puts_every_field_in_the_query() {
         assert_eq!(
-            track_install_url("ubi:https://example.com/foo/bar"),
-            "https://mise-versions.jdx.dev/api/tools/ubi%3Ahttps%3A%2F%2Fexample.com%2Ffoo%2Fbar"
+            track_install_url("node", "core:node", "22.1.0", "macos", "arm64"),
+            "https://mise-versions.jdx.dev/t?tool=node&full=core%3Anode&version=22.1.0&os=macos&arch=arm64"
         );
     }
     #[test]
-    fn test_track_install_url_for_registered_tool_name() {
+    fn test_track_install_url_encodes_values() {
         assert_eq!(
-            track_install_url("node"),
-            "https://mise-versions.jdx.dev/api/tools/node"
+            track_install_url("a&b=c", "ubi:owner/repo", "1.0 rc+1", "linux", "x64"),
+            "https://mise-versions.jdx.dev/t?tool=a%26b%3Dc&full=ubi%3Aowner%2Frepo&version=1.0%20rc%2B1&os=linux&arch=x64"
+        );
+    }
+    #[test]
+    fn test_track_install_url_strips_credentials_from_full() {
+        assert_eq!(
+            track_install_url(
+                "foo",
+                "http:https://user:secret@example.com/foo.tar.gz?token=abc#frag",
+                "1.0.0",
+                "linux",
+                "x64"
+            ),
+            "https://mise-versions.jdx.dev/t?tool=foo&full=http%3Ahttps%3A%2F%2Fexample.com%2Ffoo.tar.gz&version=1.0.0&os=linux&arch=x64"
+        );
+    }
+    #[test]
+    fn test_track_install_url_omits_full_it_cannot_clean() {
+        assert_eq!(
+            track_install_url(
+                "foo",
+                "http:https://user:secret@[bad/a",
+                "1.0.0",
+                "linux",
+                "x64"
+            ),
+            "https://mise-versions.jdx.dev/t?tool=foo&version=1.0.0&os=linux&arch=x64"
+        );
+    }
+    #[test]
+    fn test_python_precompiled_url_uses_static_data_path() {
+        assert_eq!(
+            python_precompiled_url("python-precompiled-aarch64-apple-darwin.gz"),
+            "https://mise-versions.jdx.dev/data/python-precompiled-aarch64-apple-darwin.gz"
         );
     }
     #[test]
