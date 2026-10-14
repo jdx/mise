@@ -618,6 +618,22 @@ pub fn github_is_url_replaced(repo: Option<&str>) -> bool {
     replaced
 }
 
+/// Whether `url_replacements` reroutes `url`, the api.github.com request mise
+/// would make without this host. A rule can name one endpoint (a repository's
+/// tags, say) without touching any URL [`github_is_url_replaced`] tries; the
+/// replacement is then the source for that endpoint.
+pub fn github_api_url_is_replaced(url: &str) -> bool {
+    if Settings::get().url_replacements.is_none() {
+        return false;
+    }
+    let Ok(original) = url::Url::parse(url) else {
+        return false;
+    };
+    let mut replaced = original.clone();
+    http::apply_url_replacements(&mut replaced);
+    replaced != original
+}
+
 /// Whether `url_replacements` reroutes the GitHub API URL for this exact
 /// release, which a rule written for one tag can do without touching the
 /// URLs [`github_is_url_replaced`] tries.

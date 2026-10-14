@@ -411,6 +411,15 @@ where
     Ok(Some(releases))
 }
 
+/// [`mirrors_github_metadata`] for `repo`'s tag list, which `url_replacements`
+/// may reroute on its own.
+fn mirrors_github_tags(api_url: &str, repo: &str) -> bool {
+    mirrors_github_metadata(api_url, repo)
+        && !crate::versions_host::github_api_url_is_replaced(&format!(
+            "{API_URL}/repos/{repo}/tags?per_page=100"
+        ))
+}
+
 /// A repository's tags from mise-versions: the first page, or with `list_all`
 /// every page it serves. `Ok(None)` when mise-versions doesn't list the
 /// repository.
@@ -566,7 +575,7 @@ pub async fn list_tags_from_url(api_url: &str, repo: &str) -> Result<Vec<String>
 /// tests can exercise the pagination loop: the env var is a process-wide `Lazy` that other
 /// modules' tests have already forced by the time this one runs.
 async fn list_tags_(api_url: &str, repo: &str, list_all: bool) -> Result<Vec<String>> {
-    if mirrors_github_metadata(api_url, repo) {
+    if mirrors_github_tags(api_url, repo) {
         match list_mirrored_tags(repo, list_all, false).await? {
             Some(tags) => return Ok(tags.into_iter().map(|t| t.name).collect()),
             None => ensure_private_repo_lookup(repo, &format!("GitHub repository {repo}"))?,
@@ -600,7 +609,7 @@ pub async fn list_tags_with_dates(repo: &str) -> Result<Vec<GithubTagWithDate>> 
 }
 
 async fn list_tags_with_dates_(api_url: &str, repo: &str) -> Result<Vec<GithubTagWithDate>> {
-    if mirrors_github_metadata(api_url, repo) {
+    if mirrors_github_tags(api_url, repo) {
         match list_mirrored_tags(repo, true, true).await? {
             Some(tags) => {
                 return Ok(tags
