@@ -4193,10 +4193,16 @@ fn confirmation_lines(req: &FileRequest, rendered: Option<&str>) -> Result<Vec<S
     }
     let mut lines = vec![];
     for (src, tgt) in walk_source_files(req)? {
-        let verb = match (std::fs::read(&tgt), std::fs::read(&src)) {
-            (Ok(live), Ok(repo)) if live == repo => continue,
-            (Ok(_), _) => "overwrite",
-            _ => "create",
+        let verb = match std::fs::symlink_metadata(&tgt) {
+            Err(_) => "create",
+            Ok(meta) if meta.file_type().is_symlink() => "replace symlink",
+            Ok(meta) if meta.is_file() => {
+                if matches!((std::fs::read(&tgt), std::fs::read(&src)), (Ok(a), Ok(b)) if a == b) {
+                    continue;
+                }
+                "overwrite"
+            }
+            Ok(_) => "replace",
         };
         lines.push(format!("{verb} {}", tgt.display_user()));
     }
@@ -8484,7 +8490,16 @@ source = "oldrc""#,
         file::write(tgt.join("changed"), "old")?;
         file::write(src.join("fresh"), "x")?;
         let req = link_req(&src, &tgt, FileMode::Copy);
+        #[cfg(unix)]
+        {
+            file::write(src.join("link"), "a")?;
+            std::os::unix::fs::symlink(tgt.join("same"), tgt.join("link"))?;
+        }
         let lines = confirmation_lines(&req, None)?;
+        #[cfg(unix)]
+        assert!(lines[2].starts_with("replace symlink ") && lines[2].ends_with("link"));
+        #[cfg(unix)]
+        let lines: Vec<_> = lines.into_iter().filter(|l| !l.ends_with("link")).collect();
         assert_eq!(lines.len(), 2, "{lines:?}");
         assert!(lines[0].starts_with("overwrite ") && lines[0].ends_with("changed"));
         assert!(lines[1].starts_with("create ") && lines[1].ends_with("fresh"));
