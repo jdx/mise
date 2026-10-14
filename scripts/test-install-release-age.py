@@ -222,6 +222,10 @@ class DownloadSourceTests(unittest.TestCase):
             eval "u=\${$#}"
             echo "$u" >>"$CURL_LOG"
             case " $FAIL_URLS " in *" $u "*) return 22 ;; esac
+            case " $OTHER_ASSET_SUM_URLS " in *" $u "*)
+                printf '%064d  ./mise-v0-macos-arm64.tar.gz\n' 0
+                return ;;
+            esac
             case "$1" in
                 -\#fLo) cp "$TARBALL" "$2" ;;
                 *) printf '%s  ./%s\n' "$SUM" "$(basename "$TARBALL")" ;;
@@ -230,7 +234,7 @@ class DownloadSourceTests(unittest.TestCase):
         install_mise
     """
 
-    def install(self, version="2026.1.0", fail_urls=(), **variables):
+    def install(self, version="2026.1.0", fail_urls=(), other_asset_sum_urls=(), **variables):
         with tempfile.TemporaryDirectory() as tmp:
             tmp = Path(tmp)
             asset = f"mise-v{version}-linux-x64.tar.gz"
@@ -247,6 +251,10 @@ class DownloadSourceTests(unittest.TestCase):
             env.update(
                 CURL_LOG=str(log), TARBALL=str(tarball), SUM=digest,
                 FAIL_URLS=" ".join(u.format(v=version, a=asset) for u in fail_urls),
+                # these serve a SHASUMS256.txt that only lists an unrelated asset
+                OTHER_ASSET_SUM_URLS=" ".join(
+                    u.format(v=version, a=asset) for u in other_asset_sum_urls
+                ),
                 MISE_INSTALL_PATH=str(tmp / "bin/mise"), MISE_INSTALL_OS="linux",
                 MISE_INSTALL_ARCH="x64", MISE_INSTALL_EXT="tar.gz",
                 MISE_CURRENT_VERSION="v2026.10.0", MISE_VERSION=version, MISE_INSTALL_HELP="0",
@@ -287,13 +295,19 @@ class DownloadSourceTests(unittest.TestCase):
         ])
 
     def test_checksums_fall_back_to_github(self):
-        result, urls, installed = self.install(fail_urls=[MIRROR + "/v{v}/SHASUMS256.txt"])
-        self.assert_installed(result, installed)
-        self.assertEqual(urls, [
-            f"{MIRROR}/v2026.1.0/mise-v2026.1.0-linux-x64.tar.gz",
-            f"{MIRROR}/v2026.1.0/SHASUMS256.txt",
-            f"{GITHUB}/v2026.1.0/SHASUMS256.txt",
-        ])
+        mirror_sums = MIRROR + "/v{v}/SHASUMS256.txt"
+        for case, kwargs in [
+            ("download fails", dict(fail_urls=[mirror_sums])),
+            ("asset not listed", dict(other_asset_sum_urls=[mirror_sums])),
+        ]:
+            with self.subTest(case=case):
+                result, urls, installed = self.install(**kwargs)
+                self.assert_installed(result, installed)
+                self.assertEqual(urls, [
+                    f"{MIRROR}/v2026.1.0/mise-v2026.1.0-linux-x64.tar.gz",
+                    f"{MIRROR}/v2026.1.0/SHASUMS256.txt",
+                    f"{GITHUB}/v2026.1.0/SHASUMS256.txt",
+                ])
 
     def test_both_hosts_fail(self):
         result, urls, installed = self.install(
