@@ -2759,9 +2759,11 @@ pub trait Backend: Debug + Send + Sync {
 
     /// Like `list_remote_versions` but with explicit refresh control. Pass
     /// `refresh = true` to re-fetch the remote-versions list upstream unless
-    /// the cached one was written within `REFRESH_REUSES_LISTS_NEWER_THAN`.
-    /// Used by install-time resolution for selectors whose answer depends on
-    /// the freshest upstream entry (e.g. `latest`).
+    /// the cached one was written within `REFRESH_REUSES_LISTS_NEWER_THAN`
+    /// (5 minutes), or within `fetch_remote_versions_cache` when that is
+    /// shorter, so `refresh` does not guarantee a request. Used by
+    /// install-time resolution for selectors whose answer depends on the
+    /// freshest upstream entry (e.g. `latest`).
     async fn list_remote_versions_with_refresh(
         &self,
         config: &Arc<Config>,
