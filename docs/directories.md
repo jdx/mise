@@ -16,6 +16,7 @@ overrides them.
 | Local state                 | `~/.local/state/mise`         | `~/.local/state/mise`   | `%USERPROFILE%\.local\state\mise` | `MISE_STATE_DIR`; otherwise `XDG_STATE_HOME` + `/mise`                                                                            |
 | Installed tools and plugins | `~/.local/share/mise`         | `~/.local/share/mise`   | `%LOCALAPPDATA%\mise`             | `MISE_DATA_DIR`; otherwise `XDG_DATA_HOME` + `/mise`                                                                              |
 | System config               | `/etc/mise`                   | `/etc/mise`             | `\etc\mise` on the current drive  | `MISE_SYSTEM_CONFIG_DIR` (older name: `MISE_SYSTEM_DIR`)                                                                          |
+| Vendor config               | none                          | none                    | none                              | `MISE_VENDOR_CONFIG_DIR`, or `MISE_DEFAULT_VENDOR_CONFIG_DIR` at build time                                                       |
 | Temporary files             | `$TMPDIR/mise` or `/tmp/mise` | `$TMPDIR/mise`          | `%TEMP%\mise-tmp`                 | `MISE_TMP_DIR`; otherwise `mise` in the system temporary directory, or `mise-tmp` when `mise` there is inside the cache directory |
 
 These directories live inside the data directory and can be moved on their own:
@@ -137,6 +138,24 @@ wrapper.
 `/etc/mise/config.toml`, `conf.d/` fragments, and `miserc.toml`. It has the
 lowest precedence; see
 [Global and system config](/configuration.html#global-config).
+
+## Vendor config {#vendor-config}
+
+A vendor config dir holds read-only defaults that a distribution or an image
+ships, such as `/usr/share/mise`, while administrators keep `/etc/mise` for
+their changes. It is off unless `MISE_VENDOR_CONFIG_DIR` is set or mise was
+built with `MISE_DEFAULT_VENDOR_CONFIG_DIR`; see
+[Packaging mise](/packaging.html#vendor-config).
+
+It accepts the same files as the system dir and ranks just below it:
+
+- A setting or entry in `/etc/mise` overrides the vendor one.
+- A `conf.d` file or folder in `/etc/mise/conf.d` replaces the vendor entry
+  with the same name. An empty file or a symlink to `/dev/null` masks it.
+- Its `miserc.toml` ranks below `/etc/mise/miserc.toml`.
+- mise never writes to it: `--system` writes go to `/etc/mise`.
+
+`MISE_SYSTEM_CONFIG_FILE` turns vendor config off along with the system dir.
 
 ## System installs and shims {#system-installs-and-shims}
 

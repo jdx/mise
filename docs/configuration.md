@@ -271,6 +271,10 @@ same file names as the global directory, such as `/etc/mise/config.toml`.
 [`system_config_file`](/configuration/settings.html#system_config_file)
 (`MISE_SYSTEM_CONFIG_FILE`) replaces them with a single file.
 
+Vendor config, when enabled, ranks below system config. It holds read-only
+defaults shipped by a distribution or an image, such as `/usr/share/mise`, that
+`/etc/mise` can override. See [Vendor config](/directories.html#vendor-config).
+
 ## Which file mise writes to {#target-file-for-write-operations}
 
 When [`mise use`](/cli/use.html), [`mise set`](/cli/set.html),

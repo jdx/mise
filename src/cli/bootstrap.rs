@@ -3081,6 +3081,7 @@ fn is_mise_config_target(path: &std::path::Path) -> bool {
     .any(|file| file.as_deref() == Some(path))
         || path.starts_with(*dirs::CONFIG)
         || path.starts_with(*dirs::SYSTEM_CONFIG)
+        || config::is_vendor_config(path)
         || config::DEFAULT_CONFIG_FILENAMES.iter().any(|filename| {
             filename.ends_with(".toml") && !filename.contains('*') && path.ends_with(filename)
         })

@@ -40,11 +40,14 @@ fn load_global_miserc_settings() -> MisercSettings {
     }
     let mut settings = MisercSettings::default();
     // A broken file must not block credentials or discard another valid layer.
-    for path in [
+    let vendor = env::MISE_VENDOR_CONFIG_DIR
+        .as_ref()
+        .map(|dir| dir.join("miserc.toml"));
+    for path in vendor.into_iter().chain([
         env::MISE_SYSTEM_CONFIG_DIR.join("miserc.toml"),
         dirs::CONFIG.join("miserc.toml"),
         dirs::CONFIG.join("miserc.local.toml"),
-    ] {
+    ]) {
         if let Ok(layer) = load_miserc_files(vec![path]) {
             merge_settings(&mut settings, layer);
         }
@@ -197,6 +200,7 @@ fn render_miserc_template(
 /// 1. Closest directory first: .miserc.local.toml, .miserc.toml, .config/miserc.toml
 /// 2. Global ~/.config/mise/miserc.local.toml, then miserc.toml
 /// 3. System /etc/mise/miserc.toml
+/// 4. Vendor miserc.toml in `MISE_VENDOR_CONFIG_DIR`
 fn load_miserc_settings() -> Result<MisercSettings> {
     if super::Settings::no_config() {
         return Ok(MisercSettings::default());
@@ -316,6 +320,14 @@ fn find_miserc_files() -> Vec<PathBuf> {
     let system_path = system_dir.join("miserc.toml");
     if system_path.is_file() {
         files.push(system_path);
+    }
+
+    // Vendor: MISE_VENDOR_CONFIG_DIR/miserc.toml, below the system one
+    if let Some(vendor_dir) = &*env::MISE_VENDOR_CONFIG_DIR {
+        let vendor_path = vendor_dir.join("miserc.toml");
+        if vendor_path.is_file() {
+            files.push(vendor_path);
+        }
     }
 
     files

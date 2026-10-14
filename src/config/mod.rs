@@ -2768,6 +2768,7 @@ pub(crate) fn is_conf_d_folder_file(p: &Path) -> bool {
             .is_some_and(|name| name == "mise" || name == ".mise")
             || owner == *dirs::CONFIG
             || owner == *dirs::SYSTEM_CONFIG
+            || *dirs::VENDOR_CONFIG == Some(owner)
     })
 }
 
@@ -3100,7 +3101,10 @@ fn detect_auto_env_candidate_files() -> Vec<PathBuf> {
             }
         }
     }
-    for dir in [*dirs::CONFIG, *dirs::SYSTEM_CONFIG] {
+    for dir in [*dirs::CONFIG, *dirs::SYSTEM_CONFIG]
+        .into_iter()
+        .chain(*dirs::VENDOR_CONFIG)
+    {
         for env_name in &candidate_envs {
             if env::env_conf_d() {
                 found.extend(conf_d_environment_files(dir, env_name, false));
@@ -3369,9 +3373,35 @@ pub(crate) fn system_config_files() -> IndexSet<PathBuf> {
     if let Some(p) = &*env::MISE_SYSTEM_CONFIG_FILE {
         return vec![p.clone()].into_iter().collect();
     }
-    let config_files = config_files_from_dir(&dirs::SYSTEM_CONFIG);
+    let mut config_files = vendor_config_files();
+    config_files.extend(config_files_from_dir(&dirs::SYSTEM_CONFIG));
     *s = Some(config_files.clone());
     config_files
+}
+
+/// Vendor config files, which rank below system ones. A system `conf.d` entry
+/// with the same name replaces a vendor one, so an empty file or a `/dev/null`
+/// symlink masks it.
+fn vendor_config_files() -> IndexSet<PathBuf> {
+    let Some(vendor) = *dirs::VENDOR_CONFIG else {
+        return IndexSet::new();
+    };
+    let vendor_conf_d = vendor.join("conf.d");
+    let system_conf_d = dirs::SYSTEM_CONFIG.join("conf.d");
+    config_files_from_dir(vendor)
+        .into_iter()
+        .filter(|p| {
+            p.strip_prefix(&vendor_conf_d)
+                .ok()
+                .and_then(|rel| rel.components().next())
+                .is_none_or(|name| !system_conf_d.join(name).exists())
+        })
+        .collect()
+}
+
+/// Whether `path` is in the vendor config dir, which mise never writes to.
+pub fn is_vendor_config(path: &Path) -> bool {
+    dirs::VENDOR_CONFIG.is_some_and(|vendor| path.starts_with(vendor))
 }
 
 /// Config files in a global/system config dir, lowest precedence first: `conf.d`,
@@ -3566,7 +3596,10 @@ pub fn global_shared_config_path() -> PathBuf {
 
 /// The preferred system config file to write to, or the path where it should be created.
 pub fn system_config_path() -> PathBuf {
-    let files = system_config_files();
+    let files: IndexSet<PathBuf> = system_config_files()
+        .into_iter()
+        .filter(|p| !is_vendor_config(p))
+        .collect();
     first_config_file(&files)
         .cloned()
         .or_else(|| env::MISE_SYSTEM_CONFIG_FILE.clone())

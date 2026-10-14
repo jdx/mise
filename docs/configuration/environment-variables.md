@@ -20,19 +20,20 @@ or a CI job.
 Each of these moves one of mise's directories. [Directories](/directories.html)
 lists their defaults and what each one holds.
 
-| Variable                 | Directory                                                                            |
-| ------------------------ | ------------------------------------------------------------------------------------ |
-| `MISE_CONFIG_DIR`        | [Global config](/directories.html#config-mise)                                       |
-| `MISE_DATA_DIR`          | [Installed tools and plugins](/directories.html#local-share-mise)                    |
-| `MISE_CACHE_DIR`         | [Cache](/directories.html#cache-mise)                                                |
-| `MISE_STATE_DIR`         | [Local state](/directories.html#local-state-mise)                                    |
-| `MISE_TMP_DIR`           | [Temporary files](/directories.html)                                                 |
-| `MISE_SYSTEM_CONFIG_DIR` | [System config](/directories.html#system-config); `MISE_SYSTEM_DIR` is an older name |
-| `MISE_INSTALLS_DIR`      | [Installed versions](/directories.html#local-share-mise-installs)                    |
-| `MISE_INSTALL_STORE_DIR` | [Install store](/directories.html#local-share-mise-installs) for the identity layout |
-| `MISE_PLUGINS_DIR`       | [Plugins](/directories.html#local-share-mise-plugins)                                |
-| `MISE_DOWNLOADS_DIR`     | [Downloads](/directories.html#local-share-mise-downloads)                            |
-| `MISE_SYSTEM_DATA_DIR`   | [System installs and shims](/directories.html#system-installs-and-shims)             |
+| Variable                 | Directory                                                                                |
+| ------------------------ | ---------------------------------------------------------------------------------------- |
+| `MISE_CONFIG_DIR`        | [Global config](/directories.html#config-mise)                                           |
+| `MISE_DATA_DIR`          | [Installed tools and plugins](/directories.html#local-share-mise)                        |
+| `MISE_CACHE_DIR`         | [Cache](/directories.html#cache-mise)                                                    |
+| `MISE_STATE_DIR`         | [Local state](/directories.html#local-state-mise)                                        |
+| `MISE_TMP_DIR`           | [Temporary files](/directories.html)                                                     |
+| `MISE_SYSTEM_CONFIG_DIR` | [System config](/directories.html#system-config); `MISE_SYSTEM_DIR` is an older name     |
+| `MISE_VENDOR_CONFIG_DIR` | [Vendor config](/directories.html#vendor-config), read-only defaults below system config |
+| `MISE_INSTALLS_DIR`      | [Installed versions](/directories.html#local-share-mise-installs)                        |
+| `MISE_INSTALL_STORE_DIR` | [Install store](/directories.html#local-share-mise-installs) for the identity layout     |
+| `MISE_PLUGINS_DIR`       | [Plugins](/directories.html#local-share-mise-plugins)                                    |
+| `MISE_DOWNLOADS_DIR`     | [Downloads](/directories.html#local-share-mise-downloads)                                |
+| `MISE_SYSTEM_DATA_DIR`   | [System installs and shims](/directories.html#system-installs-and-shims)                 |
 
 ## Config files {#config-files}
 

@@ -195,6 +195,16 @@ pub static MISE_SYSTEM_CONFIG_DIR: Lazy<PathBuf> = Lazy::new(|| {
         .unwrap_or_else(|| PathBuf::from("/etc/mise"))
 });
 
+/// Read-only defaults shipped by a distribution or image, such as
+/// `/usr/share/mise`. They rank below the system config dir, which can override
+/// them. Unset unless `MISE_VENDOR_CONFIG_DIR` is set or the binary was built
+/// with `MISE_DEFAULT_VENDOR_CONFIG_DIR`.
+pub static MISE_VENDOR_CONFIG_DIR: Lazy<Option<PathBuf>> = Lazy::new(|| {
+    var_path("MISE_VENDOR_CONFIG_DIR")
+        .or_else(|| option_env!("MISE_DEFAULT_VENDOR_CONFIG_DIR").map(PathBuf::from))
+        .filter(|p| !p.as_os_str().is_empty())
+});
+
 pub static MISE_INSTALLS_DIR: Lazy<PathBuf> =
     Lazy::new(|| var_path("MISE_INSTALLS_DIR").unwrap_or_else(|| MISE_DATA_DIR.join("installs")));
 

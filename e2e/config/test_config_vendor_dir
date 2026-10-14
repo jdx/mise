@@ -1,0 +1,92 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Vendor config (MISE_VENDOR_CONFIG_DIR) ranks below system config. A system
+# conf.d entry with the same name replaces or masks a vendor fragment, and mise
+# never writes to the vendor dir.
+
+export MISE_VENDOR_CONFIG_DIR="$HOME/vendor-mise"
+mkdir -p "$MISE_VENDOR_CONFIG_DIR/conf.d" "$MISE_SYSTEM_DIR/conf.d"
+
+cat >"$MISE_VENDOR_CONFIG_DIR/config.toml" <<EOF
+[settings]
+jobs = 3
+[env]
+VENDOR_ONLY = "vendor"
+VENDOR_PRECEDENCE = "from-vendor"
+EOF
+
+cat >"$MISE_VENDOR_CONFIG_DIR/conf.d/10-replaced.toml" <<EOF
+[env]
+REPLACED = "from-vendor"
+EOF
+
+cat >"$MISE_VENDOR_CONFIG_DIR/conf.d/20-masked.toml" <<EOF
+[env]
+MASKED = "from-vendor"
+EOF
+
+cat >"$MISE_VENDOR_CONFIG_DIR/conf.d/30-kept.toml" <<EOF
+[env]
+KEPT = "from-vendor"
+EOF
+
+assert "mise env --json | jq -r .VENDOR_PRECEDENCE" "from-vendor"
+assert "mise settings get jobs" "3"
+assert "mise env --json | jq -r .MASKED" "from-vendor"
+
+cat >"$MISE_SYSTEM_DIR/config.toml" <<EOF
+[settings]
+jobs = 5
+[env]
+VENDOR_PRECEDENCE = "from-system"
+EOF
+
+cat >"$MISE_SYSTEM_DIR/conf.d/10-replaced.toml" <<EOF
+[env]
+REPLACED = "from-system"
+EOF
+
+: >"$MISE_SYSTEM_DIR/conf.d/20-masked.toml"
+
+assert "mise env --json | jq -r .VENDOR_ONLY" "vendor"
+assert "mise env --json | jq -r .VENDOR_PRECEDENCE" "from-system"
+assert "mise settings get jobs" "5"
+assert "mise env --json | jq -r .REPLACED" "from-system"
+assert "mise env --json | jq -r .MASKED" "null"
+assert "mise env --json | jq -r .KEPT" "from-vendor"
+
+# A /dev/null symlink also masks a vendor fragment.
+ln -s /dev/null "$MISE_SYSTEM_DIR/conf.d/30-kept.toml"
+assert "mise env --json | jq -r .KEPT" "null"
+
+# Global config still outranks both.
+cat >"$MISE_CONFIG_DIR/config.toml" <<EOF
+[env]
+VENDOR_PRECEDENCE = "from-global"
+EOF
+assert "mise env --json | jq -r .VENDOR_PRECEDENCE" "from-global"
+
+# The vendor miserc is read, below the system one.
+cat >mise.vendorenv.toml <<EOF
+[env]
+MISERC_ENV = "vendorenv"
+EOF
+cat >mise.systemenv.toml <<EOF
+[env]
+MISERC_ENV = "systemenv"
+EOF
+cat >"$MISE_VENDOR_CONFIG_DIR/miserc.toml" <<EOF
+env = ["vendorenv"]
+EOF
+assert "mise env --json | jq -r .MISERC_ENV" "vendorenv"
+cat >"$MISE_SYSTEM_DIR/miserc.toml" <<EOF
+env = ["systemenv"]
+EOF
+assert "mise env --json | jq -r .MISERC_ENV" "systemenv"
+
+# Writes go to the system dir, never to the vendor dir.
+rm "$MISE_SYSTEM_DIR/config.toml"
+assert_succeed "mise config set --system env.WRITTEN yes"
+assert_contains "cat $MISE_SYSTEM_DIR/config.toml" "WRITTEN"
+assert_not_contains "cat $MISE_VENDOR_CONFIG_DIR/config.toml" "WRITTEN"

@@ -50,6 +50,22 @@ package ships them, and fails with
 `mise's self-update feature has been disabled at build time, cannot update`.
 This is the only method that `mise self-update --force` cannot get past.
 
+## Ship default config {#vendor-config}
+
+To ship default config with the package while leaving `/etc/mise` to
+administrators, set a [vendor config](/directories.html#vendor-config) dir when
+building, and install the defaults there:
+
+```sh
+MISE_DEFAULT_VENDOR_CONFIG_DIR=/usr/share/mise cargo build --release
+install -D -m 0644 config.toml /usr/share/mise/config.toml
+```
+
+Files in `/etc/mise` override these defaults, and a file of the same name in
+`/etc/mise/conf.d` replaces or masks a vendor `conf.d` fragment. This suits
+image-based and immutable systems, where `/usr` is read-only.
+`MISE_VENDOR_CONFIG_DIR` overrides the built-in path at runtime.
+
 ## Paths mise checks {#install-prefix}
 
 The marker and instructions files below are looked up relative to the install

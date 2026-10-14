@@ -13,6 +13,8 @@ pub static CACHE: Lazy<&Path> = Lazy::new(|| &env::MISE_CACHE_DIR);
 pub static CONFIG: Lazy<&Path> = Lazy::new(|| &env::MISE_CONFIG_DIR);
 pub static STATE: Lazy<&Path> = Lazy::new(|| &env::MISE_STATE_DIR);
 pub static SYSTEM_CONFIG: Lazy<&Path> = Lazy::new(|| &env::MISE_SYSTEM_CONFIG_DIR);
+pub static VENDOR_CONFIG: Lazy<Option<&Path>> =
+    Lazy::new(|| env::MISE_VENDOR_CONFIG_DIR.as_deref());
 
 pub static PLUGINS: Lazy<&Path> = Lazy::new(|| &env::MISE_PLUGINS_DIR);
 pub static DOWNLOADS: Lazy<&Path> = Lazy::new(|| &env::MISE_DOWNLOADS_DIR);
