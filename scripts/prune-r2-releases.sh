@@ -6,7 +6,9 @@ set -euo pipefail
 # Releases keeps every asset; this only removes the CDN copy.
 #
 # A folder is deleted only when ALL of these hold:
-#   - the download stats cover at least PRUNE_MIN_COVERED_DAYS complete days
+#   - the download stats cover every day of their window (covered_days >= days),
+#     at least PRUNE_MIN_COVERED_DAYS complete days, and end no more than
+#     PRUNE_MAX_STATS_AGE_DAYS days ago
 #   - its newest object is older than PRUNE_MIN_AGE_DAYS
 #   - it had zero downloads (binary + other) during the stats window
 #   - it is not among the PRUNE_KEEP_NEWEST most recently uploaded folders
@@ -14,12 +16,13 @@ set -euo pipefail
 # and at most PRUNE_MAX_DELETE folders (oldest first) are removed per run.
 #
 # Dry run unless PRUNE_RELEASES=delete. Anything that prevents a trustworthy
-# decision (stats endpoint missing, partial coverage, empty stats) skips the run
+# decision (stats endpoint missing, partial coverage, stale or empty stats) skips the run
 # with exit 0 and deletes nothing.
 
 mode=${PRUNE_RELEASES:-dry-run}
 window_days=${PRUNE_WINDOW_DAYS:-30}
 min_covered_days=${PRUNE_MIN_COVERED_DAYS:-$window_days}
+max_stats_age_days=${PRUNE_MAX_STATS_AGE_DAYS:-3}
 min_age_days=${PRUNE_MIN_AGE_DAYS:-180}
 keep_newest=${PRUNE_KEEP_NEWEST:-30}
 max_delete=${PRUNE_MAX_DELETE:-40}
@@ -34,7 +37,7 @@ dry-run | delete) ;;
 	exit 1
 	;;
 esac
-for var in window_days min_covered_days min_age_days keep_newest max_delete; do
+for var in window_days min_covered_days max_stats_age_days min_age_days keep_newest max_delete; do
 	if ! [[ ${!var} =~ ^[0-9]+$ ]]; then
 		echo "$var must be a non-negative integer, got '${!var}'" >&2
 		exit 1
@@ -54,7 +57,7 @@ skip() {
 	exit 0
 }
 
-echo "mode=$mode window=${window_days}d min_covered=${min_covered_days}d min_age=${min_age_days}d keep_newest=$keep_newest max_delete=$max_delete"
+echo "mode=$mode window=${window_days}d min_covered=${min_covered_days}d max_stats_age=${max_stats_age_days}d min_age=${min_age_days}d keep_newest=$keep_newest max_delete=$max_delete"
 
 # --- download stats -----------------------------------------------------------
 status=$(curl -sS --retry 3 --max-time 60 -o "$tmp/stats.json" -w '%{http_code}' "$stats_url") ||
@@ -63,18 +66,31 @@ if [[ $status != 200 ]]; then
 	skip "download stats endpoint returned HTTP $status ($stats_url)."
 fi
 if ! jq -e '
+	(.days | type == "number") and
 	(.covered_days | type == "number") and
+	(.last_covered_date | type == "string" and test("^[0-9]{4}-[0-9]{2}-[0-9]{2}$")) and
 	(.versions | type == "object") and
 	all(.versions[]; (.binary // 0 | type == "number") and (.other // 0 | type == "number"))
 ' "$tmp/stats.json" >/dev/null 2>&1; then
 	skip "download stats response is not in the expected format ($stats_url)."
 fi
+stats_days=$(jq -r '.days' "$tmp/stats.json")
 covered_days=$(jq -r '.covered_days' "$tmp/stats.json")
 first_day=$(jq -r '.first_covered_date // "?"' "$tmp/stats.json")
 last_day=$(jq -r '.last_covered_date // "?"' "$tmp/stats.json")
 echo "download stats cover $covered_days day(s): $first_day .. $last_day"
+if ((covered_days < stats_days)); then
+	skip "download stats cover only $covered_days of their $stats_days-day window ($first_day .. $last_day)."
+fi
 if ((covered_days < min_covered_days)); then
 	skip "download stats cover only $covered_days of the required $min_covered_days days ($first_day .. $last_day)."
+fi
+# The rollup runs daily (~02:20 UTC) for the previous day. A stale window means
+# the pipeline stopped, so recent downloads would be missing from the counts.
+stats_age_days=$(jq -n --arg d "$last_day" --argjson now "$(date -u +%s)" \
+	'(($now - ($d | strptime("%Y-%m-%d") | mktime)) / 86400) | floor')
+if ((stats_age_days > max_stats_age_days)); then
+	skip "download stats end on $last_day, $stats_age_days days ago (limit $max_stats_age_days), so they are stale."
 fi
 # All-zero stats mean the log pipeline is broken, not that nobody downloads mise.
 if ! jq -e '([.versions[] | (.binary // 0) + (.other // 0)] | add // 0) > 0' "$tmp/stats.json" >/dev/null; then
