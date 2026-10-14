@@ -751,18 +751,21 @@ impl Backend for AquaBackend {
         let (target_os, target_arch) = Self::to_aqua_platform(target);
 
         // Get version tag
-        let tag = match self.get_version_tags().await {
-            Ok(tags) => tags
-                .iter()
-                .find(|(version, _)| version == &tv.version)
-                .map(|(_, tag)| tag.clone()),
-            Err(e) => {
-                warn!(
-                    "[{}] failed to fetch version tags for lockfile, URL may be incorrect: {e}",
-                    self.id
-                );
-                None
-            }
+        let tag = match self.listed_release_tag(&tv.version).await {
+            Some(tag) => Some(tag),
+            None => match self.get_version_tags().await {
+                Ok(tags) => tags
+                    .iter()
+                    .find(|(version, _)| version == &tv.version)
+                    .map(|(_, tag)| tag.clone()),
+                Err(e) => {
+                    warn!(
+                        "[{}] failed to fetch version tags for lockfile, URL may be incorrect: {e}",
+                        self.id
+                    );
+                    None
+                }
+            },
         };
         let tag_is_none = tag.is_none();
         if tag_is_none && !tv.version.starts_with('v') {
@@ -1051,6 +1054,8 @@ impl AquaBackend {
             Some(tag)
         } else if existing_platform.is_some() {
             None
+        } else if let Some(tag) = self.listed_release_tag(&tv.version).await {
+            Some(tag)
         } else {
             match self.get_version_tags().await {
                 Ok(tags) => tags
@@ -2440,6 +2445,26 @@ impl AquaBackend {
                 Ok(None)
             }
         }
+    }
+
+    /// The release tag the versions host's list records for `version`, so
+    /// installing or locking a registry tool doesn't fetch the whole release
+    /// list (`get_version_tags`) just to find it. Accepted only when this
+    /// package maps the tag back to `version`, which is the test
+    /// `get_version_tags` applies to the tags it lists.
+    async fn listed_release_tag(&self, version: &str) -> Option<String> {
+        let config = Config::get().await.ok()?;
+        let url = self.listed_release_url(&config, version).await?;
+        let pkg = AQUA_REGISTRY.package(&self.id).await.ok()?;
+        let repo_url = format!("https://github.com/{}/{}", pkg.repo_owner, pkg.repo_name);
+        let tag = backend::release_tag_from_url(&url, &repo_url)?;
+        let target = PlatformTarget::from_current();
+        let (target_os, target_arch) = Self::to_aqua_platform(&target);
+        let target_libc = Self::target_variant_libc(&target, None);
+        let (listed, _) =
+            versioned_package_from_tag(&pkg, &tag, target_os, target_arch, target_libc.as_deref())
+                .ok()??;
+        (listed == version).then_some(tag)
     }
 
     async fn get_version_tags(&self) -> Result<Vec<(String, String)>> {

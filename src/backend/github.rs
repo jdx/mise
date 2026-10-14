@@ -6,7 +6,7 @@ use crate::backend::options::{BackendOptions, VersionOrder};
 use crate::backend::platform_target::PlatformTarget;
 use crate::backend::static_helpers::{
     ArchiveLayout, get_filename_from_url, install_artifact, lookup_platform_key,
-    lookup_with_fallback, pinned_checksum, template_string, try_with_v_prefix,
+    lookup_with_fallback, pinned_checksum, template_string, try_release_tags, try_with_v_prefix,
     try_with_v_prefix_and_repo, verify_artifact,
 };
 use crate::backend::{MISE_BINS_DIR, SecurityFeature, runtime_path_for_install_path};
@@ -857,15 +857,24 @@ impl Backend for UnifiedGitBackend {
         let opts = self.options(&raw_opts);
         let api_url = opts.api_url();
         let version_prefix = opts.version_prefix();
+        let listed_tag = self.listed_release_tag(&opts, version).await;
 
-        match try_with_v_prefix_and_repo(version, version_prefix, Some(&repo), |candidate| {
-            let api_url = api_url.clone();
-            let repo = repo.clone();
-            async move {
-                github::get_release_for_url_with_versions_host(&api_url, &repo, &candidate, true)
+        match try_release_tags(
+            version,
+            version_prefix,
+            Some(&repo),
+            listed_tag.as_deref(),
+            |candidate| {
+                let api_url = api_url.clone();
+                let repo = repo.clone();
+                async move {
+                    github::get_release_for_url_with_versions_host(
+                        &api_url, &repo, &candidate, true,
+                    )
                     .await
-            }
-        })
+                }
+            },
+        )
         .await
         {
             Ok(release) => Ok(Some(self.strip_version_prefix(&release.tag_name, &opts))),
@@ -1645,6 +1654,26 @@ impl UnifiedGitBackend {
         self.ba.tool_name()
     }
 
+    /// The tag the versions host's list records for `version`, tried before
+    /// any guessed spelling: `cli-2.6.0` is not `vcli-2.6.0`, and `6.6.2` is
+    /// not `v6.6.2`. Accepted only when these options list the tag as
+    /// `version`, which is how `_list_remote_versions` names its releases.
+    async fn listed_release_tag(
+        &self,
+        opts: &GitBackendOptions<'_>,
+        version: &str,
+    ) -> Option<String> {
+        if self.is_gitlab() || self.is_forgejo() {
+            return None;
+        }
+        let config = Config::get().await.ok()?;
+        let url = self.listed_release_url(&config, version).await?;
+        let web_url_base = self.web_url_base(&opts.api_url(), &self.repo());
+        let tag = crate::backend::release_tag_from_url(&url, &web_url_base)?;
+        let prefixed = opts.version_prefix().is_none_or(|p| tag.starts_with(p));
+        (prefixed && self.strip_version_prefix(&tag, opts) == version).then_some(tag)
+    }
+
     fn preferred_asset_name(&self) -> String {
         self.repo()
             .rsplit('/')
@@ -2128,10 +2157,12 @@ impl UnifiedGitBackend {
             .await
         } else {
             // Pass full repo for trying reponame@version formats
-            try_with_v_prefix_and_repo(
+            let listed_tag = self.listed_release_tag(opts, version).await;
+            try_release_tags(
                 version,
                 version_prefix,
                 Some(repo),
+                listed_tag.as_deref(),
                 |candidate| async move {
                     self.resolve_github_asset_url_for_target(
                         tv,

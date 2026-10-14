@@ -9,9 +9,10 @@ use crate::ui::progress_report::SingleReport;
 use eyre::{Result, WrapErr, bail};
 use indexmap::IndexSet;
 use reqwest::header::HeaderMap;
+use std::collections::HashMap;
 use std::path::Path;
 use std::path::PathBuf;
-use std::sync::LazyLock;
+use std::sync::{LazyLock, Mutex};
 
 use super::platform_tokens::{
     BINARY_ARCH_TOKENS, BINARY_OS_TOKENS, is_arch_token, is_os_token, is_platform_or_version_token,
@@ -266,6 +267,11 @@ where
 /// version mise listed always round-trips to its own tag; the version is still
 /// tried unprefixed afterwards for users who spell out a tag by hand, down to
 /// the bare version with every copy of the prefix removed.
+///
+/// Without a prefix, `v` goes first only for a version that starts with a
+/// digit. Any other version already carries its tag's own decoration
+/// (`cli-2.6.0`, `kustomize/v5.8.1`), and guessing `vcli-2.6.0` first costs a
+/// 404 from mise-versions and another from GitHub before the real tag is tried.
 fn tag_candidates(version: &str, version_prefix: Option<&str>, repo: Option<&str>) -> Vec<String> {
     let mut candidates = if let Some(prefix) = version_prefix {
         // If a custom prefix is configured, try both prefixed and non-prefixed versions
@@ -288,8 +294,10 @@ fn tag_candidates(version: &str, version_prefix: Option<&str>, repo: Option<&str
             version.to_string(),
             version.trim_start_matches('v').to_string(),
         ]
-    } else {
+    } else if version.starts_with(|c: char| c.is_ascii_digit()) {
         vec![format!("v{version}"), version.to_string()]
+    } else {
+        vec![version.to_string(), format!("v{version}")]
     };
 
     // Also try repo@version formats (e.g., tectonic@0.15.0) when no prefix is configured
@@ -316,6 +324,28 @@ fn tag_candidates(version: &str, version_prefix: Option<&str>, repo: Option<&str
         .collect()
 }
 
+/// The tag a release lookup resolved to earlier in this process, per
+/// `(repo, version, version_prefix)`.
+///
+/// One command looks the same release up several times -- to resolve an exact
+/// version, to select its asset, to detect and to verify its provenance, and
+/// again for every lockfile platform -- and a tag that 404s is not cached, so
+/// without this every lookup repeats each wrong guess against mise-versions
+/// and then GitHub. Only a tag the resolver accepted is recorded, and it is
+/// tried first rather than alone, so a stale entry costs a request, not a
+/// result.
+type ResolvedTagKey = (String, String, Option<String>);
+static RESOLVED_TAGS: LazyLock<Mutex<HashMap<ResolvedTagKey, String>>> =
+    LazyLock::new(Default::default);
+
+fn resolved_tag_key(repo: &str, version: &str, version_prefix: Option<&str>) -> ResolvedTagKey {
+    (
+        repo.to_ascii_lowercase(),
+        version.to_string(),
+        version_prefix.map(str::to_string),
+    )
+}
+
 /// Helper to try various tag formats for a resolver function
 /// Tries version_prefix (if set), v prefix, and optionally repo@version formats
 pub(crate) async fn try_with_v_prefix_and_repo<F, Fut, T, E>(
@@ -329,11 +359,43 @@ where
     Fut: Future<Output = std::result::Result<T, E>>,
     E: VerifiableError,
 {
-    let mut errors = vec![];
+    try_release_tags(version, version_prefix, repo, None, resolver).await
+}
 
-    for candidate in tag_candidates(version, version_prefix, repo) {
-        match resolver(candidate).await {
-            Ok(res) => return Ok(res),
+/// [`try_with_v_prefix_and_repo`], trying `known_tag` -- the tag a version
+/// list recorded for `version` -- before guessing at spellings. A tag that
+/// already resolved for this release earlier in the process goes first.
+pub(crate) async fn try_release_tags<F, Fut, T, E>(
+    version: &str,
+    version_prefix: Option<&str>,
+    repo: Option<&str>,
+    known_tag: Option<&str>,
+    resolver: F,
+) -> Result<T>
+where
+    F: Fn(String) -> Fut,
+    Fut: Future<Output = std::result::Result<T, E>>,
+    E: VerifiableError,
+{
+    let key = repo.map(|repo| resolved_tag_key(repo, version, version_prefix));
+    let resolved = key
+        .as_ref()
+        .and_then(|key| RESOLVED_TAGS.lock().unwrap().get(key).cloned());
+    let candidates: IndexSet<String> = resolved
+        .into_iter()
+        .chain(known_tag.map(str::to_string))
+        .chain(tag_candidates(version, version_prefix, repo))
+        .collect();
+
+    let mut errors = vec![];
+    for candidate in candidates {
+        match resolver(candidate.clone()).await {
+            Ok(res) => {
+                if let Some(key) = key {
+                    RESOLVED_TAGS.lock().unwrap().insert(key, candidate);
+                }
+                return Ok(res);
+            }
             Err(e) => {
                 if e.is_not_found() {
                     errors.push(e.into_eyre());
@@ -3468,6 +3530,70 @@ bin = "tool.exe"
             tag_candidates("latest", None, Some("test/repo")),
             vec!["latest".to_string()]
         );
+    }
+
+    #[test]
+    fn test_tag_candidates_try_a_decorated_version_as_written_first() {
+        // `cli-2.6.0` and `kustomize/v5.8.1` already are their tags; a `v` in
+        // front of them is a guess that 404s twice before the real tag is tried.
+        assert_eq!(
+            tag_candidates("cli-2.6.0", None, Some("mobile-dev-inc/maestro")),
+            vec![
+                "cli-2.6.0".to_string(),
+                "vcli-2.6.0".to_string(),
+                "maestro@cli-2.6.0".to_string(),
+                "mobile-dev-inc/maestro@cli-2.6.0".to_string(),
+            ],
+        );
+        assert_eq!(
+            tag_candidates("kustomize/v5.8.1", None, None),
+            vec![
+                "kustomize/v5.8.1".to_string(),
+                "vkustomize/v5.8.1".to_string()
+            ],
+        );
+    }
+
+    async fn resolve_tags(
+        version: &str,
+        repo: &str,
+        known_tag: Option<&str>,
+        real_tag: &str,
+    ) -> (String, Vec<String>) {
+        let tried = std::sync::Mutex::new(vec![]);
+        let resolved = try_release_tags(version, None, Some(repo), known_tag, |candidate| {
+            tried.lock().unwrap().push(candidate.clone());
+            let found = candidate == real_tag;
+            async move {
+                if found {
+                    Ok(candidate)
+                } else {
+                    Err(eyre::eyre!("404 Not Found"))
+                }
+            }
+        })
+        .await
+        .unwrap();
+        (resolved, tried.into_inner().unwrap())
+    }
+
+    #[tokio::test]
+    async fn test_try_release_tags_tries_the_listed_tag_before_guessing() {
+        let (resolved, tried) =
+            resolve_tags("4.210.0", "test/listed-tag", Some("4.210.0"), "4.210.0").await;
+        assert_eq!(resolved, "4.210.0");
+        assert_eq!(tried, vec!["4.210.0".to_string()]);
+    }
+
+    #[tokio::test]
+    async fn test_try_release_tags_remembers_the_tag_that_resolved() {
+        // The first lookup has to guess its way past `v6.6.2`; later lookups of
+        // the same release in this process go straight to the tag that worked.
+        let (_, tried) = resolve_tags("6.6.2", "test/remembered-tag", None, "6.6.2").await;
+        assert_eq!(tried, vec!["v6.6.2".to_string(), "6.6.2".to_string()]);
+        let (resolved, tried) = resolve_tags("6.6.2", "Test/Remembered-Tag", None, "6.6.2").await;
+        assert_eq!(resolved, "6.6.2");
+        assert_eq!(tried, vec!["6.6.2".to_string()]);
     }
 
     #[tokio::test]
