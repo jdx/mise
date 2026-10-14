@@ -4194,7 +4194,7 @@ fn confirmation_lines(req: &FileRequest, rendered: Option<&str>) -> Result<Vec<S
     let mut lines = vec![];
     // a file (or a link to one) at the root is replaced by the directory under
     // `--force`, even when the source directory is empty
-    if std::fs::symlink_metadata(&req.target).is_ok() && !req.target.is_dir() {
+    if req.target.exists() && !req.target.is_dir() {
         lines.push(format!(
             "replace {} with a directory",
             req.target.display_user()
