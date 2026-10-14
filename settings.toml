@@ -4485,8 +4485,9 @@ then deleted automatically. A nightly job turns them into usage counts, such
 as monthly active users and installs per tool, keyed by a salted hash of the IP
 address.
 
-Set this to `false` to stop these requests. Precompiled Python installs still
-download their build list from this host.
+Set this to `false` to stop these requests. mise still downloads Python's list
+of precompiled builds from this host; see
+[How mise installs Python](/lang/python.html#precompiled-python-binaries).
 
 `mise ls-remote --no-versions-host` skips the host for one command. See
 [A new release is not listed](/troubleshooting.html#new-version-of-a-tool-is-not-available).
