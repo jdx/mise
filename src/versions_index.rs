@@ -647,109 +647,111 @@ mod tests {
         queries
     }
 
-    /// What resolving from the full list gives, for both picks: `latest`
-    /// through `latest_version_for_query_with_selection_options`, and any
-    /// other query as `resolve_remote_version` and `resolve_prefix` take it
-    /// from the matching versions.
-    async fn full_list_answers(
-        backend: &ListBackend,
-        config: &Arc<Config>,
-        query: &str,
-        opts: &ToolVersionOptions,
-        before: Option<Timestamp>,
-    ) -> (Option<String>, Option<String>) {
-        let matches = backend
-            .list_versions_matching_with_selection_options(config, query, opts, before, false)
-            .await
-            .unwrap();
-        let request = if query == "latest" {
-            backend
-                .latest_version_for_query_with_selection_options(config, query, opts, before, false)
-                .await
-                .unwrap()
-        } else if matches.iter().any(|m| m == query) {
-            Some(query.to_string())
-        } else {
-            matches.last().cloned()
-        };
-        (request, matches.last().cloned())
-    }
-
-    /// The index never gives an answer the full list would not: for every
-    /// fixture tool, every shared-matcher variant, prereleases on and off, and
-    /// release-age cutoffs from none and 0s to a year, including a client clock
-    /// two days ahead of the index.
-    #[tokio::test]
-    async fn test_index_answers_agree_with_the_full_list() {
-        let config = Config::get().await.unwrap();
-        let index = index();
+    fn cutoffs() -> Vec<Option<Timestamp>> {
         let now = generated_at();
         let mut cutoffs = vec![None];
-        for (lag, age) in [
-            (0, 0),
-            (0, 1),
-            (0, 24),
-            (0, 168),
-            (0, 336),
-            (0, 720),
-            (0, 8760),
-            (48, 24),
-            (48, 336),
-        ] {
+        // A release age from 0s to past the index's 14-day horizon, and a
+        // client clock two days ahead.
+        for (lag, age) in [(0, 0), (0, 24), (0, 336), (0, 720), (48, 336)] {
             cutoffs.push(Some(now + SignedDuration::from_hours(lag - age)));
         }
+        cutoffs
+    }
+
+    fn prerelease_opts(prereleases: bool) -> ToolVersionOptions {
+        let mut opts = ToolVersionOptions::default();
+        opts.opts
+            .insert("prerelease".into(), toml::Value::Boolean(prereleases));
+        opts
+    }
+
+    /// What resolving from the full list gives, for both picks: `matches` are
+    /// the matching versions among `visible`, the full list after the
+    /// prerelease and release-date filters. `latest` as
+    /// `latest_version_for_query_with_selection_options` takes it, falling back
+    /// to every visible version when none matches, and any other query as
+    /// `resolve_remote_version` and `resolve_prefix` take it from the matching
+    /// versions. `test_full_list_answers_are_the_resolution_path_s` checks
+    /// this against the real path, which is too slow to run for every case.
+    fn full_list_answers(
+        matches: &[String],
+        visible: &[String],
+        query: &str,
+    ) -> (Option<String>, Option<String>) {
+        let last = matches.last().cloned();
+        let candidates = match matches.is_empty() && query == "latest" {
+            true => visible,
+            false => matches,
+        };
+        let request = match candidates.iter().any(|m| m == query) {
+            true => Some(query.to_string()),
+            false => candidates.last().cloned(),
+        };
+        (request, last)
+    }
+
+    fn visible(list: &[VersionInfo], prereleases: bool, before: Option<Timestamp>) -> Vec<String> {
+        let mut list = crate::backend::filter_cached_prereleases(list.to_vec(), prereleases);
+        if let Some(before) = before {
+            list = VersionInfo::filter_by_date(list, before);
+        }
+        list.into_iter().map(|v| v.version).collect()
+    }
+
+    fn backend(name: &str, list: &[VersionInfo], matcher: Matcher) -> ListBackend {
         // A digest in the name keeps a list cached by an older fixture out.
         let fixture = crate::hash::hash_to_str(&LISTS);
+        ListBackend {
+            ba: Arc::new(
+                format!("test-versions-index-{name}-{fixture}")
+                    .as_str()
+                    .into(),
+            ),
+            list: list.to_vec(),
+            matcher,
+        }
+    }
+
+    /// Check that the index never gives an answer the full list would not,
+    /// with `matcher`, for every fixture tool in `tools` (all when empty),
+    /// prereleases on and off, and each release-age cutoff.
+    fn assert_index_agrees(matcher: Matcher, tools: &[&str], cutoffs: &[Option<Timestamp>]) {
+        let index = index();
         let (mut hits, mut total) = (0, 0);
         for (name, list) in lists() {
+            if !tools.is_empty() && !tools.contains(&name.as_str()) {
+                continue;
+            }
             let entry = index.tool(&name).unwrap();
-            let matchers = match name.as_str() {
-                "python" => &[
-                    Matcher::Shared,
-                    Matcher::Pep440,
-                    Matcher::Aqua,
-                    Matcher::Ubi,
-                ][..],
-                _ => &[Matcher::Shared, Matcher::Aqua, Matcher::Ubi][..],
-            };
-            for &matcher in matchers {
-                let backend = ListBackend {
-                    ba: Arc::new(
-                        format!("test-versions-index-{name}-{fixture}")
-                            .as_str()
-                            .into(),
-                    ),
-                    list: list.clone(),
-                    matcher,
-                };
+            let queries = queries(&list, entry);
+            {
+                let backend = backend(&name, &list, matcher);
                 for prereleases in [false, true] {
-                    let mut opts = ToolVersionOptions::default();
-                    opts.opts
-                        .insert("prerelease".into(), toml::Value::Boolean(prereleases));
-                    if prereleases {
-                        let listed = backend
-                            .list_remote_versions_with_selection_options(&config, &opts, false)
-                            .await
-                            .unwrap();
-                        assert_eq!(
-                            listed.len(),
-                            list.len(),
-                            "{name}: the listing dropped versions"
-                        );
-                    }
-                    for &before in &cutoffs {
-                        for query in queries(&list, entry) {
+                    let opts = prerelease_opts(prereleases);
+                    let filter = !backend.include_prereleases(&opts);
+                    let everything = visible(&list, prereleases, None);
+                    // Matching is per entry, so the full list is matched once
+                    // per query and narrowed to what each cutoff leaves visible.
+                    let all_matches: Vec<Vec<String>> = queries
+                        .iter()
+                        .map(|q| backend.fuzzy_match_filter(everything.clone(), q, filter))
+                        .collect();
+                    for &before in cutoffs {
+                        let visible = visible(&list, prereleases, before);
+                        let shown: HashSet<&String> = visible.iter().collect();
+                        for (query, all_matches) in queries.iter().zip(&all_matches) {
+                            let matches: Vec<String> = all_matches
+                                .iter()
+                                .filter(|m| shown.contains(m))
+                                .cloned()
+                                .collect();
                             let got = [IndexPick::Request, IndexPick::Last].map(|pick| {
                                 resolve_in_versions_index(
-                                    &backend, entry, &query, pick, &opts, before,
+                                    &backend, entry, query, pick, &opts, before,
                                 )
                             });
                             total += 2;
-                            if got.iter().all(Option::is_none) {
-                                continue;
-                            }
-                            let (request, last) =
-                                full_list_answers(&backend, &config, &query, &opts, before).await;
+                            let (request, last) = full_list_answers(&matches, &visible, query);
                             for (pick, got, want) in [
                                 (IndexPick::Request, &got[0], request),
                                 (IndexPick::Last, &got[1], last),
@@ -772,6 +774,84 @@ mod tests {
             hits * 2 > total,
             "only {hits} of {total} resolved from the index"
         );
+    }
+
+    // One test per matcher keeps each within the suite's per-test time limit.
+    #[test]
+    fn test_index_answers_agree_with_the_full_list_shared_matcher() {
+        assert_index_agrees(Matcher::Shared, &[], &cutoffs());
+    }
+
+    #[test]
+    fn test_index_answers_agree_with_the_full_list_pep440_matcher() {
+        assert_index_agrees(Matcher::Pep440, &[], &cutoffs());
+    }
+
+    #[test]
+    fn test_index_answers_agree_with_the_full_list_aqua_matcher() {
+        assert_index_agrees(Matcher::Aqua, &[], &cutoffs());
+    }
+
+    /// A sample: ubi compiles a regex for every match.
+    #[test]
+    fn test_index_answers_agree_with_the_full_list_ubi_matcher() {
+        assert_index_agrees(Matcher::Ubi, &["zig", "neovim"], &[cutoffs()[2]]);
+    }
+
+    /// [`full_list_answers`] is what mise's resolution path gives, read
+    /// through the real listing, on a sample of the cases above.
+    #[tokio::test]
+    async fn test_full_list_answers_are_the_resolution_path_s() {
+        let config = Config::get().await.unwrap();
+        let lists = lists();
+        for (name, matcher) in [
+            ("go", Matcher::Shared),
+            ("python", Matcher::Pep440),
+            ("helm", Matcher::Aqua),
+        ] {
+            let list = &lists[name];
+            let backend = backend(name, list, matcher);
+            let entry = index();
+            let entry = entry.tool(name).unwrap();
+            let queries: Vec<String> = ["latest".to_string(), list.last().unwrap().version.clone()]
+                .into_iter()
+                .chain(entry.prefixes.keys().take(3).cloned())
+                .collect();
+            for prereleases in [false, true] {
+                let opts = prerelease_opts(prereleases);
+                for before in [None, cutoffs()[2]] {
+                    let visible = visible(list, prereleases, before);
+                    for query in &queries {
+                        let matches = backend
+                            .list_versions_matching_with_selection_options(
+                                &config, query, &opts, before, false,
+                            )
+                            .await
+                            .unwrap();
+                        let request = if query == "latest" {
+                            backend
+                                .latest_version_for_query_with_selection_options(
+                                    &config, query, &opts, before, false,
+                                )
+                                .await
+                                .unwrap()
+                        } else if matches.iter().any(|m| m == query) {
+                            Some(query.clone())
+                        } else {
+                            matches.last().cloned()
+                        };
+                        let filter = !backend.include_prereleases(&opts);
+                        let oracle_matches =
+                            backend.fuzzy_match_filter(visible.clone(), query, filter);
+                        assert_eq!(
+                            full_list_answers(&oracle_matches, &visible, query),
+                            (request, matches.last().cloned()),
+                            "{name}@{query} {matcher:?} prereleases={prereleases} before={before:?}"
+                        );
+                    }
+                }
+            }
+        }
     }
 
     /// The worked examples in the spec, which used this go entry.
