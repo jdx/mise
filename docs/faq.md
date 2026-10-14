@@ -280,6 +280,12 @@ one of these:
   after asking, or without asking under `--yes`. Add its `bin` directory to
   `PATH`, and set variables such as `JAVA_HOME` yourself.
 
+Shells such as `bash`, `zsh`, and `fish` belong here too, not in `[tools]`.
+Scripts and `#!/usr/bin/env bash` shebangs run them by name, so a shim for one
+changes which shell runs nearly every command, and a project that pins one
+changes it for everything run from that directory. Declare the shell in
+`[bootstrap.packages]` instead.
+
 Both give every user one version, with no switching per project. To give each
 user mise-managed tools instead, keep them in `[tools]` and let
 [`mise bootstrap`](/bootstrap.html) set up each user's activation and tools.
