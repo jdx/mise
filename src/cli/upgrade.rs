@@ -206,6 +206,13 @@ impl Upgrade {
     /// Toolsets in this upgrade's scope. An `auto_update` or `--global` upgrade
     /// works on the global config's requests, so a `MISE_*_VERSION` in the
     /// environment doesn't replace the request it was asked to upgrade.
+    /// Whether resolution leaves a lazy tool with nothing installed unresolved:
+    /// `auto_update` always does, and a bare upgrade does because it leaves that
+    /// tool alone. Naming a tool resolves it in full.
+    fn defers_missing_lazy(&self) -> bool {
+        self.for_auto_update || self.tool.is_empty()
+    }
+
     fn toolset_builder(&self) -> ToolsetBuilder {
         let builder = ToolsetBuilder::new().with_scope(self.scope());
         let builder = if self.for_auto_update {
@@ -220,7 +227,7 @@ impl Upgrade {
         // A bare upgrade leaves a lazy tool with nothing installed alone, so it does
         // not wait on that tool's remote version list either. Naming a tool resolves
         // it in full.
-        if self.tool.is_empty() && !self.for_auto_update {
+        if self.defers_missing_lazy() && !self.for_auto_update {
             builder.with_deferred_lazy_resolution_online()
         } else {
             builder
@@ -834,8 +841,8 @@ impl Upgrade {
             // What resolves after the install leaves missing lazy tools alone, as the
             // toolset builder did before it.
             after_install_resolve: ResolveOptions {
-                defer_missing_lazy_tools: self.for_auto_update,
-                defer_missing_lazy_online: self.for_auto_update,
+                defer_missing_lazy_tools: self.defers_missing_lazy(),
+                defer_missing_lazy_online: self.defers_missing_lazy(),
                 ..Default::default()
             },
             locked: false,
@@ -1000,8 +1007,8 @@ impl Upgrade {
             // This ensures "latest" symlinks point to the new versions, not the old ones
             let ts = config
                 .get_toolset_with_opts(&ResolveOptions {
-                    defer_missing_lazy_tools: self.for_auto_update,
-                    defer_missing_lazy_online: self.for_auto_update,
+                    defer_missing_lazy_tools: self.defers_missing_lazy(),
+                    defer_missing_lazy_online: self.defers_missing_lazy(),
                     ..Default::default()
                 })
                 .await?;
@@ -1058,7 +1065,7 @@ impl Upgrade {
                     true,
                     false,
                     &upgraded_config_paths,
-                    self.for_auto_update,
+                    self.defers_missing_lazy(),
                 )
                 .await?;
                 needed.extend(get_versions_needed_by_tracked_stubs(config).await?);

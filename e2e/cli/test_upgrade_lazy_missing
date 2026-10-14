@@ -95,6 +95,18 @@ EOF2
 assert_not_contains "mise upgrade --dry-run 2>&1" "no-such-repo"
 assert_contains "mise upgrade github:mise-test/no-such-repo --dry-run 2>&1" "no-such-repo"
 
+# The same holds after an upgrade installs something: resolving the config again
+# and pruning don't look the lazy tool up either.
+mise uninstall dummy --all
+mise install dummy@1.0.0
+cat >"$MISE_SYSTEM_DIR/config.toml" <<'EOF2'
+[tools]
+dummy = "latest"
+"github:mise-test/no-such-repo" = { version = "latest", lazy = true }
+EOF2
+assert_not_contains "mise upgrade --prune 2>&1" "Failed to resolve tool version list"
+assert_contains "mise ls --installed dummy" "2.0.0"
+
 # A tool the upgrade leaves alone gets no minimum_release_age warning; naming it
 # still shows one. jq has release dates, which the dummy backend lacks.
 cat >"$MISE_SYSTEM_DIR/config.toml" <<'EOF'
