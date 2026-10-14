@@ -86,6 +86,60 @@ EOF
 mise upgrade
 assert_contains "mise ls --installed dummy" "2.0.0"
 
+# A tool the upgrade leaves alone is not looked up either, so a backend that
+# cannot resolve it neither delays the upgrade nor warns. Naming it does look it up.
+cat >"$MISE_SYSTEM_DIR/config.toml" <<'EOF2'
+[tools]
+"github:mise-test/no-such-repo" = { version = "latest", lazy = true }
+EOF2
+assert_not_contains "mise upgrade --dry-run 2>&1" "no-such-repo"
+assert_contains "mise upgrade github:mise-test/no-such-repo --dry-run 2>&1" "no-such-repo"
+
+# The same holds after an upgrade installs something: resolving the config again
+# and pruning don't look the lazy tool up either.
+mise uninstall dummy --all
+mise install dummy@1.0.0
+cat >"$MISE_SYSTEM_DIR/config.toml" <<'EOF2'
+[tools]
+dummy = "latest"
+"github:mise-test/no-such-repo" = { version = "latest", lazy = true }
+EOF2
+assert_not_contains "mise upgrade --prune 2>&1" "Failed to resolve tool version list"
+assert_contains "mise ls --installed dummy" "2.0.0"
+
+# The lockfile keeps what it had for a tool the upgrade leaves alone, and never
+# gains its unresolved request.
+mise plugin install tiny
+mkdir lockproj
+cd lockproj || exit 1
+cat >mise.toml <<'EOF2'
+[settings]
+lockfile = true
+[tools]
+dummy = "latest"
+tiny = { version = "latest", lazy = true }
+EOF2
+touch mise.lock
+mise uninstall dummy --all
+mise install dummy@1.0.0 tiny
+mise uninstall tiny --all
+mise upgrade
+assert_contains "mise ls --installed dummy" "2.0.0"
+assert_contains "cat mise.lock" 'version = "2.0.0"'
+assert_contains "cat mise.lock" "[[tools.tiny]]"
+assert_not_contains "cat mise.lock" 'version = "latest"'
+
+# With no entry for it, one is not invented from the unresolved request.
+mise uninstall dummy --all
+mise install dummy@1.0.0
+rm mise.lock
+touch mise.lock
+mise upgrade
+assert_contains "cat mise.lock" 'version = "2.0.0"'
+assert_not_contains "cat mise.lock" "[[tools.tiny]]"
+assert_not_contains "cat mise.lock" 'version = "latest"'
+cd .. || exit 1
+
 # A tool the upgrade leaves alone gets no minimum_release_age warning; naming it
 # still shows one. jq has release dates, which the dummy backend lacks.
 cat >"$MISE_SYSTEM_DIR/config.toml" <<'EOF'

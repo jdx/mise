@@ -46,6 +46,9 @@ pub struct ToolVersion {
     pub before_date: Option<Timestamp>,
     locked: bool,
     resolved_from_lockfile: bool,
+    /// A lazy request left unresolved because nothing is installed: `version` is
+    /// the request itself, not a release, so nothing may record or compare it as one.
+    deferred: bool,
     pub lock_platforms: BTreeMap<String, PlatformInfo>,
     pub install_path: Option<PathBuf>,
     /// The HTTP backend should treat `install_path` as the final destination
@@ -66,6 +69,16 @@ pub struct ToolVersion {
 }
 
 impl ToolVersion {
+    /// A lazy request with no version of the tool installed: it is waiting for
+    /// its first run, so a bare `mise upgrade` leaves it alone. A backend that
+    /// fails to resolve is not waiting for anything, so it reports `false`.
+    pub fn is_unrun_lazy(&self) -> bool {
+        self.request.options().lazy == Some(true)
+            && self
+                .backend()
+                .is_ok_and(|backend| backend.list_installed_versions().is_empty())
+    }
+
     /// The error raised when resolution found no usable version.
     ///
     /// `minimum_release_age` applies by default, so "no versions found" is
@@ -149,6 +162,7 @@ impl ToolVersion {
             before_date: None,
             locked: false,
             resolved_from_lockfile: false,
+            deferred: false,
             lock_platforms: Default::default(),
             install_path: None,
             install_path_is_exact: false,
@@ -207,7 +221,9 @@ impl ToolVersion {
             && backend.list_installed_versions().is_empty()
         {
             let version = request.version();
-            return Ok(Self::new(request, version).with_before_date(opts.before_date));
+            return Ok(Self::new(request, version)
+                .into_deferred()
+                .with_before_date(opts.before_date));
         }
         if matches!(
             request,
@@ -305,6 +321,16 @@ impl ToolVersion {
     /// resolved version byte for byte and never parses or orders them. A fuzzy
     /// request (`"2"`), an alias (`"lts"`), a ref, or a prefix leaves the two
     /// strings different, so only a literal pin matches.
+    fn into_deferred(mut self) -> Self {
+        self.deferred = true;
+        self
+    }
+
+    /// Whether this is a lazy request left unresolved, so `version` only echoes it.
+    pub fn is_deferred(&self) -> bool {
+        self.deferred
+    }
+
     pub(crate) fn request_pinned_this_version(&self) -> bool {
         let ToolRequest::Version { version, .. } = &self.request else {
             return false;
@@ -864,7 +890,7 @@ impl ToolVersion {
                 return Ok(Self::from_installed(request, v));
             }
             if defer_missing_lazy {
-                return build(v);
+                return build(v).map(Self::into_deferred);
             }
             if !is_offline
                 && let Some(v) = backend
@@ -939,7 +965,7 @@ impl ToolVersion {
             return Ok(Self::from_installed(request, v.clone()));
         }
         if defer_missing_lazy {
-            return build(v);
+            return build(v).map(Self::into_deferred);
         }
         if matches!(
             request.source(),
