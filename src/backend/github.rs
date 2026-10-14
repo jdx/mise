@@ -373,6 +373,28 @@ fn ensure_registry_provenance(
     }
 }
 
+/// Where to download a release asset from: its browser URL on the public
+/// forges, which isn't API-rate-limited (60 requests an hour without a token
+/// on GitHub), with the API endpoint only when the browser URL can't serve it
+/// (a private repository). A custom API (GitHub Enterprise, a self-hosted
+/// GitLab or Forgejo) is used directly.
+async fn asset_download_url(asset: &ReleaseAsset) -> String {
+    if asset.url_api.is_empty() {
+        asset.url.clone()
+    } else if asset.url_api.starts_with(DEFAULT_GITHUB_API_BASE_URL)
+        || asset.url_api.starts_with(DEFAULT_GITLAB_API_BASE_URL)
+        || asset.url_api.starts_with(DEFAULT_FORGEJO_API_BASE_URL)
+    {
+        github::pick_reachable_asset_url(&asset.url, &asset.url_api).await
+    } else {
+        debug!(
+            "Since the tool resides on a custom GitHub/GitLab API ({:?}), the asset download will be performed using the given API instead of browser URL download",
+            asset.url_api
+        );
+        asset.url_api.clone()
+    }
+}
+
 fn attestations_supported(api_url: &str) -> bool {
     api_url.trim_end_matches('/') == DEFAULT_GITHUB_API_BASE_URL
 }
@@ -1462,12 +1484,7 @@ impl UnifiedGitBackend {
             filename
         );
 
-        // Use the API URL with appropriate headers for downloading
-        let download_url = if self.is_gitlab() {
-            asset.url.clone()
-        } else {
-            asset.url_api.clone()
-        };
+        let download_url = asset_download_url(asset).await;
         let headers = if self.is_gitlab() {
             gitlab::get_headers(&download_url, &api_url)?
         } else if self.is_forgejo() {
@@ -1755,23 +1772,7 @@ impl UnifiedGitBackend {
             platform_info.checksum = Some(digest.clone());
         }
 
-        let url = if asset.url_api.is_empty() {
-            asset.url.clone()
-        } else {
-            match asset.url_api.starts_with(DEFAULT_GITHUB_API_BASE_URL)
-                || asset.url_api.starts_with(DEFAULT_GITLAB_API_BASE_URL)
-                || asset.url_api.starts_with(DEFAULT_FORGEJO_API_BASE_URL)
-            {
-                true => github::pick_reachable_asset_url(&asset.url, &asset.url_api).await,
-                false => {
-                    debug!(
-                        "Since the tool resides on a custom GitHub/GitLab API ({:?}), the asset download will be performed using the given API instead of browser URL download",
-                        asset.url_api
-                    );
-                    asset.url_api.clone()
-                }
-            }
-        };
+        let url = asset_download_url(asset).await;
 
         let headers = if self.is_gitlab() {
             gitlab::get_headers(&url, &opts.api_url())?
@@ -1906,16 +1907,7 @@ impl UnifiedGitBackend {
             artifact_info.checksum = Some(digest.clone());
         }
 
-        let url = if asset.url_api.is_empty() {
-            asset.url.clone()
-        } else if asset.url_api.starts_with(DEFAULT_GITHUB_API_BASE_URL)
-            || asset.url_api.starts_with(DEFAULT_GITLAB_API_BASE_URL)
-            || asset.url_api.starts_with(DEFAULT_FORGEJO_API_BASE_URL)
-        {
-            github::pick_reachable_asset_url(&asset.url, &asset.url_api).await
-        } else {
-            asset.url_api.clone()
-        };
+        let url = asset_download_url(asset).await;
         let headers = if self.is_gitlab() {
             gitlab::get_headers(&url, &opts.api_url())?
         } else if self.is_forgejo() {

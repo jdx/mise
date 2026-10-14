@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+
+# `mise lock` downloads the current platform's artifact to verify its
+# provenance. It must come from the release's github.com download URL, like an
+# install, not the API asset endpoint: unauthenticated users get 60 GitHub API
+# requests an hour.
+
+unset GITHUB_TOKEN GH_TOKEN MISE_GITHUB_TOKEN GITHUB_API_TOKEN
+export MISE_GITHUB_GH_CLI_TOKENS=false
+
+cat >mise.toml <<'EOF'
+[tools]
+"github:cli/cli" = "2.62.0"
+EOF
+touch mise.lock
+
+output="$(MISE_DEBUG=1 mise lock 2>&1)" || {
+  echo "$output"
+  fail "mise lock failed"
+}
+if [[ $output != *"lock-time provenance verification"* ]]; then
+  echo "$output"
+  fail "mise lock did not verify provenance"
+fi
+if [[ $output == *"GET https://api.github.com/"* ]] || [[ $output == *"Downloading https://api.github.com/"* ]]; then
+  echo "$output"
+  fail "mise lock asked api.github.com"
+fi
+assert_contains "cat mise.lock" "provenance"
