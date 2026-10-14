@@ -1320,7 +1320,7 @@ impl Lockfile {
         self.tools.get_key_value(short).map(|(key, _)| key)
     }
 
-    fn tools_for(&self, short: &str) -> Option<&Vec<LockfileTool>> {
+    pub(crate) fn tools_for(&self, short: &str) -> Option<&Vec<LockfileTool>> {
         self.tool_key(short).and_then(|key| self.tools.get(key))
     }
 
@@ -2172,7 +2172,7 @@ impl Lockfile {
         }
     }
 
-    fn entry_lockfile_version(&self, short: &str, entry: &LockfileTool) -> u32 {
+    pub(crate) fn entry_lockfile_version(&self, short: &str, entry: &LockfileTool) -> u32 {
         self.entry_lockfile_versions
             .get(&lockfile_entry_key(short, entry))
             .copied()

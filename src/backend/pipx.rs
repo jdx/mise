@@ -412,11 +412,7 @@ impl Backend for PIPXBackend {
             self.validate_uv_lock(&tv, lock.load()?)?;
             tv.uv_lock = Some(lock);
         } else if self.uv_lock_allowed(&tv) {
-            let revision = if tv.resolved_from_lockfile() {
-                crate::lockfile::version_for_request(&ctx.config, &tv.request)?
-            } else {
-                None
-            };
+            let revision = self.uv_lockfile_version(&ctx.config, &tv)?;
             let graph_required = revision.is_some_and(|v| v >= 2)
                 || (!tv.resolved_from_lockfile() && Settings::get().lockfile_creation_enabled());
             if graph_required {
@@ -475,11 +471,7 @@ impl Backend for PIPXBackend {
                 return Ok(false);
             }
         } else if self.uv_lock_allowed(tv) {
-            let revision = if tv.resolved_from_lockfile() {
-                crate::lockfile::version_for_request(config, &tv.request)?
-            } else {
-                None
-            };
+            let revision = self.uv_lockfile_version(config, tv)?;
             let graph_required = revision.is_some_and(|v| v >= 2)
                 || (!tv.resolved_from_lockfile() && Settings::get().lockfile_creation_enabled());
             let locked = config.invocation_locked_for(tv.request.source(), Settings::get().locked)
