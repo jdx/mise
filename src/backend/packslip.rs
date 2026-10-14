@@ -930,7 +930,9 @@ fn verify_bundle(
 ///
 /// One resolution reads the same list several times (for the recommendation,
 /// the versions, and each candidate), so the signature check of a given text
-/// under a given pin is done once per process. Expiry is checked every time.
+/// under a given pin and this machine's pins is done once per process. Only
+/// the latest text is kept for each project and signer. Expiry is checked
+/// every time.
 async fn verify_project_release_list(
     project: &str,
     bundle: &str,
@@ -938,20 +940,51 @@ async fn verify_project_release_list(
     require_log: bool,
 ) -> Result<(ReleaseListStatement, Option<ForgePin>)> {
     use sha2::{Digest, Sha256};
-    type Verified = (ReleaseListStatement, Option<ForgePin>);
+    struct Verified {
+        text: String,
+        pins: String,
+        list: ReleaseListStatement,
+        forge: Option<ForgePin>,
+    }
     static VERIFIED: std::sync::LazyLock<std::sync::Mutex<BTreeMap<String, Verified>>> =
         std::sync::LazyLock::new(Default::default);
-    let key = format!(
-        "{project}\0{}\0{pin:?}\0{require_log}",
-        hex::encode(Sha256::digest(bundle.as_bytes()))
-    );
-    if let Some((list, forge)) = VERIFIED.lock().unwrap().get(&key).cloned() {
-        check_list_current(&list)?;
-        return Ok((list, forge));
+    let key = format!("{project}\0{pin:?}\0{require_log}");
+    let text = hex::encode(Sha256::digest(bundle.as_bytes()));
+    let pins = pins_digest()?;
+    if let Some(verified) = VERIFIED.lock().unwrap().get(&key)
+        && verified.text == text
+        && verified.pins == pins
+    {
+        check_list_current(&verified.list)?;
+        return Ok((verified.list.clone(), verified.forge.clone()));
     }
-    let verified = verify_project_release_list_uncached(project, bundle, pin, require_log).await?;
-    VERIFIED.lock().unwrap().insert(key, verified.clone());
-    Ok(verified)
+    let (list, forge) =
+        verify_project_release_list_uncached(project, bundle, pin, require_log).await?;
+    let verified = Verified {
+        text,
+        pins,
+        list: list.clone(),
+        forge: forge.clone(),
+    };
+    VERIFIED.lock().unwrap().insert(key, verified);
+    Ok((list, forge))
+}
+
+/// A digest of this machine's signer pins, every project's: a pin left under a
+/// repository's former name holds its releases too, so a cached verification
+/// is reused only while no pin anywhere has changed.
+fn pins_digest() -> Result<String> {
+    pins_digest_at(&packslip_pins::pins_file())
+}
+
+fn pins_digest_at(path: &Path) -> Result<String> {
+    use sha2::{Digest, Sha256};
+    let text = match std::fs::read(path) {
+        Ok(text) => text,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => Vec::new(),
+        Err(err) => return Err(err).wrap_err_with(|| format!("reading {}", path.display())),
+    };
+    Ok(hex::encode(Sha256::digest(&text)))
 }
 
 async fn verify_project_release_list_uncached(
@@ -1157,9 +1190,10 @@ struct ResolutionVerificationKey<'a> {
     stamp: Option<(&'a str, &'a str, Option<&'a str>)>,
     /// What the vendor's signed list, read fresh, says about the version.
     vendor: &'a Vendor,
-    /// The signer this machine accepted for the project before, which the
-    /// bundle's signer is checked against.
-    local_pin: Option<packslip_pins::Pin>,
+    /// The signers this machine accepted before, which the bundle's signer is
+    /// checked against: the project's pin, or one a rename left under
+    /// another name.
+    pins: String,
 }
 
 /// The [`ResolutionVerificationKey`] of a release, as the text compared.
@@ -1169,6 +1203,7 @@ fn resolution_verification_key(
     opts: &PackslipOptions<'_>,
     stamp: Option<&crate::packslip_stamps::Stamp>,
     vendor: &Vendor,
+    pins: String,
 ) -> Result<String> {
     let mut signer = BTreeMap::new();
     for key in [
@@ -1200,7 +1235,7 @@ fn resolution_verification_key(
             )
         }),
         vendor,
-        local_pin: packslip_pins::list()?.remove(project),
+        pins,
     };
     Ok(serde_json::to_string(&key)?)
 }
@@ -1738,7 +1773,14 @@ impl PackslipBackend {
         stamp: Option<&crate::packslip_stamps::Stamp>,
     ) -> Result<ResolutionVerification> {
         let vendor = self.vendor_entry(project, tv, pin, opts).await?;
-        let key = resolution_verification_key(project, &tv.version, opts, stamp, &vendor)?;
+        let key = resolution_verification_key(
+            project,
+            &tv.version,
+            opts,
+            stamp,
+            &vendor,
+            pins_digest()?,
+        )?;
         let cache = CacheManagerBuilder::new(
             self.ba
                 .cache_path()
@@ -3015,8 +3057,15 @@ mod tests {
             })
         };
         let key = |raw: &ToolVersionOptions, vendor: &Vendor| {
-            resolution_verification_key(project, "1.0.0", &PackslipOptions::new(raw), None, vendor)
-                .unwrap()
+            resolution_verification_key(
+                project,
+                "1.0.0",
+                &PackslipOptions::new(raw),
+                None,
+                vendor,
+                "pins".into(),
+            )
+            .unwrap()
         };
         let base = key(&opts(&[]), &Vendor::NoList);
         assert_eq!(base, key(&opts(&[]), &Vendor::NoList));
@@ -3056,11 +3105,37 @@ mod tests {
                 &PackslipOptions::new(&opts(&[])),
                 Some(&stamp(digest)),
                 &Vendor::NoList,
+                "pins".into(),
             )
             .unwrap()
         };
         assert_ne!(base, stamped("aaaa"));
         assert_ne!(stamped("aaaa"), stamped("bbbb"));
+
+        // Any pin this machine accepted can hold the release, including one a
+        // rename left under another name, so any change to them is a new key.
+        let pinned = |pins: &str| {
+            resolution_verification_key(
+                project,
+                "1.0.0",
+                &PackslipOptions::new(&opts(&[])),
+                None,
+                &Vendor::NoList,
+                pins.into(),
+            )
+            .unwrap()
+        };
+        assert_eq!(base, pinned("pins"));
+        assert_ne!(base, pinned("other pins"));
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("pins.toml");
+        let none = pins_digest_at(&path).unwrap();
+        std::fs::write(
+            &path,
+            "[pins.\"github.com/example/old-name\"]\nscheme = \"sigstore-oidc\"\n",
+        )
+        .unwrap();
+        assert_ne!(none, pins_digest_at(&path).unwrap());
     }
 
     #[tokio::test]
