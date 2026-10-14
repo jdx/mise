@@ -94,6 +94,17 @@ pub(crate) type VersionCacheManager = CacheManager<Vec<VersionInfo>>;
 
 pub(crate) const MISE_BINS_DIR: &str = ".mise-bins";
 
+/// How old a cached remote version list may be for an install-time refresh
+/// (which `latest` gets when nothing installed satisfies it) to reuse it
+/// instead of fetching again.
+///
+/// The refresh exists so a list cached up to `fetch_remote_versions_cache`
+/// (1h) ago does not hide a newer release. A list written in the last few
+/// minutes cannot hide much: mise-versions itself republishes about every 30
+/// minutes, and the stable-latest shortcuts (`/releases/latest`, dist tags) are
+/// already reused for the whole cache duration.
+const REFRESH_REUSES_LISTS_NEWER_THAN: std::time::Duration = std::time::Duration::from_secs(5 * 60);
+
 /// Why a backend's remote version listing failed.
 ///
 /// Backends that degrade a failed fetch into an empty list (so a flaky network
@@ -2994,7 +3005,12 @@ pub trait Backend: Debug + Send + Sync {
             trace!("Skipping remote version listing for {id} after an earlier failure");
             vec![]
         } else if refresh {
-            remote_versions.refresh_async(fetch).await?
+            // A list written moments ago (by this command's own first
+            // resolution, or by `mise outdated` just before `mise install`) is
+            // as fresh as refetching it would be.
+            remote_versions
+                .refresh_async_unless_newer_than(REFRESH_REUSES_LISTS_NEWER_THAN, fetch)
+                .await?
         } else {
             remote_versions.get_or_try_init_async(fetch).await?.clone()
         };
@@ -3036,6 +3052,16 @@ pub trait Backend: Debug + Send + Sync {
                 .is_some()
         {
             return None;
+        }
+        // Resolving the version has usually just cached this same list, or an
+        // earlier command did; the tag of a release does not go stale.
+        let cached = self.get_remote_version_cache().lock().await.get_cached();
+        if let Some(release_url) = cached
+            .ok()
+            .and_then(|versions| versions.into_iter().find(|v| v.version == version))
+            .and_then(|v| v.release_url)
+        {
+            return Some(release_url);
         }
         // The versions host alone, never `list_remote_versions_with_info`: on a
         // miss that falls through to the backend's own listing, the paginated
@@ -6464,6 +6490,98 @@ mod latest_version_tests {
 
         assert!(!outdated);
         assert_eq!(backend.list_calls(), 0);
+    }
+
+    /// An install-time refresh of `latest` reuses a list written moments ago
+    /// (by this command's own first resolution, or by `mise outdated` just
+    /// before) instead of fetching it again.
+    #[tokio::test]
+    async fn test_refresh_reuses_a_list_written_moments_ago() {
+        let _settings = crate::test::SettingsGuard::lock();
+        let config = Config::get().await.unwrap();
+        let backend = LatestBackend::new("test-refresh-reuses-recent-list");
+        backend
+            .get_remote_version_cache()
+            .lock()
+            .await
+            .clear()
+            .unwrap();
+
+        backend.list_remote_versions(&config).await.unwrap();
+        backend
+            .list_remote_versions_with_refresh(&config, true)
+            .await
+            .unwrap();
+        assert_eq!(backend.list_calls(), 1);
+    }
+
+    /// The refresh still fetches a list that is older than that, even while it
+    /// is within `fetch_remote_versions_cache`.
+    #[tokio::test]
+    async fn test_refresh_refetches_an_older_list() {
+        let _settings = crate::test::SettingsGuard::lock();
+        let config = Config::get().await.unwrap();
+        let backend = LatestBackend::new("test-refresh-refetches-older-list");
+        let cache = backend.get_remote_version_cache();
+        {
+            let mut cache = cache.lock().await;
+            cache.clear().unwrap();
+            cache
+                .write(&vec![VersionInfo {
+                    version: "1.0.0".to_string(),
+                    ..Default::default()
+                }])
+                .unwrap();
+        }
+        let ten_minutes_ago = filetime::FileTime::from_system_time(
+            std::time::SystemTime::now() - std::time::Duration::from_secs(600),
+        );
+        for entry in fs::read_dir(backend.ba().cache_path()).unwrap() {
+            let path = entry.unwrap().path();
+            if path.to_string_lossy().contains("remote_versions-") {
+                filetime::set_file_mtime(&path, ten_minutes_ago).unwrap();
+            }
+        }
+        // A separate backend, as in a later command, so nothing is in memory.
+        let backend = LatestBackend::new("test-refresh-refetches-older-list");
+
+        assert_eq!(
+            backend
+                .list_remote_versions_with_refresh(&config, true)
+                .await
+                .unwrap(),
+            vec!["1.0.0".to_string(), "2.0.0".to_string()]
+        );
+        assert_eq!(backend.list_calls(), 1);
+    }
+
+    /// Installing a registry tool looks up its release tag in the versions
+    /// host's list. Resolution has usually just cached that list, so the tag
+    /// is read from there instead of downloading the list again. The version
+    /// is one the versions host does not list, so only the cache can answer.
+    #[tokio::test]
+    async fn test_listed_release_url_reads_the_cached_list() {
+        let _settings = crate::test::SettingsGuard::lock();
+        let config = Config::get().await.unwrap();
+        let backend = aqua::AquaBackend::from_arg(BackendArg::new(
+            "act".to_string(),
+            Some("aqua:nektos/act".to_string()),
+        ));
+        let url = "https://github.com/nektos/act/releases/tag/v0.0.0-cached";
+        let cache = backend.get_remote_version_cache();
+        cache
+            .lock()
+            .await
+            .write(&vec![VersionInfo {
+                version: "0.0.0-cached".to_string(),
+                release_url: Some(url.to_string()),
+                ..Default::default()
+            }])
+            .unwrap();
+
+        let listed = backend.listed_release_url(&config, "0.0.0-cached").await;
+        cache.lock().await.clear().unwrap();
+        assert_eq!(listed.as_deref(), Some(url));
     }
 
     #[tokio::test]
