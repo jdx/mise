@@ -469,7 +469,14 @@ static MIRRORED_ATTESTATIONS: std::sync::LazyLock<
 /// the artifact; reinstalling a build asks again. Within a command every
 /// answer is shared; only a non-empty set is written to disk, since an empty
 /// one may predate the attestation. Paranoid mode always asks.
+///
+/// Routing is checked before either cache is read: once `url_replacements`
+/// sends this repository's endpoints elsewhere, that replacement is the only
+/// source, and a set kept from mise-versions earlier must not answer for it.
 async fn mirrored_attestations(repo: &str, digest: &str) -> eyre::Result<MirroredAttestations> {
+    if !crate::versions_host::enabled_for_github_repo(repo) {
+        return Ok(None);
+    }
     if mise_settings::Settings::get().paranoid {
         return crate::versions_host::github_attestations(repo, digest).await;
     }
@@ -948,6 +955,29 @@ mod tests {
             Some(crate::github::API_URL),
             true
         ));
+    }
+
+    #[tokio::test]
+    async fn test_mirrored_attestations_defer_to_a_repository_url_replacement() {
+        // A set this command already got from mise-versions, then a rule that
+        // reroutes only this repository: the kept set must not answer for it.
+        let repo = "acme/attested-tool";
+        let digest = "sha256:0";
+        let key = format!(
+            "attestations-{}",
+            crate::hash::hash_to_str(&(repo.to_ascii_lowercase(), digest))
+        );
+        let attestation: mise_sigstore::Attestation =
+            serde_json::from_value(serde_json::json!({"bundle": {}, "bundle_url": null})).unwrap();
+        let cell = MirroredAttestationsCell::default();
+        cell.set(Some(vec![attestation])).unwrap();
+        MIRRORED_ATTESTATIONS.lock().unwrap().insert(key, cell);
+
+        let _settings = SettingsGuard::new(Some(indexmap::indexmap! {
+            "https://api.github.com/repos/acme/attested-tool/".to_string()
+                => "https://github-proxy.example.com/repos/acme/attested-tool/".to_string(),
+        }));
+        assert!(mirrored_attestations(repo, digest).await.unwrap().is_none());
     }
 
     #[test]
