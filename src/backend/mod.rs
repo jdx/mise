@@ -2758,9 +2758,10 @@ pub trait Backend: Debug + Send + Sync {
     }
 
     /// Like `list_remote_versions` but with explicit refresh control. Pass
-    /// `refresh = true` to bypass the cached remote-versions list and re-fetch
-    /// upstream. Used by install-time resolution for selectors whose answer
-    /// depends on the freshest upstream entry (e.g. `latest`).
+    /// `refresh = true` to re-fetch the remote-versions list upstream unless
+    /// the cached one was written within `REFRESH_REUSES_LISTS_NEWER_THAN`.
+    /// Used by install-time resolution for selectors whose answer depends on
+    /// the freshest upstream entry (e.g. `latest`).
     async fn list_remote_versions_with_refresh(
         &self,
         config: &Arc<Config>,
@@ -3733,8 +3734,9 @@ pub trait Backend: Debug + Send + Sync {
     }
 
     /// Like `latest_version` but with explicit refresh control. Pass
-    /// `refresh = true` to bypass the cached remote-versions list when falling
-    /// back to the full version-list path. The `latest_stable_version` fast
+    /// `refresh = true` to re-fetch the remote-versions list (unless it was
+    /// written within `REFRESH_REUSES_LISTS_NEWER_THAN`) when falling back to
+    /// the full version-list path. The `latest_stable_version` fast
     /// path is still tried first — it queries canonical upstream endpoints
     /// (e.g. GitHub's `/releases/latest`, npm dist tags) which are
     /// authoritative and not subject to the local version-list cache, so
