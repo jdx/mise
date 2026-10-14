@@ -218,14 +218,14 @@ impl ToolVersion {
             return Ok(tv.with_before_date(opts.before_date));
         }
         // The refresh keeps a cached list from hiding a release newer than the
-        // cache. A cutoff at least as old as the cache can be (24h by default,
-        // against an hour) already hides every such release, so the cached list
-        // gives the same answer a refetch would. Only when the list dates its
-        // versions, though: an undated version passes any cutoff, so a backend
-        // that cannot date them keeps the refresh.
+        // cache. A cutoff older than the list (24h by default, against a list at
+        // most an hour old) already hides every such release, so the cached list
+        // gives the same answer a refetch would. See
+        // `Backend::cached_remote_versions_cover` for when that holds.
         if opts.refresh_remote_versions
-            && opts.before_date.is_some_and(cutoff_predates_cache)
-            && backend.cached_remote_versions_are_dated(config).await
+            && remote_versions_cache_enabled()
+            && let Some(before) = opts.before_date
+            && backend.cached_remote_versions_cover(config, before).await
         {
             trace!(
                 "not refreshing remote versions for {request}: the release-age cutoff predates the cache"
@@ -1422,22 +1422,12 @@ impl ResolveOptions {
     }
 }
 
-/// Whether every release `before` admits is old enough that any cached
-/// remote-version list, at most `fetch_remote_versions_cache` old, includes it.
-fn cutoff_predates_cache(before: Timestamp) -> bool {
-    // `fetch_remote_versions_cache = "0"` asks for a fetch every time.
-    let Some(max_age) = Settings::get()
+/// `fetch_remote_versions_cache = "0"` asks for a fetch every time, so a
+/// cached list never stands in for the install-time refresh.
+fn remote_versions_cache_enabled() -> bool {
+    Settings::get()
         .fetch_remote_versions_cache()
-        .filter(|max_age| !max_age.is_zero())
-    else {
-        return false;
-    };
-    let Ok(max_age) = jiff::SignedDuration::try_from(max_age) else {
-        return false;
-    };
-    crate::duration::process_now()
-        .checked_sub(max_age)
-        .is_ok_and(|oldest_cache| before <= oldest_cache)
+        .is_some_and(|max_age| !max_age.is_zero())
 }
 
 /// Check if a tool has any user-linked versions (created by `mise link`).
@@ -1578,37 +1568,17 @@ mod tests {
     use crate::toolset::{CoreToolOptions, ToolOptionSource, ToolVersionOptions};
     use std::time::{SystemTime, UNIX_EPOCH};
 
-    /// The default 24h cutoff predates any list cached within the default
-    /// hour, so install-time resolution skips its refresh; a cutoff of minutes
-    /// (or none at all) does not.
     #[test]
-    fn cutoff_predates_cache_compares_with_the_cache_duration() {
-        let _settings = crate::test::SettingsGuard::lock();
-        let now = crate::duration::process_now();
-        let ago = |secs: i64| {
-            now.checked_sub(jiff::SignedDuration::from_secs(secs))
-                .unwrap()
-        };
-
-        assert!(cutoff_predates_cache(ago(24 * 60 * 60)));
-        assert!(cutoff_predates_cache(ago(60 * 60)));
-        assert!(!cutoff_predates_cache(ago(10 * 60)));
-        assert!(!cutoff_predates_cache(now));
-    }
-
-    #[test]
-    fn cutoff_never_predates_a_cache_that_is_never_fresh() {
+    fn a_zero_cache_duration_keeps_the_install_refresh() {
         let _settings = crate::test::SettingsGuard::lock();
         use confique::Layer;
+        assert!(remote_versions_cache_enabled());
         let mut partial = crate::config::settings::SettingsPartial::empty();
         partial.fetch_remote_versions_cache = Some("0".to_string());
         Settings::reset(Some(partial));
-        let day_ago = crate::duration::process_now()
-            .checked_sub(jiff::SignedDuration::from_secs(24 * 60 * 60))
-            .unwrap();
-        let predates = cutoff_predates_cache(day_ago);
+        let enabled = remote_versions_cache_enabled();
         Settings::reset(None);
-        assert!(!predates);
+        assert!(!enabled);
     }
 
     fn unique_name(prefix: &str) -> String {

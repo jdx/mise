@@ -312,6 +312,11 @@ where
         self.refresh_async(fetch).await
     }
 
+    /// When the cache file was last written, if it exists.
+    pub fn modified(&self) -> Option<std::time::SystemTime> {
+        self.cache_file_path.metadata().ok()?.modified().ok()
+    }
+
     /// Read the cache file without checking freshness and without fetching or writing.
     pub fn get_cached(&self) -> Result<T>
     where
