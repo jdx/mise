@@ -1,0 +1,76 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+# Each entry of a multi-entry tool resolves with its own options. An option the
+# first entry sets must not reach a later entry that leaves it out: here only
+# the first entry asks for prereleases, so the second one's `1` stays stable.
+#
+# Served from a local stand-in for the GitHub API so the test needs no network.
+
+start_http_server --handler - <<'PY'
+import http.server
+import json
+
+
+def release(tag, prerelease):
+    return {
+        "tag_name": tag,
+        "draft": False,
+        "prerelease": prerelease,
+        "created_at": "2026-01-01T00:00:00Z",
+        "published_at": "2026-01-01T00:00:00Z",
+        "assets": [
+            {
+                "name": "tool-x86_64-unknown-linux-gnu.tar.gz",
+                "browser_download_url": "https://example.invalid/tool.tar.gz",
+                "url": "https://example.invalid/api/tool.tar.gz",
+            }
+        ],
+    }
+
+
+STABLE = release("v1.0.0", False)
+PRERELEASE = release("v1.1.0-pre", True)
+
+
+class Handler(http.server.BaseHTTPRequestHandler):
+    def reply(self, payload):
+        body = json.dumps(payload).encode()
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def do_GET(self):
+        path = self.path.split("?")[0]
+        if path.endswith("/releases/latest"):
+            self.reply(STABLE)
+        elif path.endswith("/releases"):
+            self.reply([PRERELEASE, STABLE])
+        else:
+            self.send_response(404)
+            self.end_headers()
+PY
+
+export MISE_USE_VERSIONS_HOST=0
+API="http://127.0.0.1:$HTTP_PORT"
+
+# Alone, `1` resolves to the stable release.
+cat >mise.toml <<EOF
+[tools]
+"github:acme/tool" = { version = "1", api_url = "$API" }
+EOF
+assert_contains "mise ls --current" "1.0.0"
+
+# After an entry that opts into prereleases, it still does.
+cat >mise.toml <<EOF
+[tools]
+"github:acme/tool" = [
+  { version = "latest", api_url = "$API", prerelease = true },
+  { version = "1", api_url = "$API" },
+]
+EOF
+assert_contains "mise ls --current" "1.1.0-pre"
+assert_contains "mise ls --current" "1.0.0"
