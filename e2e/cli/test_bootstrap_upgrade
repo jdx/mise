@@ -53,9 +53,12 @@ cat >mise.toml <<'TOML'
 tiny = "1"
 TOML
 printf 'git\t2.49.0-1.1\n' >"$HOME/rpm-state"
+assert_succeed "mise install tiny@1.0.0"
 
 # without --upgrade, bootstrap only installs what is missing
 assert_succeed "mise bootstrap --yes"
+assert_contains "mise ls --installed tiny" "1.0.0"
+assert_not_contains "mise ls --installed tiny" "1.1.0"
 assert "cat '$HOME/zypper-log'" '--non-interactive install -- ripgrep'
 
 # --upgrade installs missing packages, then upgrades installed ones
@@ -68,7 +71,12 @@ assert "cat '$HOME/zypper-log'" $'--non-interactive install -- ripgrep\n--non-in
 assert_succeed "mise bootstrap --yes --upgrade --dry-run"
 assert_succeed "test ! -s '$HOME/zypper-log'"
 
-# --skip packages leaves packages alone, but tools are still installed
+# --dry-run and --skip tools leave the older tool alone
+assert_succeed "mise bootstrap --yes --upgrade --skip tools"
+assert_not_contains "mise ls --installed tiny" "1.1.0"
+
+# --skip packages leaves packages alone, but the tool is upgraded within its range
+: >"$HOME/zypper-log"
 assert_succeed "mise bootstrap --yes --upgrade --skip packages"
 assert_succeed "test ! -s '$HOME/zypper-log'"
-assert_contains "mise ls tiny" "1."
+assert_contains "mise ls --installed tiny" "1.1.0"
