@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 
-# A lazy tool with nothing installed is waiting for its first run, not outdated.
-# A bare `mise upgrade` leaves it alone, as a bare `mise install` does, and
-# naming the tool installs it, as `mise install dummy` does. The dummy backend
-# offers 1.0.0, 1.1.0, and 2.0.0.
+# A lazy tool with no version installed is waiting for its first run, not
+# outdated. A bare `mise upgrade` leaves it alone, as a bare `mise install` does,
+# and naming the tool installs it, as `mise install dummy` does. The dummy
+# backend offers 1.0.0, 1.1.0, and 2.0.0.
 
 mise uninstall dummy --all
 
@@ -50,11 +50,40 @@ mise upgrade --prune
 assert_contains "mise ls --installed dummy" "1.1.0"
 assert_not_contains "mise ls --installed dummy" "1.0.0"
 
-# A missing tool without lazy still installs.
+# Any installed version counts, even one outside the request: the tool has been
+# run, so the upgrade installs what the request now selects.
+cat >"$MISE_SYSTEM_DIR/config.toml" <<'EOF'
+[tools]
+dummy = { version = "2", lazy = true, lazy_bins = ["dummy"] }
+EOF
+mise upgrade
+assert_contains "mise ls --installed dummy" "2.0.0"
+
+# A tool the upgrade installs still gets the missing lazy tool it depends on.
 mise uninstall dummy --all
+cat >"$MISE_SYSTEM_DIR/config.toml" <<'EOF'
+[tools]
+dummy = { version = "2.0.0", lazy = true, lazy_bins = ["dummy"] }
+needs-dummy = { version = "1.0.0", depends = ["dummy"] }
+EOF
+mise upgrade
+assert_contains "mise ls --installed dummy" "2.0.0"
+assert_contains "mise ls --installed needs-dummy" "1.0.0"
+
+# A missing tool without lazy still installs.
+mise uninstall dummy needs-dummy --all
 cat >"$MISE_SYSTEM_DIR/config.toml" <<'EOF'
 [tools]
 dummy = "latest"
 EOF
 mise upgrade
 assert_contains "mise ls --installed dummy" "2.0.0"
+
+# A tool the upgrade leaves alone gets no minimum_release_age warning; naming it
+# still shows one. jq has release dates, which the dummy backend lacks.
+cat >"$MISE_SYSTEM_DIR/config.toml" <<'EOF'
+[tools]
+jq = { version = "latest", lazy = true }
+EOF
+assert_not_contains "mise upgrade --minimum-release-age 2019-01-01 --dry-run 2>&1" "ignored by minimum_release_age"
+assert_contains "mise upgrade jq --minimum-release-age 2019-01-01 --dry-run 2>&1" "ignored by minimum_release_age"
