@@ -3870,11 +3870,11 @@ pub trait Backend: Debug + Send + Sync {
     /// shortcut, which carries the release URL. The remote listing has not
     /// been read on that path, so fetching it first costs a request (for
     /// `github:` a page of releases) to learn what the shortcut already says,
-    /// and it can trail the shortcut and miss the freshest release. A listing
-    /// some earlier command cached is still read first, since that costs no
-    /// request where asking the shortcut again might (`go:` does not cache
-    /// it). Every other query was resolved from the listing, which is then
-    /// cached, so that is asked first.
+    /// and it can trail the shortcut and miss the freshest release. A URL in a
+    /// listing some earlier command cached is still read first, since that
+    /// costs no request where asking the shortcut again might (`go:` does not
+    /// cache it). Every other query was resolved from the listing, which is
+    /// then cached, so that is asked first.
     async fn resolved_release_url(
         &self,
         config: &Arc<Config>,
@@ -3897,8 +3897,12 @@ pub trait Backend: Debug + Send + Sync {
                 .map(|info| info.release_url)
         };
         if self.should_use_latest_stable_fast_path(query, selection_opts) {
-            if let Some(release_url) = self.cached_version_info(config, version).await {
-                return release_url.release_url;
+            if let Some(release_url) = self
+                .cached_version_info(config, version)
+                .await
+                .and_then(|info| info.release_url)
+            {
+                return Some(release_url);
             }
             match shortcut().await {
                 Some(release_url) => release_url,
@@ -6651,6 +6655,38 @@ mod latest_version_tests {
             release_url("3.0.0")
         );
         assert_eq!(backend.stable_info_calls(), 0);
+        assert_eq!(backend.list_calls(), 0);
+    }
+
+    /// A cached entry without a URL does not hide the one the shortcut has.
+    #[tokio::test]
+    async fn test_release_url_for_latest_skips_a_cached_entry_without_one() {
+        let _settings = crate::test::SettingsGuard::lock();
+        let config = Config::get().await.unwrap();
+        let backend = LatestBackend::new("test-release-url-cached-without-url").with_stable_info(
+            VersionInfo {
+                version: "3.0.0".to_string(),
+                release_url: release_url("3.0.0"),
+                ..Default::default()
+            },
+        );
+        backend
+            .get_remote_version_cache()
+            .lock()
+            .await
+            .write(&vec![VersionInfo {
+                version: "3.0.0".to_string(),
+                ..Default::default()
+            }])
+            .unwrap();
+
+        assert_eq!(
+            backend
+                .resolved_release_url(&config, "3.0.0", "latest", &Default::default())
+                .await,
+            release_url("3.0.0")
+        );
+        assert_eq!(backend.stable_info_calls(), 1);
         assert_eq!(backend.list_calls(), 0);
     }
 
