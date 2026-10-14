@@ -376,6 +376,15 @@ where
     Ok(None)
 }
 
+/// Drop the matches after `eligible` from an oldest-first list, or every
+/// match when none is eligible.
+fn keep_through(versions: &mut Vec<String>, eligible: Option<&str>) {
+    let keep = eligible
+        .and_then(|eligible| versions.iter().position(|v| v == eligible))
+        .map_or(0, |index| index + 1);
+    versions.truncate(keep);
+}
+
 fn github_recommendation(
     project: &str,
     release: &github::GithubRelease,
@@ -1821,6 +1830,31 @@ impl PackslipBackend {
             .await
     }
 
+    /// The first of `candidates` that verifies and that policy admits on this
+    /// host, warning about each one skipped. A verification failure is an
+    /// error, not a reason to try the next.
+    async fn first_eligible_candidate(
+        &self,
+        project: &str,
+        opts: &PackslipOptions<'_>,
+        pin: &Pin,
+        before: Option<jiff::Timestamp>,
+        stamps: Option<&crate::packslip_stamps::Stamps>,
+        candidates: Vec<String>,
+    ) -> Result<Option<String>> {
+        first_eligible(candidates, |version| async move {
+            if let Some(reason) = self
+                .candidate_exclusion(project, &version, opts, pin, before, stamps)
+                .await?
+            {
+                warn!("packslip:{project}: skipping {version}: {reason}");
+                return Ok(false);
+            }
+            Ok(true)
+        })
+        .await
+    }
+
     async fn policy_versions(
         &self,
         raw_opts: &ToolVersionOptions,
@@ -2462,23 +2496,62 @@ impl Backend for PackslipBackend {
                 "packslip:{project}: skipping recommended {preferred}: absent, withdrawn, or excluded prerelease"
             );
         }
-        first_eligible(candidates, |version| {
-            let project = &project;
-            let opts = &opts;
-            let pin = &pin;
-            let stamps = stamps.as_ref();
-            async move {
-                if let Some(reason) = self
-                    .candidate_exclusion(project, &version, opts, pin, before, stamps)
-                    .await?
-                {
-                    warn!("packslip:{project}: skipping {version}: {reason}");
-                    return Ok(false);
-                }
-                Ok(true)
-            }
-        })
-        .await
+        self.first_eligible_candidate(&project, &opts, &pin, before, stamps.as_ref(), candidates)
+            .await
+    }
+
+    /// The matches for a request such as `1` or `1.2`, oldest first. Every
+    /// caller takes the last one, so it has to be one installing accepts:
+    /// the newest matches are walked the way `latest` walks its candidates,
+    /// and the ones whose manifest policy refuses here (the release-age
+    /// cutoff by its logged time, a missing stamp, no artifact or an unmet
+    /// requirement on this host) are dropped, rather than handed to install
+    /// to refuse. An exact version is left alone: it names its release, and
+    /// install says why that release is refused.
+    async fn list_versions_matching_with_selection_options(
+        &self,
+        config: &Arc<Config>,
+        query: &str,
+        selection_opts: &ToolVersionOptions,
+        before_date: Option<jiff::Timestamp>,
+        refresh: bool,
+    ) -> Result<Vec<String>> {
+        let versions = self
+            .list_remote_versions_with_info_with_selection_options(config, selection_opts, refresh)
+            .await?;
+        // The listing's dates drop what is plainly too new without verifying
+        // it; the walk below checks the logged time of what is left.
+        let versions = match before_date {
+            Some(before) => VersionInfo::filter_by_date(versions, before),
+            None => versions,
+        };
+        let versions = versions.into_iter().map(|v| v.version).collect();
+        let filter = !self.include_prereleases(selection_opts);
+        let versions = self.fuzzy_match_filter(versions, query, filter);
+        let mut versions = self.version_order(selection_opts)?.order(versions);
+        // Offline, policy cannot be read, as for `latest`.
+        if versions.iter().any(|v| v == query) || Settings::get().offline() {
+            return Ok(versions);
+        }
+        let before =
+            crate::backend::effective_latest_before_date(self, selection_opts, before_date)?;
+        let project = self.project()?;
+        let opts = PackslipOptions::new(selection_opts);
+        let pin = pin(&project, &opts)?;
+        let stamps = crate::packslip_stamps::fetch(&project, selection_opts).await?;
+        let newest_first = versions.iter().rev().cloned().collect();
+        let eligible = self
+            .first_eligible_candidate(&project, &opts, &pin, before, stamps.as_ref(), newest_first)
+            .await?;
+        if eligible.is_none() && !versions.is_empty() {
+            // An empty answer would send resolution on to install `query` as
+            // written, which fails for want of a release by that name.
+            bail!(
+                "no release of packslip:{project} matching {query} can be installed; the warnings above say why each was skipped"
+            );
+        }
+        keep_through(&mut versions, eligible.as_deref());
+        Ok(versions)
     }
 
     async fn install_operation_count(&self, _tv: &ToolVersion, _ctx: &InstallContext) -> usize {
@@ -3145,6 +3218,41 @@ mod tests {
         )
         .unwrap();
         assert_ne!(none, pins_digest_at(&path).unwrap());
+    }
+
+    /// `latest` and a prefix such as `1` skip the same refused releases: a
+    /// prefix's matches end at the newest one `latest` would also accept.
+    #[tokio::test]
+    async fn a_prefix_skips_what_latest_skips() {
+        let listed = ["1.0.0", "1.1.0", "1.2.0", "2.0.0"];
+        let refused = ["2.0.0", "1.2.0"];
+        let check = |v: String| async move { Ok(!refused.contains(&v.as_str())) };
+        let versions = listed
+            .iter()
+            .map(|v| version_info(Some(v.to_string()), None, None).unwrap())
+            .collect();
+        let latest = first_eligible(
+            latest_candidates(versions, None, false, VersionOrder::Semver),
+            check,
+        )
+        .await
+        .unwrap();
+        assert_eq!(latest.as_deref(), Some("1.1.0"));
+
+        let mut matches: Vec<String> = listed[..3].iter().map(|v| v.to_string()).collect();
+        let eligible = first_eligible(matches.iter().rev().cloned().collect(), check)
+            .await
+            .unwrap();
+        keep_through(&mut matches, eligible.as_deref());
+        assert_eq!(matches, ["1.0.0", "1.1.0"]);
+        assert_eq!(matches.last(), latest.as_ref());
+
+        let mut matches: Vec<String> = vec!["2.0.0".into()];
+        let eligible = first_eligible(matches.iter().rev().cloned().collect(), check)
+            .await
+            .unwrap();
+        keep_through(&mut matches, eligible.as_deref());
+        assert!(matches.is_empty());
     }
 
     #[tokio::test]
