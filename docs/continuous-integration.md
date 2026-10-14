@@ -19,8 +19,9 @@ an entry for each runner platform:
 mise lock --platform linux-x64,linux-arm64,macos-arm64
 ```
 
-`--locked` fails when a tool has no lockfile entry, or no recorded download for
-the platform, instead of looking it up; see
+`--locked` fails when a tool has no lockfile entry, instead of looking it up.
+For backends that record download URLs, the entry also needs a URL for the
+current platform; see
 [strict lockfile mode](/dev-tools/mise-lock.html#strict-lockfile-mode) and
 [what still uses the network](/dev-tools/mise-lock.html#ci-cd). Pin the mise
 version separately if the pipeline also needs to control updates to mise

@@ -387,7 +387,8 @@ mise install --locked
 ```
 
 `jdx/mise-action` adds `--locked` itself when the repository has a `mise.lock`.
-In a Dockerfile, copy `mise.lock` with `mise.toml` before `mise install`; see
+In a Dockerfile, copy `mise.lock` with `mise.toml` before `mise install`, and
+`.mise/locks/` too if the lockfile records dependency graphs; see
 [Docker](/mise-cookbook/docker.html#installing-project-tools).
 
 A lockfile does not make the run offline. These still use the network:
