@@ -2792,6 +2792,11 @@ fn tools_by_source_for_update(
         HashMap::new();
     for (ba, tvl) in &ts.versions {
         for tv in &tvl.versions {
+            // A lazy request left unresolved has no release to lock, and its existing
+            // entry stays as it is.
+            if tv.is_deferred() {
+                continue;
+            }
             // An installed `latest` resolves to its install directory name;
             // lock the version that directory holds.
             let mut tv = tv.clone();
