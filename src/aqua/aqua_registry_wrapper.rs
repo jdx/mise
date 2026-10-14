@@ -119,6 +119,15 @@ fn configured_registry_urls(settings: &Settings) -> Vec<String> {
     registries
 }
 
+/// Whether every aqua registry mise searches is the official one, built in or
+/// downloaded. A custom registry is searched first and may define a package ID
+/// differently: another repository, or other version filters.
+pub(crate) fn searches_only_official_registries(settings: &Settings) -> bool {
+    configured_registry_urls(settings)
+        .iter()
+        .all(|registry| is_official_aqua_registry(registry))
+}
+
 fn is_official_aqua_registry(registry_url: &str) -> bool {
     github_repo_slug(registry_url)
         .is_some_and(|(owner, repo)| owner == "aquaproj" && repo == "aqua-registry")
@@ -652,6 +661,18 @@ mod tests {
                 "https://example.com/second".to_string()
             ]
         );
+    }
+
+    #[test]
+    fn only_official_registries_unless_a_custom_one_is_configured() {
+        let mut settings = Settings::default();
+        assert!(searches_only_official_registries(&settings));
+        settings.aqua.baked_registry = false;
+        assert!(searches_only_official_registries(&settings));
+        settings.registry_floating = true;
+        assert!(searches_only_official_registries(&settings));
+        settings.aqua.registries = Some(vec!["https://example.com/custom".into()]);
+        assert!(!searches_only_official_registries(&settings));
     }
 
     #[test]

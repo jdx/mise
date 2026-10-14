@@ -43,3 +43,18 @@ assert_not_contains "cat ls-remote.log" "/repos/jqlang/jq/releases"
 
 # A backend that two registry tools prefer has no one list to read.
 assert_not_contains "MISE_DEBUG=1 mise ls-remote aqua:google/go-containerregistry 2>&1 || true" "/versions/data/"
+
+# A custom aqua registry is searched first and may define jqlang/jq differently
+# from the official registry the hosted list was generated from. This one does
+# not define it, so jq still comes from the baked registry, listed from source.
+# A cache of its own keeps the list cached above from answering.
+cat >registry.yaml <<'YAML'
+packages:
+  - type: github_release
+    repo_owner: example
+    repo_name: tool
+    asset: tool
+YAML
+MISE_CACHE_DIR="$PWD/custom-cache" MISE_AQUA_REGISTRIES="file://$PWD/registry.yaml" MISE_DEBUG=1 mise ls-remote aqua:jqlang/jq >custom.out 2>custom.log || true
+assert_contains "cat custom.log" "/repos/jqlang/jq/releases"
+assert_not_contains "cat custom.log" "/versions/data/"

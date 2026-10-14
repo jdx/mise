@@ -173,6 +173,8 @@ fn registry_backend_key(full: &str) -> String {
 /// pick, and not when the registry sets options on it: the arg does not
 /// inherit them, so a list generated with them (a `version_prefix`, a direct
 /// `url` that keeps asset-less releases) need not describe the arg's own.
+/// Nor for an aqua package while a custom aqua registry, searched before the
+/// official one the list was generated from, may define it differently.
 /// `registry_options_shape_listing = false` is for a caller whose use of the
 /// list no registry option changes.
 pub(crate) fn versions_host_tool(
@@ -184,7 +186,8 @@ pub(crate) fn versions_host_tool(
     }
     static PREFERRED_BY: Lazy<HashMap<String, Vec<&'static RegistryTool>>> = Lazy::new(|| {
         let mut map: HashMap<String, Vec<&'static RegistryTool>> = HashMap::new();
-        for (_, rt) in REGISTRY.iter() {
+        // An alias is stored as a copy of its tool: index each tool once.
+        for (_, rt) in REGISTRY.iter().filter(|(name, rt)| *name == rt.short) {
             if let Some(backend) = rt.backends.first() {
                 map.entry(registry_backend_key(backend.full))
                     .or_default()
@@ -193,10 +196,13 @@ pub(crate) fn versions_host_tool(
         }
         map
     });
-    let [rt] = PREFERRED_BY
-        .get(&registry_backend_key(&ba.full_without_opts()))?
-        .as_slice()
-    else {
+    let full = ba.full_without_opts();
+    if full.starts_with("aqua:")
+        && !crate::aqua::aqua_registry_wrapper::searches_only_official_registries(&Settings::get())
+    {
+        return None;
+    }
+    let [rt] = PREFERRED_BY.get(&registry_backend_key(&full))?.as_slice() else {
         return None;
     };
     let options = rt.backends.first().map_or(&[][..], |b| b.options);
@@ -1748,6 +1754,11 @@ mod tests {
         assert_eq!(tool("aqua:stedolan/jq"), Some("jq"));
         // Inline options are local options, which callers check themselves.
         assert_eq!(tool("aqua:jqlang/jq[symlink_bins=true]"), Some("jq"));
+        // A tool's aliases are copies of it, not other tools preferring its backend.
+        assert_eq!(
+            tool("aqua:google-antigravity/antigravity-cli"),
+            Some("antigravity-cli")
+        );
         // GitHub ignores the case of a repository.
         assert_eq!(tool("github:allure-framework/allure2"), Some("allure"));
         assert_eq!(tool("github:Allure-Framework/Allure2"), Some("allure"));
