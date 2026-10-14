@@ -33,7 +33,7 @@ use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, LazyLock, Mutex};
-use std::time::{Duration, Instant, SystemTime};
+use std::time::{Duration, SystemTime};
 
 /// The only `format` this client understands.
 const INDEX_FORMAT: u64 = 1;
@@ -218,7 +218,9 @@ const REFRESH_REUSES_COPIES_NEWER_THAN: Duration = Duration::from_secs(5 * 60);
 
 struct Loaded {
     index: Arc<VersionsIndex>,
-    validated: Instant,
+    /// Wall-clock time, as for the copy on disk, so a copy read from there
+    /// keeps its real age.
+    validated: SystemTime,
 }
 
 impl Loaded {
@@ -226,7 +228,12 @@ impl Loaded {
     /// list it read is kept the same way, whatever `fetch_remote_versions_cache`
     /// says, until a `refresh` asks for a recent one.
     fn usable(&self, refresh: bool) -> bool {
-        !refresh || self.validated.elapsed() < REFRESH_REUSES_COPIES_NEWER_THAN
+        // A clock that went backwards gives no age, which is not recent.
+        !refresh
+            || self
+                .validated
+                .elapsed()
+                .is_ok_and(|age| age < REFRESH_REUSES_COPIES_NEWER_THAN)
     }
 }
 
@@ -263,8 +270,7 @@ pub(crate) async fn get(tool: &str, refresh: bool) -> Option<Arc<VersionsIndex>>
     if let Some(l) = loaded.as_ref().filter(|l| l.usable(refresh)) {
         return Some(l.index.clone());
     }
-    if let Some((index, age)) = read_fresh_copy(refresh) {
-        let validated = Instant::now().checked_sub(age).unwrap_or_else(Instant::now);
+    if let Some((index, validated)) = read_fresh_copy(refresh) {
         *loaded = Some(Loaded {
             index: index.clone(),
             validated,
@@ -284,7 +290,7 @@ pub(crate) async fn get(tool: &str, refresh: bool) -> Option<Arc<VersionsIndex>>
         Some(index) => {
             *loaded = Some(Loaded {
                 index: index.clone(),
-                validated: Instant::now(),
+                validated: SystemTime::now(),
             });
             Some(index)
         }
@@ -322,16 +328,18 @@ fn read_cached() -> Result<(String, String)> {
     Ok((etag.to_string(), body.to_string()))
 }
 
-/// The copy on disk and its age, when it is recent enough to use as it is.
-fn read_fresh_copy(refresh: bool) -> Option<(Arc<VersionsIndex>, Duration)> {
-    let age = validated_at()?.elapsed().ok()?;
+/// The copy on disk and when it was validated, when it is recent enough to use
+/// as it is.
+fn read_fresh_copy(refresh: bool) -> Option<(Arc<VersionsIndex>, SystemTime)> {
+    let validated = validated_at()?;
+    let age = validated.elapsed().ok()?;
     if !is_usable(age, refresh) {
         return None;
     }
     match read_cached().and_then(|(_, body)| VersionsIndex::parse(&body)) {
         Ok(index) => {
             trace!("versions index: using the copy validated {age:?} ago");
-            Some((Arc::new(index), age))
+            Some((Arc::new(index), validated))
         }
         Err(err) => {
             debug!("versions index: cannot read the cached copy: {err:#}");
