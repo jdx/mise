@@ -91,4 +91,18 @@ mod tests {
             format!("/tools/java/bin:/home/me/.cargo/bin:/tools/flutter/bin:{shims}:/usr/bin")
         );
     }
+
+    #[tokio::test]
+    async fn test_managed_entries_include_a_marked_entry_in_place() {
+        let _config = Config::get().await.unwrap();
+        let mut path_env =
+            PathEnv::from_iter(["/user/shims", "/system/shims", "/usr/bin"].map(PathBuf::from));
+        // mise inserted a system shim directory next to the inherited one.
+        path_env.mark_managed("/system/shims".into());
+        path_env.add("/tools/node/bin".into());
+        assert_eq!(
+            path_env.managed_entries(),
+            ["/tools/node/bin", "/system/shims"].map(PathBuf::from)
+        );
+    }
 }

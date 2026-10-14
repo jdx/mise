@@ -48,6 +48,7 @@ impl Toolset {
         let mut pristine = pristine_path_without_install_dirs();
         let mut shim_farms = Vec::new();
         let mut shim_boundary = None;
+        let mut inserted_farms = Vec::new();
         if self.has_lazy_declarations() {
             shim_farms = crate::shims::shim_farm_dirs();
             for (index, path) in pristine.iter().enumerate() {
@@ -61,6 +62,20 @@ impl Toolset {
                 }
             }
             if let Some(boundary) = shim_boundary {
+                // A farm the inherited PATH lacks is placed there by mise, so it is
+                // managed even though it keeps the inherited entries' position.
+                inserted_farms = shim_farms
+                    .iter()
+                    .filter(|farm| {
+                        !pristine.iter().any(|path| {
+                            file::paths_eq(
+                                &file::canonicalize_or_self(path),
+                                &file::canonicalize_or_self(farm),
+                            )
+                        })
+                    })
+                    .cloned()
+                    .collect();
                 pristine.retain(|path| {
                     !shim_farms.iter().any(|farm| {
                         file::paths_eq(
@@ -73,6 +88,9 @@ impl Toolset {
             }
         }
         let mut path_env = PathEnv::from_iter(pristine.iter().cloned());
+        for farm in inserted_farms {
+            path_env.mark_managed(farm);
+        }
         for p in paths {
             path_env.add(p);
         }
