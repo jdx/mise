@@ -4182,6 +4182,27 @@ impl ApplyPlan<'_> {
     }
 }
 
+/// What the apply confirmation lists for one request: directory copies are
+/// expanded to the files that would be created or overwritten.
+fn confirmation_lines(req: &FileRequest, rendered: Option<&str>) -> Result<Vec<String>> {
+    if removes_target(req, rendered) {
+        return Ok(vec![format!("rm {}", req.target.display_user())]);
+    }
+    if req.mode != FileMode::Copy || !req.source.is_dir() {
+        return Ok(vec![describe(req)?]);
+    }
+    let mut lines = vec![];
+    for (src, tgt) in walk_source_files(req)? {
+        let verb = match (std::fs::read(&tgt), std::fs::read(&src)) {
+            (Ok(live), Ok(repo)) if live == repo => continue,
+            (Ok(_), _) => "overwrite",
+            _ => "create",
+        };
+        lines.push(format!("{verb} {}", tgt.display_user()));
+    }
+    Ok(lines)
+}
+
 pub fn execute_apply(
     config: &Config,
     plan: ApplyPlan<'_>,
@@ -4240,11 +4261,13 @@ pub fn execute_apply(
         for link in &plan.reconciliation.stale_links {
             eprintln!("  rm {}", link.target.display_user());
         }
-        for (req, _) in &plan.todo {
-            eprintln!("  {}", describe(req)?);
+        for (req, rendered) in &plan.todo {
+            for line in confirmation_lines(req, rendered.as_deref())? {
+                eprintln!("  {line}");
+            }
         }
         eprintln!(
-            "files: applying copies the repository versions over the live targets, replacing local edits.\n\
+            "files: applying makes the live targets match the repository, replacing local edits.\n\
              files: run `mise dot diff` to review the differences first."
         );
         if !prompt::confirm_with_default(format!("files: apply {list}?"), false)?.is_yes() {
@@ -8446,6 +8469,36 @@ source = "oldrc""#,
         let mut req = link_req(&source, &dir.join("target"), FileMode::Template);
         req.remove_empty = remove_empty;
         Ok(req)
+    }
+
+    #[test]
+    fn confirmation_lines_list_directory_copy_files() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let src = dir.path().join("src");
+        let tgt = dir.path().join("tgt");
+        file::create_dir_all(&src)?;
+        file::create_dir_all(&tgt)?;
+        file::write(src.join("same"), "a")?;
+        file::write(tgt.join("same"), "a")?;
+        file::write(src.join("changed"), "new")?;
+        file::write(tgt.join("changed"), "old")?;
+        file::write(src.join("fresh"), "x")?;
+        let req = link_req(&src, &tgt, FileMode::Copy);
+        let lines = confirmation_lines(&req, None)?;
+        assert_eq!(lines.len(), 2, "{lines:?}");
+        assert!(lines[0].starts_with("overwrite ") && lines[0].ends_with("changed"));
+        assert!(lines[1].starts_with("create ") && lines[1].ends_with("fresh"));
+        Ok(())
+    }
+
+    #[test]
+    fn confirmation_lines_show_empty_template_removal() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let req = template_req(dir.path(), true)?;
+        let lines = confirmation_lines(&req, Some(""))?;
+        assert_eq!(lines.len(), 1);
+        assert!(lines[0].starts_with("rm "), "{lines:?}");
+        Ok(())
     }
 
     #[test]
