@@ -165,6 +165,7 @@ async fn preflight_system_deps_inner(
         dry_run: opts.dry_run,
         update: false,
         yes,
+        install_previewed: false,
     };
     if let Err(err) =
         crate::system::driver::run(mgrs, crate::system::driver::Action::Install, &driver_opts).await
