@@ -5,9 +5,9 @@ use crate::backend::backend_type::BackendType;
 use crate::backend::options::{BackendOptions, VersionOrder};
 use crate::backend::platform_target::PlatformTarget;
 use crate::backend::static_helpers::{
-    ArchiveLayout, get_filename_from_url, install_artifact, lookup_platform_key,
-    lookup_with_fallback, pinned_checksum, template_string, try_with_v_prefix,
-    try_with_v_prefix_and_repo, verify_artifact,
+    ArchiveLayout, VerifiableError, get_filename_from_url, install_artifact, lookup_platform_key,
+    lookup_with_fallback, pinned_checksum, tag_candidates, template_string, try_release_tags,
+    try_with_v_prefix, verify_artifact,
 };
 use crate::backend::{MISE_BINS_DIR, SecurityFeature, runtime_path_for_install_path};
 use crate::config::{Config, Settings, SettingsExt};
@@ -38,6 +38,10 @@ struct ReleaseAsset {
     url: String,
     url_api: String,
     digest: Option<String>,
+    /// The GitHub release tag the asset was picked from, so provenance is
+    /// looked up on that same release. `None` when it came from elsewhere (a
+    /// lockfile URL, a direct `url`, GitLab or Forgejo).
+    release_tag: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -857,15 +861,25 @@ impl Backend for UnifiedGitBackend {
         let opts = self.options(&raw_opts);
         let api_url = opts.api_url();
         let version_prefix = opts.version_prefix();
+        let listed_tag = self.listed_release_tag(&opts, version).await;
 
-        match try_with_v_prefix_and_repo(version, version_prefix, Some(&repo), |candidate| {
-            let api_url = api_url.clone();
-            let repo = repo.clone();
-            async move {
-                github::get_release_for_url_with_versions_host(&api_url, &repo, &candidate, true)
+        match try_release_tags(
+            version,
+            version_prefix,
+            Some(&repo),
+            Some(&api_url),
+            listed_tag.as_deref(),
+            |candidate| {
+                let api_url = api_url.clone();
+                let repo = repo.clone();
+                async move {
+                    github::get_release_for_url_with_versions_host(
+                        &api_url, &repo, &candidate, true,
+                    )
                     .await
-            }
-        })
+                }
+            },
+        )
         .await
         {
             Ok(release) => Ok(Some(self.strip_version_prefix(&release.tag_name, &opts))),
@@ -924,6 +938,7 @@ impl Backend for UnifiedGitBackend {
                 url: existing_platform.url.clone().unwrap_or_default(),
                 url_api: existing_platform.url_api.clone().unwrap_or_default(),
                 digest: None, // Don't use old digest from lockfile, will be fetched fresh if needed
+                release_tag: None,
             }
         } else {
             // Find the asset URL for this specific version
@@ -951,6 +966,7 @@ impl Backend for UnifiedGitBackend {
                         url: artifact.url.clone(),
                         url_api: artifact.url_api.clone().unwrap_or_default(),
                         digest: None,
+                        release_tag: None,
                     })
                     .collect()
             }
@@ -1272,6 +1288,55 @@ impl UnifiedGitBackend {
         github::get_release_for_url_with_versions_host(api_url, repo, tag, true).await
     }
 
+    /// The release provenance for an asset lives on: the one the asset was
+    /// picked from, or for an asset reused from a lockfile, the one its
+    /// download URL names.
+    ///
+    /// Never the tag remembered for the version (`RESOLVED_TAGS`): `mise lock`
+    /// selects assets for several platforms at once, and an install resolves
+    /// its additional assets before the main one, so where two tags spell one
+    /// version (`1.2.3`, `v1.2.3`) with different assets, the remembered tag
+    /// can be the other release. An asset whose release can't be named either
+    /// way is looked up without that memory, preferring the release that
+    /// holds it.
+    async fn release_for_asset(
+        &self,
+        api_url: &str,
+        repo: &str,
+        version: &str,
+        version_prefix: Option<&str>,
+        asset: &ReleaseAsset,
+    ) -> Result<github::GithubRelease> {
+        let tag = asset.release_tag.clone().or_else(|| {
+            crate::backend::release_tag_from_download_url(
+                &asset.url,
+                &self.web_url_base(api_url, repo),
+            )
+        });
+        if let Some(tag) = tag {
+            return github::get_release_for_url_with_versions_host(api_url, repo, &tag, true).await;
+        }
+        let mut first_release = None;
+        let mut not_found = None;
+        for candidate in tag_candidates(version, version_prefix, Some(repo)) {
+            match github::get_release_for_url_with_versions_host(api_url, repo, &candidate, true)
+                .await
+            {
+                Ok(release) if release.assets.iter().any(|a| a.name == asset.name) => {
+                    return Ok(release);
+                }
+                Ok(release) => {
+                    first_release.get_or_insert(release);
+                }
+                Err(e) if e.is_not_found() => not_found = Some(e),
+                Err(e) => return first_release.ok_or(e),
+            }
+        }
+        first_release.ok_or_else(|| {
+            not_found.unwrap_or_else(|| eyre::eyre!("No matching release found for {version}"))
+        })
+    }
+
     /// Detect what provenance type is available for a release by checking its assets
     /// and querying the GitHub attestation API.
     async fn detect_provenance_type(
@@ -1288,17 +1353,8 @@ impl UnifiedGitBackend {
         let version = &tv.version;
         let version_prefix = opts.version_prefix();
 
-        let release =
-            try_with_v_prefix_and_repo(version, version_prefix, Some(&repo), |candidate| {
-                let api_url = api_url.to_string();
-                let repo = repo.to_string();
-                async move {
-                    github::get_release_for_url_with_versions_host(
-                        &api_url, &repo, &candidate, true,
-                    )
-                    .await
-                }
-            })
+        let release = self
+            .release_for_asset(&api_url, &repo, version, version_prefix, asset)
             .await
             .ok();
         let Some(release) = release else {
@@ -1487,17 +1543,8 @@ impl UnifiedGitBackend {
             };
             let version = &tv.version;
             let version_prefix = opts.version_prefix();
-            let release =
-                try_with_v_prefix_and_repo(version, version_prefix, Some(&repo), |candidate| {
-                    let api_url = api_url.to_string();
-                    let repo = repo.to_string();
-                    async move {
-                        github::get_release_for_url_with_versions_host(
-                            &api_url, &repo, &candidate, true,
-                        )
-                        .await
-                    }
-                })
+            let release = self
+                .release_for_asset(&api_url, &repo, version, version_prefix, asset)
                 .await?;
 
             let asset_names: Vec<String> = release.assets.iter().map(|a| a.name.clone()).collect();
@@ -1645,6 +1692,26 @@ impl UnifiedGitBackend {
         self.ba.tool_name()
     }
 
+    /// The tag the versions host's list records for `version`, tried before
+    /// any guessed spelling: `cli-2.6.0` is not `vcli-2.6.0`, and `6.6.2` is
+    /// not `v6.6.2`. Accepted only when these options list the tag as
+    /// `version`, which is how `_list_remote_versions` names its releases.
+    async fn listed_release_tag(
+        &self,
+        opts: &GitBackendOptions<'_>,
+        version: &str,
+    ) -> Option<String> {
+        if self.is_gitlab() || self.is_forgejo() {
+            return None;
+        }
+        let config = Config::get().await.ok()?;
+        let url = self.listed_release_url(&config, version).await?;
+        let web_url_base = self.web_url_base(&opts.api_url(), &self.repo());
+        let tag = crate::backend::release_tag_from_url(&url, &web_url_base)?;
+        let prefixed = opts.version_prefix().is_none_or(|p| tag.starts_with(p));
+        (prefixed && self.strip_version_prefix(&tag, opts) == version).then_some(tag)
+    }
+
     fn preferred_asset_name(&self) -> String {
         self.repo()
             .rsplit('/')
@@ -1777,7 +1844,7 @@ impl UnifiedGitBackend {
                     ctx,
                     tv,
                     &file_path,
-                    &asset.name,
+                    asset,
                     locked_provenance.as_ref(),
                     AssetVerification::primary(
                         opts.asset_pattern_for_target(&PlatformTarget::from_current())
@@ -1894,7 +1961,7 @@ impl UnifiedGitBackend {
                     ctx,
                     tv,
                     &file_path,
-                    &asset.name,
+                    asset,
                     expected_provenance.as_ref(),
                     AssetVerification::ADDITIONAL,
                 )
@@ -2095,6 +2162,7 @@ impl UnifiedGitBackend {
                 url: direct_url.clone(),
                 url_api: direct_url.clone(),
                 digest: None, // Direct URLs don't have API digest
+                release_tag: None,
             });
         }
 
@@ -2128,10 +2196,14 @@ impl UnifiedGitBackend {
             .await
         } else {
             // Pass full repo for trying reponame@version formats
-            try_with_v_prefix_and_repo(
+            let listed_tag = self.listed_release_tag(opts, version).await;
+            let api_url = opts.api_url();
+            try_release_tags(
                 version,
                 version_prefix,
                 Some(repo),
+                Some(&api_url),
+                listed_tag.as_deref(),
                 |candidate| async move {
                     self.resolve_github_asset_url_for_target(
                         tv,
@@ -2205,6 +2277,7 @@ impl UnifiedGitBackend {
                 url: asset.browser_download_url,
                 url_api: asset.url,
                 digest,
+                release_tag: Some(version.to_string()),
             });
         }
 
@@ -2240,6 +2313,7 @@ impl UnifiedGitBackend {
             url: asset.browser_download_url.clone(),
             url_api: asset.url.clone(),
             digest,
+            release_tag: Some(version.to_string()),
         })
     }
 
@@ -2301,6 +2375,7 @@ impl UnifiedGitBackend {
                 url: asset.direct_asset_url.clone(),
                 url_api: asset.url,
                 digest,
+                release_tag: None,
             });
         }
 
@@ -2333,6 +2408,7 @@ impl UnifiedGitBackend {
             url: asset.direct_asset_url.clone(),
             url_api: asset.url.clone(),
             digest,
+            release_tag: None,
         })
     }
 
@@ -2397,6 +2473,7 @@ impl UnifiedGitBackend {
                 url: asset.browser_download_url,
                 url_api: asset_url_api(&asset.uuid),
                 digest,
+                release_tag: None,
             });
         }
 
@@ -2429,6 +2506,7 @@ impl UnifiedGitBackend {
             url: asset.browser_download_url.clone(),
             url_api: asset_url_api(&asset.uuid),
             digest,
+            release_tag: None,
         })
     }
 
@@ -2674,7 +2752,7 @@ impl UnifiedGitBackend {
         ctx: &InstallContext,
         tv: &ToolVersion,
         file_path: &std::path::Path,
-        asset_name: &str,
+        asset: &ReleaseAsset,
         expected_provenance: Option<&ProvenanceType>,
         verification: AssetVerification,
     ) -> Result<Option<ProvenanceType>> {
@@ -2776,7 +2854,7 @@ impl UnifiedGitBackend {
         // Fall back to SLSA provenance (if enabled globally and for github backend)
         if !skip_slsa && settings.slsa && settings.github.slsa && opts.slsa_signer().is_some() {
             match self
-                .try_verify_slsa(ctx, tv, file_path, asset_name, &api_url, verification)
+                .try_verify_slsa(ctx, tv, file_path, asset, &api_url, verification)
                 .await
             {
                 Ok((true, provenance_url)) => {
@@ -2950,10 +3028,11 @@ impl UnifiedGitBackend {
         ctx: &InstallContext,
         tv: &ToolVersion,
         file_path: &std::path::Path,
-        asset_name: &str,
+        asset: &ReleaseAsset,
         api_url: &str,
         verification: AssetVerification,
     ) -> std::result::Result<(bool, Option<String>), VerificationStatus> {
+        let asset_name = asset.name.as_str();
         if self.is_gitlab() || self.is_forgejo() {
             return Err(VerificationStatus::NoAttestations);
         }
@@ -2975,26 +3054,17 @@ impl UnifiedGitBackend {
 
         // Try to get the release (with version prefix support)
         let version_prefix = opts.version_prefix();
-        let release =
-            match try_with_v_prefix_and_repo(version, version_prefix, Some(&repo), |candidate| {
-                let api_url = api_url.to_string();
-                let repo = repo.clone();
-                async move {
-                    github::get_release_for_url_with_versions_host(
-                        &api_url, &repo, &candidate, true,
-                    )
-                    .await
-                }
-            })
+        let release = match self
+            .release_for_asset(api_url, &repo, version, version_prefix, asset)
             .await
-            {
-                Ok(r) => r,
-                Err(e) => {
-                    return Err(VerificationStatus::ApiError(format!(
-                        "Failed to get release: {e}"
-                    )));
-                }
-            };
+        {
+            Ok(r) => r,
+            Err(e) => {
+                return Err(VerificationStatus::ApiError(format!(
+                    "Failed to get release: {e}"
+                )));
+            }
+        };
 
         // Find the best provenance asset for the current platform
         let asset_names: Vec<String> = release.assets.iter().map(|a| a.name.clone()).collect();
@@ -3294,6 +3364,136 @@ mod tests {
         ));
     }
     use crate::args::BackendArg;
+
+    fn release_json(tag: &str, asset: &str) -> String {
+        serde_json::json!({
+            "tag_name": tag,
+            "draft": false,
+            "prerelease": false,
+            "created_at": "2026-01-01T00:00:00Z",
+            "assets": [{
+                "name": asset,
+                "browser_download_url": format!("https://example.com/{tag}/{asset}"),
+                "url": format!("https://example.com/assets/{asset}"),
+            }],
+        })
+        .to_string()
+    }
+
+    #[tokio::test]
+    async fn test_provenance_release_is_the_one_the_asset_came_from() {
+        // `1.2.3` and `v1.2.3` both name version 1.2.3, with different assets,
+        // and `v1.2.3` is the tag remembered for the version. An asset from
+        // `1.2.3` must have its provenance looked up on `1.2.3`, whether it
+        // was just selected, reused from a lockfile URL, or can't be placed.
+        let mut server = mockito::Server::new_async().await;
+        let repo = "owner/two-tags-provenance";
+        let v_tag = server
+            .mock(
+                "GET",
+                format!("/repos/{repo}/releases/tags/v1.2.3").as_str(),
+            )
+            .with_header("content-type", "application/json")
+            .with_body(release_json("v1.2.3", "tool-darwin.tar.gz"))
+            .expect(1)
+            .create_async()
+            .await;
+        let bare_tag = server
+            .mock("GET", format!("/repos/{repo}/releases/tags/1.2.3").as_str())
+            .with_header("content-type", "application/json")
+            .with_body(release_json("1.2.3", "tool-linux.tar.gz"))
+            .expect(1)
+            .create_async()
+            .await;
+        let api_url = server.url();
+
+        let remembered = try_release_tags(
+            "1.2.3",
+            None,
+            Some(repo),
+            Some(&api_url),
+            None,
+            |candidate| {
+                let api_url = api_url.clone();
+                async move {
+                    github::get_release_for_url_with_versions_host(&api_url, repo, &candidate, true)
+                        .await
+                }
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(remembered.tag_name, "v1.2.3");
+
+        let backend = create_test_backend();
+        let linux_asset = |url: String, release_tag: Option<&str>| ReleaseAsset {
+            name: "tool-linux.tar.gz".to_string(),
+            url,
+            url_api: String::new(),
+            digest: None,
+            release_tag: release_tag.map(str::to_string),
+        };
+        for (case, asset) in [
+            (
+                "selected",
+                linux_asset(
+                    "https://example.com/tool-linux.tar.gz".into(),
+                    Some("1.2.3"),
+                ),
+            ),
+            (
+                "lockfile URL",
+                linux_asset(
+                    format!("{api_url}/{repo}/releases/download/1.2.3/tool-linux.tar.gz"),
+                    None,
+                ),
+            ),
+            (
+                "unplaced",
+                linux_asset("https://example.com/tool-linux.tar.gz".into(), None),
+            ),
+        ] {
+            let release = backend
+                .release_for_asset(&api_url, repo, "1.2.3", None, &asset)
+                .await
+                .unwrap();
+            assert_eq!(release.tag_name, "1.2.3", "{case}");
+        }
+        v_tag.assert_async().await;
+        bare_tag.assert_async().await;
+    }
+
+    #[test]
+    fn test_release_tag_from_download_url() {
+        let repo = "https://github.com/kubernetes-sigs/kustomize";
+        assert_eq!(
+            crate::backend::release_tag_from_download_url(
+                "https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize/v5.8.1/kustomize_v5.8.1_linux_amd64.tar.gz",
+                repo
+            )
+            .as_deref(),
+            Some("kustomize/v5.8.1")
+        );
+        assert_eq!(
+            crate::backend::release_tag_from_download_url(
+                "https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize%2Fv5.8.1/k.tar.gz",
+                repo
+            )
+            .as_deref(),
+            Some("kustomize/v5.8.1")
+        );
+        for url in [
+            "https://github.com/someone/kustomize/releases/download/v1/k.tar.gz",
+            "https://github.com/kubernetes-sigs/kustomize/releases/download/k.tar.gz",
+            "https://api.github.com/repos/kubernetes-sigs/kustomize/releases/assets/1",
+        ] {
+            assert_eq!(
+                crate::backend::release_tag_from_download_url(url, repo),
+                None,
+                "{url}"
+            );
+        }
+    }
 
     fn create_test_backend() -> UnifiedGitBackend {
         UnifiedGitBackend::from_arg(BackendArg::new(

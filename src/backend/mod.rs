@@ -144,6 +144,34 @@ pub(crate) fn backend_arg_is_preferred_registry_backend(ba: &BackendArg) -> bool
         .is_some_and(|rt| rt.backends.first().is_some_and(|b| b.full == full))
 }
 
+/// The tag in a release page URL, `<repo_web_url>/releases/tag/<tag>`, as the
+/// version listings of the aqua and github backends write it. The repository
+/// must match, ignoring case. The tag is taken as written: listings put it in
+/// unencoded, slashes included (`kustomize/v5.8.1`).
+pub(crate) fn release_tag_from_url(url: &str, repo_web_url: &str) -> Option<String> {
+    let prefix = format!("{}/releases/tag/", repo_web_url.trim_end_matches('/'));
+    let head = url.get(..prefix.len())?;
+    let tag = &url[prefix.len()..];
+    (head.eq_ignore_ascii_case(&prefix) && !tag.is_empty()).then(|| tag.to_string())
+}
+
+/// The tag in a release asset's download URL,
+/// `<repo_web_url>/releases/download/<tag>/<asset>`, as GitHub serves it and
+/// lockfiles record it. The repository must match, ignoring case; the tag may
+/// hold slashes or be percent-encoded.
+pub(crate) fn release_tag_from_download_url(url: &str, repo_web_url: &str) -> Option<String> {
+    let prefix = format!("{}/releases/download/", repo_web_url.trim_end_matches('/'));
+    let head = url.get(..prefix.len())?;
+    if !head.eq_ignore_ascii_case(&prefix) {
+        return None;
+    }
+    let (tag, asset) = url[prefix.len()..].rsplit_once('/')?;
+    if tag.is_empty() || asset.is_empty() {
+        return None;
+    }
+    urlencoding::decode(tag).ok().map(|tag| tag.into_owned())
+}
+
 /// Whether the versions host may serve this backend type's remote version list.
 ///
 /// Only a subset of backends benefit from the versions host cache — those
@@ -960,6 +988,38 @@ mod tests {
     use std::fs;
     use std::sync::Arc;
     use std::time::{SystemTime, UNIX_EPOCH};
+
+    #[test]
+    fn test_release_tag_from_url_reads_the_listed_tag() {
+        let repo = "https://github.com/kubernetes-sigs/kustomize";
+        assert_eq!(
+            release_tag_from_url(
+                "https://github.com/kubernetes-sigs/kustomize/releases/tag/kustomize/v5.8.1",
+                repo
+            )
+            .as_deref(),
+            Some("kustomize/v5.8.1")
+        );
+        // A transferred repository changes case; the tag is the same release.
+        assert_eq!(
+            release_tag_from_url(
+                "https://github.com/mobile-dev-inc/Maestro/releases/tag/cli-2.6.0",
+                "https://github.com/mobile-dev-inc/maestro"
+            )
+            .as_deref(),
+            Some("cli-2.6.0")
+        );
+        // Another repository's release, or not a release page, names no tag here.
+        for url in [
+            "https://github.com/kubernetes-sigs/kustomize-other/releases/tag/v1",
+            "https://github.com/someone/kustomize/releases/tag/v5.8.1",
+            "https://github.com/kubernetes-sigs/kustomize/releases/tag/",
+            "https://github.com/kubernetes-sigs/kustomize/releases/download/v1/a.tgz",
+            "https://gitlab.com/kubernetes-sigs/kustomize/-/releases/v1",
+        ] {
+            assert_eq!(release_tag_from_url(url, repo), None, "{url}");
+        }
+    }
 
     #[test]
     fn test_installed_replaces_seed_but_not_later_entry() {
@@ -2942,6 +3002,51 @@ pub trait Backend: Debug + Send + Sync {
             remote_versions.clear()?;
         }
         Ok(filter_cached_prereleases(versions, want_prereleases))
+    }
+
+    /// The `release_url` the remote version list gives `version`, when the
+    /// versions host serves that list.
+    ///
+    /// Installing a version needs its release tag, which the version alone
+    /// does not spell (`5.8.1` is tagged `kustomize/v5.8.1`, `4.210.0` has no
+    /// `v`). The versions host already lists every registry tool with each
+    /// release's URL, so reading the tag from there replaces fetching the
+    /// release list from the GitHub mirror, or guessing spellings that 404.
+    /// `None` whenever the versions host would not serve this backend's list,
+    /// or doesn't have it: the caller then looks the tag up as it did before.
+    async fn listed_release_url(&self, config: &Arc<Config>, version: &str) -> Option<String> {
+        let settings = Settings::get();
+        if !settings.use_versions_host || settings.offline() || settings.prefer_offline() {
+            return None;
+        }
+        let ba = self.ba().clone();
+        let resolved_opts = config.resolve_tool_opts_with_overrides(&ba).await.ok()?;
+        if has_local_version_listing_option_override(
+            &resolved_opts,
+            self.remote_version_listing_tool_option_keys(),
+        ) {
+            return None;
+        }
+        let opts = resolved_opts.effective();
+        if self.versions_host_skip_reason(opts).is_some()
+            || self
+                .remote_version_cache_context_for(config, opts, false)
+                .await
+                .ok()?
+                .is_some()
+        {
+            return None;
+        }
+        // The versions host alone, never `list_remote_versions_with_info`: on a
+        // miss that falls through to the backend's own listing, the paginated
+        // release list this hint exists to avoid, and a failure there would be
+        // recorded against the tool for the rest of the command.
+        versions_host::list_versions(&ba.short)
+            .await
+            .ok()??
+            .into_iter()
+            .find(|v| v.version == version)?
+            .release_url
     }
 
     /// Backend implementation for fetching remote versions with metadata.
