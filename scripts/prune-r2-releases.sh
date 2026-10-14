@@ -66,8 +66,10 @@ if [[ $status != 200 ]]; then
 	skip "download stats endpoint returned HTTP $status ($stats_url)."
 fi
 if ! jq -e '
-	(.days | type == "number") and
-	(.covered_days | type == "number") and
+	def days: type == "number" and . >= 0 and . == floor and . <= 100000;
+	(.days | days) and
+	(.covered_days | days) and
+	.covered_days <= .days and
 	(.last_covered_date | type == "string" and test("^[0-9]{4}-[0-9]{2}-[0-9]{2}$")) and
 	(.versions | type == "object")
 ' "$tmp/stats.json" >/dev/null 2>&1; then
@@ -88,6 +90,11 @@ stats_days=$(jq -r '.days' "$tmp/stats.json")
 covered_days=$(jq -r '.covered_days' "$tmp/stats.json")
 first_day=$(jq -r '.first_covered_date // "?"' "$tmp/stats.json")
 last_day=$(jq -r '.last_covered_date // "?"' "$tmp/stats.json")
+# jq can print a valid integer as 1E+2, which bash arithmetic rejects; a failed
+# (( )) inside `if` reads as false and would fall through the gates below.
+if ! [[ $stats_days =~ ^[0-9]+$ && $covered_days =~ ^[0-9]+$ ]]; then
+	skip "download stats have non-integer days ($stats_days) or covered_days ($covered_days)."
+fi
 echo "download stats cover $covered_days day(s): $first_day .. $last_day"
 if ((stats_days != window_days)); then
 	skip "download stats are for a $stats_days-day window, not the requested $window_days days ($first_day .. $last_day)."
@@ -101,9 +108,14 @@ fi
 # The rollup runs daily (~02:20 UTC) for the previous day. A stale window means
 # the pipeline stopped, so recent downloads would be missing from the counts.
 # A date that matches the shape but isn't a real day (such as 2026-99-99) makes
-# strptime fail; treat that, and any date in the future, as a bad response.
-if ! stats_age_days=$(jq -n --arg d "$last_day" --argjson now "$(date -u +%s)" \
-	'(($now - ($d | strptime("%Y-%m-%d") | mktime)) / 86400) | floor' 2>/dev/null) ||
+# strptime fail, and one like 2026-02-30 is normalized to another day, so the
+# parsed date must format back to the input. Treat those, and any date in the
+# future, as a bad response.
+if ! stats_age_days=$(jq -n --arg d "$last_day" --argjson now "$(date -u +%s)" '
+	($d | strptime("%Y-%m-%d") | mktime) as $t
+	| if ($t | strftime("%Y-%m-%d")) != $d then error("not a calendar date") else . end
+	| (($now - $t) / 86400) | floor
+' 2>/dev/null) ||
 	[[ ! $stats_age_days =~ ^[0-9]+$ ]]; then
 	skip "download stats have an invalid last_covered_date: $last_day."
 fi
