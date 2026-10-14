@@ -1,0 +1,55 @@
+name: prune-r2-releases
+
+# Removes old v<YYYY>.<M>.<P>/ release folders from the mise R2 bucket once the
+# download stats show nobody fetches them. GitHub Releases keeps every asset.
+# Deletion is opt-in: runs are dry runs unless the repository variable
+# PRUNE_R2_RELEASES is "delete" (and, for manual runs, dry_run is unchecked).
+# See scripts/prune-r2-releases.sh for the rule and its safety gates.
+
+on:
+  schedule:
+    - cron: "17 6 * * 1" # weekly, Monday 06:17 UTC
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Only report what would be deleted"
+        required: true
+        default: true
+        type: boolean
+
+permissions: {}
+
+concurrency:
+  group: prune-r2-releases
+  cancel-in-progress: false
+
+jobs:
+  prune:
+    if: github.repository == 'jdx/mise'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Prune unused release folders
+        env:
+          CLOUDFLARE_ACCESS_KEY_ID: ${{ secrets.CLOUDFLARE_ACCESS_KEY_ID }}
+          CLOUDFLARE_SECRET_ACCESS_KEY: ${{ secrets.CLOUDFLARE_SECRET_ACCESS_KEY }}
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_DRY_RUN: ${{ inputs.dry_run }}
+          REPO_MODE: ${{ vars.PRUNE_R2_RELEASES }}
+        run: |
+          PRUNE_RELEASES=dry-run
+          if [[ "$REPO_MODE" == "delete" ]]; then
+            if [[ "$EVENT_NAME" == "schedule" || "$INPUT_DRY_RUN" == "false" ]]; then
+              PRUNE_RELEASES=delete
+            fi
+          elif [[ "$INPUT_DRY_RUN" == "false" ]]; then
+            echo "::notice::dry_run=false ignored: set the PRUNE_R2_RELEASES repository variable to 'delete' to enable deletions"
+          fi
+          export PRUNE_RELEASES
+          ./scripts/prune-r2-releases.sh
