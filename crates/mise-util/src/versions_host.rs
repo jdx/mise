@@ -49,6 +49,28 @@ pub struct GithubReleasesPage {
     pub truncated: bool,
 }
 
+/// One entry of a repository directory, as GitHub's contents API lists it.
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct GithubContentsEntry {
+    pub name: String,
+    /// `file`, `dir`, `symlink` or `submodule`.
+    #[serde(rename = "type")]
+    pub kind: String,
+}
+
+/// What GitHub says a repository name stands for now, following a rename.
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct GithubRepository {
+    pub id: u64,
+    pub full_name: String,
+    pub owner: Option<GithubRepositoryOwner>,
+}
+
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct GithubRepositoryOwner {
+    pub id: u64,
+}
+
 #[derive(serde::Deserialize)]
 struct AttestationsResponse {
     attestations: Vec<Attestation>,
@@ -101,6 +123,19 @@ impl<'a> VersionsHostLogContext<'a> {
             tag: None,
             digest: None,
             page: Some(page),
+            full: None,
+            version: None,
+        }
+    }
+
+    fn github_repo(endpoint: &'static str, repo: &'a str) -> Self {
+        Self {
+            endpoint,
+            tool: None,
+            repo: Some(repo),
+            tag: None,
+            digest: None,
+            page: None,
             full: None,
             version: None,
         }
@@ -301,6 +336,73 @@ pub async fn github_releases(repo: &str, page: u32) -> eyre::Result<Option<Githu
     }
     log_versions_host_trace(ctx, "success", &format!("releases={}", list.releases.len()));
     Ok(Some(list))
+}
+
+/// List the directory `path` of a public repository at `commit`, a full
+/// commit SHA, from the versions host. `Ok(None)` and errors as in
+/// [`github_release`]; a `path` naming a file is a 404.
+pub async fn github_contents(
+    repo: &str,
+    commit: &str,
+    path: &str,
+) -> eyre::Result<Option<Vec<GithubContentsEntry>>> {
+    if !enabled_for_github_repo(repo) {
+        return Ok(None);
+    }
+    let Some((owner, repo_name)) = split_github_repo(repo) else {
+        return Ok(None);
+    };
+    let url = github_contents_url(owner, repo_name, commit, path);
+    let ctx = VersionsHostLogContext::github_repo("github_contents", repo);
+    let entries = fetch_json_unless_not_found(&url, ctx).await?;
+    if let Some(entries) = &entries {
+        let entries: &Vec<GithubContentsEntry> = entries;
+        log_versions_host_trace(ctx, "success", &format!("entries={}", entries.len()));
+    }
+    Ok(entries)
+}
+
+fn github_contents_url(owner: &str, repo: &str, commit: &str, path: &str) -> String {
+    let path = path
+        .split('/')
+        .filter(|segment| !segment.is_empty())
+        .map(encode_path_segment)
+        .collect::<Vec<_>>()
+        .join("/");
+    format!(
+        "https://mise-versions.jdx.dev/api/github/repos/{}/{}/contents/{path}?ref={}",
+        encode_path_segment(owner),
+        encode_path_segment(repo),
+        encode_path_segment(commit),
+    )
+}
+
+/// What GitHub says the public repository `repo` is called now, and its
+/// IDs. `Ok(None)` and errors as in [`github_release`].
+pub async fn github_repository(repo: &str) -> eyre::Result<Option<GithubRepository>> {
+    if !enabled_for_github_repo(repo) {
+        return Ok(None);
+    }
+    let Some((owner, repo_name)) = split_github_repo(repo) else {
+        return Ok(None);
+    };
+    let url = format!(
+        "https://mise-versions.jdx.dev/api/github/repos/{}/{}",
+        encode_path_segment(owner),
+        encode_path_segment(repo_name),
+    );
+    let ctx = VersionsHostLogContext::github_repo("github_repository", repo);
+    let found: Option<GithubRepository> = fetch_json_unless_not_found(&url, ctx).await?;
+    if let Some(found) = &found {
+        if split_github_repo(&found.full_name).is_none() {
+            bail!(
+                "mise-versions named {repo} {:?}, which is not a GitHub repository",
+                found.full_name
+            );
+        }
+        log_versions_host_trace(ctx, "success", &format!("full_name={}", found.full_name));
+    }
+    Ok(found)
 }
 
 fn github_releases_url(owner: &str, repo: &str, page: u32) -> String {
@@ -813,6 +915,29 @@ mod tests {
             github_releases_url("jdx", "mise.test", 3),
             "https://mise-versions.jdx.dev/api/github/repos/jdx/mise.test/releases?page=3"
         );
+    }
+
+    #[test]
+    fn test_github_contents_url_encodes_each_segment() {
+        assert_eq!(
+            github_contents_url("jdx", "fnox", "cc06c75", "skills/fnox tool/"),
+            "https://mise-versions.jdx.dev/api/github/repos/jdx/fnox/contents/skills/fnox%20tool?ref=cc06c75"
+        );
+    }
+
+    #[test]
+    fn test_github_contents_and_repository_deserialize() {
+        let entries: Vec<GithubContentsEntry> = serde_json::from_str(
+            r#"[{"name":"SKILL.md","path":"skills/fnox/SKILL.md","type":"file","size":12,"sha":"a"},{"name":"refs","path":"skills/fnox/refs","type":"dir","sha":"b"}]"#,
+        )
+        .unwrap();
+        assert_eq!(entries[1].name, "refs");
+        assert_eq!(entries[1].kind, "dir");
+        let repo: GithubRepository =
+            serde_json::from_str(r#"{"id":123,"full_name":"jdx/mise","owner":{"id":456}}"#)
+                .unwrap();
+        assert_eq!(repo.full_name, "jdx/mise");
+        assert_eq!(repo.owner.unwrap().id, 456);
     }
 
     #[test]
