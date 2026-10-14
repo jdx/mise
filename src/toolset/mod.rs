@@ -926,25 +926,7 @@ pub fn needed_key(tv: &ToolVersion) -> (String, String) {
     }
 }
 
-/// Get all tool versions that are needed by tracked config files.
-/// This is used by both `mise prune` and `mise upgrade` to avoid
-/// uninstalling versions that other projects still need.
-pub(crate) async fn get_versions_needed_by_tracked_configs(
-    config: &Arc<Config>,
-    use_locked_version: bool,
-    offline: bool,
-) -> Result<NeededVersions> {
-    get_versions_needed_by_tracked_configs_excluding_locks(
-        config,
-        use_locked_version,
-        offline,
-        &HashSet::new(),
-        false,
-    )
-    .await
-}
-
-/// Like [`get_versions_needed_by_tracked_configs`], but ignores lockfile pins
+/// Like tracked configs, but ignores lockfile pins
 /// for the provided config paths. With `defer_missing_lazy`, lazy tools that are
 /// not installed stay unresolved: there is nothing of theirs to keep or remove.
 pub async fn get_versions_needed_by_tracked_configs_excluding_locks(
@@ -954,6 +936,27 @@ pub async fn get_versions_needed_by_tracked_configs_excluding_locks(
     exclude_locked_config_paths: &HashSet<PathBuf>,
     defer_missing_lazy: bool,
 ) -> Result<NeededVersions> {
+    get_versions_needed_by_tracked_configs_with_progress(
+        config,
+        use_locked_version,
+        offline,
+        exclude_locked_config_paths,
+        defer_missing_lazy,
+        None,
+    )
+    .await
+}
+
+/// Like [`get_versions_needed_by_tracked_configs_excluding_locks`], reporting
+/// each tracked config to `progress` as it is resolved.
+async fn get_versions_needed_by_tracked_configs_with_progress(
+    config: &Arc<Config>,
+    use_locked_version: bool,
+    offline: bool,
+    exclude_locked_config_paths: &HashSet<PathBuf>,
+    defer_missing_lazy: bool,
+    progress: Option<&dyn crate::ui::progress_report::SingleReport>,
+) -> Result<NeededVersions> {
     let mut needed = NeededVersions::new();
     // `mise prune` should keep versions pinned by lockfiles. `mise upgrade`
     // also protects lockfiles for other tracked projects, but excludes configs
@@ -961,7 +964,14 @@ pub async fn get_versions_needed_by_tracked_configs_excluding_locks(
     // Prune also passes offline=true: it only protects installed versions, so
     // remote resolution can never affect the outcome and just adds latency.
     let tracked = config.get_tracked_config_files().await?;
-    for (path, cf) in tracked.clone() {
+    if let Some(progress) = progress {
+        progress.set_items(0, tracked.len() as u64);
+    }
+    for (done, (path, cf)) in tracked.clone().into_iter().enumerate() {
+        if let Some(progress) = progress {
+            progress.set_message(display_path(&path));
+            progress.set_items(done as u64, tracked.len() as u64);
+        }
         let use_locked_version = use_locked_version && !exclude_locked_config_paths.contains(&path);
         let opts = ResolveOptions {
             use_locked_version,
@@ -1081,7 +1091,7 @@ pub async fn get_versions_needed_by_tracked_configs_excluding_locks(
 /// Get all tool versions that are needed by tracked tool stub files.
 /// Stubs are tracked in ~/.local/state/mise/tracked-stubs when they are
 /// executed. Returns (short_name, tv_pathname) pairs like
-/// [`get_versions_needed_by_tracked_configs`] so `mise prune` and
+/// [`get_versions_needed_by_tracked_configs_excluding_locks`] so `mise prune` and
 /// `mise upgrade` do not delete versions still referenced by a stub.
 pub async fn get_versions_needed_by_tracked_stubs(config: &Arc<Config>) -> Result<NeededVersions> {
     let mut needed = NeededVersions::new();
@@ -1133,7 +1143,9 @@ pub async fn prunable_tools(
     config: &Arc<Config>,
     tools: Vec<&BackendArg>,
 ) -> Result<Vec<(Arc<dyn Backend>, ToolVersion)>> {
-    Ok(prunable_tools_with_sources(config, tools).await?.to_delete)
+    Ok(prunable_tools_with_sources(config, tools, None)
+        .await?
+        .to_delete)
 }
 
 /// The outcome of deciding which installed versions are unused.
@@ -1151,15 +1163,22 @@ pub struct PrunableTools {
 /// what the tracked configs and stubs still need, and which versions running
 /// processes hold. Pruning removes what none of them named, so the versions
 /// that were kept — and what kept them — are the only evidence available for
-/// explaining a removal.
+/// explaining a removal. `progress` reports the scan of tracked configs.
 pub async fn prunable_tools_with_sources(
     config: &Arc<Config>,
     tools: Vec<&BackendArg>,
+    progress: Option<&dyn crate::ui::progress_report::SingleReport>,
 ) -> Result<PrunableTools> {
     // Resolving the toolset of this directory inspects it from the environment
     // prune runs in; it must not replace what the project's snapshots say.
     let _suspended = crate::install_layout::snapshots::suspend();
+    if let Some(progress) = progress {
+        progress.set_message("resolving tools for this directory".into());
+    }
     let ts = ToolsetBuilder::new().build(config).await?;
+    if let Some(progress) = progress {
+        progress.set_message("listing installed versions".into());
+    }
     let mut to_delete = ts
         .list_installed_versions(config)
         .await?
@@ -1181,7 +1200,15 @@ pub async fn prunable_tools_with_sources(
     to_delete.retain(|_, (_, tv)| !is_excluded_from_pruning(tv.ba()));
 
     // Remove versions that are still needed by tracked configs
-    let mut needed = get_versions_needed_by_tracked_configs(config, true, true).await?;
+    let mut needed = get_versions_needed_by_tracked_configs_with_progress(
+        config,
+        true,
+        true,
+        &HashSet::new(),
+        false,
+        progress,
+    )
+    .await?;
 
     // Remove versions that are still needed by tracked tool stubs
     for (key, sources) in get_versions_needed_by_tracked_stubs(config).await? {
@@ -1194,6 +1221,9 @@ pub async fn prunable_tools_with_sources(
 
     // A process started before its version stopped being needed may still be
     // running from it. Removing the version would delete files from under it.
+    if let Some(progress) = progress {
+        progress.set_message("checking running processes".into());
+    }
     let candidates = to_delete.values().map(|(_, tv)| tv).collect::<Vec<_>>();
     let mut processes = running::processes_running_from(&candidates);
     let mut running = vec![];
