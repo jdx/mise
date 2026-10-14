@@ -558,6 +558,12 @@ impl DotfilesAdd {
                     updated_targets.push(item.target_raw.as_str());
                 }
                 accepted.push(item);
+                // --changed captures live edits that already match the target, and
+                // applying the whole group would overwrite an edit whose
+                // capture the user declined
+                if self.changed && item.group_capture {
+                    continue;
+                }
                 // files captured into one group tree apply it once
                 let request = item.managed_request(&config_path);
                 if !apply_requests.iter().any(|existing: &FileRequest| {
