@@ -221,7 +221,7 @@ output. `DB_PASSWORD` itself is not exported unless the task also lists it in
   does not shell-expand a value it builds from secrets. A `$` right before a
   reference, <span v-pre>`${{ secrets.X }}`</span>, is always an error.
 - An env value cannot take the name of a key the task exports: `secrets =
-["DB_PASSWORD"]` with <span v-pre>`env.DB_PASSWORD = "{{ secrets.DB_PASSWORD }}x"`</span>
+  ["DB_PASSWORD"]` with <span v-pre>`env.DB_PASSWORD = "{{ secrets.DB_PASSWORD }}x"`</span>
   is an error, because both would claim the name.
 - `--secrets-all` still gives the task every injectable key under its own name,
   `DB_PASSWORD` included. A reference only keeps a key out of the checks for
