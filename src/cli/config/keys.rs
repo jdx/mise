@@ -231,6 +231,14 @@ mod tests {
     }
 
     #[test]
+    fn pypi_python_selector_is_a_known_tool_option() {
+        let python = SCHEMA
+            .pointer("/$defs/tool_pypi_options/properties/python")
+            .expect("PyPI selector should be present in the schema");
+        assert_eq!(python.get("type").and_then(Value::as_str), Some("string"));
+    }
+
+    #[test]
     fn user_named_keys_come_from_the_file() {
         let dir = tempfile::tempdir().unwrap();
         let file = dir.path().join("mise.toml");

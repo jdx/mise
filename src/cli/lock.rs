@@ -2153,6 +2153,8 @@ impl Lock {
         .await?;
 
         if self.tool.is_empty() {
+            self.add_selected_python_locks(config, context, target_lockfile_path, &mut all_tools)
+                .await?;
             Ok(all_tools)
         } else {
             // Build map of tool args with explicit versions
@@ -2177,12 +2179,16 @@ impl Lock {
                         Some(backend) => config.resolve_alias(backend, &version).await?,
                         None => version.clone(),
                     };
-                    let request = ToolRequest::new_with_options(
+                    let mut request = ToolRequest::new_with_options(
                         Arc::new(ba.clone()),
                         &effective_version,
                         tv.request.options(),
                         ToolSource::Argument,
                     );
+                    if let Ok(request) = &mut request {
+                        request.set_source(tv.request.source().clone());
+                        request.set_lockfile_scope(tv.request.lockfile_scope().clone());
+                    }
                     let resolve_options = request
                         .as_ref()
                         .ok()
@@ -2247,8 +2253,41 @@ impl Lock {
             for tool in tools {
                 push_unique_lock_tool(&mut unique_tools, tool);
             }
+            self.add_selected_python_locks(
+                config,
+                context,
+                target_lockfile_path,
+                &mut unique_tools,
+            )
+            .await?;
             Ok(unique_tools)
         }
+    }
+
+    async fn add_selected_python_locks(
+        &self,
+        config: &Arc<Config>,
+        context: &LockCollectionContext<'_>,
+        target_lockfile_path: &Path,
+        tools: &mut Vec<LockTool>,
+    ) -> Result<()> {
+        let requests = tools
+            .iter()
+            .filter_map(|(_, tv)| {
+                crate::backend::pipx::selected_python_dependency(&tv.request).transpose()
+            })
+            .collect::<Result<Vec<_>>>()?;
+        for request in requests {
+            let opts = request.resolve_options(context.resolve_options)?;
+            let tv = request.resolve(config, &opts).await.wrap_err_with(|| {
+                format!(
+                    "failed to resolve selected Python dependency {request} for lockfile {}",
+                    display_path(target_lockfile_path)
+                )
+            })?;
+            push_unique_lock_tool(tools, (tv.ba().clone(), tv));
+        }
+        Ok(())
     }
 
     async fn add_task_tools_to_lock(
