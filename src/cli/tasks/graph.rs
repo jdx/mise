@@ -7,7 +7,7 @@ use serde::Serialize;
 
 /// Show the monorepo project graph
 ///
-/// Lists the projects mise infers from Cargo, uv, Go, and Node.js workspace
+/// Lists the projects mise infers from Cargo, uv, Go, Gradle, and Node.js workspace
 /// manifests, with each project's ID, root directory, dependencies, and
 /// metadata. `mise run --affected` uses this graph to decide which projects a
 /// change touches.

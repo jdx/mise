@@ -11,7 +11,7 @@ description: "Show the monorepo project graph"
 
 Show the monorepo project graph
 
-Lists the projects mise infers from Cargo, uv, Go, and Node.js workspace manifests, with each project's ID, root directory, dependencies, and metadata. `mise run --affected` uses this graph to decide which projects a change touches.
+Lists the projects mise infers from Cargo, uv, Go, Gradle, and Node.js workspace manifests, with each project's ID, root directory, dependencies, and metadata. `mise run --affected` uses this graph to decide which projects a change touches.
 
 See <https://mise.jdx.dev/tasks/workspace-graph.html>
 
