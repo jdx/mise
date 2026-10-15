@@ -121,6 +121,7 @@ pub mod upgrade_hint;
 mod uv;
 pub mod version;
 mod versions_host;
+mod versions_index;
 pub mod watch_files;
 pub mod wildcard;
 pub mod windows_console;

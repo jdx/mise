@@ -795,11 +795,17 @@ fn versions_host_error_message(status: u16, body: &str) -> String {
     )
 }
 
+/// Whether mise-versions answers for api.github.com's release and
+/// attestation endpoints.
+///
+/// Not gated on `prefer_offline`: those commands (`exec`, `x`, shims,
+/// `hook-env`) still install missing tools, and the release metadata they need
+/// then comes from GitHub when it doesn't come from here. Prefer-offline
+/// already bounds each lookup to one short attempt, and `offline` stops it in
+/// [`fetch_optional_json`].
 pub fn enabled_for_github_metadata() -> bool {
     let settings = Settings::get();
-    !crate::network::prefer_offline(&settings)
-        && settings.use_versions_host
-        && !github_is_url_replaced(None)
+    settings.use_versions_host && !github_is_url_replaced(None)
 }
 
 /// [`enabled_for_github_metadata`] for one repository (`owner/repo`), which

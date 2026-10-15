@@ -224,7 +224,11 @@ struct ResolvedPackage {
 /// aqua tool, so only `latest`, which has a fixed pattern, uses a regex; any
 /// other query is matched as a literal, optionally followed by `-` or `.` and
 /// at least one more character.
-fn aqua_fuzzy_match(versions: Vec<String>, query: &str, filter_prereleases: bool) -> Vec<String> {
+pub(crate) fn aqua_fuzzy_match(
+    versions: Vec<String>,
+    query: &str,
+    filter_prereleases: bool,
+) -> Vec<String> {
     static LATEST: LazyLock<Regex> =
         LazyLock::new(|| Regex::new(r"^\D*[0-9].*([-.].+)?$").unwrap());
     let latest = query == "latest";

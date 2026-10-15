@@ -4462,6 +4462,12 @@ version lists for registry tools and public GitHub release data on a schedule.
 Using it avoids GitHub's anonymous rate limit in normal installs, including
 Docker builds and CI jobs without a GitHub token.
 
+When a command resolves several tools, such as `mise outdated` or `mise
+upgrade`, mise reads one index of every tool's newest versions instead of each
+tool's version list, and keeps it as long as a version list
+([`fetch_remote_versions_cache`](#fetch_remote_versions_cache)). A request the
+index cannot answer exactly reads that tool's list as before.
+
 When the host does not list a registry tool's versions, mise lists them from
 the tool's own source. GitHub release data and tags for public repositories
 come only from the host: if it fails, mise reports the error rather than spend
