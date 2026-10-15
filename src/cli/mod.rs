@@ -884,6 +884,31 @@ fn preprocess_args_for_naked_run(cmd: &usage_rs::Command<'_>, args: &[String]) -
 
 /// Recognize the query path before configuration loading, even when query arguments are invalid.
 /// Parser events distinguish command names from flag values and task or exec payloads.
+/// Whether the first subcommand named on the command line is `activate`.
+///
+/// This walks the parser's events without resolving typed values, so a command whose values need
+/// plugin or registry state (`install node@22`) is never fully parsed before `miserc::init()` and
+/// `install_state::init()` have run.
+fn is_activate_command_path(args: &[String]) -> bool {
+    let argv = args
+        .iter()
+        .skip(1)
+        .map(std::ffi::OsStr::new)
+        .collect::<Vec<_>>();
+    let mut parser = usage_rs::Parser::new(Cli::command(), &argv);
+    while let Some(event) = parser.next_event() {
+        if parser.double_dash_seen() {
+            return false;
+        }
+        match event {
+            Ok(usage_rs::Event::Command(command)) => return command.name == "activate",
+            Ok(usage_rs::Event::Flag { .. }) => {}
+            _ => return false,
+        }
+    }
+    false
+}
+
 fn is_packages_where_query(args: &[String]) -> bool {
     let argv = args
         .iter()
@@ -1025,6 +1050,9 @@ impl Cli {
             return false;
         };
         if *crate::env::MISE_TOOL_STUB || !crate::env::is_mise_binary(bin_name) {
+            return false;
+        }
+        if !is_activate_command_path(args) {
             return false;
         }
         let argv = args.iter().map(std::ffi::OsStr::new).collect::<Vec<_>>();

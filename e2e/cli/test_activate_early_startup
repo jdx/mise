@@ -16,3 +16,8 @@ assert_succeed "SHELL=/bin/fish mise activate"
 assert_succeed "mise activate --help"
 assert_succeed "mise --version"
 assert_fail "mise activate not-a-shell"
+
+# Classifying a non-activation command must not parse typed tool values before startup files are
+# loaded, or a malformed .miserc.toml would be silently ignored.
+mkdir -p bad-miserc && echo "not = [valid" >bad-miserc/.miserc.toml
+assert_fail "cd bad-miserc && mise install node@22 --dry-run"
