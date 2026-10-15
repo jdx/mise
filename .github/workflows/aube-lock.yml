@@ -38,8 +38,15 @@ jobs:
         run: |
           set -euo pipefail
           # Fail open: if the comparison cannot be read, regenerate as before.
-          if ! files="$(gh api --paginate "repos/${REPO}/compare/${BASE}...${HEAD_SHA}" --jq '.files[].filename')"; then
+          # The compare endpoint lists at most 300 files, and only on its first
+          # page, so a list that long may be truncated; treat it the same way.
+          if ! files="$(gh api "repos/${REPO}/compare/${BASE}...${HEAD_SHA}" --jq '.files[].filename')"; then
             echo "::warning::could not compare ${HEAD_SHA} with ${BASE}; running aube-lock"
+            echo "aube=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [ "$(grep -c . <<< "$files" || true)" -ge 300 ]; then
+            echo "::warning::${HEAD_SHA} changes 300 or more files, so the list may be truncated; running aube-lock"
             echo "aube=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
