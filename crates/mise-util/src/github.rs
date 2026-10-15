@@ -671,7 +671,9 @@ where
     F: FnOnce() -> Fut,
     Fut: std::future::Future<Output = Result<T>>,
 {
-    match cache.get_or_try_init_async(fetch).await {
+    // Boxed: the fetch is a deep chain of futures (paging, HTTP), and keeping
+    // it inline pushes callers' futures past rustc's layout depth limit.
+    match cache.get_or_try_init_async(|| Box::pin(fetch())).await {
         Ok(val) => Ok(val.clone()),
         Err(err) => stale_on_temporary_failure(cache, err),
     }
@@ -1077,7 +1079,15 @@ pub async fn get_release_with_versions_host(
     let cache = cache.get(&key).unwrap();
     let release = cache
         .get_or_try_init_async_if(
-            async || get_release_with_options(API_URL, repo, tag, use_versions_host).await,
+            async || {
+                Box::pin(get_release_with_options(
+                    API_URL,
+                    repo,
+                    tag,
+                    use_versions_host,
+                ))
+                .await
+            },
             should_cache_release,
         )
         .await
@@ -1097,7 +1107,15 @@ pub async fn get_release_for_url_with_versions_host(
     let cache = cache.get(&key).unwrap();
     let release = cache
         .get_or_try_init_async_if(
-            async || get_release_with_options(api_url, repo, tag, use_versions_host).await,
+            async || {
+                Box::pin(get_release_with_options(
+                    api_url,
+                    repo,
+                    tag,
+                    use_versions_host,
+                ))
+                .await
+            },
             should_cache_release,
         )
         .await
