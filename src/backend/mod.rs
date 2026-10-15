@@ -21,7 +21,9 @@ use crate::file::{
     canonicalize_cached, display_path, entry_exists, remove_all_with_progress,
     remove_all_with_warning,
 };
-use crate::install_before::resolve_before_date_for_tool;
+use crate::install_before::{
+    release_age_list_window, release_age_list_window_for_cutoff, resolve_before_date_for_tool,
+};
 use crate::install_context::InstallContext;
 use crate::lockfile::{PlatformInfo, ProvenanceType};
 use crate::path_env::PathEnv;
@@ -3135,6 +3137,11 @@ pub trait Backend: Debug + Send + Sync {
                 .refresh_async_unless_newer_than(REFRESH_REUSES_LISTS_NEWER_THAN, fetch)
                 .await?
         } else {
+            adopt_cached_remote_versions_within_release_age(
+                &ba,
+                &mut remote_versions,
+                [listing_opts, selection_opts],
+            );
             remote_versions.get_or_try_init_async(fetch).await?.clone()
         };
         if versions.is_empty() {
@@ -3187,15 +3194,16 @@ pub trait Backend: Debug + Send + Sync {
             Some(context) => self.get_remote_version_cache_with_context(Some(context)),
             None => self.get_remote_version_cache(),
         };
-        cache.lock().await.adopt_file_if(|age, versions| {
-            age <= max_age
-                && !versions.is_empty()
-                && versions.iter().all(|v| {
-                    v.created_at
-                        .as_deref()
-                        .is_some_and(|created_at| parse_into_timestamp(created_at).is_ok())
-                })
-        })
+        // A command that only needs a matching version keeps a list for the
+        // cutoff's release-age window, not just `fetch_remote_versions_cache`.
+        let fresh = release_age_list_window_for_cutoff(before)
+            .or_else(|| Settings::get().fetch_remote_versions_cache());
+        cache
+            .lock()
+            .await
+            .adopt_file_if_fresh_for(fresh, |age, versions| {
+                age <= max_age && dates_every_version(versions)
+            })
     }
 
     /// The `release_url` the remote version list gives `version`, when the
@@ -6075,6 +6083,51 @@ pub(crate) fn resolve_in_versions_index<B: Backend + ?Sized>(
     entry.resolve(query, pick, &matches)
 }
 
+/// Whether a remote-version list gives every version a release date in a form
+/// that parses. A release-age cutoff admits a version without one, so only
+/// such a list shows what the cutoff would hide.
+fn dates_every_version(versions: &[VersionInfo]) -> bool {
+    !versions.is_empty()
+        && versions.iter().all(|v| {
+            v.created_at
+                .as_deref()
+                .is_some_and(|created_at| parse_into_timestamp(created_at).is_ok())
+        })
+}
+
+/// Load a cached remote-version list that is past `fetch_remote_versions_cache`
+/// but within the tool's release-age window (`release_age_list_window`), so a
+/// command that only needs a matching version does not fetch it again. Only a
+/// list that dates every version qualifies: the cutoff keeps a release newer
+/// than such a list out of reach for the window anyway, while an undated
+/// release would be picked as soon as it is listed.
+///
+/// Both option sets count, and the shorter window wins: the configured
+/// options shape the list, and the request's may shorten the cutoff.
+fn adopt_cached_remote_versions_within_release_age(
+    ba: &BackendArg,
+    cache: &mut VersionCacheManager,
+    opts: [&ToolVersionOptions; 2],
+) {
+    if cache.has_fresh_value() {
+        return;
+    }
+    let Some(window) = opts
+        .iter()
+        .map(|opts| release_age_list_window(ba, opts.minimum_release_age()))
+        .min()
+        .flatten()
+    else {
+        return;
+    };
+    if cache.adopt_file_if_fresh_for(Some(window), |_, versions| dates_every_version(versions)) {
+        debug!(
+            "Using the cached version list for {ba}, within its {}m release-age window",
+            window.as_secs() / 60
+        );
+    }
+}
+
 fn effective_latest_before_date<B: Backend + ?Sized>(
     backend: &B,
     opts: &ToolVersionOptions,
@@ -7247,6 +7300,83 @@ mod latest_version_tests {
         assert_eq!(backend.list_calls(), 1);
     }
 
+    /// Set the modified time of `backend`'s cached remote-version lists to
+    /// `secs` ago.
+    fn backdate_remote_versions(backend: &LatestBackend, secs: u64) {
+        let then = filetime::FileTime::from_system_time(
+            std::time::SystemTime::now() - std::time::Duration::from_secs(secs),
+        );
+        for entry in fs::read_dir(backend.ba().cache_path()).unwrap() {
+            let path = entry.unwrap().path();
+            if path.to_string_lossy().contains("remote_versions-") {
+                filetime::set_file_mtime(&path, then).unwrap();
+            }
+        }
+    }
+
+    /// A cached list that dates every version and was written 2h ago, read by
+    /// a later command, as `name`.
+    async fn backend_with_two_hour_old_list(name: &str, dated: bool) -> LatestBackend {
+        let backend = LatestBackend::new(name);
+        let cache = backend.get_remote_version_cache();
+        {
+            let mut cache = cache.lock().await;
+            cache.clear().unwrap();
+            cache
+                .write(&vec![VersionInfo {
+                    version: "1.0.0".to_string(),
+                    created_at: dated.then(|| "2024-01-01".to_string()),
+                    ..Default::default()
+                }])
+                .unwrap();
+        }
+        backdate_remote_versions(&backend, 2 * 60 * 60);
+        LatestBackend::new(name)
+    }
+
+    /// Past `fetch_remote_versions_cache`, a command that only needs a matching
+    /// version keeps a dated list for the tool's release-age window.
+    #[tokio::test]
+    async fn test_list_within_release_age_window_is_reused() {
+        let _settings = crate::test::SettingsGuard::lock();
+        let mut partial = SettingsPartial::empty();
+        partial.minimum_release_age = Some("24h".to_string());
+        Settings::reset(Some(partial.clone()));
+        let config = Config::get().await.unwrap();
+
+        let backend = backend_with_two_hour_old_list("test-release-age-window", true).await;
+        assert_eq!(
+            backend.list_remote_versions(&config).await.unwrap(),
+            vec!["1.0.0".to_string()]
+        );
+        assert_eq!(backend.list_calls(), 0);
+
+        // A version without a date passes the cutoff the moment it is listed.
+        let backend =
+            backend_with_two_hour_old_list("test-release-age-window-undated", false).await;
+        assert_eq!(
+            backend.list_remote_versions(&config).await.unwrap(),
+            vec!["1.0.0".to_string(), "2.0.0".to_string()]
+        );
+        assert_eq!(backend.list_calls(), 1);
+
+        // A shorter cutoff, a shorter window.
+        let mut short = partial.clone();
+        short.minimum_release_age = Some("90m".to_string());
+        Settings::reset(Some(short));
+        let backend = backend_with_two_hour_old_list("test-release-age-window-short", true).await;
+        backend.list_remote_versions(&config).await.unwrap();
+        assert_eq!(backend.list_calls(), 1);
+
+        // `fetch_remote_versions_cache` applies as set when the user sets it.
+        partial.fetch_remote_versions_cache = Some("1h".to_string());
+        Settings::reset(Some(partial));
+        let backend =
+            backend_with_two_hour_old_list("test-release-age-window-explicit", true).await;
+        backend.list_remote_versions(&config).await.unwrap();
+        assert_eq!(backend.list_calls(), 1);
+    }
+
     /// A release-age cutoff can stand in for an install-time refresh only when
     /// the cached list is younger than the cutoff by the snapshot lag and
     /// dates every version: an undated (or unparseable) one passes any cutoff.
@@ -7296,21 +7426,23 @@ mod latest_version_tests {
                 .await
         );
 
-        // Past `fetch_remote_versions_cache`, a list is not used at all.
-        let two_hours_ago = filetime::FileTime::from_system_time(
-            std::time::SystemTime::now() - std::time::Duration::from_secs(2 * 60 * 60),
+        // Past `fetch_remote_versions_cache`, a list is still used within the
+        // cutoff's release-age window, but not past a value the user set.
+        backdate_remote_versions(&backend, 2 * 60 * 60);
+        assert!(
+            backend
+                .adopt_cached_remote_versions_for_cutoff(&config, day_ago)
+                .await
         );
-        for entry in fs::read_dir(backend.ba().cache_path()).unwrap() {
-            let path = entry.unwrap().path();
-            if path.to_string_lossy().contains("remote_versions-") {
-                filetime::set_file_mtime(&path, two_hours_ago).unwrap();
-            }
-        }
+        let mut partial = SettingsPartial::empty();
+        partial.fetch_remote_versions_cache = Some("1h".to_string());
+        Settings::reset(Some(partial));
         assert!(
             !backend
                 .adopt_cached_remote_versions_for_cutoff(&config, day_ago)
                 .await
         );
+        Settings::reset(None);
 
         write(vec![
             dated("1.0.0", Some("2024-01-01")),

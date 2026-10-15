@@ -322,6 +322,20 @@ where
     where
         T: Clone,
     {
+        self.adopt_file_if_fresh_for(self.fresh_duration, accept)
+    }
+
+    /// Like [`Self::adopt_file_if`], but the file is fresh for `fresh_duration`
+    /// in place of the one this cache was built with (still bounded by any
+    /// fresh files), for a caller that may keep it longer or shorter.
+    pub fn adopt_file_if_fresh_for(
+        &mut self,
+        fresh_duration: Option<Duration>,
+        accept: impl FnOnce(Duration, &T) -> bool,
+    ) -> bool
+    where
+        T: Clone,
+    {
         let Some(age) = self
             .cache_file_path
             .metadata()
@@ -331,7 +345,10 @@ where
         else {
             return false;
         };
-        if self.freshest_duration().is_some_and(|fresh| age >= fresh) {
+        if self
+            .freshest_duration_for(fresh_duration)
+            .is_some_and(|fresh| age >= fresh)
+        {
             return false;
         }
         let Ok(val) = self.parse() else {
@@ -416,7 +433,11 @@ where
     }
 
     fn freshest_duration(&self) -> Option<Duration> {
-        let mut freshest = self.fresh_duration;
+        self.freshest_duration_for(self.fresh_duration)
+    }
+
+    fn freshest_duration_for(&self, fresh_duration: Option<Duration>) -> Option<Duration> {
+        let mut freshest = fresh_duration;
         for path in self.fresh_files.iter().unique() {
             let duration = modified_duration(path).unwrap_or_default();
             freshest = Some(match freshest {
@@ -826,6 +847,19 @@ mod tests {
         let mut cache = refresh_cache(dir.path(), Duration::ZERO);
         cache.write(&"written".to_string()).unwrap();
         assert!(!cache.adopt_file_if(|_, _| true));
+    }
+
+    /// A caller's own fresh duration replaces the cache's, either way.
+    #[tokio::test]
+    async fn adopt_file_if_fresh_for_uses_the_given_duration() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut cache = refresh_cache(dir.path(), Duration::ZERO);
+        cache.write(&"written".to_string()).unwrap();
+        assert!(!cache.adopt_file_if_fresh_for(Some(Duration::ZERO), |_, _| true));
+        assert!(cache.adopt_file_if_fresh_for(Some(Duration::from_secs(60)), |_, _| true));
+
+        let mut cache = refresh_cache(dir.path(), Duration::from_secs(60));
+        assert!(!cache.adopt_file_if_fresh_for(Some(Duration::ZERO), |_, _| true));
     }
 
     fn environment(values: &[(&str, &str)]) -> impl Fn(&str) -> Option<String> {
