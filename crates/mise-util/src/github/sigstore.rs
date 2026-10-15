@@ -548,6 +548,9 @@ async fn verify_with_mirror(
         let attestations = match found {
             Ok(Some(attestations)) => attestations,
             Ok(None) => return unknown_repo_verdict(&full),
+            // Paranoid mode has GitHub confirm mise-versions anyway, so it
+            // asks GitHub when mise-versions can't answer.
+            Err(_) if !mirror_may_answer_none() => return MirrorVerdict::AskGithub,
             Err(err) => return MirrorVerdict::Done(Err(mirror_failure(&full, &err))),
         };
         trace!(
@@ -662,6 +665,7 @@ async fn detect_with_mirror(
                     MirrorVerdict::Done(result) => Some(result.map_err(DetectError::Fetch)),
                 };
             }
+            Err(_) if !mirror_may_answer_none() => return None,
             Err(err) => return Some(Err(DetectError::Fetch(mirror_failure(&full, &err)))),
         };
         trace!(
