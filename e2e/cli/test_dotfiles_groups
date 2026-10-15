@@ -133,6 +133,7 @@ echo "light" >"$DOTS/app/dot-config/app/themes/light.toml"
 echo "secret={{ env.HOME }}" >"$DOTS/app/conf/secret.tmpl"
 echo "plain" >"$DOTS/app/dot-plainrc"
 echo "name={{ env.HOME }}" >"$DOTS/app/dot-config/app/inferred.conf.tera"
+echo "git={{ env.HOME }}" >"$DOTS/app/.literal.tera"
 echo "stale" >"$HOME/.app-old.conf"
 cat <<EOF >mise.toml
 [dotfile_groups.app]
@@ -146,6 +147,7 @@ dot_prefix = true
 "~/.app-old.conf" = { mode = "absent" }
 "~/.plainrc" = {}
 "~/.config/app/inferred.conf" = { mode = "template" }
+"~/.literal" = { mode = "template" }
 EOF
 assert_succeed "mise dot apply --yes"
 assert "readlink $HOME/.config/app/main.toml" "$DOTS/app/dot-config/app/main.toml"
@@ -159,6 +161,8 @@ assert "readlink $HOME/.plainrc" "$DOTS/app/dot-plainrc"
 # a template entry without a source finds it with a .tera suffix
 assert "cat $HOME/.config/app/inferred.conf" "name=$HOME"
 assert_fail "test -e $HOME/.config/app/inferred.conf.tera"
+assert "cat $HOME/.literal" "git=$HOME"
+assert_fail "test -e $HOME/.literal.tera"
 # an entry's source inside the tree is not also deployed by the walk
 assert_fail "test -e $HOME/conf/secret.tmpl"
 

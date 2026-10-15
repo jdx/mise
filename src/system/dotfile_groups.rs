@@ -423,7 +423,7 @@ fn group_entry(defaults: &EntryDefaults, key: &str, value: toml::Value) -> Resul
     } else if needs_source {
         let source = root.join(source_rel_for(root, &rel, dot_prefix));
         Some(if mode.as_deref() == Some("template") {
-            template_source(source)
+            template_source(source, &root.join(&rel))
         } else {
             source
         })
@@ -506,16 +506,26 @@ fn group_entry(defaults: &EntryDefaults, key: &str, value: toml::Value) -> Resul
     })
 }
 
-/// A template entry's inferred source: the exact path when it exists,
-/// otherwise the same path with a `.tera` suffix when that file exists.
-fn template_source(source: PathBuf) -> PathBuf {
-    if source.exists() {
-        return source;
-    }
-    let mut tera = source.clone().into_os_string();
-    tera.push(".tera");
-    let tera = PathBuf::from(tera);
-    if tera.exists() { tera } else { source }
+/// A template entry's inferred source: the first file among the inferred
+/// path and the literal one (a `.name` kept unprefixed in a `dot_prefix`
+/// tree), then each of them with a `.tera` suffix. When none is a file, the
+/// inferred path, so the missing source is reported.
+fn template_source(inferred: PathBuf, literal: &Path) -> PathBuf {
+    let suffixed = |path: &Path| {
+        let mut tera = path.as_os_str().to_os_string();
+        tera.push(".tera");
+        PathBuf::from(tera)
+    };
+    let candidates = [
+        inferred.clone(),
+        literal.to_path_buf(),
+        suffixed(&inferred),
+        suffixed(literal),
+    ];
+    candidates
+        .into_iter()
+        .find(|path| path.is_file())
+        .unwrap_or(inferred)
 }
 
 /// Resolve a group's `root`: relative paths start at `dotfiles.root`.
@@ -1170,17 +1180,31 @@ mod tests {
     #[test]
     fn template_sources_fall_back_to_a_tera_suffix() {
         let dir = tempfile::tempdir().unwrap();
-        let exact = dir.path().join("config");
-        // neither exists: the exact path, so the missing source is reported
-        assert_eq!(template_source(exact.clone()), exact);
-        file::write(dir.path().join("config.tera"), "x").unwrap();
+        let root = dir.path();
+        let exact = root.join("config");
+        // none exists: the inferred path, so the missing source is reported
+        assert_eq!(template_source(exact.clone(), &exact), exact);
+        file::write(root.join("config.tera"), "x").unwrap();
         assert_eq!(
-            template_source(exact.clone()),
-            dir.path().join("config.tera")
+            template_source(exact.clone(), &exact),
+            root.join("config.tera")
         );
+        // a directory at the exact path is not a template
+        file::create_dir_all(&exact).unwrap();
+        assert_eq!(
+            template_source(exact.clone(), &exact),
+            root.join("config.tera")
+        );
+        std::fs::remove_dir(&exact).unwrap();
         // the exact path wins when both exist
         file::write(&exact, "x").unwrap();
-        assert_eq!(template_source(exact.clone()), exact);
+        assert_eq!(template_source(exact.clone(), &exact), exact);
+        // a literal dotfile in a dot_prefix tree is found with its suffix
+        file::write(root.join(".gitconfig.tera"), "x").unwrap();
+        assert_eq!(
+            template_source(root.join("dot-gitconfig"), &root.join(".gitconfig")),
+            root.join(".gitconfig.tera")
+        );
     }
 
     #[test]
