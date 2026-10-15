@@ -244,9 +244,11 @@ patterns = ["**/*.go"]
 run = '[ -n "$MISE_WATCH_FILES_GIT_REWRITTEN" ] || { IFS=:; hk fix $MISE_WATCH_FILES_MODIFIED; }'
 ```
 
-The variable is unset when any changed file is newer than the last HEAD move, so
-a real edit made alongside a rebase still runs the command. `git stash pop` and
-`git stash apply` do not move HEAD, so they are not detected.
+The variable is unset when any changed file is newer than the last HEAD move,
+so a real edit made alongside a rebase still runs the command. It is also unset
+when the last HEAD move was a commit, since a commit does not rewrite the files
+you edited. `git stash pop` and `git stash apply` do not move HEAD, so they are
+not detected.
 
 ## Environment variables {#hook-execution}
 

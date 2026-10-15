@@ -27,6 +27,12 @@ sleep 1
 git checkout -q -b other
 echo two >watched.txt
 git commit -q -am two
+# an edit that was committed before the next prompt is still the user's edit
+assert_contains "mise hook-env -s bash 2>&1" "GIT_REWRITTEN=[]"
+
+eval "$(mise hook-env -s bash)"
+sleep 1
+git checkout -q -
 assert_contains "mise hook-env -s bash 2>&1" "GIT_REWRITTEN=[1]"
 
 # a later real edit is not mistaken for a git rewrite

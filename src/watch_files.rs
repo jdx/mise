@@ -37,18 +37,45 @@ pub(crate) fn add_modified_file(file: PathBuf) {
 /// pull or rebase updates the working tree and then logs the HEAD move, while
 /// an edit made afterwards is newer than the log. False outside a git checkout.
 fn git_rewrote(root: &Path, files: &[&PathBuf]) -> bool {
-    let Some(logged) = git_dir(root)
-        .and_then(|d| std::fs::metadata(d.join("logs").join("HEAD")).ok())
-        .and_then(|m| m.modified().ok())
+    let Some(log) = git_dir(root).map(|d| d.join("logs").join("HEAD")) else {
+        return false;
+    };
+    let Some(logged) = std::fs::metadata(&log)
+        .and_then(|m| m.modified())
+        .ok()
+        .filter(|_| !last_move_was_commit(&log))
     else {
         return false;
     };
+    // A deleted file has no mtime to compare, so it cannot count against the rest.
     !files.is_empty()
         && files.iter().all(|f| {
             std::fs::metadata(f)
                 .and_then(|m| m.modified())
                 .is_ok_and(|mtime| mtime <= logged)
+                || !f.exists()
         })
+}
+
+/// Whether the latest HEAD reflog entry is a commit, which moves HEAD without
+/// rewriting the files you edited before committing.
+fn last_move_was_commit(log: &Path) -> bool {
+    use std::io::{Read, Seek, SeekFrom};
+    let Ok(mut f) = std::fs::File::open(log) else {
+        return false;
+    };
+    let len = f.metadata().map(|m| m.len()).unwrap_or(0);
+    let mut tail = Vec::new();
+    if f.seek(SeekFrom::Start(len.saturating_sub(4096))).is_err()
+        || f.read_to_end(&mut tail).is_err()
+    {
+        return false;
+    }
+    String::from_utf8_lossy(&tail)
+        .lines()
+        .rfind(|l| !l.is_empty())
+        .and_then(|l| l.split_once('\t'))
+        .is_some_and(|(_, msg)| msg.starts_with("commit"))
 }
 
 /// The git directory of the checkout containing `root`: a `.git` directory, or
