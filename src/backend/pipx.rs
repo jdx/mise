@@ -581,7 +581,10 @@ impl Backend for PIPXBackend {
             let locked = config.invocation_locked_for(tv.request.source(), Settings::get().locked)
                 || tv.request.tool_config_locked(config, true);
             if graph_required {
-                if !selected_python && !locked && self.is_version_installed(config, tv, check_symlink) {
+                if !selected_python
+                    && !locked
+                    && self.is_version_installed(config, tv, check_symlink)
+                {
                     return Ok(true);
                 }
                 // Installer arguments which uv cannot lock deliberately use
@@ -589,10 +592,13 @@ impl Backend for PIPXBackend {
                 // its receipt checked below, but must not be forced to
                 // reinstall once that receipt matches.
                 let version_only_fallback = !self.uv_lock_options_supported(tv);
-                if locked || (!version_only_fallback && self
-                    .spawnable_dependency(config, None, "uv")
-                    .await
-                    .is_some()) {
+                if locked
+                    || (!version_only_fallback
+                        && self
+                            .spawnable_dependency(config, None, "uv")
+                            .await
+                            .is_some())
+                {
                     return Ok(false);
                 }
             }
@@ -601,9 +607,9 @@ impl Backend for PIPXBackend {
             let Some((_, expected_identity)) = &tv.uv_python else {
                 return Ok(false);
             };
-            let Ok(contents) = crate::file::read_to_string(
-                tv.install_path().join(".mise-uv/python.json"),
-            ) else {
+            let Ok(contents) =
+                crate::file::read_to_string(tv.install_path().join(".mise-uv/python.json"))
+            else {
                 return Ok(false);
             };
             let Ok((_, installed_identity)) = serde_json::from_str::<(PathBuf, String)>(&contents)
@@ -1406,15 +1412,12 @@ enum PipxRequest {
 
 /// Whether user-supplied `uv tool install` arguments already pick an interpreter.
 fn uv_args_select_python(args: &[String]) -> bool {
-    args.iter()
-        .any(|a| {
-            a == "-p"
-                || a == "--python"
-                || a.starts_with("--python=")
-                || (a.starts_with("-p")
-                    && !a.starts_with("--")
-                    && a.len() > 2)
-        })
+    args.iter().any(|a| {
+        a == "-p"
+            || a == "--python"
+            || a.starts_with("--python=")
+            || (a.starts_with("-p") && !a.starts_with("--") && a.len() > 2)
+    })
 }
 
 /// A Git source split into its repository and any pip/uv URL fragment
@@ -1816,14 +1819,14 @@ mod tests {
         GitSource, PIPXBackend, PipxOptions, PipxRequest, PypiPackage, PypiRelease, SelectedPython,
         UV_EXCLUDE_NEWER_VERSION, uv_args_select_python,
     };
+    use crate::args::BackendArg;
     use crate::backend::Backend;
     #[cfg(unix)]
     use crate::file;
     use crate::github::GithubRelease;
-    use crate::toolset::{ToolRequest, ToolSource, ToolVersionOptions, parse_tool_options};
     use crate::toolset::tool_request::LockfileScope;
+    use crate::toolset::{ToolRequest, ToolSource, ToolVersionOptions, parse_tool_options};
     use std::sync::Arc;
-    use crate::args::BackendArg;
 
     #[test]
     fn selected_python_accepts_numeric_minor_and_exact_patch() {
@@ -1856,7 +1859,9 @@ mod tests {
         .unwrap();
         request.set_lockfile_scope(LockfileScope::Source(owner.clone()));
 
-        let dependency = super::selected_python_dependency(&request).unwrap().unwrap();
+        let dependency = super::selected_python_dependency(&request)
+            .unwrap()
+            .unwrap();
         assert_eq!(dependency.lockfile_scope(), &LockfileScope::Source(owner));
     }
 

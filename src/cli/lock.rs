@@ -2153,7 +2153,8 @@ impl Lock {
         .await?;
 
         if self.tool.is_empty() {
-            self.add_selected_python_locks(config, context, target_lockfile_path, &mut all_tools).await?;
+            self.add_selected_python_locks(config, context, target_lockfile_path, &mut all_tools)
+                .await?;
             Ok(all_tools)
         } else {
             // Build map of tool args with explicit versions
@@ -2252,7 +2253,13 @@ impl Lock {
             for tool in tools {
                 push_unique_lock_tool(&mut unique_tools, tool);
             }
-            self.add_selected_python_locks(config, context, target_lockfile_path, &mut unique_tools).await?;
+            self.add_selected_python_locks(
+                config,
+                context,
+                target_lockfile_path,
+                &mut unique_tools,
+            )
+            .await?;
             Ok(unique_tools)
         }
     }
@@ -2266,14 +2273,18 @@ impl Lock {
     ) -> Result<()> {
         let requests = tools
             .iter()
-            .filter_map(|(_, tv)| crate::backend::pipx::selected_python_dependency(&tv.request).transpose())
+            .filter_map(|(_, tv)| {
+                crate::backend::pipx::selected_python_dependency(&tv.request).transpose()
+            })
             .collect::<Result<Vec<_>>>()?;
         for request in requests {
             let opts = request.resolve_options(context.resolve_options)?;
-            let tv = request.resolve(config, &opts).await.wrap_err_with(|| format!(
-                "failed to resolve selected Python dependency {request} for lockfile {}",
-                display_path(target_lockfile_path)
-            ))?;
+            let tv = request.resolve(config, &opts).await.wrap_err_with(|| {
+                format!(
+                    "failed to resolve selected Python dependency {request} for lockfile {}",
+                    display_path(target_lockfile_path)
+                )
+            })?;
             push_unique_lock_tool(tools, (tv.ba().clone(), tv));
         }
         Ok(())

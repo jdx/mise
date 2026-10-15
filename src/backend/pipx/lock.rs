@@ -134,7 +134,8 @@ impl PIPXBackend {
                 .ok()
                 .flatten();
             if let Some(dependency) = dependency
-                && let Ok(python) = ToolVersion::resolve(config, dependency, &Default::default()).await
+                && let Ok(python) =
+                    ToolVersion::resolve(config, dependency, &Default::default()).await
                 && let Ok(backend) = python.backend()
                 && let Ok(Some(path)) = backend.which(config, &python, "python").await
             {
