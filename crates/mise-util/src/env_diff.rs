@@ -97,6 +97,13 @@ impl EnvDiff {
         diff
     }
 
+    /// Sources `script` with bash in `dir`, using exactly `env` as the
+    /// environment, and returns the variables the script exported or changed
+    /// relative to `env`. Bash runs with `--noprofile --norc` so the user's
+    /// startup files cannot leak into the result. Keys matched by `opts` are
+    /// skipped. On Windows this needs a POSIX bash (Git Bash / MSYS2) and maps
+    /// PATH back to Windows form. Fails if bash cannot run or the script exits
+    /// non-zero.
     pub fn from_bash_script<T, U, V>(
         script: &Path,
         dir: &Path,
