@@ -4182,6 +4182,101 @@ impl ApplyPlan<'_> {
     }
 }
 
+/// What the apply confirmation lists for one request: directory copies are
+/// expanded to the files that would be created or overwritten.
+fn confirmation_lines(req: &FileRequest, rendered: Option<&str>) -> Result<Vec<String>> {
+    if removes_target(req, rendered) {
+        return Ok(vec![format!("rm {}", req.target.display_user())]);
+    }
+    if req.mode != FileMode::Copy || !req.source.is_dir() {
+        return Ok(vec![describe(req)?]);
+    }
+    let root = &req.target;
+    let mut lines = vec![];
+    match std::fs::symlink_metadata(root) {
+        // a dangling link stays in place and the copy into it fails
+        Ok(_) if !root.exists() => {
+            return Ok(vec![format!(
+                "conflict (dangling symlink): {}",
+                root.display_user()
+            )]);
+        }
+        // a file (or a link to one) at the root is replaced by the directory
+        // under `--force`, even when the source directory is empty
+        Ok(_) if !root.is_dir() => {
+            lines.push(format!("replace {} with a directory", root.display_user()));
+        }
+        Ok(_) => {}
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+            // Windows reports a file used as a parent as not found too
+            if let Some(blocker) = root.ancestors().skip(1).find(|dir| is_blocking_dir(dir)) {
+                return Ok(vec![format!(
+                    "conflict (not a directory): {}",
+                    blocker.display_user()
+                )]);
+            }
+            lines.push(format!("create {}", root.display_user()));
+        }
+        // e.g. a parent that is a file, or a path that cannot be read
+        Err(err) => {
+            return Ok(vec![format!("conflict ({err}): {}", root.display_user())]);
+        }
+    }
+    for (src, tgt) in walk_source_files(req)? {
+        // a file where a parent directory belongs blocks everything below it
+        let blocker = tgt
+            .ancestors()
+            .skip(1)
+            .take_while(|dir| dir.starts_with(root) && *dir != root.as_path())
+            .find(|dir| is_blocking_dir(dir));
+        if let Some(blocker) = blocker {
+            let line = format!("conflict (not a directory): {}", blocker.display_user());
+            if !lines.contains(&line) {
+                lines.push(line);
+            }
+            continue;
+        }
+        let verb = match std::fs::symlink_metadata(&tgt) {
+            Err(_) => "create",
+            Ok(meta) if meta.file_type().is_symlink() => "replace symlink",
+            Ok(meta) if meta.is_file() => {
+                // apply rewrites every existing file with the source's content
+                // and mode, so only a file that already matches both is skipped
+                if file_matches(&src, &tgt, &meta) {
+                    continue;
+                }
+                "overwrite"
+            }
+            // apply cannot copy a file over a directory and stops with an error
+            Ok(_) => "conflict (not a file):",
+        };
+        lines.push(format!("{verb} {}", tgt.display_user()));
+    }
+    Ok(lines)
+}
+
+/// Something sits at `dir` that is not a directory, a dangling symlink
+/// included, so nothing can be created below it.
+fn is_blocking_dir(dir: &Path) -> bool {
+    std::fs::symlink_metadata(dir).is_ok() && !dir.is_dir()
+}
+
+fn file_matches(src: &Path, tgt: &Path, tgt_meta: &std::fs::Metadata) -> bool {
+    let Ok(src_meta) = std::fs::metadata(src) else {
+        return false;
+    };
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        if src_meta.permissions().mode() & 0o7777 != tgt_meta.permissions().mode() & 0o7777 {
+            return false;
+        }
+    }
+    #[cfg(not(unix))]
+    let _ = (&src_meta, tgt_meta);
+    matches!((std::fs::read(tgt), std::fs::read(src)), (Ok(a), Ok(b)) if a == b)
+}
+
 pub fn execute_apply(
     config: &Config,
     plan: ApplyPlan<'_>,
@@ -4237,7 +4332,19 @@ pub fn execute_apply(
             .unique()
             .collect::<Vec<_>>()
             .join(", ");
-        if !prompt::confirm(format!("files: apply {list}?"))?.is_yes() {
+        for link in &plan.reconciliation.stale_links {
+            eprintln!("  rm {}", link.target.display_user());
+        }
+        for (req, rendered) in &plan.todo {
+            for line in confirmation_lines(req, rendered.as_deref())? {
+                eprintln!("  {line}");
+            }
+        }
+        eprintln!(
+            "files: applying makes the live targets match the repository, replacing local edits.\n\
+             files: run `mise dot diff` to review the differences first."
+        );
+        if !prompt::confirm_with_default(format!("files: apply {list}?"), false)?.is_yes() {
             info!("files: skipped");
             return Ok(false);
         }
@@ -8436,6 +8543,98 @@ source = "oldrc""#,
         let mut req = link_req(&source, &dir.join("target"), FileMode::Template);
         req.remove_empty = remove_empty;
         Ok(req)
+    }
+
+    #[test]
+    fn confirmation_lines_list_directory_copy_files() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let src = dir.path().join("src");
+        let tgt = dir.path().join("tgt");
+        file::create_dir_all(&src)?;
+        file::create_dir_all(&tgt)?;
+        file::write(src.join("same"), "a")?;
+        file::write(tgt.join("same"), "a")?;
+        file::write(src.join("changed"), "new")?;
+        file::write(tgt.join("changed"), "old")?;
+        file::write(src.join("fresh"), "x")?;
+        let req = link_req(&src, &tgt, FileMode::Copy);
+        #[cfg(unix)]
+        {
+            file::write(src.join("link"), "a")?;
+            std::os::unix::fs::symlink(tgt.join("same"), tgt.join("link"))?;
+        }
+        let lines = confirmation_lines(&req, None)?;
+        let blocked = dir.path().join("blocked");
+        file::write(&blocked, "file")?;
+        let root = confirmation_lines(&link_req(&src, &blocked, FileMode::Copy), None)?;
+        assert!(root[0].starts_with("replace ") && root[0].ends_with("with a directory"));
+        #[cfg(unix)]
+        assert!(lines[2].starts_with("replace symlink ") && lines[2].ends_with("link"));
+        #[cfg(unix)]
+        let lines: Vec<_> = lines.into_iter().filter(|l| !l.ends_with("link")).collect();
+        assert_eq!(lines.len(), 2, "{lines:?}");
+        assert!(lines[0].starts_with("overwrite ") && lines[0].ends_with("changed"));
+        assert!(lines[1].starts_with("create ") && lines[1].ends_with("fresh"));
+        Ok(())
+    }
+
+    #[test]
+    fn confirmation_lines_cover_directory_copy_edge_cases() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let empty = dir.path().join("empty");
+        file::create_dir_all(&empty)?;
+        let missing = dir.path().join("missing");
+        let lines = confirmation_lines(&link_req(&empty, &missing, FileMode::Copy), None)?;
+        assert_eq!(lines.len(), 1, "{lines:?}");
+        assert!(lines[0].starts_with("create ") && lines[0].ends_with("missing"));
+
+        let src = dir.path().join("src");
+        file::create_dir_all(src.join("sub"))?;
+        file::write(src.join("sub/config"), "x")?;
+        let tgt = dir.path().join("tgt");
+        file::create_dir_all(&tgt)?;
+        file::write(tgt.join("sub"), "a file")?;
+        let lines = confirmation_lines(&link_req(&src, &tgt, FileMode::Copy), None)?;
+        assert_eq!(lines.len(), 1, "{lines:?}");
+        assert!(lines[0].starts_with("conflict (not a directory): ") && lines[0].ends_with("sub"));
+
+        let under_file = tgt.join("sub").join("deeper");
+        let lines = confirmation_lines(&link_req(&src, &under_file, FileMode::Copy), None)?;
+        assert_eq!(lines.len(), 1, "{lines:?}");
+        assert!(lines[0].starts_with("conflict ("), "{lines:?}");
+
+        #[cfg(unix)]
+        {
+            let sub_link = tgt.join("sub");
+            file::remove_file(&sub_link)?;
+            std::os::unix::fs::symlink(dir.path().join("nowhere"), &sub_link)?;
+            let lines = confirmation_lines(&link_req(&src, &tgt, FileMode::Copy), None)?;
+            assert_eq!(lines.len(), 1, "{lines:?}");
+            assert!(
+                lines[0].starts_with("conflict (not a directory): "),
+                "{lines:?}"
+            );
+        }
+
+        #[cfg(unix)]
+        {
+            let dangling = dir.path().join("dangling");
+            std::os::unix::fs::symlink(dir.path().join("nowhere"), &dangling)?;
+            let lines = confirmation_lines(&link_req(&src, &dangling, FileMode::Copy), None)?;
+            assert_eq!(lines.len(), 1, "{lines:?}");
+            assert!(lines[0].starts_with("conflict (dangling symlink): "));
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn confirmation_lines_show_empty_template_removal() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let req = template_req(dir.path(), true)?;
+        let lines = confirmation_lines(&req, Some(""))?;
+        assert_eq!(lines.len(), 1);
+        assert!(lines[0].starts_with("rm "), "{lines:?}");
+        Ok(())
     }
 
     #[test]

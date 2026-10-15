@@ -1510,6 +1510,11 @@ Refresh package metadata and update repositories before applying
 
 Also fast\-forwards a checkout that `\-\-from` or `\-\-adopt` reuses. Without `\-\-update`, a reused checkout stays at its current commit.
 .TP
+\fB\-\-upgrade\fR
+Upgrade installed packages and tools as well as installing missing ones
+
+In the packages phase, runs the equivalent of `mise bootstrap packages upgrade` after installing; in the tools phase, runs `mise upgrade` (without `\-\-bump`) after installing. Package pins and tool version ranges are respected. Does not update mise itself, repositories, or container images, and does not restart services; see `\-\-update` for repositories and `mise self\-update` for mise.
+.TP
 \fB\-h, \-\-help\fR
 Print help
 \fBExamples:\fR
@@ -5657,6 +5662,9 @@ Only include variables marked for redaction; their values are printed unmasked
 \fB\-\-values\fR
 Only show values of environment variables
 .TP
+\fB\-\-paths\fR
+Print the PATH entries mise manages, in PATH order, one per line
+.TP
 \fB\-h, \-\-help\fR
 Print help
 \fBArguments:\fR
@@ -5694,6 +5702,12 @@ Print the variables as JSON
 .PP
 .RS 4
 mise env \-\-json
+.RE
+.PP
+List the PATH entries mise manages, such as tool bin directories
+.PP
+.RS 4
+mise env \-\-paths
 .RE
 .PP
 Write a dotenv file; it contains secret values

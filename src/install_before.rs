@@ -1,4 +1,5 @@
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use eyre::Result;
 use jiff::civil::date;
@@ -12,6 +13,63 @@ use crate::duration::{parse_duration, parse_into_timestamp};
 
 const DEFAULT_MINIMUM_RELEASE_AGE: &str = "24h";
 const DISABLED_MINIMUM_RELEASE_AGE_CUTOFF: &str = "2099-01-01";
+
+/// The shortest and longest a release-age window keeps a cached version list.
+/// See [`release_age_list_window`].
+const RELEASE_AGE_LIST_WINDOW_MIN: Duration = Duration::from_secs(60 * 60);
+const RELEASE_AGE_LIST_WINDOW_MAX: Duration = Duration::from_secs(24 * 60 * 60);
+
+/// The cutoff from the running command's `--minimum-release-age` flag, which
+/// resolution receives directly rather than through tool options.
+static CLI_MINIMUM_RELEASE_AGE_CUTOFF: Mutex<Option<Timestamp>> = Mutex::new(None);
+
+/// Record the cutoff a command's `--minimum-release-age` flag resolved to, so
+/// [`release_age_list_window`] sizes its window by it rather than by the
+/// tool's configured cutoff.
+pub fn set_cli_minimum_release_age_cutoff(cutoff: Timestamp) {
+    *CLI_MINIMUM_RELEASE_AGE_CUTOFF.lock().unwrap() = Some(cutoff);
+}
+
+/// How long a command that only needs a version matching its request, such as
+/// `mise install`, may keep a cached remote version list for `backend_arg` when
+/// that list dates every version: the tool's effective release-age cutoff less
+/// `LISTED_SNAPSHOT_LAG`, clamped to between 1 and 24 hours.
+///
+/// A release missing from the list was published after the snapshot it holds,
+/// which can be up to `LISTED_SNAPSHOT_LAG` older than the cache file, and the
+/// cutoff hides it until it reaches that age, so reusing the list for as long
+/// does not delay any release beyond the cutoff. `None` means no window, and
+/// the list is kept for `fetch_remote_versions_cache` as usual: when the user
+/// set that, for a command that reports what is newest, under prefer-offline,
+/// and for a tool with no cutoff.
+pub(crate) fn release_age_list_window(
+    backend_arg: &BackendArg,
+    minimum_release_age: Option<&str>,
+) -> Option<Duration> {
+    if !mise_util::network::release_age_list_window_applies(&Settings::get()) {
+        return None;
+    }
+    let cutoff = match *CLI_MINIMUM_RELEASE_AGE_CUTOFF.lock().unwrap() {
+        Some(cutoff) => cutoff,
+        None => resolve_before_date_for_tool(backend_arg, None, minimum_release_age).ok()??,
+    };
+    release_age_list_window_for_cutoff(cutoff)
+}
+
+/// [`release_age_list_window`] for a cutoff the caller already resolved.
+pub(crate) fn release_age_list_window_for_cutoff(cutoff: Timestamp) -> Option<Duration> {
+    mise_util::network::release_age_list_window_applies(&Settings::get())
+        .then(|| list_window_for_cutoff(cutoff, crate::duration::process_now()))
+}
+
+/// The release-age window for a list read at `now` under `cutoff`: a cutoff in
+/// the future (`--minimum-release-age 0s`) gives the shortest window.
+fn list_window_for_cutoff(cutoff: Timestamp, now: Timestamp) -> Duration {
+    Duration::try_from(now.duration_since(cutoff))
+        .unwrap_or(Duration::ZERO)
+        .saturating_sub(crate::backend::LISTED_SNAPSHOT_LAG)
+        .clamp(RELEASE_AGE_LIST_WINDOW_MIN, RELEASE_AGE_LIST_WINDOW_MAX)
+}
 
 /// Where an effective release-age cutoff came from.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -320,9 +378,9 @@ fn release_is_eligible_at(created_at: Timestamp, now: Timestamp, age: &Span) -> 
 mod tests {
     use super::{
         BeforeDateSource, DEFAULT_MINIMUM_RELEASE_AGE, effective_minimum_release_age_for_tool,
-        format_hidden_release_details, minimum_release_age_label, release_is_eligible_at,
-        resolve_before_date, resolve_before_date_for_tool,
-        resolve_before_date_for_tool_with_source,
+        format_hidden_release_details, list_window_for_cutoff, minimum_release_age_label,
+        release_age_list_window, release_is_eligible_at, resolve_before_date,
+        resolve_before_date_for_tool, resolve_before_date_for_tool_with_source,
     };
     use crate::args::BackendArg;
     use crate::config::SettingsExt;
@@ -330,6 +388,7 @@ mod tests {
     use confique::Layer;
     use jiff::Timestamp;
     use jiff::tz::TimeZone;
+    use std::time::Duration;
     use test_log::test;
 
     fn resolved_timestamp(
@@ -384,6 +443,61 @@ mod tests {
         partial.minimum_release_age = Some("0s".to_string());
         Settings::reset(Some(partial));
         assert_eq!(resolved_tool_timestamp("github:cli/cli", None, None), None);
+    }
+
+    #[test]
+    fn test_list_window_for_cutoff() {
+        let now = Timestamp::now();
+        let ago = |secs: i64| now - jiff::SignedDuration::from_secs(secs);
+        let hours = |hours: u64| Duration::from_secs(hours * 60 * 60);
+        // Less the hour a versions-host snapshot can lag the cache file.
+        assert_eq!(list_window_for_cutoff(ago(6 * 3600), now), hours(5));
+        assert_eq!(list_window_for_cutoff(ago(24 * 3600), now), hours(23));
+        assert_eq!(list_window_for_cutoff(ago(2 * 3600), now), hours(1));
+        assert_eq!(list_window_for_cutoff(ago(7 * 24 * 3600), now), hours(24));
+        assert_eq!(list_window_for_cutoff(ago(30 * 60), now), hours(1));
+        assert_eq!(list_window_for_cutoff(now, now), hours(1));
+        // `--minimum-release-age 0s` resolves to a cutoff in the future.
+        assert_eq!(
+            list_window_for_cutoff(
+                crate::duration::parse_into_timestamp("2099-01-01").unwrap(),
+                now
+            ),
+            hours(1)
+        );
+    }
+
+    #[test]
+    fn test_release_age_list_window() {
+        let _settings = crate::test::SettingsGuard::lock();
+        Settings::reset(None);
+        let hours = |hours: u64| Some(Duration::from_secs(hours * 60 * 60));
+        let tool: BackendArg = "github:cli/cli".into();
+
+        // The 24h default cutoff, less the snapshot lag.
+        assert_eq!(release_age_list_window(&tool, None), hours(23));
+        // A per-tool cutoff.
+        assert_eq!(release_age_list_window(&tool, Some("6h")), hours(5));
+        assert_eq!(release_age_list_window(&tool, Some("7d")), hours(24));
+        assert_eq!(release_age_list_window(&tool, Some("30m")), hours(1));
+        assert_eq!(release_age_list_window(&tool, Some("0s")), None);
+
+        // The global setting, which a per-tool cutoff overrides.
+        let mut partial = SettingsPartial::empty();
+        partial.minimum_release_age = Some("6h".to_string());
+        Settings::reset(Some(partial.clone()));
+        assert_eq!(release_age_list_window(&tool, None), hours(5));
+        assert_eq!(release_age_list_window(&tool, Some("12h")), hours(11));
+        let mut disabled = partial.clone();
+        disabled.minimum_release_age = Some("0s".to_string());
+        Settings::reset(Some(disabled));
+        assert_eq!(release_age_list_window(&tool, None), None);
+
+        // A `fetch_remote_versions_cache` the user set applies as set.
+        partial.fetch_remote_versions_cache = Some("1h".to_string());
+        Settings::reset(Some(partial));
+        assert_eq!(release_age_list_window(&tool, None), None);
+        assert_eq!(release_age_list_window(&tool, Some("6h")), None);
     }
 
     #[test]

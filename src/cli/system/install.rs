@@ -99,6 +99,7 @@ impl SystemInstall {
             dry_run: self.dry_run,
             update: self.update,
             yes: self.yes,
+            install_previewed: false,
         };
         driver::run(mgrs, Action::Install, &opts).await
     }

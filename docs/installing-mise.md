@@ -52,6 +52,14 @@ a reproducible install:
 curl -fsSL https://mise.run | MISE_VERSION=v2026.10.4 sh
 ```
 
+The script downloads the release archive from mise.jdx.dev. If mise.jdx.dev
+does not have that release or cannot be reached, it downloads the archive from
+[GitHub Releases](https://github.com/jdx/mise/releases) instead. Checksums never
+come from mise.jdx.dev. The release the script was published with uses checksums
+embedded in the script. Any other `MISE_VERSION` is checked against
+`SHASUMS256.txt` from GitHub Releases. The script stops without installing if it
+cannot get that checksum or if the archive does not match it.
+
 #### Install and activate in one step {#shell-specific-installation-activation}
 
 The shell-specific endpoints install mise and append activation to that shell's
@@ -93,7 +101,7 @@ The script reads these environment variables, not TOML settings:
 | `MISE_INSTALL_MUSL`                    | With `1`, install the static musl build.                                                                                                                        |
 | `MISE_INSTALL_OS`, `MISE_INSTALL_ARCH` | Override the detected platform, such as `MISE_INSTALL_ARCH=x64` to install the Intel build on Apple silicon. Add `-musl` to the architecture for a musl build.  |
 | `MISE_INSTALL_EXT`                     | Archive format, `tar.zst` or `tar.gz`. Defaults to `tar.zst` when `zstd` is available.                                                                          |
-| `MISE_INSTALL_FROM_GITHUB`             | With `1`, download from GitHub Releases instead of mise.jdx.dev.                                                                                                |
+| `MISE_INSTALL_FROM_GITHUB`             | With `1`, download only from GitHub Releases, without trying mise.jdx.dev first.                                                                                |
 | `MISE_INSTALL_HELP`                    | With `0`, do not print the activation hint after installing.                                                                                                    |
 | `MISE_DEBUG`, `MISE_QUIET`             | With `1`, print debug output or only errors.                                                                                                                    |
 

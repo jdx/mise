@@ -4,7 +4,6 @@ use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::{dirs, duration};
 use aqua_registry::{AquaRegistryError, CompiledRegistry, ParsedRegistry, RegistryCache};
 use eyre::Result;
-use reqwest::header::{ACCEPT, HeaderMap, HeaderValue};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Arc, LazyLock as Lazy};
@@ -117,6 +116,18 @@ fn configured_registry_urls(settings: &Settings) -> Vec<String> {
         registries.push(AQUA_DEFAULT_REGISTRY_URL.into());
     }
     registries
+}
+
+/// Whether mise searches the official aqua registry, built in or downloaded,
+/// and no other. A custom registry is searched first and may define a package
+/// ID differently: another repository, or other version filters. With no
+/// registry at all, no package resolves.
+pub(crate) fn searches_only_official_registries(settings: &Settings) -> bool {
+    let registries = configured_registry_urls(settings);
+    (settings.aqua.baked_registry || !registries.is_empty())
+        && registries
+            .iter()
+            .all(|registry| is_official_aqua_registry(registry))
 }
 
 fn is_official_aqua_registry(registry_url: &str) -> bool {
@@ -322,21 +333,7 @@ async fn download_registry_source(registry_url: &str) -> aqua_registry::Result<S
 
     for file_name in ["registry.yaml", "registry.yml"] {
         let source = if let Some((owner, repo)) = github_repo.as_ref() {
-            let url = format!("https://api.github.com/repos/{owner}/{repo}/contents/{file_name}");
-            let mut headers = HeaderMap::new();
-            headers.insert(
-                ACCEPT,
-                HeaderValue::from_static("application/vnd.github.raw"),
-            );
-            HTTP.get_text_request(url.as_str())
-                .headers(&headers)
-                .send()
-                .await
-                .map_err(|err| {
-                    AquaRegistryError::RegistryNotAvailable(format!(
-                        "failed to download aqua registry source {url}: {err}"
-                    ))
-                })
+            download_registry_url(&github_registry_file_url(owner, repo, file_name)).await
         } else {
             match registry_file_url(registry_url, file_name) {
                 Ok(url) => download_registry_url(url.as_str()).await,
@@ -393,6 +390,14 @@ async fn download_registry_url(url: &str) -> aqua_registry::Result<String> {
             "failed to download aqua registry source {url}: {err}"
         ))
     })
+}
+
+/// A GitHub-hosted registry's file on its default branch, from
+/// raw.githubusercontent.com rather than the contents API: that API allows 60
+/// requests an hour without a token. A private repository's file is served
+/// there too, with the user's token, which mise sends to this host.
+fn github_registry_file_url(owner: &str, repo: &str, file_name: &str) -> String {
+    format!("https://raw.githubusercontent.com/{owner}/{repo}/HEAD/{file_name}")
 }
 
 fn registry_file_url(registry_url: &str, file_name: &str) -> aqua_registry::Result<Url> {
@@ -605,6 +610,14 @@ mod tests {
     }
 
     #[test]
+    fn github_registry_files_come_from_raw_githubusercontent() {
+        assert_eq!(
+            github_registry_file_url("aquaproj", "aqua-registry", "registry.yaml"),
+            "https://raw.githubusercontent.com/aquaproj/aqua-registry/HEAD/registry.yaml"
+        );
+    }
+
+    #[test]
     fn registry_file_url_appends_registry_file_name() {
         assert_eq!(
             registry_file_url("https://example.com/aqua-registry/", "registry.yml")
@@ -652,6 +665,23 @@ mod tests {
                 "https://example.com/second".to_string()
             ]
         );
+    }
+
+    #[test]
+    fn only_official_registries_unless_a_custom_one_is_configured() {
+        let mut settings = Settings::default();
+        assert!(searches_only_official_registries(&settings));
+        settings.aqua.baked_registry = false;
+        assert!(searches_only_official_registries(&settings));
+        settings.registry_floating = true;
+        assert!(searches_only_official_registries(&settings));
+        settings.aqua.registries = Some(vec!["https://example.com/custom".into()]);
+        assert!(!searches_only_official_registries(&settings));
+
+        let mut settings = Settings::default();
+        settings.aqua.baked_registry = false;
+        settings.aqua.registries = Some(Vec::new());
+        assert!(!searches_only_official_registries(&settings));
     }
 
     #[test]

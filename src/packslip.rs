@@ -14,7 +14,7 @@ use std::sync::Arc;
 use eyre::{Result, WrapErr, bail, eyre};
 use itertools::Itertools;
 use packslip::model::{Artifact, Resource, ResourceSource, Statement, resource_fits};
-use reqwest::header::{HeaderMap, HeaderValue};
+use reqwest::header::HeaderMap;
 
 use crate::backend::packslip::{
     STATEMENT_FILE, is_safe_relative, locate_dir_in_install, locate_in_install, selected_artifact,
@@ -670,9 +670,14 @@ fn into_place(staging: &Path, dir: &Path, built: Result<()>) -> Result<()> {
     })
 }
 
-/// Fetch a directory of the source repository at `commit` into `dest`,
-/// through the GitHub contents API. Entries that are not plain files or
-/// directories (symlinks, submodules) are left out.
+/// Fetch a directory of the source repository at `commit` into `dest`.
+/// Entries that are not plain files or directories (symlinks, submodules)
+/// are left out.
+///
+/// The listing comes from mise-versions and the files from
+/// raw.githubusercontent.com, neither of which spends the GitHub API's rate
+/// limit. A private repository, which only the user's token can read, is
+/// listed and fetched through the contents API instead.
 async fn fetch_repo_dir(
     repo: &str,
     commit: &str,
@@ -680,62 +685,69 @@ async fn fetch_repo_dir(
     dest: &Path,
     pr: &dyn SingleReport,
 ) -> Result<()> {
-    let url = format!(
-        "https://api.github.com/repos/{repo}/contents/{}?ref={commit}",
-        url_path(rel)
-    );
-    // The client asks for the raw media type on every contents URL, which
-    // is right for a file body and wrong for a directory listing.
-    let mut headers = github::get_headers(&url)?;
-    headers.insert(
-        reqwest::header::ACCEPT,
-        HeaderValue::from_static("application/vnd.github+json"),
-    );
-    let listing: serde_json::Value = HTTP_FETCH.json_with_headers(&url, &headers).await?;
-    let Some(entries) = listing.as_array() else {
-        bail!("{rel} is not a directory of the repository");
-    };
+    let listing = github::list_repo_dir(repo, commit, rel).await?;
     file::create_dir_all(dest)?;
-    for entry in entries {
-        let Some(name) = entry["name"].as_str() else {
-            continue;
-        };
-        if !file::is_plain_file_name(name) {
-            continue;
-        }
-        match entry["type"].as_str() {
-            Some("dir") => {
-                Box::pin(fetch_repo_dir(
-                    repo,
-                    commit,
-                    &format!("{rel}/{name}"),
-                    &dest.join(name),
-                    pr,
-                ))
-                .await?;
+    for entry in listing.entries {
+        let name = entry.name;
+        let path = format!("{rel}/{name}");
+        match repo_entry_action(&name, &entry.kind) {
+            RepoEntryAction::Recurse => {
+                Box::pin(fetch_repo_dir(repo, commit, &path, &dest.join(&name), pr)).await?;
             }
-            Some("file") => {
-                // Through the contents API rather than the entry's raw
-                // download URL: the client's token, and the raw media type it
-                // sets on contents URLs, apply there, so a private repository
-                // works the same as a public one.
-                let file_url = format!(
+            RepoEntryAction::Download => {
+                let contents_url = format!(
                     "https://api.github.com/repos/{repo}/contents/{}?ref={commit}",
-                    url_path(&format!("{rel}/{name}"))
+                    url_path(&path)
                 );
-                pr.set_message(format!("download {rel}/{name}"));
+                // The contents API for a private repository, or for a file a
+                // `url_replacements` rule reroutes; the client sets the raw
+                // media type on contents URLs.
+                let file_url = if listing.private
+                    || crate::versions_host::github_api_url_is_replaced(&contents_url)
+                {
+                    contents_url
+                } else {
+                    format!(
+                        "https://raw.githubusercontent.com/{repo}/{commit}/{}",
+                        url_path(&path)
+                    )
+                };
+                pr.set_message(format!("download {path}"));
                 HTTP.download_file_with_headers(
                     &file_url,
-                    &dest.join(name),
+                    &dest.join(&name),
                     &github::get_headers(&file_url)?,
                     Some(pr),
                 )
                 .await?;
             }
-            _ => {}
+            RepoEntryAction::Skip => {}
         }
     }
     Ok(())
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum RepoEntryAction {
+    Recurse,
+    Download,
+    Skip,
+}
+
+/// What [`fetch_repo_dir`] does with a listed entry: recurse into a `dir`,
+/// download a `file`, and leave out everything else. mise-versions reports a
+/// symlink as `symlink` and a submodule as `submodule` (GitHub's own contents
+/// API calls both `file`). An entry whose name could reach outside the
+/// directory is left out too.
+fn repo_entry_action(name: &str, kind: &str) -> RepoEntryAction {
+    if !file::is_plain_file_name(name) {
+        return RepoEntryAction::Skip;
+    }
+    match kind {
+        "dir" => RepoEntryAction::Recurse,
+        "file" => RepoEntryAction::Download,
+        _ => RepoEntryAction::Skip,
+    }
 }
 
 /// A skill one of the active tools declares: a directory holding
@@ -2145,6 +2157,27 @@ mod tests {
         assert_eq!(statement(dir.path()).unwrap(), Some(s));
         file::write(dir.path().join(STATEMENT_FILE), "{}").unwrap();
         assert!(statement(dir.path()).is_err());
+    }
+
+    #[test]
+    fn repo_entry_actions_follow_the_listed_type() {
+        assert_eq!(repo_entry_action("refs", "dir"), RepoEntryAction::Recurse);
+        assert_eq!(
+            repo_entry_action("SKILL.md", "file"),
+            RepoEntryAction::Download
+        );
+        assert_eq!(repo_entry_action("link", "symlink"), RepoEntryAction::Skip);
+        assert_eq!(
+            repo_entry_action("vendor", "submodule"),
+            RepoEntryAction::Skip
+        );
+        assert_eq!(
+            repo_entry_action("x", "something-new"),
+            RepoEntryAction::Skip
+        );
+        // Names that could leave the directory, whatever their type.
+        assert_eq!(repo_entry_action("..", "dir"), RepoEntryAction::Skip);
+        assert_eq!(repo_entry_action("a/b", "file"), RepoEntryAction::Skip);
     }
 
     #[test]

@@ -1320,7 +1320,7 @@ impl Lockfile {
         self.tools.get_key_value(short).map(|(key, _)| key)
     }
 
-    fn tools_for(&self, short: &str) -> Option<&Vec<LockfileTool>> {
+    pub(crate) fn tools_for(&self, short: &str) -> Option<&Vec<LockfileTool>> {
         self.tool_key(short).and_then(|key| self.tools.get(key))
     }
 
@@ -2172,7 +2172,7 @@ impl Lockfile {
         }
     }
 
-    fn entry_lockfile_version(&self, short: &str, entry: &LockfileTool) -> u32 {
+    pub(crate) fn entry_lockfile_version(&self, short: &str, entry: &LockfileTool) -> u32 {
         self.entry_lockfile_versions
             .get(&lockfile_entry_key(short, entry))
             .copied()
@@ -2792,6 +2792,9 @@ fn tools_by_source_for_update(
         HashMap::new();
     for (ba, tvl) in &ts.versions {
         for tv in &tvl.versions {
+            if tv.is_deferred() {
+                continue;
+            }
             // An installed `latest` resolves to its install directory name;
             // lock the version that directory holds.
             let mut tv = tv.clone();
@@ -2819,7 +2822,28 @@ fn tools_by_source_for_update(
         existing_versions.push(new_tv);
     }
 
+    for (source, short) in tools_left_alone(ts) {
+        if let Some(tools) = tools_by_source.get_mut(&source) {
+            tools.remove(&short);
+        }
+    }
     tools_by_source
+}
+
+/// The tools with a lazy request left unresolved, by source. Such a request has no
+/// release to lock, and the merge replaces a tool's entries as a whole, so the
+/// lockfile keeps what it has for the tool, including when another request for it
+/// was installed.
+fn tools_left_alone(ts: &Toolset) -> HashSet<(ToolSource, String)> {
+    ts.versions
+        .iter()
+        .flat_map(|(ba, tvl)| {
+            tvl.versions
+                .iter()
+                .filter(|tv| tv.is_deferred())
+                .map(|tv| (tv.request.source().clone(), ba.short.to_string()))
+        })
+        .collect()
 }
 
 pub(crate) fn update_lockfiles(
@@ -2833,6 +2857,7 @@ pub(crate) fn update_lockfiles(
     }
 
     let tools_by_source = tools_by_source_for_update(ts, new_versions);
+    let left_alone = tools_left_alone(ts);
 
     // Group config files by target lockfile path
     let mut lockfile_configs: HashMap<PathBuf, Vec<PathBuf>> = HashMap::new();
@@ -2928,6 +2953,12 @@ pub(crate) fn update_lockfiles(
         );
 
         for new_version in new_versions {
+            if left_alone.contains(&(
+                new_version.request.source().clone(),
+                new_version.short().to_string(),
+            )) {
+                continue;
+            }
             if let Some((source_lockfile, _)) =
                 lockfile_path_for_tool_source(config, new_version.request.source())
             {

@@ -226,6 +226,25 @@ binaries. To use precompiled binaries now, set `python.compile = false` or
 `all_compile = false`; on NixOS, enable [nix-ld](https://github.com/Mic92/nix-ld)
 first. To keep compiling, set `all_compile = true` explicitly.
 
+mise finds the available precompiled CPython builds in a list it downloads
+from `https://mise-versions.jdx.dev/data/python-precompiled-<arch>-<os>.gz`,
+such as `python-precompiled-aarch64-apple-darwin.gz`. mise downloads this list
+even when [`use_versions_host`](/configuration/settings.html#use_versions_host)
+is `false`. It needs the list:
+
+- to install a CPython version, unless `python.compile` is `true` (except on
+  Windows, which always uses precompiled builds) or the lockfile already
+  records the build's URL for this platform
+- to list versions when `python.compile` is `false`, and always on Windows
+- to write lockfile entries, as `mise lock` does, whatever `python.compile` is
+
+Installs and version listing keep the list for the
+[`fetch_remote_versions_cache`](/configuration/settings.html#fetch_remote_versions_cache)
+period. Writing lockfile entries downloads it again each time, without that
+cache.
+
+[`offline`](/configuration/settings.html#offline) mode blocks the download.
+
 Official mise releases download the baseline `x86_64` build on x86-64 Linux.
 For a build optimized for newer CPUs, such as `x86_64_v3` on a CPU with AVX2,
 set [`python.precompiled_arch`](/lang/python.html#python.precompiled_arch).

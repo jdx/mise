@@ -12,7 +12,9 @@ use crate::install_before::{
     effective_minimum_release_age_for_tool, format_hidden_release_details,
     resolve_cli_minimum_release_age,
 };
+use crate::install_context::install_dependency_declarations;
 use crate::semver::split_version_prefix;
+use crate::toolset::OutdatedSelection;
 use crate::toolset::is_outdated_version;
 use crate::toolset::outdated_info::OutdatedInfo;
 use crate::toolset::outdated_info::prefixed_latest_query;
@@ -105,6 +107,17 @@ pub(crate) struct Upgrade {
     #[usage(long)]
     dry_run_code: bool,
 
+    /// Skip confirmation when installing missing plugin system dependencies.
+    /// Set internally by `mise bootstrap --yes`; not a user-facing flag.
+    #[usage(skip)]
+    yes: bool,
+
+    /// Only upgrade installed tools; leave missing ones to `mise install`.
+    /// Set internally by `mise bootstrap --upgrade`, which installs first, so a
+    /// dry run would otherwise preview each missing tool twice.
+    #[usage(skip)]
+    installed_only: bool,
+
     /// Also upgrade installed tools that the current config does not request
     #[usage(long, verbatim_doc_comment, conflicts = "local")]
     inactive: bool,
@@ -178,6 +191,17 @@ enum PruneMode {
 }
 
 impl Upgrade {
+    /// a bare `mise upgrade` (every configured tool within its range, no
+    /// `--bump`), as run by `mise bootstrap --upgrade`
+    pub(crate) fn new_bare(dry_run: bool, yes: bool) -> Self {
+        Self {
+            dry_run,
+            yes,
+            installed_only: true,
+            ..Default::default()
+        }
+    }
+
     pub(super) fn is_dry_run(&self) -> bool {
         self.dry_run || self.dry_run_code
     }
@@ -204,9 +228,16 @@ impl Upgrade {
     /// Toolsets in this upgrade's scope. An `auto_update` or `--global` upgrade
     /// works on the global config's requests, so a `MISE_*_VERSION` in the
     /// environment doesn't replace the request it was asked to upgrade.
+    /// Whether resolution leaves a lazy tool with nothing installed unresolved:
+    /// `auto_update` always does, and a bare upgrade does because it leaves that
+    /// tool alone. Naming a tool resolves it in full.
+    fn defers_missing_lazy(&self) -> bool {
+        self.for_auto_update || self.tool.is_empty()
+    }
+
     fn toolset_builder(&self) -> ToolsetBuilder {
         let builder = ToolsetBuilder::new().with_scope(self.scope());
-        if self.for_auto_update {
+        let builder = if self.for_auto_update {
             builder
                 .without_runtime_env()
                 .with_deferred_lazy_resolution_online()
@@ -214,7 +245,86 @@ impl Upgrade {
             builder.without_runtime_env()
         } else {
             builder
+        };
+        // A bare upgrade leaves a lazy tool with nothing installed alone, so it does
+        // not wait on that tool's remote version list either. Naming a tool resolves
+        // it in full.
+        if self.defers_missing_lazy() && !self.for_auto_update {
+            builder.with_deferred_lazy_resolution_online()
+        } else {
+            builder
         }
+    }
+
+    /// A lazy tool with no version installed is waiting for its first run, so a
+    /// bare upgrade leaves it alone, as a bare `mise install` does, unless a tool
+    /// it upgrades depends on it. Naming the tool installs it, as `mise install
+    /// node` does. A tool left alone is not looked up at all, so a slow or
+    /// failing backend cannot hold up the upgrade. Returns the outdated tools
+    /// and the requests left alone, as configured, since `tool_request` may
+    /// already name the version it would move to.
+    async fn list_outdated_leaving_missing_lazy(
+        &self,
+        ts: &Toolset,
+        config: &Arc<Config>,
+        opts: &ResolveOptions,
+        filter_tools: Option<&[ToolArg]>,
+        exclude_tools: Option<&[ToolArg]>,
+    ) -> (Vec<OutdatedInfo>, Vec<ToolRequest>) {
+        let mut unrun = if self.tool.is_empty() {
+            ts.list_current_versions()
+                .into_iter()
+                .map(|(_, tv)| tv)
+                .filter(ToolVersion::is_unrun_lazy)
+                .map(|tv| tv.request)
+                .collect::<Vec<_>>()
+        } else {
+            vec![]
+        };
+        let mut outdated = ts
+            .list_outdated_versions_selecting(
+                config,
+                self.bump,
+                opts,
+                OutdatedSelection {
+                    filter_tools,
+                    exclude_tools,
+                    show_progress: self.show_resolution_progress(),
+                    select: &|tv| !unrun.contains(&tv.request),
+                },
+            )
+            .await;
+        // Put back what an upgraded tool depends on, and what that depends on.
+        let mut scanned = 0;
+        while scanned < outdated.len() && !unrun.is_empty() {
+            let declarations =
+                install_dependency_declarations(&outdated[scanned].tool_version.request);
+            scanned += 1;
+            let needed = unrun
+                .iter()
+                .filter(|request| declarations.matches(request.ba()))
+                .cloned()
+                .collect::<Vec<_>>();
+            if needed.is_empty() {
+                continue;
+            }
+            unrun.retain(|request| !needed.contains(request));
+            outdated.extend(
+                ts.list_outdated_versions_selecting(
+                    config,
+                    self.bump,
+                    opts,
+                    OutdatedSelection {
+                        filter_tools,
+                        exclude_tools,
+                        show_progress: false,
+                        select: &|tv| needed.contains(&tv.request),
+                    },
+                )
+                .await,
+            );
+        }
+        (outdated, unrun)
     }
 
     fn scope(&self) -> ConfigScope {
@@ -358,6 +468,7 @@ impl Upgrade {
             offline: false,
             refresh_remote_versions: false,
             inactive: self.inactive,
+            outdated_release_urls: false,
             warn_not_in_lockfile: true,
             defer_missing_lazy_tools: false,
             defer_missing_lazy_online: false,
@@ -388,7 +499,7 @@ impl Upgrade {
             })
             .filter(|tools| !tools.is_empty())
             .unwrap_or_default();
-        let mut outdated = if !explicit_filter_tools.is_empty() {
+        let (mut outdated, left_alone) = if !explicit_filter_tools.is_empty() {
             let mut explicit = ts
                 .list_outdated_versions_with_progress(
                     &config,
@@ -418,15 +529,14 @@ impl Upgrade {
                     .await,
                 );
             }
-            explicit
+            (explicit, vec![])
         } else {
-            ts.list_outdated_versions_with_progress(
+            self.list_outdated_leaving_missing_lazy(
+                &ts,
                 &config,
-                self.bump,
                 &opts,
                 filter_tools,
                 exclude_tools,
-                self.show_resolution_progress(),
             )
             .await
         };
@@ -452,6 +562,9 @@ impl Upgrade {
                     *version = resolved;
                 }
             }
+        }
+        if self.installed_only {
+            outdated.retain(|o| o.current.is_some());
         }
         if self.for_auto_update {
             // Another version of the same tool can opt out: `auto_update` upgrades
@@ -487,6 +600,7 @@ impl Upgrade {
                 &opts,
                 filter_tools,
                 exclude_tools,
+                &left_alone,
             )
             .await;
         }
@@ -532,16 +646,22 @@ impl Upgrade {
             let bump_outdated = if self.bump {
                 Vec::new()
             } else {
-                ts.list_outdated_versions_filtered(
+                // The note only reports, and installs nothing, so a missing lazy tool
+                // is left out even when a reported tool depends on it.
+                ts.list_outdated_versions_selecting(
                     &config,
                     true,
                     &opts,
-                    filter_tools,
-                    exclude_tools,
+                    OutdatedSelection {
+                        filter_tools,
+                        exclude_tools,
+                        show_progress: false,
+                        select: &|tv| !(self.tool.is_empty() && tv.is_unrun_lazy()),
+                    },
                 )
                 .await
                 .into_iter()
-                .filter(|o| o.bump.is_some())
+                .filter(|o| o.bump.is_some() && (!self.installed_only || o.current.is_some()))
                 .collect::<Vec<_>>()
             };
             if bump_outdated.is_empty() && !has_explicit_config_bumps {
@@ -740,6 +860,7 @@ impl Upgrade {
                 offline: false,
                 refresh_remote_versions: false,
                 inactive: self.inactive,
+                outdated_release_urls: false,
                 warn_not_in_lockfile: true,
                 defer_missing_lazy_tools: false,
                 defer_missing_lazy_online: false,
@@ -747,11 +868,13 @@ impl Upgrade {
             // What resolves after the install leaves missing lazy tools alone, as the
             // toolset builder did before it.
             after_install_resolve: ResolveOptions {
-                defer_missing_lazy_tools: self.for_auto_update,
-                defer_missing_lazy_online: self.for_auto_update,
+                defer_missing_lazy_tools: self.defers_missing_lazy(),
+                defer_missing_lazy_online: self.defers_missing_lazy(),
                 ..Default::default()
             },
             locked: false,
+            yes: self.yes || Settings::get().yes,
+            explicit_yes: self.yes || Settings::cli_yes(),
             ..Default::default()
         };
 
@@ -913,8 +1036,8 @@ impl Upgrade {
             // This ensures "latest" symlinks point to the new versions, not the old ones
             let ts = config
                 .get_toolset_with_opts(&ResolveOptions {
-                    defer_missing_lazy_tools: self.for_auto_update,
-                    defer_missing_lazy_online: self.for_auto_update,
+                    defer_missing_lazy_tools: self.defers_missing_lazy(),
+                    defer_missing_lazy_online: self.defers_missing_lazy(),
                     ..Default::default()
                 })
                 .await?;
@@ -971,7 +1094,7 @@ impl Upgrade {
                     true,
                     false,
                     &upgraded_config_paths,
-                    self.for_auto_update,
+                    self.defers_missing_lazy(),
                 )
                 .await?;
                 needed.extend(get_versions_needed_by_tracked_stubs(config).await?);
@@ -1210,6 +1333,7 @@ impl Upgrade {
         opts: &ResolveOptions,
         filter_tools: Option<&[ToolArg]>,
         exclude_tools: Option<&[ToolArg]>,
+        left_alone: &[ToolRequest],
     ) {
         let list_versions = if opts.inactive {
             match ts.list_all_versions(config).await {
@@ -1227,6 +1351,9 @@ impl Upgrade {
             if let Some(exclude) = exclude_tools
                 && exclude.iter().any(|t| t.ba.as_ref() == tv.ba())
             {
+                continue;
+            }
+            if left_alone.contains(&tv.request) {
                 continue;
             }
             if let Some(tools) = filter_tools

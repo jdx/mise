@@ -1039,12 +1039,21 @@ impl Client {
     }
 
     pub async fn get_bytes<U: IntoUrl>(&self, url: U) -> Result<impl AsRef<[u8]>> {
+        self.get_bytes_with_headers(url, HeaderMap::new()).await
+    }
+
+    /// [`Client::get_bytes`] with `headers` layered over the host credentials.
+    pub async fn get_bytes_with_headers<U: IntoUrl>(
+        &self,
+        url: U,
+        headers: HeaderMap,
+    ) -> Result<impl AsRef<[u8]>> {
         ensure!(
             !crate::network::offline(&Settings::get()),
             "offline mode is enabled"
         );
         let url = url.into_url()?;
-        let headers = host_auth_headers(&url)?;
+        let headers = with_host_auth(&url, &headers)?;
         self.send_with_retries(
             RetryableRequest {
                 method: Method::GET,
@@ -1275,42 +1284,6 @@ impl Client {
         self.json_headers_with_headers(url, headers)
             .await
             .map(|(json, _)| json)
-    }
-
-    /// POST JSON data to a URL. Returns Ok(true) on success, Ok(false) on non-success status.
-    /// Errors only on network/connection failures.
-    #[allow(dead_code)]
-    pub async fn post_json<U: IntoUrl, T: serde::Serialize>(
-        &self,
-        url: U,
-        body: &T,
-    ) -> Result<bool> {
-        self.post_json_with_headers(url, body, &HeaderMap::new())
-            .await
-    }
-
-    /// POST JSON data to a URL with custom headers.
-    pub async fn post_json_with_headers<U: IntoUrl, T: serde::Serialize>(
-        &self,
-        url: U,
-        body: &T,
-        headers: &HeaderMap,
-    ) -> Result<bool> {
-        ensure!(
-            !crate::network::offline(&Settings::get()),
-            "offline mode is enabled"
-        );
-        let url = url.into_url()?;
-        debug!("POST {}", log_url(&url));
-        let resp = self
-            .reqwest()?
-            .post(url)
-            .header("Content-Type", "application/json")
-            .headers(headers.clone())
-            .json(body)
-            .send()
-            .await?;
-        Ok(resp.status().is_success())
     }
 
     pub async fn download_file<U: IntoUrl>(

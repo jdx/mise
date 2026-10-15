@@ -19,7 +19,7 @@ use crate::{
 /// Matching uses `BackendArg::all_fulls`, just like install scheduling, so aliases
 /// and explicit backend identities select the same configured tools.
 #[derive(Debug, Default)]
-pub(crate) struct InstallDependencyDeclarations {
+pub struct InstallDependencyDeclarations {
     dependencies: IndexSet<BackendArg>,
     metadata_error: Option<String>,
 }
@@ -33,7 +33,7 @@ impl InstallDependencyDeclarations {
         self.dependencies.is_empty()
     }
 
-    pub(crate) fn matches(&self, candidate: &BackendArg) -> bool {
+    pub fn matches(&self, candidate: &BackendArg) -> bool {
         self.dependencies
             .iter()
             .any(|dependency| backend_args_match(dependency, candidate))
@@ -78,9 +78,7 @@ pub(crate) fn backend_args_match(left: &BackendArg, right: &BackendArg) -> bool 
 /// The returned collection always includes direct user declarations. A backend
 /// metadata error is retained so strict consumers can propagate it while the install
 /// graph can preserve its historical behavior of ignoring that error.
-pub(crate) fn install_dependency_declarations(
-    request: &ToolRequest,
-) -> InstallDependencyDeclarations {
+pub fn install_dependency_declarations(request: &ToolRequest) -> InstallDependencyDeclarations {
     let mut declarations = InstallDependencyDeclarations::default();
     match request
         .backend()

@@ -23,7 +23,7 @@ pub struct OutdatedInfo {
     #[tabled(skip)]
     pub tool_version: ToolVersion,
     pub requested: String,
-    #[tabled(display("Self::display_current"))]
+    #[tabled(display("Self::display_current", self))]
     pub current: Option<String>,
     #[tabled(display("Self::display_bump"))]
     pub bump: Option<String>,
@@ -118,11 +118,16 @@ impl OutdatedInfo {
         let use_backend_latest =
             bump || (opts.inactive && tv.request.source() == &ToolSource::Unknown);
 
+        // The query `latest` was asked with, which says whether it went through
+        // the backend's stable-latest shortcut (see `resolved_release_url`).
+        let latest_query;
         let latest_result = if use_backend_latest {
             let prefix = prefixed_latest_query(&prefix, &prefix_version);
+            latest_query = prefix.clone().unwrap_or_else(|| "latest".to_string());
             // For bumps and installed-but-inactive tools (`--no-source`), use backend latest.
             t.latest_version(config, prefix, opts.before_date).await
         } else {
+            latest_query = tv.request.version();
             tv.latest_version_with_opts(config, opts)
                 .await
                 .map(Option::from)
@@ -169,30 +174,21 @@ impl OutdatedInfo {
             );
         }
         // Asked for after the up-to-date checks above, so a tool that is not
-        // going to be reported does not pay for the lookup. It reads the remote
-        // listing, which is cached and which resolution has usually just read,
-        // so this normally costs no extra request.
+        // going to be reported does not pay for the lookup, and only by callers
+        // that report it: it can read a version list resolution did not need.
         //
         // `oi.latest` rather than the requested version: what is wanted is where
         // to read about the version being offered, not the one already pinned.
-        oi.release_url = match t.get_version_info(config, &oi.latest).await {
-            Some(info) => info.release_url,
-            // A plain `latest` without prereleases does not come from that
-            // listing at all — `latest_version` takes the backend's
-            // stable-latest shortcut, which can name a release the cached
-            // listing has not caught up with. Looking that version up here then
-            // finds nothing, and the URL would go missing precisely for the
-            // freshest release. The shortcut carries the URL itself, so ask it
-            // rather than report nothing.
-            None => t
-                .latest_stable_version_info(config)
-                .await
-                .ok()
-                .flatten()
-                // Only if it is describing the version actually being reported.
-                .filter(|info| info.version == oi.latest)
-                .and_then(|info| info.release_url),
-        };
+        if opts.outdated_release_urls {
+            oi.release_url = t
+                .resolved_release_url(
+                    config,
+                    &oi.latest,
+                    &latest_query,
+                    &oi.tool_request.options(),
+                )
+                .await;
+        }
         if bump {
             let old = oi.tool_version.request.version();
             let old = old.strip_prefix(&prefix).unwrap_or(old.as_str());
@@ -245,11 +241,15 @@ impl OutdatedInfo {
         Ok(Some(oi))
     }
 
-    fn display_current(current: &Option<String>) -> String {
-        if let Some(current) = current {
-            current.to_string()
-        } else {
-            "[MISSING]".to_string()
+    pub fn is_unrun_lazy(&self) -> bool {
+        self.tool_version.is_unrun_lazy()
+    }
+
+    fn display_current(current: &Option<String>, oi: &Self) -> String {
+        match current {
+            Some(current) => current.to_string(),
+            None if oi.is_unrun_lazy() => "[MISSING] (lazy)".to_string(),
+            None => "[MISSING]".to_string(),
         }
     }
 

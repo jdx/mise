@@ -153,24 +153,55 @@ impl DotfilesAdd {
         let managed = system::files::files_from_config(&config)?;
         if self.changed {
             for req in &managed {
-                if req.mode == FileMode::Copy
-                    && req.target.is_file()
+                if req.mode != FileMode::Copy {
+                    continue;
+                }
+                let mut changed = vec![];
+                if req.source.is_dir() {
+                    // a group's tree captures file by file; other directory
+                    // copies are not captured by --changed
+                    if req.group.is_some() && req.target.is_dir() {
+                        // a group that cannot be walked must not hide the others
+                        let files = match system::files::directory_source_files(req) {
+                            Ok(files) => files,
+                            Err(err) => {
+                                warn!(
+                                    "dotfiles: skipped group {}: {err}",
+                                    req.group.as_deref().unwrap_or_default()
+                                );
+                                vec![]
+                            }
+                        };
+                        for (source, target) in files {
+                            if source.is_file()
+                                && !source.is_symlink()
+                                && target.is_file()
+                                && !target.is_symlink()
+                                && is_changed(&source, &target)?
+                            {
+                                changed.push(target.to_string_lossy().to_string());
+                            }
+                        }
+                    }
+                } else if req.target.is_file()
                     && !req.target.is_symlink()
-                    && !req.source.is_dir()
                     && matches!(
                         system::files::check(&config, req, &secrets)?,
                         system::files::FileState::Differs(_)
                     )
                 {
-                    if !is_global_config(&req.origin.config) && !is_path_trusted(&req.origin.config)
-                    {
-                        bail!(
-                            "--changed requires trusted configuration: {}",
-                            req.origin.config.display_user()
-                        );
-                    }
-                    self.targets.push(req.target_raw.clone());
+                    changed.push(req.target_raw.clone());
                 }
+                if changed.is_empty() {
+                    continue;
+                }
+                if !is_global_config(&req.origin.config) && !is_path_trusted(&req.origin.config) {
+                    bail!(
+                        "--changed requires trusted configuration: {}",
+                        req.origin.config.display_user()
+                    );
+                }
+                self.targets.extend(changed);
             }
             if self.targets.is_empty() {
                 super::warn_if_dotfiles_ignored(&config);
@@ -540,6 +571,12 @@ impl DotfilesAdd {
                     updated_targets.push(item.target_raw.as_str());
                 }
                 accepted.push(item);
+                // --changed captures live edits that already match the target, and
+                // applying the whole group would overwrite an edit whose
+                // capture the user declined
+                if self.changed && item.group_capture {
+                    continue;
+                }
                 // files captured into one group tree apply it once
                 let request = item.managed_request(&config_path);
                 if !apply_requests.iter().any(|existing: &FileRequest| {
@@ -633,6 +670,11 @@ impl DotfilesAdd {
         }
         Ok(())
     }
+}
+
+/// Whether a live copy-mode file no longer matches its source.
+fn is_changed(source: &std::path::Path, target: &std::path::Path) -> Result<bool> {
+    Ok(file::read(source)? != file::read(target)?)
 }
 
 #[derive(Debug)]

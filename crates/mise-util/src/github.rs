@@ -1,7 +1,7 @@
 use crate::cache::{CacheManager, CacheManagerBuilder};
 use crate::tokens;
 use crate::{dirs, env};
-use eyre::{Result, WrapErr};
+use eyre::{Result, WrapErr, bail};
 use heck::ToKebabCase;
 use mise_settings::Settings;
 use reqwest::IntoUrl;
@@ -36,6 +36,42 @@ impl GithubRelease {
     /// of the tagged commit, which may be much older than the publication date.
     pub fn released_at(&self) -> &str {
         self.published_at.as_deref().unwrap_or(&self.created_at)
+    }
+}
+
+/// What listing versions needs from a release, without its assets: what
+/// mise-versions' whole release list carries, so one request answers for a
+/// repository with any number of releases.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ReleaseVersion {
+    pub tag_name: String,
+    /// See [`GithubRelease::released_at`]. `None` when mise-versions'
+    /// list has no date for it, so a release-age check can't take an empty
+    /// date for a valid one.
+    pub released_at: Option<String>,
+    pub prerelease: bool,
+    pub has_assets: bool,
+}
+
+impl From<GithubRelease> for ReleaseVersion {
+    fn from(release: GithubRelease) -> Self {
+        Self {
+            released_at: Some(release.released_at().to_string()),
+            has_assets: !release.assets.is_empty(),
+            tag_name: release.tag_name,
+            prerelease: release.prerelease,
+        }
+    }
+}
+
+impl From<crate::versions_host::GithubListedRelease> for ReleaseVersion {
+    fn from(release: crate::versions_host::GithubListedRelease) -> Self {
+        Self {
+            released_at: release.date.filter(|date| !date.is_empty()),
+            has_assets: release.asset_count > 0,
+            tag_name: release.tag,
+            prerelease: release.prerelease,
+        }
     }
 }
 
@@ -95,11 +131,6 @@ pub struct GithubAsset {
     pub from_versions_host: bool,
 }
 
-#[derive(Debug, Deserialize)]
-struct GithubRepository {
-    full_name: String,
-}
-
 type CacheGroup<T> = HashMap<String, CacheManager<T>>;
 
 static RELEASES_CACHE: Lazy<RwLock<CacheGroup<Vec<GithubRelease>>>> = Lazy::new(Default::default);
@@ -107,6 +138,9 @@ static RELEASES_CACHE: Lazy<RwLock<CacheGroup<Vec<GithubRelease>>>> = Lazy::new(
 static RELEASE_CACHE: Lazy<RwLock<CacheGroup<GithubRelease>>> = Lazy::new(Default::default);
 
 static TAGS_CACHE: Lazy<RwLock<CacheGroup<Vec<String>>>> = Lazy::new(Default::default);
+
+static RELEASE_VERSIONS_CACHE: Lazy<RwLock<CacheGroup<Vec<ReleaseVersion>>>> =
+    Lazy::new(Default::default);
 
 static REPOSITORY_CACHE: Lazy<RwLock<CacheGroup<RepositoryIdentity>>> = Lazy::new(Default::default);
 
@@ -196,10 +230,7 @@ pub async fn list_releases_including_prereleases(repo: &str) -> Result<Vec<Githu
     let cache = get_releases_cache(&key).await;
     let cache = cache.get(&key).unwrap();
     Ok(remember_mirrored_assets(
-        cache
-            .get_or_try_init_async(async || list_releases_(API_URL, repo, false).await)
-            .await?
-            .to_vec(),
+        cached_or_stale(cache, async || list_releases_(API_URL, repo, false).await).await?,
     ))
 }
 
@@ -233,10 +264,10 @@ pub async fn list_releases_including_prereleases_from_url(
     let cache = get_releases_cache(&key).await;
     let cache = cache.get(&key).unwrap();
     Ok(remember_mirrored_assets(
-        cache
-            .get_or_try_init_async(async || list_releases_(api_url, repo, require_assets).await)
-            .await?
-            .to_vec(),
+        cached_or_stale(cache, async || {
+            list_releases_(api_url, repo, require_assets).await
+        })
+        .await?,
     ))
 }
 
@@ -296,10 +327,11 @@ async fn list_releases_(
     repo: &str,
     require_assets: bool,
 ) -> Result<Vec<GithubRelease>> {
-    if is_public_github_api_base(api_url)
-        && let Some(releases) = list_releases_from_versions_host(repo, require_assets).await
-    {
-        return Ok(releases);
+    if mirrors_github_metadata(api_url, repo) {
+        match list_releases_from_versions_host(repo, require_assets).await? {
+            Some(releases) => return Ok(releases),
+            None => ensure_private_repo_lookup(repo, &format!("GitHub repository {repo}"))?,
+        }
     }
 
     let mut url = format!("{api_url}/repos/{repo}/releases?per_page=100");
@@ -335,64 +367,430 @@ async fn list_releases_(
     Ok(releases)
 }
 
-/// [`list_releases_`] through mise-versions. `None` sends the caller to
-/// GitHub for the whole list rather than for the remaining pages, since two
-/// sources may not agree on where a page ends.
+/// [`list_releases_`] through mise-versions. `Ok(None)` when mise-versions
+/// does not know the repository: private or missing.
 async fn list_releases_from_versions_host(
     repo: &str,
     require_assets: bool,
-) -> Option<Vec<GithubRelease>> {
-    let releases =
-        paginate_mirrored_releases(require_assets, *env::MISE_LIST_ALL_VERSIONS, |page| async move {
-            match crate::versions_host::github_releases(repo, page).await {
-                Ok(list) => list,
-                Err(err) => {
-                    warn!(
-                        "mise-versions endpoint=github_releases repo={repo} page={page} outcome=failed fallback=true error={err:#}"
-                    );
-                    None
-                }
-            }
-        })
-        .await?;
-    trace!("got GitHub releases for {repo} from mise-versions");
-    Some(releases)
+) -> Result<Option<Vec<GithubRelease>>> {
+    let releases = paginate_mirrored_releases(
+        require_assets,
+        *env::MISE_LIST_ALL_VERSIONS,
+        |page| async move {
+            crate::versions_host::github_releases(repo, page)
+                .await
+                .wrap_err_with(|| versions_host_failure(&format!("GitHub releases of {repo}")))
+        },
+    )
+    .await?;
+    if releases.is_some() {
+        trace!("got GitHub releases for {repo} from mise-versions");
+    }
+    Ok(releases)
 }
 
 /// Page through mirrored release lists with the same stopping rules as the
 /// direct loop in [`list_releases_`].
+///
+/// `Ok(None)` only when the first page is a 404. A later page missing means
+/// the listing changed or the mirror broke while paging, which is an error:
+/// answering with half a list from each source could skip or repeat releases.
+/// Past the pages mise-versions serves the listing simply ends there; older
+/// releases are not fetched from GitHub.
 async fn paginate_mirrored_releases<F, Fut>(
     require_assets: bool,
     list_all: bool,
     mut fetch_page: F,
-) -> Option<Vec<GithubRelease>>
+) -> Result<Option<Vec<GithubRelease>>>
 where
     F: FnMut(u32) -> Fut,
-    Fut: std::future::Future<Output = Option<crate::versions_host::GithubReleasesPage>>,
+    Fut: std::future::Future<Output = Result<Option<crate::versions_host::GithubReleasesPage>>>,
 {
     let mut releases = Vec::new();
     let mut page = 1;
     let mut pages_fetched = 0;
     loop {
-        let list = fetch_page(page).await?;
+        let Some(list) = fetch_page(page).await? else {
+            if page == 1 {
+                return Ok(None);
+            }
+            bail!("mise-versions has no page {page} of a GitHub release list it listed before");
+        };
         releases.extend(list.releases);
         pages_fetched += 1;
-        let more = list.next_page.is_some() || list.truncated;
-        if !more
-            || !list_all
-                && (has_stopping_stable_release(&releases, require_assets)
-                    || pages_fetched >= MAX_RELEASE_FALLBACK_PAGES)
+        if !list_all
+            && (has_stopping_stable_release(&releases, require_assets)
+                || pages_fetched >= MAX_RELEASE_FALLBACK_PAGES)
         {
             break;
         }
-        // `None` past the pages mise-versions serves: GitHub has to answer.
+        let Some(next) = list.next_page else {
+            if list.truncated {
+                debug!(
+                    "mise-versions serves the newest {pages_fetched} pages of this release list; older releases are not listed"
+                );
+            }
+            break;
+        };
         // The page count bounds the loop even if a page number repeats.
         if pages_fetched >= crate::versions_host::GITHUB_RELEASES_MAX_PAGES {
-            return None;
+            debug!("stopping after the {pages_fetched} release pages mise-versions serves");
+            break;
         }
-        page = list.next_page?;
+        page = next;
     }
-    Some(releases)
+    Ok(Some(releases))
+}
+
+/// [`mirrors_github_metadata`] for `repo`'s tag list, which `url_replacements`
+/// may reroute on its own.
+fn mirrors_github_tags(api_url: &str, repo: &str) -> bool {
+    mirrors_github_metadata(api_url, repo)
+        && !crate::versions_host::github_api_url_is_replaced(&format!(
+            "{}/repos/{repo}/tags?per_page=100",
+            api_url.trim_end_matches('/')
+        ))
+}
+
+/// Whether mise-versions is the source of `repo`'s tags, as [`mirror_source`]
+/// is for releases: from configuration alone, not whether this command may go
+/// online, so prefer-offline and offline runs still find what was cached.
+fn tags_mirror_source(api_url: &str, repo: &str) -> bool {
+    is_public_github_api_base(api_url)
+        && mirror_source(repo)
+        && !crate::versions_host::github_api_url_is_replaced(&format!(
+            "{}/repos/{repo}/tags?per_page=100",
+            api_url.trim_end_matches('/')
+        ))
+}
+
+/// Part of every tag cache key: which source answers for `repo`'s tags, so
+/// turning `use_versions_host` off or adding a `url_replacements` rule starts
+/// from a fresh cache, as release lists do (see [`mirror_source`]).
+fn tags_cache_key(api_url: &str, repo: &str) -> String {
+    format!(
+        "{}-{}",
+        format!("{api_url}-{repo}").to_kebab_case(),
+        crate::hash::hash_to_str(&(api_url, repo, tags_mirror_source(api_url, repo)))
+    )
+}
+
+/// `repo`'s whole release or tag list from mise-versions, one request for
+/// any number of entries. `None` sends the caller to the paged mirror
+/// endpoints, never to GitHub: they decide what a 404 means (a private
+/// repository) and report failures. A truncated list (a newest-first
+/// prefix) goes to the paged endpoints too.
+async fn whole_list(
+    repo: &str,
+    list: crate::versions_host::GithubList<'_>,
+) -> Option<crate::versions_host::GithubVersionsList> {
+    match crate::versions_host::github_versions_list(repo, list).await {
+        // A truncated list is still being crawled, or longer than the
+        // mise-versions crawl allows. It isn't used, so it is never cached as
+        // a whole list: the paged endpoints answer, as before.
+        Ok(Some(found)) if found.truncated => {
+            debug!("mise-versions' {list:?} list for {repo} is truncated; paging instead");
+            None
+        }
+        Ok(Some(found)) => Some(found),
+        Ok(None) => None,
+        Err(err) => {
+            debug!("mise-versions' whole {list:?} list for {repo} failed, paging instead: {err:#}");
+            None
+        }
+    }
+}
+
+/// Whether every release in `list` has a date. An undated one would pass any
+/// release-age cutoff, so such a list is paged instead, where each release
+/// carries its dates.
+fn all_releases_dated(list: &crate::versions_host::GithubVersionsList) -> bool {
+    list.releases
+        .iter()
+        .all(|r| r.date.as_deref().is_some_and(|d| !d.is_empty()))
+}
+
+/// `repo`'s releases as listing versions needs them, newest first in
+/// GitHub's order. From mise-versions' whole list when it applies, otherwise
+/// (and for a repository it doesn't list) from the paged release listing,
+/// with `require_assets` as for [`list_releases_including_prereleases_from_url`].
+/// Cached like a release listing.
+pub async fn list_release_versions(
+    api_url: &str,
+    repo: &str,
+    require_assets: bool,
+) -> Result<Vec<ReleaseVersion>> {
+    let key = format!(
+        "{}-versions-{}",
+        format!("{api_url}-{repo}").to_kebab_case(),
+        crate::hash::hash_to_str(&(
+            api_url,
+            repo,
+            require_assets,
+            RELEASE_LIST_CACHE_VERSION,
+            is_public_github_api_base(api_url) && mirror_source(repo)
+        ))
+    );
+    RELEASE_VERSIONS_CACHE
+        .write()
+        .await
+        .entry(key.clone())
+        .or_insert_with(|| {
+            CacheManagerBuilder::new(cache_dir().join(format!("{key}.msgpack.z")))
+                .with_fresh_duration(crate::network::fetch_remote_versions_cache(&Settings::get()))
+                .build()
+        });
+    let caches = RELEASE_VERSIONS_CACHE.read().await;
+    let cache = caches.get(&key).unwrap();
+    cached_or_stale(cache, async || {
+        if mirrors_github_metadata(api_url, repo)
+            && let Some(list) = whole_list(repo, crate::versions_host::GithubList::Releases)
+                .await
+                .filter(all_releases_dated)
+        {
+            return Ok(list.releases.into_iter().map(Into::into).collect());
+        }
+        Ok(
+            list_releases_including_prereleases_from_url(api_url, repo, require_assets)
+                .await?
+                .into_iter()
+                .map(Into::into)
+                .collect(),
+        )
+    })
+    .await
+}
+
+/// [`list_release_versions`] limited to the releases carrying an asset named
+/// `asset`, which mise-versions filters for itself.
+pub async fn list_release_versions_with_asset(
+    repo: &str,
+    asset: &str,
+) -> Result<Vec<ReleaseVersion>> {
+    // Cached like the unfiltered list, so a copy saved earlier can stand in
+    // while mise-versions is temporarily unavailable.
+    let key = format!(
+        "{}-versions-with-asset-{}",
+        repo.to_kebab_case(),
+        crate::hash::hash_to_str(&(repo, asset, RELEASE_LIST_CACHE_VERSION, mirror_source(repo)))
+    );
+    RELEASE_VERSIONS_CACHE
+        .write()
+        .await
+        .entry(key.clone())
+        .or_insert_with(|| {
+            CacheManagerBuilder::new(cache_dir().join(format!("{key}.msgpack.z")))
+                .with_fresh_duration(crate::network::fetch_remote_versions_cache(&Settings::get()))
+                .build()
+        });
+    let caches = RELEASE_VERSIONS_CACHE.read().await;
+    let cache = caches.get(&key).unwrap();
+    cached_or_stale(cache, async || {
+        if mirrors_github_metadata(API_URL, repo)
+            && let Some(list) = whole_list(
+                repo,
+                crate::versions_host::GithubList::ReleasesWithAsset(asset),
+            )
+            .await
+            .filter(all_releases_dated)
+        {
+            return Ok(list.releases.into_iter().map(Into::into).collect());
+        }
+        Ok(list_releases_including_prereleases(repo)
+            .await?
+            .into_iter()
+            .filter(|r| r.assets.iter().any(|a| a.name == asset))
+            .map(Into::into)
+            .collect())
+    })
+    .await
+}
+
+/// The newest stable release in mise-versions' whole list of `repo`'s
+/// releases, when that list was read from GitHub within
+/// [`LISTED_LATEST_MAX_AGE`]. It stands in for GitHub's "latest" mark
+/// when that can't be read, as for a release without assets, which
+/// mise-versions doesn't serve; GitHub's mark is the newest stable release
+/// unless a maintainer moved it.
+pub async fn newest_listed_stable_release(repo: &str) -> Option<ReleaseVersion> {
+    let list = whole_list(repo, crate::versions_host::GithubList::Releases).await?;
+    let newest = newest_stable_if_fresh(list, chrono::Utc::now(), LISTED_LATEST_MAX_AGE);
+    if newest.is_none() {
+        debug!("mise-versions' release list for {repo} is too old or has no stable release");
+    }
+    newest
+}
+
+/// How old a whole release list may be for [`newest_listed_stable_release`]:
+/// mise-versions reads a quiet repository's first page about every 6 hours,
+/// plus up to a deploy (jdx/mise-versions' `docs/github-versions.md`), so a
+/// tighter limit would turn most lists away.
+const LISTED_LATEST_MAX_AGE: std::time::Duration = std::time::Duration::from_secs(7 * 60 * 60);
+
+/// The first stable release in `list` (GitHub's order, newest first), if the
+/// list was read from GitHub no more than `max_age` before `now`. A list
+/// without a readable `fetched_at` is not trusted for this.
+fn newest_stable_if_fresh(
+    list: crate::versions_host::GithubVersionsList,
+    now: chrono::DateTime<chrono::Utc>,
+    max_age: std::time::Duration,
+) -> Option<ReleaseVersion> {
+    let fetched_at = chrono::DateTime::parse_from_rfc3339(list.fetched_at.as_deref()?).ok()?;
+    let age = now.signed_duration_since(fetched_at);
+    if age.to_std().is_ok_and(|age| age > max_age) {
+        return None;
+    }
+    list.releases
+        .into_iter()
+        .find(|r| !r.prerelease)
+        .map(Into::into)
+}
+
+/// A repository's tags from mise-versions: the first page, or with `list_all`
+/// every page it serves. `Ok(None)` when mise-versions doesn't list the
+/// repository.
+async fn list_mirrored_tags(
+    repo: &str,
+    list_all: bool,
+    dates: bool,
+) -> Result<Option<Vec<crate::versions_host::GithubMirroredTag>>> {
+    paginate_mirrored_tags(list_all, |page| async move {
+        crate::versions_host::github_tags(repo, page, dates)
+            .await
+            .wrap_err_with(|| versions_host_failure(&format!("tags of {repo}")))
+    })
+    .await
+}
+
+/// Page through mirrored tag lists, as [`paginate_mirrored_releases`] does
+/// for releases: a 404 on the first page is `Ok(None)`, one later on is an
+/// error, and the listing ends at the pages mise-versions serves.
+async fn paginate_mirrored_tags<F, Fut>(
+    list_all: bool,
+    mut fetch_page: F,
+) -> Result<Option<Vec<crate::versions_host::GithubMirroredTag>>>
+where
+    F: FnMut(u32) -> Fut,
+    Fut: std::future::Future<Output = Result<Option<crate::versions_host::GithubTagsPage>>>,
+{
+    let mut tags = Vec::new();
+    let mut page = 1;
+    for pages_fetched in 1.. {
+        let Some(list) = fetch_page(page).await? else {
+            if page == 1 {
+                return Ok(None);
+            }
+            bail!("mise-versions has no page {page} of a GitHub tag list it listed before");
+        };
+        tags.extend(list.tags);
+        let Some(next) = list.next_page.filter(|_| list_all) else {
+            if list_all && list.truncated {
+                debug!(
+                    "mise-versions serves the first {pages_fetched} pages of tags; the rest are not listed"
+                );
+            }
+            break;
+        };
+        if pages_fetched >= crate::versions_host::GITHUB_RELEASES_MAX_PAGES {
+            break;
+        }
+        page = next;
+    }
+    Ok(Some(tags))
+}
+
+/// `cache`'s value, fetched with `fetch` when it is missing or stale. When
+/// mise-versions is temporarily unavailable (429, 5xx, no connection), a copy
+/// cached earlier stands in however old it is, as jdx/mise-versions' client
+/// contract asks, rather than an error or a request to api.github.com.
+async fn cached_or_stale<T, F, Fut>(cache: &CacheManager<T>, fetch: F) -> Result<T>
+where
+    T: Clone + serde::Serialize + serde::de::DeserializeOwned,
+    F: FnOnce() -> Fut,
+    Fut: std::future::Future<Output = Result<T>>,
+{
+    // Boxed: the fetch is a deep chain of futures (paging, HTTP), and keeping
+    // it inline pushes callers' futures past rustc's layout depth limit.
+    match cache.get_or_try_init_async(|| Box::pin(fetch())).await {
+        Ok(val) => Ok(val.clone()),
+        Err(err) => stale_on_temporary_failure(cache, err),
+    }
+}
+
+/// The copy `cache` holds, whatever its age, in place of `err` when that is
+/// mise-versions being temporarily unavailable; otherwise `err`.
+fn stale_on_temporary_failure<T>(cache: &CacheManager<T>, err: eyre::Report) -> Result<T>
+where
+    T: Clone + serde::Serialize + serde::de::DeserializeOwned,
+{
+    if !crate::versions_host::is_temporarily_unavailable(&err) {
+        return Err(err);
+    }
+    match cache.get_cached() {
+        Ok(stale) => {
+            warn!("{err:#}\nusing the copy mise cached earlier");
+            Ok(stale)
+        }
+        Err(_) => Err(err),
+    }
+}
+
+/// Whether mise-versions answers for `api_url`'s GitHub metadata about `repo`
+/// instead of GitHub. When it does, GitHub itself is asked only for a
+/// repository mise-versions does not know, and only with a token (see
+/// [`ensure_private_repo_lookup`]): unauthenticated callers get 60 GitHub API
+/// requests an hour, so normal usage must not spend them. The direct API stays
+/// the source with `use_versions_host = false`, with `url_replacements` that
+/// reroute GitHub, and for GitHub Enterprise or any other custom `api_url`.
+fn mirrors_github_metadata(api_url: &str, repo: &str) -> bool {
+    is_public_github_api_base(api_url) && crate::versions_host::enabled_for_github_repo(repo)
+}
+
+/// After mise-versions answered 404 for `what` in `repo` (a release tag, a
+/// directory): only a repository mise-versions doesn't list at all may be
+/// private. A public repository's missing tag or path is a plain 404, which
+/// must not reach GitHub: callers try `v1.2.3` and then `1.2.3`, and a
+/// missing skill directory would cost an API request every install.
+async fn after_mirror_404(repo: &str, what: &str) -> Result<()> {
+    match crate::versions_host::github_releases(repo, 1).await {
+        Ok(None) => ensure_private_repo_lookup(repo, what),
+        // A listing that failed can't say the repository is private; the 404
+        // stands, so callers still try their next spelling of the tag.
+        Ok(Some(_)) | Err(_) => bail!("{what} not found (404 from mise-versions.jdx.dev)"),
+    }
+}
+
+/// After mise-versions answered 404: GitHub may still hold `what` in a private
+/// repository, which mise-versions never serves. Asking needs the user's
+/// token, so without one the 404 is the answer.
+fn ensure_private_repo_lookup(repo: &str, what: &str) -> Result<()> {
+    if has_github_api_credentials() {
+        debug!("mise-versions does not know {repo}; asking GitHub, which may hold it privately");
+        return Ok(());
+    }
+    bail!(
+        "{what} not found (404 from mise-versions.jdx.dev, which mise asks instead of \
+         api.github.com). If the repository is private, set GITHUB_TOKEN; to ask GitHub \
+         directly, set use_versions_host = false."
+    )
+}
+
+/// Whether requests to api.github.com would carry the user's credentials: a
+/// token, or a `~/.netrc` entry for the host, which the HTTP client applies
+/// when no token does.
+pub(crate) fn has_github_api_credentials() -> bool {
+    resolve_token("api.github.com").is_some()
+        || url::Url::parse(API_URL).is_ok_and(|url| {
+            crate::http::netrc_headers(&url).contains_key(reqwest::header::AUTHORIZATION)
+        })
+}
+
+pub(crate) fn versions_host_failure(what: &str) -> String {
+    format!(
+        "failed to read {what} from mise-versions.jdx.dev, which mise asks instead of \
+         api.github.com. Try again later, or set use_versions_host = false to ask GitHub \
+         directly."
+    )
 }
 
 /// Whether any of `attested` (repositories that attestations vouch for, as
@@ -426,33 +824,38 @@ pub async fn attested_by_repository(owner: &str, repo: &str, attested: &[String]
 }
 
 pub async fn list_tags(repo: &str) -> Result<Vec<String>> {
-    let key = repo.to_kebab_case();
+    let key = tags_cache_key(API_URL, repo);
     let cache = get_tags_cache(&key).await;
     let cache = cache.get(&key).unwrap();
-    Ok(cache
-        .get_or_try_init_async(async || {
-            list_tags_(API_URL, repo, *env::MISE_LIST_ALL_VERSIONS).await
-        })
-        .await?
-        .to_vec())
+    cached_or_stale(cache, async || {
+        list_tags_(API_URL, repo, *env::MISE_LIST_ALL_VERSIONS).await
+    })
+    .await
 }
 
 pub async fn list_tags_from_url(api_url: &str, repo: &str) -> Result<Vec<String>> {
-    let key = format!("{api_url}-{repo}").to_kebab_case();
+    let key = tags_cache_key(api_url, repo);
     let cache = get_tags_cache(&key).await;
     let cache = cache.get(&key).unwrap();
-    Ok(cache
-        .get_or_try_init_async(async || {
-            list_tags_(api_url, repo, *env::MISE_LIST_ALL_VERSIONS).await
-        })
-        .await?
-        .to_vec())
+    cached_or_stale(cache, async || {
+        list_tags_(api_url, repo, *env::MISE_LIST_ALL_VERSIONS).await
+    })
+    .await
 }
 
 /// `list_all` is `MISE_LIST_ALL_VERSIONS`, taken as an argument rather than read here so
 /// tests can exercise the pagination loop: the env var is a process-wide `Lazy` that other
 /// modules' tests have already forced by the time this one runs.
 async fn list_tags_(api_url: &str, repo: &str, list_all: bool) -> Result<Vec<String>> {
+    if mirrors_github_tags(api_url, repo) {
+        if let Some(list) = whole_list(repo, crate::versions_host::GithubList::Tags).await {
+            return Ok(list.tags.into_iter().map(|t| t.tag).collect());
+        }
+        match list_mirrored_tags(repo, list_all, false).await? {
+            Some(tags) => return Ok(tags.into_iter().map(|t| t.name).collect()),
+            None => ensure_private_repo_lookup(repo, &format!("GitHub repository {repo}"))?,
+        }
+    }
     let mut url = format!("{api_url}/repos/{repo}/tags?per_page=100");
     let headers = get_headers(&url)?;
     let (mut tags, mut headers) = crate::http::HTTP_FETCH
@@ -481,6 +884,39 @@ pub async fn list_tags_with_dates(repo: &str) -> Result<Vec<GithubTagWithDate>> 
 }
 
 async fn list_tags_with_dates_(api_url: &str, repo: &str) -> Result<Vec<GithubTagWithDate>> {
+    if mirrors_github_tags(api_url, repo) {
+        // Only a list with every date: an undated tag would skip the release
+        // age check. The paged endpoint with `dates=1` looks dates up.
+        if let Some(list) = whole_list(repo, crate::versions_host::GithubList::Tags)
+            .await
+            .filter(|list| {
+                list.tags
+                    .iter()
+                    .all(|t| t.date.as_deref().is_some_and(|d| !d.is_empty()))
+            })
+        {
+            return Ok(list
+                .tags
+                .into_iter()
+                .map(|t| GithubTagWithDate {
+                    name: t.tag,
+                    date: t.date,
+                })
+                .collect());
+        }
+        match list_mirrored_tags(repo, true, true).await? {
+            Some(tags) => {
+                return Ok(tags
+                    .into_iter()
+                    .map(|t| GithubTagWithDate {
+                        name: t.name,
+                        date: t.date,
+                    })
+                    .collect());
+            }
+            None => ensure_private_repo_lookup(repo, &format!("GitHub repository {repo}"))?,
+        }
+    }
     let mut url = format!("{api_url}/repos/{repo}/tags?per_page=100");
     let headers = get_headers(&url)?;
     let (mut tags, mut response_headers) = crate::http::HTTP_FETCH
@@ -575,11 +1011,7 @@ pub async fn repository_identity(repo: &str) -> Result<RepositoryIdentity> {
     let cache = caches.get(&key).unwrap();
     Ok(cache
         .get_or_try_init_async(async || {
-            let url = format!("{API_URL}/repos/{repo}");
-            let headers = get_headers(&url)?;
-            let repository: GithubRepositoryIds = crate::http::HTTP_FETCH
-                .json_with_headers(url, &headers)
-                .await?;
+            let repository = fetch_repository(repo).await?;
             Ok(RepositoryIdentity {
                 id: repository.id.to_string(),
                 full_name: repository.full_name,
@@ -593,12 +1025,90 @@ pub async fn repository_identity(repo: &str) -> Result<RepositoryIdentity> {
 /// Resolve a repository name through GitHub so callers can follow repository
 /// transfers without weakening identity checks to the former owner/name.
 pub async fn canonical_repo(repo: &str) -> Result<String> {
+    Ok(fetch_repository(repo).await?.full_name)
+}
+
+/// `GET /repos/{repo}`, which follows a rename's redirect.
+///
+/// Always asked of GitHub, never mise-versions: both callers decide trust
+/// with the answer. Attestations made under another repository's name and
+/// a packslip claiming a renamed project are accepted only when GitHub says
+/// the names are one repository, and a mirror that could answer that could
+/// vouch for any repository. Only renamed or transferred repositories reach
+/// this, so it costs little of the API's rate limit.
+async fn fetch_repository(repo: &str) -> Result<GithubRepositoryIds> {
     let url = format!("{API_URL}/repos/{repo}");
     let headers = get_headers(&url)?;
-    let repository: GithubRepository = crate::http::HTTP_FETCH
+    crate::http::HTTP_FETCH
         .json_with_headers(url, &headers)
+        .await
+}
+
+/// A directory of a GitHub repository at a commit.
+pub struct RepoDir {
+    pub entries: Vec<crate::versions_host::GithubContentsEntry>,
+    /// Listed by api.github.com because mise-versions doesn't know the
+    /// repository: a private one, whose files must be fetched with the
+    /// user's token from the contents API too, since raw.githubusercontent.com
+    /// answers 404 for them.
+    pub private: bool,
+}
+
+/// List `path` in `repo` at `commit`, a full commit SHA. From mise-versions
+/// whenever it applies; the files themselves are on raw.githubusercontent.com.
+pub async fn list_repo_dir(repo: &str, commit: &str, path: &str) -> Result<RepoDir> {
+    let url = format!(
+        "{API_URL}/repos/{repo}/contents/{}?ref={commit}",
+        url_path(path)
+    );
+    // A `url_replacements` rule for this listing makes it the source, with
+    // the files fetched as for a private repository.
+    if mirrors_github_metadata(API_URL, repo)
+        && !crate::versions_host::github_api_url_is_replaced(&url)
+    {
+        let what = format!("{path} in {repo} at {commit}");
+        let listed = crate::versions_host::github_contents(repo, commit, path)
+            .await
+            .wrap_err_with(|| versions_host_failure(&what))?;
+        match listed {
+            Some(entries) => {
+                return Ok(RepoDir {
+                    entries,
+                    private: false,
+                });
+            }
+            None => after_mirror_404(repo, &what).await?,
+        }
+    }
+    // `get_headers` asks for the raw media type on contents URLs, which is
+    // right for a file body and wrong for a directory listing.
+    let mut headers = get_headers(&url)?;
+    headers.insert(
+        reqwest::header::ACCEPT,
+        HeaderValue::from_static("application/vnd.github+json"),
+    );
+    let listing: serde_json::Value = crate::http::HTTP_FETCH
+        .json_with_headers(&url, &headers)
         .await?;
-    Ok(repository.full_name)
+    let Some(entries) = listing.as_array() else {
+        bail!("{path} is not a directory of {repo}");
+    };
+    Ok(RepoDir {
+        entries: entries
+            .iter()
+            .map(|entry| serde_json::from_value(entry.clone()))
+            .collect::<std::result::Result<_, _>>()
+            .wrap_err_with(|| format!("unexpected listing of {path} in {repo}"))?,
+        private: true,
+    })
+}
+
+/// `path` with each segment percent-encoded and the separators kept.
+fn url_path(path: &str) -> String {
+    path.split('/')
+        .map(|segment| urlencoding::encode(segment).into_owned())
+        .collect::<Vec<_>>()
+        .join("/")
 }
 
 pub async fn get_release_with_versions_host(
@@ -611,10 +1121,19 @@ pub async fn get_release_with_versions_host(
     let cache = cache.get(&key).unwrap();
     let release = cache
         .get_or_try_init_async_if(
-            async || get_release_with_options(API_URL, repo, tag, use_versions_host).await,
+            async || {
+                Box::pin(get_release_with_options(
+                    API_URL,
+                    repo,
+                    tag,
+                    use_versions_host,
+                ))
+                .await
+            },
             should_cache_release,
         )
-        .await?;
+        .await
+        .or_else(|err| stale_on_temporary_failure(cache, err))?;
     remember_mirrored_assets([&release]);
     Ok(release)
 }
@@ -630,10 +1149,19 @@ pub async fn get_release_for_url_with_versions_host(
     let cache = cache.get(&key).unwrap();
     let release = cache
         .get_or_try_init_async_if(
-            async || get_release_with_options(api_url, repo, tag, use_versions_host).await,
+            async || {
+                Box::pin(get_release_with_options(
+                    api_url,
+                    repo,
+                    tag,
+                    use_versions_host,
+                ))
+                .await
+            },
             should_cache_release,
         )
-        .await?;
+        .await
+        .or_else(|err| stale_on_temporary_failure(cache, err))?;
     remember_mirrored_assets([&release]);
     Ok(release)
 }
@@ -747,13 +1275,25 @@ async fn get_release_with_options(
     use_versions_host: bool,
 ) -> Result<GithubRelease> {
     if use_versions_host
-        && is_public_github_api_base(api_url)
-        && let Ok(Some(release)) = crate::versions_host::github_release(repo, tag).await
+        && mirrors_github_metadata(api_url, repo)
+        && !crate::versions_host::github_release_is_url_replaced(repo, tag)
     {
-        trace!("got GitHub release {repo}@{tag} from mise-versions");
-        return Ok(release);
+        let release = crate::versions_host::github_release(repo, tag)
+            .await
+            .wrap_err_with(|| versions_host_failure(&format!("GitHub release {repo}@{tag}")))?;
+        match release {
+            Some(release) => {
+                trace!("got GitHub release {repo}@{tag} from mise-versions");
+                return Ok(release);
+            }
+            None => after_mirror_404(repo, &format!("GitHub release {repo}@{tag}")).await?,
+        }
     }
 
+    get_release_from_api(api_url, repo, tag).await
+}
+
+async fn get_release_from_api(api_url: &str, repo: &str, tag: &str) -> Result<GithubRelease> {
     let url = if tag == "latest" {
         format!("{api_url}/repos/{repo}/releases/latest")
     } else {
@@ -1010,24 +1550,20 @@ pub fn release_asset_from_url(url: &str) -> Option<(String, String, String)> {
 /// Explain a checksum mismatch on a GitHub release asset whose upstream bytes
 /// changed after the expected checksum was recorded.
 ///
-/// Only runs once verification has already failed, so it asks GitHub directly
-/// and skips the release cache and mise-versions: either may still hold the
-/// digest of the replaced upload. `None` when `download_url` is not a
-/// github.com release download, the lookup fails, or GitHub's current digest
-/// does not match the downloaded file.
+/// Only runs once verification has already failed. It skips mise's release
+/// cache, which may still hold the replaced upload's digest, and reads the
+/// release from mise-versions, as normal usage does (see
+/// [`digests_for_checksum_note`]). `None` when `download_url` is not a
+/// github.com release download, the lookup fails or has no digest for the
+/// asset, or the digest does not match the downloaded file: the mismatch is
+/// then reported without a hint.
 pub async fn checksum_mismatch_note(
     download_url: &str,
     file: &Path,
     from_lockfile: bool,
 ) -> Option<String> {
     let (repo, tag, asset_name) = release_asset_from_url(download_url)?;
-    let release = match get_release_with_options(API_URL, &repo, &tag, false).await {
-        Ok(release) => release,
-        Err(err) => {
-            debug!("failed to check GitHub release {repo}@{tag} after checksum mismatch: {err:#}");
-            return None;
-        }
-    };
+    let (release, source) = digests_for_checksum_note(&repo, &tag).await?;
     let actual = match crate::hash::file_hash_sha256(file, None) {
         Ok(actual) => actual,
         Err(err) => {
@@ -1038,7 +1574,46 @@ pub async fn checksum_mismatch_note(
             return None;
         }
     };
-    replaced_asset_note(&repo, &release, &asset_name, &actual, from_lockfile)
+    replaced_asset_note(&repo, &release, &asset_name, &actual, from_lockfile, source)
+}
+
+/// Where the digest in a checksum hint came from, which its wording names:
+/// mise-versions' copy can lag GitHub, so it isn't called GitHub's current
+/// digest.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DigestSource {
+    VersionsHost,
+    GitHub,
+}
+
+/// `repo@tag` with its assets' digests, for [`checksum_mismatch_note`]. From
+/// mise-versions whenever it applies, never api.github.com instead: no usable
+/// answer (a private or unknown repository, a release without the digest, a
+/// failed request) leaves the mismatch without a hint, which is only advice.
+/// GitHub is asked only when mise-versions does not answer for GitHub
+/// (`use_versions_host = false`, `url_replacements`).
+async fn digests_for_checksum_note(repo: &str, tag: &str) -> Option<(GithubRelease, DigestSource)> {
+    if crate::versions_host::enabled_for_github_repo(repo)
+        && !crate::versions_host::github_release_is_url_replaced(repo, tag)
+    {
+        match crate::versions_host::github_release(repo, tag).await {
+            Ok(Some(release)) => return Some((release, DigestSource::VersionsHost)),
+            Ok(None) => return None,
+            Err(err) => {
+                debug!(
+                    "mise-versions could not describe {repo}@{tag} for a checksum hint: {err:#}"
+                );
+                return None;
+            }
+        }
+    }
+    match get_release_from_api(API_URL, repo, tag).await {
+        Ok(release) => Some((release, DigestSource::GitHub)),
+        Err(err) => {
+            debug!("failed to check GitHub release {repo}@{tag} after checksum mismatch: {err:#}");
+            None
+        }
+    }
 }
 
 /// Append [`checksum_mismatch_note`] to a failed verification when it failed
@@ -1072,6 +1647,7 @@ fn replaced_asset_note(
     asset_name: &str,
     actual_sha256: &str,
     from_lockfile: bool,
+    source: DigestSource,
 ) -> Option<String> {
     let asset = release
         .assets
@@ -1098,8 +1674,12 @@ fn replaced_asset_note(
         "The expected checksum came from cached release metadata, which refreshes within \
          about an hour; `mise cache clear` drops mise's local copy."
     };
+    let whose = match source {
+        DigestSource::GitHub => "GitHub's current digest",
+        DigestSource::VersionsHost => "The digest mise-versions has from GitHub",
+    };
     Some(format!(
-        "GitHub's current digest for {asset_name} in {repo} {tag} matches this download{timing}, \
+        "{whose} for {asset_name} in {repo} {tag} matches this download{timing}, \
          so the expected checksum is out of date: the maintainer likely re-uploaded the asset. \
          {remedy}"
     ))

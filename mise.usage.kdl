@@ -699,6 +699,13 @@ Refresh package metadata and update repositories before applying
 Also fast-forwards a checkout that `--from` or `--adopt` reuses. Without `--update`, a reused checkout stays at its current commit.
 """#
     }
+    flag --upgrade help="Upgrade installed packages and tools as well as installing missing ones" {
+        long_help #"""
+Upgrade installed packages and tools as well as installing missing ones
+
+In the packages phase, runs the equivalent of `mise bootstrap packages upgrade` after installing; in the tools phase, runs `mise upgrade` (without `--bump`) after installing. Package pins and tool version ranges are respected. Does not update mise itself, repositories, or container images, and does not restart services; see `--update` for repositories and `mise self-update` for mise.
+"""#
+    }
     flag "-h --help" help="Print help" action=help builtin=#true
     cmd __apply-account-plan hide=#true effect=destructive {
         flag "-h --help" help="Print help" action=help builtin=#true
@@ -3560,6 +3567,7 @@ missing tools from the config are reported, not installed.
     flag --json-extended help="Output in JSON format with additional information (source, tool)" overrides=--shell
     flag --redacted help="Only include variables marked for redaction; their values are printed unmasked"
     flag --values help="Only show values of environment variables"
+    flag --paths help="Print the PATH entries mise manages, in PATH order, one per line"
     flag "-h --help" help="Print help" action=help builtin=#true
     arg "[TOOL@VERSION]…" help="Tools to include in addition to those in the config, such as `node@24`" required=#false var=#true
     example "eval \"$(mise env -s bash)\"" help="Load the environment once into the current bash session"
@@ -3567,6 +3575,7 @@ missing tools from the config are reported, not installed.
     example "mise env -s fish | source" help="Same, for fish"
     example "execx($(mise env -s xonsh))" help="Same, for xonsh"
     example "mise env --json" help="Print the variables as JSON"
+    example "mise env --paths" help="List the PATH entries mise manages, such as tool bin directories"
     example "mise env --dotenv > .env" help="Write a dotenv file; it contains secret values"
 }
 cmd exec help="Run a command with mise's tools and environment" {
