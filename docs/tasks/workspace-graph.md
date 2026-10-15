@@ -400,3 +400,9 @@ A new project needs a namespaced ID, such as `custom:docs`, and a `root`. The
 same dependency cannot be both added and removed. The final graph must reference
 only existing project IDs and must not contain cycles; diagnostics name the
 projects involved and the override fields that can repair the graph.
+
+If a provider cannot read its workspace metadata, [`mise tasks graph`](/cli/tasks/graph.html)
+and `mise run --affected` fail with the provider's error. Declaring a project in
+that provider's namespace, such as `go:example.com/acme/api`, takes over from the
+provider: its discovery error is then ignored, and the projects you declare
+become the provider's whole contribution.
