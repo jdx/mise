@@ -82,12 +82,19 @@ steps:
   - uses: actions/checkout@v7
   - uses: actions/cache@v6
     with:
+      # Linux default; use the platform-specific path below on macOS/Windows.
       path: ~/.cache/mise/downloads-cas
       key: mise-downloads-${{ runner.os }}-${{ hashFiles('mise.lock') }}
   - uses: jdx/mise-action@v5
     with:
       cache: false
 ```
+
+The path above is mise's default cache directory on Linux. On macOS, cache
+`~/Library/Caches/mise/downloads-cas`; on Windows, cache
+`%TEMP%\mise\downloads-cas`. If `MISE_CACHE_DIR` is set, cache
+`downloads-cas` under that directory instead. See
+[`mise directories`](/directories.html) for details.
 
 Installs run `mise install --locked`, which only reuses a download that has a
 checksum to check it against. Tools are unpacked on every run, so this is slower
