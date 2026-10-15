@@ -77,3 +77,9 @@ backdate_latest "25 hours ago"
 : >requests.log
 assert_contains "mise install --dry-run 2>&1" "pipx:black@25.9.0"
 assert "cat requests.log" "/pypi/black/json"
+
+# outdated reports what is newest, so it reads the registry after 1h.
+backdate_latest "2 hours ago"
+: >requests.log
+assert_succeed "mise outdated"
+assert "cat requests.log" "/pypi/black/json"

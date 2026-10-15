@@ -1672,14 +1672,6 @@ fn fix_venv_python_symlink(_install_path: &Path) -> Result<()> {
     Ok(())
 }
 
-/// PyPI versions follow PEP 440. Stamp the separator-less alpha/beta/rc
-/// suffixes (`3.12.0a1`, `1.0.0c1`) here rather than in the shared regex so
-/// the rule stays scoped to Python — hex commit hashes used by other
-/// ecosystems (e.g. Go pseudo-versions) would false-positive. This replaces
-/// the generic `mark_prerelease`, so the shared channel tags are checked here
-/// too, against the public version only (`1.1+gpu.dev0` is stable). Only
-/// fills in unknowns: an authoritative flag from a GitHub release (either
-/// value) wins over pattern detection.
 /// Load a cached latest release that is past `fetch_remote_versions_cache` but
 /// within the release-age window of the cutoff `before`, when it is dated, and
 /// say whether it did.
@@ -1708,6 +1700,14 @@ fn adopt_latest_within_release_age(
     })
 }
 
+/// PyPI versions follow PEP 440. Stamp the separator-less alpha/beta/rc
+/// suffixes (`3.12.0a1`, `1.0.0c1`) here rather than in the shared regex so
+/// the rule stays scoped to Python — hex commit hashes used by other
+/// ecosystems (e.g. Go pseudo-versions) would false-positive. This replaces
+/// the generic `mark_prerelease`, so the shared channel tags are checked here
+/// too, against the public version only (`1.1+gpu.dev0` is stable). Only
+/// fills in unknowns: an authoritative flag from a GitHub release (either
+/// value) wins over pattern detection.
 fn stamp_pep440_prerelease(mut version: VersionInfo) -> VersionInfo {
     if version.prerelease.is_none() && is_python_prerelease(&version.version) {
         version.prerelease = Some(true);
