@@ -235,6 +235,27 @@ mod tests {
     }
 
     #[test]
+    fn selected_python_dependency_waits_for_configured_option_variant() {
+        let source = ToolSource::ToolStub("/tmp/project.mise.toml".into());
+        let tool = ToolRequest::new_with_options(
+            Arc::new(BackendArg::from("pypi:black")),
+            "24.10.0",
+            parse_tool_options(r#"python = "3.12""#),
+            source.clone(),
+        )
+        .unwrap();
+        let python = ToolRequest::new_with_options(
+            Arc::new(BackendArg::from("python")),
+            "3.12",
+            parse_tool_options("patch_sysconfig = false"),
+            source,
+        )
+        .unwrap();
+
+        assert_dependency_edge(tool, python);
+    }
+
+    #[test]
     fn test_same_tool_and_version_with_different_core_options_are_rejected() {
         let backend = Arc::new(BackendArg::from("tiny"));
         let first_options = ToolVersionOptions {

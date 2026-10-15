@@ -53,7 +53,12 @@ impl InstallDependencyDeclarations {
     }
 
     pub(crate) fn matches_request(&self, candidate: &ToolRequest) -> bool {
-        self.versioned.contains(candidate) || self.matches(candidate.ba())
+        self.versioned.iter().any(|dependency| {
+            backend_args_match(dependency.ba(), candidate.ba())
+                && dependency.version() == candidate.version()
+                && dependency.source() == candidate.source()
+                && dependency.lockfile_scope() == candidate.lockfile_scope()
+        }) || self.matches(candidate.ba())
     }
 
     pub(crate) fn versioned(&self) -> impl Iterator<Item = &ToolRequest> {
