@@ -440,10 +440,7 @@ async fn mirrored_attestations(repo: &str, digest: &str) -> eyre::Result<Mirrore
     if mise_settings::Settings::get().paranoid {
         return crate::versions_host::github_attestations(repo, digest).await;
     }
-    let key = format!(
-        "attestations-{}",
-        crate::hash::hash_to_str(&(repo.to_ascii_lowercase(), digest))
-    );
+    let key = mirrored_attestations_key(repo, digest);
     let cell = MIRRORED_ATTESTATIONS
         .lock()
         .unwrap()
@@ -451,27 +448,62 @@ async fn mirrored_attestations(repo: &str, digest: &str) -> eyre::Result<Mirrore
         .or_default()
         .clone();
     cell.get_or_try_init(async || {
-        crate::cache::CacheManagerBuilder::new(
-            crate::dirs::CACHE
-                .join("github")
-                .join(format!("{key}.msgpack.z")),
-        )
-        .with_fresh_duration(Some(MIRRORED_ATTESTATIONS_TTL))
-        .build::<MirroredAttestations>()
-        .get_or_try_init_async_if(
-            || crate::versions_host::github_attestations(repo, digest),
-            // Only a complete set is kept: one missing a bundle is asked
-            // for again next time rather than failing for a week.
-            |attestations| {
-                attestations
-                    .as_ref()
-                    .is_some_and(|a| !a.is_empty() && a.iter().all(|a| a.has_inline_bundle()))
-            },
-        )
-        .await
+        mirrored_attestations_cache(&key)
+            .get_or_try_init_async_if(
+                || crate::versions_host::github_attestations(repo, digest),
+                keep_mirrored_attestations,
+            )
+            .await
     })
     .await
     .cloned()
+}
+
+fn mirrored_attestations_key(repo: &str, digest: &str) -> String {
+    format!(
+        "attestations-{}",
+        crate::hash::hash_to_str(&(repo.to_ascii_lowercase(), digest))
+    )
+}
+
+fn mirrored_attestations_cache(key: &str) -> crate::cache::CacheManager<MirroredAttestations> {
+    crate::cache::CacheManagerBuilder::new(
+        crate::dirs::CACHE
+            .join("github")
+            .join(format!("{key}.msgpack.z")),
+    )
+    .with_fresh_duration(Some(MIRRORED_ATTESTATIONS_TTL))
+    .build()
+}
+
+/// Only a complete set is kept: one missing a bundle is asked for again next
+/// time rather than failing for a week.
+fn keep_mirrored_attestations(attestations: &MirroredAttestations) -> bool {
+    attestations
+        .as_ref()
+        .is_some_and(|a| !a.is_empty() && a.iter().all(|a| a.has_inline_bundle()))
+}
+
+/// mise-versions' attestations for `repo` at `digest`, asked for again past
+/// the copy [`mirrored_attestations`] keeps, which may predate one GitHub
+/// added since. A complete answer replaces that copy, on disk and for the
+/// rest of this command, so later checks don't ask again.
+async fn refreshed_mirrored_attestations(
+    repo: &str,
+    digest: &str,
+) -> eyre::Result<MirroredAttestations> {
+    let fresh = crate::versions_host::github_attestations(repo, digest).await?;
+    if keep_mirrored_attestations(&fresh) && !mise_settings::Settings::get().paranoid {
+        let key = mirrored_attestations_key(repo, digest);
+        if let Err(err) = mirrored_attestations_cache(&key).write(&fresh) {
+            debug!("failed to keep refreshed attestations for {repo}: {err:#}");
+        }
+        MIRRORED_ATTESTATIONS.lock().unwrap().insert(
+            key,
+            std::sync::Arc::new(tokio::sync::OnceCell::new_with(Some(fresh.clone()))),
+        );
+    }
+    Ok(fresh)
 }
 
 /// What mise-versions settled about an artifact's attestations.
@@ -509,7 +541,7 @@ async fn verify_with_mirror(
     let digest = format!("sha256:{artifact_digest}");
     for fresh in [false, true] {
         let found = if fresh {
-            crate::versions_host::github_attestations(&full, &digest).await
+            refreshed_mirrored_attestations(&full, &digest).await
         } else {
             mirrored_attestations(&full, &digest).await
         };
@@ -618,7 +650,7 @@ async fn detect_with_mirror(
     // attestation looked for, so a miss is asked of mise-versions again.
     for fresh in [false, true] {
         let found = if fresh {
-            crate::versions_host::github_attestations(&full, &digest).await
+            refreshed_mirrored_attestations(&full, &digest).await
         } else {
             mirrored_attestations(&full, &digest).await
         };
@@ -673,7 +705,8 @@ fn no_attestations_verdict(full: &str) -> MirrorVerdict {
 /// mise-versions answered 404: it doesn't serve `full`, which is private or
 /// gone. Only the user's token can read a private repository's attestations.
 fn unknown_repo_verdict(full: &str) -> MirrorVerdict {
-    if crate::github::has_github_api_credentials() {
+    // A token, not netrc: the attestation client sends only a token.
+    if resolve_token_for_wrapper(None).is_some() {
         debug!("mise-versions does not know {full}; asking GitHub, which may hold it privately");
         return MirrorVerdict::AskGithub;
     }
