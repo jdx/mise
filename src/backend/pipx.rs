@@ -296,6 +296,35 @@ pub(crate) fn has_selected_python(tv: &ToolVersion) -> Result<bool> {
     Ok(PipxOptions::new(&options).selected_python()?.is_some())
 }
 
+/// A version resolved from an existing legacy `~uv~` directory keeps that
+/// directory in `install_path`. A selected interpreter is part of the
+/// environment identity, though, so a replacement must never reuse a path
+/// whose identity or receipt belongs to another interpreter. Otherwise a
+/// failed replacement would clean up the still-working environment.
+fn reset_selected_python_install_path(tv: &mut ToolVersion) {
+    if tv.install_path_is_explicit {
+        return;
+    }
+    let Some(install_path) = tv.install_path.as_ref() else {
+        return;
+    };
+    let Some((_, expected_identity)) = tv.uv_python.as_ref() else {
+        return;
+    };
+
+    let has_target_name = install_path
+        .file_name()
+        .is_some_and(|name| name == std::ffi::OsStr::new(&tv.tv_pathname()));
+    let has_expected_receipt =
+        crate::file::read_to_string(install_path.join(".mise-uv/python.json"))
+            .ok()
+            .and_then(|contents| serde_json::from_str::<(PathBuf, String)>(&contents).ok())
+            .is_some_and(|(_, installed_identity)| installed_identity == *expected_identity);
+    if !has_target_name || !has_expected_receipt {
+        tv.install_path = None;
+    }
+}
+
 #[async_trait]
 impl Backend for PIPXBackend {
     fn get_type(&self) -> BackendType {
@@ -520,6 +549,7 @@ impl Backend for PIPXBackend {
             .is_some()
         {
             self.bind_uv_python(ctx, &mut tv).await?;
+            reset_selected_python_install_path(&mut tv);
         }
         if let Some(lock) = &tv.uv_lock {
             let lock = if !ctx.locked && lock.load().is_err() {
@@ -575,6 +605,7 @@ impl Backend for PIPXBackend {
         if tv.uv_lock.is_some() && tv.uv_python.is_none() {
             self.bind_uv_python(ctx, &mut tv).await?;
         }
+        reset_selected_python_install_path(&mut tv);
         Ok(tv)
     }
 
@@ -1863,8 +1894,12 @@ mod tests {
     use crate::file;
     use crate::github::GithubRelease;
     use crate::toolset::tool_request::LockfileScope;
-    use crate::toolset::{ToolRequest, ToolSource, ToolVersionOptions, parse_tool_options};
+    use crate::toolset::{
+        ToolRequest, ToolSource, ToolVersion, ToolVersionOptions, parse_tool_options,
+    };
+    use std::path::PathBuf;
     use std::sync::Arc;
+    use tempfile::tempdir;
 
     #[test]
     fn selected_python_accepts_numeric_minor_and_exact_patch() {
@@ -1917,6 +1952,76 @@ mod tests {
                 "{key}"
             );
         }
+    }
+
+    fn selected_python_tool_version(identity: &str) -> ToolVersion {
+        let request = ToolRequest::new_with_options(
+            Arc::new(BackendArg::from("pypi:demo")),
+            "1.0.0",
+            parse_tool_options(r#"python = "3.13""#),
+            ToolSource::Unknown,
+        )
+        .unwrap();
+        let mut tv = ToolVersion::new(request, "1.0.0".into());
+        tv.uv_python = Some((
+            PathBuf::from("/data/installs/python/3.13.0/bin/python"),
+            identity.into(),
+        ));
+        tv
+    }
+
+    fn write_python_receipt(path: &std::path::Path, identity: &str) {
+        std::fs::create_dir_all(path.join(".mise-uv")).unwrap();
+        std::fs::write(
+            path.join(".mise-uv/python.json"),
+            serde_json::to_string(&(PathBuf::from("/data/installs/python/bin/python"), identity))
+                .unwrap(),
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn selected_python_same_identity_keeps_discovered_environment() {
+        let temp = tempdir().unwrap();
+        let mut tv = selected_python_tool_version("core:python:3.13.0:same");
+        let old = temp.path().join(tv.tv_pathname());
+        write_python_receipt(&old, "core:python:3.13.0:same");
+        tv.install_path = Some(old.clone());
+
+        super::reset_selected_python_install_path(&mut tv);
+
+        assert_eq!(tv.install_path.as_deref(), Some(old.as_path()));
+    }
+
+    #[test]
+    fn selected_python_missing_legacy_receipt_uses_new_destination() {
+        let temp = tempdir().unwrap();
+        let mut tv = selected_python_tool_version("core:python:3.13.0:new");
+        let old = temp.path().join(tv.tv_pathname());
+        std::fs::create_dir_all(&old).unwrap();
+        tv.install_path = Some(old);
+
+        super::reset_selected_python_install_path(&mut tv);
+
+        assert!(tv.install_path.is_none());
+    }
+
+    #[test]
+    fn selected_python_replacement_leaves_old_environment_when_new_install_fails() {
+        let temp = tempdir().unwrap();
+        let mut tv = selected_python_tool_version("core:python:3.13.0:new");
+        let old = temp.path().join("1.0.0~uv~old");
+        write_python_receipt(&old, "core:python:3.12.0:old");
+        tv.install_path = Some(old.clone());
+
+        super::reset_selected_python_install_path(&mut tv);
+        assert!(tv.install_path.is_none());
+
+        let replacement = temp.path().join(tv.tv_pathname());
+        assert_ne!(replacement, old);
+        std::fs::create_dir_all(&replacement).unwrap();
+        std::fs::remove_dir_all(&replacement).unwrap();
+        assert!(old.join(".mise-uv/python.json").is_file());
     }
 
     #[test]
