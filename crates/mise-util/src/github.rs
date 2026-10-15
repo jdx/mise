@@ -403,6 +403,92 @@ where
     Ok(Some(releases))
 }
 
+/// [`mirrors_github_metadata`] for `repo`'s tag list, which `url_replacements`
+/// may reroute on its own.
+fn mirrors_github_tags(api_url: &str, repo: &str) -> bool {
+    mirrors_github_metadata(api_url, repo)
+        && !crate::versions_host::github_api_url_is_replaced(&format!(
+            "{}/repos/{repo}/tags?per_page=100",
+            api_url.trim_end_matches('/')
+        ))
+}
+
+/// Whether mise-versions is the source of `repo`'s tags, as [`mirror_source`]
+/// is for releases: from configuration alone, not whether this command may go
+/// online, so prefer-offline and offline runs still find what was cached.
+fn tags_mirror_source(api_url: &str, repo: &str) -> bool {
+    is_public_github_api_base(api_url)
+        && mirror_source(repo)
+        && !crate::versions_host::github_api_url_is_replaced(&format!(
+            "{}/repos/{repo}/tags?per_page=100",
+            api_url.trim_end_matches('/')
+        ))
+}
+
+/// Part of every tag cache key: which source answers for `repo`'s tags, so
+/// turning `use_versions_host` off or adding a `url_replacements` rule starts
+/// from a fresh cache, as release lists do (see [`mirror_source`]).
+fn tags_cache_key(api_url: &str, repo: &str) -> String {
+    format!(
+        "{}-{}",
+        format!("{api_url}-{repo}").to_kebab_case(),
+        crate::hash::hash_to_str(&(api_url, repo, tags_mirror_source(api_url, repo)))
+    )
+}
+
+/// A repository's tags from mise-versions: the first page, or with `list_all`
+/// every page it serves. `Ok(None)` when mise-versions doesn't list the
+/// repository.
+async fn list_mirrored_tags(
+    repo: &str,
+    list_all: bool,
+    dates: bool,
+) -> Result<Option<Vec<crate::versions_host::GithubMirroredTag>>> {
+    paginate_mirrored_tags(list_all, |page| async move {
+        crate::versions_host::github_tags(repo, page, dates)
+            .await
+            .wrap_err_with(|| versions_host_failure(&format!("tags of {repo}")))
+    })
+    .await
+}
+
+/// Page through mirrored tag lists, as [`paginate_mirrored_releases`] does
+/// for releases: a 404 on the first page is `Ok(None)`, one later on is an
+/// error, and the listing ends at the pages mise-versions serves.
+async fn paginate_mirrored_tags<F, Fut>(
+    list_all: bool,
+    mut fetch_page: F,
+) -> Result<Option<Vec<crate::versions_host::GithubMirroredTag>>>
+where
+    F: FnMut(u32) -> Fut,
+    Fut: std::future::Future<Output = Result<Option<crate::versions_host::GithubTagsPage>>>,
+{
+    let mut tags = Vec::new();
+    let mut page = 1;
+    for pages_fetched in 1.. {
+        let Some(list) = fetch_page(page).await? else {
+            if page == 1 {
+                return Ok(None);
+            }
+            bail!("mise-versions has no page {page} of a GitHub tag list it listed before");
+        };
+        tags.extend(list.tags);
+        let Some(next) = list.next_page.filter(|_| list_all) else {
+            if list_all && list.truncated {
+                debug!(
+                    "mise-versions serves the first {pages_fetched} pages of tags; the rest are not listed"
+                );
+            }
+            break;
+        };
+        if pages_fetched >= crate::versions_host::GITHUB_RELEASES_MAX_PAGES {
+            break;
+        }
+        page = next;
+    }
+    Ok(Some(tags))
+}
+
 /// `cache`'s value, fetched with `fetch` when it is missing or stale. When
 /// mise-versions is temporarily unavailable (429, 5xx, no connection), a copy
 /// cached earlier stands in however old it is, as jdx/mise-versions' client
@@ -528,33 +614,35 @@ pub async fn attested_by_repository(owner: &str, repo: &str, attested: &[String]
 }
 
 pub async fn list_tags(repo: &str) -> Result<Vec<String>> {
-    let key = repo.to_kebab_case();
+    let key = tags_cache_key(API_URL, repo);
     let cache = get_tags_cache(&key).await;
     let cache = cache.get(&key).unwrap();
-    Ok(cache
-        .get_or_try_init_async(async || {
-            list_tags_(API_URL, repo, *env::MISE_LIST_ALL_VERSIONS).await
-        })
-        .await?
-        .to_vec())
+    cached_or_stale(cache, async || {
+        list_tags_(API_URL, repo, *env::MISE_LIST_ALL_VERSIONS).await
+    })
+    .await
 }
 
 pub async fn list_tags_from_url(api_url: &str, repo: &str) -> Result<Vec<String>> {
-    let key = format!("{api_url}-{repo}").to_kebab_case();
+    let key = tags_cache_key(api_url, repo);
     let cache = get_tags_cache(&key).await;
     let cache = cache.get(&key).unwrap();
-    Ok(cache
-        .get_or_try_init_async(async || {
-            list_tags_(api_url, repo, *env::MISE_LIST_ALL_VERSIONS).await
-        })
-        .await?
-        .to_vec())
+    cached_or_stale(cache, async || {
+        list_tags_(api_url, repo, *env::MISE_LIST_ALL_VERSIONS).await
+    })
+    .await
 }
 
 /// `list_all` is `MISE_LIST_ALL_VERSIONS`, taken as an argument rather than read here so
 /// tests can exercise the pagination loop: the env var is a process-wide `Lazy` that other
 /// modules' tests have already forced by the time this one runs.
 async fn list_tags_(api_url: &str, repo: &str, list_all: bool) -> Result<Vec<String>> {
+    if mirrors_github_tags(api_url, repo) {
+        match list_mirrored_tags(repo, list_all, false).await? {
+            Some(tags) => return Ok(tags.into_iter().map(|t| t.name).collect()),
+            None => ensure_private_repo_lookup(repo, &format!("GitHub repository {repo}"))?,
+        }
+    }
     let mut url = format!("{api_url}/repos/{repo}/tags?per_page=100");
     let headers = get_headers(&url)?;
     let (mut tags, mut headers) = crate::http::HTTP_FETCH
@@ -583,6 +671,20 @@ pub async fn list_tags_with_dates(repo: &str) -> Result<Vec<GithubTagWithDate>> 
 }
 
 async fn list_tags_with_dates_(api_url: &str, repo: &str) -> Result<Vec<GithubTagWithDate>> {
+    if mirrors_github_tags(api_url, repo) {
+        match list_mirrored_tags(repo, true, true).await? {
+            Some(tags) => {
+                return Ok(tags
+                    .into_iter()
+                    .map(|t| GithubTagWithDate {
+                        name: t.name,
+                        date: t.date,
+                    })
+                    .collect());
+            }
+            None => ensure_private_repo_lookup(repo, &format!("GitHub repository {repo}"))?,
+        }
+    }
     let mut url = format!("{api_url}/repos/{repo}/tags?per_page=100");
     let headers = get_headers(&url)?;
     let (mut tags, mut response_headers) = crate::http::HTTP_FETCH

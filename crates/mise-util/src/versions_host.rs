@@ -49,6 +49,25 @@ pub struct GithubReleasesPage {
     pub truncated: bool,
 }
 
+/// One page (100 tags) of a repository's tags from mise-versions.
+#[derive(serde::Deserialize)]
+pub struct GithubTagsPage {
+    /// GitHub's order: by name, highest version first.
+    pub tags: Vec<GithubMirroredTag>,
+    pub next_page: Option<u32>,
+    /// More tags exist than mise-versions serves.
+    #[serde(default)]
+    pub truncated: bool,
+}
+
+#[derive(serde::Deserialize)]
+pub struct GithubMirroredTag {
+    pub name: String,
+    /// The tagged commit's committer date, sent only when asked for.
+    #[serde(default)]
+    pub date: Option<String>,
+}
+
 /// One entry of a repository directory, as GitHub's contents API lists it.
 #[derive(Debug, Clone, serde::Deserialize)]
 pub struct GithubContentsEntry {
@@ -105,6 +124,19 @@ impl<'a> VersionsHostLogContext<'a> {
     fn github_releases(repo: &'a str, page: u32) -> Self {
         Self {
             endpoint: "github_releases",
+            tool: None,
+            repo: Some(repo),
+            tag: None,
+            digest: None,
+            page: Some(page),
+            full: None,
+            version: None,
+        }
+    }
+
+    fn github_tags(repo: &'a str, page: u32) -> Self {
+        Self {
+            endpoint: "github_tags",
             tool: None,
             repo: Some(repo),
             tag: None,
@@ -323,6 +355,42 @@ pub async fn github_releases(repo: &str, page: u32) -> eyre::Result<Option<Githu
     }
     log_versions_host_trace(ctx, "success", &format!("releases={}", list.releases.len()));
     Ok(Some(list))
+}
+
+/// Fetch one page of a public repository's tags from the versions host, with
+/// each tagged commit's date when `dates` is set. `Ok(None)` and errors as in
+/// [`github_release`].
+pub async fn github_tags(
+    repo: &str,
+    page: u32,
+    dates: bool,
+) -> eyre::Result<Option<GithubTagsPage>> {
+    if !enabled_for_github_repo(repo) {
+        return Ok(None);
+    }
+    let Some((owner, repo_name)) = split_github_repo(repo) else {
+        return Ok(None);
+    };
+    let url = github_tags_url(owner, repo_name, page, dates);
+    let ctx = VersionsHostLogContext::github_tags(repo, page);
+    let Some(list) = fetch_json_unless_not_found::<GithubTagsPage>(&url, ctx).await? else {
+        return Ok(None);
+    };
+    if list.next_page.is_some_and(|next| next != page + 1) {
+        log_versions_host_trace(ctx, "invalid_next_page", "");
+        bail!("mise-versions pointed page {page} of {repo}'s tags at an unexpected next page");
+    }
+    log_versions_host_trace(ctx, "success", &format!("tags={}", list.tags.len()));
+    Ok(Some(list))
+}
+
+fn github_tags_url(owner: &str, repo: &str, page: u32, dates: bool) -> String {
+    format!(
+        "https://mise-versions.jdx.dev/api/github/repos/{}/{}/tags?page={page}{}",
+        encode_path_segment(owner),
+        encode_path_segment(repo),
+        if dates { "&dates=1" } else { "" }
+    )
 }
 
 /// List the directory `path` of a public repository at `commit`, a full
@@ -946,6 +1014,31 @@ mod tests {
             github_releases_url("jdx", "mise.test", 3),
             "https://mise-versions.jdx.dev/api/github/repos/jdx/mise.test/releases?page=3"
         );
+    }
+
+    #[test]
+    fn test_github_tags_url() {
+        assert_eq!(
+            github_tags_url("apache", "tomcat", 2, false),
+            "https://mise-versions.jdx.dev/api/github/repos/apache/tomcat/tags?page=2"
+        );
+        assert_eq!(
+            github_tags_url("apache", "tomcat", 1, true),
+            "https://mise-versions.jdx.dev/api/github/repos/apache/tomcat/tags?page=1&dates=1"
+        );
+    }
+
+    #[test]
+    fn test_github_tags_page_deserializes() {
+        // The shape mise-versions serves (jdx/mise-versions#369).
+        let page: GithubTagsPage = serde_json::from_str(
+            r#"{"tags":[{"name":"11.0.27","commit":{"sha":"52f3b36","url":"https://api.github.com/repos/apache/tomcat/commits/52f3b36"},"date":"2026-10-06T18:22:36Z"},{"name":"11.0.26","commit":{"sha":"a1"}}],"next_page":2,"truncated":false}"#,
+        )
+        .unwrap();
+        assert_eq!(page.tags[0].name, "11.0.27");
+        assert_eq!(page.tags[0].date.as_deref(), Some("2026-10-06T18:22:36Z"));
+        assert_eq!(page.tags[1].date, None);
+        assert_eq!(page.next_page, Some(2));
     }
 
     #[test]
