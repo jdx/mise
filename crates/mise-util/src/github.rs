@@ -821,7 +821,12 @@ pub async fn list_tags_with_dates(repo: &str) -> Result<Vec<GithubTagWithDate>> 
 
 async fn list_tags_with_dates_(api_url: &str, repo: &str) -> Result<Vec<GithubTagWithDate>> {
     if mirrors_github_tags(api_url, repo) {
-        if let Some(list) = whole_list(repo, crate::versions_host::GithubList::Tags).await {
+        // A list whose tags all lack dates gives a dated listing nothing; the
+        // paged endpoint with `dates=1` looks the dates up.
+        if let Some(list) = whole_list(repo, crate::versions_host::GithubList::Tags)
+            .await
+            .filter(|list| list.tags.is_empty() || list.tags.iter().any(|t| t.date.is_some()))
+        {
             return Ok(list
                 .tags
                 .into_iter()
