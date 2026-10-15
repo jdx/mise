@@ -149,7 +149,6 @@ windows-sys = { version = "0.61", features = [
 
 [dev-dependencies]
 confique = { version = "0.4", default-features = false }
-ctor = "1"
 mockito = "1"
 insta = { version = "1", features = ["filters", "json"] }
 pretty_assertions = "1"

@@ -16,6 +16,7 @@ use crate::file;
 use crate::github::{self, GithubRelease};
 use crate::hash::hash_to_str;
 use crate::http::HTTP_FETCH;
+use crate::install_before::release_age_list_window_for_cutoff;
 use crate::install_context::InstallContext;
 use crate::plugins::is_python_prerelease;
 use crate::semver::semver_is_older_than;
@@ -42,6 +43,48 @@ use xx::regex;
 
 const UV_EXCLUDE_NEWER_VERSION: &str = "0.2.22";
 const UV_WITH_EXECUTABLES_FROM_VERSION: &str = "0.8.5";
+
+/// A portable, mise-owned CPython selector for one PyPI tool.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum SelectedPython {
+    Minor(String),
+    Exact(String),
+}
+
+impl SelectedPython {
+    fn parse(value: &str) -> Result<Self> {
+        let parts = value.split('.').collect::<Vec<_>>();
+        let numeric = |part: &str| !part.is_empty() && part.bytes().all(|c| c.is_ascii_digit());
+        match parts.as_slice() {
+            [major, minor] if numeric(major) && numeric(minor) => {
+                Ok(Self::Minor(format!("{major}.{minor}")))
+            }
+            [major, minor, patch] if numeric(major) && numeric(minor) && numeric(patch) => {
+                Ok(Self::Exact(format!("{major}.{minor}.{patch}")))
+            }
+            _ => bail!(
+                "python must be a numeric CPython minor (for example 3.12) or exact patch (for example 3.12.12)"
+            ),
+        }
+    }
+
+    pub(crate) fn request_version(&self) -> &str {
+        match self {
+            Self::Minor(version) | Self::Exact(version) => version,
+        }
+    }
+
+    pub(crate) fn requires_python(&self) -> String {
+        match self {
+            Self::Minor(version) => {
+                let (major, minor) = version.split_once('.').expect("validated minor");
+                let next_minor = minor.parse::<u32>().expect("validated minor") + 1;
+                format!(">={major}.{minor},<{major}.{next_minor}")
+            }
+            Self::Exact(version) => format!("=={version}"),
+        }
+    }
+}
 
 #[derive(Debug)]
 pub struct PIPXBackend {
@@ -147,6 +190,13 @@ impl<'a> PipxOptions<'a> {
         self.with()?;
         self.exposed_package_names()?;
         self.dependency_prereleases()?;
+        if self.selected_python()?.is_some() {
+            for args in [self.uvx_args(), self.pipx_args()].into_iter().flatten() {
+                if uv_args_select_python(&shell_words::split(args)?) {
+                    bail!("python cannot be combined with --python or -p in uvx_args or pipx_args");
+                }
+            }
+        }
         if self.has_uv_only_options()? && self.uvx_disabled() {
             bail!("with, expose, and dependency_prereleases cannot be combined with uvx = false");
         }
@@ -187,6 +237,14 @@ impl<'a> PipxOptions<'a> {
         self.values.raw().get_string("uvx").as_deref() == Some("false")
     }
 
+    pub(crate) fn selected_python(&self) -> Result<Option<SelectedPython>> {
+        match self.values.raw().opts.get("python") {
+            Some(toml::Value::String(value)) => SelectedPython::parse(value).map(Some),
+            Some(_) => bail!("python must be a string"),
+            None => Ok(None),
+        }
+    }
+
     fn lockfile_options(&self) -> Result<BTreeMap<String, String>> {
         let mut result = BTreeMap::new();
         if let Some(value) = self.extras() {
@@ -209,6 +267,68 @@ impl<'a> PipxOptions<'a> {
         self.validate_semantic()?;
         Ok(result)
     }
+}
+
+/// Build the dependency request for an explicitly selected interpreter.  This
+/// keeps the request anchored to the PyPI tool's source, so its lockfile is
+/// consulted instead of whichever Python happens to be active in the shell.
+pub fn selected_python_dependency(request: &ToolRequest) -> Result<Option<ToolRequest>> {
+    if request.ba().backend_type() != BackendType::Pipx {
+        return Ok(None);
+    }
+    let options = request.options();
+    let options = PipxOptions::new(&options);
+    options.validate_semantic()?;
+    let Some(selector) = options.selected_python()? else {
+        return Ok(None);
+    };
+    let mut dependency = ToolRequest::new(
+        Arc::new(BackendArg::from("python")),
+        selector.request_version(),
+        request.source().clone(),
+    )?;
+    dependency.set_lockfile_scope(request.lockfile_scope().clone());
+    Ok(Some(dependency))
+}
+
+pub(crate) fn has_selected_python(tv: &ToolVersion) -> Result<bool> {
+    let options = tv.request.options();
+    Ok(PipxOptions::new(&options).selected_python()?.is_some())
+}
+
+/// A version resolved from an existing legacy `~uv~` directory keeps that
+/// directory in `install_path`. A selected interpreter is part of the
+/// environment identity, though, so a replacement must never reuse a path
+/// whose identity or receipt belongs to another interpreter. Otherwise a
+/// failed replacement would clean up the still-working environment.
+fn reset_selected_python_install_path(tv: &mut ToolVersion) -> Result<()> {
+    if tv.install_path_is_explicit {
+        return Ok(());
+    }
+    let Some(install_path) = tv.install_path.as_ref() else {
+        return Ok(());
+    };
+    let Some((_, expected_identity)) = tv.uv_python.as_ref() else {
+        return Ok(());
+    };
+
+    let has_target_name = install_path
+        .file_name()
+        .is_some_and(|name| name == std::ffi::OsStr::new(&tv.tv_pathname()));
+    let has_expected_receipt =
+        crate::file::read_to_string(install_path.join(".mise-uv/python.json"))
+            .ok()
+            .and_then(|contents| serde_json::from_str::<(PathBuf, String)>(&contents).ok())
+            .is_some_and(|(_, installed_identity)| installed_identity == *expected_identity);
+    if !has_target_name {
+        tv.install_path = None;
+    } else if !has_expected_receipt {
+        bail!(
+            "cannot safely replace {}: the existing environment has no matching Python receipt",
+            tv.style()
+        );
+    }
+    Ok(())
 }
 
 #[async_trait]
@@ -304,6 +424,14 @@ impl Backend for PIPXBackend {
         &self,
         config: &Arc<Config>,
     ) -> eyre::Result<Option<VersionInfo>> {
+        self.latest_stable_version_info_before(config, None).await
+    }
+
+    async fn latest_stable_version_info_before(
+        &self,
+        config: &Arc<Config>,
+        before: Option<Timestamp>,
+    ) -> eyre::Result<Option<VersionInfo>> {
         let package = match self.tool_name().parse()? {
             PipxRequest::Pypi(package) => package,
             PipxRequest::Git(source) => {
@@ -320,7 +448,10 @@ impl Backend for PIPXBackend {
             }
         };
         let registry_url = self.get_registry_url(config).await?;
-        let latest_version_cache = self.latest_version_cache(&registry_url);
+        let mut latest_version_cache = self.latest_version_cache(&registry_url);
+        if adopt_latest_within_release_age(&mut latest_version_cache, before) {
+            debug!("Using the cached latest release of {package}, within its release-age window");
+        }
         timeout::run_with_timeout_async(
             async || {
                 latest_version_cache
@@ -416,6 +547,16 @@ impl Backend for PIPXBackend {
     ) -> Result<ToolVersion> {
         let request_options = tv.request.options();
         PipxOptions::new(&request_options).validate_semantic()?;
+        // An explicit selector is never a graph-only preference. Bind it
+        // before any branch that may fall back to version-only uv or pipx so
+        // every installer receives the same exact mise-managed executable.
+        if PipxOptions::new(&request_options)
+            .selected_python()?
+            .is_some()
+        {
+            self.bind_uv_python(ctx, &mut tv).await?;
+            reset_selected_python_install_path(&mut tv)?;
+        }
         if let Some(lock) = &tv.uv_lock {
             let lock = if !ctx.locked && lock.load().is_err() {
                 lock.refresh()?
@@ -425,11 +566,7 @@ impl Backend for PIPXBackend {
             self.validate_uv_lock(&tv, lock.load()?)?;
             tv.uv_lock = Some(lock);
         } else if self.uv_lock_allowed(&tv) {
-            let revision = if tv.resolved_from_lockfile() {
-                crate::lockfile::version_for_request(&ctx.config, &tv.request)?
-            } else {
-                None
-            };
+            let revision = self.uv_lockfile_version(&ctx.config, &tv)?;
             let graph_required = revision.is_some_and(|v| v >= 2)
                 || (!tv.resolved_from_lockfile() && Settings::get().lockfile_creation_enabled());
             if graph_required {
@@ -471,9 +608,10 @@ impl Backend for PIPXBackend {
                 }
             }
         }
-        if tv.uv_lock.is_some() {
-            self.bind_uv_python(&ctx.config, &mut tv).await?;
+        if tv.uv_lock.is_some() && tv.uv_python.is_none() {
+            self.bind_uv_python(ctx, &mut tv).await?;
         }
+        reset_selected_python_install_path(&mut tv)?;
         Ok(tv)
     }
 
@@ -483,33 +621,57 @@ impl Backend for PIPXBackend {
         tv: &ToolVersion,
         check_symlink: bool,
     ) -> Result<bool> {
+        let selected_python = PipxOptions::new(&tv.request.options())
+            .selected_python()?
+            .is_some();
         if tv.uv_lock.is_some() {
             if tv.uv_python.is_none() {
                 return Ok(false);
             }
         } else if self.uv_lock_allowed(tv) {
-            let revision = if tv.resolved_from_lockfile() {
-                crate::lockfile::version_for_request(config, &tv.request)?
-            } else {
-                None
-            };
+            let revision = self.uv_lockfile_version(config, tv)?;
             let graph_required = revision.is_some_and(|v| v >= 2)
                 || (!tv.resolved_from_lockfile() && Settings::get().lockfile_creation_enabled());
             let locked = config.invocation_locked_for(tv.request.source(), Settings::get().locked)
                 || tv.request.tool_config_locked(config, true);
             if graph_required {
-                if !locked && self.is_version_installed(config, tv, check_symlink) {
+                if !selected_python
+                    && !locked
+                    && self.is_version_installed(config, tv, check_symlink)
+                {
                     return Ok(true);
                 }
+                // Installer arguments which uv cannot lock deliberately use
+                // version-only installation. A selected runtime still needs
+                // its receipt checked below, but must not be forced to
+                // reinstall once that receipt matches.
+                let version_only_fallback = !self.uv_lock_options_supported(tv);
                 if locked
-                    || (!self.uv_lock_options_supported(tv)
-                        || self
+                    || (!version_only_fallback
+                        && self
                             .spawnable_dependency(config, None, "uv")
                             .await
                             .is_some())
                 {
                     return Ok(false);
                 }
+            }
+        }
+        if selected_python {
+            let Some((_, expected_identity)) = &tv.uv_python else {
+                return Ok(false);
+            };
+            let Ok(contents) =
+                crate::file::read_to_string(tv.install_path().join(".mise-uv/python.json"))
+            else {
+                return Ok(false);
+            };
+            let Ok((_, installed_identity)) = serde_json::from_str::<(PathBuf, String)>(&contents)
+            else {
+                return Ok(false);
+            };
+            if &installed_identity != expected_identity {
+                return Ok(false);
             }
         }
         Ok(self.is_version_installed(config, tv, check_symlink))
@@ -634,7 +796,9 @@ impl Backend for PIPXBackend {
             // uv prefers a Python it downloaded earlier over the one on PATH, which would
             // tie the tool's venv to an interpreter outside the mise data dir. Bind it to
             // mise's Python so a cached data dir restores a working tool.
-            if !uv_args_select_python(&user_args)
+            if let Some((python, _)) = &tv.uv_python {
+                cmd = cmd.arg("--python").arg(python);
+            } else if !uv_args_select_python(&user_args)
                 && let Some(python) = self.mise_managed_python(&ctx.config, &ctx.ts).await
             {
                 cmd = cmd.arg("--python").arg(python);
@@ -681,6 +845,9 @@ impl Backend for PIPXBackend {
             )
             .await?;
             cmd = cmd.args(Self::pip_uploaded_prior_to_args(ctx.before_date));
+            if let Some((python, _)) = &tv.uv_python {
+                cmd = cmd.arg("--python").arg(python);
+            }
             if let Some(args) = options.pipx_args() {
                 cmd = cmd.args(shell_words::split(args)?);
             }
@@ -700,9 +867,22 @@ impl Backend for PIPXBackend {
             }
         }
 
-        // Fix venv Python symlink to use minor version path
-        // This allows patch upgrades (3.12.1 → 3.12.2) to work without reinstalling
-        fix_venv_python_symlink(&tv.install_path())?;
+        // A selector also gives version-only installs an immutable runtime
+        // identity. Keep the provenance beside the environment so future
+        // resolution can verify that a matching directory was built with the
+        // same interpreter rather than adopting an old legacy install.
+        if let Some(python) = &tv.uv_python {
+            let metadata = tv.install_path().join(".mise-uv");
+            crate::file::create_dir_all(&metadata)?;
+            crate::file::write(metadata.join("python.json"), serde_json::to_string(python)?)?;
+        }
+
+        // Legacy environments retain their mutable-minor compatibility link.
+        // Selector-owned environments are instead named by a concrete runtime
+        // identity and must never be rebound by a later Python patch upgrade.
+        if options.selected_python()?.is_none() {
+            fix_venv_python_symlink(&tv.install_path())?;
+        }
 
         Ok(tv)
     }
@@ -752,6 +932,7 @@ pub(crate) fn install_time_option_keys() -> Vec<String> {
         "pipx_args".into(),
         "uvx_args".into(),
         "uvx".into(),
+        "python".into(),
     ]
 }
 
@@ -1278,8 +1459,12 @@ enum PipxRequest {
 
 /// Whether user-supplied `uv tool install` arguments already pick an interpreter.
 fn uv_args_select_python(args: &[String]) -> bool {
-    args.iter()
-        .any(|a| a == "-p" || a == "--python" || a.starts_with("--python="))
+    args.iter().any(|a| {
+        a == "-p"
+            || a == "--python"
+            || a.starts_with("--python=")
+            || (a.starts_with("-p") && !a.starts_with("--") && a.len() > 2)
+    })
 }
 
 /// A Git source split into its repository and any pip/uv URL fragment
@@ -1660,6 +1845,34 @@ fn fix_venv_python_symlink(_install_path: &Path) -> Result<()> {
     Ok(())
 }
 
+/// Load a cached latest release that is past `fetch_remote_versions_cache` but
+/// within the release-age window of the cutoff `before`, when it is dated, and
+/// say whether it did.
+///
+/// It is the newest stable release in the registry's list, not a tag a
+/// maintainer can move. It changes when a newer version is uploaded, which the
+/// cutoff hides for the window, and resolution then takes the newest release
+/// past the cutoff, which is this one again when it qualifies. Or when it is
+/// yanked, which a version list cached for the same window shows as late.
+/// Without a date, a new upload would pass the cutoff at once.
+fn adopt_latest_within_release_age(
+    cache: &mut CacheManager<Option<VersionInfo>>,
+    before: Option<Timestamp>,
+) -> bool {
+    if cache.has_fresh_value() {
+        return false;
+    }
+    let Some(window) = before.and_then(release_age_list_window_for_cutoff) else {
+        return false;
+    };
+    cache.adopt_file_if_fresh_for(Some(window), |_, latest| {
+        latest
+            .as_ref()
+            .and_then(|latest| latest.created_at.as_deref())
+            .is_some_and(|created_at| parse_into_timestamp(created_at).is_ok())
+    })
+}
+
 /// PyPI versions follow PEP 440. Stamp the separator-less alpha/beta/rc
 /// suffixes (`3.12.0a1`, `1.0.0c1`) here rather than in the shared regex so
 /// the rule stays scoped to Python — hex commit hashes used by other
@@ -1678,14 +1891,259 @@ fn stamp_pep440_prerelease(mut version: VersionInfo) -> VersionInfo {
 #[cfg(test)]
 mod tests {
     use super::{
-        GitSource, PIPXBackend, PipxOptions, PipxRequest, PypiPackage, PypiRelease,
-        UV_EXCLUDE_NEWER_VERSION,
+        GitSource, PIPXBackend, PipxOptions, PipxRequest, PypiPackage, PypiRelease, SelectedPython,
+        UV_EXCLUDE_NEWER_VERSION, uv_args_select_python,
     };
+    use crate::args::BackendArg;
     use crate::backend::{Backend, VersionInfo};
+    use crate::config::Config;
     #[cfg(unix)]
     use crate::file;
     use crate::github::GithubRelease;
-    use crate::toolset::ToolVersionOptions;
+    use crate::install_context::InstallContext;
+    use crate::toolset::tool_request::LockfileScope;
+    use crate::toolset::{
+        ToolRequest, ToolSource, ToolVersion, ToolVersionOptions, Toolset, parse_tool_options,
+    };
+    use crate::ui::progress_report::QuietReport;
+    use async_trait::async_trait;
+    use std::path::PathBuf;
+    use std::sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    };
+    use tempfile::tempdir;
+
+    #[test]
+    fn selected_python_accepts_numeric_minor_and_exact_patch() {
+        assert_eq!(
+            SelectedPython::parse("3.12").unwrap().requires_python(),
+            ">=3.12,<3.13"
+        );
+        assert_eq!(
+            SelectedPython::parse("3.12.12").unwrap().requires_python(),
+            "==3.12.12"
+        );
+    }
+
+    #[test]
+    fn selected_python_rejects_nonportable_selectors() {
+        for selector in ["latest", "3.12.*", "cpython@3.12", "/usr/bin/python3"] {
+            assert!(SelectedPython::parse(selector).is_err(), "{selector}");
+        }
+    }
+
+    #[test]
+    fn selected_python_dependency_keeps_its_lockfile_scope() {
+        let owner = ToolSource::MiseToml("/project/mise.toml".into());
+        let mut request = ToolRequest::new_with_options(
+            Arc::new(BackendArg::from("pypi:demo")),
+            "latest",
+            parse_tool_options(r#"python = "3.12""#),
+            ToolSource::Argument,
+        )
+        .unwrap();
+        request.set_lockfile_scope(LockfileScope::Source(owner.clone()));
+
+        let dependency = super::selected_python_dependency(&request)
+            .unwrap()
+            .unwrap();
+        assert_eq!(dependency.lockfile_scope(), &LockfileScope::Source(owner));
+    }
+
+    #[test]
+    fn selected_python_rejects_installer_python_arguments() {
+        for (key, value) in [
+            ("uvx_args", "--python 3.13"),
+            ("uvx_args", "-p3.13"),
+            ("pipx_args", "-p=python3"),
+            ("pipx_args", "-p python3"),
+        ] {
+            let options = parse_tool_options(&format!("python = \"3.12\", {key} = \"{value}\""));
+            assert!(
+                PipxOptions::new(&options).validate_semantic().is_err(),
+                "{key}"
+            );
+        }
+    }
+
+    fn selected_python_tool_version(identity: &str) -> ToolVersion {
+        selected_python_tool_version_for("pypi:demo", identity)
+    }
+
+    fn selected_python_tool_version_for(backend: &str, identity: &str) -> ToolVersion {
+        let request = ToolRequest::new_with_options(
+            Arc::new(BackendArg::from(backend)),
+            "1.0.0",
+            parse_tool_options(r#"python = "3.13""#),
+            ToolSource::Unknown,
+        )
+        .unwrap();
+        let mut tv = ToolVersion::new(request, "1.0.0".into());
+        tv.uv_python = Some((
+            PathBuf::from("/data/installs/python/3.13.0/bin/python"),
+            identity.into(),
+        ));
+        tv
+    }
+
+    fn write_python_receipt(path: &std::path::Path, identity: &str) {
+        std::fs::create_dir_all(path.join(".mise-uv")).unwrap();
+        std::fs::write(
+            path.join(".mise-uv/python.json"),
+            serde_json::to_string(&(PathBuf::from("/data/installs/python/bin/python"), identity))
+                .unwrap(),
+        )
+        .unwrap();
+    }
+
+    #[derive(Debug)]
+    struct FailingInstallBackend {
+        ba: Arc<BackendArg>,
+        attempts: Arc<AtomicUsize>,
+    }
+
+    #[async_trait]
+    impl Backend for FailingInstallBackend {
+        fn ba(&self) -> &Arc<BackendArg> {
+            &self.ba
+        }
+
+        async fn _list_remote_versions(
+            &self,
+            _config: &Arc<Config>,
+        ) -> eyre::Result<Vec<VersionInfo>> {
+            Ok(vec![])
+        }
+
+        async fn install_version_(
+            &self,
+            _ctx: &InstallContext,
+            _tv: ToolVersion,
+        ) -> eyre::Result<ToolVersion> {
+            self.attempts.fetch_add(1, Ordering::SeqCst);
+            eyre::bail!("controlled installer failure")
+        }
+    }
+
+    fn lifecycle_context(config: Arc<Config>) -> InstallContext {
+        InstallContext {
+            config,
+            ts: Arc::new(Toolset::default()),
+            pr: Arc::new(QuietReport::new()),
+            force: false,
+            dry_run: false,
+            explicit_yes: true,
+            locked: false,
+            before_date: None,
+            dependency_context: Default::default(),
+        }
+    }
+
+    #[test]
+    fn selected_python_same_identity_keeps_discovered_environment() {
+        let temp = tempdir().unwrap();
+        let mut tv = selected_python_tool_version("core:python:3.13.0:same");
+        let old = temp.path().join(tv.tv_pathname());
+        write_python_receipt(&old, "core:python:3.13.0:same");
+        tv.install_path = Some(old.clone());
+
+        super::reset_selected_python_install_path(&mut tv).unwrap();
+
+        assert_eq!(tv.install_path.as_deref(), Some(old.as_path()));
+    }
+
+    #[test]
+    fn selected_python_missing_receipt_fails_without_removing_environment() {
+        let temp = tempdir().unwrap();
+        let mut tv = selected_python_tool_version("core:python:3.13.0:new");
+        let old = temp.path().join(tv.tv_pathname());
+        std::fs::create_dir_all(&old).unwrap();
+        tv.install_path = Some(old.clone());
+
+        assert!(super::reset_selected_python_install_path(&mut tv).is_err());
+
+        assert_eq!(tv.install_path.as_deref(), Some(old.as_path()));
+        assert!(old.is_dir());
+    }
+
+    #[tokio::test]
+    async fn selected_python_replacement_keeps_old_environment_when_install_lifecycle_fails() {
+        let config = Config::get().await.unwrap();
+        let temp = tempdir().unwrap();
+        // The controlled backend has no declared dependencies, so this reaches the
+        // generic installation lifecycle rather than attempting a real Python install.
+        let mut tv = selected_python_tool_version_for("node", "core:python:3.13.0:new");
+        let old = temp.path().join("1.0.0~uv~old");
+        write_python_receipt(&old, "core:python:3.12.0:old");
+        tv.install_path = Some(old.clone());
+
+        super::reset_selected_python_install_path(&mut tv).unwrap();
+        assert!(tv.install_path.is_none());
+
+        let replacement = temp.path().join(tv.tv_pathname());
+        assert_ne!(replacement, old);
+        tv.install_path = Some(replacement.clone());
+        tv.install_path_is_explicit = true;
+        let attempts = Arc::new(AtomicUsize::new(0));
+        let backend = FailingInstallBackend {
+            ba: tv.ba().clone().into(),
+            attempts: attempts.clone(),
+        };
+
+        let error = backend
+            .install_version(lifecycle_context(config), tv)
+            .await
+            .unwrap_err();
+
+        assert!(error.to_string().contains("controlled installer failure"));
+        assert_eq!(attempts.load(Ordering::SeqCst), 1);
+        assert!(
+            replacement.exists(),
+            "the controlled installer created only the new target"
+        );
+        assert!(old.join(".mise-uv/python.json").is_file());
+    }
+
+    #[test]
+    fn selected_python_stale_same_destination_rejects_before_install_cleanup() {
+        let temp = tempdir().unwrap();
+        let mut tv = selected_python_tool_version("core:python:3.13.0:new");
+        let old = temp.path().join(tv.tv_pathname());
+        std::fs::create_dir_all(&old).unwrap();
+        std::fs::write(old.join("working-tool"), "preserve me").unwrap();
+        tv.install_path = Some(old.clone());
+
+        let error = super::reset_selected_python_install_path(&mut tv).unwrap_err();
+
+        assert!(error.to_string().contains("cannot safely replace"));
+        assert_eq!(tv.install_path.as_deref(), Some(old.as_path()));
+        assert_eq!(
+            std::fs::read_to_string(old.join("working-tool")).unwrap(),
+            "preserve me"
+        );
+    }
+
+    #[test]
+    fn uv_args_detect_every_python_flag_spelling() {
+        for args in [
+            vec!["--python".into(), "3.12".into()],
+            vec!["--python=3.12".into()],
+            vec!["-p".into(), "3.12".into()],
+            vec!["-p3.12".into()],
+            vec!["-p=3.12".into()],
+        ] {
+            assert!(uv_args_select_python(&args), "{args:?}");
+        }
+        for args in [
+            vec!["--resolution".into(), "lowest".into()],
+            vec!["--prerelease".into(), "allow".into()],
+            vec!["--pip-args".into(), "--pre".into()],
+            vec!["--python-preference".into(), "system".into()],
+        ] {
+            assert!(!uv_args_select_python(&args), "{args:?}");
+        }
+    }
     use indexmap::IndexMap;
     use pretty_assertions::assert_eq;
     use std::ffi::OsString;
@@ -2036,6 +2494,126 @@ cccccccccccccccccccccccccccccccccccccccc\trefs/heads/main\n";
             Some("1.0.0")
         );
         registry.assert_async().await;
+    }
+
+    /// Set the modified time of `backend`'s cached latest releases to `secs` ago.
+    fn backdate_cached_latest(backend: &PIPXBackend, secs: u64) {
+        let then = filetime::FileTime::from_system_time(
+            std::time::SystemTime::now() - std::time::Duration::from_secs(secs),
+        );
+        for entry in std::fs::read_dir(backend.ba().cache_path()).unwrap() {
+            let path = entry.unwrap().path();
+            if path.to_string_lossy().contains("latest_version_info_") {
+                filetime::set_file_mtime(&path, then).unwrap();
+            }
+        }
+    }
+
+    /// Past `fetch_remote_versions_cache`, resolving `latest` under a cutoff
+    /// keeps the cached, dated latest release for the cutoff's release-age
+    /// window instead of fetching the registry document again, unless the user
+    /// set `fetch_remote_versions_cache`.
+    #[tokio::test]
+    async fn latest_within_release_age_window_reads_registry_once() {
+        use crate::config::settings::SettingsPartial;
+        use crate::config::{Settings, SettingsExt};
+        use confique::Layer;
+
+        let _settings = crate::test::SettingsGuard::lock();
+        Settings::reset(None);
+        let mut server = mockito::Server::new_async().await;
+        let registry = dated_registry(&mut server, "dated-window", 2).await;
+        let config = crate::config::Config::get().await.unwrap();
+        let tool = format!(
+            "pipx:dated-window[registry_url='{}/pypi/{{}}/json']",
+            server.url()
+        );
+        let backend = PIPXBackend::from_arg(tool.as_str().into());
+        let _ = std::fs::remove_dir_all(backend.ba().cache_path());
+        let before = crate::duration::parse_into_timestamp("2026-06-01").unwrap();
+        let latest = async |backend: &PIPXBackend| {
+            backend
+                .latest_version(&config, Some("latest".into()), Some(before))
+                .await
+                .unwrap()
+        };
+
+        assert_eq!(latest(&backend).await.as_deref(), Some("2.0.0"));
+        backdate_cached_latest(&backend, 2 * 60 * 60);
+        let backend = PIPXBackend::from_arg(tool.as_str().into());
+        assert_eq!(latest(&backend).await.as_deref(), Some("2.0.0"));
+
+        let mut partial = SettingsPartial::empty();
+        partial.fetch_remote_versions_cache = Some("1h".to_string());
+        Settings::reset(Some(partial));
+        backdate_cached_latest(&backend, 2 * 60 * 60);
+        let backend = PIPXBackend::from_arg(tool.as_str().into());
+        assert_eq!(latest(&backend).await.as_deref(), Some("2.0.0"));
+        Settings::reset(None);
+        registry.assert_async().await;
+    }
+
+    /// Only a dated latest release is kept for the window, and only under a
+    /// cutoff.
+    #[test]
+    fn adopt_latest_within_release_age_needs_a_date_and_a_cutoff() {
+        use crate::cache::{CacheManager, CacheManagerBuilder};
+        use crate::config::{Settings, SettingsExt};
+
+        let _settings = crate::test::SettingsGuard::lock();
+        Settings::reset(None);
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("latest.msgpack.z");
+        let cache = || -> CacheManager<Option<VersionInfo>> {
+            CacheManagerBuilder::new(path.clone())
+                .with_fresh_duration(Some(std::time::Duration::from_secs(60 * 60)))
+                .build()
+        };
+        let write = |created_at: Option<&str>| {
+            cache()
+                .write(&Some(VersionInfo {
+                    version: "1.0.0".to_string(),
+                    created_at: created_at.map(str::to_string),
+                    ..Default::default()
+                }))
+                .unwrap();
+            let then = filetime::FileTime::from_system_time(
+                std::time::SystemTime::now() - std::time::Duration::from_secs(2 * 60 * 60),
+            );
+            for entry in std::fs::read_dir(dir.path()).unwrap() {
+                filetime::set_file_mtime(entry.unwrap().path(), then).unwrap();
+            }
+        };
+        let day_ago = Some(jiff::Timestamp::now() - jiff::SignedDuration::from_hours(24));
+        let six_hours_ago = Some(jiff::Timestamp::now() - jiff::SignedDuration::from_hours(6));
+        let ninety_minutes_ago = Some(jiff::Timestamp::now() - jiff::SignedDuration::from_mins(90));
+
+        write(Some("2026-01-01T00:00:00Z"));
+        assert!(super::adopt_latest_within_release_age(
+            &mut cache(),
+            day_ago
+        ));
+        assert!(super::adopt_latest_within_release_age(
+            &mut cache(),
+            six_hours_ago
+        ));
+        // A 90 minute cutoff keeps it for 90 minutes, not two hours.
+        assert!(!super::adopt_latest_within_release_age(
+            &mut cache(),
+            ninety_minutes_ago
+        ));
+        assert!(!super::adopt_latest_within_release_age(&mut cache(), None));
+
+        write(None);
+        assert!(!super::adopt_latest_within_release_age(
+            &mut cache(),
+            day_ago
+        ));
+        write(Some("not a date"));
+        assert!(!super::adopt_latest_within_release_age(
+            &mut cache(),
+            day_ago
+        ));
     }
 
     #[tokio::test]

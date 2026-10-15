@@ -824,7 +824,12 @@ impl Backend for AquaBackend {
                 target.to_key(),
                 pkg.supported_envs
             );
-            return Ok(PlatformInfo::default());
+            return Err(crate::errors::Error::UnsupportedTarget(format!(
+                "aqua package {} does not support {}",
+                self.id,
+                target.to_key()
+            ))
+            .into());
         }
 
         // Get URL and checksum for the target platform
@@ -1548,14 +1553,13 @@ impl AquaBackend {
         attestations: &AquaGithubArtifactAttestations,
         digest: &str,
     ) -> std::result::Result<bool, crate::github::sigstore::DetectError> {
-        let repo = format!("{}/{}", pkg.repo_owner, pkg.repo_name);
         crate::github::sigstore::detect_attestations_with_predicate_type(
             &pkg.repo_owner,
             &pkg.repo_name,
             github::API_URL,
             digest,
             attestations.predicate_type.as_deref(),
-            self.use_versions_host_for_github_metadata(&repo),
+            true,
         )
         .await
     }
@@ -1807,7 +1811,7 @@ impl AquaBackend {
             signer_workflow.as_deref(),
             predicate_type,
             None,
-            self.use_versions_host_for_github_metadata(&repo),
+            true,
         )
         .await;
 
@@ -1835,7 +1839,7 @@ impl AquaBackend {
                 canonical_workflow.as_deref(),
                 predicate_type,
                 None,
-                self.use_versions_host_for_github_metadata(&canonical_repo),
+                true,
             )
             .await;
         }
@@ -2359,27 +2363,13 @@ impl AquaBackend {
         }
     }
 
-    /// mise-versions serves any public github.com repo, but only the package's
-    /// own repo may come from it: an aqua package that reads another repo's
-    /// releases (a foreign attestation signer, say) asks GitHub directly.
-    fn use_versions_host_for_github_metadata(&self, repo: &str) -> bool {
-        let full = self.ba.full_without_opts();
-        let Some(aqua_id) = full.strip_prefix("aqua:") else {
-            return false;
-        };
-        let aqua_id = aqua_id.to_ascii_lowercase();
-        let repo = repo.to_ascii_lowercase();
-        aqua_id == repo || aqua_id.starts_with(&format!("{repo}/"))
-    }
-
+    /// From mise-versions for any public repository, the package's own or
+    /// another it reads (kubectl's releases are kubernetes/kubernetes', a
+    /// checksum or signer can live elsewhere): its release data is pinned to
+    /// the repository asked for, and what it describes is verified on
+    /// download.
     async fn get_github_release(&self, repo: &str, tag: &str) -> Result<github::GithubRelease> {
-        github::get_release_for_url_with_versions_host(
-            github::API_URL,
-            repo,
-            tag,
-            self.use_versions_host_for_github_metadata(repo),
-        )
-        .await
+        github::get_release_for_url_with_versions_host(github::API_URL, repo, tag, true).await
     }
 
     /// The release GitHub marks as "Latest", with the metadata that came back
@@ -2424,12 +2414,36 @@ impl AquaBackend {
         let repo = format!("{}/{}", pkg.repo_owner, pkg.repo_name);
         let release = match self.get_github_release(&repo, "latest").await {
             Ok(release) => release,
+            // GitHub's "latest" mark can't be read for a release without
+            // assets, which mise-versions doesn't serve (kubernetes,
+            // terraform, vault). A fresh whole release list gives the newest
+            // stable release instead, which is where the mark sits unless a
+            // maintainer moved it.
+            // Only when the mark is known to be unreadable (a 404); after a
+            // temporary failure the newest stable release could differ from it.
             Err(e) => {
-                debug!(
-                    "Failed to fetch latest GitHub release for aqua package {}: {e}",
-                    self.id
-                );
-                return Ok(None);
+                let listed = if crate::http::error_code(&e) == Some(404) {
+                    github::newest_listed_stable_release(&repo).await
+                } else {
+                    None
+                };
+                match listed {
+                    Some(listed) => github::GithubRelease {
+                        tag_name: listed.tag_name,
+                        draft: false,
+                        prerelease: false,
+                        created_at: listed.released_at.clone().unwrap_or_default(),
+                        published_at: listed.released_at,
+                        assets: vec![],
+                    },
+                    None => {
+                        debug!(
+                            "Failed to fetch latest GitHub release for aqua package {}: {e}",
+                            self.id
+                        );
+                        return Ok(None);
+                    }
+                }
             }
         };
 
@@ -4551,37 +4565,6 @@ packages:
     }
 
     #[test]
-    fn test_use_versions_host_for_github_metadata_only_for_the_package_repo() {
-        let registry_backend = AquaBackend::from_arg(BackendArg::new(
-            "act".to_string(),
-            Some("aqua:nektos/act".to_string()),
-        ));
-        assert!(registry_backend.use_versions_host_for_github_metadata("nektos/act"));
-        assert!(!registry_backend.use_versions_host_for_github_metadata("sigstore/foreign"));
-
-        let explicit_registry_backend = AquaBackend::from_arg(BackendArg::new(
-            "nektos/act".to_string(),
-            Some("aqua:nektos/act".to_string()),
-        ));
-        assert!(explicit_registry_backend.use_versions_host_for_github_metadata("nektos/act"));
-
-        let subpackage_backend = AquaBackend::from_arg(BackendArg::new(
-            "fly".to_string(),
-            Some("aqua:concourse/concourse/fly".to_string()),
-        ));
-        assert!(subpackage_backend.use_versions_host_for_github_metadata("concourse/concourse"));
-
-        let direct_backend = AquaBackend::from_arg(BackendArg::new(
-            "aws/session-manager-plugin".to_string(),
-            Some("aqua:aws/session-manager-plugin".to_string()),
-        ));
-        assert!(direct_backend.use_versions_host_for_github_metadata("aws/session-manager-plugin"));
-        assert!(!direct_backend.use_versions_host_for_github_metadata("aws/other"));
-        // A repo name that merely shares a prefix is a different repo.
-        assert!(!direct_backend.use_versions_host_for_github_metadata("aws/session-manager"));
-    }
-
-    #[test]
     fn test_has_github_attestations_config_requires_enabled_config() {
         let mut pkg = AquaPackage::default();
         assert!(!AquaBackend::has_github_attestations_config(&pkg));
@@ -6298,13 +6281,10 @@ async fn get_tags_with_release_dates(
         return Ok(versions.into_iter().map(|v| (v, None, None)).collect());
     }
     let repo = format!("{}/{}", pkg.repo_owner, pkg.repo_name);
-    let releases = github::list_releases_including_prereleases(&repo).await?;
+    let releases = github::list_release_versions(github::API_URL, &repo, false).await?;
     Ok(releases
         .into_iter()
-        .map(|r| {
-            let released_at = r.released_at().to_string();
-            (r.tag_name, Some(released_at), Some(r.prerelease))
-        })
+        .map(|r| (r.tag_name, r.released_at, Some(r.prerelease)))
         .collect())
 }
 

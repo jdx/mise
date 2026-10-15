@@ -18,7 +18,7 @@ members = [
 
 [package]
 name = "mise"
-version = "2026.10.10"
+version = "2026.10.11"
 edition = "2024"
 description = "Dev tools, env vars, and tasks in one CLI"
 authors = ["Jeff Dickey (@jdx)"]
@@ -342,7 +342,6 @@ serde-saphyr = "1"
 toml = "1"
 
 [dev-dependencies]
-ctor = "1"
 insta = { version = "1", features = ["filters", "json"] }
 mockito = "1"
 opentelemetry_sdk = { version = "0.33", default-features = false, features = [

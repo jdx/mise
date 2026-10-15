@@ -48,6 +48,82 @@ impl PIPXBackend {
             )
     }
 
+    /// The lockfile revision a request's uv graph requirement comes from.
+    ///
+    /// A version resolved from the lockfile answers to its entry, graph or
+    /// not. An upgrade resolves outside the lockfile, so it only inherits the
+    /// requirement from a recorded graph: version-only entries (which an
+    /// upgrade of a graphless global tool writes) must stay version-only. A
+    /// bump or a hand-edited pin rewrites the selector itself, which needs
+    /// `replaced_entry_lockfile_version`.
+    pub(crate) fn uv_lockfile_version(
+        &self,
+        config: &Config,
+        tv: &ToolVersion,
+    ) -> Result<Option<u32>> {
+        if tv.resolved_from_lockfile() {
+            return crate::lockfile::version_for_request(config, &tv.request);
+        }
+        match Self::graph_lockfile_version(config, &tv.request)? {
+            Some(revision) => Ok(Some(revision)),
+            None => Self::replaced_entry_lockfile_version(config, &tv.request),
+        }
+    }
+
+    /// The lockfile revision of the entry matching `request`, if that entry
+    /// records a dependency graph.
+    fn graph_lockfile_version(config: &Config, request: &ToolRequest) -> Result<Option<u32>> {
+        if !Settings::get().lockfile_enabled() {
+            return Ok(None);
+        }
+        match request.lockfile_resolve(config)? {
+            Some(entry) if entry.uv.is_some() => {
+                crate::lockfile::version_for_request(config, request)
+            }
+            _ => Ok(None),
+        }
+    }
+
+    /// The lockfile revision of the global entry this request replaces.
+    ///
+    /// An install that resolves outside the lockfile — an `upgrade --bump`
+    /// or a hand-edited pin — replaces the owning global config's entry for
+    /// the backend, whatever version that entry records. The replacement
+    /// inherits the entry's requirement only when the backend has exactly
+    /// one entry and that entry carries a uv graph; with several entries a
+    /// graph-bearing sibling must never lend its graph to a version-only
+    /// request, so ambiguity stays version-only, and graph creation for
+    /// global tools is never implicit.
+    fn replaced_entry_lockfile_version(
+        config: &Config,
+        request: &ToolRequest,
+    ) -> Result<Option<u32>> {
+        if !Settings::get().lockfile_enabled() {
+            return Ok(None);
+        }
+        let Some(owner) = request.lockfile_source() else {
+            return Ok(None);
+        };
+        if !owner.path().is_some_and(crate::config::is_global_config) {
+            return Ok(None);
+        }
+        let lockfile = request.read_lockfile(config)?;
+        let mut entries = lockfile
+            .tools_for(&request.ba().short)
+            .into_iter()
+            .flatten();
+        let (Some(entry), None) = (entries.next(), entries.next()) else {
+            // Zero or several predecessors: stay version-only rather than guess.
+            return Ok(None);
+        };
+        if entry.uv.is_none() {
+            return Ok(None);
+        }
+        Ok(Some(
+            lockfile.entry_lockfile_version(&request.ba().short, entry),
+        ))
+    }
+
     pub(super) fn uv_lock_options_supported(&self, tv: &ToolVersion) -> bool {
         let raw = tv.request.options();
         let opts = PipxOptions::new(&raw);
@@ -116,6 +192,41 @@ impl PIPXBackend {
     }
 
     pub(crate) async fn restore_uv_python(&self, config: &Arc<Config>, tv: &mut ToolVersion) {
+        // A selected interpreter is part of this environment's identity, not a
+        // preference for whatever Python is active in the configuration. The
+        // provenance file is the only safe way to recover that identity before
+        // installation. In particular, do not let a later default-Python
+        // upgrade silently rebind a selected tool.
+        if PipxOptions::new(&tv.request.options())
+            .selected_python()
+            .ok()
+            .flatten()
+            .is_some()
+        {
+            // Resolve the current selected-runtime request in its owner scope.
+            // A receipt describes the environment that exists on disk, but must
+            // not make a later lockfile pin silently keep that old runtime.
+            let dependency = super::selected_python_dependency(&tv.request)
+                .ok()
+                .flatten();
+            if let Some(dependency) = dependency
+                && let Ok(python) =
+                    ToolVersion::resolve(config, dependency, &Default::default()).await
+                && let Ok(backend) = python.backend()
+                && let Ok(Some(path)) = backend.which(config, &python, "python").await
+            {
+                tv.uv_python = Some((
+                    path,
+                    format!(
+                        "{}:{}:{}",
+                        python.ba().full(),
+                        python.version,
+                        Self::python_installation_identity(&python)
+                    ),
+                ));
+            }
+            return;
+        }
         if let Some(identity) = self.configured_python_identity(config).await {
             tv.uv_python = Some((PathBuf::new(), identity));
             return;
@@ -179,15 +290,44 @@ impl PIPXBackend {
 
     pub(crate) async fn bind_uv_python(
         &self,
-        config: &Arc<Config>,
+        ctx: &InstallContext,
         tv: &mut ToolVersion,
     ) -> Result<()> {
-        let python = self.spawnable_dependency(config, None, "python").await
-            .ok_or_else(|| eyre!("Python graph installs require an installed interpreter; run `mise install python`"))?;
-        let identity = if let Some(identity) = self.configured_python_identity(config).await {
-            identity
+        let raw = tv.request.options();
+        let selected = PipxOptions::new(&raw).selected_python()?;
+        let (python, identity) = if selected.is_some() {
+            let dependencies = ctx.dependency_context(&tv.request).await?;
+            let (_, selected) = dependencies
+                .toolset
+                .list_current_versions()
+                .into_iter()
+                .find(|(_, candidate)| candidate.ba().short == "python")
+                .ok_or_else(|| eyre!("missing selected Python dependency"))?;
+            let python = dependencies
+                .toolset
+                .which_bin_spawnable(&ctx.config, "python")
+                .await
+                .ok_or_else(|| eyre!("selected Python dependency is not executable"))?;
+            (
+                python,
+                format!(
+                    "{}:{}:{}",
+                    selected.ba().full(),
+                    selected.version,
+                    Self::python_installation_identity(&selected)
+                ),
+            )
         } else {
-            CmdLineRunner::new(&python).args(["-I", "-c", "import sys, sysconfig; print((sys.implementation.name, sys.version_info[:2], sysconfig.get_config_var('SOABI'), sysconfig.get_platform()))"]).read().await?.trim().to_owned()
+            let python = self.spawnable_dependency(&ctx.config, None, "python").await
+                .ok_or_else(|| eyre!("Python graph installs require an installed interpreter; run `mise install python`"))?;
+            let identity = if let Some(identity) =
+                self.configured_python_identity(&ctx.config).await
+            {
+                identity
+            } else {
+                CmdLineRunner::new(&python).args(["-I", "-c", "import sys, sysconfig; print((sys.implementation.name, sys.version_info[:2], sysconfig.get_config_var('SOABI'), sysconfig.get_platform()))"]).read().await?.trim().to_owned()
+            };
+            (python, identity)
         };
         tv.uv_python = Some((python, identity));
         Ok(())
@@ -273,6 +413,9 @@ impl PIPXBackend {
             .await
             .wrap_err_with(|| format!("failed to lock {}", self.ba.short))?;
         let mut constraints = vec![">=3.8".to_string()];
+        if let Some(selector) = PipxOptions::new(&tv.request.options()).selected_python()? {
+            constraints.push(selector.requires_python());
+        }
         constraints.extend(python_constraint(&root));
         // Everything in `with` and `expose` shares the sidecar's interpreter, so a
         // pinned injection with a narrower floor narrows the whole project. uv

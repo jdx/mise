@@ -1,0 +1,113 @@
+#!/usr/bin/env bash
+
+# A command that only needs a matching version keeps mise-versions' versions
+# index for the tool's release-age window, as it keeps the tool's own list
+# (see test_version_list_release_age_window), instead of revalidating it after
+# fetch_remote_versions_cache (1h). Commands that report what is newest still
+# revalidate it.
+#
+# A local stand-in serves the versions host and logs each request.
+
+mkdir -p srv/data
+cat >srv/data/node.toml <<'TOML'
+[versions]
+"20.10.0" = { created_at = 2025-03-01T00:00:00.000Z }
+"20.11.1" = { created_at = 2025-04-01T00:00:00.000Z }
+TOML
+cat >srv/data/go.toml <<'TOML'
+[versions]
+"1.24.0" = { created_at = 2025-01-01T00:00:00.000Z }
+"1.25.0" = { created_at = 2025-02-01T00:00:00.000Z }
+"1.25.1" = { created_at = 2025-03-01T00:00:00.000Z }
+TOML
+cat >srv/data/index.v1.json <<'JSON'
+{
+  "format": 1,
+  "generated_at": 1760000000000,
+  "horizon": 1209600000,
+  "tools": {
+    "go": {
+      "count": 3,
+      "tail": 0,
+      "versions": [["1.25.1", 1740787200000, 0]],
+      "prefixes": { "1": 0, "1.25": 0 }
+    }
+  }
+}
+JSON
+
+start_http_server --handler - <<'PY'
+import http.server
+from pathlib import Path
+
+
+class Handler(http.server.BaseHTTPRequestHandler):
+    def do_GET(self):
+        path = self.path.split("?")[0]
+        etag = self.headers.get("If-None-Match") or "-"
+        with open("requests.log", "a") as log:
+            log.write(f"{path} {etag}\n")
+        file = Path("srv") / path.removeprefix("/versions/").lstrip("/")
+        if not path.startswith("/versions/data/") or not file.is_file():
+            self.send_response(404)
+            self.end_headers()
+            return
+        if path.endswith(".json") and etag == '"index-1"':
+            self.send_response(304)
+            self.end_headers()
+            return
+        body = file.read_bytes()
+        self.send_response(200)
+        self.send_header("Content-Length", str(len(body)))
+        if path.endswith(".json"):
+            self.send_header("ETag", '"index-1"')
+        self.end_headers()
+        self.wfile.write(body)
+
+    def log_message(self, format, *args):
+        pass
+PY
+
+cat >mise.toml <<TOML
+[settings]
+url_replacements = { "https://mise-versions.jdx.dev" = "http://127.0.0.1:$HTTP_PORT/versions" }
+
+[tools]
+node = "20"
+go = "1.25"
+TOML
+
+backdate_caches() {
+  find "$MISE_CACHE_DIR" \( -name 'remote_versions*' -o -name 'index.v1.validated' \) \
+    -exec touch -d "$1" {} +
+}
+
+# The first tool reads its own list, and the index answers the second.
+: >requests.log
+mise install --dry-run >install.txt 2>&1
+assert_contains "cat install.txt" "node@20.11.1"
+assert_contains "cat install.txt" "go@1.25.1"
+assert "grep -c index.v1.json requests.log" "1"
+
+# Two hours later, install still uses both without a request.
+backdate_caches "2 hours ago"
+: >requests.log
+assert_contains "mise install --dry-run 2>&1" "go@1.25.1"
+assert_empty "cat requests.log"
+
+# Unless fetch_remote_versions_cache is set, which then applies as set.
+: >requests.log
+assert_contains "MISE_FETCH_REMOTE_VERSIONS_CACHE=1h mise install --dry-run 2>&1" "go@1.25.1"
+assert_contains "cat requests.log" '/versions/data/index.v1.json "index-1"'
+
+# A shorter minimum_release_age is a shorter window.
+backdate_caches "2 hours ago"
+: >requests.log
+assert_contains "MISE_MINIMUM_RELEASE_AGE=90m mise install --dry-run 2>&1" "go@1.25.1"
+assert_contains "cat requests.log" '/versions/data/index.v1.json "index-1"'
+
+# outdated reports what is newest, so it revalidates a copy older than 1h.
+backdate_caches "2 hours ago"
+: >requests.log
+assert_contains "mise outdated" "1.25.1"
+assert_contains "cat requests.log" '/versions/data/index.v1.json "index-1"'

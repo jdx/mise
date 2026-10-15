@@ -49,6 +49,68 @@ pub struct GithubReleasesPage {
     pub truncated: bool,
 }
 
+/// A public repository's whole release or tag list from mise-versions, in
+/// GitHub's REST order (format 1 of jdx/mise-versions'
+/// `docs/github-versions.md`). Entries carry no assets.
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct GithubVersionsList {
+    /// `releases` or `tags`.
+    pub source: String,
+    /// When mise-versions last read page 1 of the list from GitHub.
+    pub fetched_at: Option<String>,
+    #[serde(default)]
+    pub releases: Vec<GithubListedRelease>,
+    #[serde(default)]
+    pub tags: Vec<GithubListedTag>,
+    /// The list is a newest-first prefix; older entries exist.
+    #[serde(default)]
+    pub truncated: bool,
+}
+
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct GithubListedRelease {
+    pub tag: String,
+    /// `published_at`, or `created_at` without one.
+    pub date: Option<String>,
+    pub prerelease: bool,
+    pub asset_count: u32,
+}
+
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct GithubListedTag {
+    pub tag: String,
+    /// The tagged commit's committer date.
+    pub date: Option<String>,
+}
+
+/// Which whole list to read with [`github_versions_list`].
+#[derive(Debug, Clone, Copy)]
+pub enum GithubList<'a> {
+    Releases,
+    Tags,
+    /// The releases carrying an asset with exactly this name.
+    ReleasesWithAsset(&'a str),
+}
+
+/// One page (100 tags) of a repository's tags from mise-versions.
+#[derive(serde::Deserialize)]
+pub struct GithubTagsPage {
+    /// GitHub's order: by name, highest version first.
+    pub tags: Vec<GithubMirroredTag>,
+    pub next_page: Option<u32>,
+    /// More tags exist than mise-versions serves.
+    #[serde(default)]
+    pub truncated: bool,
+}
+
+#[derive(serde::Deserialize)]
+pub struct GithubMirroredTag {
+    pub name: String,
+    /// The tagged commit's committer date, sent only when asked for.
+    #[serde(default)]
+    pub date: Option<String>,
+}
+
 /// One entry of a repository directory, as GitHub's contents API lists it.
 #[derive(Debug, Clone, serde::Deserialize)]
 pub struct GithubContentsEntry {
@@ -105,6 +167,19 @@ impl<'a> VersionsHostLogContext<'a> {
     fn github_releases(repo: &'a str, page: u32) -> Self {
         Self {
             endpoint: "github_releases",
+            tool: None,
+            repo: Some(repo),
+            tag: None,
+            digest: None,
+            page: Some(page),
+            full: None,
+            version: None,
+        }
+    }
+
+    fn github_tags(repo: &'a str, page: u32) -> Self {
+        Self {
+            endpoint: "github_tags",
             tool: None,
             repo: Some(repo),
             tag: None,
@@ -325,6 +400,115 @@ pub async fn github_releases(repo: &str, page: u32) -> eyre::Result<Option<Githu
     Ok(Some(list))
 }
 
+/// Fetch a public repository's whole release or tag list from the versions
+/// host. These are static files baked at deploy time, so most requests never
+/// reach its Worker. `Ok(None)` and errors as in [`github_release`]; also
+/// `Ok(None)` for a name the list paths can't spell.
+pub async fn github_versions_list(
+    repo: &str,
+    list: GithubList<'_>,
+) -> eyre::Result<Option<GithubVersionsList>> {
+    if !enabled_for_github_repo(repo) {
+        return Ok(None);
+    }
+    let Some(url) = github_versions_list_url(repo, list) else {
+        return Ok(None);
+    };
+    let ctx = VersionsHostLogContext::github_repo("github_versions_list", repo);
+    let Some(found) = fetch_json_unless_not_found::<GithubVersionsList>(&url, ctx).await? else {
+        return Ok(None);
+    };
+    let expected = match list {
+        GithubList::Tags => "tags",
+        GithubList::Releases | GithubList::ReleasesWithAsset(_) => "releases",
+    };
+    if found.source != expected {
+        bail!(
+            "mise-versions answered {url} with a list of {}",
+            found.source
+        );
+    }
+    log_versions_host_trace(
+        ctx,
+        "success",
+        &format!(
+            "entries={} truncated={}",
+            found.releases.len() + found.tags.len(),
+            found.truncated
+        ),
+    );
+    Ok(Some(found))
+}
+
+/// `/data/github/{owner}/{repo}/…`, lowercase as the files are baked, or
+/// `None` for a name or asset those paths don't allow.
+fn github_versions_list_url(repo: &str, list: GithubList<'_>) -> Option<String> {
+    let (owner, name) = split_github_repo(repo)?;
+    let part = |s: &str| {
+        let s = s.to_ascii_lowercase();
+        let valid = !s.is_empty()
+            && s != "."
+            && s != ".."
+            && s.chars()
+                .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '.' | '-'));
+        valid.then_some(s)
+    };
+    let (owner, name) = (part(owner)?, part(name)?);
+    let file = match list {
+        GithubList::Releases => "releases.json".to_string(),
+        GithubList::Tags => "tags.json".to_string(),
+        GithubList::ReleasesWithAsset(asset) => {
+            let valid = (1..=255).contains(&asset.len())
+                && asset.chars().all(|c| {
+                    c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '+' | '@' | '~' | '-')
+                });
+            if !valid {
+                return None;
+            }
+            format!("assets/{asset}/releases.json")
+        }
+    };
+    Some(format!(
+        "https://mise-versions.jdx.dev/data/github/{owner}/{name}/{file}"
+    ))
+}
+
+/// Fetch one page of a public repository's tags from the versions host, with
+/// each tagged commit's date when `dates` is set. `Ok(None)` and errors as in
+/// [`github_release`].
+pub async fn github_tags(
+    repo: &str,
+    page: u32,
+    dates: bool,
+) -> eyre::Result<Option<GithubTagsPage>> {
+    if !enabled_for_github_repo(repo) {
+        return Ok(None);
+    }
+    let Some((owner, repo_name)) = split_github_repo(repo) else {
+        return Ok(None);
+    };
+    let url = github_tags_url(owner, repo_name, page, dates);
+    let ctx = VersionsHostLogContext::github_tags(repo, page);
+    let Some(list) = fetch_json_unless_not_found::<GithubTagsPage>(&url, ctx).await? else {
+        return Ok(None);
+    };
+    if list.next_page.is_some_and(|next| next != page + 1) {
+        log_versions_host_trace(ctx, "invalid_next_page", "");
+        bail!("mise-versions pointed page {page} of {repo}'s tags at an unexpected next page");
+    }
+    log_versions_host_trace(ctx, "success", &format!("tags={}", list.tags.len()));
+    Ok(Some(list))
+}
+
+fn github_tags_url(owner: &str, repo: &str, page: u32, dates: bool) -> String {
+    format!(
+        "https://mise-versions.jdx.dev/api/github/repos/{}/{}/tags?page={page}{}",
+        encode_path_segment(owner),
+        encode_path_segment(repo),
+        if dates { "&dates=1" } else { "" }
+    )
+}
+
 /// List the directory `path` of a public repository at `commit`, a full
 /// commit SHA, from the versions host. `Ok(None)` and errors as in
 /// [`github_release`]; a `path` naming a file is a 404.
@@ -392,6 +576,7 @@ fn pin_listed_releases(
 ///
 /// The returned bundles are not trusted by virtue of coming from mise-versions;
 /// callers still verify them cryptographically against the downloaded artifact.
+/// `Ok(None)` and errors as in [`github_release`].
 pub async fn github_attestations(
     repo: &str,
     digest: &str,
@@ -411,7 +596,7 @@ pub async fn github_attestations(
     );
 
     let ctx = VersionsHostLogContext::github_attestations(repo, digest);
-    let response: Option<AttestationsResponse> = fetch_optional_json(&url, ctx).await?;
+    let response: Option<AttestationsResponse> = fetch_json_unless_not_found(&url, ctx).await?;
     if let Some(response) = &response {
         log_versions_host_trace(
             ctx,
@@ -422,81 +607,10 @@ pub async fn github_attestations(
     Ok(response.map(|r| r.attestations))
 }
 
-async fn fetch_optional_json<T>(
-    url: &str,
-    ctx: VersionsHostLogContext<'_>,
-) -> eyre::Result<Option<T>>
-where
-    T: serde::de::DeserializeOwned,
-{
-    if crate::network::offline(&Settings::get()) {
-        log_versions_host_trace(ctx, "disabled", "fallback=true");
-        return Ok(None);
-    }
-
-    debug!("GET {url}");
-    match HTTP_FETCH
-        .get_async_with_headers_allow_error_status(url, &VERSIONS_HOST_HEADERS)
-        .await
-    {
-        Ok(resp) => {
-            let status = resp.status();
-            debug!("GET {url} {status}");
-            if status.is_success() {
-                return match resp.json().await {
-                    Ok(value) => Ok(Some(value)),
-                    Err(err) => {
-                        log_versions_host_warn(
-                            ctx,
-                            "invalid_response",
-                            &format!("fallback=true error={}", log_value(&err.to_string())),
-                        );
-                        Ok(None)
-                    }
-                };
-            }
-            let body = resp.text().await.unwrap_or_default();
-            match status.as_u16() {
-                404 => {
-                    log_versions_host_trace(ctx, "not_found", "status=404 fallback=true");
-                    Ok(None)
-                }
-                429 => {
-                    log_versions_host_warn(ctx, "rate_limited", "status=429 fallback=true");
-                    Ok(None)
-                }
-                status => {
-                    log_versions_host_warn(
-                        ctx,
-                        "failed",
-                        &format!(
-                            "status={status} fallback=true error={}",
-                            log_value(&versions_host_error_message(status, &body))
-                        ),
-                    );
-                    Ok(None)
-                }
-            }
-        }
-        Err(err) => {
-            log_versions_host_warn(
-                ctx,
-                "failed",
-                &format!(
-                    "status={} fallback=true error={}",
-                    http::error_code(&err).unwrap_or(0),
-                    log_value(&err.to_string())
-                ),
-            );
-            Ok(None)
-        }
-    }
-}
-
 /// GET `url` from the versions host for data mise would otherwise ask
 /// api.github.com for. `Ok(None)` is a 404 and nothing else; every other
-/// failure is an error, so that it is never mistaken for "not found" and
-/// never sends the caller to GitHub.
+/// failure is an error, so that it is never mistaken for "not found". Only
+/// the errors [`retries_on_github`] accepts send the caller to GitHub.
 async fn fetch_json_unless_not_found<T>(
     url: &str,
     ctx: VersionsHostLogContext<'_>,
@@ -514,7 +628,7 @@ where
     {
         Ok(resp) => resp,
         Err(err) => {
-            let status = http::error_code(&err);
+            let status = transport_error_status(&err);
             log_versions_host_trace(
                 ctx,
                 "failed",
@@ -563,11 +677,24 @@ where
         .map_err(|err| eyre::eyre!("invalid response from {url}: {err}"))
 }
 
+/// The HTTP status of a request that failed without a response mise could
+/// read, which is only ever one `reqwest` reports. Not [`http::error_code`]:
+/// a timeout's message holds the URL, and a URL holding `404` (a tag such as
+/// `v1.404.0`) would pass the timeout off as a 404, which isn't retried on
+/// GitHub.
+fn transport_error_status(err: &eyre::Report) -> Option<u16> {
+    err.chain()
+        .filter_map(|cause| cause.downcast_ref::<reqwest::Error>())
+        .find_map(reqwest::Error::status)
+        .map(|status| status.as_u16())
+}
+
 /// The versions host could not answer: a network failure or an error status
 /// other than 404. In jdx/mise-versions' client contract a 403 means the
 /// mirror is disabled or restricted, and anything else (429, 5xx, no
 /// connection) is temporary: a copy cached earlier may stand in for the
-/// answer. Neither ever sends mise to api.github.com.
+/// answer. A timeout, a lost connection, a 429 or a 5xx also sends a GitHub
+/// lookup to api.github.com (see [`retries_on_github`]).
 #[derive(Debug, thiserror::Error)]
 #[error("{message}")]
 pub struct VersionsHostUnavailable {
@@ -582,13 +709,59 @@ impl VersionsHostUnavailable {
     }
 }
 
-/// Whether `err` is, or was caused by, a temporary [`VersionsHostUnavailable`].
+/// Whether `err` is, or was caused by, a temporary [`VersionsHostUnavailable`],
+/// or is a [`GithubRetryFailed`]: mise-versions failed that way and so did
+/// api.github.com after it.
 pub fn is_temporarily_unavailable(err: &eyre::Report) -> bool {
+    err.chain().any(|cause| {
+        cause.is::<GithubRetryFailed>()
+            || cause
+                .downcast_ref::<VersionsHostUnavailable>()
+                .is_some_and(VersionsHostUnavailable::is_temporary)
+    })
+}
+
+/// Whether a failed lookup of GitHub metadata on mise-versions is asked of
+/// api.github.com instead: mise-versions timed out, lost the connection, or
+/// answered 429 or 5xx. Anything it answered is trusted, including a 404
+/// (a missing release, tag or repository), an empty list, and a 403 (the
+/// mirror is disabled or restricted), so normal usage doesn't spend GitHub's
+/// rate limit of 60 requests an hour without a token. An answer that doesn't
+/// check out (a wrong tag, an asset URL off github.com) is an error too, and
+/// not one GitHub is asked to paper over.
+pub fn retries_on_github(err: &eyre::Report) -> bool {
     err.chain().any(|cause| {
         cause
             .downcast_ref::<VersionsHostUnavailable>()
-            .is_some_and(VersionsHostUnavailable::is_temporary)
+            .is_some_and(|e| match e.status {
+                None => true,
+                Some(status) => status == 429 || (500..=599).contains(&status),
+            })
     })
+}
+
+/// A GitHub lookup failed on mise-versions (see [`retries_on_github`]) and
+/// again on api.github.com. Its source is GitHub's failure, so the
+/// rate-limit hints that look for an api.github.com 403 still find it.
+#[derive(Debug, thiserror::Error)]
+#[error(
+    "failed to read {what} from mise-versions.jdx.dev ({mirror}), and from api.github.com after it"
+)]
+pub struct GithubRetryFailed {
+    what: String,
+    mirror: String,
+    #[source]
+    github: Box<dyn std::error::Error + Send + Sync + 'static>,
+}
+
+impl GithubRetryFailed {
+    pub fn new(what: &str, mirror: &eyre::Report, github: eyre::Report) -> Self {
+        Self {
+            what: what.to_string(),
+            mirror: format!("{mirror:#}"),
+            github: github.into(),
+        }
+    }
 }
 
 fn versions_host_error_message(status: u16, body: &str) -> String {
@@ -949,6 +1122,74 @@ mod tests {
     }
 
     #[test]
+    fn test_github_versions_list_url() {
+        assert_eq!(
+            github_versions_list_url("BurntSushi/ripgrep", GithubList::Releases).as_deref(),
+            Some("https://mise-versions.jdx.dev/data/github/burntsushi/ripgrep/releases.json")
+        );
+        assert_eq!(
+            github_versions_list_url("apache/tomcat", GithubList::Tags).as_deref(),
+            Some("https://mise-versions.jdx.dev/data/github/apache/tomcat/tags.json")
+        );
+        assert_eq!(
+            github_versions_list_url(
+                "jdx/mise",
+                GithubList::ReleasesWithAsset("packslip.sigstore.json")
+            )
+            .as_deref(),
+            Some(
+                "https://mise-versions.jdx.dev/data/github/jdx/mise/assets/packslip.sigstore.json/releases.json"
+            )
+        );
+        assert!(github_versions_list_url("o/..", GithubList::Releases).is_none());
+        assert!(github_versions_list_url("o/r", GithubList::ReleasesWithAsset("a/b")).is_none());
+        assert!(github_versions_list_url("o/r%20", GithubList::Releases).is_none());
+    }
+
+    #[test]
+    fn test_github_versions_list_deserializes() {
+        // The shapes in jdx/mise-versions' docs/github-versions.md.
+        let releases: GithubVersionsList = serde_json::from_str(
+            r#"{"source":"releases","fetched_at":"2026-10-14T21:20:41Z","releases":[{"tag":"v2.102.0","date":"2026-09-30T02:40:02Z","prerelease":false,"asset_count":22}],"truncated":false}"#,
+        )
+        .unwrap();
+        assert_eq!(releases.releases[0].asset_count, 22);
+        assert!(releases.tags.is_empty());
+        let tags: GithubVersionsList = serde_json::from_str(
+            r#"{"source":"tags","fetched_at":"2026-10-14T21:20:43Z","tags":[{"tag":"11.0.27","sha":"52f3b36","date":null}],"truncated":true}"#,
+        )
+        .unwrap();
+        assert_eq!(tags.tags[0].tag, "11.0.27");
+        assert_eq!(tags.tags[0].date, None);
+        assert!(tags.truncated);
+    }
+
+    #[test]
+    fn test_github_tags_url() {
+        assert_eq!(
+            github_tags_url("apache", "tomcat", 2, false),
+            "https://mise-versions.jdx.dev/api/github/repos/apache/tomcat/tags?page=2"
+        );
+        assert_eq!(
+            github_tags_url("apache", "tomcat", 1, true),
+            "https://mise-versions.jdx.dev/api/github/repos/apache/tomcat/tags?page=1&dates=1"
+        );
+    }
+
+    #[test]
+    fn test_github_tags_page_deserializes() {
+        // The shape mise-versions serves (jdx/mise-versions#369).
+        let page: GithubTagsPage = serde_json::from_str(
+            r#"{"tags":[{"name":"11.0.27","commit":{"sha":"52f3b36","url":"https://api.github.com/repos/apache/tomcat/commits/52f3b36"},"date":"2026-10-06T18:22:36Z"},{"name":"11.0.26","commit":{"sha":"a1"}}],"next_page":2,"truncated":false}"#,
+        )
+        .unwrap();
+        assert_eq!(page.tags[0].name, "11.0.27");
+        assert_eq!(page.tags[0].date.as_deref(), Some("2026-10-06T18:22:36Z"));
+        assert_eq!(page.tags[1].date, None);
+        assert_eq!(page.next_page, Some(2));
+    }
+
+    #[test]
     fn test_github_contents_url_encodes_each_segment() {
         assert_eq!(
             github_contents_url("jdx", "fnox", "cc06c75", "skills/fnox tool/"),
@@ -1226,5 +1467,20 @@ mod tests {
                 .attestations
                 .is_empty()
         );
+    }
+
+    #[test]
+    fn test_transport_error_status_ignores_404_in_the_message() {
+        // A timeout's message carries the URL, which may hold "404".
+        let err = eyre::eyre!(
+            "error sending request for url (https://mise-versions.jdx.dev/api/github/repos/o/r/releases/v1.404.0): operation timed out"
+        );
+        assert_eq!(transport_error_status(&err), None);
+        let unavailable: eyre::Report = VersionsHostUnavailable {
+            status: transport_error_status(&err),
+            message: format!("{err:#}"),
+        }
+        .into();
+        assert!(retries_on_github(&unavailable));
     }
 }

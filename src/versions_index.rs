@@ -17,6 +17,10 @@
 //! always did, so a single-tool command never downloads the index, and a
 //! command that resolves many tools makes two requests instead of one per
 //! tool. A stale copy is revalidated with `If-None-Match`.
+//!
+//! A command that only needs a matching version keeps the copy longer for a
+//! tool with a release-age cutoff, as it keeps that tool's own list: see
+//! [`get`].
 
 use crate::backend::VersionInfo;
 use crate::config::{Settings, SettingsExt};
@@ -221,35 +225,56 @@ struct Loaded {
     /// Wall-clock time, as for the copy on disk, so a copy read from there
     /// keeps its real age.
     validated: SystemTime,
+    /// Read from disk past `fetch_remote_versions_cache`, which only a tool's
+    /// release-age window allows. Such a copy answers only for a tool whose
+    /// window covers its age.
+    past_fresh: bool,
 }
 
 impl Loaded {
     /// Whether this copy can answer for the rest of the command. A version
     /// list it read is kept the same way, whatever `fetch_remote_versions_cache`
-    /// says, until a `refresh` asks for a recent one.
-    fn usable(&self, refresh: bool) -> bool {
+    /// says, until a `refresh` asks for a recent one, or, for a copy only a
+    /// release-age window let in, a tool asks whose `window` does not cover it.
+    fn usable(&self, refresh: bool, window: Option<Duration>) -> bool {
         // A clock that went backwards gives no age, which is not recent.
-        !refresh
-            || self
-                .validated
-                .elapsed()
-                .is_ok_and(|age| age < REFRESH_REUSES_COPIES_NEWER_THAN)
+        let age = self.validated.elapsed();
+        if refresh {
+            return age.is_ok_and(|age| age < REFRESH_REUSES_COPIES_NEWER_THAN);
+        }
+        !self.past_fresh || age.is_ok_and(|age| window.is_some_and(|window| age < window))
     }
 }
 
-/// Whether the copy on disk, validated `age` ago, can be used without a request.
-fn is_usable(age: Duration, refresh: bool) -> bool {
-    let max_age = Settings::get()
-        .fetch_remote_versions_cache()
-        .unwrap_or_default();
+/// Whether the copy on disk, validated `age` ago, can be used without a
+/// request: within `fetch_remote_versions_cache`, or the asking tool's
+/// release-age `window`.
+fn is_usable(age: Duration, refresh: bool, window: Option<Duration>) -> bool {
+    let max_age = fresh_duration().max(window.unwrap_or_default());
     age < max_age && (!refresh || age < REFRESH_REUSES_COPIES_NEWER_THAN)
+}
+
+fn fresh_duration() -> Duration {
+    Settings::get()
+        .fetch_remote_versions_cache()
+        .unwrap_or_default()
 }
 
 /// The index for this process, when using it costs at most one request that
 /// would not otherwise replace several. `tool` is the tool asking, and
 /// `refresh` asks for a recently validated copy, as a refreshed version list
 /// would be. `None` means read the tool's own list.
-pub(crate) async fn get(tool: &str, refresh: bool) -> Option<Arc<VersionsIndex>> {
+///
+/// `window` is the asking tool's release-age window
+/// (`install_before::release_age_list_window_for_cutoff`), for which a copy
+/// past `fetch_remote_versions_cache` still answers, as the tool's own list
+/// would: every entry is dated, and the cutoff hides a release newer than the
+/// copy for that long.
+pub(crate) async fn get(
+    tool: &str,
+    refresh: bool,
+    window: Option<Duration>,
+) -> Option<Arc<VersionsIndex>> {
     // The copy in use, and when it was last validated. Held across loading,
     // so tools resolving at once share one read or fetch.
     static LOADED: tokio::sync::Mutex<Option<Loaded>> = tokio::sync::Mutex::const_new(None);
@@ -267,14 +292,12 @@ pub(crate) async fn get(tool: &str, refresh: bool) -> Option<Arc<VersionsIndex>>
     if FAILED.load(Ordering::Relaxed) {
         return None;
     }
-    if let Some(l) = loaded.as_ref().filter(|l| l.usable(refresh)) {
+    if let Some(l) = loaded.as_ref().filter(|l| l.usable(refresh, window)) {
         return Some(l.index.clone());
     }
-    if let Some((index, validated)) = read_fresh_copy(refresh) {
-        *loaded = Some(Loaded {
-            index: index.clone(),
-            validated,
-        });
+    if let Some(copy) = read_fresh_copy(refresh, window) {
+        let index = copy.index.clone();
+        *loaded = Some(copy);
         return Some(index);
     }
     let several = {
@@ -291,6 +314,7 @@ pub(crate) async fn get(tool: &str, refresh: bool) -> Option<Arc<VersionsIndex>>
             *loaded = Some(Loaded {
                 index: index.clone(),
                 validated: SystemTime::now(),
+                past_fresh: false,
             });
             Some(index)
         }
@@ -328,18 +352,29 @@ fn read_cached() -> Result<(String, String)> {
     Ok((etag.to_string(), body.to_string()))
 }
 
-/// The copy on disk and when it was validated, when it is recent enough to use
-/// as it is.
-fn read_fresh_copy(refresh: bool) -> Option<(Arc<VersionsIndex>, SystemTime)> {
+/// The copy on disk, when it is recent enough to use as it is.
+fn read_fresh_copy(refresh: bool, window: Option<Duration>) -> Option<Loaded> {
     let validated = validated_at()?;
     let age = validated.elapsed().ok()?;
-    if !is_usable(age, refresh) {
+    if !is_usable(age, refresh, window) {
         return None;
     }
     match read_cached().and_then(|(_, body)| VersionsIndex::parse(&body)) {
         Ok(index) => {
-            trace!("versions index: using the copy validated {age:?} ago");
-            Some((Arc::new(index), validated))
+            let past_fresh = age >= fresh_duration();
+            if past_fresh {
+                debug!(
+                    "versions index: using the copy validated {}m ago, within a release-age window",
+                    age.as_secs() / 60
+                );
+            } else {
+                trace!("versions index: using the copy validated {age:?} ago");
+            }
+            Some(Loaded {
+                index: Arc::new(index),
+                validated,
+                past_fresh,
+            })
         }
         Err(err) => {
             debug!("versions index: cannot read the cached copy: {err:#}");
@@ -536,6 +571,35 @@ mod tests {
             Some("1.0.0".into())
         );
         assert_eq!(t.resolve("3", IndexPick::Request, &[]), None);
+    }
+
+    /// A copy past `fetch_remote_versions_cache` answers only for a tool whose
+    /// release-age window covers its age, and never for a refresh.
+    #[test]
+    fn test_a_release_age_window_keeps_a_copy_for_its_tool() {
+        let _settings = crate::test::SettingsGuard::lock();
+        Settings::reset(None);
+        let mins = |mins: u64| Duration::from_secs(mins * 60);
+        let day = Some(mins(24 * 60));
+
+        assert!(is_usable(mins(30), false, None));
+        assert!(!is_usable(mins(120), false, None));
+        assert!(is_usable(mins(120), false, day));
+        assert!(!is_usable(mins(120), false, Some(mins(90))));
+        assert!(!is_usable(mins(25 * 60), false, day));
+        assert!(!is_usable(mins(120), true, day));
+
+        let copy = |age: u64, past_fresh: bool| Loaded {
+            index: Arc::new(index()),
+            validated: SystemTime::now() - mins(age),
+            past_fresh,
+        };
+        // One read within `fetch_remote_versions_cache` lasts the command.
+        assert!(copy(120, false).usable(false, None));
+        assert!(copy(120, true).usable(false, day));
+        assert!(!copy(120, true).usable(false, None));
+        assert!(!copy(120, true).usable(false, Some(mins(90))));
+        assert!(!copy(120, true).usable(true, day));
     }
 
     #[test]

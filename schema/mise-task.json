@@ -1862,6 +1862,9 @@
         "expand": {
           "$ref": "#/$defs/env_file_expand"
         },
+        "find_up": {
+          "$ref": "#/$defs/env_file_find_up"
+        },
         "redact": {
           "$ref": "#/$defs/env_redact"
         },
@@ -2559,6 +2562,10 @@
           "type": "string",
           "enum": ["disallow", "allow", "if-necessary", "explicit"]
         },
+        "python": {
+          "description": "mise-managed CPython version for this tool (minor or exact patch)",
+          "type": "string"
+        },
         "package_name": {
           "description": "distribution name for git sources, used to attach extras",
           "type": "string"
@@ -3091,6 +3098,11 @@
       "type": "boolean",
       "default": false,
       "description": "enable shell-style variable expansion for values loaded by env._.file"
+    },
+    "env_file_find_up": {
+      "type": "boolean",
+      "default": false,
+      "description": "look for a relative env._.file path in the current directory and each parent directory"
     },
     "tool_bool_text": {
       "description": "a boolean, also accepted as the string true or false",

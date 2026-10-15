@@ -747,26 +747,24 @@ impl Backend for UnifiedGitBackend {
             // so flipping the `prerelease` tool option (e.g. via a project
             // override) is correct without invalidating the cache; the read
             // path filters on `prerelease` according to the current opts.
-            github::list_releases_including_prereleases_from_url(
-                api_url.as_str(),
-                &repo,
-                !skip_asset_check,
-            )
-            .await?
-            .into_iter()
-            .filter(|r| version_prefix.is_none_or(|p| r.tag_name.starts_with(p)))
-            .filter(|r| skip_asset_check || github_release_has_assets(r))
-            .map(|r| {
-                let created_at = Some(r.released_at().to_string());
-                VersionInfo {
-                    version: self.strip_version_prefix(&r.tag_name, &opts),
-                    created_at,
-                    release_url: Some(format!("{}/releases/tag/{}", web_url_base, r.tag_name)),
-                    prerelease: Some(r.prerelease),
-                    ..Default::default()
-                }
-            })
-            .collect()
+            // Version-level data only: from mise-versions' whole list, one
+            // request however many releases the repository has.
+            github::list_release_versions(api_url.as_str(), &repo, !skip_asset_check)
+                .await?
+                .into_iter()
+                .filter(|r| version_prefix.is_none_or(|p| r.tag_name.starts_with(p)))
+                .filter(|r| skip_asset_check || r.has_assets)
+                .map(|r| {
+                    let created_at = r.released_at.clone();
+                    VersionInfo {
+                        version: self.strip_version_prefix(&r.tag_name, &opts),
+                        created_at,
+                        release_url: Some(format!("{}/releases/tag/{}", web_url_base, r.tag_name)),
+                        prerelease: Some(r.prerelease),
+                        ..Default::default()
+                    }
+                })
+                .collect()
         };
 
         // Apply common validation and reverse order
@@ -1186,12 +1184,12 @@ impl Backend for UnifiedGitBackend {
                 })
             }
             Err(e) => {
-                if Settings::get().generate_lockfiles()
-                    && !matches!(
-                        e.downcast_ref::<crate::errors::Error>(),
-                        Some(crate::errors::Error::UnsupportedTarget(_))
-                    )
-                {
+                // An unsupported target is reported to the lock command as such.
+                let unsupported = matches!(
+                    e.downcast_ref::<crate::errors::Error>(),
+                    Some(crate::errors::Error::UnsupportedTarget(_))
+                );
+                if unsupported || Settings::get().generate_lockfiles() {
                     return Err(e);
                 }
                 debug!(

@@ -1,5 +1,92 @@
 # Changelog
 
+## [2026.10.11](https://github.com/jdx/mise/releases/tag/v2026.10.11) - 2026-10-15
+
+### 🚀 Features
+
+- **(bootstrap)** add --upgrade to upgrade packages and tools by @jdx in [#14433](https://github.com/jdx/mise/pull/14433)
+- **(env)** add --paths to list the PATH entries mise manages by @jdx in [#14429](https://github.com/jdx/mise/pull/14429)
+- **(install)** download pinned versions from mise.jdx.dev with GitHub fallback by @jdx in [#14446](https://github.com/jdx/mise/pull/14446)
+
+### 🐛 Bug Fixes
+
+- **(aqua)** read GitHub-hosted aqua registries from raw.githubusercontent.com by @jdx in [#14470](https://github.com/jdx/mise/pull/14470)
+- **(backend)** build packslip after versions_host_applies was removed by @jdx in [8bdf9ae](https://github.com/jdx/mise/commit/8bdf9aee007fc3f127168d3ef15c2cd14ca8df6e)
+- **(backend)** resolve packslip prefixes like `latest` by @jdx in [#14467](https://github.com/jdx/mise/pull/14467)
+- **(bootstrap)** render incoming direction for ufw interface rules by @jdx in [#14480](https://github.com/jdx/mise/pull/14480)
+- **(dotfiles)** show planned file actions before the apply prompt by @jdx in [#14430](https://github.com/jdx/mise/pull/14430)
+- **(dotfiles)** speed up flaky objects_at test by @jdx in [#14439](https://github.com/jdx/mise/pull/14439)
+- **(dotfiles)** capture changed files of copy-mode groups with dot add --changed by @jdx in [#14436](https://github.com/jdx/mise/pull/14436)
+- **(exec)** ask mise-versions for GitHub releases when auto-installing from exec and shims by @jdx in [#14458](https://github.com/jdx/mise/pull/14458)
+- **(github)** stop falling back to api.github.com when mise-versions misses by @jdx in [#14460](https://github.com/jdx/mise/pull/14460)
+- **(github)** read the checksum-mismatch hint's digest from mise-versions by @jdx in [#14481](https://github.com/jdx/mise/pull/14481)
+- **(github)** list git tags from mise-versions instead of api.github.com by @jdx in [#14461](https://github.com/jdx/mise/pull/14461)
+- **(github)** verify attestations from mise-versions without api.github.com fallbacks by @jdx in [#14469](https://github.com/jdx/mise/pull/14469)
+- **(lock)** ignore the host's implicit compile default for other lock platforms by @jdx in [#14432](https://github.com/jdx/mise/pull/14432)
+- **(lock)** download artifacts for provenance checks from github.com, not the API by @jdx in [#14465](https://github.com/jdx/mise/pull/14465)
+- **(oci)** require root for apt bootstrap packages and show dpkg output on failure by @jdx in [#14447](https://github.com/jdx/mise/pull/14447)
+- **(pipx)** preserve uv graph locking during global upgrades by @wislertt in [#14426](https://github.com/jdx/mise/pull/14426)
+- **(ruby)** look up the latest ruby-build release through mise-versions by @jdx in [#14471](https://github.com/jdx/mise/pull/14471)
+- **(self-update)** read mise releases from mise-versions and download from github.com by @jdx in [#14464](https://github.com/jdx/mise/pull/14464)
+- **(shim)** allow a few repeated fallback handoffs in one process by @jdx in [#14475](https://github.com/jdx/mise/pull/14475)
+- **(upgrade)** leave lazy tools that are not installed to their first run by @ryanrhughes in [#14422](https://github.com/jdx/mise/pull/14422)
+- **(upgrade)** skip version lookups for lazy tools a bare upgrade leaves alone by @jdx in [#14444](https://github.com/jdx/mise/pull/14444)
+- avoid false "stack limit reached" on musl builds by @jdx in [#14450](https://github.com/jdx/mise/pull/14450)
+
+### 📚 Documentation
+
+- recommend committing mise.lock so CI and Docker skip version lookups by @jdx in [#14453](https://github.com/jdx/mise/pull/14453)
+
+### ⚡ Performance
+
+- **(backend)** take release tags from the versions host instead of listing or guessing them by @jdx in [#14442](https://github.com/jdx/mise/pull/14442)
+- **(backend)** read the registry tool's version list for an explicit backend arg by @jdx in [#14459](https://github.com/jdx/mise/pull/14459)
+- **(backend)** stop re-downloading what packslip resolution already verified by @jdx in [#14466](https://github.com/jdx/mise/pull/14466)
+- **(github)** reuse mirrored attestations and skip mise-versions for asset-less latest releases by @jdx in [#14443](https://github.com/jdx/mise/pull/14443)
+- **(github)** list releases and tags from mise-versions' whole lists by @jdx in [#14477](https://github.com/jdx/mise/pull/14477)
+- **(install)** skip refetching version lists a cached copy already answers by @jdx in [#14457](https://github.com/jdx/mise/pull/14457)
+- **(install)** reuse cached version lists for the tool's release-age window by @jdx in [#14484](https://github.com/jdx/mise/pull/14484)
+- **(install)** keep the versions index and pipx's latest release for the release-age window by @jdx in [#14485](https://github.com/jdx/mise/pull/14485)
+- **(outdated)** resolve `latest` without refetching the version list by @jdx in [#14456](https://github.com/jdx/mise/pull/14456)
+- **(outdated)** resolve many registry tools with one request to the mise-versions index by @jdx in [#14473](https://github.com/jdx/mise/pull/14473)
+- **(python)** list python versions from mise-versions instead of cloning pyenv by @jdx in [#14455](https://github.com/jdx/mise/pull/14455)
+- **(versions-host)** send install tracking and python lists to static assets by @jdx in [#14441](https://github.com/jdx/mise/pull/14441)
+
+### 📦️ Dependency Updates
+
+- bump jactionlint to 2.2.0 and mbx to 1.24.0 by @jdx in [#14448](https://github.com/jdx/mise/pull/14448)
+
+### 📦 Registry
+
+- install native-sdk from npm so the native command works by @jdx in [#14431](https://github.com/jdx/mise/pull/14431)
+- add gdal (conda:libgdal-core) by @ivan-ivkovic in [#14440](https://github.com/jdx/mise/pull/14440)
+
+### Ci
+
+- prune unused release folders from the mise.jdx.dev CDN bucket by @jdx in [#14445](https://github.com/jdx/mise/pull/14445)
+- check R2 credentials on every prune run by @jdx in [#14451](https://github.com/jdx/mise/pull/14451)
+- stop aube-lock from re-committing on Cargo-only Renovate PRs by @jdx in [#14482](https://github.com/jdx/mise/pull/14482)
+
+### Security
+
+- **(deps)** update rustls to 0.23.46 by @jdx in [#14434](https://github.com/jdx/mise/pull/14434)
+- **(task)** require trust before rendering a remote task file by @JamBalaya56562 in [#14416](https://github.com/jdx/mise/pull/14416)
+
+### New Contributors
+
+- @ivan-ivkovic made their first contribution in [#14440](https://github.com/jdx/mise/pull/14440)
+
+### 📦 Aqua Registry Updates
+
+#### New Packages (2)
+
+- [`btwld/fvm`](https://github.com/btwld/fvm)
+- [`tailscale/tailcat`](https://github.com/tailscale/tailcat)
+
+#### Updated Packages (1)
+
+- [`k1LoW/tbls`](https://github.com/k1LoW/tbls)
+
 ## [2026.10.10](https://github.com/jdx/mise/releases/tag/v2026.10.10) - 2026-10-14
 
 ### 🚀 Features

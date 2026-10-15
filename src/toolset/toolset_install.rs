@@ -20,7 +20,9 @@ use crate::registry::REGISTRY;
 use crate::toolset::Toolset;
 use crate::toolset::helpers::{TVTuple, preflight_system_deps, show_python_install_hint};
 use crate::toolset::install_options::InstallOptions;
-use crate::toolset::tool_deps::{ToolDeps, ensure_compatible_install_requests, tool_key};
+use crate::toolset::tool_deps::{
+    ToolDeps, ensure_compatible_install_requests, graph_key, tool_key,
+};
 use crate::toolset::tool_request::ToolRequest;
 use crate::toolset::tool_source::ToolSource;
 use crate::toolset::tool_version::{ResolveOptions, ToolVersion};
@@ -332,6 +334,15 @@ impl Toolset {
         }
 
         self.init_request_options(&mut versions);
+        // Some backends own a versioned runtime for one consumer. Add those
+        // requests to this installation batch before constructing the graph so
+        // the runtime is installed first rather than being borrowed from the
+        // active shell toolset.
+        // The backend itself may request a runtime from the same backend as a
+        // tool selected by the caller. Track dependencies by their full request
+        // key, rather than just their backend, so that private runtimes are not
+        // returned to callers such as `mise use` and persisted as user tools.
+        let private_dependency_keys = self.add_private_install_dependencies(&mut versions)?;
         ensure_compatible_install_requests(&versions)?;
         ensure_safe_install_options(&versions)?;
 
@@ -540,16 +551,56 @@ impl Toolset {
         }
 
         // Return appropriate result
+        let requested_installations = || {
+            installed
+                .iter()
+                .filter(|tv| !private_dependency_keys.contains(&graph_key(&tv.request)))
+                .cloned()
+                .collect()
+        };
         if all_failed.is_empty() {
-            Ok(installed)
+            Ok(requested_installations())
         } else {
             crate::lockfile::generate::record_install_failure();
             Err(Error::InstallFailed {
-                successful_installations: installed,
+                successful_installations: requested_installations(),
                 failed_installations: all_failed,
             }
             .into())
         }
+    }
+
+    fn add_private_install_dependencies(
+        &self,
+        versions: &mut Vec<ToolRequest>,
+    ) -> Result<HashSet<String>> {
+        let mut private_dependency_keys = HashSet::new();
+        let mut next = 0;
+        while next < versions.len() {
+            // Only the PyPI selector owns a private runtime. Do not inspect
+            // every backend's install metadata here: an ordinary unknown tool
+            // must continue through the installer so its failure is rendered
+            // as `Failed to install <tool>`, rather than escaping this setup
+            // phase without install context.
+            let mut dependencies =
+                crate::backend::pipx::selected_python_dependency(&versions[next])?
+                    .into_iter()
+                    .collect_vec();
+            // A selector-owned runtime is resolved in the consumer's source
+            // scope, but its installer options still come from the effective
+            // configured runtime request. Apply those before duplicate and
+            // compatibility checks so the private dependency is the same
+            // concrete install request as an explicitly configured Python.
+            self.init_request_options(&mut dependencies);
+            for dependency in dependencies {
+                if !versions.contains(&dependency) {
+                    private_dependency_keys.insert(graph_key(&dependency));
+                    versions.push(dependency);
+                }
+            }
+            next += 1;
+        }
+        Ok(private_dependency_keys)
     }
 
     /// Ensure all plugins for the requested tools are installed
@@ -623,7 +674,7 @@ impl Toolset {
         let request_order: HashMap<String, usize> = versions
             .iter()
             .enumerate()
-            .map(|(i, tr)| (tool_key(tr), i))
+            .map(|(i, tr)| (graph_key(tr), i))
             .collect();
 
         // Build dependency graph
@@ -794,7 +845,7 @@ impl Toolset {
 
         // Sort installed versions by original request order to preserve user's intended ordering
         installed.sort_by_key(|tv| {
-            let key = tool_key(&tv.request);
+            let key = graph_key(&tv.request);
             request_order.get(&key).copied().unwrap_or(usize::MAX)
         });
 
@@ -1265,5 +1316,40 @@ mod tests {
         assert_eq!(options.get("selected"), Some("config"));
         assert_eq!(options.get("request_only"), Some("request"));
         assert_eq!(options.get("inline_only"), Some("inline"));
+    }
+
+    #[test]
+    fn selected_python_dependency_inherits_configured_python_options() {
+        let python = Arc::new(BackendArg::from("python"));
+        let pypi = Arc::new(BackendArg::from("pypi:black"));
+        let configured_python = ToolRequest::new_with_options(
+            python.clone(),
+            "3.12",
+            parse_tool_options("patch_sysconfig=false"),
+            ToolSource::Unknown,
+        )
+        .unwrap();
+        let selected_tool = ToolRequest::new_with_options(
+            pypi,
+            "24.10.0",
+            parse_tool_options(r#"python="3.12""#),
+            ToolSource::Unknown,
+        )
+        .unwrap();
+        let mut toolset = Toolset::new(ToolSource::Unknown);
+        toolset.add_version(configured_python);
+        let mut versions = vec![selected_tool];
+
+        let private = toolset
+            .add_private_install_dependencies(&mut versions)
+            .unwrap();
+        let dependency = versions
+            .iter()
+            .find(|request| request.ba() == &python)
+            .expect("selected Python dependency should be added");
+
+        assert_eq!(dependency.options().get("patch_sysconfig"), Some("false"));
+        assert!(private.contains(&graph_key(dependency)));
+        ensure_compatible_install_requests(&versions).unwrap();
     }
 }
