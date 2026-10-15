@@ -359,3 +359,20 @@ async fn test_stale_copy_stands_in_while_mise_versions_is_unavailable() {
             .is_err()
     );
 }
+
+#[test]
+fn test_listed_release_without_a_date_has_none() {
+    // An empty date would read as present and slip past a release-age check.
+    let listed = |date: Option<&str>| crate::versions_host::GithubListedRelease {
+        tag: "v1".to_string(),
+        date: date.map(str::to_string),
+        prerelease: false,
+        asset_count: 1,
+    };
+    let version: ReleaseVersion = listed(None).into();
+    assert_eq!(version.released_at, None);
+    let version: ReleaseVersion = listed(Some("")).into();
+    assert_eq!(version.released_at, None);
+    let version: ReleaseVersion = listed(Some("2026-10-01T00:00:00Z")).into();
+    assert_eq!(version.released_at.as_deref(), Some("2026-10-01T00:00:00Z"));
+}

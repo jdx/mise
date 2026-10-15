@@ -2419,8 +2419,8 @@ impl AquaBackend {
                     tag_name: listed.tag_name,
                     draft: false,
                     prerelease: false,
-                    created_at: listed.released_at.clone(),
-                    published_at: Some(listed.released_at),
+                    created_at: listed.released_at.clone().unwrap_or_default(),
+                    published_at: listed.released_at,
                     assets: vec![],
                 },
                 None => {
@@ -6270,7 +6270,7 @@ async fn get_tags_with_release_dates(
     let releases = github::list_release_versions(github::API_URL, &repo, false).await?;
     Ok(releases
         .into_iter()
-        .map(|r| (r.tag_name, Some(r.released_at), Some(r.prerelease)))
+        .map(|r| (r.tag_name, r.released_at, Some(r.prerelease)))
         .collect())
 }
 

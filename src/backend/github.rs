@@ -755,7 +755,7 @@ impl Backend for UnifiedGitBackend {
                 .filter(|r| version_prefix.is_none_or(|p| r.tag_name.starts_with(p)))
                 .filter(|r| skip_asset_check || r.has_assets)
                 .map(|r| {
-                    let created_at = Some(r.released_at.clone());
+                    let created_at = r.released_at.clone();
                     VersionInfo {
                         version: self.strip_version_prefix(&r.tag_name, &opts),
                         created_at,

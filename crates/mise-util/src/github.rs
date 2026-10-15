@@ -45,8 +45,10 @@ impl GithubRelease {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ReleaseVersion {
     pub tag_name: String,
-    /// See [`GithubRelease::released_at`].
-    pub released_at: String,
+    /// See [`GithubRelease::released_at`]. `None` when mise-versions'
+    /// list has no date for it, so a release-age check can't take an empty
+    /// date for a valid one.
+    pub released_at: Option<String>,
     pub prerelease: bool,
     pub has_assets: bool,
 }
@@ -54,7 +56,7 @@ pub struct ReleaseVersion {
 impl From<GithubRelease> for ReleaseVersion {
     fn from(release: GithubRelease) -> Self {
         Self {
-            released_at: release.released_at().to_string(),
+            released_at: Some(release.released_at().to_string()),
             has_assets: !release.assets.is_empty(),
             tag_name: release.tag_name,
             prerelease: release.prerelease,
@@ -65,7 +67,7 @@ impl From<GithubRelease> for ReleaseVersion {
 impl From<crate::versions_host::GithubListedRelease> for ReleaseVersion {
     fn from(release: crate::versions_host::GithubListedRelease) -> Self {
         Self {
-            released_at: release.date.unwrap_or_default(),
+            released_at: release.date.filter(|date| !date.is_empty()),
             has_assets: release.asset_count > 0,
             tag_name: release.tag,
             prerelease: release.prerelease,

@@ -1427,7 +1427,7 @@ impl PackslipBackend {
                 .filter_map(|r| {
                     version_info(
                         tag_version(&r.tag_name, project),
-                        Some(r.released_at),
+                        r.released_at,
                         Some(format!(
                             "https://github.com/{repo}/releases/tag/{}",
                             r.tag_name
