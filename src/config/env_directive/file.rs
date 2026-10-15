@@ -142,13 +142,16 @@ impl EnvResults {
         let pattern = PathBuf::from(&s);
         let paths = match &*crate::dirs::CWD {
             // Farthest directory first, so the file nearest the current directory wins.
-            Some(cwd) if find_up && !file::replace_path(&pattern).is_absolute() => cwd
-                .ancestors()
-                .collect::<Vec<_>>()
-                .into_iter()
-                .rev()
-                .flat_map(|dir| xx::file::glob(dir.join(&pattern)).unwrap_or_default())
-                .collect(),
+            Some(cwd) if find_up && !file::replace_path(&pattern).is_absolute() => {
+                // The result depends on the current directory, which the env cache key omits.
+                ctx.results.has_uncacheable = true;
+                cwd.ancestors()
+                    .collect::<Vec<_>>()
+                    .into_iter()
+                    .rev()
+                    .flat_map(|dir| xx::file::glob(dir.join(&pattern)).unwrap_or_default())
+                    .collect()
+            }
             _ => xx::file::glob(ctx.normalize_path(pattern)).unwrap_or_default(),
         };
         for p in paths {

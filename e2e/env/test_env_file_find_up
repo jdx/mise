@@ -20,3 +20,8 @@ assert "cd proj/sub/deep && mise env -s bash | grep FROM_PROJ" "export FROM_PROJ
 assert "cd proj/sub/deep && mise env -s bash | grep SHARED" "export SHARED=sub"
 assert "cd proj/sub/deep && mise env -s bash | grep LOCAL_ONLY" "export LOCAL_ONLY=local"
 assert_not_contains "cd proj && mise env -s bash" "LOCAL_ONLY"
+
+# A find_up file depends on the current directory, so it must not be served from the env cache.
+export MISE_ENV_CACHE=1
+assert_contains "cd proj/sub && mise env -s bash" "LOCAL_ONLY=local"
+assert_not_contains "cd proj && mise env -s bash" "LOCAL_ONLY"
