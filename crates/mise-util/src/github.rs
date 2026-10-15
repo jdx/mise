@@ -1143,10 +1143,10 @@ async fn fetch_repository(repo: &str) -> Result<GithubRepositoryIds> {
 /// A directory of a GitHub repository at a commit.
 pub struct RepoDir {
     pub entries: Vec<crate::versions_host::GithubContentsEntry>,
-    /// Listed by api.github.com because mise-versions doesn't know the
-    /// repository: a private one, whose files must be fetched with the
-    /// user's token from the contents API too, since raw.githubusercontent.com
-    /// answers 404 for them.
+    /// Listed by api.github.com, because mise-versions doesn't know the
+    /// repository or failed to answer: it may be a private one, whose files
+    /// must be fetched with the user's credentials from the contents API too,
+    /// since raw.githubusercontent.com answers 404 for them.
     pub private: bool,
 }
 
@@ -1171,11 +1171,12 @@ pub async fn list_repo_dir(repo: &str, commit: &str, path: &str) -> Result<RepoD
                     private: false,
                 })
             });
-        // Retried on GitHub, the repository is still taken as a public one,
-        // whose files raw.githubusercontent.com serves: a private one is a
-        // 404 on mise-versions, not a failure.
+        // Retried on GitHub, the repository may be private: an outage can't
+        // tell. Its files then come through the contents API too, with the
+        // credentials the listing used, as for a repository mise-versions
+        // doesn't know.
         let listed = mirror_or_github(&what, mirrored, async || {
-            repo_dir_from_api(&url, repo, path, false).await.map(Some)
+            repo_dir_from_api(&url, repo, path).await.map(Some)
         })
         .await?;
         match listed {
@@ -1183,12 +1184,12 @@ pub async fn list_repo_dir(repo: &str, commit: &str, path: &str) -> Result<RepoD
             None => after_mirror_404(repo, &what).await?,
         }
     }
-    repo_dir_from_api(&url, repo, path, true).await
+    repo_dir_from_api(&url, repo, path).await
 }
 
-/// [`list_repo_dir`] from the contents API `url`, for a repository whose
-/// files are fetched through that API too when `private`.
-async fn repo_dir_from_api(url: &str, repo: &str, path: &str, private: bool) -> Result<RepoDir> {
+/// [`list_repo_dir`] from the contents API `url`. The files are fetched
+/// through that API too ([`RepoDir::private`]).
+async fn repo_dir_from_api(url: &str, repo: &str, path: &str) -> Result<RepoDir> {
     // `get_headers` asks for the raw media type on contents URLs, which is
     // right for a file body and wrong for a directory listing.
     let mut headers = get_headers(url)?;
@@ -1208,7 +1209,7 @@ async fn repo_dir_from_api(url: &str, repo: &str, path: &str, private: bool) -> 
             .map(|entry| serde_json::from_value(entry.clone()))
             .collect::<std::result::Result<_, _>>()
             .wrap_err_with(|| format!("unexpected listing of {path} in {repo}"))?,
-        private,
+        private: true,
     })
 }
 

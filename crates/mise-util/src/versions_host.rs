@@ -628,7 +628,7 @@ where
     {
         Ok(resp) => resp,
         Err(err) => {
-            let status = http::error_code(&err);
+            let status = transport_error_status(&err);
             log_versions_host_trace(
                 ctx,
                 "failed",
@@ -675,6 +675,18 @@ where
     serde_json::from_slice(&body)
         .map(Some)
         .map_err(|err| eyre::eyre!("invalid response from {url}: {err}"))
+}
+
+/// The HTTP status of a request that failed without a response mise could
+/// read, which is only ever one `reqwest` reports. Not [`http::error_code`]:
+/// a timeout's message holds the URL, and a URL holding `404` (a tag such as
+/// `v1.404.0`) would pass the timeout off as a 404, which isn't retried on
+/// GitHub.
+fn transport_error_status(err: &eyre::Report) -> Option<u16> {
+    err.chain()
+        .filter_map(|cause| cause.downcast_ref::<reqwest::Error>())
+        .find_map(reqwest::Error::status)
+        .map(|status| status.as_u16())
 }
 
 /// The versions host could not answer: a network failure or an error status
@@ -1455,5 +1467,20 @@ mod tests {
                 .attestations
                 .is_empty()
         );
+    }
+
+    #[test]
+    fn test_transport_error_status_ignores_404_in_the_message() {
+        // A timeout's message carries the URL, which may hold "404".
+        let err = eyre::eyre!(
+            "error sending request for url (https://mise-versions.jdx.dev/api/github/repos/o/r/releases/v1.404.0): operation timed out"
+        );
+        assert_eq!(transport_error_status(&err), None);
+        let unavailable: eyre::Report = VersionsHostUnavailable {
+            status: transport_error_status(&err),
+            message: format!("{err:#}"),
+        }
+        .into();
+        assert!(retries_on_github(&unavailable));
     }
 }
