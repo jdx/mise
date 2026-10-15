@@ -2586,7 +2586,7 @@
         },
         "use_versions_host": {
           "default": true,
-          "description": "Get version lists, public GitHub release metadata and attestations from mise-versions instead of upstream APIs.",
+          "description": "Get version lists, public GitHub release metadata and attestations from mise-versions before upstream APIs.",
           "type": "boolean"
         },
         "use_versions_host_track": {
