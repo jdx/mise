@@ -668,7 +668,9 @@ async fn detect_with_mirror(
             "got {} GitHub attestation probes for {full}@{digest} from mise-versions",
             attestations.len()
         );
-        if attestations.iter().any(|a| !a.has_inline_bundle()) {
+        // Only a predicate filter reads the bundles; whether any attestation
+        // exists doesn't depend on them.
+        if predicate_type.is_some() && attestations.iter().any(|a| !a.has_inline_bundle()) {
             if !fresh {
                 continue;
             }

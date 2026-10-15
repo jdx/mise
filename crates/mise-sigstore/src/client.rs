@@ -349,7 +349,13 @@ impl AttestationClient {
     }
 
     async fn fetch_bundle_url(&self, bundle_url: &str) -> Result<serde_json::Value> {
-        log::debug!("GET {bundle_url}");
+        // Without the query: a bundle URL can be pre-signed, its token there.
+        log::debug!(
+            "GET {}",
+            bundle_url
+                .split_once('?')
+                .map_or(bundle_url, |(url, _)| url)
+        );
         let request = self
             .client
             .get(bundle_url)
