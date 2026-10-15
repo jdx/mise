@@ -8,11 +8,22 @@ pub async fn run() {
     tokio::join!(
         task(migrate_trusted_configs),
         task(migrate_tracked_configs),
-        task(migrate_incomplete_markers),
+        task(migrate_incomplete_markers)
     );
 }
 
+/// Run startup migrations without requiring an async runtime.
+pub fn run_sync() {
+    task_sync(migrate_trusted_configs);
+    task_sync(migrate_tracked_configs);
+    task_sync(migrate_incomplete_markers);
+}
+
 async fn task(job: impl FnOnce() -> Result<()> + Send + 'static) {
+    task_sync(job);
+}
+
+fn task_sync(job: impl FnOnce() -> Result<()>) {
     if let Err(err) = job() {
         safe_eprintln!("[WARN] migrate: {err}");
     }

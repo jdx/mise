@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+
+# Activation only generates shell code, so it must remain usable through the
+# synchronous startup path before Tokio's signal driver is initialized.
+for shell in bash elvish fish nu xonsh zsh pwsh powershell; do
+  assert_succeed "mise activate $shell"
+  assert_succeed "mise --quiet -C . activate --shims $shell"
+done
+
+# The early parser must retain activation option spellings and leave clap meta/error paths alone.
+assert "diff <(mise activate fish) <(mise activate --shell fish) && echo same" "same"
+assert "diff <(mise activate fish) <(mise activate -s fish) && echo same" "same"
+assert_succeed "mise activate --no-hook-env fish"
+assert_succeed "mise activate --status fish"
+assert_succeed "SHELL=/bin/fish mise activate"
+assert_succeed "mise activate --help"
+assert_succeed "mise --version"
+assert_fail "mise activate not-a-shell"

@@ -79,11 +79,17 @@ fn main() -> ExitCode {
     // (notably `__node-gyp-bootstrap`). Hand those to aube before mise's
     // naked-run rewrite / clap parser can claim them.
     let early_args = env::args_safe();
+    *env::ARGS.write().unwrap() = early_args.clone();
     if let Some(code) = backend::aube_host::try_run_embedded_cli(&early_args) {
         return exit::status(code);
     }
     if cli::Cli::exit_early_for_unchanged_hook_env(&early_args) {
         return ExitCode::SUCCESS;
+    }
+    if cli::Cli::is_early_activation(&early_args) {
+        let result =
+            init_error_reporting().and_then(|()| cli::Cli::run_early_activation(&early_args));
+        return finish_early_activation(result);
     }
     let nprocs = std::thread::available_parallelism()
         .map(|n| n.get())
@@ -142,16 +148,7 @@ fn main() -> ExitCode {
 
 async fn main_() -> eyre::Result<()> {
     let _downloads = http::InvocationDownloads;
-    // Configure color-eyre based on color preferences
-    let hook_builder = if *env::CLICOLOR == Some(false) {
-        // Use blank theme (no colors) when colors are disabled
-        color_eyre::config::HookBuilder::new().theme(color_eyre::config::Theme::new())
-    } else {
-        color_eyre::config::HookBuilder::default()
-    };
-    let (panic_hook, eyre_hook) = hook_builder.into_hooks();
-    eyre_hook.install()?;
-    install_panic_hook(panic_hook);
+    init_error_reporting()?;
     measure!("main", {
         let args = env::args_safe();
         match Cli::run(&args)
@@ -166,6 +163,44 @@ async fn main_() -> eyre::Result<()> {
         mpr.stop()?;
     }
     Ok(())
+}
+
+fn init_error_reporting() -> eyre::Result<()> {
+    // Configure color-eyre based on color preferences
+    let hook_builder = if *env::CLICOLOR == Some(false) {
+        // Use blank theme (no colors) when colors are disabled
+        color_eyre::config::HookBuilder::new().theme(color_eyre::config::Theme::new())
+    } else {
+        color_eyre::config::HookBuilder::default()
+    };
+    let (panic_hook, eyre_hook) = hook_builder.into_hooks();
+    eyre_hook.install()?;
+    install_panic_hook(panic_hook);
+    Ok(())
+}
+
+fn finish_early_activation(result: eyre::Result<()>) -> ExitCode {
+    let result = result
+        .with_section(|| VERSION.to_string().header("Version:"))
+        .or_else(handle_err);
+    match result {
+        Ok(()) => {
+            if let Some(mpr) = MultiProgressReport::try_get()
+                && let Err(err) = mpr.stop()
+            {
+                eprintln!("Error: {err:?}");
+                return exit::status(1);
+            }
+            ExitCode::SUCCESS
+        }
+        Err(err) => match exit::requested_exit_code(&err) {
+            Some(code) => exit::status(code),
+            None => {
+                eprintln!("Error: {err:?}");
+                exit::status(1)
+            }
+        },
+    }
 }
 
 fn handle_err(err: Report) -> eyre::Result<()> {

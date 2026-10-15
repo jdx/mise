@@ -1011,6 +1011,61 @@ impl Cli {
         true
     }
 
+    /// Whether this invocation can generate an activation script without Tokio.
+    ///
+    /// Keep the normal parser as the authority for recognizing `activate`, so global flags and
+    /// shell aliases behave as usual. Anything the parser cannot settle falls through to normal
+    /// startup.
+    pub(crate) fn is_early_activation(args: &[String]) -> bool {
+        let Some(bin_name) = args
+            .first()
+            .and_then(|arg| std::path::Path::new(arg).file_name())
+            .and_then(|name| name.to_str())
+        else {
+            return false;
+        };
+        if *crate::env::MISE_TOOL_STUB || !crate::env::is_mise_binary(bin_name) {
+            return false;
+        }
+        let argv = args.iter().map(std::ffi::OsStr::new).collect::<Vec<_>>();
+        let Ok((cli, _)) = Cli::parse_from_argv_with_settings(&argv) else {
+            return false;
+        };
+        !cli.version && matches!(cli.command, Some(Commands::Activate(_)))
+    }
+
+    /// Run `activate` before constructing Tokio's runtime.
+    ///
+    /// Activation only reads settings and writes shell code. Keep its argument parsing, `--cd`,
+    /// settings, active-config trust validation and startup migrations, but defer registry/backend
+    /// refresh and skip Ctrl-C registration, neither of which it needs. This avoids installing
+    /// Tokio's Unix signal driver for a command that has no signal handling to perform.
+    pub(crate) fn run_early_activation(args: &[String]) -> Result<()> {
+        *crate::env::ARGS.write().unwrap() = args.to_vec();
+        crate::config::miserc::init()?;
+        logger::init();
+        check_working_directory();
+
+        let argv = args.iter().map(std::ffi::OsStr::new).collect::<Vec<_>>();
+        let (mut cli, cli_settings) = Cli::parse_from_argv_with_settings(&argv)
+            .map_err(|err| usage_error(&argv[1..], err))?;
+        let Some(Commands::Activate(command)) = cli.command.take() else {
+            unreachable!("early activation classifier accepted another command");
+        };
+        validate_cd_path(&cli.cd)?;
+        let command_local = command_local_settings(&cli_settings)?;
+        Settings::add_cli_matches(cli.settings_layer(command_local));
+        Settings::try_get()?;
+        config_file::set_implicitly_trust_active_config(false);
+        config_file::trust_active_config()?;
+        logger::init();
+        migrate::run_sync();
+        if let Err(err) = crate::cache::auto_prune() {
+            warn!("auto_prune failed: {err:?}");
+        }
+        command.run()
+    }
+
     pub(crate) async fn run(args: &Vec<String>) -> Result<()> {
         run_with_exit_signal(Self::run_inner(args), ctrlc::exit_signal()).await
     }
@@ -2518,5 +2573,48 @@ mod tests {
         ];
 
         assert_eq!(escape_task_args(cmd, &args), args);
+    }
+
+    #[test]
+    fn early_activation_classifier_accepts_supported_shells_and_options() {
+        let shells = [
+            "bash",
+            "elvish",
+            "fish",
+            "nu",
+            "xonsh",
+            "zsh",
+            "pwsh",
+            "powershell",
+        ];
+        for shell in shells {
+            for args in [
+                vec!["mise", "activate", shell],
+                vec!["mise", "--quiet", "-C", ".", "activate", "--shims", shell],
+                vec!["mise", "activate", "--shell", shell],
+                vec!["mise", "activate", "-s", shell],
+                vec!["mise", "activate", "--no-hook-env", shell],
+                vec!["mise", "activate", "--status", shell],
+            ] {
+                let args = args
+                    .into_iter()
+                    .map(ToString::to_string)
+                    .collect::<Vec<_>>();
+                assert!(Cli::is_early_activation(&args), "{args:?}");
+            }
+        }
+        for args in [
+            vec!["mise", "hook-env"],
+            vec!["mise", "activate", "--help"],
+            vec!["mise", "-V", "activate", "fish"],
+            vec!["mise", "activate", "not-a-shell"],
+            vec!["mise", "exec", "--", "activate", "fish"],
+        ] {
+            let args = args
+                .into_iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>();
+            assert!(!Cli::is_early_activation(&args), "{args:?}");
+        }
     }
 }
