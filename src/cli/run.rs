@@ -456,9 +456,11 @@ async fn get_affected_task_list(
     let git = crate::git::Git::new(&workspace_root);
     let cargo = crate::task::workspace::cargo::CargoWorkspaceProvider;
     let go = crate::task::workspace::go::GoWorkspaceProvider;
+    let gradle = crate::task::workspace::gradle::GradleWorkspaceProvider;
     let node = crate::task::workspace::node::NodeWorkspaceProvider;
     let uv = crate::task::workspace::uv::UvWorkspaceProvider;
-    let providers: [&dyn crate::task::workspace::WorkspaceProvider; 4] = [&cargo, &go, &node, &uv];
+    let providers: [&dyn crate::task::workspace::WorkspaceProvider; 5] =
+        [&cargo, &go, &gradle, &node, &uv];
     let mut regular_paths = BTreeSet::new();
     let mut lockfile_projects = BTreeMap::<PathBuf, BTreeSet<_>>::new();
 

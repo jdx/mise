@@ -990,11 +990,12 @@ impl Config {
         let overrides = monorepo_config.monorepo.projects;
         let cargo = crate::task::workspace::cargo::CargoWorkspaceProvider;
         let go = crate::task::workspace::go::GoWorkspaceProvider;
+        let gradle = crate::task::workspace::gradle::GradleWorkspaceProvider;
         let node = crate::task::workspace::node::NodeWorkspaceProvider;
         let uv = crate::task::workspace::uv::UvWorkspaceProvider;
 
         crate::task::workspace::WorkspaceProjectGraph::discover_all_with_overrides_lenient(
-            &[&cargo, &go, &node, &uv],
+            &[&cargo, &go, &gradle, &node, &uv],
             &monorepo_root,
             &overrides,
         )
