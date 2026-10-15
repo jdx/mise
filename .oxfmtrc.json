@@ -47,8 +47,13 @@
         "trailingComma": "es5",
         "printWidth": 80
       }
+    },
+    {
+      "files": ["**/*.md"],
+      "options": {
+        "embeddedLanguageFormatting": "off"
+      }
     }
   ],
-  "sortPackageJson": false,
-  "embeddedLanguageFormatting": "off"
+  "sortPackageJson": false
 }
