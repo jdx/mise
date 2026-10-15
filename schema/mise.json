@@ -1003,7 +1003,6 @@
           "type": "boolean"
         },
         "fetch_remote_versions_cache": {
-          "default": "1h",
           "description": "How long a tool's cached list of available versions stays fresh.",
           "type": "string"
         },

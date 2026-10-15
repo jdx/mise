@@ -474,9 +474,11 @@ directories, and sudo settings.
 
 ## Caching {#caching-and-performance}
 
-mise reuses a tool's list of remote versions for the period set by
-[`fetch_remote_versions_cache`](/configuration/settings.html#fetch_remote_versions_cache);
-run `mise cache clear <tool>` to refresh it. See
+mise reuses a tool's list of remote versions for a while: up to the tool's
+[`minimum_release_age`](/configuration/settings.html#minimum_release_age) when
+installing, and for
+[`fetch_remote_versions_cache`](/configuration/settings.html#fetch_remote_versions_cache)
+when reporting what is newest. Run `mise cache clear <tool>` to refresh it. See
 [Caches](/cache-behavior.html), and
 [slow shell prompts](/troubleshooting.html#slow-shell-prompts) if activation
 feels slow.
