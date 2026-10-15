@@ -1896,15 +1896,22 @@ mod tests {
     };
     use crate::args::BackendArg;
     use crate::backend::{Backend, VersionInfo};
+    use crate::config::Config;
     #[cfg(unix)]
     use crate::file;
     use crate::github::GithubRelease;
+    use crate::install_context::InstallContext;
     use crate::toolset::tool_request::LockfileScope;
     use crate::toolset::{
-        ToolRequest, ToolSource, ToolVersion, ToolVersionOptions, parse_tool_options,
+        ToolRequest, ToolSource, ToolVersion, ToolVersionOptions, Toolset, parse_tool_options,
     };
+    use crate::ui::progress_report::QuietReport;
+    use async_trait::async_trait;
     use std::path::PathBuf;
-    use std::sync::Arc;
+    use std::sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    };
     use tempfile::tempdir;
 
     #[test]
@@ -1961,8 +1968,12 @@ mod tests {
     }
 
     fn selected_python_tool_version(identity: &str) -> ToolVersion {
+        selected_python_tool_version_for("pypi:demo", identity)
+    }
+
+    fn selected_python_tool_version_for(backend: &str, identity: &str) -> ToolVersion {
         let request = ToolRequest::new_with_options(
-            Arc::new(BackendArg::from("pypi:demo")),
+            Arc::new(BackendArg::from(backend)),
             "1.0.0",
             parse_tool_options(r#"python = "3.13""#),
             ToolSource::Unknown,
@@ -1984,6 +1995,49 @@ mod tests {
                 .unwrap(),
         )
         .unwrap();
+    }
+
+    #[derive(Debug)]
+    struct FailingInstallBackend {
+        ba: Arc<BackendArg>,
+        attempts: Arc<AtomicUsize>,
+    }
+
+    #[async_trait]
+    impl Backend for FailingInstallBackend {
+        fn ba(&self) -> &Arc<BackendArg> {
+            &self.ba
+        }
+
+        async fn _list_remote_versions(
+            &self,
+            _config: &Arc<Config>,
+        ) -> eyre::Result<Vec<VersionInfo>> {
+            Ok(vec![])
+        }
+
+        async fn install_version_(
+            &self,
+            _ctx: &InstallContext,
+            _tv: ToolVersion,
+        ) -> eyre::Result<ToolVersion> {
+            self.attempts.fetch_add(1, Ordering::SeqCst);
+            eyre::bail!("controlled installer failure")
+        }
+    }
+
+    fn lifecycle_context(config: Arc<Config>) -> InstallContext {
+        InstallContext {
+            config,
+            ts: Arc::new(Toolset::default()),
+            pr: Arc::new(QuietReport::new()),
+            force: false,
+            dry_run: false,
+            explicit_yes: true,
+            locked: false,
+            before_date: None,
+            dependency_context: Default::default(),
+        }
     }
 
     #[test]
@@ -2013,10 +2067,13 @@ mod tests {
         assert!(old.is_dir());
     }
 
-    #[test]
-    fn selected_python_replacement_leaves_old_environment_when_new_install_fails() {
+    #[tokio::test]
+    async fn selected_python_replacement_keeps_old_environment_when_install_lifecycle_fails() {
+        let config = Config::get().await.unwrap();
         let temp = tempdir().unwrap();
-        let mut tv = selected_python_tool_version("core:python:3.13.0:new");
+        // The controlled backend has no declared dependencies, so this reaches the
+        // generic installation lifecycle rather than attempting a real Python install.
+        let mut tv = selected_python_tool_version_for("node", "core:python:3.13.0:new");
         let old = temp.path().join("1.0.0~uv~old");
         write_python_receipt(&old, "core:python:3.12.0:old");
         tv.install_path = Some(old.clone());
@@ -2026,9 +2083,45 @@ mod tests {
 
         let replacement = temp.path().join(tv.tv_pathname());
         assert_ne!(replacement, old);
-        std::fs::create_dir_all(&replacement).unwrap();
-        std::fs::remove_dir_all(&replacement).unwrap();
+        tv.install_path = Some(replacement.clone());
+        tv.install_path_is_explicit = true;
+        let attempts = Arc::new(AtomicUsize::new(0));
+        let backend = FailingInstallBackend {
+            ba: tv.ba().clone().into(),
+            attempts: attempts.clone(),
+        };
+
+        let error = backend
+            .install_version(lifecycle_context(config), tv)
+            .await
+            .unwrap_err();
+
+        assert!(error.to_string().contains("controlled installer failure"));
+        assert_eq!(attempts.load(Ordering::SeqCst), 1);
+        assert!(
+            replacement.exists(),
+            "the controlled installer created only the new target"
+        );
         assert!(old.join(".mise-uv/python.json").is_file());
+    }
+
+    #[test]
+    fn selected_python_stale_same_destination_rejects_before_install_cleanup() {
+        let temp = tempdir().unwrap();
+        let mut tv = selected_python_tool_version("core:python:3.13.0:new");
+        let old = temp.path().join(tv.tv_pathname());
+        std::fs::create_dir_all(&old).unwrap();
+        std::fs::write(old.join("working-tool"), "preserve me").unwrap();
+        tv.install_path = Some(old.clone());
+
+        let error = super::reset_selected_python_install_path(&mut tv).unwrap_err();
+
+        assert!(error.to_string().contains("cannot safely replace"));
+        assert_eq!(tv.install_path.as_deref(), Some(old.as_path()));
+        assert_eq!(
+            std::fs::read_to_string(old.join("working-tool")).unwrap(),
+            "preserve me"
+        );
     }
 
     #[test]
