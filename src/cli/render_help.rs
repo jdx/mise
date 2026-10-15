@@ -20,9 +20,9 @@ impl RenderHelp {
         file::write("docs/.vitepress/cli_commands.ts", render_command_ts())?;
         render_idiomatic_version_files()?;
         if cfg!(windows) {
-            cmd!("prettier.cmd", "--write", "docs/.vitepress/cli_commands.ts").run()?;
+            cmd!("oxfmt.cmd", "--write", "docs/.vitepress/cli_commands.ts").run()?;
         } else {
-            cmd!("prettier", "--write", "docs/.vitepress/cli_commands.ts").run()?;
+            cmd!("oxfmt", "--write", "docs/.vitepress/cli_commands.ts").run()?;
         }
         Ok(())
     }
