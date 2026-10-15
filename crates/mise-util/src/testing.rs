@@ -160,7 +160,7 @@ macro_rules! run_before_main {
             #[used]
             #[cfg_attr(
                 target_vendor = "apple",
-                unsafe(link_section = "__DATA,__mod_init_func")
+                unsafe(link_section = "__DATA,__mod_init_func,mod_init_funcs")
             )]
             #[cfg_attr(windows, unsafe(link_section = ".CRT$XCU"))]
             #[cfg_attr(
