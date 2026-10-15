@@ -11,8 +11,8 @@ Set one when mise calls a forge's API itself: for private repositories, GitHub
 Enterprise, self-managed GitLab and Forgejo hosts, or after GitHub's anonymous
 rate limit returns `403 Forbidden`.
 
-mise also calls the GitHub API directly when mise-versions does not have a
-release's metadata yet, or when
+mise also calls the GitHub API directly when mise-versions fails to answer (a
+timeout, a lost connection, or a `429` or `5xx` response), or when
 [`use_versions_host`](/configuration/settings.html#use_versions_host) is
 `false`. Without a token, those calls share GitHub's low
 [anonymous rate limit](https://docs.github.com/en/rest/using-the-rest-api/rate-limits-for-the-rest-api).

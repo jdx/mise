@@ -4,17 +4,8 @@ use std::sync::{Mutex, MutexGuard};
 use crate::config::{Settings, SettingsExt};
 use crate::env;
 
-// ctor puts the constructor body in `__TEXT,__text_startup` on Apple targets, a
-// section laid out after `__text`. The debug test binary's `__text` is past the
-// 128MB reach of an arm64 direct branch, and ld only inserts branch islands
-// inside `__text`, so a call from that section into the front of `__text` fails
-// to link with "B/BL out of range". Keeping the body in `__text` lets the
-// linker island the call like any other.
-#[cfg_attr(
-    target_vendor = "apple",
-    ctor::ctor(unsafe, body(link_section = "__TEXT,__text,regular,pure_instructions"))
-)]
-#[cfg_attr(not(target_vendor = "apple"), ctor::ctor(unsafe))]
+mise_util::run_before_main!(init);
+
 fn init() {
     // The library's tests have no `cli` to register the real frontend. Stand in for it so a
     // missing-task error or a post-install lockfile update does not panic on an unset hook.

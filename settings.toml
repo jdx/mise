@@ -4468,7 +4468,7 @@ type = "Bool"
 
 [use_versions_host]
 default = true
-description = "Get version lists, public GitHub release metadata and attestations from mise-versions instead of upstream APIs."
+description = "Get version lists, public GitHub release metadata and attestations from mise-versions before upstream APIs."
 docs = """
 [mise-versions](https://mise-versions.jdx.dev) is a shared cache that refreshes
 version lists for registry tools and public GitHub release data on a schedule.
@@ -4482,15 +4482,21 @@ tool's version list, and keeps it as long as a version list
 index cannot answer exactly reads that tool's list as before.
 
 When the host does not list a registry tool's versions, mise lists them from
-the tool's own source. GitHub release data, tags and attestations for public
-repositories come only from the host: if it fails, mise reports the error
-rather than spend GitHub's anonymous rate limit. Paranoid mode asks GitHub when
-the host can't settle an attestation answer. mise asks GitHub directly only
-for a repository the host does not know, which may be private, and only with
-GitHub credentials. Private repositories, GitHub Enterprise, custom GitHub API
-URLs, and installs with this setting off need normal
-[GitHub authentication](/dev-tools/github-tokens.html) to stay within GitHub's
-rate limits.
+the tool's own source. GitHub release data, tags, repository contents and
+attestations for public repositories come from the host first. When the host
+errors (a timeout, a lost connection, or a `429` or `5xx` response), mise asks
+`api.github.com` for the same data instead, with your GitHub token if one is
+set. If GitHub fails too, release data and tag lists fall back to a copy mise
+cached earlier when it has one; otherwise the error names both failures.
+Anything the host answers is trusted, including a `404` for a missing release,
+tag or repository and an empty list, so those never reach GitHub's anonymous
+rate limit.
+Paranoid mode also asks GitHub when the host can't settle an attestation
+answer. Otherwise mise asks GitHub directly only for a repository the host does
+not know, which may be private, and only with GitHub credentials. Private
+repositories, GitHub Enterprise, custom GitHub API URLs, and installs with this
+setting off need normal [GitHub authentication](/dev-tools/github-tokens.html)
+to stay within GitHub's rate limits.
 
 When [`url_replacements`](#url_replacements) reroutes `api.github.com`, or a
 repository's release or attestation API paths, mise does not use this host for

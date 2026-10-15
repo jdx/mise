@@ -237,9 +237,10 @@ for CI.
 
 mise gets public release metadata and artifact attestations from the
 [mise-versions](https://mise-versions.jdx.dev) host to avoid most GitHub API
-calls. A 403 from GitHub therefore usually means that the host did not have the
-metadata yet, that `MISE_USE_VERSIONS_HOST=0` is set, or that the tool comes
-from a private repository or GitHub Enterprise. A
+calls. A 403 from GitHub therefore usually means that the host failed and mise
+asked GitHub instead (the error then names both failures), that
+`MISE_USE_VERSIONS_HOST=0` is set, or that the tool comes from a private
+repository or GitHub Enterprise. A
 [lockfile](/dev-tools/mise-lock.html) that records download URLs avoids most
 API calls during installs.
 

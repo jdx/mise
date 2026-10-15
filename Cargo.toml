@@ -342,7 +342,6 @@ serde-saphyr = "1"
 toml = "1"
 
 [dev-dependencies]
-ctor = "1"
 insta = { version = "1", features = ["filters", "json"] }
 mockito = "1"
 opentelemetry_sdk = { version = "0.33", default-features = false, features = [

@@ -120,6 +120,10 @@ pub struct EnvDirectiveOptions {
     pub(crate) required: RequiredValue,
     #[serde(default)]
     pub(crate) expand: bool,
+    /// `_.file` only: look for a relative path in the current directory and each parent
+    /// directory, rather than only in the config file's directory.
+    #[serde(default)]
+    pub(crate) find_up: bool,
     /// `[vars]` only: ask for this value once and remember the answer on this machine.
     #[serde(default)]
     pub(crate) prompt: Option<String>,
@@ -773,7 +777,8 @@ impl EnvResults {
                         config_root: &config_root,
                         toolset,
                     };
-                    let files = Self::file(&mut directive_ctx, input, opts.expand).await?;
+                    let files =
+                        Self::file(&mut directive_ctx, input, opts.expand, opts.find_up).await?;
                     for (f, new_env) in files {
                         r.env_files.push(f.clone());
                         for (k, v) in new_env {
