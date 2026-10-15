@@ -577,9 +577,15 @@ impl Toolset {
         let mut private_dependency_keys = HashSet::new();
         let mut next = 0;
         while next < versions.len() {
-            let declarations = install_dependency_declarations(&versions[next]);
-            declarations.validate()?;
-            let mut dependencies = declarations.versioned().cloned().collect_vec();
+            // Only the PyPI selector owns a private runtime. Do not inspect
+            // every backend's install metadata here: an ordinary unknown tool
+            // must continue through the installer so its failure is rendered
+            // as `Failed to install <tool>`, rather than escaping this setup
+            // phase without install context.
+            let mut dependencies =
+                crate::backend::pipx::selected_python_dependency(&versions[next])?
+                    .into_iter()
+                    .collect_vec();
             // A selector-owned runtime is resolved in the consumer's source
             // scope, but its installer options still come from the effective
             // configured runtime request. Apply those before duplicate and
