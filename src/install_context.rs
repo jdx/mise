@@ -82,7 +82,7 @@ impl InstallDependencyDeclarations {
         if backend_args_match(target, dependency.ba()) {
             return;
         }
-        self.dependencies.shift_remove(dependency.ba());
+        self.dependencies.shift_remove(dependency.ba().as_ref());
         self.versioned.insert(dependency);
     }
 
