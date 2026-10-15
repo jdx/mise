@@ -297,8 +297,9 @@ _.file = { path = ".env.json", expand = true }
 mise decrypts SOPS-encrypted JSON, YAML and TOML files as it loads them; see
 [SOPS files](/environments/secrets/sops.html).
 
-`_.file` resolves a relative path against the config file that declares it. To
-load a file from the current directory and every parent directory instead, set
+`_.file` resolves a relative path against the config's root, normally the
+project directory. To load a file from the current directory and every parent
+directory instead, set
 `find_up = true`. This works from a global config, so one entry covers every
 project:
 
