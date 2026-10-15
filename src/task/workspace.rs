@@ -18,6 +18,7 @@ use super::{
 pub mod cargo;
 pub mod git;
 pub mod go;
+pub mod gradle;
 pub mod node;
 pub mod uv;
 

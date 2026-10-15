@@ -1,11 +1,11 @@
 ---
-description: "Infer projects and dependencies from Cargo, uv, Go, and Node.js workspaces to run affected and upstream tasks in a monorepo."
-socialDescription: "Infer monorepo projects from Cargo, uv, Go, and Node.js workspaces to run affected tasks."
+description: "Infer projects and dependencies from Cargo, uv, Go, Gradle, and Node.js workspaces to run affected and upstream tasks in a monorepo."
+socialDescription: "Infer monorepo projects from Cargo, uv, Go, Gradle, and Node.js workspaces to run affected tasks."
 ---
 
 # Workspace project graph
 
-mise can read Cargo, uv, Go, and Node.js workspace manifests to learn which
+mise can read Cargo, uv, Go, Gradle, and Node.js workspace manifests to learn which
 projects a [monorepo](/tasks/monorepo.html) contains and how they depend on
 each other. Use the graph to run tasks only in the projects a change affects, to
 run a task in upstream projects first, and to import Node.js package scripts as
@@ -56,11 +56,12 @@ carry field-level provenance, so other tools can tell, for example, a
 | Cargo    | A `[workspace]` table in the root `Cargo.toml`                    | `cargo:<package.name>`         | `path` dependencies, including `workspace = true` declarations                                                  |
 | uv       | A `[tool.uv.workspace]` table in the root `pyproject.toml`        | `uv:<normalized project.name>` | `[tool.uv.sources]` entries with `workspace = true` or a `path`                                                 |
 | Go       | `use` directives in the root `go.work`                            | `go:<module path>`             | None; add them with [project overrides](#project-overrides)                                                     |
+| Gradle   | `include` directives in the root `settings.gradle(.kts)`          | `gradle:<project path>`        | `project(":x")` references in `dependencies {}` blocks                                                          |
 | Node.js  | `pnpm-workspace.yaml`, or `workspaces` in the root `package.json` | `node:<package name>`          | `dependencies`, `devDependencies`, `optionalDependencies`, and `peerDependencies` that name a workspace package |
 
 Project IDs come from ecosystem metadata, not from directories, so moving a
 project does not change its ID. Every provider parses manifests directly:
-`cargo`, `uv`, Python, `go`, and the Node.js package managers do not need to be
+`cargo`, `uv`, Python, `go`, Gradle, and the Node.js package managers do not need to be
 installed to build the graph. Running an imported Node.js script does need its
 package manager.
 
@@ -120,6 +121,35 @@ Add the edges that matter with an override:
 ```toml
 [monorepo.projects."go:example.com/acme/api"]
 depends_add = ["go:example.com/acme/lib"]
+```
+
+### Gradle workspaces
+
+mise reads literal `include` directives from `settings.gradle` or
+`settings.gradle.kts` at the monorepo root, in Groovy or Kotlin syntax. It never
+runs Gradle or the wrapper. The project ID is Gradle's own project path, so
+`:app` becomes `gradle::app`, `:services:person-service` becomes
+`gradle::services:person-service`, and the root project, which is included only
+when it has a build script, is `gradle::`. A `project(":x").projectDir = file("...")`
+remap sets the project root; otherwise the root is the directory the path names.
+
+Edges come from literal `project(":lib")` and `project(path: ":lib")` references
+inside a `dependencies {}` block of a project's build script. Dependencies added
+from `subprojects {}`, `allprojects {}`, or convention plugins are not seen; add
+them with [project overrides](#project-overrides). `includeBuild`, version
+catalogs, and type-safe project accessors are not read.
+
+Gradle settings are executable scripts, so mise does not guess. If `include`
+takes anything but a string literal (a variable, interpolation, or a loop over
+the file system), or both settings scripts exist, mise reports an error. Declare
+the projects under `[monorepo.projects]` to take over from the provider:
+
+```toml
+[monorepo.projects."gradle::app"]
+root = "app"
+
+[monorepo.projects."gradle::lib"]
+root = "lib"
 ```
 
 ### Node.js workspaces
