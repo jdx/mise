@@ -48,6 +48,82 @@ impl PIPXBackend {
             )
     }
 
+    /// The lockfile revision a request's uv graph requirement comes from.
+    ///
+    /// A version resolved from the lockfile answers to its entry, graph or
+    /// not. An upgrade resolves outside the lockfile, so it only inherits the
+    /// requirement from a recorded graph: version-only entries (which an
+    /// upgrade of a graphless global tool writes) must stay version-only. A
+    /// bump or a hand-edited pin rewrites the selector itself, which needs
+    /// `replaced_entry_lockfile_version`.
+    pub(crate) fn uv_lockfile_version(
+        &self,
+        config: &Config,
+        tv: &ToolVersion,
+    ) -> Result<Option<u32>> {
+        if tv.resolved_from_lockfile() {
+            return crate::lockfile::version_for_request(config, &tv.request);
+        }
+        match Self::graph_lockfile_version(config, &tv.request)? {
+            Some(revision) => Ok(Some(revision)),
+            None => Self::replaced_entry_lockfile_version(config, &tv.request),
+        }
+    }
+
+    /// The lockfile revision of the entry matching `request`, if that entry
+    /// records a dependency graph.
+    fn graph_lockfile_version(config: &Config, request: &ToolRequest) -> Result<Option<u32>> {
+        if !Settings::get().lockfile_enabled() {
+            return Ok(None);
+        }
+        match request.lockfile_resolve(config)? {
+            Some(entry) if entry.uv.is_some() => {
+                crate::lockfile::version_for_request(config, request)
+            }
+            _ => Ok(None),
+        }
+    }
+
+    /// The lockfile revision of the global entry this request replaces.
+    ///
+    /// An install that resolves outside the lockfile — an `upgrade --bump`
+    /// or a hand-edited pin — replaces the owning global config's entry for
+    /// the backend, whatever version that entry records. The replacement
+    /// inherits the entry's requirement only when the backend has exactly
+    /// one entry and that entry carries a uv graph; with several entries a
+    /// graph-bearing sibling must never lend its graph to a version-only
+    /// request, so ambiguity stays version-only, and graph creation for
+    /// global tools is never implicit.
+    fn replaced_entry_lockfile_version(
+        config: &Config,
+        request: &ToolRequest,
+    ) -> Result<Option<u32>> {
+        if !Settings::get().lockfile_enabled() {
+            return Ok(None);
+        }
+        let Some(owner) = request.lockfile_source() else {
+            return Ok(None);
+        };
+        if !owner.path().is_some_and(crate::config::is_global_config) {
+            return Ok(None);
+        }
+        let lockfile = request.read_lockfile(config)?;
+        let mut entries = lockfile
+            .tools_for(&request.ba().short)
+            .into_iter()
+            .flatten();
+        let (Some(entry), None) = (entries.next(), entries.next()) else {
+            // Zero or several predecessors: stay version-only rather than guess.
+            return Ok(None);
+        };
+        if entry.uv.is_none() {
+            return Ok(None);
+        }
+        Ok(Some(
+            lockfile.entry_lockfile_version(&request.ba().short, entry),
+        ))
+    }
+
     pub(super) fn uv_lock_options_supported(&self, tv: &ToolVersion) -> bool {
         let raw = tv.request.options();
         let opts = PipxOptions::new(&raw);
