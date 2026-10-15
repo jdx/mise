@@ -408,7 +408,8 @@ fn parse_settings(tokens: &[Token]) -> Result<GradleSettings> {
             "include" => {
                 // Inside a block or after a condition, whether the project is
                 // included depends on the build, not the script text.
-                if depth > 0 || follows_condition(tokens, index) {
+                let statement = if on_settings { index - 2 } else { index };
+                if depth > 0 || follows_condition(tokens, statement) {
                     bail!("`include` is conditional or nested in a block");
                 }
                 let Some((next, arguments)) = call_arguments(tokens, index + 1) else {
@@ -1121,6 +1122,7 @@ mod tests {
         for script in [
             "if (System.getenv(\"CI\") != null) {\n    include(\":ci\")\n}\n",
             "if (flag) include(\":x\")\n",
+            "if (flag) settings.include(\":x\")\n",
             "if (flag) include(\":x\") else include(\":y\")\n",
         ] {
             let temp = tempdir().unwrap();
