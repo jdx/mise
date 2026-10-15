@@ -187,7 +187,7 @@ pub(crate) async fn prepare_install(config: &Arc<Config>, tv: &ToolVersion) -> R
         &[(tv.ba().clone(), tv.clone())],
         &platforms,
         true,
-        false,
+        PlatformSelection::Default,
         1,
         &[],
     )
@@ -358,12 +358,24 @@ fn can_reuse(info: &PlatformInfo) -> bool {
         && !Settings::get().force_provenance_verify()
 }
 
+/// How the target platforms were chosen. Platforms the user named are replaced
+/// individually and warn when a tool has no build for one of them.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum PlatformSelection {
+    /// Taken from the lockfile or the common default set
+    Default,
+    /// Listed in the `lockfile_platforms` setting
+    Configured,
+    /// Passed with `mise lock --platform`
+    Explicit,
+}
+
 pub async fn generate(
     previous: &Lockfile,
     tools: &[Tool],
     platforms: &[Platform],
     retain_unselected_tools: bool,
-    filtered_platforms: bool,
+    platform_selection: PlatformSelection,
     jobs: usize,
     installed: &[ToolVersion],
 ) -> Result<Lockfile> {
@@ -393,7 +405,7 @@ pub async fn generate(
         for entry in entries {
             let mut untouched = entry.clone();
             if selected.contains(short.as_str()) {
-                if !filtered_platforms {
+                if platform_selection != PlatformSelection::Explicit {
                     continue;
                 }
                 untouched
@@ -527,9 +539,13 @@ pub async fn generate(
         resolved.push((ordinal, specifier, resolution));
     }
     resolved.sort_by_key(|(ordinal, _, _)| *ordinal);
+    let mut unsupported = crate::lockfile::UnsupportedPlatforms::new(
+        platform_selection != PlatformSelection::Default,
+    );
     for (_, specifier, resolution) in resolved {
         let (short, version, backend, platform, info, options, conda, status) = resolution;
         if status == LockResolutionStatus::Unsupported {
+            unsupported.record(&short, &version, &platform.to_key());
             continue;
         }
         let mut info = info.map_err(|error| eyre!(error))?;
@@ -572,6 +588,9 @@ pub async fn generate(
         for (key, value) in conda {
             candidate.set_conda_package(&platform.to_key(), &key, value);
         }
+    }
+    for warning in unsupported.messages() {
+        warn!("{warning}");
     }
     for (short, entries) in &mut candidate.tools {
         for entry in entries.iter_mut().filter(|entry| entry.aube.is_none()) {
@@ -1092,7 +1111,7 @@ mod tests {
             &[(ba, actual.clone())],
             std::slice::from_ref(&platform),
             false,
-            false,
+            PlatformSelection::Default,
             1,
             &[actual],
         )
@@ -1112,7 +1131,7 @@ mod tests {
             &[tool()],
             &[Platform::parse("windows-arm64").unwrap()],
             false,
-            false,
+            PlatformSelection::Default,
             1,
             &[],
         )
@@ -1132,7 +1151,7 @@ mod tests {
                 Platform::parse("windows-arm64").unwrap(),
             ],
             false,
-            false,
+            PlatformSelection::Default,
             2,
             &[],
         )
@@ -1151,13 +1170,29 @@ mod tests {
             Platform::parse("linux-x64").unwrap(),
             Platform::parse("macos-arm64").unwrap(),
         ];
-        let generated = generate(&old, &[tool()], &platforms, false, false, 2, &[])
-            .await
-            .unwrap();
+        let generated = generate(
+            &old,
+            &[tool()],
+            &platforms,
+            false,
+            PlatformSelection::Default,
+            2,
+            &[],
+        )
+        .await
+        .unwrap();
         assert_eq!(old.tools, generated.tools);
-        let again = generate(&generated, &[tool()], &platforms, false, false, 2, &[])
-            .await
-            .unwrap();
+        let again = generate(
+            &generated,
+            &[tool()],
+            &platforms,
+            false,
+            PlatformSelection::Default,
+            2,
+            &[],
+        )
+        .await
+        .unwrap();
         assert_eq!(generated.tools, again.tools);
     }
 
@@ -1170,9 +1205,17 @@ mod tests {
             Platform::parse("linux-x64").unwrap(),
             Platform::parse("macos-arm64").unwrap(),
         ];
-        let generated = generate(&old, &[tool()], &platforms, false, false, 2, &[])
-            .await
-            .unwrap();
+        let generated = generate(
+            &old,
+            &[tool()],
+            &platforms,
+            false,
+            PlatformSelection::Default,
+            2,
+            &[],
+        )
+        .await
+        .unwrap();
         assert_eq!(old.tools, generated.tools);
     }
 
@@ -1202,7 +1245,7 @@ mod tests {
             &[(ba, tv)],
             &[Platform::parse("linux-x64").unwrap()],
             false,
-            false,
+            PlatformSelection::Default,
             2,
             &[],
         )
@@ -1253,9 +1296,17 @@ mod tests {
                 old.tools_for_mut("fixture").unwrap()[0].specifiers.clear();
             }
             assert!(is_current(&old, &tools, &platforms, true).unwrap());
-            let generated = generate(&old, &tools, &platforms, false, false, 2, &[])
-                .await
-                .unwrap();
+            let generated = generate(
+                &old,
+                &tools,
+                &platforms,
+                false,
+                PlatformSelection::Default,
+                2,
+                &[],
+            )
+            .await
+            .unwrap();
             assert_eq!(old.tools, generated.tools);
         }
     }
@@ -1383,7 +1434,7 @@ mod tests {
             &[tool()],
             &[Platform::parse("linux-x64").unwrap()],
             false,
-            true,
+            PlatformSelection::Explicit,
             2,
             &[],
         )
@@ -1396,11 +1447,13 @@ mod tests {
     async fn fresh_generation_drops_obsolete_tools_but_filter_keeps_them() {
         crate::backend::load_tools().await.unwrap();
         let old = previous();
-        let empty = generate(&old, &[], &[], false, false, 1, &[])
+        let empty = generate(&old, &[], &[], false, PlatformSelection::Default, 1, &[])
             .await
             .unwrap();
         assert!(empty.tools.is_empty());
-        let retained = generate(&old, &[], &[], true, false, 1, &[]).await.unwrap();
+        let retained = generate(&old, &[], &[], true, PlatformSelection::Default, 1, &[])
+            .await
+            .unwrap();
         assert_eq!(old.tools, retained.tools);
     }
 
@@ -1430,9 +1483,17 @@ mod tests {
         assert!(!is_current(&current, &[tool()], &platforms, true).unwrap());
         assert!(is_current(&current, &[tool()], &platforms, false).unwrap());
 
-        let generated = generate(&old, &[tool()], &platforms, true, false, 2, &[])
-            .await
-            .unwrap();
+        let generated = generate(
+            &old,
+            &[tool()],
+            &platforms,
+            true,
+            PlatformSelection::Default,
+            2,
+            &[],
+        )
+        .await
+        .unwrap();
         assert_eq!(generated.tools["npm:retained"], vec![retained]);
         assert_eq!(generated.tools["fixture"].len(), 1);
         assert!(generated.tools["fixture"][0].options.is_empty());
@@ -1498,9 +1559,17 @@ mod tests {
             old.bind_request("erlang", "28", "28.0", &options);
         }
         assert!(is_current(&old, &[(ba.clone(), tv.clone())], &platforms, true).unwrap());
-        let generated = generate(&old, &[(ba, tv)], &platforms, false, false, 2, &[])
-            .await
-            .unwrap();
+        let generated = generate(
+            &old,
+            &[(ba, tv)],
+            &platforms,
+            false,
+            PlatformSelection::Default,
+            2,
+            &[],
+        )
+        .await
+        .unwrap();
         assert_eq!(old.tools, generated.tools);
     }
 

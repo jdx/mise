@@ -3887,6 +3887,47 @@ pub enum LockResolutionStatus {
     Unsupported,
 }
 
+/// Tools with no build for a platform the user asked for by name
+/// (`--platform` or `lockfile_platforms`). The default platform set stays quiet
+/// because many tools legitimately lack a build for some of those platforms.
+#[derive(Default)]
+pub struct UnsupportedPlatforms {
+    enabled: bool,
+    /// (short, version) -> requested platforms the tool is not available for
+    platforms: BTreeMap<(String, String), BTreeSet<String>>,
+}
+
+impl UnsupportedPlatforms {
+    pub fn new(enabled: bool) -> Self {
+        Self {
+            enabled,
+            ..Default::default()
+        }
+    }
+
+    pub fn record(&mut self, short: &str, version: &str, platform: &str) {
+        if self.enabled {
+            self.platforms
+                .entry((short.to_string(), version.to_string()))
+                .or_default()
+                .insert(platform.to_string());
+        }
+    }
+
+    pub fn messages(&self) -> Vec<String> {
+        self.platforms
+            .iter()
+            .map(|((short, version), platforms)| {
+                let platforms = platforms.iter().cloned().collect::<Vec<_>>();
+                format!(
+                    "{short}@{version} is not available for {}; it will not install there",
+                    platforms.join(", ")
+                )
+            })
+            .collect()
+    }
+}
+
 pub type LockResolutionResult = (
     String,
     String,
