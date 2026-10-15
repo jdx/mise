@@ -4486,7 +4486,8 @@ the tool's own source. GitHub release data, tags, repository contents and
 attestations for public repositories come from the host first. When the host
 errors (a timeout, a lost connection, or a `429` or `5xx` response), mise asks
 `api.github.com` for the same data instead, with your GitHub token if one is
-set; if GitHub fails too, the error names both failures. Anything the host
+set. If GitHub fails too, mise uses a copy it cached earlier when it has one,
+and otherwise reports an error that names both failures. Anything the host
 answers is trusted, including a `404` for a missing release, tag or repository
 and an empty list, so those never reach GitHub's anonymous rate limit.
 Paranoid mode also asks GitHub when the host can't settle an attestation
