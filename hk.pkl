@@ -136,6 +136,8 @@ fi
     // render:usage and render:help tasks keep current.
     ["render-llms"] {
         glob = List("docs/**/*.md", "docs/.vitepress/sidebar.ts", "docs/.vitepress/llms.ts")
+        // the output is outside the glob, so name it for the pre-commit hook to stage
+        stage = List("docs/public/llms.txt")
         check = new CommandSpec {
           command = "node docs/.vitepress/llms.ts > /dev/null && git diff --exit-code -- docs/public/llms.txt"
           effect = "write"
