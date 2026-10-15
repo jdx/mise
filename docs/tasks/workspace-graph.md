@@ -129,20 +129,26 @@ mise reads literal `include` directives from `settings.gradle` or
 `settings.gradle.kts` at the monorepo root, in Groovy or Kotlin syntax. It never
 runs Gradle or the wrapper. The project ID is Gradle's own project path, so
 `:app` becomes `gradle::app`, `:services:person-service` becomes
-`gradle::services:person-service`, and the root project, which is included only
-when it has a build script, is `gradle::`. A `project(":x").projectDir = file("...")`
-remap sets the project root; otherwise the root is the directory the path names.
+`gradle::services:person-service`, and the root project is `gradle::`. The root
+project, and a parent such as `:services` that `include(":services:api")`
+implies, are included only when they have a build script of their own. A
+`project(":x").projectDir = file("...")` remap sets the project root; otherwise
+the root is the directory the path names. Roots that are absolute or contain `..`
+are skipped, because project roots are always relative to the repository.
 
-Edges come from literal `project(":lib")` and `project(path: ":lib")` references
-inside a `dependencies {}` block of a project's build script. Dependencies added
-from `subprojects {}`, `allprojects {}`, or convention plugins are not seen; add
+Edges come from literal `project(":lib")`, `project(path: ":lib")`, and
+`project(path = ":lib")` references inside a top-level `dependencies {}` block of
+a project's build script. Dependencies added from `subprojects {}`,
+`allprojects {}`, `project(":x") {}`, or convention plugins are not seen; add
 them with [project overrides](#project-overrides). `includeBuild`, version
-catalogs, and type-safe project accessors are not read.
+catalogs, and type-safe project accessors are not read. A change to the settings
+script affects every project.
 
 Gradle settings are executable scripts, so mise does not guess. If `include`
-takes anything but a string literal (a variable, interpolation, or a loop over
-the file system), or both settings scripts exist, mise reports an error. Declare
-the projects under `[monorepo.projects]` to take over from the provider:
+takes anything but a string literal (a variable, interpolation, concatenation,
+or a loop over the file system), if a `projectDir` is anything but a
+`file("...")` literal, or if both settings scripts exist, mise reports an error.
+Declare the projects under `[monorepo.projects]` to take over from the provider:
 
 ```toml
 [monorepo.projects."gradle::app"]

@@ -878,6 +878,11 @@ impl WorkspaceProjectGraph {
         let mapped = self.map_paths_to_projects(paths)?;
         let global_matcher =
             build_source_matcher(workspace_root, workspace_root, resolved_global_inputs);
+        // A Gradle settings script decides every project's membership and
+        // directory, even when the root project owns the file.
+        let has_gradle_projects = self
+            .projects()
+            .any(|project| project.provenance.provider.as_deref() == Some("gradle"));
         let global_paths = mapped
             .projects_by_path
             .keys()
@@ -885,6 +890,7 @@ impl WorkspaceProjectGraph {
             .filter(|path| {
                 mapped.unowned_paths.contains(*path)
                     || is_source(&global_matcher, &workspace_root.join(path))
+                    || (has_gradle_projects && is_gradle_settings(path))
             })
             .cloned()
             .collect::<BTreeSet<_>>();
@@ -1226,6 +1232,10 @@ fn normalize_project_root(id: &ProjectId, root: &Path) -> Result<PathBuf> {
         normalized.push(".");
     }
     Ok(normalized)
+}
+
+fn is_gradle_settings(path: &Path) -> bool {
+    path == Path::new("settings.gradle") || path == Path::new("settings.gradle.kts")
 }
 
 fn normalize_workspace_path(path: &Path) -> Result<PathBuf> {
@@ -2683,6 +2693,29 @@ mod tests {
                 ["apps/app/toolchain.toml"],
                 &["**/toolchain.toml".to_string()],
             )
+            .unwrap();
+
+        assert_eq!(
+            affected,
+            graph.projects().map(|project| project.id.clone()).collect()
+        );
+    }
+
+    #[test]
+    fn gradle_settings_changes_affect_every_project() {
+        let mut projects = vec![
+            project("test", ":", "."),
+            project("test", ":app", "app"),
+            project("test", ":lib", "lib"),
+        ];
+        for project in &mut projects {
+            project.provenance.provider = Some("gradle".to_string());
+        }
+        let provider = test_provider(projects);
+        let graph = WorkspaceProjectGraph::discover(&provider, Path::new("/workspace")).unwrap();
+
+        let affected = graph
+            .affected_projects_for_paths(Path::new("/workspace"), ["settings.gradle.kts"], &[])
             .unwrap();
 
         assert_eq!(

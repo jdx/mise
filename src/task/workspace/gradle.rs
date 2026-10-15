@@ -53,7 +53,7 @@ impl WorkspaceProvider for GradleWorkspaceProvider {
                 settings_path.display()
             )
         })?;
-        let settings = parse_settings(&contents).wrap_err_with(|| {
+        let settings = parse_settings(&tokenize(&contents)).wrap_err_with(|| {
             format!(
                 "cannot statically read Gradle projects from {}; declare them under \
                  [monorepo.projects.\"gradle:...\"] instead",
@@ -65,22 +65,32 @@ impl WorkspaceProvider for GradleWorkspaceProvider {
         }
 
         // Gradle project path -> workspace-relative directory.
-        let mut roots = BTreeMap::new();
-        for member in &settings.members {
-            let directory = settings
+        let directory_of = |member: &str| {
+            settings
                 .remapped
                 .get(member)
                 .cloned()
-                .unwrap_or_else(|| project_directory(member));
-            // Project roots in the graph are always relative to the repository.
-            if directory.is_absolute()
-                || directory
-                    .components()
-                    .any(|component| matches!(component, Component::ParentDir))
-            {
-                continue;
+                .unwrap_or_else(|| project_directory(member))
+        };
+        let mut roots = BTreeMap::new();
+        for member in &settings.members {
+            let directory = directory_of(member);
+            if is_repository_relative(&directory) {
+                roots.insert(member.clone(), directory);
             }
-            roots.insert(member.clone(), directory);
+        }
+        // `include(":a:b")` also creates `:a`. It is a graph project only when
+        // it has a build script of its own, like the root project.
+        for member in &settings.members {
+            for parent in parent_paths(member) {
+                let directory = directory_of(&parent);
+                if !roots.contains_key(&parent)
+                    && is_repository_relative(&directory)
+                    && build_script(context, workspace_root, &directory).is_some()
+                {
+                    roots.insert(parent, directory);
+                }
+            }
         }
         // The root project only participates when it has a build script of its
         // own, mirroring how the Cargo provider treats a workspace root package.
@@ -117,7 +127,7 @@ impl WorkspaceProvider for GradleWorkspaceProvider {
                 let script_contents = context.read_to_string(&script).wrap_err_with(|| {
                     format!("failed to read Gradle build script {}", script.display())
                 })?;
-                for referenced in project_references(&script_contents) {
+                for referenced in project_references(&tokenize(&script_contents)) {
                     let Some(dependency) = ids.get(&referenced) else {
                         continue;
                     };
@@ -151,43 +161,310 @@ struct GradleSettings {
     remapped: BTreeMap<String, PathBuf>,
 }
 
-/// Parses `include` directives and `projectDir` remaps out of a settings script.
-///
-/// Fails when membership is not statically enumerable, so the caller does not
-/// report a partial project list.
-fn parse_settings(contents: &str) -> Result<GradleSettings> {
-    let mut settings = GradleSettings::default();
+#[derive(Clone, Debug, Eq, PartialEq)]
+enum Kind {
+    Ident(String),
+    /// A string literal; `None` when it has interpolation, escapes, or is a
+    /// multi-line string, so its value is not statically known.
+    Str(Option<String>),
+    Punct(char),
+}
 
-    for (index, identifier) in identifiers(contents) {
-        if is_property_access(contents, index) {
+#[derive(Clone, Debug)]
+struct Token {
+    kind: Kind,
+    newline_before: bool,
+}
+
+/// Splits Groovy or Kotlin source into identifiers, strings and punctuation,
+/// dropping whitespace and comments.
+fn tokenize(source: &str) -> Vec<Token> {
+    let chars = source.chars().collect::<Vec<_>>();
+    let mut tokens = Vec::new();
+    let mut newline = false;
+    let mut i = 0;
+
+    while i < chars.len() {
+        let c = chars[i];
+        let next = chars.get(i + 1).copied();
+        if c == '\n' {
+            newline = true;
+            i += 1;
             continue;
         }
-        let after = index + identifier.len();
-        match identifier.as_str() {
-            "include" => {
-                let Some((_, arguments)) = call_span(contents, after) else {
-                    bail!("`include` is not followed by a readable argument list");
-                };
-                for argument in &arguments {
-                    let Some(path) = string_literal(argument) else {
-                        bail!("`include` argument {argument} is not a plain string literal");
-                    };
-                    let path = project_path(&path)?;
-                    if !settings.members.contains(&path) {
-                        settings.members.push(path);
-                    }
-                }
+        if c.is_whitespace() {
+            i += 1;
+            continue;
+        }
+        if c == '/' && next == Some('/') {
+            while i < chars.len() && chars[i] != '\n' {
+                i += 1;
             }
-            "project" => {
-                if let Some((path, directory)) = project_remap(contents, after) {
-                    settings.remapped.insert(path, directory);
+            continue;
+        }
+        if c == '/' && next == Some('*') {
+            i += 2;
+            while i < chars.len() && !(chars[i] == '*' && chars.get(i + 1) == Some(&'/')) {
+                newline |= chars[i] == '\n';
+                i += 1;
+            }
+            i = (i + 2).min(chars.len());
+            continue;
+        }
+        let kind = if c == '"' || c == '\'' {
+            if chars[i..].starts_with(&[c, c, c]) {
+                i += 3;
+                while i < chars.len() && !chars[i..].starts_with(&[c, c, c]) {
+                    i += 1;
+                }
+                i = (i + 3).min(chars.len());
+                Kind::Str(None)
+            } else {
+                i += 1;
+                let mut text = String::new();
+                let mut plain = true;
+                while i < chars.len() && chars[i] != c {
+                    if chars[i] == '\\' {
+                        plain = false;
+                        i += 2;
+                        continue;
+                    }
+                    plain &= chars[i] != '$';
+                    text.push(chars[i]);
+                    i += 1;
+                }
+                i += 1;
+                Kind::Str(plain.then_some(text))
+            }
+        } else if c.is_alphanumeric() || c == '_' {
+            let start = i;
+            while i < chars.len() && (chars[i].is_alphanumeric() || chars[i] == '_') {
+                i += 1;
+            }
+            Kind::Ident(chars[start..i].iter().collect())
+        } else {
+            i += 1;
+            Kind::Punct(c)
+        };
+        tokens.push(Token {
+            kind,
+            newline_before: newline,
+        });
+        newline = false;
+    }
+
+    tokens
+}
+
+fn ident_at(tokens: &[Token], index: usize) -> Option<&str> {
+    match tokens.get(index).map(|token| &token.kind) {
+        Some(Kind::Ident(name)) => Some(name),
+        _ => None,
+    }
+}
+
+fn punct_at(tokens: &[Token], index: usize, expected: char) -> bool {
+    matches!(tokens.get(index).map(|token| &token.kind), Some(Kind::Punct(c)) if *c == expected)
+}
+
+fn is_member_access(tokens: &[Token], index: usize) -> bool {
+    index > 0 && punct_at(tokens, index - 1, '.')
+}
+
+/// Returns the index of the bracket closing the one at `open`.
+fn matching(tokens: &[Token], open: usize) -> Option<usize> {
+    let mut depth = 0usize;
+    for (index, token) in tokens.iter().enumerate().skip(open) {
+        match token.kind {
+            Kind::Punct('(' | '[' | '{') => depth += 1,
+            Kind::Punct(')' | ']' | '}') => {
+                depth = depth.checked_sub(1)?;
+                if depth == 0 {
+                    return Some(index);
                 }
             }
             _ => {}
         }
     }
+    None
+}
+
+/// Splits tokens on top-level commas.
+fn split_arguments(tokens: &[Token]) -> Vec<&[Token]> {
+    let mut arguments = Vec::new();
+    let mut depth = 0usize;
+    let mut start = 0;
+    for (index, token) in tokens.iter().enumerate() {
+        match token.kind {
+            Kind::Punct('(' | '[' | '{') => depth += 1,
+            Kind::Punct(')' | ']' | '}') => depth = depth.saturating_sub(1),
+            Kind::Punct(',') if depth == 0 => {
+                arguments.push(&tokens[start..index]);
+                start = index + 1;
+            }
+            _ => {}
+        }
+    }
+    arguments.push(&tokens[start..]);
+    arguments
+}
+
+/// Reads the arguments of a call whose arguments start at `at`, and returns
+/// the index just past the call.
+///
+/// Handles `f(a, b)` and Groovy command syntax, `f a, b`, which continues
+/// across lines after a trailing comma.
+fn call_arguments(tokens: &[Token], at: usize) -> Option<(usize, Vec<&[Token]>)> {
+    let first = tokens.get(at)?;
+    if punct_at(tokens, at, '(') {
+        let close = matching(tokens, at)?;
+        let mut arguments = split_arguments(&tokens[at + 1..close]);
+        if arguments.last().is_some_and(|argument| argument.is_empty()) {
+            arguments.pop();
+        }
+        return Some((close + 1, arguments));
+    }
+    if first.newline_before {
+        return None;
+    }
+    let mut depth = 0usize;
+    let mut end = at;
+    while end < tokens.len() {
+        if end > at && depth == 0 && tokens[end].newline_before && !punct_at(tokens, end - 1, ',') {
+            break;
+        }
+        match tokens[end].kind {
+            Kind::Punct('(' | '[' | '{') => depth += 1,
+            Kind::Punct(')' | ']' | '}') => {
+                if depth == 0 {
+                    break;
+                }
+                depth -= 1;
+            }
+            Kind::Punct(';') if depth == 0 => break,
+            _ => {}
+        }
+        end += 1;
+    }
+    Some((end, split_arguments(&tokens[at..end])))
+}
+
+/// The value of an argument that is exactly one plain string literal.
+fn plain_literal(argument: &[Token]) -> Option<&str> {
+    match argument {
+        [
+            Token {
+                kind: Kind::Str(Some(value)),
+                ..
+            },
+        ] => Some(value),
+        _ => None,
+    }
+}
+
+/// The value of `":lib"`, `path: ":lib"` or `path = ":lib"`.
+fn path_argument(argument: &[Token], positional: bool) -> Option<&str> {
+    if positional && let Some(value) = plain_literal(argument) {
+        return Some(value);
+    }
+    let [name, separator, value] = argument else {
+        return None;
+    };
+    let named = matches!(&name.kind, Kind::Ident(name) if name == "path");
+    let separated = matches!(separator.kind, Kind::Punct(':' | '='));
+    if named && separated {
+        plain_literal(std::slice::from_ref(value))
+    } else {
+        None
+    }
+}
+
+/// Parses `include` directives and `projectDir` remaps out of a settings script.
+///
+/// Fails when membership is not statically enumerable, so the caller does not
+/// report a partial project list.
+fn parse_settings(tokens: &[Token]) -> Result<GradleSettings> {
+    let mut settings = GradleSettings::default();
+    let mut index = 0;
+
+    while index < tokens.len() {
+        let Some(name) = ident_at(tokens, index) else {
+            index += 1;
+            continue;
+        };
+        let member = is_member_access(tokens, index);
+        let on_settings = member && index >= 2 && ident_at(tokens, index - 2) == Some("settings");
+        if member && !on_settings {
+            index += 1;
+            continue;
+        }
+        match name {
+            "include" => {
+                let Some((next, arguments)) = call_arguments(tokens, index + 1) else {
+                    bail!("`include` is not followed by a readable argument list");
+                };
+                for argument in arguments {
+                    let Some(path) = plain_literal(argument) else {
+                        bail!("`include` has an argument that is not a plain string literal");
+                    };
+                    let path = project_path(path)?;
+                    if !settings.members.contains(&path) {
+                        settings.members.push(path);
+                    }
+                }
+                index = next;
+                continue;
+            }
+            "project" if !member && punct_at(tokens, index + 1, '(') => {
+                if let Some((next, path, directory)) = project_remap(tokens, index)? {
+                    settings.remapped.insert(path, directory);
+                    index = next;
+                    continue;
+                }
+            }
+            _ => {}
+        }
+        index += 1;
+    }
 
     Ok(settings)
+}
+
+/// Parses `project(":app").projectDir = file("modules/app")` starting at `project`.
+///
+/// Returns `None` for any other use of `project(...)`.
+fn project_remap(tokens: &[Token], index: usize) -> Result<Option<(usize, String, PathBuf)>> {
+    let Some((next, arguments)) = call_arguments(tokens, index + 1) else {
+        return Ok(None);
+    };
+    if !(punct_at(tokens, next, '.')
+        && ident_at(tokens, next + 1) == Some("projectDir")
+        && punct_at(tokens, next + 2, '='))
+    {
+        return Ok(None);
+    }
+    let Some(path) = arguments
+        .first()
+        .and_then(|argument| plain_literal(argument))
+    else {
+        bail!(
+            "`project(...).projectDir` assignment has a project path that is not a plain string literal"
+        );
+    };
+    let path = project_path(path)?;
+    let readable = matches!(ident_at(tokens, next + 3), Some("file" | "File"))
+        && punct_at(tokens, next + 4, '(');
+    let directory = readable
+        .then(|| call_arguments(tokens, next + 4))
+        .flatten()
+        .and_then(|(end, arguments)| match arguments.as_slice() {
+            [argument] => plain_literal(argument).map(|directory| (end, directory)),
+            _ => None,
+        });
+    let Some((end, directory)) = directory else {
+        bail!("`projectDir` of {path} is not a plain `file(\"...\")` literal");
+    };
+    Ok(Some((end, path, PathBuf::from(directory))))
 }
 
 /// Normalizes an `include` argument to an absolute Gradle project path.
@@ -202,336 +479,64 @@ fn project_path(value: &str) -> Result<String> {
         || path.contains("::")
         || path.chars().any(char::is_whitespace)
     {
-        bail!("`include` argument {value:?} is not a valid Gradle project path");
+        bail!("{value:?} is not a valid Gradle project path");
     }
     Ok(path)
 }
 
-/// Reads the member paths referenced by `project(...)` calls inside
-/// `dependencies { }` blocks.
-fn project_references(contents: &str) -> Vec<String> {
+/// Reads the member paths referenced by `project(...)` calls inside the
+/// build script's top-level `dependencies { }` blocks.
+///
+/// Blocks nested in `project(":x") { }`, `subprojects { }`, `buildscript { }`
+/// and the like configure other projects or the build itself, so they are
+/// skipped.
+fn project_references(tokens: &[Token]) -> Vec<String> {
     let mut references = Vec::new();
+    let mut depth = 0usize;
+    let mut index = 0;
 
-    for (index, identifier) in identifiers(contents) {
-        if identifier != "dependencies" || is_property_access(contents, index) {
+    while index < tokens.len() {
+        match tokens[index].kind {
+            Kind::Punct('{') => depth += 1,
+            Kind::Punct('}') => depth = depth.saturating_sub(1),
+            _ => {}
+        }
+        if depth == 0
+            && ident_at(tokens, index) == Some("dependencies")
+            && !is_member_access(tokens, index)
+            && punct_at(tokens, index + 1, '{')
+            && let Some(close) = matching(tokens, index + 1)
+        {
+            collect_references(&tokens[index + 2..close], &mut references);
+            index = close + 1;
             continue;
         }
-        let Some(block) = block_after(contents, index + identifier.len()) else {
-            continue;
-        };
-        for (inner, name) in identifiers(block) {
-            if name != "project" || is_property_access(block, inner) {
-                continue;
-            }
-            let Some((_, arguments)) = call_span(block, inner + name.len()) else {
-                continue;
-            };
-            for argument in &arguments {
-                let Some(value) = labelled_literal(argument) else {
-                    continue;
-                };
-                if value.starts_with(':') && !references.contains(&value) {
-                    references.push(value);
-                }
-            }
-        }
+        index += 1;
     }
 
     references
 }
 
-/// Returns the body of the `{ }` block that follows `after`.
-fn block_after(contents: &str, after: usize) -> Option<&str> {
-    let rest = contents.get(after..)?;
-    let trimmed = rest.trim_start();
-    let body = trimmed.strip_prefix('{')?;
-    let start = contents.len() - body.len();
-    let bytes = body.as_bytes();
-    let mut depth = 1usize;
-    let mut index = 0usize;
-    while index < bytes.len() {
-        match bytes[index] {
-            b'/' if bytes.get(index + 1) == Some(&b'/') => {
-                while index < bytes.len() && bytes[index] != b'\n' {
-                    index += 1;
-                }
-            }
-            b'/' if bytes.get(index + 1) == Some(&b'*') => {
-                index += 2;
-                while index < bytes.len()
-                    && !(bytes[index] == b'*' && bytes.get(index + 1) == Some(&b'/'))
-                {
-                    index += 1;
-                }
-                index = (index + 2).min(bytes.len());
-            }
-            quote @ (b'\'' | b'"') => {
-                index += 1;
-                while index < bytes.len() {
-                    if bytes[index] == b'\\' {
-                        index += 2;
-                        continue;
-                    }
-                    if bytes[index] == quote {
-                        break;
-                    }
-                    index += 1;
-                }
-                index += 1;
-            }
-            b'{' => {
-                depth += 1;
-                index += 1;
-            }
-            b'}' => {
-                depth -= 1;
-                if depth == 0 {
-                    return contents.get(start..start + index);
-                }
-                index += 1;
-            }
-            _ => index += 1,
+fn collect_references(block: &[Token], references: &mut Vec<String>) {
+    for index in 0..block.len() {
+        if ident_at(block, index) != Some("project")
+            || is_member_access(block, index)
+            || !punct_at(block, index + 1, '(')
+        {
+            continue;
         }
-    }
-    None
-}
-
-/// Parses `project(":app").projectDir = file("modules/app")`.
-fn project_remap(contents: &str, after: usize) -> Option<(String, PathBuf)> {
-    let (end, arguments) = call_span(contents, after)?;
-    let path = arguments
-        .iter()
-        .filter_map(|argument| labelled_literal(argument))
-        .find(|value| value.starts_with(':'))?;
-
-    let rest = contents.get(end..)?.trim_start();
-    let rest = rest.strip_prefix(".projectDir")?.trim_start();
-    let rest = rest.strip_prefix('=')?.trim_start();
-    let inner = rest.strip_prefix("file")?.trim_start();
-    let inner = inner.strip_prefix('(')?;
-    let close = closing_parenthesis(inner)?;
-    let directory = string_literal(&inner[..close])?;
-
-    Some((path, PathBuf::from(directory)))
-}
-
-/// Returns the raw arguments of a call starting at `after`, and the offset just
-/// past the call.
-fn call_span(contents: &str, after: usize) -> Option<(usize, Vec<String>)> {
-    let rest = contents.get(after..)?;
-    let trimmed = rest.trim_start();
-    let skipped = rest.len() - trimmed.len();
-
-    if let Some(inner) = trimmed.strip_prefix('(') {
-        let end = closing_parenthesis(inner)?;
-        let arguments = split_arguments(&inner[..end])?;
-        return Some((after + skipped + end + 2, arguments));
-    }
-
-    // Groovy command syntax: `include ':app', ':lib'` runs to the end of the line.
-    let line = trimmed.split('\n').next().unwrap_or_default();
-    let line = line.trim().trim_end_matches(';');
-    let arguments = split_arguments(line)?;
-    Some((after + skipped + line.len(), arguments))
-}
-
-/// Finds the index of the parenthesis closing the one already consumed.
-fn closing_parenthesis(text: &str) -> Option<usize> {
-    let characters = text.chars().collect::<Vec<_>>();
-    let mut depth = 1usize;
-    let mut index = 0usize;
-
-    while index < characters.len() {
-        let character = characters[index];
-        match character {
-            '\'' | '"' => {
-                index += 1;
-                while index < characters.len() {
-                    if characters[index] == '\\' {
-                        index += 2;
-                        continue;
-                    }
-                    if characters[index] == character {
-                        break;
-                    }
-                    index += 1;
-                }
-                index += 1;
-            }
-            '(' => {
-                depth += 1;
-                index += 1;
-            }
-            ')' => {
-                depth -= 1;
-                if depth == 0 {
-                    return Some(index);
-                }
-                index += 1;
-            }
-            _ => index += 1,
-        }
-    }
-
-    None
-}
-
-/// Splits a call's arguments on top-level commas.
-fn split_arguments(text: &str) -> Option<Vec<String>> {
-    let characters = text.chars().collect::<Vec<_>>();
-    let mut arguments = Vec::new();
-    let mut current = String::new();
-    let mut depth = 0i32;
-    let mut index = 0usize;
-
-    while index < characters.len() {
-        let character = characters[index];
-        match character {
-            '\'' | '"' => {
-                current.push(character);
-                index += 1;
-                while index < characters.len() {
-                    let inner = characters[index];
-                    current.push(inner);
-                    index += 1;
-                    if inner == '\\' && index < characters.len() {
-                        current.push(characters[index]);
-                        index += 1;
-                        continue;
-                    }
-                    if inner == character {
-                        break;
-                    }
-                }
-            }
-            '(' | '[' | '{' => {
-                depth += 1;
-                current.push(character);
-                index += 1;
-            }
-            ')' | ']' | '}' => {
-                depth -= 1;
-                current.push(character);
-                index += 1;
-            }
-            ',' if depth == 0 => {
-                arguments.push(current.trim().to_string());
-                current.clear();
-                index += 1;
-            }
-            '/' if characters.get(index + 1) == Some(&'/') => {
-                while index < characters.len() && characters[index] != '\n' {
-                    index += 1;
-                }
-            }
-            '/' if characters.get(index + 1) == Some(&'*') => {
-                index += 2;
-                while index < characters.len()
-                    && !(characters[index] == '*' && characters.get(index + 1) == Some(&'/'))
-                {
-                    index += 1;
-                }
-                index = (index + 2).min(characters.len());
-            }
-            _ => {
-                current.push(character);
-                index += 1;
+        let Some((_, arguments)) = call_arguments(block, index + 1) else {
+            continue;
+        };
+        for (position, argument) in arguments.into_iter().enumerate() {
+            let Some(path) = path_argument(argument, position == 0) else {
+                continue;
+            };
+            if path.starts_with(':') && !references.iter().any(|known| known == path) {
+                references.push(path.to_string());
             }
         }
     }
-
-    if !current.trim().is_empty() {
-        arguments.push(current.trim().to_string());
-    }
-
-    Some(arguments)
-}
-
-/// Extracts a plain string literal, declining interpolation and escapes.
-fn string_literal(argument: &str) -> Option<String> {
-    let argument = argument.trim();
-    let quote = argument.chars().next()?;
-    if quote != '\'' && quote != '"' {
-        return None;
-    }
-    if argument.len() < 2 || !argument.ends_with(quote) {
-        return None;
-    }
-    let value = &argument[1..argument.len() - 1];
-    if value.contains('$') || value.contains('\\') {
-        return None;
-    }
-    Some(value.to_string())
-}
-
-/// Extracts a string literal from a positional or labelled argument.
-fn labelled_literal(argument: &str) -> Option<String> {
-    let argument = argument.trim();
-    if let Some(value) = string_literal(argument) {
-        return Some(value);
-    }
-    let (_, value) = argument
-        .split_once(':')
-        .or_else(|| argument.split_once('='))?;
-    string_literal(value)
-}
-
-/// Returns the identifier-like words outside strings and comments.
-fn identifiers(contents: &str) -> Vec<(usize, String)> {
-    let bytes = contents.as_bytes();
-    let mut found = Vec::new();
-    let mut index = 0usize;
-
-    while index < bytes.len() {
-        match bytes[index] {
-            b'/' if bytes.get(index + 1) == Some(&b'/') => {
-                while index < bytes.len() && bytes[index] != b'\n' {
-                    index += 1;
-                }
-            }
-            b'/' if bytes.get(index + 1) == Some(&b'*') => {
-                index += 2;
-                while index < bytes.len()
-                    && !(bytes[index] == b'*' && bytes.get(index + 1) == Some(&b'/'))
-                {
-                    index += 1;
-                }
-                index = (index + 2).min(bytes.len());
-            }
-            quote @ (b'\'' | b'"') => {
-                index += 1;
-                while index < bytes.len() {
-                    if bytes[index] == b'\\' {
-                        index += 2;
-                        continue;
-                    }
-                    if bytes[index] == quote {
-                        index += 1;
-                        break;
-                    }
-                    index += 1;
-                }
-            }
-            byte if byte.is_ascii_alphabetic() || byte == b'_' => {
-                let start = index;
-                while index < bytes.len()
-                    && (bytes[index].is_ascii_alphanumeric() || bytes[index] == b'_')
-                {
-                    index += 1;
-                }
-                found.push((start, contents[start..index].to_string()));
-            }
-            _ => index += 1,
-        }
-    }
-
-    found
-}
-
-fn is_property_access(contents: &str, index: usize) -> bool {
-    contents
-        .get(..index)
-        .is_some_and(|prefix| prefix.trim_end().ends_with('.'))
 }
 
 fn settings_script(
@@ -581,6 +586,21 @@ fn project_directory(path: &str) -> PathBuf {
         return PathBuf::from(".");
     }
     trimmed.split(':').collect()
+}
+
+fn is_repository_relative(directory: &Path) -> bool {
+    !directory.is_absolute()
+        && !directory
+            .components()
+            .any(|component| matches!(component, Component::ParentDir))
+}
+
+/// The enclosing project paths of `:a:b:c`: `:a` and `:a:b`.
+fn parent_paths(path: &str) -> Vec<String> {
+    let segments = path.trim_start_matches(':').split(':').collect::<Vec<_>>();
+    (1..segments.len())
+        .map(|count| format!(":{}", segments[..count].join(":")))
+        .collect()
 }
 
 #[cfg(test)]
@@ -912,5 +932,145 @@ mod tests {
         let projects = GradleWorkspaceProvider.discover(temp.path()).unwrap();
 
         assert_eq!(summary(&projects), vec![("gradle::app", Path::new("app"))]);
+    }
+
+    fn dependencies_of<'a>(projects: &'a [WorkspaceProject], id: &str) -> Vec<&'a str> {
+        projects
+            .iter()
+            .find(|project| project.id.as_str() == id)
+            .unwrap()
+            .dependencies
+            .iter()
+            .map(ProjectId::as_str)
+            .collect()
+    }
+
+    #[test]
+    fn reads_non_ascii_names_and_comments_in_calls() {
+        let temp = tempdir().unwrap();
+        settings(
+            temp.path(),
+            "include(/* 括号 ) */ \":应用\", // ) trailing\n    \":模块\")\n\
+             project(\":模块\").projectDir = file(\"模块/核心\")\n",
+        );
+
+        let projects = GradleWorkspaceProvider.discover(temp.path()).unwrap();
+
+        assert_eq!(
+            summary(&projects),
+            vec![
+                ("gradle::应用", Path::new("应用")),
+                ("gradle::模块", Path::new("模块/核心")),
+            ]
+        );
+    }
+
+    #[test]
+    fn reads_multi_line_groovy_includes() {
+        let temp = tempdir().unwrap();
+        write(
+            &temp.path().join(SETTINGS_GROOVY),
+            "include ':app',\n        ':lib',\n        ':tools'\ninclude ':last'\n",
+        );
+
+        let projects = GradleWorkspaceProvider.discover(temp.path()).unwrap();
+
+        assert_eq!(projects.len(), 4);
+    }
+
+    #[test]
+    fn reads_includes_on_the_settings_object() {
+        let temp = tempdir().unwrap();
+        settings(
+            temp.path(),
+            "settings.include(\":app\")\nother.include(\":x\")\n",
+        );
+
+        let projects = GradleWorkspaceProvider.discover(temp.path()).unwrap();
+
+        assert_eq!(summary(&projects), vec![("gradle::app", Path::new("app"))]);
+    }
+
+    #[test]
+    fn errors_on_concatenated_membership() {
+        let temp = tempdir().unwrap();
+        settings(temp.path(), "include(\":ap\" + \"p\")\n");
+
+        assert_declined(temp.path());
+    }
+
+    #[test]
+    fn errors_on_unreadable_project_dir_remaps() {
+        let temp = tempdir().unwrap();
+        settings(
+            temp.path(),
+            "include(\":app\")\nproject(\":app\").projectDir = File(rootDir, \"modules/app\")\n",
+        );
+
+        assert_declined(temp.path());
+    }
+
+    #[test]
+    fn includes_parent_projects_that_have_build_scripts() {
+        let temp = tempdir().unwrap();
+        settings(temp.path(), "include(\":services:api\", \":tools:cli\")\n");
+        write(
+            &temp.path().join("services/build.gradle.kts"),
+            "plugins {}\n",
+        );
+        write(
+            &temp.path().join("services/api/build.gradle.kts"),
+            "dependencies { implementation(project(\":services\")) }\n",
+        );
+
+        let projects = GradleWorkspaceProvider.discover(temp.path()).unwrap();
+
+        assert_eq!(
+            summary(&projects),
+            vec![
+                ("gradle::services", Path::new("services")),
+                ("gradle::services:api", Path::new("services/api")),
+                ("gradle::tools:cli", Path::new("tools/cli")),
+            ]
+        );
+        assert_eq!(
+            dependencies_of(&projects, "gradle::services:api"),
+            vec!["gradle::services"]
+        );
+    }
+
+    #[test]
+    fn skips_dependencies_blocks_that_configure_other_projects() {
+        let temp = tempdir().unwrap();
+        settings(temp.path(), "include(\":app\", \":lib\", \":tools\")\n");
+        write(&temp.path().join("build.gradle.kts"), "plugins {}\n");
+        write(
+            &temp.path().join("build.gradle.kts"),
+            "buildscript { dependencies { classpath(project(\":tools\")) } }\n\
+             project(\":app\") { dependencies { implementation(project(\":lib\")) } }\n\
+             subprojects { dependencies { implementation(project(\":lib\")) } }\n\
+             dependencies { implementation(project(\":app\")) }\n",
+        );
+
+        let projects = GradleWorkspaceProvider.discover(temp.path()).unwrap();
+
+        assert_eq!(dependencies_of(&projects, "gradle::"), vec!["gradle::app"]);
+    }
+
+    #[test]
+    fn reads_kotlin_named_project_arguments() {
+        let temp = tempdir().unwrap();
+        settings(temp.path(), "include(\":app\", \":lib\")\n");
+        write(
+            &temp.path().join("app/build.gradle.kts"),
+            "dependencies { implementation(project(path = \":lib\", configuration = \"x\")) }\n",
+        );
+
+        let projects = GradleWorkspaceProvider.discover(temp.path()).unwrap();
+
+        assert_eq!(
+            dependencies_of(&projects, "gradle::app"),
+            vec!["gradle::lib"]
+        );
     }
 }
