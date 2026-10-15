@@ -33,6 +33,10 @@ assert_contains "mise skills ls" "fnox"
 # ant is `version_source: github_tag` with no registry entry: its versions
 # are git tags.
 no_github_api latest aqua:apache/ant
+# Attestations come from mise-versions too. foundry's are filtered by
+# predicate type (SPDX), which mise-versions leaves to the client.
+no_github_api install aqua:goreleaser/goreleaser@2.14.1
+no_github_api install aqua:foundry-rs/foundry@1.8.5
 # kubectl's aqua package reads kubernetes/kubernetes, whose releases have no
 # assets: `latest` comes from mise-versions' whole release list.
 no_github_api latest aqua:kubernetes/kubectl

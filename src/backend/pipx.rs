@@ -16,6 +16,7 @@ use crate::file;
 use crate::github::{self, GithubRelease};
 use crate::hash::hash_to_str;
 use crate::http::HTTP_FETCH;
+use crate::install_before::release_age_list_window_for_cutoff;
 use crate::install_context::InstallContext;
 use crate::plugins::is_python_prerelease;
 use crate::semver::semver_is_older_than;
@@ -304,6 +305,14 @@ impl Backend for PIPXBackend {
         &self,
         config: &Arc<Config>,
     ) -> eyre::Result<Option<VersionInfo>> {
+        self.latest_stable_version_info_before(config, None).await
+    }
+
+    async fn latest_stable_version_info_before(
+        &self,
+        config: &Arc<Config>,
+        before: Option<Timestamp>,
+    ) -> eyre::Result<Option<VersionInfo>> {
         let package = match self.tool_name().parse()? {
             PipxRequest::Pypi(package) => package,
             PipxRequest::Git(source) => {
@@ -320,7 +329,10 @@ impl Backend for PIPXBackend {
             }
         };
         let registry_url = self.get_registry_url(config).await?;
-        let latest_version_cache = self.latest_version_cache(&registry_url);
+        let mut latest_version_cache = self.latest_version_cache(&registry_url);
+        if adopt_latest_within_release_age(&mut latest_version_cache, before) {
+            debug!("Using the cached latest release of {package}, within its release-age window");
+        }
         timeout::run_with_timeout_async(
             async || {
                 latest_version_cache
@@ -425,11 +437,7 @@ impl Backend for PIPXBackend {
             self.validate_uv_lock(&tv, lock.load()?)?;
             tv.uv_lock = Some(lock);
         } else if self.uv_lock_allowed(&tv) {
-            let revision = if tv.resolved_from_lockfile() {
-                crate::lockfile::version_for_request(&ctx.config, &tv.request)?
-            } else {
-                None
-            };
+            let revision = self.uv_lockfile_version(&ctx.config, &tv)?;
             let graph_required = revision.is_some_and(|v| v >= 2)
                 || (!tv.resolved_from_lockfile() && Settings::get().lockfile_creation_enabled());
             if graph_required {
@@ -488,11 +496,7 @@ impl Backend for PIPXBackend {
                 return Ok(false);
             }
         } else if self.uv_lock_allowed(tv) {
-            let revision = if tv.resolved_from_lockfile() {
-                crate::lockfile::version_for_request(config, &tv.request)?
-            } else {
-                None
-            };
+            let revision = self.uv_lockfile_version(config, tv)?;
             let graph_required = revision.is_some_and(|v| v >= 2)
                 || (!tv.resolved_from_lockfile() && Settings::get().lockfile_creation_enabled());
             let locked = config.invocation_locked_for(tv.request.source(), Settings::get().locked)
@@ -1660,6 +1664,34 @@ fn fix_venv_python_symlink(_install_path: &Path) -> Result<()> {
     Ok(())
 }
 
+/// Load a cached latest release that is past `fetch_remote_versions_cache` but
+/// within the release-age window of the cutoff `before`, when it is dated, and
+/// say whether it did.
+///
+/// It is the newest stable release in the registry's list, not a tag a
+/// maintainer can move. It changes when a newer version is uploaded, which the
+/// cutoff hides for the window, and resolution then takes the newest release
+/// past the cutoff, which is this one again when it qualifies. Or when it is
+/// yanked, which a version list cached for the same window shows as late.
+/// Without a date, a new upload would pass the cutoff at once.
+fn adopt_latest_within_release_age(
+    cache: &mut CacheManager<Option<VersionInfo>>,
+    before: Option<Timestamp>,
+) -> bool {
+    if cache.has_fresh_value() {
+        return false;
+    }
+    let Some(window) = before.and_then(release_age_list_window_for_cutoff) else {
+        return false;
+    };
+    cache.adopt_file_if_fresh_for(Some(window), |_, latest| {
+        latest
+            .as_ref()
+            .and_then(|latest| latest.created_at.as_deref())
+            .is_some_and(|created_at| parse_into_timestamp(created_at).is_ok())
+    })
+}
+
 /// PyPI versions follow PEP 440. Stamp the separator-less alpha/beta/rc
 /// suffixes (`3.12.0a1`, `1.0.0c1`) here rather than in the shared regex so
 /// the rule stays scoped to Python — hex commit hashes used by other
@@ -2036,6 +2068,126 @@ cccccccccccccccccccccccccccccccccccccccc\trefs/heads/main\n";
             Some("1.0.0")
         );
         registry.assert_async().await;
+    }
+
+    /// Set the modified time of `backend`'s cached latest releases to `secs` ago.
+    fn backdate_cached_latest(backend: &PIPXBackend, secs: u64) {
+        let then = filetime::FileTime::from_system_time(
+            std::time::SystemTime::now() - std::time::Duration::from_secs(secs),
+        );
+        for entry in std::fs::read_dir(backend.ba().cache_path()).unwrap() {
+            let path = entry.unwrap().path();
+            if path.to_string_lossy().contains("latest_version_info_") {
+                filetime::set_file_mtime(&path, then).unwrap();
+            }
+        }
+    }
+
+    /// Past `fetch_remote_versions_cache`, resolving `latest` under a cutoff
+    /// keeps the cached, dated latest release for the cutoff's release-age
+    /// window instead of fetching the registry document again, unless the user
+    /// set `fetch_remote_versions_cache`.
+    #[tokio::test]
+    async fn latest_within_release_age_window_reads_registry_once() {
+        use crate::config::settings::SettingsPartial;
+        use crate::config::{Settings, SettingsExt};
+        use confique::Layer;
+
+        let _settings = crate::test::SettingsGuard::lock();
+        Settings::reset(None);
+        let mut server = mockito::Server::new_async().await;
+        let registry = dated_registry(&mut server, "dated-window", 2).await;
+        let config = crate::config::Config::get().await.unwrap();
+        let tool = format!(
+            "pipx:dated-window[registry_url='{}/pypi/{{}}/json']",
+            server.url()
+        );
+        let backend = PIPXBackend::from_arg(tool.as_str().into());
+        let _ = std::fs::remove_dir_all(backend.ba().cache_path());
+        let before = crate::duration::parse_into_timestamp("2026-06-01").unwrap();
+        let latest = async |backend: &PIPXBackend| {
+            backend
+                .latest_version(&config, Some("latest".into()), Some(before))
+                .await
+                .unwrap()
+        };
+
+        assert_eq!(latest(&backend).await.as_deref(), Some("2.0.0"));
+        backdate_cached_latest(&backend, 2 * 60 * 60);
+        let backend = PIPXBackend::from_arg(tool.as_str().into());
+        assert_eq!(latest(&backend).await.as_deref(), Some("2.0.0"));
+
+        let mut partial = SettingsPartial::empty();
+        partial.fetch_remote_versions_cache = Some("1h".to_string());
+        Settings::reset(Some(partial));
+        backdate_cached_latest(&backend, 2 * 60 * 60);
+        let backend = PIPXBackend::from_arg(tool.as_str().into());
+        assert_eq!(latest(&backend).await.as_deref(), Some("2.0.0"));
+        Settings::reset(None);
+        registry.assert_async().await;
+    }
+
+    /// Only a dated latest release is kept for the window, and only under a
+    /// cutoff.
+    #[test]
+    fn adopt_latest_within_release_age_needs_a_date_and_a_cutoff() {
+        use crate::cache::{CacheManager, CacheManagerBuilder};
+        use crate::config::{Settings, SettingsExt};
+
+        let _settings = crate::test::SettingsGuard::lock();
+        Settings::reset(None);
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("latest.msgpack.z");
+        let cache = || -> CacheManager<Option<VersionInfo>> {
+            CacheManagerBuilder::new(path.clone())
+                .with_fresh_duration(Some(std::time::Duration::from_secs(60 * 60)))
+                .build()
+        };
+        let write = |created_at: Option<&str>| {
+            cache()
+                .write(&Some(VersionInfo {
+                    version: "1.0.0".to_string(),
+                    created_at: created_at.map(str::to_string),
+                    ..Default::default()
+                }))
+                .unwrap();
+            let then = filetime::FileTime::from_system_time(
+                std::time::SystemTime::now() - std::time::Duration::from_secs(2 * 60 * 60),
+            );
+            for entry in std::fs::read_dir(dir.path()).unwrap() {
+                filetime::set_file_mtime(entry.unwrap().path(), then).unwrap();
+            }
+        };
+        let day_ago = Some(jiff::Timestamp::now() - jiff::SignedDuration::from_hours(24));
+        let six_hours_ago = Some(jiff::Timestamp::now() - jiff::SignedDuration::from_hours(6));
+        let ninety_minutes_ago = Some(jiff::Timestamp::now() - jiff::SignedDuration::from_mins(90));
+
+        write(Some("2026-01-01T00:00:00Z"));
+        assert!(super::adopt_latest_within_release_age(
+            &mut cache(),
+            day_ago
+        ));
+        assert!(super::adopt_latest_within_release_age(
+            &mut cache(),
+            six_hours_ago
+        ));
+        // A 90 minute cutoff keeps it for 90 minutes, not two hours.
+        assert!(!super::adopt_latest_within_release_age(
+            &mut cache(),
+            ninety_minutes_ago
+        ));
+        assert!(!super::adopt_latest_within_release_age(&mut cache(), None));
+
+        write(None);
+        assert!(!super::adopt_latest_within_release_age(
+            &mut cache(),
+            day_ago
+        ));
+        write(Some("not a date"));
+        assert!(!super::adopt_latest_within_release_age(
+            &mut cache(),
+            day_ago
+        ));
     }
 
     #[tokio::test]

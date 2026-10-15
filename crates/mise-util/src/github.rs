@@ -778,14 +778,14 @@ fn ensure_private_repo_lookup(repo: &str, what: &str) -> Result<()> {
 /// Whether requests to api.github.com would carry the user's credentials: a
 /// token, or a `~/.netrc` entry for the host, which the HTTP client applies
 /// when no token does.
-fn has_github_api_credentials() -> bool {
+pub(crate) fn has_github_api_credentials() -> bool {
     resolve_token("api.github.com").is_some()
         || url::Url::parse(API_URL).is_ok_and(|url| {
             crate::http::netrc_headers(&url).contains_key(reqwest::header::AUTHORIZATION)
         })
 }
 
-fn versions_host_failure(what: &str) -> String {
+pub(crate) fn versions_host_failure(what: &str) -> String {
     format!(
         "failed to read {what} from mise-versions.jdx.dev, which mise asks instead of \
          api.github.com. Try again later, or set use_versions_host = false to ask GitHub \

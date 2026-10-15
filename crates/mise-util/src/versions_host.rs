@@ -576,6 +576,7 @@ fn pin_listed_releases(
 ///
 /// The returned bundles are not trusted by virtue of coming from mise-versions;
 /// callers still verify them cryptographically against the downloaded artifact.
+/// `Ok(None)` and errors as in [`github_release`].
 pub async fn github_attestations(
     repo: &str,
     digest: &str,
@@ -595,7 +596,7 @@ pub async fn github_attestations(
     );
 
     let ctx = VersionsHostLogContext::github_attestations(repo, digest);
-    let response: Option<AttestationsResponse> = fetch_optional_json(&url, ctx).await?;
+    let response: Option<AttestationsResponse> = fetch_json_unless_not_found(&url, ctx).await?;
     if let Some(response) = &response {
         log_versions_host_trace(
             ctx,
@@ -604,77 +605,6 @@ pub async fn github_attestations(
         );
     }
     Ok(response.map(|r| r.attestations))
-}
-
-async fn fetch_optional_json<T>(
-    url: &str,
-    ctx: VersionsHostLogContext<'_>,
-) -> eyre::Result<Option<T>>
-where
-    T: serde::de::DeserializeOwned,
-{
-    if crate::network::offline(&Settings::get()) {
-        log_versions_host_trace(ctx, "disabled", "fallback=true");
-        return Ok(None);
-    }
-
-    debug!("GET {url}");
-    match HTTP_FETCH
-        .get_async_with_headers_allow_error_status(url, &VERSIONS_HOST_HEADERS)
-        .await
-    {
-        Ok(resp) => {
-            let status = resp.status();
-            debug!("GET {url} {status}");
-            if status.is_success() {
-                return match resp.json().await {
-                    Ok(value) => Ok(Some(value)),
-                    Err(err) => {
-                        log_versions_host_warn(
-                            ctx,
-                            "invalid_response",
-                            &format!("fallback=true error={}", log_value(&err.to_string())),
-                        );
-                        Ok(None)
-                    }
-                };
-            }
-            let body = resp.text().await.unwrap_or_default();
-            match status.as_u16() {
-                404 => {
-                    log_versions_host_trace(ctx, "not_found", "status=404 fallback=true");
-                    Ok(None)
-                }
-                429 => {
-                    log_versions_host_warn(ctx, "rate_limited", "status=429 fallback=true");
-                    Ok(None)
-                }
-                status => {
-                    log_versions_host_warn(
-                        ctx,
-                        "failed",
-                        &format!(
-                            "status={status} fallback=true error={}",
-                            log_value(&versions_host_error_message(status, &body))
-                        ),
-                    );
-                    Ok(None)
-                }
-            }
-        }
-        Err(err) => {
-            log_versions_host_warn(
-                ctx,
-                "failed",
-                &format!(
-                    "status={} fallback=true error={}",
-                    http::error_code(&err).unwrap_or(0),
-                    log_value(&err.to_string())
-                ),
-            );
-            Ok(None)
-        }
-    }
 }
 
 /// GET `url` from the versions host for data mise would otherwise ask
