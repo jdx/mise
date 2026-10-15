@@ -716,12 +716,13 @@ fn no_attestations_verdict(full: &str) -> MirrorVerdict {
 /// gone. Only the user's token can read a private repository's attestations.
 /// Whether mise-versions lists `full`'s releases, after it answered 404 for
 /// an attestation lookup: a public repository it knows has no attestations
-/// for that digest, while one it doesn't know may be private. A failed
-/// listing can't tell, and counts as not listed.
+/// for that digest, while one it doesn't know may be private. Only a 404
+/// for the listing says the repository is unknown: a failed listing keeps
+/// the attestation miss, as release lookups do.
 async fn mirror_lists_repo(full: &str) -> bool {
-    matches!(
+    !matches!(
         crate::versions_host::github_releases(full, 1).await,
-        Ok(Some(_))
+        Ok(None)
     )
 }
 
