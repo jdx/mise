@@ -385,9 +385,15 @@ fn path_argument(argument: &[Token], positional: bool) -> Option<&str> {
 /// report a partial project list.
 fn parse_settings(tokens: &[Token]) -> Result<GradleSettings> {
     let mut settings = GradleSettings::default();
+    let mut depth = 0usize;
     let mut index = 0;
 
     while index < tokens.len() {
+        match tokens[index].kind {
+            Kind::Punct('{') => depth += 1,
+            Kind::Punct('}') => depth = depth.saturating_sub(1),
+            _ => {}
+        }
         let Some(name) = ident_at(tokens, index) else {
             index += 1;
             continue;
@@ -400,6 +406,14 @@ fn parse_settings(tokens: &[Token]) -> Result<GradleSettings> {
         }
         match name {
             "include" => {
+                // Inside a block or after a condition, whether the project is
+                // included depends on the build, not the script text.
+                if depth > 0
+                    || punct_at(tokens, index.wrapping_sub(1), ')')
+                    || ident_at(tokens, index.wrapping_sub(1)) == Some("else")
+                {
+                    bail!("`include` is conditional or nested in a block");
+                }
                 let Some((next, arguments)) = call_arguments(tokens, index + 1) else {
                     bail!("`include` is not followed by a readable argument list");
                 };
@@ -1072,5 +1086,19 @@ mod tests {
             dependencies_of(&projects, "gradle::app"),
             vec!["gradle::lib"]
         );
+    }
+
+    #[test]
+    fn errors_on_conditional_includes() {
+        for script in [
+            "if (System.getenv(\"CI\") != null) {\n    include(\":ci\")\n}\n",
+            "if (flag) include(\":x\")\n",
+            "if (flag) include(\":x\") else include(\":y\")\n",
+        ] {
+            let temp = tempdir().unwrap();
+            settings(temp.path(), script);
+
+            assert_declined(temp.path());
+        }
     }
 }

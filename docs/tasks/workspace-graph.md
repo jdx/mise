@@ -146,7 +146,8 @@ script affects every project.
 
 Gradle settings are executable scripts, so mise does not guess. If `include`
 takes anything but a string literal (a variable, interpolation, concatenation,
-or a loop over the file system), if a `projectDir` is anything but a
+or a loop over the file system), if an `include` is conditional or inside a
+block, if a `projectDir` is anything but a
 `file("...")` literal, or if both settings scripts exist, mise reports an error.
 Declare the projects under `[monorepo.projects]` to take over from the provider:
 
