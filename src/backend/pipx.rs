@@ -301,15 +301,15 @@ pub(crate) fn has_selected_python(tv: &ToolVersion) -> Result<bool> {
 /// environment identity, though, so a replacement must never reuse a path
 /// whose identity or receipt belongs to another interpreter. Otherwise a
 /// failed replacement would clean up the still-working environment.
-fn reset_selected_python_install_path(tv: &mut ToolVersion) {
+fn reset_selected_python_install_path(tv: &mut ToolVersion) -> Result<()> {
     if tv.install_path_is_explicit {
-        return;
+        return Ok(());
     }
     let Some(install_path) = tv.install_path.as_ref() else {
-        return;
+        return Ok(());
     };
     let Some((_, expected_identity)) = tv.uv_python.as_ref() else {
-        return;
+        return Ok(());
     };
 
     let has_target_name = install_path
@@ -320,9 +320,15 @@ fn reset_selected_python_install_path(tv: &mut ToolVersion) {
             .ok()
             .and_then(|contents| serde_json::from_str::<(PathBuf, String)>(&contents).ok())
             .is_some_and(|(_, installed_identity)| installed_identity == *expected_identity);
-    if !has_target_name || !has_expected_receipt {
+    if !has_target_name {
         tv.install_path = None;
+    } else if !has_expected_receipt {
+        bail!(
+            "cannot safely replace {}: the existing environment has no matching Python receipt",
+            tv.style()
+        );
     }
+    Ok(())
 }
 
 #[async_trait]
@@ -549,7 +555,7 @@ impl Backend for PIPXBackend {
             .is_some()
         {
             self.bind_uv_python(ctx, &mut tv).await?;
-            reset_selected_python_install_path(&mut tv);
+            reset_selected_python_install_path(&mut tv)?;
         }
         if let Some(lock) = &tv.uv_lock {
             let lock = if !ctx.locked && lock.load().is_err() {
@@ -605,7 +611,7 @@ impl Backend for PIPXBackend {
         if tv.uv_lock.is_some() && tv.uv_python.is_none() {
             self.bind_uv_python(ctx, &mut tv).await?;
         }
-        reset_selected_python_install_path(&mut tv);
+        reset_selected_python_install_path(&mut tv)?;
         Ok(tv)
     }
 
@@ -1988,22 +1994,23 @@ mod tests {
         write_python_receipt(&old, "core:python:3.13.0:same");
         tv.install_path = Some(old.clone());
 
-        super::reset_selected_python_install_path(&mut tv);
+        super::reset_selected_python_install_path(&mut tv).unwrap();
 
         assert_eq!(tv.install_path.as_deref(), Some(old.as_path()));
     }
 
     #[test]
-    fn selected_python_missing_legacy_receipt_uses_new_destination() {
+    fn selected_python_missing_receipt_fails_without_removing_environment() {
         let temp = tempdir().unwrap();
         let mut tv = selected_python_tool_version("core:python:3.13.0:new");
         let old = temp.path().join(tv.tv_pathname());
         std::fs::create_dir_all(&old).unwrap();
-        tv.install_path = Some(old);
+        tv.install_path = Some(old.clone());
 
-        super::reset_selected_python_install_path(&mut tv);
+        assert!(super::reset_selected_python_install_path(&mut tv).is_err());
 
-        assert!(tv.install_path.is_none());
+        assert_eq!(tv.install_path.as_deref(), Some(old.as_path()));
+        assert!(old.is_dir());
     }
 
     #[test]
@@ -2014,7 +2021,7 @@ mod tests {
         write_python_receipt(&old, "core:python:3.12.0:old");
         tv.install_path = Some(old.clone());
 
-        super::reset_selected_python_install_path(&mut tv);
+        super::reset_selected_python_install_path(&mut tv).unwrap();
         assert!(tv.install_path.is_none());
 
         let replacement = temp.path().join(tv.tv_pathname());
