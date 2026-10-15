@@ -552,7 +552,7 @@ async fn verify_with_mirror(
                     &full,
                     repo_listing(&full).await,
                     !mirror_may_answer_none(),
-                    resolve_token_for_wrapper(None).is_some(),
+                    || resolve_token_for_wrapper(None).is_some(),
                 );
             }
             // Paranoid mode has GitHub confirm mise-versions anyway, so it
@@ -573,6 +573,9 @@ async fn verify_with_mirror(
         if attestations.iter().any(|a| !a.has_inline_bundle()) {
             if !fresh {
                 continue;
+            }
+            if !mirror_may_answer_none() {
+                return MirrorVerdict::AskGithub;
             }
             return MirrorVerdict::Done(Err(AttestationError::Api(format!(
                 "mise-versions returned attestations for {full} without their bundles"
@@ -671,7 +674,7 @@ async fn detect_with_mirror(
                     &full,
                     repo_listing(&full).await,
                     !mirror_may_answer_none(),
-                    resolve_token_for_wrapper(None).is_some(),
+                    || resolve_token_for_wrapper(None).is_some(),
                 ));
             }
             Err(_) if !mirror_may_answer_none() => return None,
@@ -686,6 +689,9 @@ async fn detect_with_mirror(
         if predicate_type.is_some() && attestations.iter().any(|a| !a.has_inline_bundle()) {
             if !fresh {
                 continue;
+            }
+            if !mirror_may_answer_none() {
+                return None;
             }
             return Some(Err(DetectError::Fetch(AttestationError::Api(format!(
                 "mise-versions returned attestations for {full} without their bundles"
@@ -745,12 +751,14 @@ fn verdict_after_attestation_404(
     full: &str,
     listing: RepoListing,
     paranoid: bool,
-    has_token: bool,
+    has_token: impl FnOnce() -> bool,
 ) -> MirrorVerdict {
     match listing {
         RepoListing::Listed if paranoid => MirrorVerdict::AskGithub,
         RepoListing::Listed => MirrorVerdict::Done(Err(AttestationError::NoAttestations)),
-        RepoListing::Unknown => unknown_repo_verdict(full, has_token),
+        // Only here is a token needed, so only here is it resolved: that
+        // may run the user's credential helper.
+        RepoListing::Unknown => unknown_repo_verdict(full, has_token()),
         RepoListing::Failed(_) if paranoid => MirrorVerdict::AskGithub,
         RepoListing::Failed(err) => MirrorVerdict::Done(Err(mirror_failure(full, &err))),
     }
@@ -909,7 +917,7 @@ mod tests {
     #[test]
     fn test_attestation_404_verdict_by_listing() {
         let verdict = |listing, paranoid, has_token| {
-            verdict_after_attestation_404("o/r", listing, paranoid, has_token)
+            verdict_after_attestation_404("o/r", listing, paranoid, || has_token)
         };
         // Listed: a public repository without attestations for the digest.
         assert!(matches!(
@@ -946,10 +954,24 @@ mod tests {
     }
 
     #[test]
+    fn test_attestation_404_resolves_a_token_only_for_an_unknown_repo() {
+        // Resolving a token may run a credential helper; a listed repository
+        // or a failed listing never needs one.
+        for listing in [listed(), failed()] {
+            let _ = verdict_after_attestation_404("o/r", listing, false, || {
+                panic!("token resolved for a repository mise-versions can answer for")
+            });
+        }
+    }
+
+    #[test]
     fn test_attestation_404_probe_by_listing() {
         let probe = |listing, paranoid, has_token| {
             detect_after_attestation_404(verdict_after_attestation_404(
-                "o/r", listing, paranoid, has_token,
+                "o/r",
+                listing,
+                paranoid,
+                || has_token,
             ))
         };
         assert!(matches!(probe(listed(), false, false), Some(Ok(false))));
