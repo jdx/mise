@@ -408,10 +408,7 @@ fn parse_settings(tokens: &[Token]) -> Result<GradleSettings> {
             "include" => {
                 // Inside a block or after a condition, whether the project is
                 // included depends on the build, not the script text.
-                if depth > 0
-                    || punct_at(tokens, index.wrapping_sub(1), ')')
-                    || ident_at(tokens, index.wrapping_sub(1)) == Some("else")
-                {
+                if depth > 0 || follows_condition(tokens, index) {
                     bail!("`include` is conditional or nested in a block");
                 }
                 let Some((next, arguments)) = call_arguments(tokens, index + 1) else {
@@ -444,6 +441,37 @@ fn parse_settings(tokens: &[Token]) -> Result<GradleSettings> {
     Ok(settings)
 }
 
+/// Whether the statement at `index` is the body of an `if`, `else`, `for`, or
+/// `while` without braces, as in `if (ci) include(":ci")`.
+fn follows_condition(tokens: &[Token], index: usize) -> bool {
+    let Some(previous) = index.checked_sub(1) else {
+        return false;
+    };
+    if ident_at(tokens, previous) == Some("else") {
+        return true;
+    }
+    if !punct_at(tokens, previous, ')') {
+        return false;
+    }
+    let mut depth = 0usize;
+    for open in (0..=previous).rev() {
+        match tokens[open].kind {
+            Kind::Punct(')') => depth += 1,
+            Kind::Punct('(') => {
+                depth -= 1;
+                if depth == 0 {
+                    return matches!(
+                        ident_at(tokens, open.wrapping_sub(1)),
+                        Some("if" | "for" | "while")
+                    );
+                }
+            }
+            _ => {}
+        }
+    }
+    false
+}
+
 /// Parses `project(":app").projectDir = file("modules/app")` starting at `project`.
 ///
 /// Returns `None` for any other use of `project(...)`.
@@ -459,7 +487,7 @@ fn project_remap(tokens: &[Token], index: usize) -> Result<Option<(usize, String
     }
     let Some(path) = arguments
         .first()
-        .and_then(|argument| plain_literal(argument))
+        .and_then(|argument| path_argument(argument, true))
     else {
         bail!(
             "`project(...).projectDir` assignment has a project path that is not a plain string literal"
@@ -1100,5 +1128,35 @@ mod tests {
 
             assert_declined(temp.path());
         }
+    }
+
+    #[test]
+    fn reads_consecutive_includes_and_includes_after_calls() {
+        let temp = tempdir().unwrap();
+        settings(
+            temp.path(),
+            "enableFeaturePreview(\"X\")\ninclude(\":app\")\ninclude(\":lib\")\n\
+             if (ci) { }\ninclude(\":tools\")\n",
+        );
+
+        let projects = GradleWorkspaceProvider.discover(temp.path()).unwrap();
+
+        assert_eq!(projects.len(), 3);
+    }
+
+    #[test]
+    fn reads_named_path_in_project_dir_remaps() {
+        let temp = tempdir().unwrap();
+        settings(
+            temp.path(),
+            "include(\":app\")\nproject(path = \":app\").projectDir = file(\"modules/app\")\n",
+        );
+
+        let projects = GradleWorkspaceProvider.discover(temp.path()).unwrap();
+
+        assert_eq!(
+            summary(&projects),
+            vec![("gradle::app", Path::new("modules/app"))]
+        );
     }
 }
