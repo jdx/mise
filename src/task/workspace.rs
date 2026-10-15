@@ -1345,6 +1345,19 @@ mod tests {
     }
 
     #[derive(Debug)]
+    struct NamedFailingProvider(&'static str);
+
+    impl WorkspaceProvider for NamedFailingProvider {
+        fn id(&self) -> &str {
+            self.0
+        }
+
+        fn discover(&self, _workspace_root: &Path) -> Result<Vec<WorkspaceProject>> {
+            bail!("{} workspace metadata is unreadable", self.0)
+        }
+    }
+
+    #[derive(Debug)]
     struct ContextObservingProvider {
         id: &'static str,
         contents: Arc<Mutex<Vec<Arc<str>>>>,
@@ -1914,6 +1927,55 @@ mod tests {
             graph
                 .get(&ProjectId::new("broken", "app").unwrap())
                 .is_some()
+        );
+    }
+
+    #[test]
+    fn overrides_only_clear_errors_of_the_namespace_they_declare_projects_in() {
+        let declare = |id: &str| {
+            (
+                id.to_string(),
+                WorkspaceProjectOverride {
+                    root: Some(PathBuf::from("app")),
+                    ..Default::default()
+                },
+            )
+        };
+        let discover = |overrides: BTreeMap<String, WorkspaceProjectOverride>| {
+            WorkspaceProjectGraph::discover_all_with_overrides_lenient(
+                &[&FailingDiscoveryProvider, &NamedFailingProvider("fragile")],
+                Path::new("/workspace"),
+                &overrides,
+            )
+            .unwrap()
+        };
+
+        let other_namespace = discover(BTreeMap::from([declare("custom:app")]));
+        assert_eq!(
+            other_namespace.provider_discovery_error().as_deref(),
+            Some(
+                "broken: broken workspace metadata; \
+                 fragile: fragile workspace metadata is unreadable"
+            )
+        );
+
+        let removed = discover(BTreeMap::from([(
+            "broken:app".to_string(),
+            WorkspaceProjectOverride {
+                remove: true,
+                ..Default::default()
+            },
+        )]));
+        assert!(
+            removed
+                .provider_discovery_error()
+                .is_some_and(|error| error.contains("broken:"))
+        );
+
+        let one_of_two = discover(BTreeMap::from([declare("broken:app")]));
+        assert_eq!(
+            one_of_two.provider_discovery_error().as_deref(),
+            Some("fragile: fragile workspace metadata is unreadable")
         );
     }
 
