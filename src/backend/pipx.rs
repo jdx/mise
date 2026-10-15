@@ -562,6 +562,9 @@ impl Backend for PIPXBackend {
         tv: &ToolVersion,
         check_symlink: bool,
     ) -> Result<bool> {
+        let selected_python = PipxOptions::new(&tv.request.options())
+            .selected_python()?
+            .is_some();
         if tv.uv_lock.is_some() {
             if tv.uv_python.is_none() {
                 return Ok(false);
@@ -577,7 +580,7 @@ impl Backend for PIPXBackend {
             let locked = config.invocation_locked_for(tv.request.source(), Settings::get().locked)
                 || tv.request.tool_config_locked(config, true);
             if graph_required {
-                if !locked && self.is_version_installed(config, tv, check_symlink) {
+                if !selected_python && !locked && self.is_version_installed(config, tv, check_symlink) {
                     return Ok(true);
                 }
                 if locked
@@ -591,7 +594,7 @@ impl Backend for PIPXBackend {
                 }
             }
         }
-        if PipxOptions::new(&tv.request.options()).selected_python()?.is_some() {
+        if selected_python {
             let Some((_, expected_identity)) = &tv.uv_python else {
                 return Ok(false);
             };
@@ -1860,7 +1863,14 @@ mod tests {
         ] {
             assert!(uv_args_select_python(&args), "{args:?}");
         }
-        assert!(!uv_args_select_python(&["--resolution".into(), "lowest".into()]));
+        for args in [
+            vec!["--resolution".into(), "lowest".into()],
+            vec!["--prerelease".into(), "allow".into()],
+            vec!["--pip-args".into(), "--pre".into()],
+            vec!["--python-preference".into(), "system".into()],
+        ] {
+            assert!(!uv_args_select_python(&args), "{args:?}");
+        }
     }
     use indexmap::IndexMap;
     use pretty_assertions::assert_eq;

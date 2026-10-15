@@ -1361,6 +1361,12 @@ fn keep_uv_python_variants(
                 .insert(source.to_path_buf());
         }
     }
+    // Graph locks also write receipts for system and non-core interpreters.
+    // Only an explicit selector owns a mise Python runtime that must be
+    // retained through the receipt closure below.
+    if !crate::backend::pipx::has_selected_python(tv)? {
+        return Ok(());
+    }
     // A retained variant may have been built before its selector's lock entry
     // advanced. Its receipt is authoritative for the runtime closure of that
     // existing environment, so retain that exact Python as well. Do not merely
