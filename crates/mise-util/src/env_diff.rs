@@ -155,10 +155,18 @@ impl EnvDiff {
         // argument (`$1`, in forward-slash form so MSYS bash reads it verbatim)
         // rather than interpolated into the command, so `$`/backticks in the
         // path are not expanded by bash.
+        //
+        // `--norc` (on every platform): a non-interactive `bash -c` normally
+        // reads no startup files, but bash's "run by rshd/sshd" heuristic
+        // sources ~/.bashrc anyway when stdin is a socket and SHLVL < 2 (e.g.
+        // mise spawned by an editor extension over a Node.js pipe, which is a
+        // socketpair). The user's bashrc would then leak variables into the
+        // diff and can rewrite PATH so the script's PATH prepends are dropped.
         #[cfg(windows)]
         let out = cmd!(
             bash_path,
             "--noprofile",
+            "--norc",
             "-c",
             indoc::indoc! {r#"
                 export -p
@@ -176,6 +184,7 @@ impl EnvDiff {
         let out = cmd!(
             bash_path,
             "--noprofile",
+            "--norc",
             "-c",
             indoc::formatdoc! {"
                 . \"{script}\"
