@@ -91,9 +91,10 @@ steps:
 ```
 
 The path above is mise's default cache directory on Linux. On macOS, cache
-`~/Library/Caches/mise/downloads-cas`; on Windows, cache
-`%TEMP%\mise\downloads-cas`. If `MISE_CACHE_DIR` is set, cache
-`downloads-cas` under that directory instead. See
+`~/Library/Caches/mise/downloads-cas`. On Windows, use the runner's temp
+directory context so GitHub Actions resolves the path before passing it to the
+cache action: <code v-pre>${{ runner.temp }}\mise\downloads-cas</code>. If
+`MISE_CACHE_DIR` is set, cache `downloads-cas` under that directory instead. See
 [`mise directories`](/directories.html) for details.
 
 Installs run `mise install --locked`, which only reuses a download that has a
