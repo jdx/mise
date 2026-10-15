@@ -889,7 +889,11 @@ async fn list_tags_with_dates_(api_url: &str, repo: &str) -> Result<Vec<GithubTa
         // age check. The paged endpoint with `dates=1` looks dates up.
         if let Some(list) = whole_list(repo, crate::versions_host::GithubList::Tags)
             .await
-            .filter(|list| list.tags.iter().all(|t| t.date.is_some()))
+            .filter(|list| {
+                list.tags
+                    .iter()
+                    .all(|t| t.date.as_deref().is_some_and(|d| !d.is_empty()))
+            })
         {
             return Ok(list
                 .tags
