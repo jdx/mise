@@ -134,7 +134,8 @@ jobs:
 
   unit:
     name: unit-macos
-    runs-on: ${{ !inputs.trusted && 'macos-14' || 'namespace-profile-endev-macos-arm64;overrides.cache-tag=cache' }}
+    # TEMP: force the untrusted path on this job to verify the link fix; revert before merge.
+    runs-on: ${{ !false && 'macos-14' || 'namespace-profile-endev-macos-arm64;overrides.cache-tag=cache' }}
     timeout-minutes: 180
     needs: [classify-changes]
     if: needs.classify-changes.outputs.full-ci == 'true'
@@ -148,7 +149,7 @@ jobs:
       MISE_CARGO_BUILD_EXTRA_ARGS: --ignore-rust-version
       # Untrusted runs land on a shared macos-14 runner that is roughly twice as
       # slow, where the strict per-test ceilings only produce false failures.
-      NEXTEST_PROFILE: ${{ inputs.trusted && 'ci' || 'ci-shared' }}
+      NEXTEST_PROFILE: ${{ false && 'ci' || 'ci-shared' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -156,12 +157,12 @@ jobs:
           repository: ${{ github.event.pull_request.head.repo.full_name }}
           ref: ${{ github.head_ref }}
       - name: Cache mbx objects on Namespace
-        if: inputs.trusted
+        if: false
         uses: namespacelabs/nscloud-cache-action@1124a6f3ce44e5cf84cc22111530961f4d2a15f9 # v1
         with:
           path: ${{ env.MBX_CACHE_DIR }}
       - name: Cache Cargo downloads on Namespace
-        if: inputs.trusted && !(github.event_name == 'push' && github.ref == 'refs/heads/main')
+        if: false && !(github.event_name == 'push' && github.ref == 'refs/heads/main')
         uses: namespacelabs/nscloud-cache-action@1124a6f3ce44e5cf84cc22111530961f4d2a15f9 # v1
         with:
           path: |
@@ -173,7 +174,7 @@ jobs:
       # Install mbx before bootstrapping this checkout's mise.
       - uses: jdx/mr-boxington-action@d0825fbaf3cc36ca2609aa38e71046265a1f1e37 # v1.7.1
         with:
-          backend: ${{ inputs.trusted && !(github.event_name == 'push' && github.ref == 'refs/heads/main') && 'local' || 'github' }}
+          backend: ${{ false && !(github.event_name == 'push' && github.ref == 'refs/heads/main') && 'local' || 'github' }}
           cache-generation: unit-macos-v1
       - name: Install test tools
         run: brew install fd tmux
@@ -197,7 +198,7 @@ jobs:
       # macos-14 runners have 3 cores; Namespace runners have 6.
       - name: Test dotfiles and bootstrap e2e
         env:
-          E2E_JOBS: ${{ inputs.trusted && '3' || '2' }}
+          E2E_JOBS: ${{ false && '3' || '2' }}
         run: >-
           mise run test:e2e
           '^test_dotfiles_rollback_types$' '^test_dotfiles_sync_files_encrypted$'
