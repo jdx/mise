@@ -882,7 +882,7 @@ impl WorkspaceProjectGraph {
         // directory, even when the root project owns the file.
         let has_gradle_projects = self
             .projects()
-            .any(|project| project.provenance.provider.as_deref() == Some("gradle"));
+            .any(|project| project.id.as_str().starts_with("gradle:"));
         let global_paths = mapped
             .projects_by_path
             .keys()
@@ -2703,15 +2703,14 @@ mod tests {
 
     #[test]
     fn gradle_settings_changes_affect_every_project() {
-        let mut projects = vec![
-            project("test", ":", "."),
-            project("test", ":app", "app"),
-            project("test", ":lib", "lib"),
-        ];
-        for project in &mut projects {
-            project.provenance.provider = Some("gradle".to_string());
-        }
-        let provider = test_provider(projects);
+        let provider = TestProvider {
+            id: "gradle",
+            projects: vec![
+                project("gradle", ":", "."),
+                project("gradle", ":app", "app"),
+                project("gradle", ":lib", "lib"),
+            ],
+        };
         let graph = WorkspaceProjectGraph::discover(&provider, Path::new("/workspace")).unwrap();
 
         let affected = graph
