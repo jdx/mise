@@ -114,21 +114,7 @@ async fn fetch_version_list(tool: &str) -> eyre::Result<Option<Vec<VersionInfo>>
         .send()
         .await
     {
-        Ok(body) => {
-            let response: VersionsResponse = toml::from_str(&body)?;
-            response
-                .versions
-                .into_iter()
-                .map(|(version, entry)| VersionInfo {
-                    version,
-                    created_at: Some(entry.created_at.to_string()),
-                    release_url: entry.release_url,
-                    rolling: entry.rolling,
-                    prerelease: entry.prerelease,
-                    ..Default::default()
-                })
-                .collect()
-        }
+        Ok(body) => parse_version_list(&body)?,
         Err(err) => match http::error_code(&err).unwrap_or(0) {
             404 => {
                 log_versions_host_trace(ctx, "not_found", "status=404 fallback=true");
@@ -169,6 +155,22 @@ async fn fetch_version_list(tool: &str) -> eyre::Result<Option<Vec<VersionInfo>>
         .await
         .insert(tool.to_string(), versions.clone());
     Ok(Some(versions))
+}
+/// A `data/<tool>.toml` body as the version list it describes, in file order.
+pub(crate) fn parse_version_list(body: &str) -> eyre::Result<Vec<VersionInfo>> {
+    let response: VersionsResponse = toml::from_str(body)?;
+    Ok(response
+        .versions
+        .into_iter()
+        .map(|(version, entry)| VersionInfo {
+            version,
+            created_at: Some(entry.created_at.to_string()),
+            release_url: entry.release_url,
+            rolling: entry.rolling,
+            prerelease: entry.prerelease,
+            ..Default::default()
+        })
+        .collect())
 }
 /// Tracks a tool installation asynchronously (fire-and-forget)
 /// Tracks all core plugins and registry tools (including java/python)

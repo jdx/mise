@@ -359,6 +359,12 @@ where
         self.parse()
     }
 
+    /// Whether a read would be answered without fetching: the value is in
+    /// memory, or the cache file is fresh.
+    pub fn has_fresh_value(&self) -> bool {
+        self.cache_async.get().is_some() || self.cache.get().is_some() || self.is_fresh()
+    }
+
     fn parse(&self) -> Result<T> {
         let path = &self.cache_file_path;
         trace!("reading {}", display_path(path));

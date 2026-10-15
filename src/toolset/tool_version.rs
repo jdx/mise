@@ -6,7 +6,7 @@ use std::{cmp::Ordering, sync::LazyLock};
 use std::{collections::BTreeMap, sync::Arc};
 
 use crate::args::BackendArg;
-use crate::backend::{ABackend, VersionInfo};
+use crate::backend::{self, ABackend, VersionInfo};
 use crate::config::env_directive::EnvValue;
 use crate::config::{Config, Settings, SettingsExt};
 #[cfg(windows)]
@@ -19,6 +19,7 @@ use crate::install_before::{
 use crate::lockfile::{AubeLock, CondaPackageInfo, LockfileTool, PlatformInfo};
 use crate::runtime_symlinks::is_runtime_symlink;
 use crate::toolset::{ToolRequest, ToolSource, install_state, tool_request};
+use crate::versions_index::IndexPick;
 use crate::{dirs, env};
 use console::style;
 use dashmap::DashMap;
@@ -647,6 +648,7 @@ impl ToolVersion {
             offline: base_opts.offline,
             refresh_remote_versions: base_opts.refresh_remote_versions,
             inactive: base_opts.inactive,
+            outdated_release_urls: base_opts.outdated_release_urls,
             warn_not_in_lockfile: base_opts.warn_not_in_lockfile,
             defer_missing_lazy_tools: false,
             defer_missing_lazy_online: false,
@@ -1101,6 +1103,22 @@ impl ToolVersion {
         let matches = match pin_remote_matches {
             Some(matches) => matches,
             None => {
+                // The answer the matches below would give, when the versions
+                // index can prove it without the full list.
+                let selection_opts = config.get_tool_opts_with_overrides(backend.ba()).await?;
+                if let Some(version) = Box::pin(backend::resolve_from_versions_index(
+                    backend.as_ref(),
+                    config,
+                    v,
+                    IndexPick::Request,
+                    &selection_opts,
+                    opts.before_date,
+                    opts.refresh_remote_versions,
+                ))
+                .await
+                {
+                    return Ok(version);
+                }
                 backend
                     .list_versions_matching_with_opts(
                         config,
@@ -1196,6 +1214,20 @@ impl ToolVersion {
         }
         if opts.offline {
             return Ok(Self::new(request, prefix.to_string()));
+        }
+        let selection_opts = config.get_tool_opts_with_overrides(backend.ba()).await?;
+        if let Some(v) = Box::pin(backend::resolve_from_versions_index(
+            backend.as_ref(),
+            config,
+            prefix,
+            IndexPick::Last,
+            &selection_opts,
+            opts.before_date,
+            opts.refresh_remote_versions,
+        ))
+        .await
+        {
+            return Ok(Self::new(request, v));
         }
         let matches = backend
             .list_versions_matching_with_opts(
@@ -1368,6 +1400,10 @@ pub struct ResolveOptions {
     /// (for example `ToolSource::Unknown`) when resolving tools for flows like
     /// outdated/upgrade checks.
     pub inactive: bool,
+    /// Look up where to read about each outdated version
+    /// (`OutdatedInfo::release_url`). Only `mise outdated --json` reports it,
+    /// and the lookup can read a version list that resolution did not need.
+    pub outdated_release_urls: bool,
     /// If false, missing lockfile entries log at debug instead of warn.
     pub warn_not_in_lockfile: bool,
     /// Under `prefer_offline`, leave a lazy tool that has no installed match at its
@@ -1394,6 +1430,7 @@ impl Default for ResolveOptions {
             offline: false,
             refresh_remote_versions: false,
             inactive: false,
+            outdated_release_urls: false,
             warn_not_in_lockfile: true,
             defer_missing_lazy_tools: false,
             defer_missing_lazy_online: false,

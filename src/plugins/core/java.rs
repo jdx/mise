@@ -676,6 +676,12 @@ impl Backend for JavaPlugin {
         Ok(map)
     }
 
+    /// A `-musl` query matches versions without the suffix, which the shared
+    /// matcher would not select.
+    fn fuzzy_match_stays_within_shared_matcher(&self) -> bool {
+        false
+    }
+
     fn fuzzy_match_filter(
         &self,
         versions: Vec<String>,
