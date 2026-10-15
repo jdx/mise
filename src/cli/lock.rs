@@ -2522,6 +2522,10 @@ impl Lock {
                         resolution.7 == crate::lockfile::LockResolutionStatus::Required;
                     if let Some(msg) = &resolution_error {
                         skip_warnings.record(&short, &version, &platform_key, msg, resolution.7);
+                    } else {
+                        skip_warnings
+                            .unsupported
+                            .record_resolved(&short, &version, &platform_key);
                     }
                     pr.set_message(format!("{}@{} {}", short, version, platform_key));
                     pr.set_position(completed);
@@ -2624,6 +2628,10 @@ mod tests {
         warnings.record("apko", "1.0.0", "windows-x64", "no asset", Unsupported);
         warnings.record("apko", "1.0.0", "linux-arm64", "no asset", Unsupported);
         warnings.record("apko", "1.0.0", "windows-x64", "no asset", Unsupported);
+        warnings
+            .unsupported
+            .record_resolved("apko", "1.0.0", "macos-arm64");
+        warnings.record("apko", "1.0.0", "macos-arm64", "no asset", Unsupported);
         assert_eq!(
             warnings.messages(),
             vec![

@@ -548,6 +548,9 @@ pub async fn generate(
             unsupported.record(&short, &version, &platform.to_key());
             continue;
         }
+        if info.is_ok() {
+            unsupported.record_resolved(&short, &version, &platform.to_key());
+        }
         let mut info = info.map_err(|error| eyre!(error))?;
         if let Some(entries) = previous.tools_for(&short) {
             for old in entries

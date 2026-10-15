@@ -3895,6 +3895,9 @@ pub struct UnsupportedPlatforms {
     enabled: bool,
     /// (short, version) -> requested platforms the tool is not available for
     platforms: BTreeMap<(String, String), BTreeSet<String>>,
+    /// Platforms another request for the same tool version did resolve, such
+    /// as one with different options, so they are not reported as unavailable.
+    resolved: BTreeSet<(String, String, String)>,
 }
 
 impl UnsupportedPlatforms {
@@ -3914,15 +3917,32 @@ impl UnsupportedPlatforms {
         }
     }
 
+    pub fn record_resolved(&mut self, short: &str, version: &str, platform: &str) {
+        self.resolved
+            .insert((short.to_string(), version.to_string(), platform.to_string()));
+    }
+
     pub fn messages(&self) -> Vec<String> {
         self.platforms
             .iter()
-            .map(|((short, version), platforms)| {
-                let platforms = platforms.iter().cloned().collect::<Vec<_>>();
-                format!(
-                    "{short}@{version} is not available for {}; it will not install there",
-                    platforms.join(", ")
-                )
+            .filter_map(|((short, version), platforms)| {
+                let platforms = platforms
+                    .iter()
+                    .filter(|platform| {
+                        !self.resolved.contains(&(
+                            short.clone(),
+                            version.clone(),
+                            (*platform).clone(),
+                        ))
+                    })
+                    .cloned()
+                    .collect::<Vec<_>>();
+                (!platforms.is_empty()).then(|| {
+                    format!(
+                        "{short}@{version} is not available for {}; it will not install there",
+                        platforms.join(", ")
+                    )
+                })
             })
             .collect()
     }
