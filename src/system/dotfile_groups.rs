@@ -423,7 +423,9 @@ fn group_entry(defaults: &EntryDefaults, key: &str, value: toml::Value) -> Resul
     } else if needs_source {
         let source = root.join(source_rel_for(root, &rel, dot_prefix));
         Some(if mode.as_deref() == Some("template") {
-            template_source(source, &root.join(&rel))
+            // only the leaf can differ: its parents were chosen by what exists
+            let literal = source.with_file_name(rel.file_name().unwrap_or_default());
+            template_source(source, &literal)
         } else {
             source
         })
@@ -1199,6 +1201,13 @@ mod tests {
         // the exact path wins when both exist
         file::write(&exact, "x").unwrap();
         assert_eq!(template_source(exact.clone(), &exact), exact);
+        // in a prefixed parent, only the leaf is spelled literally
+        file::create_dir_all(root.join("dot-config")).unwrap();
+        file::write(root.join("dot-config/.rc.tera"), "x").unwrap();
+        assert_eq!(
+            template_source(root.join("dot-config/dot-rc"), &root.join("dot-config/.rc")),
+            root.join("dot-config/.rc.tera")
+        );
         // a literal dotfile in a dot_prefix tree is found with its suffix
         file::write(root.join(".gitconfig.tera"), "x").unwrap();
         assert_eq!(
