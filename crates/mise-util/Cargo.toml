@@ -149,8 +149,6 @@ windows-sys = { version = "0.61", features = [
 
 [dev-dependencies]
 confique = { version = "0.4", default-features = false }
-# No `priority`: its Apple trampoline lives in `__text_startup`, out of arm64 branch range of a 128MB+ debug `__text`.
-ctor = { version = "1", default-features = false, features = ["std", "proc_macro"] }
 mockito = "1"
 insta = { version = "1", features = ["filters", "json"] }
 pretty_assertions = "1"
