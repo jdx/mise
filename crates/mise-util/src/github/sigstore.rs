@@ -758,6 +758,8 @@ fn verdict_after_attestation_404(
         RepoListing::Listed => MirrorVerdict::Done(Err(AttestationError::NoAttestations)),
         // Only here is a token needed, so only here is it resolved: that
         // may run the user's credential helper.
+        // Paranoid mode has GitHub confirm what mise-versions can't settle.
+        RepoListing::Unknown if paranoid => MirrorVerdict::AskGithub,
         RepoListing::Unknown => unknown_repo_verdict(full, has_token()),
         RepoListing::Failed(_) if paranoid => MirrorVerdict::AskGithub,
         RepoListing::Failed(err) => MirrorVerdict::Done(Err(mirror_failure(full, &err))),
@@ -945,6 +947,11 @@ mod tests {
         // Paranoid mode asks GitHub whenever mise-versions can't settle it.
         assert!(matches!(
             verdict(listed(), true, false),
+            MirrorVerdict::AskGithub
+        ));
+        // An unlisted repository without a token: paranoid mode still asks GitHub.
+        assert!(matches!(
+            verdict(unknown(), true, false),
             MirrorVerdict::AskGithub
         ));
         assert!(matches!(
