@@ -23,5 +23,6 @@ assert_not_contains "cd proj && mise env -s bash" "LOCAL_ONLY"
 
 # A find_up file depends on the current directory, so it must not be served from the env cache.
 export MISE_ENV_CACHE=1
+export __MISE_ENV_CACHE_KEY="dGVzdGtleXRlc3RrZXl0ZXN0a2V5dGVzdGtleXRlc3Q="
 assert_contains "cd proj/sub && mise env -s bash" "LOCAL_ONLY=local"
 assert_not_contains "cd proj && mise env -s bash" "LOCAL_ONLY"
