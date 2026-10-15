@@ -4407,6 +4407,10 @@
           "type": "string",
           "enum": ["disallow", "allow", "if-necessary", "explicit"]
         },
+        "python": {
+          "description": "mise-managed CPython version for this tool (minor or exact patch)",
+          "type": "string"
+        },
         "package_name": {
           "description": "distribution name for git sources, used to attach extras",
           "type": "string"
