@@ -2414,23 +2414,32 @@ impl AquaBackend {
             // terraform, vault). A fresh whole release list gives the newest
             // stable release instead, which is where the mark sits unless a
             // maintainer moved it.
-            Err(e) => match github::newest_listed_stable_release(&repo).await {
-                Some(listed) => github::GithubRelease {
-                    tag_name: listed.tag_name,
-                    draft: false,
-                    prerelease: false,
-                    created_at: listed.released_at.clone().unwrap_or_default(),
-                    published_at: listed.released_at,
-                    assets: vec![],
-                },
-                None => {
-                    debug!(
-                        "Failed to fetch latest GitHub release for aqua package {}: {e}",
-                        self.id
-                    );
-                    return Ok(None);
+            // Only when the mark is known to be unreadable (a 404); after a
+            // temporary failure the newest stable release could differ from it.
+            Err(e) => {
+                let listed = if crate::http::error_code(&e) == Some(404) {
+                    github::newest_listed_stable_release(&repo).await
+                } else {
+                    None
+                };
+                match listed {
+                    Some(listed) => github::GithubRelease {
+                        tag_name: listed.tag_name,
+                        draft: false,
+                        prerelease: false,
+                        created_at: listed.released_at.clone().unwrap_or_default(),
+                        published_at: listed.released_at,
+                        assets: vec![],
+                    },
+                    None => {
+                        debug!(
+                            "Failed to fetch latest GitHub release for aqua package {}: {e}",
+                            self.id
+                        );
+                        return Ok(None);
+                    }
                 }
-            },
+            }
         };
 
         let target = PlatformTarget::from_current();
