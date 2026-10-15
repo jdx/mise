@@ -331,23 +331,23 @@ impl Toolset {
             return Ok(vec![]);
         }
 
-        // Keep the caller's selection separate from private, backend-owned
-        // runtime dependencies. They must be installed in this batch but must
-        // not be returned to callers such as `mise use`, which persists every
-        // returned tool into its configuration.
-        let requested_backends: HashSet<_> = versions.iter().map(|request| request.ba().clone()).collect();
-
         self.init_request_options(&mut versions);
         // Some backends own a versioned runtime for one consumer. Add those
         // requests to this installation batch before constructing the graph so
         // the runtime is installed first rather than being borrowed from the
         // active shell toolset.
+        // The backend itself may request a runtime from the same backend as a
+        // tool selected by the caller. Track dependencies by their full request
+        // key, rather than just their backend, so that private runtimes are not
+        // returned to callers such as `mise use` and persisted as user tools.
+        let mut private_dependency_keys = HashSet::new();
         let mut next = 0;
         while next < versions.len() {
             let declarations = install_dependency_declarations(&versions[next]);
             declarations.validate()?;
             for dependency in declarations.versioned() {
                 if !versions.contains(dependency) {
+                    private_dependency_keys.insert(tool_key(dependency));
                     versions.push(dependency.clone());
                 }
             }
@@ -564,7 +564,7 @@ impl Toolset {
         let requested_installations = || {
             installed
                 .iter()
-                .filter(|tv| requested_backends.contains(tv.ba()))
+                .filter(|tv| !private_dependency_keys.contains(&tool_key(&tv.request)))
                 .cloned()
                 .collect()
         };
