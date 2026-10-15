@@ -22,12 +22,74 @@ pub struct WatchFile {
     pub task: Option<String>,
 }
 
+const GIT_REWROTE_VAR: &str = "MISE_WATCH_FILES_GIT_REWRITTEN";
+
 pub(crate) static MODIFIED_FILES: Mutex<Option<BTreeSet<PathBuf>>> = Mutex::new(None);
 
 pub(crate) fn add_modified_file(file: PathBuf) {
     let mut mu = MODIFIED_FILES.lock().unwrap();
     let set = mu.get_or_insert_with(BTreeSet::new);
     set.insert(file);
+}
+
+/// Whether git rewrote every one of `files`: each was last modified no later
+/// than the most recent write to HEAD's reflog in `root`'s checkout. A checkout,
+/// pull or rebase updates the working tree and then logs the HEAD move, while
+/// an edit made afterwards is newer than the log. False outside a git checkout.
+fn git_rewrote(root: &Path, files: &[&PathBuf]) -> bool {
+    let Some(log) = git_dir(root).map(|d| d.join("logs").join("HEAD")) else {
+        return false;
+    };
+    let Some(logged) = std::fs::metadata(&log)
+        .and_then(|m| m.modified())
+        .ok()
+        .filter(|_| !last_move_was_commit(&log))
+    else {
+        return false;
+    };
+    // A deleted file has no mtime to compare, so it neither counts against the
+    // rest nor, alone, shows that git rewrote anything.
+    let mtimes = files
+        .iter()
+        .filter_map(|f| std::fs::metadata(f).and_then(|m| m.modified()).ok())
+        .collect_vec();
+    !mtimes.is_empty() && mtimes.iter().all(|mtime| *mtime <= logged)
+}
+
+/// Whether the latest HEAD reflog entry is a commit, which moves HEAD without
+/// rewriting the files you edited before committing.
+fn last_move_was_commit(log: &Path) -> bool {
+    use std::io::{Read, Seek, SeekFrom};
+    let Ok(mut f) = std::fs::File::open(log) else {
+        return false;
+    };
+    let len = f.metadata().map(|m| m.len()).unwrap_or(0);
+    let mut tail = Vec::new();
+    if f.seek(SeekFrom::Start(len.saturating_sub(4096))).is_err()
+        || f.read_to_end(&mut tail).is_err()
+    {
+        return false;
+    }
+    String::from_utf8_lossy(&tail)
+        .lines()
+        .rfind(|l| !l.is_empty())
+        .and_then(|l| l.split_once('\t'))
+        .is_some_and(|(_, msg)| msg.starts_with("commit"))
+}
+
+/// The git directory of the checkout containing `root`: a `.git` directory, or
+/// the target of a `.git` file in a linked worktree. Reads no git config, so it
+/// stays cheap on the prompt path.
+fn git_dir(root: &Path) -> Option<PathBuf> {
+    root.ancestors().find_map(|dir| {
+        let dot_git = dir.join(".git");
+        if dot_git.is_dir() {
+            return Some(dot_git);
+        }
+        let target = std::fs::read_to_string(&dot_git).ok()?;
+        let target = Path::new(target.strip_prefix("gitdir:")?.trim());
+        Some(dir.join(target))
+    })
 }
 
 pub async fn execute_runs(config: &Arc<Config>, ts: &Toolset) {
@@ -59,10 +121,20 @@ pub async fn execute_runs(config: &Arc<Config>, ts: &Toolset) {
                 if wf.task.is_some() && wf.shell.is_some() {
                     warn!("watch_file hook has both shell and task set, ignoring shell");
                 }
+                let git_rewrote = git_rewrote(&root, &files);
                 let result = if let Some(task_name) = &wf.task {
-                    execute_task(config, ts, &root, task_name, files).await
+                    execute_task(config, ts, &root, task_name, files, git_rewrote).await
                 } else if let Some(run) = &wf.run {
-                    execute(config, ts, &root, run, wf.shell.as_deref(), files).await
+                    execute(
+                        config,
+                        ts,
+                        &root,
+                        run,
+                        wf.shell.as_deref(),
+                        files,
+                        git_rewrote,
+                    )
+                    .await
                 } else {
                     warn!("watch_file hook has neither run nor task set, skipping");
                     continue;
@@ -85,6 +157,7 @@ async fn execute(
     run: &str,
     shell: Option<&str>,
     files: Vec<&PathBuf>,
+    git_rewrote: bool,
 ) -> Result<()> {
     let modified_files_var = files
         .iter()
@@ -109,6 +182,10 @@ async fn execute(
         .collect_vec();
     let mut env = ts.full_env(config).await?;
     env.insert("MISE_WATCH_FILES_MODIFIED".to_string(), modified_files_var);
+    env.remove(GIT_REWROTE_VAR);
+    if git_rewrote {
+        env.insert(GIT_REWROTE_VAR.to_string(), "1".to_string());
+    }
     env.insert(
         crate::secrets::DENIED_MARKER.to_string(),
         "watch_files".to_string(),
@@ -161,6 +238,7 @@ async fn execute_task(
     root: &Path,
     task_name: &str,
     files: Vec<&PathBuf>,
+    git_rewrote: bool,
 ) -> Result<()> {
     let modified_files_var = files
         .iter()
@@ -170,6 +248,10 @@ async fn execute_task(
 
     let mut env = ts.full_env(config).await?;
     env.insert("MISE_WATCH_FILES_MODIFIED".to_string(), modified_files_var);
+    env.remove(GIT_REWROTE_VAR);
+    if git_rewrote {
+        env.insert(GIT_REWROTE_VAR.to_string(), "1".to_string());
+    }
     env.insert("MISE_NO_HOOKS".to_string(), "1".to_string());
     env.insert(
         crate::secrets::DENIED_MARKER.to_string(),
