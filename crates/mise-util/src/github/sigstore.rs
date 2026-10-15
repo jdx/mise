@@ -547,6 +547,7 @@ async fn verify_with_mirror(
         };
         let attestations = match found {
             Ok(Some(attestations)) => attestations,
+            Ok(None) if mirror_lists_repo(&full).await => return no_attestations_verdict(&full),
             Ok(None) => return unknown_repo_verdict(&full),
             // Paranoid mode has GitHub confirm mise-versions anyway, so it
             // asks GitHub when mise-versions can't answer.
@@ -659,6 +660,9 @@ async fn detect_with_mirror(
         };
         let attestations = match found {
             Ok(Some(attestations)) => attestations,
+            Ok(None) if mirror_lists_repo(&full).await => {
+                return (mirror_may_answer_none()).then_some(Ok(false));
+            }
             Ok(None) => {
                 return match unknown_repo_verdict(&full) {
                     MirrorVerdict::AskGithub => None,
@@ -710,6 +714,17 @@ fn no_attestations_verdict(full: &str) -> MirrorVerdict {
 
 /// mise-versions answered 404: it doesn't serve `full`, which is private or
 /// gone. Only the user's token can read a private repository's attestations.
+/// Whether mise-versions lists `full`'s releases, after it answered 404 for
+/// an attestation lookup: a public repository it knows has no attestations
+/// for that digest, while one it doesn't know may be private. A failed
+/// listing can't tell, and counts as not listed.
+async fn mirror_lists_repo(full: &str) -> bool {
+    matches!(
+        crate::versions_host::github_releases(full, 1).await,
+        Ok(Some(_))
+    )
+}
+
 fn unknown_repo_verdict(full: &str) -> MirrorVerdict {
     // A token, not netrc: the attestation client sends only a token.
     if resolve_token_for_wrapper(None).is_some() {
