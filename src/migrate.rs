@@ -8,7 +8,7 @@ pub async fn run() {
     tokio::join!(
         task(migrate_trusted_configs),
         task(migrate_tracked_configs),
-        task(migrate_incomplete_markers)
+        task(migrate_incomplete_markers),
     );
 }
 
