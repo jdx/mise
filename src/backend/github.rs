@@ -1184,12 +1184,12 @@ impl Backend for UnifiedGitBackend {
                 })
             }
             Err(e) => {
-                if Settings::get().generate_lockfiles()
-                    && !matches!(
-                        e.downcast_ref::<crate::errors::Error>(),
-                        Some(crate::errors::Error::UnsupportedTarget(_))
-                    )
-                {
+                // An unsupported target is reported to the lock command as such.
+                let unsupported = matches!(
+                    e.downcast_ref::<crate::errors::Error>(),
+                    Some(crate::errors::Error::UnsupportedTarget(_))
+                );
+                if unsupported || Settings::get().generate_lockfiles() {
                     return Err(e);
                 }
                 debug!(

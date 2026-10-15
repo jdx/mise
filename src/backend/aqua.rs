@@ -824,7 +824,12 @@ impl Backend for AquaBackend {
                 target.to_key(),
                 pkg.supported_envs
             );
-            return Ok(PlatformInfo::default());
+            return Err(crate::errors::Error::UnsupportedTarget(format!(
+                "aqua package {} does not support {}",
+                self.id,
+                target.to_key()
+            ))
+            .into());
         }
 
         // Get URL and checksum for the target platform
