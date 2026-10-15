@@ -20,7 +20,7 @@ use crate::registry::REGISTRY;
 use crate::toolset::Toolset;
 use crate::toolset::helpers::{TVTuple, preflight_system_deps, show_python_install_hint};
 use crate::toolset::install_options::InstallOptions;
-use crate::toolset::tool_deps::{ToolDeps, ensure_compatible_install_requests, tool_key};
+use crate::toolset::tool_deps::{ToolDeps, ensure_compatible_install_requests, graph_key, tool_key};
 use crate::toolset::tool_request::ToolRequest;
 use crate::toolset::tool_source::ToolSource;
 use crate::toolset::tool_version::{ResolveOptions, ToolVersion};
@@ -552,7 +552,7 @@ impl Toolset {
         let requested_installations = || {
             installed
                 .iter()
-                .filter(|tv| !private_dependency_keys.contains(&tool_key(&tv.request)))
+                .filter(|tv| !private_dependency_keys.contains(&graph_key(&tv.request)))
                 .cloned()
                 .collect()
         };
@@ -586,7 +586,7 @@ impl Toolset {
             self.init_request_options(&mut dependencies);
             for dependency in dependencies {
                 if !versions.contains(&dependency) {
-                    private_dependency_keys.insert(tool_key(&dependency));
+                    private_dependency_keys.insert(graph_key(&dependency));
                     versions.push(dependency);
                 }
             }
@@ -666,7 +666,7 @@ impl Toolset {
         let request_order: HashMap<String, usize> = versions
             .iter()
             .enumerate()
-            .map(|(i, tr)| (tool_key(tr), i))
+            .map(|(i, tr)| (graph_key(tr), i))
             .collect();
 
         // Build dependency graph
@@ -837,7 +837,7 @@ impl Toolset {
 
         // Sort installed versions by original request order to preserve user's intended ordering
         installed.sort_by_key(|tv| {
-            let key = tool_key(&tv.request);
+            let key = graph_key(&tv.request);
             request_order.get(&key).copied().unwrap_or(usize::MAX)
         });
 
