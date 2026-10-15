@@ -547,8 +547,14 @@ async fn verify_with_mirror(
         };
         let attestations = match found {
             Ok(Some(attestations)) => attestations,
-            Ok(None) if mirror_lists_repo(&full).await => return no_attestations_verdict(&full),
-            Ok(None) => return unknown_repo_verdict(&full),
+            Ok(None) => {
+                return verdict_after_attestation_404(
+                    &full,
+                    repo_listing(&full).await,
+                    !mirror_may_answer_none(),
+                    resolve_token_for_wrapper(None).is_some(),
+                );
+            }
             // Paranoid mode has GitHub confirm mise-versions anyway, so it
             // asks GitHub when mise-versions can't answer.
             Err(_) if !mirror_may_answer_none() => return MirrorVerdict::AskGithub,
@@ -660,14 +666,13 @@ async fn detect_with_mirror(
         };
         let attestations = match found {
             Ok(Some(attestations)) => attestations,
-            Ok(None) if mirror_lists_repo(&full).await => {
-                return (mirror_may_answer_none()).then_some(Ok(false));
-            }
             Ok(None) => {
-                return match unknown_repo_verdict(&full) {
-                    MirrorVerdict::AskGithub => None,
-                    MirrorVerdict::Done(result) => Some(result.map_err(DetectError::Fetch)),
-                };
+                return detect_after_attestation_404(verdict_after_attestation_404(
+                    &full,
+                    repo_listing(&full).await,
+                    !mirror_may_answer_none(),
+                    resolve_token_for_wrapper(None).is_some(),
+                ));
             }
             Err(_) if !mirror_may_answer_none() => return None,
             Err(err) => return Some(Err(DetectError::Fetch(mirror_failure(&full, &err)))),
@@ -712,23 +717,61 @@ fn no_attestations_verdict(full: &str) -> MirrorVerdict {
     }
 }
 
-/// mise-versions answered 404: it doesn't serve `full`, which is private or
-/// gone. Only the user's token can read a private repository's attestations.
-/// Whether mise-versions lists `full`'s releases, after it answered 404 for
-/// an attestation lookup: a public repository it knows has no attestations
-/// for that digest, while one it doesn't know may be private. Only a 404
-/// for the listing says the repository is unknown: a failed listing keeps
-/// the attestation miss, as release lookups do.
-async fn mirror_lists_repo(full: &str) -> bool {
-    !matches!(
-        crate::versions_host::github_releases(full, 1).await,
-        Ok(None)
-    )
+/// What mise-versions' release listing says about a repository whose
+/// attestations it answered 404 for.
+enum RepoListing {
+    /// It lists the repository: a public one with no attestations for that
+    /// digest.
+    Listed,
+    /// A 404 here too: the repository is private or gone.
+    Unknown,
+    /// The listing failed, so mise can't tell which.
+    Failed(eyre::Report),
 }
 
-fn unknown_repo_verdict(full: &str) -> MirrorVerdict {
-    // A token, not netrc: the attestation client sends only a token.
-    if resolve_token_for_wrapper(None).is_some() {
+async fn repo_listing(full: &str) -> RepoListing {
+    match crate::versions_host::github_releases(full, 1).await {
+        Ok(Some(_)) => RepoListing::Listed,
+        Ok(None) => RepoListing::Unknown,
+        Err(err) => RepoListing::Failed(err),
+    }
+}
+
+/// The verdict after mise-versions answered 404 for `full`'s attestations.
+/// A failed listing is a failed lookup, not "no attestations": that would
+/// let the install go on unchecked, and `provenance_api_failures_fatal`
+/// decides what a failed lookup does. Paranoid mode asks GitHub instead.
+fn verdict_after_attestation_404(
+    full: &str,
+    listing: RepoListing,
+    paranoid: bool,
+    has_token: bool,
+) -> MirrorVerdict {
+    match listing {
+        RepoListing::Listed if paranoid => MirrorVerdict::AskGithub,
+        RepoListing::Listed => MirrorVerdict::Done(Err(AttestationError::NoAttestations)),
+        RepoListing::Unknown => unknown_repo_verdict(full, has_token),
+        RepoListing::Failed(_) if paranoid => MirrorVerdict::AskGithub,
+        RepoListing::Failed(err) => MirrorVerdict::Done(Err(mirror_failure(full, &err))),
+    }
+}
+
+/// [`verdict_after_attestation_404`] for a probe: no attestations is
+/// `Ok(false)`, any other failure a fetch error, and `None` asks GitHub.
+fn detect_after_attestation_404(verdict: MirrorVerdict) -> Option<Result<bool, DetectError>> {
+    match verdict {
+        MirrorVerdict::AskGithub => None,
+        MirrorVerdict::Done(Err(AttestationError::NoAttestations)) => Some(Ok(false)),
+        MirrorVerdict::Done(Err(err)) => Some(Err(DetectError::Fetch(err))),
+        MirrorVerdict::Done(Ok(found)) => Some(Ok(found)),
+    }
+}
+
+/// mise-versions doesn't serve `full`, which is private or gone. Only the
+/// user's token can read a private repository's attestations; the
+/// attestation client sends a token, not netrc credentials.
+fn unknown_repo_verdict(full: &str, has_token: bool) -> MirrorVerdict {
+    if has_token {
         debug!("mise-versions does not know {full}; asking GitHub, which may hold it privately");
         return MirrorVerdict::AskGithub;
     }
@@ -852,6 +895,76 @@ pub async fn verify_cosign_signature_with_key(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn listed() -> RepoListing {
+        RepoListing::Listed
+    }
+    fn unknown() -> RepoListing {
+        RepoListing::Unknown
+    }
+    fn failed() -> RepoListing {
+        RepoListing::Failed(eyre::eyre!("HTTP 503"))
+    }
+
+    #[test]
+    fn test_attestation_404_verdict_by_listing() {
+        let verdict = |listing, paranoid, has_token| {
+            verdict_after_attestation_404("o/r", listing, paranoid, has_token)
+        };
+        // Listed: a public repository without attestations for the digest.
+        assert!(matches!(
+            verdict(listed(), false, false),
+            MirrorVerdict::Done(Err(AttestationError::NoAttestations))
+        ));
+        // Unknown: private or gone; GitHub only with a token.
+        assert!(matches!(
+            verdict(unknown(), false, false),
+            MirrorVerdict::Done(Err(AttestationError::Api(_)))
+        ));
+        assert!(matches!(
+            verdict(unknown(), false, true),
+            MirrorVerdict::AskGithub
+        ));
+        // Failed listing: a failed lookup, never "no attestations".
+        assert!(matches!(
+            verdict(failed(), false, false),
+            MirrorVerdict::Done(Err(AttestationError::Api(_)))
+        ));
+        assert!(matches!(
+            verdict(failed(), false, true),
+            MirrorVerdict::Done(Err(AttestationError::Api(_)))
+        ));
+        // Paranoid mode asks GitHub whenever mise-versions can't settle it.
+        assert!(matches!(
+            verdict(listed(), true, false),
+            MirrorVerdict::AskGithub
+        ));
+        assert!(matches!(
+            verdict(failed(), true, false),
+            MirrorVerdict::AskGithub
+        ));
+    }
+
+    #[test]
+    fn test_attestation_404_probe_by_listing() {
+        let probe = |listing, paranoid, has_token| {
+            detect_after_attestation_404(verdict_after_attestation_404(
+                "o/r", listing, paranoid, has_token,
+            ))
+        };
+        assert!(matches!(probe(listed(), false, false), Some(Ok(false))));
+        assert!(matches!(
+            probe(unknown(), false, false),
+            Some(Err(DetectError::Fetch(AttestationError::Api(_))))
+        ));
+        assert!(probe(unknown(), false, true).is_none());
+        assert!(matches!(
+            probe(failed(), false, false),
+            Some(Err(DetectError::Fetch(AttestationError::Api(_))))
+        ));
+        assert!(probe(listed(), true, false).is_none());
+        assert!(probe(failed(), true, false).is_none());
+    }
     use crate::env as mise_env;
     use confique::Layer;
 
