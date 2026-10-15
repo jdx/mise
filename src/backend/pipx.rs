@@ -1841,7 +1841,7 @@ mod tests {
             ("pipx_args", "-p=python3"),
             ("pipx_args", "-p python3"),
         ] {
-            let options = parse_tool_options(&format!("python = \"3.12\"\n{key} = \"{value}\""));
+            let options = parse_tool_options(&format!("python = \"3.12\", {key} = \"{value}\""));
             assert!(
                 PipxOptions::new(&options).validate_semantic().is_err(),
                 "{key}"
