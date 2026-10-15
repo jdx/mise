@@ -689,15 +689,12 @@ async fn fetch_repo_dir(
     file::create_dir_all(dest)?;
     for entry in listing.entries {
         let name = entry.name;
-        if !file::is_plain_file_name(&name) {
-            continue;
-        }
         let path = format!("{rel}/{name}");
-        match entry.kind.as_str() {
-            "dir" => {
+        match repo_entry_action(&name, &entry.kind) {
+            RepoEntryAction::Recurse => {
                 Box::pin(fetch_repo_dir(repo, commit, &path, &dest.join(&name), pr)).await?;
             }
-            "file" => {
+            RepoEntryAction::Download => {
                 let contents_url = format!(
                     "https://api.github.com/repos/{repo}/contents/{}?ref={commit}",
                     url_path(&path)
@@ -724,10 +721,33 @@ async fn fetch_repo_dir(
                 )
                 .await?;
             }
-            _ => {}
+            RepoEntryAction::Skip => {}
         }
     }
     Ok(())
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum RepoEntryAction {
+    Recurse,
+    Download,
+    Skip,
+}
+
+/// What [`fetch_repo_dir`] does with a listed entry: recurse into a `dir`,
+/// download a `file`, and leave out everything else. mise-versions reports a
+/// symlink as `symlink` and a submodule as `submodule` (GitHub's own contents
+/// API calls both `file`). An entry whose name could reach outside the
+/// directory is left out too.
+fn repo_entry_action(name: &str, kind: &str) -> RepoEntryAction {
+    if !file::is_plain_file_name(name) {
+        return RepoEntryAction::Skip;
+    }
+    match kind {
+        "dir" => RepoEntryAction::Recurse,
+        "file" => RepoEntryAction::Download,
+        _ => RepoEntryAction::Skip,
+    }
 }
 
 /// A skill one of the active tools declares: a directory holding
@@ -2137,6 +2157,27 @@ mod tests {
         assert_eq!(statement(dir.path()).unwrap(), Some(s));
         file::write(dir.path().join(STATEMENT_FILE), "{}").unwrap();
         assert!(statement(dir.path()).is_err());
+    }
+
+    #[test]
+    fn repo_entry_actions_follow_the_listed_type() {
+        assert_eq!(repo_entry_action("refs", "dir"), RepoEntryAction::Recurse);
+        assert_eq!(
+            repo_entry_action("SKILL.md", "file"),
+            RepoEntryAction::Download
+        );
+        assert_eq!(repo_entry_action("link", "symlink"), RepoEntryAction::Skip);
+        assert_eq!(
+            repo_entry_action("vendor", "submodule"),
+            RepoEntryAction::Skip
+        );
+        assert_eq!(
+            repo_entry_action("x", "something-new"),
+            RepoEntryAction::Skip
+        );
+        // Names that could leave the directory, whatever their type.
+        assert_eq!(repo_entry_action("..", "dir"), RepoEntryAction::Skip);
+        assert_eq!(repo_entry_action("a/b", "file"), RepoEntryAction::Skip);
     }
 
     #[test]
