@@ -54,8 +54,12 @@ def main():
             })
             (root / "home").mkdir()
             print(f"Testing real self-update to {version}", flush=True)
-            output = run(binary, ["self-update", version, "--force", "--yes", "--no-plugins"], env, root)
+            # Debug logs show every request; mise's own releases come from
+            # mise-versions and github.com downloads, not the rate-limited API.
+            output = run(binary, ["self-update", version, "--force", "--yes", "--no-plugins"],
+                         {**env, "MISE_LOG_LEVEL": "debug"}, root)
             assert f"Updated mise to {version}" in output
+            assert "GET https://api.github.com/" not in output, "self-update asked api.github.com"
             assert "Failed to update mise-shim.exe" not in output
             assert digest(binary) != original, "self-update did not replace the binary"
             installed = run(binary, ["--version"], env, root).split()[0]

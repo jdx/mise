@@ -14,7 +14,10 @@ use std::{
 };
 use tokio::sync::Mutex;
 /// Tools that use the versions host for listing versions
-/// (excludes java/python due to complex version schemes)
+/// (excludes java/python due to complex version schemes). The versions host
+/// does publish python's list, but it is python-build's definitions, which is
+/// only python's listing when it may compile; see
+/// [`list_python_build_definitions`].
 static PLUGINS_USE_VERSION_HOST: LazyLock<HashSet<&str>> = LazyLock::new(|| {
     CORE_PLUGINS
         .keys()
@@ -64,9 +67,27 @@ struct VersionEntry {
 /// List versions from the versions host (mise-versions.jdx.dev).
 /// Returns Vec<VersionInfo> with created_at timestamps from the TOML endpoint.
 pub(crate) async fn list_versions(tool: &str) -> eyre::Result<Option<Vec<VersionInfo>>> {
+    if !lists_versions_for(tool) {
+        log_versions_host_trace(
+            VersionsHostLogContext::version_list(tool),
+            "disabled",
+            "fallback=true",
+        );
+        return Ok(None);
+    }
+    fetch_version_list(tool).await
+}
+/// The definitions `python-build --definitions` prints, with the date each was
+/// added, so listing python does not need a pyenv clone. Not the list python
+/// shows when it only installs precompiled builds, which is why `python` stays
+/// out of [`lists_versions_for`].
+pub(crate) async fn list_python_build_definitions() -> eyre::Result<Option<Vec<VersionInfo>>> {
+    fetch_version_list("python").await
+}
+async fn fetch_version_list(tool: &str) -> eyre::Result<Option<Vec<VersionInfo>>> {
     let ctx = VersionsHostLogContext::version_list(tool);
     let settings = Settings::get();
-    if settings.prefer_offline() || !settings.use_versions_host || !lists_versions_for(tool) {
+    if settings.prefer_offline() || !settings.use_versions_host {
         log_versions_host_trace(ctx, "disabled", "fallback=true");
         return Ok(None);
     }
@@ -93,21 +114,7 @@ pub(crate) async fn list_versions(tool: &str) -> eyre::Result<Option<Vec<Version
         .send()
         .await
     {
-        Ok(body) => {
-            let response: VersionsResponse = toml::from_str(&body)?;
-            response
-                .versions
-                .into_iter()
-                .map(|(version, entry)| VersionInfo {
-                    version,
-                    created_at: Some(entry.created_at.to_string()),
-                    release_url: entry.release_url,
-                    rolling: entry.rolling,
-                    prerelease: entry.prerelease,
-                    ..Default::default()
-                })
-                .collect()
-        }
+        Ok(body) => parse_version_list(&body)?,
         Err(err) => match http::error_code(&err).unwrap_or(0) {
             404 => {
                 log_versions_host_trace(ctx, "not_found", "status=404 fallback=true");
@@ -119,10 +126,10 @@ pub(crate) async fn list_versions(tool: &str) -> eyre::Result<Option<Vec<Version
                 return Ok(None);
             }
             status => {
-                // fallback=true: the sole caller
-                // (`Backend::list_remote_versions_with_refresh`) logs this error
-                // at debug and then lists versions from the backend's upstream
-                // source anyway, so a failure here is not the end of the road.
+                // fallback=true: every caller logs this error at debug and then
+                // lists versions from the upstream source anyway (python lists
+                // python-build from a pyenv clone), so a failure here is not the
+                // end of the road.
                 log_versions_host_warn(
                     ctx,
                     "failed",
@@ -148,6 +155,22 @@ pub(crate) async fn list_versions(tool: &str) -> eyre::Result<Option<Vec<Version
         .await
         .insert(tool.to_string(), versions.clone());
     Ok(Some(versions))
+}
+/// A `data/<tool>.toml` body as the version list it describes, in file order.
+pub(crate) fn parse_version_list(body: &str) -> eyre::Result<Vec<VersionInfo>> {
+    let response: VersionsResponse = toml::from_str(body)?;
+    Ok(response
+        .versions
+        .into_iter()
+        .map(|(version, entry)| VersionInfo {
+            version,
+            created_at: Some(entry.created_at.to_string()),
+            release_url: entry.release_url,
+            rolling: entry.rolling,
+            prerelease: entry.prerelease,
+            ..Default::default()
+        })
+        .collect())
 }
 /// Tracks a tool installation asynchronously (fire-and-forget)
 /// Tracks all core plugins and registry tools (including java/python)
@@ -238,6 +261,36 @@ fn version_list_url(tool: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_python_is_left_to_its_own_listing() {
+        // The shared listing would show python-build's definitions even when python only installs
+        // precompiled builds; python asks for them itself when it may compile.
+        assert!(!lists_versions_for("python"));
+        assert!(lists_versions_for("node"));
+    }
+    #[tokio::test]
+    async fn test_python_build_definitions_respect_use_versions_host() {
+        use crate::config::settings::SettingsPartial;
+        use confique::Layer;
+
+        let _guard = crate::test::SettingsGuard::lock();
+        let mut partial = SettingsPartial::empty();
+        partial.use_versions_host = Some(false);
+        Settings::reset(Some(partial));
+        assert!(list_python_build_definitions().await.unwrap().is_none());
+    }
+    #[tokio::test]
+    async fn test_python_build_definitions_respect_prefer_offline() {
+        use crate::config::settings::SettingsPartial;
+        use confique::Layer;
+
+        let _guard = crate::test::SettingsGuard::lock();
+        let mut partial = SettingsPartial::empty();
+        partial.prefer_offline = Some(true);
+        Settings::reset(Some(partial));
+        assert!(list_python_build_definitions().await.unwrap().is_none());
+    }
 
     #[test]
     fn test_track_install_url_puts_every_field_in_the_query() {

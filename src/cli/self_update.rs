@@ -710,22 +710,7 @@ impl SelfUpdate {
         }
         Self::ensure_install_dir_writable()?;
         let client = Self::http_client()?;
-        let mut url = url::Url::parse(&format!(
-            "{}/repos/{}/releases/tags/",
-            source.api_url, source.repository
-        ))?;
-        url.path_segments_mut()
-            .map_err(|()| eyre::eyre!("invalid release API URL"))?
-            .pop_if_empty()
-            .push(&format!("v{version}"));
-        let release: crate::github::GithubRelease = client
-            .get(url.clone())
-            .headers(Self::request_headers(&source, url.as_str())?)
-            .send()
-            .await?
-            .error_for_status()?
-            .json()
-            .await?;
+        let release = Self::fetch_release(&client, &source, &version).await?;
         let manifest = Self::release_packslip(&client, &source, &release, &version).await?;
         let before = enforce_age
             .then(|| {
@@ -752,7 +737,7 @@ impl SelfUpdate {
         }
         let dir = tempfile::tempdir()?;
         let archive_path = dir.path().join(&archive_name);
-        Self::download_archive(&client, &source, &asset.url, &archive_path).await?;
+        Self::download_archive(&client, &source, source.asset_url(&asset), &archive_path).await?;
         let binary = dir
             .path()
             .join(if cfg!(windows) { "mise.exe" } else { "mise" });
@@ -776,6 +761,41 @@ impl SelfUpdate {
         })
         .await??;
         Ok(Some(version))
+    }
+
+    /// Release `v{version}` of the source repository. For mise's own releases
+    /// it comes from mise-versions, so updating doesn't spend the GitHub API's
+    /// rate limit (60 requests an hour without a token). The release data
+    /// needn't be trusted: the archive is checked against its packslip and its
+    /// zipsign signature, and mise-versions' download URLs are pinned to
+    /// github.com/jdx/mise. A configured `self_update.api_url` or `repository`
+    /// is asked directly, since it may be private or not on github.com.
+    async fn fetch_release(
+        client: &reqwest::Client,
+        source: &SelfUpdateSource,
+        version: &str,
+    ) -> Result<crate::github::GithubRelease> {
+        let tag = format!("v{version}");
+        if source.uses_versions_host() {
+            return crate::github::get_release_with_versions_host(&source.repository, &tag, true)
+                .await;
+        }
+        let mut url = url::Url::parse(&format!(
+            "{}/repos/{}/releases/tags/",
+            source.api_url, source.repository
+        ))?;
+        url.path_segments_mut()
+            .map_err(|()| eyre::eyre!("invalid release API URL"))?
+            .pop_if_empty()
+            .push(&tag);
+        Ok(client
+            .get(url.clone())
+            .headers(Self::request_headers(source, url.as_str())?)
+            .send()
+            .await?
+            .error_for_status()?
+            .json()
+            .await?)
     }
 
     fn request_headers(source: &SelfUpdateSource, url: &str) -> Result<reqwest::header::HeaderMap> {
@@ -805,7 +825,7 @@ impl SelfUpdate {
             .find(|asset| asset.name == "packslip.sigstore.json")
         {
             Some(asset) => Ok(Some(
-                Self::download_packslip(client, source, &asset.url).await?,
+                Self::download_packslip(client, source, source.asset_url(asset)).await?,
             )),
             None if packslip::required(version)? => {
                 bail!("release v{version} is missing its required packslip.sigstore.json")
@@ -819,6 +839,7 @@ impl SelfUpdate {
         source: &SelfUpdateSource,
         url: &str,
     ) -> Result<String> {
+        debug!("GET {url}");
         let mut headers = Self::request_headers(source, url)?;
         headers.insert(reqwest::header::ACCEPT, "application/octet-stream".parse()?);
         let mut response = client
@@ -859,6 +880,7 @@ impl SelfUpdate {
         path: &Path,
     ) -> Result<()> {
         use tokio::io::AsyncWriteExt;
+        debug!("GET {url}");
         let mut headers = Self::request_headers(source, url)?;
         headers.insert(reqwest::header::ACCEPT, "application/octet-stream".parse()?);
         let mut response = client
@@ -922,13 +944,7 @@ impl SelfUpdate {
         source.validate()?;
         let version = version.strip_prefix('v').unwrap_or(version);
         let archive_name = format!("mise-v{version}-{}-{}.zip", *OS, *ARCH);
-        let release = crate::github::get_release_for_url_with_versions_host(
-            &source.api_url,
-            &source.repository,
-            &format!("v{version}"),
-            false,
-        )
-        .await?;
+        let release = Self::fetch_release(&Self::http_client()?, source, version).await?;
         let asset = release
             .assets
             .iter()
@@ -939,9 +955,8 @@ impl SelfUpdate {
                     source.repository
                 )
             })?;
-        // Use the API asset endpoint directly so every redirect is governed by
-        // the downgrade-rejecting client below. This also supports private releases.
-        let url = asset.url.clone();
+        // Every redirect is governed by the downgrade-rejecting client below.
+        let url = source.asset_url(asset).to_string();
         debug!("Downloading mise-shim.exe from {url}");
 
         let temp_dir = tempfile::tempdir()?;

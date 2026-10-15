@@ -376,14 +376,30 @@ impl Backend for PIPXBackend {
         Ok(versions.into_iter().map(stamp_pep440_prerelease).collect())
     }
 
-    async fn latest_stable_version(&self, config: &Arc<Config>) -> eyre::Result<Option<String>> {
+    // No `latest_stable_version` override: the trait asks this first and only
+    // falls back to the string variant on `None`, which would repeat the
+    // registry request for a package with no stable release.
+    //
+    // The registry answer already dates every release, and the date has to
+    // travel with the version: without it, `minimum_release_age` (on by
+    // default) can only check the candidate by listing every version, which
+    // fetches the same document a second time.
+    async fn latest_stable_version_info(
+        &self,
+        config: &Arc<Config>,
+    ) -> eyre::Result<Option<VersionInfo>> {
         let package = match self.tool_name().parse()? {
             PipxRequest::Pypi(package) => package,
             PipxRequest::Git(source) => {
                 return if PipxRequest::github_repo(&source.repo).is_some() {
                     Ok(None)
                 } else {
-                    Self::git_head(&source.remote()).await.map(Some)
+                    Self::git_head(&source.remote()).await.map(|version| {
+                        Some(VersionInfo {
+                            version,
+                            ..Default::default()
+                        })
+                    })
                 };
             }
         };
@@ -393,19 +409,16 @@ impl Backend for PIPXBackend {
             async || {
                 latest_version_cache
                     .get_or_try_init_async(async || {
-                        if registry_url.contains("/json") {
+                        let url = registry_url.replace("{}", &package);
+                        let versions = if registry_url.contains("/json") {
                             debug!("Fetching JSON for {}", package);
-                            let url = registry_url.replace("{}", &package);
                             let pkg: PypiPackage = HTTP_FETCH.json(url).await?;
-                            Ok(Self::latest_stable_from_pypi_package(pkg))
+                            Self::versions_from_pypi_package(pkg)
                         } else {
                             debug!("Fetching simple index for {}", package);
-                            let url = registry_url.replace("{}", &package);
-                            let versions = Self::fetch_simple_index(&package, url).await?;
-                            Ok(Self::latest_stable_from_simple_index(
-                                versions.into_iter().map(|v| v.version).collect(),
-                            ))
-                        }
+                            Self::fetch_simple_index(&package, url).await?
+                        };
+                        Ok(Self::latest_stable(versions))
                     })
                     .await
             },
@@ -1110,19 +1123,12 @@ impl PIPXBackend {
             .collect()
     }
 
-    fn latest_stable_from_pypi_package(data: PypiPackage) -> Option<String> {
-        Self::versions_from_pypi_package(data)
-            .into_iter()
-            .rev()
-            .find(|v| !is_python_prerelease(&v.version))
-            .map(|v| v.version)
-    }
-
-    fn latest_stable_from_simple_index(versions: Vec<String>) -> Option<String> {
+    /// The newest release that is not a PEP 440 pre-release, with its date.
+    fn latest_stable(versions: Vec<VersionInfo>) -> Option<VersionInfo> {
         versions
             .into_iter()
-            .filter(|v| !is_python_prerelease(v))
-            .sorted_by_cached_key(|v| Versioning::new(v))
+            .filter(|v| !is_python_prerelease(&v.version))
+            .sorted_by_cached_key(|v| Versioning::new(&v.version))
             .next_back()
     }
 
@@ -1168,12 +1174,12 @@ impl PIPXBackend {
         Self { ba: Arc::new(ba) }
     }
 
-    fn latest_version_cache(&self, registry_url: &str) -> CacheManager<Option<String>> {
+    fn latest_version_cache(&self, registry_url: &str) -> CacheManager<Option<VersionInfo>> {
         let registry_hash = hash_to_str(&registry_url);
         CacheManagerBuilder::new(
             self.ba
                 .cache_path()
-                .join(format!("latest_version_{registry_hash}.msgpack.z")),
+                .join(format!("latest_version_info_{registry_hash}.msgpack.z")),
         )
         .with_fresh_duration(Settings::get().fetch_remote_versions_cache())
         .build()
@@ -1820,7 +1826,7 @@ mod tests {
         UV_EXCLUDE_NEWER_VERSION, uv_args_select_python,
     };
     use crate::args::BackendArg;
-    use crate::backend::Backend;
+    use crate::backend::{Backend, VersionInfo};
     #[cfg(unix)]
     use crate::file;
     use crate::github::GithubRelease;
@@ -1948,7 +1954,7 @@ mod tests {
     }
 
     #[test]
-    fn test_latest_stable_from_simple_index_uses_python_prerelease_rule() {
+    fn test_latest_stable_uses_python_prerelease_rule() {
         let versions = [
             "1.0",
             "1.1+gpu.dev0",
@@ -1960,7 +1966,17 @@ mod tests {
         .map(String::from)
         .to_vec();
         assert_eq!(
-            PIPXBackend::latest_stable_from_simple_index(versions).as_deref(),
+            PIPXBackend::latest_stable(
+                versions
+                    .into_iter()
+                    .map(|version| VersionInfo {
+                        version,
+                        ..Default::default()
+                    })
+                    .collect()
+            )
+            .map(|v| v.version)
+            .as_deref(),
             Some("1.1+gpu.dev0")
         );
     }
@@ -2038,9 +2054,10 @@ cccccccccccccccccccccccccccccccccccccccc\trefs/heads/main\n";
         );
         assert_eq!(
             backend
-                .latest_stable_version(&config)
+                .latest_stable_version_info(&config)
                 .await
                 .unwrap()
+                .map(|v| v.version)
                 .as_deref(),
             Some("2.0.0")
         );
@@ -2141,7 +2158,99 @@ cccccccccccccccccccccccccccccccccccccccc\trefs/heads/main\n";
 
         assert_eq!(
             backend
-                .latest_stable_version(&config)
+                .latest_stable_version_info(&config)
+                .await
+                .unwrap()
+                .map(|v| v.version)
+                .as_deref(),
+            Some("1.0.0")
+        );
+        registry.assert_async().await;
+    }
+
+    /// Mocks a JSON registry serving `1.0.0` (January) and `2.0.0` (March)
+    /// that expects `hits` requests.
+    async fn dated_registry(
+        server: &mut mockito::Server,
+        package: &str,
+        hits: usize,
+    ) -> mockito::Mock {
+        server
+            .mock("GET", format!("/pypi/{package}/json").as_str())
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(
+                serde_json::json!({
+                    "releases": {
+                        "1.0.0": [{
+                            "upload_time_iso_8601": "2026-01-01T00:00:00Z",
+                            "yanked": false
+                        }],
+                        "2.0.0": [{
+                            "upload_time_iso_8601": "2026-03-01T00:00:00Z",
+                            "yanked": false
+                        }]
+                    }
+                })
+                .to_string(),
+            )
+            .expect(hits)
+            .create_async()
+            .await
+    }
+
+    /// `minimum_release_age` is on by default, so resolving `latest` has to
+    /// date its candidate. The registry document the shortcut reads already
+    /// does, so a candidate older than the cutoff costs that one request, not
+    /// a second fetch of the same document to list versions.
+    #[tokio::test]
+    async fn latest_older_than_cutoff_reads_registry_once() {
+        let _settings = crate::test::SettingsGuard::lock();
+        let mut server = mockito::Server::new_async().await;
+        let registry = dated_registry(&mut server, "dated-old", 1).await;
+        let config = crate::config::Config::get().await.unwrap();
+        let backend = PIPXBackend::from_arg(
+            format!(
+                "pipx:dated-old[registry_url='{}/pypi/{{}}/json']",
+                server.url()
+            )
+            .into(),
+        );
+        let _ = std::fs::remove_dir_all(backend.ba().cache_path());
+        let before = crate::duration::parse_into_timestamp("2026-06-01").unwrap();
+
+        assert_eq!(
+            backend
+                .latest_version(&config, Some("latest".into()), Some(before))
+                .await
+                .unwrap()
+                .as_deref(),
+            Some("2.0.0")
+        );
+        registry.assert_async().await;
+    }
+
+    /// A candidate newer than the cutoff still falls back to the full list,
+    /// which is what picks the older release.
+    #[tokio::test]
+    async fn latest_newer_than_cutoff_falls_back_to_listing() {
+        let _settings = crate::test::SettingsGuard::lock();
+        let mut server = mockito::Server::new_async().await;
+        let registry = dated_registry(&mut server, "dated-new", 2).await;
+        let config = crate::config::Config::get().await.unwrap();
+        let backend = PIPXBackend::from_arg(
+            format!(
+                "pipx:dated-new[registry_url='{}/pypi/{{}}/json']",
+                server.url()
+            )
+            .into(),
+        );
+        let _ = std::fs::remove_dir_all(backend.ba().cache_path());
+        let before = crate::duration::parse_into_timestamp("2026-02-01").unwrap();
+
+        assert_eq!(
+            backend
+                .latest_version(&config, Some("latest".into()), Some(before))
                 .await
                 .unwrap()
                 .as_deref(),
@@ -2960,8 +3069,8 @@ cccccccccccccccccccccccccccccccccccccccc\trefs/heads/main\n";
     }
 
     #[test]
-    fn test_latest_stable_from_pypi_package_skips_yanked_and_prerelease() {
-        let version = PIPXBackend::latest_stable_from_pypi_package(pypi_package(vec![
+    fn test_latest_stable_of_pypi_package_skips_yanked_and_prerelease() {
+        let version = latest_stable_of_pypi_package(pypi_package(vec![
             (
                 "1.0.0",
                 vec![pypi_release(Some("2024-01-01T00:00:00Z"), false)],
@@ -2993,7 +3102,7 @@ cccccccccccccccccccccccccccccccccccccccc\trefs/heads/main\n";
 
     #[test]
     fn test_pep440_local_label_does_not_mark_prerelease() {
-        let version = PIPXBackend::latest_stable_from_pypi_package(pypi_package(vec![
+        let version = latest_stable_of_pypi_package(pypi_package(vec![
             (
                 "1.0.0",
                 vec![pypi_release(Some("2024-01-01T00:00:00Z"), false)],
@@ -3178,6 +3287,10 @@ cccccccccccccccccccccccccccccccccccccccc\trefs/heads/main\n";
             published_at: None,
             assets: vec![],
         }
+    }
+
+    fn latest_stable_of_pypi_package(data: PypiPackage) -> Option<String> {
+        PIPXBackend::latest_stable(PIPXBackend::versions_from_pypi_package(data)).map(|v| v.version)
     }
 
     fn pypi_package(releases: Vec<(&str, Vec<PypiRelease>)>) -> PypiPackage {

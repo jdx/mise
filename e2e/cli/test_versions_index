@@ -1,0 +1,153 @@
+#!/usr/bin/env bash
+
+# A command that resolves several tools reads mise-versions' versions index
+# once instead of each tool's version list. A single tool still reads its own
+# list, and a copy of the index on disk is reused, then revalidated.
+#
+# A local stand-in serves the versions host. Its index lists only part of each
+# tool's versions, as the real one does; the answers must match the lists.
+
+mkdir -p srv/data
+cat >srv/data/node.toml <<'TOML'
+[versions]
+"18.0.0" = { created_at = 2025-01-01T00:00:00.000Z }
+"20.0.0" = { created_at = 2025-02-01T00:00:00.000Z }
+"20.10.0" = { created_at = 2025-03-01T00:00:00.000Z }
+"20.11.1" = { created_at = 2025-04-01T00:00:00.000Z }
+"22.0.0" = { created_at = 2025-05-01T00:00:00.000Z }
+"22.1.0" = { created_at = 2025-06-01T00:00:00.000Z }
+TOML
+cat >srv/data/go.toml <<'TOML'
+[versions]
+"1.24.0" = { created_at = 2025-01-01T00:00:00.000Z }
+"1.25.0" = { created_at = 2025-02-01T00:00:00.000Z }
+"1.25.1" = { created_at = 2025-03-01T00:00:00.000Z }
+TOML
+cat >srv/data/zig.toml <<'TOML'
+[versions]
+"0.13.0" = { created_at = 2025-01-01T00:00:00.000Z }
+"0.14.0" = { created_at = 2025-02-01T00:00:00.000Z }
+"0.14.1" = { created_at = 2025-03-01T00:00:00.000Z }
+"0.15.1" = { created_at = 2025-04-01T00:00:00.000Z }
+TOML
+cat >srv/data/index.v1.json <<'JSON'
+{
+  "format": 1,
+  "generated_at": 1760000000000,
+  "horizon": 1209600000,
+  "tools": {
+    "node": {
+      "count": 6,
+      "tail": 3,
+      "versions": [
+        ["20.10.0", 1740787200000, 0],
+        ["20.11.1", 1743465600000, 0],
+        ["22.0.0", 1746057600000, 0],
+        ["22.1.0", 1748736000000, 0]
+      ],
+      "prefixes": { "20": 0, "22": 2 }
+    },
+    "go": {
+      "count": 3,
+      "tail": 0,
+      "versions": [["1.25.1", 1740787200000, 0]],
+      "prefixes": { "1": 0, "1.25": 0 }
+    },
+    "zig": {
+      "count": 4,
+      "tail": 2,
+      "versions": [
+        ["0.14.0", 1738368000000, 0],
+        ["0.14.1", 1740787200000, 0],
+        ["0.15.1", 1743465600000, 0]
+      ],
+      "prefixes": { "0": 2, "0.14": 0, "0.15": 2 }
+    }
+  }
+}
+JSON
+
+start_http_server --handler - <<'PY'
+import http.server
+from pathlib import Path
+
+
+class Handler(http.server.BaseHTTPRequestHandler):
+    def do_GET(self):
+        path = self.path.split("?")[0]
+        etag = self.headers.get("If-None-Match") or "-"
+        with open("requests.log", "a") as log:
+            log.write(f"{path} {etag}\n")
+        file = Path("srv") / path.removeprefix("/versions/").lstrip("/")
+        if not path.startswith("/versions/data/") or not file.is_file():
+            self.send_response(404)
+            self.end_headers()
+            return
+        if path.endswith(".json") and etag == '"index-1"':
+            self.send_response(304)
+            self.end_headers()
+            return
+        body = file.read_bytes()
+        self.send_response(200)
+        self.send_header("Content-Length", str(len(body)))
+        if path.endswith(".json"):
+            self.send_header("ETag", '"index-1"')
+        self.end_headers()
+        self.wfile.write(body)
+
+    def log_message(self, format, *args):
+        pass
+PY
+
+cat >mise.toml <<EOF
+[settings]
+url_replacements = { "https://mise-versions.jdx.dev" = "http://127.0.0.1:$HTTP_PORT/versions" }
+
+[tools]
+node = "20"
+go = "latest"
+# A prefix request takes the last match.
+zig = "prefix:0.14"
+EOF
+
+: >requests.log
+
+# One tool reads its own list, not the larger index.
+assert "mise latest node@20" "20.11.1"
+assert "cat requests.log" "/versions/data/node.toml -"
+mise cache clear
+: >requests.log
+
+# Several tools: the first reads its own list, and the index answers the rest.
+assert_contains "mise outdated" "20.11.1"
+assert "grep -c index.v1.json requests.log" "1"
+assert "grep -c toml requests.log" "1"
+: >requests.log
+
+# The copy on disk is fresh, and the first tool's list is cached.
+mise outdated >outdated.txt
+assert_contains "cat outdated.txt" "20.11.1"
+assert_contains "cat outdated.txt" "1.25.1"
+assert_contains "cat outdated.txt" "0.14.1"
+assert_empty "cat requests.log"
+
+# Once stale, the copy is revalidated with its ETag, once for the command.
+assert_contains "MISE_FETCH_REMOTE_VERSIONS_CACHE=0s mise outdated" "0.14.1"
+assert_contains "cat requests.log" '/versions/data/index.v1.json "index-1"'
+assert "grep -c index.v1.json requests.log" "1"
+: >requests.log
+
+# A copy that no longer parses is fetched again rather than revalidated, and
+# the copy that replaces it is revalidated next time.
+printf '"index-1"\n{"format": 1, "tools":' >"$MISE_CACHE_DIR/versions-index/index.v1"
+assert_contains "MISE_FETCH_REMOTE_VERSIONS_CACHE=0s mise outdated" "0.14.1"
+assert_contains "cat requests.log" "/versions/data/index.v1.json -"
+: >requests.log
+assert_contains "MISE_FETCH_REMOTE_VERSIONS_CACHE=0s mise outdated" "0.14.1"
+assert_contains "cat requests.log" '/versions/data/index.v1.json "index-1"'
+: >requests.log
+
+# Offline reads nothing.
+mise cache clear
+assert_succeed "MISE_OFFLINE=1 mise outdated"
+assert_empty "cat requests.log"
