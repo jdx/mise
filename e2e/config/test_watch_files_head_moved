@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+
+# A watch_files command sees MISE_WATCH_FILES_HEAD_MOVED=1 when git moved HEAD
+# since the previous prompt, so it can skip files git rewrote.
+
+git init -q
+git config user.email test@example.com
+git config user.name test
+
+cat <<EOT >mise.toml
+[[watch_files]]
+patterns = ["watched.txt"]
+run = 'echo "HEAD_MOVED=[\$MISE_WATCH_FILES_HEAD_MOVED]"'
+EOT
+
+echo one >watched.txt
+git add mise.toml watched.txt
+git commit -q -m one
+
+eval "$(mise hook-env -s bash)"
+sleep 1
+echo edit >>watched.txt
+assert_contains "mise hook-env -s bash 2>&1" "HEAD_MOVED=[]"
+
+eval "$(mise hook-env -s bash)"
+sleep 1
+git checkout -q -b other
+echo two >watched.txt
+git commit -q -am two
+assert_contains "mise hook-env -s bash 2>&1" "HEAD_MOVED=[1]"

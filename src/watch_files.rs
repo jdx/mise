@@ -30,6 +30,22 @@ pub(crate) fn add_modified_file(file: PathBuf) {
     set.insert(file);
 }
 
+/// The commit `root`'s git checkout has at HEAD, or `None` outside a git
+/// checkout or before the first commit.
+pub(crate) fn git_head(root: &Path) -> Option<String> {
+    let repo = gix::discover(root).ok()?;
+    Some(repo.head_id().ok()?.to_string())
+}
+
+/// Whether git moved HEAD in `root` since the previous hook-env run, which
+/// rewrites files on a checkout, pull or rebase without the user editing them.
+fn head_moved(root: &Path) -> bool {
+    match crate::hook_env::PREV_SESSION.git_heads.get(root) {
+        Some(prev) => git_head(root).as_ref() != Some(prev),
+        None => false,
+    }
+}
+
 pub async fn execute_runs(config: &Arc<Config>, ts: &Toolset) {
     let files = {
         let mut mu = MODIFIED_FILES.lock().unwrap();
@@ -59,10 +75,20 @@ pub async fn execute_runs(config: &Arc<Config>, ts: &Toolset) {
                 if wf.task.is_some() && wf.shell.is_some() {
                     warn!("watch_file hook has both shell and task set, ignoring shell");
                 }
+                let head_moved = head_moved(&root);
                 let result = if let Some(task_name) = &wf.task {
-                    execute_task(config, ts, &root, task_name, files).await
+                    execute_task(config, ts, &root, task_name, files, head_moved).await
                 } else if let Some(run) = &wf.run {
-                    execute(config, ts, &root, run, wf.shell.as_deref(), files).await
+                    execute(
+                        config,
+                        ts,
+                        &root,
+                        run,
+                        wf.shell.as_deref(),
+                        files,
+                        head_moved,
+                    )
+                    .await
                 } else {
                     warn!("watch_file hook has neither run nor task set, skipping");
                     continue;
@@ -85,6 +111,7 @@ async fn execute(
     run: &str,
     shell: Option<&str>,
     files: Vec<&PathBuf>,
+    head_moved: bool,
 ) -> Result<()> {
     let modified_files_var = files
         .iter()
@@ -109,6 +136,9 @@ async fn execute(
         .collect_vec();
     let mut env = ts.full_env(config).await?;
     env.insert("MISE_WATCH_FILES_MODIFIED".to_string(), modified_files_var);
+    if head_moved {
+        env.insert("MISE_WATCH_FILES_HEAD_MOVED".to_string(), "1".to_string());
+    }
     env.insert(
         crate::secrets::DENIED_MARKER.to_string(),
         "watch_files".to_string(),
@@ -161,6 +191,7 @@ async fn execute_task(
     root: &Path,
     task_name: &str,
     files: Vec<&PathBuf>,
+    head_moved: bool,
 ) -> Result<()> {
     let modified_files_var = files
         .iter()
@@ -170,6 +201,9 @@ async fn execute_task(
 
     let mut env = ts.full_env(config).await?;
     env.insert("MISE_WATCH_FILES_MODIFIED".to_string(), modified_files_var);
+    if head_moved {
+        env.insert("MISE_WATCH_FILES_HEAD_MOVED".to_string(), "1".to_string());
+    }
     env.insert("MISE_NO_HOOKS".to_string(), "1".to_string());
     env.insert(
         crate::secrets::DENIED_MARKER.to_string(),

@@ -233,17 +233,33 @@ patterns = ["uv.lock"]
 task = "sync-deps"
 ```
 
+A checkout, pull, rebase or `git stash pop` rewrites files without you editing
+them, and mise reports those files as changed too. When git moved HEAD since the
+previous prompt, mise sets `MISE_WATCH_FILES_HEAD_MOVED=1` so the command can
+skip work such as formatting files you did not touch:
+
+```toml [mise.toml]
+[[watch_files]]
+patterns = ["**/*.go"]
+run = '[ -n "$MISE_WATCH_FILES_HEAD_MOVED" ] || { IFS=:; hk fix $MISE_WATCH_FILES_MODIFIED; }'
+```
+
+The variable is also set when you edited a file and committed before the next
+prompt. `git stash pop` and `git stash apply` do not move HEAD, so they are not
+detected.
+
 ## Environment variables {#hook-execution}
 
-| Variable                    | Set for                                                     | Value                                                                       |
-| --------------------------- | ----------------------------------------------------------- | --------------------------------------------------------------------------- |
-| `MISE_PROJECT_ROOT`         | All hooks and `watch_files`                                 | The project root                                                            |
-| `MISE_CONFIG_ROOT`          | `[hooks]`                                                   | The root of the config file that defines the hook                           |
-| `MISE_ORIGINAL_CWD`         | All hooks and `watch_files`                                 | The directory you were in when mise ran                                     |
-| `MISE_PREVIOUS_DIR`         | `enter`, `leave`, `cd`                                      | The directory before the change                                             |
-| `MISE_INSTALLED_TOOLS`      | `postinstall`                                               | A JSON array of the installed tools; see [below](#mise-installed-tools)     |
-| `MISE_WATCH_FILES_MODIFIED` | `watch_files`                                               | The changed files, separated by `:`, with any `:` in a name escaped as `\:` |
-| `MISE_NO_HOOKS`             | Spawned `[hooks]` commands, task hooks, `watch_files` tasks | `1`, so a `mise` command run from the hook does not run hooks again         |
+| Variable                      | Set for                                                     | Value                                                                       |
+| ----------------------------- | ----------------------------------------------------------- | --------------------------------------------------------------------------- |
+| `MISE_PROJECT_ROOT`           | All hooks and `watch_files`                                 | The project root                                                            |
+| `MISE_CONFIG_ROOT`            | `[hooks]`                                                   | The root of the config file that defines the hook                           |
+| `MISE_ORIGINAL_CWD`           | All hooks and `watch_files`                                 | The directory you were in when mise ran                                     |
+| `MISE_PREVIOUS_DIR`           | `enter`, `leave`, `cd`                                      | The directory before the change                                             |
+| `MISE_INSTALLED_TOOLS`        | `postinstall`                                               | A JSON array of the installed tools; see [below](#mise-installed-tools)     |
+| `MISE_WATCH_FILES_MODIFIED`   | `watch_files`                                               | The changed files, separated by `:`, with any `:` in a name escaped as `\:` |
+| `MISE_WATCH_FILES_HEAD_MOVED` | `watch_files`                                               | `1` when git moved HEAD since the previous prompt; unset otherwise          |
+| `MISE_NO_HOOKS`               | Spawned `[hooks]` commands, task hooks, `watch_files` tasks | `1`, so a `mise` command run from the hook does not run hooks again         |
 
 Global hooks get the active project's root as `MISE_PROJECT_ROOT`, or the global
 config root when no project is active, and the global config root as
