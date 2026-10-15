@@ -73,6 +73,9 @@ dot_prefix = true
 - An entry without `source` finds it under the root, at its path inside the
   group's target: `~/.config/kitty` in the `home` group reads
   `~/.dotfiles/home/dot-config/kitty`.
+  With `mode = "template"`, a missing file falls back to the same path plus
+  `.tera`, so `"~/.config/git/config" = { mode = "template" }` renders
+  `home/dot-config/git/config.tera` and does not also deploy it with the suffix.
 - A relative `source` starts at the root. When it lies inside the root, or
   inside the tree of another entry that walks a directory, that walk skips it,
   so `git/config.tmpl` is rendered to `~/.gitconfig` and not also linked to

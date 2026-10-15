@@ -421,7 +421,15 @@ fn group_entry(defaults: &EntryDefaults, key: &str, value: toml::Value) -> Resul
             source
         })
     } else if needs_source {
-        Some(root.join(source_rel_for(root, &rel, dot_prefix)))
+        let source = root.join(source_rel_for(root, &rel, dot_prefix));
+        Some(if mode.as_deref() == Some("template") {
+            // the leaf spelled literally in the chosen parent, or every
+            // component spelled literally
+            let leaf = source.with_file_name(rel.file_name().unwrap_or_default());
+            template_source(source, &[leaf, root.join(&rel)])
+        } else {
+            source
+        })
     } else {
         None
     };
@@ -499,6 +507,28 @@ fn group_entry(defaults: &EntryDefaults, key: &str, value: toml::Value) -> Resul
         dot_prefix: entry_dot_prefix,
         table,
     })
+}
+
+/// A template entry's inferred source: the first file among the inferred
+/// path and the `others` (literal spellings of a dotfile in a `dot_prefix`
+/// tree), then each of them with a `.tera` suffix. When none is a file, the
+/// inferred path, so the missing source is reported.
+fn template_source(inferred: PathBuf, others: &[PathBuf]) -> PathBuf {
+    let suffixed = |path: &Path| {
+        let mut tera = path.as_os_str().to_os_string();
+        tera.push(".tera");
+        PathBuf::from(tera)
+    };
+    let plain = std::iter::once(&inferred).chain(others);
+    let candidates = plain
+        .clone()
+        .cloned()
+        .chain(plain.map(|path| suffixed(path)))
+        .collect::<Vec<_>>();
+    candidates
+        .into_iter()
+        .find(|path| path.is_file())
+        .unwrap_or(inferred)
 }
 
 /// Resolve a group's `root`: relative paths start at `dotfiles.root`.
@@ -1147,6 +1177,59 @@ mod tests {
         assert_eq!(
             source_rel_for(source, rel, true),
             PathBuf::from("dot-config/kitty/kitty.conf")
+        );
+    }
+
+    #[test]
+    fn template_sources_fall_back_to_a_tera_suffix() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let exact = root.join("config");
+        // none exists: the inferred path, so the missing source is reported
+        assert_eq!(template_source(exact.clone(), &[]), exact);
+        file::write(root.join("config.tera"), "x").unwrap();
+        assert_eq!(
+            template_source(exact.clone(), &[]),
+            root.join("config.tera")
+        );
+        // a directory at the exact path is not a template
+        file::create_dir_all(&exact).unwrap();
+        assert_eq!(
+            template_source(exact.clone(), &[]),
+            root.join("config.tera")
+        );
+        std::fs::remove_dir(&exact).unwrap();
+        // the exact path wins when both exist
+        file::write(&exact, "x").unwrap();
+        assert_eq!(template_source(exact.clone(), &[]), exact);
+        // in a prefixed parent, only the leaf is spelled literally
+        file::create_dir_all(root.join("dot-config")).unwrap();
+        file::write(root.join("dot-config/.rc.tera"), "x").unwrap();
+        assert_eq!(
+            template_source(
+                root.join("dot-config/dot-rc"),
+                &[root.join("dot-config/.rc")]
+            ),
+            root.join("dot-config/.rc.tera")
+        );
+        // a fully literal path in a tree that also keeps a prefixed directory
+        file::create_dir_all(root.join(".config/git")).unwrap();
+        file::write(root.join(".config/git/config.tera"), "x").unwrap();
+        assert_eq!(
+            template_source(
+                root.join("dot-config/git/config"),
+                &[
+                    root.join("dot-config/git/config"),
+                    root.join(".config/git/config")
+                ]
+            ),
+            root.join(".config/git/config.tera")
+        );
+        // a literal dotfile in a dot_prefix tree is found with its suffix
+        file::write(root.join(".gitconfig.tera"), "x").unwrap();
+        assert_eq!(
+            template_source(root.join("dot-gitconfig"), &[root.join(".gitconfig")]),
+            root.join(".gitconfig.tera")
         );
     }
 
