@@ -2178,12 +2178,16 @@ impl Lock {
                         Some(backend) => config.resolve_alias(backend, &version).await?,
                         None => version.clone(),
                     };
-                    let request = ToolRequest::new_with_options(
+                    let mut request = ToolRequest::new_with_options(
                         Arc::new(ba.clone()),
                         &effective_version,
                         tv.request.options(),
                         ToolSource::Argument,
                     );
+                    if let Ok(request) = &mut request {
+                        request.set_source(tv.request.source().clone());
+                        request.set_lockfile_scope(tv.request.lockfile_scope().clone());
+                    }
                     let resolve_options = request
                         .as_ref()
                         .ok()

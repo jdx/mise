@@ -1346,7 +1346,11 @@ fn keep_uv_python_variants(
     source: &Path,
     needed: &mut NeededVersions,
 ) -> Result<()> {
-    if tv.uv_install_identity().is_none() {
+    // A selected runtime can be temporarily unavailable after its lock pin
+    // advances. Keep existing receipt-backed environments in that case rather
+    // than skipping their runtime closure solely because resolution did not
+    // populate `uv_python` yet.
+    if tv.uv_install_identity().is_none() && !crate::backend::pipx::has_selected_python(tv)? {
         return Ok(());
     }
     let prefix = format!("{}~uv~", tv.logical_pathname());
