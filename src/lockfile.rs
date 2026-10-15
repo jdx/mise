@@ -3892,7 +3892,8 @@ pub enum LockResolutionStatus {
 /// because many tools legitimately lack a build for some of those platforms.
 #[derive(Default)]
 pub struct UnsupportedPlatforms {
-    enabled: bool,
+    /// Platforms the user named; `None` keeps the default set quiet
+    named: Option<BTreeSet<String>>,
     /// (short, version) -> requested platforms the tool is not available for
     platforms: BTreeMap<(String, String), BTreeSet<String>>,
     /// Platforms another request for the same tool version did resolve, such
@@ -3901,15 +3902,22 @@ pub struct UnsupportedPlatforms {
 }
 
 impl UnsupportedPlatforms {
-    pub fn new(enabled: bool) -> Self {
+    pub fn new(named: Option<BTreeSet<String>>) -> Self {
         Self {
-            enabled,
+            named,
             ..Default::default()
         }
     }
 
     pub fn record(&mut self, short: &str, version: &str, platform: &str) {
-        if self.enabled {
+        // Variants such as `linux-x64-musl` belong to the named `linux-x64`. The
+        // current platform is always locked, so it only counts when named too.
+        let named = self.named.as_ref().is_some_and(|named| {
+            named
+                .iter()
+                .any(|name| platform == name || platform.starts_with(&format!("{name}-")))
+        });
+        if named {
             self.platforms
                 .entry((short.to_string(), version.to_string()))
                 .or_default()

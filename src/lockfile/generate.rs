@@ -360,14 +360,23 @@ fn can_reuse(info: &PlatformInfo) -> bool {
 
 /// How the target platforms were chosen. Platforms the user named are replaced
 /// individually and warn when a tool has no build for one of them.
-#[derive(Clone, Copy, PartialEq, Eq)]
 pub enum PlatformSelection {
     /// Taken from the lockfile or the common default set
     Default,
     /// Listed in the `lockfile_platforms` setting
-    Configured,
+    Configured(BTreeSet<String>),
     /// Passed with `mise lock --platform`
-    Explicit,
+    Explicit(BTreeSet<String>),
+}
+
+impl PlatformSelection {
+    /// The platforms the user named, if they chose any
+    pub fn named(&self) -> Option<BTreeSet<String>> {
+        match self {
+            Self::Default => None,
+            Self::Configured(named) | Self::Explicit(named) => Some(named.clone()),
+        }
+    }
 }
 
 pub async fn generate(
@@ -405,7 +414,7 @@ pub async fn generate(
         for entry in entries {
             let mut untouched = entry.clone();
             if selected.contains(short.as_str()) {
-                if platform_selection != PlatformSelection::Explicit {
+                if !matches!(platform_selection, PlatformSelection::Explicit(_)) {
                     continue;
                 }
                 untouched
@@ -539,9 +548,7 @@ pub async fn generate(
         resolved.push((ordinal, specifier, resolution));
     }
     resolved.sort_by_key(|(ordinal, _, _)| *ordinal);
-    let mut unsupported = crate::lockfile::UnsupportedPlatforms::new(
-        platform_selection != PlatformSelection::Default,
-    );
+    let mut unsupported = crate::lockfile::UnsupportedPlatforms::new(platform_selection.named());
     for (_, specifier, resolution) in resolved {
         let (short, version, backend, platform, info, options, conda, status) = resolution;
         if status == LockResolutionStatus::Unsupported {
@@ -1437,7 +1444,7 @@ mod tests {
             &[tool()],
             &[Platform::parse("linux-x64").unwrap()],
             false,
-            PlatformSelection::Explicit,
+            PlatformSelection::Explicit(BTreeSet::new()),
             2,
             &[],
         )

@@ -2441,9 +2441,17 @@ impl Lock {
 
     fn platform_selection(&self, settings: &Settings) -> Result<PlatformSelection> {
         Ok(if !self.platform.is_empty() {
-            PlatformSelection::Explicit
-        } else if settings.lockfile_platforms()?.is_some() {
-            PlatformSelection::Configured
+            PlatformSelection::Explicit(
+                self.platform
+                    .iter()
+                    .map(|platform| {
+                        Platform::parse(platform)
+                            .map_or_else(|_| platform.clone(), |platform| platform.to_key())
+                    })
+                    .collect(),
+            )
+        } else if let Some(configured) = settings.lockfile_platforms()? {
+            PlatformSelection::Configured(configured.iter().map(Platform::to_key).collect())
         } else {
             PlatformSelection::Default
         })
@@ -2506,7 +2514,7 @@ impl Lock {
         let mut resolution_errors: Vec<String> = Vec::new();
         let mut skip_warnings = SkipWarnings {
             unsupported: crate::lockfile::UnsupportedPlatforms::new(
-                self.platform_selection(settings)? != PlatformSelection::Default,
+                self.platform_selection(settings)?.named(),
             ),
             ..Default::default()
         };
@@ -2622,7 +2630,11 @@ mod tests {
     fn skip_warnings_report_unsupported_requested_platforms() {
         use crate::lockfile::LockResolutionStatus::Unsupported;
         let mut warnings = SkipWarnings {
-            unsupported: crate::lockfile::UnsupportedPlatforms::new(true),
+            unsupported: crate::lockfile::UnsupportedPlatforms::new(Some(
+                ["linux-arm64", "windows-x64", "macos-arm64"]
+                    .map(String::from)
+                    .into(),
+            )),
             ..Default::default()
         };
         warnings.record("apko", "1.0.0", "windows-x64", "no asset", Unsupported);
@@ -2636,6 +2648,27 @@ mod tests {
             warnings.messages(),
             vec![
                 "apko@1.0.0 is not available for linux-arm64, windows-x64; it will not install there"
+                    .to_string()
+            ]
+        );
+    }
+
+    #[test]
+    fn skip_warnings_ignore_platforms_the_user_did_not_name() {
+        use crate::lockfile::LockResolutionStatus::Unsupported;
+        let mut warnings = SkipWarnings {
+            unsupported: crate::lockfile::UnsupportedPlatforms::new(Some(
+                ["linux-arm64".to_string()].into(),
+            )),
+            ..Default::default()
+        };
+        // The current platform is always locked, so it is not a request.
+        warnings.record("apko", "1.0.0", "macos-arm64", "no asset", Unsupported);
+        warnings.record("apko", "1.0.0", "linux-arm64-musl", "no asset", Unsupported);
+        assert_eq!(
+            warnings.messages(),
+            vec![
+                "apko@1.0.0 is not available for linux-arm64-musl; it will not install there"
                     .to_string()
             ]
         );
