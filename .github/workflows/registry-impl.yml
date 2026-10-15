@@ -217,6 +217,8 @@ jobs:
       - run: chmod +x target/debug/mise
       - run: echo target/debug >> "$GITHUB_PATH"
       - uses: ./.github/actions/mise-tools
+      # our own e2e image, the e2e tag moves on purpose
+      # jactionlint ignore=unpinned-images
       - name: Pull e2e Docker image
         run: docker pull ghcr.io/jdx/mise:e2e
       - name: Set test-tool jobs
@@ -226,6 +228,8 @@ jobs:
             jobs=4
           fi
           echo "TEST_TOOL_JOBS=$jobs" >> "$GITHUB_ENV"
+      # our own e2e image, the e2e tag moves on purpose
+      # jactionlint ignore=unpinned-images
       - id: test-tools
         env:
           TEST_TRANCHE: ${{ matrix.tranche }}
@@ -290,6 +294,8 @@ jobs:
             echo "::error::mise test-tool exited with status $test_tool_status without reporting failed tools"
             exit "$test_tool_status"
           fi
+      # our own e2e image, the e2e tag moves on purpose
+      # jactionlint ignore=unpinned-images
       - name: Retry failed tools
         id: retry
         if: steps.test-tools.outputs.failed_tools != ''

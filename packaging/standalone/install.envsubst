@@ -123,12 +123,53 @@ shasum_bin() {
   fi
 }
 
+github_release_url() {
+  echo "https://github.com/jdx/mise/releases/download/v$1"
+}
+
+mirror_release_url() {
+  echo "https://mise.jdx.dev/v$1"
+}
+
+# Prints the remote file at $1 to stdout. Returns non-zero on any failure.
+fetch_text() {
+  url="$1"
+  if command -v curl >/dev/null 2>&1; then
+    debug ">" curl --compressed -fsSL "$url"
+    curl --compressed -fsSL "$url"
+  elif command -v wget >/dev/null 2>&1; then
+    debug ">" wget -qO - "$url"
+    wget -qO - "$url"
+  else
+    error "mise standalone install specific version requires curl or wget but neither is installed. Aborting."
+  fi
+}
+
+# Reads SHASUMS256.txt lines on stdin and prints the first well-formed SHA-256
+# line for exactly file $1 (listed as "$1" or "./$1"). Prints nothing if
+# there is none.
+select_checksum() {
+  awk -v f="$1" '
+    NF == 2 && length($1) == 64 && $1 ~ /^[0-9a-f]+$/ {
+      name = $2
+      sub(/^\*/, "", name)
+      if (name == f || name == "./" f) { print $1 "  ./" f; exit }
+    }
+  '
+}
+
+# Prints the line for asset $2 from SHASUMS256.txt in the release directory at
+# $1. Prints nothing if the file cannot be fetched or has no valid line for it.
+fetch_checksum() {
+  # TODO: verify with minisign or gpg if available
+  fetch_text "$1/SHASUMS256.txt" | select_checksum "$2" || true
+}
+
 get_checksum() {
   version=$1
   os=$2
   arch=$3
   ext=$4
-  url="https://github.com/jdx/mise/releases/download/v${version}/SHASUMS256.txt"
   current_version="$MISE_CURRENT_VERSION"
   current_version="${current_version#v}"
 
@@ -211,21 +252,11 @@ get_checksum() {
       fi
     fi
   else
-    if command -v curl >/dev/null 2>&1; then
-      debug ">" curl -fsSL "$url"
-      checksums="$(curl --compressed -fsSL "$url")"
-    else
-      if command -v wget >/dev/null 2>&1; then
-        debug ">" wget -qO - "$url"
-        checksums="$(wget -qO - "$url")"
-      else
-        error "mise standalone install specific version requires curl or wget but neither is installed. Aborting."
-      fi
-    fi
-    # TODO: verify with minisign or gpg if available
-
-    checksum="$(echo "$checksums" | grep "$os-$arch.$ext")"
-    if ! echo "$checksum" | grep -Eq "^([0-9a-f]{32}|[0-9a-f]{64})"; then
+    # Always verify against GitHub Releases, never the host the archive came
+    # from, so a compromised mise.jdx.dev cannot serve a matching archive and
+    # checksum. There is deliberately no fallback to mise.jdx.dev here.
+    checksum="$(fetch_checksum "$(github_release_url "$version")" "mise-v${version}-${os}-${arch}.${ext}")"
+    if [ -z "$checksum" ]; then
       warn "no checksum for mise $version and $os-$arch"
     else
       echo "$checksum"
@@ -235,22 +266,26 @@ get_checksum() {
 
 #endregion
 
+# Downloads $1 into directory $2 and prints the path of the downloaded file.
+# Returns non-zero if the download fails.
 download_file() {
   url="$1"
   download_dir="$2"
   filename="$(basename "$url")"
   file="$download_dir/$filename"
 
-  info "mise: installing mise..."
-
   if command -v curl >/dev/null 2>&1; then
     debug ">" curl -#fLo "$file" "$url"
-    curl -#fLo "$file" "$url"
+    curl -#fLo "$file" "$url" || return 1
   else
     if command -v wget >/dev/null 2>&1; then
       debug ">" wget -qO "$file" "$url"
       stderr=$(mktemp)
-      wget -O "$file" "$url" >"$stderr" 2>&1 || error "wget failed: $(cat "$stderr")"
+      if ! wget -O "$file" "$url" >"$stderr" 2>&1; then
+        warn "wget failed: $(cat "$stderr")"
+        rm -f "$stderr"
+        return 1
+      fi
       rm "$stderr"
     else
       error "mise standalone install requires curl or wget but neither is installed. Aborting."
@@ -353,20 +388,40 @@ install_mise() {
       fi
     fi
   fi
-  if [ "$version" != "$current_version" ] || [ "$install_from_github" = "1" ] || [ "$install_from_github" = "true" ]; then
-    tarball_url="https://github.com/jdx/mise/releases/download/v${version}/mise-v${version}-${os}-${arch}.${ext}"
-  elif [ -n "${MISE_TARBALL_URL-}" ]; then
+  # Download from mise.jdx.dev first and fall back to GitHub Releases when that
+  # fails, for example because mise.jdx.dev no longer hosts an older release.
+  # The checksum never comes from mise.jdx.dev: it is embedded in this script
+  # for the built-in version and read from GitHub Releases for any other.
+  asset="mise-v${version}-${os}-${arch}.${ext}"
+  github_url="$(github_release_url "$version")/$asset"
+  if [ "$install_from_github" = "1" ] || [ "$install_from_github" = "true" ]; then
+    tarball_url="$github_url"
+    fallback_url=""
+  elif [ "$version" = "$current_version" ] && [ -n "${MISE_TARBALL_URL-}" ]; then
     tarball_url="$MISE_TARBALL_URL"
+    fallback_url=""
   else
-    tarball_url="https://mise.jdx.dev/v${version}/mise-v${version}-${os}-${arch}.${ext}"
+    tarball_url="$(mirror_release_url "$version")/$asset"
+    fallback_url="$github_url"
   fi
 
+  info "mise: installing mise..."
   download_dir="$(mktemp -d)"
-  cache_file=$(download_file "$tarball_url" "$download_dir")
+  if ! cache_file=$(download_file "$tarball_url" "$download_dir"); then
+    [ -n "$fallback_url" ] || error "mise: failed to download $tarball_url"
+    info "mise: could not download from mise.jdx.dev, trying GitHub Releases"
+    cache_file=$(download_file "$fallback_url" "$download_dir") || error "mise: failed to download $fallback_url"
+  fi
   debug "mise-setup: tarball=$cache_file"
 
   debug "validating checksum"
-  cd "$(dirname "$cache_file")" && get_checksum "$version" "$os" "$arch" "$ext" | "$(shasum_bin)" -c >/dev/null
+  # Never extract an archive without a checksum for exactly that file: an empty
+  # or unrelated line must not reach `shasum -c`, whose handling of it varies.
+  cache_name="$(basename "$cache_file")"
+  checksum="$(get_checksum "$version" "$os" "$arch" "$ext" | select_checksum "$cache_name")"
+  [ -n "$checksum" ] || error "mise: no checksum found for $cache_name, refusing to install it unverified"
+  cd "$(dirname "$cache_file")"
+  printf '%s\n' "$checksum" | "$(shasum_bin)" -c >/dev/null || error "mise: checksum mismatch for $cache_name"
 
   # extract tarball
   if [ -d "$install_path" ]; then

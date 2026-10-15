@@ -889,18 +889,31 @@ env = "MISE_EXPERIMENTAL"
 type = "Bool"
 
 [fetch_remote_versions_cache]
-default = "1h"
+default_docs = "1h"
 description = "How long a tool's cached list of available versions stays fresh."
 docs = """
-Commands such as `mise install`, `mise use`, `mise outdated` and
-`mise ls-remote` fetch the list again once it is older than this. Commands that
-prefer offline data, such as shims, `mise activate`, `mise exec`, `mise env`
-and `mise ls`, use the cached list whatever its age, as does every command when
-[`prefer_offline`](#prefer_offline) is on. The same duration controls when
-remote `include` fragments that point at a branch or tag are refreshed. See
+`mise outdated`, `mise upgrade`, `mise ls-remote`, `mise lock` and `mise latest`
+fetch the list again once it is older than this, 1 hour by default.
+
+When this is not set, commands that only need a version matching a request,
+such as `mise install`, `mise use` and `mise run`, keep a list for the tool's
+[`minimum_release_age`](#minimum_release_age) less an hour, the most a
+versions-host snapshot lags: 23 hours by default, 5 hours for a tool with
+`minimum_release_age = "6h"`, and never less than 1 hour or more than 24 hours.
+A release newer than the list could not be picked before it reached that age
+anyway. This applies only to lists that date every
+version; others are refetched after 1 hour. Setting this value applies it to
+every command.
+
+Commands that prefer offline data, such as shims, `mise activate`, `mise exec`,
+`mise env` and `mise ls`, use the cached list whatever its age, as does every
+command when [`prefer_offline`](#prefer_offline) is on. The same duration
+controls when remote `include` fragments that point at a branch or tag are
+refreshed. See
 [When mise refreshes version lists](/cache-behavior.html#version-list-refresh).
 """
 env = "MISE_FETCH_REMOTE_VERSIONS_CACHE"
+optional = true
 type = "Duration"
 
 [fetch_remote_versions_timeout]
@@ -4462,9 +4475,19 @@ version lists for registry tools and public GitHub release data on a schedule.
 Using it avoids GitHub's anonymous rate limit in normal installs, including
 Docker builds and CI jobs without a GitHub token.
 
-When the host does not have the requested metadata yet, mise falls back to the
-upstream API. Private repositories, GitHub Enterprise, custom GitHub API URLs,
-and installs with this setting off need normal
+When a command resolves several tools, such as `mise outdated` or `mise
+upgrade`, mise reads one index of every tool's newest versions instead of each
+tool's version list, and keeps it as long as a version list
+([`fetch_remote_versions_cache`](#fetch_remote_versions_cache)). A request the
+index cannot answer exactly reads that tool's list as before.
+
+When the host does not list a registry tool's versions, mise lists them from
+the tool's own source. GitHub release data for public repositories comes only
+from the host: if it fails, mise reports the error rather than spend GitHub's
+anonymous rate limit. mise asks GitHub directly only
+for a repository the host does not know, which may be private, and only with
+GitHub credentials. Private repositories, GitHub Enterprise, custom GitHub API
+URLs, and installs with this setting off need normal
 [GitHub authentication](/dev-tools/github-tokens.html) to stay within GitHub's
 rate limits.
 
@@ -4474,6 +4497,21 @@ that GitHub metadata; the replacement is the only source, because this host
 describes only github.com. Rules that reroute only release downloads do not
 change this, and version lists for registry tools still come from this host.
 
+Every request to the host sends the mise version and invoking shell in the
+User-Agent. When mise runs in CI, these requests also send an
+`x-mise-ci: true` header and end the User-Agent with ` ci`, for example
+`mise/2026.10.10 linux-x64 (2026-10-11) bash ci`.
+
+The host's request logs record each request's IP address, path and query,
+User-Agent, and time. They are kept in private storage for up to 35 days and
+then deleted automatically. A nightly job turns them into usage counts, such
+as monthly active users and installs per tool, keyed by a salted hash of the IP
+address.
+
+Set this to `false` to stop these requests. mise still downloads Python's list
+of precompiled builds from this host; see
+[How mise installs Python](/lang/python.html#precompiled-python-binaries).
+
 `mise ls-remote --no-versions-host` skips the host for one command. See
 [A new release is not listed](/troubleshooting.html#new-version-of-a-tool-is-not-available).
 """
@@ -4482,21 +4520,28 @@ type = "Bool"
 
 [use_versions_host_track]
 default = true
-description = "Send anonymous download statistics to mise-versions after installing a tool."
+description = "Send download statistics to mise-versions after installing a tool."
 docs = """
 After a successful install of a core or registry tool, mise reports it to
 [mise-versions](https://mise-versions.jdx.dev), which shows tool popularity.
-mise sends:
+Set this to `false` to opt out. Nothing is sent when
+[`use_versions_host`](#use_versions_host) is `false`.
 
-- the tool name, its full backend identifier such as `aqua:BurntSushi/ripgrep`,
-  and the version
+The report is a `GET https://mise-versions.jdx.dev/t` request whose query
+parameters carry:
+
+- the tool name, its full backend identifier such as `aqua:BurntSushi/ripgrep`
+  (with any URL credentials, query string, and fragment removed, and left out
+  when a URL in it cannot be parsed), and the version
 - the OS and architecture
-- the mise version and invoking shell, in the User-Agent, and whether it runs
-  in CI
 
-The server hashes your IP address for daily deduplication and does not store it
-raw. Nothing is sent when [`use_versions_host`](#use_versions_host) is `false`.
-Set this to `false` to opt out.
+The request also sends the mise version and invoking shell, in the User-Agent,
+and whether it runs in CI.
+
+The host's request logs store the report with your raw IP address, User-Agent,
+and time in private storage for up to 35 days, then delete it automatically. A
+nightly job counts installs from these logs, keyed by a salted hash of the IP
+address.
 """
 env = "MISE_USE_VERSIONS_HOST_TRACK"
 type = "Bool"

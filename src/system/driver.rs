@@ -38,6 +38,10 @@ pub struct DriverOpts {
     pub dry_run: bool,
     pub update: bool,
     pub yes: bool,
+    /// the install pass for these packages was only previewed (`--dry-run`), so
+    /// a package it would install still reads as missing; the upgrade pass must
+    /// not tell the user to run apply first
+    pub install_previewed: bool,
 }
 
 fn unavailable_manager_is_error(d: &DriverOpts) -> bool {
@@ -247,7 +251,7 @@ async fn run_manager(
         .filter(|status| status.request.desired == PackageDesiredState::Present)
         .filter(|status| matches!(status.state, PackageState::Missing))
         .count();
-    if action == Action::Upgrade && missing > 0 {
+    if action == Action::Upgrade && missing > 0 && !d.install_previewed {
         warn!(
             "{name}: {missing} package(s) not installed — run `mise bootstrap packages apply` first"
         );
@@ -394,6 +398,7 @@ mod tests {
             dry_run: false,
             update: false,
             yes: true,
+            install_previewed: false,
         };
         let statuses = vec![PackageStatus {
             request: PackageRequest {
@@ -421,6 +426,7 @@ mod tests {
             dry_run: false,
             update: false,
             yes: true,
+            install_previewed: false,
         };
         assert!(unavailable_manager_is_error(&manager_opts));
         assert_eq!(unavailable_package_reason(&manager_opts, &statuses), None);
@@ -517,6 +523,7 @@ mod run_tests {
             dry_run: false,
             update: false,
             yes: true,
+            install_previewed: false,
         }
     }
 

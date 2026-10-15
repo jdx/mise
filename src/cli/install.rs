@@ -7,7 +7,7 @@ use crate::config::Settings;
 use crate::config::{Config, SettingsExt};
 use crate::errors::split_install_result;
 use crate::hooks::Hooks;
-use crate::install_before::resolve_cli_minimum_release_age;
+use crate::install_before::{resolve_cli_minimum_release_age, set_cli_minimum_release_age_cutoff};
 use crate::task::TaskLoadContext;
 use crate::task::task_context_builder::TaskContextBuilder;
 use crate::task::task_tool_installer::TaskToolInstaller;
@@ -165,6 +165,11 @@ impl Install {
 
     #[async_backtrace::framed]
     pub async fn run(self) -> Result<()> {
+        // Before anything lists versions, so cached lists are kept no longer
+        // than this cutoff allows.
+        if let Some(cutoff) = self.get_before_date()? {
+            set_cli_minimum_release_age_cutoff(cutoff);
+        }
         let config = Config::get().await?;
         if !self.is_dry_run() && !Settings::get().generate_lockfiles() {
             crate::lockfile::migrate_monorepo_lockfiles(&config, false)?;
@@ -511,6 +516,7 @@ impl Install {
                 offline: false,
                 refresh_remote_versions: false,
                 inactive: false,
+                outdated_release_urls: false,
                 warn_not_in_lockfile: true,
                 defer_missing_lazy_tools: false,
                 defer_missing_lazy_online: false,

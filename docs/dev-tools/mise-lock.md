@@ -358,12 +358,41 @@ already in the lockfile, or writes the common platforms for a new lockfile.
 [Locked tool stubs](/dev-tools/tool-stubs.html#locked-tool-stub) follow the
 same rules, using their project's `mise.lock`.
 
-## Lockfiles in CI {#ci-cd}
+## Lockfiles in CI and Docker {#ci-cd}
 
-Commit entries for every runner platform and install with
-`mise install --locked` (`jdx/mise-action` adds `--locked` itself when the
-repository has a `mise.lock`); see
-[Continuous integration](/continuous-integration.html).
+Commit `mise.lock` for CI jobs and Docker builds. Besides installing the same
+versions everywhere, it saves each run from looking up versions. Without a
+lockfile, a request such as `node = "24"` or `latest` needs the tool's list of
+available versions, fetched from the
+[versions host](/configuration/settings.html#use_versions_host) or the tool's
+upstream source. A fresh runner or Docker layer has no cached lists, so every
+tool costs at least one request before anything downloads. A restored cache
+helps only briefly: `mise install` fetches a list again once it is older than
+[`fetch_remote_versions_cache`](/configuration/settings.html#fetch_remote_versions_cache)
+(1 hour by default). When a tool has a matching lockfile entry, mise takes the
+version from it and skips the lookup.
+
+Lock every platform that runs the tools, from CI runners to developer machines
+and Docker images:
+
+```sh
+mise lock --platform linux-x64,linux-arm64,macos-arm64
+```
+
+Commit `mise.lock`, and `.mise/locks/` if mise created it for
+[dependency graphs](#dependency-graphs). Then install with:
+
+```sh
+mise install --locked
+```
+
+`jdx/mise-action` adds `--locked` itself when the repository has a `mise.lock`.
+In a Dockerfile, copy `mise.lock` with `mise.toml` before `mise install`, and
+`.mise/locks/` too if the lockfile records dependency graphs; see
+[Docker](/mise-cookbook/docker.html#installing-project-tools).
+
+See [Continuous integration](/continuous-integration.html) for complete
+workflows.
 
 ## Backend support
 

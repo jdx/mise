@@ -22,17 +22,17 @@ async fn paginate_canned(
     pages: Vec<Option<crate::versions_host::GithubReleasesPage>>,
     require_assets: bool,
     list_all: bool,
-) -> (Option<Vec<String>>, Vec<u32>) {
+) -> (eyre::Result<Option<Vec<String>>>, Vec<u32>) {
     let pages = std::sync::Mutex::new(pages.into_iter().map(Some).collect::<Vec<_>>());
     let requested = std::sync::Mutex::new(vec![]);
     let releases = paginate_mirrored_releases(require_assets, list_all, |page| {
         requested.lock().unwrap().push(page);
         let list = pages.lock().unwrap()[page as usize - 1].take().unwrap();
-        async move { list }
+        async move { Ok(list) }
     })
     .await;
     (
-        releases.map(|r| r.into_iter().map(|r| r.tag_name).collect()),
+        releases.map(|r| r.map(|r| r.into_iter().map(|r| r.tag_name).collect())),
         requested.into_inner().unwrap(),
     )
 }
@@ -48,7 +48,7 @@ async fn test_mirrored_releases_stop_at_a_stable_release() {
         false,
     )
     .await;
-    assert_eq!(releases.unwrap(), ["v2.0.0-rc.1", "v1.0.0"]);
+    assert_eq!(releases.unwrap().unwrap(), ["v2.0.0-rc.1", "v1.0.0"]);
     assert_eq!(requested, [1]);
 }
 
@@ -66,7 +66,7 @@ async fn test_mirrored_releases_follow_next_page_past_prereleases() {
         false,
     )
     .await;
-    assert_eq!(releases.unwrap(), ["v2.0.0-rc.1", "v1.0.0"]);
+    assert_eq!(releases.unwrap().unwrap(), ["v2.0.0-rc.1", "v1.0.0"]);
     assert_eq!(requested, [1, 2, 3]);
 }
 
@@ -81,7 +81,7 @@ async fn test_mirrored_releases_are_bounded_like_the_direct_listing() {
         })
         .collect();
     let (releases, requested) = paginate_canned(pages, false, false).await;
-    assert_eq!(releases.unwrap().len(), MAX_RELEASE_FALLBACK_PAGES);
+    assert_eq!(releases.unwrap().unwrap().len(), MAX_RELEASE_FALLBACK_PAGES);
     assert_eq!(requested.len(), MAX_RELEASE_FALLBACK_PAGES);
 }
 
@@ -102,12 +102,13 @@ async fn test_mirrored_releases_require_assets_keeps_paginating() {
         false,
     )
     .await;
-    assert_eq!(releases.unwrap(), ["v2.0.0", "v1.0.0"]);
+    assert_eq!(releases.unwrap().unwrap(), ["v2.0.0", "v1.0.0"]);
 }
 
 #[tokio::test]
 async fn test_mirrored_releases_never_mix_sources() {
-    // No mirror answer for a later page discards the earlier ones.
+    // A later page going missing is an error rather than half a list, or a
+    // cue to ask GitHub for the rest.
     let (releases, _) = paginate_canned(
         vec![
             Some(mirrored_page(vec![make_prerelease("v2.0.0-rc.1")], Some(2))),
@@ -117,10 +118,20 @@ async fn test_mirrored_releases_never_mix_sources() {
         false,
     )
     .await;
-    assert_eq!(releases, None);
+    assert!(releases.is_err());
 
+    // A first page that is a 404: mise-versions doesn't know the repository.
     let (releases, _) = paginate_canned(vec![None], false, false).await;
-    assert_eq!(releases, None);
+    assert!(releases.unwrap().is_none());
+}
+
+#[tokio::test]
+async fn test_mirrored_releases_surface_a_failed_page() {
+    let releases = paginate_mirrored_releases(false, false, |_| async {
+        Err::<Option<crate::versions_host::GithubReleasesPage>, _>(eyre::eyre!("502"))
+    })
+    .await;
+    assert!(releases.is_err());
 }
 
 #[tokio::test]
@@ -130,10 +141,13 @@ async fn test_mirrored_releases_stop_on_a_repeating_page() {
     let requested = std::sync::Mutex::new(0);
     let releases = paginate_mirrored_releases(false, true, |_| {
         *requested.lock().unwrap() += 1;
-        async { Some(mirrored_page(vec![make_release("v1")], Some(1))) }
+        async { Ok(Some(mirrored_page(vec![make_release("v1")], Some(1)))) }
     })
     .await;
-    assert!(releases.is_none());
+    assert_eq!(
+        releases.unwrap().unwrap().len(),
+        crate::versions_host::GITHUB_RELEASES_MAX_PAGES
+    );
     assert_eq!(
         requested.into_inner().unwrap(),
         crate::versions_host::GITHUB_RELEASES_MAX_PAGES
@@ -141,7 +155,7 @@ async fn test_mirrored_releases_stop_on_a_repeating_page() {
 }
 
 #[tokio::test]
-async fn test_mirrored_releases_defer_to_github_past_the_served_pages() {
+async fn test_mirrored_releases_end_at_the_served_pages() {
     let pages = vec![
         Some(mirrored_page(vec![make_release("v2")], Some(2))),
         Some(crate::versions_host::GithubReleasesPage {
@@ -149,8 +163,9 @@ async fn test_mirrored_releases_defer_to_github_past_the_served_pages() {
             ..mirrored_page(vec![make_release("v1")], None)
         }),
     ];
+    // Older releases than mise-versions serves are not fetched from GitHub.
     let (releases, requested) = paginate_canned(pages, false, true).await;
-    assert_eq!(releases, None);
+    assert_eq!(releases.unwrap().unwrap(), ["v2", "v1"]);
     assert_eq!(requested, [1, 2]);
 
     // Without MISE_LIST_ALL_VERSIONS a stable release ends the listing
@@ -160,5 +175,53 @@ async fn test_mirrored_releases_defer_to_github_past_the_served_pages() {
         ..mirrored_page(vec![make_release("v1")], None)
     })];
     let (releases, _) = paginate_canned(pages, false, false).await;
-    assert_eq!(releases.unwrap(), ["v1"]);
+    assert_eq!(releases.unwrap().unwrap(), ["v1"]);
+}
+
+#[tokio::test]
+async fn test_stale_copy_stands_in_while_mise_versions_is_unavailable() {
+    let tmp = tempfile::tempdir().unwrap();
+    let path = tmp.path().join("releases.msgpack.z");
+    let unavailable = |status| -> eyre::Result<Vec<String>> {
+        Err(crate::versions_host::VersionsHostUnavailable {
+            status,
+            message: "mise-versions answered".to_string(),
+        }
+        .into())
+    };
+    // A copy written earlier, already past its freshness window.
+    CacheManagerBuilder::new(&path)
+        .build::<Vec<String>>()
+        .write(&vec!["v1".to_string()])
+        .unwrap();
+    let stale = || {
+        CacheManagerBuilder::new(&path)
+            .with_fresh_duration(Some(std::time::Duration::ZERO))
+            .build::<Vec<String>>()
+    };
+
+    for status in [Some(503), Some(429), None] {
+        let got = cached_or_stale(&stale(), async || unavailable(status)).await;
+        assert_eq!(got.unwrap(), ["v1"], "status {status:?}");
+    }
+    // Restricted or disabled, or a failure that isn't mise-versions': no.
+    assert!(
+        cached_or_stale(&stale(), async || unavailable(Some(403)))
+            .await
+            .is_err()
+    );
+    assert!(
+        cached_or_stale(&stale(), async || -> eyre::Result<Vec<String>> {
+            Err(eyre::eyre!("bad data"))
+        })
+        .await
+        .is_err()
+    );
+    // Nothing cached: the failure is the answer.
+    let empty = CacheManagerBuilder::new(tmp.path().join("none.msgpack.z")).build::<Vec<String>>();
+    assert!(
+        cached_or_stale(&empty, async || unavailable(Some(503)))
+            .await
+            .is_err()
+    );
 }

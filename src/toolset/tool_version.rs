@@ -6,7 +6,7 @@ use std::{cmp::Ordering, sync::LazyLock};
 use std::{collections::BTreeMap, sync::Arc};
 
 use crate::args::BackendArg;
-use crate::backend::{ABackend, VersionInfo};
+use crate::backend::{self, ABackend, VersionInfo};
 use crate::config::env_directive::EnvValue;
 use crate::config::{Config, Settings, SettingsExt};
 #[cfg(windows)]
@@ -19,6 +19,7 @@ use crate::install_before::{
 use crate::lockfile::{AubeLock, CondaPackageInfo, LockfileTool, PlatformInfo};
 use crate::runtime_symlinks::is_runtime_symlink;
 use crate::toolset::{ToolRequest, ToolSource, install_state, tool_request};
+use crate::versions_index::IndexPick;
 use crate::{dirs, env};
 use console::style;
 use dashmap::DashMap;
@@ -46,6 +47,9 @@ pub struct ToolVersion {
     pub before_date: Option<Timestamp>,
     locked: bool,
     resolved_from_lockfile: bool,
+    /// A lazy request left unresolved because nothing is installed: `version` is
+    /// the request itself, not a release, so nothing may record or compare it as one.
+    deferred: bool,
     pub lock_platforms: BTreeMap<String, PlatformInfo>,
     pub install_path: Option<PathBuf>,
     /// The HTTP backend should treat `install_path` as the final destination
@@ -66,6 +70,16 @@ pub struct ToolVersion {
 }
 
 impl ToolVersion {
+    /// A lazy request with no version of the tool installed: it is waiting for
+    /// its first run, so a bare `mise upgrade` leaves it alone. A backend that
+    /// fails to resolve is not waiting for anything, so it reports `false`.
+    pub fn is_unrun_lazy(&self) -> bool {
+        self.request.options().lazy == Some(true)
+            && self
+                .backend()
+                .is_ok_and(|backend| backend.list_installed_versions().is_empty())
+    }
+
     /// The error raised when resolution found no usable version.
     ///
     /// `minimum_release_age` applies by default, so "no versions found" is
@@ -149,6 +163,7 @@ impl ToolVersion {
             before_date: None,
             locked: false,
             resolved_from_lockfile: false,
+            deferred: false,
             lock_platforms: Default::default(),
             install_path: None,
             install_path_is_exact: false,
@@ -207,7 +222,9 @@ impl ToolVersion {
             && backend.list_installed_versions().is_empty()
         {
             let version = request.version();
-            return Ok(Self::new(request, version).with_before_date(opts.before_date));
+            return Ok(Self::new(request, version)
+                .into_deferred()
+                .with_before_date(opts.before_date));
         }
         if matches!(
             request,
@@ -233,6 +250,37 @@ impl ToolVersion {
         let tv = tv.with_before_date(opts.before_date);
         trace!("resolved: {tv}");
         Ok(tv)
+    }
+
+    /// `opts` without the install-time refresh, when `backend` (the one the
+    /// request resolves through, after aliases and registry `min_version`
+    /// boundaries) has a cached list that already holds every release the
+    /// cutoff admits.
+    ///
+    /// The refresh keeps a cached list from hiding a release newer than the
+    /// cache. A cutoff well older than the list (24h by default, against a list
+    /// at most an hour old) already hides every such release, so the cached
+    /// list gives the same answer a refetch would. See
+    /// `Backend::adopt_cached_remote_versions_for_cutoff` for when that holds.
+    async fn without_covered_refresh(
+        config: &Arc<Config>,
+        request: &ToolRequest,
+        backend: &ABackend,
+        opts: &ResolveOptions,
+    ) -> ResolveOptions {
+        let mut opts = opts.clone();
+        if opts.refresh_remote_versions
+            && let Some(before) = opts.before_date
+            && backend
+                .adopt_cached_remote_versions_for_cutoff(config, before)
+                .await
+        {
+            trace!(
+                "not refreshing remote versions for {request}: the release-age cutoff predates the cache"
+            );
+            opts.refresh_remote_versions = false;
+        }
+        opts
     }
 
     /// Whether a command that runs tools may leave this lazy request unresolved
@@ -305,6 +353,16 @@ impl ToolVersion {
     /// resolved version byte for byte and never parses or orders them. A fuzzy
     /// request (`"2"`), an alias (`"lts"`), a ref, or a prefix leaves the two
     /// strings different, so only a literal pin matches.
+    fn into_deferred(mut self) -> Self {
+        self.deferred = true;
+        self
+    }
+
+    /// Whether this is a lazy request left unresolved, so `version` only echoes it.
+    pub fn is_deferred(&self) -> bool {
+        self.deferred
+    }
+
     pub(crate) fn request_pinned_this_version(&self) -> bool {
         let ToolRequest::Version { version, .. } = &self.request else {
             return false;
@@ -590,6 +648,7 @@ impl ToolVersion {
             offline: base_opts.offline,
             refresh_remote_versions: base_opts.refresh_remote_versions,
             inactive: base_opts.inactive,
+            outdated_release_urls: base_opts.outdated_release_urls,
             warn_not_in_lockfile: base_opts.warn_not_in_lockfile,
             defer_missing_lazy_tools: false,
             defer_missing_lazy_online: false,
@@ -739,6 +798,7 @@ impl ToolVersion {
         let v = config.resolve_alias(&backend, v).await?;
         let request = request.with_registry_version(&v);
         let backend = request.backend()?;
+        let opts = &Self::without_covered_refresh(config, &request, &backend, opts).await;
 
         // Re-check the lockfile after alias resolution (e.g., "lts" → "24")
         // The initial lockfile check in resolve() uses the unresolved alias which
@@ -864,7 +924,7 @@ impl ToolVersion {
                 return Ok(Self::from_installed(request, v));
             }
             if defer_missing_lazy {
-                return build(v);
+                return build(v).map(Self::into_deferred);
             }
             if !is_offline
                 && let Some(v) = backend
@@ -939,7 +999,7 @@ impl ToolVersion {
             return Ok(Self::from_installed(request, v.clone()));
         }
         if defer_missing_lazy {
-            return build(v);
+            return build(v).map(Self::into_deferred);
         }
         if matches!(
             request.source(),
@@ -1043,6 +1103,22 @@ impl ToolVersion {
         let matches = match pin_remote_matches {
             Some(matches) => matches,
             None => {
+                // The answer the matches below would give, when the versions
+                // index can prove it without the full list.
+                let selection_opts = config.get_tool_opts_with_overrides(backend.ba()).await?;
+                if let Some(version) = Box::pin(backend::resolve_from_versions_index(
+                    backend.as_ref(),
+                    config,
+                    v,
+                    IndexPick::Request,
+                    &selection_opts,
+                    opts.before_date,
+                    opts.refresh_remote_versions,
+                ))
+                .await
+                {
+                    return Ok(version);
+                }
                 backend
                     .list_versions_matching_with_opts(
                         config,
@@ -1081,6 +1157,7 @@ impl ToolVersion {
     ) -> Result<Self> {
         let request = request.with_registry_version(v);
         let backend = request.backend()?;
+        let opts = &Self::without_covered_refresh(config, &request, &backend, opts).await;
         if v == "latest" && opts.offline {
             let pathname = request.version().replace([':', '/'], "-");
             let path = backend.ba().installs_path().join(&pathname);
@@ -1119,6 +1196,7 @@ impl ToolVersion {
     ) -> Result<Self> {
         let request = request.with_registry_version(prefix);
         let backend = request.backend()?;
+        let opts = &Self::without_covered_refresh(config, &request, &backend, opts).await;
         let settings = Settings::get();
         let is_offline = settings.offline() || opts.offline;
         let prefer_offline =
@@ -1136,6 +1214,20 @@ impl ToolVersion {
         }
         if opts.offline {
             return Ok(Self::new(request, prefix.to_string()));
+        }
+        let selection_opts = config.get_tool_opts_with_overrides(backend.ba()).await?;
+        if let Some(v) = Box::pin(backend::resolve_from_versions_index(
+            backend.as_ref(),
+            config,
+            prefix,
+            IndexPick::Last,
+            &selection_opts,
+            opts.before_date,
+            opts.refresh_remote_versions,
+        ))
+        .await
+        {
+            return Ok(Self::new(request, v));
         }
         let matches = backend
             .list_versions_matching_with_opts(
@@ -1308,6 +1400,10 @@ pub struct ResolveOptions {
     /// (for example `ToolSource::Unknown`) when resolving tools for flows like
     /// outdated/upgrade checks.
     pub inactive: bool,
+    /// Look up where to read about each outdated version
+    /// (`OutdatedInfo::release_url`). Only `mise outdated --json` reports it,
+    /// and the lookup can read a version list that resolution did not need.
+    pub outdated_release_urls: bool,
     /// If false, missing lockfile entries log at debug instead of warn.
     pub warn_not_in_lockfile: bool,
     /// Under `prefer_offline`, leave a lazy tool that has no installed match at its
@@ -1334,6 +1430,7 @@ impl Default for ResolveOptions {
             offline: false,
             refresh_remote_versions: false,
             inactive: false,
+            outdated_release_urls: false,
             warn_not_in_lockfile: true,
             defer_missing_lazy_tools: false,
             defer_missing_lazy_online: false,
