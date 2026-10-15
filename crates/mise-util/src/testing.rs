@@ -158,7 +158,10 @@ macro_rules! run_before_main {
             }
 
             #[used]
-            #[cfg_attr(target_vendor = "apple", unsafe(link_section = "__DATA,__mod_init_func"))]
+            #[cfg_attr(
+                target_vendor = "apple",
+                unsafe(link_section = "__DATA,__mod_init_func")
+            )]
             #[cfg_attr(windows, unsafe(link_section = ".CRT$XCU"))]
             #[cfg_attr(
                 not(any(target_vendor = "apple", windows)),
@@ -169,11 +172,12 @@ macro_rules! run_before_main {
     };
 }
 
+#[cfg(test)]
+crate::run_before_main!(register_default_settings);
+
 /// This crate's own unit tests have no mise config system to load settings
 /// from, so they read the `settings.toml` defaults, and no mise build to key
 /// caches on.
-#[cfg(test)]
-crate::run_before_main!(register_default_settings);
 #[cfg(test)]
 fn register_default_settings() {
     mise_settings::set_loader(mise_settings::load_defaults);
