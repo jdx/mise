@@ -508,20 +508,29 @@ where
         bail!("offline mode is enabled");
     }
     debug!("GET {url}");
-    let resp = HTTP_FETCH
+    let resp = match HTTP_FETCH
         .get_async_with_headers_allow_error_status(url, &VERSIONS_HOST_HEADERS)
         .await
-        .inspect_err(|err| {
+    {
+        Ok(resp) => resp,
+        Err(err) => {
+            let status = http::error_code(&err);
             log_versions_host_trace(
                 ctx,
                 "failed",
                 &format!(
                     "status={} error={}",
-                    http::error_code(err).unwrap_or(0),
+                    status.unwrap_or(0),
                     log_value(&err.to_string())
                 ),
             );
-        })?;
+            return Err(VersionsHostUnavailable {
+                status,
+                message: format!("{err:#}"),
+            }
+            .into());
+        }
+    };
     let status = resp.status();
     debug!("GET {url} {status}");
     if status == reqwest::StatusCode::NOT_FOUND {
@@ -536,12 +545,44 @@ where
             "failed",
             &format!("status={} error={}", status.as_u16(), log_value(&message)),
         );
-        bail!(message);
+        return Err(VersionsHostUnavailable {
+            status: Some(status.as_u16()),
+            message,
+        }
+        .into());
     }
     resp.json()
         .await
         .map(Some)
         .map_err(|err| eyre::eyre!("invalid response from {url}: {err}"))
+}
+
+/// The versions host could not answer: a network failure or an error status
+/// other than 404. In jdx/mise-versions' client contract a 403 means the
+/// mirror is disabled or restricted, and anything else (429, 5xx, no
+/// connection) is temporary: a copy cached earlier may stand in for the
+/// answer. Neither ever sends mise to api.github.com.
+#[derive(Debug, thiserror::Error)]
+#[error("{message}")]
+pub struct VersionsHostUnavailable {
+    pub status: Option<u16>,
+    pub(crate) message: String,
+}
+
+impl VersionsHostUnavailable {
+    /// Whether this failure is temporary, so a stale cached copy may be used.
+    pub fn is_temporary(&self) -> bool {
+        self.status != Some(403)
+    }
+}
+
+/// Whether `err` is, or was caused by, a temporary [`VersionsHostUnavailable`].
+pub fn is_temporarily_unavailable(err: &eyre::Report) -> bool {
+    err.chain().any(|cause| {
+        cause
+            .downcast_ref::<VersionsHostUnavailable>()
+            .is_some_and(VersionsHostUnavailable::is_temporary)
+    })
 }
 
 fn versions_host_error_message(status: u16, body: &str) -> String {
@@ -911,6 +952,27 @@ mod tests {
         .unwrap();
         assert_eq!(entries[1].name, "refs");
         assert_eq!(entries[1].kind, "dir");
+    }
+
+    #[test]
+    fn test_temporarily_unavailable() {
+        let unavailable = |status| -> eyre::Report {
+            VersionsHostUnavailable {
+                status,
+                message: "x".to_string(),
+            }
+            .into()
+        };
+        for status in [Some(429), Some(502), Some(503), None] {
+            assert!(is_temporarily_unavailable(
+                &unavailable(status).wrap_err("failed to read from mise-versions")
+            ));
+        }
+        // Disabled or restricted: not something an old copy should paper over.
+        assert!(!is_temporarily_unavailable(&unavailable(Some(403))));
+        assert!(!is_temporarily_unavailable(&eyre::eyre!(
+            "invalid response"
+        )));
     }
 
     #[test]
