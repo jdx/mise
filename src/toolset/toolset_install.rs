@@ -340,19 +340,7 @@ impl Toolset {
         // tool selected by the caller. Track dependencies by their full request
         // key, rather than just their backend, so that private runtimes are not
         // returned to callers such as `mise use` and persisted as user tools.
-        let mut private_dependency_keys = HashSet::new();
-        let mut next = 0;
-        while next < versions.len() {
-            let declarations = install_dependency_declarations(&versions[next]);
-            declarations.validate()?;
-            for dependency in declarations.versioned() {
-                if !versions.contains(dependency) {
-                    private_dependency_keys.insert(tool_key(dependency));
-                    versions.push(dependency.clone());
-                }
-            }
-            next += 1;
-        }
+        let private_dependency_keys = self.add_private_install_dependencies(&mut versions)?;
         ensure_compatible_install_requests(&versions)?;
         ensure_safe_install_options(&versions)?;
 
@@ -578,6 +566,33 @@ impl Toolset {
             }
             .into())
         }
+    }
+
+    fn add_private_install_dependencies(
+        &self,
+        versions: &mut Vec<ToolRequest>,
+    ) -> Result<HashSet<String>> {
+        let mut private_dependency_keys = HashSet::new();
+        let mut next = 0;
+        while next < versions.len() {
+            let declarations = install_dependency_declarations(&versions[next]);
+            declarations.validate()?;
+            let mut dependencies = declarations.versioned().cloned().collect_vec();
+            // A selector-owned runtime is resolved in the consumer's source
+            // scope, but its installer options still come from the effective
+            // configured runtime request. Apply those before duplicate and
+            // compatibility checks so the private dependency is the same
+            // concrete install request as an explicitly configured Python.
+            self.init_request_options(&mut dependencies);
+            for dependency in dependencies {
+                if !versions.contains(&dependency) {
+                    private_dependency_keys.insert(tool_key(&dependency));
+                    versions.push(dependency);
+                }
+            }
+            next += 1;
+        }
+        Ok(private_dependency_keys)
     }
 
     /// Ensure all plugins for the requested tools are installed
@@ -1293,5 +1308,40 @@ mod tests {
         assert_eq!(options.get("selected"), Some("config"));
         assert_eq!(options.get("request_only"), Some("request"));
         assert_eq!(options.get("inline_only"), Some("inline"));
+    }
+
+    #[test]
+    fn selected_python_dependency_inherits_configured_python_options() {
+        let python = Arc::new(BackendArg::from("python"));
+        let pypi = Arc::new(BackendArg::from("pypi:black"));
+        let configured_python = ToolRequest::new_with_options(
+            python.clone(),
+            "3.12",
+            parse_tool_options("patch_sysconfig=false"),
+            ToolSource::Unknown,
+        )
+        .unwrap();
+        let selected_tool = ToolRequest::new_with_options(
+            pypi,
+            "24.10.0",
+            parse_tool_options(r#"python="3.12""#),
+            ToolSource::Unknown,
+        )
+        .unwrap();
+        let mut toolset = Toolset::new(ToolSource::Unknown);
+        toolset.add_version(configured_python);
+        let mut versions = vec![selected_tool];
+
+        let private = toolset
+            .add_private_install_dependencies(&mut versions)
+            .unwrap();
+        let dependency = versions
+            .iter()
+            .find(|request| request.ba() == &python)
+            .expect("selected Python dependency should be added");
+
+        assert_eq!(dependency.options().get("patch_sysconfig"), Some("false"));
+        assert!(private.contains(&tool_key(dependency)));
+        ensure_compatible_install_requests(&versions).unwrap();
     }
 }
