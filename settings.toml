@@ -4471,8 +4471,8 @@ index cannot answer exactly reads that tool's list as before.
 When the host does not list a registry tool's versions, mise lists them from
 the tool's own source. GitHub release data and attestations for public
 repositories come only from the host: if it fails, mise reports the error
-rather than spend GitHub's anonymous rate limit. Paranoid mode still confirms
-the host's answers about attestations with GitHub. mise asks GitHub directly only
+rather than spend GitHub's anonymous rate limit. Paranoid mode asks
+GitHub when the host can't settle an attestation answer. mise asks GitHub directly only
 for a repository the host does not know, which may be private, and only with
 GitHub credentials. Private repositories, GitHub Enterprise, custom GitHub API
 URLs, and installs with this setting off need normal
