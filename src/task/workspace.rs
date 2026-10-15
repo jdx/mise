@@ -571,6 +571,16 @@ impl WorkspaceProjectGraph {
             skip_provider_errors,
         )?
         .with_overrides(overrides)?;
+        // Declaring a project in a provider's namespace takes manual control
+        // from that provider, so its failed discovery no longer blocks the graph.
+        for (raw_id, config) in overrides {
+            if config.remove {
+                continue;
+            }
+            if let Some((provider_id, _)) = raw_id.split_once(':') {
+                graph.provider_errors.remove(provider_id);
+            }
+        }
         for (raw_id, config) in overrides {
             if config.remove || config.root.is_none() {
                 continue;
@@ -1879,6 +1889,31 @@ mod tests {
         assert_eq!(
             graph.provider_discovery_error().as_deref(),
             Some("broken: broken workspace metadata")
+        );
+    }
+
+    #[test]
+    fn override_in_provider_namespace_clears_its_discovery_error() {
+        let overrides = BTreeMap::from([(
+            "broken:app".to_string(),
+            WorkspaceProjectOverride {
+                root: Some(PathBuf::from("app")),
+                ..Default::default()
+            },
+        )]);
+
+        let graph = WorkspaceProjectGraph::discover_all_with_overrides_lenient(
+            &[&FailingDiscoveryProvider],
+            Path::new("/workspace"),
+            &overrides,
+        )
+        .unwrap();
+
+        assert!(graph.provider_discovery_error().is_none());
+        assert!(
+            graph
+                .get(&ProjectId::new("broken", "app").unwrap())
+                .is_some()
         );
     }
 
