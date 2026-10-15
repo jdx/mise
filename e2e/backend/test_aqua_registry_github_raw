@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+
+# A GitHub-hosted aqua registry is read from raw.githubusercontent.com, not the
+# contents API, which allows 60 requests an hour without a token.
+
+unset GITHUB_TOKEN GH_TOKEN MISE_GITHUB_TOKEN GITHUB_API_TOKEN
+export MISE_GITHUB_GH_CLI_TOKENS=false
+
+cat <<EOF >mise.toml
+[settings]
+aqua.registries = ["https://github.com/aquaproj/aqua-registry"]
+EOF
+
+output="$(MISE_DEBUG=1 mise install aqua:BurntSushi/ripgrep@14.1.1 2>&1)" || {
+  echo "$output"
+  fail "mise install failed"
+}
+if [[ $output != *"GET https://raw.githubusercontent.com/aquaproj/aqua-registry/HEAD/registry.yaml"* ]]; then
+  echo "$output"
+  fail "the registry was not read from raw.githubusercontent.com"
+fi
+if [[ $output == *"GET https://api.github.com/repos/aquaproj/aqua-registry/contents/"* ]]; then
+  echo "$output"
+  fail "mise read the registry through the contents API"
+fi
+assert_contains "mise x aqua:BurntSushi/ripgrep@14.1.1 -- rg --version" "ripgrep 14.1.1"

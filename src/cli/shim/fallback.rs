@@ -7,6 +7,9 @@ use std::path::Path;
 
 const CHAIN_ENV: &str = "__MISE_SHIM_FALLBACK_CHAIN";
 const MAX_HANDOFFS: usize = 32;
+// A program that execs into its last command (bash -c 'bash ...') legitimately
+// re-enters the same shim from the same fallback, so a few repeats are not a cycle.
+const MAX_REPEATS: usize = 8;
 
 #[derive(Default, Deserialize, Serialize)]
 pub(super) struct Chain {
@@ -46,7 +49,7 @@ impl Chain {
         );
         // exec preserves the PID. A child process (e.g. bun run invoking bun)
         // starts a fresh chain, so legitimate nested shim calls still work.
-        if self.handoffs.contains(&handoff) {
+        if self.handoffs.iter().filter(|h| **h == handoff).count() >= MAX_REPEATS {
             bail!(
                 "shim fallback recursion detected for {bin_name}: {} keeps resolving back through mise. Set a version for {bin_name}, or remove mise's shim for it.",
                 file::display_path(fallback)
@@ -77,14 +80,30 @@ mod tests {
 
     #[test]
     fn repeated_handoff_in_one_process_is_rejected() {
-        let value = start().extended("npx", Path::new("/wrapper/npx")).unwrap();
-        let chain = Chain::parse(&value, PID)
-            .extended("node", Path::new("/wrapper/node"))
-            .unwrap();
-        let err = Chain::parse(&chain, PID)
+        let mut value = String::new();
+        for _ in 0..MAX_REPEATS {
+            value = Chain::parse(&value, PID)
+                .extended("npx", Path::new("/wrapper/npx"))
+                .unwrap();
+            value = Chain::parse(&value, PID)
+                .extended("node", Path::new("/wrapper/node"))
+                .unwrap();
+        }
+        let err = Chain::parse(&value, PID)
             .extended("npx", Path::new("/wrapper/npx"))
             .unwrap_err();
         assert!(err.to_string().contains("recursion detected for npx"));
+    }
+
+    #[test]
+    fn a_few_repeated_handoffs_are_allowed() {
+        // bash -c 'bash --version' execs its final command back into the shim.
+        let mut value = String::new();
+        for _ in 0..MAX_REPEATS {
+            value = Chain::parse(&value, PID)
+                .extended("bash", Path::new("/bin/bash"))
+                .unwrap();
+        }
     }
 
     #[test]
@@ -133,7 +152,10 @@ mod tests {
     fn handoffs_preserve_delimiters_and_non_utf8_paths() {
         let one = Path::new(OsStr::from_bytes(b"/w/\xff\x1f\x1e"));
         let two = Path::new(OsStr::from_bytes(b"/w/\xfe\x1f\x1e"));
-        let value = start().extended("tool", one).unwrap();
+        let mut value = String::new();
+        for _ in 0..MAX_REPEATS {
+            value = Chain::parse(&value, PID).extended("tool", one).unwrap();
+        }
         assert!(Chain::parse(&value, PID).extended("tool", two).is_ok());
         assert!(Chain::parse(&value, PID).extended("tool", one).is_err());
     }
