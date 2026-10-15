@@ -17,7 +17,7 @@ use crate::platform::Platform;
 use crate::toolset::{ToolRequest, ToolVersion, ToolVersionOptions, Toolset};
 use crate::ui::progress_report::SingleReport;
 use crate::{Result, lock_file::LockFile};
-use crate::{dirs, file, plugins, sysconfig};
+use crate::{dirs, file, plugins, sysconfig, versions_host};
 use async_trait::async_trait;
 use eyre::{bail, eyre};
 use flate2::read::GzDecoder;
@@ -282,6 +282,33 @@ impl PythonPlugin {
         Ok(parse_python_build_definition_created_at(&output))
     }
 
+    /// Runs `python-build --definitions` from the pyenv clone, cloning or updating it first.
+    async fn list_python_build_definitions(&self) -> eyre::Result<Vec<VersionInfo>> {
+        self.install_or_update_python_build(None)?;
+        let python_build_bin = self.python_build_bin();
+        let python_build_str = python_build_bin.to_string_lossy().to_string();
+        let definition_created_at = self
+            .python_build_definition_created_at()
+            .inspect_err(|err| debug!("failed to get python-build definition timestamps: {err:#}"))
+            .unwrap_or_default();
+        plugins::core::run_fetch_task_with_timeout_async(async move || {
+            let output = crate::cmd::cmd_read_async_inherited_env(
+                &python_build_str,
+                &["--definitions"],
+                std::iter::empty::<(&str, &std::ffi::OsStr)>(),
+            )
+            .await?;
+            Ok(python_build_version_infos(output.split('\n').map(|s| {
+                VersionInfo {
+                    version: s.to_string(),
+                    created_at: definition_created_at.get(s).cloned(),
+                    ..Default::default()
+                }
+            })))
+        })
+        .await
+    }
+
     async fn fetch_precompiled_remote_versions(
         &self,
     ) -> eyre::Result<&Vec<(String, String, String)>> {
@@ -296,9 +323,7 @@ impl PythonPlugin {
             .get_or_try_init_async(async || {
                 let settings = Settings::get();
                 let url_path = python_precompiled_url_path(&settings);
-                let rsp = HTTP_FETCH
-                    .get_bytes(format!("https://mise-versions.jdx.dev/tools/{url_path}"))
-                    .await?;
+                let rsp = versions_host::python_precompiled(&url_path).await?;
                 let mut decoder = GzDecoder::new(rsp.as_ref());
                 let mut raw = String::new();
                 decoder.read_to_string(&mut raw)?;
@@ -417,6 +442,8 @@ impl PythonPlugin {
             debug!("using lockfile URL for platform {platform_key}: {url}");
             url
         } else {
+            // mise-versions publishes what `python-build --definitions` prints, so listing does
+            // not need a pyenv clone. Compiling still clones it, in `install_compiled`.
             let settings = Settings::get();
             let os = settings.os();
             let (platform, arch) = pypy_platform_arch(os, settings.arch())
@@ -818,9 +845,7 @@ impl PythonPlugin {
 
         let platform = format!("{arch}-{os}");
         let url_path = format!("python-precompiled-{arch}-{os}.gz");
-        let rsp = HTTP_FETCH
-            .get_bytes(format!("https://mise-versions.jdx.dev/tools/{url_path}"))
-            .await?;
+        let rsp = versions_host::python_precompiled(&url_path).await?;
         let mut decoder = GzDecoder::new(rsp.as_ref());
         let mut raw = String::new();
         decoder.read_to_string(&mut raw)?;
@@ -1017,36 +1042,17 @@ impl Backend for PythonPlugin {
                 .collect();
             Ok(merge_pypy_and_cpython(versions, cpython))
         } else {
-            self.install_or_update_python_build(None)?;
-            let python_build_bin = self.python_build_bin();
-            let python_build_str = python_build_bin.to_string_lossy().to_string();
-            let definition_created_at = self
-                .python_build_definition_created_at()
-                .inspect_err(|err| {
-                    debug!("failed to get python-build definition timestamps: {err:#}")
-                })
-                .unwrap_or_default();
-            plugins::core::run_fetch_task_with_timeout_async(async move || {
-                let output = crate::cmd::cmd_read_async_inherited_env(
-                    &python_build_str,
-                    &["--definitions"],
-                    std::iter::empty::<(&str, &std::ffi::OsStr)>(),
+            // mise-versions publishes what `python-build --definitions` prints, so listing does
+            // not need a pyenv clone. Compiling still clones it, in `install_compiled`.
+            let settings = Settings::get();
+            if python_build_definitions_may_come_from_versions_host(&settings)
+                && let Some(versions) = python_build_definitions_from_versions_host(
+                    versions_host::list_python_build_definitions().await,
                 )
-                .await?;
-                let versions = output
-                    .split('\n')
-                    // remove free-threaded pythons like 3.13t and 3.14t-dev
-                    .filter(|s| !regex!(r"\dt(-dev)?$").is_match(s))
-                    .map(|s| VersionInfo {
-                        version: s.to_string(),
-                        created_at: definition_created_at.get(s).cloned(),
-                        ..Default::default()
-                    })
-                    .sorted_by_cached_key(|v| python_version_sort_key(&v.version))
-                    .collect();
-                Ok(versions)
-            })
-            .await
+            {
+                return Ok(versions);
+            }
+            self.list_python_build_definitions().await
         }
     }
 
@@ -1280,6 +1286,48 @@ impl Backend for PythonPlugin {
             ..Default::default()
         })
     }
+}
+
+/// The pyenv repository mise-versions reads python-build's definitions from.
+const VERSIONS_HOST_PYENV_REPO: &str = "https://github.com/pyenv/pyenv.git";
+
+/// mise-versions only describes the default pyenv repository; a fork set in `python.pyenv_repo`
+/// can add or drop definitions, so its list has to come from the fork itself.
+fn python_build_definitions_may_come_from_versions_host(settings: &Settings) -> bool {
+    settings.python.pyenv_repo == VERSIONS_HOST_PYENV_REPO
+}
+
+/// The python-build listing to use from the versions host, or `None` to run python-build from a
+/// pyenv clone instead: the host is turned off, has no list, or failed.
+fn python_build_definitions_from_versions_host(
+    host: eyre::Result<Option<Vec<VersionInfo>>>,
+) -> Option<Vec<VersionInfo>> {
+    match host {
+        // Keep only what a pyenv clone gives, so the list cannot depend on where it came from:
+        // a host `prerelease` flag would drop entries python leaves to PEP 440 matching.
+        Ok(Some(versions)) => Some(python_build_version_infos(versions.into_iter().map(|v| {
+            VersionInfo {
+                version: v.version,
+                created_at: v.created_at,
+                ..Default::default()
+            }
+        }))),
+        Ok(None) => None,
+        Err(err) => {
+            debug!("failed to list python-build definitions from the versions host: {err:#}");
+            None
+        }
+    }
+}
+
+/// Shapes python-build's definitions into the python listing, wherever they came from.
+fn python_build_version_infos(versions: impl IntoIterator<Item = VersionInfo>) -> Vec<VersionInfo> {
+    versions
+        .into_iter()
+        // remove free-threaded pythons like 3.13t and 3.14t-dev
+        .filter(|v| !regex!(r"\dt(-dev)?$").is_match(&v.version))
+        .sorted_by_cached_key(|v| python_version_sort_key(&v.version))
+        .collect()
 }
 
 fn parse_python_build_definition_created_at(output: &str) -> BTreeMap<String, String> {
@@ -2024,6 +2072,78 @@ cpython-3.12.13+20260805-x86_64-unknown-linux-gnu-install_only_stripped.tar.gz
             Some("/etc/python-patches")
         );
         Settings::reset(None);
+    }
+
+    fn python_build_definition(version: &str, created_at: &str) -> VersionInfo {
+        VersionInfo {
+            version: version.to_string(),
+            created_at: Some(created_at.to_string()),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn test_python_build_definitions_from_versions_host_are_shaped_like_pyenv() {
+        let host = vec![
+            python_build_definition("3.13.0", "2024-10-07T00:00:00.000Z"),
+            VersionInfo {
+                prerelease: Some(true),
+                rolling: true,
+                release_url: Some("https://example.com/3.14.0a1".to_string()),
+                ..python_build_definition("3.14.0a1", "2024-10-15T00:00:00.000Z")
+            },
+            python_build_definition("3.13t-dev", "2024-05-08T00:00:00.000Z"),
+            python_build_definition("miniconda3-latest", "2019-01-01T00:00:00.000Z"),
+            python_build_definition("3.13.0t", "2024-10-07T00:00:00.000Z"),
+            python_build_definition("pypy3.10-7.3.17", "2024-08-29T00:00:00.000Z"),
+        ];
+        let versions = python_build_definitions_from_versions_host(Ok(Some(host)))
+            .expect("a host list is used");
+        // The filter, order and fields a pyenv clone's `python-build --definitions` gives.
+        assert_eq!(
+            versions
+                .into_iter()
+                .map(|v| (
+                    v.version,
+                    v.created_at,
+                    v.prerelease,
+                    v.rolling,
+                    v.release_url
+                ))
+                .collect::<Vec<_>>(),
+            [
+                ("pypy3.10-7.3.17", "2024-08-29T00:00:00.000Z"),
+                ("miniconda3-latest", "2019-01-01T00:00:00.000Z"),
+                ("3.13.0", "2024-10-07T00:00:00.000Z"),
+                ("3.14.0a1", "2024-10-15T00:00:00.000Z"),
+            ]
+            .map(|(v, at)| (v.to_string(), Some(at.to_string()), None, false, None))
+        );
+    }
+
+    #[test]
+    fn test_python_build_definitions_fall_back_to_pyenv_without_a_host_list() {
+        assert!(python_build_definitions_from_versions_host(Ok(None)).is_none());
+        assert!(python_build_definitions_from_versions_host(Err(eyre!("status 500"))).is_none());
+    }
+
+    #[test]
+    fn test_python_build_definitions_from_versions_host_need_the_default_pyenv_repo() {
+        let mut settings = Settings::default();
+        settings.python.pyenv_repo = VERSIONS_HOST_PYENV_REPO.to_string();
+        assert!(python_build_definitions_may_come_from_versions_host(
+            &settings
+        ));
+        settings.python.pyenv_repo = "https://github.com/example/pyenv.git".to_string();
+        assert!(!python_build_definitions_may_come_from_versions_host(
+            &settings
+        ));
+    }
+
+    #[test]
+    fn test_versions_host_pyenv_repo_is_the_default() {
+        let _guard = crate::test::SettingsGuard::lock();
+        assert_eq!(Settings::get().python.pyenv_repo, VERSIONS_HOST_PYENV_REPO);
     }
 
     #[test]

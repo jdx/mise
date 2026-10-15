@@ -20,11 +20,15 @@ cat >mise.toml <<'EOF'
 packslip = "latest"
 EOF
 # Latest resolves and verifies the vendor recommendation without installing it.
+assert_contains "MISE_DEBUG=1 mise latest packslip 2>&1" "verifying for resolution"
 latest=$(mise latest packslip) || exit 1
 [[ -n $latest ]] || exit 1
 assert_contains "mise ls-remote packslip" "$latest"
+# What resolution verified is kept, so resolving again asks only for the
+# vendor's list, while installing what it picked verifies the release again.
+assert_not_contains "MISE_DEBUG=1 mise latest packslip 2>&1" "verifying for resolution"
 # The quickstart works with no explicit signer options in the user's config.
-MISE_GLOBAL_CONFIG_FILE="$PWD/global.toml" mise use -g packslip
+assert_contains "MISE_DEBUG=1 MISE_GLOBAL_CONFIG_FILE=$PWD/global.toml mise use -g packslip 2>&1" "packslip signed by"
 assert_contains "cat global.toml" 'packslip ='
 assert_contains "mise exec -- packslip version" "packslip $latest"
 canonical_install_path="$(mise where packslip)"
@@ -112,6 +116,17 @@ assert_contains "mise x -- packslip version" "packslip 0.2.0"
 MISE_MINIMUM_RELEASE_AGE=2000-01-01 mise lock
 assert_contains "cat mise.lock" 'version = "0.2.0"'
 cd ..
+
+# A prefix resolves like latest: each newest match is verified, and one this
+# host cannot install is skipped rather than resolved and left for install to
+# refuse. Here every match is.
+mise packslip forget github.com/jdx/packslip
+assert_fail_contains "MISE_DEBUG=1 mise latest 'packslip:jdx/packslip[variant=nope]@0'" "verifying for resolution"
+assert_fail_contains "mise latest 'packslip:jdx/packslip[variant=nope]@0'" "skipping 0.3.1: no artifact"
+assert_fail_contains "mise install 'packslip:jdx/packslip[variant=nope]@0'" "no release of packslip:github.com/jdx/packslip matching 0 can be installed"
+# The verifications that walk kept serve a prefix with another variant, which
+# only changes the artifact chosen, and that choice is made again on reading.
+assert_not_contains "MISE_DEBUG=1 mise latest packslip:jdx/packslip@0 2>&1" "verifying for resolution"
 
 # A release that carries no packslip is refused rather than guessed at.
 assert_fail_contains "mise install packslip:jdx/mise-test-fixtures@1.0.0" "no release"

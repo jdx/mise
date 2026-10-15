@@ -1149,11 +1149,16 @@ pub(crate) fn file_declares_secrets(path: &Path, body: &str) -> bool {
             table_declares(v) || v.as_table().is_some_and(|t| t.values().any(table_declares))
         })
     } else {
-        scan_mise_header_entries(body)
-            .into_iter()
-            .filter_map(|entry| entry.parse_toml().ok())
-            .any(|value| table_declares(&value))
+        header_declares_secrets(body)
     }
+}
+
+/// [`file_declares_secrets`] for a file read only through its `#MISE` headers, whatever its name.
+pub(crate) fn header_declares_secrets(body: &str) -> bool {
+    scan_mise_header_entries(file::strip_utf8_bom(body))
+        .into_iter()
+        .filter_map(|entry| entry.parse_toml().ok())
+        .any(|value| value.as_table().is_some_and(|t| t.contains_key("secrets")))
 }
 
 pub(crate) fn file_has_decoded_template(path: &Path, body: &str) -> bool {
@@ -1168,13 +1173,20 @@ pub(crate) fn file_has_decoded_template(path: &Path, body: &str) -> bool {
         // render), so it doesn't need trust on this account.
         toml::from_str::<toml::Value>(body).is_ok_and(|v| toml_value_has_template(&v))
     } else {
-        // per-entry so one unparseable header cannot hide a decoded template in
-        // another entry (the whole file used to fall back to "no template")
-        scan_mise_header_entries(body)
-            .into_iter()
-            .filter_map(|entry| entry.parse_toml().ok())
-            .any(|value| toml_value_has_template(&value))
+        header_has_decoded_template(body)
     }
+}
+
+/// [`file_has_decoded_template`] for a file read only through its `#MISE` headers, whatever its
+/// name: a remote task file loads that way even when it is called `*.toml`.
+pub(crate) fn header_has_decoded_template(body: &str) -> bool {
+    use crate::config::config_file::mise_toml::toml_value_has_template;
+    // per-entry so one unparseable header cannot hide a decoded template in
+    // another entry (the whole file used to fall back to "no template")
+    scan_mise_header_entries(file::strip_utf8_bom(body))
+        .into_iter()
+        .filter_map(|entry| entry.parse_toml().ok())
+        .any(|value| toml_value_has_template(&value))
 }
 
 #[cfg(test)]
@@ -5082,6 +5094,33 @@ rust_cache = { unknown = true }
         assert!(!file_has_decoded_template(
             script,
             "\u{feff}#MISE description=\"a plain task\"\necho hi\n"
+        ));
+    }
+
+    #[test]
+    fn test_header_checks_ignore_the_file_name() {
+        use super::{
+            file_has_decoded_template, header_declares_secrets, header_has_decoded_template,
+        };
+        // A remote `git::` task file keeps its name, and the remote loader reads only its
+        // `#MISE` headers. Read as a TOML document, this header is a comment.
+        let body =
+            "#MISE description=\"\\u007b\\u007b exec(command='x') \\u007d\\u007d\"\necho hi\n";
+        assert!(!file_has_decoded_template(Path::new("evil.toml"), body));
+        assert!(header_has_decoded_template(body));
+        assert!(!header_has_decoded_template(
+            "#MISE description=\"a plain task\"\necho hi\n"
+        ));
+        // a raw template in a header counts; one in the script body never renders
+        assert!(header_has_decoded_template(
+            "#MISE description=\"{{ exec(command='x') }}\"\necho hi\n"
+        ));
+        assert!(!header_has_decoded_template(
+            "#MISE description=\"plain\"\ndocker ps --format '{{.Names}}'\n"
+        ));
+        assert!(header_declares_secrets("#MISE secrets={}\necho hi\n"));
+        assert!(!header_declares_secrets(
+            "#MISE description=\"x\"\necho hi\n"
         ));
     }
 

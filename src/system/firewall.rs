@@ -1706,6 +1706,8 @@ fn render_ufw_rule_with_comment(rule: &FirewallRule, comment: String) -> Vec<Str
     let mut args = vec![rule.action.ufw().to_string()];
     if rule.direction == FirewallDirection::Outgoing {
         args.push("out".to_string());
+    } else if rule.interface.is_some() {
+        args.push("in".to_string());
     }
     if let Some(interface) = &rule.interface {
         args.extend(["on".to_string(), interface.clone()]);
@@ -2440,6 +2442,53 @@ mod tests {
         assert_eq!(rendered.len(), 2);
         assert!(rendered[0].contains("meter mise_limit_0_ip"));
         assert!(!rendered[0].contains("ip6 saddr"));
+    }
+
+    #[test]
+    fn renders_ufw_interface_rules_with_explicit_direction() {
+        let mut rule = request_with_ssh(None).rules.remove(0);
+        rule.name = "tailnet".to_string();
+        rule.port = None;
+        rule.protocol = None;
+        rule.interface = Some("tailscale0".to_string());
+
+        for action in [
+            FirewallAction::Allow,
+            FirewallAction::Limit,
+            FirewallAction::Deny,
+            FirewallAction::Reject,
+        ] {
+            rule.action = action;
+            for (direction, token) in [
+                (FirewallDirection::Incoming, "in"),
+                (FirewallDirection::Outgoing, "out"),
+            ] {
+                rule.direction = direction;
+                for comment in ["mise:tailnet", "mise-transition:a1B2c3D4:tailnet"] {
+                    assert_eq!(
+                        render_ufw_rule_with_comment(&rule, comment.to_string()),
+                        [
+                            action.ufw(),
+                            token,
+                            "on",
+                            "tailscale0",
+                            "from",
+                            "any",
+                            "to",
+                            "any",
+                            "comment",
+                            comment,
+                        ]
+                    );
+                }
+                let canonical = shell_words::split(&format!(
+                    "{} {token} on tailscale0 comment 'mise:tailnet'",
+                    action.ufw()
+                ))
+                .unwrap();
+                assert!(ufw_rule_matches(&canonical, &rule));
+            }
+        }
     }
 
     #[test]

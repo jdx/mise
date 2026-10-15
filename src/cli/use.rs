@@ -16,7 +16,7 @@ use crate::config::{
     resolve_target_config_path,
 };
 use crate::file::display_path;
-use crate::install_before::resolve_cli_minimum_release_age;
+use crate::install_before::{resolve_cli_minimum_release_age, set_cli_minimum_release_age_cutoff};
 use crate::toolset::{
     ConfigScope, InstallOptions, ResolveOptions, ToolRequest, ToolSource, ToolVersion,
     ToolVersionOptions, ToolsetBuilder,
@@ -260,6 +260,11 @@ impl Use {
     }
 
     pub(crate) async fn run(mut self) -> Result<()> {
+        // Before anything lists versions, so cached lists are kept no longer
+        // than this cutoff allows.
+        if let Some(cutoff) = self.get_before_date()? {
+            set_cli_minimum_release_age_cutoff(cutoff);
+        }
         if self.tools.is_empty() && self.remove.is_empty() {
             self.tools = vec![UseTool {
                 postinstall: None,
@@ -311,6 +316,7 @@ impl Use {
             offline: false,
             refresh_remote_versions: false,
             inactive: false,
+            outdated_release_urls: false,
             warn_not_in_lockfile: true,
             defer_missing_lazy_tools: false,
             defer_missing_lazy_online: false,

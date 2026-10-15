@@ -1,0 +1,110 @@
+#!/usr/bin/env bash
+require_cmd python3
+
+# A globally locked pipx tool's uv dependency graph must survive upgrades that
+# resolve outside the lockfile, the same way an npm aube graph does.
+export MISE_PYTHON_COMPILE=0
+export MISE_PYTHON_GITHUB_ATTESTATIONS=0
+export MISE_PIPX_UVX=1
+export MISE_HIDE_PROGRESS=1
+
+# An older release that stays published; the upgrade always lands on a newer
+# latest, so the moved version is read back from mise instead of assumed.
+old=0.16.7
+
+write_global_config() {
+  cat >"$MISE_CONFIG_DIR/config.toml" <<EOF
+[tools]
+python = "3.12"
+uv = "latest"
+"pipx:ruff" = { version = "$1" }
+EOF
+}
+
+check_graph() {
+  mise -C "$HOME" lock --global --sidecars --json >"$PWD/sidecars.json"
+  python3 - "$PWD/sidecars.json" "$1" <<'PY'
+import json
+import sys
+listing, = json.loads(open(sys.argv[1]).read())
+entries = [e for e in listing['sidecars'] if e['tool'] == 'pipx:ruff']
+assert entries, listing
+entry, = entries
+assert entry['version'] == sys.argv[2], entry
+assert entry['graph'] == 'uv' and entry['exists'], entry
+PY
+}
+
+# Install first: generating the uv graph needs the uv binary the toolset
+# just installed, and the isolated e2e PATH has none of its own.
+write_global_config "$old"
+mise -C "$HOME" install
+mise -C "$HOME" lock --global
+check_graph "$old"
+mise -C "$HOME" install --locked
+assert_succeed "mise -C '$HOME' exec -- ruff --version"
+
+mise -C "$HOME" --yes upgrade --bump
+new="$(mise -C "$HOME" current pipx:ruff)"
+[[ $new != "$old" ]] || fail "upgrade did not move ruff past $old; rerun when a newer ruff is released"
+check_graph "$new"
+assert_succeed "mise -C '$HOME' exec -- ruff --version"
+
+# A fresh data dir replays the upgraded graph under --locked.
+cp "$MISE_CONFIG_DIR/mise.lock" "$PWD/replay.lock"
+export MISE_DATA_DIR="$HOME/replay-data"
+mise -C "$HOME" install --locked
+assert_succeed "mise -C '$HOME' exec -- ruff --version"
+assert_succeed "cmp '$PWD/replay.lock' '$MISE_CONFIG_DIR/mise.lock'"
+
+# With automatic lockfile creation on but no explicit `mise lock`, an ordinary
+# global install still never creates a lockfile, and an upgrade must not invent
+# one. Grep for a graph on a missing file would pass vacuously, so assert the
+# file itself stays absent.
+unset MISE_DATA_DIR
+rm -f "$MISE_CONFIG_DIR/mise.lock"
+cat >"$MISE_CONFIG_DIR/config.toml" <<EOF
+[settings]
+lockfile = true
+
+[tools]
+python = "3.12"
+uv = "latest"
+"pipx:ruff" = { version = "$old" }
+EOF
+export MISE_DATA_DIR="$HOME/graphless-data"
+mise -C "$HOME" install
+assert_succeed "test ! -e '$MISE_CONFIG_DIR/mise.lock'"
+mise -C "$HOME" --yes upgrade --bump
+new="$(mise -C "$HOME" current pipx:ruff)"
+[[ $new != "$old" ]] || fail "upgrade did not move ruff past $old; rerun when a newer ruff is released"
+assert_succeed "test ! -e '$MISE_CONFIG_DIR/mise.lock'"
+
+# An explicit `mise lock` graph also survives a hand-edited pin, without
+# lockfile creation being enabled: the new version inherits the requirement
+# from the entry it replaces.
+unset MISE_DATA_DIR
+rm -f "$MISE_CONFIG_DIR/mise.lock"
+cat >"$MISE_CONFIG_DIR/config.toml" <<EOF
+[tools]
+python = "3.12"
+uv = "latest"
+"pipx:ruff" = { version = "$old" }
+EOF
+export MISE_DATA_DIR="$HOME/handedit-data"
+mise -C "$HOME" install
+mise -C "$HOME" lock --global
+check_graph "$old"
+cat >"$MISE_CONFIG_DIR/config.toml" <<EOF
+[tools]
+python = "3.12"
+uv = "latest"
+"pipx:ruff" = { version = "$new" }
+EOF
+mise -C "$HOME" install
+check_graph "$new"
+cp "$MISE_CONFIG_DIR/mise.lock" "$PWD/handedit.lock"
+export MISE_DATA_DIR="$HOME/handedit-replay"
+mise -C "$HOME" install --locked
+assert_succeed "mise -C '$HOME' exec -- ruff --version"
+assert_succeed "cmp '$PWD/handedit.lock' '$MISE_CONFIG_DIR/mise.lock'"

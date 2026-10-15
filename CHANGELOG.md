@@ -1,5 +1,47 @@
 # Changelog
 
+## [2026.10.10](https://github.com/jdx/mise/releases/tag/v2026.10.10) - 2026-10-14
+
+### 🚀 Features
+
+- **(bootstrap)** add snap package manager by @jdx in [#14402](https://github.com/jdx/mise/pull/14402)
+- **(bootstrap)** adopt a branch with --adopt <url>?ref=<branch> by @jdx in [#14400](https://github.com/jdx/mise/pull/14400)
+- **(bootstrap)** enable COPR repositories with [bootstrap.dnf.repos] by @jdx in [#14401](https://github.com/jdx/mise/pull/14401)
+- **(github)** keep the OAuth refresh token behind Touch ID in the Secure Enclave by @jdx in [#14413](https://github.com/jdx/mise/pull/14413)
+- **(install)** turn on the identity layout on Windows with experimental by @jdx in [#14392](https://github.com/jdx/mise/pull/14392)
+- **(task)** add skip_if to skip a task based on current state by @jdx in [#14399](https://github.com/jdx/mise/pull/14399)
+
+### 🐛 Bug Fixes
+
+- **(dotfiles)** stop machines swapping ciphertext for an unchanged encrypted file by @jdx in [#14405](https://github.com/jdx/mise/pull/14405)
+- **(dotfiles)** plan a stale pull again instead of pausing sharing by @jdx in [#14414](https://github.com/jdx/mise/pull/14414)
+- **(dotfiles)** recover an interrupted operation before a pull plans by @jdx in [#14410](https://github.com/jdx/mise/pull/14410)
+- **(dotfiles)** stop holding files that already have the incoming version by @jdx in [#14411](https://github.com/jdx/mise/pull/14411)
+- **(erlang)** show a compiling phase while kerl builds from source by @jdx in [#14391](https://github.com/jdx/mise/pull/14391)
+- **(exec)** run the original of a .mise-bins copy on Windows by @jdx in [#14397](https://github.com/jdx/mise/pull/14397)
+- **(install)** retain saved packslip shared-workflow pins by @jdx in [#14408](https://github.com/jdx/mise/pull/14408)
+- **(npm)** reinstall aube trees that lost their dependency links on Windows by @jdx in [#14418](https://github.com/jdx/mise/pull/14418)
+- **(npm)** preserve graph locking during global upgrades by @jdx in [#14419](https://github.com/jdx/mise/pull/14419)
+- **(prune)** show progress while scanning for unused versions by @jdx in [#14420](https://github.com/jdx/mise/pull/14420)
+- **(rust)** read the nightly manifest from RUSTUP_DIST_SERVER by @jdx in [#14384](https://github.com/jdx/mise/pull/14384)
+- **(schema)** reject unknown keys in env._.python and its venv options by @JamBalaya56562 in [#14387](https://github.com/jdx/mise/pull/14387)
+- **(use)** honor --tool-option minimum_release_age=0s when resolving latest by @halms in [#14398](https://github.com/jdx/mise/pull/14398)
+
+### 📚 Documentation
+
+- **(bootstrap)** list [bootstrap.apt.sources] in the overview and run order by @jdx in [#14396](https://github.com/jdx/mise/pull/14396)
+- **(config)** explain the config search before the per-directory file names by @jdx in [#14390](https://github.com/jdx/mise/pull/14390)
+
+### ⚡ Performance
+
+- **(dotfiles)** stop pull from walking history one git process per commit by @jdx in [#14407](https://github.com/jdx/mise/pull/14407)
+- **(dotfiles)** read history objects and refs through gix by @jdx in [#14415](https://github.com/jdx/mise/pull/14415)
+
+### 📦️ Dependency Updates
+
+- update github actions by @renovate[bot] in [#14394](https://github.com/jdx/mise/pull/14394)
+- update rattler by @renovate[bot] in [#14406](https://github.com/jdx/mise/pull/14406)
+
 ## [2026.10.9](https://github.com/jdx/mise/releases/tag/v2026.10.9) - 2026-10-13
 
 ### 🚀 Features

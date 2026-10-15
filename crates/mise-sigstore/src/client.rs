@@ -160,7 +160,9 @@ pub(crate) struct AttestationsResponse {
     attestations: Vec<Attestation>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+/// Serializable so a caller can keep attestations it fetched (they are
+/// verified again on every use, so a kept copy vouches for nothing by itself).
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct Attestation {
     pub(crate) bundle: Option<serde_json::Value>,
     bundle_url: Option<String>,
@@ -169,6 +171,40 @@ pub struct Attestation {
 impl Attestation {
     pub fn has_inline_bundle(&self) -> bool {
         self.bundle.is_some()
+    }
+
+    /// Whether this attestation's statement has the predicate type `filter`,
+    /// read the way GitHub's `predicate_type` query parameter reads it: an
+    /// exact type, or `provenance` / `sbom` for those families. The payload is
+    /// read without being verified, so this only picks which attestations to
+    /// verify; verification covers the payload itself.
+    pub fn matches_predicate_type(&self, filter: &str) -> bool {
+        let Some(predicate_type) = self.predicate_type() else {
+            return false;
+        };
+        match filter {
+            "provenance" => predicate_type.starts_with("https://slsa.dev/provenance/"),
+            "sbom" => {
+                predicate_type.starts_with("https://spdx.dev/Document")
+                    || predicate_type.starts_with("https://cyclonedx.org/bom")
+            }
+            filter => predicate_type == filter,
+        }
+    }
+
+    fn predicate_type(&self) -> Option<String> {
+        use base64::Engine;
+        let payload = self
+            .bundle
+            .as_ref()?
+            .get("dsseEnvelope")?
+            .get("payload")?
+            .as_str()?;
+        let payload = base64::engine::general_purpose::STANDARD
+            .decode(payload)
+            .ok()?;
+        let statement: serde_json::Value = serde_json::from_slice(&payload).ok()?;
+        Some(statement.get("predicateType")?.as_str()?.to_string())
     }
 }
 
@@ -275,6 +311,9 @@ impl AttestationClient {
 
     pub async fn fetch_attestations(&self, params: FetchParams) -> Result<Vec<Attestation>> {
         let url = self.attestations_url(&params)?;
+        // In mise's debug log, like its own requests, so a GitHub API call
+        // made here is visible.
+        log::debug!("GET {url}");
 
         let request = self
             .client
@@ -310,6 +349,13 @@ impl AttestationClient {
     }
 
     async fn fetch_bundle_url(&self, bundle_url: &str) -> Result<serde_json::Value> {
+        // Without the query: a bundle URL can be pre-signed, its token there.
+        log::debug!(
+            "GET {}",
+            bundle_url
+                .split_once('?')
+                .map_or(bundle_url, |(url, _)| url)
+        );
         let request = self
             .client
             .get(bundle_url)
@@ -329,5 +375,47 @@ impl AttestationClient {
         } else {
             serde_json::from_slice(&response.body).map_err(AttestationError::Json)
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use base64::Engine;
+
+    fn attestation(predicate_type: &str) -> Attestation {
+        let payload = serde_json::json!({
+            "_type": "https://in-toto.io/Statement/v1",
+            "predicateType": predicate_type,
+        });
+        Attestation {
+            bundle: Some(serde_json::json!({
+                "dsseEnvelope": {
+                    "payload": base64::engine::general_purpose::STANDARD
+                        .encode(payload.to_string()),
+                    "payloadType": "application/vnd.in-toto+json",
+                },
+            })),
+            bundle_url: None,
+        }
+    }
+
+    #[test]
+    fn test_matches_predicate_type_like_github() {
+        let spdx = attestation("https://spdx.dev/Document/v2.3");
+        assert!(spdx.matches_predicate_type("https://spdx.dev/Document/v2.3"));
+        assert!(spdx.matches_predicate_type("sbom"));
+        assert!(!spdx.matches_predicate_type("provenance"));
+        assert!(!spdx.matches_predicate_type("https://spdx.dev/Document/v2.2"));
+
+        let slsa = attestation("https://slsa.dev/provenance/v1");
+        assert!(slsa.matches_predicate_type("provenance"));
+        assert!(!slsa.matches_predicate_type("sbom"));
+
+        let no_bundle = Attestation {
+            bundle: None,
+            bundle_url: None,
+        };
+        assert!(!no_bundle.matches_predicate_type("provenance"));
     }
 }

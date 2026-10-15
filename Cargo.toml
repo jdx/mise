@@ -18,7 +18,7 @@ members = [
 
 [package]
 name = "mise"
-version = "2026.10.9"
+version = "2026.10.10"
 edition = "2024"
 description = "Dev tools, env vars, and tasks in one CLI"
 authors = ["Jeff Dickey (@jdx)"]
@@ -136,6 +136,7 @@ mise-dotenv = { path = "crates/mise-dotenv", version = "0.1" }
 duct = "1"
 dunce = "1"
 expr-lang = "2"
+stacker = "0.1"
 eyre = "0.6"
 file-id = "0.2"
 filetime = "0.2"

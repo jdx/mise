@@ -323,6 +323,8 @@ jobs:
             with:
               name: mise-ubuntu-latest
               path: target/debug
+          # our own e2e image, the e2e tag moves on purpose
+          # jactionlint ignore=unpinned-images
           - name: Pull e2e Docker image
             run: docker pull ghcr.io/jdx/mise:e2e
       - run: echo "$PWD/target/debug" >> "$GITHUB_PATH" && chmod +x target/debug/mise

@@ -224,7 +224,11 @@ struct ResolvedPackage {
 /// aqua tool, so only `latest`, which has a fixed pattern, uses a regex; any
 /// other query is matched as a literal, optionally followed by `-` or `.` and
 /// at least one more character.
-fn aqua_fuzzy_match(versions: Vec<String>, query: &str, filter_prereleases: bool) -> Vec<String> {
+pub(crate) fn aqua_fuzzy_match(
+    versions: Vec<String>,
+    query: &str,
+    filter_prereleases: bool,
+) -> Vec<String> {
     static LATEST: LazyLock<Regex> =
         LazyLock::new(|| Regex::new(r"^\D*[0-9].*([-.].+)?$").unwrap());
     let latest = query == "latest";
@@ -751,18 +755,21 @@ impl Backend for AquaBackend {
         let (target_os, target_arch) = Self::to_aqua_platform(target);
 
         // Get version tag
-        let tag = match self.get_version_tags().await {
-            Ok(tags) => tags
-                .iter()
-                .find(|(version, _)| version == &tv.version)
-                .map(|(_, tag)| tag.clone()),
-            Err(e) => {
-                warn!(
-                    "[{}] failed to fetch version tags for lockfile, URL may be incorrect: {e}",
-                    self.id
-                );
-                None
-            }
+        let tag = match self.listed_release_tag(tv, target).await {
+            Some(tag) => Some(tag),
+            None => match self.get_version_tags().await {
+                Ok(tags) => tags
+                    .iter()
+                    .find(|(version, _)| version == &tv.version)
+                    .map(|(_, tag)| tag.clone()),
+                Err(e) => {
+                    warn!(
+                        "[{}] failed to fetch version tags for lockfile, URL may be incorrect: {e}",
+                        self.id
+                    );
+                    None
+                }
+            },
         };
         let tag_is_none = tag.is_none();
         if tag_is_none && !tv.version.starts_with('v') {
@@ -1051,6 +1058,11 @@ impl AquaBackend {
             Some(tag)
         } else if existing_platform.is_some() {
             None
+        } else if let Some(tag) = self
+            .listed_release_tag(tv, &PlatformTarget::from_current())
+            .await
+        {
+            Some(tag)
         } else {
             match self.get_version_tags().await {
                 Ok(tags) => tags
@@ -1536,14 +1548,13 @@ impl AquaBackend {
         attestations: &AquaGithubArtifactAttestations,
         digest: &str,
     ) -> std::result::Result<bool, crate::github::sigstore::DetectError> {
-        let repo = format!("{}/{}", pkg.repo_owner, pkg.repo_name);
         crate::github::sigstore::detect_attestations_with_predicate_type(
             &pkg.repo_owner,
             &pkg.repo_name,
             github::API_URL,
             digest,
             attestations.predicate_type.as_deref(),
-            self.use_versions_host_for_github_metadata(&repo),
+            true,
         )
         .await
     }
@@ -1795,7 +1806,7 @@ impl AquaBackend {
             signer_workflow.as_deref(),
             predicate_type,
             None,
-            self.use_versions_host_for_github_metadata(&repo),
+            true,
         )
         .await;
 
@@ -1823,7 +1834,7 @@ impl AquaBackend {
                 canonical_workflow.as_deref(),
                 predicate_type,
                 None,
-                self.use_versions_host_for_github_metadata(&canonical_repo),
+                true,
             )
             .await;
         }
@@ -2347,27 +2358,13 @@ impl AquaBackend {
         }
     }
 
-    /// mise-versions serves any public github.com repo, but only the package's
-    /// own repo may come from it: an aqua package that reads another repo's
-    /// releases (a foreign attestation signer, say) asks GitHub directly.
-    fn use_versions_host_for_github_metadata(&self, repo: &str) -> bool {
-        let full = self.ba.full_without_opts();
-        let Some(aqua_id) = full.strip_prefix("aqua:") else {
-            return false;
-        };
-        let aqua_id = aqua_id.to_ascii_lowercase();
-        let repo = repo.to_ascii_lowercase();
-        aqua_id == repo || aqua_id.starts_with(&format!("{repo}/"))
-    }
-
+    /// From mise-versions for any public repository, the package's own or
+    /// another it reads (kubectl's releases are kubernetes/kubernetes', a
+    /// checksum or signer can live elsewhere): its release data is pinned to
+    /// the repository asked for, and what it describes is verified on
+    /// download.
     async fn get_github_release(&self, repo: &str, tag: &str) -> Result<github::GithubRelease> {
-        github::get_release_for_url_with_versions_host(
-            github::API_URL,
-            repo,
-            tag,
-            self.use_versions_host_for_github_metadata(repo),
-        )
-        .await
+        github::get_release_for_url_with_versions_host(github::API_URL, repo, tag, true).await
     }
 
     /// The release GitHub marks as "Latest", with the metadata that came back
@@ -2412,12 +2409,36 @@ impl AquaBackend {
         let repo = format!("{}/{}", pkg.repo_owner, pkg.repo_name);
         let release = match self.get_github_release(&repo, "latest").await {
             Ok(release) => release,
+            // GitHub's "latest" mark can't be read for a release without
+            // assets, which mise-versions doesn't serve (kubernetes,
+            // terraform, vault). A fresh whole release list gives the newest
+            // stable release instead, which is where the mark sits unless a
+            // maintainer moved it.
+            // Only when the mark is known to be unreadable (a 404); after a
+            // temporary failure the newest stable release could differ from it.
             Err(e) => {
-                debug!(
-                    "Failed to fetch latest GitHub release for aqua package {}: {e}",
-                    self.id
-                );
-                return Ok(None);
+                let listed = if crate::http::error_code(&e) == Some(404) {
+                    github::newest_listed_stable_release(&repo).await
+                } else {
+                    None
+                };
+                match listed {
+                    Some(listed) => github::GithubRelease {
+                        tag_name: listed.tag_name,
+                        draft: false,
+                        prerelease: false,
+                        created_at: listed.released_at.clone().unwrap_or_default(),
+                        published_at: listed.released_at,
+                        assets: vec![],
+                    },
+                    None => {
+                        debug!(
+                            "Failed to fetch latest GitHub release for aqua package {}: {e}",
+                            self.id
+                        );
+                        return Ok(None);
+                    }
+                }
             }
         };
 
@@ -2439,6 +2460,133 @@ impl AquaBackend {
                 );
                 Ok(None)
             }
+        }
+    }
+
+    /// The release tag the versions host's list records for `tv`'s version, so
+    /// installing or locking a registry tool for `target` doesn't fetch the
+    /// whole release list (`get_version_tags`) just to find it. Accepted only
+    /// when this package maps the tag back to the version, which is the test
+    /// `get_version_tags` applies to the tags it lists.
+    ///
+    /// Only a hint: the host's list can trail a retag upstream, and a tag
+    /// returned here is the only spelling tried for `target`, without the
+    /// `v` alternative or the URL probe it would otherwise get. So it is
+    /// confirmed for `target` first (see [`Self::confirm_listed_tag`]); `None`
+    /// sends that target down the old path, alternatives and probe included.
+    async fn listed_release_tag(
+        &self,
+        tv: &ToolVersion,
+        target: &PlatformTarget,
+    ) -> Option<String> {
+        let version = tv.version.as_str();
+        let config = Config::get().await.ok()?;
+        let url = self.listed_release_url(&config, version).await?;
+        let pkg = AQUA_REGISTRY.package(&self.id).await.ok()?;
+        let repo_url = format!("https://github.com/{}/{}", pkg.repo_owner, pkg.repo_name);
+        let tag = backend::release_tag_from_url(&url, &repo_url)?;
+        let (target_os, target_arch) = Self::to_aqua_platform(target);
+        // Mapped as `get_version_tags` maps the tags it lists.
+        let target_libc = Self::target_variant_libc(target, None);
+        let (listed, _) =
+            versioned_package_from_tag(&pkg, &tag, target_os, target_arch, target_libc.as_deref())
+                .ok()??;
+        if listed != version {
+            return None;
+        }
+        let raw_opts = tv.request.options();
+        let opts = AquaOptions::new(&raw_opts);
+        self.confirm_listed_tag(pkg, &tag, target, &opts)
+            .await
+            .then_some(tag)
+    }
+
+    /// Whether `tag` installs `pkg` for `target`, checked without a GitHub
+    /// API request beyond the one installing makes anyway (see
+    /// [`ListedTagCheck`]). URL packages probe `target`'s own artifact: the
+    /// host's may not exist, or may exist where `target`'s doesn't.
+    async fn confirm_listed_tag(
+        &self,
+        pkg: AquaPackage,
+        tag: &str,
+        target: &PlatformTarget,
+        opts: &AquaOptions<'_>,
+    ) -> bool {
+        let repo = format!("{}/{}", pkg.repo_owner, pkg.repo_name);
+        let Ok(pkg) = Self::package_for_target(target, pkg, &[tag], opts) else {
+            return false;
+        };
+        let v = version_with_prefix(tag, pkg.version_prefix.as_deref());
+        let (target_os, target_arch) = Self::to_aqua_platform(target);
+        let confirmed = match self.listed_tag_check(&pkg, &v, target_os, target_arch) {
+            // The same release fetch installing makes for this tag (cached),
+            // and the asset it would pick for `target` must be on it.
+            ListedTagCheck::Release => match self.get_github_release(&repo, &v).await {
+                Ok(release) => self.release_has_target_asset(&pkg, &v, &release, target),
+                Err(e) => {
+                    debug!("[{}] listed tag {tag} did not resolve: {e:#}", self.id);
+                    false
+                }
+            },
+            ListedTagCheck::ArtifactUrl(url) => artifact_url_exists(&url).await,
+            ListedTagCheck::Unconfirmable => false,
+        };
+        if !confirmed {
+            debug!(
+                "[{}] not relying on listed tag {tag} for {}",
+                self.id,
+                target.to_key()
+            );
+        }
+        confirmed
+    }
+
+    /// Whether `release` holds the asset installing `pkg` as `v` would select
+    /// for `target`. A release that exists without it is the wrong spelling
+    /// for this target (`1.2.3` and `v1.2.3` can carry different assets).
+    fn release_has_target_asset(
+        &self,
+        pkg: &AquaPackage,
+        v: &str,
+        release: &github::GithubRelease,
+        target: &PlatformTarget,
+    ) -> bool {
+        let (target_os, target_arch) = Self::to_aqua_platform(target);
+        pkg.asset_strs(v, target_os, target_arch)
+            .is_ok_and(|asset_strs| {
+                select_github_release_asset(
+                    &release.assets,
+                    &asset_strs,
+                    libc_asset_preference(target, self.tool_libc),
+                )
+                .is_some()
+            })
+    }
+
+    /// How [`Self::confirm_listed_tag`] confirms a listed tag for `pkg`,
+    /// installed as version `v` on `target_os`/`target_arch`.
+    fn listed_tag_check(
+        &self,
+        pkg: &AquaPackage,
+        v: &str,
+        target_os: &str,
+        target_arch: &str,
+    ) -> ListedTagCheck {
+        match pkg.package_type() {
+            // The release lookup installing makes next; it is cached.
+            AquaPackageType::GithubRelease => ListedTagCheck::Release,
+            // A private repository's browser URLs need the API to reach.
+            _ if pkg.private => ListedTagCheck::Unconfirmable,
+            AquaPackageType::Http => pkg
+                .url(v, target_os, target_arch)
+                .map_or(ListedTagCheck::Unconfirmable, ListedTagCheck::ArtifactUrl),
+            AquaPackageType::GithubArchive => {
+                ListedTagCheck::ArtifactUrl(self.github_archive_url(pkg, v))
+            }
+            AquaPackageType::GithubContent if pkg.path.is_some() => {
+                ListedTagCheck::ArtifactUrl(self.github_content_url(pkg, v))
+            }
+            _ => ListedTagCheck::Unconfirmable,
         }
     }
 
@@ -3874,13 +4022,7 @@ async fn resolve_aqua_http_url(
     let Ok(prefixed_url) = pkg.url(prefixed_version, target_os, target_arch) else {
         return Ok((url, version.to_string()));
     };
-    // Some artifact hosts reject HEAD even though GET is supported. get_async()
-    // only waits for the response headers; dropping the response avoids downloading
-    // the artifact during URL resolution.
-    if prefixed_url == url
-        || HTTP.head(&prefixed_url).await.is_ok()
-        || HTTP.get_async(&prefixed_url).await.is_ok()
-    {
+    if prefixed_url == url || artifact_url_exists(&prefixed_url).await {
         Ok((prefixed_url, prefixed_version.to_string()))
     } else {
         Ok((url, version.to_string()))
@@ -3984,6 +4126,25 @@ fn lock_package_for_version(
         }
     }
     Ok(pkg.with_version_libc(&versions, os, arch, libc))
+}
+
+/// How a tag from the versions host is confirmed before installing relies on
+/// it as the only spelling.
+#[derive(Debug, PartialEq, Eq)]
+enum ListedTagCheck {
+    /// Fetch its GitHub release, which installing release assets does anyway.
+    Release,
+    /// Probe the artifact the package downloads, on the artifact's own host.
+    ArtifactUrl(String),
+    /// Nothing cheap confirms it; keep looking the tag up as before.
+    Unconfirmable,
+}
+
+/// Whether an artifact URL answers. Some artifact hosts reject HEAD even
+/// though GET is supported; `get_async` only waits for the response headers,
+/// and dropping the response avoids downloading the artifact.
+async fn artifact_url_exists(url: &str) -> bool {
+    HTTP.head(url).await.is_ok() || HTTP.get_async(url).await.is_ok()
 }
 
 fn github_release_tag_from_url(url: &str) -> Option<String> {
@@ -4399,37 +4560,6 @@ packages:
     }
 
     #[test]
-    fn test_use_versions_host_for_github_metadata_only_for_the_package_repo() {
-        let registry_backend = AquaBackend::from_arg(BackendArg::new(
-            "act".to_string(),
-            Some("aqua:nektos/act".to_string()),
-        ));
-        assert!(registry_backend.use_versions_host_for_github_metadata("nektos/act"));
-        assert!(!registry_backend.use_versions_host_for_github_metadata("sigstore/foreign"));
-
-        let explicit_registry_backend = AquaBackend::from_arg(BackendArg::new(
-            "nektos/act".to_string(),
-            Some("aqua:nektos/act".to_string()),
-        ));
-        assert!(explicit_registry_backend.use_versions_host_for_github_metadata("nektos/act"));
-
-        let subpackage_backend = AquaBackend::from_arg(BackendArg::new(
-            "fly".to_string(),
-            Some("aqua:concourse/concourse/fly".to_string()),
-        ));
-        assert!(subpackage_backend.use_versions_host_for_github_metadata("concourse/concourse"));
-
-        let direct_backend = AquaBackend::from_arg(BackendArg::new(
-            "aws/session-manager-plugin".to_string(),
-            Some("aqua:aws/session-manager-plugin".to_string()),
-        ));
-        assert!(direct_backend.use_versions_host_for_github_metadata("aws/session-manager-plugin"));
-        assert!(!direct_backend.use_versions_host_for_github_metadata("aws/other"));
-        // A repo name that merely shares a prefix is a different repo.
-        assert!(!direct_backend.use_versions_host_for_github_metadata("aws/session-manager"));
-    }
-
-    #[test]
     fn test_has_github_attestations_config_requires_enabled_config() {
         let mut pkg = AquaPackage::default();
         assert!(!AquaBackend::has_github_attestations_config(&pkg));
@@ -4447,6 +4577,196 @@ packages:
             signer_workflow: None,
         });
         assert!(AquaBackend::has_github_attestations_config(&pkg));
+    }
+
+    fn listed_tag_test_package(package_type: AquaPackageType, url: &str) -> AquaPackage {
+        let mut pkg = AquaPackage::default();
+        pkg.repo_owner = "owner".to_string();
+        pkg.repo_name = "repo".to_string();
+        pkg.r#type = Some(package_type);
+        pkg.url = url.to_string();
+        pkg
+    }
+
+    #[test]
+    fn test_listed_tag_check_never_needs_the_github_api_for_url_packages() {
+        // A correct hint for terraform-, kubectl- or vault-style packages costs
+        // one probe of the artifact, never a GitHub API request; release-asset
+        // packages confirm with the release lookup installing makes anyway.
+        let backend = AquaBackend::from_arg(BackendArg::new(
+            "tool".to_string(),
+            Some("aqua:owner/repo".to_string()),
+        ));
+        let release = listed_tag_test_package(AquaPackageType::GithubRelease, "");
+        assert_eq!(
+            backend.listed_tag_check(&release, "v1.2.3", "linux", "amd64"),
+            ListedTagCheck::Release
+        );
+
+        let http = listed_tag_test_package(
+            AquaPackageType::Http,
+            "https://releases.example.com/tool/{{.Version}}/tool.zip",
+        );
+        assert_eq!(
+            backend.listed_tag_check(&http, "1.2.3", "linux", "amd64"),
+            ListedTagCheck::ArtifactUrl("https://releases.example.com/tool/1.2.3/tool.zip".into())
+        );
+
+        let archive = listed_tag_test_package(AquaPackageType::GithubArchive, "");
+        assert_eq!(
+            backend.listed_tag_check(&archive, "v1.2.3", "linux", "amd64"),
+            ListedTagCheck::ArtifactUrl(
+                "https://github.com/owner/repo/archive/refs/tags/v1.2.3.tar.gz".into()
+            )
+        );
+
+        let mut content = listed_tag_test_package(AquaPackageType::GithubContent, "");
+        content.path = Some("bin/tool".to_string());
+        assert_eq!(
+            backend.listed_tag_check(&content, "v1.2.3", "linux", "amd64"),
+            ListedTagCheck::ArtifactUrl(
+                "https://raw.githubusercontent.com/owner/repo/v1.2.3/bin/tool".into()
+            )
+        );
+
+        let mut private = http.clone();
+        private.private = true;
+        assert_eq!(
+            backend.listed_tag_check(&private, "1.2.3", "linux", "amd64"),
+            ListedTagCheck::Unconfirmable
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_listed_tag_is_confirmed_for_the_platform_being_locked() {
+        // The tag's artifact exists for linux-x64 but not for macos-arm64.
+        // Locking linux-x64 keeps the hint whatever the host is; macos-arm64
+        // drops it, so that target alone goes back to the old lookup, `v`
+        // alternative included.
+        let mut server = mockito::Server::new_async().await;
+        let linux = server
+            .mock("HEAD", "/dl/1.2.3/tool_linux_amd64.zip")
+            .with_status(200)
+            .expect(1)
+            .create_async()
+            .await;
+        let _darwin = server
+            .mock("HEAD", "/dl/1.2.3/tool_darwin_arm64.zip")
+            .with_status(404)
+            .create_async()
+            .await;
+        let _darwin_get = server
+            .mock("GET", "/dl/1.2.3/tool_darwin_arm64.zip")
+            .with_status(404)
+            .create_async()
+            .await;
+        let backend = AquaBackend::from_arg(BackendArg::new(
+            "tool".to_string(),
+            Some("aqua:owner/repo".to_string()),
+        ));
+        let pkg = listed_tag_test_package(
+            AquaPackageType::Http,
+            &format!(
+                "{}/dl/{{{{.Version}}}}/tool_{{{{.OS}}}}_{{{{.Arch}}}}.zip",
+                server.url()
+            ),
+        );
+        let raw_opts = ToolVersionOptions::default();
+        let opts = AquaOptions::new(&raw_opts);
+        let target =
+            |key: &str| PlatformTarget::new(crate::platform::Platform::parse(key).unwrap());
+
+        assert!(
+            backend
+                .confirm_listed_tag(pkg.clone(), "1.2.3", &target("linux-x64"), &opts)
+                .await
+        );
+        assert!(
+            !backend
+                .confirm_listed_tag(pkg, "1.2.3", &target("macos-arm64"), &opts)
+                .await
+        );
+        linux.assert_async().await;
+    }
+
+    #[test]
+    fn test_a_listed_release_must_hold_the_targets_asset() {
+        // `1.2.3` and `v1.2.3` both exist, but only `v1.2.3` ships the linux
+        // asset. A hint naming `1.2.3` is rejected for linux-x64, so that
+        // target falls back to the old lookup and its `v` alternative.
+        let backend = AquaBackend::from_arg(BackendArg::new(
+            "tool".to_string(),
+            Some("aqua:owner/repo".to_string()),
+        ));
+        let mut pkg = listed_tag_test_package(AquaPackageType::GithubRelease, "");
+        pkg.asset = "tool_{{.OS}}_{{.Arch}}.tar.gz".to_string();
+        let release = |tag: &str, assets: &[&str]| github::GithubRelease {
+            tag_name: tag.to_string(),
+            draft: false,
+            prerelease: false,
+            created_at: "2026-01-01T00:00:00Z".to_string(),
+            published_at: None,
+            assets: assets
+                .iter()
+                .map(|name| github::GithubAsset {
+                    from_versions_host: false,
+                    name: name.to_string(),
+                    browser_download_url: String::new(),
+                    url: String::new(),
+                    digest: None,
+                    updated_at: None,
+                })
+                .collect(),
+        };
+        let linux = PlatformTarget::new(crate::platform::Platform::parse("linux-x64").unwrap());
+        let darwin = PlatformTarget::new(crate::platform::Platform::parse("macos-arm64").unwrap());
+
+        let bare = release("1.2.3", &["tool_darwin_arm64.tar.gz"]);
+        assert!(!backend.release_has_target_asset(&pkg, "1.2.3", &bare, &linux));
+        assert!(backend.release_has_target_asset(&pkg, "1.2.3", &bare, &darwin));
+
+        let prefixed = release("v1.2.3", &["tool_linux_amd64.tar.gz"]);
+        assert!(backend.release_has_target_asset(&pkg, "v1.2.3", &prefixed, &linux));
+    }
+
+    #[tokio::test]
+    async fn test_a_stale_listed_tag_leaves_the_v_alternative_in_place() {
+        // The host lists 1.2.3 under tag `1.2.3`, but upstream now ships it as
+        // `v1.2.3`. The hint's artifact doesn't answer, so it is not relied
+        // on, and the old resolution, `v` alternative and probe included,
+        // finds the artifact that exists.
+        let mut server = mockito::Server::new_async().await;
+        let stale = format!("{}/dl/1.2.3/tool.zip", server.url());
+        let live = format!("{}/dl/v1.2.3/tool.zip", server.url());
+        let _missing = server
+            .mock("HEAD", "/dl/1.2.3/tool.zip")
+            .with_status(404)
+            .create_async()
+            .await;
+        let _missing_get = server
+            .mock("GET", "/dl/1.2.3/tool.zip")
+            .with_status(404)
+            .create_async()
+            .await;
+        let found = server
+            .mock("HEAD", "/dl/v1.2.3/tool.zip")
+            .with_status(200)
+            .expect_at_least(1)
+            .create_async()
+            .await;
+        let pkg = listed_tag_test_package(
+            AquaPackageType::Http,
+            &format!("{}/dl/{{{{.Version}}}}/tool.zip", server.url()),
+        );
+
+        assert!(!artifact_url_exists(&stale).await);
+        let (url, version) = resolve_aqua_http_url(&pkg, "1.2.3", Some("v1.2.3"), "linux", "amd64")
+            .await
+            .unwrap();
+        assert_eq!((url.as_str(), version.as_str()), (live.as_str(), "v1.2.3"));
+        // A correct hint answers its one probe and nothing else is asked.
+        assert!(artifact_url_exists(&live).await);
+        found.assert_async().await;
     }
 
     #[test]
@@ -5956,13 +6276,10 @@ async fn get_tags_with_release_dates(
         return Ok(versions.into_iter().map(|v| (v, None, None)).collect());
     }
     let repo = format!("{}/{}", pkg.repo_owner, pkg.repo_name);
-    let releases = github::list_releases_including_prereleases(&repo).await?;
+    let releases = github::list_release_versions(github::API_URL, &repo, false).await?;
     Ok(releases
         .into_iter()
-        .map(|r| {
-            let released_at = r.released_at().to_string();
-            (r.tag_name, Some(released_at), Some(r.prerelease))
-        })
+        .map(|r| (r.tag_name, r.released_at, Some(r.prerelease)))
         .collect())
 }
 

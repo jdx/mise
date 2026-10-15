@@ -233,9 +233,9 @@ entries on an Alpine or Wolfi base image, but not both in one build. mise
 unpacks the base image into a temporary root filesystem, runs the matching
 package manager on the host to install into it, and emits the changes as one
 layer annotated with `dev.mise.system.packages`. The host needs `apt-get` and
-`dpkg` for apt, or `apk` for apk. Apk package scripts run inside a chroot, so
-apk layers need a Linux host running mise as root. mise removes package-manager
-caches and logs before creating the layer.
+`dpkg` for apt, or `apk` for apk. Package scripts run inside a chroot of the
+image, so apt and apk layers need mise to run as root (apk also needs a Linux
+host). mise removes package-manager caches and logs before creating the layer.
 
 Entries for any other package manager, such as `brew:`, make the build fail.
 Keep them in a config the image build does not include, or exclude that manager

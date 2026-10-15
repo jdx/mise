@@ -513,8 +513,10 @@ mise dot add ~/.config/starship.toml
 ```
 
 `mise dot add --changed` updates the sources of every changed regular file
-managed in `copy` mode. Each file's config must be trusted. It skips directory
-copies, symlinks, templates, and inline content.
+managed in `copy` mode, including the files a copy-mode
+[group](/dotfiles/groups.html) discovers in its tree. Each file's config must
+be trusted. It skips other directory copies, symlinks, templates, and inline
+content.
 
 A target inside a [group](/dotfiles/groups.html#adding-files-to-a-group)'s
 tree is captured into that group's root instead, without a new entry.

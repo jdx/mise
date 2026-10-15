@@ -1,0 +1,60 @@
+#!/usr/bin/env bash
+
+# An explicit backend arg that is exactly a registry tool's preferred backend
+# reads that tool's version list on the versions host, as the short name does,
+# instead of paging the repository's releases.
+#
+# A local stand-in serves the versions host. It lists jq at a version only it
+# knows and has no release mirror, so the list can only come from data/jq.toml.
+
+start_http_server --handler - <<'PY'
+import http.server
+
+
+HOSTED = b'[versions."1.7.1"]\ncreated_at = 2023-12-13T00:00:00Z\n\n[versions."9.9.9"]\ncreated_at = 2026-01-01T00:00:00Z\n'
+
+
+class Handler(http.server.BaseHTTPRequestHandler):
+    def do_GET(self):
+        if self.path.split("?")[0] == "/versions/data/jq.toml":
+            self.send_response(200)
+            self.send_header("Content-Type", "application/toml")
+            self.send_header("Content-Length", str(len(HOSTED)))
+            self.end_headers()
+            self.wfile.write(HOSTED)
+        else:
+            self.send_response(404)
+            self.end_headers()
+
+    def log_message(self, format, *args):
+        pass
+PY
+
+cat >mise.toml <<EOF
+[settings]
+url_replacements = { "https://mise-versions.jdx.dev" = "http://127.0.0.1:$HTTP_PORT/versions", "https://api.github.com" = "http://127.0.0.1:$HTTP_PORT/github" }
+EOF
+
+MISE_DEBUG=1 mise ls-remote aqua:jqlang/jq >ls-remote.out 2>ls-remote.log
+assert "cat ls-remote.out" "1.7.1
+9.9.9"
+assert_contains "cat ls-remote.log" "/versions/data/jq.toml"
+assert_not_contains "cat ls-remote.log" "/repos/jqlang/jq/releases"
+
+# A backend that two registry tools prefer has no one list to read.
+assert_not_contains "MISE_DEBUG=1 mise ls-remote aqua:google/go-containerregistry 2>&1 || true" "/versions/data/"
+
+# A custom aqua registry is searched first and may define jqlang/jq differently
+# from the official registry the hosted list was generated from. This one does
+# not define it, so jq still comes from the baked registry, listed from source.
+# A cache of its own keeps the list cached above from answering.
+cat >registry.yaml <<'YAML'
+packages:
+  - type: github_release
+    repo_owner: example
+    repo_name: tool
+    asset: tool
+YAML
+MISE_CACHE_DIR="$PWD/custom-cache" MISE_AQUA_REGISTRIES="file://$PWD/registry.yaml" MISE_DEBUG=1 mise ls-remote aqua:jqlang/jq >custom.out 2>custom.log || true
+assert_contains "cat custom.log" "/repos/jqlang/jq/releases"
+assert_not_contains "cat custom.log" "/versions/data/"

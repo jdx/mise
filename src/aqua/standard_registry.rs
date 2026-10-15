@@ -111,6 +111,15 @@ pub fn package(package_id: &str) -> Option<Result<AquaPackage>> {
     baked_registry_file(package_id).map(|content| decode_package_rkyv(package_id, content))
 }
 
+/// The baked package an alias such as `stedolan/jq` stands for, or the ID
+/// itself when it is not an alias.
+pub(crate) fn canonical_package_id(package_id: &str) -> &str {
+    AQUA_STANDARD_REGISTRY_ALIASES
+        .get(package_id)
+        .copied()
+        .unwrap_or(package_id)
+}
+
 fn baked_registry_file(package_id: &str) -> Option<&'static [u8]> {
     if let Some(content) = AQUA_STANDARD_REGISTRY_FILES.get(package_id) {
         return Some(*content);

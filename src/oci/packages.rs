@@ -136,12 +136,7 @@ fn validate_host_requirements(manager: OciPackageManager) -> Result<()> {
             if file::which("apk").is_none() {
                 bail!("mise oci needs `apk` on PATH to install apk system packages into the image");
             }
-            if !crate::system::sudo::is_root() {
-                bail!(
-                    "mise oci needs to run as root to install apk system packages because apk \
-                     executes package scripts in a chroot"
-                );
-            }
+            require_root(manager, "apk")?;
         }
         OciPackageManager::Apt => {
             if file::which("apt-get").is_none() {
@@ -154,7 +149,21 @@ fn validate_host_requirements(manager: OciPackageManager) -> Result<()> {
                     "mise oci needs `dpkg` on PATH to install apt system packages into the image"
                 );
             }
+            require_root(manager, "dpkg")?;
         }
+    }
+    Ok(())
+}
+
+/// Package scripts run inside a chroot of the image rootfs, which only root can
+/// enter, and a non-root install would leave the layer owned by the builder.
+fn require_root(manager: OciPackageManager, tool: &str) -> Result<()> {
+    if !crate::system::sudo::is_root() {
+        bail!(
+            "mise oci needs to run as root to install {name} system packages because {tool} \
+             executes package scripts in a chroot",
+            name = manager.name()
+        );
     }
     Ok(())
 }
@@ -512,6 +521,21 @@ fn apt_root_args(
     ])
 }
 
+/// dpkg reports script failures on stdout, so apt's stderr alone only says
+/// "Sub-process /usr/bin/dpkg returned an error code".
+fn apt_failure_output(output: &std::process::Output) -> String {
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let tail: Vec<&str> = stdout.trim().lines().rev().take(20).collect();
+    let tail = tail.into_iter().rev().collect::<Vec<_>>().join("\n");
+    [tail.as_str(), stderr.trim()]
+        .iter()
+        .filter(|s| !s.is_empty())
+        .copied()
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
 fn run_apt_get(args: Vec<String>) -> Result<()> {
     info!("apt-get {}", args.join(" "));
     let output = Command::new("apt-get")
@@ -523,7 +547,7 @@ fn run_apt_get(args: Vec<String>) -> Result<()> {
         bail!(
             "apt-get failed while installing OCI system packages: {}\n{}",
             output.status,
-            String::from_utf8_lossy(&output.stderr).trim()
+            apt_failure_output(&output)
         );
     }
     Ok(())
@@ -862,6 +886,25 @@ mod tests {
     fn write_file(path: &Path, contents: &str) {
         file::create_dir_all(path.parent().unwrap()).unwrap();
         file::write(path, contents).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn apt_failure_output_includes_stdout_tail_and_stderr() {
+        use std::os::unix::process::ExitStatusExt;
+        let stdout = (1..=30)
+            .map(|i| format!("line {i}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let output = std::process::Output {
+            status: std::process::ExitStatus::from_raw(100 << 8),
+            stdout: stdout.into_bytes(),
+            stderr: b"E: Sub-process failed\n".to_vec(),
+        };
+        let msg = apt_failure_output(&output);
+        assert!(!msg.contains("line 10\n"));
+        assert!(msg.contains("line 11\n"));
+        assert!(msg.ends_with("line 30\nE: Sub-process failed"));
     }
 
     #[test]
