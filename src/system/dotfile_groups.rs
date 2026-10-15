@@ -421,7 +421,12 @@ fn group_entry(defaults: &EntryDefaults, key: &str, value: toml::Value) -> Resul
             source
         })
     } else if needs_source {
-        Some(root.join(source_rel_for(root, &rel, dot_prefix)))
+        let source = root.join(source_rel_for(root, &rel, dot_prefix));
+        Some(if mode.as_deref() == Some("template") {
+            template_source(source)
+        } else {
+            source
+        })
     } else {
         None
     };
@@ -499,6 +504,18 @@ fn group_entry(defaults: &EntryDefaults, key: &str, value: toml::Value) -> Resul
         dot_prefix: entry_dot_prefix,
         table,
     })
+}
+
+/// A template entry's inferred source: the exact path when it exists,
+/// otherwise the same path with a `.tera` suffix when that file exists.
+fn template_source(source: PathBuf) -> PathBuf {
+    if source.exists() {
+        return source;
+    }
+    let mut tera = source.clone().into_os_string();
+    tera.push(".tera");
+    let tera = PathBuf::from(tera);
+    if tera.exists() { tera } else { source }
 }
 
 /// Resolve a group's `root`: relative paths start at `dotfiles.root`.
@@ -1148,6 +1165,22 @@ mod tests {
             source_rel_for(source, rel, true),
             PathBuf::from("dot-config/kitty/kitty.conf")
         );
+    }
+
+    #[test]
+    fn template_sources_fall_back_to_a_tera_suffix() {
+        let dir = tempfile::tempdir().unwrap();
+        let exact = dir.path().join("config");
+        // neither exists: the exact path, so the missing source is reported
+        assert_eq!(template_source(exact.clone()), exact);
+        file::write(dir.path().join("config.tera"), "x").unwrap();
+        assert_eq!(
+            template_source(exact.clone()),
+            dir.path().join("config.tera")
+        );
+        // the exact path wins when both exist
+        file::write(&exact, "x").unwrap();
+        assert_eq!(template_source(exact.clone()), exact);
     }
 
     #[test]
