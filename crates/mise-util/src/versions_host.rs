@@ -49,6 +49,49 @@ pub struct GithubReleasesPage {
     pub truncated: bool,
 }
 
+/// A public repository's whole release or tag list from mise-versions, in
+/// GitHub's REST order (format 1 of jdx/mise-versions'
+/// `docs/github-versions.md`). Entries carry no assets.
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct GithubVersionsList {
+    /// `releases` or `tags`.
+    pub source: String,
+    /// When mise-versions last read page 1 of the list from GitHub.
+    pub fetched_at: Option<String>,
+    #[serde(default)]
+    pub releases: Vec<GithubListedRelease>,
+    #[serde(default)]
+    pub tags: Vec<GithubListedTag>,
+    /// The list is a newest-first prefix; older entries exist.
+    #[serde(default)]
+    pub truncated: bool,
+}
+
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct GithubListedRelease {
+    pub tag: String,
+    /// `published_at`, or `created_at` without one.
+    pub date: Option<String>,
+    pub prerelease: bool,
+    pub asset_count: u32,
+}
+
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct GithubListedTag {
+    pub tag: String,
+    /// The tagged commit's committer date.
+    pub date: Option<String>,
+}
+
+/// Which whole list to read with [`github_versions_list`].
+#[derive(Debug, Clone, Copy)]
+pub enum GithubList<'a> {
+    Releases,
+    Tags,
+    /// The releases carrying an asset with exactly this name.
+    ReleasesWithAsset(&'a str),
+}
+
 /// One page (100 tags) of a repository's tags from mise-versions.
 #[derive(serde::Deserialize)]
 pub struct GithubTagsPage {
@@ -355,6 +398,79 @@ pub async fn github_releases(repo: &str, page: u32) -> eyre::Result<Option<Githu
     }
     log_versions_host_trace(ctx, "success", &format!("releases={}", list.releases.len()));
     Ok(Some(list))
+}
+
+/// Fetch a public repository's whole release or tag list from the versions
+/// host. These are static files baked at deploy time, so most requests never
+/// reach its Worker. `Ok(None)` and errors as in [`github_release`]; also
+/// `Ok(None)` for a name the list paths can't spell.
+pub async fn github_versions_list(
+    repo: &str,
+    list: GithubList<'_>,
+) -> eyre::Result<Option<GithubVersionsList>> {
+    if !enabled_for_github_repo(repo) {
+        return Ok(None);
+    }
+    let Some(url) = github_versions_list_url(repo, list) else {
+        return Ok(None);
+    };
+    let ctx = VersionsHostLogContext::github_repo("github_versions_list", repo);
+    let Some(found) = fetch_json_unless_not_found::<GithubVersionsList>(&url, ctx).await? else {
+        return Ok(None);
+    };
+    let expected = match list {
+        GithubList::Tags => "tags",
+        GithubList::Releases | GithubList::ReleasesWithAsset(_) => "releases",
+    };
+    if found.source != expected {
+        bail!(
+            "mise-versions answered {url} with a list of {}",
+            found.source
+        );
+    }
+    log_versions_host_trace(
+        ctx,
+        "success",
+        &format!(
+            "entries={} truncated={}",
+            found.releases.len() + found.tags.len(),
+            found.truncated
+        ),
+    );
+    Ok(Some(found))
+}
+
+/// `/data/github/{owner}/{repo}/…`, lowercase as the files are baked, or
+/// `None` for a name or asset those paths don't allow.
+fn github_versions_list_url(repo: &str, list: GithubList<'_>) -> Option<String> {
+    let (owner, name) = split_github_repo(repo)?;
+    let part = |s: &str| {
+        let s = s.to_ascii_lowercase();
+        let valid = !s.is_empty()
+            && s != "."
+            && s != ".."
+            && s.chars()
+                .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '.' | '-'));
+        valid.then_some(s)
+    };
+    let (owner, name) = (part(owner)?, part(name)?);
+    let file = match list {
+        GithubList::Releases => "releases.json".to_string(),
+        GithubList::Tags => "tags.json".to_string(),
+        GithubList::ReleasesWithAsset(asset) => {
+            let valid = (1..=255).contains(&asset.len())
+                && asset.chars().all(|c| {
+                    c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '+' | '@' | '~' | '-')
+                });
+            if !valid {
+                return None;
+            }
+            format!("assets/{asset}/releases.json")
+        }
+    };
+    Some(format!(
+        "https://mise-versions.jdx.dev/data/github/{owner}/{name}/{file}"
+    ))
 }
 
 /// Fetch one page of a public repository's tags from the versions host, with
@@ -944,6 +1060,49 @@ mod tests {
             github_releases_url("jdx", "mise.test", 3),
             "https://mise-versions.jdx.dev/api/github/repos/jdx/mise.test/releases?page=3"
         );
+    }
+
+    #[test]
+    fn test_github_versions_list_url() {
+        assert_eq!(
+            github_versions_list_url("BurntSushi/ripgrep", GithubList::Releases).as_deref(),
+            Some("https://mise-versions.jdx.dev/data/github/burntsushi/ripgrep/releases.json")
+        );
+        assert_eq!(
+            github_versions_list_url("apache/tomcat", GithubList::Tags).as_deref(),
+            Some("https://mise-versions.jdx.dev/data/github/apache/tomcat/tags.json")
+        );
+        assert_eq!(
+            github_versions_list_url(
+                "jdx/mise",
+                GithubList::ReleasesWithAsset("packslip.sigstore.json")
+            )
+            .as_deref(),
+            Some(
+                "https://mise-versions.jdx.dev/data/github/jdx/mise/assets/packslip.sigstore.json/releases.json"
+            )
+        );
+        assert!(github_versions_list_url("o/..", GithubList::Releases).is_none());
+        assert!(github_versions_list_url("o/r", GithubList::ReleasesWithAsset("a/b")).is_none());
+        assert!(github_versions_list_url("o/r%20", GithubList::Releases).is_none());
+    }
+
+    #[test]
+    fn test_github_versions_list_deserializes() {
+        // The shapes in jdx/mise-versions' docs/github-versions.md.
+        let releases: GithubVersionsList = serde_json::from_str(
+            r#"{"source":"releases","fetched_at":"2026-10-14T21:20:41Z","releases":[{"tag":"v2.102.0","date":"2026-09-30T02:40:02Z","prerelease":false,"asset_count":22}],"truncated":false}"#,
+        )
+        .unwrap();
+        assert_eq!(releases.releases[0].asset_count, 22);
+        assert!(releases.tags.is_empty());
+        let tags: GithubVersionsList = serde_json::from_str(
+            r#"{"source":"tags","fetched_at":"2026-10-14T21:20:43Z","tags":[{"tag":"11.0.27","sha":"52f3b36","date":null}],"truncated":true}"#,
+        )
+        .unwrap();
+        assert_eq!(tags.tags[0].tag, "11.0.27");
+        assert_eq!(tags.tags[0].date, None);
+        assert!(tags.truncated);
     }
 
     #[test]
