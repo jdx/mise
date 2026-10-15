@@ -476,22 +476,21 @@ fn tags_cache_key(api_url: &str, repo: &str) -> String {
 /// `repo`'s whole release or tag list from mise-versions, one request for
 /// any number of entries. `None` sends the caller to the paged mirror
 /// endpoints, never to GitHub: they decide what a 404 means (a private
-/// repository) and report failures. A truncated list is a newest-first
-/// prefix of up to 2,000 entries; the paged endpoints serve fewer, so it is
-/// used as it is.
+/// repository) and report failures. A truncated list (a newest-first
+/// prefix) goes to the paged endpoints too.
 async fn whole_list(
     repo: &str,
     list: crate::versions_host::GithubList<'_>,
 ) -> Option<crate::versions_host::GithubVersionsList> {
     match crate::versions_host::github_versions_list(repo, list).await {
-        Ok(Some(found)) => {
-            if found.truncated {
-                debug!(
-                    "mise-versions lists the newest entries of {repo}'s {list:?}; older ones are not listed"
-                );
-            }
-            Some(found)
+        // A truncated list is still being crawled, or longer than the
+        // mise-versions crawl allows. It isn't used, so it is never cached as
+        // a whole list: the paged endpoints answer, as before.
+        Ok(Some(found)) if found.truncated => {
+            debug!("mise-versions' {list:?} list for {repo} is truncated; paging instead");
+            None
         }
+        Ok(Some(found)) => Some(found),
         Ok(None) => None,
         Err(err) => {
             debug!("mise-versions' whole {list:?} list for {repo} failed, paging instead: {err:#}");
@@ -574,20 +573,24 @@ pub async fn list_release_versions_with_asset(
 
 /// The newest stable release in mise-versions' whole list of `repo`'s
 /// releases, when that list was read from GitHub within
-/// `fetch_remote_versions_cache`. It stands in for GitHub's "latest" mark
+/// [`LISTED_LATEST_MAX_AGE`]. It stands in for GitHub's "latest" mark
 /// when that can't be read, as for a release without assets, which
 /// mise-versions doesn't serve; GitHub's mark is the newest stable release
 /// unless a maintainer moved it.
 pub async fn newest_listed_stable_release(repo: &str) -> Option<ReleaseVersion> {
     let list = whole_list(repo, crate::versions_host::GithubList::Releases).await?;
-    let max_age =
-        crate::duration::parse_duration(&Settings::get().fetch_remote_versions_cache).ok()?;
-    let newest = newest_stable_if_fresh(list, chrono::Utc::now(), max_age);
+    let newest = newest_stable_if_fresh(list, chrono::Utc::now(), LISTED_LATEST_MAX_AGE);
     if newest.is_none() {
         debug!("mise-versions' release list for {repo} is too old or has no stable release");
     }
     newest
 }
+
+/// How old a whole release list may be for [`newest_listed_stable_release`]:
+/// mise-versions reads a quiet repository's first page about every 6 hours,
+/// plus up to a deploy (jdx/mise-versions' `docs/github-versions.md`), so a
+/// tighter limit would turn most lists away.
+const LISTED_LATEST_MAX_AGE: std::time::Duration = std::time::Duration::from_secs(7 * 60 * 60);
 
 /// The first stable release in `list` (GitHub's order, newest first), if the
 /// list was read from GitHub no more than `max_age` before `now`. A list
