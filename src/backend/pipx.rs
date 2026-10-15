@@ -281,12 +281,13 @@ pub fn selected_python_dependency(request: &ToolRequest) -> Result<Option<ToolRe
     let Some(selector) = options.selected_python()? else {
         return Ok(None);
     };
-    ToolRequest::new(
+    let mut dependency = ToolRequest::new(
         Arc::new(BackendArg::from("python")),
         selector.request_version(),
         request.source().clone(),
-    )
-    .map(Some)
+    )?;
+    dependency.set_lockfile_scope(request.lockfile_scope().clone());
+    Ok(Some(dependency))
 }
 
 pub(crate) fn has_selected_python(tv: &ToolVersion) -> Result<bool> {
@@ -1815,7 +1816,10 @@ mod tests {
     #[cfg(unix)]
     use crate::file;
     use crate::github::GithubRelease;
-    use crate::toolset::{ToolVersionOptions, parse_tool_options};
+    use crate::toolset::{ToolRequest, ToolSource, ToolVersionOptions, parse_tool_options};
+    use crate::toolset::tool_request::LockfileScope;
+    use std::sync::Arc;
+    use crate::args::BackendArg;
 
     #[test]
     fn selected_python_accepts_numeric_minor_and_exact_patch() {
@@ -1834,6 +1838,22 @@ mod tests {
         for selector in ["latest", "3.12.*", "cpython@3.12", "/usr/bin/python3"] {
             assert!(SelectedPython::parse(selector).is_err(), "{selector}");
         }
+    }
+
+    #[test]
+    fn selected_python_dependency_keeps_its_lockfile_scope() {
+        let owner = ToolSource::MiseToml("/project/mise.toml".into());
+        let mut request = ToolRequest::new_with_options(
+            Arc::new(BackendArg::from("pypi:demo")),
+            "latest",
+            parse_tool_options(r#"python = "3.12""#),
+            ToolSource::Argument,
+        )
+        .unwrap();
+        request.set_lockfile_scope(LockfileScope::Source(owner.clone()));
+
+        let dependency = super::selected_python_dependency(&request).unwrap().unwrap();
+        assert_eq!(dependency.lockfile_scope(), &LockfileScope::Source(owner));
     }
 
     #[test]

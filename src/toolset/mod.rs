@@ -1364,9 +1364,7 @@ fn keep_uv_python_variants(
     // Graph locks also write receipts for system and non-core interpreters.
     // Only an explicit selector owns a mise Python runtime that must be
     // retained through the receipt closure below.
-    if !crate::backend::pipx::has_selected_python(tv)? {
-        return Ok(());
-    }
+    let selected_python = crate::backend::pipx::has_selected_python(tv)?;
     // A retained variant may have been built before its selector's lock entry
     // advanced. Its receipt is authoritative for the runtime closure of that
     // existing environment, so retain that exact Python as well. Do not merely
@@ -1375,7 +1373,22 @@ fn keep_uv_python_variants(
     // key. A receipt that cannot be mapped safely aborts pruning rather than
     // leaving a retained environment with a deleted interpreter.
     let python_ba = BackendArg::from("python");
-    for (_, dir) in crate::install_layout::resolver::installs_of(tv.ba()) {
+    if selected_python {
+    let mut variant_dirs: Vec<_> = crate::install_layout::resolver::installs_of(tv.ba())
+        .into_iter()
+        .map(|(_, dir)| dir)
+        .collect();
+    // The default layout stores environments under `<tool>/<version>`, which
+    // `installs_of` intentionally does not enumerate. Include those retained
+    // variants so an older receipt can keep its exact interpreter alive too.
+    variant_dirs.extend(
+        backend
+            .list_installed_versions()
+            .into_iter()
+            .filter(|version| version.starts_with(&prefix))
+            .map(|version| tv.ba().installs_path().join(version)),
+    );
+    for dir in variant_dirs {
         let receipt = dir.join(".mise-uv/python.json");
         let contents = match crate::file::read_to_string(&receipt) {
             Ok(contents) => contents,
@@ -1393,20 +1406,7 @@ fn keep_uv_python_variants(
                 receipt.display()
             )),
         };
-        let (python, identity) = serde_json::from_str::<(PathBuf, String)>(&contents)
-            .wrap_err_with(|| format!(
-                "cannot safely prune: invalid Python receipt {}",
-                receipt.display()
-            ))?;
-        let mut parts = identity.splitn(4, ':');
-        let (Some("core"), Some("python"), Some(version), Some(_runtime_identity)) =
-            (parts.next(), parts.next(), parts.next(), parts.next())
-        else {
-            bail!(
-                "cannot safely prune: Python receipt {} does not name a mise core Python runtime",
-                receipt.display()
-            );
-        };
+        let (python, version) = selected_python_receipt(&contents, &receipt)?;
 
         let identity_install = crate::install_layout::resolver::installs_of(&python_ba)
             .into_iter()
@@ -1426,7 +1426,7 @@ fn keep_uv_python_variants(
             continue;
         }
 
-        let legacy_dir = python_ba.installs_path().join(version);
+        let legacy_dir = python_ba.installs_path().join(&version);
         if python.starts_with(&legacy_dir) {
             needed
                 .entry((python_ba.short.to_string(), version.to_string()))
@@ -1441,6 +1441,7 @@ fn keep_uv_python_variants(
             python.display()
         );
     }
+    }
     for (name, dir) in crate::install_layout::resolver::installs_of(tv.ba()) {
         if name.starts_with(&prefix)
             && let Some(dir) = crate::install_layout::resolver::dir_name_of(&dir)
@@ -1452,6 +1453,24 @@ fn keep_uv_python_variants(
         }
     }
     Ok(())
+}
+
+fn selected_python_receipt(contents: &str, receipt: &Path) -> Result<(PathBuf, String)> {
+    let (python, identity) = serde_json::from_str::<(PathBuf, String)>(contents)
+        .wrap_err_with(|| format!(
+            "cannot safely prune: invalid Python receipt {}",
+            receipt.display()
+        ))?;
+    let mut parts = identity.splitn(4, ':');
+    let (Some("core"), Some("python"), Some(version), Some(_runtime_identity)) =
+        (parts.next(), parts.next(), parts.next(), parts.next())
+    else {
+        bail!(
+            "cannot safely prune: Python receipt {} does not name a mise core Python runtime",
+            receipt.display()
+        );
+    };
+    Ok((python, version.to_string()))
 }
 
 async fn collect_needed_versions(
@@ -1542,6 +1561,36 @@ mod tests {
             &BackendArg::from("aqua:BurntSushi/ripgrep[bin=rg]")
         ));
         assert!(is_named_in(&names, &BackendArg::from("ripgrep[bin=rg]")));
+    }
+
+    #[test]
+    fn selected_python_receipt_preserves_its_runtime_after_lock_advance() {
+        let receipt = Path::new("/data/installs/pypi:demo/demo~uv~old/.mise-uv/python.json");
+        let (python, version) = selected_python_receipt(
+            r#"["/data/installs/python/3.11.9/bin/python","core:python:3.11.9:old-runtime"]"#,
+            receipt,
+        )
+        .unwrap();
+        assert_eq!(python, PathBuf::from("/data/installs/python/3.11.9/bin/python"));
+        assert_eq!(version, "3.11.9");
+    }
+
+    #[test]
+    fn selected_python_receipt_fails_closed_when_malformed_or_not_mise_python() {
+        let receipt = Path::new("/data/installs/pypi:demo/demo/.mise-uv/python.json");
+        let invalid_json = selected_python_receipt("not json", receipt).unwrap_err();
+        assert!(invalid_json.to_string().contains("invalid Python receipt"));
+
+        let foreign_runtime = selected_python_receipt(
+            r#"["/usr/bin/python3","system:python:3.12:system"]"#,
+            receipt,
+        )
+        .unwrap_err();
+        assert!(
+            foreign_runtime
+                .to_string()
+                .contains("does not name a mise core Python runtime")
+        );
     }
 
     #[tokio::test]

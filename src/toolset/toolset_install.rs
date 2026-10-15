@@ -331,6 +331,12 @@ impl Toolset {
             return Ok(vec![]);
         }
 
+        // Keep the caller's selection separate from private, backend-owned
+        // runtime dependencies. They must be installed in this batch but must
+        // not be returned to callers such as `mise use`, which persists every
+        // returned tool into its configuration.
+        let requested_keys: HashSet<_> = versions.iter().map(tool_key).collect();
+
         self.init_request_options(&mut versions);
         // Some backends own a versioned runtime for one consumer. Add those
         // requests to this installation batch before constructing the graph so
@@ -555,12 +561,19 @@ impl Toolset {
         }
 
         // Return appropriate result
+        let requested_installations = || {
+            installed
+                .iter()
+                .filter(|tv| requested_keys.contains(&tool_key(&tv.request)))
+                .cloned()
+                .collect()
+        };
         if all_failed.is_empty() {
-            Ok(installed)
+            Ok(requested_installations())
         } else {
             crate::lockfile::generate::record_install_failure();
             Err(Error::InstallFailed {
-                successful_installations: installed,
+                successful_installations: requested_installations(),
                 failed_installations: all_failed,
             }
             .into())

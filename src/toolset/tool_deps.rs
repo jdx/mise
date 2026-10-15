@@ -205,6 +205,36 @@ mod tests {
     }
 
     #[test]
+    fn selected_python_dependencies_remain_distinct_per_source() {
+        let backend = Arc::new(BackendArg::from("pypi:demo"));
+        let first = ToolRequest::new_with_options(
+            backend.clone(),
+            "1.0.0",
+            parse_tool_options(r#"python = "3.12""#),
+            ToolSource::ToolStub("/tmp/first-tool-stub.toml".into()),
+        )
+        .unwrap();
+        let second = ToolRequest::new_with_options(
+            backend,
+            "1.0.0",
+            parse_tool_options(r#"python = "3.12""#),
+            ToolSource::ToolStub("/tmp/second-tool-stub.toml".into()),
+        )
+        .unwrap();
+
+        let first_python = crate::backend::pipx::selected_python_dependency(&first)
+            .unwrap()
+            .unwrap();
+        let second_python = crate::backend::pipx::selected_python_dependency(&second)
+            .unwrap()
+            .unwrap();
+        assert_eq!(first_python.ba().short, "python");
+        assert_eq!(second_python.ba().short, "python");
+        assert_ne!(first_python.source(), second_python.source());
+        assert_ne!(tool_key(&first_python), tool_key(&second_python));
+    }
+
+    #[test]
     fn test_same_tool_and_version_with_different_core_options_are_rejected() {
         let backend = Arc::new(BackendArg::from("tiny"));
         let first_options = ToolVersionOptions {

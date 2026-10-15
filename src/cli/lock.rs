@@ -2152,28 +2152,8 @@ impl Lock {
         )
         .await?;
 
-        // A PyPI tool's explicit interpreter is a request owned by the same
-        // config scope. Resolve it here (rather than from the active shell
-        // toolset) so the ordinary Python lock entry records the concrete
-        // runtime used by the tool and can be replayed offline later.
-        let selected_pythons = all_tools
-            .iter()
-            .filter_map(|(_, tv)| {
-                crate::backend::pipx::selected_python_dependency(&tv.request).transpose()
-            })
-            .collect::<Result<Vec<_>>>()?;
-        for request in selected_pythons {
-            let opts = request.resolve_options(context.resolve_options)?;
-            let tv = request.resolve(config, &opts).await.wrap_err_with(|| {
-                format!(
-                    "failed to resolve selected Python dependency {request} for lockfile {}",
-                    display_path(target_lockfile_path)
-                )
-            })?;
-            push_unique_lock_tool(&mut all_tools, (tv.ba().clone(), tv));
-        }
-
         if self.tool.is_empty() {
+            self.add_selected_python_locks(config, context, target_lockfile_path, &mut all_tools).await?;
             Ok(all_tools)
         } else {
             // Build map of tool args with explicit versions
@@ -2268,8 +2248,31 @@ impl Lock {
             for tool in tools {
                 push_unique_lock_tool(&mut unique_tools, tool);
             }
+            self.add_selected_python_locks(config, context, target_lockfile_path, &mut unique_tools).await?;
             Ok(unique_tools)
         }
+    }
+
+    async fn add_selected_python_locks(
+        &self,
+        config: &Arc<Config>,
+        context: &LockCollectionContext<'_>,
+        target_lockfile_path: &Path,
+        tools: &mut Vec<LockTool>,
+    ) -> Result<()> {
+        let requests = tools
+            .iter()
+            .filter_map(|(_, tv)| crate::backend::pipx::selected_python_dependency(&tv.request).transpose())
+            .collect::<Result<Vec<_>>>()?;
+        for request in requests {
+            let opts = request.resolve_options(context.resolve_options)?;
+            let tv = request.resolve(config, &opts).await.wrap_err_with(|| format!(
+                "failed to resolve selected Python dependency {request} for lockfile {}",
+                display_path(target_lockfile_path)
+            ))?;
+            push_unique_lock_tool(tools, (tv.ba().clone(), tv));
+        }
+        Ok(())
     }
 
     async fn add_task_tools_to_lock(

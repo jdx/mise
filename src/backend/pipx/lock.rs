@@ -127,7 +127,27 @@ impl PIPXBackend {
             .flatten()
             .is_some()
         {
-            Self::restore_system_uv_python(tv);
+            // Resolve the current selected-runtime request in its owner scope.
+            // A receipt describes the environment that exists on disk, but must
+            // not make a later lockfile pin silently keep that old runtime.
+            let dependency = super::selected_python_dependency(&tv.request)
+                .ok()
+                .flatten();
+            if let Some(dependency) = dependency
+                && let Ok(python) = ToolVersion::resolve(config, dependency, &Default::default()).await
+                && let Ok(backend) = python.backend()
+                && let Ok(Some(path)) = backend.which(config, &python, "python").await
+            {
+                tv.uv_python = Some((
+                    path,
+                    format!(
+                        "{}:{}:{}",
+                        python.ba().full(),
+                        python.version,
+                        Self::python_installation_identity(&python)
+                    ),
+                ));
+            }
             return;
         }
         if let Some(identity) = self.configured_python_identity(config).await {
