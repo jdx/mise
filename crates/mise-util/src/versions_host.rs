@@ -521,6 +521,104 @@ pub fn is_temporarily_unavailable(err: &eyre::Report) -> bool {
     })
 }
 
+/// GET `url` from the versions host for data mise would otherwise ask
+/// api.github.com for. `Ok(None)` is a 404 and nothing else; every other
+/// failure is an error, so that it is never mistaken for "not found" and
+/// never sends the caller to GitHub.
+async fn fetch_json_unless_not_found<T>(
+    url: &str,
+    ctx: VersionsHostLogContext<'_>,
+) -> eyre::Result<Option<T>>
+where
+    T: serde::de::DeserializeOwned,
+{
+    if crate::network::offline(&Settings::get()) {
+        bail!("offline mode is enabled");
+    }
+    debug!("GET {url}");
+    let resp = match HTTP_FETCH
+        .get_async_with_headers_allow_error_status(url, &VERSIONS_HOST_HEADERS)
+        .await
+    {
+        Ok(resp) => resp,
+        Err(err) => {
+            let status = http::error_code(&err);
+            log_versions_host_trace(
+                ctx,
+                "failed",
+                &format!(
+                    "status={} error={}",
+                    status.unwrap_or(0),
+                    log_value(&err.to_string())
+                ),
+            );
+            return Err(VersionsHostUnavailable {
+                status,
+                message: format!("{err:#}"),
+            }
+            .into());
+        }
+    };
+    let status = resp.status();
+    debug!("GET {url} {status}");
+    if status == reqwest::StatusCode::NOT_FOUND {
+        log_versions_host_trace(ctx, "not_found", "status=404");
+        return Ok(None);
+    }
+    if !status.is_success() {
+        let body = resp.text().await.unwrap_or_default();
+        let message = versions_host_error_message(status.as_u16(), &body);
+        log_versions_host_trace(
+            ctx,
+            "failed",
+            &format!("status={} error={}", status.as_u16(), log_value(&message)),
+        );
+        return Err(VersionsHostUnavailable {
+            status: Some(status.as_u16()),
+            message,
+        }
+        .into());
+    }
+    // The body is read first so that a connection lost while reading it is
+    // mise-versions being unavailable, like one lost before the status;
+    // only a body that arrived and doesn't parse is a bad answer.
+    let body = resp.bytes().await.map_err(|err| VersionsHostUnavailable {
+        status: None,
+        message: format!("reading {url}: {err:#}"),
+    })?;
+    serde_json::from_slice(&body)
+        .map(Some)
+        .map_err(|err| eyre::eyre!("invalid response from {url}: {err}"))
+}
+
+/// The versions host could not answer: a network failure or an error status
+/// other than 404. In jdx/mise-versions' client contract a 403 means the
+/// mirror is disabled or restricted, and anything else (429, 5xx, no
+/// connection) is temporary: a copy cached earlier may stand in for the
+/// answer. Neither ever sends mise to api.github.com.
+#[derive(Debug, thiserror::Error)]
+#[error("{message}")]
+pub struct VersionsHostUnavailable {
+    pub status: Option<u16>,
+    pub(crate) message: String,
+}
+
+impl VersionsHostUnavailable {
+    /// Whether this failure is temporary, so a stale cached copy may be used.
+    pub fn is_temporary(&self) -> bool {
+        self.status != Some(403)
+    }
+}
+
+/// Whether `err` is, or was caused by, a temporary [`VersionsHostUnavailable`].
+pub fn is_temporarily_unavailable(err: &eyre::Report) -> bool {
+    err.chain().any(|cause| {
+        cause
+            .downcast_ref::<VersionsHostUnavailable>()
+            .is_some_and(VersionsHostUnavailable::is_temporary)
+    })
+}
+
 fn versions_host_error_message(status: u16, body: &str) -> String {
     let body = body.trim();
     let status_code = reqwest::StatusCode::from_u16(status);

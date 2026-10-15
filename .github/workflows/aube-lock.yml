@@ -18,7 +18,48 @@ concurrency:
 permissions: {}
 
 jobs:
+  changes:
+    # Same sender gate as the shared workflow, so other pushes cost nothing.
+    if: github.event.sender.id == 29139614 # renovate[bot]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      aube: ${{ steps.diff.outputs.aube }}
+    steps:
+      - name: Check whether the branch changes aube inputs
+        id: diff
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          BASE: ${{ github.event.repository.default_branch }}
+          HEAD_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          # Fail open: if the comparison cannot be read, regenerate as before.
+          # The compare endpoint lists at most 300 files, and only on its first
+          # page, so a list that long may be truncated; treat it the same way.
+          if ! files="$(gh api "repos/${REPO}/compare/${BASE}...${HEAD_SHA}" --jq '.files[].filename')"; then
+            echo "::warning::could not compare ${HEAD_SHA} with ${BASE}; running aube-lock"
+            echo "aube=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [ "$(grep -c . <<< "$files" || true)" -ge 300 ]; then
+            echo "::warning::${HEAD_SHA} changes 300 or more files, so the list may be truncated; running aube-lock"
+            echo "aube=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if grep -Eq '(^|/)(package\.json|mise\.toml|mise\.lock)$' <<< "$files"; then
+            echo "aube=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "branch changes no package.json or mise tool pins; skipping aube-lock"
+            echo "aube=false" >> "$GITHUB_OUTPUT"
+          fi
+
   aube-lock:
+    needs: changes
+    if: needs.changes.outputs.aube == 'true'
     permissions:
       contents: write
     uses: jdx/renovate-config/.github/workflows/aube-lock.yml@d0f85cba63adc5a26194009e76eebcf5bc1ee823 # v1.0.2
