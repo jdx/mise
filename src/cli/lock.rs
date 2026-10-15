@@ -4,7 +4,7 @@ use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use crate::config::{Config, ConfigMap};
+use crate::config::{Config, ConfigMap, SettingsExt};
 use crate::file::display_path;
 use crate::install_before::resolve_cli_minimum_release_age;
 use crate::lockfile::{self, LockResolutionResult, Lockfile};
@@ -445,6 +445,12 @@ fn classify_lock_result(
 struct SkipWarnings {
     /// (short, version) -> platforms that failed, and the first error seen
     failures: BTreeMap<(String, String), (usize, String)>,
+    /// Report tools with no build for a platform the user asked for by name
+    /// (`--platform` or `lockfile_platforms`); the default set stays quiet
+    /// because many tools legitimately skip some of its platforms.
+    warn_unsupported: bool,
+    /// (short, version) -> requested platforms the tool is not available for
+    unsupported: BTreeMap<(String, String), Vec<String>>,
 }
 
 impl SkipWarnings {
@@ -452,12 +458,21 @@ impl SkipWarnings {
         &mut self,
         short: &str,
         version: &str,
+        platform: &str,
         error: &str,
         status: crate::lockfile::LockResolutionStatus,
     ) {
         use crate::lockfile::LockResolutionStatus;
         match status {
-            // An unsupported target is an expected skip.
+            // An unsupported target is an expected skip unless the user named
+            // the platform themselves.
+            LockResolutionStatus::Unsupported if self.warn_unsupported => {
+                debug!("{error}");
+                self.unsupported
+                    .entry((short.to_string(), version.to_string()))
+                    .or_default()
+                    .push(platform.to_string());
+            }
             LockResolutionStatus::Unsupported => debug!("{error}"),
             // Fatal errors are reported by failing the command.
             LockResolutionStatus::Required => {}
@@ -471,6 +486,17 @@ impl SkipWarnings {
     }
 
     fn messages(&self) -> Vec<String> {
+        let unsupported = self
+            .unsupported
+            .iter()
+            .map(|((short, version), platforms)| {
+                let mut platforms = platforms.clone();
+                platforms.sort();
+                format!(
+                    "{short}@{version} is not available for {}; it will not install there",
+                    platforms.join(", ")
+                )
+            });
         self.failures
             .iter()
             .map(|((_, version), (count, error))| match count {
@@ -480,6 +506,7 @@ impl SkipWarnings {
                     n - 1
                 ),
             })
+            .chain(unsupported)
             .collect()
     }
 }
@@ -2486,7 +2513,10 @@ impl Lock {
         // tools' entries aren't lost.
         let mut completed = 0;
         let mut resolution_errors: Vec<String> = Vec::new();
-        let mut skip_warnings = SkipWarnings::default();
+        let mut skip_warnings = SkipWarnings {
+            warn_unsupported: !self.platform.is_empty() || settings.lockfile_platforms()?.is_some(),
+            ..Default::default()
+        };
         while let Some(result) = jset.join_next().await {
             completed += 1;
             match result {
@@ -2498,7 +2528,7 @@ impl Lock {
                     let error_is_fatal =
                         resolution.7 == crate::lockfile::LockResolutionStatus::Required;
                     if let Some(msg) = &resolution_error {
-                        skip_warnings.record(&short, &version, msg, resolution.7);
+                        skip_warnings.record(&short, &version, &platform_key, msg, resolution.7);
                     }
                     pr.set_message(format!("{}@{} {}", short, version, platform_key));
                     pr.set_position(completed);
@@ -2571,16 +2601,40 @@ mod tests {
     fn skip_warnings_group_by_tool_version() {
         use crate::lockfile::LockResolutionStatus::{Optional, Required, Unsupported};
         let mut warnings = SkipWarnings::default();
-        warnings.record("node", "20.0.0", "boom on linux-x64", Optional);
-        warnings.record("node", "20.0.0", "boom on macos-arm64", Optional);
-        warnings.record("node", "22.0.0", "other cause", Optional);
-        warnings.record("node", "22.0.0", "not built for windows", Unsupported);
-        warnings.record("conda:x", "1.0.0", "solve failed", Required);
+        warnings.record("node", "20.0.0", "linux-x64", "boom on linux-x64", Optional);
+        warnings.record(
+            "node",
+            "20.0.0",
+            "macos-arm64",
+            "boom on macos-arm64",
+            Optional,
+        );
+        warnings.record("node", "22.0.0", "linux-x64", "other cause", Optional);
+        warnings.record("node", "22.0.0", "windows-x64", "not built", Unsupported);
+        warnings.record("conda:x", "1.0.0", "linux-x64", "solve failed", Required);
         assert_eq!(
             warnings.messages(),
             vec![
                 "boom on linux-x64 (version 20.0.0, and 1 more platform(s))".to_string(),
                 "other cause (version 22.0.0)".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn skip_warnings_report_unsupported_requested_platforms() {
+        use crate::lockfile::LockResolutionStatus::Unsupported;
+        let mut warnings = SkipWarnings {
+            warn_unsupported: true,
+            ..Default::default()
+        };
+        warnings.record("apko", "1.0.0", "windows-x64", "no asset", Unsupported);
+        warnings.record("apko", "1.0.0", "linux-arm64", "no asset", Unsupported);
+        assert_eq!(
+            warnings.messages(),
+            vec![
+                "apko@1.0.0 is not available for linux-arm64, windows-x64; it will not install there"
+                    .to_string()
             ]
         );
     }
