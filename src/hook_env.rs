@@ -518,10 +518,6 @@ pub struct HookEnvSession {
     /// Stored so the fast-path can detect changes without loading config.
     #[serde(default)]
     pub watch_files: Vec<PathBuf>,
-    /// Git HEAD commit of each `[[watch_files]]` project root when this session
-    /// was built, so the next run can tell that git moved HEAD in between.
-    #[serde(default)]
-    pub git_heads: std::collections::BTreeMap<PathBuf, String>,
     dir: Option<PathBuf>,
     env_var_hash: String,
     latest_update: u128,
@@ -592,12 +588,6 @@ pub async fn build_session(
     config_paths: IndexSet<PathBuf>,
 ) -> Result<HookEnvSession> {
     let mut max_modtime = UNIX_EPOCH;
-    let git_heads = watch_files
-        .iter()
-        .filter_map(|wfp| wfp.root.as_ref())
-        .unique()
-        .filter_map(|root| Some((root.clone(), watch_files::git_head(root)?)))
-        .collect();
     let resolved_watch_files = get_watch_files(watch_files)?;
     for cf in &resolved_watch_files {
         if let Ok(Ok(modified)) = cf.metadata().map(|m| m.modified()) {
@@ -668,7 +658,6 @@ pub async fn build_session(
         aliases,
         tera_files: config.tera_files.clone(),
         watch_files: resolved_watch_files.into_iter().collect(),
-        git_heads,
         loaded_configs,
         loaded_tools,
         config_paths,
