@@ -38,10 +38,11 @@ older than
 1 hour by default.
 
 Commands that only need a version matching a request, such as `mise install`,
-`mise use`, and `mise run`, keep a list for as long as the tool's
-[`minimum_release_age`](/configuration/settings.html#minimum_release_age),
-between 1 and 24 hours: 24 hours under the default cutoff, 6 hours for a tool
-with `minimum_release_age = "6h"`, and 1 hour when the cutoff is off. A release
+`mise use`, and `mise run`, keep a list for the tool's
+[`minimum_release_age`](/configuration/settings.html#minimum_release_age) less
+an hour (the most a versions-host snapshot lags), between 1 and 24 hours: 23
+hours under the default cutoff, 5 hours for a tool with
+`minimum_release_age = "6h"`, and 1 hour when the cutoff is off. A release
 newer than the list could not be installed before it reached that age anyway.
 Lists that do not date every version, and every list once you set
 `fetch_remote_versions_cache` yourself, are refetched after

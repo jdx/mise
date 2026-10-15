@@ -896,11 +896,12 @@ docs = """
 fetch the list again once it is older than this, 1 hour by default.
 
 When this is not set, commands that only need a version matching a request,
-such as `mise install`, `mise use` and `mise run`, keep a list as long as the
-tool's [`minimum_release_age`](#minimum_release_age): 24 hours by default,
-6 hours for a tool with `minimum_release_age = "6h"`, and never less than 1
-hour or more than 24 hours. A release newer than the list could not be picked
-before it reached that age anyway. This applies only to lists that date every
+such as `mise install`, `mise use` and `mise run`, keep a list for the tool's
+[`minimum_release_age`](#minimum_release_age) less an hour, the most a
+versions-host snapshot lags: 23 hours by default, 5 hours for a tool with
+`minimum_release_age = "6h"`, and never less than 1 hour or more than 24 hours.
+A release newer than the list could not be picked before it reached that age
+anyway. This applies only to lists that date every
 version; others are refetched after 1 hour. Setting this value applies it to
 every command.
 

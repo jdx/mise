@@ -32,10 +32,11 @@ pub fn set_cli_minimum_release_age_cutoff(cutoff: Timestamp) {
 
 /// How long a command that only needs a version matching its request, such as
 /// `mise install`, may keep a cached remote version list for `backend_arg` when
-/// that list dates every version: the tool's effective release-age cutoff,
-/// clamped to between 1 and 24 hours.
+/// that list dates every version: the tool's effective release-age cutoff less
+/// `LISTED_SNAPSHOT_LAG`, clamped to between 1 and 24 hours.
 ///
-/// A release missing from the list was published after it was fetched, and the
+/// A release missing from the list was published after the snapshot it holds,
+/// which can be up to `LISTED_SNAPSHOT_LAG` older than the cache file, and the
 /// cutoff hides it until it reaches that age, so reusing the list for as long
 /// does not delay any release beyond the cutoff. `None` means no window, and
 /// the list is kept for `fetch_remote_versions_cache` as usual: when the user
@@ -66,6 +67,7 @@ pub(crate) fn release_age_list_window_for_cutoff(cutoff: Timestamp) -> Option<Du
 fn list_window_for_cutoff(cutoff: Timestamp, now: Timestamp) -> Duration {
     Duration::try_from(now.duration_since(cutoff))
         .unwrap_or(Duration::ZERO)
+        .saturating_sub(crate::backend::LISTED_SNAPSHOT_LAG)
         .clamp(RELEASE_AGE_LIST_WINDOW_MIN, RELEASE_AGE_LIST_WINDOW_MAX)
 }
 
@@ -448,8 +450,10 @@ mod tests {
         let now = Timestamp::now();
         let ago = |secs: i64| now - jiff::SignedDuration::from_secs(secs);
         let hours = |hours: u64| Duration::from_secs(hours * 60 * 60);
-        assert_eq!(list_window_for_cutoff(ago(6 * 3600), now), hours(6));
-        assert_eq!(list_window_for_cutoff(ago(24 * 3600), now), hours(24));
+        // Less the hour a versions-host snapshot can lag the cache file.
+        assert_eq!(list_window_for_cutoff(ago(6 * 3600), now), hours(5));
+        assert_eq!(list_window_for_cutoff(ago(24 * 3600), now), hours(23));
+        assert_eq!(list_window_for_cutoff(ago(2 * 3600), now), hours(1));
         assert_eq!(list_window_for_cutoff(ago(7 * 24 * 3600), now), hours(24));
         assert_eq!(list_window_for_cutoff(ago(30 * 60), now), hours(1));
         assert_eq!(list_window_for_cutoff(now, now), hours(1));
@@ -470,10 +474,10 @@ mod tests {
         let hours = |hours: u64| Some(Duration::from_secs(hours * 60 * 60));
         let tool: BackendArg = "github:cli/cli".into();
 
-        // The 24h default cutoff.
-        assert_eq!(release_age_list_window(&tool, None), hours(24));
+        // The 24h default cutoff, less the snapshot lag.
+        assert_eq!(release_age_list_window(&tool, None), hours(23));
         // A per-tool cutoff.
-        assert_eq!(release_age_list_window(&tool, Some("6h")), hours(6));
+        assert_eq!(release_age_list_window(&tool, Some("6h")), hours(5));
         assert_eq!(release_age_list_window(&tool, Some("7d")), hours(24));
         assert_eq!(release_age_list_window(&tool, Some("30m")), hours(1));
         assert_eq!(release_age_list_window(&tool, Some("0s")), None);
@@ -482,8 +486,8 @@ mod tests {
         let mut partial = SettingsPartial::empty();
         partial.minimum_release_age = Some("6h".to_string());
         Settings::reset(Some(partial.clone()));
-        assert_eq!(release_age_list_window(&tool, None), hours(6));
-        assert_eq!(release_age_list_window(&tool, Some("12h")), hours(12));
+        assert_eq!(release_age_list_window(&tool, None), hours(5));
+        assert_eq!(release_age_list_window(&tool, Some("12h")), hours(11));
         let mut disabled = partial.clone();
         disabled.minimum_release_age = Some("0s".to_string());
         Settings::reset(Some(disabled));

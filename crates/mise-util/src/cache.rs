@@ -376,6 +376,26 @@ where
         self.parse()
     }
 
+    /// Drop the value in memory when the cache file is `max_age` old or older,
+    /// so the next read checks the file again. The value in memory is the
+    /// file's contents when it was read or written, so the file's age bounds
+    /// its age: a caller that adopted the file for a longer duration than a
+    /// later caller allows must not answer that later caller from memory.
+    pub fn forget_memory_older_than(&mut self, max_age: Duration) {
+        if self.cache_async.get().is_none() && self.cache.get().is_none() {
+            return;
+        }
+        let too_old = self
+            .cache_file_path
+            .metadata()
+            .and_then(|metadata| metadata.modified())
+            .is_ok_and(|modified| modified.elapsed().is_ok_and(|age| age >= max_age));
+        if too_old {
+            *self.cache = Default::default();
+            *self.cache_async = Default::default();
+        }
+    }
+
     /// Whether a read would be answered without fetching: the value is in
     /// memory, or the cache file is fresh.
     pub fn has_fresh_value(&self) -> bool {
@@ -860,6 +880,35 @@ mod tests {
 
         let mut cache = refresh_cache(dir.path(), Duration::from_secs(60));
         assert!(!cache.adopt_file_if_fresh_for(Some(Duration::ZERO), |_, _| true));
+    }
+
+    #[tokio::test]
+    async fn forget_memory_older_than_drops_only_an_old_value() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut cache = refresh_cache(dir.path(), Duration::from_secs(3600));
+        cache.write(&"written".to_string()).unwrap();
+        assert!(cache.adopt_file_if(|_, _| true));
+        cache.forget_memory_older_than(Duration::from_secs(60));
+        assert!(cache.has_fresh_value());
+        cache.forget_memory_older_than(Duration::ZERO);
+        assert_eq!(
+            cache
+                .get_or_try_init_async(async || Ok("fetched".to_string()))
+                .await
+                .unwrap(),
+            "written"
+        );
+
+        let mut cache = refresh_cache(dir.path(), Duration::ZERO);
+        assert!(cache.adopt_file_if_fresh_for(Some(Duration::from_secs(60)), |_, _| true));
+        cache.forget_memory_older_than(Duration::ZERO);
+        assert_eq!(
+            cache
+                .get_or_try_init_async(async || Ok("fetched".to_string()))
+                .await
+                .unwrap(),
+            "fetched"
+        );
     }
 
     fn environment(values: &[(&str, &str)]) -> impl Fn(&str) -> Option<String> {

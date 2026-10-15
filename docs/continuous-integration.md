@@ -259,7 +259,7 @@ Still run `mise install` after restoring a cache: it installs anything missing,
 and the job must also succeed with an empty cache. `mise install` counts a
 cached version list as stale after the tool's
 [`minimum_release_age`](/configuration/settings.html#minimum_release_age)
-(24 hours by default, never less than 1 hour; see
+less an hour (23 hours by default, never less than 1 hour; see
 [When mise refreshes version lists](/cache-behavior.html#version-list-refresh)),
 so a restored cache does not save version lookups the way a lockfile does. See
 [Directories](/directories.html) for where mise keeps installs and metadata.

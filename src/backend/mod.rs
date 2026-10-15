@@ -100,7 +100,7 @@ pub(crate) const MISE_BINS_DIR: &str = ".mise-bins";
 /// How much older a cached remote-version list's contents can be than the file
 /// holding them. mise-versions republishes its lists about every 30 minutes;
 /// this leaves room for that and for the CDN in front of it.
-const LISTED_SNAPSHOT_LAG: std::time::Duration = std::time::Duration::from_secs(60 * 60);
+pub(crate) const LISTED_SNAPSHOT_LAG: std::time::Duration = std::time::Duration::from_secs(60 * 60);
 
 /// How old a cached remote version list may be for an install-time refresh
 /// (which `latest` gets when nothing installed satisfies it) to reuse it
@@ -6103,23 +6103,29 @@ fn dates_every_version(versions: &[VersionInfo]) -> bool {
 /// release would be picked as soon as it is listed.
 ///
 /// Both option sets count, and the shorter window wins: the configured
-/// options shape the list, and the request's may shorten the cutoff.
+/// options shape the list, and the request's may shorten the cutoff. A list
+/// already in memory, adopted for an earlier request with a longer window, is
+/// dropped when it is too old for this one.
 fn adopt_cached_remote_versions_within_release_age(
     ba: &BackendArg,
     cache: &mut VersionCacheManager,
     opts: [&ToolVersionOptions; 2],
 ) {
-    if cache.has_fresh_value() {
-        return;
-    }
-    let Some(window) = opts
+    let window = opts
         .iter()
         .map(|opts| release_age_list_window(ba, opts.minimum_release_age()))
         .min()
-        .flatten()
-    else {
+        .flatten();
+    let Some(allowed) = window.or_else(|| Settings::get().fetch_remote_versions_cache()) else {
         return;
     };
+    cache.forget_memory_older_than(allowed);
+    let Some(window) = window else {
+        return;
+    };
+    if cache.has_fresh_value() {
+        return;
+    }
     if cache.adopt_file_if_fresh_for(Some(window), |_, versions| dates_every_version(versions)) {
         debug!(
             "Using the cached version list for {ba}, within its {}m release-age window",
@@ -7350,6 +7356,18 @@ mod latest_version_tests {
             vec!["1.0.0".to_string()]
         );
         assert_eq!(backend.list_calls(), 0);
+
+        // A later request with a shorter cutoff does not reuse the list
+        // adopted for the longer one.
+        let no_cutoff = crate::toolset::parse_tool_options("minimum_release_age=0s");
+        assert_eq!(
+            backend
+                .list_remote_versions_with_selection_options(&config, &no_cutoff, false)
+                .await
+                .unwrap(),
+            vec!["1.0.0".to_string(), "2.0.0".to_string()]
+        );
+        assert_eq!(backend.list_calls(), 1);
 
         // A version without a date passes the cutoff the moment it is listed.
         let backend =
