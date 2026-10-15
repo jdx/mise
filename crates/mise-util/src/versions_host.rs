@@ -609,8 +609,8 @@ pub async fn github_attestations(
 
 /// GET `url` from the versions host for data mise would otherwise ask
 /// api.github.com for. `Ok(None)` is a 404 and nothing else; every other
-/// failure is an error, so that it is never mistaken for "not found" and
-/// never sends the caller to GitHub.
+/// failure is an error, so that it is never mistaken for "not found". Only
+/// the errors [`retries_on_github`] accepts send the caller to GitHub.
 async fn fetch_json_unless_not_found<T>(
     url: &str,
     ctx: VersionsHostLogContext<'_>,
@@ -681,7 +681,8 @@ where
 /// other than 404. In jdx/mise-versions' client contract a 403 means the
 /// mirror is disabled or restricted, and anything else (429, 5xx, no
 /// connection) is temporary: a copy cached earlier may stand in for the
-/// answer. Neither ever sends mise to api.github.com.
+/// answer. A timeout, a lost connection, a 429 or a 5xx also sends a GitHub
+/// lookup to api.github.com (see [`retries_on_github`]).
 #[derive(Debug, thiserror::Error)]
 #[error("{message}")]
 pub struct VersionsHostUnavailable {
@@ -696,13 +697,59 @@ impl VersionsHostUnavailable {
     }
 }
 
-/// Whether `err` is, or was caused by, a temporary [`VersionsHostUnavailable`].
+/// Whether `err` is, or was caused by, a temporary [`VersionsHostUnavailable`],
+/// or is a [`GithubRetryFailed`]: mise-versions failed that way and so did
+/// api.github.com after it.
 pub fn is_temporarily_unavailable(err: &eyre::Report) -> bool {
+    err.chain().any(|cause| {
+        cause.is::<GithubRetryFailed>()
+            || cause
+                .downcast_ref::<VersionsHostUnavailable>()
+                .is_some_and(VersionsHostUnavailable::is_temporary)
+    })
+}
+
+/// Whether a failed lookup of GitHub metadata on mise-versions is asked of
+/// api.github.com instead: mise-versions timed out, lost the connection, or
+/// answered 429 or 5xx. Anything it answered is trusted, including a 404
+/// (a missing release, tag or repository), an empty list, and a 403 (the
+/// mirror is disabled or restricted), so normal usage doesn't spend GitHub's
+/// rate limit of 60 requests an hour without a token. An answer that doesn't
+/// check out (a wrong tag, an asset URL off github.com) is an error too, and
+/// not one GitHub is asked to paper over.
+pub fn retries_on_github(err: &eyre::Report) -> bool {
     err.chain().any(|cause| {
         cause
             .downcast_ref::<VersionsHostUnavailable>()
-            .is_some_and(VersionsHostUnavailable::is_temporary)
+            .is_some_and(|e| match e.status {
+                None => true,
+                Some(status) => status == 429 || (500..=599).contains(&status),
+            })
     })
+}
+
+/// A GitHub lookup failed on mise-versions (see [`retries_on_github`]) and
+/// again on api.github.com. Its source is GitHub's failure, so the
+/// rate-limit hints that look for an api.github.com 403 still find it.
+#[derive(Debug, thiserror::Error)]
+#[error(
+    "failed to read {what} from mise-versions.jdx.dev ({mirror}), and from api.github.com after it"
+)]
+pub struct GithubRetryFailed {
+    what: String,
+    mirror: String,
+    #[source]
+    github: Box<dyn std::error::Error + Send + Sync + 'static>,
+}
+
+impl GithubRetryFailed {
+    pub fn new(what: &str, mirror: &eyre::Report, github: eyre::Report) -> Self {
+        Self {
+            what: what.to_string(),
+            mirror: format!("{mirror:#}"),
+            github: github.into(),
+        }
+    }
 }
 
 fn versions_host_error_message(status: u16, body: &str) -> String {
