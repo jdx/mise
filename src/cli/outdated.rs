@@ -146,6 +146,7 @@ impl Outdated {
                 self.bump,
                 &ResolveOptions {
                     inactive: self.inactive,
+                    outdated_release_urls: self.json,
                     ..Default::default()
                 },
             )

@@ -66,6 +66,22 @@ chmod +x "$wrapperdir/chain-tool12"
 export PATH="$shimdir:$wrapperdir:$original_path"
 assert_completes "finite-chain-complete" chain-tool1
 
+# A fallback may exec back into the same shim a few times, as bash does for
+# its final command (bash -c 'bash ...').
+ln -s "$mise_bin" "$shimdir/repeat-tool"
+cat >"$wrapperdir/repeat-tool" <<'WRAPPER'
+#!/usr/bin/env bash
+hops=${REPEAT_HOPS:-0}
+if [[ $hops -ge 3 ]]; then
+  echo repeat-chain-complete
+  exit 0
+fi
+export REPEAT_HOPS=$((hops + 1))
+exec repeat-tool "$@"
+WRAPPER
+chmod +x "$wrapperdir/repeat-tool"
+assert_completes "repeat-chain-complete" repeat-tool
+
 # A fallback that calls itself in a child is legitimate (like bun run -> bun).
 ln -s "$mise_bin" "$shimdir/nested-tool"
 cat >"$wrapperdir/nested-tool" <<'WRAPPER'

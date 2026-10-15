@@ -40,6 +40,7 @@ use crate::toolset::{
     install_state, is_outdated_version,
 };
 use crate::ui::progress_report::SingleReport;
+use crate::versions_index::{self, IndexPick, IndexTool};
 use crate::{
     cache::{CacheManager, CacheManagerBuilder},
     plugins::PluginEnum,
@@ -93,6 +94,25 @@ pub(crate) type IdiomaticVersion = (String, Option<ToolVersionOptions>);
 pub(crate) type VersionCacheManager = CacheManager<Vec<VersionInfo>>;
 
 pub(crate) const MISE_BINS_DIR: &str = ".mise-bins";
+
+/// How much older a cached remote-version list's contents can be than the file
+/// holding them. mise-versions republishes its lists about every 30 minutes;
+/// this leaves room for that and for the CDN in front of it.
+const LISTED_SNAPSHOT_LAG: std::time::Duration = std::time::Duration::from_secs(60 * 60);
+
+/// How old a cached remote version list may be for an install-time refresh
+/// (which `latest` gets when nothing installed satisfies it) to reuse it
+/// instead of fetching again.
+///
+/// The refresh exists so a list cached up to `fetch_remote_versions_cache`
+/// (1h) ago does not hide a newer release. Resolution already skips it when the
+/// release-age cutoff makes the cached list sufficient (the 24h default; see
+/// `Backend::adopt_cached_remote_versions_for_cutoff`), so this applies to
+/// short cutoffs such as `minimum_release_age = 0`. Even then, a list written
+/// in the last few minutes cannot hide much: mise-versions itself republishes
+/// about every 30 minutes, and the stable-latest shortcuts (`/releases/latest`,
+/// dist tags) are already reused for the whole cache duration.
+const REFRESH_REUSES_LISTS_NEWER_THAN: std::time::Duration = std::time::Duration::from_secs(5 * 60);
 
 /// Why a backend's remote version listing failed.
 ///
@@ -2855,9 +2875,12 @@ pub trait Backend: Debug + Send + Sync {
     }
 
     /// Like `list_remote_versions` but with explicit refresh control. Pass
-    /// `refresh = true` to bypass the cached remote-versions list and re-fetch
-    /// upstream. Used by install-time resolution for selectors whose answer
-    /// depends on the freshest upstream entry (e.g. `latest`).
+    /// `refresh = true` to re-fetch the remote-versions list upstream unless
+    /// the cached one was written within `REFRESH_REUSES_LISTS_NEWER_THAN`
+    /// (5 minutes), or within `fetch_remote_versions_cache` when that is
+    /// shorter, so `refresh` does not guarantee a request. Used by
+    /// install-time resolution for selectors whose answer depends on the
+    /// freshest upstream entry (e.g. `latest`).
     async fn list_remote_versions_with_refresh(
         &self,
         config: &Arc<Config>,
@@ -3105,7 +3128,12 @@ pub trait Backend: Debug + Send + Sync {
             trace!("Skipping remote version listing for {id} after an earlier failure");
             vec![]
         } else if refresh {
-            remote_versions.refresh_async(fetch).await?
+            // A list written moments ago (by this command's own first
+            // resolution, or by `mise outdated` just before `mise install`) is
+            // as fresh as refetching it would be.
+            remote_versions
+                .refresh_async_unless_newer_than(REFRESH_REUSES_LISTS_NEWER_THAN, fetch)
+                .await?
         } else {
             remote_versions.get_or_try_init_async(fetch).await?.clone()
         };
@@ -3113,6 +3141,61 @@ pub trait Backend: Debug + Send + Sync {
             remote_versions.clear()?;
         }
         Ok(filter_cached_prereleases(versions, want_prereleases))
+    }
+
+    /// Use the cached remote-version list in place of an install-time refresh,
+    /// when it already holds every version a release-age cutoff of `before`
+    /// admits. Read without fetching anything; on `true` the list is loaded
+    /// into memory, so resolution uses exactly the copy that was checked.
+    ///
+    /// The list's contents can be older than the file: mise-versions serves
+    /// snapshots it republishes periodically. So the file must be younger than
+    /// the cutoff by `LISTED_SNAPSHOT_LAG`, which the 24h default is and a
+    /// cutoff of minutes is not. It must also be fresh, and date every version
+    /// in a form that parses: a backend that dates its listing dates new
+    /// releases too, while a version without a usable date passes any cutoff.
+    async fn adopt_cached_remote_versions_for_cutoff(
+        &self,
+        config: &Arc<Config>,
+        before: Timestamp,
+    ) -> bool {
+        let Ok(cutoff_age) = std::time::Duration::try_from(Timestamp::now().duration_since(before))
+        else {
+            return false;
+        };
+        let Some(max_age) = cutoff_age.checked_sub(LISTED_SNAPSHOT_LAG) else {
+            return false;
+        };
+        let Ok(resolved_opts) = config.resolve_tool_opts_with_overrides(self.ba()).await else {
+            return false;
+        };
+        let has_local_version_listing_override = has_local_version_listing_option_override(
+            &resolved_opts,
+            self.remote_version_listing_tool_option_keys(),
+        );
+        let Ok(cache_context) = self
+            .remote_version_cache_context_for(
+                config,
+                resolved_opts.effective(),
+                has_local_version_listing_override,
+            )
+            .await
+        else {
+            return false;
+        };
+        let cache = match cache_context.as_deref() {
+            Some(context) => self.get_remote_version_cache_with_context(Some(context)),
+            None => self.get_remote_version_cache(),
+        };
+        cache.lock().await.adopt_file_if(|age, versions| {
+            age <= max_age
+                && !versions.is_empty()
+                && versions.iter().all(|v| {
+                    v.created_at
+                        .as_deref()
+                        .is_some_and(|created_at| parse_into_timestamp(created_at).is_ok())
+                })
+        })
     }
 
     /// The `release_url` the remote version list gives `version`, when the
@@ -3147,6 +3230,16 @@ pub trait Backend: Debug + Send + Sync {
             .is_some()
         {
             return None;
+        }
+        // Resolving the version has usually just cached this same list, or an
+        // earlier command did; the tag of a release does not go stale.
+        let cached = self.get_remote_version_cache().lock().await.get_cached();
+        if let Some(release_url) = cached
+            .ok()
+            .and_then(|versions| versions.into_iter().find(|v| v.version == version))
+            .and_then(|v| v.release_url)
+        {
+            return Some(release_url);
         }
         // The versions host alone, never `list_remote_versions_with_info`: on a
         // miss that falls through to the backend's own listing, the paginated
@@ -3631,6 +3724,19 @@ pub trait Backend: Debug + Send + Sync {
         before_date: Option<Timestamp>,
         refresh: bool,
     ) -> eyre::Result<Option<String>> {
+        if let Some(version) = Box::pin(resolve_from_versions_index(
+            self,
+            config,
+            query,
+            IndexPick::Request,
+            selection_opts,
+            before_date,
+            refresh,
+        ))
+        .await
+        {
+            return Ok(Some(version));
+        }
         let mut matches = self
             .list_versions_matching_with_selection_options(
                 config,
@@ -3818,8 +3924,9 @@ pub trait Backend: Debug + Send + Sync {
     }
 
     /// Like `latest_version` but with explicit refresh control. Pass
-    /// `refresh = true` to bypass the cached remote-versions list when falling
-    /// back to the full version-list path. The `latest_stable_version` fast
+    /// `refresh = true` to re-fetch the remote-versions list (unless it was
+    /// written within `REFRESH_REUSES_LISTS_NEWER_THAN`) when falling back to
+    /// the full version-list path. The `latest_stable_version` fast
     /// path is still tried first — it queries canonical upstream endpoints
     /// (e.g. GitHub's `/releases/latest`, npm dist tags) which are
     /// authoritative and not subject to the local version-list cache, so
@@ -5411,6 +5518,15 @@ pub trait Backend: Debug + Send + Sync {
         fuzzy_match_versions(versions, query, filter_prereleases)
     }
 
+    /// Whether [`Self::fuzzy_match_filter`] selects, for any query but
+    /// `latest`, only versions the shared `fuzzy_version_matches` selects too,
+    /// apart from the query itself. The versions index guarantees its coverage
+    /// of a prefix in terms of that matcher, so a broader override must return
+    /// `false` here, which makes such queries read the full list.
+    fn fuzzy_match_stays_within_shared_matcher(&self) -> bool {
+        true
+    }
+
     /// Select the ordering policy supported by this backend.
     ///
     /// Backends must opt in explicitly before `version_order` can affect remote
@@ -5825,6 +5941,139 @@ pub(crate) fn is_active_postinstall_install(tv: &ToolVersion, install_path: &Pat
 /// The token a tool-level postinstall hook receives; see
 /// [`install_state::PostinstallToken`].
 const POSTINSTALL_TOKEN_ENV: &str = "MISE_TOOL_INSTALL_TOKEN";
+
+/// Resolve `query` from the versions index, so resolving many tools takes
+/// one request instead of one version list each. `None` means resolve from
+/// the full list as before: the index cannot prove its answer, or the full
+/// list would not come from the versions host, or it costs no request.
+///
+/// Selection is the full-list path's own: the same prerelease and
+/// release-date filters and the same `fuzzy_match_filter`, run over the
+/// index's subset of the list. See [`versions_index`] for when the index
+/// is fetched.
+pub(crate) async fn resolve_from_versions_index<B: Backend + ?Sized>(
+    backend: &B,
+    config: &Arc<Config>,
+    query: &str,
+    pick: IndexPick,
+    selection_opts: &ToolVersionOptions,
+    before_date: Option<Timestamp>,
+    refresh: bool,
+) -> Option<String> {
+    let tool = match versions_index_tool(backend, config, query, selection_opts, refresh).await {
+        Ok(tool) => tool,
+        Err(reason) => {
+            trace!(
+                "versions index: not used for {}@{query}: {reason}",
+                backend.id()
+            );
+            return None;
+        }
+    };
+    let index = versions_index::get(&tool, refresh).await?;
+    let Some(entry) = index.tool(&tool) else {
+        trace!("versions index: {tool} is not listed");
+        return None;
+    };
+    let version =
+        resolve_in_versions_index(backend, entry, query, pick, selection_opts, before_date);
+    match &version {
+        Some(version) => trace!("versions index: {tool}@{query} is {version}"),
+        None => trace!("versions index: {tool}@{query} needs the full list"),
+    }
+    version
+}
+
+/// The versions-host name of this backend's list, when the versions index
+/// may stand in for it in resolving `query`. The gates are the full-list
+/// path's for reading the versions host, plus the index's own: source
+/// order, a matcher the index's coverage applies to, and no list that is
+/// already available without a request.
+async fn versions_index_tool<B: Backend + ?Sized>(
+    backend: &B,
+    config: &Arc<Config>,
+    query: &str,
+    selection_opts: &ToolVersionOptions,
+    refresh: bool,
+) -> Result<String, &'static str> {
+    let settings = Settings::get();
+    if !settings.use_versions_host || settings.offline() || settings.prefer_offline() {
+        return Err("the versions host is off");
+    }
+    // Another order reorders matches, so "later in the list" stops meaning newer.
+    if !matches!(
+        backend.version_order(selection_opts),
+        Ok(VersionOrder::Source)
+    ) {
+        return Err("it is not in source order");
+    }
+    if query != "latest" && !backend.fuzzy_match_stays_within_shared_matcher() {
+        return Err("its matcher selects more than the shared one");
+    }
+    let ba = backend.ba();
+    // The full list would be empty after a failure, and resolution fail with it.
+    if version_listing_failure(ba).is_some() {
+        return Err("listing its versions failed");
+    }
+    let unavailable = "the versions host does not serve its list";
+    let resolved_opts = config
+        .resolve_tool_opts_with_overrides(ba)
+        .await
+        .map_err(|_| unavailable)?;
+    if has_local_version_listing_option_override(
+        &resolved_opts,
+        backend.remote_version_listing_tool_option_keys(),
+    ) {
+        return Err(unavailable);
+    }
+    let listing_opts = resolved_opts.effective();
+    let tool = backend
+        .versions_host_tool(listing_opts)
+        .map_err(|_| unavailable)?;
+    if !matches!(
+        backend
+            .remote_version_cache_context_for(config, listing_opts, false)
+            .await,
+        Ok(None)
+    ) {
+        return Err(unavailable);
+    }
+    // A list that costs no request is the whole list: use it.
+    if !refresh
+        && backend
+            .get_remote_version_cache()
+            .lock()
+            .await
+            .has_fresh_value()
+    {
+        return Err("its full list is cached");
+    }
+    Ok(tool)
+}
+
+/// [`IndexTool::resolve`] over this backend's own selection from `entry`'s
+/// subset, filtered as `list_versions_matching_with_selection_options`
+/// filters the full list.
+pub(crate) fn resolve_in_versions_index<B: Backend + ?Sized>(
+    backend: &B,
+    entry: &IndexTool,
+    query: &str,
+    pick: IndexPick,
+    selection_opts: &ToolVersionOptions,
+    before_date: Option<Timestamp>,
+) -> Option<String> {
+    let want_prereleases = backend.include_prereleases(selection_opts);
+    let mut versions = filter_cached_prereleases(entry.version_infos(), want_prereleases);
+    if let Some(before) = before_date {
+        versions = VersionInfo::filter_by_date(versions, before);
+    }
+    let matches = backend.fuzzy_match_filter(
+        versions.into_iter().map(|v| v.version).collect(),
+        query,
+        !want_prereleases,
+    );
+    entry.resolve(query, pick, &matches)
+}
 
 fn effective_latest_before_date<B: Backend + ?Sized>(
     backend: &B,
@@ -6933,6 +7182,189 @@ mod latest_version_tests {
             second.lock().await.get_cached().unwrap()[0].version,
             "2.0.0"
         );
+    }
+
+    /// An install-time refresh of `latest` reuses a list written moments ago
+    /// (by this command's own first resolution, or by `mise outdated` just
+    /// before) instead of fetching it again.
+    #[tokio::test]
+    async fn test_refresh_reuses_a_list_written_moments_ago() {
+        let _settings = crate::test::SettingsGuard::lock();
+        let config = Config::get().await.unwrap();
+        let backend = LatestBackend::new("test-refresh-reuses-recent-list");
+        backend
+            .get_remote_version_cache()
+            .lock()
+            .await
+            .clear()
+            .unwrap();
+
+        backend.list_remote_versions(&config).await.unwrap();
+        backend
+            .list_remote_versions_with_refresh(&config, true)
+            .await
+            .unwrap();
+        assert_eq!(backend.list_calls(), 1);
+    }
+
+    /// The refresh still fetches a list that is older than that, even while it
+    /// is within `fetch_remote_versions_cache`.
+    #[tokio::test]
+    async fn test_refresh_refetches_an_older_list() {
+        let _settings = crate::test::SettingsGuard::lock();
+        let config = Config::get().await.unwrap();
+        let backend = LatestBackend::new("test-refresh-refetches-older-list");
+        let cache = backend.get_remote_version_cache();
+        {
+            let mut cache = cache.lock().await;
+            cache.clear().unwrap();
+            cache
+                .write(&vec![VersionInfo {
+                    version: "1.0.0".to_string(),
+                    ..Default::default()
+                }])
+                .unwrap();
+        }
+        let ten_minutes_ago = filetime::FileTime::from_system_time(
+            std::time::SystemTime::now() - std::time::Duration::from_secs(600),
+        );
+        for entry in fs::read_dir(backend.ba().cache_path()).unwrap() {
+            let path = entry.unwrap().path();
+            if path.to_string_lossy().contains("remote_versions-") {
+                filetime::set_file_mtime(&path, ten_minutes_ago).unwrap();
+            }
+        }
+        // A separate backend, as in a later command, so nothing is in memory.
+        let backend = LatestBackend::new("test-refresh-refetches-older-list");
+
+        assert_eq!(
+            backend
+                .list_remote_versions_with_refresh(&config, true)
+                .await
+                .unwrap(),
+            vec!["1.0.0".to_string(), "2.0.0".to_string()]
+        );
+        assert_eq!(backend.list_calls(), 1);
+    }
+
+    /// A release-age cutoff can stand in for an install-time refresh only when
+    /// the cached list is younger than the cutoff by the snapshot lag and
+    /// dates every version: an undated (or unparseable) one passes any cutoff.
+    #[tokio::test]
+    async fn test_adopt_cached_remote_versions_for_cutoff() {
+        let _settings = crate::test::SettingsGuard::lock();
+        let config = Config::get().await.unwrap();
+        let backend = LatestBackend::new("test-adopt-cached-remote-versions");
+        let cache = backend.get_remote_version_cache();
+        let now = Timestamp::now();
+        let ago = |secs: i64| {
+            now.checked_sub(jiff::SignedDuration::from_secs(secs))
+                .unwrap()
+        };
+        let day_ago = ago(24 * 60 * 60);
+        cache.lock().await.clear().unwrap();
+        assert!(
+            !backend
+                .adopt_cached_remote_versions_for_cutoff(&config, day_ago)
+                .await
+        );
+
+        let dated = |version: &str, created_at: Option<&str>| VersionInfo {
+            version: version.to_string(),
+            created_at: created_at.map(str::to_string),
+            ..Default::default()
+        };
+        let write = async |versions: Vec<VersionInfo>| {
+            cache.lock().await.write(&versions).unwrap();
+        };
+
+        write(vec![
+            dated("1.0.0", Some("2024-01-01")),
+            dated("2.0.0", Some("2025-01-01")),
+        ])
+        .await;
+        assert!(
+            backend
+                .adopt_cached_remote_versions_for_cutoff(&config, day_ago)
+                .await
+        );
+        // A just-written list can still hold a snapshot too old for a short
+        // cutoff.
+        assert!(
+            !backend
+                .adopt_cached_remote_versions_for_cutoff(&config, ago(10 * 60))
+                .await
+        );
+
+        // Past `fetch_remote_versions_cache`, a list is not used at all.
+        let two_hours_ago = filetime::FileTime::from_system_time(
+            std::time::SystemTime::now() - std::time::Duration::from_secs(2 * 60 * 60),
+        );
+        for entry in fs::read_dir(backend.ba().cache_path()).unwrap() {
+            let path = entry.unwrap().path();
+            if path.to_string_lossy().contains("remote_versions-") {
+                filetime::set_file_mtime(&path, two_hours_ago).unwrap();
+            }
+        }
+        assert!(
+            !backend
+                .adopt_cached_remote_versions_for_cutoff(&config, day_ago)
+                .await
+        );
+
+        write(vec![
+            dated("1.0.0", Some("2024-01-01")),
+            dated("2.0.0", None),
+        ])
+        .await;
+        assert!(
+            !backend
+                .adopt_cached_remote_versions_for_cutoff(&config, day_ago)
+                .await
+        );
+
+        write(vec![
+            dated("1.0.0", Some("2024-01-01")),
+            dated("2.0.0", Some("not-a-date")),
+        ])
+        .await;
+        assert!(
+            !backend
+                .adopt_cached_remote_versions_for_cutoff(&config, day_ago)
+                .await
+        );
+
+        cache.lock().await.clear().unwrap();
+        assert_eq!(backend.list_calls(), 0);
+    }
+
+    /// Installing a registry tool looks up its release tag in the versions
+    /// host's list. Resolution has usually just cached that list, so the tag
+    /// is read from there instead of downloading the list again. The version
+    /// is one the versions host does not list, so only the cache can answer.
+    #[tokio::test]
+    async fn test_listed_release_url_reads_the_cached_list() {
+        let _settings = crate::test::SettingsGuard::lock();
+        let config = Config::get().await.unwrap();
+        let backend = aqua::AquaBackend::from_arg(BackendArg::new(
+            "act".to_string(),
+            Some("aqua:nektos/act".to_string()),
+        ));
+        let url = "https://github.com/nektos/act/releases/tag/v0.0.0-cached";
+        let cache = backend.get_remote_version_cache();
+        cache
+            .lock()
+            .await
+            .write(&vec![VersionInfo {
+                version: "0.0.0-cached".to_string(),
+                release_url: Some(url.to_string()),
+                ..Default::default()
+            }])
+            .unwrap();
+
+        let listed = backend.listed_release_url(&config, "0.0.0-cached").await;
+        cache.lock().await.clear().unwrap();
+        assert_eq!(listed.as_deref(), Some(url));
     }
 
     #[tokio::test]
