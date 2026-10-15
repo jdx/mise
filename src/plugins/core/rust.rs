@@ -32,6 +32,7 @@ pub(super) struct RustPlugin {
 }
 
 const RUST_DEFAULT_DIST_SERVER: &str = "https://static.rust-lang.org";
+const RUST_MINIMAL_PROFILE_COMPONENTS: &[&str] = &["cargo", "rust-std", "rustc"];
 const RUST_DEFAULT_PROFILE_COMPONENTS: &[&str] = &["clippy", "rust-docs", "rustfmt"];
 
 fn parse_nightly_manifest(manifest: &str) -> Result<String> {
@@ -504,9 +505,10 @@ impl RustPlugin {
         requested: &[String],
         installed: &BTreeSet<String>,
     ) -> Vec<String> {
+        let host = rustup_installed_host(installed);
         requested
             .iter()
-            .filter(|component| !rustup_component_installed(installed, component))
+            .filter(|component| !rustup_component_installed(installed, component, host))
             .cloned()
             .collect()
     }
@@ -571,13 +573,7 @@ impl Backend for RustPlugin {
         };
 
         let mut required_components = components.unwrap_or_default();
-        if effective_profile == "default" {
-            required_components.extend(
-                RUST_DEFAULT_PROFILE_COMPONENTS
-                    .iter()
-                    .map(|component| (*component).to_string()),
-            );
-        }
+        required_components.extend(profile_components(effective_profile));
         required_components.sort();
         required_components.dedup();
 
@@ -747,15 +743,9 @@ impl Backend for RustPlugin {
         };
         let effective_profile = normalize_rustup_profile(&effective_profile)?;
         let mut components = components.unwrap_or_default();
-        if effective_profile == "default" {
-            components.extend(
-                RUST_DEFAULT_PROFILE_COMPONENTS
-                    .iter()
-                    .map(|component| (*component).to_string()),
-            );
-            components.sort();
-            components.dedup();
-        }
+        components.extend(profile_components(effective_profile));
+        components.sort();
+        components.dedup();
 
         let config_env = ctx.config.env().await?;
         let cmd = CmdLineRunner::new(runtime.bin_dir.join(RUSTUP_BIN))
@@ -1435,13 +1425,48 @@ fn normalize_rustup_profile(profile: &str) -> Result<&'static str> {
     }
 }
 
-fn rustup_component_installed(installed: &BTreeSet<String>, component: &str) -> bool {
+/// Components a profile installs that `mise install` restores when they are
+/// missing, by naming them to rustup as `--component`.
+fn profile_components(profile: &str) -> Vec<String> {
+    let components: &[&[&str]] = match profile {
+        "minimal" => &[RUST_MINIMAL_PROFILE_COMPONENTS],
+        "default" => &[
+            RUST_MINIMAL_PROFILE_COMPONENTS,
+            RUST_DEFAULT_PROFILE_COMPONENTS,
+        ],
+        _ => &[],
+    };
+    components
+        .iter()
+        .flat_map(|list| list.iter().map(|component| (*component).to_string()))
+        .collect()
+}
+
+/// The toolchain's host triple, read from its `rustc-<triple>` component;
+/// `rustc` only ever exists for the host.
+fn rustup_installed_host(installed: &BTreeSet<String>) -> Option<&str> {
+    installed.iter().find_map(|item| {
+        item.strip_prefix("rustc-")
+            .filter(|triple| rustup_component_suffix_is_host_triple(triple))
+    })
+}
+
+/// With a known host, only the host's component counts, so a cross target's
+/// `rust-std-<target>` does not stand in for the host's `rust-std`.
+fn rustup_component_installed(
+    installed: &BTreeSet<String>,
+    component: &str,
+    host: Option<&str>,
+) -> bool {
     installed.iter().any(|item| {
         item == component
             || item
                 .strip_prefix(component)
                 .and_then(|suffix| suffix.strip_prefix('-'))
-                .is_some_and(rustup_component_suffix_is_host_triple)
+                .is_some_and(|suffix| match host {
+                    Some(host) => suffix == host,
+                    None => rustup_component_suffix_is_host_triple(suffix),
+                })
     })
 }
 
@@ -1795,11 +1820,47 @@ rustup - up to date : 1.29.1
             "llvm-tools-x86_64-unknown-linux-gnu".to_string(),
         ]);
 
-        assert!(rustup_component_installed(&installed, "rust-src"));
-        assert!(rustup_component_installed(&installed, "llvm-tools"));
-        assert!(!rustup_component_installed(&installed, "rustfmt"));
-        assert!(!rustup_component_installed(&installed, "rust"));
-        assert!(!rustup_component_installed(&installed, "llvm"));
+        assert!(rustup_component_installed(&installed, "rust-src", None));
+        assert!(rustup_component_installed(&installed, "llvm-tools", None));
+        assert!(!rustup_component_installed(&installed, "rustfmt", None));
+        assert!(!rustup_component_installed(&installed, "rust", None));
+        assert!(!rustup_component_installed(&installed, "llvm", None));
+    }
+
+    #[test]
+    fn rustup_component_matching_uses_the_toolchains_host() {
+        let installed = BTreeSet::from([
+            "cargo-x86_64-unknown-linux-gnu".to_string(),
+            "rustc-x86_64-unknown-linux-gnu".to_string(),
+            "rust-std-wasm32-unknown-unknown".to_string(),
+        ]);
+        let host = rustup_installed_host(&installed);
+
+        assert_eq!(host, Some("x86_64-unknown-linux-gnu"));
+        assert!(rustup_component_installed(&installed, "cargo", host));
+        // a cross target's standard library is not the host's
+        assert!(!rustup_component_installed(&installed, "rust-std", host));
+        assert!(rustup_component_installed(&installed, "rust-std", None));
+    }
+
+    #[test]
+    fn profiles_require_their_components() {
+        assert_eq!(
+            profile_components("minimal"),
+            vec!["cargo", "rust-std", "rustc"]
+        );
+        assert_eq!(
+            profile_components("default"),
+            vec![
+                "cargo",
+                "rust-std",
+                "rustc",
+                "clippy",
+                "rust-docs",
+                "rustfmt"
+            ]
+        );
+        assert!(profile_components("complete").is_empty());
     }
 
     #[test]
