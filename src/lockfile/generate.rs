@@ -555,7 +555,9 @@ pub async fn generate(
             unsupported.record(&short, &version, &platform.to_key());
             continue;
         }
-        if info.is_ok() {
+        if info.as_ref().is_ok_and(|info| {
+            info.url.is_some() || info.install.is_some() || info.conda_deps.is_some()
+        }) {
             unsupported.record_resolved(&short, &version, &platform.to_key());
         }
         let mut info = info.map_err(|error| eyre!(error))?;

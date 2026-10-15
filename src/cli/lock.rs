@@ -2530,10 +2530,6 @@ impl Lock {
                         resolution.7 == crate::lockfile::LockResolutionStatus::Required;
                     if let Some(msg) = &resolution_error {
                         skip_warnings.record(&short, &version, &platform_key, msg, resolution.7);
-                    } else {
-                        skip_warnings
-                            .unsupported
-                            .record_resolved(&short, &version, &platform_key);
                     }
                     pr.set_message(format!("{}@{} {}", short, version, platform_key));
                     pr.set_position(completed);
@@ -2551,6 +2547,13 @@ impl Lock {
                         // update — backends that can't resolve metadata without
                         // installing return empty info rather than an error.
                         Ok(applied) => {
+                            if applied && resolution_error.is_none() {
+                                skip_warnings.unsupported.record_resolved(
+                                    &short,
+                                    &version,
+                                    &platform_key,
+                                );
+                            }
                             let (status, resolution_error) =
                                 classify_lock_result(resolution_error, error_is_fatal, applied);
                             if let Some(error) = resolution_error {
