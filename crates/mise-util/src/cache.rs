@@ -5,7 +5,7 @@ use std::fs::File;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, SystemTime};
 
 use eyre::{Result, WrapErr};
 use flate2::Compression;
@@ -131,6 +131,7 @@ impl CacheManagerBuilder {
             cache: Box::new(OnceCell::new()),
             cache_async: Box::new(tokio::sync::OnceCell::new()),
             fetch_lock: Arc::default(),
+            adopted_at: None,
             fresh_files: self.fresh_files,
             fresh_duration: self.fresh_duration,
         }
@@ -150,6 +151,9 @@ where
     /// Held while fetching, so concurrent callers of one cache wait for the
     /// first fetch instead of each making the same request.
     fetch_lock: Arc<tokio::sync::Mutex<()>>,
+    /// When the file whose contents [`Self::adopt_file_if_fresh_for`] put in
+    /// memory was written, while that value is still the one in memory.
+    adopted_at: Option<SystemTime>,
 }
 
 impl<T> CacheManager<T>
@@ -275,6 +279,7 @@ where
         }
         *self.cache = OnceCell::with_value(val.clone());
         *self.cache_async = tokio::sync::OnceCell::new_with(Some(val.clone()));
+        self.adopted_at = None;
         Ok(val)
     }
 
@@ -307,6 +312,7 @@ where
         if written_recently && let Ok(val) = self.parse() {
             *self.cache = OnceCell::with_value(val.clone());
             *self.cache_async = tokio::sync::OnceCell::new_with(Some(val.clone()));
+            self.adopted_at = None;
             return Ok(val);
         }
         self.refresh_async(fetch).await
@@ -336,12 +342,12 @@ where
     where
         T: Clone,
     {
-        let Some(age) = self
+        let Some((modified, age)) = self
             .cache_file_path
             .metadata()
             .and_then(|metadata| metadata.modified())
             .ok()
-            .and_then(|modified| modified.elapsed().ok())
+            .and_then(|modified| Some((modified, modified.elapsed().ok()?)))
         else {
             return false;
         };
@@ -359,6 +365,7 @@ where
         }
         *self.cache = OnceCell::with_value(val.clone());
         *self.cache_async = tokio::sync::OnceCell::new_with(Some(val));
+        self.adopted_at = Some(modified);
         true
     }
 
@@ -376,23 +383,19 @@ where
         self.parse()
     }
 
-    /// Drop the value in memory when the cache file is `max_age` old or older,
-    /// so the next read checks the file again. The value in memory is the
-    /// file's contents when it was read or written, so the file's age bounds
-    /// its age: a caller that adopted the file for a longer duration than a
-    /// later caller allows must not answer that later caller from memory.
+    /// Drop a value [`Self::adopt_file_if_fresh_for`] put in memory once the
+    /// file it came from is `max_age` old or older, so the next read checks the
+    /// file again: a caller that adopted it for a longer duration than a later
+    /// caller allows must not answer that later caller from memory. A value
+    /// fetched in this process is kept, even if writing it to disk failed.
     pub fn forget_memory_older_than(&mut self, max_age: Duration) {
-        if self.cache_async.get().is_none() && self.cache.get().is_none() {
-            return;
-        }
         let too_old = self
-            .cache_file_path
-            .metadata()
-            .and_then(|metadata| metadata.modified())
-            .is_ok_and(|modified| modified.elapsed().is_ok_and(|age| age >= max_age));
+            .adopted_at
+            .is_some_and(|modified| modified.elapsed().is_ok_and(|age| age >= max_age));
         if too_old {
             *self.cache = Default::default();
             *self.cache_async = Default::default();
+            self.adopted_at = None;
         }
     }
 
@@ -436,6 +439,7 @@ where
         }
         *self.cache = Default::default();
         *self.cache_async = Default::default();
+        self.adopted_at = None;
         Ok(())
     }
 
@@ -898,6 +902,16 @@ mod tests {
                 .unwrap(),
             "written"
         );
+
+        // A value fetched here is kept, whatever the file's age (a failed
+        // write leaves an old file behind).
+        let mut cache = refresh_cache(dir.path(), Duration::ZERO);
+        cache
+            .get_or_try_init_async(async || Ok("fetched here".to_string()))
+            .await
+            .unwrap();
+        cache.forget_memory_older_than(Duration::ZERO);
+        assert_eq!(cache.get_cached().unwrap(), "fetched here");
 
         let mut cache = refresh_cache(dir.path(), Duration::ZERO);
         assert!(cache.adopt_file_if_fresh_for(Some(Duration::from_secs(60)), |_, _| true));
