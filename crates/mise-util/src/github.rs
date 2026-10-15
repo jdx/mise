@@ -1121,18 +1121,17 @@ enum DigestSource {
 }
 
 /// `repo@tag` with its assets' digests, for [`checksum_mismatch_note`]. From
-/// mise-versions whenever it applies, never api.github.com instead: a missing
-/// or failed answer leaves the mismatch without a hint. GitHub is asked when
-/// mise-versions does not answer for GitHub (`use_versions_host = false`,
-/// `url_replacements`), and for a repository it doesn't know, which may be
-/// private, only with a token.
+/// mise-versions whenever it applies, never api.github.com instead: no usable
+/// answer (a private or unknown repository, a release without the digest, a
+/// failed request) leaves the mismatch without a hint, which is only advice.
+/// GitHub is asked only when mise-versions does not answer for GitHub
+/// (`use_versions_host = false`, `url_replacements`).
 async fn digests_for_checksum_note(repo: &str, tag: &str) -> Option<(GithubRelease, DigestSource)> {
     if crate::versions_host::enabled_for_github_repo(repo)
         && !crate::versions_host::github_release_is_url_replaced(repo, tag)
     {
         match crate::versions_host::github_release(repo, tag).await {
             Ok(Some(release)) => return Some((release, DigestSource::VersionsHost)),
-            Ok(None) if resolve_token("api.github.com").is_some() => {}
             Ok(None) => return None,
             Err(err) => {
                 debug!(
