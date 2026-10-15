@@ -3,17 +3,52 @@ use super::*;
 #[test]
 fn test_replaced_asset_note_when_github_digest_matches_download() {
     let release = replaced_release(Some("sha256:90A8"));
-    let note = replaced_asset_note("rvben/rumdl", &release, "rumdl.tar.gz", "90a8", true).unwrap();
-    assert!(note.contains("rumdl.tar.gz in rvben/rumdl v0.2.76 matches this download"));
+    let note = replaced_asset_note(
+        "rvben/rumdl",
+        &release,
+        "rumdl.tar.gz",
+        "90a8",
+        true,
+        DigestSource::GitHub,
+    )
+    .unwrap();
+    assert!(note.starts_with(
+        "GitHub's current digest for rumdl.tar.gz in rvben/rumdl v0.2.76 matches this download"
+    ));
     assert!(
         note.contains(
             "(asset updated 2026-09-23T08:25:23Z, release published 2026-09-23T01:45:05Z)"
         )
     );
     assert!(note.contains("update the checksum in mise.lock"));
-    let note = replaced_asset_note("rvben/rumdl", &release, "rumdl.tar.gz", "90a8", false).unwrap();
+    let note = replaced_asset_note(
+        "rvben/rumdl",
+        &release,
+        "rumdl.tar.gz",
+        "90a8",
+        false,
+        DigestSource::GitHub,
+    )
+    .unwrap();
     assert!(note.contains("cached release metadata"));
     assert!(!note.contains("mise.lock"));
+}
+
+#[test]
+fn test_replaced_asset_note_from_mise_versions_names_its_source() {
+    // mise-versions' copy can lag GitHub, so the hint doesn't call it current.
+    let release = replaced_release(Some("sha256:90a8"));
+    let note = replaced_asset_note(
+        "rvben/rumdl",
+        &release,
+        "rumdl.tar.gz",
+        "90a8",
+        true,
+        DigestSource::VersionsHost,
+    )
+    .unwrap();
+    assert!(note.starts_with("The digest mise-versions has from GitHub for rumdl.tar.gz"));
+    assert!(!note.contains("current"));
 }
 
 #[tokio::test]
@@ -36,16 +71,37 @@ async fn test_checksum_mismatch_note_skips_other_verification_errors() {
 fn test_replaced_asset_note_skips_when_download_differs_from_github() {
     let release = replaced_release(Some("sha256:90a8"));
     assert_eq!(
-        replaced_asset_note("rvben/rumdl", &release, "rumdl.tar.gz", "3a02", true),
+        replaced_asset_note(
+            "rvben/rumdl",
+            &release,
+            "rumdl.tar.gz",
+            "3a02",
+            true,
+            DigestSource::GitHub
+        ),
         None
     );
     let release = replaced_release(None);
     assert_eq!(
-        replaced_asset_note("rvben/rumdl", &release, "rumdl.tar.gz", "90a8", true),
+        replaced_asset_note(
+            "rvben/rumdl",
+            &release,
+            "rumdl.tar.gz",
+            "90a8",
+            true,
+            DigestSource::GitHub
+        ),
         None
     );
     assert_eq!(
-        replaced_asset_note("rvben/rumdl", &release, "other.tar.gz", "90a8", true),
+        replaced_asset_note(
+            "rvben/rumdl",
+            &release,
+            "other.tar.gz",
+            "90a8",
+            true,
+            DigestSource::GitHub
+        ),
         None
     );
 }

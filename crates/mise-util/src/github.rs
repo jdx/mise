@@ -1216,24 +1216,20 @@ pub fn release_asset_from_url(url: &str) -> Option<(String, String, String)> {
 /// Explain a checksum mismatch on a GitHub release asset whose upstream bytes
 /// changed after the expected checksum was recorded.
 ///
-/// Only runs once verification has already failed, so it asks GitHub directly
-/// and skips the release cache and mise-versions: either may still hold the
-/// digest of the replaced upload. `None` when `download_url` is not a
-/// github.com release download, the lookup fails, or GitHub's current digest
-/// does not match the downloaded file.
+/// Only runs once verification has already failed. It skips mise's release
+/// cache, which may still hold the replaced upload's digest, and reads the
+/// release from mise-versions, as normal usage does (see
+/// [`digests_for_checksum_note`]). `None` when `download_url` is not a
+/// github.com release download, the lookup fails or has no digest for the
+/// asset, or the digest does not match the downloaded file: the mismatch is
+/// then reported without a hint.
 pub async fn checksum_mismatch_note(
     download_url: &str,
     file: &Path,
     from_lockfile: bool,
 ) -> Option<String> {
     let (repo, tag, asset_name) = release_asset_from_url(download_url)?;
-    let release = match get_release_with_options(API_URL, &repo, &tag, false).await {
-        Ok(release) => release,
-        Err(err) => {
-            debug!("failed to check GitHub release {repo}@{tag} after checksum mismatch: {err:#}");
-            return None;
-        }
-    };
+    let (release, source) = digests_for_checksum_note(&repo, &tag).await?;
     let actual = match crate::hash::file_hash_sha256(file, None) {
         Ok(actual) => actual,
         Err(err) => {
@@ -1244,7 +1240,46 @@ pub async fn checksum_mismatch_note(
             return None;
         }
     };
-    replaced_asset_note(&repo, &release, &asset_name, &actual, from_lockfile)
+    replaced_asset_note(&repo, &release, &asset_name, &actual, from_lockfile, source)
+}
+
+/// Where the digest in a checksum hint came from, which its wording names:
+/// mise-versions' copy can lag GitHub, so it isn't called GitHub's current
+/// digest.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DigestSource {
+    VersionsHost,
+    GitHub,
+}
+
+/// `repo@tag` with its assets' digests, for [`checksum_mismatch_note`]. From
+/// mise-versions whenever it applies, never api.github.com instead: no usable
+/// answer (a private or unknown repository, a release without the digest, a
+/// failed request) leaves the mismatch without a hint, which is only advice.
+/// GitHub is asked only when mise-versions does not answer for GitHub
+/// (`use_versions_host = false`, `url_replacements`).
+async fn digests_for_checksum_note(repo: &str, tag: &str) -> Option<(GithubRelease, DigestSource)> {
+    if crate::versions_host::enabled_for_github_repo(repo)
+        && !crate::versions_host::github_release_is_url_replaced(repo, tag)
+    {
+        match crate::versions_host::github_release(repo, tag).await {
+            Ok(Some(release)) => return Some((release, DigestSource::VersionsHost)),
+            Ok(None) => return None,
+            Err(err) => {
+                debug!(
+                    "mise-versions could not describe {repo}@{tag} for a checksum hint: {err:#}"
+                );
+                return None;
+            }
+        }
+    }
+    match get_release_from_api(API_URL, repo, tag).await {
+        Ok(release) => Some((release, DigestSource::GitHub)),
+        Err(err) => {
+            debug!("failed to check GitHub release {repo}@{tag} after checksum mismatch: {err:#}");
+            None
+        }
+    }
 }
 
 /// Append [`checksum_mismatch_note`] to a failed verification when it failed
@@ -1278,6 +1313,7 @@ fn replaced_asset_note(
     asset_name: &str,
     actual_sha256: &str,
     from_lockfile: bool,
+    source: DigestSource,
 ) -> Option<String> {
     let asset = release
         .assets
@@ -1304,8 +1340,12 @@ fn replaced_asset_note(
         "The expected checksum came from cached release metadata, which refreshes within \
          about an hour; `mise cache clear` drops mise's local copy."
     };
+    let whose = match source {
+        DigestSource::GitHub => "GitHub's current digest",
+        DigestSource::VersionsHost => "The digest mise-versions has from GitHub",
+    };
     Some(format!(
-        "GitHub's current digest for {asset_name} in {repo} {tag} matches this download{timing}, \
+        "{whose} for {asset_name} in {repo} {tag} matches this download{timing}, \
          so the expected checksum is out of date: the maintainer likely re-uploaded the asset. \
          {remedy}"
     ))
