@@ -3313,6 +3313,18 @@ pub trait Backend: Debug + Send + Sync {
         Ok(None)
     }
 
+    /// [`Self::latest_stable_version_info`] for a resolution that applies the
+    /// release-age cutoff `before`. A backend whose cached answer that cutoff
+    /// keeps current for longer than `fetch_remote_versions_cache` overrides
+    /// this to keep it for the cutoff's release-age window.
+    async fn latest_stable_version_info_before(
+        &self,
+        config: &Arc<Config>,
+        _before: Option<Timestamp>,
+    ) -> eyre::Result<Option<VersionInfo>> {
+        self.latest_stable_version_info(config).await
+    }
+
     /// Backend-specific fast path for exact version requests.
     ///
     /// Return the normalized version when the backend can cheaply prove that
@@ -3975,7 +3987,10 @@ pub trait Backend: Debug + Send + Sync {
         let mut fallback_refresh = refresh;
         self.version_order(selection_opts)?;
         let latest = if self.should_use_latest_stable_fast_path(resolved_query, selection_opts) {
-            match self.latest_stable_version_info(config).await? {
+            match self
+                .latest_stable_version_info_before(config, before_date)
+                .await?
+            {
                 Some(info) => Some(info),
                 None => self
                     .latest_stable_version(config)
@@ -5978,7 +5993,9 @@ pub(crate) async fn resolve_from_versions_index<B: Backend + ?Sized>(
             return None;
         }
     };
-    let index = versions_index::get(&tool, refresh).await?;
+    // The index stands in for this tool's own list, so it is kept as long.
+    let window = before_date.and_then(release_age_list_window_for_cutoff);
+    let index = versions_index::get(&tool, refresh, window).await?;
     let Some(entry) = index.tool(&tool) else {
         trace!("versions index: {tool} is not listed");
         return None;
