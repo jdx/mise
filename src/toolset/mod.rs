@@ -13,7 +13,7 @@ use crate::runtime_symlinks::is_runtime_symlink;
 use crate::{backend, parallel};
 pub use builder::{ConfigScope, ToolsetBuilder};
 use console::truncate_str;
-use eyre::{Result, bail};
+use eyre::{Result, WrapErr, bail};
 use helpers::TVTuple;
 use indexmap::IndexMap;
 use itertools::Itertools;
@@ -1127,7 +1127,7 @@ async fn get_versions_needed_by_tracked_configs_with_progress(
         }
         let mut ts = Toolset::from(requests);
         ts.resolve_with_opts(config, &opts).await?;
-        collect_needed_versions(&ts, offline, &path, &mut needed);
+        collect_needed_versions(config, &ts, offline, &path, &mut needed).await?;
     }
     Ok(needed)
 }
@@ -1178,7 +1178,7 @@ pub async fn get_versions_needed_by_tracked_stubs(config: &Arc<Config>) -> Resul
             );
             continue;
         }
-        collect_needed_versions(&ts, true, &path, &mut needed);
+        collect_needed_versions(config, &ts, true, &path, &mut needed).await?;
     }
     Ok(needed)
 }
@@ -1341,18 +1341,114 @@ fn is_named_in(names: &std::collections::BTreeSet<String>, ba: &BackendArg) -> b
 /// toolset is resolved in. A global tool therefore resolves to a different
 /// directory per project, so keep the installs of the same version built with
 /// any other Python as well.
-fn keep_uv_python_variants(tv: &ToolVersion, source: &Path, needed: &mut NeededVersions) {
-    if tv.uv_install_identity().is_none() {
-        return;
+fn keep_uv_python_variants(
+    tv: &ToolVersion,
+    source: &Path,
+    needed: &mut NeededVersions,
+) -> Result<()> {
+    // A selected runtime can be temporarily unavailable after its lock pin
+    // advances. Keep existing receipt-backed environments in that case rather
+    // than skipping their runtime closure solely because resolution did not
+    // populate `uv_python` yet.
+    if tv.uv_install_identity().is_none() && !crate::backend::pipx::has_selected_python(tv)? {
+        return Ok(());
     }
     let prefix = format!("{}~uv~", tv.logical_pathname());
-    let Ok(backend) = tv.backend() else { return };
+    let Ok(backend) = tv.backend() else {
+        return Ok(());
+    };
     for v in backend.list_installed_versions() {
         if v.starts_with(&prefix) {
             needed
                 .entry((tv.ba().short.to_string(), v))
                 .or_default()
                 .insert(source.to_path_buf());
+        }
+    }
+    // Graph locks also write receipts for system and non-core interpreters.
+    // Only an explicit selector owns a mise Python runtime that must be
+    // retained through the receipt closure below.
+    let selected_python = crate::backend::pipx::has_selected_python(tv)?;
+    // A retained variant may have been built before its selector's lock entry
+    // advanced. Its receipt is authoritative for the runtime closure of that
+    // existing environment, so retain that exact Python as well. Do not merely
+    // retain the version string: identity-layout installations are pruned by
+    // their physical directory, while legacy installations use the tool/version
+    // key. A receipt that cannot be mapped safely aborts pruning rather than
+    // leaving a retained environment with a deleted interpreter.
+    let python_ba = BackendArg::from("python");
+    if selected_python {
+        let mut variant_dirs: Vec<_> = crate::install_layout::resolver::installs_of(tv.ba())
+            .into_iter()
+            .map(|(_, dir)| dir)
+            .collect();
+        // The default layout stores environments under `<tool>/<version>`, which
+        // `installs_of` intentionally does not enumerate. Include those retained
+        // variants so an older receipt can keep its exact interpreter alive too.
+        variant_dirs.extend(
+            backend
+                .list_installed_versions()
+                .into_iter()
+                .filter(|version| version.starts_with(&prefix))
+                .map(|version| tv.ba().installs_path().join(version)),
+        );
+        for dir in variant_dirs {
+            let receipt = dir.join(".mise-uv/python.json");
+            let contents = match crate::file::read_to_string(&receipt) {
+                Ok(contents) => contents,
+                // Older non-selector variants have no interpreter receipt and do
+                // not own a private runtime.
+                Err(err)
+                    if err
+                        .downcast_ref::<std::io::Error>()
+                        .is_some_and(|err| err.kind() == std::io::ErrorKind::NotFound) =>
+                {
+                    continue;
+                }
+                Err(err) => {
+                    return Err(err).wrap_err_with(|| {
+                        format!(
+                            "cannot safely prune: failed to read Python receipt {}",
+                            receipt.display()
+                        )
+                    });
+                }
+            };
+            let (python, version) = selected_python_receipt(&contents, &receipt)?;
+
+            let identity_install = crate::install_layout::resolver::installs_of(&python_ba)
+                .into_iter()
+                .find(|(_, python_dir)| python.starts_with(python_dir));
+            if let Some((_, python_dir)) = identity_install {
+                let Some(dir_name) = crate::install_layout::resolver::dir_name_of(&python_dir)
+                else {
+                    bail!(
+                        "cannot safely prune: Python receipt {} points to an unkeyable identity installation {}",
+                        receipt.display(),
+                        python_dir.display()
+                    );
+                };
+                needed
+                    .entry((String::new(), dir_name))
+                    .or_default()
+                    .insert(source.to_path_buf());
+                continue;
+            }
+
+            let legacy_dir = python_ba.installs_path().join(&version);
+            if python.starts_with(&legacy_dir) {
+                needed
+                    .entry((python_ba.short.to_string(), version.to_string()))
+                    .or_default()
+                    .insert(source.to_path_buf());
+                continue;
+            }
+
+            bail!(
+                "cannot safely prune: Python receipt {} points to an unknown mise Python installation {}",
+                receipt.display(),
+                python.display()
+            );
         }
     }
     for (name, dir) in crate::install_layout::resolver::installs_of(tv.ba()) {
@@ -1365,20 +1461,65 @@ fn keep_uv_python_variants(tv: &ToolVersion, source: &Path, needed: &mut NeededV
                 .insert(source.to_path_buf());
         }
     }
+    Ok(())
 }
 
-fn collect_needed_versions(
+fn selected_python_receipt(contents: &str, receipt: &Path) -> Result<(PathBuf, String)> {
+    let (python, identity) =
+        serde_json::from_str::<(PathBuf, String)>(contents).wrap_err_with(|| {
+            format!(
+                "cannot safely prune: invalid Python receipt {}",
+                receipt.display()
+            )
+        })?;
+    let mut parts = identity.splitn(4, ':');
+    let (Some("core"), Some("python"), Some(version), Some(_runtime_identity)) =
+        (parts.next(), parts.next(), parts.next(), parts.next())
+    else {
+        bail!(
+            "cannot safely prune: Python receipt {} does not name a mise core Python runtime",
+            receipt.display()
+        );
+    };
+    Ok((python, version.to_string()))
+}
+
+async fn collect_needed_versions(
+    config: &Arc<Config>,
     ts: &Toolset,
     offline: bool,
     source: &Path,
     needed: &mut NeededVersions,
-) {
+) -> Result<()> {
     for (_, tv) in ts.list_current_versions() {
         needed
             .entry(needed_key(&tv))
             .or_default()
             .insert(source.to_path_buf());
-        keep_uv_python_variants(&tv, source, needed);
+        keep_uv_python_variants(&tv, source, needed)?;
+        for runtime in
+            crate::install_context::install_dependency_declarations(&tv.request).versioned()
+        {
+            let runtime = ToolVersion::resolve(
+                config,
+                runtime.clone(),
+                &ResolveOptions {
+                    offline: true,
+                    ..Default::default()
+                },
+            )
+            .await
+            .wrap_err_with(|| {
+                format!(
+                    "cannot safely prune while resolving selected runtime for {}",
+                    tv.style()
+                )
+            })?;
+            needed
+                .entry(needed_key(&runtime))
+                .or_default()
+                .insert(source.to_path_buf());
+        }
         // Offline can't resolve `sub-N:latest` to a concrete version
         // (no remote latest available). Conservatively protect every
         // installed version of this backend so we don't delete the
@@ -1406,6 +1547,7 @@ fn collect_needed_versions(
             }
         }
     }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -1443,6 +1585,39 @@ mod tests {
             &BackendArg::from("aqua:BurntSushi/ripgrep[bin=rg]")
         ));
         assert!(is_named_in(&names, &BackendArg::from("ripgrep[bin=rg]")));
+    }
+
+    #[test]
+    fn selected_python_receipt_preserves_its_runtime_after_lock_advance() {
+        let receipt = Path::new("/data/installs/pypi:demo/demo~uv~old/.mise-uv/python.json");
+        let (python, version) = selected_python_receipt(
+            r#"["/data/installs/python/3.11.9/bin/python","core:python:3.11.9:old-runtime"]"#,
+            receipt,
+        )
+        .unwrap();
+        assert_eq!(
+            python,
+            PathBuf::from("/data/installs/python/3.11.9/bin/python")
+        );
+        assert_eq!(version, "3.11.9");
+    }
+
+    #[test]
+    fn selected_python_receipt_fails_closed_when_malformed_or_not_mise_python() {
+        let receipt = Path::new("/data/installs/pypi:demo/demo/.mise-uv/python.json");
+        let invalid_json = selected_python_receipt("not json", receipt).unwrap_err();
+        assert!(invalid_json.to_string().contains("invalid Python receipt"));
+
+        let foreign_runtime = selected_python_receipt(
+            r#"["/usr/bin/python3","system:python:3.12:system"]"#,
+            receipt,
+        )
+        .unwrap_err();
+        assert!(
+            foreign_runtime
+                .to_string()
+                .contains("does not name a mise core Python runtime")
+        );
     }
 
     #[tokio::test]

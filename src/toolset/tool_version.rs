@@ -185,7 +185,7 @@ impl ToolVersion {
         let mut tv =
             crate::env::with_install_env(install_env, Self::resolve_(config, request, opts))
                 .await?;
-        if tv.uv_lock.is_some() {
+        if tv.uv_lock.is_some() || crate::backend::pipx::has_selected_python(&tv).unwrap_or(false) {
             Box::pin(
                 crate::backend::pipx::PIPXBackend::from_arg(tv.ba().clone())
                     .restore_uv_python(config, &mut tv),
@@ -473,12 +473,10 @@ impl ToolVersion {
 
     pub(crate) fn uv_install_identity(&self) -> Option<String> {
         use sha2::{Digest, Sha256};
-        let lock = self.uv_lock.as_ref()?;
         let python = self
             .uv_python
             .as_ref()
-            .map(|(_, identity)| identity.as_str())
-            .unwrap_or("");
+            .map(|(_, identity)| identity.as_str())?;
         let options: BTreeMap<_, _> = self
             .request
             .options()
@@ -488,7 +486,10 @@ impl ToolVersion {
         Some(hex::encode(Sha256::digest(
             format!(
                 "{}\n{}\n{}",
-                lock.identity(),
+                self.uv_lock
+                    .as_ref()
+                    .map(|lock| lock.identity())
+                    .unwrap_or_else(|| "version-only".to_string()),
                 python,
                 toml::to_string(&options).ok()?
             )

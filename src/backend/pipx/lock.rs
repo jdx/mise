@@ -192,6 +192,41 @@ impl PIPXBackend {
     }
 
     pub(crate) async fn restore_uv_python(&self, config: &Arc<Config>, tv: &mut ToolVersion) {
+        // A selected interpreter is part of this environment's identity, not a
+        // preference for whatever Python is active in the configuration. The
+        // provenance file is the only safe way to recover that identity before
+        // installation. In particular, do not let a later default-Python
+        // upgrade silently rebind a selected tool.
+        if PipxOptions::new(&tv.request.options())
+            .selected_python()
+            .ok()
+            .flatten()
+            .is_some()
+        {
+            // Resolve the current selected-runtime request in its owner scope.
+            // A receipt describes the environment that exists on disk, but must
+            // not make a later lockfile pin silently keep that old runtime.
+            let dependency = super::selected_python_dependency(&tv.request)
+                .ok()
+                .flatten();
+            if let Some(dependency) = dependency
+                && let Ok(python) =
+                    ToolVersion::resolve(config, dependency, &Default::default()).await
+                && let Ok(backend) = python.backend()
+                && let Ok(Some(path)) = backend.which(config, &python, "python").await
+            {
+                tv.uv_python = Some((
+                    path,
+                    format!(
+                        "{}:{}:{}",
+                        python.ba().full(),
+                        python.version,
+                        Self::python_installation_identity(&python)
+                    ),
+                ));
+            }
+            return;
+        }
         if let Some(identity) = self.configured_python_identity(config).await {
             tv.uv_python = Some((PathBuf::new(), identity));
             return;
@@ -255,15 +290,44 @@ impl PIPXBackend {
 
     pub(crate) async fn bind_uv_python(
         &self,
-        config: &Arc<Config>,
+        ctx: &InstallContext,
         tv: &mut ToolVersion,
     ) -> Result<()> {
-        let python = self.spawnable_dependency(config, None, "python").await
-            .ok_or_else(|| eyre!("Python graph installs require an installed interpreter; run `mise install python`"))?;
-        let identity = if let Some(identity) = self.configured_python_identity(config).await {
-            identity
+        let raw = tv.request.options();
+        let selected = PipxOptions::new(&raw).selected_python()?;
+        let (python, identity) = if selected.is_some() {
+            let dependencies = ctx.dependency_context(&tv.request).await?;
+            let (_, selected) = dependencies
+                .toolset
+                .list_current_versions()
+                .into_iter()
+                .find(|(_, candidate)| candidate.ba().short == "python")
+                .ok_or_else(|| eyre!("missing selected Python dependency"))?;
+            let python = dependencies
+                .toolset
+                .which_bin_spawnable(&ctx.config, "python")
+                .await
+                .ok_or_else(|| eyre!("selected Python dependency is not executable"))?;
+            (
+                python,
+                format!(
+                    "{}:{}:{}",
+                    selected.ba().full(),
+                    selected.version,
+                    Self::python_installation_identity(&selected)
+                ),
+            )
         } else {
-            CmdLineRunner::new(&python).args(["-I", "-c", "import sys, sysconfig; print((sys.implementation.name, sys.version_info[:2], sysconfig.get_config_var('SOABI'), sysconfig.get_platform()))"]).read().await?.trim().to_owned()
+            let python = self.spawnable_dependency(&ctx.config, None, "python").await
+                .ok_or_else(|| eyre!("Python graph installs require an installed interpreter; run `mise install python`"))?;
+            let identity = if let Some(identity) =
+                self.configured_python_identity(&ctx.config).await
+            {
+                identity
+            } else {
+                CmdLineRunner::new(&python).args(["-I", "-c", "import sys, sysconfig; print((sys.implementation.name, sys.version_info[:2], sysconfig.get_config_var('SOABI'), sysconfig.get_platform()))"]).read().await?.trim().to_owned()
+            };
+            (python, identity)
         };
         tv.uv_python = Some((python, identity));
         Ok(())
@@ -349,6 +413,9 @@ impl PIPXBackend {
             .await
             .wrap_err_with(|| format!("failed to lock {}", self.ba.short))?;
         let mut constraints = vec![">=3.8".to_string()];
+        if let Some(selector) = PipxOptions::new(&tv.request.options()).selected_python()? {
+            constraints.push(selector.requires_python());
+        }
         constraints.extend(python_constraint(&root));
         // Everything in `with` and `expose` shares the sidecar's interpreter, so a
         // pinned injection with a narrower floor narrows the whole project. uv
