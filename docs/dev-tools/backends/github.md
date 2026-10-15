@@ -640,9 +640,11 @@ without a `url` fails.
 mise reads one page of 100 releases. It reads more, up to three pages, only
 while it has not found a stable release with assets. Set
 `MISE_LIST_ALL_VERSIONS=1` to read every page. For public repositories, mise
-reads release lists from [mise-versions](https://mise-versions.jdx.dev) before
-it calls the GitHub API, unless
+reads release lists from [mise-versions](https://mise-versions.jdx.dev)
+instead of the GitHub API, unless
 [`use_versions_host`](/configuration/settings.html#use_versions_host) is off.
+mise-versions serves the newest 1,000 releases of a repository; to list older
+ones, turn `use_versions_host` off.
 
 ## Settings
 
