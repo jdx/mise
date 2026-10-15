@@ -271,7 +271,7 @@ impl<'a> PipxOptions<'a> {
 /// Build the dependency request for an explicitly selected interpreter.  This
 /// keeps the request anchored to the PyPI tool's source, so its lockfile is
 /// consulted instead of whichever Python happens to be active in the shell.
-pub(crate) fn selected_python_dependency(request: &ToolRequest) -> Result<Option<ToolRequest>> {
+pub fn selected_python_dependency(request: &ToolRequest) -> Result<Option<ToolRequest>> {
     if request.ba().backend_type() != BackendType::Pipx {
         return Ok(None);
     }

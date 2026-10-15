@@ -29,6 +29,7 @@ pub struct InstallDependencyDeclarations {
 }
 
 impl InstallDependencyDeclarations {
+    #[cfg(test)]
     pub(crate) fn iter(&self) -> impl Iterator<Item = &BackendArg> {
         self.dependencies.iter()
     }
