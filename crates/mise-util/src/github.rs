@@ -228,10 +228,7 @@ pub async fn list_releases_including_prereleases(repo: &str) -> Result<Vec<Githu
     let cache = get_releases_cache(&key).await;
     let cache = cache.get(&key).unwrap();
     Ok(remember_mirrored_assets(
-        cache
-            .get_or_try_init_async(async || list_releases_(API_URL, repo, false).await)
-            .await?
-            .to_vec(),
+        cached_or_stale(cache, async || list_releases_(API_URL, repo, false).await).await?,
     ))
 }
 
@@ -265,10 +262,10 @@ pub async fn list_releases_including_prereleases_from_url(
     let cache = get_releases_cache(&key).await;
     let cache = cache.get(&key).unwrap();
     Ok(remember_mirrored_assets(
-        cache
-            .get_or_try_init_async(async || list_releases_(api_url, repo, require_assets).await)
-            .await?
-            .to_vec(),
+        cached_or_stale(cache, async || {
+            list_releases_(api_url, repo, require_assets).await
+        })
+        .await?,
     ))
 }
 
@@ -535,24 +532,21 @@ pub async fn list_release_versions(
         });
     let caches = RELEASE_VERSIONS_CACHE.read().await;
     let cache = caches.get(&key).unwrap();
-    Ok(cache
-        .get_or_try_init_async(async || {
-            if mirrors_github_metadata(api_url, repo)
-                && let Some(list) =
-                    whole_list(repo, crate::versions_host::GithubList::Releases).await
-            {
-                return Ok(list.releases.into_iter().map(Into::into).collect());
-            }
-            Ok(
-                list_releases_including_prereleases_from_url(api_url, repo, require_assets)
-                    .await?
-                    .into_iter()
-                    .map(Into::into)
-                    .collect(),
-            )
-        })
-        .await?
-        .clone())
+    cached_or_stale(cache, async || {
+        if mirrors_github_metadata(api_url, repo)
+            && let Some(list) = whole_list(repo, crate::versions_host::GithubList::Releases).await
+        {
+            return Ok(list.releases.into_iter().map(Into::into).collect());
+        }
+        Ok(
+            list_releases_including_prereleases_from_url(api_url, repo, require_assets)
+                .await?
+                .into_iter()
+                .map(Into::into)
+                .collect(),
+        )
+    })
+    .await
 }
 
 /// [`list_release_versions`] limited to the releases carrying an asset named
@@ -667,6 +661,40 @@ where
     Ok(Some(tags))
 }
 
+/// `cache`'s value, fetched with `fetch` when it is missing or stale. When
+/// mise-versions is temporarily unavailable (429, 5xx, no connection), a copy
+/// cached earlier stands in however old it is, as jdx/mise-versions' client
+/// contract asks, rather than an error or a request to api.github.com.
+async fn cached_or_stale<T, F, Fut>(cache: &CacheManager<T>, fetch: F) -> Result<T>
+where
+    T: Clone + serde::Serialize + serde::de::DeserializeOwned,
+    F: FnOnce() -> Fut,
+    Fut: std::future::Future<Output = Result<T>>,
+{
+    match cache.get_or_try_init_async(fetch).await {
+        Ok(val) => Ok(val.clone()),
+        Err(err) => stale_on_temporary_failure(cache, err),
+    }
+}
+
+/// The copy `cache` holds, whatever its age, in place of `err` when that is
+/// mise-versions being temporarily unavailable; otherwise `err`.
+fn stale_on_temporary_failure<T>(cache: &CacheManager<T>, err: eyre::Report) -> Result<T>
+where
+    T: Clone + serde::Serialize + serde::de::DeserializeOwned,
+{
+    if !crate::versions_host::is_temporarily_unavailable(&err) {
+        return Err(err);
+    }
+    match cache.get_cached() {
+        Ok(stale) => {
+            warn!("{err:#}\nusing the copy mise cached earlier");
+            Ok(stale)
+        }
+        Err(_) => Err(err),
+    }
+}
+
 /// Whether mise-versions answers for `api_url`'s GitHub metadata about `repo`
 /// instead of GitHub. When it does, GitHub itself is asked only for a
 /// repository mise-versions does not know, and only with a token (see
@@ -759,24 +787,20 @@ pub async fn list_tags(repo: &str) -> Result<Vec<String>> {
     let key = tags_cache_key(API_URL, repo);
     let cache = get_tags_cache(&key).await;
     let cache = cache.get(&key).unwrap();
-    Ok(cache
-        .get_or_try_init_async(async || {
-            list_tags_(API_URL, repo, *env::MISE_LIST_ALL_VERSIONS).await
-        })
-        .await?
-        .to_vec())
+    cached_or_stale(cache, async || {
+        list_tags_(API_URL, repo, *env::MISE_LIST_ALL_VERSIONS).await
+    })
+    .await
 }
 
 pub async fn list_tags_from_url(api_url: &str, repo: &str) -> Result<Vec<String>> {
     let key = tags_cache_key(api_url, repo);
     let cache = get_tags_cache(&key).await;
     let cache = cache.get(&key).unwrap();
-    Ok(cache
-        .get_or_try_init_async(async || {
-            list_tags_(api_url, repo, *env::MISE_LIST_ALL_VERSIONS).await
-        })
-        .await?
-        .to_vec())
+    cached_or_stale(cache, async || {
+        list_tags_(api_url, repo, *env::MISE_LIST_ALL_VERSIONS).await
+    })
+    .await
 }
 
 /// `list_all` is `MISE_LIST_ALL_VERSIONS`, taken as an argument rather than read here so
@@ -1056,7 +1080,8 @@ pub async fn get_release_with_versions_host(
             async || get_release_with_options(API_URL, repo, tag, use_versions_host).await,
             should_cache_release,
         )
-        .await?;
+        .await
+        .or_else(|err| stale_on_temporary_failure(cache, err))?;
     remember_mirrored_assets([&release]);
     Ok(release)
 }
@@ -1075,7 +1100,8 @@ pub async fn get_release_for_url_with_versions_host(
             async || get_release_with_options(api_url, repo, tag, use_versions_host).await,
             should_cache_release,
         )
-        .await?;
+        .await
+        .or_else(|err| stale_on_temporary_failure(cache, err))?;
     remember_mirrored_assets([&release]);
     Ok(release)
 }

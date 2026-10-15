@@ -311,3 +311,51 @@ fn test_newest_stable_if_fresh() {
         .is_none()
     );
 }
+
+#[tokio::test]
+async fn test_stale_copy_stands_in_while_mise_versions_is_unavailable() {
+    let tmp = tempfile::tempdir().unwrap();
+    let path = tmp.path().join("releases.msgpack.z");
+    let unavailable = |status| -> eyre::Result<Vec<String>> {
+        Err(crate::versions_host::VersionsHostUnavailable {
+            status,
+            message: "mise-versions answered".to_string(),
+        }
+        .into())
+    };
+    // A copy written earlier, already past its freshness window.
+    CacheManagerBuilder::new(&path)
+        .build::<Vec<String>>()
+        .write(&vec!["v1".to_string()])
+        .unwrap();
+    let stale = || {
+        CacheManagerBuilder::new(&path)
+            .with_fresh_duration(Some(std::time::Duration::ZERO))
+            .build::<Vec<String>>()
+    };
+
+    for status in [Some(503), Some(429), None] {
+        let got = cached_or_stale(&stale(), async || unavailable(status)).await;
+        assert_eq!(got.unwrap(), ["v1"], "status {status:?}");
+    }
+    // Restricted or disabled, or a failure that isn't mise-versions': no.
+    assert!(
+        cached_or_stale(&stale(), async || unavailable(Some(403)))
+            .await
+            .is_err()
+    );
+    assert!(
+        cached_or_stale(&stale(), async || -> eyre::Result<Vec<String>> {
+            Err(eyre::eyre!("bad data"))
+        })
+        .await
+        .is_err()
+    );
+    // Nothing cached: the failure is the answer.
+    let empty = CacheManagerBuilder::new(tmp.path().join("none.msgpack.z")).build::<Vec<String>>();
+    assert!(
+        cached_or_stale(&empty, async || unavailable(Some(503)))
+            .await
+            .is_err()
+    );
+}
