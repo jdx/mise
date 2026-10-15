@@ -415,11 +415,12 @@ system package manager, which [`mise bootstrap`](/bootstrap.html) can manage.
 ## Keep shims out of mise activate {#activate-shims}
 
 PATH activation puts real tool directories first. While
-[`activate_shims`](/configuration/settings.html#activate_shims) and
-`not_found_auto_install` are both on (the default), it also keeps the user and
-system shim directories on `PATH` behind them, whether or not the current
-directory has any tools, so running a missing tool's command can still install
-it. To remove the shim directories from
+[`activate_shims`](/configuration/settings.html#activate_shims) is on (the
+default), it also keeps the user and system shim directories on `PATH` behind
+them, so running a missing tool's command can still install it. With
+`not_found_auto_install` on (also the default) this applies whether or not the
+current directory has any tools; with it off, the shims stay only while a
+[lazy tool](#lazy-tools) is declared. To remove the shim directories from
 activation entirely, run `mise settings activate_shims=false` and restart
 your shell. See [`activate_shims`](/configuration/settings.html#activate_shims)
 for what stops working. [Command wrappers](#command-wrappers) keep working,
