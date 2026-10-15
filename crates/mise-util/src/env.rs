@@ -1326,9 +1326,12 @@ const PREFER_OFFLINE_COMMANDS: &[&str] = &[
     "activate", "current", "direnv", "env", "exec", "hook-env", "ls", "where", "which", "x",
 ];
 
-/// Commands whose whole purpose is to enumerate remote versions. See
-/// [`REMOTE_FETCH_COMMAND`].
+/// Commands whose whole purpose is to enumerate remote versions, or to report
+/// the newest one. See [`REMOTE_FETCH_COMMAND`]. They also keep a cached version
+/// list for only `fetch_remote_versions_cache`, never for a tool's release-age
+/// window (`crate::network::release_age_list_window_applies`).
 const REMOTE_FETCH_COMMANDS: &[&str] = &[
+    "latest",
     "lock",
     "ls-remote",
     "list-all",
@@ -2073,6 +2076,8 @@ mod tests {
             "--profile=development",
             "outdated",
         ])));
+        assert!(remote_fetch_command(&args(&["mise", "latest", "node"])));
+        assert!(!remote_fetch_command(&args(&["mise", "install", "node"])));
     }
     #[test]
     fn test_prefer_offline_command_skips_global_option_values() {
