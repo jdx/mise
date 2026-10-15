@@ -376,3 +376,28 @@ fn test_listed_release_without_a_date_has_none() {
     let version: ReleaseVersion = listed(Some("2026-10-01T00:00:00Z")).into();
     assert_eq!(version.released_at.as_deref(), Some("2026-10-01T00:00:00Z"));
 }
+
+#[test]
+fn test_whole_release_list_used_only_when_every_release_is_dated() {
+    let list = |dates: &[Option<&str>]| crate::versions_host::GithubVersionsList {
+        source: "releases".to_string(),
+        fetched_at: None,
+        releases: dates
+            .iter()
+            .map(|date| crate::versions_host::GithubListedRelease {
+                tag: "v1".to_string(),
+                date: date.map(str::to_string),
+                prerelease: false,
+                asset_count: 1,
+            })
+            .collect(),
+        tags: vec![],
+        truncated: false,
+    };
+    assert!(all_releases_dated(&list(&[Some("2026-10-01T00:00:00Z")])));
+    assert!(!all_releases_dated(&list(&[
+        Some("2026-10-01T00:00:00Z"),
+        None
+    ])));
+    assert!(!all_releases_dated(&list(&[Some("")])));
+}

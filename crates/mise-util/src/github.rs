@@ -501,6 +501,15 @@ async fn whole_list(
     }
 }
 
+/// Whether every release in `list` has a date. An undated one would pass any
+/// release-age cutoff, so such a list is paged instead, where each release
+/// carries its dates.
+fn all_releases_dated(list: &crate::versions_host::GithubVersionsList) -> bool {
+    list.releases
+        .iter()
+        .all(|r| r.date.as_deref().is_some_and(|d| !d.is_empty()))
+}
+
 /// `repo`'s releases as listing versions needs them, newest first in
 /// GitHub's order. From mise-versions' whole list when it applies, otherwise
 /// (and for a repository it doesn't list) from the paged release listing,
@@ -535,7 +544,9 @@ pub async fn list_release_versions(
     let cache = caches.get(&key).unwrap();
     cached_or_stale(cache, async || {
         if mirrors_github_metadata(api_url, repo)
-            && let Some(list) = whole_list(repo, crate::versions_host::GithubList::Releases).await
+            && let Some(list) = whole_list(repo, crate::versions_host::GithubList::Releases)
+                .await
+                .filter(all_releases_dated)
         {
             return Ok(list.releases.into_iter().map(Into::into).collect());
         }
@@ -581,6 +592,7 @@ pub async fn list_release_versions_with_asset(
                 crate::versions_host::GithubList::ReleasesWithAsset(asset),
             )
             .await
+            .filter(all_releases_dated)
         {
             return Ok(list.releases.into_iter().map(Into::into).collect());
         }
