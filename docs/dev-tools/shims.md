@@ -171,9 +171,17 @@ prompt or directory change. After that, mise refreshes the environment at each
 prompt and, in shells with a [directory-change hook](#hook-on-cd), after each
 `cd`. Child processes inherit the result.
 
-While shims are needed for [lazy tools](#lazy-tools) or
-`not_found_auto_install`, activation keeps the shim directories on `PATH`
-behind the real tool directories. See
+By default, activation also keeps the shim directories on `PATH`, behind the
+real tool directories, even in a directory with no `mise.toml`:
+
+```sh
+echo "$PATH"
+# ~/.local/share/mise/shims:/usr/local/bin:/usr/bin:/bin
+```
+
+They let a command for a missing tool auto-install
+([`not_found_auto_install`](/configuration/settings.html#not_found_auto_install),
+on by default) and let [lazy tools](#lazy-tools) install on first use. See
 [Keep shims out of mise activate](#activate-shims) to remove them.
 
 ### Directory changes {#hook-on-cd}
@@ -406,10 +414,12 @@ system package manager, which [`mise bootstrap`](/bootstrap.html) can manage.
 
 ## Keep shims out of mise activate {#activate-shims}
 
-PATH activation puts real tool directories first. When the toolset has a
-[lazy tool](#lazy-tools) or `not_found_auto_install` is on, it also keeps the
-user and system shim directories on `PATH` behind them, so running a missing
-tool's command can still install it. To remove the shim directories from
+PATH activation puts real tool directories first. While
+[`activate_shims`](/configuration/settings.html#activate_shims) and
+`not_found_auto_install` are both on (the default), it also keeps the user and
+system shim directories on `PATH` behind them, whether or not the current
+directory has any tools, so running a missing tool's command can still install
+it. To remove the shim directories from
 activation entirely, run `mise settings activate_shims=false` and restart
 your shell. See [`activate_shims`](/configuration/settings.html#activate_shims)
 for what stops working. [Command wrappers](#command-wrappers) keep working,
