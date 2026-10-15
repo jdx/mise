@@ -481,8 +481,14 @@ where
         }
         .into());
     }
-    resp.json()
-        .await
+    // The body is read first so that a connection lost while reading it is
+    // mise-versions being unavailable, like one lost before the status;
+    // only a body that arrived and doesn't parse is a bad answer.
+    let body = resp.bytes().await.map_err(|err| VersionsHostUnavailable {
+        status: None,
+        message: format!("reading {url}: {err:#}"),
+    })?;
+    serde_json::from_slice(&body)
         .map(Some)
         .map_err(|err| eyre::eyre!("invalid response from {url}: {err}"))
 }
