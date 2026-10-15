@@ -20,7 +20,9 @@ use crate::registry::REGISTRY;
 use crate::toolset::Toolset;
 use crate::toolset::helpers::{TVTuple, preflight_system_deps, show_python_install_hint};
 use crate::toolset::install_options::InstallOptions;
-use crate::toolset::tool_deps::{ToolDeps, ensure_compatible_install_requests, graph_key, tool_key};
+use crate::toolset::tool_deps::{
+    ToolDeps, ensure_compatible_install_requests, graph_key, tool_key,
+};
 use crate::toolset::tool_request::ToolRequest;
 use crate::toolset::tool_source::ToolSource;
 use crate::toolset::tool_version::{ResolveOptions, ToolVersion};
@@ -1341,7 +1343,7 @@ mod tests {
             .expect("selected Python dependency should be added");
 
         assert_eq!(dependency.options().get("patch_sysconfig"), Some("false"));
-        assert!(private.contains(&tool_key(dependency)));
+        assert!(private.contains(&graph_key(dependency)));
         ensure_compatible_install_requests(&versions).unwrap();
     }
 }
