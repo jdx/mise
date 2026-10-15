@@ -47,14 +47,13 @@ fn git_rewrote(root: &Path, files: &[&PathBuf]) -> bool {
     else {
         return false;
     };
-    // A deleted file has no mtime to compare, so it cannot count against the rest.
-    !files.is_empty()
-        && files.iter().all(|f| {
-            std::fs::metadata(f)
-                .and_then(|m| m.modified())
-                .is_ok_and(|mtime| mtime <= logged)
-                || !f.exists()
-        })
+    // A deleted file has no mtime to compare, so it neither counts against the
+    // rest nor, alone, shows that git rewrote anything.
+    let mtimes = files
+        .iter()
+        .filter_map(|f| std::fs::metadata(f).and_then(|m| m.modified()).ok())
+        .collect_vec();
+    !mtimes.is_empty() && mtimes.iter().all(|mtime| *mtime <= logged)
 }
 
 /// Whether the latest HEAD reflog entry is a commit, which moves HEAD without
