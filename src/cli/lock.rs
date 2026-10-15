@@ -2152,6 +2152,27 @@ impl Lock {
         )
         .await?;
 
+        // A PyPI tool's explicit interpreter is a request owned by the same
+        // config scope. Resolve it here (rather than from the active shell
+        // toolset) so the ordinary Python lock entry records the concrete
+        // runtime used by the tool and can be replayed offline later.
+        let selected_pythons = all_tools
+            .iter()
+            .filter_map(|(_, tv)| {
+                crate::backend::pipx::selected_python_dependency(&tv.request).transpose()
+            })
+            .collect::<Result<Vec<_>>>()?;
+        for request in selected_pythons {
+            let opts = request.resolve_options(context.resolve_options)?;
+            let tv = request.resolve(config, &opts).await.wrap_err_with(|| {
+                format!(
+                    "failed to resolve selected Python dependency {request} for lockfile {}",
+                    display_path(target_lockfile_path)
+                )
+            })?;
+            push_unique_lock_tool(&mut all_tools, (tv.ba().clone(), tv));
+        }
+
         if self.tool.is_empty() {
             Ok(all_tools)
         } else {

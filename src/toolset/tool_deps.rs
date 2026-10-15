@@ -5,11 +5,16 @@ use crate::deps_graph::DepsGraph;
 use crate::install_context::install_dependency_declarations;
 use crate::toolset::tool_request::ToolRequest;
 
-/// Unique key for a tool request (tool short name + version).
+/// Unique key for an unresolved tool request. Source belongs in the key: two
+/// lockfile scopes can resolve the same selector to different concrete pins.
 pub(super) type ToolKey = String;
 
 /// Creates a unique key for a ToolRequest
 pub(crate) fn tool_key(tr: &ToolRequest) -> ToolKey {
+    format!("{}@{}#{}", tr.ba().short, tr.version(), tr.source())
+}
+
+fn install_destination_key(tr: &ToolRequest) -> String {
     format!("{}@{}", tr.ba().short, tr.version())
 }
 
@@ -19,7 +24,7 @@ pub(crate) fn tool_key(tr: &ToolRequest) -> ToolKey {
 pub fn ensure_compatible_install_requests(requests: &[ToolRequest]) -> Result<()> {
     let mut options_by_destination = std::collections::HashMap::new();
     for request in requests {
-        let key = tool_key(request);
+        let key = install_destination_key(request);
         let options = request.options();
         if let Some(existing) = options_by_destination.get(&key)
             && existing != &options
@@ -63,17 +68,11 @@ impl ToolDeps {
         for tr in &requests {
             let tr_key = tool_key(tr);
             let declarations = install_dependency_declarations(tr);
-            for dependency in declarations.iter() {
-                for other_tr in &requests {
-                    if dependency
-                        .all_fulls()
-                        .iter()
-                        .any(|identity| other_tr.ba().all_fulls().contains(identity))
-                    {
-                        let other_key = tool_key(other_tr);
-                        if tr_key != other_key {
-                            edges.push((tr_key.clone(), other_key));
-                        }
+            for other_tr in &requests {
+                if declarations.matches_request(other_tr) {
+                    let other_key = tool_key(other_tr);
+                    if tr_key != other_key {
+                        edges.push((tr_key.clone(), other_key));
                     }
                 }
             }
@@ -167,6 +166,33 @@ mod tests {
                 "1.0.0",
                 parse_tool_options("flavor=two"),
                 ToolSource::Argument,
+            )
+            .unwrap(),
+        ];
+
+        let err = ToolDeps::new(requests).unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("conflicting options for tiny@1.0.0")
+        );
+    }
+
+    #[test]
+    fn test_same_destination_from_different_sources_with_different_options_is_rejected() {
+        let backend = Arc::new(BackendArg::from("tiny"));
+        let requests = vec![
+            ToolRequest::new_with_options(
+                backend.clone(),
+                "1.0.0",
+                parse_tool_options("flavor=one"),
+                ToolSource::ToolStub("/tmp/first-tool-stub.toml".into()),
+            )
+            .unwrap(),
+            ToolRequest::new_with_options(
+                backend,
+                "1.0.0",
+                parse_tool_options("flavor=two"),
+                ToolSource::ToolStub("/tmp/second-tool-stub.toml".into()),
             )
             .unwrap(),
         ];

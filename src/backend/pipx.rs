@@ -43,6 +43,48 @@ use xx::regex;
 const UV_EXCLUDE_NEWER_VERSION: &str = "0.2.22";
 const UV_WITH_EXECUTABLES_FROM_VERSION: &str = "0.8.5";
 
+/// A portable, mise-owned CPython selector for one PyPI tool.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum SelectedPython {
+    Minor(String),
+    Exact(String),
+}
+
+impl SelectedPython {
+    fn parse(value: &str) -> Result<Self> {
+        let parts = value.split('.').collect::<Vec<_>>();
+        let numeric = |part: &str| !part.is_empty() && part.bytes().all(|c| c.is_ascii_digit());
+        match parts.as_slice() {
+            [major, minor] if numeric(major) && numeric(minor) => {
+                Ok(Self::Minor(format!("{major}.{minor}")))
+            }
+            [major, minor, patch] if numeric(major) && numeric(minor) && numeric(patch) => {
+                Ok(Self::Exact(format!("{major}.{minor}.{patch}")))
+            }
+            _ => bail!(
+                "python must be a numeric CPython minor (for example 3.12) or exact patch (for example 3.12.12)"
+            ),
+        }
+    }
+
+    pub(crate) fn request_version(&self) -> &str {
+        match self {
+            Self::Minor(version) | Self::Exact(version) => version,
+        }
+    }
+
+    pub(crate) fn requires_python(&self) -> String {
+        match self {
+            Self::Minor(version) => {
+                let (major, minor) = version.split_once('.').expect("validated minor");
+                let next_minor = minor.parse::<u32>().expect("validated minor") + 1;
+                format!(">={major}.{minor},<{major}.{next_minor}")
+            }
+            Self::Exact(version) => format!("=={version}"),
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct PIPXBackend {
     ba: Arc<BackendArg>,
@@ -147,6 +189,13 @@ impl<'a> PipxOptions<'a> {
         self.with()?;
         self.exposed_package_names()?;
         self.dependency_prereleases()?;
+        if self.selected_python()?.is_some() {
+            for args in [self.uvx_args(), self.pipx_args()].into_iter().flatten() {
+                if uv_args_select_python(&shell_words::split(args)?) {
+                    bail!("python cannot be combined with --python or -p in uvx_args or pipx_args");
+                }
+            }
+        }
         if self.has_uv_only_options()? && self.uvx_disabled() {
             bail!("with, expose, and dependency_prereleases cannot be combined with uvx = false");
         }
@@ -187,6 +236,14 @@ impl<'a> PipxOptions<'a> {
         self.values.raw().get_string("uvx").as_deref() == Some("false")
     }
 
+    pub(crate) fn selected_python(&self) -> Result<Option<SelectedPython>> {
+        match self.values.raw().opts.get("python") {
+            Some(toml::Value::String(value)) => SelectedPython::parse(value).map(Some),
+            Some(_) => bail!("python must be a string"),
+            None => Ok(None),
+        }
+    }
+
     fn lockfile_options(&self) -> Result<BTreeMap<String, String>> {
         let mut result = BTreeMap::new();
         if let Some(value) = self.extras() {
@@ -209,6 +266,32 @@ impl<'a> PipxOptions<'a> {
         self.validate_semantic()?;
         Ok(result)
     }
+}
+
+/// Build the dependency request for an explicitly selected interpreter.  This
+/// keeps the request anchored to the PyPI tool's source, so its lockfile is
+/// consulted instead of whichever Python happens to be active in the shell.
+pub(crate) fn selected_python_dependency(request: &ToolRequest) -> Result<Option<ToolRequest>> {
+    if request.ba().backend_type() != BackendType::Pipx {
+        return Ok(None);
+    }
+    let options = request.options();
+    let options = PipxOptions::new(&options);
+    options.validate_semantic()?;
+    let Some(selector) = options.selected_python()? else {
+        return Ok(None);
+    };
+    ToolRequest::new(
+        Arc::new(BackendArg::from("python")),
+        selector.request_version(),
+        request.source().clone(),
+    )
+    .map(Some)
+}
+
+pub(crate) fn has_selected_python(tv: &ToolVersion) -> Result<bool> {
+    let options = tv.request.options();
+    Ok(PipxOptions::new(&options).selected_python()?.is_some())
 }
 
 #[async_trait]
@@ -403,6 +486,15 @@ impl Backend for PIPXBackend {
     ) -> Result<ToolVersion> {
         let request_options = tv.request.options();
         PipxOptions::new(&request_options).validate_semantic()?;
+        // An explicit selector is never a graph-only preference. Bind it
+        // before any branch that may fall back to version-only uv or pipx so
+        // every installer receives the same exact mise-managed executable.
+        if PipxOptions::new(&request_options)
+            .selected_python()?
+            .is_some()
+        {
+            self.bind_uv_python(ctx, &mut tv).await?;
+        }
         if let Some(lock) = &tv.uv_lock {
             let lock = if !ctx.locked && lock.load().is_err() {
                 lock.refresh()?
@@ -458,8 +550,8 @@ impl Backend for PIPXBackend {
                 }
             }
         }
-        if tv.uv_lock.is_some() {
-            self.bind_uv_python(&ctx.config, &mut tv).await?;
+        if tv.uv_lock.is_some() && tv.uv_python.is_none() {
+            self.bind_uv_python(ctx, &mut tv).await?;
         }
         Ok(tv)
     }
@@ -497,6 +589,23 @@ impl Backend for PIPXBackend {
                 {
                     return Ok(false);
                 }
+            }
+        }
+        if PipxOptions::new(&tv.request.options()).selected_python()?.is_some() {
+            let Some((_, expected_identity)) = &tv.uv_python else {
+                return Ok(false);
+            };
+            let Ok(contents) = crate::file::read_to_string(
+                tv.install_path().join(".mise-uv/python.json"),
+            ) else {
+                return Ok(false);
+            };
+            let Ok((_, installed_identity)) = serde_json::from_str::<(PathBuf, String)>(&contents)
+            else {
+                return Ok(false);
+            };
+            if &installed_identity != expected_identity {
+                return Ok(false);
             }
         }
         Ok(self.is_version_installed(config, tv, check_symlink))
@@ -621,7 +730,9 @@ impl Backend for PIPXBackend {
             // uv prefers a Python it downloaded earlier over the one on PATH, which would
             // tie the tool's venv to an interpreter outside the mise data dir. Bind it to
             // mise's Python so a cached data dir restores a working tool.
-            if !uv_args_select_python(&user_args)
+            if let Some((python, _)) = &tv.uv_python {
+                cmd = cmd.arg("--python").arg(python);
+            } else if !uv_args_select_python(&user_args)
                 && let Some(python) = self.mise_managed_python(&ctx.config, &ctx.ts).await
             {
                 cmd = cmd.arg("--python").arg(python);
@@ -668,6 +779,9 @@ impl Backend for PIPXBackend {
             )
             .await?;
             cmd = cmd.args(Self::pip_uploaded_prior_to_args(ctx.before_date));
+            if let Some((python, _)) = &tv.uv_python {
+                cmd = cmd.arg("--python").arg(python);
+            }
             if let Some(args) = options.pipx_args() {
                 cmd = cmd.args(shell_words::split(args)?);
             }
@@ -687,9 +801,22 @@ impl Backend for PIPXBackend {
             }
         }
 
-        // Fix venv Python symlink to use minor version path
-        // This allows patch upgrades (3.12.1 → 3.12.2) to work without reinstalling
-        fix_venv_python_symlink(&tv.install_path())?;
+        // A selector also gives version-only installs an immutable runtime
+        // identity. Keep the provenance beside the environment so future
+        // resolution can verify that a matching directory was built with the
+        // same interpreter rather than adopting an old legacy install.
+        if let Some(python) = &tv.uv_python {
+            let metadata = tv.install_path().join(".mise-uv");
+            crate::file::create_dir_all(&metadata)?;
+            crate::file::write(metadata.join("python.json"), serde_json::to_string(python)?)?;
+        }
+
+        // Legacy environments retain their mutable-minor compatibility link.
+        // Selector-owned environments are instead named by a concrete runtime
+        // identity and must never be rebound by a later Python patch upgrade.
+        if options.selected_python()?.is_none() {
+            fix_venv_python_symlink(&tv.install_path())?;
+        }
 
         Ok(tv)
     }
@@ -739,6 +866,7 @@ pub(crate) fn install_time_option_keys() -> Vec<String> {
         "pipx_args".into(),
         "uvx_args".into(),
         "uvx".into(),
+        "python".into(),
     ]
 }
 
@@ -1273,7 +1401,12 @@ enum PipxRequest {
 /// Whether user-supplied `uv tool install` arguments already pick an interpreter.
 fn uv_args_select_python(args: &[String]) -> bool {
     args.iter()
-        .any(|a| a == "-p" || a == "--python" || a.starts_with("--python="))
+        .any(|a| {
+            a == "-p"
+                || a == "--python"
+                || a.starts_with("--python=")
+                || (a.starts_with("-p") && a.len() > 2)
+        })
 }
 
 /// A Git source split into its repository and any pip/uv URL fragment
@@ -1672,14 +1805,63 @@ fn stamp_pep440_prerelease(mut version: VersionInfo) -> VersionInfo {
 #[cfg(test)]
 mod tests {
     use super::{
-        GitSource, PIPXBackend, PipxOptions, PipxRequest, PypiPackage, PypiRelease,
-        UV_EXCLUDE_NEWER_VERSION,
+        GitSource, PIPXBackend, PipxOptions, PipxRequest, PypiPackage, PypiRelease, SelectedPython,
+        UV_EXCLUDE_NEWER_VERSION, uv_args_select_python,
     };
     use crate::backend::Backend;
     #[cfg(unix)]
     use crate::file;
     use crate::github::GithubRelease;
-    use crate::toolset::ToolVersionOptions;
+    use crate::toolset::{ToolVersionOptions, parse_tool_options};
+
+    #[test]
+    fn selected_python_accepts_numeric_minor_and_exact_patch() {
+        assert_eq!(
+            SelectedPython::parse("3.12").unwrap().requires_python(),
+            ">=3.12,<3.13"
+        );
+        assert_eq!(
+            SelectedPython::parse("3.12.12").unwrap().requires_python(),
+            "==3.12.12"
+        );
+    }
+
+    #[test]
+    fn selected_python_rejects_nonportable_selectors() {
+        for selector in ["latest", "3.12.*", "cpython@3.12", "/usr/bin/python3"] {
+            assert!(SelectedPython::parse(selector).is_err(), "{selector}");
+        }
+    }
+
+    #[test]
+    fn selected_python_rejects_installer_python_arguments() {
+        for (key, value) in [
+            ("uvx_args", "--python 3.13"),
+            ("uvx_args", "-p3.13"),
+            ("pipx_args", "-p=python3"),
+            ("pipx_args", "-p python3"),
+        ] {
+            let options = parse_tool_options(&format!("python = \"3.12\"\n{key} = \"{value}\""));
+            assert!(
+                PipxOptions::new(&options).validate_semantic().is_err(),
+                "{key}"
+            );
+        }
+    }
+
+    #[test]
+    fn uv_args_detect_every_python_flag_spelling() {
+        for args in [
+            vec!["--python".into(), "3.12".into()],
+            vec!["--python=3.12".into()],
+            vec!["-p".into(), "3.12".into()],
+            vec!["-p3.12".into()],
+            vec!["-p=3.12".into()],
+        ] {
+            assert!(uv_args_select_python(&args), "{args:?}");
+        }
+        assert!(!uv_args_select_python(&["--resolution".into(), "lowest".into()]));
+    }
     use indexmap::IndexMap;
     use pretty_assertions::assert_eq;
     use std::ffi::OsString;

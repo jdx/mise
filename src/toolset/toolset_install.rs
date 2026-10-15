@@ -332,6 +332,21 @@ impl Toolset {
         }
 
         self.init_request_options(&mut versions);
+        // Some backends own a versioned runtime for one consumer. Add those
+        // requests to this installation batch before constructing the graph so
+        // the runtime is installed first rather than being borrowed from the
+        // active shell toolset.
+        let mut next = 0;
+        while next < versions.len() {
+            let declarations = install_dependency_declarations(&versions[next]);
+            declarations.validate()?;
+            for dependency in declarations.versioned() {
+                if !versions.contains(dependency) {
+                    versions.push(dependency.clone());
+                }
+            }
+            next += 1;
+        }
         ensure_compatible_install_requests(&versions)?;
         ensure_safe_install_options(&versions)?;
 
