@@ -554,21 +554,42 @@ pub async fn list_release_versions_with_asset(
     repo: &str,
     asset: &str,
 ) -> Result<Vec<ReleaseVersion>> {
-    if mirrors_github_metadata(API_URL, repo)
-        && let Some(list) = whole_list(
-            repo,
-            crate::versions_host::GithubList::ReleasesWithAsset(asset),
-        )
+    // Cached like the unfiltered list, so a copy saved earlier can stand in
+    // while mise-versions is temporarily unavailable.
+    let key = format!(
+        "{}-versions-with-asset-{}",
+        repo.to_kebab_case(),
+        crate::hash::hash_to_str(&(repo, asset, RELEASE_LIST_CACHE_VERSION, mirror_source(repo)))
+    );
+    RELEASE_VERSIONS_CACHE
+        .write()
         .await
-    {
-        return Ok(list.releases.into_iter().map(Into::into).collect());
-    }
-    Ok(list_releases_including_prereleases(repo)
-        .await?
-        .into_iter()
-        .filter(|r| r.assets.iter().any(|a| a.name == asset))
-        .map(Into::into)
-        .collect())
+        .entry(key.clone())
+        .or_insert_with(|| {
+            CacheManagerBuilder::new(cache_dir().join(format!("{key}.msgpack.z")))
+                .with_fresh_duration(crate::network::fetch_remote_versions_cache(&Settings::get()))
+                .build()
+        });
+    let caches = RELEASE_VERSIONS_CACHE.read().await;
+    let cache = caches.get(&key).unwrap();
+    cached_or_stale(cache, async || {
+        if mirrors_github_metadata(API_URL, repo)
+            && let Some(list) = whole_list(
+                repo,
+                crate::versions_host::GithubList::ReleasesWithAsset(asset),
+            )
+            .await
+        {
+            return Ok(list.releases.into_iter().map(Into::into).collect());
+        }
+        Ok(list_releases_including_prereleases(repo)
+            .await?
+            .into_iter()
+            .filter(|r| r.assets.iter().any(|a| a.name == asset))
+            .map(Into::into)
+            .collect())
+    })
+    .await
 }
 
 /// The newest stable release in mise-versions' whole list of `repo`'s
@@ -850,11 +871,11 @@ pub async fn list_tags_with_dates(repo: &str) -> Result<Vec<GithubTagWithDate>> 
 
 async fn list_tags_with_dates_(api_url: &str, repo: &str) -> Result<Vec<GithubTagWithDate>> {
     if mirrors_github_tags(api_url, repo) {
-        // A list whose tags all lack dates gives a dated listing nothing; the
-        // paged endpoint with `dates=1` looks the dates up.
+        // Only a list with every date: an undated tag would skip the release
+        // age check. The paged endpoint with `dates=1` looks dates up.
         if let Some(list) = whole_list(repo, crate::versions_host::GithubList::Tags)
             .await
-            .filter(|list| list.tags.is_empty() || list.tags.iter().any(|t| t.date.is_some()))
+            .filter(|list| list.tags.iter().all(|t| t.date.is_some()))
         {
             return Ok(list
                 .tags
