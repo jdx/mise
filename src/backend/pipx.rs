@@ -584,13 +584,15 @@ impl Backend for PIPXBackend {
                 if !selected_python && !locked && self.is_version_installed(config, tv, check_symlink) {
                     return Ok(true);
                 }
-                if locked
-                    || (!self.uv_lock_options_supported(tv)
-                        || self
-                            .spawnable_dependency(config, None, "uv")
-                            .await
-                            .is_some())
-                {
+                // Installer arguments which uv cannot lock deliberately use
+                // version-only installation. A selected runtime still needs
+                // its receipt checked below, but must not be forced to
+                // reinstall once that receipt matches.
+                let version_only_fallback = !self.uv_lock_options_supported(tv);
+                if locked || (!version_only_fallback && self
+                    .spawnable_dependency(config, None, "uv")
+                    .await
+                    .is_some()) {
                     return Ok(false);
                 }
             }
@@ -1409,7 +1411,9 @@ fn uv_args_select_python(args: &[String]) -> bool {
             a == "-p"
                 || a == "--python"
                 || a.starts_with("--python=")
-                || (a.starts_with("-p") && a.len() > 2)
+                || (a.starts_with("-p")
+                    && !a.starts_with("--")
+                    && a.len() > 2)
         })
 }
 
