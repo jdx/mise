@@ -84,11 +84,11 @@ branch = "main"
 These optional fields shape the first clone of a missing repository. They have
 no effect on an existing checkout, which keeps the shape it was cloned with.
 
-| Field        | Effect                                                                                              |
-| ------------ | --------------------------------------------------------------------------------------------------- |
-| `filter`     | Passes `--filter=<spec>`, for example `"blob:none"` for a blobless clone                            |
-| `depth`      | Passes `--depth <n> --no-single-branch` for a shallow clone; cannot be combined with a commit `ref` |
-| `submodules` | When `true`, passes `--recurse-submodules` (and `--also-filter-submodules` with `filter`)           |
+| Field        | Effect                                                                                                                                  |
+| ------------ | --------------------------------------------------------------------------------------------------------------------------------------- |
+| `filter`     | Passes `--filter=<spec>`, for example `"blob:none"` for a blobless clone                                                                |
+| `depth`      | Passes `--depth <n> --no-single-branch` for a shallow clone; cannot be combined with a full commit SHA or a `ref` starting with `refs/` |
+| `submodules` | When `true`, passes `--recurse-submodules` (and `--also-filter-submodules` with `filter`)                                               |
 
 ```toml
 [bootstrap.repos]
