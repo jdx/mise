@@ -1546,7 +1546,8 @@ fn has_linked_version(ba: &BackendArg, version: &str) -> bool {
                 && path.file_name().is_some_and(|name| {
                     let name = name.to_string_lossy();
                     linked_name_satisfies(&name, version)
-                        && (name == version
+                        && (version == "latest"
+                            || name == version.strip_prefix("prefix:").unwrap_or(version)
                             || !backend.as_ref().is_some_and(|b| {
                                 crate::plugins::VERSION_REGEX.is_match(&name)
                                     || b.is_backend_prerelease(&name)
