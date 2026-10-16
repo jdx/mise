@@ -14,6 +14,7 @@ members = [
   "crates/mise-settings",
   "crates/mise-util",
   "crates/mise-ui",
+  "crates/mise-system-packages",
   "crates/mise-dotenv",
 ]
 
@@ -145,9 +146,9 @@ flate2 = "1"
 futures-util = "0.3"
 mise-cache-core = { path = "crates/mise-cache-core", version = "0.1", default-features = false }
 mise-settings = { path = "crates/mise-settings", version = "2026" }
+mise-system-packages = { path = "crates/mise-system-packages", version = "0.1" }
 mise-ui = { path = "crates/mise-ui", version = "2026" }
 mise-util = { path = "crates/mise-util", version = "2026", default-features = false }
-mise-brew-metadata = { path = "crates/mise-brew-metadata", version = "0.1" }
 mise-bootstrap = { path = "crates/mise-bootstrap", version = "0.1" }
 fslock = "0.2"
 gix = { version = "<1", default-features = false, features = [
@@ -297,7 +298,6 @@ zipsign-api = { version = "0.2", optional = true }
 
 [target.'cfg(unix)'.dependencies]
 exec = "0.3"
-mise-brew-relocation = { path = "crates/mise-brew-relocation", version = "0.1" }
 nix = { version = "0.31", features = [
   "dir",
   "feature",

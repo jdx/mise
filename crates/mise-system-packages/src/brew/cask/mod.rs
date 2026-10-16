@@ -16,10 +16,8 @@ use unicode_normalization::UnicodeNormalization;
 use walkdir::WalkDir;
 
 use super::prefix;
-use crate::system::packages::options::ManagerPackageOptions;
-use crate::system::packages::{
-    InstallOpts, PackageRequest, PackageState, PackageStatus, SystemPackageManager,
-};
+use crate::options::ManagerPackageOptions;
+use crate::{InstallOpts, PackageRequest, PackageState, PackageStatus, SystemPackageManager};
 use eyre::Result;
 use mise_ui::multi_progress_report::MultiProgressReport;
 use mise_ui::progress_report::{ProgressIcon, SingleReport};
@@ -37,7 +35,7 @@ mod artifacts;
 mod bulk;
 mod fetch;
 mod flight;
-pub(crate) mod paths;
+pub mod paths;
 mod running;
 mod state;
 
@@ -1245,7 +1243,7 @@ impl SystemPackageManager for BrewCaskManager {
 /// and does not care whether the metadata came from Homebrew or from config.
 /// Only the fields an app install reads are populated — there is no Ruby source,
 /// no tap, no dependencies, and no lifecycle hooks to evaluate.
-fn declared_app_cask(name: &str, spec: &crate::system::packages::options::AppSpec) -> Result<Cask> {
+fn declared_app_cask(name: &str, spec: &crate::options::AppSpec) -> Result<Cask> {
     validate_cask_path_component("package name", name)?;
     // `version` is joined into the install-record and journal paths, so it is
     // validated exactly as fetched cask metadata is by `validate_cask_identity`.

@@ -65,7 +65,7 @@ pub mod login_items;
 pub mod login_shell;
 pub mod managed_files;
 pub mod package_plugin;
-pub mod packages;
+pub use mise_system_packages as packages;
 pub mod packages_host;
 #[cfg(unix)]
 pub use packages::options::AppSpec;

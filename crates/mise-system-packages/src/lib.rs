@@ -3,24 +3,27 @@
 //! These are host-owned, unversioned packages — deliberately separate from
 //! the `Backend` system, which manages per-project, version-pinned dev tools.
 
+#[macro_use]
+mod macros;
+
 use std::sync::Arc;
 
 use async_trait::async_trait;
 
-use crate::system::packages::options::ManagerPackageOptions;
+use crate::options::ManagerPackageOptions;
 use eyre::Result;
 
-pub(crate) mod apk;
-pub(crate) mod apt;
+pub mod apk;
+pub mod apt;
 pub mod apt_sources;
 pub(crate) mod aur;
 #[cfg(unix)]
 pub mod brew;
-pub(crate) mod dnf;
+pub mod dnf;
 pub mod dnf_repos;
 pub(crate) mod flatpak;
 pub mod host;
-pub(crate) mod mas;
+pub mod mas;
 pub mod nix;
 pub mod options;
 pub(crate) mod pacman;
@@ -127,7 +130,7 @@ impl PackageState {
         }
     }
 
-    pub(crate) fn unavailable_reason(&self) -> Option<&str> {
+    pub fn unavailable_reason(&self) -> Option<&str> {
         #[cfg(unix)]
         if let Self::Unavailable { reason } = self {
             return Some(reason);
@@ -326,7 +329,7 @@ pub trait SystemPackageManager: Send + Sync {
 ///   the config.
 /// * On version, both pins reach the manager in a single invocation, and which
 ///   pin survives is that manager's arbitrary ordering.
-pub(crate) fn check_name_conflicts(
+pub fn check_name_conflicts(
     manager: &dyn SystemPackageManager,
     pkgs: &[PackageRequest],
 ) -> Result<()> {
@@ -369,7 +372,7 @@ pub(crate) fn check_name_conflicts(
     Ok(())
 }
 
-pub(crate) fn builtin_managers() -> Vec<Arc<dyn SystemPackageManager>> {
+pub fn builtin_managers() -> Vec<Arc<dyn SystemPackageManager>> {
     vec![
         Arc::new(apk::ApkManager::new()),
         Arc::new(apt::AptManager::new()),
@@ -555,5 +558,37 @@ mod tests {
     #[test]
     fn apt_compares_package_names_verbatim() {
         assert_eq!(apt::AptManager::new().package_identity("Git"), None);
+    }
+}
+
+#[cfg(test)]
+mod test_harness {
+    //! The tests below mise have no config system to load settings from and no fixture tree, so
+    //! they read the `settings.toml` defaults and use `test/` as the home directory.
+
+    mise_util::run_before_main!(init);
+
+    fn init() {
+        // Under the crate, not `/tmp`: the cask tests need ancestors that are not world-writable.
+        let home = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test");
+        std::fs::create_dir_all(&home).unwrap();
+        mise_util::env::set_var("HOME", &home);
+        mise_util::testing::enable(home);
+        mise_settings::set_loader(mise_settings::load_defaults);
+        mise_util::cache::set_base_cache_keys(vec!["mise-system-packages-tests".to_string()]);
+        mise_util::user_agent::set("mise-system-packages-tests".to_string());
+        mise_util::deprecation::set_version(env!("CARGO_PKG_VERSION"));
+        mise_util::env::set_mise_env(|| &[]);
+        mise_util::shells::set_implicit_inline_shell(|| true);
+        // Without mise's toolset, the host's tools are whatever is on PATH.
+        crate::host::register(crate::host::Host {
+            provision_ruby: || {
+                Box::pin(async { eyre::bail!("ruby cannot be provisioned in these tests") })
+            },
+            installed_ruby: || Box::pin(async { Ok(mise_util::file::which("ruby")) }),
+            tool_bin: |name| Box::pin(async move { Ok(mise_util::file::which(name)) }),
+            package_plugin_names: Vec::new,
+            load_package_plugin: |name| eyre::bail!("no package plugin {name} in these tests"),
+        });
     }
 }

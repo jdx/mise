@@ -184,7 +184,7 @@ pub(super) fn target_app_dir() -> Result<PathBuf> {
 /// Parse an appdir in a package table. Unlike the shell environment variable,
 /// the configuration form supports a leading `~/` for a portable per-user
 /// declaration.
-pub(crate) fn package_app_dir(value: &str) -> Result<PathBuf> {
+pub fn package_app_dir(value: &str) -> Result<PathBuf> {
     let dir = if value == "~" {
         mise_util::env::HOME.clone()
     } else if let Some(relative) = value.strip_prefix("~/") {

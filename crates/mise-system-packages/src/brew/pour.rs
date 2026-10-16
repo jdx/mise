@@ -872,7 +872,7 @@ pub(super) fn link_keg(name: &str, pkg_version: &str, keg_only: bool) -> Result<
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::system::packages::brew::package_root;
+    use crate::brew::package_root;
     use std::os::unix::fs::{PermissionsExt, symlink};
     use tokio::sync::Mutex;
 
@@ -1263,9 +1263,7 @@ mod tests {
     async fn test_manager_repairs_linked_record_without_repouring() -> Result<()> {
         use std::os::unix::fs::MetadataExt;
 
-        use crate::system::packages::{
-            InstallOpts, PackageRequest, PackageState, SystemPackageManager,
-        };
+        use crate::{InstallOpts, PackageRequest, PackageState, SystemPackageManager};
 
         let _lock = ENV_LOCK.lock().await;
         let (_tmp, prefix) = canonical_tempdir()?;
@@ -1278,7 +1276,7 @@ mod tests {
             name: "foo".to_string(),
             version: None,
             tap_url: None,
-            desired: crate::system::packages::PackageDesiredState::Present,
+            desired: crate::PackageDesiredState::Present,
         };
         let keg_inode = keg.metadata()?.ino();
         let receipt_modified = keg.join("INSTALL_RECEIPT.json").metadata()?.modified()?;

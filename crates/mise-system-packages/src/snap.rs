@@ -5,7 +5,7 @@ use async_trait::async_trait;
 use eyre::bail;
 
 use super::{InstallOpts, PackageRequest, PackageState, PackageStatus, SystemPackageManager};
-use crate::system::packages::options::ManagerPackageOptions;
+use crate::options::ManagerPackageOptions;
 use eyre::Result;
 use mise_ui::sudo;
 
@@ -42,7 +42,7 @@ pub(crate) struct SnapManager;
 
 /// Check a snap name, with an optional `_<instance-key>` suffix, against the
 /// store's naming rules. This also keeps a name from reaching `snap` as a flag.
-pub(crate) fn validate_name(name: &str) -> eyre::Result<()> {
+pub fn validate_name(name: &str) -> eyre::Result<()> {
     let (snap, instance) = match name.split_once('_') {
         Some((snap, instance)) => (snap, Some(instance)),
         None => (name, None),
@@ -73,7 +73,7 @@ pub(crate) fn validate_name(name: &str) -> eyre::Result<()> {
 /// A misspelled risk is caught here, so the entry is skipped with a warning
 /// rather than failing inside snap. A bare track cannot be checked: track
 /// names are the publisher's.
-pub(crate) fn validate_channel(name: &str, channel: &str) -> eyre::Result<()> {
+pub fn validate_channel(name: &str, channel: &str) -> eyre::Result<()> {
     let segments = channel.split('/').collect::<Vec<_>>();
     let well_formed = segments.iter().all(|segment| {
         !segment.is_empty()
@@ -378,7 +378,7 @@ hello     2.10             42     -                -           -
             name: name.to_string(),
             version: None,
             tap_url: None,
-            desired: crate::system::packages::PackageDesiredState::Present,
+            desired: crate::PackageDesiredState::Present,
         }
     }
 

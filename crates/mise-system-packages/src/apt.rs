@@ -7,11 +7,12 @@ use async_trait::async_trait;
 use eyre::bail;
 
 use super::{InstallOpts, PackageRequest, PackageState, PackageStatus, SystemPackageManager};
-use crate::system::packages::options::ManagerPackageOptions;
+use crate::options::ManagerPackageOptions;
 use eyre::Result;
 use mise_ui::sudo;
 
-pub(crate) struct AptManager {
+#[derive(Default)]
+pub struct AptManager {
     /// `[bootstrap.apt.sources]` changed and the lists were refreshed for
     /// them (or, in a dry run, would be), so this run needs no other refresh.
     lists_refreshed: AtomicBool,
@@ -23,11 +24,8 @@ pub(crate) struct AptManager {
 }
 
 impl AptManager {
-    pub(crate) fn new() -> Self {
-        Self {
-            lists_refreshed: AtomicBool::new(false),
-            recording_uris: Default::default(),
-        }
+    pub fn new() -> Self {
+        Self::default()
     }
 
     /// fresh container/VM case: no package lists at all, so any install would
@@ -654,7 +652,7 @@ mod tests {
             name: name.to_string(),
             version: version.map(str::to_string),
             tap_url: None,
-            desired: crate::system::packages::PackageDesiredState::Present,
+            desired: crate::PackageDesiredState::Present,
         }
     }
 

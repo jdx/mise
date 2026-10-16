@@ -8,7 +8,7 @@ use serde::Deserialize;
 use walkdir::WalkDir;
 
 use super::{api, pour, prefix, resolve};
-use crate::system::packages::PackageRequest;
+use crate::PackageRequest;
 use eyre::Result;
 use mise_util::file;
 

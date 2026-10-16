@@ -212,13 +212,13 @@ async fn ruby_for_metadata(name: &str, provision_ruby: bool) -> Result<PathBuf> 
     if let Some(ruby) = usable_system_ruby().await {
         return Ok(ruby);
     }
-    if let Some(ruby) = crate::system::packages::host::installed_ruby().await?
+    if let Some(ruby) = crate::host::installed_ruby().await?
         && ruby_is_compatible(&ruby).await
     {
         return Ok(ruby);
     }
     if provision_ruby {
-        let ruby = crate::system::packages::host::provision_ruby().await?;
+        let ruby = crate::host::provision_ruby().await?;
         if ruby_is_compatible(&ruby).await {
             return Ok(ruby);
         }
@@ -372,7 +372,7 @@ pub(super) async fn test_ruby() -> Result<Option<PathBuf>> {
     if let Some(ruby) = usable_system_ruby().await {
         return Ok(Some(ruby));
     }
-    crate::system::packages::host::installed_ruby().await
+    crate::host::installed_ruby().await
 }
 
 #[cfg(test)]

@@ -6,18 +6,19 @@ use async_trait::async_trait;
 use eyre::{WrapErr, bail};
 
 use super::{InstallOpts, PackageRequest, PackageState, PackageStatus, SystemPackageManager};
-use crate::system::packages::options::ManagerPackageOptions;
+use crate::options::ManagerPackageOptions;
 use eyre::Result;
 use mise_settings::Settings;
 use mise_settings::SystemPackagesOstree;
 use mise_ui::sudo;
 
 /// RedHat-family (Fedora, RHEL, CentOS, Rocky, Alma) via dnf
-pub(crate) struct DnfManager {}
+#[derive(Default)]
+pub struct DnfManager {}
 
 impl DnfManager {
-    pub(crate) fn new() -> Self {
-        Self {}
+    pub fn new() -> Self {
+        Self::default()
     }
 }
 
@@ -594,7 +595,7 @@ mod tests {
             name: name.to_string(),
             version: version.map(str::to_string),
             tap_url: None,
-            desired: crate::system::packages::PackageDesiredState::Present,
+            desired: crate::PackageDesiredState::Present,
         }
     }
 

@@ -900,7 +900,7 @@ mod tests {
     #[test]
     fn armor_is_readable_as_a_keyring() {
         let keys = mise_util::gpg::parse_keyring(include_bytes!(
-            "../../../crates/mise-util/src/assets/gpg/swift.asc"
+            "../../mise-util/src/assets/gpg/swift.asc"
         ))
         .unwrap();
         let bytes = keys
@@ -1095,7 +1095,7 @@ mod tests {
     #[test]
     fn keyring_must_hold_exactly_the_declared_keys() {
         let keys = mise_util::gpg::parse_keyring(include_bytes!(
-            "../../../crates/mise-util/src/assets/gpg/swift.asc"
+            "../../mise-util/src/assets/gpg/swift.asc"
         ))
         .unwrap();
         assert!(keys.len() >= 2, "need two keys for this test");

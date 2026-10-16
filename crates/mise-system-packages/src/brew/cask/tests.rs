@@ -113,7 +113,7 @@ fn cask_dependency_closure_collects_formulae_and_transitive_casks() {
         name: "acme/tools/root".to_string(),
         version: None,
         tap_url: Some("https://github.com/acme/custom-tools.git".to_string()),
-        desired: crate::system::packages::PackageDesiredState::Present,
+        desired: crate::PackageDesiredState::Present,
     };
     extend_cask_dependency_closure(&mut closure, &mut pending, &root_request, root.clone());
     assert_eq!(pending.len(), 1);
@@ -142,7 +142,7 @@ fn cask_dependency_closure_collects_formulae_and_transitive_casks() {
     );
     let standard_tap_request = PackageRequest {
         tap_url: None,
-        desired: crate::system::packages::PackageDesiredState::Present,
+        desired: crate::PackageDesiredState::Present,
         ..root_request
     };
     assert_eq!(
@@ -177,7 +177,7 @@ fn cask_dependency_closure_keeps_duplicate_names_from_each_tap() {
             name: format!("{owner}/tools/shared"),
             version: None,
             tap_url: Some(tap_url.to_string()),
-            desired: crate::system::packages::PackageDesiredState::Present,
+            desired: crate::PackageDesiredState::Present,
         };
         extend_cask_dependency_closure(&mut closure, &mut pending, &request, root);
     }
@@ -523,7 +523,7 @@ fn externally_managed_version_precedes_artifact_parsing() -> Result<()> {
         name: cask.token.clone(),
         version: None,
         tap_url: None,
-        desired: crate::system::packages::PackageDesiredState::Present,
+        desired: crate::PackageDesiredState::Present,
     };
 
     assert_eq!(
@@ -554,7 +554,7 @@ fn both_receipt_types_satisfy_installed_state_without_mutation() -> Result<()> {
         name: cask.token.clone(),
         version: None,
         tap_url: None,
-        desired: crate::system::packages::PackageDesiredState::Present,
+        desired: crate::PackageDesiredState::Present,
     };
 
     assert_eq!(
@@ -592,7 +592,7 @@ fn mise_owned_state_validates_artifacts_before_receipt() -> Result<()> {
         name: cask.token.clone(),
         version: None,
         tap_url: None,
-        desired: crate::system::packages::PackageDesiredState::Present,
+        desired: crate::PackageDesiredState::Present,
     };
 
     let error = package_state(&request, &cask).unwrap_err();
@@ -615,7 +615,7 @@ fn mise_owned_state_validates_platform_before_receipt() -> Result<()> {
         name: cask.token.clone(),
         version: None,
         tap_url: None,
-        desired: crate::system::packages::PackageDesiredState::Present,
+        desired: crate::PackageDesiredState::Present,
     };
 
     assert!(matches!(
@@ -8495,7 +8495,7 @@ fn dependency_appdir_uses_its_own_package_setting() {
         name: "dependency".to_string(),
         version: None,
         tap_url: None,
-        desired: crate::system::packages::PackageDesiredState::Present,
+        desired: crate::PackageDesiredState::Present,
     };
 
     assert_eq!(
@@ -9757,7 +9757,7 @@ fn macos_app_records_state_outside_the_homebrew_caskroom() {
 
 #[test]
 fn declared_app_cask_populates_only_the_fields_an_app_install_reads() -> Result<()> {
-    let spec = crate::system::packages::options::AppSpec {
+    let spec = crate::options::AppSpec {
         url: "https://example.com/Nuvio-1.1.20-arm64.dmg".to_string(),
         sha256: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855".to_string(),
         artifact: "Nuvio.app".to_string(),
@@ -9791,7 +9791,7 @@ fn declared_app_cask_populates_only_the_fields_an_app_install_reads() -> Result<
 
 #[test]
 fn declared_app_cask_rejects_a_traversing_package_name() {
-    let spec = crate::system::packages::options::AppSpec {
+    let spec = crate::options::AppSpec {
         url: "https://example.com/a.dmg".to_string(),
         sha256: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855".to_string(),
         artifact: "A.app".to_string(),
@@ -9821,7 +9821,7 @@ fn macos_app_and_brew_cask_differ_in_platform_and_pin_support() {
 fn declared_app_cask_rejects_a_traversing_version() {
     // `version` is joined into the install-record and journal paths, so an
     // unvalidated one could place records outside the manager's state root.
-    let spec = crate::system::packages::options::AppSpec {
+    let spec = crate::options::AppSpec {
         url: "https://example.com/a.dmg".to_string(),
         sha256: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855".to_string(),
         artifact: "A.app".to_string(),
@@ -9864,7 +9864,7 @@ fn macos_app_status_ignores_a_same_named_homebrew_cask() -> Result<()> {
     file::create_dir_all(token_dir.join(".metadata"))?;
     file::create_dir_all(token_dir.join("9.9.9"))?;
 
-    let spec = crate::system::packages::options::AppSpec {
+    let spec = crate::options::AppSpec {
         url: "https://example.com/Nuvio.dmg".to_string(),
         sha256: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855".to_string(),
         artifact: "Nuvio.app".to_string(),
@@ -9875,7 +9875,7 @@ fn macos_app_status_ignores_a_same_named_homebrew_cask() -> Result<()> {
         name: "nuvio".to_string(),
         version: Some("1.1.20".to_string()),
         tap_url: None,
-        desired: crate::system::packages::PackageDesiredState::Present,
+        desired: crate::PackageDesiredState::Present,
     };
 
     // The macos-app entry is a different install in a different state root, so
@@ -10180,7 +10180,7 @@ fn macos_app_replaces_an_owned_bundle_that_differs() -> Result<()> {
 /// extract tree and stage the wrong payload.
 #[test]
 fn staging_directories_are_scoped_per_manager() -> Result<()> {
-    let spec = crate::system::packages::options::AppSpec {
+    let spec = crate::options::AppSpec {
         url: "https://example.com/Nuvio.dmg".to_string(),
         sha256: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855".to_string(),
         artifact: "Nuvio.app".to_string(),
@@ -10522,7 +10522,7 @@ fn macos_app_same_version_retarget_is_not_already_installed() -> Result<()> {
     let mut guard = EnvVarGuard::new();
     guard.set(APP_DIR_ENV, appdir.path());
 
-    let spec = crate::system::packages::options::AppSpec {
+    let spec = crate::options::AppSpec {
         url: "https://example.com/Nuvio.dmg".to_string(),
         sha256: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855".to_string(),
         artifact: "Other.app".to_string(),
@@ -10537,7 +10537,7 @@ fn macos_app_same_version_retarget_is_not_already_installed() -> Result<()> {
     // hand-built path would never match and the test would pass or fail for
     // the wrong reason.
     let owned_app = {
-        let previous = crate::system::packages::options::AppSpec {
+        let previous = crate::options::AppSpec {
             artifact: "Nuvio.app".to_string(),
             ..spec.clone()
         };
@@ -10579,7 +10579,7 @@ fn macos_app_same_version_retarget_is_not_already_installed() -> Result<()> {
     );
 
     // Back to the recorded app: ordinary already-installed skip applies again.
-    let same = crate::system::packages::options::AppSpec {
+    let same = crate::options::AppSpec {
         artifact: "Nuvio.app".to_string(),
         ..spec
     };
