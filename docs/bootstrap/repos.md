@@ -69,7 +69,7 @@ Reading a var never prompts; an unanswered one uses its `default`. Run
 The optional `ref` is a branch, a tag, or a full commit SHA. An invalid entry
 is reported with a warning and skipped.
 
-`url` and `ref` can use vars too, so one file can serve several branches:
+`url` and `ref` can use vars and process environment variables (`env.NAME`) too, so one file can serve several branches. Values from a config's `[env]` table are not available, as in checkout paths:
 
 ```toml
 [vars]
