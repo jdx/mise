@@ -6,3 +6,4 @@
 
 pub mod dotfiles;
 pub mod history;
+pub mod secrets;
