@@ -2,10 +2,10 @@ use std::sync::{Arc, Mutex, Once};
 
 use clx::progress::{self, ProgressJobBuilder, ProgressOutput};
 
-use crate::config::Settings;
-use crate::env;
-use crate::ui::progress_report::{ProgressReport, QuietReport, SingleReport, VerboseReport};
-use crate::version::VERSION_PLAIN;
+use crate::progress_report::{ProgressReport, QuietReport, SingleReport, VerboseReport};
+use mise_settings::Settings;
+use mise_util::deprecation::VERSION_PLAIN;
+use mise_util::env;
 
 #[derive(Debug)]
 pub struct MultiProgressReport {
@@ -48,7 +48,7 @@ impl ProgressPauseState {
 /// Keeps the global progress renderer suspended until every overlapping
 /// suspension has been released.
 #[derive(Debug)]
-pub(crate) struct ProgressPauseGuard {
+pub struct ProgressPauseGuard {
     report: Arc<MultiProgressReport>,
 }
 
@@ -133,7 +133,7 @@ impl MultiProgressReport {
     ///
     /// Suspensions are reference-counted because tool installs run in
     /// parallel. The renderer resumes only after the final guard is dropped.
-    pub(crate) fn pause_progress(self: &Arc<Self>) -> ProgressPauseGuard {
+    pub fn pause_progress(self: &Arc<Self>) -> ProgressPauseGuard {
         let mut state = self.pause_state.lock().unwrap();
         let renderer_is_paused = !self.use_progress_ui || progress::is_paused();
         if state.acquire(renderer_is_paused) {
@@ -147,10 +147,10 @@ impl MultiProgressReport {
     /// Depth of overlapping progress suspensions.
     ///
     /// For tests that need to observe that a caller holds its guard for a whole
-    /// scope — such as an elevated child's lifetime in [`crate::system::sudo`] —
+    /// scope — such as an elevated child's lifetime in `system::sudo` —
     /// rather than only that it constructed one.
-    #[cfg(test)]
-    pub(crate) fn progress_suspension_depth(&self) -> usize {
+    #[doc(hidden)]
+    pub fn progress_suspension_depth(&self) -> usize {
         self.pause_state.lock().unwrap().count
     }
 
@@ -178,7 +178,7 @@ impl MultiProgressReport {
 
     /// The live install region replaces the per-tool clx rows and the old
     /// header whenever the animated display is on at all.
-    pub(crate) fn use_tty_install_output(&self) -> bool {
+    pub fn use_tty_install_output(&self) -> bool {
         self.use_progress_ui
     }
 
@@ -187,7 +187,7 @@ impl MultiProgressReport {
     }
 
     /// Create a progress report before backends are loaded, when normal prefix sizing is unavailable.
-    pub(crate) fn add_pre_backend(&self, prefix: &str) -> Box<dyn SingleReport> {
+    pub fn add_pre_backend(&self, prefix: &str) -> Box<dyn SingleReport> {
         if self.quiet {
             Box::new(QuietReport::new())
         } else if self.use_progress_ui {
@@ -197,7 +197,7 @@ impl MultiProgressReport {
         }
     }
 
-    pub(crate) fn add_with_options(&self, prefix: &str, dry_run: bool) -> Box<dyn SingleReport> {
+    pub fn add_with_options(&self, prefix: &str, dry_run: bool) -> Box<dyn SingleReport> {
         if self.quiet {
             progress_trace!(
                 "add_with_options[{}]: creating QuietReport (quiet=true)",
@@ -221,7 +221,7 @@ impl MultiProgressReport {
         }
     }
 
-    pub(crate) fn init_footer(&self, dry_run: bool, _message: &str, total_count: usize) {
+    pub fn init_footer(&self, dry_run: bool, _message: &str, total_count: usize) {
         // Only create header once - check if already initialized
         if self.header_job.lock().unwrap().is_some() {
             return;
@@ -244,7 +244,7 @@ impl MultiProgressReport {
         // Create header job showing overall progress (only in progress UI mode)
         // Left-aligned, colored header with "mise VERSION by @jdx" and cur/total count
         if self.use_progress_ui && !dry_run {
-            use crate::ui::style;
+            use crate::style;
 
             // Build colored header text parts
             let mise_text = format!("{}", style::emagenta("mise").bold());
@@ -267,7 +267,7 @@ impl MultiProgressReport {
         }
     }
 
-    pub(crate) fn footer_inc(&self, n: usize) {
+    pub fn footer_inc(&self, n: usize) {
         if n == 0 {
             return;
         }
@@ -286,7 +286,7 @@ impl MultiProgressReport {
         }
     }
 
-    pub(crate) fn footer_finish(&self) {
+    pub fn footer_finish(&self) {
         let total = *self.total_count.lock().unwrap();
         let completed = *self.completed_count.lock().unwrap();
 
@@ -327,7 +327,6 @@ mod tests {
 
     #[tokio::test]
     async fn test_multi_progress_report() {
-        crate::backend::load_tools().await.unwrap();
         let mpr = MultiProgressReport::get();
         let pr = mpr.add("PREFIX");
         pr.finish_with_message("test".into());

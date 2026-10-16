@@ -6728,6 +6728,7 @@ dependencies = [
  "mise-dotenv",
  "mise-interactive-config",
  "mise-settings",
+ "mise-ui",
  "mise-util",
  "mockito",
  "nix 0.31.3",
@@ -6932,6 +6933,24 @@ dependencies = [
  "thiserror 2.0.21",
  "tokio",
  "x509-cert 0.3.0",
+]
+
+[[package]]
+name = "mise-ui"
+version = "2026.9.0"
+dependencies = [
+ "calm_io",
+ "clx",
+ "console",
+ "demand",
+ "eyre",
+ "log",
+ "mise-settings",
+ "mise-util",
+ "nix 0.31.3",
+ "strum 0.28.0",
+ "tokio",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
