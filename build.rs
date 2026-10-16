@@ -1383,14 +1383,14 @@ fn platforms_disjoint(a: &[String], b: &[String]) -> bool {
             )
         })
     };
-    !a.is_empty()
-        && !b.is_empty()
-        && !(windows_arm64(a) && windows_arm64(b))
-        && a.iter().all(|a| {
-            let (a_os, a_arch) = split(a);
-            b.iter().all(|b| {
-                let (b_os, b_arch) = split(b);
-                differ(&a_os, &b_os) || differ(&a_arch, &b_arch)
-            })
+    if a.is_empty() || b.is_empty() || (windows_arm64(a) && windows_arm64(b)) {
+        return false;
+    }
+    a.iter().all(|a| {
+        let (a_os, a_arch) = split(a);
+        b.iter().all(|b| {
+            let (b_os, b_arch) = split(b);
+            differ(&a_os, &b_os) || differ(&a_arch, &b_arch)
         })
+    })
 }
