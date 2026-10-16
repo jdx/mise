@@ -3038,13 +3038,13 @@ fn archive_content_files_zip(
         if file.is_symlink() {
             bail!(
                 "content-level SLSA verification does not support symlink archive entry: {}",
-                file.name()
+                file.name().as_deref().unwrap_or("<unreadable name>")
             );
         }
         let enclosed_name = file.enclosed_name().ok_or_else(|| {
             eyre::eyre!(
                 "content-level SLSA verification rejected unsafe zip path: {}",
-                file.name()
+                file.name().as_deref().unwrap_or("<unreadable name>")
             )
         })?;
         let name = normalize_archive_content_path(&enclosed_name, strip_components)?;

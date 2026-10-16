@@ -1278,7 +1278,7 @@ mod tests {
             package_record: PackageRecord::new(
                 PackageName::from_str(name).unwrap(),
                 Version::from_str(version).unwrap(),
-                build.to_string(),
+                rattler_conda_types::package::BuildString::new_unchecked(build),
             ),
             identifier: DistArchiveIdentifier::new(archive_id, DistArchiveType::Conda(conda_type)),
             url: Url::parse(url).unwrap(),
