@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+
+# A venv that mise creates in one process stays stale for deps in later
+# processes until each provider tracking it runs.
+
+cat >requirements.txt <<'EOF2'
+six
+EOF2
+
+cat >mise.toml <<'EOF2'
+[settings]
+python.venv_stdlib = true
+
+[env]
+_.python.venv = { path = ".venv", create = true }
+
+[deps.pip]
+run = "touch .venv/installed"
+
+[deps.extra]
+sources = ["requirements.txt"]
+outputs = [".venv"]
+run = "touch .venv/extra"
+EOF2
+
+assert_contains "mise deps 2>&1" "Installed: pip"
+assert_contains "mise deps 2>&1" "up to date"
+
+rm -rf .venv
+mise env >/dev/null
+assert_directory_exists .venv
+assert_fail_contains "mise deps install pip --explain 2>&1" "output created since the last run"
+
+# Providers sharing the venv become fresh when run separately.
+assert_contains "mise deps --only pip 2>&1" "Installed: pip"
+assert "test -f .venv/installed"
+assert_contains "mise deps --only pip 2>&1" "up to date"
+assert_fail_contains "mise deps install extra --explain 2>&1" "output created since the last run"
+assert_contains "mise deps --only extra 2>&1" "Installed: extra"
+assert "test -f .venv/extra"
+assert_contains "mise deps 2>&1" "up to date"
