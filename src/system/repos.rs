@@ -1399,7 +1399,7 @@ mod tests {
     #[test]
     fn clone_options_extend_the_clone_command() {
         let request = RepoRequest::from_toml(
-            "/tmp/repo".to_string(),
+            "~/src/repo".to_string(),
             RepoTomlConfig {
                 url: Some("https://github.com/jdx/mise.git".to_string()),
                 filter: Some("blob:none".to_string()),
@@ -1422,7 +1422,7 @@ mod tests {
                 "--recurse-submodules",
                 "--also-filter-submodules",
                 "https://github.com/jdx/mise.git",
-                "/tmp/repo"
+                request.path.to_str().unwrap()
             ]
         );
     }
@@ -1435,7 +1435,7 @@ mod tests {
             depth,
             ..Default::default()
         };
-        let from = |config| RepoRequest::from_toml("/tmp/repo".to_string(), config, None);
+        let from = |config| RepoRequest::from_toml("~/src/repo".to_string(), config, None);
         assert!(from(config(Some(0), None)).is_err());
         assert!(
             from(config(
