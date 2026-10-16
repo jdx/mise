@@ -322,6 +322,6 @@ assert "git -C templated config remote.origin.partialclonefilter" "blob:none"
 
 # a shallow clone can still switch to another branch
 git -C "$SRC" branch dev
-sed -i 's/branch = "main"/branch = "dev"/' mise.toml
+sed -i.bak 's/branch = "main"/branch = "dev"/' mise.toml
 assert_succeed "mise bootstrap repos apply --yes"
 assert "git -C templated rev-parse --abbrev-ref HEAD" "dev"
