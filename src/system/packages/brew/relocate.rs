@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 
 use eyre::bail;
 
-use crate::result::Result;
+use eyre::Result;
 
 pub(super) use mise_brew_relocation::RelocationReport;
 
@@ -26,7 +26,7 @@ pub(super) fn relocate_keg(
 /// the kernel kills binaries whose signature doesn't match their contents.
 pub(super) fn codesign(files: &[PathBuf]) -> Result<()> {
     for file in files {
-        let res = crate::cmd::cmd(
+        let res = mise_util::cmd::cmd(
             "/usr/bin/codesign",
             [
                 "--sign",

@@ -6,8 +6,8 @@ use std::fmt;
 use eyre::{Report, WrapErr, bail};
 use serde::Deserialize;
 
-use crate::http::HTTP_FETCH;
-use crate::result::Result;
+use eyre::Result;
+use mise_util::http::HTTP_FETCH;
 
 pub(super) use mise_brew_metadata::*;
 

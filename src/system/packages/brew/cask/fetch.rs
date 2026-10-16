@@ -206,7 +206,7 @@ pub(super) fn validate_cask_path_component(kind: &str, value: &str) -> Result<()
 /// of the URL, so two managers share that file only when it is the same
 /// download, and each still verifies it against its own `sha256`.
 pub(super) fn cask_staging_dir(cask: &Cask, kind: &str) -> PathBuf {
-    crate::dirs::CACHE
+    mise_util::dirs::CACHE
         .join("system-brew")
         .join(kind)
         .join(format!(
@@ -300,7 +300,7 @@ pub(super) fn git_only_path_source(
 pub(super) async fn fetch_archive(cask: &Cask, pr: Option<&dyn SingleReport>) -> Result<PathBuf> {
     let filename = archive_filename(&cask.url)
         .ok_or_else(|| eyre!("{}:{}: URL has no file name", cask.label(), cask.token))?;
-    let cache_dir = crate::dirs::CACHE.join("system-brew").join("casks");
+    let cache_dir = mise_util::dirs::CACHE.join("system-brew").join("casks");
     file::create_dir_all(&cache_dir)?;
     let url_hash = &hash::hash_sha256_to_str(&cask.url)[..12];
     let archive = cache_dir.join(format!(
@@ -480,7 +480,7 @@ pub(super) async fn execute_lifecycle_hook(
     }
     let ruby = cask_ruby_bin().await?;
     let cask_rb = fetch_cask_rb(cask, pr).await?;
-    let shim_path = crate::dirs::CACHE
+    let shim_path = mise_util::dirs::CACHE
         .join("system-brew")
         .join("casks")
         .join("mise-brew-cask-shim.rb");
@@ -521,7 +521,7 @@ pub(super) async fn cask_ruby_bin() -> Result<PathBuf> {
     {
         return Ok(ruby);
     }
-    source::ruby_bin().await
+    crate::system::packages::host::provision_ruby().await
 }
 
 pub(super) fn ensure_cask_shim(path: &Path) -> Result<()> {
@@ -563,7 +563,9 @@ pub(super) async fn fetch_cask_rb(cask: &Cask, pr: Option<&dyn SingleReport>) ->
             cask.token
         )
     })?;
-    let cache_dir = crate::dirs::CACHE.join("system-brew").join("cask-source");
+    let cache_dir = mise_util::dirs::CACHE
+        .join("system-brew")
+        .join("cask-source");
     file::create_dir_all(&cache_dir)?;
     let short_sha = sha256.get(..12).unwrap_or(sha256);
     let dest = cache_dir.join(format!("{}-{short_sha}.rb", cask.token));

@@ -4,7 +4,7 @@ use async_trait::async_trait;
 use eyre::bail;
 
 use super::{InstallOpts, PackageRequest, PackageState, PackageStatus, SystemPackageManager};
-use crate::result::Result;
+use eyre::Result;
 
 // APPINSTALLER_CLI_ERROR_NO_APPLICATIONS_FOUND. WinGet returns the HRESULT as
 // a signed process exit code on Windows.
@@ -221,7 +221,7 @@ impl SystemPackageManager for WingetManager {
     }
 
     fn is_available(&self) -> bool {
-        cfg!(windows) && crate::file::which_spawnable("winget").is_some()
+        cfg!(windows) && mise_util::file::which_spawnable("winget").is_some()
     }
 
     fn unavailable_reason(&self) -> String {

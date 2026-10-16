@@ -13,7 +13,7 @@ use serde_json::Value;
 use walkdir::WalkDir;
 
 use super::prefix;
-use crate::result::Result;
+use eyre::Result;
 
 /// a step (or part of one) this implementation does not handle
 #[derive(Debug)]
@@ -52,7 +52,7 @@ pub(super) fn install_bottle_config(keg: &Path) -> Result<Vec<PathBuf>> {
         }
         Ok(())
     });
-    let result = copied.and_then(|()| crate::file::remove_all(&bottle));
+    let result = copied.and_then(|()| mise_util::file::remove_all(&bottle));
     if let Err(err) = result {
         remove_created(&created);
         return Err(err);
@@ -113,7 +113,7 @@ fn copy_tree(
                     fs::remove_file(&dest)?;
                 }
             }
-            crate::file::make_symlink(&link, &dest)?;
+            mise_util::file::make_symlink(&link, &dest)?;
             // only what did not exist before is ours to remove on rollback
             if !existed {
                 created.push(dest);
@@ -229,7 +229,7 @@ impl Context<'_> {
             }
             fs::remove_file(&target)?;
         }
-        crate::file::make_symlink(&source, &target)?;
+        mise_util::file::make_symlink(&source, &target)?;
         Ok(())
     }
 
@@ -268,12 +268,12 @@ impl Context<'_> {
             if !flag(step, "overwrite") {
                 return Ok(());
             }
-            crate::file::remove_all(&target)?;
+            mise_util::file::remove_all(&target)?;
         }
         if let Some(parent) = target.parent() {
             fs::create_dir_all(parent)?;
         }
-        crate::file::move_file(&source, &target)?;
+        mise_util::file::move_file(&source, &target)?;
         Ok(())
     }
 

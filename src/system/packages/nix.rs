@@ -154,10 +154,10 @@ async fn profile_path() -> Result<PathBuf> {
         std::env::var_os("XDG_STATE_HOME")
             .filter(|p| !p.is_empty())
             .map(PathBuf::from)
-            .unwrap_or_else(|| crate::env::HOME.join(".local/state"))
+            .unwrap_or_else(|| mise_util::env::HOME.join(".local/state"))
             .join("nix/profile")
     } else {
-        crate::env::HOME.join(".nix-profile")
+        mise_util::env::HOME.join(".nix-profile")
     })
 }
 
@@ -281,7 +281,7 @@ impl SystemPackageManager for NixManager {
     }
 
     fn is_available(&self) -> bool {
-        cfg!(unix) && crate::file::which("nix").is_some()
+        cfg!(unix) && mise_util::file::which("nix").is_some()
     }
 
     fn unavailable_reason(&self) -> String {

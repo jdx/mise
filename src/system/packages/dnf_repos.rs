@@ -18,9 +18,9 @@ use std::path::{Path, PathBuf};
 use eyre::{bail, eyre};
 use serde::Deserialize;
 
-use crate::http::HTTP_FETCH;
-use crate::result::Result;
-use crate::system::sudo;
+use eyre::Result;
+use mise_ui::sudo;
+use mise_util::http::HTTP_FETCH;
 
 const REPOS_DIR: &str = "/etc/yum.repos.d";
 const COPR_HOST: &str = "copr.fedorainfracloud.org";
@@ -400,7 +400,7 @@ fn confirm(pending: &[&DnfRepo]) -> Result<bool> {
         .map(|repo| format!("{} ({})", repo.name, repo.describe()))
         .collect::<Vec<_>>()
         .join(", ");
-    Ok(crate::ui::prompt::confirm(format!("dnf: enable repositories {list}?"))?.is_yes())
+    Ok(mise_ui::prompt::confirm(format!("dnf: enable repositories {list}?"))?.is_yes())
 }
 
 /// Write a world-readable root-owned file, as the copr plugin leaves it.

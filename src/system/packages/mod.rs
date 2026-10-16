@@ -7,8 +7,8 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 
-use crate::result::Result;
-use crate::system::ManagerPackageOptions;
+use crate::system::packages::options::ManagerPackageOptions;
+use eyre::Result;
 
 pub(crate) mod apk;
 pub(crate) mod apt;
@@ -19,10 +19,11 @@ pub mod brew;
 pub(crate) mod dnf;
 pub mod dnf_repos;
 pub(crate) mod flatpak;
+pub mod host;
 pub(crate) mod mas;
 pub mod nix;
+pub mod options;
 pub(crate) mod pacman;
-pub mod plugin;
 pub(crate) mod scoop;
 pub mod snap;
 pub(crate) mod winget;
@@ -404,21 +405,15 @@ pub fn all_managers() -> Vec<Arc<dyn SystemPackageManager>> {
         .iter()
         .map(|manager| manager.name().to_string())
         .collect::<std::collections::HashSet<_>>();
-    let Some(plugins) = crate::toolset::install_state::try_list_plugins() else {
-        return managers;
-    };
-    for (name, plugin_type) in plugins.iter() {
-        if *plugin_type != crate::plugins::PluginType::Package {
-            continue;
-        }
-        if builtins.contains(name) {
+    for name in host::package_plugin_names() {
+        if builtins.contains(&name) {
             warn!(
                 "package plugin '{name}' collides with a built-in package manager; ignoring plugin"
             );
             continue;
         }
-        match plugin::PackagePluginManager::new(name.clone()) {
-            Ok(manager) => managers.push(Arc::new(manager)),
+        match host::load_package_plugin(&name) {
+            Ok(manager) => managers.push(manager),
             Err(err) => warn!("failed to load package plugin '{name}': {err:#}"),
         }
     }

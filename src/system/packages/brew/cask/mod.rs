@@ -16,22 +16,21 @@ use unicode_normalization::UnicodeNormalization;
 use walkdir::WalkDir;
 
 use super::prefix;
-use super::source;
-use crate::cmd::CmdLineRunner;
-#[cfg(unix)]
-use crate::file::remove_all_at;
-use crate::file::{self, ExtractOptions, ExtractionFormat};
-use crate::git::{CloneOptions, Git};
-use crate::hash;
-use crate::http::{HTTP, HTTP_FETCH};
-use crate::result::Result;
-use crate::system::ManagerPackageOptions;
+use crate::system::packages::options::ManagerPackageOptions;
 use crate::system::packages::{
     InstallOpts, PackageRequest, PackageState, PackageStatus, SystemPackageManager,
 };
-use crate::system::sudo;
-use crate::ui::multi_progress_report::MultiProgressReport;
-use crate::ui::progress_report::{ProgressIcon, SingleReport};
+use eyre::Result;
+use mise_ui::multi_progress_report::MultiProgressReport;
+use mise_ui::progress_report::{ProgressIcon, SingleReport};
+use mise_ui::sudo;
+use mise_util::cmd::CmdLineRunner;
+#[cfg(unix)]
+use mise_util::file::remove_all_at;
+use mise_util::file::{self, ExtractOptions, ExtractionFormat};
+use mise_util::git::{CloneOptions, Git};
+use mise_util::hash;
+use mise_util::http::{HTTP, HTTP_FETCH};
 
 mod app_version;
 mod artifacts;
@@ -1246,7 +1245,7 @@ impl SystemPackageManager for BrewCaskManager {
 /// and does not care whether the metadata came from Homebrew or from config.
 /// Only the fields an app install reads are populated — there is no Ruby source,
 /// no tap, no dependencies, and no lifecycle hooks to evaluate.
-fn declared_app_cask(name: &str, spec: &crate::system::AppSpec) -> Result<Cask> {
+fn declared_app_cask(name: &str, spec: &crate::system::packages::options::AppSpec) -> Result<Cask> {
     validate_cask_path_component("package name", name)?;
     // `version` is joined into the install-record and journal paths, so it is
     // validated exactly as fetched cask metadata is by `validate_cask_identity`.
@@ -1339,7 +1338,7 @@ async fn prewarm_downloads(
     manager: CaskManager,
     manager_options: &ManagerPackageOptions,
 ) {
-    let jobs = crate::jobs::normalize(crate::config::Settings::get().jobs);
+    let jobs = mise_util::jobs::normalize(mise_settings::Settings::get().jobs);
     if jobs <= 1 || pkgs.len() <= 1 {
         return;
     }
@@ -1617,7 +1616,7 @@ fn install_app_in(
     ditto(&source, &caskroom_app)?;
     // Suffix hashes stay derived from the logical path so temporary and backup
     // names are stable across runs.
-    let name_hash = crate::hash::hash_to_str(&logical_target.display().to_string());
+    let name_hash = mise_util::hash::hash_to_str(&logical_target.display().to_string());
     let tmp_name = replace_bundle_extension(&name, &format!("mise-tmp-{name_hash}"));
     let old_name = replace_bundle_extension(&name, &format!("mise-old-{name_hash}"));
     remove_all_at(&parent.fd, &tmp_name)?;
@@ -1900,7 +1899,7 @@ fn activate_app_at(
 
 #[cfg(unix)]
 fn replace_caskroom_app_with_symlink(caskroom_app: &Path, target: &Path) -> Result<()> {
-    let suffix = crate::hash::hash_to_str(&caskroom_app.display().to_string());
+    let suffix = mise_util::hash::hash_to_str(&caskroom_app.display().to_string());
     let staged_link = caskroom_app.with_extension(format!("mise-link-{suffix}"));
     let staged_copy = caskroom_app.with_extension(format!("mise-copy-{suffix}"));
     file::remove_all(&staged_link)?;
@@ -2453,7 +2452,7 @@ fn copy_generic_artifact_unprivileged(from: &Path, to: &Path) -> Result<()> {
     let name = to
         .file_name()
         .ok_or_else(|| eyre!("brew-cask: generic artifact target has no filename"))?;
-    let staging_name = format!(".mise-copy-{}", crate::rand::random_string(16));
+    let staging_name = format!(".mise-copy-{}", mise_util::rand::random_string(16));
     nix::sys::stat::mkdirat(
         &parent.fd,
         staging_name.as_str(),
@@ -2793,7 +2792,7 @@ fn current_process_groups() -> Result<Vec<nix::libc::gid_t>> {
 
 #[cfg(unix)]
 fn sudo_invoking_id(effective_uid: u32, variable: &str) -> Option<u32> {
-    sudo_invoking_id_from(effective_uid, crate::env::var(variable).ok().as_deref())
+    sudo_invoking_id_from(effective_uid, mise_util::env::var(variable).ok().as_deref())
 }
 
 #[cfg(unix)]
@@ -3483,7 +3482,7 @@ fn link_font(caskroom: &Path, font: &FontArtifact) -> Result<()> {
     // that a failure during copy leaves the old font intact.
     let old_target = target.with_extension(format!(
         "mise-old-{}",
-        crate::hash::hash_to_str(&target.display().to_string())
+        mise_util::hash::hash_to_str(&target.display().to_string())
     ));
     file::remove_all(&old_target)?;
     if target.exists() {
@@ -3507,7 +3506,7 @@ fn caskroom_font_path(caskroom: &Path, font: &FontArtifact) -> Result<PathBuf> {
 fn font_filename(font: &FontArtifact) -> Result<String> {
     match &font.target {
         Some(target) => {
-            let home = crate::dirs::HOME.to_string_lossy();
+            let home = mise_util::dirs::HOME.to_string_lossy();
             let mut expanded = target.replace("$HOME", &home);
             if let Some(rest) = expanded.strip_prefix("~/") {
                 expanded = home.to_string() + "/" + rest;
@@ -3516,7 +3515,7 @@ fn font_filename(font: &FontArtifact) -> Result<String> {
             }
             let expanded_path = Path::new(&expanded);
             if expanded_path.is_absolute() {
-                let macos_fonts_dir = crate::dirs::HOME.join("Library").join("Fonts");
+                let macos_fonts_dir = mise_util::dirs::HOME.join("Library").join("Fonts");
                 for fonts_dir in [font_dir(), macos_fonts_dir] {
                     if let Ok(relative) = expanded_path.strip_prefix(fonts_dir) {
                         return Ok(relative.to_string_lossy().to_string());
@@ -3589,9 +3588,9 @@ fn font_target_path(font: &FontArtifact) -> Result<PathBuf> {
 
 fn font_dir() -> PathBuf {
     if cfg!(target_os = "linux") {
-        crate::env::XDG_DATA_HOME.join("fonts")
+        mise_util::env::XDG_DATA_HOME.join("fonts")
     } else {
-        crate::dirs::HOME.join("Library").join("Fonts")
+        mise_util::dirs::HOME.join("Library").join("Fonts")
     }
 }
 
@@ -3641,7 +3640,7 @@ fn stage_generated_completions(
             file::create_dir_all(parent)?;
         }
         let output = generate_completion_output(&executable, completion, *shell)?;
-        crate::file::write(caskroom_completion, output)?;
+        mise_util::file::write(caskroom_completion, output)?;
     }
     Ok(())
 }

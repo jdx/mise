@@ -5,7 +5,7 @@ use async_trait::async_trait;
 use eyre::bail;
 
 use super::{InstallOpts, PackageRequest, PackageState, PackageStatus, SystemPackageManager};
-use crate::result::Result;
+use eyre::Result;
 
 #[derive(Clone, Copy)]
 enum FlatpakScope {
@@ -106,7 +106,7 @@ impl SystemPackageManager for FlatpakManager {
     }
 
     fn is_available(&self) -> bool {
-        cfg!(target_os = "linux") && crate::file::which("flatpak").is_some()
+        cfg!(target_os = "linux") && mise_util::file::which("flatpak").is_some()
     }
 
     fn unavailable_reason(&self) -> String {

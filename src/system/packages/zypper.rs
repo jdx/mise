@@ -5,9 +5,9 @@ use async_trait::async_trait;
 use eyre::bail;
 
 use super::{InstallOpts, PackageRequest, PackageState, PackageStatus, SystemPackageManager};
-use crate::errors::ProcessError;
-use crate::result::Result;
-use crate::system::sudo;
+use eyre::Result;
+use mise_ui::sudo;
+use mise_util::errors::ProcessError;
 
 /// openSUSE and SUSE Linux Enterprise packages via zypper.
 pub(crate) struct ZypperManager;
@@ -122,15 +122,15 @@ impl SystemPackageManager for ZypperManager {
     /// Both the transaction tool and local RPM query tool are required.
     fn is_available(&self) -> bool {
         cfg!(target_os = "linux")
-            && crate::file::which("zypper").is_some()
-            && crate::file::which("rpm").is_some()
+            && mise_util::file::which("zypper").is_some()
+            && mise_util::file::which("rpm").is_some()
     }
 
     /// Explain the missing platform or executable prerequisite.
     fn unavailable_reason(&self) -> String {
         if !cfg!(target_os = "linux") {
             "only available on linux".to_string()
-        } else if crate::file::which("zypper").is_none() {
+        } else if mise_util::file::which("zypper").is_none() {
             "zypper not found".to_string()
         } else {
             "rpm not found".to_string()
