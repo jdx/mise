@@ -369,6 +369,16 @@ fn codegen_registry(aqua_packages: &[RegistryPackageRow]) {
             (cmd, expected, tools)
         });
         let mut backends = vec![];
+        // Each entry's backend and `[min_version, max_version)` range, to
+        // check that a backend listed more than once never overlaps itself.
+        type Range = (
+            String,
+            Vec<String>,
+            Option<semver::Version>,
+            Option<semver::Version>,
+            Vec<(String, String)>,
+        );
+        let mut ranges: Vec<Range> = vec![];
         for backend in info.get("backends").unwrap().as_array().unwrap() {
             match backend {
                 toml::Value::String(backend) => {
@@ -376,6 +386,7 @@ fn codegen_registry(aqua_packages: &[RegistryPackageRow]) {
                         .strip_prefix("pipx:")
                         .map(|name| format!("pypi:{name}"))
                         .unwrap_or_else(|| backend.clone());
+                    ranges.push((backend.clone(), vec![], None, None, vec![]));
                     backends.push(format!(
                         r##"RegistryBackend{{
                             full: r#"{backend}"#,
@@ -426,6 +437,14 @@ fn codegen_registry(aqua_packages: &[RegistryPackageRow]) {
                             "[{short}] backend min_version must be lower than max_version"
                         );
                     }
+                    let backend_options = parse_options(backend.get("options"));
+                    ranges.push((
+                        full.clone(),
+                        platforms.clone(),
+                        min_version.as_ref().map(|(_, v)| v.clone()),
+                        max_version.as_ref().map(|(_, v)| v.clone()),
+                        backend_options.clone(),
+                    ));
                     let bound_literal = |bound: Option<(String, semver::Version)>| {
                         bound
                             .map(|(value, _)| format!("Some({})", raw_string_literal(&value)))
@@ -448,7 +467,6 @@ fn codegen_registry(aqua_packages: &[RegistryPackageRow]) {
                             format!("Some({})", raw_string_literal(value))
                         })
                         .unwrap_or_else(|| "None".to_string());
-                    let backend_options = parse_options(backend.get("options"));
                     backends.push(format!(
                         r##"RegistryBackend{{
                             full: r#"{full}"#,
@@ -475,6 +493,25 @@ fn codegen_registry(aqua_packages: &[RegistryPackageRow]) {
                     ));
                 }
                 _ => panic!("Unknown backend type"),
+            }
+        }
+        // `lower < upper`, where a missing lower bound is -inf and a missing upper +inf.
+        let below =
+            |lower: &Option<semver::Version>, upper: &Option<semver::Version>| match (lower, upper)
+            {
+                (Some(lower), Some(upper)) => lower.cmp_precedence(upper).is_lt(),
+                _ => true,
+            };
+        for (i, (full, platforms, min, max, options)) in ranges.iter().enumerate() {
+            for (_, other_platforms, other_min, other_max, other_options) in
+                ranges[i + 1..].iter().filter(|(f, ..)| f == full)
+            {
+                assert!(
+                    options == other_options
+                        || !(below(min, other_max) && below(other_min, max))
+                        || platforms_disjoint(platforms, other_platforms),
+                    "[{short}] backend {full} is listed more than once with different options for overlapping min_version/max_version ranges"
+                );
             }
         }
         let os = info
@@ -1322,4 +1359,28 @@ fn codegen_daemon_presets() -> Result<()> {
         code,
     )?;
     Ok(())
+}
+
+/// Whether no platform matches both registry selector lists; mirrors
+/// `registry::platforms_disjoint`.
+fn platforms_disjoint(a: &[String], b: &[String]) -> bool {
+    const ARCHES: [&str; 5] = ["x64", "arm64", "x86", "loongarch64", "riscv64"];
+    let split = |selector: &str| -> (Option<String>, Option<String>) {
+        match selector.split_once('-') {
+            Some((os, arch)) => (Some(os.to_string()), Some(arch.to_string())),
+            None if ARCHES.contains(&selector) => (None, Some(selector.to_string())),
+            None => (Some(selector.to_string()), None),
+        }
+    };
+    let differ =
+        |x: &Option<String>, y: &Option<String>| matches!((x, y), (Some(x), Some(y)) if x != y);
+    !a.is_empty()
+        && !b.is_empty()
+        && a.iter().all(|a| {
+            let (a_os, a_arch) = split(a);
+            b.iter().all(|b| {
+                let (b_os, b_arch) = split(b);
+                differ(&a_os, &b_os) || differ(&a_arch, &b_arch)
+            })
+        })
 }

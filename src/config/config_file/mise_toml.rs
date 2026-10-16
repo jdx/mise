@@ -1428,7 +1428,7 @@ impl MiseToml {
                     if let Some(rt) = crate::registry::REGISTRY.get(ba.short.as_str()) {
                         let full = ba.full();
                         // Get structured options from registry (table-format backends)
-                        let mut registry_opts = rt.backend_options(&full);
+                        let mut registry_opts = rt.backend_options(&full, ba.registry_version());
                         // Also parse inline options from [key=val,...] in the full string
                         if let Some(start) = full.rfind('[')
                             && full.ends_with(']')
