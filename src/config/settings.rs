@@ -100,6 +100,34 @@ impl IdiomaticVersionFileSettings {
 }
 
 static PACKAGE_QUERY_SETTINGS: AtomicBool = AtomicBool::new(false);
+/// Settings files parsed during the current [`load`], so the global-only pass that bootstraps
+/// trust and the trusted pass that follows it read each file once. `None` outside a load.
+static LOAD_PARSE_CACHE: Mutex<
+    Option<std::collections::HashMap<PathBuf, Result<SettingsPartial, String>>>,
+> = Mutex::new(None);
+
+fn parse_settings_file_once(path: &Path) -> Result<SettingsPartial> {
+    if let Some(cached) = LOAD_PARSE_CACHE
+        .lock()
+        .unwrap()
+        .as_ref()
+        .and_then(|cache| cache.get(path))
+    {
+        return cached.clone().map_err(|err| eyre::eyre!(err));
+    }
+    let parsed = Settings::parse_settings_file(path);
+    if let Some(cache) = LOAD_PARSE_CACHE.lock().unwrap().as_mut() {
+        cache.insert(
+            path.to_path_buf(),
+            parsed
+                .as_ref()
+                .map(Clone::clone)
+                .map_err(|err| err.to_string()),
+        );
+    }
+    parsed
+}
+
 /// Set while [`load`] has published its global-only bootstrap snapshot, so the cache reads as
 /// loaded although the real settings are still being built.
 static BOOTSTRAPPING: AtomicBool = AtomicBool::new(false);
@@ -1476,7 +1504,7 @@ impl SettingsInternal for Settings {
                 }
                 SettingsTrustPolicy::GlobalOnly => crate::config::is_global_config(path),
             })
-            .filter_map(|path| match Self::parse_settings_file(&path) {
+            .filter_map(|path| match parse_settings_file_once(&path) {
                 Ok(config) => Some(config),
                 Err(err) => {
                     // Name the file. mise reads several settings files and two of them can fail
@@ -1674,11 +1702,20 @@ fn load() -> Result<Arc<Settings>> {
     let previous = mise_settings::is_loaded()
         .then(mise_settings::last_cached)
         .flatten();
-    let bootstrap = Settings::load_sources_from(None, SettingsLoadPolicy::GLOBAL_HIERARCHY)?;
+    *LOAD_PARSE_CACHE.lock().unwrap() = Some(std::collections::HashMap::new());
+    let bootstrap = Settings::load_sources_from(None, SettingsLoadPolicy::GLOBAL_HIERARCHY);
+    let bootstrap = match bootstrap {
+        Ok(bootstrap) => bootstrap,
+        Err(err) => {
+            *LOAD_PARSE_CACHE.lock().unwrap() = None;
+            return Err(err);
+        }
+    };
     mise_settings::store(Arc::new(bootstrap));
     BOOTSTRAPPING.store(true, Ordering::Relaxed);
     let trusted = Settings::load_sources_from(None, SettingsLoadPolicy::TRUSTED_HIERARCHY);
     BOOTSTRAPPING.store(false, Ordering::Relaxed);
+    *LOAD_PARSE_CACHE.lock().unwrap() = None;
     settings = match trusted {
         Ok(settings) => settings,
         Err(err) => {
@@ -2257,6 +2294,26 @@ mod tests {
     /// The shape #5791 reported: the setting is accepted into the file, so without this it
     /// survives into the partial and `mise settings get` echoes it back while the config
     /// loader — which already ran — never saw it.
+    /// The global-only pass that bootstraps trust and the trusted pass after it both read the
+    /// global config, but a file must only be parsed once per load.
+    #[test]
+    fn test_load_parses_each_settings_file_once() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        std::fs::write(&path, "[settings]\nquiet = true\n").unwrap();
+
+        *LOAD_PARSE_CACHE.lock().unwrap() = Some(std::collections::HashMap::new());
+        let first = parse_settings_file_once(&path).unwrap();
+        std::fs::write(&path, "[settings]\nquiet = false\n").unwrap();
+        let second = parse_settings_file_once(&path).unwrap();
+        *LOAD_PARSE_CACHE.lock().unwrap() = None;
+        let third = parse_settings_file_once(&path).unwrap();
+
+        assert_eq!(first.quiet, Some(true));
+        assert_eq!(second.quiet, Some(true));
+        assert_eq!(third.quiet, Some(false));
+    }
+
     #[test]
     fn test_parse_settings_file_strips_env_only_settings() {
         let dir = tempfile::tempdir().unwrap();
