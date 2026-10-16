@@ -46,3 +46,31 @@ assert_variants
 mise uninstall --all
 mise install
 assert_variants
+
+# The reverse split: the current platform has no options and the other
+# platform's variant does. Reinstalling an installed version must not drop
+# the other variant.
+cat <<EOF2 >mise.toml
+[tools."http:lock-option-variants"]
+version = "1.0.0"
+bin_path = "hello-world-1.0.0/bin"
+postinstall = "chmod +x \$MISE_TOOL_INSTALL_PATH/hello-world-1.0.0/bin/hello-world"
+
+[tools."http:lock-option-variants".platforms."$PLATFORM"]
+url = "https://mise.jdx.dev/test-fixtures/hello-world-1.0.0.tar.gz"
+checksum = "sha256:dbca4f08377d70dc0828f5822fc47ecec3895cd9a6dacbc54cc984d346a571af"
+
+[tools."http:lock-option-variants".platforms."$OTHER_PLATFORM"]
+url = "https://mise.jdx.dev/test-fixtures/hello-world-1.0.0.tar.gz"
+checksum = "sha256:dbca4f08377d70dc0828f5822fc47ecec3895cd9a6dacbc54cc984d346a571af"
+format = "tar.gz"
+EOF2
+
+rm -f mise.lock
+mise uninstall --all
+mise lock --platform "$PLATFORM,$OTHER_PLATFORM"
+assert_variants
+mise install
+assert_variants
+mise install
+assert_variants

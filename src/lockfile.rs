@@ -4171,10 +4171,9 @@ fn build_rekey_decisions(
     versions: &[ToolVersion],
     existing_tools: Option<&Vec<LockfileTool>>,
 ) -> RekeyDecisions {
-    let legacy_platforms: HashMap<&str, BTreeSet<&str>> = existing_tools
+    let locked_platforms: HashMap<&str, BTreeSet<&str>> = existing_tools
         .into_iter()
         .flatten()
-        .filter(|tool| tool.options.is_empty())
         .fold(HashMap::new(), |mut platforms, tool| {
             platforms
                 .entry(tool.version.as_str())
@@ -4185,7 +4184,7 @@ fn build_rekey_decisions(
     let mut decisions = HashMap::new();
 
     for tv in versions {
-        let Some(platforms) = legacy_platforms.get(tv.version.as_str()) else {
+        let Some(platforms) = locked_platforms.get(tv.version.as_str()) else {
             continue;
         };
         for platform_key in platforms {
@@ -4215,6 +4214,8 @@ fn build_rekey_decisions(
 /// Existing empty-options entries are rekeyed platform-by-platform using the
 /// backend's resolved options. This migrates legacy entries without guessing
 /// from platform overlap while preserving data when resolution is ambiguous.
+/// Existing non-empty-options platforms are kept while they still resolve to
+/// the same options, so a host install does not drop other platforms' variants.
 fn merge_tool_entries<F>(
     entries: Vec<LockfileTool>,
     existing_tools: Option<&Vec<LockfileTool>>,
@@ -4276,6 +4277,26 @@ where
                             .or_insert(info.clone());
                     }
                     entry.specifiers.extend(existing_tool.specifiers.clone());
+                } else if fresh_versions.contains(&existing_tool.version) {
+                    // A host install only produces its own variant. Keep other
+                    // platforms that still resolve to this variant, such as
+                    // linux entries locked from a macOS host.
+                    for (platform_key, info) in &existing_tool.platforms {
+                        let still_resolves = Platform::parse(platform_key)
+                            .ok()
+                            .and_then(|platform| resolve(&existing_tool.version, &platform))
+                            .is_some_and(|options| options == existing_tool.options);
+                        if still_resolves {
+                            by_key
+                                .entry(key.clone())
+                                .or_insert_with(|| LockfileTool {
+                                    platforms: BTreeMap::new(),
+                                    ..existing_tool.clone()
+                                })
+                                .platforms
+                                .insert(platform_key.clone(), info.clone());
+                        }
+                    }
                 }
                 continue;
             }
@@ -7456,6 +7477,66 @@ url = "https://example.com/hk-1.58.1-mac"
         let kept = entries.iter().find(|t| t.version == "1.57.0").unwrap();
         assert_eq!(kept.backend.as_deref(), Some("aqua:jdx/hk"));
         assert!(reread.has_platforms("hk", "1.57.0"));
+    }
+
+    #[test]
+    fn test_merge_tool_entries_preserves_other_platform_options_variant() {
+        let linux_options =
+            BTreeMap::from([("precompiled_os".to_string(), "ubuntu-24.04".to_string())]);
+        let macos = || LockfileTool {
+            version: "29.1.2".to_string(),
+            backend: Some("core:erlang".to_string()),
+            specifiers: BTreeSet::new(),
+            options: BTreeMap::new(),
+            platforms: BTreeMap::from([(
+                "macos-arm64".to_string(),
+                PlatformInfo {
+                    url: Some("https://example.com/otp-macos.tar.gz".to_string()),
+                    ..Default::default()
+                },
+            )]),
+            aube: None,
+            uv: None,
+        };
+        let existing = vec![
+            macos(),
+            LockfileTool {
+                version: "29.1.2".to_string(),
+                backend: Some("core:erlang".to_string()),
+                specifiers: BTreeSet::new(),
+                options: linux_options.clone(),
+                platforms: BTreeMap::from([(
+                    "linux-x64".to_string(),
+                    PlatformInfo {
+                        url: Some("https://example.com/otp-linux.tar.gz".to_string()),
+                        ..Default::default()
+                    },
+                )]),
+                aube: None,
+                uv: None,
+            },
+        ];
+
+        // Installing on macOS only produces the macOS entry.
+        let (merged, consumed) =
+            merge_tool_entries(vec![macos()], Some(&existing), |_, platform| {
+                if platform.is_linux() {
+                    Some(linux_options.clone())
+                } else {
+                    Some(BTreeMap::new())
+                }
+            });
+
+        assert!(consumed.is_empty());
+        assert_eq!(merged.len(), 2, "linux variant was dropped: {merged:?}");
+        let linux = merged
+            .iter()
+            .find(|tool| tool.options == linux_options)
+            .unwrap();
+        assert_eq!(
+            linux.platforms["linux-x64"].url.as_deref(),
+            Some("https://example.com/otp-linux.tar.gz")
+        );
     }
 
     #[test]
