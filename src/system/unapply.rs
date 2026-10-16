@@ -16,8 +16,8 @@ use std::path::{Path, PathBuf};
 
 use eyre::Result;
 
-use crate::config::Config;
 use crate::path::PathExt;
+use crate::system::host::Config;
 use crate::system::managed_files::{ManagedDirectoryRequest, ManagedFileRequest, ManagedState};
 use crate::system::resources::ResourceAction;
 use crate::system::services_common::ServiceState;
@@ -583,8 +583,8 @@ fn uncovered_sections(config: &Config, environments: &[String]) -> Vec<Uncovered
     // Independent bootstrap roots keep their own config maps, and a module can
     // declare all of its packages in one of them.
     for config_files in config.bootstrap_config_maps() {
-        for (path, config_file) in config_files {
-            if !crate::config::environments_for_config_path(path)
+        for (path, config_file) in &config_files {
+            if !crate::system::host::environments_for_config_path(path)
                 .iter()
                 .any(|environment| environments.iter().any(|name| name == environment))
             {

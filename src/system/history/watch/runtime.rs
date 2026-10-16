@@ -19,7 +19,7 @@ use tokio::sync::mpsc;
 use super::noise::{self, NoisyPath, NoisyRecord};
 use super::plan::{Anchor, Mode, PathKind, WatchPlan};
 use super::schedule::{self, Adjustment, Limits, PersistedSchedule, Schedule};
-use crate::config::{Config, Settings};
+use crate::config::Settings;
 use crate::file::display_path;
 use crate::lock_file::LockFile;
 use crate::system::history::checkpoint::{Draft, Outcome, Store};
@@ -1235,7 +1235,7 @@ impl State {
 
     /// Reloads the configuration; `Ok(false)` when history was disabled.
     async fn reload(&mut self) -> Result<bool> {
-        Config::reset().await?;
+        crate::system::host::reload_config().await?;
         if !Settings::get().history.enabled {
             return Ok(false);
         }

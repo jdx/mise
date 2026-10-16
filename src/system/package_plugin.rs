@@ -389,7 +389,7 @@ impl PackagePluginManager {
 
     pub async fn apply_prune_plan(&self, plan: &PluginPrunePlan) -> Result<usize> {
         let _lock = self.operation_lock()?;
-        let config = Config::reset().await?;
+        let config = crate::system::host::reload_config().await?;
         let configured =
             crate::system::package_requests_for_manager_from_config_and_tracked_config_files(
                 &config, &self.name,

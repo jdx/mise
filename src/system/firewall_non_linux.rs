@@ -1,6 +1,6 @@
 use eyre::{Result, bail};
 
-use crate::config::Config;
+use crate::system::host::Config;
 use crate::system::resources::{ResourceAction, ResourceId, ResourcePlan};
 pub use mise_system_config::firewall::FirewallTomlConfig;
 
@@ -65,7 +65,7 @@ pub fn apply_privileged_plan_from_stdin() -> Result<()> {
 }
 
 fn configured(config: &Config) -> bool {
-    config.config_files.values().any(|cf| {
+    config.config_files().values().any(|cf| {
         cf.bootstrap_config()
             .and_then(|bootstrap| bootstrap.linux.firewall)
             .is_some_and(|firewall| {

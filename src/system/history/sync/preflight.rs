@@ -3,16 +3,14 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 
 use eyre::{Result, bail};
 
 use super::layout::{Roots, is_configuration};
 use super::reconcile::{Object, PathPlan};
-use crate::config::ConfigMap;
-use crate::config::config_file::mise_toml::MiseToml;
 use crate::system::history::shadow::HistoryRepo;
 use crate::system::history::tracked::TrackedSet;
+use crate::system::host::ConfigMap;
 
 pub(super) fn prospective(
     repo: &HistoryRepo,
@@ -35,7 +33,7 @@ pub(super) fn prospective(
         return Ok(tracked.clone());
     }
     let paths: BTreeSet<PathBuf> = incoming.keys().cloned().collect();
-    let candidates = crate::config::config_files_with_incoming(&roots.config_dir, &paths);
+    let candidates = crate::system::host::config_files_with_incoming(&roots.config_dir, &paths);
     // Validate every body we will write, even a conf.d file not selected
     // by this machine's explicit MISE_GLOBAL_CONFIG_FILE override.
     let mut incoming_files = ConfigMap::new();
@@ -55,7 +53,7 @@ pub(super) fn prospective(
             );
         }
         let body = String::from_utf8(repo.cat_object(oid)?)?;
-        let parsed = MiseToml::for_history_preflight(&body, path)?;
+        let parsed = crate::system::host::parse_config_body(&body, path)?;
         if parsed
             .history_config()
             .is_some_and(|history| history.origin.is_some())
@@ -65,10 +63,7 @@ pub(super) fn prospective(
                 path.display()
             );
         }
-        incoming_files.insert(
-            path.clone(),
-            Arc::new(parsed) as Arc<dyn crate::config::config_file::ConfigFile>,
-        );
+        incoming_files.insert(path.clone(), parsed);
     }
     crate::system::files::validate_incoming_files(&incoming_files)?;
     let global = match &*crate::env::MISE_GLOBAL_CONFIG_FILE {
@@ -77,7 +72,7 @@ pub(super) fn prospective(
     };
     let mut files = ConfigMap::new();
     let mut excludes = vec![];
-    for path in crate::config::system_config_files()
+    for path in crate::system::host::system_config_files()
         .into_iter()
         .chain(global)
     {
@@ -99,14 +94,11 @@ pub(super) fn prospective(
                 Err(err) => return Err(err.into()),
             },
         };
-        let parsed = MiseToml::for_history_preflight(&body, &path)?;
+        let parsed = crate::system::host::parse_config_body(&body, &path)?;
         if let Some(history) = parsed.history_config() {
             excludes.extend(history.exclude);
         }
-        files.insert(
-            path,
-            Arc::new(parsed) as Arc<dyn crate::config::config_file::ConfigFile>,
-        );
+        files.insert(path, parsed);
     }
     // File composition expects highest precedence first.
     files.reverse();

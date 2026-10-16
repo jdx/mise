@@ -12,7 +12,7 @@ use ipnet::IpNet;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
-use crate::config::Config;
+use crate::system::host::Config;
 use crate::system::resources::{ResourceAction, ResourceId, ResourcePlan};
 pub use mise_system_config::firewall::{
     FirewallAction, FirewallBackend, FirewallDirection, FirewallPolicy, FirewallPortToml,
@@ -131,7 +131,7 @@ pub fn prepare_request_from_config(config: &Config) -> Result<Option<FirewallReq
     let mut merged = None;
     // config_files is ordered local -> global; merge global -> local so a
     // more local scalar or same-named rule overrides its inherited value.
-    for cf in config.config_files.values().rev() {
+    for cf in config.config_files().values().rev() {
         if let Some(bootstrap) = cf.bootstrap_config()
             && let Some(firewall) = bootstrap.linux.firewall
         {

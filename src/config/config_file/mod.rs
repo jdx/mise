@@ -288,6 +288,10 @@ pub trait ConfigFile: Debug + Send + Sync {
     ) -> Option<mise_system_config::dotfiles::DotfileGroupsTomlConfig> {
         None
     }
+
+    fn history_config(&self) -> Option<mise_system_config::history::HistoryTomlConfig> {
+        None
+    }
 }
 
 impl dyn ConfigFile {

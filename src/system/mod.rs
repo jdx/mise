@@ -39,8 +39,8 @@ use eyre::bail;
 use indexmap::IndexMap;
 use serde::Deserialize;
 
-use crate::config::{Config, ConfigMap};
 use crate::system::defaults::{DefaultsRequest, DefaultsValue, HostScope, canonical_domain};
+use crate::system::host::{Config, ConfigMap};
 use crate::system::launchd::{LaunchdRequest, LaunchdTomlConfig};
 use crate::system::packages::{PackageRequest, SystemPackageManager};
 use crate::system::repos::{RepoRequest, RepoTomlConfig};
@@ -56,6 +56,7 @@ pub mod accounts;
 #[cfg(not(target_os = "linux"))]
 #[path = "accounts_non_linux.rs"]
 pub mod accounts;
+pub mod bootstrap_host;
 pub mod compose;
 pub mod defaults;
 pub mod deps;
@@ -71,6 +72,7 @@ pub mod firewall;
 pub mod git_prerequisites;
 pub mod history;
 pub mod hooks;
+pub mod host;
 pub mod launchd;
 pub mod login_items;
 pub mod login_shell;
@@ -105,7 +107,7 @@ pub mod user_services;
 
 pub fn plugins_from_config(config: &Config) -> IndexMap<String, String> {
     let mut plugins = IndexMap::new();
-    for cf in config.config_files.values().rev() {
+    for cf in config.config_files().values().rev() {
         if let Some(bootstrap) = cf.bootstrap_config() {
             for (name, url) in bootstrap.plugins {
                 plugins.insert(name, url);
@@ -365,7 +367,7 @@ pub fn attach_brew_tap_urls(config: &Config, by_mgr: &mut IndexMap<String, Vec<P
 /// all.
 pub fn packages_from_config(config: &Config) -> Result<Vec<ManagerPackages>> {
     let brew_taps = brew_taps_from_config(config);
-    packages_from_config_files_with_brew_taps(&config.config_files, &brew_taps, true)
+    packages_from_config_files_with_brew_taps(&config.config_files(), &brew_taps, true)
 }
 
 /// Merge raw `[bootstrap.packages]` declarations inherited by `target` without
@@ -375,7 +377,7 @@ pub fn package_configs_for_target(
     config: &Config,
     target: &Path,
 ) -> IndexMap<String, PackageTomlConfig> {
-    package_configs_from_config_files_for_target(&config.config_files, target)
+    package_configs_from_config_files_for_target(&config.config_files(), target)
 }
 
 /// Package requests for declared package plugins that are not installed yet.
@@ -404,7 +406,7 @@ pub(crate) fn pending_plugin_packages_from_config_including_disabled(
         .into_iter()
         .map(|manager| manager.name().to_string())
         .collect::<std::collections::HashSet<_>>();
-    package_requests_from_config_files(&config.config_files, &brew_taps, true)
+    package_requests_from_config_files(&config.config_files(), &brew_taps, true)
         .0
         .into_iter()
         .filter(|(name, _)| declared.contains_key(name) && !installed.contains(name))
@@ -424,10 +426,13 @@ pub(crate) fn package_manager_is_enabled(name: &str) -> bool {
 /// still referenced by other projects.
 #[cfg(unix)]
 pub async fn packages_from_config_and_tracked_config_files(
-    config: &Arc<Config>,
+    config: &Config,
 ) -> Result<Vec<ManagerPackages>> {
     let tracked_config_files = config.get_tracked_config_files().await?;
-    packages_from_config_files_and_tracked_config_files(&config.config_files, &tracked_config_files)
+    packages_from_config_files_and_tracked_config_files(
+        &config.config_files(),
+        &tracked_config_files,
+    )
 }
 
 /// Paths of the current and tracked config files whose `[bootstrap.packages]`
@@ -435,13 +440,13 @@ pub async fn packages_from_config_and_tracked_config_files(
 /// another project.
 #[cfg(unix)]
 pub async fn config_files_declaring_package(
-    config: &Arc<Config>,
+    config: &Config,
     manager: &str,
     name: &str,
 ) -> Result<Vec<PathBuf>> {
     let tracked = config.get_tracked_config_files().await?;
     Ok(config_files_declaring_package_in(
-        config.config_files.iter().chain(&tracked),
+        config.config_files().iter().chain(&tracked),
         manager,
         name,
     ))
@@ -452,7 +457,7 @@ fn config_files_declaring_package_in<'a>(
     config_files: impl Iterator<
         Item = (
             &'a PathBuf,
-            &'a Arc<dyn crate::config::config_file::ConfigFile>,
+            &'a Arc<dyn crate::system::host::ConfigFileView>,
         ),
     >,
     manager: &str,
@@ -483,12 +488,12 @@ fn config_files_declaring_package_in<'a>(
 /// keeps plugin pruning portable when shared configs contain host-specific
 /// package managers.
 pub async fn package_requests_for_manager_from_config_and_tracked_config_files(
-    config: &Arc<Config>,
+    config: &Config,
     manager: &str,
 ) -> Result<Vec<PackageRequest>> {
     let tracked = config.get_tracked_config_files().await?;
     let mut requests =
-        package_requests_from_config_files(&config.config_files, &IndexMap::new(), false)
+        package_requests_from_config_files(&config.config_files(), &IndexMap::new(), false)
             .0
             .shift_remove(manager)
             .unwrap_or_default();
@@ -848,7 +853,7 @@ fn package_configs_from_config_files_for_target(
 }
 
 fn merge_package_configs<'a>(
-    config_files: impl DoubleEndedIterator<Item = &'a Arc<dyn crate::config::config_file::ConfigFile>>,
+    config_files: impl DoubleEndedIterator<Item = &'a Arc<dyn crate::system::host::ConfigFileView>>,
 ) -> IndexMap<String, PackageTomlConfig> {
     let mut merged: IndexMap<String, PackageTomlConfig> = IndexMap::new();
     // config_files is ordered local -> global; reverse for global -> local
@@ -868,9 +873,14 @@ fn merge_package_configs<'a>(
 /// a more local config overrides the value a global config declared. Unsupported
 /// value shapes warn (forward compatibility) and are skipped.
 pub fn defaults_from_config(config: &Config) -> Vec<DefaultsRequest> {
+    defaults_from_config_files(&config.config_files())
+}
+
+/// [`defaults_from_config`] against a specific set of config files.
+pub fn defaults_from_config_files(config_files: &ConfigMap) -> Vec<DefaultsRequest> {
     let mut merged = IndexMap::new();
     // config_files is ordered local -> global; reverse for global -> local
-    for cf in config.config_files.values().rev() {
+    for cf in config_files.values().rev() {
         if let Some(sys) = cf.bootstrap_config() {
             let mut friendly: IndexMap<(String, String), toml::Value> = IndexMap::new();
             let mut raw: IndexMap<(String, String), toml::Value> = IndexMap::new();
@@ -991,7 +1001,7 @@ pub fn login_items_from_config(config: &Config) -> login_items::LoginItemsReques
 pub fn launchd_from_config(config: &Config) -> Vec<LaunchdRequest> {
     let mut merged: IndexMap<String, (Templated<LaunchdTomlConfig>, PathBuf)> = IndexMap::new();
     // config_files is ordered local -> global; reverse for global -> local
-    for (path, cf) in config.config_files.iter().rev() {
+    for (path, cf) in config.config_files().iter().rev() {
         if let Some(sys) = cf.bootstrap_config() {
             for (name, agent) in sys.macos.launchd.agents {
                 // Report before merging: a typo in an agent a more local config
@@ -1033,7 +1043,7 @@ fn render_repo_str(config: &Config, config_path: &Path, path_raw: &str) -> Resul
     }
     let mut ctx = config.bootstrap_tera_ctx(config_path).clone();
     if ctx.get("config_root").is_none() {
-        let config_root = crate::config::config_file::config_root::config_root(config_path);
+        let config_root = crate::system::host::config_root(config_path);
         ctx.insert("config_root", &config_root);
     }
     let mut tera = crate::tera::get_tera_without_exec(config_path.parent());
@@ -1048,7 +1058,7 @@ fn render_repo_str(config: &Config, config_path: &Path, path_raw: &str) -> Resul
 pub fn repos_from_config(config: &Config) -> Vec<RepoRequest> {
     let mut merged: IndexMap<PathBuf, RepoRequest> = IndexMap::new();
     // config_files is ordered local -> global; reverse for global -> local
-    for cf in config.config_files.values().rev() {
+    for cf in config.config_files().values().rev() {
         if let Some(sys) = cf.bootstrap_config() {
             for (path_raw, repo) in sys.repos {
                 let rendered = render_repo_str(config, cf.get_path(), &path_raw).and_then(|path| {
@@ -1606,7 +1616,7 @@ fn merge_trackpad_defaults(
 pub fn systemd_from_config(config: &Config) -> Vec<SystemdRequest> {
     let mut merged: IndexMap<String, (Templated<SystemdTomlConfig>, PathBuf)> = IndexMap::new();
     // config_files is ordered local -> global; reverse for global -> local
-    for (path, cf) in config.config_files.iter().rev() {
+    for (path, cf) in config.config_files().iter().rev() {
         if let Some(sys) = cf.bootstrap_config() {
             for (name, unit) in sys.linux.systemd.units {
                 // Report before merging: a typo in a unit a more local config
@@ -1642,7 +1652,7 @@ pub fn systemd_from_config(config: &Config) -> Vec<SystemdRequest> {
 pub fn login_shell_from_config(config: &Config) -> Option<login_shell::LoginShellRequest> {
     let mut shell = None;
     // config_files is ordered local -> global; reverse for global -> local
-    for cf in config.config_files.values().rev() {
+    for cf in config.config_files().values().rev() {
         if let Some(sys) = cf.bootstrap_config()
             && let Some(login_shell) = sys.user.login_shell
         {
@@ -1677,7 +1687,7 @@ pub fn login_shell_from_config(config: &Config) -> Option<login_shell::LoginShel
 /// `[dotfiles]` edits for the same rc file/id win over the generated shell
 /// activation edit.
 pub fn shell_activation_from_config(config: &Config) -> Vec<ShellActivationRequest> {
-    shell_activation_from_config_files(&config.config_files)
+    shell_activation_from_config_files(&config.config_files())
 }
 
 pub fn shell_activation_from_config_files(config_files: &ConfigMap) -> Vec<ShellActivationRequest> {
@@ -1932,7 +1942,7 @@ fn shell_activation_setting_display(setting: Option<ShellActivationMode>) -> &'s
 /// Hooks are additive and ordered global -> local. A hook value can be a string
 /// command, an array of string commands, or a table with a `run` string/array.
 pub fn hooks_from_config(config: &Config) -> Vec<hooks::BootstrapHook> {
-    hooks_from_config_files(&config.config_files)
+    hooks_from_config_files(&config.config_files())
 }
 
 pub(crate) fn hooks_from_config_files(config_files: &ConfigMap) -> Vec<hooks::BootstrapHook> {
@@ -1959,11 +1969,10 @@ pub fn packages_from_specs_with_config(
     specs: &[String],
     config: Option<&Config>,
 ) -> eyre::Result<Vec<ManagerPackages>> {
-    let empty = ConfigMap::default();
-    packages_from_specs_with_config_files(
-        specs,
-        config.map_or(&empty, |config| &config.config_files),
-    )
+    let config_files = config
+        .map(|config| config.config_files())
+        .unwrap_or_default();
+    packages_from_specs_with_config_files(specs, &config_files)
 }
 
 /// `packages_from_specs_with_config` against a specific set of config files.
@@ -2225,7 +2234,7 @@ fn snap_options_for(
 /// invalid entry. Export must either represent the entire selection or fail.
 pub fn nix_packages_for_export(config: &Config) -> Vec<(String, PackageTomlConfig)> {
     let environments = &crate::env::MISE_ENV_WITH_AUTO;
-    package_configs_from_config_files(&config.config_files)
+    package_configs_from_config_files(&config.config_files())
         .into_iter()
         .filter(|(spec, package)| {
             spec.starts_with("nix:")
@@ -2237,7 +2246,7 @@ pub fn nix_packages_for_export(config: &Config) -> Vec<(String, PackageTomlConfi
 }
 
 pub fn brew_taps_from_config(config: &Config) -> IndexMap<String, String> {
-    brew_taps_from_config_files(&config.config_files)
+    brew_taps_from_config_files(&config.config_files())
 }
 
 /// `[bootstrap.apt.sources]` across `config_files`: a more local config
@@ -2359,7 +2368,7 @@ pub fn declared_packages_in_file(path: &Path) -> eyre::Result<IndexMap<String, P
     }
     use eyre::WrapErr;
 
-    if !path.exists() || crate::config::safe_mode_ignores_bootstrap(path) {
+    if !path.exists() || crate::system::host::safe_mode_ignores_bootstrap(path) {
         return Ok(IndexMap::new());
     }
     let file: File = toml::from_str(&crate::file::read_to_string(path)?)
@@ -2397,7 +2406,7 @@ pub fn attach_snap_options(
 /// `[bootstrap.dnf.repos]` they install from, for callers that build requests
 /// without the config.
 pub fn attach_package_sources(config: &Config, mgrs: &mut [ManagerPackages]) {
-    for (manager, sources) in package_sources_from_config_files(&config.config_files) {
+    for (manager, sources) in package_sources_from_config_files(&config.config_files()) {
         for mp in mgrs.iter_mut().filter(|mp| mp.manager.name() == manager) {
             mp.options = sources.clone();
         }
@@ -2494,8 +2503,8 @@ fn resolve_managers(
                 // unsupported there
                 if cfg!(windows) && name == "brew" {
                     debug!("system package manager 'brew' is not supported on windows");
-                } else if crate::config::is_loaded()
-                    && plugins_from_config(&crate::config::Config::get_()).contains_key(&name)
+                } else if crate::system::host::loaded_config()
+                    .is_some_and(|config| plugins_from_config(&*config).contains_key(&name))
                 {
                     warn!(
                         "unknown bootstrap package manager '{name}' in [bootstrap.packages] — declared in [bootstrap.plugins] but not installed; run `mise bootstrap`"
@@ -2515,7 +2524,7 @@ fn resolve_managers(
 mod tests {
     use super::*;
     #[cfg(unix)]
-    use crate::config::config_file::{ConfigFile, mise_toml::MiseToml};
+    use crate::system::host::ConfigFileView;
     #[cfg(unix)]
     use std::sync::Arc;
 
@@ -2551,7 +2560,7 @@ mod tests {
                 crate::file::create_dir_all(parent)?;
             }
             crate::file::write(&path, contents)?;
-            let cf: Arc<dyn ConfigFile> = Arc::new(MiseToml::from_file(&path)?);
+            let cf: Arc<dyn ConfigFileView> = crate::system::host::parse_config_file(&path)?;
             config_files.insert(path, cf);
         }
         Ok((tmp, config_files))
@@ -4101,7 +4110,7 @@ persistent-apps = []"#;
 domain = "com.apple.dock"
 key = "persistent-apps"
 value = []"#;
-        let config = Config::get().await?;
+        let _config = crate::system::host::config().await?;
         for (local, global, expected_friendly) in [
             (friendly.to_string(), raw, true),
             (raw.to_string(), friendly, false),
@@ -4110,7 +4119,7 @@ value = []"#;
         ] {
             let (_tmp, files) =
                 config_map_from_toml(&[("local.toml", &local), ("global.toml", global)])?;
-            let requests = defaults_from_config(&config.with_config_files(files));
+            let requests = defaults_from_config_files(&files);
             assert_eq!(requests.len(), 1);
             assert_eq!(requests[0].dock_apps, expected_friendly);
             assert_eq!(requests[0].key, "persistent-apps");

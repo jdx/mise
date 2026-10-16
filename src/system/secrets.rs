@@ -9,8 +9,8 @@ use serde::Serialize;
 use serde_json::Value as JsonValue;
 use tera::{Kwargs, State, TeraResult, Value};
 
-use crate::config::{Config, ConfigMap};
 use crate::env_diff::EnvMap;
+use crate::system::host::{Config, ConfigMap};
 use crate::system::resources::ResourceOrigin;
 use crate::tera::{
     BASE_CONTEXT, TeraEngine, get_tera, get_tera_for_oci, get_tera_v2, render_str, render_str_v2,
@@ -79,7 +79,7 @@ struct SecretUnavailable {
 pub(crate) fn declarations_from_config(config: &Config) -> Result<Vec<SecretDeclaration>> {
     let mut merged: IndexMap<String, (SecretDeclaration, ResourceOrigin)> = IndexMap::new();
     for config_files in config.bootstrap_config_maps() {
-        for (name, declaration) in secrets_from_config_files(config_files)? {
+        for (name, declaration) in secrets_from_config_files(&config_files)? {
             if let Some(existing) = merged.get(&name) {
                 if existing.0 == declaration.0 {
                     continue;
@@ -108,7 +108,7 @@ fn secrets_from_config_files(
             let origin = ResourceOrigin {
                 config: path.clone(),
                 config_root: cf.config_root(),
-                environment: crate::config::environments_for_config_path(path),
+                environment: crate::system::host::environments_for_config_path(path),
                 source: None,
             };
             for (name, declaration) in bootstrap.secrets {
@@ -241,9 +241,10 @@ impl SecretValues {
         if let Some((config, config_path)) = config
             && !config
                 .selected_bootstrap_config_maps()
+                .iter()
                 .any(|(_, files)| files.contains_key(config_path))
         {
-            context.insert("vars", &config.vars);
+            context.insert("vars", &config.vars());
         }
         context.insert("config_root", base);
         context.insert("target", target);
@@ -300,7 +301,7 @@ impl SecretValues {
             .map_err(|_| eyre::eyre!("bootstrap secret resolver is unavailable"))?;
         if let Some(config) = config {
             config.add_redactions_excluding(
-                resolution.redaction_env.keys().cloned(),
+                resolution.redaction_env.keys().cloned().collect(),
                 &resolution.redaction_env,
                 &BTreeSet::new(),
             );

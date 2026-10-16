@@ -7,7 +7,7 @@ use eyre::{Result, bail, eyre};
 use indexmap::{IndexMap, IndexSet};
 use serde::Deserialize;
 
-use crate::config::{Config, ConfigMap};
+use crate::system::host::{Config, ConfigMap};
 use crate::system::resources::{ResourceAction, ResourceId, ResourceOrigin, ResourcePlan};
 #[cfg(test)]
 use crate::system::templating::Templated;
@@ -75,7 +75,7 @@ struct ComposeContainer {
 pub fn prepare_requests_from_config(config: &Config) -> Result<Vec<ComposeRequest>> {
     let mut composed: IndexMap<String, (ComposeTomlConfig, ResourceOrigin)> = IndexMap::new();
     for config_files in config.bootstrap_config_maps() {
-        for (name, declaration) in compose_from_config_files(config, config_files)? {
+        for (name, declaration) in compose_from_config_files(config, &config_files)? {
             if let Some(existing) = composed.get(&name) {
                 if existing.0 == declaration.0 {
                     continue;
@@ -107,7 +107,7 @@ fn compose_from_config_files(
             let origin = ResourceOrigin {
                 config: path.clone(),
                 config_root: cf.config_root(),
-                environment: crate::config::environments_for_config_path(path),
+                environment: crate::system::host::environments_for_config_path(path),
                 source: None,
             };
             for (name, project) in bootstrap.compose {
