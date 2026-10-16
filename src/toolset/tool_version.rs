@@ -205,8 +205,16 @@ impl ToolVersion {
         opts.apply_before_date_for_tool(request.ba(), minimum_release_age.as_deref())?;
 
         trace!("resolving {} {}", &request, opts);
+        // A link is chosen by what the request means, so expand aliases (`lts` -> `24`) first.
+        let linked_query = match request.backend() {
+            Ok(backend) => config
+                .resolve_alias(&backend, &request.version())
+                .await
+                .unwrap_or_else(|_| request.version()),
+            Err(_) => request.version(),
+        };
         if opts.use_locked_version
-            && !has_linked_version(request.ba(), &request.version())
+            && !has_linked_version(request.ba(), &linked_query)
             && let Some(lt) = request.lockfile_resolve(config)?
         {
             return Ok(Self::from_lockfile(request.clone(), lt).with_before_date(opts.before_date));
@@ -230,7 +238,7 @@ impl ToolVersion {
             request,
             ToolRequest::Prefix { .. } | ToolRequest::Ref { .. }
         ) {
-            Self::ensure_unlocked_resolution_allowed(config, &request, &opts)?;
+            Self::ensure_unlocked_resolution_allowed(config, &request, &linked_query, &opts)?;
         }
         let tv = match request.clone() {
             ToolRequest::Version { version: v, .. } => {
@@ -760,6 +768,7 @@ impl ToolVersion {
     fn ensure_unlocked_resolution_allowed(
         config: &Config,
         request: &ToolRequest,
+        linked_query: &str,
         opts: &ResolveOptions,
     ) -> Result<()> {
         let settings = Settings::get();
@@ -768,7 +777,7 @@ impl ToolVersion {
         if (invocation_locked || tool_config_locked)
             && opts.use_locked_version
             && settings.lockfile_enabled()
-            && !has_linked_version(request.ba(), &request.version())
+            && !has_linked_version(request.ba(), linked_query)
             && request
                 .lockfile_source()
                 .and_then(ToolSource::path)
@@ -820,7 +829,7 @@ impl ToolVersion {
         {
             return Ok(Self::from_lockfile(request.clone(), lt));
         }
-        Self::ensure_unlocked_resolution_allowed(config, &request, opts)?;
+        Self::ensure_unlocked_resolution_allowed(config, &request, lock_query, opts)?;
 
         match v.split_once(':') {
             Some((ref_type @ ("ref" | "tag" | "branch" | "rev"), r)) => {
@@ -1539,17 +1548,14 @@ fn has_linked_version(ba: &BackendArg, version: &str) -> bool {
     false
 }
 
-/// Whether a link named `name` is something a request for `version` selects: any link for
-/// `latest`, the same name, or a name that extends `version` at a `.` boundary.
+/// Whether a link named `name` is something a request for `version` selects, by the same
+/// rules the backend applies to installed versions.
 fn linked_name_satisfies(name: &str, version: &str) -> bool {
     let version = version.strip_prefix("prefix:").unwrap_or(version);
-    let pathname = version.replace([':', '/'], "-");
     version == "latest"
         || name == version
-        || name == pathname
-        || name
-            .strip_prefix(version)
-            .is_some_and(|rest| rest.starts_with('.'))
+        || name == version.replace([':', '/'], "-")
+        || crate::backend::fuzzy_version_matches(version, name)
 }
 
 /// core:rust installs are symlinks to rustup's `$CARGO_HOME/bin`, which sits
@@ -2062,6 +2068,16 @@ mod tests {
         assert!(!has_linked_version(&backend, "latest"));
 
         Ok(())
+    }
+
+    #[test]
+    fn linked_name_satisfies_follows_backend_matching() {
+        assert!(linked_name_satisfies("v3.2.0", "3"));
+        assert!(linked_name_satisfies("3.2.0-custom", "3"));
+        assert!(linked_name_satisfies("3.2+build", "3.2"));
+        assert!(linked_name_satisfies("brew", "latest"));
+        assert!(!linked_name_satisfies("3.20", "3.2"));
+        assert!(!linked_name_satisfies("22", "24.21.0"));
     }
 
     #[test]

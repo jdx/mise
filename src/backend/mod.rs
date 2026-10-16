@@ -8005,7 +8005,7 @@ fn fuzzy_match_versions_by(
 /// A query starting with a digit also matches a `v`-prefixed version, and a
 /// query starting with `v` or `V` also matches the version without it. None of
 /// the text matched after the query may contain a newline.
-fn fuzzy_version_matches(query: &str, version: &str) -> bool {
+pub(crate) fn fuzzy_version_matches(query: &str, version: &str) -> bool {
     let starts_with_digit = |s: &str| s.starts_with(|c: char| c.is_ascii_digit());
     if query == "latest" {
         let version = version.strip_prefix('v').unwrap_or(version);
