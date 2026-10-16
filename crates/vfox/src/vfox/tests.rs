@@ -559,3 +559,43 @@ async fn test_download_redirect_loop_is_an_error() {
         .unwrap_err();
     assert!(err.to_string().contains("too many redirects"), "{err}");
 }
+
+#[tokio::test]
+async fn test_download_plugin_authorization_replaces_resolver_authorization() {
+    use reqwest::header::{AUTHORIZATION, HeaderValue};
+    use wiremock::matchers::{method, path};
+    use wiremock::{Mock, MockServer, Request, ResponseTemplate};
+
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/tool.tar.gz"))
+        .respond_with(|req: &Request| {
+            let values: Vec<_> = req.headers.get_all("authorization").iter().collect();
+            assert_eq!(values.len(), 1);
+            assert_eq!(values[0], "Bearer plugin");
+            ResponseTemplate::new(200).set_body_bytes(b"artifact")
+        })
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let temp = TempDir::new().unwrap();
+    let plugin_dir = temp.path().join("dummy");
+    std::fs::create_dir_all(&plugin_dir).unwrap();
+    let plugin = Plugin::from_dir(&plugin_dir).unwrap();
+    let mut vfox = Vfox::test();
+    vfox.set_http_headers_resolver(|_| {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            AUTHORIZATION,
+            HeaderValue::from_static("Basic bmV0cmM6eA=="),
+        );
+        headers
+    });
+    let mut headers = HeaderMap::new();
+    headers.insert(AUTHORIZATION, HeaderValue::from_static("Bearer plugin"));
+    let url = Url::parse(&format!("{}/tool.tar.gz", server.uri())).unwrap();
+    vfox.download(&url, &plugin, "1.0.0", temp.path(), Some(&headers))
+        .await
+        .unwrap();
+}
