@@ -5,7 +5,9 @@
 //! the plain data here, below both, is what lets those two layers be separate crates.
 
 pub mod accounts;
+pub mod compose;
 pub mod dotfiles;
+pub mod firewall;
 pub mod history;
 pub mod launchd;
 pub mod login_items;
@@ -15,3 +17,5 @@ pub mod remote;
 pub mod repos;
 pub mod secrets;
 pub mod services_common;
+pub mod systemd;
+pub mod templating;

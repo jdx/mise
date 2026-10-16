@@ -43,6 +43,7 @@ use crate::system::shell_activation::{
 };
 use crate::system::systemd::{SystemdRequest, SystemdTomlConfig};
 use crate::system::templating::Templated;
+use crate::system::templating::TemplatedExt;
 
 #[cfg(target_os = "linux")]
 pub mod accounts;

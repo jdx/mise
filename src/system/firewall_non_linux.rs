@@ -1,14 +1,8 @@
 use eyre::{Result, bail};
-use serde::Deserialize;
 
 use crate::config::Config;
 use crate::system::resources::{ResourceAction, ResourceId, ResourcePlan};
-
-#[derive(Clone, Debug, Default, Deserialize)]
-pub struct FirewallTomlConfig {
-    #[serde(flatten)]
-    values: std::collections::HashMap<String, toml::Value>,
-}
+pub use mise_system_config::firewall::FirewallTomlConfig;
 
 #[derive(Clone, Debug)]
 pub struct FirewallRequest;

@@ -177,10 +177,6 @@ pub fn validate_notifications(
     Ok(())
 }
 
-fn default_true() -> bool {
-    true
-}
-
 #[cfg(test)]
 mod notification_tests {
     use super::*;

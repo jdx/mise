@@ -13,4 +13,5 @@ mise-bootstrap = { path = "../mise-bootstrap", version = "0.1" }
 mise-system-packages = { path = "../mise-system-packages", version = "0.1" }
 mise-util = { path = "../mise-util", version = "2026", default-features = false }
 serde = { version = "1", features = ["derive"] }
+serde_ignored = "0.1"
 toml = { version = "1", features = ["parse", "preserve_order"] }
