@@ -43,7 +43,7 @@ use crate::config::{Config, ConfigMap};
 use crate::system::defaults::{DefaultsRequest, DefaultsValue, HostScope, canonical_domain};
 use crate::system::launchd::{LaunchdRequest, LaunchdTomlConfig};
 use crate::system::packages::{PackageRequest, SystemPackageManager};
-use crate::system::repos::RepoRequest;
+use crate::system::repos::{RepoRequest, RepoTomlConfig};
 use crate::system::shell_activation::{
     ShellActivationMode, ShellActivationRequest, ShellActivationShell, ShellActivationTarget,
 };
