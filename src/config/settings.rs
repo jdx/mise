@@ -38,6 +38,8 @@ enum SettingsSourcePolicy {
 enum SettingsTrustPolicy {
     AsDiscovered,
     TrustedOnly,
+    /// Global and system config only: no project file is consulted, trusted or not.
+    GlobalOnly,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -58,6 +60,13 @@ impl SettingsLoadPolicy {
     pub(crate) const TRUSTED_HIERARCHY: Self = Self {
         source: SettingsSourcePolicy::Hierarchy,
         trust: SettingsTrustPolicy::TrustedOnly,
+    };
+    /// Settings no project file can influence. The trust check reads a few of them
+    /// (`paranoid`, `trusted_config_paths`, ...), so they must exist before any project
+    /// file can be classified as trusted.
+    const GLOBAL_HIERARCHY: Self = Self {
+        source: SettingsSourcePolicy::Hierarchy,
+        trust: SettingsTrustPolicy::GlobalOnly,
     };
 }
 
@@ -1451,9 +1460,14 @@ impl SettingsInternal for Settings {
             .filter(|path| match trust_policy {
                 SettingsTrustPolicy::AsDiscovered => true,
                 SettingsTrustPolicy::TrustedOnly => {
-                    crate::config::is_global_config(path)
-                        || crate::config::config_file::is_path_trusted(path)
+                    let usable = crate::config::is_global_config(path)
+                        || crate::config::config_file::is_path_trusted(path);
+                    if !usable {
+                        debug!("ignoring settings in untrusted config: {}", path.display());
+                    }
+                    usable
                 }
+                SettingsTrustPolicy::GlobalOnly => crate::config::is_global_config(path),
             })
             .filter_map(|path| match Self::parse_settings_file(&path) {
                 Ok(config) => Some(config),
@@ -1646,8 +1660,13 @@ fn load() -> Result<Arc<Settings>> {
         env::set_current_dir(cd)?;
     }
 
-    // Reload settings after current directory option processed
-    settings = Settings::load_sources_from(None, SettingsLoadPolicy::HIERARCHY)?;
+    // Reload settings after current directory option processed. A project's `[settings]` can
+    // repoint downloads and build commands, so they apply only once that project is trusted,
+    // just like its `[tools]` and `[env]`. Deciding trust reads a few settings of its own, so
+    // publish the ones no project file can influence first.
+    let bootstrap = Settings::load_sources_from(None, SettingsLoadPolicy::GLOBAL_HIERARCHY)?;
+    mise_settings::store(Arc::new(bootstrap));
+    settings = Settings::load_sources_from(None, SettingsLoadPolicy::TRUSTED_HIERARCHY)?;
     time!("try_get load2");
     if !settings.legacy_version_file {
         settings.idiomatic_version_file = Some(false);
@@ -1700,6 +1719,9 @@ fn load() -> Result<Arc<Settings>> {
     }
     trace!("Settings: {:#?}", redacted_settings_for_debug(&settings));
     let settings = Arc::new(settings);
+    // Replace the bootstrap snapshot published above; the loader's own result is not cached
+    // once the cache has changed underneath it.
+    mise_settings::store(settings.clone());
     let system_installs_changed = settings.system_installs_dir() != *env::MISE_SYSTEM_INSTALLS_DIR;
     if system_installs_changed {
         crate::toolset::install_state::reset_tools();

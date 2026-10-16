@@ -582,6 +582,7 @@ pub fn trust_active_config() -> Result<()> {
     if settings.paranoid || Settings::safe_mode() {
         return Ok(());
     }
+    let mut newly_trusted = false;
     for path in config::load_config_paths(&config::DEFAULT_CONFIG_FILENAMES, false) {
         if config::is_global_config(&path) {
             continue;
@@ -592,7 +593,13 @@ pub fn trust_active_config() -> Result<()> {
         }
         if !is_trusted(&config_root) {
             trust(&config_root)?;
+            newly_trusted = true;
         }
+    }
+    // The settings snapshot was built before this config was trusted, so it left out the
+    // project's `[settings]`.
+    if newly_trusted {
+        Settings::reload()?;
     }
     Ok(())
 }

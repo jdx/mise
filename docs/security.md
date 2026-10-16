@@ -49,7 +49,10 @@ A `mise.toml` loads without trust when it has no template syntax
 - `[tasks]`, as long as no task lists `secrets`
 
 Anything else needs trust, including tool option tables, `[env]`, `[hooks]`,
-`[settings]`, `[tool_alias]` and `include`. Other files follow the same idea:
+`[settings]`, `[tool_alias]` and `include`. mise ignores the `[settings]` of a
+config that is not trusted, so a repository cannot change mirrors, build
+commands or other settings before you trust it. Other files follow the same
+idea:
 
 - `.tool-versions` needs trust only when it contains template syntax or inline
   tool options such as `node[postinstall=...] 24`.
