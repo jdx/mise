@@ -76,6 +76,11 @@ impl BootstrapConfig for Config {
             .collect()
     }
 
+    fn is_in_selected_bootstrap_root(&self, config_path: &Path) -> bool {
+        Config::selected_bootstrap_config_maps(self)
+            .any(|(_, files)| files.contains_key(config_path))
+    }
+
     fn bootstrap_tera_ctx(&self, config_path: &Path) -> &tera::Context {
         Config::bootstrap_tera_ctx(self, config_path)
     }

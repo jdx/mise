@@ -45,6 +45,8 @@ pub trait BootstrapConfig {
     fn bootstrap_config_maps(&self) -> Vec<ConfigMap>;
     /// The bootstrap roots that were selected explicitly, with their files.
     fn selected_bootstrap_config_maps(&self) -> Vec<(PathBuf, ConfigMap)>;
+    /// Whether the config file at `config_path` belongs to an explicitly selected bootstrap root.
+    fn is_in_selected_bootstrap_root(&self, config_path: &Path) -> bool;
     /// The template context for the config file at `config_path`.
     fn bootstrap_tera_ctx(&self, config_path: &Path) -> &tera::Context;
     /// Variables a dry run could not resolve for the file at `config_path`.
@@ -78,6 +80,9 @@ impl<T: BootstrapConfig + ?Sized> BootstrapConfig for Arc<T> {
     }
     fn selected_bootstrap_config_maps(&self) -> Vec<(PathBuf, ConfigMap)> {
         (**self).selected_bootstrap_config_maps()
+    }
+    fn is_in_selected_bootstrap_root(&self, config_path: &Path) -> bool {
+        (**self).is_in_selected_bootstrap_root(config_path)
     }
     fn bootstrap_tera_ctx(&self, config_path: &Path) -> &tera::Context {
         (**self).bootstrap_tera_ctx(config_path)

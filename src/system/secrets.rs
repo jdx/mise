@@ -239,10 +239,7 @@ impl SecretValues {
         // Independently selected bootstrap roots keep their legacy template
         // context until scoped composition and execution semantics are defined.
         if let Some((config, config_path)) = config
-            && !config
-                .selected_bootstrap_config_maps()
-                .iter()
-                .any(|(_, files)| files.contains_key(config_path))
+            && !config.is_in_selected_bootstrap_root(config_path)
         {
             context.insert("vars", &config.vars());
         }
