@@ -33,7 +33,7 @@ use eyre::{bail, eyre};
 use regex::Regex;
 
 use super::open_trusted_directory;
-use crate::result::Result;
+use eyre::Result;
 
 pub(super) struct AppVersion {
     pub(super) short: Option<String>,

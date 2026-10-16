@@ -6,8 +6,8 @@ use async_trait::async_trait;
 use eyre::bail;
 
 use super::{InstallOpts, PackageRequest, PackageState, PackageStatus, SystemPackageManager};
-use crate::result::Result;
-use crate::system::sudo;
+use eyre::Result;
+use mise_ui::sudo;
 
 /// Arch-family (Arch, Manjaro, EndeavourOS) via pacman
 pub(crate) struct PacmanManager {}
@@ -20,11 +20,14 @@ impl PacmanManager {
     /// fresh container case: no sync databases, any install would fail
     fn dbs_missing(&self) -> bool {
         let sync = Path::new("/var/lib/pacman/sync");
-        !crate::file::ls(sync).unwrap_or_default().iter().any(|p| {
-            p.extension()
-                .map(|e| e.to_string_lossy() == "db")
-                .unwrap_or(false)
-        })
+        !mise_util::file::ls(sync)
+            .unwrap_or_default()
+            .iter()
+            .any(|p| {
+                p.extension()
+                    .map(|e| e.to_string_lossy() == "db")
+                    .unwrap_or(false)
+            })
     }
 
     fn refresh(&self, opts: &InstallOpts) -> Result<()> {
@@ -416,7 +419,7 @@ impl SystemPackageManager for PacmanManager {
     }
 
     fn is_available(&self) -> bool {
-        cfg!(target_os = "linux") && crate::file::which("pacman").is_some()
+        cfg!(target_os = "linux") && mise_util::file::which("pacman").is_some()
     }
 
     fn unavailable_reason(&self) -> String {
@@ -590,7 +593,7 @@ mod tests {
     async fn test_pacman_query_file_advisory() {
         let dir = tempfile::tempdir().unwrap();
         let pacman = dir.path().join("pacman");
-        let mut env = crate::test::EnvVarGuard::new();
+        let mut env = mise_util::testing::EnvVarGuard::new();
         let path = std::env::join_paths(std::iter::once(dir.path().to_path_buf()).chain(
             std::env::split_paths(&std::env::var_os("PATH").unwrap_or_default()),
         ))
@@ -629,7 +632,7 @@ mod tests {
                 ),
             )
             .unwrap();
-            crate::file::make_executable(&pacman).unwrap();
+            mise_util::file::make_executable(&pacman).unwrap();
             let result = pacman_query(&["curl".to_string(), "fish".to_string()]).await;
             if accepted {
                 assert_eq!(result.unwrap(), "curl 8.19.0-1\n");

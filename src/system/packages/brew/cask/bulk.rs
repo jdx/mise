@@ -26,8 +26,8 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::OnceCell;
 
 use super::Cask;
-use crate::config::{Settings, SettingsExt};
-use crate::http::HTTP;
+use mise_settings::Settings;
+use mise_util::http::HTTP;
 
 const BULK_URL: &str = "https://formulae.brew.sh/api/cask.json";
 
@@ -91,16 +91,16 @@ const INDEX_VERSION: u32 = 1;
 /// somewhere else. The canonical endpoint keeps the plain path so the common
 /// case stays readable; anything redirected gets its own directory.
 fn dir() -> PathBuf {
-    let base = crate::dirs::CACHE.join("system-brew").join("api");
+    let base = mise_util::dirs::CACHE.join("system-brew").join("api");
     let mut url = match url::Url::parse(BULK_URL) {
         Ok(url) => url,
         Err(_) => return base,
     };
-    crate::http::apply_url_replacements(&mut url);
+    mise_util::http::apply_url_replacements(&mut url);
     if url.as_str() == BULK_URL {
         return base;
     }
-    let digest = crate::hash::hash_sha256_to_str(url.as_str());
+    let digest = mise_util::hash::hash_sha256_to_str(url.as_str());
     base.join(format!("redirected-{}", &digest[..16]))
 }
 
@@ -211,8 +211,8 @@ fn is_fresh() -> bool {
 
 /// Restart the staleness window without touching the document.
 fn mark_checked() -> Result<()> {
-    crate::file::create_dir_all(dir())?;
-    crate::file::write_atomic(checked_path(), [])?;
+    mise_util::file::create_dir_all(dir())?;
+    mise_util::file::write_atomic(checked_path(), [])?;
     Ok(())
 }
 
@@ -236,7 +236,7 @@ static REFRESHED: OnceCell<bool> = OnceCell::const_new();
 async fn refresh_once() -> bool {
     *REFRESHED
         .get_or_init(|| async {
-            let deadline = REFRESH_DEADLINE.min(Settings::get().http_download_timeout());
+            let deadline = REFRESH_DEADLINE.min(mise_util::network::http_download_timeout(&Settings::get()));
             match tokio::time::timeout(deadline, refresh()).await {
                 Ok(Ok(())) => true,
                 Err(_) => {
@@ -284,7 +284,8 @@ async fn refresh() -> Result<()> {
     // learned afterwards that was not knowable beforehand. Failing here sends
     // every lookup to the per-cask endpoint, which is what mise did before this
     // cache existed.
-    crate::file::create_dir_all(dir()).wrap_err("the Homebrew cask index cache is not writable")?;
+    mise_util::file::create_dir_all(dir())
+        .wrap_err("the Homebrew cask index cache is not writable")?;
     eyre::ensure!(
         cache_is_writable(),
         "the Homebrew cask index cache directory is not writable"
@@ -358,7 +359,7 @@ async fn refresh() -> Result<()> {
     // last known-good document in place.
     let mut index = build_index(&body)?;
 
-    crate::file::create_dir_all(dir())?;
+    mise_util::file::create_dir_all(dir())?;
 
     // Publishing the document and its index is one operation and has to be
     // serialized. Interleaved, two refreshes can install different bodies and
@@ -367,7 +368,7 @@ async fn refresh() -> Result<()> {
     // document. The lock is held across the synchronous publication only, not
     // across the download above, so a second process waits a moment rather than
     // blocking on a ~19MB transfer.
-    let _lock = crate::lock_file::LockFile::at(&dir().join("cask.lock")).lock()?;
+    let _lock = mise_util::lock_file::LockFile::at(&dir().join("cask.lock")).lock()?;
 
     // Re-check under the lock, because the wait for it can be long enough for
     // the answer to have changed. Two processes both past the window download
@@ -403,7 +404,7 @@ async fn refresh() -> Result<()> {
         return Ok(());
     }
 
-    crate::file::write_atomic(&path, &body)?;
+    mise_util::file::write_atomic(&path, &body)?;
 
     // The validator has to describe the document that is now on disk, or not
     // exist. It is what the publication race is decided on, so a newer document
@@ -418,13 +419,13 @@ async fn refresh() -> Result<()> {
     let validator = dir().join("cask.last-modified");
     match last_modified {
         Some(stamp) => {
-            if let Err(err) = crate::file::write_atomic(&validator, stamp) {
-                let _ = crate::file::remove_file(&validator);
+            if let Err(err) = mise_util::file::write_atomic(&validator, stamp) {
+                let _ = mise_util::file::remove_file(&validator);
                 return Err(err).wrap_err("failed to record the Homebrew cask index validator");
             }
         }
         None => {
-            let _ = crate::file::remove_file(&validator);
+            let _ = mise_util::file::remove_file(&validator);
         }
     }
 
@@ -460,12 +461,12 @@ fn mark_checked_best_effort() {
 }
 
 fn write_index(index: &Index) -> Result<()> {
-    crate::file::create_dir_all(dir())?;
+    mise_util::file::create_dir_all(dir())?;
     // `write_atomic` rather than a fixed `.part` name plus rename: concurrent
     // mise processes would otherwise share one temporary path and clobber each
     // other's partial writes. It also carries the Windows sharing-violation
     // retry that a raw rename does not.
-    crate::file::write_atomic(index_path(), serde_json::to_vec(index)?)?;
+    mise_util::file::write_atomic(index_path(), serde_json::to_vec(index)?)?;
     Ok(())
 }
 
@@ -531,8 +532,8 @@ fn load_index() -> Result<Index> {
 /// and tries again, which is where it already was.
 fn discard_document() {
     debug!("brew-cask: discarding an unusable cached bulk index so the next run refetches it");
-    let _ = crate::file::remove_file(document_path());
-    let _ = crate::file::remove_file(dir().join("cask.last-modified"));
+    let _ = mise_util::file::remove_file(document_path());
+    let _ = mise_util::file::remove_file(dir().join("cask.last-modified"));
 }
 
 /// Walk the top-level array and record each element's byte range.
@@ -682,7 +683,7 @@ pub(super) async fn cask(token: &str) -> Option<Cask> {
     //
     // Taken after `refresh`, which acquires and releases it internally, so these
     // never nest. Uncontended except during a publication, which is rare.
-    let _lock = match crate::lock_file::LockFile::at(&dir().join("cask.lock")).lock() {
+    let _lock = match mise_util::lock_file::LockFile::at(&dir().join("cask.lock")).lock() {
         Ok(lock) => lock,
         Err(err) => {
             debug!(

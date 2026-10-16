@@ -22,7 +22,7 @@ use windows_sys::Win32::Foundation::{FALSE, TRUE};
 use windows_sys::Win32::System::Console::{CTRL_BREAK_EVENT, CTRL_C_EVENT, SetConsoleCtrlHandler};
 use windows_sys::core::BOOL;
 
-use crate::cmd::CmdLineRunner;
+use mise_util::cmd::CmdLineRunner;
 
 static EXIT: AtomicBool = AtomicBool::new(true);
 static SHOW_CURSOR: AtomicBool = AtomicBool::new(false);
@@ -69,7 +69,7 @@ fn install_handler() {
     if unsafe { SetConsoleCtrlHandler(Some(handler), TRUE) } == FALSE {
         // Without a console there is nothing to interrupt, so this is not worth
         // failing a command over.
-        debug!(
+        log::debug!(
             "failed to install console ctrl handler: {}",
             std::io::Error::last_os_error()
         );
@@ -80,14 +80,17 @@ fn install_handler() {
 const INTERRUPTED_EXIT_CODE: i32 = 130;
 
 pub async fn exit_signal() -> i32 {
+    if crate::in_tests() {
+        return std::future::pending().await;
+    }
     loop {
         INTERRUPTED.notified().await;
         if SHOW_CURSOR.load(Ordering::Relaxed) {
             let _ = Term::stderr().show_cursor();
         }
-        vfox::cancel_http_requests();
+        crate::run_interrupt_hook();
         if SHOULD_EXIT.load(Ordering::Relaxed) {
-            debug!("Ctrl-C pressed, exiting...");
+            log::debug!("Ctrl-C pressed, exiting...");
             // Unlike Unix, where the pgroup got the SIGINT that reached mise,
             // nothing is guaranteed to have ended the tree: a console event is
             // advisory and `cmd.exe` in particular stops to ask about it.
@@ -96,13 +99,16 @@ pub async fn exit_signal() -> i32 {
         }
         // The console delivered the event to every child as well, so give them
         // the chance to stop on their own before anything is forced.
-        info!(
+        log::info!(
             "interrupted, waiting for running commands to exit (press Ctrl-C again to stop them)"
         );
     }
 }
 
 pub fn exit_on_ctrl_c(do_exit: bool) {
+    if crate::in_tests() {
+        return;
+    }
     EXIT.store(do_exit, Ordering::Relaxed);
     mise_util::cancel::reset();
     install_handler();
@@ -110,10 +116,16 @@ pub fn exit_on_ctrl_c(do_exit: bool) {
 
 /// Returns true if ctrl-c has been received
 pub fn is_cancelled() -> bool {
+    if crate::in_tests() {
+        return false;
+    }
     mise_util::cancel::is_cancelled()
 }
 
 /// ensures cursor is displayed on ctrl-c
 pub fn show_cursor_after_ctrl_c() {
+    if crate::in_tests() {
+        return;
+    }
     SHOW_CURSOR.store(true, Ordering::Relaxed);
 }

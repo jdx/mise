@@ -9,7 +9,7 @@
 use std::collections::HashMap;
 use std::sync::LazyLock as Lazy;
 
-use crate::cmd::cmd;
+use mise_util::cmd::cmd;
 
 use super::api::BottleFile;
 

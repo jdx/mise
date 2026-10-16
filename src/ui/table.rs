@@ -1,8 +1,8 @@
-use crate::Result;
-use crate::env::TERM_WIDTH;
 use comfy_table::{Attribute, Cell, Color, ContentArrangement, Row};
 use console::style;
+use eyre::Result;
 use itertools::Itertools;
+use mise_util::env::TERM_WIDTH;
 use tabled::Table;
 use tabled::settings::object::{Columns, Rows};
 use tabled::settings::peaker::PriorityMax;
@@ -80,7 +80,7 @@ impl MiseTable {
         // Pin the width when the user overrides it (e.g. MISE_TERM_WIDTH in CI).
         // comfy_table does its own terminal detection, which fails in non-ttys,
         // so this is what makes the override actually affect `mise ls` et al.
-        if let Some(w) = *crate::env::TERM_WIDTH_OVERRIDE {
+        if let Some(w) = *mise_util::env::TERM_WIDTH_OVERRIDE {
             table.set_width(w.min(u16::MAX as usize) as u16);
         }
         if console::colors_enabled() {

@@ -1,6 +1,6 @@
 use demand::Theme;
 
-use crate::config::Settings;
+use mise_settings::Settings;
 
 /// Returns the demand theme based on the `color_theme` setting and the current
 /// terminal color state.
@@ -49,7 +49,7 @@ fn select_theme(colors_enabled: bool, color_theme: &str, light_background: bool)
         "catppuccin" => Theme::catppuccin(),
         "dracula" => Theme::dracula(),
         other => {
-            warn!("Unknown color theme '{}', using default", other);
+            log::warn!("Unknown color theme '{}', using default", other);
             auto()
         }
     }

@@ -42,8 +42,8 @@ use crate::tera::{
 };
 use crate::toolset::env_cache::{CachedNonToolEnv, compute_settings_hash, get_file_mtime};
 use crate::toolset::{
-    ResolveOptions, ResolvedToolOptions, ToolOptions, ToolRequestSet, ToolRequestSetBuilder,
-    ToolSource, ToolVersion, ToolVersionOptions, Toolset, install_state,
+    ResolveOptions, ResolvedToolOptions, ToolOptions, ToolRequest, ToolRequestSet,
+    ToolRequestSetBuilder, ToolSource, ToolVersion, ToolVersionOptions, Toolset, install_state,
 };
 use crate::ui::style;
 use crate::version;
@@ -737,9 +737,32 @@ impl Config {
             .into_effective())
     }
 
+    /// [`Self::get_tool_opts_with_overrides`] for one version: the config
+    /// layer is the entry for that version rather than the tool's first entry,
+    /// so a later entry of a multi-entry tool does not inherit options it
+    /// leaves out.
+    pub(crate) async fn get_tool_opts_for_request(
+        self: &Arc<Self>,
+        backend_arg: &Arc<BackendArg>,
+        request: &ToolRequest,
+    ) -> Result<ToolOptions> {
+        Ok(self
+            .resolve_tool_opts_for(backend_arg, Some(request))
+            .await?
+            .into_effective())
+    }
+
     pub(crate) async fn resolve_tool_opts_with_overrides(
         self: &Arc<Self>,
         backend_arg: &Arc<BackendArg>,
+    ) -> Result<ResolvedToolOptions> {
+        self.resolve_tool_opts_for(backend_arg, None).await
+    }
+
+    async fn resolve_tool_opts_for(
+        self: &Arc<Self>,
+        backend_arg: &Arc<BackendArg>,
+        request: Option<&ToolRequest>,
     ) -> Result<ResolvedToolOptions> {
         let trs = self.get_tool_request_set().await?;
         let short_match = trs.iter().find(|tr| tr.0.short == backend_arg.short);
@@ -751,7 +774,13 @@ impl Config {
             let resolved_ba = BackendArg::new(backend_arg.full(), None);
             trs.iter().find(|tr| tr.0.short == resolved_ba.short)
         });
-        let config_opts = tool_request.and_then(|tr| tr.1.first().map(|req| req.options()));
+        let config_opts = tool_request.and_then(|tr| {
+            request
+                .and_then(|request| {
+                    crate::toolset::configured_options_for_runtime_request(tr.1, request)
+                })
+                .or_else(|| tr.1.first().map(|req| req.options()))
+        });
         let alias_opts = self.get_backend_alias_opts(backend_arg);
         Ok(backend_arg.resolve_opts_with_layers(alias_opts, config_opts, None))
     }

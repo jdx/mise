@@ -137,7 +137,10 @@ pub use crate::result::Result;
 /// Runs first in `main` and in the test harness constructor. The binary also
 /// registers its [`frontend`] there.
 pub fn register_util_hooks() {
+    // First: `version::VERSION` below reads it.
+    mise_util::deprecation::set_version(env!("CARGO_PKG_VERSION"));
     config::settings::register_loader();
+    system::packages_host::register();
     enclave::register();
     cache::register_base_cache_keys();
     let shell = env::MISE_SHELL.map(|s| s.to_string()).unwrap_or_default();
@@ -146,7 +149,14 @@ pub fn register_util_hooks() {
             .trim()
             .to_string(),
     );
-    mise_util::deprecation::set_version(env!("CARGO_PKG_VERSION"));
+    mise_ui::set_interrupt_hook(vfox::cancel_http_requests);
+    mise_ui::progress_report::set_longest_plugin_name(|| {
+        backend::list()
+            .into_iter()
+            .map(|p| p.id().len())
+            .max()
+            .unwrap_or_default()
+    });
     mise_util::env::set_mise_env(|| env::MISE_ENV.as_slice());
     mise_util::shells::set_implicit_inline_shell(|| {
         config::Settings::get().implicit_inline_shell()

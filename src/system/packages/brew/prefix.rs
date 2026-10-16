@@ -5,8 +5,8 @@ use std::path::{Path, PathBuf};
 
 use eyre::bail;
 
-use crate::result::Result;
-use crate::system::sudo;
+use eyre::Result;
+use mise_ui::sudo;
 
 /// subdirectories brew's install.sh creates, mirrored here
 const SUBDIRS: &[&str] = &[
@@ -32,7 +32,7 @@ const SUBDIRS: &[&str] = &[
 ];
 
 pub(super) fn prefix() -> PathBuf {
-    crate::env::system_brew_prefix()
+    mise_util::env::system_brew_prefix()
 }
 
 pub(super) fn cellar() -> PathBuf {
@@ -65,7 +65,7 @@ pub(super) fn setup_linux_runtime() -> Result<()> {
         return Ok(());
     }
     let lib = prefix().join("lib");
-    crate::file::create_dir_all(&lib)?;
+    mise_util::file::create_dir_all(&lib)?;
     let ld = lib.join("ld.so");
     // a brewed glibc keg takes precedence (hosts older than the bottles'
     // build glibc); otherwise the host loader
@@ -84,9 +84,9 @@ pub(super) fn setup_linux_runtime() -> Result<()> {
         // repoint at the brewed glibc even if ld.so already exists
         if std::fs::read_link(&ld).ok().as_deref() != Some(target.as_path()) {
             if ld.symlink_metadata().is_ok() {
-                crate::file::remove_file(&ld)?;
+                mise_util::file::remove_file(&ld)?;
             }
-            crate::file::make_symlink(&target, &ld)?;
+            mise_util::file::make_symlink(&target, &ld)?;
         }
         return Ok(());
     }
@@ -94,7 +94,7 @@ pub(super) fn setup_linux_runtime() -> Result<()> {
         return Ok(()); // valid symlink or file already in place
     }
     if ld.symlink_metadata().is_ok() {
-        crate::file::remove_file(&ld)?; // dangling symlink
+        mise_util::file::remove_file(&ld)?; // dangling symlink
     }
     let host_loader = [
         "/lib64/ld-linux-x86-64.so.2",
@@ -112,7 +112,7 @@ pub(super) fn setup_linux_runtime() -> Result<()> {
             ld.display()
         );
     };
-    crate::file::make_symlink(&target, &ld)?;
+    mise_util::file::make_symlink(&target, &ld)?;
     Ok(())
 }
 
@@ -154,7 +154,7 @@ fn foreign_uid(euid: u32, owner: u32) -> Option<u32> {
 /// SUDO_USER set). None for plain root (e.g. a container) and non-root runs.
 pub(super) fn sudo_invoking_user() -> Option<String> {
     if nix::unistd::geteuid().is_root()
-        && let Ok(sudo_user) = crate::env::var("SUDO_USER")
+        && let Ok(sudo_user) = mise_util::env::var("SUDO_USER")
         && !sudo_user.is_empty()
         && sudo_user != "root"
     {
@@ -265,7 +265,7 @@ pub(super) fn bootstrap(dry_run: bool) -> Result<()> {
     } else {
         // prefix is ours, just fill in missing subdirs
         for dir in missing_subdirs {
-            crate::file::create_dir_all(&dir)?;
+            mise_util::file::create_dir_all(&dir)?;
         }
     }
     Ok(())

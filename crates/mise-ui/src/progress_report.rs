@@ -5,17 +5,25 @@ use std::sync::{Arc, Mutex};
 use clx::progress::{ProgressJob, ProgressJobBuilder, ProgressStatus};
 use std::sync::LazyLock as Lazy;
 
-use crate::ui::style;
-use crate::{backend, ui};
+use std::sync::OnceLock;
+
+use crate::ctrlc;
+use crate::style;
 
 pub use mise_util::progress::{ProgressIcon, SingleReport};
 
+static LONGEST_PLUGIN_NAME_SOURCE: OnceLock<fn() -> usize> = OnceLock::new();
+
+/// Register how to find the length of the longest backend name, which sets the width
+/// of the progress prefix column. Without it the column is the 15-character minimum.
+pub fn set_longest_plugin_name(source: fn() -> usize) {
+    let _ = LONGEST_PLUGIN_NAME_SOURCE.set(source);
+}
+
 static LONGEST_PLUGIN_NAME: Lazy<usize> = Lazy::new(|| {
-    backend::list()
-        .into_iter()
-        .map(|p| p.id().len())
-        .max()
-        .unwrap_or_default()
+    LONGEST_PLUGIN_NAME_SOURCE
+        .get()
+        .map_or(0, |source| source())
         .clamp(15, 35)
 });
 
@@ -43,7 +51,7 @@ impl ProgressReport {
     }
 
     pub(crate) fn new_with_pad(prefix: String, pad: usize) -> ProgressReport {
-        ui::ctrlc::show_cursor_after_ctrl_c();
+        ctrlc::show_cursor_after_ctrl_c();
         let formatted_prefix = normal_prefix(pad, &prefix);
 
         // Template: prefix + message + optional bytes/progress bar + spinner on right
@@ -129,12 +137,12 @@ impl SingleReport for ProgressReport {
     }
 }
 
-#[derive(Debug)]
-pub(crate) struct QuietReport {}
+#[derive(Debug, Default)]
+pub struct QuietReport {}
 
 impl QuietReport {
-    pub(crate) fn new() -> QuietReport {
-        QuietReport {}
+    pub fn new() -> QuietReport {
+        QuietReport::default()
     }
 }
 
@@ -235,13 +243,10 @@ impl SingleReport for VerboseReport {
 
 #[cfg(test)]
 mod tests {
-    use crate::config::Config;
-
     use super::*;
 
     #[tokio::test]
     async fn test_progress_report() {
-        let _config = Config::get().await.unwrap();
         let pr = ProgressReport::new("foo".into());
         pr.set_message("message".into());
         pr.finish_with_message("message".into());
@@ -249,7 +254,6 @@ mod tests {
 
     #[tokio::test]
     async fn test_progress_report_verbose() {
-        let _config = Config::get().await.unwrap();
         let pr = VerboseReport::new("PREFIX".to_string());
         pr.set_message("message".into());
         pr.finish_with_message("message".into());
@@ -257,7 +261,6 @@ mod tests {
 
     #[tokio::test]
     async fn test_progress_report_quiet() {
-        let _config = Config::get().await.unwrap();
         let pr = QuietReport::new();
         pr.set_message("message".into());
         pr.finish_with_message("message".into());

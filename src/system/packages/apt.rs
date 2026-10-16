@@ -7,9 +7,9 @@ use async_trait::async_trait;
 use eyre::bail;
 
 use super::{InstallOpts, PackageRequest, PackageState, PackageStatus, SystemPackageManager};
-use crate::result::Result;
-use crate::system::ManagerPackageOptions;
-use crate::system::sudo;
+use crate::system::packages::options::ManagerPackageOptions;
+use eyre::Result;
+use mise_ui::sudo;
 
 pub(crate) struct AptManager {
     /// `[bootstrap.apt.sources]` changed and the lists were refreshed for
@@ -34,11 +34,14 @@ impl AptManager {
     /// fail with "Unable to locate package"
     fn lists_missing(&self) -> bool {
         let lists = Path::new("/var/lib/apt/lists");
-        !crate::file::ls(lists).unwrap_or_default().iter().any(|p| {
-            p.file_name()
-                .map(|f| f.to_string_lossy().contains("_Packages"))
-                .unwrap_or(false)
-        })
+        !mise_util::file::ls(lists)
+            .unwrap_or_default()
+            .iter()
+            .any(|p| {
+                p.file_name()
+                    .map(|f| f.to_string_lossy().contains("_Packages"))
+                    .unwrap_or(false)
+            })
     }
 
     /// Whether `apt-get install` with these arguments would fail against the
@@ -186,7 +189,7 @@ struct MovedToSources(std::collections::BTreeSet<(String, String)>);
 
 impl MovedToSources {
     fn path() -> std::path::PathBuf {
-        crate::dirs::STATE.join("apt-sources-moved")
+        mise_util::dirs::STATE.join("apt-sources-moved")
     }
 
     fn load() -> Self {
@@ -206,7 +209,7 @@ impl MovedToSources {
             .iter()
             .map(|(name, uri)| format!("{name} {uri}\n"))
             .collect::<String>();
-        crate::file::write(Self::path(), content)?;
+        mise_util::file::write(Self::path(), content)?;
         Ok(())
     }
 
@@ -418,7 +421,7 @@ impl SystemPackageManager for AptManager {
     }
 
     fn is_available(&self) -> bool {
-        cfg!(target_os = "linux") && crate::file::which("apt-get").is_some()
+        cfg!(target_os = "linux") && mise_util::file::which("apt-get").is_some()
     }
 
     fn unavailable_reason(&self) -> String {
@@ -784,7 +787,7 @@ curl:
     #[tokio::test]
     async fn test_available_against_real_apt_cache() {
         let mgr = AptManager::new();
-        if !mgr.is_available() || crate::file::which("apt-cache").is_none() {
+        if !mgr.is_available() || mise_util::file::which("apt-cache").is_none() {
             return;
         }
         let names = vec!["bash".to_string(), "mise-nonexistent-pkg-xyz".to_string()];

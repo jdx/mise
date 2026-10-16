@@ -7,7 +7,7 @@ use eyre::bail;
 use serde::Deserialize;
 
 use super::{InstallOpts, PackageRequest, PackageState, PackageStatus, SystemPackageManager};
-use crate::result::Result;
+use eyre::Result;
 
 /// `scoop bucket add` exit code for a bucket that is already present.
 const BUCKET_ALREADY_EXISTS: i32 = 2;
@@ -338,7 +338,7 @@ fn parse_export(output: &str) -> Result<ScoopExport> {
 /// Scoop ships as a PowerShell script behind a `scoop.cmd` shim, so the
 /// resolved path is spawned rather than the bare name.
 fn scoop_bin() -> Result<PathBuf> {
-    crate::file::which_spawnable("scoop").ok_or_else(|| eyre::eyre!("scoop not found on PATH"))
+    mise_util::file::which_spawnable("scoop").ok_or_else(|| eyre::eyre!("scoop not found on PATH"))
 }
 
 /// Reads Scoop's installed apps and buckets. Side-effect free.
@@ -404,7 +404,7 @@ impl SystemPackageManager for ScoopManager {
     }
 
     fn is_available(&self) -> bool {
-        cfg!(windows) && crate::file::which_spawnable("scoop").is_some()
+        cfg!(windows) && mise_util::file::which_spawnable("scoop").is_some()
     }
 
     fn unavailable_reason(&self) -> String {

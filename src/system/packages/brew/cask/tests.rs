@@ -4,7 +4,7 @@ use mise_brew_metadata::cask::{CaskConflicts, CaskDependencies, CaskUrlSpecs};
 use std::os::unix::fs::PermissionsExt;
 use std::sync::Mutex;
 
-use crate::test::EnvVarGuard;
+use mise_util::testing::EnvVarGuard;
 
 static ENV_LOCK: Mutex<()> = Mutex::new(());
 
@@ -14,8 +14,8 @@ struct BrewPrefixGuard {
 
 impl BrewPrefixGuard {
     fn set(prefix: &Path) -> Self {
-        let previous = crate::env::var("MISE_SYSTEM_BREW_PREFIX").ok();
-        crate::env::set_var("MISE_SYSTEM_BREW_PREFIX", prefix);
+        let previous = mise_util::env::var("MISE_SYSTEM_BREW_PREFIX").ok();
+        mise_util::env::set_var("MISE_SYSTEM_BREW_PREFIX", prefix);
         Self { previous }
     }
 }
@@ -23,8 +23,8 @@ impl BrewPrefixGuard {
 impl Drop for BrewPrefixGuard {
     fn drop(&mut self) {
         match &self.previous {
-            Some(previous) => crate::env::set_var("MISE_SYSTEM_BREW_PREFIX", previous),
-            None => crate::env::remove_var("MISE_SYSTEM_BREW_PREFIX"),
+            Some(previous) => mise_util::env::set_var("MISE_SYSTEM_BREW_PREFIX", previous),
+            None => mise_util::env::remove_var("MISE_SYSTEM_BREW_PREFIX"),
         }
     }
 }
@@ -38,7 +38,7 @@ impl Drop for BrewPrefixGuard {
 /// (`/Applications`, `~/Applications`) are never world-writable, so anchor
 /// the fixture under the test home instead.
 fn trusted_tempdir() -> Result<tempfile::TempDir> {
-    let base = &*crate::env::HOME;
+    let base = &*mise_util::env::HOME;
     file::create_dir_all(base)?;
     Ok(tempfile::Builder::new()
         .prefix(".mise-cask-appdir-")
@@ -376,7 +376,7 @@ fn rejects_unsafe_cask_identity_components() {
 
 #[test]
 fn detects_any_foreign_homebrew_metadata_object() -> Result<()> {
-    let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+    let _lock = mise_util::testing::lock_ignoring_poison(&ENV_LOCK);
     let tmp = tempfile::tempdir()?;
     let _guard = BrewPrefixGuard::set(tmp.path());
     let metadata = tmp.path().join("Caskroom/example/.metadata");
@@ -384,14 +384,14 @@ fn detects_any_foreign_homebrew_metadata_object() -> Result<()> {
     file::create_dir_all(&metadata)?;
     assert!(homebrew_metadata_present("example")?);
     file::remove_all(&metadata)?;
-    crate::file::write(&metadata, "foreign")?;
+    mise_util::file::write(&metadata, "foreign")?;
     assert!(homebrew_metadata_present("example")?);
     Ok(())
 }
 
 #[test]
 fn homebrew_version_ignores_mise_working_directories() -> Result<()> {
-    let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+    let _lock = mise_util::testing::lock_ignoring_poison(&ENV_LOCK);
     let tmp = tempfile::tempdir()?;
     let _guard = BrewPrefixGuard::set(tmp.path());
     let token_dir = caskroom_token_dir(CaskManager::BrewCask, "example");
@@ -410,7 +410,7 @@ fn homebrew_version_ignores_mise_working_directories() -> Result<()> {
 #[cfg(target_os = "linux")]
 #[test]
 fn rejects_non_utf8_homebrew_version_name() -> Result<()> {
-    let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+    let _lock = mise_util::testing::lock_ignoring_poison(&ENV_LOCK);
     let tmp = tempfile::tempdir()?;
     let _guard = BrewPrefixGuard::set(tmp.path());
     let token_dir = caskroom_token_dir(CaskManager::BrewCask, "example");
@@ -426,7 +426,7 @@ fn rejects_non_utf8_homebrew_version_name() -> Result<()> {
 
 #[test]
 fn homebrew_version_enumeration_error_includes_directory() -> Result<()> {
-    let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+    let _lock = mise_util::testing::lock_ignoring_poison(&ENV_LOCK);
     let tmp = tempfile::tempdir()?;
     let _guard = BrewPrefixGuard::set(tmp.path());
     let token_dir = caskroom_token_dir(CaskManager::BrewCask, "example");
@@ -443,7 +443,7 @@ fn homebrew_version_enumeration_error_includes_directory() -> Result<()> {
 #[cfg(unix)]
 #[test]
 fn homebrew_metadata_probe_error_is_not_absence() -> Result<()> {
-    let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+    let _lock = mise_util::testing::lock_ignoring_poison(&ENV_LOCK);
     let tmp = tempfile::tempdir()?;
     let _guard = BrewPrefixGuard::set(tmp.path());
     let token_dir = caskroom_token_dir(CaskManager::BrewCask, "example");
@@ -459,7 +459,7 @@ fn homebrew_metadata_probe_error_is_not_absence() -> Result<()> {
 
 #[test]
 fn ignores_version_without_homebrew_metadata() -> Result<()> {
-    let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+    let _lock = mise_util::testing::lock_ignoring_poison(&ENV_LOCK);
     let tmp = tempfile::tempdir()?;
     let _guard = BrewPrefixGuard::set(tmp.path());
     file::create_dir_all(caskroom_version_dir(
@@ -474,7 +474,7 @@ fn ignores_version_without_homebrew_metadata() -> Result<()> {
 
 #[test]
 fn rejects_homebrew_metadata_without_installed_version() -> Result<()> {
-    let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+    let _lock = mise_util::testing::lock_ignoring_poison(&ENV_LOCK);
     let tmp = tempfile::tempdir()?;
     let _guard = BrewPrefixGuard::set(tmp.path());
     file::create_dir_all(caskroom_token_dir(CaskManager::BrewCask, "example").join(".metadata"))?;
@@ -490,7 +490,7 @@ fn rejects_homebrew_metadata_without_installed_version() -> Result<()> {
 
 #[test]
 fn rejects_homebrew_metadata_with_multiple_versions() -> Result<()> {
-    let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+    let _lock = mise_util::testing::lock_ignoring_poison(&ENV_LOCK);
     let tmp = tempfile::tempdir()?;
     let _guard = BrewPrefixGuard::set(tmp.path());
     let token_dir = caskroom_token_dir(CaskManager::BrewCask, "example");
@@ -509,7 +509,7 @@ fn rejects_homebrew_metadata_with_multiple_versions() -> Result<()> {
 
 #[test]
 fn externally_managed_version_precedes_artifact_parsing() -> Result<()> {
-    let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+    let _lock = mise_util::testing::lock_ignoring_poison(&ENV_LOCK);
     let tmp = tempfile::tempdir()?;
     let _guard = BrewPrefixGuard::set(tmp.path());
     let token_dir = caskroom_token_dir(CaskManager::BrewCask, "example");
@@ -538,7 +538,7 @@ fn externally_managed_version_precedes_artifact_parsing() -> Result<()> {
 
 #[test]
 fn both_receipt_types_satisfy_installed_state_without_mutation() -> Result<()> {
-    let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+    let _lock = mise_util::testing::lock_ignoring_poison(&ENV_LOCK);
     let tmp = tempfile::tempdir()?;
     let _guard = BrewPrefixGuard::set(tmp.path());
     let cask = test_cask("example", "1.0.0");
@@ -580,7 +580,7 @@ fn both_receipt_types_satisfy_installed_state_without_mutation() -> Result<()> {
 
 #[test]
 fn mise_owned_state_validates_artifacts_before_receipt() -> Result<()> {
-    let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+    let _lock = mise_util::testing::lock_ignoring_poison(&ENV_LOCK);
     let tmp = tempfile::tempdir()?;
     let _guard = BrewPrefixGuard::set(tmp.path());
     let mut cask = test_cask("example", "1.0.0");
@@ -603,7 +603,7 @@ fn mise_owned_state_validates_artifacts_before_receipt() -> Result<()> {
 #[cfg(target_os = "linux")]
 #[test]
 fn mise_owned_state_validates_platform_before_receipt() -> Result<()> {
-    let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+    let _lock = mise_util::testing::lock_ignoring_poison(&ENV_LOCK);
     let tmp = tempfile::tempdir()?;
     let _guard = BrewPrefixGuard::set(tmp.path());
     let mut cask = test_cask("example", "1.0.0");
@@ -627,7 +627,7 @@ fn mise_owned_state_validates_platform_before_receipt() -> Result<()> {
 
 #[test]
 fn ownership_race_guard_removes_only_mise_stage() -> Result<()> {
-    let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+    let _lock = mise_util::testing::lock_ignoring_poison(&ENV_LOCK);
     let tmp = tempfile::tempdir()?;
     let _guard = BrewPrefixGuard::set(tmp.path());
     let stage = tmp.path().join("stage");
@@ -649,7 +649,7 @@ fn ownership_race_guard_removes_only_mise_stage() -> Result<()> {
 #[cfg(unix)]
 #[test]
 fn ownership_race_probe_error_removes_mise_stage() -> Result<()> {
-    let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+    let _lock = mise_util::testing::lock_ignoring_poison(&ENV_LOCK);
     let tmp = tempfile::tempdir()?;
     let _guard = BrewPrefixGuard::set(tmp.path());
     let stage = tmp.path().join("stage");
@@ -676,18 +676,18 @@ fn directory_fingerprint_tracks_tree_content_and_links() -> Result<()> {
     let tmp = tempfile::tempdir()?;
     let root = tmp.path().join("Example.app");
     file::create_dir_all(root.join("Contents/Resources"))?;
-    crate::file::write(root.join("Contents/app"), "one")?;
-    crate::file::write(root.join("Contents/Resources/config"), "config")?;
+    mise_util::file::write(root.join("Contents/app"), "one")?;
+    mise_util::file::write(root.join("Contents/Resources/config"), "config")?;
     std::os::unix::fs::symlink("app", root.join("Contents/current"))?;
     let original = cask_target_fingerprint(&root)?;
     assert_eq!(original, cask_target_fingerprint(&root)?);
 
-    crate::file::write(root.join("Contents/app"), "two")?;
+    mise_util::file::write(root.join("Contents/app"), "two")?;
     assert_ne!(original, cask_target_fingerprint(&root)?);
-    crate::file::write(root.join("Contents/app"), "one")?;
+    mise_util::file::write(root.join("Contents/app"), "one")?;
     assert_eq!(original, cask_target_fingerprint(&root)?);
 
-    crate::file::write(root.join("Contents/added"), "added")?;
+    mise_util::file::write(root.join("Contents/added"), "added")?;
     assert_ne!(original, cask_target_fingerprint(&root)?);
     file::remove_file(root.join("Contents/added"))?;
     assert_eq!(original, cask_target_fingerprint(&root)?);
@@ -698,7 +698,7 @@ fn directory_fingerprint_tracks_tree_content_and_links() -> Result<()> {
 
     file::remove_all(&root)?;
     file::create_dir_all(root.join("Contents/Resources"))?;
-    crate::file::write(root.join("Contents/app"), "replacement")?;
+    mise_util::file::write(root.join("Contents/app"), "replacement")?;
     assert_ne!(original, cask_target_fingerprint(&root)?);
     Ok(())
 }
@@ -733,7 +733,7 @@ fn staged_app_accepts_target_symlink_and_legacy_copy() -> Result<()> {
 
 #[test]
 fn completed_receipt_ignores_app_bundle_content_drift() -> Result<()> {
-    let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+    let _lock = mise_util::testing::lock_ignoring_poison(&ENV_LOCK);
     let tmp = tempfile::tempdir()?;
     let _guard = BrewPrefixGuard::set(tmp.path());
     let cask = test_cask("example", "1.0.0");
@@ -747,7 +747,7 @@ fn completed_receipt_ignores_app_bundle_content_drift() -> Result<()> {
     };
     let app_target = app_target_path(app.target_name()?)?;
     file::create_dir_all(app_target.join("Contents"))?;
-    crate::file::write(app_target.join("Contents/app"), "original")?;
+    mise_util::file::write(app_target.join("Contents/app"), "original")?;
     let caskroom = caskroom_version_dir(CaskManager::BrewCask, &cask.token, &cask.version);
     file::create_dir_all(&caskroom)?;
     write_receipt_with_flight_targets(
@@ -763,7 +763,7 @@ fn completed_receipt_ignores_app_bundle_content_drift() -> Result<()> {
         mise_installed_cask_version(&cask)?,
         Some(cask.version.clone())
     );
-    crate::file::write(app_target.join("Contents/app"), "changed")?;
+    mise_util::file::write(app_target.join("Contents/app"), "changed")?;
     // Content drift must not look like "missing" — that would reinstall the
     // app on the next apply and revoke macOS TCC grants.
     assert_eq!(
@@ -782,7 +782,7 @@ fn completed_receipt_ignores_app_bundle_content_drift() -> Result<()> {
 
 #[test]
 fn completed_receipt_missing_app_is_not_installed() -> Result<()> {
-    let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+    let _lock = mise_util::testing::lock_ignoring_poison(&ENV_LOCK);
     let tmp = tempfile::tempdir()?;
     let _guard = BrewPrefixGuard::set(tmp.path());
     let cask = test_cask("example", "1.0.0");
@@ -796,7 +796,7 @@ fn completed_receipt_missing_app_is_not_installed() -> Result<()> {
     };
     let app_target = app_target_path(app.target_name()?)?;
     file::create_dir_all(app_target.join("Contents"))?;
-    crate::file::write(app_target.join("Contents/app"), "original")?;
+    mise_util::file::write(app_target.join("Contents/app"), "original")?;
     let caskroom = caskroom_version_dir(CaskManager::BrewCask, &cask.token, &cask.version);
     file::create_dir_all(&caskroom)?;
     write_receipt_with_flight_targets(
@@ -818,7 +818,7 @@ fn cask_target_present_checks_symlink_destination_and_kinds() -> Result<()> {
     let tmp = tempfile::tempdir()?;
     let dest = tmp.path().join("bin/tool");
     file::create_dir_all(dest.parent().unwrap())?;
-    crate::file::write(&dest, "tool")?;
+    mise_util::file::write(&dest, "tool")?;
     let link = tmp.path().join("prefix/bin/tool");
     file::create_dir_all(link.parent().unwrap())?;
     file::make_symlink(&dest, &link)?;
@@ -835,9 +835,9 @@ fn cask_target_present_checks_symlink_destination_and_kinds() -> Result<()> {
         "dangling symlink must not count as present"
     );
 
-    crate::file::write(&dest, "tool")?;
+    mise_util::file::write(&dest, "tool")?;
     let other = tmp.path().join("bin/other");
-    crate::file::write(&other, "other")?;
+    mise_util::file::write(&other, "other")?;
     file::remove_file(&link)?;
     file::make_symlink(&other, &link)?;
     assert!(
@@ -846,7 +846,7 @@ fn cask_target_present_checks_symlink_destination_and_kinds() -> Result<()> {
     );
 
     file::remove_file(&link)?;
-    crate::file::write(&link, "not a symlink")?;
+    mise_util::file::write(&link, "not a symlink")?;
     assert!(
         !cask_target_present(&record),
         "file replacing a symlink must not count as present"
@@ -854,14 +854,14 @@ fn cask_target_present_checks_symlink_destination_and_kinds() -> Result<()> {
 
     let font = tmp.path().join("fonts/Example.ttf");
     file::create_dir_all(font.parent().unwrap())?;
-    crate::file::write(&font, "font")?;
+    mise_util::file::write(&font, "font")?;
     let file_record = CaskTargetRecord {
         path: font.clone(),
         fingerprint: cask_target_fingerprint(&font)?,
         uninstall: None,
     };
     assert!(cask_target_present(&file_record));
-    crate::file::write(&font, "changed font bytes")?;
+    mise_util::file::write(&font, "changed font bytes")?;
     assert!(
         cask_target_present(&file_record),
         "file content drift is ignored for install health"
@@ -892,7 +892,7 @@ fn self_updating_receipt_accepts_app_bundle_drift() -> Result<()> {
     };
     let app_target = app_target_path(app.target_name()?)?;
     file::create_dir_all(app_target.join("Contents"))?;
-    crate::file::write(app_target.join("Contents/app"), "downloaded")?;
+    mise_util::file::write(app_target.join("Contents/app"), "downloaded")?;
     let caskroom = caskroom_version_dir(CaskManager::BrewCask, &cask.token, &cask.version);
     file::create_dir_all(&caskroom)?;
     write_receipt_with_flight_targets(
@@ -905,7 +905,7 @@ fn self_updating_receipt_accepts_app_bundle_drift() -> Result<()> {
         &[],
     )?;
 
-    crate::file::write(app_target.join("Contents/app"), "updated by app")?;
+    mise_util::file::write(app_target.join("Contents/app"), "updated by app")?;
     cask.version = "2.0.0".to_string();
     assert_eq!(
         mise_installed_cask_version(&cask)?,
@@ -943,7 +943,7 @@ fn self_updating_receipt_accepts_app_bundle_drift() -> Result<()> {
 
 #[test]
 fn adopts_only_an_identical_existing_app() -> Result<()> {
-    let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+    let _lock = mise_util::testing::lock_ignoring_poison(&ENV_LOCK);
     let tmp = trusted_tempdir()?;
     let root = tmp.path().canonicalize()?;
     let _guard = BrewPrefixGuard::set(&root);
@@ -953,8 +953,8 @@ fn adopts_only_an_identical_existing_app() -> Result<()> {
     let target = root.join("Applications/Example.app/Contents");
     file::create_dir_all(&source)?;
     file::create_dir_all(&target)?;
-    crate::file::write(source.join("app"), "identical")?;
-    crate::file::write(target.join("app"), "identical")?;
+    mise_util::file::write(source.join("app"), "identical")?;
+    mise_util::file::write(target.join("app"), "identical")?;
     let app = AppArtifact {
         source: "Example.app".to_string(),
         target: Some("$HOMEBREW_PREFIX/Applications/Example.app".to_string()),
@@ -980,7 +980,7 @@ fn adopts_only_an_identical_existing_app() -> Result<()> {
     );
     assert!(!caskroom.join("Example.app").exists());
 
-    crate::file::write(target.join("app"), "different")?;
+    mise_util::file::write(target.join("app"), "different")?;
     let error = install_app(
         &stage,
         &caskroom,
@@ -1001,7 +1001,7 @@ fn adopts_only_an_identical_existing_app() -> Result<()> {
 
 #[test]
 fn self_updating_cask_adopts_a_different_existing_app() -> Result<()> {
-    let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+    let _lock = mise_util::testing::lock_ignoring_poison(&ENV_LOCK);
     let tmp = trusted_tempdir()?;
     let root = tmp.path().canonicalize()?;
     let _guard = BrewPrefixGuard::set(&root);
@@ -1011,8 +1011,8 @@ fn self_updating_cask_adopts_a_different_existing_app() -> Result<()> {
     let target = root.join("Applications/Example.app/Contents");
     file::create_dir_all(&source)?;
     file::create_dir_all(&target)?;
-    crate::file::write(source.join("app"), "downloaded version")?;
-    crate::file::write(target.join("app"), "self-updated version")?;
+    mise_util::file::write(source.join("app"), "downloaded version")?;
+    mise_util::file::write(target.join("app"), "self-updated version")?;
     let app = AppArtifact {
         source: "Example.app".to_string(),
         target: Some("$HOMEBREW_PREFIX/Applications/Example.app".to_string()),
@@ -1097,7 +1097,7 @@ fn rejects_command_wrapper_invalid_environment_name() {
 #[test]
 #[cfg(unix)]
 fn stages_command_wrapper_with_args_env_and_expanded_paths() -> Result<()> {
-    let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+    let _lock = mise_util::testing::lock_ignoring_poison(&ENV_LOCK);
     let tmp = tempfile::tempdir()?;
     let prefix = tmp.path().join("homebrew");
     let _guard = BrewPrefixGuard::set(&prefix);
@@ -1144,7 +1144,7 @@ fn stages_command_wrapper_with_args_env_and_expanded_paths() -> Result<()> {
 #[test]
 #[cfg(unix)]
 fn stages_command_wrapper_with_literal_content() -> Result<()> {
-    let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+    let _lock = mise_util::testing::lock_ignoring_poison(&ENV_LOCK);
     let tmp = tempfile::tempdir()?;
     let prefix = tmp.path().join("homebrew");
     let _guard = BrewPrefixGuard::set(&prefix);
@@ -1386,7 +1386,7 @@ fn parses_gcloud_copy_installer_and_run_metadata() -> Result<()> {
 fn installer_script_is_made_executable_before_running() -> Result<()> {
     use std::os::unix::fs::PermissionsExt;
 
-    let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+    let _lock = mise_util::testing::lock_ignoring_poison(&ENV_LOCK);
     let tmp = tempfile::tempdir()?;
     let prefix = tmp.path().join("prefix");
     let _guard = BrewPrefixGuard::set(&prefix);
@@ -1454,7 +1454,7 @@ fn installer_script_rejects_paths_outside_stage() -> Result<()> {
 #[test]
 #[cfg(unix)]
 fn installer_script_accepts_preflight_copied_root() -> Result<()> {
-    let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+    let _lock = mise_util::testing::lock_ignoring_poison(&ENV_LOCK);
     let tmp = tempfile::tempdir()?;
     let prefix = tmp.path().join("prefix");
     let _guard = BrewPrefixGuard::set(&prefix);
@@ -1522,7 +1522,7 @@ fn installer_script_rejects_unrecorded_file_beneath_copied_target() -> Result<()
 #[test]
 #[cfg(unix)]
 fn installer_mutations_are_included_in_durable_symlink_sources() -> Result<()> {
-    let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+    let _lock = mise_util::testing::lock_ignoring_poison(&ENV_LOCK);
     let tmp = tempfile::tempdir()?;
     let prefix = tmp.path().join("prefix");
     let _guard = BrewPrefixGuard::set(&prefix);
@@ -1598,7 +1598,7 @@ fn parses_installer_script_sudo_and_print_stderr() -> Result<()> {
 #[test]
 #[cfg(unix)]
 fn installer_script_expands_homebrew_placeholders() -> Result<()> {
-    let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+    let _lock = mise_util::testing::lock_ignoring_poison(&ENV_LOCK);
     let tmp = tempfile::tempdir()?;
     let prefix = tmp.path().join("prefix");
     let _guard = BrewPrefixGuard::set(&prefix);
@@ -1651,7 +1651,7 @@ fn installer_script_expands_homebrew_placeholders() -> Result<()> {
 
 #[test]
 fn structured_copy_restores_external_target_without_status_tracking() -> Result<()> {
-    let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+    let _lock = mise_util::testing::lock_ignoring_poison(&ENV_LOCK);
     let tmp = tempfile::tempdir()?;
     let prefix = tmp.path().join("prefix");
     let _guard = BrewPrefixGuard::set(&prefix);
@@ -1700,7 +1700,7 @@ fn structured_copy_restores_external_target_without_status_tracking() -> Result<
 
 #[test]
 fn structured_copy_rollback_removes_target_with_created_parent() -> Result<()> {
-    let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+    let _lock = mise_util::testing::lock_ignoring_poison(&ENV_LOCK);
     let tmp = tempfile::tempdir()?;
     let prefix = tmp.path().join("prefix");
     let _guard = BrewPrefixGuard::set(&prefix);
@@ -3215,7 +3215,7 @@ fn terminate_process_must_succeed_returns_final_error() {
 
 #[test]
 fn structured_run_expands_paths_args_and_env() -> Result<()> {
-    let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+    let _lock = mise_util::testing::lock_ignoring_poison(&ENV_LOCK);
     let tmp = tempfile::tempdir()?;
     let prefix = tmp.path().join("homebrew");
     let _guard = BrewPrefixGuard::set(&prefix);
@@ -3721,7 +3721,7 @@ fn rejects_malformed_structured_set_ownership_steps() {
 
 #[test]
 fn resolves_structured_set_ownership_paths() -> Result<()> {
-    let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+    let _lock = mise_util::testing::lock_ignoring_poison(&ENV_LOCK);
     let tmp = tempfile::tempdir()?;
     let _guard = BrewPrefixGuard::set(&tmp.path().join("prefix"));
     let stage = tmp.path().join("stage");
@@ -3743,7 +3743,7 @@ fn resolves_structured_set_ownership_paths() -> Result<()> {
 
     assert_eq!(
         resolve(FlightPathBase::Literal, "~/.parsec")?,
-        [crate::dirs::HOME.join(".parsec")]
+        [mise_util::dirs::HOME.join(".parsec")]
     );
     assert_eq!(
         resolve(FlightPathBase::Literal, "/usr/local/lib")?,
@@ -3997,7 +3997,7 @@ fn cask_shim_supports_completion_stanzas_and_system_command() -> Result<()> {
     let shim = tmp.path().join("cask_shim.rb");
     let cask = tmp.path().join("example.rb");
     file::write(&shim, CASK_SHIM_RB)?;
-    crate::file::write(tmp.path().join("kubectl"), "kubectl")?;
+    mise_util::file::write(tmp.path().join("kubectl"), "kubectl")?;
     // Modeled on the docker-desktop cask: completion stanzas plus a
     // postflight that symlinks kubectl via system_command.
     file::write(
@@ -4035,7 +4035,7 @@ end
 "##,
     )?;
     let spaced_tool = tmp.path().join("my tool $HOME");
-    crate::file::write(&spaced_tool, "#!/bin/sh\nprintf spaced-ok\n")?;
+    mise_util::file::write(&spaced_tool, "#!/bin/sh\nprintf spaced-ok\n")?;
     file::make_executable(&spaced_tool)?;
 
     let output = run_cask_shim_hook(&ruby, &shim, &cask, tmp.path(), "1.0.0", "postflight")?;
@@ -4503,7 +4503,7 @@ fn artifact_lookup_resolves_through_a_flight_created_symlink() -> Result<()> {
     let installed = tmp.path().join("share/google-cloud-sdk");
     file::create_dir_all(&stage)?;
     file::create_dir_all(installed.join("bin"))?;
-    crate::file::write(
+    mise_util::file::write(
         installed.join("bin/git-credential-gcloud.sh"),
         "credential helper",
     )?;
@@ -4526,7 +4526,7 @@ fn artifact_lookup_rejects_sources_that_escape_the_root() -> Result<()> {
     let tmp = tempfile::tempdir()?;
     let stage = tmp.path().join("stage");
     file::create_dir_all(&stage)?;
-    crate::file::write(tmp.path().join("outside"), "not ours")?;
+    mise_util::file::write(tmp.path().join("outside"), "not ours")?;
 
     assert_eq!(find_file_artifact(&stage, "../outside"), None);
     assert_eq!(
@@ -4600,7 +4600,7 @@ fn maps_preflight_generated_wrapper_from_extract_stage() -> Result<()> {
     // VLC: preflight writes `#{staged_path}/vlc.wrapper.sh` while preflight
     // staged_path is the extract stage, not the temp Caskroom. API binary
     // source is `$HOMEBREW_PREFIX/Caskroom/vlc/<ver>/vlc.wrapper.sh`.
-    let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+    let _lock = mise_util::testing::lock_ignoring_poison(&ENV_LOCK);
     let tmp = tempfile::tempdir()?;
     let prefix = tmp.path().join("homebrew");
     let _guard = BrewPrefixGuard::set(&prefix);
@@ -4626,7 +4626,7 @@ fn maps_preflight_generated_wrapper_from_extract_stage() -> Result<()> {
 
 #[test]
 fn prefers_temp_caskroom_wrapper_over_extract_stage() -> Result<()> {
-    let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+    let _lock = mise_util::testing::lock_ignoring_poison(&ENV_LOCK);
     let tmp = tempfile::tempdir()?;
     let prefix = tmp.path().join("homebrew");
     let _guard = BrewPrefixGuard::set(&prefix);
@@ -4797,7 +4797,7 @@ fn parses_declared_completion_artifacts() -> Result<()> {
 
 #[test]
 fn completion_target_paths_match_homebrew_names() -> Result<()> {
-    let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+    let _lock = mise_util::testing::lock_ignoring_poison(&ENV_LOCK);
     let tmp = tempfile::tempdir()?;
     let _guard = BrewPrefixGuard::set(tmp.path());
 
@@ -4823,14 +4823,14 @@ fn completion_target_paths_match_homebrew_names() -> Result<()> {
 
 #[test]
 fn stages_and_links_declared_completion() -> Result<()> {
-    let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+    let _lock = mise_util::testing::lock_ignoring_poison(&ENV_LOCK);
     let tmp = tempfile::tempdir()?;
     let _guard = BrewPrefixGuard::set(tmp.path());
     let stage = tmp.path().join("stage");
     let caskroom = tmp.path().join("caskroom");
     file::create_dir_all(stage.join("completions"))?;
     file::create_dir_all(&caskroom)?;
-    crate::file::write(stage.join("completions/ghostty.bash"), "complete")?;
+    mise_util::file::write(stage.join("completions/ghostty.bash"), "complete")?;
     let cask = test_cask("ghostty", "1.0.0");
     let completion = CompletionArtifact {
         shell: CompletionShell::Bash,
@@ -4847,20 +4847,20 @@ fn stages_and_links_declared_completion() -> Result<()> {
     link_completion(&cask, &artifacts, &caskroom, &target)?;
 
     assert_eq!(
-        crate::file::read_to_string(caskroom.join("etc/bash_completion.d/ghostty"))?,
+        mise_util::file::read_to_string(caskroom.join("etc/bash_completion.d/ghostty"))?,
         "complete"
     );
     assert_eq!(
         std::fs::read_link(&target)?,
         caskroom.join("etc/bash_completion.d/ghostty")
     );
-    assert_eq!(crate::file::read_to_string(target)?, "complete");
+    assert_eq!(mise_util::file::read_to_string(target)?, "complete");
     Ok(())
 }
 
 #[test]
 fn declared_completion_source_maps_caskroom_path_to_temp_caskroom() -> Result<()> {
-    let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+    let _lock = mise_util::testing::lock_ignoring_poison(&ENV_LOCK);
     let tmp = tempfile::tempdir()?;
     let _guard = BrewPrefixGuard::set(tmp.path());
     let stage = tmp.path().join("stage");
@@ -4868,7 +4868,7 @@ fn declared_completion_source_maps_caskroom_path_to_temp_caskroom() -> Result<()
     let cask = test_cask("foo", "1.0.0");
     file::create_dir_all(&stage)?;
     file::create_dir_all(caskroom.join("etc/bash_completion.d"))?;
-    crate::file::write(caskroom.join("etc/bash_completion.d/foo"), "complete")?;
+    mise_util::file::write(caskroom.join("etc/bash_completion.d/foo"), "complete")?;
     let completion = CompletionArtifact {
         shell: CompletionShell::Bash,
         source: "$HOMEBREW_PREFIX/Caskroom/foo/1.0.0/etc/bash_completion.d/foo".to_string(),
@@ -4878,7 +4878,7 @@ fn declared_completion_source_maps_caskroom_path_to_temp_caskroom() -> Result<()
     stage_completion(&stage, &caskroom, &cask, &[], &completion)?;
 
     assert_eq!(
-        crate::file::read_to_string(caskroom.join("etc/bash_completion.d/foo"))?,
+        mise_util::file::read_to_string(caskroom.join("etc/bash_completion.d/foo"))?,
         "complete"
     );
     Ok(())
@@ -4886,7 +4886,7 @@ fn declared_completion_source_maps_caskroom_path_to_temp_caskroom() -> Result<()
 
 #[test]
 fn declared_completion_source_maps_caskroom_path_to_extract_stage() -> Result<()> {
-    let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+    let _lock = mise_util::testing::lock_ignoring_poison(&ENV_LOCK);
     let tmp = tempfile::tempdir()?;
     let _guard = BrewPrefixGuard::set(tmp.path());
     let stage = tmp.path().join("stage");
@@ -4894,7 +4894,7 @@ fn declared_completion_source_maps_caskroom_path_to_extract_stage() -> Result<()
     let cask = test_cask("foo", "1.0.0");
     file::create_dir_all(stage.join("share/completions"))?;
     file::create_dir_all(&caskroom)?;
-    crate::file::write(stage.join("share/completions/foo.bash"), "complete")?;
+    mise_util::file::write(stage.join("share/completions/foo.bash"), "complete")?;
     let completion = CompletionArtifact {
         shell: CompletionShell::Bash,
         source: "$HOMEBREW_PREFIX/Caskroom/foo/1.0.0/share/completions/foo.bash".to_string(),
@@ -4904,7 +4904,7 @@ fn declared_completion_source_maps_caskroom_path_to_extract_stage() -> Result<()
     stage_completion(&stage, &caskroom, &cask, &[], &completion)?;
 
     assert_eq!(
-        crate::file::read_to_string(caskroom.join("etc/bash_completion.d/foo"))?,
+        mise_util::file::read_to_string(caskroom.join("etc/bash_completion.d/foo"))?,
         "complete"
     );
     Ok(())
@@ -4913,7 +4913,7 @@ fn declared_completion_source_maps_caskroom_path_to_extract_stage() -> Result<()
 #[cfg(unix)]
 #[test]
 fn link_completion_adopts_homebrew_app_symlink() -> Result<()> {
-    let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+    let _lock = mise_util::testing::lock_ignoring_poison(&ENV_LOCK);
     let tmp = tempfile::tempdir()?;
     let _guard = BrewPrefixGuard::set(tmp.path());
     let cask = test_cask("docker-desktop", "2.0.0");
@@ -4940,21 +4940,21 @@ fn link_completion_adopts_homebrew_app_symlink() -> Result<()> {
     file::create_dir_all(caskroom_completion.parent().unwrap())?;
     file::create_dir_all(app_completion.parent().unwrap())?;
     file::create_dir_all(target.parent().unwrap())?;
-    crate::file::write(&caskroom_completion, "new")?;
-    crate::file::write(&app_completion, "homebrew")?;
+    mise_util::file::write(&caskroom_completion, "new")?;
+    mise_util::file::write(&app_completion, "homebrew")?;
     file::make_symlink(&app_completion, &target)?;
 
     link_completion(&cask, &artifacts, &caskroom, &target)?;
 
     assert_eq!(std::fs::read_link(&target)?, caskroom_completion);
-    assert_eq!(crate::file::read_to_string(target)?, "new");
+    assert_eq!(mise_util::file::read_to_string(target)?, "new");
     Ok(())
 }
 
 #[cfg(unix)]
 #[test]
 fn link_completion_rejects_other_file_in_declared_app() -> Result<()> {
-    let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+    let _lock = mise_util::testing::lock_ignoring_poison(&ENV_LOCK);
     let tmp = tempfile::tempdir()?;
     let _guard = BrewPrefixGuard::set(tmp.path());
     let cask = test_cask("foo", "2.0.0");
@@ -4978,8 +4978,8 @@ fn link_completion_rejects_other_file_in_declared_app() -> Result<()> {
     let other = app_resources.join("other.bash");
     file::create_dir_all(&app_resources)?;
     file::create_dir_all(target.parent().unwrap())?;
-    crate::file::write(expected, "expected")?;
-    crate::file::write(&other, "other")?;
+    mise_util::file::write(expected, "expected")?;
+    mise_util::file::write(&other, "other")?;
     file::make_symlink(&other, &target)?;
 
     let err = ensure_completion_target_replaceable(&cask, &artifacts, &target)
@@ -4994,7 +4994,7 @@ fn link_completion_rejects_other_file_in_declared_app() -> Result<()> {
 #[cfg(unix)]
 #[test]
 fn link_completion_rejects_target_owned_by_another_cask() -> Result<()> {
-    let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+    let _lock = mise_util::testing::lock_ignoring_poison(&ENV_LOCK);
     let tmp = tempfile::tempdir()?;
     let _guard = BrewPrefixGuard::set(tmp.path());
     let cask = test_cask("foo", "2.0.0");
@@ -5005,8 +5005,8 @@ fn link_completion_rejects_target_owned_by_another_cask() -> Result<()> {
     file::create_dir_all(caskroom.join("etc/bash_completion.d"))?;
     file::create_dir_all(other_caskroom.join("etc/bash_completion.d"))?;
     file::create_dir_all(target.parent().unwrap())?;
-    crate::file::write(caskroom.join(relative), "new")?;
-    crate::file::write(other_caskroom.join(relative), "other")?;
+    mise_util::file::write(caskroom.join(relative), "new")?;
+    mise_util::file::write(other_caskroom.join(relative), "other")?;
     file::make_symlink(&other_caskroom.join(relative), &target)?;
 
     let err = link_completion(&cask, &CaskArtifacts::default(), &caskroom, &target)
@@ -5021,7 +5021,7 @@ fn link_completion_rejects_target_owned_by_another_cask() -> Result<()> {
 #[cfg(unix)]
 #[test]
 fn stages_generated_completion_output() -> Result<()> {
-    let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+    let _lock = mise_util::testing::lock_ignoring_poison(&ENV_LOCK);
     let tmp = tempfile::tempdir()?;
     let _guard = BrewPrefixGuard::set(tmp.path());
     let stage = tmp.path().join("stage");
@@ -5029,7 +5029,7 @@ fn stages_generated_completion_output() -> Result<()> {
     file::create_dir_all(&stage)?;
     file::create_dir_all(&caskroom)?;
     let executable = stage.join("op");
-    crate::file::write(
+    mise_util::file::write(
         &executable,
         "#!/bin/sh\nprintf '%s|%s|%s' \"$1\" \"$2\" \"$SHELL\"\n",
     )?;
@@ -5045,7 +5045,7 @@ fn stages_generated_completion_output() -> Result<()> {
     stage_generated_completions(&stage, &caskroom, &cask, &[], &completion)?;
 
     assert_eq!(
-        crate::file::read_to_string(caskroom.join("etc/bash_completion.d/op"))?,
+        mise_util::file::read_to_string(caskroom.join("etc/bash_completion.d/op"))?,
         "completion|bash|bash"
     );
     Ok(())
@@ -5053,7 +5053,7 @@ fn stages_generated_completion_output() -> Result<()> {
 
 #[test]
 fn generated_completion_executable_expands_appdir() -> Result<()> {
-    let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+    let _lock = mise_util::testing::lock_ignoring_poison(&ENV_LOCK);
     let tmp = tempfile::tempdir()?;
     let _guard = BrewPrefixGuard::set(tmp.path());
     let stage = tmp.path().join("stage");
@@ -5062,7 +5062,7 @@ fn generated_completion_executable_expands_appdir() -> Result<()> {
     file::create_dir_all(&caskroom)?;
     let app_executable = tmp.path().join("Applications/Foo.app/Contents/MacOS/foo");
     file::create_dir_all(app_executable.parent().unwrap())?;
-    crate::file::write(&app_executable, "app cli")?;
+    mise_util::file::write(&app_executable, "app cli")?;
     let cask = test_cask("foo", "1.0.0");
     let completion = GeneratedCompletionArtifact {
         executable: "$APPDIR/Foo.app/Contents/MacOS/foo".to_string(),
@@ -5085,13 +5085,13 @@ fn generated_completion_executable_expands_appdir() -> Result<()> {
 
 #[test]
 fn appdir_artifact_source_matches_app_case_insensitively() -> Result<()> {
-    let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+    let _lock = mise_util::testing::lock_ignoring_poison(&ENV_LOCK);
     let tmp = tempfile::tempdir()?;
     let _guard = BrewPrefixGuard::set(tmp.path());
     let prefix_appdir = tmp.path().join("Applications");
     let relative = "foo.app/Contents/MacOS/foo";
     file::create_dir_all(prefix_appdir.join(relative).parent().unwrap())?;
-    crate::file::write(prefix_appdir.join(relative), "prefix")?;
+    mise_util::file::write(prefix_appdir.join(relative), "prefix")?;
     let apps = [
         AppArtifact {
             source: "Other.app".to_string(),
@@ -5112,15 +5112,15 @@ fn appdir_artifact_source_matches_app_case_insensitively() -> Result<()> {
 
 #[test]
 fn generated_completion_executable_prefers_staged_prefix_binary() -> Result<()> {
-    let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+    let _lock = mise_util::testing::lock_ignoring_poison(&ENV_LOCK);
     let tmp = tempfile::tempdir()?;
     let _guard = BrewPrefixGuard::set(tmp.path());
     let stage = tmp.path().join("stage");
     let caskroom = tmp.path().join("caskroom");
     file::create_dir_all(tmp.path().join("bin"))?;
     file::create_dir_all(caskroom.join("bin"))?;
-    crate::file::write(tmp.path().join("bin/op"), "old")?;
-    crate::file::write(caskroom.join("bin/op"), "new")?;
+    mise_util::file::write(tmp.path().join("bin/op"), "old")?;
+    mise_util::file::write(caskroom.join("bin/op"), "new")?;
     let cask = test_cask("1password-cli", "2.34.1");
     let completion = GeneratedCompletionArtifact {
         executable: "$HOMEBREW_PREFIX/bin/op".to_string(),
@@ -5139,7 +5139,7 @@ fn generated_completion_executable_prefers_staged_prefix_binary() -> Result<()> 
 
 #[test]
 fn rejects_ambiguous_generated_completion_bare_executable() -> Result<()> {
-    let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+    let _lock = mise_util::testing::lock_ignoring_poison(&ENV_LOCK);
     let tmp = tempfile::tempdir()?;
     let _guard = BrewPrefixGuard::set(tmp.path());
     let stage = tmp.path().join("stage");
@@ -5147,8 +5147,8 @@ fn rejects_ambiguous_generated_completion_bare_executable() -> Result<()> {
     file::create_dir_all(stage.join("a"))?;
     file::create_dir_all(stage.join("b"))?;
     file::create_dir_all(&caskroom)?;
-    crate::file::write(stage.join("a/tool"), "a")?;
-    crate::file::write(stage.join("b/tool"), "b")?;
+    mise_util::file::write(stage.join("a/tool"), "a")?;
+    mise_util::file::write(stage.join("b/tool"), "b")?;
     let cask = test_cask("tool", "1.0.0");
     let completion = GeneratedCompletionArtifact {
         executable: "tool".to_string(),
@@ -5175,8 +5175,8 @@ fn rejects_ambiguous_generated_completion_nested_executable() -> Result<()> {
     file::create_dir_all(stage.join("a/bin"))?;
     file::create_dir_all(stage.join("b/bin"))?;
     file::create_dir_all(&caskroom)?;
-    crate::file::write(stage.join("a/bin/tool"), "a")?;
-    crate::file::write(stage.join("b/bin/tool"), "b")?;
+    mise_util::file::write(stage.join("a/bin/tool"), "a")?;
+    mise_util::file::write(stage.join("b/bin/tool"), "b")?;
     let cask = test_cask("tool", "1.0.0");
     let completion = GeneratedCompletionArtifact {
         executable: "bin/tool".to_string(),
@@ -5198,7 +5198,7 @@ fn rejects_ambiguous_generated_completion_nested_executable() -> Result<()> {
 
 #[test]
 fn remove_obsolete_completions_removes_only_caskroom_symlinks() -> Result<()> {
-    let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+    let _lock = mise_util::testing::lock_ignoring_poison(&ENV_LOCK);
     let tmp = tempfile::tempdir()?;
     let _guard = BrewPrefixGuard::set(tmp.path());
     let cask = test_cask("foo", "2.0.0");
@@ -5212,9 +5212,9 @@ fn remove_obsolete_completions_removes_only_caskroom_symlinks() -> Result<()> {
     file::create_dir_all(old_caskroom.join("etc/bash_completion.d"))?;
     file::create_dir_all(other_caskroom.join("etc/bash_completion.d"))?;
     file::create_dir_all(target.parent().unwrap())?;
-    crate::file::write(old_caskroom.join(relative), "old")?;
-    crate::file::write(other_caskroom.join(relative), "old")?;
-    crate::file::write(&regular_target, "old")?;
+    mise_util::file::write(old_caskroom.join(relative), "old")?;
+    mise_util::file::write(other_caskroom.join(relative), "old")?;
+    mise_util::file::write(&regular_target, "old")?;
     file::make_symlink(&old_caskroom.join(relative), &target)?;
     file::make_symlink(
         &old_caskroom.join("etc/bash_completion.d/dangling"),
@@ -5243,7 +5243,7 @@ fn remove_obsolete_completions_removes_only_caskroom_symlinks() -> Result<()> {
 #[cfg(unix)]
 #[test]
 fn remove_obsolete_completions_removes_dangling_symlinks_with_symlinked_prefix() -> Result<()> {
-    let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+    let _lock = mise_util::testing::lock_ignoring_poison(&ENV_LOCK);
     let tmp = tempfile::tempdir()?;
     let real_prefix = tmp.path().join("homebrew-real");
     let prefix = tmp.path().join("homebrew");
@@ -5307,7 +5307,7 @@ fn detects_lifecycle_hooks() {
 
 #[test]
 fn maps_generated_caskroom_binary_to_temp_caskroom() -> Result<()> {
-    let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+    let _lock = mise_util::testing::lock_ignoring_poison(&ENV_LOCK);
     let tmp = tempfile::tempdir()?;
     let prefix = tmp.path().join("homebrew");
     let _guard = BrewPrefixGuard::set(&prefix);
@@ -5328,7 +5328,7 @@ fn maps_generated_caskroom_binary_to_temp_caskroom() -> Result<()> {
 
 #[test]
 fn rejects_generated_caskroom_binary_parent_dirs() -> Result<()> {
-    let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+    let _lock = mise_util::testing::lock_ignoring_poison(&ENV_LOCK);
     let tmp = tempfile::tempdir()?;
     let prefix = tmp.path().join("homebrew");
     let _guard = BrewPrefixGuard::set(&prefix);
@@ -5357,7 +5357,7 @@ fn parses_pkg_artifacts() {
 
 #[test]
 fn parses_and_installs_generic_artifact() -> Result<()> {
-    let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+    let _lock = mise_util::testing::lock_ignoring_poison(&ENV_LOCK);
     let tmp = tempfile::tempdir()?;
     let _guard = BrewPrefixGuard::set(tmp.path());
     let stage = tmp.path().join("stage");
@@ -5410,7 +5410,7 @@ fn parses_and_installs_generic_artifact() -> Result<()> {
 #[test]
 #[cfg(unix)]
 fn generic_artifact_rejects_extraction_source_symlink_escape() -> Result<()> {
-    let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+    let _lock = mise_util::testing::lock_ignoring_poison(&ENV_LOCK);
     let tmp = tempfile::tempdir()?;
     let _guard = BrewPrefixGuard::set(tmp.path());
     let stage = tmp.path().join("stage");
@@ -5442,7 +5442,7 @@ fn generic_artifact_rejects_extraction_source_symlink_escape() -> Result<()> {
 #[test]
 #[cfg(unix)]
 fn generic_artifact_rejects_caskroom_source_symlink_escape() -> Result<()> {
-    let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+    let _lock = mise_util::testing::lock_ignoring_poison(&ENV_LOCK);
     let tmp = tempfile::tempdir()?;
     let _guard = BrewPrefixGuard::set(tmp.path());
     let stage = tmp.path().join("stage");
@@ -5477,7 +5477,7 @@ fn generic_artifact_rejects_caskroom_source_symlink_escape() -> Result<()> {
 #[test]
 #[cfg(unix)]
 fn rejects_generic_artifact_target_through_external_symlink() -> Result<()> {
-    let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+    let _lock = mise_util::testing::lock_ignoring_poison(&ENV_LOCK);
     let tmp = tempfile::tempdir()?;
     let prefix = tmp.path().join("homebrew");
     let external = tmp.path().join("external");
@@ -5496,7 +5496,7 @@ fn rejects_generic_artifact_target_through_external_symlink() -> Result<()> {
 #[test]
 #[cfg(unix)]
 fn generic_copy_revalidates_target_after_symlink_swap() -> Result<()> {
-    let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+    let _lock = mise_util::testing::lock_ignoring_poison(&ENV_LOCK);
     let tmp = tempfile::tempdir()?;
     let prefix = tmp.path().join("homebrew");
     let external = tmp.path().join("external");
@@ -5519,7 +5519,7 @@ fn generic_copy_revalidates_target_after_symlink_swap() -> Result<()> {
 #[test]
 #[cfg(unix)]
 fn trusted_operation_parent_stays_bound_after_ancestor_swap() -> Result<()> {
-    let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+    let _lock = mise_util::testing::lock_ignoring_poison(&ENV_LOCK);
     let tmp = tempfile::tempdir()?;
     let prefix = tmp.path().join("homebrew");
     let library = prefix.join("lib");
@@ -5554,7 +5554,7 @@ fn trusted_operation_parent_stays_bound_after_ancestor_swap() -> Result<()> {
 #[test]
 #[cfg(unix)]
 fn trusted_operation_parent_accepts_symlinked_prefix() -> Result<()> {
-    let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+    let _lock = mise_util::testing::lock_ignoring_poison(&ENV_LOCK);
     let tmp = tempfile::tempdir()?;
     let real_prefix = tmp.path().join("real-homebrew");
     file::create_dir_all(real_prefix.join("lib"))?;
@@ -5580,7 +5580,7 @@ fn trusted_operation_parent_accepts_symlinked_prefix() -> Result<()> {
 #[test]
 #[cfg(unix)]
 fn trusted_operation_parent_creates_missing_directories() -> Result<()> {
-    let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+    let _lock = mise_util::testing::lock_ignoring_poison(&ENV_LOCK);
     let tmp = tempfile::tempdir()?;
     let prefix = tmp.path().join("homebrew");
     file::create_dir_all(&prefix)?;
@@ -5636,7 +5636,7 @@ fn elevated_generic_target_allows_only_group_writable_prefix() {
 #[test]
 #[cfg(unix)]
 fn unprivileged_generic_rollback_restores_backup_when_target_is_absent() -> Result<()> {
-    let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+    let _lock = mise_util::testing::lock_ignoring_poison(&ENV_LOCK);
     let tmp = tempfile::tempdir()?;
     let prefix = tmp.path().join("homebrew");
     let target = prefix.join("include/example.h");
@@ -5656,7 +5656,7 @@ fn unprivileged_generic_rollback_restores_backup_when_target_is_absent() -> Resu
 #[test]
 #[cfg(unix)]
 fn trusted_generic_rename_rejects_swapped_prefix() -> Result<()> {
-    let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+    let _lock = mise_util::testing::lock_ignoring_poison(&ENV_LOCK);
     let tmp = tempfile::tempdir()?;
     let prefix = tmp.path().join("homebrew");
     let library = prefix.join("lib");
@@ -5698,7 +5698,7 @@ fn trusted_generic_rename_rejects_swapped_prefix() -> Result<()> {
 fn private_staging_cleanup_rejects_replaced_directory() -> Result<()> {
     use std::os::unix::fs::PermissionsExt;
 
-    let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+    let _lock = mise_util::testing::lock_ignoring_poison(&ENV_LOCK);
     let tmp = tempfile::tempdir()?;
     let prefix = tmp.path().join("homebrew");
     let library = prefix.join("lib");
@@ -5738,7 +5738,7 @@ fn private_staging_cleanup_rejects_replaced_directory() -> Result<()> {
 fn obsolete_generic_cleanup_skips_mutable_parent_directories() -> Result<()> {
     use std::os::unix::fs::PermissionsExt;
 
-    let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+    let _lock = mise_util::testing::lock_ignoring_poison(&ENV_LOCK);
     let tmp = tempfile::tempdir()?;
     let _guard = BrewPrefixGuard::set(tmp.path());
     let obsolete = tmp.path().join("lib/obsolete");
@@ -5776,7 +5776,7 @@ fn obsolete_generic_cleanup_skips_mutable_parent_directories() -> Result<()> {
 fn obsolete_generic_cleanup_allows_owner_group_writable_prefix() -> Result<()> {
     use std::os::unix::fs::PermissionsExt;
 
-    let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+    let _lock = mise_util::testing::lock_ignoring_poison(&ENV_LOCK);
     let tmp = tempfile::tempdir()?;
     let prefix = tmp.path().join("homebrew");
     let library = prefix.join("lib");
@@ -6341,7 +6341,7 @@ fn font_target_path_with_tilde_target() -> Result<()> {
 #[cfg(target_os = "linux")]
 #[test]
 fn linux_font_dir_uses_xdg_data_home() {
-    assert_eq!(font_dir(), crate::env::XDG_DATA_HOME.join("fonts"));
+    assert_eq!(font_dir(), mise_util::env::XDG_DATA_HOME.join("fonts"));
 }
 
 #[cfg(target_os = "linux")]
@@ -6409,7 +6409,7 @@ fn app_only_casks_ignore_pkgutil_ids() -> Result<()> {
 
 #[test]
 fn binary_targets_default_to_prefix_bin() -> Result<()> {
-    let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+    let _lock = mise_util::testing::lock_ignoring_poison(&ENV_LOCK);
     let tmp = tempfile::tempdir()?;
     let _guard = BrewPrefixGuard::set(tmp.path());
 
@@ -6443,7 +6443,7 @@ fn binary_targets_default_to_prefix_bin() -> Result<()> {
 
 #[test]
 fn binary_targets_must_stay_under_an_allowed_root() -> Result<()> {
-    let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+    let _lock = mise_util::testing::lock_ignoring_poison(&ENV_LOCK);
     let tmp = tempfile::tempdir()?;
     let _guard = BrewPrefixGuard::set(tmp.path());
 
@@ -6461,7 +6461,7 @@ fn binary_targets_must_stay_under_an_allowed_root() -> Result<()> {
 
 #[test]
 fn binary_targets_allow_absolute_usr_local() -> Result<()> {
-    let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+    let _lock = mise_util::testing::lock_ignoring_poison(&ENV_LOCK);
     let tmp = tempfile::tempdir()?;
     let _guard = BrewPrefixGuard::set(tmp.path());
 
@@ -6483,7 +6483,7 @@ fn binary_targets_allow_absolute_usr_local() -> Result<()> {
 
 #[test]
 fn appdir_binary_targets_are_contained() -> Result<()> {
-    let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+    let _lock = mise_util::testing::lock_ignoring_poison(&ENV_LOCK);
     let tmp = tempfile::tempdir()?;
     let _guard = BrewPrefixGuard::set(tmp.path());
     assert_eq!(
@@ -6511,7 +6511,7 @@ fn appdir_binary_targets_are_contained() -> Result<()> {
 
 #[test]
 fn caskroom_binary_paths_support_contained_appdir_targets() -> Result<()> {
-    let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+    let _lock = mise_util::testing::lock_ignoring_poison(&ENV_LOCK);
     let tmp = tempfile::tempdir()?;
     let _guard = BrewPrefixGuard::set(tmp.path());
     let caskroom = tmp.path().join("Caskroom/surge/1.0.0");
@@ -6529,7 +6529,7 @@ fn caskroom_binary_paths_support_contained_appdir_targets() -> Result<()> {
 
 #[test]
 fn caskroom_binary_paths_preserve_prefix_relative_target() -> Result<()> {
-    let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+    let _lock = mise_util::testing::lock_ignoring_poison(&ENV_LOCK);
     let tmp = tempfile::tempdir()?;
     let _guard = BrewPrefixGuard::set(tmp.path());
     let caskroom = tmp.path().join("Caskroom/example/1.0.0");
@@ -6547,7 +6547,7 @@ fn caskroom_binary_paths_preserve_prefix_relative_target() -> Result<()> {
 
 #[test]
 fn caskroom_binary_paths_strip_usr_local_root() -> Result<()> {
-    let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+    let _lock = mise_util::testing::lock_ignoring_poison(&ENV_LOCK);
     let tmp = tempfile::tempdir()?;
     let _guard = BrewPrefixGuard::set(tmp.path());
     let caskroom = tmp.path().join("Caskroom/docker-desktop/1.0.0");
@@ -6565,7 +6565,7 @@ fn caskroom_binary_paths_strip_usr_local_root() -> Result<()> {
 
 #[test]
 fn installed_cask_version_uses_only_recorded_legacy_targets() -> Result<()> {
-    let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+    let _lock = mise_util::testing::lock_ignoring_poison(&ENV_LOCK);
     let tmp = tempfile::tempdir()?;
     let _guard = BrewPrefixGuard::set(tmp.path());
     let cask = test_cask("app-only", "1.0.0");
@@ -6592,7 +6592,7 @@ fn installed_cask_version_uses_only_recorded_legacy_targets() -> Result<()> {
         prune_safe: false,
         prune_blocker: None,
     };
-    crate::file::write(
+    mise_util::file::write(
         caskroom.join(".mise-cask.toml"),
         toml::to_string_pretty(&receipt)?,
     )?;
@@ -6606,7 +6606,7 @@ fn installed_cask_version_uses_only_recorded_legacy_targets() -> Result<()> {
 
 #[test]
 fn installed_cask_version_rejects_unknown_receipt_schema() -> Result<()> {
-    let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+    let _lock = mise_util::testing::lock_ignoring_poison(&ENV_LOCK);
     let tmp = tempfile::tempdir()?;
     let _guard = BrewPrefixGuard::set(tmp.path());
     let cask = test_cask("future", "1.0.0");
@@ -6639,7 +6639,7 @@ fn installed_cask_version_rejects_unknown_receipt_schema() -> Result<()> {
 
 #[test]
 fn cask_prune_removes_only_receipt_owned_direct_artifacts() -> Result<()> {
-    let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+    let _lock = mise_util::testing::lock_ignoring_poison(&ENV_LOCK);
     let tmp = tempfile::tempdir()?;
     let _guard = BrewPrefixGuard::set(tmp.path());
     let state_dir = tmp.path().join("state");
@@ -6686,7 +6686,7 @@ fn cask_prune_removes_only_receipt_owned_direct_artifacts() -> Result<()> {
 
 #[test]
 fn cask_prune_keeps_nonempty_token_directory_and_continues() -> Result<()> {
-    let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+    let _lock = mise_util::testing::lock_ignoring_poison(&ENV_LOCK);
     let tmp = tempfile::tempdir()?;
     let _guard = BrewPrefixGuard::set(tmp.path());
     let state_dir = tmp.path().join("state");
@@ -6718,7 +6718,7 @@ fn cask_prune_keeps_nonempty_token_directory_and_continues() -> Result<()> {
 
 #[test]
 fn cask_prune_skips_configured_drifted_and_legacy_casks() -> Result<()> {
-    let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+    let _lock = mise_util::testing::lock_ignoring_poison(&ENV_LOCK);
     let tmp = tempfile::tempdir()?;
     let _guard = BrewPrefixGuard::set(tmp.path());
     let state_dir = tmp.path().join("state");
@@ -6808,7 +6808,7 @@ fn cask_prune_skips_configured_drifted_and_legacy_casks() -> Result<()> {
 
 #[test]
 fn cask_prune_skips_shared_targets_and_pending_transactions() -> Result<()> {
-    let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+    let _lock = mise_util::testing::lock_ignoring_poison(&ENV_LOCK);
     let tmp = tempfile::tempdir()?;
     let _guard = BrewPrefixGuard::set(tmp.path());
     let state_dir = tmp.path().join("state");
@@ -6850,7 +6850,7 @@ fn cask_prune_skips_shared_targets_and_pending_transactions() -> Result<()> {
 
 #[test]
 fn cask_prune_rechecks_shared_targets_before_removal() -> Result<()> {
-    let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+    let _lock = mise_util::testing::lock_ignoring_poison(&ENV_LOCK);
     let tmp = tempfile::tempdir()?;
     let _guard = BrewPrefixGuard::set(tmp.path());
     let state_dir = tmp.path().join("state");
@@ -6868,7 +6868,7 @@ fn cask_prune_rechecks_shared_targets_before_removal() -> Result<()> {
 
 #[test]
 fn cask_prune_rechecks_homebrew_ownership_before_removal() -> Result<()> {
-    let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+    let _lock = mise_util::testing::lock_ignoring_poison(&ENV_LOCK);
     let tmp = tempfile::tempdir()?;
     let _guard = BrewPrefixGuard::set(tmp.path());
     let state_dir = tmp.path().join("state");
@@ -6897,7 +6897,7 @@ fn prune_containment_rejects_parent_components() {
 
 #[test]
 fn cask_prune_fails_closed_when_a_receipt_is_corrupt() -> Result<()> {
-    let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+    let _lock = mise_util::testing::lock_ignoring_poison(&ENV_LOCK);
     let tmp = tempfile::tempdir()?;
     let _guard = BrewPrefixGuard::set(tmp.path());
     let state_dir = tmp.path().join("state");
@@ -6923,7 +6923,7 @@ fn cask_prune_fails_closed_when_a_receipt_is_corrupt() -> Result<()> {
 fn cask_prune_fails_closed_when_a_token_directory_is_unreadable() -> Result<()> {
     use std::os::unix::fs::PermissionsExt;
 
-    let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+    let _lock = mise_util::testing::lock_ignoring_poison(&ENV_LOCK);
     let tmp = tempfile::tempdir()?;
     let _guard = BrewPrefixGuard::set(tmp.path());
     let state_dir = tmp.path().join("state");
@@ -7026,7 +7026,7 @@ fn any_version_journal_marks_token_pending() -> Result<()> {
 
 #[test]
 fn installed_cask_version_rejects_binary_state_without_receipt() -> Result<()> {
-    let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+    let _lock = mise_util::testing::lock_ignoring_poison(&ENV_LOCK);
     let tmp = tempfile::tempdir()?;
     let _guard = BrewPrefixGuard::set(tmp.path());
     let cask = test_cask("binary-only", "1.0.0");
@@ -7044,7 +7044,7 @@ fn installed_cask_version_rejects_binary_state_without_receipt() -> Result<()> {
 
     let target = binary.target_path(Path::new("/Applications"))?;
     file::create_dir_all(target.parent().unwrap())?;
-    crate::file::write(&target, "binary")?;
+    mise_util::file::write(&target, "binary")?;
 
     assert_eq!(mise_installed_cask_version(&cask)?, None);
     Ok(())
@@ -7052,7 +7052,7 @@ fn installed_cask_version_rejects_binary_state_without_receipt() -> Result<()> {
 
 #[test]
 fn installed_cask_version_does_not_invent_wrapper_from_current_api() -> Result<()> {
-    let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+    let _lock = mise_util::testing::lock_ignoring_poison(&ENV_LOCK);
     let tmp = tempfile::tempdir()?;
     let _guard = BrewPrefixGuard::set(tmp.path());
     let cask = test_cask("firefox", "153.0.1");
@@ -7108,12 +7108,12 @@ fn installed_cask_version_does_not_invent_wrapper_from_current_api() -> Result<(
 #[cfg(unix)]
 #[test]
 fn stages_and_links_binary_artifact() -> Result<()> {
-    let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+    let _lock = mise_util::testing::lock_ignoring_poison(&ENV_LOCK);
     let tmp = tempfile::tempdir()?;
     let _guard = BrewPrefixGuard::set(tmp.path());
     let stage = tmp.path().join("stage");
     file::create_dir_all(&stage)?;
-    crate::file::write(stage.join("op"), "binary")?;
+    mise_util::file::write(stage.join("op"), "binary")?;
     let caskroom = caskroom_version_dir(CaskManager::BrewCask, "binary-only", "1.0.0");
     file::create_dir_all(&caskroom)?;
     let cask = test_cask("binary-only", "1.0.0");
@@ -7127,7 +7127,7 @@ fn stages_and_links_binary_artifact() -> Result<()> {
 
     let target = binary.target_path(Path::new("/Applications"))?;
     assert_eq!(std::fs::read_link(&target)?, caskroom.join("bin/op"));
-    assert_eq!(crate::file::read_to_string(&target)?, "binary");
+    assert_eq!(mise_util::file::read_to_string(&target)?, "binary");
     Ok(())
 }
 
@@ -7139,16 +7139,16 @@ fn keeps_the_payload_beside_a_stage_sourced_binary() -> Result<()> {
     // `binary "bin/codex"`, so copying that one file out of the stage leaves a
     // launcher with nothing to exec, and it falls back to whatever stale copy
     // another install left on the machine.
-    let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+    let _lock = mise_util::testing::lock_ignoring_poison(&ENV_LOCK);
     let tmp = tempfile::tempdir()?;
     let _guard = BrewPrefixGuard::set(tmp.path());
     let stage = tmp.path().join("stage");
     file::create_dir_all(stage.join("bin"))?;
     file::create_dir_all(stage.join("resources"))?;
-    crate::file::write(stage.join("bin/tool"), "launcher")?;
-    crate::file::write(stage.join("bin/tool-helper"), "helper")?;
-    crate::file::write(stage.join("package.json"), "{}")?;
-    crate::file::write(stage.join("resources/data"), "data")?;
+    mise_util::file::write(stage.join("bin/tool"), "launcher")?;
+    mise_util::file::write(stage.join("bin/tool-helper"), "helper")?;
+    mise_util::file::write(stage.join("package.json"), "{}")?;
+    mise_util::file::write(stage.join("resources/data"), "data")?;
     let caskroom = caskroom_version_dir(CaskManager::BrewCask, "payload-cask", "1.0.0");
     file::create_dir_all(&caskroom)?;
     let cask = test_cask("payload-cask", "1.0.0");
@@ -7166,9 +7166,9 @@ fn keeps_the_payload_beside_a_stage_sourced_binary() -> Result<()> {
     file::remove_all(&stage)?;
     let target = binary.target_path(Path::new("/Applications"))?;
     assert_eq!(std::fs::read_link(&target)?, caskroom.join("bin/tool"));
-    assert_eq!(crate::file::read_to_string(&target)?, "launcher");
+    assert_eq!(mise_util::file::read_to_string(&target)?, "launcher");
     assert!(
-        crate::file::is_executable(&caskroom.join("bin/tool")),
+        mise_util::file::is_executable(&caskroom.join("bin/tool")),
         "a payload the cask ships without the bit still has to run"
     );
     for (path, contents) in [
@@ -7177,7 +7177,7 @@ fn keeps_the_payload_beside_a_stage_sourced_binary() -> Result<()> {
         ("resources/data", "data"),
     ] {
         assert_eq!(
-            crate::file::read_to_string(caskroom.join(path))?,
+            mise_util::file::read_to_string(caskroom.join(path))?,
             contents,
             "payload entry '{path}' must survive beside the binary"
         );
@@ -7191,14 +7191,14 @@ fn links_a_stage_sourced_binary_into_its_payload_when_the_target_moves_it() -> R
     // A payload that nests its binary deeper than the target path cannot rely
     // on the two coinciding, so the caskroom entry has to link back into the
     // tree rather than become a copy standing outside it.
-    let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+    let _lock = mise_util::testing::lock_ignoring_poison(&ENV_LOCK);
     let tmp = tempfile::tempdir()?;
     let _guard = BrewPrefixGuard::set(tmp.path());
     let stage = tmp.path().join("stage");
     file::create_dir_all(stage.join("pkg/bin"))?;
     file::create_dir_all(stage.join("pkg/lib"))?;
-    crate::file::write(stage.join("pkg/bin/tool"), "launcher")?;
-    crate::file::write(stage.join("pkg/lib/support"), "support")?;
+    mise_util::file::write(stage.join("pkg/bin/tool"), "launcher")?;
+    mise_util::file::write(stage.join("pkg/lib/support"), "support")?;
     let caskroom = caskroom_version_dir(CaskManager::BrewCask, "nested-payload", "1.0.0");
     file::create_dir_all(&caskroom)?;
     let cask = test_cask("nested-payload", "1.0.0");
@@ -7216,9 +7216,11 @@ fn links_a_stage_sourced_binary_into_its_payload_when_the_target_moves_it() -> R
         caskroom.join("pkg/bin/tool"),
         "must link into the payload, not copy the launcher out of it"
     );
-    assert!(crate::file::is_executable(&caskroom.join("pkg/bin/tool")));
+    assert!(mise_util::file::is_executable(
+        &caskroom.join("pkg/bin/tool")
+    ));
     file::remove_all(&stage)?;
-    assert_eq!(crate::file::read_to_string(&staged)?, "launcher");
+    assert_eq!(mise_util::file::read_to_string(&staged)?, "launcher");
     assert!(
         std::fs::read_link(&staged)?
             .parent()
@@ -7235,12 +7237,12 @@ fn retargets_a_payload_binary_link_when_the_caskroom_is_renamed() -> Result<()> 
     // which only exists until activation renames it. `symlinks_under` takes a
     // *minimum* depth, so the walk reaches a link nested under `bin/` and
     // rewrites it onto the final caskroom rather than leaving it dangling.
-    let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+    let _lock = mise_util::testing::lock_ignoring_poison(&ENV_LOCK);
     let tmp = tempfile::tempdir()?;
     let _guard = BrewPrefixGuard::set(tmp.path());
     let stage = tmp.path().join("stage");
     file::create_dir_all(stage.join("pkg/bin"))?;
-    crate::file::write(stage.join("pkg/bin/tool"), "launcher")?;
+    mise_util::file::write(stage.join("pkg/bin/tool"), "launcher")?;
     let final_caskroom = caskroom_version_dir(CaskManager::BrewCask, "renamed-payload", "1.0.0");
     let tmp_caskroom = tmp.path().join("tmp-caskroom");
     file::create_dir_all(&tmp_caskroom)?;
@@ -7274,21 +7276,21 @@ fn retargets_a_payload_binary_link_when_the_caskroom_is_renamed() -> Result<()> 
         "the link must follow the caskroom it was renamed into"
     );
     file::remove_all(&stage)?;
-    assert_eq!(crate::file::read_to_string(&staged)?, "launcher");
+    assert_eq!(mise_util::file::read_to_string(&staged)?, "launcher");
     Ok(())
 }
 
 #[cfg(unix)]
 #[test]
 fn stages_same_basename_binaries_without_collision() -> Result<()> {
-    let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+    let _lock = mise_util::testing::lock_ignoring_poison(&ENV_LOCK);
     let tmp = tempfile::tempdir()?;
     let _guard = BrewPrefixGuard::set(tmp.path());
     let stage = tmp.path().join("stage");
     file::create_dir_all(stage.join("bin"))?;
     file::create_dir_all(stage.join("sbin"))?;
-    crate::file::write(stage.join("bin/op"), "bin")?;
-    crate::file::write(stage.join("sbin/op"), "sbin")?;
+    mise_util::file::write(stage.join("bin/op"), "bin")?;
+    mise_util::file::write(stage.join("sbin/op"), "sbin")?;
     let caskroom = caskroom_version_dir(CaskManager::BrewCask, "binary-only", "1.0.0");
     file::create_dir_all(&caskroom)?;
     let cask = test_cask("binary-only", "1.0.0");
@@ -7307,11 +7309,11 @@ fn stages_same_basename_binaries_without_collision() -> Result<()> {
     link_binary(&caskroom, Path::new("/Applications"), &sbin)?;
 
     assert_eq!(
-        crate::file::read_to_string(bin.target_path(Path::new("/Applications"))?)?,
+        mise_util::file::read_to_string(bin.target_path(Path::new("/Applications"))?)?,
         "bin"
     );
     assert_eq!(
-        crate::file::read_to_string(sbin.target_path(Path::new("/Applications"))?)?,
+        mise_util::file::read_to_string(sbin.target_path(Path::new("/Applications"))?)?,
         "sbin"
     );
     Ok(())
@@ -7320,15 +7322,15 @@ fn stages_same_basename_binaries_without_collision() -> Result<()> {
 #[cfg(unix)]
 #[test]
 fn binary_source_prefers_hook_generated_caskroom_file() -> Result<()> {
-    let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+    let _lock = mise_util::testing::lock_ignoring_poison(&ENV_LOCK);
     let tmp = tempfile::tempdir()?;
     let _guard = BrewPrefixGuard::set(tmp.path());
     let stage = tmp.path().join("stage");
     file::create_dir_all(&stage)?;
-    crate::file::write(stage.join("op"), "stage")?;
+    mise_util::file::write(stage.join("op"), "stage")?;
     let caskroom = caskroom_version_dir(CaskManager::BrewCask, "binary-only", "1.0.0");
     file::create_dir_all(&caskroom)?;
-    crate::file::write(caskroom.join("op"), "hook")?;
+    mise_util::file::write(caskroom.join("op"), "hook")?;
     let cask = test_cask("binary-only", "1.0.0");
     let binary = BinaryArtifact {
         source: "op".to_string(),
@@ -7338,7 +7340,7 @@ fn binary_source_prefers_hook_generated_caskroom_file() -> Result<()> {
     stage_binary(&stage, &caskroom, &cask, &[], &binary)?;
 
     assert_eq!(
-        crate::file::read_to_string(caskroom.join("bin/op"))?,
+        mise_util::file::read_to_string(caskroom.join("bin/op"))?,
         "hook"
     );
     Ok(())
@@ -7352,7 +7354,7 @@ fn links_rather_than_copies_a_binary_behind_a_flight_symlink() -> Result<()> {
     // CLOUDSDK_ROOT_DIR from the resolved path of `$0`, so copying it into
     // the caskroom — out of the tree holding `lib/` — would stage a broken
     // binary. It has to be linked, like Homebrew does.
-    let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+    let _lock = mise_util::testing::lock_ignoring_poison(&ENV_LOCK);
     let tmp = tempfile::tempdir()?;
     let _guard = BrewPrefixGuard::set(tmp.path());
     let stage = tmp.path().join("stage");
@@ -7360,7 +7362,7 @@ fn links_rather_than_copies_a_binary_behind_a_flight_symlink() -> Result<()> {
     file::create_dir_all(&stage)?;
     file::create_dir_all(installed.join("bin"))?;
     file::create_dir_all(installed.join("lib"))?;
-    crate::file::write(installed.join("bin/gcloud"), "launcher")?;
+    mise_util::file::write(installed.join("bin/gcloud"), "launcher")?;
     std::os::unix::fs::symlink(&installed, stage.join("google-cloud-sdk"))?;
     let caskroom = caskroom_version_dir(CaskManager::BrewCask, "gcloud-cli", "531.0.0");
     file::create_dir_all(&caskroom)?;
@@ -7379,7 +7381,7 @@ fn links_rather_than_copies_a_binary_behind_a_flight_symlink() -> Result<()> {
         "must link into the SDK tree, not copy the launcher out of it"
     );
     // Still resolves, and `lib/` is a sibling of the link target.
-    assert_eq!(crate::file::read_to_string(&staged)?, "launcher");
+    assert_eq!(mise_util::file::read_to_string(&staged)?, "launcher");
     assert!(
         std::fs::read_link(&staged)?
             .parent()
@@ -7396,14 +7398,14 @@ fn links_a_stage_symlink_at_its_target_so_it_survives_teardown() -> Result<()> {
     // so a stage-local link to a durable binary comes back as a stage path
     // that resolves outside the stage. Linking the caskroom entry at that
     // literal path would dangle the moment staging tears the stage down.
-    let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+    let _lock = mise_util::testing::lock_ignoring_poison(&ENV_LOCK);
     let tmp = tempfile::tempdir()?;
     let _guard = BrewPrefixGuard::set(tmp.path());
     let stage = tmp.path().join("stage");
     let durable = tmp.path().join("opt/vendor/tool");
     file::create_dir_all(&stage)?;
     file::create_dir_all(durable.parent().unwrap())?;
-    crate::file::write(&durable, "durable")?;
+    mise_util::file::write(&durable, "durable")?;
     std::os::unix::fs::symlink(&durable, stage.join("tool"))?;
     let caskroom = caskroom_version_dir(CaskManager::BrewCask, "linked-binary", "1.0.0");
     file::create_dir_all(&caskroom)?;
@@ -7423,7 +7425,7 @@ fn links_a_stage_symlink_at_its_target_so_it_survives_teardown() -> Result<()> {
     );
     // The decisive check: staging is over, so the stage is gone.
     file::remove_all(&stage)?;
-    assert_eq!(crate::file::read_to_string(&staged)?, "durable");
+    assert_eq!(mise_util::file::read_to_string(&staged)?, "durable");
     Ok(())
 }
 
@@ -7433,7 +7435,7 @@ fn stages_generic_artifact_through_a_symlinked_stage() -> Result<()> {
     // The lookup resolves links it traverses, so the source can be
     // contained by the stage without sharing its literal prefix. A lexical
     // strip would fail here even though the containment check passes.
-    let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+    let _lock = mise_util::testing::lock_ignoring_poison(&ENV_LOCK);
     let tmp = tempfile::tempdir()?;
     let _guard = BrewPrefixGuard::set(tmp.path());
     let real_stage = tmp.path().join("real-stage");
@@ -7470,12 +7472,12 @@ fn copies_a_binary_whose_link_stays_inside_a_symlinked_stage() -> Result<()> {
     // `~/Library/Caches`). The resolved source then differs lexically from
     // `stage`, and treating that as a durable location would leave a
     // dangling binary once the stage is torn down.
-    let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+    let _lock = mise_util::testing::lock_ignoring_poison(&ENV_LOCK);
     let tmp = tempfile::tempdir()?;
     let _guard = BrewPrefixGuard::set(tmp.path());
     let real_stage = tmp.path().join("real-stage");
     file::create_dir_all(real_stage.join("payload/bin"))?;
-    crate::file::write(real_stage.join("payload/bin/tool"), "tool")?;
+    mise_util::file::write(real_stage.join("payload/bin/tool"), "tool")?;
     std::os::unix::fs::symlink(real_stage.join("payload"), real_stage.join("link"))?;
     let stage = tmp.path().join("stage");
     std::os::unix::fs::symlink(&real_stage, &stage)?;
@@ -7494,14 +7496,14 @@ fn copies_a_binary_whose_link_stays_inside_a_symlinked_stage() -> Result<()> {
         !staged.is_symlink(),
         "stage content must be copied, not linked"
     );
-    assert_eq!(crate::file::read_to_string(&staged)?, "tool");
+    assert_eq!(mise_util::file::read_to_string(&staged)?, "tool");
     Ok(())
 }
 
 #[cfg(unix)]
 #[test]
 fn stages_absolute_binary_source_from_pkg_install() -> Result<()> {
-    let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+    let _lock = mise_util::testing::lock_ignoring_poison(&ENV_LOCK);
     let tmp = tempfile::tempdir()?;
     let _guard = BrewPrefixGuard::set(tmp.path());
     let stage = tmp.path().join("stage");
@@ -7512,7 +7514,7 @@ fn stages_absolute_binary_source_from_pkg_install() -> Result<()> {
     if let Some(parent) = pkg_binary.parent() {
         file::create_dir_all(parent)?;
     }
-    crate::file::write(&pkg_binary, "pkg binary")?;
+    mise_util::file::write(&pkg_binary, "pkg binary")?;
     let caskroom = caskroom_version_dir(CaskManager::BrewCask, "karabiner-elements", "16.1.0");
     file::create_dir_all(&caskroom)?;
     let cask = test_cask("karabiner-elements", "16.1.0");
@@ -7528,14 +7530,14 @@ fn stages_absolute_binary_source_from_pkg_install() -> Result<()> {
     assert_eq!(std::fs::read_link(&staged)?, pkg_binary);
     let target = binary.target_path(Path::new("/Applications"))?;
     assert_eq!(std::fs::read_link(&target)?, staged);
-    assert_eq!(crate::file::read_to_string(&target)?, "pkg binary");
+    assert_eq!(mise_util::file::read_to_string(&target)?, "pkg binary");
     Ok(())
 }
 
 #[cfg(unix)]
 #[test]
 fn reports_missing_target_for_dangling_staged_binary_symlink() -> Result<()> {
-    let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+    let _lock = mise_util::testing::lock_ignoring_poison(&ENV_LOCK);
     let tmp = tempfile::tempdir()?;
     let _guard = BrewPrefixGuard::set(tmp.path());
     let stage = tmp.path().join("stage");
@@ -7546,7 +7548,7 @@ fn reports_missing_target_for_dangling_staged_binary_symlink() -> Result<()> {
     if let Some(parent) = pkg_binary.parent() {
         file::create_dir_all(parent)?;
     }
-    crate::file::write(&pkg_binary, "pkg binary")?;
+    mise_util::file::write(&pkg_binary, "pkg binary")?;
     let caskroom = caskroom_version_dir(CaskManager::BrewCask, "karabiner-elements", "16.1.0");
     file::create_dir_all(&caskroom)?;
     let cask = test_cask("karabiner-elements", "16.1.0");
@@ -7568,7 +7570,7 @@ fn reports_missing_target_for_dangling_staged_binary_symlink() -> Result<()> {
 
 #[test]
 fn cask_appdir_uses_prefix_for_prefix_targeted_apps() -> Result<()> {
-    let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+    let _lock = mise_util::testing::lock_ignoring_poison(&ENV_LOCK);
     let tmp = tempfile::tempdir()?;
     let _guard = BrewPrefixGuard::set(tmp.path());
     let app = AppArtifact {
@@ -7582,7 +7584,7 @@ fn cask_appdir_uses_prefix_for_prefix_targeted_apps() -> Result<()> {
 
 #[test]
 fn nested_app_source_defaults_to_validated_bundle_basename() -> Result<()> {
-    let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+    let _lock = mise_util::testing::lock_ignoring_poison(&ENV_LOCK);
     for source in [
         "Example.app",
         "nested/Example.app",
@@ -7633,7 +7635,7 @@ fn nested_app_source_defaults_to_validated_bundle_basename() -> Result<()> {
 
 #[test]
 fn nested_app_sources_reject_duplicate_targets() -> Result<()> {
-    let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+    let _lock = mise_util::testing::lock_ignoring_poison(&ENV_LOCK);
     let tmp = tempfile::tempdir()?;
     let appdir = tmp.path().canonicalize()?.join("Applications");
     let mut guard = EnvVarGuard::new();
@@ -7665,7 +7667,7 @@ fn nested_app_sources_reject_duplicate_targets() -> Result<()> {
 
 #[test]
 fn app_sources_reject_case_only_target_collisions() -> Result<()> {
-    let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+    let _lock = mise_util::testing::lock_ignoring_poison(&ENV_LOCK);
     let tmp = tempfile::tempdir()?;
     let appdir = tmp.path().canonicalize()?.join("Applications");
     let mut guard = EnvVarGuard::new();
@@ -7692,7 +7694,7 @@ fn app_sources_reject_case_only_target_collisions() -> Result<()> {
 
 #[test]
 fn app_sources_reject_unicode_equivalent_target_collisions() -> Result<()> {
-    let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+    let _lock = mise_util::testing::lock_ignoring_poison(&ENV_LOCK);
     let tmp = tempfile::tempdir()?;
     let appdir = tmp.path().canonicalize()?.join("Applications");
     let mut guard = EnvVarGuard::new();
@@ -7747,7 +7749,7 @@ fn app_sources_reject_unicode_equivalent_target_collisions() -> Result<()> {
 #[cfg(target_os = "macos")]
 #[test]
 fn nested_app_source_installs_under_bundle_basename() -> Result<()> {
-    let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+    let _lock = mise_util::testing::lock_ignoring_poison(&ENV_LOCK);
     let tmp = trusted_tempdir()?;
     let root = tmp.path().canonicalize()?;
     let appdir = root.join("Applications");
@@ -8082,7 +8084,7 @@ fn ensure_trusted_appdir_stays_bound_after_same_uid_replacement() -> Result<()> 
     // Writing through the bound descriptor path must reach the original
     // directory (now at `stashed`), never the attacker's directory.
     let bound = parent.path()?;
-    crate::file::write(bound.join("canary"), "bound")?;
+    mise_util::file::write(bound.join("canary"), "bound")?;
     assert!(stashed.join("canary").is_file());
     assert!(!attacker.join("canary").exists());
     Ok(())
@@ -8103,7 +8105,7 @@ fn ditto_into_stays_bound_after_directory_replacement() -> Result<()> {
 
     let source = base.join("payload");
     file::create_dir_all(&source)?;
-    crate::file::write(source.join("marker"), "payload")?;
+    mise_util::file::write(source.join("marker"), "payload")?;
 
     let stashed = base.join("stashed");
     std::fs::rename(&appdir, &stashed)?;
@@ -8157,7 +8159,7 @@ fn ditto_into_rejects_preplanted_symlink_destination() -> Result<()> {
 
     let source = base.join("payload");
     file::create_dir_all(&source)?;
-    crate::file::write(source.join("marker"), "payload")?;
+    mise_util::file::write(source.join("marker"), "payload")?;
 
     let attacker = base.join("attacker");
     file::create_dir_all(&attacker)?;
@@ -8187,7 +8189,7 @@ fn repair_app_permissions_does_not_traverse_bundle_symlinks() -> Result<()> {
     let parent = ensure_trusted_appdir(&appdir)?;
 
     let outside = base.join("outside.txt");
-    crate::file::write(&outside, "keep")?;
+    mise_util::file::write(&outside, "keep")?;
     let status = std::process::Command::new("/bin/chmod")
         .args(["644"])
         .arg(&outside)
@@ -8216,7 +8218,7 @@ fn repair_app_permissions_does_not_traverse_bundle_symlinks() -> Result<()> {
         flags.is_empty() || flags == "-",
         "referent flags set: {flags}"
     );
-    assert_eq!(crate::file::read_to_string(&outside)?, "keep");
+    assert_eq!(mise_util::file::read_to_string(&outside)?, "keep");
     Ok(())
 }
 
@@ -8308,7 +8310,7 @@ fn appdir_override_with_benign_symlink_is_resolved() -> Result<()> {
 fn package_appdir_expands_home_and_uses_the_same_path_validation() -> Result<()> {
     assert_eq!(
         package_app_dir("~/Applications")?,
-        crate::env::HOME.join("Applications")
+        mise_util::env::HOME.join("Applications")
     );
     for invalid in ["relative/Applications", "/Applications/../etc", "/"] {
         assert!(
@@ -8547,7 +8549,7 @@ fn upgrades_app_with_protected_existing_contents() -> Result<()> {
     let target = base.join("Docker.app");
     let protected_dir = target.join("Contents/Resources");
     file::create_dir_all(&protected_dir)?;
-    crate::file::write(protected_dir.join("docker"), "old")?;
+    mise_util::file::write(protected_dir.join("docker"), "old")?;
     let status = std::process::Command::new("/bin/chmod")
         .args(["+a", "everyone deny delete_child"])
         .arg(&protected_dir)
@@ -8556,7 +8558,7 @@ fn upgrades_app_with_protected_existing_contents() -> Result<()> {
 
     let tmp_target = base.join("Docker.mise-tmp-test");
     file::create_dir_all(&tmp_target)?;
-    crate::file::write(tmp_target.join("version"), "new")?;
+    mise_util::file::write(tmp_target.join("version"), "new")?;
 
     // swap_app_at addresses entries by name relative to the verified appdir
     // descriptor, so open the containing directory and use bare names.
@@ -8583,7 +8585,10 @@ fn upgrades_app_with_protected_existing_contents() -> Result<()> {
     }
 
     result?;
-    assert_eq!(crate::file::read_to_string(target.join("version"))?, "new");
+    assert_eq!(
+        mise_util::file::read_to_string(target.join("version"))?,
+        "new"
+    );
     assert!(!old_target.exists());
     Ok(())
 }
@@ -8591,20 +8596,20 @@ fn upgrades_app_with_protected_existing_contents() -> Result<()> {
 #[cfg(unix)]
 #[test]
 fn remove_obsolete_binary_links_removes_only_caskroom_symlinks() -> Result<()> {
-    let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+    let _lock = mise_util::testing::lock_ignoring_poison(&ENV_LOCK);
     let tmp = tempfile::tempdir()?;
     let _guard = BrewPrefixGuard::set(tmp.path());
     let cask = test_cask("binary-only", "2.0.0");
     let old_caskroom = caskroom_version_dir(CaskManager::BrewCask, &cask.token, "1.0.0");
     file::create_dir_all(old_caskroom.join("bin"))?;
-    crate::file::write(old_caskroom.join("bin/old"), "old")?;
+    mise_util::file::write(old_caskroom.join("bin/old"), "old")?;
     let old_target = tmp.path().join("bin/old");
     file::create_dir_all(old_target.parent().unwrap())?;
     file::make_symlink(&old_caskroom.join("bin/old"), &old_target)?;
 
     let external = tmp.path().join("external/outside");
     file::create_dir_all(external.parent().unwrap())?;
-    crate::file::write(&external, "outside")?;
+    mise_util::file::write(&external, "outside")?;
     let external_target = tmp.path().join("bin/outside");
     file::make_symlink(&external, &external_target)?;
 
@@ -8621,7 +8626,7 @@ fn remove_obsolete_binary_links_removes_only_caskroom_symlinks() -> Result<()> {
 
 #[test]
 fn installed_cask_version_does_not_invent_pkg_ids_from_current_api() -> Result<()> {
-    let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+    let _lock = mise_util::testing::lock_ignoring_poison(&ENV_LOCK);
     let tmp = tempfile::tempdir()?;
     let _guard = BrewPrefixGuard::set(tmp.path());
     let cask = test_cask("pkg-only", "1.0.0");
@@ -8643,7 +8648,7 @@ fn installed_cask_version_does_not_invent_pkg_ids_from_current_api() -> Result<(
         prune_safe: false,
         prune_blocker: None,
     };
-    crate::file::write(
+    mise_util::file::write(
         caskroom.join(".mise-cask.toml"),
         toml::to_string_pretty(&receipt)?,
     )?;
@@ -8657,7 +8662,7 @@ fn installed_cask_version_does_not_invent_pkg_ids_from_current_api() -> Result<(
 
 #[test]
 fn installed_cask_version_rejects_app_state_without_receipt() -> Result<()> {
-    let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+    let _lock = mise_util::testing::lock_ignoring_poison(&ENV_LOCK);
     let tmp = tempfile::tempdir()?;
     let _guard = BrewPrefixGuard::set(tmp.path());
     let cask = test_cask("actual-token", "1.0.0");
@@ -8680,7 +8685,7 @@ fn installed_cask_version_rejects_app_state_without_receipt() -> Result<()> {
 
 #[test]
 fn installed_cask_version_rejects_completion_state_without_receipt() -> Result<()> {
-    let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+    let _lock = mise_util::testing::lock_ignoring_poison(&ENV_LOCK);
     let tmp = tempfile::tempdir()?;
     let _guard = BrewPrefixGuard::set(tmp.path());
     let cask = test_cask("completion-only", "1.0.0");
@@ -8699,14 +8704,14 @@ fn installed_cask_version_rejects_completion_state_without_receipt() -> Result<(
 
     let target = completion.target_path()?;
     file::create_dir_all(target.parent().unwrap())?;
-    crate::file::write(target, "complete")?;
+    mise_util::file::write(target, "complete")?;
     assert_eq!(mise_installed_cask_version(&cask)?, None);
     Ok(())
 }
 
 #[test]
 fn installed_cask_version_uses_metadata_token() -> Result<()> {
-    let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+    let _lock = mise_util::testing::lock_ignoring_poison(&ENV_LOCK);
     let tmp = tempfile::tempdir()?;
     let _guard = BrewPrefixGuard::set(tmp.path());
     let cask = test_cask("metadata-token", "2.0.0");
@@ -8756,7 +8761,7 @@ fn installed_cask_version_uses_metadata_token() -> Result<()> {
 
 #[test]
 fn installed_version_ignores_homebrew_metadata() -> Result<()> {
-    let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+    let _lock = mise_util::testing::lock_ignoring_poison(&ENV_LOCK);
     let tmp = tempfile::tempdir()?;
     let _guard = BrewPrefixGuard::set(tmp.path());
     let token_dir = caskroom_token_dir(CaskManager::BrewCask, "actual-token");
@@ -8774,7 +8779,7 @@ fn installed_version_ignores_homebrew_metadata() -> Result<()> {
 
 #[test]
 fn installed_versions_preserve_conflict_presence_with_multiple_versions() -> Result<()> {
-    let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+    let _lock = mise_util::testing::lock_ignoring_poison(&ENV_LOCK);
     let tmp = tempfile::tempdir()?;
     let _guard = BrewPrefixGuard::set(tmp.path());
     let token_dir = caskroom_token_dir(CaskManager::BrewCask, "conflicting-cask");
@@ -8795,7 +8800,7 @@ fn installed_versions_preserve_conflict_presence_with_multiple_versions() -> Res
 #[cfg(unix)]
 #[test]
 fn failed_activation_restores_caskroom_and_external_links() -> Result<()> {
-    let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+    let _lock = mise_util::testing::lock_ignoring_poison(&ENV_LOCK);
     let tmp = tempfile::tempdir()?;
     let _guard = BrewPrefixGuard::set(tmp.path());
     let cask = test_cask("completion-only", "1.0.0");
@@ -8804,8 +8809,8 @@ fn failed_activation_restores_caskroom_and_external_links() -> Result<()> {
     let relative = Path::new("etc/bash_completion.d/tool");
     file::create_dir_all(destination.join(relative).parent().unwrap())?;
     file::create_dir_all(staged.join(relative).parent().unwrap())?;
-    crate::file::write(destination.join(relative), "previous")?;
-    crate::file::write(staged.join(relative), "replacement")?;
+    mise_util::file::write(destination.join(relative), "previous")?;
+    mise_util::file::write(staged.join(relative), "replacement")?;
     let target = tmp.path().join(relative);
     let new_target = tmp.path().join("bin/new-tool");
     file::create_dir_all(target.parent().unwrap())?;
@@ -8823,7 +8828,7 @@ fn failed_activation_restores_caskroom_and_external_links() -> Result<()> {
     link_transaction.rollback()?;
 
     assert_eq!(err.to_string(), "link failed");
-    assert_eq!(crate::file::read_to_string(&target)?, "previous");
+    assert_eq!(mise_util::file::read_to_string(&target)?, "previous");
     assert!(new_target.symlink_metadata().is_err());
     assert!(!caskroom_backup_dir(&cask).exists());
     Ok(())
@@ -8831,7 +8836,7 @@ fn failed_activation_restores_caskroom_and_external_links() -> Result<()> {
 
 #[test]
 fn remove_stale_versions_keeps_current_version_and_homebrew_metadata() -> Result<()> {
-    let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+    let _lock = mise_util::testing::lock_ignoring_poison(&ENV_LOCK);
     let tmp = tempfile::tempdir()?;
     let _guard = BrewPrefixGuard::set(tmp.path());
     let token_dir = caskroom_token_dir(CaskManager::BrewCask, "actual-token");
@@ -8839,14 +8844,14 @@ fn remove_stale_versions_keeps_current_version_and_homebrew_metadata() -> Result
     file::create_dir_all(token_dir.join("2.0.0"))?;
     let metadata = token_dir.join(".metadata/2.0.0/timestamp/Casks");
     file::create_dir_all(&metadata)?;
-    crate::file::write(metadata.join("actual-token.json"), "metadata")?;
+    mise_util::file::write(metadata.join("actual-token.json"), "metadata")?;
 
     remove_stale_versions(&token_dir, "2.0.0")?;
 
     assert!(!token_dir.join("1.0.0").exists());
     assert!(token_dir.join("2.0.0").exists());
     assert_eq!(
-        crate::file::read_to_string(metadata.join("actual-token.json"))?,
+        mise_util::file::read_to_string(metadata.join("actual-token.json"))?,
         "metadata"
     );
     Ok(())
@@ -8854,7 +8859,7 @@ fn remove_stale_versions_keeps_current_version_and_homebrew_metadata() -> Result
 
 #[test]
 fn fetch_git_clone_and_stage_clones_and_restructures_only_path() -> Result<()> {
-    let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+    let _lock = mise_util::testing::lock_ignoring_poison(&ENV_LOCK);
     let tmp = tempfile::tempdir()?;
 
     // Create a local git repo to clone from
@@ -9345,7 +9350,7 @@ fn auto_updates_reads_string_versions_from_xml_and_binary_plists() -> Result<()>
 /// installation will refuse a manual or another cask's bundle there.
 #[test]
 fn brew_cask_auto_update_appdir_relocation_checks_old_owned_bundle() -> Result<()> {
-    let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+    let _lock = mise_util::testing::lock_ignoring_poison(&ENV_LOCK);
     let tmp = trusted_tempdir()?;
     let mut guard = EnvVarGuard::new();
     guard.set(APP_DIR_ENV, tmp.path().join("default"));
@@ -9571,7 +9576,7 @@ fn running_app_sees_a_process_launched_from_the_bundle() -> Result<()> {
 #[cfg(target_os = "macos")]
 #[test]
 fn defers_a_running_self_updating_app_at_the_swap() -> Result<()> {
-    let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+    let _lock = mise_util::testing::lock_ignoring_poison(&ENV_LOCK);
     let tmp = trusted_tempdir()?;
     let root = tmp.path().canonicalize()?;
     let _guard = BrewPrefixGuard::set(&root);
@@ -9721,8 +9726,8 @@ fn structured_run_respects_failure_policy() -> Result<()> {
     let err = execute_flight_steps(&cask, &[step], tmp.path(), tmp.path(), "postflight_steps")
         .expect_err("signal termination must remain an error");
     assert!(matches!(
-        err.downcast_ref::<crate::errors::ProcessError>(),
-        Some(crate::errors::ProcessError::ScriptFailed(_, Some(status), _)) if status.code().is_none()
+        err.downcast_ref::<mise_util::errors::ProcessError>(),
+        Some(mise_util::errors::ProcessError::ScriptFailed(_, Some(status), _)) if status.code().is_none()
     ));
     let invalid = serde_json::json!({"type": "run", "command": {"path": "/usr/bin/false"}, "must_succeed": "false"});
     assert!(parse_flight_step(&cask, "postflight_steps", &invalid).is_err());
@@ -9752,7 +9757,7 @@ fn macos_app_records_state_outside_the_homebrew_caskroom() {
 
 #[test]
 fn declared_app_cask_populates_only_the_fields_an_app_install_reads() -> Result<()> {
-    let spec = crate::system::AppSpec {
+    let spec = crate::system::packages::options::AppSpec {
         url: "https://example.com/Nuvio-1.1.20-arm64.dmg".to_string(),
         sha256: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855".to_string(),
         artifact: "Nuvio.app".to_string(),
@@ -9786,7 +9791,7 @@ fn declared_app_cask_populates_only_the_fields_an_app_install_reads() -> Result<
 
 #[test]
 fn declared_app_cask_rejects_a_traversing_package_name() {
-    let spec = crate::system::AppSpec {
+    let spec = crate::system::packages::options::AppSpec {
         url: "https://example.com/a.dmg".to_string(),
         sha256: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855".to_string(),
         artifact: "A.app".to_string(),
@@ -9816,7 +9821,7 @@ fn macos_app_and_brew_cask_differ_in_platform_and_pin_support() {
 fn declared_app_cask_rejects_a_traversing_version() {
     // `version` is joined into the install-record and journal paths, so an
     // unvalidated one could place records outside the manager's state root.
-    let spec = crate::system::AppSpec {
+    let spec = crate::system::packages::options::AppSpec {
         url: "https://example.com/a.dmg".to_string(),
         sha256: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855".to_string(),
         artifact: "A.app".to_string(),
@@ -9850,7 +9855,7 @@ fn install_journals_are_scoped_per_manager() {
 
 #[test]
 fn macos_app_status_ignores_a_same_named_homebrew_cask() -> Result<()> {
-    let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+    let _lock = mise_util::testing::lock_ignoring_poison(&ENV_LOCK);
     let tmp = tempfile::tempdir()?;
     let _guard = BrewPrefixGuard::set(tmp.path());
 
@@ -9859,7 +9864,7 @@ fn macos_app_status_ignores_a_same_named_homebrew_cask() -> Result<()> {
     file::create_dir_all(token_dir.join(".metadata"))?;
     file::create_dir_all(token_dir.join("9.9.9"))?;
 
-    let spec = crate::system::AppSpec {
+    let spec = crate::system::packages::options::AppSpec {
         url: "https://example.com/Nuvio.dmg".to_string(),
         sha256: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855".to_string(),
         artifact: "Nuvio.app".to_string(),
@@ -9902,7 +9907,7 @@ fn macos_app_status_ignores_a_same_named_homebrew_cask() -> Result<()> {
 
 #[test]
 fn rejects_a_target_that_appears_after_the_early_ownership_check() -> Result<()> {
-    let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+    let _lock = mise_util::testing::lock_ignoring_poison(&ENV_LOCK);
     let tmp = trusted_tempdir()?;
     let root = tmp.path().canonicalize()?;
     let _guard = BrewPrefixGuard::set(&root);
@@ -9925,7 +9930,7 @@ fn rejects_a_target_that_appears_after_the_early_ownership_check() -> Result<()>
     // The early check passed (nothing at the target), then something else
     // created the bundle while the archive was downloading.
     file::create_dir_all(root.join("Applications/Example.app/Contents"))?;
-    crate::file::write(root.join("Applications/Example.app/Contents/app"), "theirs")?;
+    mise_util::file::write(root.join("Applications/Example.app/Contents/app"), "theirs")?;
 
     let err = install_app(&stage, &caskroom, &app, opts)
         .unwrap_err()
@@ -9936,7 +9941,7 @@ fn rejects_a_target_that_appears_after_the_early_ownership_check() -> Result<()>
 
     // The bundle that appeared is left exactly as it was.
     assert_eq!(
-        crate::file::read_to_string(root.join("Applications/Example.app/Contents/app"))?,
+        mise_util::file::read_to_string(root.join("Applications/Example.app/Contents/app"))?,
         "theirs"
     );
     Ok(())
@@ -9944,17 +9949,17 @@ fn rejects_a_target_that_appears_after_the_early_ownership_check() -> Result<()>
 
 #[test]
 fn macos_app_refuses_a_target_whose_content_is_not_ours() -> Result<()> {
-    let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+    let _lock = mise_util::testing::lock_ignoring_poison(&ENV_LOCK);
     let tmp = trusted_tempdir()?;
     let root = tmp.path().canonicalize()?;
     let _guard = BrewPrefixGuard::set(&root);
     let stage = root.join("stage");
     let caskroom = root.join("Caskroom/example/1.0.0");
     file::create_dir_all(stage.join("Example.app/Contents"))?;
-    crate::file::write(stage.join("Example.app/Contents/app"), "ours")?;
+    mise_util::file::write(stage.join("Example.app/Contents/app"), "ours")?;
     let target = root.join("Applications/Example.app/Contents");
     file::create_dir_all(&target)?;
-    crate::file::write(target.join("app"), "theirs")?;
+    mise_util::file::write(target.join("app"), "theirs")?;
     let app = AppArtifact {
         source: "Example.app".to_string(),
         target: Some("$HOMEBREW_PREFIX/Applications/Example.app".to_string()),
@@ -9980,23 +9985,26 @@ fn macos_app_refuses_a_target_whose_content_is_not_ours() -> Result<()> {
     assert!(err.contains("already exists"), "{err}");
     assert!(err.contains("is not owned by this entry"), "{err}");
     assert!(err.starts_with("macos-app:"), "{err}");
-    assert_eq!(crate::file::read_to_string(target.join("app"))?, "theirs");
+    assert_eq!(
+        mise_util::file::read_to_string(target.join("app"))?,
+        "theirs"
+    );
     Ok(())
 }
 
 #[test]
 fn macos_app_adopts_an_identical_target_only_with_adopt() -> Result<()> {
-    let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+    let _lock = mise_util::testing::lock_ignoring_poison(&ENV_LOCK);
     let tmp = trusted_tempdir()?;
     let root = tmp.path().canonicalize()?;
     let _guard = BrewPrefixGuard::set(&root);
     let stage = root.join("stage");
     let caskroom = root.join("Caskroom/example/1.0.0");
     file::create_dir_all(stage.join("Example.app/Contents"))?;
-    crate::file::write(stage.join("Example.app/Contents/app"), "ours")?;
+    mise_util::file::write(stage.join("Example.app/Contents/app"), "ours")?;
     let target = root.join("Applications/Example.app/Contents");
     file::create_dir_all(&target)?;
-    crate::file::write(target.join("app"), "ours")?;
+    mise_util::file::write(target.join("app"), "ours")?;
     let app = AppArtifact {
         source: "Example.app".to_string(),
         target: Some("$HOMEBREW_PREFIX/Applications/Example.app".to_string()),
@@ -10044,7 +10052,7 @@ fn macos_app_adopts_an_identical_target_only_with_adopt() -> Result<()> {
         }
     );
     // The bundle on disk is untouched — no copy was made beside it either.
-    assert_eq!(crate::file::read_to_string(target.join("app"))?, "ours");
+    assert_eq!(mise_util::file::read_to_string(target.join("app"))?, "ours");
     assert!(!caskroom.join("Example.app").exists());
     Ok(())
 }
@@ -10059,17 +10067,17 @@ fn macos_app_adopts_an_identical_target_only_with_adopt() -> Result<()> {
 /// ownership and so clears the unowned-target refusal.
 #[test]
 fn macos_app_keeps_an_identical_owned_bundle_in_place() -> Result<()> {
-    let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+    let _lock = mise_util::testing::lock_ignoring_poison(&ENV_LOCK);
     let tmp = trusted_tempdir()?;
     let root = tmp.path().canonicalize()?;
     let _guard = BrewPrefixGuard::set(&root);
     let stage = root.join("stage");
     let caskroom = root.join("Caskroom/example/1.0.0");
     file::create_dir_all(stage.join("Example.app/Contents"))?;
-    crate::file::write(stage.join("Example.app/Contents/app"), "ours")?;
+    mise_util::file::write(stage.join("Example.app/Contents/app"), "ours")?;
     let bundle = root.join("Applications/Example.app");
     file::create_dir_all(bundle.join("Contents"))?;
-    crate::file::write(bundle.join("Contents/app"), "ours")?;
+    mise_util::file::write(bundle.join("Contents/app"), "ours")?;
     let app = AppArtifact {
         source: "Example.app".to_string(),
         target: Some("$HOMEBREW_PREFIX/Applications/Example.app".to_string()),
@@ -10105,7 +10113,7 @@ fn macos_app_keeps_an_identical_owned_bundle_in_place() -> Result<()> {
         "the identical owned bundle was replaced rather than kept in place"
     );
     assert_eq!(
-        crate::file::read_to_string(bundle.join("Contents/app"))?,
+        mise_util::file::read_to_string(bundle.join("Contents/app"))?,
         "ours"
     );
     // The install record still points at the installed bundle.
@@ -10125,17 +10133,17 @@ fn macos_app_keeps_an_identical_owned_bundle_in_place() -> Result<()> {
 #[cfg(target_os = "macos")]
 #[test]
 fn macos_app_replaces_an_owned_bundle_that_differs() -> Result<()> {
-    let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+    let _lock = mise_util::testing::lock_ignoring_poison(&ENV_LOCK);
     let tmp = trusted_tempdir()?;
     let root = tmp.path().canonicalize()?;
     let _guard = BrewPrefixGuard::set(&root);
     let stage = root.join("stage");
     let caskroom = root.join("Caskroom/example/1.0.0");
     file::create_dir_all(stage.join("Example.app/Contents"))?;
-    crate::file::write(stage.join("Example.app/Contents/app"), "new")?;
+    mise_util::file::write(stage.join("Example.app/Contents/app"), "new")?;
     let bundle = root.join("Applications/Example.app");
     file::create_dir_all(bundle.join("Contents"))?;
-    crate::file::write(bundle.join("Contents/app"), "old")?;
+    mise_util::file::write(bundle.join("Contents/app"), "old")?;
     let app = AppArtifact {
         source: "Example.app".to_string(),
         target: Some("$HOMEBREW_PREFIX/Applications/Example.app".to_string()),
@@ -10160,7 +10168,7 @@ fn macos_app_replaces_an_owned_bundle_that_differs() -> Result<()> {
         }
     );
     assert_eq!(
-        crate::file::read_to_string(bundle.join("Contents/app"))?,
+        mise_util::file::read_to_string(bundle.join("Contents/app"))?,
         "new"
     );
     Ok(())
@@ -10172,7 +10180,7 @@ fn macos_app_replaces_an_owned_bundle_that_differs() -> Result<()> {
 /// extract tree and stage the wrong payload.
 #[test]
 fn staging_directories_are_scoped_per_manager() -> Result<()> {
-    let spec = crate::system::AppSpec {
+    let spec = crate::system::packages::options::AppSpec {
         url: "https://example.com/Nuvio.dmg".to_string(),
         sha256: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855".to_string(),
         artifact: "Nuvio.app".to_string(),
@@ -10358,14 +10366,14 @@ fn descriptor_bound_fingerprint_matches_the_path_based_one() -> Result<()> {
     file::create_dir_all(bundle.join("Contents/MacOS"))?;
     file::create_dir_all(bundle.join("Contents/Resources/nested/deeper"))?;
     file::create_dir_all(bundle.join("Contents/empty-dir"))?;
-    crate::file::write(bundle.join("Contents/Info.plist"), "plist")?;
-    crate::file::write(bundle.join("Contents/MacOS/Example"), "binary\0bytes")?;
-    crate::file::write(bundle.join("Contents/Resources/a.txt"), "")?;
-    crate::file::write(
+    mise_util::file::write(bundle.join("Contents/Info.plist"), "plist")?;
+    mise_util::file::write(bundle.join("Contents/MacOS/Example"), "binary\0bytes")?;
+    mise_util::file::write(bundle.join("Contents/Resources/a.txt"), "")?;
+    mise_util::file::write(
         bundle.join("Contents/Resources/a-b.txt"),
         "dash sorts before /",
     )?;
-    crate::file::write(
+    mise_util::file::write(
         bundle.join("Contents/Resources/nested/deeper/leaf"),
         "leaf contents",
     )?;
@@ -10388,7 +10396,7 @@ fn descriptor_bound_fingerprint_matches_the_path_based_one() -> Result<()> {
     assert!(cask_target_fingerprint_at(&parent, std::ffi::OsStr::new("file")).is_err());
 
     // The other two kinds at the top level, not just inside a directory walk.
-    crate::file::write(root.join("file"), "top level file")?;
+    mise_util::file::write(root.join("file"), "top level file")?;
     std::os::unix::fs::symlink("file", root.join("link"))?;
     assert_eq!(
         cask_target_fingerprint_at(&parent, std::ffi::OsStr::new("file"))?,
@@ -10402,7 +10410,7 @@ fn descriptor_bound_fingerprint_matches_the_path_based_one() -> Result<()> {
     // A change anywhere in the tree must move the digest, or the comparison
     // this protects would accept a modified bundle.
     let before = cask_target_fingerprint_at(&parent, name)?;
-    crate::file::write(
+    mise_util::file::write(
         bundle.join("Contents/Resources/nested/deeper/leaf"),
         "changed",
     )?;
@@ -10419,7 +10427,7 @@ fn fingerprint_refuses_an_entry_replaced_after_classification() -> Result<()> {
     let tmp = tempfile::tempdir()?;
     let root = tmp.path().canonicalize()?;
     file::create_dir_all(root.join("a"))?;
-    crate::file::write(root.join("a/marker"), "original")?;
+    mise_util::file::write(root.join("a/marker"), "original")?;
 
     let parent = nix::dir::Dir::open(
         root.as_path(),
@@ -10436,7 +10444,7 @@ fn fingerprint_refuses_an_entry_replaced_after_classification() -> Result<()> {
     // Replaced by a different directory — same kind, so O_NOFOLLOW and
     // O_DIRECTORY both still succeed and only the identity check catches it.
     file::create_dir_all(root.join("b"))?;
-    crate::file::write(root.join("b/marker"), "attacker")?;
+    mise_util::file::write(root.join("b/marker"), "attacker")?;
     file::remove_all(root.join("a"))?;
     std::fs::rename(root.join("b"), root.join("a"))?;
 
@@ -10509,12 +10517,12 @@ fn fingerprint_refuses_a_symlink_replaced_after_classification() -> Result<()> {
 /// never run.
 #[test]
 fn macos_app_same_version_retarget_is_not_already_installed() -> Result<()> {
-    let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+    let _lock = mise_util::testing::lock_ignoring_poison(&ENV_LOCK);
     let appdir = tempfile::tempdir()?;
     let mut guard = EnvVarGuard::new();
     guard.set(APP_DIR_ENV, appdir.path());
 
-    let spec = crate::system::AppSpec {
+    let spec = crate::system::packages::options::AppSpec {
         url: "https://example.com/Nuvio.dmg".to_string(),
         sha256: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855".to_string(),
         artifact: "Other.app".to_string(),
@@ -10529,7 +10537,7 @@ fn macos_app_same_version_retarget_is_not_already_installed() -> Result<()> {
     // hand-built path would never match and the test would pass or fail for
     // the wrong reason.
     let owned_app = {
-        let previous = crate::system::AppSpec {
+        let previous = crate::system::packages::options::AppSpec {
             artifact: "Nuvio.app".to_string(),
             ..spec.clone()
         };
@@ -10571,7 +10579,7 @@ fn macos_app_same_version_retarget_is_not_already_installed() -> Result<()> {
     );
 
     // Back to the recorded app: ordinary already-installed skip applies again.
-    let same = crate::system::AppSpec {
+    let same = crate::system::packages::options::AppSpec {
         artifact: "Nuvio.app".to_string(),
         ..spec
     };
@@ -10600,7 +10608,7 @@ fn macos_app_same_version_retarget_is_not_already_installed() -> Result<()> {
 /// create one, and the ordinary swap would move it aside and then delete it.
 #[test]
 fn activation_refuses_an_app_that_appeared_during_staging() -> Result<()> {
-    let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+    let _lock = mise_util::testing::lock_ignoring_poison(&ENV_LOCK);
     let tmp = trusted_tempdir()?;
     let root = tmp.path().canonicalize()?;
     let parent = open_trusted_directory(&root, Path::new(""), true, false)?;
@@ -10608,12 +10616,12 @@ fn activation_refuses_an_app_that_appeared_during_staging() -> Result<()> {
     // mise's staged replacement, ready to activate.
     let staged = root.join("Example.mise-tmp-test");
     file::create_dir_all(staged.join("Contents"))?;
-    crate::file::write(staged.join("Contents/marker"), "ours")?;
+    mise_util::file::write(staged.join("Contents/marker"), "ours")?;
 
     // Someone else's app lands at the target while the copies were running.
     let target = root.join("Example.app");
     file::create_dir_all(target.join("Contents"))?;
-    crate::file::write(target.join("Contents/marker"), "theirs")?;
+    mise_util::file::write(target.join("Contents/marker"), "theirs")?;
     let before = target.symlink_metadata()?;
 
     let err = swap_app_at(
@@ -10629,7 +10637,7 @@ fn activation_refuses_an_app_that_appeared_during_staging() -> Result<()> {
 
     // Untouched: same contents, same inode, not moved aside.
     assert_eq!(
-        crate::file::read_to_string(target.join("Contents/marker"))?,
+        mise_util::file::read_to_string(target.join("Contents/marker"))?,
         "theirs"
     );
     assert_eq!(
@@ -10660,7 +10668,7 @@ fn activation_refuses_an_app_that_appeared_during_staging() -> Result<()> {
 
     // With ownership, replacement is still what happens.
     file::create_dir_all(target.join("Contents"))?;
-    crate::file::write(target.join("Contents/marker"), "theirs")?;
+    mise_util::file::write(target.join("Contents/marker"), "theirs")?;
     swap_app_at(
         &parent,
         std::ffi::OsStr::new("Example.app"),
@@ -10669,7 +10677,7 @@ fn activation_refuses_an_app_that_appeared_during_staging() -> Result<()> {
         true,
     )?;
     assert_eq!(
-        crate::file::read_to_string(target.join("Contents/marker"))?,
+        mise_util::file::read_to_string(target.join("Contents/marker"))?,
         "ours"
     );
     Ok(())

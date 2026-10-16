@@ -7,10 +7,9 @@ use eyre::{Result as EyreResult, bail, eyre};
 use serde_json::Value;
 use tokio::sync::OnceCell;
 
+use super::host;
 use super::{InstallOpts, PackageRequest, PackageState, PackageStatus, SystemPackageManager};
-use crate::backend::configured_toolset_or_path_which;
-use crate::config::Config;
-use crate::result::Result;
+use eyre::Result;
 
 /// Mac App Store apps via the `mas` CLI.
 pub(crate) struct MasManager {
@@ -30,8 +29,7 @@ impl MasManager {
         }
         self.bin
             .get_or_try_init(|| async {
-                let config = Config::get().await?;
-                configured_toolset_or_path_which(&config, ["mas".to_string()], "mas")
+                host::tool_bin("mas")
                     .await?
                     .ok_or_else(|| eyre!("mas not found"))
             })
@@ -231,7 +229,7 @@ impl SystemPackageManager for MasManager {
     }
 
     fn is_available(&self) -> bool {
-        cfg!(target_os = "macos") && crate::file::which_non_pristine("mas").is_some()
+        cfg!(target_os = "macos") && mise_util::file::which_non_pristine("mas").is_some()
     }
 
     fn unavailable_reason(&self) -> String {

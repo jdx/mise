@@ -4,11 +4,11 @@ use crate::config::Config;
 use crate::config::Settings;
 use crate::system;
 use crate::system::history::OperationScope;
+use crate::system::package_plugin::PackagePluginManager;
 #[cfg(unix)]
 use crate::system::packages::SystemPackageManager;
 #[cfg(unix)]
 use crate::system::packages::brew;
-use crate::system::packages::plugin::PackagePluginManager;
 use crate::ui::prompt;
 
 /// Uninstall packages that no config declares

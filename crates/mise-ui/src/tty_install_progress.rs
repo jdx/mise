@@ -19,7 +19,7 @@ use super::style;
 use super::text_install_progress::{
     Action, Outcome, State, Tool, elapsed, filled_cells, first_line, format_bytes,
 };
-use crate::version::VERSION_PLAIN;
+use mise_util::deprecation::VERSION_PLAIN;
 
 /// Redraw cadence for elapsed times and rates. clx animates the spinner on its
 /// own; this only needs to keep the numbers from looking stuck.

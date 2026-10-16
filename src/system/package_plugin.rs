@@ -14,12 +14,14 @@ use vfox::{
     PackageUninstallContext,
 };
 
-use super::{InstallOpts, PackageRequest, PackageState, PackageStatus, SystemPackageManager};
 use crate::config::Config;
 use crate::plugins::mise_plugin_toml::{MisePluginToml, MisePluginTomlPackageManagerConfig};
 use crate::plugins::vfox_plugin::VfoxPlugin;
-use crate::result::Result;
+use crate::system::packages::{
+    InstallOpts, PackageRequest, PackageState, PackageStatus, SystemPackageManager,
+};
 use crate::toolset::{ConfigScope, ToolsetBuilder};
+use eyre::Result;
 
 const STATE_SCHEMA_VERSION: u8 = 1;
 
@@ -94,7 +96,7 @@ pub struct PackagePluginManager {
 
 impl PackagePluginManager {
     pub fn new(name: String) -> Result<Self> {
-        let plugin_path = crate::dirs::PLUGINS.join(name.to_kebab_case());
+        let plugin_path = mise_util::dirs::PLUGINS.join(name.to_kebab_case());
         let config =
             MisePluginToml::from_file(&plugin_path.join("mise.plugin.toml"))?.package_manager;
         let plugin = Arc::new(VfoxPlugin::new(name.clone(), plugin_path));
@@ -114,9 +116,10 @@ impl PackagePluginManager {
     }
 
     fn state_path_for(name: &str) -> PathBuf {
-        crate::dirs::STATE
-            .join("package-plugins")
-            .join(format!("{}.json", crate::hash::hash_sha256_to_str(name)))
+        mise_util::dirs::STATE.join("package-plugins").join(format!(
+            "{}.json",
+            mise_util::hash::hash_sha256_to_str(name)
+        ))
     }
 
     fn state_path(&self) -> PathBuf {
@@ -124,7 +127,7 @@ impl PackagePluginManager {
     }
 
     fn operation_lock(&self) -> Result<Option<fslock::LockFile>> {
-        crate::lock_file::get(&self.state_path(), false)
+        mise_util::lock_file::get(&self.state_path(), false)
     }
 
     fn load_state_at(path: &std::path::Path, manager: &str) -> Result<PackagePluginState> {
@@ -135,24 +138,24 @@ impl PackagePluginManager {
                 packages: BTreeMap::new(),
             });
         }
-        let state: PackagePluginState = serde_json::from_str(&crate::file::read_to_string(path)?)
-            .wrap_err_with(|| {
-            format!(
-                "failed to read package plugin ownership state {}",
-                crate::file::display_path(path)
-            )
-        })?;
+        let state: PackagePluginState =
+            serde_json::from_str(&mise_util::file::read_to_string(path)?).wrap_err_with(|| {
+                format!(
+                    "failed to read package plugin ownership state {}",
+                    mise_util::file::display_path(path)
+                )
+            })?;
         if state.schema_version != STATE_SCHEMA_VERSION {
             bail!(
                 "unsupported package plugin ownership state version {} in {}",
                 state.schema_version,
-                crate::file::display_path(path)
+                mise_util::file::display_path(path)
             );
         }
         if state.manager != manager {
             bail!(
                 "package plugin ownership state {} belongs to manager '{}', not '{manager}'",
-                crate::file::display_path(path),
+                mise_util::file::display_path(path),
                 state.manager
             );
         }
@@ -164,10 +167,10 @@ impl PackagePluginManager {
     }
 
     fn save_state_at(path: &std::path::Path, state: &PackagePluginState) -> Result<()> {
-        crate::file::create_dir_all(path.parent().expect("package plugin state parent"))?;
+        mise_util::file::create_dir_all(path.parent().expect("package plugin state parent"))?;
         let mut contents = serde_json::to_vec_pretty(state)?;
         contents.push(b'\n');
-        crate::file::write_atomic(path, contents)
+        mise_util::file::write_atomic(path, contents)
     }
 
     fn save_state(&self, state: &PackagePluginState) -> Result<()> {
@@ -185,7 +188,7 @@ impl PackagePluginManager {
         let mut paths: Vec<PathBuf> = std::env::var_os("PATH")
             .map(|path| split_paths(&path).collect())
             .unwrap_or_default();
-        let shims = crate::dirs::shims();
+        let shims = mise_util::dirs::shims();
         if !paths.iter().any(|path| path == &shims) {
             paths.push(shims);
         }
@@ -214,7 +217,7 @@ impl PackagePluginManager {
                 paths.extend(toolset.list_paths(&config).await);
                 let path =
                     join_paths(&paths).wrap_err("failed to construct package plugin PATH")?;
-                let mut env: IndexMap<String, String> = crate::env::vars_safe().collect();
+                let mut env: IndexMap<String, String> = mise_util::env::vars_safe().collect();
                 env.insert("PATH".into(), path.to_string_lossy().into_owned());
                 Ok(env)
             })
@@ -704,7 +707,7 @@ mod tests {
     fn ownership_state_rejects_invalid_json_and_schema() -> Result<()> {
         let tmp = tempfile::tempdir()?;
         let path = tmp.path().join("manager.json");
-        crate::file::write(&path, b"not json")?;
+        mise_util::file::write(&path, b"not json")?;
         assert!(PackagePluginManager::load_state_at(&path, "fake").is_err());
 
         let mut invalid = state("fake");

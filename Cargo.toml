@@ -13,6 +13,7 @@ members = [
   "crates/mise-sigstore",
   "crates/mise-settings",
   "crates/mise-util",
+  "crates/mise-ui",
   "crates/mise-dotenv",
 ]
 
@@ -144,6 +145,7 @@ flate2 = "1"
 futures-util = "0.3"
 mise-cache-core = { path = "crates/mise-cache-core", version = "0.1", default-features = false }
 mise-settings = { path = "crates/mise-settings", version = "2026" }
+mise-ui = { path = "crates/mise-ui", version = "2026" }
 mise-util = { path = "crates/mise-util", version = "2026", default-features = false }
 mise-brew-metadata = { path = "crates/mise-brew-metadata", version = "0.1" }
 mise-bootstrap = { path = "crates/mise-bootstrap", version = "0.1" }

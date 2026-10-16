@@ -7,9 +7,9 @@ use futures_util::stream::{self, StreamExt};
 
 use super::api::{self, Formula};
 use super::tag;
-use crate::config::Settings;
-use crate::result::Result;
 use crate::system::packages::PackageRequest;
+use eyre::Result;
+use mise_settings::Settings;
 
 #[derive(Debug, Clone)]
 pub(super) struct ResolvedFormula {
@@ -191,7 +191,7 @@ async fn resolve_closure_pairs(
             })
             .collect();
         let mut fetched = stream::iter(fetches)
-            .buffer_unordered(crate::jobs::normalize(Settings::get().jobs).max(1))
+            .buffer_unordered(mise_util::jobs::normalize(Settings::get().jobs).max(1))
             .collect::<Vec<_>>()
             .await;
         // buffer_unordered returns completion order. Restore the frontier's

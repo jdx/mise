@@ -3,10 +3,10 @@ use std::sync::Mutex;
 
 use demand::{Confirm, Dialog, DialogButton};
 
-use crate::env;
-use crate::ui::ctrlc;
-use crate::ui::multi_progress_report::MultiProgressReport;
-use crate::ui::theme::get_theme;
+use crate::ctrlc;
+use crate::multi_progress_report::MultiProgressReport;
+use crate::theme::get_theme;
+use mise_util::env;
 
 static MUTEX: Mutex<()> = Mutex::new(());
 

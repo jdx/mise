@@ -5,8 +5,9 @@ use async_trait::async_trait;
 use eyre::bail;
 
 use super::{InstallOpts, PackageRequest, PackageState, PackageStatus, SystemPackageManager};
-use crate::result::Result;
-use crate::system::{ManagerPackageOptions, sudo};
+use crate::system::packages::options::ManagerPackageOptions;
+use eyre::Result;
+use mise_ui::sudo;
 
 /// Snap risk levels. A channel's first segment is a risk rather than a track
 /// when it is one of these, as in `beta` or `edge/fix-123`.
@@ -260,7 +261,7 @@ impl SystemPackageManager for SnapManager {
     }
 
     fn is_available(&self) -> bool {
-        cfg!(target_os = "linux") && crate::file::which("snap").is_some()
+        cfg!(target_os = "linux") && mise_util::file::which("snap").is_some()
     }
 
     fn unavailable_reason(&self) -> String {

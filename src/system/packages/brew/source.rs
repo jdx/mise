@@ -11,22 +11,20 @@
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 
-use eyre::{WrapErr, bail, eyre};
+use eyre::{WrapErr, bail};
 
 use super::api::Formula;
 use super::pour;
 use super::prefix;
 use super::resolve::ResolvedFormula;
 use super::tag;
-use crate::cmd::CmdLineRunner;
-use crate::config::{Config, Settings};
-use crate::file::{ExtractOptions, ExtractionFormat};
-use crate::http::HTTP_FETCH;
-use crate::result::Result;
-use crate::toolset::{InstallOptions, ToolsetBuilder};
-use crate::ui::progress_report::SingleReport;
+use eyre::Result;
+use mise_settings::Settings;
+use mise_ui::progress_report::SingleReport;
+use mise_util::cmd::CmdLineRunner;
+use mise_util::file::{ExtractOptions, ExtractionFormat};
+use mise_util::http::HTTP_FETCH;
 
 const SHIM_RB: &str = include_str!("shim.rb");
 const HOMEBREW_CORE_RAW: &str = "https://raw.githubusercontent.com/Homebrew/homebrew-core";
@@ -35,7 +33,7 @@ const HOMEBREW_CORE_RAW: &str = "https://raw.githubusercontent.com/Homebrew/home
 pub(super) fn has_bottle(formula: &Formula) -> bool {
     // undocumented override for testing the source-build pipeline with
     // formulae that do have bottles (comma-separated names)
-    if let Ok(force) = crate::env::var("MISE_SYSTEM_BREW_FORCE_SOURCE")
+    if let Ok(force) = mise_util::env::var("MISE_SYSTEM_BREW_FORCE_SOURCE")
         && force.split(',').any(|f| f.trim() == formula.name)
     {
         return false;
@@ -106,7 +104,7 @@ pub(super) async fn build(
     check_buildable(formula)?;
 
     pr.set_message("resolve ruby".to_string());
-    let ruby = ruby_bin().await?;
+    let ruby = crate::system::packages::host::provision_ruby().await?;
     let formula_rb = fetch_formula_rb(rf, pr).await?;
     let archive = fetch_source(formula, pr).await?;
 
@@ -119,24 +117,24 @@ pub(super) async fn build(
         return Ok(());
     }
 
-    let build_root = crate::dirs::CACHE
+    let build_root = mise_util::dirs::CACHE
         .join("system-brew")
         .join("build")
         .join(format!("{name}-{pkg_version}"));
     if build_root.exists() {
-        crate::file::remove_all(&build_root)?;
+        mise_util::file::remove_all(&build_root)?;
     }
-    crate::file::create_dir_all(&build_root)?;
+    mise_util::file::create_dir_all(&build_root)?;
     pr.set_message("extract source".to_string());
     let buildpath = stage_source(&archive, &build_root, &source_basename(formula))?;
     let shim_path = build_root.join("mise-brew-shim.rb");
-    crate::file::write(&shim_path, SHIM_RB)?;
+    mise_util::file::write(&shim_path, SHIM_RB)?;
 
     // Formulae bake the final keg path into binaries, so the build installs
     // straight into the Cellar (same as brew); a failed build removes the keg.
     let keg = pour::keg_path(name, &pkg_version);
     if keg.exists() {
-        crate::file::remove_all(&keg)?;
+        mise_util::file::remove_all(&keg)?;
     }
 
     pr.set_message("build from source".to_string());
@@ -155,9 +153,9 @@ pub(super) async fn build(
     // cannot drop the commit lock while the child is still mutating Cellar.
     // run_blocking hands the Tokio worker core off on mise's multithreaded
     // runtime while the build runs.
-    let built = crate::file::run_blocking(|| cmd.execute());
+    let built = mise_util::file::run_blocking(|| cmd.execute());
     if let Err(err) = built {
-        let _ = crate::file::remove_all(&keg);
+        let _ = mise_util::file::remove_all(&keg);
         return Err(err.wrap_err(format!("failed to build {name} {pkg_version} from source")));
     }
     if !keg.is_dir() {
@@ -179,7 +177,7 @@ pub(super) async fn build(
     let linked =
         receipt.and_then(|()| pour::link_keg(name, &pkg_version, formula.keg_only_for_target()));
     if let Err(err) = linked {
-        if let Err(rm_err) = crate::file::remove_all(&keg) {
+        if let Err(rm_err) = mise_util::file::remove_all(&keg) {
             warn!(
                 "failed to remove {} after link failure: {rm_err}\n\
                  remove it manually, then re-run `mise bootstrap packages apply`",
@@ -188,62 +186,8 @@ pub(super) async fn build(
         }
         return Err(err);
     }
-    crate::file::remove_all(&build_root)?;
+    mise_util::file::remove_all(&build_root)?;
     Ok(())
-}
-
-/// Ensure a mise-managed ruby is installed (precompiled by default) and
-/// return the path to its `ruby` executable.
-pub(crate) async fn ruby_bin() -> Result<PathBuf> {
-    let mut config = Config::get().await?;
-    let tool: crate::args::ToolArg = "ruby".parse()?;
-    let mut ts = ToolsetBuilder::new()
-        .with_args(&[tool])
-        .with_default_to_latest(true)
-        .build(&config)
-        .await?;
-    ts.install_missing_versions(
-        &mut config,
-        &InstallOptions {
-            // only ruby — never drag the rest of the config's toolset in
-            missing_args_only: true,
-            reason: "brew source build".to_string(),
-            ..Default::default()
-        },
-    )
-    .await?;
-    find_ruby_bin(&config, &ts).await?.ok_or_else(|| {
-        eyre!("failed to provision ruby for building from source (try `mise install ruby`)")
-    })
-}
-
-pub(crate) async fn installed_ruby_bin() -> Result<Option<PathBuf>> {
-    let config = Config::get().await?;
-    let tool: crate::args::ToolArg = "ruby".parse()?;
-    let ts = ToolsetBuilder::new()
-        .with_args(&[tool])
-        .with_default_to_latest(true)
-        .build(&config)
-        .await?;
-    find_ruby_bin(&config, &ts).await
-}
-
-async fn find_ruby_bin(
-    config: &Arc<Config>,
-    ts: &crate::toolset::Toolset,
-) -> Result<Option<PathBuf>> {
-    for (backend, tv) in ts.list_current_versions() {
-        if tv.ba().short != "ruby" {
-            continue;
-        }
-        for bin_dir in backend.list_bin_paths(config, &tv).await? {
-            let ruby = bin_dir.join("ruby");
-            if ruby.is_file() {
-                return Ok(Some(ruby));
-            }
-        }
-    }
-    Ok(None)
 }
 
 /// Download the formula's .rb from homebrew/core, pinned to the commit the
@@ -258,9 +202,9 @@ async fn fetch_formula_rb(rf: &ResolvedFormula, pr: &dyn SingleReport) -> Result
         .and_then(|c| c.sha256.as_deref())
         .unwrap();
     let commit = formula.tap_git_head.as_deref().unwrap();
-    let cache_dir = crate::dirs::CACHE.join("system-brew").join("formula");
+    let cache_dir = mise_util::dirs::CACHE.join("system-brew").join("formula");
     let dest = cache_dir.join(format!("{}-{}.rb", formula.name, &sha256[..12]));
-    if dest.exists() && crate::hash::ensure_checksum(&dest, sha256, None, "sha256").is_ok() {
+    if dest.exists() && mise_util::hash::ensure_checksum(&dest, sha256, None, "sha256").is_ok() {
         return Ok(dest);
     }
     let raw_base = rf
@@ -271,7 +215,7 @@ async fn fetch_formula_rb(rf: &ResolvedFormula, pr: &dyn SingleReport) -> Result
     let url = super::tap::ruby_source_url(&format!("{raw_base}/{commit}"), rb_path);
     pr.set_message(format!("download {rb_path}"));
     HTTP_FETCH.download_file(&url, &dest, Some(pr)).await?;
-    crate::hash::ensure_checksum(&dest, sha256, Some(pr), "sha256")?;
+    mise_util::hash::ensure_checksum(&dest, sha256, Some(pr), "sha256")?;
     Ok(dest)
 }
 
@@ -291,16 +235,16 @@ async fn fetch_source(formula: &Formula, pr: &dyn SingleReport) -> Result<PathBu
     let src = formula.stable_url().unwrap(); // check_buildable
     let sha256 = src.checksum.as_deref().unwrap(); // check_buildable
     let basename = source_basename(formula);
-    let cache_dir = crate::dirs::CACHE.join("system-brew").join("sources");
+    let cache_dir = mise_util::dirs::CACHE.join("system-brew").join("sources");
     let dest = cache_dir.join(format!("{}-{basename}", &sha256[..12]));
-    if dest.exists() && crate::hash::ensure_checksum(&dest, sha256, None, "sha256").is_ok() {
+    if dest.exists() && mise_util::hash::ensure_checksum(&dest, sha256, None, "sha256").is_ok() {
         debug!("source cache hit: {}", dest.display());
         return Ok(dest);
     }
     pr.set_message(format!("download {basename}"));
     // GNU formulae point at ftpmirror.gnu.org, which may redirect to a
     // plain-HTTP mirror; brew follows it, and the pinned sha256 makes it safe.
-    crate::http::download_file_checksum_pinned(&src.url, &dest, sha256, Some(pr)).await?;
+    mise_util::http::download_file_checksum_pinned(&src.url, &dest, sha256, Some(pr)).await?;
     Ok(dest)
 }
 
@@ -308,18 +252,18 @@ async fn fetch_source(formula: &Formula, pr: &dyn SingleReport) -> Result<PathBu
 /// a single top-level directory, that directory is the buildpath.
 fn stage_source(archive: &Path, build_root: &Path, basename: &str) -> Result<PathBuf> {
     let stage = build_root.join("src");
-    crate::file::create_dir_all(&stage)?;
+    mise_util::file::create_dir_all(&stage)?;
     // `basename` is the upstream file name — the cache entry's own name
     // carries a checksum prefix that must not leak into the build tree
     let format = ExtractionFormat::detect(archive, basename)?;
     if format.is_archive() {
-        crate::file::extract_archive(archive, &stage, format, &ExtractOptions::default())
+        mise_util::file::extract_archive(archive, &stage, format, &ExtractOptions::default())
             .wrap_err_with(|| format!("failed to extract {}", archive.display()))?;
     } else {
         // a bare file (script, single binary): stage it as-is
-        crate::file::copy(archive, stage.join(basename))?;
+        mise_util::file::copy(archive, stage.join(basename))?;
     }
-    let entries: Vec<PathBuf> = crate::file::ls(&stage)?.into_iter().collect();
+    let entries: Vec<PathBuf> = mise_util::file::ls(&stage)?.into_iter().collect();
     match entries.as_slice() {
         [single] if single.is_dir() => Ok(single.clone()),
         _ => Ok(stage),
@@ -403,7 +347,7 @@ fn build_env(
         ldflags.push(format!("-Wl,-rpath,{}", prefix.join("lib").display()));
     }
 
-    let jobs = crate::jobs::normalize(Settings::get().jobs);
+    let jobs = mise_util::jobs::normalize(Settings::get().jobs);
     let stable_version = rf.formula.versions.stable.clone().unwrap_or_default();
     let mut env = HashMap::from(
         [
@@ -416,7 +360,7 @@ fn build_env(
             ("MISE_BREW_BUILDPATH", buildpath.display().to_string()),
             (
                 "MISE_BREW_CACHE",
-                crate::dirs::CACHE
+                mise_util::dirs::CACHE
                     .join("system-brew")
                     .join("downloads")
                     .display()
@@ -557,10 +501,10 @@ mod tests {
         let formula_rb = tmp.path().join("example.rb");
         let buildpath = tmp.path().join("build");
         let cellar = tmp.path().join("Cellar");
-        crate::file::create_dir_all(&buildpath)?;
-        crate::file::write(&shim, SHIM_RB)?;
+        mise_util::file::create_dir_all(&buildpath)?;
+        mise_util::file::write(&shim, SHIM_RB)?;
         // both install-time helpers that write through Pathname#write
-        crate::file::write(
+        mise_util::file::write(
             &formula_rb,
             r#"class Example < Formula
   def install
@@ -591,11 +535,13 @@ end
         );
         let keg = cellar.join("example/1.0.0");
         assert_eq!(
-            crate::file::read_to_string(keg.join("share/example/greeting"))?,
+            mise_util::file::read_to_string(keg.join("share/example/greeting"))?,
             "hello, world"
         );
         assert_eq!(
-            crate::file::read_to_string(keg.join("share/fish/vendor_completions.d/example.fish"))?,
+            mise_util::file::read_to_string(
+                keg.join("share/fish/vendor_completions.d/example.fish")
+            )?,
             "completions fish\n"
         );
         Ok(())
@@ -645,7 +591,7 @@ end
         };
         let tmp = tempfile::tempdir().unwrap();
         let cache = tmp.path().join("cache");
-        crate::file::create_dir_all(&cache).unwrap();
+        mise_util::file::create_dir_all(&cache).unwrap();
 
         let mut builder = jdx_tar::Builder::new(GzEncoder::new(Vec::new(), Compression::default()));
         let mut header = jdx_tar::Header::new_gnu(jdx_tar::EntryType::File);
@@ -688,7 +634,7 @@ end
         let shim = tmp.path().join("shim.rb");
         std::fs::write(&shim, SHIM_RB).unwrap();
         let buildpath = tmp.path().join("build");
-        crate::file::create_dir_all(&buildpath).unwrap();
+        mise_util::file::create_dir_all(&buildpath).unwrap();
 
         let output = std::process::Command::new(ruby)
             .arg(&shim)
