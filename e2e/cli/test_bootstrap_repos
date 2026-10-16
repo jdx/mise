@@ -303,3 +303,17 @@ cat <<EOF2 >mise.toml
 EOF2
 assert_contains "mise bootstrap repos status" "rooted"
 assert_not_contains "mise bootstrap repos status" "ran/bad"
+
+# ref and url render like the key, and clone options shape the first clone
+cat <<EOF2 >mise.toml
+[vars]
+branch = "main"
+src_url = "$SRC_URL"
+
+[bootstrap.repos]
+"$PWD/templated" = { url = "{{ vars.src_url }}", ref = "{{ vars.branch }}", filter = "blob:none", depth = 1 }
+EOF2
+assert_contains "mise bootstrap repos apply --dry-run" "--branch main '--filter=blob:none' --depth 1 $SRC_URL"
+assert_succeed "mise bootstrap repos apply --yes"
+assert "cat templated/version.txt" "v5"
+assert "git -C templated rev-parse --is-shallow-repository" "true"

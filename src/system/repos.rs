@@ -27,14 +27,26 @@ pub struct RepoTomlConfig {
     pub url: Option<String>,
     #[serde(default, rename = "ref")]
     pub git_ref: Option<String>,
+    #[serde(default)]
+    pub filter: Option<String>,
+    #[serde(default)]
+    pub depth: Option<u32>,
+    #[serde(default)]
+    pub submodules: Option<bool>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct RepoRequest {
     pub path_raw: String,
     pub path: PathBuf,
     pub url: String,
     pub git_ref: Option<String>,
+    /// `git clone --filter=<spec>`; only applies to the first clone.
+    pub filter: Option<String>,
+    /// `git clone --depth <n>`; only applies to the first clone.
+    pub depth: Option<u32>,
+    /// `git clone --recurse-submodules`; only applies to the first clone.
+    pub submodules: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -135,11 +147,30 @@ impl RepoRequest {
             Some(git_ref) if git_ref.starts_with('-') => bail!("`ref` must not start with `-`"),
             other => other,
         };
+        let filter = config.filter.map(|s| s.trim().to_string());
+        let filter = match filter {
+            Some(filter) if filter.is_empty() => bail!("`filter` must not be empty"),
+            Some(filter) if filter.starts_with('-') => bail!("`filter` must not start with `-`"),
+            other => other,
+        };
+        if config.depth == Some(0) {
+            bail!("`depth` must be at least 1");
+        }
+        if config.depth.is_some()
+            && git_ref
+                .as_deref()
+                .is_some_and(|git_ref| !can_clone_with_ref(git_ref))
+        {
+            bail!("`depth` cannot be combined with a commit SHA or `refs/` `ref`");
+        }
         Ok(Self {
             path_raw,
             path,
             url,
             git_ref,
+            filter,
+            depth: config.depth,
+            submodules: config.submodules.unwrap_or(false),
         })
     }
 }
@@ -587,6 +618,16 @@ fn clone_command_parts(request: &RepoRequest) -> Vec<String> {
         parts.push("--branch".to_string());
         parts.push(git_ref.to_string());
     }
+    if let Some(filter) = &request.filter {
+        parts.push(format!("--filter={filter}"));
+    }
+    if let Some(depth) = request.depth {
+        parts.push("--depth".to_string());
+        parts.push(depth.to_string());
+    }
+    if request.submodules {
+        parts.push("--recurse-submodules".to_string());
+    }
     parts.push(request.url.clone());
     parts.push(request.path.display().to_string());
     parts
@@ -848,6 +889,7 @@ mod tests {
             RepoTomlConfig {
                 url: Some(" https://example.com/dotfiles.git ".to_string()),
                 git_ref: Some(" main ".to_string()),
+                ..Default::default()
             },
             None,
         )
@@ -860,7 +902,8 @@ mod tests {
                 "~/src/empty".to_string(),
                 RepoTomlConfig {
                     url: Some("".to_string()),
-                    git_ref: None
+                    git_ref: None,
+                    ..Default::default()
                 },
                 None
             )
@@ -871,7 +914,8 @@ mod tests {
                 "~/src/bad-url".to_string(),
                 RepoTomlConfig {
                     url: Some("--upload-pack=sh".to_string()),
-                    git_ref: None
+                    git_ref: None,
+                    ..Default::default()
                 },
                 None
             )
@@ -882,7 +926,8 @@ mod tests {
                 "~/src/bad-ref".to_string(),
                 RepoTomlConfig {
                     url: Some("https://example.com/repo.git".to_string()),
-                    git_ref: Some("--detach".to_string())
+                    git_ref: Some("--detach".to_string()),
+                    ..Default::default()
                 },
                 None
             )
@@ -896,6 +941,7 @@ mod tests {
         let config = || RepoTomlConfig {
             url: Some("https://example.com/tool.git".to_string()),
             git_ref: None,
+            ..Default::default()
         };
 
         let request = RepoRequest::from_toml("vendor/tool".to_string(), config(), Some(root))
@@ -1106,6 +1152,7 @@ mod tests {
             path: repo.clone(),
             url: "https://github.com/jdx/mise.git".to_string(),
             git_ref: None,
+            ..Default::default()
         };
         assert_eq!(status_one(&request).unwrap().state, RepoState::Current);
 
@@ -1133,12 +1180,14 @@ mod tests {
             path: missing_path.clone(),
             url: "file:///does/not/matter.git".to_string(),
             git_ref: None,
+            ..Default::default()
         };
         let dirty_request = RepoRequest {
             path_raw: tmp.path().join("dirty").display().to_string(),
             path: tmp.path().join("dirty"),
             url: "file:///does/not/matter.git".to_string(),
             git_ref: None,
+            ..Default::default()
         };
         let dirty_status = RepoStatus {
             request: dirty_request,
@@ -1169,6 +1218,7 @@ mod tests {
             path: target.clone(),
             url,
             git_ref: None,
+            ..Default::default()
         };
 
         let statuses = status(&[request]).await.unwrap();
@@ -1196,6 +1246,7 @@ mod tests {
             path: target.clone(),
             url,
             git_ref: None,
+            ..Default::default()
         };
 
         update_statuses(&status(&[request]).await.unwrap(), false).unwrap();
@@ -1241,6 +1292,7 @@ mod tests {
             path: repo,
             url: "file:///does/not/matter.git".to_string(),
             git_ref: Some("main".to_string()),
+            ..Default::default()
         };
 
         let err = update_repo(&request, false).unwrap_err();
@@ -1261,6 +1313,7 @@ mod tests {
             path: target.clone(),
             url,
             git_ref: None,
+            ..Default::default()
         };
         let statuses = status(&[request]).await.unwrap();
         let original_origin_sha = local_ref_sha(&target, "origin/main").unwrap();
@@ -1316,6 +1369,7 @@ mod tests {
             path: target,
             url,
             git_ref: None,
+            ..Default::default()
         };
         let statuses = status(&[request]).await.unwrap();
         assert_eq!(statuses[0].state, RepoState::Current);
@@ -1328,12 +1382,67 @@ mod tests {
     }
 
     #[test]
+    fn clone_options_extend_the_clone_command() {
+        let request = RepoRequest::from_toml(
+            "/tmp/repo".to_string(),
+            RepoTomlConfig {
+                url: Some("https://github.com/jdx/mise.git".to_string()),
+                filter: Some("blob:none".to_string()),
+                depth: Some(1),
+                submodules: Some(true),
+                ..Default::default()
+            },
+            None,
+        )
+        .unwrap();
+        assert_eq!(
+            clone_command_parts(&request),
+            vec![
+                "git",
+                "clone",
+                "--filter=blob:none",
+                "--depth",
+                "1",
+                "--recurse-submodules",
+                "https://github.com/jdx/mise.git",
+                "/tmp/repo"
+            ]
+        );
+    }
+
+    #[test]
+    fn clone_options_are_validated() {
+        let config = |depth, git_ref: Option<&str>| RepoTomlConfig {
+            url: Some("https://github.com/jdx/mise.git".to_string()),
+            git_ref: git_ref.map(str::to_string),
+            depth,
+            ..Default::default()
+        };
+        let from = |config| RepoRequest::from_toml("/tmp/repo".to_string(), config, None);
+        assert!(from(config(Some(0), None)).is_err());
+        assert!(
+            from(config(
+                Some(1),
+                Some("0123456789abcdef0123456789abcdef01234567")
+            ))
+            .is_err()
+        );
+        assert!(from(config(Some(1), Some("main"))).is_ok());
+        let mut filter = config(None, None);
+        filter.filter = Some("--evil".to_string());
+        assert!(from(filter).is_err());
+    }
+
+    #[test]
     fn clone_command_uses_branch_flag_except_for_sha_refs() {
         let mut request = RepoRequest {
             path_raw: "/tmp/repo".to_string(),
             path: PathBuf::from("/tmp/repo"),
             url: "https://github.com/jdx/mise.git".to_string(),
             git_ref: Some("main".to_string()),
+            filter: None,
+            depth: None,
+            submodules: false,
         };
         assert_eq!(
             clone_command_parts(&request),
@@ -1401,6 +1510,7 @@ cccccccccccccccccccccccccccccccccccccccc\trefs/tags/release^{}
             path,
             url: "https://github.com/jdx/mise.git".to_string(),
             git_ref: None,
+            ..Default::default()
         };
         let status = status(&[request]).await.unwrap();
         assert_eq!(status[0].state, RepoState::Missing);
@@ -1424,6 +1534,7 @@ cccccccccccccccccccccccccccccccccccccccc\trefs/tags/release^{}
             path: nested,
             url: "https://github.com/jdx/mise.git".to_string(),
             git_ref: None,
+            ..Default::default()
         };
         let status = status(&[request]).await.unwrap();
         assert_eq!(status[0].state, RepoState::Missing);
