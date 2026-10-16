@@ -8,5 +8,6 @@ repository = "https://github.com/jdx/mise"
 
 [dependencies]
 indexmap = { version = "2", features = ["serde"] }
+mise-bootstrap = { path = "../mise-bootstrap", version = "0.1" }
 serde = { version = "1", features = ["derive"] }
 toml = { version = "1", features = ["parse", "preserve_order"] }

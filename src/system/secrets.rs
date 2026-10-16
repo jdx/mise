@@ -5,7 +5,7 @@ use std::sync::{Arc, Mutex};
 use demand::Input;
 use eyre::{Result, bail};
 use indexmap::IndexMap;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use serde_json::Value as JsonValue;
 use tera::{Kwargs, State, TeraResult, Value};
 

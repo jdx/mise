@@ -11,36 +11,7 @@ use crate::config::Config;
 use crate::system::resources::{ResourceAction, ResourceId, ResourcePlan};
 
 pub use mise_bootstrap::AccountState;
-
-#[derive(Clone, Debug, Default, Deserialize)]
-pub struct GroupTomlConfig {
-    #[serde(default)]
-    pub state: AccountState,
-    pub gid: Option<u32>,
-    #[serde(default)]
-    pub system: bool,
-}
-
-#[derive(Clone, Debug, Default, Deserialize)]
-pub struct UserTomlConfig {
-    #[serde(default)]
-    pub state: AccountState,
-    pub uid: Option<u32>,
-    pub group: Option<String>,
-    pub groups: Option<Vec<String>>,
-    #[serde(default)]
-    pub exclusive_groups: bool,
-    pub home: Option<PathBuf>,
-    pub shell: Option<PathBuf>,
-    pub comment: Option<String>,
-    #[serde(default)]
-    pub system: bool,
-    pub create_home: Option<bool>,
-    #[serde(default)]
-    pub move_home: bool,
-    #[serde(default)]
-    pub remove_home: bool,
-}
+pub use mise_system_config::accounts::{GroupTomlConfig, UserTomlConfig};
 
 #[derive(Clone, Debug)]
 pub struct GroupRequest {

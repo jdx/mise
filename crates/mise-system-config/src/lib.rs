@@ -4,6 +4,7 @@
 //! mise's config layer stores these as parsed, and the system modules interpret them. Keeping
 //! the plain data here, below both, is what lets those two layers be separate crates.
 
+pub mod accounts;
 pub mod dotfiles;
 pub mod history;
 pub mod secrets;
