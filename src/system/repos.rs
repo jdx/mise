@@ -639,6 +639,9 @@ fn clone_command_parts(request: &RepoRequest) -> Vec<String> {
     }
     if request.submodules {
         parts.push("--recurse-submodules".to_string());
+        if request.filter.is_some() {
+            parts.push("--also-filter-submodules".to_string());
+        }
     }
     parts.push(request.url.clone());
     parts.push(request.path.display().to_string());
@@ -1417,6 +1420,7 @@ mod tests {
                 "1",
                 "--no-single-branch",
                 "--recurse-submodules",
+                "--also-filter-submodules",
                 "https://github.com/jdx/mise.git",
                 "/tmp/repo"
             ]

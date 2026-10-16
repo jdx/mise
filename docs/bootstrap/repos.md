@@ -88,7 +88,7 @@ no effect on an existing checkout, which keeps the shape it was cloned with.
 | ------------ | --------------------------------------------------------------------------------------------------- |
 | `filter`     | Passes `--filter=<spec>`, for example `"blob:none"` for a blobless clone                            |
 | `depth`      | Passes `--depth <n> --no-single-branch` for a shallow clone; cannot be combined with a commit `ref` |
-| `submodules` | When `true`, passes `--recurse-submodules`                                                          |
+| `submodules` | When `true`, passes `--recurse-submodules` (and `--also-filter-submodules` with `filter`)           |
 
 ```toml
 [bootstrap.repos]
