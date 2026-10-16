@@ -214,7 +214,7 @@ impl RegistryBackend {
         below(self.min_version, other.max_version) && below(other.min_version, self.max_version)
     }
 
-    fn supports_version(&self, request: &str) -> bool {
+    pub(crate) fn supports_version(&self, request: &str) -> bool {
         if self.min_version.is_none() && self.max_version.is_none() {
             return true;
         }
@@ -860,6 +860,20 @@ impl RegistryTool {
         &self,
         keep: impl Fn(&RegistryBackend) -> bool,
     ) -> Vec<&'static str> {
+        let mut seen = HashSet::new();
+        self.eligible_entries(keep)
+            .into_iter()
+            .map(|rb| rb.full)
+            .filter(|full| seen.insert(*full))
+            .collect()
+    }
+
+    /// The entries `keep` accepts whose backend this platform and
+    /// configuration allow, in registry order.
+    fn eligible_entries(
+        &self,
+        keep: impl Fn(&RegistryBackend) -> bool,
+    ) -> Vec<&'static RegistryBackend> {
         static BACKEND_TYPES: Lazy<HashSet<String>> = Lazy::new(|| {
             let mut backend_types = BackendType::iter()
                 .map(|b| b.to_string())
@@ -876,27 +890,80 @@ impl RegistryTool {
         });
         let settings = Settings::get();
         let experimental = settings.experimental;
-        let mut seen = HashSet::new();
         self.backends
             .iter()
             .filter(|rb| keep(rb))
             .filter(|rb| backend_matches_platform(rb.platforms, &settings))
-            .map(|rb| rb.full)
-            .filter(|full| {
-                full.split(':')
+            .filter(|rb| {
+                rb.full
+                    .split(':')
                     .next()
                     .is_some_and(|b| BACKEND_TYPES.contains(b))
             })
             // Filter out experimental backends if experimental mode is disabled
-            .filter(|full| {
+            .filter(|rb| {
                 if experimental {
                     return true;
                 }
-                let backend_type = BackendType::guess(full);
+                let backend_type = BackendType::guess(rb.full);
                 !backend_type.is_experimental()
             })
-            .filter(|full| seen.insert(*full))
             .collect()
+    }
+
+    /// The entries that each serve a range of this tool's versions, when its
+    /// backends are split by version: in priority order, until their ranges
+    /// together cover every version. `None`
+    /// when a single backend serves every version, or a `MISE_BACKENDS_*`
+    /// override picks the backend.
+    pub(crate) fn version_range_owners(&self) -> Option<Vec<&'static RegistryBackend>> {
+        if self.env_backend_override().is_some() {
+            return None;
+        }
+        let parse = |v: &str| semver::Version::parse(v).expect("validated registry version bound");
+        let mut owners = vec![];
+        for rb in self.eligible_entries(|_| true) {
+            // An entry whose whole range earlier entries already serve owns
+            // no version.
+            let (min, max) = (rb.min_version.map(parse), rb.max_version.map(parse));
+            if !owners.is_empty() && covers(&owners, min.as_ref(), max.as_ref()) {
+                continue;
+            }
+            owners.push(rb);
+            if covers_every_version(&owners) {
+                break;
+            }
+        }
+        (owners.len() > 1).then_some(owners)
+    }
+
+    /// The range owners whose versions `request` can match: those whose range
+    /// it reaches, until they together cover everything it asks for.
+    pub(crate) fn version_range_owners_for(
+        &self,
+        owners: Vec<&'static RegistryBackend>,
+        request: &str,
+    ) -> Vec<&'static RegistryBackend> {
+        let range = request_range(request);
+        let mut kept = vec![];
+        for owner in owners.into_iter().filter(|o| o.supports_version(request)) {
+            kept.push(owner);
+            if range
+                .as_ref()
+                .is_some_and(|(lo, hi)| covers(&kept, Some(lo), Some(hi)))
+            {
+                break;
+            }
+        }
+        kept
+    }
+
+    /// The entry that serves the concrete `version`: the first eligible one
+    /// whose range contains it.
+    pub(crate) fn version_owner(&self, version: &str) -> Option<&'static RegistryBackend> {
+        self.eligible_entries(|rb| rb.supports_version(version))
+            .into_iter()
+            .next()
     }
 
     /// Filter only requests known to be older than a backend's introduction.
@@ -999,6 +1066,93 @@ impl RegistryTool {
                 | BackendType::Http
         )
         .then_some(self.version_order)
+    }
+}
+
+/// Whether the `[min_version, max_version)` ranges of `entries` leave no
+/// version out.
+fn covers_every_version(entries: &[&RegistryBackend]) -> bool {
+    covers(entries, None, None)
+}
+
+/// Whether the `[min_version, max_version)` ranges of `entries` together
+/// contain every version in `[lo, hi)`, where a missing `lo` is -inf and a
+/// missing `hi` is +inf.
+fn covers(
+    entries: &[&RegistryBackend],
+    lo: Option<&semver::Version>,
+    hi: Option<&semver::Version>,
+) -> bool {
+    let parse = |v: &str| semver::Version::parse(v).expect("validated registry version bound");
+    let mut ranges = entries
+        .iter()
+        .map(|rb| (rb.min_version.map(parse), rb.max_version.map(parse)))
+        .collect::<Vec<_>>();
+    // Missing lower bounds (-inf) first.
+    ranges.sort_by(|(a, _), (b, _)| match (a, b) {
+        (None, None) => std::cmp::Ordering::Equal,
+        (None, Some(_)) => std::cmp::Ordering::Less,
+        (Some(_), None) => std::cmp::Ordering::Greater,
+        (Some(a), Some(b)) => a.cmp_precedence(b),
+    });
+    /// How far up from `lo` the ranges reach without a gap.
+    enum Reach {
+        NegInf,
+        At(semver::Version),
+        PosInf,
+    }
+    let reached = |reach: &Reach| match (reach, hi) {
+        (Reach::PosInf, _) => true,
+        (_, None) | (Reach::NegInf, Some(_)) => false,
+        (Reach::At(reach), Some(hi)) => !reach.cmp_precedence(hi).is_lt(),
+    };
+    let mut reach = lo.map_or(Reach::NegInf, |lo| Reach::At(lo.clone()));
+    for (min, max) in ranges {
+        if reached(&reach) {
+            return true;
+        }
+        let gap = match (&min, &reach) {
+            (None, _) | (Some(_), Reach::PosInf) => false,
+            (Some(_), Reach::NegInf) => true,
+            (Some(min), Reach::At(reach)) => min.cmp_precedence(reach).is_gt(),
+        };
+        if gap {
+            return false;
+        }
+        reach = match (max, reach) {
+            (None, _) => Reach::PosInf,
+            (Some(max), Reach::At(reach)) if max.cmp_precedence(&reach).is_le() => Reach::At(reach),
+            (Some(_), Reach::PosInf) => Reach::PosInf,
+            (Some(max), _) => Reach::At(max),
+        };
+    }
+    reached(&reach)
+}
+
+/// The versions a request covers, as `[lo, hi)`: `2` is `[2.0.0, 3.0.0)`,
+/// `1.58` is `[1.58.0, 1.59.0)` and `1.58.1` is `[1.58.1, 1.58.2)`. `None`
+/// for anything else, such as `latest` or a non-numeric prefix.
+fn request_range(request: &str) -> Option<(semver::Version, semver::Version)> {
+    let request = request.strip_prefix("prefix:").unwrap_or(request);
+    let request = request.trim_start_matches(['v', 'V']);
+    if let Ok(version) = semver::Version::parse(request) {
+        let next = semver::Version::new(version.major, version.minor, version.patch + 1);
+        return Some((version, next));
+    }
+    let parts = request
+        .split('.')
+        .map(|part| part.parse::<u64>().ok())
+        .collect::<Option<Vec<_>>>()?;
+    match parts[..] {
+        [major] => Some((
+            semver::Version::new(major, 0, 0),
+            semver::Version::new(major + 1, 0, 0),
+        )),
+        [major, minor] => Some((
+            semver::Version::new(major, minor, 0),
+            semver::Version::new(major, minor + 1, 0),
+        )),
+        _ => None,
     }
 }
 
@@ -1456,6 +1610,108 @@ backends = [
         ] {
             assert!(parse(second).is_err(), "{second}");
         }
+    }
+
+    #[test]
+    fn registry_version_range_owners() {
+        use super::*;
+        let parse = |backends: &str| {
+            let source = format!("version_order = \"semver\"\nbackends = [{backends}]\n");
+            parse_registry_tool("example", &toml::from_str::<toml::Value>(&source).unwrap())
+                .unwrap()
+                .0
+        };
+        let fulls = |owners: Option<Vec<&RegistryBackend>>| {
+            owners.map(|owners| owners.iter().map(|rb| rb.full).collect::<Vec<_>>())
+        };
+
+        // A newer backend with a fallback for older releases: the fallback
+        // owns what the first does not, and nothing after it is listed.
+        let tool = parse(
+            r#"{ full = "github:example/new", min_version = "1.58.1" }, "aqua:example/old", "aqua:example/spare""#,
+        );
+        assert_eq!(
+            fulls(tool.version_range_owners()),
+            Some(vec!["github:example/new", "aqua:example/old"])
+        );
+        let owner = |v: &str| tool.version_owner(v).map(|rb| rb.full);
+        assert_eq!(owner("1.58.1"), Some("github:example/new"));
+        assert_eq!(owner("1.58.0"), Some("aqua:example/old"));
+        assert_eq!(owner("2.0.0-rc.1"), Some("github:example/new"));
+
+        // One backend per major; the fallback serves nothing they leave.
+        let tool = parse(
+            r#"{ full = "go:example.com/tool/v2/cmd/tool", min_version = "2.0.0" }, { full = "go:example.com/tool/cmd/tool", max_version = "2.0.0" }, "asdf:example/tool""#,
+        );
+        assert_eq!(
+            fulls(tool.version_range_owners()),
+            Some(vec![
+                "go:example.com/tool/v2/cmd/tool",
+                "go:example.com/tool/cmd/tool"
+            ])
+        );
+        assert_eq!(
+            tool.version_owner("1.19.2").map(|rb| rb.full),
+            Some("go:example.com/tool/cmd/tool")
+        );
+
+        // A gap between ranges falls to the fallback. (Not an asdf one:
+        // Windows drops asdf backends.)
+        let tool = parse(
+            r#"{ full = "aqua:example/new", min_version = "3.0.0" }, { full = "aqua:example/old", max_version = "2.0.0" }, "github:example/tool""#,
+        );
+        assert_eq!(
+            fulls(tool.version_range_owners()),
+            Some(vec![
+                "aqua:example/new",
+                "aqua:example/old",
+                "github:example/tool"
+            ])
+        );
+        assert_eq!(
+            tool.version_owner("2.5.0").map(|rb| rb.full),
+            Some("github:example/tool")
+        );
+
+        // A request inside one range lists only its owner; one that spans a
+        // boundary lists both sides.
+        let tool =
+            parse(r#"{ full = "github:example/new", min_version = "1.58.1" }, "aqua:example/old""#);
+        let for_request = |request: &str| {
+            fulls(Some(tool.version_range_owners_for(
+                tool.version_range_owners().unwrap(),
+                request,
+            )))
+            .unwrap()
+        };
+        assert_eq!(for_request("2"), ["github:example/new"]);
+        assert_eq!(for_request("1.59"), ["github:example/new"]);
+        assert_eq!(for_request("1.58.1"), ["github:example/new"]);
+        assert_eq!(for_request("1.57"), ["aqua:example/old"]);
+        assert_eq!(
+            for_request("1.58"),
+            ["github:example/new", "aqua:example/old"]
+        );
+        assert_eq!(for_request("1"), ["github:example/new", "aqua:example/old"]);
+        assert_eq!(
+            for_request("nightly"),
+            ["github:example/new", "aqua:example/old"]
+        );
+
+        // An entry inside an earlier entry's range owns nothing.
+        let tool = parse(
+            r#"{ full = "github:example/new", min_version = "2.0.0" }, { full = "asdf:example/tool", min_version = "3.0.0" }, "aqua:example/old""#,
+        );
+        assert_eq!(
+            fulls(tool.version_range_owners()),
+            Some(vec!["github:example/new", "aqua:example/old"])
+        );
+
+        // An unbounded first backend serves every version.
+        let tool = parse(
+            r#""aqua:example/tool", { full = "github:example/tool", max_version = "2.0.0" }"#,
+        );
+        assert_eq!(fulls(tool.version_range_owners()), None);
     }
 
     #[test]
