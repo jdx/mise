@@ -181,10 +181,10 @@ pub async fn list_remote_versions_across_ranges(
     if ba.full_without_opts() != owners[0].full {
         return Ok(None);
     }
-    let owners = owners
-        .into_iter()
-        .filter(|owner| prefix.is_none_or(|prefix| owner.supports_version(prefix)))
-        .collect::<Vec<_>>();
+    let owners = match prefix {
+        Some(prefix) => tool.version_range_owners_for(owners, prefix),
+        None => owners,
+    };
     if owners.len() < 2 {
         return Ok(None);
     }
