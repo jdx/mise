@@ -25,6 +25,7 @@ pub mod progress_report;
 pub mod prompt;
 pub mod resolve_progress;
 pub mod style;
+pub mod sudo;
 pub(crate) mod text_install_progress;
 pub mod theme;
 pub mod time;

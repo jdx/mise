@@ -11,12 +11,12 @@ use std::process::{Command, Output, Stdio};
 
 use eyre::bail;
 
-use crate::cmd::CmdLineRunner;
-use crate::config::Settings;
-use crate::result::Result;
-use crate::ui::multi_progress_report::{MultiProgressReport, ProgressPauseGuard};
+use crate::multi_progress_report::{MultiProgressReport, ProgressPauseGuard};
+use eyre::Result;
+use mise_settings::Settings;
+use mise_util::cmd::CmdLineRunner;
 
-pub(crate) fn is_root() -> bool {
+pub fn is_root() -> bool {
     #[cfg(unix)]
     {
         nix::unistd::geteuid().is_root()
@@ -30,7 +30,7 @@ pub(crate) fn is_root() -> bool {
 /// The command used to elevate: `system_packages.elevate_with` when set,
 /// otherwise the first of `sudo`, `run0` and `doas` on `PATH`. Falls back to
 /// `sudo` when none is installed so errors name the conventional tool.
-pub(crate) fn elevator() -> String {
+pub fn elevator() -> String {
     if let Some(cmd) = Settings::get()
         .system_packages
         .elevate_with
@@ -42,7 +42,7 @@ pub(crate) fn elevator() -> String {
     }
     ["sudo", "run0", "doas"]
         .into_iter()
-        .find(|cmd| crate::file::which(cmd).is_some())
+        .find(|cmd| mise_util::file::which(cmd).is_some())
         .unwrap_or("sudo")
         .to_string()
 }
@@ -66,15 +66,11 @@ fn is_sudo(elevator: &str) -> bool {
 
 /// The argv that [`run`] would execute, including the `sudo` prefix when
 /// elevation would be used. For logging and `--dry-run`.
-pub(crate) fn argv(program: &str, args: &[String]) -> Vec<String> {
+pub fn argv(program: &str, args: &[String]) -> Vec<String> {
     argv_with_env(program, args, &[])
 }
 
-pub(crate) fn argv_with_env(
-    program: &str,
-    args: &[String],
-    envs: &[(String, String)],
-) -> Vec<String> {
+pub fn argv_with_env(program: &str, args: &[String], envs: &[(String, String)]) -> Vec<String> {
     if !is_root() && Settings::get().system_packages.sudo {
         build_argv(program, args, envs, !console::user_attended_stderr())
     } else {
@@ -147,10 +143,10 @@ fn build_argv(
 ///   fails instead of hanging on a password prompt
 /// - `"deny"`: elevation is disabled or sudo is unavailable
 #[cfg(unix)]
-pub(crate) fn subprocess_mode() -> &'static str {
+pub fn subprocess_mode() -> &'static str {
     if is_root() {
         "interactive"
-    } else if !Settings::get().system_packages.sudo || crate::file::which("sudo").is_none() {
+    } else if !Settings::get().system_packages.sudo || mise_util::file::which("sudo").is_none() {
         // the brew cask shim only knows how to call sudo
         "deny"
     } else if console::user_attended_stderr() {
@@ -187,7 +183,7 @@ fn pause_progress_for_child() -> Option<ProgressPauseGuard> {
 /// - non-interactive: only proceeds if sudo works without a password
 ///   (`sudo -n`); otherwise errors with the exact command to run manually
 /// - `system_packages.sudo = false`: never elevates; errors if not root
-pub(crate) fn run(program: &str, args: &[String], envs: &[(String, String)]) -> Result<()> {
+pub fn run(program: &str, args: &[String], envs: &[(String, String)]) -> Result<()> {
     let argv = argv_with_env(program, args, envs);
     // the copy-pasteable fallback must include the env vars the automated
     // path would have set (e.g. DEBIAN_FRONTEND=noninteractive)
@@ -195,7 +191,7 @@ pub(crate) fn run(program: &str, args: &[String], envs: &[(String, String)]) -> 
     ensure_elevation_available(&manual_cmd)?;
     attempt(&manual_cmd, || {
         let _progress_pause = pause_progress_for_child();
-        info!("$ {}", argv.join(" "));
+        log::info!("$ {}", argv.join(" "));
         let mut cmd = CmdLineRunner::new(&argv[0]);
         for arg in &argv[1..] {
             cmd = cmd.arg(arg);
@@ -222,11 +218,7 @@ pub(crate) fn run(program: &str, args: &[String], envs: &[(String, String)]) -> 
 ///
 /// stdio is inherited so a sudo password prompt still reaches the terminal.
 #[cfg(unix)]
-pub(crate) fn run_in_dir<Fd: std::os::fd::AsFd>(
-    program: &str,
-    args: &[String],
-    dir: Fd,
-) -> Result<()> {
+pub fn run_in_dir<Fd: std::os::fd::AsFd>(program: &str, args: &[String], dir: Fd) -> Result<()> {
     use std::os::fd::AsRawFd;
     use std::os::unix::process::CommandExt;
 
@@ -237,7 +229,7 @@ pub(crate) fn run_in_dir<Fd: std::os::fd::AsFd>(
     ensure_elevation_available(&manual_cmd)?;
     attempt(&manual_cmd, || {
         let _progress_pause = pause_progress_for_child();
-        info!("$ {}", argv.join(" "));
+        log::info!("$ {}", argv.join(" "));
         let raw = dir.as_fd().as_raw_fd();
         let mut cmd = Command::new(&argv[0]);
         cmd.args(&argv[1..]);
@@ -267,7 +259,7 @@ pub(crate) fn run_in_dir<Fd: std::os::fd::AsFd>(
 /// Interactive callers authenticate with an inherited `sudo -v` first so a
 /// password prompt is never hidden inside captured stderr. Non-interactive
 /// callers retain [`ensure_elevation_available`]'s fail-fast `sudo -n` check.
-pub(crate) fn output(program: &str, args: &[String], envs: &[(String, String)]) -> Result<Output> {
+pub fn output(program: &str, args: &[String], envs: &[(String, String)]) -> Result<Output> {
     let argv = argv_with_env(program, args, envs);
     let manual_cmd = manual_command(program, args, envs);
     ensure_elevation_available(&manual_cmd)?;
@@ -282,7 +274,7 @@ pub(crate) fn output(program: &str, args: &[String], envs: &[(String, String)]) 
     let _progress_pause = (interactive && !is_sudo(&argv[0]))
         .then(pause_progress_for_child)
         .flatten();
-    info!("$ {}", argv.join(" "));
+    log::info!("$ {}", argv.join(" "));
     let mut cmd = Command::new(&argv[0]);
     if interactive && !is_sudo(&argv[0]) {
         cmd.stdin(Stdio::inherit());
@@ -306,12 +298,12 @@ pub(crate) fn output(program: &str, args: &[String], envs: &[(String, String)]) 
 ///
 /// Unlike [`run`], the payload is never included in argv, logs, or the manual
 /// fallback. This is the transport used for typed privileged bootstrap plans.
-pub(crate) fn run_with_input(program: &str, args: &[String], input: &[u8]) -> Result<()> {
+pub fn run_with_input(program: &str, args: &[String], input: &[u8]) -> Result<()> {
     run_with_reader(program, args, input)
 }
 
 /// Stream a prepared payload without keeping tool archives in memory.
-pub(crate) fn run_with_reader(
+pub fn run_with_reader(
     program: &str,
     args: &[String],
     mut input: impl std::io::Read,
@@ -319,7 +311,7 @@ pub(crate) fn run_with_reader(
     let argv = argv(program, args);
     ensure_stdin_elevation_available()?;
     let _progress_pause = pause_progress_for_child();
-    info!("$ {}", argv.join(" "));
+    log::info!("$ {}", argv.join(" "));
     let mut child = Command::new(&argv[0])
         .args(&argv[1..])
         .stdin(Stdio::piped())
@@ -344,15 +336,11 @@ pub(crate) fn run_with_reader(
 
 /// Run one elevated helper with a private stdin payload and capture stdout.
 /// Stderr remains attached to the terminal for sudo prompts and diagnostics.
-pub(crate) fn run_with_input_output(
-    program: &str,
-    args: &[String],
-    input: &[u8],
-) -> Result<Vec<u8>> {
+pub fn run_with_input_output(program: &str, args: &[String], input: &[u8]) -> Result<Vec<u8>> {
     let argv = argv(program, args);
     ensure_stdin_elevation_available()?;
     let _progress_pause = pause_progress_for_child();
-    info!("$ {}", argv.join(" "));
+    log::info!("$ {}", argv.join(" "));
     let mut child = Command::new(&argv[0])
         .args(&argv[1..])
         .stdin(Stdio::piped())
@@ -420,7 +408,7 @@ fn root_fallback(manual_cmd: &str, elevator: &str) -> String {
 
 /// Verify that the elevation command mise is configured to use can run
 /// without violating mise's elevation policy or hanging without a TTY.
-pub(crate) fn ensure_elevation_available(manual_cmd: &str) -> Result<()> {
+pub fn ensure_elevation_available(manual_cmd: &str) -> Result<()> {
     let elevator = elevator();
     check_elevation(
         &elevator,
@@ -432,7 +420,7 @@ pub(crate) fn ensure_elevation_available(manual_cmd: &str) -> Result<()> {
 /// Like [`ensure_elevation_available`] for a subprocess that calls `sudo`
 /// itself and never sees `system_packages.elevate_with`, such as an AUR
 /// helper. Only `sudo` is checked, because only `sudo` will be used.
-pub(crate) fn ensure_sudo_available(manual_cmd: &str) -> Result<()> {
+pub fn ensure_sudo_available(manual_cmd: &str) -> Result<()> {
     check_elevation(
         "sudo",
         &format!("Run manually:\n  {manual_cmd}"),
@@ -456,7 +444,7 @@ fn check_elevation(elevator: &str, manual_hint: &str, root_hint: &str) -> Result
     if !Settings::get().system_packages.sudo {
         bail!("not running as root and system_packages.sudo is disabled. {manual_hint}");
     }
-    if crate::file::which(elevator).is_none() {
+    if mise_util::file::which(elevator).is_none() {
         bail!("{elevator} not found. {root_hint}");
     }
     if !console::user_attended_stderr() {

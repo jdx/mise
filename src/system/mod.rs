@@ -79,7 +79,7 @@ pub mod services;
 pub mod services;
 pub mod services_common;
 pub mod shell_activation;
-pub(crate) mod sudo;
+pub use mise_ui::sudo;
 pub mod systemd;
 pub(crate) mod templating;
 pub mod unapply;
