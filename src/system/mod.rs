@@ -2016,7 +2016,13 @@ pub fn login_shell_from_config(config: &Config) -> Option<login_shell::LoginShel
         if let Some(sys) = cf.bootstrap_config()
             && let Some(login_shell) = sys.user.login_shell
         {
-            let login_shell = login_shell.trim().to_string();
+            let login_shell = match render_repo_str(config, cf.get_path(), &login_shell) {
+                Ok(rendered) => rendered.trim().to_string(),
+                Err(err) => {
+                    warn!("[bootstrap.user].login_shell: {err}, ignoring entry");
+                    continue;
+                }
+            };
             if login_shell.is_empty() {
                 warn!("[bootstrap.user].login_shell: must not be empty, ignoring entry");
                 continue;
