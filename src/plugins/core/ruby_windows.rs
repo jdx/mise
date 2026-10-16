@@ -8,6 +8,7 @@ use crate::args::BackendArg;
 use crate::backend::Backend;
 use crate::backend::VersionInfo;
 use crate::backend::normalize_idiomatic_contents;
+use crate::backend::platform_target::PlatformTarget;
 use crate::backend::static_helpers::lock_checksum;
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings, SettingsExt};
@@ -15,6 +16,7 @@ use crate::env::PATH_KEY;
 use crate::github::GithubRelease;
 use crate::http::HTTP;
 use crate::install_context::InstallContext;
+use crate::lockfile::PlatformInfo;
 use crate::toolset::{ToolVersion, Toolset};
 use crate::ui::progress_report::SingleReport;
 use crate::{file, github, plugins};
@@ -263,6 +265,19 @@ impl Backend for RubyPlugin {
         let map = BTreeMap::new();
         // No modification to RUBYLIB
         Ok(map)
+    }
+
+    async fn resolve_lock_info(
+        &self,
+        tv: &ToolVersion,
+        target: &PlatformTarget,
+    ) -> Result<PlatformInfo> {
+        if target.os_name() == "windows" {
+            return super::ruby_common::resolve_rubyinstaller_lock_info(&tv.version).await;
+        }
+        // Precompiled and source-build lock info for other targets is only
+        // implemented in ruby.rs, which Windows hosts do not compile.
+        Ok(PlatformInfo::default())
     }
 }
 
