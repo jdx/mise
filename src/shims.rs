@@ -195,7 +195,7 @@ pub fn shim_farm_dirs() -> Vec<PathBuf> {
 /// version list. Once every lazy declaration is installed there is nothing left to
 /// write, and the function returns before locating the mise binary, so that steady
 /// state costs only the option checks.
-pub fn ensure_lazy_shims(missing: &[ToolVersion]) -> Result<()> {
+pub async fn ensure_lazy_shims(missing: &[ToolVersion]) -> Result<()> {
     let mut bins_by_dir = BTreeMap::<PathBuf, Vec<String>>::new();
     let mut lazy_bins_error = None;
     for tv in missing {
@@ -224,6 +224,10 @@ pub fn ensure_lazy_shims(missing: &[ToolVersion]) -> Result<()> {
         // actually needs a shim.
         let mise_bin = mise_bin_for_shims().absolutize()?.into_owned();
         let excluded = &Settings::get().shims.exclude;
+        // Same in-process serialization as `reshim_for`: a bootstrap write that
+        // blocks on the shims file lock would starve a reshim in this process
+        // that holds it.
+        let _in_process_lock = RESHIM_LOCK.lock().await;
         for (shims_dir, bins) in bins_by_dir {
             // Bootstrap shims are written outside the reshim path, so they need the
             // same exclusion filter get_desired_shims applies, or a `mise env`/`x`/`run`
@@ -350,6 +354,8 @@ fn is_permission_denied(err: &eyre::Report) -> bool {
     })
 }
 
+static RESHIM_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
 pub async fn reshim_for(
     config: &Arc<Config>,
     ts: &Toolset,
@@ -368,6 +374,12 @@ pub async fn reshim_for(
         ShimScope::User | ShimScope::Both => user_shims,
         ShimScope::System => system_shims,
     };
+    // The file lock below blocks its thread and is held across awaits. Concurrent
+    // reshims in this process (parallel tasks installing tools) can share a
+    // thread, so a second one blocking in `lock()` would starve the first, which
+    // holds the lock, of the thread it needs to finish. Serialize them here
+    // first, awaiting instead of blocking.
+    let _in_process_lock = RESHIM_LOCK.lock().await;
     let _lock = LockFile::new(&shims_dir)
         .with_callback(|l| {
             trace!("reshim callback {}", l.display());
