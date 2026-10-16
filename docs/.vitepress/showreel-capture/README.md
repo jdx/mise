@@ -90,7 +90,7 @@ try took and how it ended.
   version asked for.
 - **The user:** `you`, `HOME=/home/you`. The shell gets a PTY whose size is
   set before zsh starts (the same as hk's `script -c 'stty cols 80 rows 50;
-…'`).
+  …'`).
   - Machine 1: `~/.zshrc` holds only `PROMPT='%~ $ '`, `compinit` and
     `eval "$(mise activate zsh)"`.
   - Machine 2 is fresh: mise is installed and the home directory is what
@@ -113,10 +113,10 @@ try took and how it ended.
 - **Staged off camera, so a take shows no wait it would otherwise have**
   (steps.json `setup`; no caption claims the install or start it skips):
   - machine 1: a global `node@<lts_major>`, and api's `mise use
-node@<lts_major>` (the file the pitch's card shows starts as that
+    node@<lts_major>` (the file the pitch's card shows starts as that
     command wrote it);
   - C6: `mise install github:cli/cli@<gh_version>`, so `mise use
-github:cli/cli` prints its config line without a download (the scene
+    github:cli/cli` prints its config line without a download (the scene
     shows no install rows for it);
   - C7: dashboard's `mise use node@<other_major>`;
   - C8: `mise install hk@<hk_old> hk@<hk_new>`, so the upgrade shows no
