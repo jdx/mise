@@ -694,6 +694,13 @@ impl BackendArg {
         self.registry_version.is_some()
     }
 
+    /// This backend configured as the registry entry for `version` would
+    /// configure it, without changing which backend it is.
+    pub(crate) fn for_registry_version(mut self, version: Option<&str>) -> Self {
+        self.registry_version = version.map(str::to_string);
+        self
+    }
+
     /// The version this registry shorthand is being routed for, if any.
     pub(crate) fn registry_version(&self) -> Option<&str> {
         self.registry_version.as_deref()

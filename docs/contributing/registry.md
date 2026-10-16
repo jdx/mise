@@ -309,6 +309,13 @@ that spans it keeps the preferred backend. Prereleases of the boundary version
 sort below it, so an exact request for `tool@2.0.0-rc.1` selects `tool-legacy`,
 while the prefix `2` still selects `tool-next`.
 
+`mise ls-remote tool` lists every range, each from the backend that serves it:
+1.x from `tool-legacy` and 2.x and later from `tool-next`. A version a backend
+lists outside its own range is left out, since installing it would select
+another backend. The same applies to `min_version` alone: hk lists 1.58.1 and
+later from packslip and earlier releases from aqua. A prefix inside one range,
+such as `mise ls-remote tool 1`, lists only that range's backend.
+
 A locked backend stays in use only for the versions it serves. If the lockfile
 records `tool-legacy` and the config moves to `tool@2`, mise selects `tool-next`
 instead of asking the legacy backend for a release it does not publish.
