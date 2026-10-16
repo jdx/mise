@@ -17,7 +17,7 @@ use crate::github::GithubRelease;
 use crate::http::HTTP;
 use crate::install_context::InstallContext;
 use crate::lockfile::PlatformInfo;
-use crate::toolset::{ToolVersion, Toolset};
+use crate::toolset::{ToolRequest, ToolVersion, Toolset};
 use crate::ui::progress_report::SingleReport;
 use crate::{file, github, plugins};
 use async_trait::async_trait;
@@ -267,17 +267,20 @@ impl Backend for RubyPlugin {
         Ok(map)
     }
 
+    fn resolve_lockfile_options(
+        &self,
+        _request: &ToolRequest,
+        target: &PlatformTarget,
+    ) -> Result<BTreeMap<String, String>> {
+        self.lock_options(target)
+    }
+
     async fn resolve_lock_info(
         &self,
         tv: &ToolVersion,
         target: &PlatformTarget,
     ) -> Result<PlatformInfo> {
-        if target.os_name() == "windows" {
-            return super::ruby_common::resolve_rubyinstaller_lock_info(&tv.version).await;
-        }
-        // Precompiled and source-build lock info for other targets is only
-        // implemented in ruby.rs, which Windows hosts do not compile.
-        Ok(PlatformInfo::default())
+        self.lock_info(tv, target).await
     }
 }
 
@@ -296,6 +299,36 @@ mod tests {
     use pretty_assertions::assert_eq;
 
     use super::*;
+
+    /// A Windows host locks every platform of a shared lockfile, so the options
+    /// that distinguish a Linux entry must be resolved here too.
+    #[test]
+    fn lockfile_options_are_resolved_for_non_windows_targets() {
+        use crate::config::settings::SettingsPartial;
+        use crate::platform::Platform;
+        use crate::toolset::ToolSource;
+        use confique::Layer;
+
+        let _guard = crate::test::SettingsGuard::lock();
+        let mut settings = SettingsPartial::empty();
+        settings.ruby.compile = Some(false);
+        Settings::reset(Some(settings));
+
+        let backend = RubyPlugin::new();
+        let request = ToolRequest::new(backend.ba().clone(), "3.4.8", ToolSource::Unknown).unwrap();
+        let target = |platform: &str| PlatformTarget::new(Platform::parse(platform).unwrap());
+
+        let linux = backend
+            .resolve_lockfile_options(&request, &target("linux-x64"))
+            .unwrap();
+        assert_eq!(linux["compile"], "false");
+        assert_eq!(linux["precompiled_url"], "jdx/ruby");
+
+        let windows = backend
+            .resolve_lockfile_options(&request, &target("windows-x64"))
+            .unwrap();
+        assert!(windows.is_empty());
+    }
 
     /// A lockfile pins the archive whose checksum `verify_checksum` will apply,
     /// so a locked URL has to be used verbatim rather than re-resolved to a
