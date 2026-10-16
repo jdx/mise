@@ -4249,6 +4249,14 @@ where
     }
     let fresh_versions: HashSet<String> =
         by_key.keys().map(|(version, _)| version.clone()).collect();
+    let fresh_platforms: HashSet<(String, String)> = by_key
+        .iter()
+        .flat_map(|((version, _), tool)| {
+            tool.platforms
+                .keys()
+                .map(|platform| (version.clone(), platform.clone()))
+        })
+        .collect();
 
     // Merge with existing tools to preserve platform info
     if let Some(existing) = existing_tools {
@@ -4276,6 +4284,19 @@ where
                             .or_insert(info.clone());
                     }
                     entry.specifiers.extend(existing_tool.specifiers.clone());
+                } else if fresh_versions.contains(&existing_tool.version) {
+                    // A per-platform option variant (e.g. a github asset_pattern
+                    // for another platform) has no fresh counterpart because the
+                    // toolset only resolves the current platform's options. Keep
+                    // the platforms that no fresh entry of this version refreshed.
+                    let mut kept = existing_tool.clone();
+                    kept.platforms.retain(|platform, _| {
+                        !fresh_platforms
+                            .contains(&(existing_tool.version.clone(), platform.clone()))
+                    });
+                    if !kept.platforms.is_empty() {
+                        by_key.insert(key, kept);
+                    }
                 }
                 continue;
             }
@@ -7539,6 +7560,123 @@ url = "https://example.com/hk-1.58.1-mac"
             tool.options.is_empty()
                 && tool.platforms["linux-x64"].checksum.as_deref() == Some("sha256:OLD")
         }));
+    }
+
+    #[test]
+    fn test_merge_tool_entries_keeps_other_platform_option_variants() {
+        let variant = |pattern: &str, platform: &str, checksum: &str| LockfileTool {
+            version: "0.11.0".to_string(),
+            backend: Some("github:koalaman/shellcheck".to_string()),
+            specifiers: BTreeSet::new(),
+            options: BTreeMap::from([("asset_pattern".to_string(), pattern.to_string())]),
+            platforms: BTreeMap::from([(
+                platform.to_string(),
+                PlatformInfo {
+                    checksum: Some(checksum.to_string()),
+                    ..Default::default()
+                },
+            )]),
+            aube: None,
+            uv: None,
+        };
+        let existing = vec![
+            variant("shellcheck-*.zip", "windows-x64", "sha256:WIN"),
+            variant("shellcheck-*.tar.xz", "linux-x64", "sha256:LINUX"),
+        ];
+        // Only the current platform's variant is resolved from the toolset.
+        let mut fresh_linux = variant("shellcheck-*.tar.xz", "linux-x64", "sha256:LINUX");
+        fresh_linux.platforms.clear();
+
+        let (merged, _) = merge_tool_entries(vec![fresh_linux], Some(&existing), |_, _| None);
+
+        assert_eq!(merged.len(), 2);
+        assert!(merged.iter().any(|tool| {
+            tool.options["asset_pattern"] == "shellcheck-*.zip"
+                && tool.platforms["windows-x64"].checksum.as_deref() == Some("sha256:WIN")
+        }));
+        assert!(merged.iter().any(|tool| {
+            tool.options["asset_pattern"] == "shellcheck-*.tar.xz"
+                && tool.platforms["linux-x64"].checksum.as_deref() == Some("sha256:LINUX")
+        }));
+    }
+
+    #[test]
+    fn test_merge_tool_entries_keeps_unrefreshed_platforms_of_changed_variant() {
+        let tool = |pattern: &str, platforms: &[(&str, &str)]| LockfileTool {
+            version: "0.11.0".to_string(),
+            backend: Some("github:koalaman/shellcheck".to_string()),
+            specifiers: BTreeSet::new(),
+            options: BTreeMap::from([("asset_pattern".to_string(), pattern.to_string())]),
+            platforms: platforms
+                .iter()
+                .map(|(platform, checksum)| {
+                    (
+                        platform.to_string(),
+                        PlatformInfo {
+                            checksum: Some(checksum.to_string()),
+                            ..Default::default()
+                        },
+                    )
+                })
+                .collect(),
+            aube: None,
+            uv: None,
+        };
+        let existing = vec![tool(
+            "shellcheck-*.old",
+            &[
+                ("linux-x64", "sha256:OLDLINUX"),
+                ("windows-x64", "sha256:WIN"),
+            ],
+        )];
+        let fresh = vec![tool(
+            "shellcheck-*.new",
+            &[("linux-x64", "sha256:NEWLINUX")],
+        )];
+
+        let (merged, _) = merge_tool_entries(fresh, Some(&existing), |_, _| None);
+
+        assert_eq!(merged.len(), 2);
+        let old = merged
+            .iter()
+            .find(|t| t.options["asset_pattern"] == "shellcheck-*.old")
+            .unwrap();
+        assert_eq!(old.platforms.len(), 1);
+        assert_eq!(
+            old.platforms["windows-x64"].checksum.as_deref(),
+            Some("sha256:WIN")
+        );
+    }
+
+    #[test]
+    fn test_merge_tool_entries_retained_variants_do_not_count_as_fresh() {
+        let tool = |pattern: &str, platforms: &[&str]| LockfileTool {
+            version: "0.11.0".to_string(),
+            backend: Some("github:koalaman/shellcheck".to_string()),
+            specifiers: BTreeSet::new(),
+            options: BTreeMap::from([("asset_pattern".to_string(), pattern.to_string())]),
+            platforms: platforms
+                .iter()
+                .map(|platform| (platform.to_string(), PlatformInfo::default()))
+                .collect(),
+            aube: None,
+            uv: None,
+        };
+        let existing = vec![
+            tool("a", &["windows-x64"]),
+            tool("b", &["windows-x64", "macos-arm64"]),
+        ];
+        let fresh = vec![tool("c", &["linux-x64"])];
+
+        let (merged, _) = merge_tool_entries(fresh, Some(&existing), |_, _| None);
+
+        for pattern in ["a", "b"] {
+            let kept = merged
+                .iter()
+                .find(|t| t.options["asset_pattern"] == pattern)
+                .unwrap();
+            assert!(kept.platforms.contains_key("windows-x64"));
+        }
     }
 
     #[test]

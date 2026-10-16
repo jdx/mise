@@ -321,8 +321,9 @@ lockfile_auto_prune = false
 
 It applies in both modes, including to `mise lock --global`, and it keeps only
 tools outside the active configuration. Configured tools are still refreshed,
-and their stale versions, option variants and dependency graphs are still
-removed. `mise lock node` already keeps tools outside its filter.
+and stale versions, option variants for refreshed platforms, and dependency
+graphs are still removed. An option variant for a platform that the run does not
+resolve can remain while its version is current. `mise lock node` already keeps tools outside its filter.
 
 ## Which lock entry a command reads {#runtime-resolution}
 
