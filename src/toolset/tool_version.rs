@@ -206,7 +206,7 @@ impl ToolVersion {
 
         trace!("resolving {} {}", &request, opts);
         if opts.use_locked_version
-            && !has_linked_version(request.ba())
+            && !has_linked_version(request.ba(), &request.version())
             && let Some(lt) = request.lockfile_resolve(config)?
         {
             return Ok(Self::from_lockfile(request.clone(), lt).with_before_date(opts.before_date));
@@ -768,7 +768,7 @@ impl ToolVersion {
         if (invocation_locked || tool_config_locked)
             && opts.use_locked_version
             && settings.lockfile_enabled()
-            && !has_linked_version(request.ba())
+            && !has_linked_version(request.ba(), &request.version())
             && request
                 .lockfile_source()
                 .and_then(ToolSource::path)
@@ -814,7 +814,7 @@ impl ToolVersion {
             None => (v.as_str(), false),
         };
         if opts.use_locked_version
-            && !has_linked_version(request.ba())
+            && !has_linked_version(request.ba(), lock_query)
             && let Some(lt) =
                 request.lockfile_resolve_with_prefix(config, lock_query, lock_prefix_boundary)?
         {
@@ -1505,10 +1505,12 @@ impl ResolveOptions {
     }
 }
 
-/// Check if a tool has any user-linked versions (created by `mise link`).
-/// A linked version is an installed version whose path is a symlink to an external
-/// absolute path, as opposed to runtime symlinks or mise-managed install/cache links.
-fn has_linked_version(ba: &BackendArg) -> bool {
+/// Check if a tool has a user-linked version (created by `mise link`) that could
+/// satisfy `version`. A linked version is an installed version whose path is a symlink
+/// to an external absolute path, as opposed to runtime symlinks or mise-managed
+/// install/cache links. A link that `version` cannot select (`node@22` linked while the
+/// config asks for `24.21.0`) is not a candidate, so it must not displace the lockfile.
+fn has_linked_version(ba: &BackendArg, version: &str) -> bool {
     if install_state::get_tool_full(&ba.short)
         .is_some_and(|installed| installed != ba.full_without_opts())
     {
@@ -1526,12 +1528,28 @@ fn has_linked_version(ba: &BackendArg) -> bool {
             if target.is_absolute()
                 && !is_mise_managed_symlink_target(&target)
                 && !is_rustup_install(ba, &path, &target)
+                && path
+                    .file_name()
+                    .is_some_and(|name| linked_name_satisfies(&name.to_string_lossy(), version))
             {
                 return true;
             }
         }
     }
     false
+}
+
+/// Whether a link named `name` is something a request for `version` selects: any link for
+/// `latest`, the same name, or a name that extends `version` at a `.` boundary.
+fn linked_name_satisfies(name: &str, version: &str) -> bool {
+    let version = version.strip_prefix("prefix:").unwrap_or(version);
+    let pathname = version.replace([':', '/'], "-");
+    version == "latest"
+        || name == version
+        || name == pathname
+        || name
+            .strip_prefix(version)
+            .is_some_and(|rest| rest.starts_with('.'))
 }
 
 /// core:rust installs are symlinks to rustup's `$CARGO_HOME/bin`, which sits
@@ -1925,7 +1943,7 @@ mod tests {
         fs::create_dir_all(&external_target)?;
         crate::file::make_symlink_or_file(&external_target, &backend.installs_path().join("brew"))?;
 
-        assert!(has_linked_version(&backend));
+        assert!(has_linked_version(&backend, "latest"));
 
         Ok(())
     }
@@ -1952,18 +1970,18 @@ mod tests {
         };
         fs::write(cargo_bin.join(rustup), "")?;
         crate::file::make_symlink_or_file(&cargo_bin, &backend.installs_path().join("1.99.0"))?;
-        assert!(!has_linked_version(&backend));
+        assert!(!has_linked_version(&backend, "latest"));
 
         // A user link to the same directory under a non-toolchain name stays linked.
         let custom = backend.installs_path().join("custom");
         crate::file::make_symlink_or_file(&cargo_bin, &custom)?;
-        assert!(has_linked_version(&backend));
+        assert!(has_linked_version(&backend, "latest"));
         fs::remove_file(&custom)?;
 
         let other = temp_dir.path().join("other");
         fs::create_dir_all(&other)?;
         crate::file::make_symlink_or_file(&other, &backend.installs_path().join("custom"))?;
-        assert!(has_linked_version(&backend));
+        assert!(has_linked_version(&backend, "latest"));
 
         Ok(())
     }
@@ -2004,7 +2022,7 @@ mod tests {
             &backend.installs_path().join("escaped"),
         )?;
 
-        assert!(has_linked_version(&backend));
+        assert!(has_linked_version(&backend, "latest"));
 
         Ok(())
     }
@@ -2041,7 +2059,25 @@ mod tests {
             managed_targets.push(target);
         }
 
-        assert!(!has_linked_version(&backend));
+        assert!(!has_linked_version(&backend, "latest"));
+
+        Ok(())
+    }
+
+    #[test]
+    fn has_linked_version_ignores_links_the_request_cannot_select() -> Result<()> {
+        let temp_dir = tempfile::tempdir()?;
+        let backend = test_backend(temp_dir.path().join("installs").join("dummy"));
+        fs::create_dir_all(backend.installs_path())?;
+
+        let external_target = temp_dir.path().join("external").join("tool");
+        fs::create_dir_all(&external_target)?;
+        crate::file::make_symlink_or_file(&external_target, &backend.installs_path().join("22"))?;
+
+        assert!(!has_linked_version(&backend, "24.21.0"));
+        assert!(!has_linked_version(&backend, "2"));
+        assert!(has_linked_version(&backend, "22"));
+        assert!(has_linked_version(&backend, "latest"));
 
         Ok(())
     }
@@ -2057,7 +2093,7 @@ mod tests {
             &backend.installs_path().join("latest"),
         )?;
 
-        assert!(!has_linked_version(&backend));
+        assert!(!has_linked_version(&backend, "latest"));
 
         Ok(())
     }
