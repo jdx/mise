@@ -1529,12 +1529,7 @@ fn has_linked_version(ba: &BackendArg, version: &str) -> bool {
     let Ok(entries) = std::fs::read_dir(installs_dir) else {
         return false;
     };
-    // Installed-version selection hides pre-releases unless asked for by name, so a link
-    // like `24.21.0-rc1` does not satisfy a request for `24.21.0`.
-    let backend = ba
-        .backend()
-        .ok()
-        .filter(|b| !b.include_prereleases(&ba.opts()));
+    let backend = ba.backend().ok();
     for entry in entries.flatten() {
         let path = entry.path();
         if let Ok(Some(target)) = crate::file::resolve_symlink(&path) {
@@ -1544,14 +1539,7 @@ fn has_linked_version(ba: &BackendArg, version: &str) -> bool {
                 && !is_mise_managed_symlink_target(&target)
                 && !is_rustup_install(ba, &path, &target)
                 && path.file_name().is_some_and(|name| {
-                    let name = name.to_string_lossy();
-                    linked_name_satisfies(&name, version)
-                        && (version == "latest"
-                            || linked_name_is_exact(&name, version)
-                            || !backend.as_ref().is_some_and(|b| {
-                                crate::plugins::VERSION_REGEX.is_match(&name)
-                                    || b.is_backend_prerelease(&name)
-                            }))
+                    linked_name_satisfies(&name.to_string_lossy(), version, backend.as_deref())
                 })
             {
                 return true;
@@ -1568,13 +1556,27 @@ fn linked_name_is_exact(name: &str, version: &str) -> bool {
     name == version || name == version.replace([':', '/'], "-")
 }
 
-/// Whether a link named `name` is something a request for `version` selects, by the same
-/// rules the backend applies to installed versions.
-fn linked_name_satisfies(name: &str, version: &str) -> bool {
+/// Whether a link named `name` is something a request for `version` selects. Any link
+/// satisfies `latest`, and an exact name always does; otherwise the backend's own
+/// installed-version matching decides (separators, `v` prefixes, pre-release hiding).
+fn linked_name_satisfies(
+    name: &str,
+    version: &str,
+    backend: Option<&dyn backend::Backend>,
+) -> bool {
     let version = version.strip_prefix("prefix:").unwrap_or(version);
-    version == "latest"
-        || linked_name_is_exact(name, version)
-        || crate::backend::fuzzy_version_matches(version, name)
+    if version == "latest" || linked_name_is_exact(name, version) {
+        return true;
+    }
+    match backend {
+        Some(backend) => {
+            let filter = !backend.include_prereleases(&backend.ba().opts());
+            !backend
+                .fuzzy_match_filter(vec![name.to_string()], version, filter)
+                .is_empty()
+        }
+        None => crate::backend::fuzzy_version_matches(version, name),
+    }
 }
 
 /// core:rust installs are symlinks to rustup's `$CARGO_HOME/bin`, which sits
@@ -2091,12 +2093,12 @@ mod tests {
 
     #[test]
     fn linked_name_satisfies_follows_backend_matching() {
-        assert!(linked_name_satisfies("v3.2.0", "3"));
-        assert!(linked_name_satisfies("3.2.0-custom", "3"));
-        assert!(linked_name_satisfies("3.2+build", "3.2"));
-        assert!(linked_name_satisfies("brew", "latest"));
-        assert!(!linked_name_satisfies("3.20", "3.2"));
-        assert!(!linked_name_satisfies("22", "24.21.0"));
+        assert!(linked_name_satisfies("v3.2.0", "3", None));
+        assert!(linked_name_satisfies("3.2.0-custom", "3", None));
+        assert!(linked_name_satisfies("3.2+build", "3.2", None));
+        assert!(linked_name_satisfies("brew", "latest", None));
+        assert!(!linked_name_satisfies("3.20", "3.2", None));
+        assert!(!linked_name_satisfies("22", "24.21.0", None));
         assert!(linked_name_is_exact("ref-main", "ref:main"));
     }
 
