@@ -279,7 +279,13 @@ impl Config {
                 GLOB_RESULTS.lock().unwrap().clear();
                 crate::lockfile::invalidate_caches();
                 crate::task::reset();
-                crate::system::files::clear_invalid_declarations();
+                for hook in RESET_HOOKS
+                    .lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner())
+                    .iter()
+                {
+                    hook();
+                }
                 Ok(())
             },
             Duration::from_secs(5),
@@ -2541,6 +2547,18 @@ pub static IGNORED_CONFIG_FILES: Lazy<IndexSet<PathBuf>> = Lazy::new(|| {
 // });
 
 type GlobResults = HashMap<(PathBuf, String), Vec<PathBuf>>;
+/// Work to do whenever the configuration is reloaded, registered by modules above the config
+/// layer (such as the dotfiles declarations) that cache what they read from it.
+static RESET_HOOKS: Mutex<Vec<fn()>> = Mutex::new(Vec::new());
+
+/// Run `hook` on every configuration reload.
+pub fn register_reset_hook(hook: fn()) {
+    RESET_HOOKS
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .push(hook);
+}
+
 static GLOB_RESULTS: Lazy<Mutex<GlobResults>> = Lazy::new(Default::default);
 
 pub(crate) fn glob(dir: &Path, pattern: &str) -> Result<Vec<PathBuf>> {

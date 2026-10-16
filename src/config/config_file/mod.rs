@@ -271,7 +271,7 @@ pub trait ConfigFile: Debug + Send + Sync {
         Default::default()
     }
 
-    fn bootstrap_config(&self) -> Option<crate::system::BootstrapTomlConfig> {
+    fn bootstrap_config(&self) -> Option<mise_system_config::bootstrap::BootstrapTomlConfig> {
         None
     }
 
@@ -279,13 +279,13 @@ pub trait ConfigFile: Debug + Send + Sync {
         None
     }
 
-    fn dotfiles_config(&self) -> Option<crate::system::DotfilesTomlConfig> {
+    fn dotfiles_config(&self) -> Option<mise_system_config::dotfiles::DotfilesTomlConfig> {
         None
     }
 
     fn dotfile_groups_config(
         &self,
-    ) -> Option<crate::system::dotfile_groups::DotfileGroupsTomlConfig> {
+    ) -> Option<mise_system_config::dotfiles::DotfileGroupsTomlConfig> {
         None
     }
 }

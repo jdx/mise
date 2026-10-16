@@ -6948,8 +6948,13 @@ dependencies = [
 name = "mise-system-config"
 version = "0.1.0"
 dependencies = [
+ "eyre",
  "indexmap 2.14.2",
+ "mise-bootstrap",
+ "mise-system-packages",
+ "mise-util",
  "serde",
+ "serde_ignored",
  "toml 1.1.8+spec-1.1.0",
 ]
 

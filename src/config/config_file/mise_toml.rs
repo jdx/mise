@@ -40,13 +40,15 @@ use crate::hooks::{Hook, HookDef, Hooks};
 use crate::oci::OciConfig;
 use crate::redactions::Redactions;
 use crate::registry::REGISTRY;
-use crate::system::{BootstrapTomlConfig, DotfilesTomlConfig, PackageTomlConfig};
 use crate::task::workspace::WorkspaceProjectOverride;
 use crate::task::{Task, TaskTemplate, TaskTomlBoolPresence};
 use crate::tera::{BASE_CONTEXT, contains_template_syntax, get_tera, render_str};
 use crate::toolset::{ToolRequest, ToolRequestSet, ToolSource, ToolVersionOptions};
 use crate::watch_files::WatchFile;
 use crate::{env, file};
+use mise_system_config::bootstrap::BootstrapTomlConfig;
+use mise_system_config::dotfiles::DotfilesTomlConfig;
+use mise_system_config::packages::PackageTomlConfig;
 
 use super::diagnostic::toml_parse_error;
 use super::min_version::MinVersionSpec;
@@ -485,9 +487,9 @@ pub struct MiseToml {
     #[serde(default)]
     dotfiles: Option<DotfilesTomlConfig>,
     #[serde(default)]
-    dotfile_groups: Option<crate::system::dotfile_groups::DotfileGroupsTomlConfig>,
+    dotfile_groups: Option<mise_system_config::dotfiles::DotfileGroupsTomlConfig>,
     #[serde(default)]
-    history: Option<crate::system::history::config::HistoryTomlConfig>,
+    history: Option<mise_system_config::history::HistoryTomlConfig>,
     #[serde(default, deserialize_with = "deserialize_vars")]
     vars: EnvList,
     #[serde(default)]
@@ -1044,9 +1046,10 @@ impl MiseToml {
         let (preserve_options, reset_absent) = match packages.get_mut(spec) {
             Some(PackageTomlConfig::Options(options)) => {
                 options.version = version.to_string();
-                let reset_absent =
-                    options.state == crate::system::PackageDesiredStateTomlConfig::Absent;
-                options.state = crate::system::PackageDesiredStateTomlConfig::Present;
+                let reset_absent = options.state
+                    == mise_system_config::packages::PackageDesiredStateTomlConfig::Absent;
+                options.state =
+                    mise_system_config::packages::PackageDesiredStateTomlConfig::Present;
                 (true, reset_absent)
             }
             _ => {
@@ -1117,7 +1120,7 @@ impl MiseToml {
         {
             let mut options = options.clone();
             options.version = version.to_string();
-            options.state = crate::system::PackageDesiredStateTomlConfig::Present;
+            options.state = mise_system_config::packages::PackageDesiredStateTomlConfig::Present;
             self.bootstrap
                 .get_or_insert_with(Default::default)
                 .packages
@@ -2120,7 +2123,7 @@ impl ConfigFile for MiseToml {
 
     fn dotfile_groups_config(
         &self,
-    ) -> Option<crate::system::dotfile_groups::DotfileGroupsTomlConfig> {
+    ) -> Option<mise_system_config::dotfiles::DotfileGroupsTomlConfig> {
         self.dotfile_groups
             .as_ref()
             .filter(|_| !self.ignored_in_safe_mode("[dotfile_groups]"))
@@ -2144,9 +2147,7 @@ impl MiseToml {
     }
 
     /// `[history]` as declared by this file.
-    pub(crate) fn history_config(
-        &self,
-    ) -> Option<crate::system::history::config::HistoryTomlConfig> {
+    pub(crate) fn history_config(&self) -> Option<mise_system_config::history::HistoryTomlConfig> {
         self.history.clone()
     }
 }
@@ -3832,7 +3833,7 @@ mod tests {
         );
         assert!(matches!(
             system.packages.get("brew-cask:1password"),
-            Some(crate::system::PackageTomlConfig::Options(options))
+            Some(mise_system_config::packages::PackageTomlConfig::Options(options))
                 if options.adopt == Some(true) && options.env == ["work"]
         ));
         assert_eq!(
@@ -4055,7 +4056,7 @@ mod tests {
         assert_eq!(agent.start_interval, Some(300));
         assert_eq!(agent.throttle_interval, Some(60));
         assert_eq!(agent.queue_directories, vec!["~/Library/Queues/my-sync"]);
-        let crate::system::launchd::LaunchdCalendarIntervals::Single(interval) =
+        let mise_system_config::launchd::LaunchdCalendarIntervals::Single(interval) =
             agent.start_calendar_interval.as_ref().unwrap()
         else {
             panic!("expected single calendar interval");
@@ -4073,7 +4074,7 @@ mod tests {
         );
         assert!(agent.kickstart);
         let backup = system.macos.launchd.agents.get("my-backup").unwrap();
-        let crate::system::launchd::LaunchdCalendarIntervals::Multiple(intervals) =
+        let mise_system_config::launchd::LaunchdCalendarIntervals::Multiple(intervals) =
             backup.start_calendar_interval.as_ref().unwrap()
         else {
             panic!("expected multiple calendar intervals");
@@ -4153,40 +4154,42 @@ mod tests {
                 .unwrap();
             #[cfg(unix)]
             {
-                let inherited_without_selector =
-                    PackageTomlConfig::Options(crate::system::PackageOptionsTomlConfig {
+                let inherited_without_selector = PackageTomlConfig::Options(
+                    mise_system_config::packages::PackageOptionsTomlConfig {
                         version: "1.0.0".to_string(),
                         os: vec![],
                         env: vec![],
                         adopt: None,
                         appdir: None,
-                        state: crate::system::PackageDesiredStateTomlConfig::Present,
+                        state: mise_system_config::packages::PackageDesiredStateTomlConfig::Present,
                         url: None,
                         sha256: None,
                         artifact: None,
                         channel: None,
                         classic: None,
-                    });
+                    },
+                );
                 cf.update_bootstrap_package_with_fallback(
                     "brew:tree",
                     "latest",
                     Some(&inherited_without_selector),
                 )
                 .unwrap();
-                let inherited_with_appdir =
-                    PackageTomlConfig::Options(crate::system::PackageOptionsTomlConfig {
+                let inherited_with_appdir = PackageTomlConfig::Options(
+                    mise_system_config::packages::PackageOptionsTomlConfig {
                         version: "1.0.0".to_string(),
                         os: vec![],
                         env: vec![],
                         adopt: None,
                         appdir: Some("/Applications".to_string()),
-                        state: crate::system::PackageDesiredStateTomlConfig::Present,
+                        state: mise_system_config::packages::PackageDesiredStateTomlConfig::Present,
                         url: None,
                         sha256: None,
                         artifact: None,
                         channel: None,
                         classic: None,
-                    });
+                    },
+                );
                 cf.update_bootstrap_package_with_fallback(
                     "brew-cask:1password",
                     "latest",
@@ -6644,17 +6647,17 @@ run = "cargo build"
         let firewall = cf.bootstrap_config().unwrap().linux.firewall.unwrap();
         assert_eq!(
             firewall.backend,
-            Some(crate::system::firewall::FirewallBackend::Nftables)
+            Some(mise_system_config::firewall::FirewallBackend::Nftables)
         );
         assert_eq!(firewall.rules.len(), 2);
         assert_eq!(firewall.rules[0].name, "https");
         assert!(matches!(
             firewall.rules[0].port,
-            Some(crate::system::firewall::FirewallPortToml::Single(443))
+            Some(mise_system_config::firewall::FirewallPortToml::Single(443))
         ));
         assert!(matches!(
             firewall.rules[1].port,
-            Some(crate::system::firewall::FirewallPortToml::Range(ref range))
+            Some(mise_system_config::firewall::FirewallPortToml::Range(ref range))
                 if range == "2200-2205"
         ));
         assert_eq!(firewall.rules[1].source.as_deref(), Some("203.0.113.0/24"));
