@@ -4276,6 +4276,21 @@ where
                             .or_insert(info.clone());
                     }
                     entry.specifiers.extend(existing_tool.specifiers.clone());
+                } else if fresh_versions.contains(&existing_tool.version)
+                    && !existing_tool.platforms.is_empty()
+                    && !by_key.iter().any(|((version, _), fresh)| {
+                        *version == existing_tool.version
+                            && existing_tool
+                                .platforms
+                                .keys()
+                                .any(|platform| fresh.platforms.contains_key(platform))
+                    })
+                {
+                    // A per-platform option variant (e.g. a github asset_pattern
+                    // for another platform) has no fresh counterpart because the
+                    // toolset only resolves the current platform's options. None
+                    // of its platforms were refreshed, so keep it as is.
+                    by_key.insert(key, existing_tool.clone());
                 }
                 continue;
             }
@@ -7538,6 +7553,44 @@ url = "https://example.com/hk-1.58.1-mac"
         assert!(merged.iter().any(|tool| {
             tool.options.is_empty()
                 && tool.platforms["linux-x64"].checksum.as_deref() == Some("sha256:OLD")
+        }));
+    }
+
+    #[test]
+    fn test_merge_tool_entries_keeps_other_platform_option_variants() {
+        let variant = |pattern: &str, platform: &str, checksum: &str| LockfileTool {
+            version: "0.11.0".to_string(),
+            backend: Some("github:koalaman/shellcheck".to_string()),
+            specifiers: BTreeSet::new(),
+            options: BTreeMap::from([("asset_pattern".to_string(), pattern.to_string())]),
+            platforms: BTreeMap::from([(
+                platform.to_string(),
+                PlatformInfo {
+                    checksum: Some(checksum.to_string()),
+                    ..Default::default()
+                },
+            )]),
+            aube: None,
+            uv: None,
+        };
+        let existing = vec![
+            variant("shellcheck-*.zip", "windows-x64", "sha256:WIN"),
+            variant("shellcheck-*.tar.xz", "linux-x64", "sha256:LINUX"),
+        ];
+        // Only the current platform's variant is resolved from the toolset.
+        let mut fresh_linux = variant("shellcheck-*.tar.xz", "linux-x64", "sha256:LINUX");
+        fresh_linux.platforms.clear();
+
+        let (merged, _) = merge_tool_entries(vec![fresh_linux], Some(&existing), |_, _| None);
+
+        assert_eq!(merged.len(), 2);
+        assert!(merged.iter().any(|tool| {
+            tool.options["asset_pattern"] == "shellcheck-*.zip"
+                && tool.platforms["windows-x64"].checksum.as_deref() == Some("sha256:WIN")
+        }));
+        assert!(merged.iter().any(|tool| {
+            tool.options["asset_pattern"] == "shellcheck-*.tar.xz"
+                && tool.platforms["linux-x64"].checksum.as_deref() == Some("sha256:LINUX")
         }));
     }
 
