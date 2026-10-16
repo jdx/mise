@@ -162,13 +162,20 @@ impl Vfox {
         self.rewrite_url(&mut request_url);
         self.log_emit(format!("Downloading {request_url}"));
         let url_str = request_url.to_string();
+        let client = client()?;
+        let no_redirect_client = no_redirect_client()?;
         let bytes = retry_async(&url_str, || async {
             let resp = match plugin_headers.filter(|h| !h.is_empty()) {
                 Some(plugin_headers) => {
                     // The headers belong to the plugin's own `url`; a rewritten
                     // mirror is not trusted with them.
                     match self
-                        .get_following_redirects(&request_url, url, plugin_headers)
+                        .get_following_redirects(
+                            no_redirect_client,
+                            &request_url,
+                            url,
+                            plugin_headers,
+                        )
                         .await?
                     {
                         Some(resp) => resp,
@@ -176,7 +183,7 @@ impl Vfox {
                     }
                 }
                 None => {
-                    let mut request = CLIENT.get(request_url.clone());
+                    let mut request = client.get(request_url.clone());
                     if let Some(resolver) = &self.http_headers_resolver {
                         request = request.headers(resolver(&request_url));
                     }
@@ -202,6 +209,7 @@ impl Vfox {
     /// the redirect limit is exceeded.
     async fn get_following_redirects(
         &self,
+        client: &reqwest::Client,
         url: &Url,
         trusted: &Url,
         plugin_headers: &HeaderMap,
@@ -217,11 +225,7 @@ impl Vfox {
             if current.origin() == trusted.origin() {
                 headers.extend(plugin_headers.clone());
             }
-            let resp = NO_REDIRECT_CLIENT
-                .get(current.clone())
-                .headers(headers)
-                .send()
-                .await?;
+            let resp = client.get(current.clone()).headers(headers).send().await?;
             if !resp.status().is_redirection() {
                 return Ok(Some(resp));
             }
