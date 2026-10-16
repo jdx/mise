@@ -12,6 +12,9 @@ static SHOW_CURSOR: AtomicBool = AtomicBool::new(false);
 const INTERRUPTED_EXIT_CODE: i32 = 130;
 
 pub async fn exit_signal() -> i32 {
+    if crate::in_tests() {
+        return std::future::pending().await;
+    }
     mise_util::cmd::track_sigint();
     loop {
         tokio::signal::ctrl_c().await.unwrap();
@@ -31,16 +34,25 @@ pub async fn exit_signal() -> i32 {
 }
 
 pub fn exit_on_ctrl_c(do_exit: bool) {
+    if crate::in_tests() {
+        return;
+    }
     EXIT.store(do_exit, Ordering::Relaxed);
     mise_util::cancel::reset();
 }
 
 /// Returns true if ctrl-c has been received
 pub fn is_cancelled() -> bool {
+    if crate::in_tests() {
+        return false;
+    }
     mise_util::cancel::is_cancelled()
 }
 
 /// ensures cursor is displayed on ctrl-c
 pub fn show_cursor_after_ctrl_c() {
+    if crate::in_tests() {
+        return;
+    }
     SHOW_CURSOR.store(true, Ordering::Relaxed);
 }

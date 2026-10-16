@@ -17,8 +17,7 @@ macro_rules! progress_trace {
 
 pub use prompt::confirm;
 
-#[cfg_attr(test, path = "ctrlc_stub.rs")]
-#[cfg_attr(all(windows, not(test)), path = "ctrlc_windows.rs")]
+#[cfg_attr(windows, path = "ctrlc_windows.rs")]
 pub mod ctrlc;
 pub mod install_progress;
 pub mod multi_progress_report;
@@ -38,9 +37,26 @@ pub fn set_interrupt_hook(hook: fn()) {
     let _ = INTERRUPT_HOOK.set(hook);
 }
 
-#[cfg(all(any(unix, windows), not(test)))]
+#[cfg(any(unix, windows))]
 fn run_interrupt_hook() {
     if let Some(hook) = INTERRUPT_HOOK.get() {
         hook();
+    }
+}
+
+/// Whether unit tests are running, this crate's own or mise's. `cfg(test)` does not reach a
+/// dependency, so mise's harness flips `mise_util::testing` instead.
+pub(crate) fn in_tests() -> bool {
+    cfg!(test) || mise_util::testing::in_tests()
+}
+
+#[cfg(test)]
+mod test_harness {
+    mise_util::run_before_main!(init);
+
+    /// This crate's own tests have no mise config system to load settings from.
+    fn init() {
+        mise_settings::set_loader(mise_settings::load_defaults);
+        mise_util::deprecation::set_version(env!("CARGO_PKG_VERSION"));
     }
 }
