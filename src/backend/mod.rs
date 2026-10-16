@@ -5628,11 +5628,15 @@ pub trait Backend: Debug + Send + Sync {
         // Only local overrides count: a registry-supplied value is identical for everyone, so
         // one entry is correct for it, and leaving it out keeps the shared versions host
         // available for the default case. The exception is a backend the registry lists once
-        // per version range with different options: each range's list needs its own entry.
+        // per version range with different listing options: each range's list needs its own
+        // entry.
         let ba = self.ba();
-        let registry_options_vary = ba
-            .registry_tool()
-            .is_some_and(|tool| tool.options_vary_by_version(&ba.full_without_opts()));
+        let registry_options_vary = ba.registry_tool().is_some_and(|tool| {
+            tool.options_vary_by_version(
+                &ba.full_without_opts(),
+                self.remote_version_listing_tool_option_keys(),
+            )
+        });
         let opt_context =
             (has_local_version_listing_override || registry_options_vary).then(|| {
                 listing_option_digest(listing_opts, self.remote_version_listing_tool_option_keys())
