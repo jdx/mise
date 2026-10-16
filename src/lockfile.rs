@@ -4276,21 +4276,21 @@ where
                             .or_insert(info.clone());
                     }
                     entry.specifiers.extend(existing_tool.specifiers.clone());
-                } else if fresh_versions.contains(&existing_tool.version)
-                    && !existing_tool.platforms.is_empty()
-                    && !by_key.iter().any(|((version, _), fresh)| {
-                        *version == existing_tool.version
-                            && existing_tool
-                                .platforms
-                                .keys()
-                                .any(|platform| fresh.platforms.contains_key(platform))
-                    })
-                {
+                } else if fresh_versions.contains(&existing_tool.version) {
                     // A per-platform option variant (e.g. a github asset_pattern
                     // for another platform) has no fresh counterpart because the
-                    // toolset only resolves the current platform's options. None
-                    // of its platforms were refreshed, so keep it as is.
-                    by_key.insert(key, existing_tool.clone());
+                    // toolset only resolves the current platform's options. Keep
+                    // the platforms that no fresh entry of this version refreshed.
+                    let mut kept = existing_tool.clone();
+                    kept.platforms.retain(|platform, _| {
+                        !by_key.iter().any(|((version, _), fresh)| {
+                            *version == existing_tool.version
+                                && fresh.platforms.contains_key(platform)
+                        })
+                    });
+                    if !kept.platforms.is_empty() {
+                        by_key.insert(key, kept);
+                    }
                 }
                 continue;
             }
@@ -7592,6 +7592,54 @@ url = "https://example.com/hk-1.58.1-mac"
             tool.options["asset_pattern"] == "shellcheck-*.tar.xz"
                 && tool.platforms["linux-x64"].checksum.as_deref() == Some("sha256:LINUX")
         }));
+    }
+
+    #[test]
+    fn test_merge_tool_entries_keeps_unrefreshed_platforms_of_changed_variant() {
+        let tool = |pattern: &str, platforms: &[(&str, &str)]| LockfileTool {
+            version: "0.11.0".to_string(),
+            backend: Some("github:koalaman/shellcheck".to_string()),
+            specifiers: BTreeSet::new(),
+            options: BTreeMap::from([("asset_pattern".to_string(), pattern.to_string())]),
+            platforms: platforms
+                .iter()
+                .map(|(platform, checksum)| {
+                    (
+                        platform.to_string(),
+                        PlatformInfo {
+                            checksum: Some(checksum.to_string()),
+                            ..Default::default()
+                        },
+                    )
+                })
+                .collect(),
+            aube: None,
+            uv: None,
+        };
+        let existing = vec![tool(
+            "shellcheck-*.old",
+            &[
+                ("linux-x64", "sha256:OLDLINUX"),
+                ("windows-x64", "sha256:WIN"),
+            ],
+        )];
+        let fresh = vec![tool(
+            "shellcheck-*.new",
+            &[("linux-x64", "sha256:NEWLINUX")],
+        )];
+
+        let (merged, _) = merge_tool_entries(fresh, Some(&existing), |_, _| None);
+
+        assert_eq!(merged.len(), 2);
+        let old = merged
+            .iter()
+            .find(|t| t.options["asset_pattern"] == "shellcheck-*.old")
+            .unwrap();
+        assert_eq!(old.platforms.len(), 1);
+        assert_eq!(
+            old.platforms["windows-x64"].checksum.as_deref(),
+            Some("sha256:WIN")
+        );
     }
 
     #[test]
