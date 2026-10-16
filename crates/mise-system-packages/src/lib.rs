@@ -585,10 +585,25 @@ mod test_harness {
             provision_ruby: || {
                 Box::pin(async { eyre::bail!("ruby cannot be provisioned in these tests") })
             },
-            installed_ruby: || Box::pin(async { Ok(mise_util::file::which("ruby")) }),
+            installed_ruby: || Box::pin(async { Ok(compatible_ruby_on_path().await) }),
             tool_bin: |name| Box::pin(async move { Ok(mise_util::file::which(name)) }),
             package_plugin_names: Vec::new,
             load_package_plugin: |name| eyre::bail!("no package plugin {name} in these tests"),
         });
+    }
+
+    /// Ruby-backed tests skip without a usable Ruby, so offer one only if it can run the shims.
+    async fn compatible_ruby_on_path() -> Option<std::path::PathBuf> {
+        #[cfg(unix)]
+        {
+            let ruby = mise_util::file::which("ruby")?;
+            crate::brew::tap::ruby_is_compatible(&ruby)
+                .await
+                .then_some(ruby)
+        }
+        #[cfg(not(unix))]
+        {
+            None
+        }
     }
 }

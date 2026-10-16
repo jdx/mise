@@ -40,7 +40,7 @@ mod relocate;
 mod resolve;
 mod source;
 mod tag;
-mod tap;
+pub(crate) mod tap;
 
 #[derive(Default)]
 pub struct BrewManager {}
