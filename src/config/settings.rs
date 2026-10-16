@@ -100,6 +100,15 @@ impl IdiomaticVersionFileSettings {
 }
 
 static PACKAGE_QUERY_SETTINGS: AtomicBool = AtomicBool::new(false);
+/// Set while [`load`] has published its global-only bootstrap snapshot, so the cache reads as
+/// loaded although the real settings are still being built.
+static BOOTSTRAPPING: AtomicBool = AtomicBool::new(false);
+
+/// Whether the settings cache holds only the snapshot used to decide trust. Warnings that depend
+/// on the final settings must wait for them.
+pub(crate) fn is_bootstrapping() -> bool {
+    BOOTSTRAPPING.load(Ordering::Relaxed)
+}
 /// Caches the resolved `safe` value from the most recent settings load so
 static CLI_SETTINGS: Mutex<Option<SettingsPartial>> = Mutex::new(None);
 static EXPLICIT_INLINE_SHELL: RwLock<Option<bool>> = RwLock::new(None);
@@ -1669,7 +1678,10 @@ fn load() -> Result<Arc<Settings>> {
         .flatten();
     let bootstrap = Settings::load_sources_from(None, SettingsLoadPolicy::GLOBAL_HIERARCHY)?;
     mise_settings::store(Arc::new(bootstrap));
-    settings = match Settings::load_sources_from(None, SettingsLoadPolicy::TRUSTED_HIERARCHY) {
+    BOOTSTRAPPING.store(true, Ordering::Relaxed);
+    let trusted = Settings::load_sources_from(None, SettingsLoadPolicy::TRUSTED_HIERARCHY);
+    BOOTSTRAPPING.store(false, Ordering::Relaxed);
+    settings = match trusted {
         Ok(settings) => settings,
         Err(err) => {
             // A failed reload keeps the settings that were current before it.
