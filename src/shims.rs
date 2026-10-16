@@ -1643,6 +1643,23 @@ async fn get_desired_shims(
             Err(err) => warn!("Skipping invalid lazy shim declaration: {err:#}"),
         }
     }
+    // A task's own lazy tools are not in the config a nested `mise install` reloads,
+    // so keep their bootstrap shims instead of pruning them as extra.
+    for request in task_tool_args_from_env()?
+        .iter()
+        .filter_map(|arg| arg.tvr.as_ref())
+        .filter(|request| shim_scope_contains_request(scope, request))
+    {
+        match request.lazy_bins() {
+            Ok(Some(bins)) => shims.extend(
+                bins.into_iter()
+                    .flat_map(|bin| platform_shim_names(_mise_bin, &bin)),
+            ),
+            Ok(None) => {}
+            Err(err) if strict_lazy_bins => return Err(err),
+            Err(err) => warn!("Skipping invalid lazy shim declaration: {err:#}"),
+        }
+    }
     let excluded = &Settings::get().shims.exclude;
     if !excluded.is_empty() {
         shims.retain(|name| !shim_name_excluded(excluded, name));
