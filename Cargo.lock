@@ -4362,7 +4362,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1c48eccd894bd15555b0346470e63491ded94aefe76b3fcb1052084b5a393238"
 dependencies = [
  "bstr",
- "hashbrown 0.15.5",
+ "hashbrown 0.17.1",
 ]
 
 [[package]]
@@ -6805,7 +6805,7 @@ dependencies = [
  "winapi",
  "windows-sys 0.61.2",
  "xx",
- "zip 8.6.0",
+ "zip 9.0.4",
  "zipsign-api",
  "zstd 0.14.2",
 ]
@@ -6842,7 +6842,7 @@ dependencies = [
  "log",
  "tempfile",
  "walkdir",
- "zip 8.6.0",
+ "zip 9.0.4",
 ]
 
 [[package]]
@@ -7048,7 +7048,7 @@ dependencies = [
  "xx",
  "xz2",
  "yaml-edit",
- "zip 8.6.0",
+ "zip 9.0.4",
  "zstd 0.14.2",
 ]
 
@@ -9878,7 +9878,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b8050abb251097357e24aff63ba2c52a6309ecb7d23a5474023df960a02694d8"
 dependencies = [
  "annotate-snippets",
- "base64 0.21.7",
+ "base64 0.23.1",
  "encoding_rs_io",
  "granit-parser",
  "nohash-hasher",
@@ -10298,7 +10298,7 @@ version = "1.4.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c4db69cba1110affc0e9f7bcd48bbf87b3f4fc7c61fc9155afd4c469eb3d6c1b"
 dependencies = [
- "errno 0.2.8",
+ "errno 0.3.14",
  "libc",
 ]
 
@@ -12961,6 +12961,21 @@ dependencies = [
  "zeroize",
  "zopfli",
  "zstd 0.13.3",
+]
+
+[[package]]
+name = "zip"
+version = "9.0.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a954114b47a54df49f83d2722814e86b23d4bb1b54a1b90fb7d92b41619ddc22"
+dependencies = [
+ "crc32fast",
+ "flate2",
+ "indexmap 2.14.2",
+ "memchr",
+ "nix 0.31.3",
+ "typed-path",
+ "zopfli",
 ]
 
 [[package]]

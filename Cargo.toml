@@ -270,7 +270,7 @@ mise-interactive-config = { path = "crates/mise-interactive-config", version = "
 walkdir = "2"
 which = "8"
 xx = { version = "2", default-features = false, features = ["glob"] }
-zip = { version = "8", default-features = false, features = ["deflate"] }
+zip = { version = "9", default-features = false, features = ["deflate"] }
 zstd = "0.14"
 opentelemetry = { version = "0.33", default-features = false, features = [
   "trace",
