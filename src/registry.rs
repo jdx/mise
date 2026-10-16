@@ -953,8 +953,28 @@ impl RegistryTool {
     /// Whether any entry naming `full` serves `version`. A backend the
     /// registry does not list (an override, say) serves every version.
     pub(crate) fn backend_supports_version(&self, full: &str, version: &str) -> bool {
-        let mut entries = self.backends.iter().filter(|rb| rb.full == full).peekable();
-        entries.peek().is_none() || entries.any(|rb| rb.supports_version(version))
+        let entries = self.entries_for(full);
+        entries.is_empty() || entries.iter().any(|rb| rb.supports_version(version))
+    }
+
+    /// Whether the entries for `full` give different version ranges
+    /// different options, so its version list can depend on the range.
+    pub(crate) fn options_vary_by_version(&self, full: &str) -> bool {
+        let entries = self.entries_for(full);
+        entries.iter().any(|rb| rb.options != entries[0].options)
+    }
+
+    /// The entries that name `full`: those for this platform, or every one
+    /// when none is for this platform.
+    fn entries_for(&self, full: &str) -> Vec<&'static RegistryBackend> {
+        let settings = Settings::get();
+        let entries: Vec<_> = self.backends.iter().filter(|rb| rb.full == full).collect();
+        let here: Vec<_> = entries
+            .iter()
+            .copied()
+            .filter(|rb| backend_matches_platform(rb.platforms, &settings))
+            .collect();
+        if here.is_empty() { entries } else { here }
     }
 
     pub fn is_supported_os(&self) -> bool {
@@ -975,15 +995,7 @@ impl RegistryTool {
         full: &str,
         version: Option<&str>,
     ) -> Option<&RegistryBackend> {
-        let settings = Settings::get();
-        let entries: Vec<_> = self.backends.iter().filter(|rb| rb.full == full).collect();
-        // Entries for other platforms only answer when none is for this one.
-        let here: Vec<_> = entries
-            .iter()
-            .copied()
-            .filter(|rb| backend_matches_platform(rb.platforms, &settings))
-            .collect();
-        let entries = if here.is_empty() { entries } else { here };
+        let entries = self.entries_for(full);
         version
             .and_then(|version| entries.iter().find(|rb| rb.supports_version(version)))
             .or(entries.first())
@@ -1469,6 +1481,10 @@ backends = [
         assert_eq!(pattern(None).as_deref(), Some("tool-v2-*"));
         assert_eq!(pattern(Some("latest")).as_deref(), Some("tool-v2-*"));
 
+        // Its version list can differ by range, so it is cached per range.
+        assert!(tool.options_vary_by_version("github:example/tool"));
+        assert!(!tool.options_vary_by_version("aqua:example/tool"));
+
         // A backend named twice is listed once, at its first eligible entry.
         assert_eq!(
             tool.backends(),
@@ -1575,6 +1591,39 @@ backends = [
             r#""aqua:example/tool", { full = "github:example/tool", max_version = "2.0.0" }"#,
         );
         assert_eq!(fulls(tool.version_range_owners()), None);
+    }
+
+    #[test]
+    fn registry_backend_ranges_on_another_platform_do_not_count() {
+        use super::*;
+        let here = Settings::get().os().to_string();
+        let elsewhere = if here == "windows" {
+            "linux"
+        } else {
+            "windows"
+        };
+        let source = format!(
+            r#"
+version_order = "semver"
+backends = [
+  {{ full = "github:example/tool", platforms = ["{here}"], min_version = "2.0.0" }},
+  {{ full = "github:example/tool", platforms = ["{elsewhere}"], max_version = "2.0.0", options = {{ asset_pattern = "old-*" }} }},
+  "aqua:example/tool",
+]
+"#
+        );
+        let (tool, _) =
+            parse_registry_tool("example", &toml::from_str::<toml::Value>(&source).unwrap())
+                .unwrap();
+        // Only the other platform's entry serves 1.x, so a lock on the github
+        // backend must not hold for it here.
+        assert!(!tool.backend_supports_version("github:example/tool", "1.4.0"));
+        assert!(tool.backend_supports_version("github:example/tool", "2.1.0"));
+        assert_eq!(
+            tool.backend_options("github:example/tool", Some("1.4.0"))
+                .get("asset_pattern"),
+            None
+        );
     }
 
     #[test]
