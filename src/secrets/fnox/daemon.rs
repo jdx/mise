@@ -691,7 +691,8 @@ mod tests {
                 target_os = "linux",
                 target_os = "macos",
                 target_os = "freebsd",
-                target_os = "openbsd"
+                target_os = "openbsd",
+                windows
             ))
         );
     }
