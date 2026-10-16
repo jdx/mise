@@ -254,7 +254,7 @@ async fn command_wrapper_for(
         return Ok(None);
     };
     // Render first so the self-delegation guard and the install see the real command name.
-    let wrapper = render_wrapper(config, wrapper)?;
+    let wrapper = render_wrapper(config, ts, wrapper).await?;
     if same_command_name(wrapper.command(), shim_name) {
         bail!("command wrapper for {shim_name} cannot delegate to itself");
     }
@@ -266,13 +266,26 @@ async fn command_wrapper_for(
 
 /// Render `command`, `args` and `env` values as templates, so a wrapper can use `vars`, `env`
 /// and the path functions like a task. Values without template syntax are left untouched.
-fn render_wrapper(config: &Config, wrapper: &CommandWrapper) -> Result<CommandWrapper> {
+async fn render_wrapper(
+    config: &Arc<Config>,
+    ts: &Toolset,
+    wrapper: &CommandWrapper,
+) -> Result<CommandWrapper> {
+    let templated = std::iter::once(wrapper.command())
+        .chain(wrapper.args().iter().map(String::as_str))
+        .chain(wrapper.env().values().map(String::as_str))
+        .any(crate::tera::contains_template_syntax);
+    if !templated {
+        return Ok(wrapper.clone());
+    }
+    // The toolset context carries the resolved project `[env]`, which `config.tera_ctx` lacks.
+    let ctx = ts.tera_ctx(config).await?;
     let mut tera = crate::tera::get_tera(Some(&env::current_dir()?));
     let mut render = |input: &str| -> Result<String> {
         if !crate::tera::contains_template_syntax(input) {
             return Ok(input.to_string());
         }
-        Ok(crate::tera::render_str(&mut tera, input, &config.tera_ctx)?)
+        Ok(crate::tera::render_str(&mut tera, input, ctx)?)
     };
     let command = render(wrapper.command())?;
     if command.trim().is_empty() {

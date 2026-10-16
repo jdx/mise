@@ -17,12 +17,15 @@ cat >mise.toml <<'TOML'
 [vars]
 mode = "fast"
 
+[env]
+PROJECT_DIR = "/opt/foo"
+
 [wrappers.foo]
 command = "fakeshow"
-args = ["--mode={{ vars.mode }}"]
+args = ["--mode={{ vars.mode }}", "{{ env.PROJECT_DIR }}"]
 env = { FOO_HOME = "{{ [env.HOME, 'foo'] | join_path }}" }
 TOML
 
 mise reshim
 eval "$(mise activate bash --shims)"
-assert "foo run" "home:$HOME/foo args:--mode=fast run"
+assert "foo run" "home:$HOME/foo args:--mode=fast /opt/foo run"
