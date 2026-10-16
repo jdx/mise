@@ -173,7 +173,9 @@ when rustup is not set up, then runs `rustup toolchain install` with the
 configured profile, components and targets. The toolchains live in
 `RUSTUP_HOME`, not in mise's installs directory; mise keeps a link there to
 track the version. When the toolchain is already installed, `mise install`
-still adds missing configured components and targets.
+still adds missing configured components and targets, and the components of
+its `minimal` or `default` profile, such as `cargo`, `rustc` and the host's
+`rust-std`.
 [`rust.default_host`](/lang/rust.html#rust.default_host) sets the host triple passed to
 `rustup-init`.
 

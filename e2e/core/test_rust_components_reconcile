@@ -45,11 +45,16 @@ case "$1 $2" in
 		toolchain_exists=false
 		[[ -d "$MISE_RUSTUP_HOME/toolchains/$toolchain" ]] && toolchain_exists=true
 		mkdir -p "$MISE_RUSTUP_HOME/toolchains/$toolchain"
+		host=x86_64-unknown-linux-gnu
 		profile=""
 		while [[ $# -gt 0 ]]; do
 			case "$1" in
 				--component)
-					echo "$2" >>"$MISE_CARGO_HOME/components"
+					# rustup lists host components with the host's triple
+					case "$2" in
+						cargo | rust-std | rustc) echo "$2-$host" >>"$MISE_CARGO_HOME/components" ;;
+						*) echo "$2" >>"$MISE_CARGO_HOME/components" ;;
+					esac
 					shift 2
 					;;
 				--target)
@@ -65,8 +70,12 @@ case "$1 $2" in
 					;;
 			esac
 			done
-		if ! $toolchain_exists && [[ -z "$profile" || "$profile" == "default" || "$profile" == "d" ]]; then
-			printf '%s\n' clippy rust-docs rustfmt >>"$MISE_CARGO_HOME/components"
+		# a toolchain this fake creates gets its profile's components
+		if ! $toolchain_exists; then
+			printf '%s\n' "cargo-$host" "rust-std-$host" "rustc-$host" >>"$MISE_CARGO_HOME/components"
+			if [[ -z "$profile" || "$profile" == "default" || "$profile" == "d" ]]; then
+				printf '%s\n' clippy rust-docs rustfmt >>"$MISE_CARGO_HOME/components"
+			fi
 		fi
 		sort -u "$MISE_CARGO_HOME/components" -o "$MISE_CARGO_HOME/components" 2>/dev/null || true
 		sort -u "$MISE_CARGO_HOME/targets" -o "$MISE_CARGO_HOME/targets" 2>/dev/null || true
@@ -160,3 +169,22 @@ assert_contains "mise install rust --dry-run-code 2>&1" "already installed"
 mise reshim
 assert_does_not_call_rustup "$MISE_DATA_DIR/shims/rustc" -V
 MISE_EXEC_AUTO_INSTALL=0 assert_does_not_call_rustup mise exec -- rustc -V
+
+# Every profile needs cargo, rustc and the host's standard library, and an
+# existing toolchain only gets them back when mise names them. A cross
+# target's standard library does not stand in for the host's.
+cat >mise.toml <<EOF2
+[tools]
+rust = { version = "1.81.0", profile = "minimal" }
+EOF2
+
+sed -i.bak -e '/^cargo/d' -e '/^rust-std$/d' -e '/^rust-std-x86_64-unknown-linux-gnu$/d' "$MISE_CARGO_HOME/components"
+echo rust-std-wasm32-unknown-unknown >>"$MISE_CARGO_HOME/components"
+assert_fail_contains "mise install rust --dry-run-code 2>&1" "would install"
+mise install
+assert_contains "grep -c '^toolchain install' '$MISE_CARGO_HOME/rustup.log'" "7"
+last_install="grep '^toolchain install' '$MISE_CARGO_HOME/rustup.log' | tail -1"
+assert_contains "$last_install" "--component cargo"
+assert_contains "$last_install" "--component rust-std"
+assert_contains "cat '$MISE_CARGO_HOME/components'" "rust-std-x86_64-unknown-linux-gnu"
+assert_contains "mise install rust --dry-run-code 2>&1" "already installed"
