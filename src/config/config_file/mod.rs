@@ -607,8 +607,9 @@ pub fn trust_active_config() -> Result<()> {
 /// Trusts a config root. The settings snapshot was built without the project's
 /// `[settings]` while it was untrusted, so rebuild it to pick them up.
 fn trust_and_reload_settings(config_root: &Path) -> eyre::Result<()> {
+    let was_trusted = is_trusted(config_root);
     trust(config_root)?;
-    if settings::is_loaded() {
+    if !was_trusted && settings::is_loaded() {
         Settings::reload()?;
     }
     Ok(())
