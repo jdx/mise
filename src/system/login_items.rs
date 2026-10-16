@@ -9,19 +9,8 @@
 
 use std::path::{Component, Path, PathBuf};
 
-use serde::Deserialize;
-
 use crate::result::Result;
-
-#[derive(Debug, Default, Clone, Deserialize)]
-pub struct LoginItemsTomlConfig {
-    /// application bundles to open at login: absolute or `~/` `.app` paths
-    #[serde(default)]
-    pub apps: Vec<String>,
-    /// also remove login items that are not declared
-    #[serde(default)]
-    pub exclusive: Option<bool>,
-}
+pub use mise_system_config::login_items::LoginItemsTomlConfig;
 
 /// The merged `[bootstrap.macos.login_items]` declaration.
 #[derive(Debug, Default, Clone, PartialEq)]

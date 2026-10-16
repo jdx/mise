@@ -7,4 +7,11 @@
 pub mod accounts;
 pub mod dotfiles;
 pub mod history;
+pub mod launchd;
+pub mod login_items;
+pub mod managed_files;
+pub mod packages;
+pub mod remote;
+pub mod repos;
 pub mod secrets;
+pub mod services_common;

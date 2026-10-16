@@ -1,3 +1,4 @@
+pub use mise_system_config::managed_files::{ManagedDirectoryTomlConfig, ManagedFileTomlConfig};
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -12,48 +13,6 @@ use serde::{Deserialize, Serialize};
 
 use crate::config::{Config, ConfigMap};
 use crate::system::resources::{ResourceAction, ResourceId, ResourceOrigin, ResourcePlan};
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
-pub struct ManagedFileTomlConfig {
-    #[serde(default)]
-    pub phase: ManagedFilePhase,
-    pub source: Option<String>,
-    pub content: Option<String>,
-    pub owner: Option<String>,
-    pub group: Option<String>,
-    pub mode: Option<String>,
-    #[serde(default)]
-    pub template: bool,
-    #[serde(default)]
-    pub remove_empty: bool,
-    #[serde(default)]
-    pub state: ManagedState,
-    #[serde(default)]
-    pub replace: bool,
-    #[serde(default)]
-    pub notify: Vec<String>,
-    #[serde(default, deserialize_with = "crate::system::deserialize_package_os")]
-    pub os: Vec<String>,
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
-pub struct ManagedDirectoryTomlConfig {
-    #[serde(default)]
-    pub phase: ManagedFilePhase,
-    pub owner: Option<String>,
-    pub group: Option<String>,
-    pub mode: Option<String>,
-    #[serde(default)]
-    pub state: ManagedState,
-    #[serde(default)]
-    pub recursive: bool,
-    #[serde(default)]
-    pub replace: bool,
-    #[serde(default)]
-    pub notify: Vec<String>,
-    #[serde(default, deserialize_with = "crate::system::deserialize_package_os")]
-    pub os: Vec<String>,
-}
 
 pub use mise_bootstrap::ManagedFilePhase;
 

@@ -7,7 +7,10 @@ description = "The mise.toml declaration types for [bootstrap], [dotfiles], and 
 repository = "https://github.com/jdx/mise"
 
 [dependencies]
+eyre = "0.6"
 indexmap = { version = "2", features = ["serde"] }
 mise-bootstrap = { path = "../mise-bootstrap", version = "0.1" }
+mise-system-packages = { path = "../mise-system-packages", version = "0.1" }
+mise-util = { path = "../mise-util", version = "2026", default-features = false }
 serde = { version = "1", features = ["derive"] }
 toml = { version = "1", features = ["parse", "preserve_order"] }
