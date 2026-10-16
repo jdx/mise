@@ -8,7 +8,8 @@ use serde::de::DeserializeOwned;
 ///
 /// Derefs to the unrendered parsed value: callers that only inspect the
 /// declaration (tests, counters) need no changes, while callers that build a
-/// request from it call [`Templated::render`] first.
+/// request from it render it first. Rendering needs the config's template context, so mise
+/// provides it outside this crate.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Templated<T> {
     pub raw: toml::Value,
