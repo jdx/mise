@@ -1056,6 +1056,23 @@ pub fn validate_wrapper_names<'a>(names: impl IntoIterator<Item = &'a String>) -
     Ok(())
 }
 
+/// The mise executable to re-invoke from a subprocess.
+///
+/// `current_exe()` is the path mise was launched through on some platforms (macOS), so when a tool
+/// shim triggered the run it names the shim (`jq`), not mise. Fall back to the real mise then.
+pub fn running_mise_bin() -> PathBuf {
+    match std::env::current_exe() {
+        Ok(exe)
+            if exe
+                .file_name()
+                .is_some_and(|n| env::is_mise_binary(&n.to_string_lossy())) =>
+        {
+            exe
+        }
+        _ => mise_bin_for_shims(),
+    }
+}
+
 /// Resolve the mise executable that Unix symlink shims should target.
 ///
 /// Snap exposes applications through `/snap/bin`, where each command is a symlink to the
