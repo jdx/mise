@@ -918,6 +918,13 @@ impl RegistryTool {
         entries.is_empty() || entries.iter().any(|rb| rb.supports_version(version))
     }
 
+    /// Whether the entries for `full` give different version ranges
+    /// different options, so its version list can depend on the range.
+    pub(crate) fn options_vary_by_version(&self, full: &str) -> bool {
+        let entries = self.entries_for(full);
+        entries.iter().any(|rb| rb.options != entries[0].options)
+    }
+
     /// The entries that name `full`: those for this platform, or every one
     /// when none is for this platform.
     fn entries_for(&self, full: &str) -> Vec<&'static RegistryBackend> {
@@ -1396,6 +1403,10 @@ backends = [
         // Unrouted requests use the first entry, as for any other backend.
         assert_eq!(pattern(None).as_deref(), Some("tool-v2-*"));
         assert_eq!(pattern(Some("latest")).as_deref(), Some("tool-v2-*"));
+
+        // Its version list can differ by range, so it is cached per range.
+        assert!(tool.options_vary_by_version("github:example/tool"));
+        assert!(!tool.options_vary_by_version("aqua:example/tool"));
 
         // A backend named twice is listed once, at its first eligible entry.
         assert_eq!(
