@@ -13,9 +13,9 @@ task belongs to. With log export on, each task's output appears next to its
 span.
 
 ::: warning Experimental
-Span names, attributes, and settings may change between releases. Export does
-not need `experimental = true`; the `otel.enabled` and `otel.logs` settings
-turn it on.
+Span names, attributes, and settings may change between releases. Export also
+needs `experimental = true`: without it, `mise run` stops with an error whenever
+it would export.
 :::
 
 ## Quick start
@@ -26,10 +26,11 @@ Start a local Jaeger that accepts OTLP over HTTP:
 docker run -d --name jaeger -p 16686:16686 -p 4318:4318 jaegertracing/jaeger:latest
 ```
 
-Turn on trace export:
+Turn on experimental features and trace export:
 
 ```toml [mise.toml]
 [settings]
+experimental = true
 otel.enabled = true
 ```
 
@@ -80,6 +81,7 @@ data. Each signal also needs an endpoint: the general
 To send traces to an authenticated collector:
 
 ```sh
+export MISE_EXPERIMENTAL=1
 export MISE_OTEL_ENABLED=1
 export OTEL_EXPORTER_OTLP_ENDPOINT=https://otel.example.com:4318
 export OTEL_EXPORTER_OTLP_HEADERS="Authorization=Bearer mytoken"

@@ -2544,7 +2544,7 @@ mise exports traces only when a traces endpoint is also set, with
 reads other options, such as `OTEL_EXPORTER_OTLP_HEADERS` and
 `OTEL_SERVICE_NAME`, from the standard OpenTelemetry variables. Because export
 needs this setting too, an endpoint set for another tool does not make mise send
-data. Export does not need `experimental = true`, and offline mode turns it off.
+data. Export also needs `experimental = true`, and offline mode turns it off.
 
 Task output is exported separately, with [`otel.logs`](#otel.logs). See
 [OpenTelemetry](/tasks/opentelemetry.html).
@@ -2559,6 +2559,7 @@ docs = """
 mise exports logs only when a logs endpoint is also set, with
 `OTEL_EXPORTER_OTLP_ENDPOINT` or `OTEL_EXPORTER_OTLP_LOGS_ENDPOINT`. Each record
 is linked to its task's span, which [`otel.enabled`](#otel.enabled) exports.
+Log export also needs `experimental = true`.
 
 This is separate from `otel.enabled` because it sends task output, including
 any secret a task prints, to the collector. With log export on, `interleave`
