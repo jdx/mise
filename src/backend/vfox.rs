@@ -710,7 +710,7 @@ impl VfoxBackend {
 
     async fn tool_options_for_tv(&self, config: &Arc<Config>, tv: &ToolVersion) -> ToolOptions {
         let mut options = config
-            .get_tool_opts_with_overrides(&self.ba)
+            .get_tool_opts_for_request(&self.ba, &tv.request)
             .await
             .unwrap_or_default();
         options.apply_overrides(&tv.request.options());
