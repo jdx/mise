@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use indexmap::IndexMap;
 use mlua::prelude::LuaError;
 use mlua::{FromLua, Lua, Table, Value};
+use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 
 use crate::Plugin;
 use crate::error::Result;
@@ -279,6 +280,38 @@ fn validate_slsa_attestation_params(table: &Table) -> std::result::Result<(), Lu
     Ok(())
 }
 
+fn parse_headers(table: Option<mlua::Table>) -> std::result::Result<Option<HeaderMap>, LuaError> {
+    let Some(table) = table else {
+        return Ok(None);
+    };
+    let invalid = |message: String| LuaError::FromLuaConversionError {
+        from: "table",
+        to: "PreInstall".into(),
+        message: Some(message),
+    };
+    let mut headers = HeaderMap::new();
+    for pair in table.pairs::<String, Value>() {
+        let (name, value) = pair.map_err(|_| {
+            invalid("`headers` must be a table of header names to string values".to_string())
+        })?;
+        let Value::String(value) = value else {
+            return Err(invalid(format!(
+                "header `{name}` in `headers` must be a string"
+            )));
+        };
+        let value = value
+            .to_str()
+            .map_err(|_| invalid(format!("header `{name}` in `headers` is not valid UTF-8")))?;
+        let header_name = HeaderName::from_bytes(name.as_bytes())
+            .map_err(|_| invalid(format!("invalid header name `{name}` in `headers`")))?;
+        let mut header_value = HeaderValue::from_str(&value)
+            .map_err(|_| invalid(format!("invalid value for header `{name}` in `headers`")))?;
+        header_value.set_sensitive(true);
+        headers.insert(header_name, header_value);
+    }
+    Ok(Some(headers))
+}
+
 #[derive(Debug)]
 pub struct PreInstall {
     pub version: String,
@@ -289,6 +322,9 @@ pub struct PreInstall {
     pub sha1: Option<String>,
     pub sha512: Option<String>,
     pub attestation: Option<PreInstallAttestation>,
+    /// Request headers for the download of `url`. Values are marked sensitive,
+    /// so `Debug` output redacts them.
+    pub headers: Option<HeaderMap>,
     // pub addition: Option<Table>,
 }
 
@@ -312,6 +348,7 @@ impl FromLua for PreInstall {
                     sha1: table.get::<Option<String>>("sha1")?,
                     sha512: table.get::<Option<String>>("sha512")?,
                     attestation: table.get::<Option<PreInstallAttestation>>("attestation")?,
+                    headers: parse_headers(table.get::<Option<mlua::Table>>("headers")?)?,
                     // addition,
                 })
             }
@@ -402,6 +439,38 @@ mod tests {
     async fn test_attestation_plugin() {
         let pre_install = run("attestation", "1.2.3").await;
         assert_debug_snapshot!(pre_install);
+    }
+
+    #[test]
+    async fn test_headers_are_parsed_and_redacted() {
+        let lua = Lua::new();
+        let table: mlua::Table = lua
+            .load(
+                r#"return { version = "1", url = "https://x.test/a",
+                    headers = { Accept = "application/octet-stream", Authorization = "Bearer s3cret" } }"#,
+            )
+            .eval()
+            .unwrap();
+        let pre = PreInstall::from_lua(mlua::Value::Table(table), &lua).unwrap();
+        let headers = pre.headers.as_ref().unwrap();
+        assert_eq!(headers["accept"], "application/octet-stream");
+        assert_eq!(headers["authorization"], "Bearer s3cret");
+        assert!(!format!("{pre:?}").contains("s3cret"));
+    }
+
+    #[test]
+    async fn test_headers_reject_non_string_values() {
+        let lua = Lua::new();
+        let table: mlua::Table = lua
+            .load(r#"return { version = "1", headers = { Accept = 1.5 } }"#)
+            .eval()
+            .unwrap();
+        assert!(PreInstall::from_lua(mlua::Value::Table(table), &lua).is_err());
+        let table: mlua::Table = lua
+            .load(r#"return { version = "1", headers = { Accept = {} } }"#)
+            .eval()
+            .unwrap();
+        assert!(PreInstall::from_lua(mlua::Value::Table(table), &lua).is_err());
     }
 
     #[test]
