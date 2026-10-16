@@ -454,22 +454,6 @@ packages:
           linux: unknown-linux-gnu
           amd64: x86_64
   - type: github_release
-    repo_owner: Arata1202
-    repo_name: ascdir
-    description: Manage App Store Connect metadata, TestFlight distribution, and releases with safe CLI workflows
-    version_constraint: "false"
-    version_overrides:
-      - version_constraint: "true"
-        asset: ascdir_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
-        format: tar.gz
-        checksum:
-          type: github_release
-          asset: checksums.txt
-          algorithm: sha256
-        overrides:
-          - goos: windows
-            format: zip
-  - type: github_release
     repo_owner: Arriven
     repo_name: db1000n
     version_constraint: "false"
@@ -67264,6 +67248,31 @@ packages:
           - darwin
           - windows
           - amd64
+      - version_constraint: semver("< 0.80.0")
+        asset: worktrunk-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.xz
+        windows_arm_emulation: true
+        files:
+          - name: wt
+            src: "{{.AssetWithoutExt}}/wt"
+          - name: git-wt
+            src: "{{.AssetWithoutExt}}/git-wt"
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-msvc
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
+            files:
+              - name: wt
+              - name: git-wt
       - version_constraint: "true"
         asset: worktrunk-{{.Arch}}-{{.OS}}.{{.Format}}
         format: tar.xz
@@ -67283,6 +67292,15 @@ packages:
           type: github_release
           asset: "{{.Asset}}.sha256"
           algorithm: sha256
+        cosign:
+          bundle:
+            type: github_release
+            asset: packslip.sigstore.json
+          opts:
+            - --certificate-identity
+            - https://github.com/max-sixty/worktrunk/.github/workflows/release.yaml@refs/tags/{{.Version}}
+            - --certificate-oidc-issuer
+            - https://token.actions.githubusercontent.com
         overrides:
           - goos: windows
             format: zip
@@ -77141,14 +77159,15 @@ packages:
     repo_owner: oxc-project
     repo_name: oxc
     description: A collection of high-performance JavaScript tools
-    version_filter: Version matches "^apps_v"
-    version_prefix: apps_v
+    version_filter: Version matches "^oxfmt_v"
+    version_prefix: oxfmt_v
     files:
       - name: oxfmt
         src: "{{.AssetWithoutExt}}"
     version_constraint: "false"
     version_overrides:
       - version_constraint: semver("<= 1.43.0")
+        version_prefix: apps_v
         asset: oxfmt-{{.OS}}-{{.Arch}}-gnu.{{.Format}}
         format: tar.gz
         replacements:
@@ -77161,8 +77180,10 @@ packages:
             format: zip
             asset: oxfmt-{{.OS}}-{{.Arch}}.{{.Format}}
       - version_constraint: semver("= 1.47.0")
+        version_prefix: apps_v
         no_asset: true
       - version_constraint: semver("<= 1.51.0")
+        version_prefix: apps_v
         asset: oxfmt-{{.Arch}}-{{.OS}}.{{.Format}}
         format: tar.gz
         replacements:
@@ -77175,7 +77196,27 @@ packages:
           - goos: windows
             format: zip
       - version_constraint: semver("<= 1.53.0")
+        version_prefix: apps_v
         no_asset: true
+      - version_constraint: semver("<= 1.84.0")
+        version_prefix: apps_v
+        asset: oxfmt-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-msvc
+        overrides:
+          - goos: windows
+            format: zip
+      - version_constraint: semver("< 0.70.0")
+        error_message: |
+          This version is unavailable.
+          oxfmt < 0.70.0 was released together with oxlint, and its version is the version of oxlint with the prefix apps_v.
+          e.g. oxfmt 0.69.0 => apps_v1.84.0
+          oxfmt >= 0.70.0 has its own version with the prefix oxfmt_v e.g. oxfmt_v0.70.0
       - version_constraint: "true"
         asset: oxfmt-{{.Arch}}-{{.OS}}.{{.Format}}
         format: tar.gz
@@ -77250,20 +77291,22 @@ packages:
         replacements:
           amd64: x64
           windows: win32
-      - version_constraint: semver(">= 1.17.0")
+      - version_constraint: semver(">= 1.17.0") && semver("< 1.85.0")
         version_prefix: oxlint_v
         error_message: |
           This version is unavailable.
           < 1.17.0: The version prefix is oxlint_v e.g. oxlint_v1.16.0
           >= 1.17.0, < 1.28.0: These versions are unavailable
-          >= 1.28.0: The version prefix is apps_v e.g. apps_v1.28.0
+          >= 1.28.0, < 1.85.0: The version prefix is apps_v e.g. apps_v1.28.0
+          >= 1.85.0: The version prefix is again oxlint_v
       - version_constraint: semver("< 1.28.0")
         version_prefix: apps_v
         error_message: |
           The version was too old. Please ugrade to 1.28.0 or later.
           < 1.17.0: The version prefix is oxlint_v
           >= 1.17.0, < 1.28.0: These versions are unavailable
-          >= 1.28.0: The version prefix is apps_v
+          >= 1.28.0, < 1.85.0: The version prefix is apps_v
+          >= 1.85.0: The version prefix is oxlint_v
       - version_constraint: semver("<= 1.43.0")
         version_prefix: apps_v
         asset: oxlint-{{.OS}}-{{.Arch}}-gnu.{{.Format}}
@@ -77293,8 +77336,21 @@ packages:
       - version_constraint: semver("<= 1.53.0")
         version_prefix: apps_v
         no_asset: true
-      - version_constraint: "true"
+      - version_constraint: semver("< 1.85.0")
         version_prefix: apps_v
+        asset: oxlint-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-msvc
+        overrides:
+          - goos: windows
+            format: zip
+      - version_constraint: "true"
+        version_prefix: oxlint_v
         asset: oxlint-{{.Arch}}-{{.OS}}.{{.Format}}
         format: tar.gz
         replacements:
