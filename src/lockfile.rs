@@ -4249,6 +4249,14 @@ where
     }
     let fresh_versions: HashSet<String> =
         by_key.keys().map(|(version, _)| version.clone()).collect();
+    let fresh_platforms: HashSet<(String, String)> = by_key
+        .iter()
+        .flat_map(|((version, _), tool)| {
+            tool.platforms
+                .keys()
+                .map(|platform| (version.clone(), platform.clone()))
+        })
+        .collect();
 
     // Merge with existing tools to preserve platform info
     if let Some(existing) = existing_tools {
@@ -4283,10 +4291,8 @@ where
                     // the platforms that no fresh entry of this version refreshed.
                     let mut kept = existing_tool.clone();
                     kept.platforms.retain(|platform, _| {
-                        !by_key.iter().any(|((version, _), fresh)| {
-                            *version == existing_tool.version
-                                && fresh.platforms.contains_key(platform)
-                        })
+                        !fresh_platforms
+                            .contains(&(existing_tool.version.clone(), platform.clone()))
                     });
                     if !kept.platforms.is_empty() {
                         by_key.insert(key, kept);
@@ -7640,6 +7646,37 @@ url = "https://example.com/hk-1.58.1-mac"
             old.platforms["windows-x64"].checksum.as_deref(),
             Some("sha256:WIN")
         );
+    }
+
+    #[test]
+    fn test_merge_tool_entries_retained_variants_do_not_count_as_fresh() {
+        let tool = |pattern: &str, platforms: &[&str]| LockfileTool {
+            version: "0.11.0".to_string(),
+            backend: Some("github:koalaman/shellcheck".to_string()),
+            specifiers: BTreeSet::new(),
+            options: BTreeMap::from([("asset_pattern".to_string(), pattern.to_string())]),
+            platforms: platforms
+                .iter()
+                .map(|platform| (platform.to_string(), PlatformInfo::default()))
+                .collect(),
+            aube: None,
+            uv: None,
+        };
+        let existing = vec![
+            tool("a", &["windows-x64"]),
+            tool("b", &["windows-x64", "macos-arm64"]),
+        ];
+        let fresh = vec![tool("c", &["linux-x64"])];
+
+        let (merged, _) = merge_tool_entries(fresh, Some(&existing), |_, _| None);
+
+        for pattern in ["a", "b"] {
+            let kept = merged
+                .iter()
+                .find(|t| t.options["asset_pattern"] == pattern)
+                .unwrap();
+            assert!(kept.platforms.contains_key("windows-x64"));
+        }
     }
 
     #[test]
