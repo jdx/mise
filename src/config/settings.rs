@@ -2337,6 +2337,8 @@ mod tests {
     #[test]
     fn test_load_closes_its_parse_cache() {
         let _settings = crate::test::SettingsGuard::lock();
+        // Tests may share a thread (`RUST_TEST_THREADS=1`), so count only this load's parses.
+        PARSE_COUNTS.with_borrow_mut(|counts| counts.clear());
         let settings = load();
         assert!(settings.is_ok(), "{:?}", settings.err());
         assert!(LOAD_PARSE_CACHE.with_borrow(Option::is_none));
