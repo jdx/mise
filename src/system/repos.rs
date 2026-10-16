@@ -393,6 +393,9 @@ fn clone_repo(request: &RepoRequest, dry_run: bool) -> Result<()> {
         miseprintln!("{}", shell_words::join(clone_command_parts(request)));
         if let Some(git_ref) = checkout_after_clone_ref(request) {
             print_git_command(&request.path, &["checkout", checkout_ref_for(git_ref)])?;
+            if request.submodules {
+                print_git_command(&request.path, SUBMODULE_UPDATE)?;
+            }
         }
         return Ok(());
     }
@@ -407,9 +410,15 @@ fn clone_repo(request: &RepoRequest, dry_run: bool) -> Result<()> {
     run_command(&mut cmd)?;
     if let Some(git_ref) = checkout_after_clone_ref(request) {
         git_run(&request.path, &["checkout", checkout_ref_for(git_ref)])?;
+        if request.submodules {
+            git_run(&request.path, SUBMODULE_UPDATE)?;
+        }
     }
     Ok(())
 }
+
+/// Moves submodules to the commit a post-clone or update checkout selected.
+const SUBMODULE_UPDATE: &[&str] = &["submodule", "update", "--init", "--recursive"];
 
 fn update_repo(request: &RepoRequest, dry_run: bool) -> Result<()> {
     let Some(git_ref) = &request.git_ref else {
@@ -624,6 +633,9 @@ fn clone_command_parts(request: &RepoRequest) -> Vec<String> {
     if let Some(depth) = request.depth {
         parts.push("--depth".to_string());
         parts.push(depth.to_string());
+        // `--depth` implies `--single-branch`, which would make a later `ref`
+        // change fail because the new branch was never fetched.
+        parts.push("--no-single-branch".to_string());
     }
     if request.submodules {
         parts.push("--recurse-submodules".to_string());
@@ -1403,6 +1415,7 @@ mod tests {
                 "--filter=blob:none",
                 "--depth",
                 "1",
+                "--no-single-branch",
                 "--recurse-submodules",
                 "https://github.com/jdx/mise.git",
                 "/tmp/repo"
