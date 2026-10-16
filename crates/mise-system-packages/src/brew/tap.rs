@@ -409,7 +409,7 @@ mod tests {
         let output = std::process::Command::new(std::env::current_exe()?)
             .args([
                 "--exact",
-                "system::packages::brew::tap::tests::ignores_mise_shim_when_selecting_system_ruby",
+                "brew::tap::tests::ignores_mise_shim_when_selecting_system_ruby",
             ])
             .env(CHILD_ENV, "1")
             .env(EXPECTED_RUBY_ENV, &system_ruby)
@@ -422,6 +422,12 @@ mod tests {
             "child test failed:\nstdout:\n{}\nstderr:\n{}",
             String::from_utf8_lossy(&output.stdout),
             String::from_utf8_lossy(&output.stderr)
+        );
+        // A filter that matches nothing also exits successfully, which would skip the check.
+        assert!(
+            String::from_utf8_lossy(&output.stdout).contains("1 passed"),
+            "child test did not run:\nstdout:\n{}",
+            String::from_utf8_lossy(&output.stdout)
         );
         Ok(())
     }
