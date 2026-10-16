@@ -1,7 +1,7 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use crate::cmd::CmdLineRunner;
 use console::Term;
+use mise_util::cmd::CmdLineRunner;
 
 static EXIT: AtomicBool = AtomicBool::new(true);
 static SHOW_CURSOR: AtomicBool = AtomicBool::new(false);
@@ -12,7 +12,7 @@ static SHOW_CURSOR: AtomicBool = AtomicBool::new(false);
 const INTERRUPTED_EXIT_CODE: i32 = 130;
 
 pub async fn exit_signal() -> i32 {
-    crate::cmd::track_sigint();
+    mise_util::cmd::track_sigint();
     loop {
         tokio::signal::ctrl_c().await.unwrap();
         if SHOW_CURSOR.load(Ordering::Relaxed) {
@@ -21,10 +21,10 @@ pub async fn exit_signal() -> i32 {
         // Record the first task-mode interrupt before signalling children so
         // their exit handlers can distinguish cancellation from task failure.
         let should_exit = EXIT.load(Ordering::Relaxed) || mise_util::cancel::mark();
-        vfox::cancel_http_requests();
+        crate::run_interrupt_hook();
         CmdLineRunner::kill_all(nix::sys::signal::SIGINT);
         if should_exit {
-            debug!("Ctrl-C pressed, exiting...");
+            log::debug!("Ctrl-C pressed, exiting...");
             return INTERRUPTED_EXIT_CODE;
         }
     }

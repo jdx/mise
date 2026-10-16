@@ -752,7 +752,7 @@ pub(crate) struct TextInstallProgress {
 impl TextInstallProgress {
     pub(super) fn new(state: State) -> Self {
         let total = state.tools.len();
-        info!(
+        log::info!(
             "{} – {} {total} {}",
             style::edim("by @jdx"),
             state.action.present(),
@@ -770,7 +770,7 @@ impl TextInstallProgress {
                     let state = shared.lock().unwrap();
                     // Completed tools have already printed their individual results.
                     if !state.all_done() {
-                        info!("{}", state.snapshot(Instant::now()));
+                        log::info!("{}", state.snapshot(Instant::now()));
                     }
                 };
                 if let Some(report) = MultiProgressReport::try_get() {
@@ -819,9 +819,9 @@ impl InstallProgress for TextInstallProgress {
         let mut state = self.state.lock().unwrap();
         let now = Instant::now();
         for line in state.fail_unstarted(failures, now, None) {
-            info!("{line}");
+            log::info!("{line}");
         }
-        info!("{}", state.summary(now));
+        log::info!("{}", state.summary(now));
     }
 }
 
@@ -863,7 +863,7 @@ impl ToolProgress for TextToolProgress {
             state.tools[self.index].message = first_line(error);
         }
         if let Some(line) = state.finish_tool(self.index, outcome, Instant::now(), None) {
-            info!("{line}");
+            log::info!("{line}");
         }
     }
 
@@ -903,7 +903,7 @@ impl SingleReport for TextToolProgress {
         // must not serialize behind another tool's status update.
         let prefix = self.state.lock().unwrap().tools[self.index].prefix.clone();
         for line in message.lines() {
-            info!("{prefix} {line}");
+            log::info!("{prefix} {line}");
         }
     }
 

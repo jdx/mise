@@ -1,7 +1,7 @@
 //! Install-wide progress: one model, two renderers.
 //!
-//! [`crate::ui::text_install_progress`] appends snapshots for captured stderr and
-//! CI; [`crate::ui::tty_install_progress`] redraws a live region for an
+//! [`crate::text_install_progress`] appends snapshots for captured stderr and
+//! CI; [`crate::tty_install_progress`] redraws a live region for an
 //! interactive terminal. Both read the same [`State`], so they cannot disagree
 //! about what is done, what is running, or how far along it is.
 use std::sync::Arc;
@@ -56,7 +56,7 @@ pub fn install_progress(
 }
 
 /// A separate lookup phase, used before upgrade knows which tools need work.
-pub(crate) fn resolution_progress(
+pub fn resolution_progress(
     tools: impl Iterator<Item = (String, String)>,
 ) -> Option<Box<dyn InstallProgress>> {
     progress_for(&MultiProgressReport::get(), Action::Resolve, tools)

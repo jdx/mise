@@ -22,7 +22,7 @@ use windows_sys::Win32::Foundation::{FALSE, TRUE};
 use windows_sys::Win32::System::Console::{CTRL_BREAK_EVENT, CTRL_C_EVENT, SetConsoleCtrlHandler};
 use windows_sys::core::BOOL;
 
-use crate::cmd::CmdLineRunner;
+use mise_util::cmd::CmdLineRunner;
 
 static EXIT: AtomicBool = AtomicBool::new(true);
 static SHOW_CURSOR: AtomicBool = AtomicBool::new(false);
@@ -69,7 +69,7 @@ fn install_handler() {
     if unsafe { SetConsoleCtrlHandler(Some(handler), TRUE) } == FALSE {
         // Without a console there is nothing to interrupt, so this is not worth
         // failing a command over.
-        debug!(
+        log::debug!(
             "failed to install console ctrl handler: {}",
             std::io::Error::last_os_error()
         );
@@ -85,9 +85,9 @@ pub async fn exit_signal() -> i32 {
         if SHOW_CURSOR.load(Ordering::Relaxed) {
             let _ = Term::stderr().show_cursor();
         }
-        vfox::cancel_http_requests();
+        crate::run_interrupt_hook();
         if SHOULD_EXIT.load(Ordering::Relaxed) {
-            debug!("Ctrl-C pressed, exiting...");
+            log::debug!("Ctrl-C pressed, exiting...");
             // Unlike Unix, where the pgroup got the SIGINT that reached mise,
             // nothing is guaranteed to have ended the tree: a console event is
             // advisory and `cmd.exe` in particular stops to ask about it.
@@ -96,7 +96,7 @@ pub async fn exit_signal() -> i32 {
         }
         // The console delivered the event to every child as well, so give them
         // the chance to stop on their own before anything is forced.
-        info!(
+        log::info!(
             "interrupted, waiting for running commands to exit (press Ctrl-C again to stop them)"
         );
     }

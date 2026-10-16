@@ -38,6 +38,7 @@ anything else runs.
 | Crate                     | Contents                                                                                  |
 | ------------------------- | ----------------------------------------------------------------------------------------- |
 | `mise-util`               | Environment, directory, file, HTTP, cache, template, and `EnvDiff`/`PathEnv` helpers      |
+| `mise-ui`                 | Progress reports, prompts, and themes for the terminal                                    |
 | `mise-settings`           | The `Settings` types, generated from `settings.toml`, and the process-wide settings cache |
 | `vfox`                    | The embedded Lua runtime and the hook and module interfaces for vfox plugins              |
 | `aqua-registry`           | Parsing, package lookup, and cache formats for aqua registries                            |
