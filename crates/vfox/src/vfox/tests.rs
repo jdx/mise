@@ -500,3 +500,62 @@ async fn test_download_sends_plugin_headers_and_drops_them_cross_origin() {
         .unwrap();
     assert_eq!(std::fs::read(downloaded).unwrap(), b"artifact");
 }
+
+#[tokio::test]
+async fn test_download_plugin_headers_not_sent_to_rewritten_mirror() {
+    use reqwest::header::HeaderValue;
+    use wiremock::matchers::{method, path};
+    use wiremock::{Mock, MockServer, Request, ResponseTemplate};
+
+    let mirror = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/tool.tar.gz"))
+        .respond_with(|req: &Request| {
+            assert!(!req.headers.contains_key("authorization"));
+            ResponseTemplate::new(200).set_body_bytes(b"artifact")
+        })
+        .expect(1)
+        .mount(&mirror)
+        .await;
+
+    let temp = TempDir::new().unwrap();
+    let plugin_dir = temp.path().join("dummy");
+    std::fs::create_dir_all(&plugin_dir).unwrap();
+    let plugin = Plugin::from_dir(&plugin_dir).unwrap();
+    let mut vfox = Vfox::test();
+    let mirror_url = Url::parse(&format!("{}/tool.tar.gz", mirror.uri())).unwrap();
+    vfox.set_url_rewriter(move |url| *url = mirror_url.clone());
+    let mut headers = HeaderMap::new();
+    headers.insert("authorization", HeaderValue::from_static("Bearer secret"));
+    let url = Url::parse("https://upstream.invalid/tool.tar.gz").unwrap();
+    vfox.download(&url, &plugin, "1.0.0", temp.path(), Some(&headers))
+        .await
+        .unwrap();
+}
+
+#[tokio::test]
+async fn test_download_redirect_loop_is_an_error() {
+    use reqwest::header::HeaderValue;
+    use wiremock::matchers::method;
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .respond_with(ResponseTemplate::new(302).insert_header("Location", "/again"))
+        .mount(&server)
+        .await;
+
+    let temp = TempDir::new().unwrap();
+    let plugin_dir = temp.path().join("dummy");
+    std::fs::create_dir_all(&plugin_dir).unwrap();
+    let plugin = Plugin::from_dir(&plugin_dir).unwrap();
+    let vfox = Vfox::test();
+    let mut headers = HeaderMap::new();
+    headers.insert("authorization", HeaderValue::from_static("Bearer secret"));
+    let url = Url::parse(&format!("{}/loop", server.uri())).unwrap();
+    let err = vfox
+        .download(&url, &plugin, "1.0.0", temp.path(), Some(&headers))
+        .await
+        .unwrap_err();
+    assert!(err.to_string().contains("too many redirects"), "{err}");
+}

@@ -280,7 +280,8 @@ end
 
 mise sends the headers only to the origin (scheme, host and port) of `url`. It
 drops them when a redirect leads to another origin, which is what signed
-storage URLs such as GitHub's need. A `headers` `Authorization` wins over
+storage URLs such as GitHub's need. A mirror configured with
+[`url_replacements`](/url-replacements) never receives them. A `headers` `Authorization` wins over
 netrc and the automatic GitHub token. Header values are kept out of debug
 output, and headers are not recorded in `mise.lock`. mise downloads the file
 with these headers, so checksums, retries and `mise lock` keep working.

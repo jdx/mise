@@ -290,10 +290,18 @@ fn parse_headers(table: Option<mlua::Table>) -> std::result::Result<Option<Heade
         message: Some(message),
     };
     let mut headers = HeaderMap::new();
-    for pair in table.pairs::<String, String>() {
+    for pair in table.pairs::<String, Value>() {
         let (name, value) = pair.map_err(|_| {
             invalid("`headers` must be a table of header names to string values".to_string())
         })?;
+        let Value::String(value) = value else {
+            return Err(invalid(format!(
+                "header `{name}` in `headers` must be a string"
+            )));
+        };
+        let value = value
+            .to_str()
+            .map_err(|_| invalid(format!("header `{name}` in `headers` is not valid UTF-8")))?;
         let header_name = HeaderName::from_bytes(name.as_bytes())
             .map_err(|_| invalid(format!("invalid header name `{name}` in `headers`")))?;
         let mut header_value = HeaderValue::from_str(&value)
@@ -457,8 +465,7 @@ mod tests {
             .load(r#"return { version = "1", headers = { Accept = 1.5 } }"#)
             .eval()
             .unwrap();
-        // numbers coerce to strings in Lua, tables do not
-        assert!(PreInstall::from_lua(mlua::Value::Table(table), &lua).is_ok());
+        assert!(PreInstall::from_lua(mlua::Value::Table(table), &lua).is_err());
         let table: mlua::Table = lua
             .load(r#"return { version = "1", headers = { Accept = {} } }"#)
             .eval()

@@ -165,8 +165,15 @@ impl Vfox {
         let bytes = retry_async(&url_str, || async {
             let resp = match plugin_headers.filter(|h| !h.is_empty()) {
                 Some(plugin_headers) => {
-                    self.get_following_redirects(&request_url, plugin_headers)
+                    // The headers belong to the plugin's own `url`; a rewritten
+                    // mirror is not trusted with them.
+                    match self
+                        .get_following_redirects(&request_url, url, plugin_headers)
                         .await?
+                    {
+                        Some(resp) => resp,
+                        None => return Ok(None),
+                    }
                 }
                 None => {
                     let mut request = CLIENT.get(request_url.clone());
@@ -177,9 +184,10 @@ impl Vfox {
                 }
             };
             let resp = resp.error_for_status()?;
-            resp.bytes().await
+            resp.bytes().await.map(Some)
         })
-        .await?;
+        .await?
+        .ok_or_else(|| format!("too many redirects downloading {request_url}"))?;
         file::mkdirp(path.parent().unwrap())?;
         let mut file = tokio::fs::File::create(&path).await?;
         tokio::io::AsyncWriteExt::write_all(&mut file, &bytes).await?;
@@ -188,13 +196,16 @@ impl Vfox {
     }
 
     /// GET `url` with the plugin's headers, following redirects by hand so the
-    /// headers are only sent to the origin of `url`. A redirect to another
-    /// host, port or scheme (e.g. a signed storage URL) drops them.
+    /// headers are only sent to the origin of `trusted` (the plugin's own
+    /// `url`). A rewritten mirror or a redirect to another host, port or scheme
+    /// (e.g. a signed storage URL) does not receive them. Returns `None` when
+    /// the redirect limit is exceeded.
     async fn get_following_redirects(
         &self,
         url: &Url,
+        trusted: &Url,
         plugin_headers: &HeaderMap,
-    ) -> reqwest::Result<reqwest::Response> {
+    ) -> reqwest::Result<Option<reqwest::Response>> {
         const MAX_REDIRECTS: usize = 10;
         let mut current = url.clone();
         for _ in 0..=MAX_REDIRECTS {
@@ -203,7 +214,7 @@ impl Vfox {
                 .as_ref()
                 .map(|resolver| resolver(&current))
                 .unwrap_or_default();
-            if current.origin() == url.origin() {
+            if current.origin() == trusted.origin() {
                 headers.extend(plugin_headers.clone());
             }
             let resp = NO_REDIRECT_CLIENT
@@ -212,7 +223,7 @@ impl Vfox {
                 .send()
                 .await?;
             if !resp.status().is_redirection() {
-                return Ok(resp);
+                return Ok(Some(resp));
             }
             let Some(next) = resp
                 .headers()
@@ -220,15 +231,11 @@ impl Vfox {
                 .and_then(|l| l.to_str().ok())
                 .and_then(|l| current.join(l).ok())
             else {
-                return Ok(resp);
+                return Ok(Some(resp));
             };
             current = next;
         }
-        NO_REDIRECT_CLIENT
-            .get(current)
-            .send()
-            .await?
-            .error_for_status()
+        Ok(None)
     }
 
     pub(super) fn download_path_for(
