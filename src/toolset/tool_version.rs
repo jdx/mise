@@ -18,7 +18,7 @@ use crate::install_before::{
 };
 use crate::lockfile::{AubeLock, CondaPackageInfo, LockfileTool, PlatformInfo};
 use crate::runtime_symlinks::is_runtime_symlink;
-use crate::toolset::{ToolRequest, ToolSource, install_state, tool_request};
+use crate::toolset::{ToolRequest, ToolSource, ToolVersionOptions, install_state, tool_request};
 use crate::versions_index::IndexPick;
 use crate::{dirs, env};
 use console::style;
@@ -983,7 +983,13 @@ impl ToolVersion {
             // bypasses an installed fuzzy match. Some backend exact resolvers
             // only validate syntax and defer existence checks to installation.
             let matches = backend
-                .list_versions_matching_with_opts(config, &v, None, opts.refresh_remote_versions)
+                .list_versions_matching_with_selection_options(
+                    config,
+                    &v,
+                    &request.options(),
+                    None,
+                    opts.refresh_remote_versions,
+                )
                 .await?;
             if matches.contains(&v) {
                 return build(v);
@@ -1063,7 +1069,17 @@ impl ToolVersion {
         let fall_back_to_literal = settings.prefer_offline()
             && !opts.latest_versions
             && (v.matches('.').count() >= 2 || backend.is_exact_version(&v));
-        match Self::resolve_remote_version(config, &backend, &v, opts, pin_remote_matches).await {
+        let selection_opts = request.options();
+        match Self::resolve_remote_version(
+            config,
+            &backend,
+            &v,
+            &selection_opts,
+            opts,
+            pin_remote_matches,
+        )
+        .await
+        {
             Ok(v) => build(v),
             Err(err) if fall_back_to_literal && crate::http::is_unreachable(&err) => {
                 // Keyed without the error: a command can resolve more than once,
@@ -1086,6 +1102,7 @@ impl ToolVersion {
         config: &Arc<Config>,
         backend: &ABackend,
         v: &str,
+        selection_opts: &ToolVersionOptions,
         opts: &ResolveOptions,
         pin_remote_matches: Option<Vec<String>>,
     ) -> Result<String> {
@@ -1106,13 +1123,12 @@ impl ToolVersion {
             None => {
                 // The answer the matches below would give, when the versions
                 // index can prove it without the full list.
-                let selection_opts = config.get_tool_opts_with_overrides(backend.ba()).await?;
                 if let Some(version) = Box::pin(backend::resolve_from_versions_index(
                     backend.as_ref(),
                     config,
                     v,
                     IndexPick::Request,
-                    &selection_opts,
+                    selection_opts,
                     opts.before_date,
                     opts.refresh_remote_versions,
                 ))
@@ -1121,9 +1137,10 @@ impl ToolVersion {
                     return Ok(version);
                 }
                 backend
-                    .list_versions_matching_with_opts(
+                    .list_versions_matching_with_selection_options(
                         config,
                         v,
+                        selection_opts,
                         opts.before_date,
                         opts.refresh_remote_versions,
                     )
@@ -1139,7 +1156,15 @@ impl ToolVersion {
         // If date filter is active and exact version not found, check without filter.
         // Explicit pinned versions like "22.5.0" should not be filtered by date.
         if opts.before_date.is_some() {
-            let all_versions = backend.list_versions_matching(config, v).await?;
+            let all_versions = backend
+                .list_versions_matching_with_selection_options(
+                    config,
+                    v,
+                    selection_opts,
+                    None,
+                    false,
+                )
+                .await?;
             if all_versions.iter().any(|m| m == v) {
                 // Exact match exists but was filtered by date - use it anyway
                 return Ok(v.to_string());
@@ -1216,7 +1241,7 @@ impl ToolVersion {
         if opts.offline {
             return Ok(Self::new(request, prefix.to_string()));
         }
-        let selection_opts = config.get_tool_opts_with_overrides(backend.ba()).await?;
+        let selection_opts = request.options();
         if let Some(v) = Box::pin(backend::resolve_from_versions_index(
             backend.as_ref(),
             config,
@@ -1231,9 +1256,10 @@ impl ToolVersion {
             return Ok(Self::new(request, v));
         }
         let matches = backend
-            .list_versions_matching_with_opts(
+            .list_versions_matching_with_selection_options(
                 config,
                 prefix,
+                &selection_opts,
                 opts.before_date,
                 opts.refresh_remote_versions,
             )
