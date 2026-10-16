@@ -979,10 +979,17 @@ impl RegistryTool {
     }
 
     /// Whether the entries for `full` give different version ranges
-    /// different options, so its version list can depend on the range.
-    pub(crate) fn options_vary_by_version(&self, full: &str) -> bool {
+    /// different values for any of `keys`, so its version list can depend on
+    /// the range.
+    pub(crate) fn options_vary_by_version(&self, full: &str, keys: &[&str]) -> bool {
         let entries = self.entries_for(full);
-        entries.iter().any(|rb| rb.options != entries[0].options)
+        let listing = |rb: &RegistryBackend| {
+            rb.options
+                .iter()
+                .filter(|(k, _)| keys.contains(k))
+                .collect::<Vec<_>>()
+        };
+        entries.iter().any(|rb| listing(rb) != listing(entries[0]))
     }
 
     /// The entries that name `full`: those for this platform, or every one
@@ -1552,8 +1559,10 @@ backends = [
         assert_eq!(pattern(Some("latest")).as_deref(), Some("tool-v2-*"));
 
         // Its version list can differ by range, so it is cached per range.
-        assert!(tool.options_vary_by_version("github:example/tool"));
-        assert!(!tool.options_vary_by_version("aqua:example/tool"));
+        assert!(tool.options_vary_by_version("github:example/tool", &["asset_pattern"]));
+        assert!(!tool.options_vary_by_version("aqua:example/tool", &["asset_pattern"]));
+        // Options that do not shape the version list leave it shared.
+        assert!(!tool.options_vary_by_version("github:example/tool", &["version_prefix"]));
 
         // A backend named twice is listed once, at its first eligible entry.
         assert_eq!(
