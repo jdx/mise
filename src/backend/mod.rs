@@ -159,8 +159,9 @@ pub fn version_listing_failure(ba: &BackendArg) -> Option<String> {
 /// reaches are listed.
 ///
 /// `None` when one backend serves everything `prefix` asks for: a tool with a
-/// single backend, an explicit backend, a `MISE_BACKENDS_*` override, or a
-/// prefix inside one range.
+/// single backend, a prefix inside one range, or a backend chosen other than
+/// by the registry (an explicit backend, a `MISE_BACKENDS_*` override, an
+/// alias, a custom plugin or a lockfile entry).
 pub async fn list_remote_versions_across_ranges(
     config: &Arc<Config>,
     ba: &BackendArg,
@@ -175,6 +176,11 @@ pub async fn list_remote_versions_across_ranges(
     let Some(owners) = tool.version_range_owners() else {
         return Ok(None);
     };
+    // An alias, a custom plugin or a lock picks the backend instead, and
+    // installs only from it.
+    if ba.full_without_opts() != owners[0].full {
+        return Ok(None);
+    }
     let owners = owners
         .into_iter()
         .filter(|owner| prefix.is_none_or(|prefix| owner.supports_version(prefix)))
@@ -187,8 +193,10 @@ pub async fn list_remote_versions_across_ranges(
         // A version inside the entry's range selects its options when the
         // backend is listed more than once.
         let hint = owner.min_version.or(owner.max_version.map(|_| "0.0.0"));
-        let owner_ba = BackendArg::new(ba.short.clone(), Some(owner.full.to_string()))
+        let mut owner_ba = BackendArg::new(ba.short.clone(), Some(owner.full.to_string()))
             .for_registry_version(hint);
+        // Keep options given inline, such as `hk[prerelease=true]`.
+        owner_ba.set_opts(ba.explicit_opts().cloned());
         let backend = owner_ba.backend()?;
         if let Some(plugin) = backend.plugin() {
             let mpr = crate::ui::multi_progress_report::MultiProgressReport::get();
