@@ -920,8 +920,15 @@ impl RegistryTool {
         if self.env_backend_override().is_some() {
             return None;
         }
+        let parse = |v: &str| semver::Version::parse(v).expect("validated registry version bound");
         let mut owners = vec![];
         for rb in self.eligible_entries(|_| true) {
+            // An entry whose whole range earlier entries already serve owns
+            // no version.
+            let (min, max) = (rb.min_version.map(parse), rb.max_version.map(parse));
+            if !owners.is_empty() && covers(&owners, min.as_ref(), max.as_ref()) {
+                continue;
+            }
             owners.push(rb);
             if covers_every_version(&owners) {
                 break;
@@ -1688,6 +1695,15 @@ backends = [
         assert_eq!(
             for_request("nightly"),
             ["github:example/new", "aqua:example/old"]
+        );
+
+        // An entry inside an earlier entry's range owns nothing.
+        let tool = parse(
+            r#"{ full = "github:example/new", min_version = "2.0.0" }, { full = "asdf:example/tool", min_version = "3.0.0" }, "aqua:example/old""#,
+        );
+        assert_eq!(
+            fulls(tool.version_range_owners()),
+            Some(vec!["github:example/new", "aqua:example/old"])
         );
 
         // An unbounded first backend serves every version.
