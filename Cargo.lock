@@ -6948,6 +6948,7 @@ dependencies = [
  "mise-settings",
  "mise-util",
  "nix 0.31.3",
+ "shell-words",
  "strum 0.28.0",
  "tokio",
  "windows-sys 0.61.2",
