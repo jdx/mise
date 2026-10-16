@@ -253,13 +253,15 @@ async fn command_wrapper_for(
     let Some(wrapper) = wrapper else {
         return Ok(None);
     };
+    // Render first so the self-delegation guard and the install see the real command name.
+    let wrapper = render_wrapper(config, wrapper)?;
     if same_command_name(wrapper.command(), shim_name) {
         bail!("command wrapper for {shim_name} cannot delegate to itself");
     }
     if install_command {
         install_missing_wrapper_command(config, ts, wrapper.command()).await?;
     }
-    Ok(Some(render_wrapper(config, wrapper)?))
+    Ok(Some(wrapper))
 }
 
 /// Render `command`, `args` and `env` values as templates, so a wrapper can use `vars`, `env`
