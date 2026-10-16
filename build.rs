@@ -1374,8 +1374,18 @@ fn platforms_disjoint(a: &[String], b: &[String]) -> bool {
     };
     let differ =
         |x: &Option<String>, y: &Option<String>| matches!((x, y), (Some(x), Some(y)) if x != y);
+    // Windows on arm64 also matches x64 selectors, as `backend_matches_platform` does.
+    let windows_arm64 = |list: &[String]| {
+        list.iter().any(|s| {
+            matches!(
+                s.as_str(),
+                "windows" | "arm64" | "windows-arm64" | "x64" | "windows-x64"
+            )
+        })
+    };
     !a.is_empty()
         && !b.is_empty()
+        && !(windows_arm64(a) && windows_arm64(b))
         && a.iter().all(|a| {
             let (a_os, a_arch) = split(a);
             b.iter().all(|b| {
