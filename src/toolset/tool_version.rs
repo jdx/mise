@@ -1547,7 +1547,7 @@ fn has_linked_version(ba: &BackendArg, version: &str) -> bool {
                     let name = name.to_string_lossy();
                     linked_name_satisfies(&name, version)
                         && (version == "latest"
-                            || name == version.strip_prefix("prefix:").unwrap_or(version)
+                            || linked_name_is_exact(&name, version)
                             || !backend.as_ref().is_some_and(|b| {
                                 crate::plugins::VERSION_REGEX.is_match(&name)
                                     || b.is_backend_prerelease(&name)
@@ -1561,13 +1561,19 @@ fn has_linked_version(ba: &BackendArg, version: &str) -> bool {
     false
 }
 
+/// Whether a link named `name` is the very version `version` spells, including the
+/// directory name a `ref:`/`tag:` request is stored under.
+fn linked_name_is_exact(name: &str, version: &str) -> bool {
+    let version = version.strip_prefix("prefix:").unwrap_or(version);
+    name == version || name == version.replace([':', '/'], "-")
+}
+
 /// Whether a link named `name` is something a request for `version` selects, by the same
 /// rules the backend applies to installed versions.
 fn linked_name_satisfies(name: &str, version: &str) -> bool {
     let version = version.strip_prefix("prefix:").unwrap_or(version);
     version == "latest"
-        || name == version
-        || name == version.replace([':', '/'], "-")
+        || linked_name_is_exact(name, version)
         || crate::backend::fuzzy_version_matches(version, name)
 }
 
@@ -2091,6 +2097,7 @@ mod tests {
         assert!(linked_name_satisfies("brew", "latest"));
         assert!(!linked_name_satisfies("3.20", "3.2"));
         assert!(!linked_name_satisfies("22", "24.21.0"));
+        assert!(linked_name_is_exact("ref-main", "ref:main"));
     }
 
     #[test]
