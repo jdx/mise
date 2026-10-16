@@ -637,7 +637,14 @@ impl Backend for JavaPlugin {
                     }
 
                     // The lockfile already names the build, so the catalog is not consulted.
-                    (JavaMetadata::from_locked(&tv.version, &url), tarball_path)
+                    (
+                        JavaMetadata::from_locked(
+                            &tv.version,
+                            &url,
+                            &Settings::get().java.shorthand_vendor,
+                        ),
+                        tarball_path,
+                    )
                 } else {
                     // No URL in lockfile, fall back to metadata
                     let metadata = self.tv_to_metadata(&tv).await?;
@@ -878,12 +885,13 @@ impl Display for JavaMetadata {
 impl JavaMetadata {
     /// The parts of a catalog entry that installing needs, rebuilt from the lockfile so
     /// an install of a locked build does not fetch the catalog. `version` is the locked
-    /// version such as "zulu-21.0.1", and `url` the locked download URL.
-    fn from_locked(version: &str, url: &str) -> Self {
+    /// version such as "zulu-21.0.1", `url` the locked download URL, and `shorthand_vendor`
+    /// the vendor a numeric version like "21.0.1" stands for.
+    fn from_locked(version: &str, url: &str, shorthand_vendor: &str) -> Self {
         let mut parts = version.split('-');
         let vendor = match parts.next() {
             Some(v) if !v.starts_with(|c: char| c.is_ascii_digit()) => v.to_string(),
-            _ => String::new(),
+            _ => shorthand_vendor.to_string(),
         };
         Self {
             url: url.to_string(),
@@ -957,11 +965,11 @@ mod tests {
     #[test]
     fn java_locked_metadata_keeps_vendor_and_version() {
         let url = "https://cdn.azul.com/zulu/bin/zulu21.30.15-ca-jdk21.0.1-macosx_aarch64.tar.gz";
-        let m = JavaMetadata::from_locked("zulu-21.0.1", url);
+        let m = JavaMetadata::from_locked("zulu-21.0.1", url, "temurin");
         assert_eq!((m.vendor.as_str(), m.version.as_str()), ("zulu", "21.0.1"));
         assert_eq!(m.url, url);
-        let m = JavaMetadata::from_locked("21.0.1", url);
-        assert_eq!((m.vendor.as_str(), m.version.as_str()), ("", "21.0.1"));
+        let m = JavaMetadata::from_locked("21.0.1", url, "zulu");
+        assert_eq!((m.vendor.as_str(), m.version.as_str()), ("zulu", "21.0.1"));
     }
 
     #[test]

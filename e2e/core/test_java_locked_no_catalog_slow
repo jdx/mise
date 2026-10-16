@@ -18,6 +18,10 @@ TOML
 mise lock --platform "$CURRENT_PLATFORM"
 assert_contains "cat mise.lock" 'url = "https://'
 
+# `mise lock` warmed the catalog cache; use a fresh one so any catalog request reaches
+# the dead address below.
+export MISE_CACHE_DIR="$PWD/fresh-cache"
+
 # Point the catalog at a dead address; only the lockfile can satisfy the install.
 export MISE_URL_REPLACEMENTS='{"https://mise-java.jdx.dev/":"http://127.0.0.1:1/"}'
 assert "mise install --locked java"
