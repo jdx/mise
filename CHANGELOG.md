@@ -1,5 +1,52 @@
 # Changelog
 
+## [2026.10.12](https://github.com/jdx/mise/releases/tag/v2026.10.12) - 2026-10-16
+
+### 🚀 Features
+
+- **(config)** add find_up option to env._.file by @jdx in [#14497](https://github.com/jdx/mise/pull/14497)
+- **(dotfiles)** infer .tera sources for group template entries by @jdx in [#14502](https://github.com/jdx/mise/pull/14502)
+- **(hooks)** tell watch_files commands when git moved HEAD by @jdx in [#14511](https://github.com/jdx/mise/pull/14511)
+- **(lock)** warn when a tool is unavailable for a requested platform by @jdx in [#14500](https://github.com/jdx/mise/pull/14500)
+- **(pypi)** select Python runtime per tool by @jdx in [#14479](https://github.com/jdx/mise/pull/14479)
+- **(task)** discover Gradle workspaces by @jdx in [#14512](https://github.com/jdx/mise/pull/14512)
+
+### 🐛 Bug Fixes
+
+- **(backend)** resolve remote versions with each request's own options by @JamBalaya56562 in [#14476](https://github.com/jdx/mise/pull/14476)
+- **(ci)** replace the ctor crate so macOS test binaries link by @jdx in [#14495](https://github.com/jdx/mise/pull/14495)
+- **(env)** stop _.source from loading ~/.bashrc when mise's stdin is a socket by @pikeas in [#14487](https://github.com/jdx/mise/pull/14487)
+- **(github)** retry api.github.com when mise-versions errors by @jdx in [#14501](https://github.com/jdx/mise/pull/14501)
+- **(pypi)** preserve environments when Python changes by @jdx in [#14504](https://github.com/jdx/mise/pull/14504)
+- **(task)** let project overrides take over from a failing workspace provider by @jdx in [#14508](https://github.com/jdx/mise/pull/14508)
+
+### 📚 Documentation
+
+- **(activate)** explain why mise activate keeps shims on PATH by @jdx in [#14493](https://github.com/jdx/mise/pull/14493)
+- **(ci)** clarify platform-specific mise cache paths by @zeitlinger in [#14506](https://github.com/jdx/mise/pull/14506)
+
+### 📦️ Dependency Updates
+
+- update jdx crates to v7.0.1 by @renovate[bot] in [#14454](https://github.com/jdx/mise/pull/14454)
+- update aube to v2.7.1 by @renovate[bot] in [#14507](https://github.com/jdx/mise/pull/14507)
+
+### 📦 Registry
+
+- add martin ([github:maplibre/martin](https://github.com/maplibre/martin)) by @ivan-ivkovic in [#14488](https://github.com/jdx/mise/pull/14488)
+
+### Chore
+
+- regenerate llms.txt in the hk pre-commit hook by @jdx in [#14515](https://github.com/jdx/mise/pull/14515)
+- format with oxfmt instead of prettier by @jdx in [#14516](https://github.com/jdx/mise/pull/14516)
+
+### 📦 Aqua Registry Updates
+
+#### Updated Packages (3)
+
+- [`max-sixty/worktrunk`](https://github.com/max-sixty/worktrunk)
+- [`oxc-project/oxc/oxfmt`](https://github.com/oxc-project/oxc)
+- [`oxc-project/oxc/oxlint`](https://github.com/oxc-project/oxc)
+
 ## [2026.10.11](https://github.com/jdx/mise/releases/tag/v2026.10.11) - 2026-10-15
 
 ### 🚀 Features
