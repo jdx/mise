@@ -2308,6 +2308,7 @@ mod tests {
     /// must not be served from a cache.
     #[test]
     fn test_load_parses_each_settings_file_once() {
+        let _settings = crate::test::SettingsGuard::lock();
         let layers = || Settings::settings_layers_from(None, SettingsTrustPolicy::AsDiscovered);
         let parses = || PARSE_COUNTS.with_borrow(|counts| counts.values().sum::<usize>());
 
@@ -2335,7 +2336,7 @@ mod tests {
     /// settings reload after an edit would keep serving the old values.
     #[test]
     fn test_load_closes_its_parse_cache() {
-        Settings::reset(None);
+        let _settings = crate::test::SettingsGuard::lock();
         let settings = load();
         assert!(settings.is_ok(), "{:?}", settings.err());
         assert!(LOAD_PARSE_CACHE.with_borrow(Option::is_none));
