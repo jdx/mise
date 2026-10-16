@@ -130,6 +130,23 @@ fi
           effect = "write"
         }
     }
+    // docs/public/llms.txt is built from page descriptions and the sidebar, so
+    // any docs edit can change it; CI fails when `mise run render` would.
+    // Reads the committed docs/cli pages and cli_commands.ts, which the
+    // render:usage and render:help tasks keep current.
+    ["render-llms"] {
+        glob = List("docs/**/*.md", "docs/.vitepress/sidebar.ts", "docs/.vitepress/llms.ts")
+        // the output is outside the glob, so name it for the pre-commit hook to stage
+        stage = List("docs/public/llms.txt")
+        check = new CommandSpec {
+          command = "node docs/.vitepress/llms.ts > /dev/null && git diff --exit-code -- docs/public/llms.txt"
+          effect = "write"
+        }
+        fix = new CommandSpec {
+          command = "node docs/.vitepress/llms.ts"
+          effect = "write"
+        }
+    }
     ["markdownlint"] {
         glob = List("**/*.md")
         check = new CommandSpec {
