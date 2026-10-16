@@ -5,7 +5,9 @@
 //! the plain data here, below both, is what lets those two layers be separate crates.
 
 pub mod accounts;
+pub mod bootstrap;
 pub mod compose;
+pub mod defaults;
 pub mod dotfiles;
 pub mod firewall;
 pub mod history;

@@ -1,3 +1,4 @@
+use crate::system::BootstrapMerge;
 use eyre::{WrapErr, eyre};
 use indexmap::IndexMap;
 use itertools::Itertools;
