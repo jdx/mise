@@ -11,16 +11,19 @@ use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
 use eyre::{Result, bail};
+use indexmap::IndexMap;
 
+use super::directories::Step as DirectoryStep;
 use super::layout::Roots;
 use super::reconcile::{Conflict, Object};
-use super::run::{self, PendingApplication};
-use super::state;
+use super::run::{self, PendingApplication, SyncStatus};
+use super::state::{self, SyncState};
 use crate::file::display_path;
 use crate::system::history::checkpoint::Store;
 use crate::system::history::journal;
 use crate::system::history::replay;
 use crate::system::history::scope::OperationScope;
+use crate::system::history::shadow::HistoryRepo;
 use crate::system::history::store::{OperationKind, Summary};
 use crate::system::history::tracked::{TrackedSet, normalize_target};
 use crate::ui::table::MiseTable;
@@ -109,279 +112,311 @@ pub(crate) async fn apply_locked(
     apply_locked_with_scope(store, tracked, req, None).await
 }
 
-pub(crate) async fn apply_locked_with_scope(
-    store: &Store,
-    tracked: &TrackedSet,
-    req: &ApplyRequest,
-    mut operation_scope: Option<OperationScope>,
-) -> Result<ApplyOutcome> {
-    if !req.paths.is_empty() {
-        bail!("partial pulls are not supported: apply the complete setup without PATH arguments");
-    }
-    // A pull deletes, and a rule it could not compile is a path it would
-    // wrongly believe is selected here.
-    tracked.refuse_unusable_exclusions()?;
-    let repo = store
-        .repo()
-        .ok_or_else(|| eyre::eyre!("applying requires git"))?;
-    let state_dir = store.state_dir();
-    if operation_scope.is_none() && !req.dry_run {
-        crate::system::history::scope::recover_before_planning(store, tracked)?;
-    }
-    let planned_head = repo.ref_oid(crate::system::history::shadow::HistoryRepo::HISTORY_REF)?;
-    let incoming = run::incoming_tracking(repo, tracked)?;
-    let tracked = &incoming;
-    // Metadata changes must advance the same complete Git tree after live
-    // application. They cannot be reduced to this machine's selected paths.
-    let mut inventory_tree = run::incoming_repository_tree(repo, tracked)?;
-    let mut status = run::read_status(state_dir)?;
-    if req.automatic && status.application_failure.is_some() {
-        return Ok(ApplyOutcome {
-            held: status.pending_applications.len().max(1),
-            ..Default::default()
-        });
-    }
-    run::refresh_with_interaction(
-        store,
-        tracked,
-        &mut status,
-        !req.automatic && console::user_attended_stderr(),
-    )?;
-    let roots = Roots::current();
-    let mut take_remote: BTreeSet<PathBuf> = req
-        .take_remote
-        .iter()
-        .map(|path| normalize_target(path))
-        .collect();
-    let mut keep_local: BTreeSet<PathBuf> = req
-        .keep_local
-        .iter()
-        .map(|path| normalize_target(path))
-        .collect();
-    // Which conflicts a blanket choice spoke for, and why it could not speak
-    // for the rest.
-    let mut blanket_chosen: BTreeSet<PathBuf> = BTreeSet::new();
-    let mut blanket_held: Vec<String> = vec![];
-    // A blanket choice covers the conflicts nothing else decided, so
-    // `--take-remote-all --keep-local <path>` keeps that one exception.
-    if req.take_remote_all || req.keep_local_all {
-        let decided: BTreeSet<PathBuf> = req
-            .take_remote
-            .iter()
-            .chain(req.keep_local.iter())
-            .map(|path| normalize_target(path))
-            .collect();
-        for conflict in &status.conflicts {
-            if let Some(path) = roots.locate(&conflict.branch_path).path()
-                && !decided.contains(path)
-            {
-                blanket_chosen.insert(path.to_path_buf());
-            }
-        }
-        let blanket = if req.take_remote_all {
-            &mut take_remote
-        } else {
-            &mut keep_local
-        };
-        blanket.extend(blanket_chosen.iter().cloned());
+/// The conflict choices of one pull: what `--take-remote`, `--keep-local` and
+/// the blanket flags decided, and what a blanket choice could not.
+struct Decisions {
+    take_remote: BTreeSet<PathBuf>,
+    keep_local: BTreeSet<PathBuf>,
+    /// Which conflicts a blanket choice spoke for.
+    blanket_chosen: BTreeSet<PathBuf>,
+    /// Why a blanket choice could not speak for the rest.
+    blanket_held: Vec<String>,
+}
+
+/// What every phase of one pull reads and none changes.
+struct Pull<'a> {
+    store: &'a Store,
+    repo: &'a HistoryRepo,
+    tracked: &'a TrackedSet,
+    req: &'a ApplyRequest,
+    roots: Roots,
+    state_dir: &'a Path,
+    planned_head: Option<String>,
+}
+
+impl Pull<'_> {
+    fn interactive(&self) -> bool {
+        !self.req.automatic && console::user_attended_stderr()
     }
 
-    // Store choices without publishing or applying any part of the setup.
-    let mut sync_state = state::load(repo)?;
-    let shared_report = super::share::current(repo, tracked)?;
-    let shared = shared_report.objects();
-    let encrypted = super::files::encrypted_paths(repo, status.upstream_commit.as_deref())?;
-    for conflict in &status.conflicts {
-        let Some(local) = roots
-            .locate(&conflict.branch_path)
-            .path()
-            .map(Path::to_path_buf)
-        else {
-            continue;
-        };
-        if take_remote.contains(&local) || keep_local.contains(&local) {
-            if take_remote.contains(&local) && keep_local.contains(&local) {
-                bail!("choose only one resolution for {}", display_path(&local));
-            }
-            // A blanket choice cannot speak for a path whose live side is not
-            // a file or symlink, and failing here would discard every other
-            // decision this pass makes. Hold that one path and keep going; a
-            // path named on the command line still reports the failure. The
-            // check belongs on this read, so a path that changed since the
-            // blanket choice was made is held too rather than aborting it.
-            // Only the path's own fault is held: a repository failure on an
-            // otherwise sound file is nobody's to fix by hand, so it stops
-            // the pass with its own error.
-            let live = match live_object(repo, &local) {
-                Ok(live) => live,
-                Err(err)
-                    if blanket_chosen.contains(&local)
-                        && err.downcast_ref::<UnusableLive>().is_some() =>
+    fn decisions(&self, status: &SyncStatus) -> Decisions {
+        let req = self.req;
+        let roots = &self.roots;
+        let mut take_remote: BTreeSet<PathBuf> = req
+            .take_remote
+            .iter()
+            .map(|path| normalize_target(path))
+            .collect();
+        let mut keep_local: BTreeSet<PathBuf> = req
+            .keep_local
+            .iter()
+            .map(|path| normalize_target(path))
+            .collect();
+        // Which conflicts a blanket choice spoke for, and why it could not speak
+        // for the rest.
+        let mut blanket_chosen: BTreeSet<PathBuf> = BTreeSet::new();
+        let blanket_held: Vec<String> = vec![];
+        // A blanket choice covers the conflicts nothing else decided, so
+        // `--take-remote-all --keep-local <path>` keeps that one exception.
+        if req.take_remote_all || req.keep_local_all {
+            let decided: BTreeSet<PathBuf> = req
+                .take_remote
+                .iter()
+                .chain(req.keep_local.iter())
+                .map(|path| normalize_target(path))
+                .collect();
+            for conflict in &status.conflicts {
+                if let Some(path) = roots.locate(&conflict.branch_path).path()
+                    && !decided.contains(path)
                 {
-                    blanket_held.push(err.to_string());
-                    take_remote.remove(&local);
-                    keep_local.remove(&local);
-                    continue;
+                    blanket_chosen.insert(path.to_path_buf());
                 }
-                Err(err) => return Err(err),
+            }
+            let blanket = if req.take_remote_all {
+                &mut take_remote
+            } else {
+                &mut keep_local
             };
-            // a repository choice withdraws an earlier keep-local one
-            if take_remote.contains(&local)
-                && !req.dry_run
-                && shared_report.unheld.contains_key(&conflict.branch_path)
-                && let Some(entry) = tracked.entry_for(&local)
-            {
-                let _store_lock = store.lock()?;
-                let mut held = crate::system::history::held::Held::load(repo)?;
-                held.unkeep(&entry.tree_path(&entry.path)?);
-                held.save(repo)?;
-            }
-            // **Keeping this machine's version of a stream it never held
-            // means saving it.** Its saved version is another machine's, so
-            // there is nothing of this machine's to publish yet: hold the
-            // stream, and the next save records the live files over it.
-            if keep_local.contains(&local)
-                && shared_report.unheld.contains_key(&conflict.branch_path)
-            {
-                let entry = tracked
-                    .entry_for(&local)
-                    .ok_or_else(|| eyre::eyre!("{} is not tracked here", display_path(&local)))?;
-                // Holding a directory holds every file in it: a sibling
-                // missing here would be saved as a deletion, and a stale one
-                // over the newer shared version. Only a tracked file is
-                // kept on its own.
-                let advice = if entry.path != local {
-                    format!(
-                        "{path} is in a directory another machine saved while it was not selected here, so it cannot be kept on its own: take the repository's version with `mise dot pull --take-remote {path}`, then copy yours back and save it",
-                        path = display_path(&local)
-                    )
-                } else {
-                    if !req.dry_run {
-                        // captures update the same record under the store lock
-                        let _store_lock = store.lock()?;
-                        let mut held = crate::system::history::held::Held::load(repo)?;
-                        held.keep(&entry.tree_path(&entry.path)?);
-                        held.save(repo)?;
+            blanket.extend(blanket_chosen.iter().cloned());
+        }
+        Decisions {
+            take_remote,
+            keep_local,
+            blanket_chosen,
+            blanket_held,
+        }
+    }
+
+    /// Stores choices without publishing or applying any part of the setup.
+    fn record_resolutions(&self, status: &mut SyncStatus, decisions: &mut Decisions) -> Result<()> {
+        let Self {
+            store,
+            repo,
+            tracked,
+            req,
+            roots,
+            planned_head,
+            ..
+        } = self;
+        let Decisions {
+            take_remote,
+            keep_local,
+            blanket_chosen,
+            blanket_held,
+        } = decisions;
+        let shared_report = super::share::current(repo, tracked)?;
+        let shared = shared_report.objects();
+        let encrypted = super::files::encrypted_paths(repo, status.upstream_commit.as_deref())?;
+        for conflict in &status.conflicts {
+            let Some(local) = roots
+                .locate(&conflict.branch_path)
+                .path()
+                .map(Path::to_path_buf)
+            else {
+                continue;
+            };
+            if take_remote.contains(&local) || keep_local.contains(&local) {
+                if take_remote.contains(&local) && keep_local.contains(&local) {
+                    bail!("choose only one resolution for {}", display_path(&local));
+                }
+                // A blanket choice cannot speak for a path whose live side is not
+                // a file or symlink, and failing here would discard every other
+                // decision this pass makes. Hold that one path and keep going; a
+                // path named on the command line still reports the failure. The
+                // check belongs on this read, so a path that changed since the
+                // blanket choice was made is held too rather than aborting it.
+                // Only the path's own fault is held: a repository failure on an
+                // otherwise sound file is nobody's to fix by hand, so it stops
+                // the pass with its own error.
+                let live = match live_object(repo, &local) {
+                    Ok(live) => live,
+                    Err(err)
+                        if blanket_chosen.contains(&local)
+                            && err.downcast_ref::<UnusableLive>().is_some() =>
+                    {
+                        blanket_held.push(err.to_string());
+                        take_remote.remove(&local);
+                        keep_local.remove(&local);
+                        continue;
                     }
-                    format!(
-                        "{path} keeps this machine's version once it is saved: run `mise dot save {path}`, then `mise dot sync` publishes it",
-                        path = display_path(&local)
-                    )
+                    Err(err) => return Err(err),
                 };
-                if blanket_chosen.contains(&local) {
-                    blanket_held.push(advice);
-                    keep_local.remove(&local);
-                    continue;
+                // a repository choice withdraws an earlier keep-local one
+                if take_remote.contains(&local)
+                    && !req.dry_run
+                    && shared_report.unheld.contains_key(&conflict.branch_path)
+                    && let Some(entry) = tracked.entry_for(&local)
+                {
+                    let _store_lock = store.lock()?;
+                    let mut held = crate::system::history::held::Held::load(repo)?;
+                    held.unkeep(&entry.tree_path(&entry.path)?);
+                    held.save(repo)?;
                 }
-                bail!("{advice}");
-            }
-            let saved = shared.get(&conflict.branch_path).cloned();
-            let saved_mode = permissions_at(
-                repo,
-                planned_head.as_deref(),
-                &conflict.branch_path,
-                saved.as_ref(),
-            )?;
-            if keep_local.contains(&local)
-                && (live != saved || live_permissions(&local)? != saved_mode)
-            {
-                // Keeping the local side resolves the conflict by publishing
-                // this machine's *saved* version, so there must be one, and it
-                // must be the file as it stands now. A freshly adopted machine
-                // has no baseline at all; an edited file has a stale one.
-                let reason = if saved.is_none() {
-                    "has no saved version on this machine yet"
-                } else {
-                    "has unsaved changes"
-                };
-                // The refusal stands either way, but as with an unusable live
-                // side a blanket choice holds just this path rather than
-                // discarding every decision it made alongside it. A path named
-                // on the command line is the user's own instruction, so it
-                // still fails the pass.
-                if blanket_chosen.contains(&local) {
-                    blanket_held.push(format!(
-                        "{path} {reason}, so run `mise dot save {path}` first",
+                // **Keeping this machine's version of a stream it never held
+                // means saving it.** Its saved version is another machine's, so
+                // there is nothing of this machine's to publish yet: hold the
+                // stream, and the next save records the live files over it.
+                if keep_local.contains(&local)
+                    && shared_report.unheld.contains_key(&conflict.branch_path)
+                {
+                    let entry = tracked.entry_for(&local).ok_or_else(|| {
+                        eyre::eyre!("{} is not tracked here", display_path(&local))
+                    })?;
+                    // Holding a directory holds every file in it: a sibling
+                    // missing here would be saved as a deletion, and a stale one
+                    // over the newer shared version. Only a tracked file is
+                    // kept on its own.
+                    let advice = if entry.path != local {
+                        format!(
+                            "{path} is in a directory another machine saved while it was not selected here, so it cannot be kept on its own: take the repository's version with `mise dot pull --take-remote {path}`, then copy yours back and save it",
+                            path = display_path(&local)
+                        )
+                    } else {
+                        if !req.dry_run {
+                            // captures update the same record under the store lock
+                            let _store_lock = store.lock()?;
+                            let mut held = crate::system::history::held::Held::load(repo)?;
+                            held.keep(&entry.tree_path(&entry.path)?);
+                            held.save(repo)?;
+                        }
+                        format!(
+                            "{path} keeps this machine's version once it is saved: run `mise dot save {path}`, then `mise dot sync` publishes it",
+                            path = display_path(&local)
+                        )
+                    };
+                    if blanket_chosen.contains(&local) {
+                        blanket_held.push(advice);
+                        keep_local.remove(&local);
+                        continue;
+                    }
+                    bail!("{advice}");
+                }
+                let saved = shared.get(&conflict.branch_path).cloned();
+                let saved_mode = permissions_at(
+                    repo,
+                    planned_head.as_deref(),
+                    &conflict.branch_path,
+                    saved.as_ref(),
+                )?;
+                if keep_local.contains(&local)
+                    && (live != saved || live_permissions(&local)? != saved_mode)
+                {
+                    // Keeping the local side resolves the conflict by publishing
+                    // this machine's *saved* version, so there must be one, and it
+                    // must be the file as it stands now. A freshly adopted machine
+                    // has no baseline at all; an edited file has a stale one.
+                    let reason = if saved.is_none() {
+                        "has no saved version on this machine yet"
+                    } else {
+                        "has unsaved changes"
+                    };
+                    // The refusal stands either way, but as with an unusable live
+                    // side a blanket choice holds just this path rather than
+                    // discarding every decision it made alongside it. A path named
+                    // on the command line is the user's own instruction, so it
+                    // still fails the pass.
+                    if blanket_chosen.contains(&local) {
+                        blanket_held.push(format!(
+                            "{path} {reason}, so run `mise dot save {path}` first",
+                            path = display_path(&local)
+                        ));
+                        keep_local.remove(&local);
+                        continue;
+                    }
+                    bail!(
+                        "run `mise dot save {path}` first: --keep-local publishes this machine's saved version of {path}, and it {reason}",
                         path = display_path(&local)
-                    ));
-                    keep_local.remove(&local);
-                    continue;
+                    );
                 }
-                bail!(
-                    "run `mise dot save {path}` first: --keep-local publishes this machine's saved version of {path}, and it {reason}",
-                    path = display_path(&local)
+                let remote = match status.upstream_commit.as_deref() {
+                    Some(head) => repo
+                        .object_at(head, &conflict.branch_path)?
+                        .map(|object| {
+                            // a nested repository pointer names objects this
+                            // repository does not hold: it cannot be taken
+                            if take_remote.contains(&local)
+                                && super::reconcile::is_gitlink(Some(&object))
+                            {
+                                bail!(
+                                    "cannot take the repository's version of {path}: it is a nested repository pointer, whose files history does not hold. Keep this machine's files with `mise dot pull --keep-local {path}`, or replace them with a clone of that repository yourself",
+                                    path = display_path(&local)
+                                );
+                            }
+                            if !encrypted.contains(&conflict.branch_path) {
+                                return Ok(object);
+                            }
+                            super::files::decrypt(
+                                repo,
+                                &conflict.branch_path,
+                                &object,
+                                !req.automatic && console::user_attended_stderr(),
+                            )
+                        })
+                        .transpose()?,
+                    None => None,
+                };
+                status.resolutions.insert(
+                    conflict.branch_path.clone(),
+                    run::Resolution {
+                        local_mode: saved_mode,
+                        remote_mode: permissions_at(
+                            repo,
+                            status.upstream_commit.as_deref(),
+                            &conflict.branch_path,
+                            remote.as_ref(),
+                        )?,
+                        live_mode: live_permissions(&local)?,
+                        local: saved,
+                        remote,
+                        live,
+                        take_remote: take_remote.contains(&local),
+                    },
                 );
             }
-            let remote = match status.upstream_commit.as_deref() {
-                Some(head) => repo
-                    .object_at(head, &conflict.branch_path)?
-                    .map(|object| {
-                        // a nested repository pointer names objects this
-                        // repository does not hold: it cannot be taken
-                        if take_remote.contains(&local)
-                            && super::reconcile::is_gitlink(Some(&object))
-                        {
-                            bail!(
-                                "cannot take the repository's version of {path}: it is a nested repository pointer, whose files history does not hold. Keep this machine's files with `mise dot pull --keep-local {path}`, or replace them with a clone of that repository yourself",
-                                path = display_path(&local)
-                            );
-                        }
-                        if !encrypted.contains(&conflict.branch_path) {
-                            return Ok(object);
-                        }
-                        super::files::decrypt(
-                            repo,
-                            &conflict.branch_path,
-                            &object,
-                            !req.automatic && console::user_attended_stderr(),
-                        )
-                    })
-                    .transpose()?,
-                None => None,
-            };
-            status.resolutions.insert(
-                conflict.branch_path.clone(),
-                run::Resolution {
-                    local_mode: saved_mode,
-                    remote_mode: permissions_at(
-                        repo,
-                        status.upstream_commit.as_deref(),
-                        &conflict.branch_path,
-                        remote.as_ref(),
-                    )?,
-                    live_mode: live_permissions(&local)?,
-                    local: saved,
-                    remote,
-                    live,
-                    take_remote: take_remote.contains(&local),
-                },
-            );
         }
+        Ok(())
     }
-    for path in take_remote.iter().chain(keep_local.iter()) {
-        let located = |branch_path: &String| roots.locate(branch_path).path() == Some(path);
-        // **A choice an earlier pull recorded stands, and naming it again
-        // is not an error.** Taking the repository's version exempts the
-        // path from the conflict check, so when that pull then failed for
-        // another reason the path was no longer listed, and repeating the
-        // command that decided it said it "is not a conflict".
-        let decided = status.resolutions.iter().any(|(branch_path, choice)| {
-            located(branch_path) && choice.take_remote == take_remote.contains(path)
-        });
-        if !decided
-            && !status
-                .conflicts
-                .iter()
-                .any(|conflict| located(&conflict.branch_path))
+
+    fn check_choices_are_conflicts(
+        &self,
+        status: &SyncStatus,
+        decisions: &Decisions,
+    ) -> Result<()> {
+        let roots = &self.roots;
+        for path in decisions
+            .take_remote
+            .iter()
+            .chain(decisions.keep_local.iter())
         {
-            bail!("{} is not a conflict", display_path(path));
+            let located = |branch_path: &String| roots.locate(branch_path).path() == Some(path);
+            // **A choice an earlier pull recorded stands, and naming it again
+            // is not an error.** Taking the repository's version exempts the
+            // path from the conflict check, so when that pull then failed for
+            // another reason the path was no longer listed, and repeating the
+            // command that decided it said it "is not a conflict".
+            let decided = status.resolutions.iter().any(|(branch_path, choice)| {
+                located(branch_path) && choice.take_remote == decisions.take_remote.contains(path)
+            });
+            if !decided
+                && !status
+                    .conflicts
+                    .iter()
+                    .any(|conflict| located(&conflict.branch_path))
+            {
+                bail!("{} is not a conflict", display_path(path));
+            }
         }
+        Ok(())
     }
-    run::refresh(store, tracked, &mut status)?;
-    if !req.dry_run {
-        run::write_status(state_dir, &status)?;
-    }
-    if !status.conflicts.is_empty() {
+
+    /// Unresolved conflicts pause the whole setup: nothing is applied.
+    fn pause_for_conflicts(
+        &self,
+        status: &SyncStatus,
+        decisions: &Decisions,
+    ) -> Result<ApplyOutcome> {
+        let req = self.req;
+        let roots = &self.roots;
         if req.dry_run {
             // Preview the whole paused setup even when reconciliation
             // cannot yet produce an applicable write set.
@@ -409,22 +444,26 @@ pub(crate) async fn apply_locked_with_scope(
         // A blanket choice promises to decide every conflict, so it has not
         // succeeded while one is still held -- whatever it decided alongside.
         // Those decisions are recorded above; naming the rest is what is left.
-        if !blanket_held.is_empty() {
+        if !decisions.blanket_held.is_empty() {
             if !req.dry_run && !req.automatic {
                 bail!(
                     "sync paused: resolve all {count} conflict(s) before sharing resumes; a blanket choice cannot decide them all: {held}. Fix each of those paths, then pull again",
                     count = status.conflicts.len(),
-                    held = blanket_held.join("; "),
+                    held = decisions.blanket_held.join("; "),
                 );
             }
             // A preview and a background pass both carry on, so this is the
             // only chance either gets to say why a path went undecided.
             warn!(
                 "a blanket choice cannot decide {held}",
-                held = blanket_held.join("; "),
+                held = decisions.blanket_held.join("; "),
             );
         }
-        if take_remote.is_empty() && keep_local.is_empty() && !req.dry_run && !req.automatic {
+        if decisions.take_remote.is_empty()
+            && decisions.keep_local.is_empty()
+            && !req.dry_run
+            && !req.automatic
+        {
             bail!(
                 "sync paused: resolve all {} conflict(s) before sharing resumes; `mise dot pull --take-remote-all` chooses the repository's version for every conflict at once, and `mise dot status` says whether any path still needs a different fix",
                 status.conflicts.len()
@@ -434,22 +473,23 @@ pub(crate) async fn apply_locked_with_scope(
             "sync paused: {} conflict(s) remain; no files applied or published",
             status.conflicts.len()
         );
-        return Ok(ApplyOutcome {
+        Ok(ApplyOutcome {
             held: status.conflicts.len(),
             ..Default::default()
-        });
+        })
     }
 
-    // Only after all version-bound choices are valid may they replace Git's
-    // conflict objects in the complete tree. Use the committed ciphertext,
-    // never the decrypted comparison objects held by the resolution record.
-    if let Some(tree) = &inventory_tree {
+    /// Only after all version-bound choices are valid may they replace Git's
+    /// conflict objects in the complete tree. Use the committed ciphertext,
+    /// never the decrypted comparison objects held by the resolution record.
+    fn overlay_resolutions(&self, status: &SyncStatus, tree: &str) -> Result<String> {
+        let repo = self.repo;
         let mut overlays = vec![];
         for (path, choice) in &status.resolutions {
             let head = if choice.take_remote {
                 status.upstream_commit.as_deref()
             } else {
-                planned_head.as_deref()
+                self.planned_head.as_deref()
             };
             overlays.push(crate::system::history::shadow::Overlay {
                 path: path.clone(),
@@ -459,99 +499,99 @@ pub(crate) async fn apply_locked_with_scope(
                     .flatten(),
             });
         }
-        inventory_tree = Some(repo.compose(tree, &overlays)?);
+        repo.compose(tree, &overlays)
     }
 
-    // the write set
-    let directory_tree = inventory_tree
-        .as_deref()
-        .or(status.upstream_commit.as_deref())
-        .or(planned_head.as_deref());
-    let mut directories = directory_tree
-        .map(|tree| super::directories::plan(repo, tracked, tree))
-        .transpose()?
-        .unwrap_or_default();
-    let mut steps = vec![];
-    let mut holds: Vec<Hold> = vec![];
-    for pending in &status.pending_applications {
-        let Some(path) = roots
-            .locate(&pending.branch_path)
-            .path()
-            .map(Path::to_path_buf)
-        else {
-            continue;
-        };
-        let group = if pending.configuration || pending.branch_path.starts_with("sources/") {
-            "configuration".to_string()
-        } else {
-            pending.branch_path.clone()
-        };
-        steps.push(Step {
-            before_mode: live_permissions(&path)?,
-            desired_mode: tracked
-                .manifest
-                .file_permissions(&pending.branch_path, pending.object.as_ref()),
-            pending: pending.clone(),
-            exists: path.exists() || path.is_symlink(),
-            before: live_object(repo, &path)?,
-            permissions: std::fs::symlink_metadata(&path)
-                .ok()
-                .map(|meta| meta.permissions()),
-            path,
-            group,
-        });
+    fn plan_directories(
+        &self,
+        status: &SyncStatus,
+        inventory_tree: Option<&str>,
+    ) -> Result<Vec<DirectoryStep>> {
+        let directory_tree = inventory_tree
+            .or(status.upstream_commit.as_deref())
+            .or(self.planned_head.as_deref());
+        Ok(directory_tree
+            .map(|tree| super::directories::plan(self.repo, self.tracked, tree))
+            .transpose()?
+            .unwrap_or_default())
     }
-    // paths sync leaves alone are shown with every plan, so a nested
-    // repository that never arrives is not mistaken for one still pending
-    let skipped: Vec<(PathBuf, String)> = status
-        .skipped
-        .iter()
-        .filter_map(|skipped| {
-            roots
-                .locate(&skipped.branch_path)
+
+    fn plan_steps(&self, status: &SyncStatus) -> Result<Vec<Step>> {
+        let repo = self.repo;
+        let mut steps = vec![];
+        for pending in &status.pending_applications {
+            let Some(path) = self
+                .roots
+                .locate(&pending.branch_path)
                 .path()
-                .map(|path| (path.to_path_buf(), skipped.reason.clone()))
-        })
-        .collect();
-    let fresh_adoption = planned_head.is_none() && status.upstream_commit.is_some();
-    if steps.is_empty() && !fresh_adoption && inventory_tree.is_none() {
-        if !req.dry_run && !req.automatic {
-            status.application_failure = None;
-            run::write_status(state_dir, &status)?;
-        }
-        if !req.automatic {
-            for (path, reason) in &skipped {
-                info!("history: {} skipped: {reason}", display_path(path));
-            }
-            info!("history: nothing to apply");
-        }
-        return Ok(ApplyOutcome::default());
-    }
-
-    let staged = staged_paths(steps.iter().map(|step| step.path.as_path()))?;
-    // Validate the complete batch before writing any member.
-    for step in &steps {
-        let take_remote = status
-            .resolutions
-            .get(&step.pending.branch_path)
-            .is_some_and(|choice| choice.take_remote);
-        if let Some(reason) = hold_reason(repo, tracked, step, take_remote, &staged)? {
-            holds.push(Hold {
-                path: step.path.clone(),
-                reason,
+                .map(Path::to_path_buf)
+            else {
+                continue;
+            };
+            let group = if pending.configuration || pending.branch_path.starts_with("sources/") {
+                "configuration".to_string()
+            } else {
+                pending.branch_path.clone()
+            };
+            steps.push(Step {
+                before_mode: live_permissions(&path)?,
+                desired_mode: self
+                    .tracked
+                    .manifest
+                    .file_permissions(&pending.branch_path, pending.object.as_ref()),
+                pending: pending.clone(),
+                exists: path.exists() || path.is_symlink(),
+                before: live_object(repo, &path)?,
+                permissions: std::fs::symlink_metadata(&path)
+                    .ok()
+                    .map(|meta| meta.permissions()),
+                path,
+                group,
             });
         }
+        Ok(steps)
     }
-    // One unsafe path holds the complete batch; there is no partial apply.
-    let (ready, held): (Vec<&Step>, Vec<&Step>) = if holds.is_empty() {
-        (steps.iter().collect(), vec![])
-    } else {
-        (vec![], steps.iter().collect())
-    };
-    if held.is_empty()
-        && let Some(tree) = &inventory_tree
-    {
-        let parents: Vec<_> = planned_head
+
+    /// Paths sync leaves alone are shown with every plan, so a nested
+    /// repository that never arrives is not mistaken for one still pending.
+    fn skipped_paths(&self, status: &SyncStatus) -> Vec<(PathBuf, String)> {
+        status
+            .skipped
+            .iter()
+            .filter_map(|skipped| {
+                self.roots
+                    .locate(&skipped.branch_path)
+                    .path()
+                    .map(|path| (path.to_path_buf(), skipped.reason.clone()))
+            })
+            .collect()
+    }
+
+    /// Validates the complete batch before writing any member.
+    fn find_holds(&self, status: &SyncStatus, steps: &[Step]) -> Result<Vec<Hold>> {
+        let staged = staged_paths(steps.iter().map(|step| step.path.as_path()))?;
+        let mut holds: Vec<Hold> = vec![];
+        for step in steps {
+            let take_remote = status
+                .resolutions
+                .get(&step.pending.branch_path)
+                .is_some_and(|choice| choice.take_remote);
+            if let Some(reason) = hold_reason(self.repo, self.tracked, step, take_remote, &staged)?
+            {
+                holds.push(Hold {
+                    path: step.path.clone(),
+                    reason,
+                });
+            }
+        }
+        Ok(holds)
+    }
+
+    /// The complete tree that will be adopted, with the ready steps' objects.
+    fn overlay_ready(&self, status: &SyncStatus, tree: &str, ready: &[&Step]) -> Result<String> {
+        let repo = self.repo;
+        let parents: Vec<_> = self
+            .planned_head
             .as_deref()
             .into_iter()
             .chain(status.upstream_commit.as_deref())
@@ -570,103 +610,115 @@ pub(crate) async fn apply_locked_with_scope(
                                 repo,
                                 &step.pending.branch_path,
                                 object,
-                                &tracked.manifest,
+                                &self.tracked.manifest,
                                 &parents,
-                                !req.automatic && console::user_attended_stderr(),
+                                self.interactive(),
                             )
                         })
                         .transpose()?,
                 })
             })
             .collect::<Result<Vec<_>>>()?;
-        inventory_tree = Some(repo.compose(tree, &overlays)?);
+        repo.compose(tree, &overlays)
+    }
+}
+
+/// The steps of a plan, split into those that will be written and those held.
+struct Plan<'a> {
+    ready: &'a [&'a Step],
+    held: &'a [&'a Step],
+    holds: &'a [Hold],
+    directories: &'a [DirectoryStep],
+    skipped: &'a [(PathBuf, String)],
+}
+
+impl Plan<'_> {
+    fn table(&self) -> MiseTable {
+        let mut table = MiseTable::new(false, &["Path", "Action", "Group"]);
+        for step in self.ready {
+            let action = match (&step.pending.object, step.exists) {
+                (Some(_), true) => "write",
+                (Some(_), false) => "create",
+                (None, _) => "delete",
+            };
+            table.add_row(vec![
+                display_path(&step.path),
+                action.to_string(),
+                step.group.clone(),
+            ]);
+        }
+        for directory in self.directories {
+            table.add_row(vec![
+                display_path(&directory.path),
+                "permissions".into(),
+                "setup".into(),
+            ]);
+        }
+        for (path, reason) in self.skipped {
+            table.add_row(vec![
+                display_path(path),
+                format!("skipped: {reason}"),
+                "setup".into(),
+            ]);
+        }
+        for step in self.held {
+            let reason = self
+                .holds
+                .iter()
+                .find(|hold| hold.path == step.path)
+                .map(|hold| hold.reason.clone())
+                .unwrap_or_else(|| "sharing paused for the entire setup".to_string());
+            table.add_row(vec![
+                display_path(&step.path),
+                format!("held: {reason}"),
+                step.group.clone(),
+            ]);
+        }
+        table
+    }
+}
+
+/// The transaction: the write set's preimages are protected, every file is
+/// written and journaled one at a time, and the outcome is recorded.
+struct Applying<'a> {
+    pull: &'a Pull<'a>,
+    scope: OperationScope,
+    upstream_commit: Option<String>,
+    ready: &'a [&'a Step],
+    directories: &'a mut Vec<DirectoryStep>,
+    inventory_tree: &'a Option<String>,
+    fresh_adoption: bool,
+    application_head: Option<String>,
+    sync_state: &'a mut SyncState,
+    reload: IndexMap<String, String>,
+    held: usize,
+    touched: Vec<PathBuf>,
+    /// set when a fresh adoption saved the files it replaces
+    protected_head: Option<String>,
+    /// the repository's head, once a fresh adoption made it this machine's
+    adopted_head: Option<String>,
+}
+
+impl Applying<'_> {
+    fn run(&mut self) -> Result<()> {
+        self.check_planning_still_holds()?;
+        self.validate_batch()?;
+        self.protect_replaced_files()?;
+        self.write_batch()?;
+        self.adopt_history()
     }
 
-    // the plan
-    let mut table = MiseTable::new(false, &["Path", "Action", "Group"]);
-    for step in &ready {
-        let action = match (&step.pending.object, step.exists) {
-            (Some(_), true) => "write",
-            (Some(_), false) => "create",
-            (None, _) => "delete",
-        };
-        table.add_row(vec![
-            display_path(&step.path),
-            action.to_string(),
-            step.group.clone(),
-        ]);
-    }
-    for directory in &directories {
-        table.add_row(vec![
-            display_path(&directory.path),
-            "permissions".into(),
-            "setup".into(),
-        ]);
-    }
-    for (path, reason) in &skipped {
-        table.add_row(vec![
-            display_path(path),
-            format!("skipped: {reason}"),
-            "setup".into(),
-        ]);
-    }
-    for step in &held {
-        let reason = holds
-            .iter()
-            .find(|hold| hold.path == step.path)
-            .map(|hold| hold.reason.clone())
-            .unwrap_or_else(|| "sharing paused for the entire setup".to_string());
-        table.add_row(vec![
-            display_path(&step.path),
-            format!("held: {reason}"),
-            step.group.clone(),
-        ]);
-    }
-    if !req.automatic {
-        table.print()?;
-    }
-    if req.dry_run {
-        if !req.plan_only {
-            miseprintln!("history: dry run; nothing was changed");
-        }
-        return Ok(ApplyOutcome::default());
-    }
-    if ready.is_empty() && !((fresh_adoption || inventory_tree.is_some()) && held.is_empty()) {
-        if req.automatic {
-            return Ok(ApplyOutcome {
-                held: held.len(),
-                ..Default::default()
-            });
-        }
-        bail!("nothing can be applied until the held paths are decided");
-    }
-
-    // the transaction
-    let reload = crate::system::history::config::reload_commands()?;
-    let scope = if let Some(scope) = operation_scope.take() {
-        scope
-    } else if req.automatic {
-        OperationScope::begin_automatic_apply().await?
-    } else {
-        OperationScope::begin_kind(OperationKind::Apply, "dotfiles pull", false).await?
-    };
-    scope.with_operation(|op| {
-        op.applied = status.upstream_commit.clone();
-    });
-    let application_head =
-        repo.ref_oid(crate::system::history::shadow::HistoryRepo::HISTORY_REF)?;
-    let mut touched = vec![];
-    // set when a fresh adoption saved the files it replaces (see below)
-    let mut protected_head: Option<String> = None;
-    // the repository's head, once a fresh adoption made it this machine's
-    let mut adopted_head: Option<String> = None;
-    let result = (|| -> Result<()> {
+    fn check_planning_still_holds(&self) -> Result<()> {
+        let repo = self.pull.repo;
+        let planned_head = &self.pull.planned_head;
+        let scope = &self.scope;
+        let ready = self.ready;
         if !scope.starting_head_is(planned_head.as_deref())? {
             return Err(stale(
                 "local saved history changed since planning; nothing was applied; run pull again",
             ));
         }
-        if let (Some(tree), Some(local)) = (&inventory_tree, &planned_head) {
+        if let (Some(tree), Some(local)) = (self.inventory_tree, planned_head) {
             let heads = super::graph::Heads::read(repo)?;
             let current = heads
                 .local
@@ -699,7 +751,7 @@ pub(crate) async fn apply_locked_with_scope(
                     crate::system::history::manifest::Manifest::read(repo, local)?,
                 )
             {
-                for step in &ready {
+                for step in ready {
                     let path = &step.pending.branch_path;
                     let incoming = saved.file_permissions(path, step.pending.object.as_ref())
                         == step.desired_mode;
@@ -722,7 +774,7 @@ pub(crate) async fn apply_locked_with_scope(
             }
             // Do not let a divergent text merge or a stale resolution differ
             // from the complete tree that will be adopted.
-            for step in &ready {
+            for step in ready {
                 if repo.restored_object_at(tree, &step.pending.branch_path)? != step.pending.object
                 {
                     return Err(stale(format!(
@@ -736,12 +788,17 @@ pub(crate) async fn apply_locked_with_scope(
                 .ok_or_else(|| eyre::eyre!("setup branch disappeared"))?;
             audit_incoming_history(repo, &candidate.commit)?;
         }
-        // Validate the complete batch again after acquiring the operation
-        // lock, before the first write.
-        for directory in &directories {
+        Ok(())
+    }
+
+    /// Validates the complete batch again after acquiring the operation
+    /// lock, before the first write.
+    fn validate_batch(&self) -> Result<()> {
+        let repo = self.pull.repo;
+        for directory in self.directories.iter() {
             directory.validate()?;
         }
-        for step in &ready {
+        for step in self.ready {
             if live_object(repo, &step.path)? != step.before
                 || live_permissions(&step.path)? != step.before_mode
             {
@@ -751,17 +808,23 @@ pub(crate) async fn apply_locked_with_scope(
                 );
             }
         }
-        // A fresh adoption has no history of its own, so its operation took
-        // no protective checkpoint, and taking the repository's version of
-        // a file that exists here would leave the replaced contents nowhere.
-        // Adopt the repository's history first and save those files on top
-        // of it, so `mise dot undo` restores them.
-        let replaced: Vec<&Step> = ready
+        Ok(())
+    }
+
+    /// A fresh adoption has no history of its own, so its operation took
+    /// no protective checkpoint, and taking the repository's version of
+    /// a file that exists here would leave the replaced contents nowhere.
+    /// Adopt the repository's history first and save those files on top
+    /// of it, so `mise dot undo` restores them.
+    fn protect_replaced_files(&mut self) -> Result<()> {
+        let repo = self.pull.repo;
+        let replaced: Vec<&Step> = self
+            .ready
             .iter()
             .copied()
             .filter(|step| step.before.is_some() && step.before != step.pending.object)
             .collect();
-        if fresh_adoption && !replaced.is_empty() {
+        if self.fresh_adoption && !replaced.is_empty() {
             // Refuse a file history cannot save before anything changes,
             // so a retry plans from the same state.
             for step in &replaced {
@@ -776,7 +839,7 @@ pub(crate) async fn apply_locked_with_scope(
                 }
             }
             let heads = super::graph::Heads::read(repo)?;
-            if heads.local != application_head || heads.remote != status.upstream_commit {
+            if heads.local != self.application_head || heads.remote != self.upstream_commit {
                 bail!("setup history changed during adoption; retry pull");
             }
             let remote = heads
@@ -785,19 +848,19 @@ pub(crate) async fn apply_locked_with_scope(
                 .ok_or_else(|| eyre::eyre!("setup branch disappeared during adoption"))?;
             audit_incoming_history(repo, remote)?;
             repo.update_history_head(remote, None)?;
-            adopted_head = Some(remote.to_owned());
+            self.adopted_head = Some(remote.to_owned());
             // every path this pull writes, the ones it creates included,
             // and manual-save ones as they are now: undo puts back exactly
             // what was here
-            let written: Vec<PathBuf> = ready.iter().map(|step| step.path.clone()).collect();
-            scope.recapture_before(&written)?;
-            protected_head =
+            let written: Vec<PathBuf> = self.ready.iter().map(|step| step.path.clone()).collect();
+            self.scope.recapture_before(&written)?;
+            self.protected_head =
                 repo.ref_oid(crate::system::history::shadow::HistoryRepo::HISTORY_REF)?;
             // **A file is replaced only once that checkpoint holds it as it
             // is now.** History does not save every file (one larger than it
             // captures, for one), and a checkpoint that kept another version
             // in its place would leave `undo` nothing to restore.
-            let Some((_, protective)) = scope.before() else {
+            let Some((_, protective)) = self.scope.before() else {
                 bail!(
                     "could not save this machine's files before replacing them; nothing was written"
                 );
@@ -811,10 +874,15 @@ pub(crate) async fn apply_locked_with_scope(
                 }
             }
         }
-        for directory in &mut directories {
+        Ok(())
+    }
+
+    fn write_batch(&mut self) -> Result<()> {
+        let repo = self.pull.repo;
+        for directory in self.directories.iter_mut() {
             directory.apply()?;
         }
-        for step in &ready {
+        for step in self.ready {
             // the file may have changed since the plan was made: an edit
             // that landed meanwhile is never overwritten (undo would bring
             // back the planned version, not it)
@@ -828,9 +896,10 @@ pub(crate) async fn apply_locked_with_scope(
             }
             let pending =
                 journal::begin_changes("history", &display_path(&step.path), [step.path.clone()])?;
-            touched.push(step.path.clone());
+            self.touched.push(step.path.clone());
             let affected = display_path(&step.path);
-            scope.with_operation(|op| op.affected.push(affected.clone()));
+            self.scope
+                .with_operation(|op| op.affected.push(affected.clone()));
             match &step.pending.object {
                 Some((mode, oid)) => {
                     replay::write_path_with_mode(repo, &step.path, mode, oid, step.desired_mode)?
@@ -842,12 +911,20 @@ pub(crate) async fn apply_locked_with_scope(
             let oid = step.pending.object.clone();
             next.applied = oid.clone();
             next.acknowledged = oid;
-            sync_state.insert(step.pending.branch_path.clone(), next);
+            self.sync_state
+                .insert(step.pending.branch_path.clone(), next);
         }
-        if fresh_adoption || inventory_tree.is_some() {
+        Ok(())
+    }
+
+    /// Advances Git to the complete adopted tree once the written batch is
+    /// verified.
+    fn adopt_history(&self) -> Result<()> {
+        let repo = self.pull.repo;
+        if self.fresh_adoption || self.inventory_tree.is_some() {
             // Verify the whole written batch again before advancing Git. A
             // concurrent edit must not become an apparently applied setup.
-            for step in &ready {
+            for step in self.ready {
                 if live_object(repo, &step.path)? != step.pending.object
                     || live_permissions(&step.path)? != step.desired_mode
                 {
@@ -857,26 +934,26 @@ pub(crate) async fn apply_locked_with_scope(
                     );
                 }
             }
-            for directory in &directories {
+            for directory in self.directories.iter() {
                 directory.verify_written()?;
             }
             let heads = super::graph::Heads::read(repo)?;
-            if let Some(protected) = &protected_head {
+            if let Some(protected) = &self.protected_head {
                 // the repository's history is already this machine's, with
                 // the replaced files saved on top: the outcome checkpoint
                 // records the applied ones after them
-                if heads.local.as_ref() != Some(protected) || heads.remote != status.upstream_commit
-                {
+                if heads.local.as_ref() != Some(protected) || heads.remote != self.upstream_commit {
                     bail!("setup history changed during adoption; retry pull");
                 }
                 return Ok(());
             }
-            if heads.local != application_head || heads.remote != status.upstream_commit {
+            if heads.local != self.application_head || heads.remote != self.upstream_commit {
                 bail!("setup history changed during adoption; retry pull");
             }
             let remote = heads.remote.as_deref().unwrap();
             audit_incoming_history(repo, remote)?;
-            let tree = inventory_tree
+            let tree = self
+                .inventory_tree
                 .clone()
                 .unwrap_or(repo.output_tree_of(remote)?);
             let candidate = heads
@@ -885,27 +962,44 @@ pub(crate) async fn apply_locked_with_scope(
             candidate.adopt(repo)?;
         }
         Ok(())
-    })();
-    if let Err(error) = &result
-        && !fresh_adoption
-        && touched.is_empty()
-        && error.downcast_ref::<StalePlan>().is_some()
-    {
-        // **A plan that went stale before its first write is planned again,
-        // not a failed application.** Nothing was written, so there is
-        // nothing to restore and nothing to pause sharing over. Recording it
-        // as a failure stopped the watcher's automatic applies until someone
-        // pulled by hand, though all it had hit was a save landing while it
-        // planned.
-        scope.finish(
+    }
+
+    /// **A plan that went stale before its first write is planned again,
+    /// not a failed application.** Nothing was written, so there is
+    /// nothing to restore and nothing to pause sharing over. Recording it
+    /// as a failure stopped the watcher's automatic applies until someone
+    /// pulled by hand, though all it had hit was a save landing while it
+    /// planned.
+    fn is_stale_before_first_write(&self, error: &eyre::Report) -> bool {
+        !self.fresh_adoption
+            && self.touched.is_empty()
+            && error.downcast_ref::<StalePlan>().is_some()
+    }
+
+    fn finish_planned_again(self, error: &eyre::Report) {
+        self.scope.finish(
             Some(format!("{error:#}")),
             Some(Summary {
                 message: Some("apply planned again: history changed while planning".into()),
             }),
         );
-        return result.map(|()| ApplyOutcome::default());
     }
-    if let Err(error) = &result {
+
+    /// Restores what was written and pauses sharing until the failure is looked at.
+    fn record_failure(self, error: &eyre::Report, status: &mut SyncStatus) -> Result<()> {
+        let Self {
+            pull,
+            scope,
+            ready,
+            directories,
+            fresh_adoption,
+            application_head,
+            touched,
+            protected_head,
+            adopted_head,
+            ..
+        } = self;
+        let repo = pull.repo;
         let mut recovery_errors = vec![];
         for step in ready
             .iter()
@@ -930,7 +1024,7 @@ pub(crate) async fn apply_locked_with_scope(
                 recovery_errors.join("; ")
             }
         ));
-        run::write_status(state_dir, &status)?;
+        run::write_status(pull.state_dir, status)?;
         let summary = Some(Summary {
             message: Some("apply failed; recovery attempted".into()),
         });
@@ -978,66 +1072,249 @@ pub(crate) async fn apply_locked_with_scope(
                 && recorded_by_this_operation(&head)?
                 && repo.delete_history_head(&head).is_ok()
             {
-                store.rebuild_index()?;
+                pull.store.rebuild_index()?;
             }
+            status.application_failure = None;
+            run::write_status(pull.state_dir, status)?;
+        }
+        Ok(())
+    }
+
+    /// Records the applied changes, runs the reload hooks and reports.
+    fn record_success(self, status: &mut SyncStatus) -> Result<ApplyOutcome> {
+        let Self {
+            pull,
+            scope,
+            ready,
+            directories,
+            inventory_tree,
+            fresh_adoption,
+            sync_state,
+            reload,
+            held,
+            touched,
+            ..
+        } = self;
+        let repo = pull.repo;
+        let written = touched.len() + directories.len();
+        scope.promote(&touched);
+        let summary = Summary {
+            message: Some(format!("applied {written} incoming change(s)")),
+        };
+        state::save(repo, sync_state, "applied")?;
+        let applied: BTreeSet<String> = ready
+            .iter()
+            .filter(|step| touched.contains(&step.path))
+            .map(|step| step.pending.branch_path.clone())
+            .collect();
+        status
+            .pending_applications
+            .retain(|pending| !applied.contains(&pending.branch_path));
+        status.resolutions.retain(|path, _| !applied.contains(path));
+        status.application_failure = None;
+        status.pending_repository = false;
+        status.conflict_pause_observed = false;
+        // the live declarations changed now: said until `mise bootstrap` ran
+        let configuration_written = ready
+            .iter()
+            .any(|step| step.pending.configuration && touched.contains(&step.path));
+        status.declarations_changed = status.declarations_changed
+            || configuration_written
+            || status
+                .pending_applications
+                .iter()
+                .any(|pending| pending.configuration);
+        if !touched.is_empty() || inventory_tree.is_some() || fresh_adoption {
+            status.last_apply = Some(crate::system::history::store::now_rfc3339());
+        }
+        run::write_status(pull.state_dir, status)?;
+        scope.finish(None, Some(summary));
+        replay::run_reload(&reload, &touched);
+        let configuration = ready.iter().any(|step| step.pending.configuration);
+        if configuration && !pull.req.automatic {
+            info!(
+                "history: configuration changed; declarations may differ from the applied setup: run `mise bootstrap --dry-run`"
+            );
+        }
+        if !pull.req.automatic {
+            if written == 0 {
+                info!("history: recorded incoming history; no files here changed");
+            } else {
+                info!("history: applied {written} incoming change(s)");
+            }
+        }
+        Ok(ApplyOutcome {
+            written,
+            held,
+            configuration,
+        })
+    }
+}
+
+pub(crate) async fn apply_locked_with_scope(
+    store: &Store,
+    tracked: &TrackedSet,
+    req: &ApplyRequest,
+    mut operation_scope: Option<OperationScope>,
+) -> Result<ApplyOutcome> {
+    if !req.paths.is_empty() {
+        bail!("partial pulls are not supported: apply the complete setup without PATH arguments");
+    }
+    // A pull deletes, and a rule it could not compile is a path it would
+    // wrongly believe is selected here.
+    tracked.refuse_unusable_exclusions()?;
+    let repo = store
+        .repo()
+        .ok_or_else(|| eyre::eyre!("applying requires git"))?;
+    let state_dir = store.state_dir();
+    if operation_scope.is_none() && !req.dry_run {
+        crate::system::history::scope::recover_before_planning(store, tracked)?;
+    }
+    let planned_head = repo.ref_oid(crate::system::history::shadow::HistoryRepo::HISTORY_REF)?;
+    let incoming = run::incoming_tracking(repo, tracked)?;
+    let tracked = &incoming;
+    // Metadata changes must advance the same complete Git tree after live
+    // application. They cannot be reduced to this machine's selected paths.
+    let mut inventory_tree = run::incoming_repository_tree(repo, tracked)?;
+    let mut status = run::read_status(state_dir)?;
+    if req.automatic && status.application_failure.is_some() {
+        return Ok(ApplyOutcome {
+            held: status.pending_applications.len().max(1),
+            ..Default::default()
+        });
+    }
+    run::refresh_with_interaction(
+        store,
+        tracked,
+        &mut status,
+        !req.automatic && console::user_attended_stderr(),
+    )?;
+    let pull = Pull {
+        store,
+        repo,
+        tracked,
+        req,
+        roots: Roots::current(),
+        state_dir,
+        planned_head,
+    };
+    let mut decisions = pull.decisions(&status);
+
+    let mut sync_state = state::load(repo)?;
+    pull.record_resolutions(&mut status, &mut decisions)?;
+    pull.check_choices_are_conflicts(&status, &decisions)?;
+    run::refresh(store, tracked, &mut status)?;
+    if !req.dry_run {
+        run::write_status(state_dir, &status)?;
+    }
+    if !status.conflicts.is_empty() {
+        return pull.pause_for_conflicts(&status, &decisions);
+    }
+
+    if let Some(tree) = &inventory_tree {
+        inventory_tree = Some(pull.overlay_resolutions(&status, tree)?);
+    }
+
+    // the write set
+    let mut directories = pull.plan_directories(&status, inventory_tree.as_deref())?;
+    let steps = pull.plan_steps(&status)?;
+    let skipped = pull.skipped_paths(&status);
+    let fresh_adoption = pull.planned_head.is_none() && status.upstream_commit.is_some();
+    if steps.is_empty() && !fresh_adoption && inventory_tree.is_none() {
+        if !req.dry_run && !req.automatic {
             status.application_failure = None;
             run::write_status(state_dir, &status)?;
         }
-        return result.map(|()| ApplyOutcome::default());
+        if !req.automatic {
+            for (path, reason) in &skipped {
+                info!("history: {} skipped: {reason}", display_path(path));
+            }
+            info!("history: nothing to apply");
+        }
+        return Ok(ApplyOutcome::default());
     }
-    let written = touched.len() + directories.len();
-    scope.promote(&touched);
-    let summary = Summary {
-        message: Some(format!("applied {written} incoming change(s)")),
+
+    let holds = pull.find_holds(&status, &steps)?;
+    // One unsafe path holds the complete batch; there is no partial apply.
+    let (ready, held): (Vec<&Step>, Vec<&Step>) = if holds.is_empty() {
+        (steps.iter().collect(), vec![])
+    } else {
+        (vec![], steps.iter().collect())
     };
-    state::save(repo, &sync_state, "applied")?;
-    let applied: BTreeSet<String> = ready
-        .iter()
-        .filter(|step| touched.contains(&step.path))
-        .map(|step| step.pending.branch_path.clone())
-        .collect();
-    status
-        .pending_applications
-        .retain(|pending| !applied.contains(&pending.branch_path));
-    status.resolutions.retain(|path, _| !applied.contains(path));
-    status.application_failure = None;
-    status.pending_repository = false;
-    status.conflict_pause_observed = false;
-    // the live declarations changed now: said until `mise bootstrap` ran
-    let configuration_written = ready
-        .iter()
-        .any(|step| step.pending.configuration && touched.contains(&step.path));
-    status.declarations_changed = status.declarations_changed
-        || configuration_written
-        || status
-            .pending_applications
-            .iter()
-            .any(|pending| pending.configuration);
-    if !touched.is_empty() || inventory_tree.is_some() || fresh_adoption {
-        status.last_apply = Some(crate::system::history::store::now_rfc3339());
+    if held.is_empty()
+        && let Some(tree) = &inventory_tree
+    {
+        inventory_tree = Some(pull.overlay_ready(&status, tree, &ready)?);
     }
-    run::write_status(state_dir, &status)?;
-    scope.finish(None, Some(summary));
-    replay::run_reload(&reload, &touched);
-    let configuration = ready.iter().any(|step| step.pending.configuration);
-    if configuration && !req.automatic {
-        info!(
-            "history: configuration changed; declarations may differ from the applied setup: run `mise bootstrap --dry-run`"
-        );
-    }
+
+    // the plan
+    let plan = Plan {
+        ready: &ready,
+        held: &held,
+        holds: &holds,
+        directories: &directories,
+        skipped: &skipped,
+    };
     if !req.automatic {
-        if written == 0 {
-            info!("history: recorded incoming history; no files here changed");
-        } else {
-            info!("history: applied {written} incoming change(s)");
+        plan.table().print()?;
+    }
+    if req.dry_run {
+        if !req.plan_only {
+            miseprintln!("history: dry run; nothing was changed");
+        }
+        return Ok(ApplyOutcome::default());
+    }
+    if ready.is_empty() && !((fresh_adoption || inventory_tree.is_some()) && held.is_empty()) {
+        if req.automatic {
+            return Ok(ApplyOutcome {
+                held: held.len(),
+                ..Default::default()
+            });
+        }
+        bail!("nothing can be applied until the held paths are decided");
+    }
+
+    // the transaction
+    let reload = crate::system::history::config::reload_commands()?;
+    let scope = if let Some(scope) = operation_scope.take() {
+        scope
+    } else if req.automatic {
+        OperationScope::begin_automatic_apply().await?
+    } else {
+        OperationScope::begin_kind(OperationKind::Apply, "dotfiles pull", false).await?
+    };
+    scope.with_operation(|op| {
+        op.applied = status.upstream_commit.clone();
+    });
+    let application_head =
+        repo.ref_oid(crate::system::history::shadow::HistoryRepo::HISTORY_REF)?;
+    let mut applying = Applying {
+        pull: &pull,
+        scope,
+        upstream_commit: status.upstream_commit.clone(),
+        ready: &ready,
+        directories: &mut directories,
+        inventory_tree: &inventory_tree,
+        fresh_adoption,
+        application_head,
+        sync_state: &mut sync_state,
+        reload,
+        held: held.len(),
+        touched: vec![],
+        protected_head: None,
+        adopted_head: None,
+    };
+    match applying.run() {
+        Ok(()) => applying.record_success(&mut status),
+        Err(error) if applying.is_stale_before_first_write(&error) => {
+            applying.finish_planned_again(&error);
+            Err(error)
+        }
+        Err(error) => {
+            applying.record_failure(&error, &mut status)?;
+            Err(error)
         }
     }
-    let outcome = ApplyOutcome {
-        written,
-        held: held.len(),
-        configuration,
-    };
-    Ok(outcome)
 }
 
 fn audit_incoming_history(
