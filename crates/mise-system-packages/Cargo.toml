@@ -10,7 +10,10 @@ include = ["src/**/*"]
 [dependencies]
 async-trait = "0.1"
 base64 = "0.23"
-chrono = { version = "0.4", default-features = false, features = ["std", "clock"] }
+chrono = { version = "0.4", default-features = false, features = [
+  "std",
+  "clock",
+] }
 eyre = "0.6"
 flate2 = "1"
 fslock = "0.2"
@@ -41,7 +44,13 @@ walkdir = "2"
 [target.'cfg(unix)'.dependencies]
 mise-brew-metadata = { path = "../mise-brew-metadata", version = "0.1" }
 mise-brew-relocation = { path = "../mise-brew-relocation", version = "0.1" }
-nix = { version = "0.31", features = ["dir", "fs", "hostname", "signal", "user"] }
+nix = { version = "0.31", features = [
+  "dir",
+  "fs",
+  "hostname",
+  "signal",
+  "user",
+] }
 plist = "1"
 unicase = "2"
 
