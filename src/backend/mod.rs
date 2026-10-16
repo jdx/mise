@@ -4549,19 +4549,18 @@ pub trait Backend: Debug + Send + Sync {
         let state_version = tv.state_key();
         // An identity-layout installation is shared by every spelling of its tool, so
         // it is locked by its own directory as well as by this tool's state below.
-        let mut _identity_lock =
+        let mut _identity_lock = block_on_lock(|| {
             crate::install_layout::resolver::lock_install(&tv.install_path(), &|pid| {
                 ctx.pr.set_message(install_lock_wait_message(pid));
-            })?;
+            })
+        })?;
         // Another mise may be installing this exact version. Say so while we
         // wait on it: a row that sits in "resolving" for a minute looks hung.
-        let mut _state_lock = Some(install_state::lock_tool_version_with_notice(
-            tv.ba(),
-            &state_version,
-            &|pid| {
+        let mut _state_lock = Some(block_on_lock(|| {
+            install_state::lock_tool_version_with_notice(tv.ba(), &state_version, &|pid| {
                 ctx.pr.set_message(install_lock_wait_message(pid));
-            },
-        )?);
+            })
+        })?);
 
         let mut install_satisfied = self
             .is_install_satisfied_or_false(&ctx.config, &tv, true)
@@ -4593,17 +4592,16 @@ pub trait Backend: Debug + Send + Sync {
             // for the new destination. (A shared root is never locked.)
             _state_lock = None;
             _identity_lock = None;
-            _identity_lock =
+            _identity_lock = block_on_lock(|| {
                 crate::install_layout::resolver::lock_install(&tv.install_path(), &|pid| {
                     ctx.pr.set_message(install_lock_wait_message(pid));
-                })?;
-            _state_lock = Some(install_state::lock_tool_version_with_notice(
-                tv.ba(),
-                &tv.state_key(),
-                &|pid| {
+                })
+            })?;
+            _state_lock = Some(block_on_lock(|| {
+                install_state::lock_tool_version_with_notice(tv.ba(), &tv.state_key(), &|pid| {
                     ctx.pr.set_message(install_lock_wait_message(pid));
-                },
-            )?);
+                })
+            })?);
         }
 
         // If the install path resolved to a shared dir (but wasn't explicitly set via
@@ -7799,6 +7797,20 @@ const DOWNLOAD_OPERATION_WEIGHT: f64 = 0.7;
 
 /// Replacing an existing install before the new one is fetched.
 const UNINSTALL_OPERATION_WEIGHT: f64 = 0.05;
+
+/// Run a blocking lock acquisition without starving the async runtime. The
+/// holder of an install lock is often another install in this same process
+/// (parallel tasks sharing a tool); if the waiter blocks its worker thread, the
+/// holder's tasks queued on that worker never run and neither side finishes.
+/// `block_in_place` hands the worker's queued tasks to other workers first.
+fn block_on_lock<T>(f: impl FnOnce() -> T) -> T {
+    match tokio::runtime::Handle::try_current() {
+        Ok(handle) if handle.runtime_flavor() == tokio::runtime::RuntimeFlavor::MultiThread => {
+            tokio::task::block_in_place(f)
+        }
+        _ => f(),
+    }
+}
 
 /// What an install says while another process holds its tool-version lock.
 /// Naming the PID matters: the holder is usually a shim auto-installing the
