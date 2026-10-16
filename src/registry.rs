@@ -1655,21 +1655,22 @@ backends = [
             Some("go:example.com/tool/cmd/tool")
         );
 
-        // A gap between ranges falls to the fallback.
+        // A gap between ranges falls to the fallback. (Not an asdf one:
+        // Windows drops asdf backends.)
         let tool = parse(
-            r#"{ full = "aqua:example/new", min_version = "3.0.0" }, { full = "aqua:example/old", max_version = "2.0.0" }, "asdf:example/tool""#,
+            r#"{ full = "aqua:example/new", min_version = "3.0.0" }, { full = "aqua:example/old", max_version = "2.0.0" }, "github:example/tool""#,
         );
         assert_eq!(
             fulls(tool.version_range_owners()),
             Some(vec![
                 "aqua:example/new",
                 "aqua:example/old",
-                "asdf:example/tool"
+                "github:example/tool"
             ])
         );
         assert_eq!(
             tool.version_owner("2.5.0").map(|rb| rb.full),
-            Some("asdf:example/tool")
+            Some("github:example/tool")
         );
 
         // A request inside one range lists only its owner; one that spans a
