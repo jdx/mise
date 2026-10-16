@@ -100,31 +100,40 @@ impl IdiomaticVersionFileSettings {
 }
 
 static PACKAGE_QUERY_SETTINGS: AtomicBool = AtomicBool::new(false);
-/// Settings files parsed during the current [`load`], so the global-only pass that bootstraps
-/// trust and the trusted pass that follows it read each file once. `None` outside a load.
-static LOAD_PARSE_CACHE: Mutex<
-    Option<std::collections::HashMap<PathBuf, Result<SettingsPartial, String>>>,
-> = Mutex::new(None);
+type ParseCache = std::collections::HashMap<PathBuf, Result<SettingsPartial, String>>;
+
+thread_local! {
+    /// Settings files parsed during the current [`load`], so the global-only pass that
+    /// bootstraps trust and the trusted pass that follows it read each file once. `None`
+    /// outside a load. `load` runs on one thread, so this never mixes concurrent loads.
+    static LOAD_PARSE_CACHE: std::cell::RefCell<Option<ParseCache>> =
+        const { std::cell::RefCell::new(None) };
+    /// How many times each settings file was actually parsed on this thread.
+    #[cfg(test)]
+    static PARSE_COUNTS: std::cell::RefCell<std::collections::HashMap<PathBuf, usize>> =
+        std::cell::RefCell::new(std::collections::HashMap::new());
+}
 
 fn parse_settings_file_once(path: &Path) -> Result<SettingsPartial> {
-    if let Some(cached) = LOAD_PARSE_CACHE
-        .lock()
-        .unwrap()
-        .as_ref()
-        .and_then(|cache| cache.get(path))
-    {
-        return cached.clone().map_err(|err| eyre::eyre!(err));
+    let cached = LOAD_PARSE_CACHE
+        .with_borrow(|cache| cache.as_ref().and_then(|cache| cache.get(path).cloned()));
+    if let Some(cached) = cached {
+        return cached.map_err(|err| eyre::eyre!(err));
     }
+    #[cfg(test)]
+    PARSE_COUNTS.with_borrow_mut(|counts| *counts.entry(path.to_path_buf()).or_default() += 1);
     let parsed = Settings::parse_settings_file(path);
-    if let Some(cache) = LOAD_PARSE_CACHE.lock().unwrap().as_mut() {
-        cache.insert(
-            path.to_path_buf(),
-            parsed
-                .as_ref()
-                .map(Clone::clone)
-                .map_err(|err| err.to_string()),
-        );
-    }
+    LOAD_PARSE_CACHE.with_borrow_mut(|cache| {
+        if let Some(cache) = cache {
+            cache.insert(
+                path.to_path_buf(),
+                parsed
+                    .as_ref()
+                    .map(Clone::clone)
+                    .map_err(|err| err.to_string()),
+            );
+        }
+    });
     parsed
 }
 
@@ -1702,12 +1711,12 @@ fn load() -> Result<Arc<Settings>> {
     let previous = mise_settings::is_loaded()
         .then(mise_settings::last_cached)
         .flatten();
-    *LOAD_PARSE_CACHE.lock().unwrap() = Some(std::collections::HashMap::new());
+    LOAD_PARSE_CACHE.set(Some(ParseCache::new()));
     let bootstrap = Settings::load_sources_from(None, SettingsLoadPolicy::GLOBAL_HIERARCHY);
     let bootstrap = match bootstrap {
         Ok(bootstrap) => bootstrap,
         Err(err) => {
-            *LOAD_PARSE_CACHE.lock().unwrap() = None;
+            LOAD_PARSE_CACHE.set(None);
             return Err(err);
         }
     };
@@ -1715,7 +1724,7 @@ fn load() -> Result<Arc<Settings>> {
     BOOTSTRAPPING.store(true, Ordering::Relaxed);
     let trusted = Settings::load_sources_from(None, SettingsLoadPolicy::TRUSTED_HIERARCHY);
     BOOTSTRAPPING.store(false, Ordering::Relaxed);
-    *LOAD_PARSE_CACHE.lock().unwrap() = None;
+    LOAD_PARSE_CACHE.set(None);
     settings = match trusted {
         Ok(settings) => settings,
         Err(err) => {
@@ -2295,25 +2304,50 @@ mod tests {
     /// survives into the partial and `mise settings get` echoes it back while the config
     /// loader — which already ran — never saw it.
     /// The global-only pass that bootstraps trust and the trusted pass after it both read the
-    /// global config, but a file must only be parsed once per load.
+    /// config files, but a file must only be parsed once per load, and reads outside a load
+    /// must not be served from a cache.
     #[test]
     fn test_load_parses_each_settings_file_once() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("config.toml");
-        std::fs::write(&path, "[settings]\nquiet = true\n").unwrap();
+        let layers = || Settings::settings_layers_from(None, SettingsTrustPolicy::AsDiscovered);
+        let parses = || PARSE_COUNTS.with_borrow(|counts| counts.values().sum::<usize>());
 
-        *LOAD_PARSE_CACHE.lock().unwrap() = Some(std::collections::HashMap::new());
-        let first = parse_settings_file_once(&path).unwrap();
-        std::fs::write(&path, "[settings]\nquiet = false\n").unwrap();
-        let second = parse_settings_file_once(&path).unwrap();
-        *LOAD_PARSE_CACHE.lock().unwrap() = None;
-        let third = parse_settings_file_once(&path).unwrap();
+        LOAD_PARSE_CACHE.set(Some(ParseCache::new()));
+        let before = parses();
+        layers();
+        let first_pass = parses() - before;
+        layers();
+        let second_pass = parses() - before - first_pass;
+        LOAD_PARSE_CACHE.set(None);
+        // The unit-test config directory always holds at least one settings file.
+        assert!(first_pass >= 1, "no settings file was parsed");
+        assert_eq!(second_pass, 0, "the second pass re-parsed a cached file");
 
-        assert_eq!(first.quiet, Some(true));
-        assert_eq!(second.quiet, Some(true));
-        assert_eq!(third.quiet, Some(false));
+        let before = parses();
+        layers();
+        assert_eq!(
+            parses() - before,
+            first_pass,
+            "a read outside a load was cached"
+        );
     }
 
+    /// `load` must open the cache for its two passes and close it afterwards, or the first
+    /// settings reload after an edit would keep serving the old values.
+    #[test]
+    fn test_load_closes_its_parse_cache() {
+        Settings::reset(None);
+        let settings = load();
+        assert!(settings.is_ok(), "{:?}", settings.err());
+        assert!(LOAD_PARSE_CACHE.with_borrow(Option::is_none));
+        // Every file the real load touched was parsed exactly once.
+        PARSE_COUNTS.with_borrow(|counts| {
+            assert!(counts.values().all(|n| *n == 1), "{counts:?}");
+        });
+    }
+
+    /// The shape #5791 reported: the setting is accepted into the file, so without this it
+    /// survives into the partial and `mise settings get` echoes it back while the config
+    /// loader — which already ran — never saw it.
     #[test]
     fn test_parse_settings_file_strips_env_only_settings() {
         let dir = tempfile::tempdir().unwrap();
