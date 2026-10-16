@@ -421,6 +421,7 @@ available:
 - `config_root`: the directory that holds the `.miserc.toml` file
 - `cwd`
 - `xdg_cache_home`, `xdg_config_home`, `xdg_data_home`, `xdg_state_home`
+- `system_brew_prefix`
 - Functions that need no project context, such as `arch()`, `os()`,
   `os_family()`, `libc()`, `avx2()`, `num_cpus()`, `choice()`, and `get_env()`
 - All [filters](#filters) and [tests](#tests)

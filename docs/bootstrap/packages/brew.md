@@ -67,9 +67,6 @@ one config works on both platforms:
 ```toml
 [env]
 PKG_CONFIG_PATH = "{{ system_brew_prefix }}/opt/mysql-client/lib/pkgconfig"
-
-[bootstrap.user]
-login_shell = "{{ system_brew_prefix }}/bin/zsh"
 ```
 
 ## Formula names
