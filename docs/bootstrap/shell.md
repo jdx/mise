@@ -222,6 +222,11 @@ are in, so `mise bootstrap` ends with a follow-up reminding you to start a new
 login session. It also does not set up [activation](#activate-mise-in-your-shell)
 in the new shell.
 
+`login_shell` is a template, so it can use `[vars]` and the other
+[template variables](/templates.html), such as
+<code v-pre>login_shell = "{{ vars.brew_prefix }}/bin/zsh"</code>. mise renders it without
+`exec()`.
+
 A project config can override a global `login_shell`; the most local value
 wins. mise changes the login shell only when you run `mise bootstrap` or
 `mise bootstrap user apply`. When mise itself runs under `sudo`, it checks and

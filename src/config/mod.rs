@@ -67,7 +67,7 @@ use crate::plugins::PluginType;
 use crate::tera::BASE_CONTEXT;
 use crate::watch_files::WatchFile;
 use crate::wildcard::Wildcard;
-pub use command_wrapper::CommandWrapper;
+pub use command_wrapper::{CommandWrapper, CommandWrapperOptions};
 
 type AliasMap = IndexMap<String, Alias>;
 pub type ConfigMap = IndexMap<PathBuf, Arc<dyn ConfigFile>>;

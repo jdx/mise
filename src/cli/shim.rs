@@ -1,7 +1,9 @@
 //! Running mise as a shim: find which tool the shim stands for and hand off to `mise exec`.
 
 use crate::cli::exec::Exec;
-use crate::config::{CommandWrapper, Config, Settings, load_command_wrappers};
+use crate::config::{
+    CommandWrapper, CommandWrapperOptions, Config, Settings, load_command_wrappers,
+};
 use crate::file::display_path;
 use crate::request_exit;
 use crate::shims::*;
@@ -251,13 +253,60 @@ async fn command_wrapper_for(
     let Some(wrapper) = wrapper else {
         return Ok(None);
     };
-    if same_command_name(wrapper.command(), shim_name) {
+    // `command` renders from `vars` and the process environment only: the full toolset context
+    // needs the project's tools installed, and the command may be what installs them.
+    let command = render_template(wrapper.command(), &config.tera_ctx)?;
+    if command.trim().is_empty() {
+        bail!(
+            "command wrapper command rendered blank: {:?}",
+            wrapper.command()
+        );
+    }
+    if same_command_name(&command, shim_name) {
         bail!("command wrapper for {shim_name} cannot delegate to itself");
     }
     if install_command {
-        install_missing_wrapper_command(config, ts, wrapper.command()).await?;
+        install_missing_wrapper_command(config, ts, &command).await?;
     }
-    Ok(Some(wrapper.clone()))
+    let templated = wrapper
+        .args()
+        .iter()
+        .chain(wrapper.env().values())
+        .any(|value| crate::tera::contains_template_syntax(value));
+    if !templated {
+        return Ok(Some(CommandWrapper::Detailed(CommandWrapperOptions {
+            command,
+            args: wrapper.args().to_vec(),
+            env: wrapper.env().clone(),
+        })));
+    }
+    // The toolset context carries the resolved project `[env]`, which `config.tera_ctx` lacks.
+    let ctx = ts.tera_ctx(config).await?;
+    let args = wrapper
+        .args()
+        .iter()
+        .map(|arg| render_template(arg, ctx))
+        .collect::<Result<Vec<_>>>()?;
+    let env = wrapper
+        .env()
+        .iter()
+        .map(|(key, value)| Ok((key.clone(), render_template(value, ctx)?)))
+        .collect::<Result<_>>()?;
+    Ok(Some(CommandWrapper::Detailed(CommandWrapperOptions {
+        command,
+        args,
+        env,
+    })))
+}
+
+/// Render a wrapper value as a template, so a wrapper can use `vars` and the path functions
+/// like a task. Values without template syntax are left untouched.
+fn render_template(input: &str, ctx: &tera::Context) -> Result<String> {
+    if !crate::tera::contains_template_syntax(input) {
+        return Ok(input.to_string());
+    }
+    let mut tera = crate::tera::get_tera(Some(&env::current_dir()?));
+    Ok(crate::tera::render_str(&mut tera, input, ctx)?)
 }
 
 /// Whether two command names find the same shim. Windows file names are case-insensitive, so a
