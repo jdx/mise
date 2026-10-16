@@ -244,7 +244,7 @@ async fn execute_task(
         .iter()
         .map(|f| f.to_string_lossy().replace(':', "\\:"))
         .join(":");
-    let mise_bin = std::env::current_exe().unwrap_or_else(|_| PathBuf::from("mise"));
+    let mise_bin = crate::shims::running_mise_bin();
 
     let mut env = ts.full_env(config).await?;
     env.insert("MISE_WATCH_FILES_MODIFIED".to_string(), modified_files_var);
