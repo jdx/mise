@@ -57,8 +57,8 @@ Connect the server only to a project and a client you trust.
   [trust rules](/security.html#configuration-trust), and the server cannot show
   the trust prompt. If the project's config needs trust, for example because
   it has `[env]`, templates or tool options, reads fail with
-  `Failed to load config: error parsing config file: <path>` until you run
-  `mise trust` in the project.
+  `Failed to load config: error parsing config file: <path>: Config files in
+  <path> are not trusted.` until you run `mise trust` in the project.
 - `run_task` runs the project's commands with your account's access, and
   `install_tool` installs tools. Unlike `mise run` and `mise install` in a
   terminal, neither trusts the project for you: both refuse a project whose
