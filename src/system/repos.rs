@@ -394,7 +394,9 @@ fn clone_repo(request: &RepoRequest, dry_run: bool) -> Result<()> {
         if let Some(git_ref) = checkout_after_clone_ref(request) {
             print_git_command(&request.path, &["checkout", checkout_ref_for(git_ref)])?;
             if request.submodules {
-                print_git_command(&request.path, SUBMODULE_UPDATE)?;
+                let args = submodule_update_args(request);
+                let args: Vec<&str> = args.iter().map(String::as_str).collect();
+                print_git_command(&request.path, &args)?;
             }
         }
         return Ok(());
@@ -411,14 +413,25 @@ fn clone_repo(request: &RepoRequest, dry_run: bool) -> Result<()> {
     if let Some(git_ref) = checkout_after_clone_ref(request) {
         git_run(&request.path, &["checkout", checkout_ref_for(git_ref)])?;
         if request.submodules {
-            git_run(&request.path, SUBMODULE_UPDATE)?;
+            let args = submodule_update_args(request);
+            let args: Vec<&str> = args.iter().map(String::as_str).collect();
+            git_run(&request.path, &args)?;
         }
     }
     Ok(())
 }
 
-/// Moves submodules to the commit a post-clone or update checkout selected.
-const SUBMODULE_UPDATE: &[&str] = &["submodule", "update", "--init", "--recursive"];
+/// Moves submodules to the commit a post-clone checkout selected, filtering
+/// any submodule that checkout introduces like the initial clone.
+fn submodule_update_args(request: &RepoRequest) -> Vec<String> {
+    let mut args = ["submodule", "update", "--init", "--recursive"]
+        .map(String::from)
+        .to_vec();
+    if let Some(filter) = &request.filter {
+        args.push(format!("--filter={filter}"));
+    }
+    args
+}
 
 fn update_repo(request: &RepoRequest, dry_run: bool) -> Result<()> {
     let Some(git_ref) = &request.git_ref else {
@@ -1423,6 +1436,26 @@ mod tests {
                 "--also-filter-submodules",
                 "https://github.com/jdx/mise.git",
                 request.path.to_str().unwrap()
+            ]
+        );
+    }
+
+    #[test]
+    fn submodule_update_carries_the_clone_filter() {
+        let mut request = RepoRequest::default();
+        assert_eq!(
+            submodule_update_args(&request),
+            ["submodule", "update", "--init", "--recursive"]
+        );
+        request.filter = Some("blob:none".to_string());
+        assert_eq!(
+            submodule_update_args(&request),
+            [
+                "submodule",
+                "update",
+                "--init",
+                "--recursive",
+                "--filter=blob:none"
             ]
         );
     }
