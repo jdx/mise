@@ -1529,6 +1529,12 @@ fn has_linked_version(ba: &BackendArg, version: &str) -> bool {
     let Ok(entries) = std::fs::read_dir(installs_dir) else {
         return false;
     };
+    // Installed-version selection hides pre-releases unless asked for by name, so a link
+    // like `24.21.0-rc1` does not satisfy a request for `24.21.0`.
+    let backend = ba
+        .backend()
+        .ok()
+        .filter(|b| !b.include_prereleases(&ba.opts()));
     for entry in entries.flatten() {
         let path = entry.path();
         if let Ok(Some(target)) = crate::file::resolve_symlink(&path) {
@@ -1537,9 +1543,15 @@ fn has_linked_version(ba: &BackendArg, version: &str) -> bool {
             if target.is_absolute()
                 && !is_mise_managed_symlink_target(&target)
                 && !is_rustup_install(ba, &path, &target)
-                && path
-                    .file_name()
-                    .is_some_and(|name| linked_name_satisfies(&name.to_string_lossy(), version))
+                && path.file_name().is_some_and(|name| {
+                    let name = name.to_string_lossy();
+                    linked_name_satisfies(&name, version)
+                        && (name == version
+                            || !backend.as_ref().is_some_and(|b| {
+                                crate::plugins::VERSION_REGEX.is_match(&name)
+                                    || b.is_backend_prerelease(&name)
+                            }))
+                })
             {
                 return true;
             }
