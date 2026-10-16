@@ -650,7 +650,9 @@ fn clone_command_parts(request: &RepoRequest) -> Vec<String> {
         // change fail because the new branch was never fetched.
         parts.push("--no-single-branch".to_string());
     }
-    if request.submodules {
+    // A ref checked out after the clone gets its submodules from the update
+    // that follows the checkout, so the default branch's never block it.
+    if request.submodules && checkout_after_clone_ref(request).is_none() {
         parts.push("--recurse-submodules".to_string());
         if request.filter.is_some() {
             parts.push("--also-filter-submodules".to_string());
@@ -1438,6 +1440,18 @@ mod tests {
                 request.path.to_str().unwrap()
             ]
         );
+    }
+
+    #[test]
+    fn post_clone_checkout_defers_recursive_submodules() {
+        let request = RepoRequest {
+            url: "https://github.com/jdx/mise.git".to_string(),
+            path: PathBuf::from("/tmp/repo"),
+            git_ref: Some("0123456789abcdef0123456789abcdef01234567".to_string()),
+            submodules: true,
+            ..Default::default()
+        };
+        assert!(!clone_command_parts(&request).contains(&"--recurse-submodules".to_string()));
     }
 
     #[test]
