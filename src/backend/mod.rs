@@ -158,8 +158,8 @@ pub fn version_listing_failure(ba: &BackendArg) -> Option<String> {
 /// tool's version order. With a `prefix`, only the backends whose range it
 /// reaches are listed.
 ///
-/// `None` when one backend serves everything `prefix` asks for: a tool with a
-/// single backend, a prefix inside one range, or a backend chosen other than
+/// `None` when one backend serves every version: a tool with a single
+/// backend, or a backend chosen other than
 /// by the registry (an explicit backend, a `MISE_BACKENDS_*` override, an
 /// alias, a custom plugin or a lockfile entry). Also `None` with
 /// `--strict-metadata`, which builds the list mise-versions publishes for the
@@ -188,7 +188,9 @@ pub async fn list_remote_versions_across_ranges(
         Some(prefix) => tool.version_range_owners_for(owners, prefix),
         None => owners,
     };
-    if owners.len() < 2 {
+    // Even a prefix inside one range goes through here: its backend may list
+    // versions that match the prefix as a string but install from another.
+    if owners.is_empty() {
         return Ok(None);
     }
     let mut versions = vec![];
