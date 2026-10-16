@@ -519,7 +519,8 @@ command = "foo-real"
 env = { FOO_HOME = "{{ [xdg_data_home, 'foo'] | join_path }}" }
 ```
 
-A literal `{{` or `{%` in a value, such as Docker's `{{.Names}}` format string, is now
+A literal <span v-pre>`{{`</span> or <span v-pre>`{%`</span> in a value, such as Docker's
+<span v-pre>`{{.Names}}`</span> format string, is now
 parsed as a template. Wrap it in a raw block:
 
 ```toml [mise.toml]
