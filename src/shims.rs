@@ -195,7 +195,7 @@ pub fn shim_farm_dirs() -> Vec<PathBuf> {
 /// version list. Once every lazy declaration is installed there is nothing left to
 /// write, and the function returns before locating the mise binary, so that steady
 /// state costs only the option checks.
-pub fn ensure_lazy_shims(missing: &[ToolVersion]) -> Result<()> {
+pub async fn ensure_lazy_shims(missing: &[ToolVersion]) -> Result<()> {
     let mut bins_by_dir = BTreeMap::<PathBuf, Vec<String>>::new();
     let mut lazy_bins_error = None;
     for tv in missing {
@@ -224,6 +224,10 @@ pub fn ensure_lazy_shims(missing: &[ToolVersion]) -> Result<()> {
         // actually needs a shim.
         let mise_bin = mise_bin_for_shims().absolutize()?.into_owned();
         let excluded = &Settings::get().shims.exclude;
+        // Same in-process serialization as `reshim_for`: a bootstrap write that
+        // blocks on the shims file lock would starve a reshim in this process
+        // that holds it.
+        let _in_process_lock = RESHIM_LOCK.lock().await;
         for (shims_dir, bins) in bins_by_dir {
             // Bootstrap shims are written outside the reshim path, so they need the
             // same exclusion filter get_desired_shims applies, or a `mise env`/`x`/`run`
