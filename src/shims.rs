@@ -1061,16 +1061,21 @@ pub fn validate_wrapper_names<'a>(names: impl IntoIterator<Item = &'a String>) -
 /// `current_exe()` is the path mise was launched through on some platforms (macOS), so when a tool
 /// shim triggered the run it names the shim (`jq`), not mise. Fall back to the real mise then.
 pub fn running_mise_bin() -> PathBuf {
-    match std::env::current_exe() {
-        Ok(exe)
-            if exe
-                .file_name()
-                .is_some_and(|n| env::is_mise_binary(&n.to_string_lossy())) =>
-        {
-            exe
+    let is_mise = |p: &Path| {
+        p.file_name()
+            .is_some_and(|n| env::is_mise_binary(&n.to_string_lossy()))
+    };
+    if let Ok(exe) = std::env::current_exe() {
+        if is_mise(&exe) {
+            return exe;
         }
-        _ => mise_bin_for_shims(),
+        // Unix tool shims are symlinks to mise, so resolving one finds it even when no mise is on PATH.
+        let resolved = file::canonicalize_or_self(&exe);
+        if is_mise(&resolved) {
+            return resolved;
+        }
     }
+    mise_bin_for_shims()
 }
 
 /// Resolve the mise executable that Unix symlink shims should target.
