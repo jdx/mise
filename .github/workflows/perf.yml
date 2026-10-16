@@ -43,7 +43,7 @@ jobs:
     # perf-pr.yml, which executes pull-request code with read-only permissions.
     runs-on: [self-hosted, jdx-perf-v1]
     container:
-      image: ghcr.io/jdx/perf-runner@sha256:5263c143b12ce2234e7b0b21d3d6501c2ed05837b42937d0eaeaa191cd5c8e68
+      image: ghcr.io/jdx/perf-runner:jdx-perf-v1@sha256:5263c143b12ce2234e7b0b21d3d6501c2ed05837b42937d0eaeaa191cd5c8e68
       options: --cpuset-cpus 0-7 --mount type=bind,src=/var/cache/jdx-perf/mbx,dst=/var/cache/mbx
     timeout-minutes: 30
     permissions:
