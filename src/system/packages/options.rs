@@ -1,7 +1,10 @@
 //! Per-manager options that travel with a manager's package requests, and the
 //! inline `macos-app` declaration type.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
+#[cfg(unix)]
+use std::collections::BTreeSet;
+#[cfg(unix)]
 use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone, Default)]

@@ -35,10 +35,12 @@ fn host() -> Result<&'static Host> {
         .ok_or_else(|| eyre!("system package host was not registered"))
 }
 
+#[cfg(unix)]
 pub(crate) async fn provision_ruby() -> Result<PathBuf> {
     (host()?.provision_ruby)().await
 }
 
+#[cfg(unix)]
 pub(crate) async fn installed_ruby() -> Result<Option<PathBuf>> {
     (host()?.installed_ruby)().await
 }
@@ -48,9 +50,13 @@ pub(crate) async fn tool_bin(name: &'static str) -> Result<Option<PathBuf>> {
 }
 
 pub(crate) fn package_plugin_names() -> Vec<String> {
-    HOST.get()
-        .map(|host| (host.package_plugin_names)())
-        .unwrap_or_default()
+    match HOST.get() {
+        Some(host) => (host.package_plugin_names)(),
+        None => {
+            warn!("system package host was not registered; package plugins are not loaded");
+            Vec::new()
+        }
+    }
 }
 
 pub(crate) fn load_package_plugin(name: &str) -> Result<Arc<dyn SystemPackageManager>> {
