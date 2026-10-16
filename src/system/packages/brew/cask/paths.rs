@@ -172,7 +172,7 @@ pub(super) fn cask_target_app_dir(cask: &Cask) -> Result<PathBuf> {
 /// the default so that exporting `MISE_BREW_CASK_OPT_APPDIR=` cannot disable
 /// that boundary: `Path::starts_with("")` is true for every path.
 pub(super) fn target_app_dir() -> Result<PathBuf> {
-    let Ok(dir) = crate::env::var(APP_DIR_ENV) else {
+    let Ok(dir) = mise_util::env::var(APP_DIR_ENV) else {
         return Ok(PathBuf::from(DEFAULT_APP_DIR));
     };
     if dir.is_empty() {
@@ -186,9 +186,9 @@ pub(super) fn target_app_dir() -> Result<PathBuf> {
 /// declaration.
 pub(crate) fn package_app_dir(value: &str) -> Result<PathBuf> {
     let dir = if value == "~" {
-        crate::env::HOME.clone()
+        mise_util::env::HOME.clone()
     } else if let Some(relative) = value.strip_prefix("~/") {
-        crate::env::HOME.join(relative)
+        mise_util::env::HOME.join(relative)
     } else {
         PathBuf::from(value)
     };

@@ -6,11 +6,11 @@ use async_trait::async_trait;
 use eyre::{WrapErr, bail};
 
 use super::{InstallOpts, PackageRequest, PackageState, PackageStatus, SystemPackageManager};
-use crate::config::Settings;
-use crate::config::settings::SystemPackagesOstree;
-use crate::result::Result;
-use crate::system::ManagerPackageOptions;
-use crate::system::sudo;
+use crate::system::packages::options::ManagerPackageOptions;
+use eyre::Result;
+use mise_settings::Settings;
+use mise_settings::SystemPackagesOstree;
+use mise_ui::sudo;
 
 /// RedHat-family (Fedora, RHEL, CentOS, Rocky, Alma) via dnf
 pub(crate) struct DnfManager {}
@@ -383,7 +383,7 @@ impl SystemPackageManager for DnfManager {
     }
 
     fn is_available(&self) -> bool {
-        cfg!(target_os = "linux") && crate::file::which(self.backend()).is_some()
+        cfg!(target_os = "linux") && mise_util::file::which(self.backend()).is_some()
     }
 
     fn unavailable_reason(&self) -> String {

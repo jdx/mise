@@ -14,10 +14,10 @@ use serde::Deserialize;
 
 use super::api::{self, Formula};
 use super::cask::Cask;
-use crate::cmd::CmdLineRunner;
-use crate::http::HTTP_FETCH;
-use crate::result::Result;
-use crate::sandbox::SandboxConfig;
+use eyre::Result;
+use mise_util::cmd::CmdLineRunner;
+use mise_util::http::HTTP_FETCH;
+use mise_util::sandbox::SandboxConfig;
 
 const METADATA_SHIM_RB: &str = include_str!("tap_formula_metadata.rb");
 const CASK_METADATA_SHIM_RB: &str = include_str!("tap_cask_metadata.rb");
@@ -65,7 +65,7 @@ pub(super) async fn formula_from_ruby(
     validate_name(name)?;
     let tap_source = resolve_tap_source(owner, tap, tap_url).await?;
     let (source, source_path) = fetch_formula_source(&tap_source, name).await?;
-    let checksum = crate::hash::hash_sha256_to_str(&source);
+    let checksum = mise_util::hash::hash_sha256_to_str(&source);
     let ruby = ruby_for_metadata(name, provision_ruby).await?;
     let mut runner = CmdLineRunner::new(&ruby)
         .arg("--disable-gems")
@@ -111,7 +111,7 @@ pub(super) async fn cask_from_ruby(
     validate_name(token)?;
     let tap_source = resolve_tap_source(owner, tap, tap_url).await?;
     let (source, source_path) = fetch_ruby_source(&tap_source.raw_base, "Casks", token).await?;
-    let checksum = crate::hash::hash_sha256_to_str(&source);
+    let checksum = mise_util::hash::hash_sha256_to_str(&source);
     let ruby = ruby_for_metadata(token, provision_ruby).await?;
     let mut runner = CmdLineRunner::new(&ruby)
         .arg("--disable-gems")
@@ -161,7 +161,7 @@ fn metadata_sandbox() -> Result<SandboxConfig> {
 
 fn macos_version() -> String {
     if cfg!(target_os = "macos") {
-        crate::cmd::cmd("sw_vers", ["-productVersion"])
+        mise_util::cmd::cmd("sw_vers", ["-productVersion"])
             .read()
             .map(|version| version.trim().to_string())
             .unwrap_or_default()
@@ -194,7 +194,7 @@ async fn resolve_tap_source(owner: &str, tap: &str, tap_url: Option<&str>) -> Re
 }
 
 async fn usable_system_ruby() -> Option<PathBuf> {
-    let ruby = crate::file::which_no_shims("ruby")?;
+    let ruby = mise_util::file::which_no_shims("ruby")?;
     ruby_is_compatible(&ruby).await.then_some(ruby)
 }
 
@@ -212,13 +212,13 @@ async fn ruby_for_metadata(name: &str, provision_ruby: bool) -> Result<PathBuf> 
     if let Some(ruby) = usable_system_ruby().await {
         return Ok(ruby);
     }
-    if let Some(ruby) = super::source::installed_ruby_bin().await?
+    if let Some(ruby) = crate::system::packages::host::installed_ruby().await?
         && ruby_is_compatible(&ruby).await
     {
         return Ok(ruby);
     }
     if provision_ruby {
-        let ruby = super::source::ruby_bin().await?;
+        let ruby = crate::system::packages::host::provision_ruby().await?;
         if ruby_is_compatible(&ruby).await {
             return Ok(ruby);
         }
@@ -372,7 +372,7 @@ pub(super) async fn test_ruby() -> Result<Option<PathBuf>> {
     if let Some(ruby) = usable_system_ruby().await {
         return Ok(Some(ruby));
     }
-    super::source::installed_ruby_bin().await
+    crate::system::packages::host::installed_ruby().await
 }
 
 #[cfg(test)]
@@ -395,14 +395,14 @@ mod tests {
         let data_dir = temp.path().join("data");
         let shims_dir = data_dir.join("shims");
         let bin_dir = temp.path().join("bin");
-        crate::file::create_dir_all(&shims_dir)?;
-        crate::file::create_dir_all(&bin_dir)?;
+        mise_util::file::create_dir_all(&shims_dir)?;
+        mise_util::file::create_dir_all(&bin_dir)?;
 
         let shim_ruby = shims_dir.join("ruby");
         let system_ruby = bin_dir.join("ruby");
         for ruby in [&shim_ruby, &system_ruby] {
-            crate::file::write(ruby, "#!/bin/sh\nexit 0\n")?;
-            crate::file::make_executable(ruby)?;
+            mise_util::file::write(ruby, "#!/bin/sh\nexit 0\n")?;
+            mise_util::file::make_executable(ruby)?;
         }
 
         let path = std::env::join_paths([&shims_dir, &bin_dir])?;
@@ -663,7 +663,7 @@ mod tests {
         };
         let dir = tempfile::tempdir()?;
         let formula = dir.path().join("widget.rb");
-        crate::file::write(
+        mise_util::file::write(
             &formula,
             r#"
 class Widget < Formula
@@ -692,7 +692,7 @@ end
             .arg("--disable-gems")
             .arg("-e")
             .arg(METADATA_SHIM_RB)
-            .stdin_string(crate::file::read_to_string(&formula)?)
+            .stdin_string(mise_util::file::read_to_string(&formula)?)
             .env("MISE_BREW_NAME", "widget")
             .env("MISE_BREW_TAP", "acme/tools")
             .env("MISE_BREW_SOURCE_PATH", "Formula/widget.rb")
@@ -840,7 +840,7 @@ end
         };
         let dir = tempfile::tempdir()?;
         let cask_file = dir.path().join("widget.rb");
-        crate::file::write(
+        mise_util::file::write(
             &cask_file,
             r##"
 cask "widget" do
@@ -872,7 +872,7 @@ end
             .arg("--disable-gems")
             .arg("-e")
             .arg(CASK_METADATA_SHIM_RB)
-            .stdin_string(crate::file::read_to_string(&cask_file)?)
+            .stdin_string(mise_util::file::read_to_string(&cask_file)?)
             .env("MISE_BREW_TOKEN", "widget")
             .env("MISE_BREW_SOURCE_PATH", "Casks/widget.rb")
             .env("MISE_BREW_SOURCE_CHECKSUM", "bbbb")
@@ -1058,8 +1058,8 @@ end"##,
         let matching_manpage = dir
             .path()
             .join("$HOMEBREW_PREFIX/Caskroom/widget/1.2.3/manpages/widget.1");
-        crate::file::create_dir_all(matching_manpage.parent().unwrap())?;
-        crate::file::write(&matching_manpage, "fixture")?;
+        mise_util::file::create_dir_all(matching_manpage.parent().unwrap())?;
+        mise_util::file::write(&matching_manpage, "fixture")?;
 
         let runner = CmdLineRunner::new(ruby)
             .with_on_stderr(|line| eprintln!("{line}"))
@@ -1181,10 +1181,10 @@ end"##,
         let Some(ruby) = test_ruby().await? else {
             return Ok(());
         };
-        crate::file::create_dir_all(&*crate::env::HOME)?;
+        mise_util::file::create_dir_all(&*mise_util::env::HOME)?;
         let dir = tempfile::Builder::new()
             .prefix(".mise-tap-sandbox-")
-            .tempdir_in(&*crate::env::HOME)?;
+            .tempdir_in(&*mise_util::env::HOME)?;
         let source = dir.path().join("malicious.rb");
         let temp_dir = tempfile::tempdir()?;
         let denied = temp_dir.path().join("denied");
@@ -1204,7 +1204,7 @@ begin
 rescue SystemCallError
 end
 "#;
-        crate::file::write(&source, "tap source")?;
+        mise_util::file::write(&source, "tap source")?;
         let mut runner = CmdLineRunner::new(ruby)
             .with_on_stderr(|line| eprintln!("{line}"))
             .arg("--disable-gems")

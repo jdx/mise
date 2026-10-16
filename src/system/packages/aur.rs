@@ -5,8 +5,8 @@ use async_trait::async_trait;
 use eyre::bail;
 
 use super::{InstallOpts, PackageRequest, PackageState, PackageStatus, SystemPackageManager};
-use crate::cmd::CmdLineRunner;
-use crate::result::Result;
+use eyre::Result;
+use mise_util::cmd::CmdLineRunner;
 
 struct ResolvedForeignPackage {
     status: PackageStatus,
@@ -24,7 +24,7 @@ impl AurManager {
     fn helper(&self) -> Option<&'static str> {
         ["yay", "paru"]
             .into_iter()
-            .find(|helper| crate::file::which(helper).is_some())
+            .find(|helper| mise_util::file::which(helper).is_some())
     }
 }
 
@@ -147,14 +147,14 @@ impl SystemPackageManager for AurManager {
 
     fn is_available(&self) -> bool {
         cfg!(target_os = "linux")
-            && crate::file::which("pacman").is_some()
+            && mise_util::file::which("pacman").is_some()
             && self.helper().is_some()
     }
 
     fn unavailable_reason(&self) -> String {
         if !cfg!(target_os = "linux") {
             "only available on linux".to_string()
-        } else if crate::file::which("pacman").is_none() {
+        } else if mise_util::file::which("pacman").is_none() {
             "pacman not found".to_string()
         } else {
             "neither yay nor paru found".to_string()
@@ -191,10 +191,10 @@ impl SystemPackageManager for AurManager {
             miseprintln!("{}", shell_words::join(command));
             return Ok(());
         }
-        if crate::system::sudo::is_root() {
+        if mise_ui::sudo::is_root() {
             bail!("AUR packages cannot be built as root; run mise as a non-root user");
         }
-        crate::system::sudo::ensure_sudo_available(&shell_words::join(&command))?;
+        mise_ui::sudo::ensure_sudo_available(&shell_words::join(&command))?;
         let mut runner = CmdLineRunner::new(helper);
         for arg in &args {
             runner = runner.arg(arg);

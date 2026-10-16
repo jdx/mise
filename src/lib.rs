@@ -140,6 +140,7 @@ pub fn register_util_hooks() {
     // First: `version::VERSION` below reads it.
     mise_util::deprecation::set_version(env!("CARGO_PKG_VERSION"));
     config::settings::register_loader();
+    system::packages_host::register();
     enclave::register();
     cache::register_base_cache_keys();
     let shell = env::MISE_SHELL.map(|s| s.to_string()).unwrap_or_default();

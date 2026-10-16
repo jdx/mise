@@ -412,7 +412,7 @@ pub(super) fn remove_obsolete_binary_links(
 
 #[cfg(not(test))]
 pub(super) fn mise_installed_cask_version(cask: &Cask) -> Result<Option<String>> {
-    installed_cask_version_in(cask, &crate::dirs::STATE)
+    installed_cask_version_in(cask, &mise_util::dirs::STATE)
 }
 
 #[cfg(test)]
@@ -940,7 +940,7 @@ pub(super) fn write_cask_journal(
     manager: CaskManager,
     journal: &CaskTransactionJournal<'_>,
 ) -> Result<()> {
-    write_cask_journal_in(&crate::dirs::STATE, manager, journal)
+    write_cask_journal_in(&mise_util::dirs::STATE, manager, journal)
 }
 
 pub(super) fn write_cask_journal_in(
@@ -958,7 +958,7 @@ pub(super) fn record_cask_action(
     journal: &mut CaskTransactionJournal<'_>,
     action: &str,
 ) -> Result<()> {
-    record_cask_action_in(&crate::dirs::STATE, manager, journal, action)
+    record_cask_action_in(&mise_util::dirs::STATE, manager, journal, action)
 }
 
 pub(super) fn record_cask_action_in(
@@ -972,7 +972,7 @@ pub(super) fn record_cask_action_in(
 }
 
 pub(super) fn remove_cask_journals(manager: CaskManager, token: &str) -> Result<()> {
-    remove_cask_journals_in(&crate::dirs::STATE, manager, token)
+    remove_cask_journals_in(&mise_util::dirs::STATE, manager, token)
 }
 
 pub(super) fn remove_cask_journals_in(
@@ -1011,7 +1011,7 @@ pub(super) fn read_receipt(caskroom: &Path) -> Result<Option<CaskReceipt>> {
     if !path.exists() {
         return Ok(None);
     }
-    let body = crate::file::read_to_string(&path)?;
+    let body = mise_util::file::read_to_string(&path)?;
     toml::from_str(&body)
         .map(Some)
         .wrap_err_with(|| format!("failed to parse {}", path.display()))
@@ -1020,7 +1020,7 @@ pub(super) fn read_receipt(caskroom: &Path) -> Result<Option<CaskReceipt>> {
 pub async fn cask_prune_plan(configured: &[PackageRequest]) -> Result<CaskPrunePlan> {
     let closure = resolve_cask_dependency_closure(configured).await?;
     let keep = closure.casks.into_values().collect();
-    cask_prune_plan_from_tokens(&keep, &crate::dirs::STATE)
+    cask_prune_plan_from_tokens(&keep, &mise_util::dirs::STATE)
 }
 
 pub async fn cask_formula_dependencies(
@@ -1348,7 +1348,7 @@ pub(super) fn cask_prune_plan_from_tokens(
 }
 
 pub fn apply_cask_prune_plan(plan: &CaskPrunePlan, dry_run: bool) -> Result<usize> {
-    apply_cask_prune_plan_in(plan, dry_run, &crate::dirs::STATE)
+    apply_cask_prune_plan_in(plan, dry_run, &mise_util::dirs::STATE)
 }
 
 pub(super) fn apply_cask_prune_plan_in(
@@ -1435,8 +1435,8 @@ pub(super) fn apply_cask_prune_plan_in(
 /// Taken before [`lock_caskroom`] wherever both are held, so the order is the
 /// same on every path.
 pub(super) fn lock_app_mutations() -> Result<fslock::LockFile> {
-    file::create_dir_all(*crate::dirs::STATE)?;
-    let path = crate::dirs::STATE.join("cask-apps.lock");
+    file::create_dir_all(*mise_util::dirs::STATE)?;
+    let path = mise_util::dirs::STATE.join("cask-apps.lock");
     let mut lock = fslock::LockFile::open(&path)?;
     if !lock.try_lock()? {
         debug!("waiting for cask app lock on {}", path.display());
@@ -1721,7 +1721,7 @@ pub(super) fn symlink_resolves_below(path: &Path, root: &Path) -> bool {
 pub(super) fn cask_state_root(manager: CaskManager) -> PathBuf {
     match manager {
         CaskManager::BrewCask => prefix::prefix().join("Caskroom"),
-        CaskManager::MacosApp => crate::dirs::STATE.join("macos-apps"),
+        CaskManager::MacosApp => mise_util::dirs::STATE.join("macos-apps"),
     }
 }
 

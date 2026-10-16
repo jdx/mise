@@ -7,9 +7,9 @@ use futures_util::stream::{FuturesUnordered, StreamExt};
 use reqwest::header::{AUTHORIZATION, HeaderMap, HeaderValue};
 
 use super::api::BottleFile;
-use crate::http::HTTP;
-use crate::result::Result;
-use crate::ui::progress_report::SingleReport;
+use eyre::Result;
+use mise_ui::progress_report::SingleReport;
+use mise_util::http::HTTP;
 
 /// Bounded concurrent jobs that can discard work not yet admitted to the
 /// active set while still draining active jobs after a failure.
@@ -62,9 +62,10 @@ pub(super) async fn fetch_bottle(
     bottle: &BottleFile,
     pr: Option<&dyn SingleReport>,
 ) -> Result<PathBuf> {
-    let cache_dir = crate::dirs::CACHE.join("system-brew").join("bottles");
+    let cache_dir = mise_util::dirs::CACHE.join("system-brew").join("bottles");
     let path = cache_dir.join(format!("{name}-{pkg_version}.tar.gz"));
-    if path.exists() && crate::hash::ensure_checksum(&path, &bottle.sha256, None, "sha256").is_ok()
+    if path.exists()
+        && mise_util::hash::ensure_checksum(&path, &bottle.sha256, None, "sha256").is_ok()
     {
         debug!("bottle cache hit: {}", path.display());
         return Ok(path);
@@ -80,7 +81,7 @@ pub(super) async fn fetch_bottle(
     if let Some(pr) = pr {
         pr.set_message("checksum".to_string());
     }
-    crate::hash::ensure_checksum(&path, &bottle.sha256, pr, "sha256")?;
+    mise_util::hash::ensure_checksum(&path, &bottle.sha256, pr, "sha256")?;
     Ok(path)
 }
 

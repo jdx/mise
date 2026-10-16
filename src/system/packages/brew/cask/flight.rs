@@ -375,7 +375,9 @@ pub(super) fn flight_target_recovery_path(entry: &ArtifactLinkBackup) -> PathBuf
 }
 
 pub(super) fn flight_recovery_root() -> PathBuf {
-    crate::dirs::STATE.join("brew-cask").join("flight-recovery")
+    mise_util::dirs::STATE
+        .join("brew-cask")
+        .join("flight-recovery")
 }
 
 pub(super) fn ensure_no_unresolved_flight_recovery(target: &Path) -> Result<()> {
@@ -896,8 +898,8 @@ pub(super) fn execute_flight_step(
             };
             if let Err(err) = result {
                 let exited = matches!(
-                    err.downcast_ref::<crate::errors::ProcessError>(),
-                    Some(crate::errors::ProcessError::ScriptFailed(_, Some(status), _))
+                    err.downcast_ref::<mise_util::errors::ProcessError>(),
+                    Some(mise_util::errors::ProcessError::ScriptFailed(_, Some(status), _))
                         if status.code().is_some()
                 );
                 if *must_succeed || !exited {
@@ -1246,7 +1248,7 @@ pub(super) fn expand_cask_template(
     let mut value = value
         .replace("$HOMEBREW_PREFIX", &prefix.to_string_lossy())
         .replace("$APPDIR", &appdir.to_string_lossy())
-        .replace("$HOME", &crate::dirs::HOME.to_string_lossy())
+        .replace("$HOME", &mise_util::dirs::HOME.to_string_lossy())
         .replace("{{HOMEBREW_PREFIX}}", &prefix.to_string_lossy())
         .replace("{{staged_path}}", &staged_path.to_string_lossy())
         .replace("{{appdir}}", &appdir.to_string_lossy());
@@ -1254,7 +1256,10 @@ pub(super) fn expand_cask_template(
         value = value.replace("{{version}}", version);
     }
     if let Some(rest) = value.strip_prefix("~/") {
-        value = crate::dirs::HOME.join(rest).to_string_lossy().to_string();
+        value = mise_util::dirs::HOME
+            .join(rest)
+            .to_string_lossy()
+            .to_string();
     }
     value
 }

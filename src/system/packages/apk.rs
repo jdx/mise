@@ -4,8 +4,8 @@ use async_trait::async_trait;
 use eyre::bail;
 
 use super::{InstallOpts, PackageRequest, PackageState, PackageStatus, SystemPackageManager};
-use crate::result::Result;
-use crate::system::sudo;
+use eyre::Result;
+use mise_ui::sudo;
 
 /// Alpine Linux via apk
 pub(crate) struct ApkManager {}
@@ -58,7 +58,7 @@ impl SystemPackageManager for ApkManager {
     }
 
     fn is_available(&self) -> bool {
-        cfg!(target_os = "linux") && crate::file::which("apk").is_some()
+        cfg!(target_os = "linux") && mise_util::file::which("apk").is_some()
     }
 
     fn unavailable_reason(&self) -> String {

@@ -11,9 +11,9 @@ use super::api::BottleFile;
 use super::prefix;
 use super::relocate;
 use super::resolve::ResolvedFormula;
-use crate::file::{ExtractOptions, ExtractionFormat};
-use crate::result::Result;
-use crate::ui::progress_report::SingleReport;
+use eyre::Result;
+use mise_ui::progress_report::SingleReport;
+use mise_util::file::{ExtractOptions, ExtractionFormat};
 
 /// directories linked from a keg into the prefix (brew's Keg::KEG_LINK_DIRECTORIES,
 /// minus etc/var, which brew copies from the bottle instead of linking; see
@@ -133,8 +133,8 @@ pub(super) fn repair_link_record(name: &str, dry_run: bool) -> Result<bool> {
         miseprintln!("repair {name}/{}: {record}", repair.version);
         return Ok(true);
     }
-    crate::file::create_dir_all(repair.destination.parent().unwrap())?;
-    crate::file::make_symlink(
+    mise_util::file::create_dir_all(repair.destination.parent().unwrap())?;
+    mise_util::file::make_symlink(
         &relative_target(&repair.keg, &repair.destination),
         &repair.destination,
     )
@@ -234,7 +234,7 @@ fn symlink_points_to(link: &Path, target: &Path) -> bool {
 /// symlink, like brew) first, the rest name-sorted
 pub(super) fn installed_versions(name: &str) -> Vec<String> {
     let dir = prefix::cellar().join(name);
-    let mut versions: Vec<String> = crate::file::ls(&dir)
+    let mut versions: Vec<String> = mise_util::file::ls(&dir)
         .unwrap_or_default()
         .into_iter()
         .filter(|p| p.is_dir())
@@ -273,16 +273,17 @@ fn create_staging_dir(
     rack: &Path,
     pkg_version: &str,
 ) -> Result<(tempfile::TempDir, fslock::LockFile)> {
-    crate::file::create_dir_all(rack)?;
+    mise_util::file::create_dir_all(rack)?;
     // Serialize the short cleanup/create handshake within a formula rack. The
     // per-directory lock then protects active extraction after this lock is
     // released, including work owned by another mise process.
-    let _rack_lock = crate::lock_file::LockFile::at(&rack.join(".mise-staging.lock")).lock()?;
+    let _rack_lock = mise_util::lock_file::LockFile::at(&rack.join(".mise-staging.lock")).lock()?;
     remove_abandoned_staging_dirs(rack)?;
     let staging = tempfile::Builder::new()
         .prefix(&format!(".mise-extract-{pkg_version}-"))
         .tempdir_in(rack)?;
-    let staging_lock = crate::lock_file::LockFile::at(&staging.path().join(".mise-lock")).lock()?;
+    let staging_lock =
+        mise_util::lock_file::LockFile::at(&staging.path().join(".mise-lock")).lock()?;
     Ok((staging, staging_lock))
 }
 
@@ -330,7 +331,7 @@ fn remove_abandoned_staging_dirs(rack: &Path) -> Result<()> {
         // The rack lock prevents a new owner from appearing after this check.
         // Drop the file handle first so cleanup also works on Windows filesystems.
         drop(lock);
-        if let Err(err) = crate::file::remove_all(&path) {
+        if let Err(err) = mise_util::file::remove_all(&path) {
             let disappeared = err.chain().any(|cause| {
                 cause
                     .downcast_ref::<std::io::Error>()
@@ -354,7 +355,7 @@ fn commit_lock_path() -> PathBuf {
 /// disabled. Bottle download and preparation happen before acquiring this lock;
 /// source builds hold it while writing directly into the final Cellar.
 pub(super) fn commit_lock(pr: &dyn SingleReport) -> Result<fslock::LockFile> {
-    crate::lock_file::LockFile::at(&commit_lock_path()).lock_with_notice(&|_| {
+    mise_util::lock_file::LockFile::at(&commit_lock_path()).lock_with_notice(&|_| {
         pr.set_message("waiting for another brew install".to_string());
     })
 }
@@ -390,7 +391,7 @@ pub(super) fn prepare_bottle(
 
     // bottle tarballs contain <name>/<pkg_version>/...
     pr.set_message("extract".to_string());
-    crate::file::untar(
+    mise_util::file::untar(
         tarball,
         prepared.staging.path(),
         ExtractionFormat::TarGz,
@@ -441,12 +442,12 @@ pub(super) fn install_prepared(prepared: PreparedBottle, pr: &dyn SingleReport) 
         return Ok(());
     }
     if prepared.keg.exists() {
-        crate::file::remove_all(&prepared.keg)?;
+        mise_util::file::remove_all(&prepared.keg)?;
     }
     // copy the bottle's etc/var files first so a failure here leaves nothing
     // linked and the next install retries; they are rolled back with the keg
     let config = super::post_install::install_bottle_config(&prepared.staged_keg)?;
-    if let Err(err) = crate::file::rename(&prepared.staged_keg, &prepared.keg) {
+    if let Err(err) = mise_util::file::rename(&prepared.staged_keg, &prepared.keg) {
         super::post_install::remove_created(&config);
         return Err(err);
     }
@@ -454,7 +455,7 @@ pub(super) fn install_prepared(prepared: PreparedBottle, pr: &dyn SingleReport) 
     // remove the keg so the next install retries from scratch
     if let Err(err) = link_keg(&prepared.name, &prepared.pkg_version, prepared.keg_only) {
         super::post_install::remove_created(&config);
-        if let Err(rm_err) = crate::file::remove_all(&prepared.keg) {
+        if let Err(rm_err) = mise_util::file::remove_all(&prepared.keg) {
             // a keg left behind here is unlinked but looks installed, so
             // future installs would skip it — make that state visible
             warn!(
@@ -471,7 +472,7 @@ pub(super) fn install_prepared(prepared: PreparedBottle, pr: &dyn SingleReport) 
     if !prepared.post_install_steps.is_empty() {
         pr.set_message("post-install".to_string());
         // `run` steps wait on subprocesses; hand the runtime worker off meanwhile
-        crate::file::run_blocking(|| {
+        mise_util::file::run_blocking(|| {
             super::post_install::run_steps(
                 &prepared.post_install_steps,
                 &super::post_install::Context {
@@ -490,7 +491,7 @@ pub(super) fn install_prepared(prepared: PreparedBottle, pr: &dyn SingleReport) 
 /// own. This mirrors brew's own `parsed_homebrew_version >= "5.1.15"` check —
 /// brew's version format is dotted numerics, not an arbitrary tool version.
 fn bottled_by_homebrew_at_least(keg: &Path, min: (u64, u64, u64)) -> bool {
-    let Ok(receipt) = crate::file::read_to_string(keg.join("INSTALL_RECEIPT.json")) else {
+    let Ok(receipt) = mise_util::file::read_to_string(keg.join("INSTALL_RECEIPT.json")) else {
         return false;
     };
     let Ok(json) = serde_json::from_str::<serde_json::Value>(&receipt) else {
@@ -586,7 +587,7 @@ pub(super) fn write_receipt(
         "arch": if cfg!(target_arch = "aarch64") { "arm64" } else { "x86_64" },
         "built_on": {},
     });
-    crate::file::write(
+    mise_util::file::write(
         keg.join("INSTALL_RECEIPT.json"),
         serde_json::to_string(&receipt)?,
     )?;
@@ -724,9 +725,9 @@ fn materialize_brew_dirs(dest: &Path) -> Result<()> {
         ));
         let staged = (|| -> Result<()> {
             if staging.exists() {
-                crate::file::remove_all(&staging)?;
+                mise_util::file::remove_all(&staging)?;
             }
-            crate::file::create_dir_all(&staging)?;
+            mise_util::file::create_dir_all(&staging)?;
             // a dangling dir symlink (keg already pruned) has nothing to preserve
             let target = lexical_normalize(&link_dir.parent().unwrap().join(&raw_target));
             if target.is_dir() {
@@ -734,7 +735,7 @@ fn materialize_brew_dirs(dest: &Path) -> Result<()> {
                     let entry = entry?;
                     // targets are relative to the link's final location
                     let child_link = link_dir.join(entry.file_name());
-                    crate::file::make_symlink(
+                    mise_util::file::make_symlink(
                         &relative_target(&entry.path(), &child_link),
                         &staging.join(entry.file_name()),
                     )?;
@@ -743,18 +744,18 @@ fn materialize_brew_dirs(dest: &Path) -> Result<()> {
             Ok(())
         })();
         if let Err(err) = staged {
-            let _ = crate::file::remove_all(&staging);
+            let _ = mise_util::file::remove_all(&staging);
             return Err(err);
         }
         // swap: a directory cannot be renamed over a symlink, so remove the
         // link first; if the rename then fails, put the symlink back
-        if let Err(err) = crate::file::remove_file(&link_dir) {
-            let _ = crate::file::remove_all(&staging);
+        if let Err(err) = mise_util::file::remove_file(&link_dir) {
+            let _ = mise_util::file::remove_all(&staging);
             return Err(err);
         }
-        if let Err(err) = crate::file::rename(&staging, &link_dir) {
-            let _ = crate::file::make_symlink(&raw_target, &link_dir);
-            let _ = crate::file::remove_all(&staging);
+        if let Err(err) = mise_util::file::rename(&staging, &link_dir) {
+            let _ = mise_util::file::make_symlink(&raw_target, &link_dir);
+            let _ = mise_util::file::remove_all(&staging);
             return Err(err);
         }
     }
@@ -769,7 +770,7 @@ pub(super) fn link_keg(name: &str, pkg_version: &str, keg_only: bool) -> Result<
     let prefix_path = prefix::prefix();
     let keg = keg_path(name, pkg_version);
     if keg_only {
-        crate::file::write(keg.join(KEG_ONLY_MARKER), "")?;
+        mise_util::file::write(keg.join(KEG_ONLY_MARKER), "")?;
     }
     // <prefix>/opt/<name> -> ../Cellar/<name>/<version> (always, even keg-only)
     let opt_link = prefix_path.join("opt").join(name);
@@ -840,14 +841,14 @@ pub(super) fn link_keg(name: &str, pkg_version: &str, keg_only: bool) -> Result<
             // directory first — otherwise the link below would be created
             // inside (and delete files from) the old keg it points to
             materialize_brew_dirs(dest)?;
-            crate::file::create_dir_all(dest.parent().unwrap())?;
+            mise_util::file::create_dir_all(dest.parent().unwrap())?;
             if dest.symlink_metadata().is_ok() {
                 if let Ok(prev) = std::fs::read_link(dest) {
                     replaced.push((dest.clone(), prev));
                 }
-                crate::file::remove_file(dest)?;
+                mise_util::file::remove_file(dest)?;
             }
-            crate::file::make_symlink(&relative_target(target, dest), dest)?;
+            mise_util::file::make_symlink(&relative_target(target, dest), dest)?;
             Ok(())
         })();
         if let Err(err) = made {
@@ -858,10 +859,10 @@ pub(super) fn link_keg(name: &str, pkg_version: &str, keg_only: bool) -> Result<
     }
     if let Some(err) = failure {
         for dest in created {
-            let _ = crate::file::remove_file(&dest);
+            let _ = mise_util::file::remove_file(&dest);
         }
         for (dest, prev) in replaced {
-            let _ = crate::file::make_symlink(&prev, &dest);
+            let _ = mise_util::file::make_symlink(&prev, &dest);
         }
         return Err(err);
     }
@@ -883,8 +884,8 @@ mod tests {
 
     impl BrewPrefixGuard {
         fn set(prefix: &Path) -> Self {
-            let previous = crate::env::var("MISE_SYSTEM_BREW_PREFIX").ok();
-            crate::env::set_var("MISE_SYSTEM_BREW_PREFIX", prefix);
+            let previous = mise_util::env::var("MISE_SYSTEM_BREW_PREFIX").ok();
+            mise_util::env::set_var("MISE_SYSTEM_BREW_PREFIX", prefix);
             Self { previous }
         }
     }
@@ -892,8 +893,8 @@ mod tests {
     impl Drop for BrewPrefixGuard {
         fn drop(&mut self) {
             match &self.previous {
-                Some(previous) => crate::env::set_var("MISE_SYSTEM_BREW_PREFIX", previous),
-                None => crate::env::remove_var("MISE_SYSTEM_BREW_PREFIX"),
+                Some(previous) => mise_util::env::set_var("MISE_SYSTEM_BREW_PREFIX", previous),
+                None => mise_util::env::remove_var("MISE_SYSTEM_BREW_PREFIX"),
             }
         }
     }
@@ -902,9 +903,9 @@ mod tests {
     fn removes_abandoned_locking_staging_directories() {
         let rack = tempfile::tempdir().unwrap();
         let extract = rack.path().join(".mise-extract-1.0-abandoned");
-        crate::file::create_dir_all(&extract).unwrap();
+        mise_util::file::create_dir_all(&extract).unwrap();
         drop(
-            crate::lock_file::LockFile::at(&extract.join(".mise-lock"))
+            mise_util::lock_file::LockFile::at(&extract.join(".mise-lock"))
                 .lock()
                 .unwrap(),
         );
@@ -919,8 +920,8 @@ mod tests {
         let rack = tempfile::tempdir().unwrap();
         let extract = rack.path().join(".mise-extract-1.0-legacy");
         let legacy_tmp = rack.path().join(".mise-tmp-1.0");
-        crate::file::create_dir_all(&extract).unwrap();
-        crate::file::create_dir_all(&legacy_tmp).unwrap();
+        mise_util::file::create_dir_all(&extract).unwrap();
+        mise_util::file::create_dir_all(&legacy_tmp).unwrap();
 
         remove_abandoned_staging_dirs(rack.path()).unwrap();
 
@@ -932,8 +933,8 @@ mod tests {
     fn preserves_locked_staging_until_its_owner_finishes() {
         let rack = tempfile::tempdir().unwrap();
         let active = rack.path().join(".mise-extract-1.0-active");
-        crate::file::create_dir_all(&active).unwrap();
-        let held = crate::lock_file::LockFile::at(&active.join(".mise-lock"))
+        mise_util::file::create_dir_all(&active).unwrap();
+        let held = mise_util::lock_file::LockFile::at(&active.join(".mise-lock"))
             .lock()
             .unwrap();
 
@@ -949,16 +950,16 @@ mod tests {
     /// symlink chain every brew library bottle ships), plus a header dir
     fn write_lib_keg(prefix: &Path, name: &str, version: &str) -> Result<PathBuf> {
         let keg = prefix.join("Cellar").join(name).join(version);
-        crate::file::create_dir_all(keg.join("lib"))?;
-        crate::file::write(keg.join("lib").join(format!("lib{name}.1.dylib")), version)?;
-        crate::file::make_symlink(
+        mise_util::file::create_dir_all(keg.join("lib"))?;
+        mise_util::file::write(keg.join("lib").join(format!("lib{name}.1.dylib")), version)?;
+        mise_util::file::make_symlink(
             Path::new(&format!("lib{name}.1.dylib")),
             &keg.join("lib").join(format!("lib{name}.dylib")),
         )?;
-        crate::file::create_dir_all(keg.join("include").join(name))?;
-        crate::file::write(keg.join("include").join(name).join("header.h"), version)?;
+        mise_util::file::create_dir_all(keg.join("include").join(name))?;
+        mise_util::file::write(keg.join("include").join(name).join("header.h"), version)?;
         // keg-internal relative symlink inside the dir brew links wholesale
-        crate::file::make_symlink(
+        mise_util::file::make_symlink(
             Path::new("header.h"),
             &keg.join("include").join(name).join("alias.h"),
         )?;
@@ -969,20 +970,20 @@ mod tests {
     /// parent dir is shared, one directory symlink for a dir the keg owns
     fn brew_style_link(prefix: &Path, name: &str, version: &str) -> Result<()> {
         let cellar_rel = Path::new("../Cellar").join(name).join(version);
-        crate::file::create_dir_all(prefix.join("opt"))?;
-        crate::file::make_symlink(
+        mise_util::file::create_dir_all(prefix.join("opt"))?;
+        mise_util::file::make_symlink(
             &Path::new("../Cellar").join(name).join(version),
             &prefix.join("opt").join(name),
         )?;
-        crate::file::create_dir_all(prefix.join("lib"))?;
+        mise_util::file::create_dir_all(prefix.join("lib"))?;
         for lib in [format!("lib{name}.dylib"), format!("lib{name}.1.dylib")] {
-            crate::file::make_symlink(
+            mise_util::file::make_symlink(
                 &cellar_rel.join("lib").join(&lib),
                 &prefix.join("lib").join(&lib),
             )?;
         }
-        crate::file::create_dir_all(prefix.join("include"))?;
-        crate::file::make_symlink(
+        mise_util::file::create_dir_all(prefix.join("include"))?;
+        mise_util::file::make_symlink(
             &cellar_rel.join("include").join(name),
             &prefix.join("include").join(name),
         )?;
@@ -1051,19 +1052,19 @@ mod tests {
         let _guard = BrewPrefixGuard::set(&prefix);
         for version in ["1.0", "2.0"] {
             let keg = prefix.join("Cellar").join("foo").join(version);
-            crate::file::create_dir_all(keg.join("lib"))?;
-            crate::file::make_symlink(
+            mise_util::file::create_dir_all(keg.join("lib"))?;
+            mise_util::file::make_symlink(
                 Path::new("/usr/lib/libSystem.B.dylib"),
                 &keg.join("lib").join("libsys.dylib"),
             )?;
         }
-        crate::file::create_dir_all(prefix.join("opt"))?;
-        crate::file::make_symlink(
+        mise_util::file::create_dir_all(prefix.join("opt"))?;
+        mise_util::file::make_symlink(
             Path::new("../Cellar/foo/1.0"),
             &prefix.join("opt").join("foo"),
         )?;
-        crate::file::create_dir_all(prefix.join("lib"))?;
-        crate::file::make_symlink(
+        mise_util::file::create_dir_all(prefix.join("lib"))?;
+        mise_util::file::make_symlink(
             Path::new("../Cellar/foo/1.0/lib/libsys.dylib"),
             &prefix.join("lib").join("libsys.dylib"),
         )?;
@@ -1085,8 +1086,8 @@ mod tests {
         let (_tmp, prefix) = canonical_tempdir()?;
         let _guard = BrewPrefixGuard::set(&prefix);
         write_lib_keg(&prefix, "foo", "2.0")?;
-        crate::file::create_dir_all(prefix.join("include").join("foo"))?;
-        crate::file::write(prefix.join("include").join("foo").join("header.h"), "mine")?;
+        mise_util::file::create_dir_all(prefix.join("include").join("foo"))?;
+        mise_util::file::write(prefix.join("include").join("foo").join("header.h"), "mine")?;
 
         let err = link_keg("foo", "2.0", false).unwrap_err();
         assert!(err.to_string().contains("not created by mise or brew"));
@@ -1106,17 +1107,17 @@ mod tests {
         let _guard = BrewPrefixGuard::set(&prefix);
         // other keg owns share/xml via a dir symlink
         let other = prefix.join("Cellar").join("other").join("1.0");
-        crate::file::create_dir_all(other.join("share").join("xml"))?;
-        crate::file::write(other.join("share").join("xml").join("other.dtd"), "other")?;
-        crate::file::create_dir_all(prefix.join("share"))?;
-        crate::file::make_symlink(
+        mise_util::file::create_dir_all(other.join("share").join("xml"))?;
+        mise_util::file::write(other.join("share").join("xml").join("other.dtd"), "other")?;
+        mise_util::file::create_dir_all(prefix.join("share"))?;
+        mise_util::file::make_symlink(
             Path::new("../Cellar/other/1.0/share/xml"),
             &prefix.join("share").join("xml"),
         )?;
         // new keg wants a file inside share/xml
         let keg = prefix.join("Cellar").join("foo").join("2.0");
-        crate::file::create_dir_all(keg.join("share").join("xml"))?;
-        crate::file::write(keg.join("share").join("xml").join("foo.dtd"), "foo")?;
+        mise_util::file::create_dir_all(keg.join("share").join("xml"))?;
+        mise_util::file::write(keg.join("share").join("xml").join("foo.dtd"), "foo")?;
 
         link_keg("foo", "2.0", false)?;
 
@@ -1135,13 +1136,13 @@ mod tests {
         let (_tmp, prefix) = canonical_tempdir()?;
         let _guard = BrewPrefixGuard::set(&prefix);
         let keg = prefix.join("Cellar/foo/1.0/lib");
-        crate::file::create_dir_all(&keg)?;
-        crate::file::write(keg.join("libfoo.1.dylib"), "")?;
+        mise_util::file::create_dir_all(&keg)?;
+        mise_util::file::write(keg.join("libfoo.1.dylib"), "")?;
         let lib = prefix.join("lib");
-        crate::file::create_dir_all(&lib)?;
-        crate::file::make_symlink(Path::new("../Cellar/foo/1.0/lib"), &lib.join("foo"))?;
+        mise_util::file::create_dir_all(&lib)?;
+        mise_util::file::make_symlink(Path::new("../Cellar/foo/1.0/lib"), &lib.join("foo"))?;
         let nested = lib.join("libfoo.dylib");
-        crate::file::make_symlink(Path::new("foo/libfoo.1.dylib"), &nested)?;
+        mise_util::file::make_symlink(Path::new("foo/libfoo.1.dylib"), &nested)?;
 
         assert!(can_overwrite(&nested));
         Ok(())
@@ -1172,7 +1173,7 @@ mod tests {
         assert!(prefix.join("opt/bar").is_symlink());
         assert!(prefix::linked_keg_record("bar").symlink_metadata().is_err());
         assert_eq!(linked_state("bar"), Some(("1.0".to_string(), false)));
-        crate::file::make_symlink(
+        mise_util::file::make_symlink(
             &bar_keg.join("lib/libbar.1.dylib"),
             &prefix.join("lib/libbar.1.dylib"),
         )?;
@@ -1180,8 +1181,8 @@ mod tests {
         assert!(prefix::linked_keg_record("bar").symlink_metadata().is_err());
 
         let linked = prefix::linked_keg_record("bar");
-        crate::file::create_dir_all(linked.parent().unwrap())?;
-        crate::file::make_symlink(Path::new("../../../Cellar/bar/1.0"), &linked)?;
+        mise_util::file::create_dir_all(linked.parent().unwrap())?;
+        mise_util::file::make_symlink(Path::new("../../../Cellar/bar/1.0"), &linked)?;
         std::fs::remove_file(prefix.join("opt/bar"))?;
         assert_eq!(linked_state("bar"), Some(("1.0".to_string(), true)));
         assert!(repair_link_record("bar", false)?);
@@ -1210,7 +1211,7 @@ mod tests {
             PathBuf::from("../../../Cellar/foo/1.0")
         );
 
-        crate::file::remove_file(prefix.join("opt/foo"))?;
+        mise_util::file::remove_file(prefix.join("opt/foo"))?;
         assert_eq!(linked_state("foo"), Some(("1.0".to_string(), true)));
         assert!(repair_link_record("foo", false)?);
         assert_eq!(
@@ -1229,8 +1230,8 @@ mod tests {
         write_lib_keg(&prefix, "foo", "1.0")?;
         brew_style_link(&prefix, "foo", "1.0")?;
         let linked = prefix::linked_keg_record("foo");
-        crate::file::create_dir_all(linked.parent().unwrap())?;
-        crate::file::make_symlink(Path::new("../../../Cellar/foo/0.9"), &linked)?;
+        mise_util::file::create_dir_all(linked.parent().unwrap())?;
+        mise_util::file::make_symlink(Path::new("../../../Cellar/foo/0.9"), &linked)?;
 
         assert_eq!(linked_state("foo"), Some(("1.0".to_string(), true)));
         assert!(repair_link_record("foo", false)?);
@@ -1240,7 +1241,7 @@ mod tests {
         );
 
         let opt = prefix.join("opt/foo");
-        crate::file::make_symlink(Path::new("../Cellar/foo/0.9"), &opt)?;
+        mise_util::file::make_symlink(Path::new("../Cellar/foo/0.9"), &opt)?;
         assert_eq!(linked_state("foo"), Some(("1.0".to_string(), true)));
         assert!(repair_link_record("foo", false)?);
         assert_eq!(
@@ -1248,7 +1249,7 @@ mod tests {
             PathBuf::from("../Cellar/foo/1.0")
         );
 
-        crate::file::make_symlink(Path::new("/custom/missing-foo"), &linked)?;
+        mise_util::file::make_symlink(Path::new("/custom/missing-foo"), &linked)?;
         assert_eq!(linked_state("foo"), Some(("1.0".to_string(), false)));
         assert!(!repair_link_record("foo", false)?);
         assert_eq!(
@@ -1270,7 +1271,7 @@ mod tests {
         let (_tmp, prefix) = canonical_tempdir()?;
         let _guard = BrewPrefixGuard::set(&prefix);
         let keg = write_lib_keg(&prefix, "foo", "1.0")?;
-        crate::file::write(keg.join("INSTALL_RECEIPT.json"), "{}")?;
+        mise_util::file::write(keg.join("INSTALL_RECEIPT.json"), "{}")?;
         brew_style_link(&prefix, "foo", "1.0")?;
         let public = prefix.join("lib/libfoo.dylib");
         let request = PackageRequest {
@@ -1332,8 +1333,8 @@ mod tests {
         let (_tmp, prefix) = canonical_tempdir()?;
         let _guard = BrewPrefixGuard::set(&prefix);
         write_lib_keg(&prefix, "foo", "1.0")?;
-        crate::file::create_dir_all(prefix.join("opt"))?;
-        crate::file::make_symlink(Path::new("../Cellar/foo/1.0"), &prefix.join("opt/foo"))?;
+        mise_util::file::create_dir_all(prefix.join("opt"))?;
+        mise_util::file::make_symlink(Path::new("../Cellar/foo/1.0"), &prefix.join("opt/foo"))?;
 
         assert_eq!(linked_state("foo"), Some(("1.0".to_string(), false)));
         assert!(!repair_link_record("foo", false)?);
@@ -1347,12 +1348,12 @@ mod tests {
         let (_tmp, prefix) = canonical_tempdir()?;
         let _guard = BrewPrefixGuard::set(&prefix);
         let keg = prefix.join("Cellar/glibc/1.0");
-        crate::file::create_dir_all(keg.join("lib"))?;
-        crate::file::write(keg.join("lib/ld-linux-x86-64.so.2"), "")?;
-        crate::file::create_dir_all(prefix.join("opt"))?;
-        crate::file::make_symlink(Path::new("../Cellar/glibc/1.0"), &prefix.join("opt/glibc"))?;
-        crate::file::create_dir_all(prefix.join("lib"))?;
-        crate::file::make_symlink(
+        mise_util::file::create_dir_all(keg.join("lib"))?;
+        mise_util::file::write(keg.join("lib/ld-linux-x86-64.so.2"), "")?;
+        mise_util::file::create_dir_all(prefix.join("opt"))?;
+        mise_util::file::make_symlink(Path::new("../Cellar/glibc/1.0"), &prefix.join("opt/glibc"))?;
+        mise_util::file::create_dir_all(prefix.join("lib"))?;
+        mise_util::file::make_symlink(
             &keg.join("lib/ld-linux-x86-64.so.2"),
             &prefix.join("lib/ld.so"),
         )?;
@@ -1374,13 +1375,13 @@ mod tests {
         let _guard = BrewPrefixGuard::set(&prefix);
         write_lib_keg(&prefix, "foo", "1.0")?;
         let linked = prefix::linked_keg_record("foo");
-        crate::file::create_dir_all(linked.parent().unwrap())?;
-        crate::file::write(&linked, "foreign")?;
+        mise_util::file::create_dir_all(linked.parent().unwrap())?;
+        mise_util::file::write(&linked, "foreign")?;
 
         let err = link_keg("foo", "1.0", false).unwrap_err();
 
         assert!(err.to_string().contains("not created by mise or brew"));
-        assert_eq!(crate::file::read_to_string(&linked)?, "foreign");
+        assert_eq!(mise_util::file::read_to_string(&linked)?, "foreign");
         assert!(prefix.join("opt/foo").symlink_metadata().is_err());
         Ok(())
     }
@@ -1392,13 +1393,13 @@ mod tests {
         let _guard = BrewPrefixGuard::set(&prefix);
         write_lib_keg(&prefix, "foo", "1.0")?;
         let opt = prefix.join("opt/foo");
-        crate::file::create_dir_all(opt.parent().unwrap())?;
-        crate::file::write(&opt, "foreign")?;
+        mise_util::file::create_dir_all(opt.parent().unwrap())?;
+        mise_util::file::write(&opt, "foreign")?;
 
         let err = link_keg("foo", "1.0", false).unwrap_err();
 
         assert!(err.to_string().contains("not created by mise or brew"));
-        assert_eq!(crate::file::read_to_string(&opt)?, "foreign");
+        assert_eq!(mise_util::file::read_to_string(&opt)?, "foreign");
         assert!(prefix.join("lib/libfoo.dylib").symlink_metadata().is_err());
         Ok(())
     }

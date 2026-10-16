@@ -24,15 +24,14 @@ use std::path::{Path, PathBuf};
 use eyre::{bail, eyre};
 use serde::Deserialize;
 
-use crate::http::HTTP_FETCH;
-use crate::result::Result;
-use crate::system::sudo;
+use eyre::Result;
+use mise_ui::sudo;
+use mise_util::http::HTTP_FETCH;
 
 const SOURCES_DIR: &str = "/etc/apt/sources.list.d";
 /// Where earlier mise versions kept a source's key; removed once the key is
 /// embedded in the source file.
 const KEYRINGS_DIR: &str = "/etc/apt/keyrings";
-crate::remove_by!("2027.10.0", "apt-legacy-keyring-cleanup");
 
 /// One `[bootstrap.apt.sources.<name>]` entry as written in mise.toml.
 #[derive(Debug, Default, Clone, Deserialize)]
@@ -287,7 +286,7 @@ impl AptSource {
     /// Whether the keyring on disk is what this source declares: exactly the
     /// declared fingerprints, or for a PPA without one, any readable key.
     fn keyring_current(&self, keyring: Option<&[u8]>) -> bool {
-        let Some(keys) = keyring.and_then(|data| crate::gpg::parse_keyring(data).ok()) else {
+        let Some(keys) = keyring.and_then(|data| mise_util::gpg::parse_keyring(data).ok()) else {
             return false;
         };
         let mut found = keys.into_iter().map(|k| k.fingerprint).collect::<Vec<_>>();
@@ -321,7 +320,7 @@ impl AptSource {
         };
         debug!("apt source {}: fetching signing key {url}", self.name);
         let data = HTTP_FETCH.get_bytes(&url).await?;
-        let keys = crate::gpg::parse_keyring(data.as_ref())
+        let keys = mise_util::gpg::parse_keyring(data.as_ref())
             .map_err(|err| eyre!("{}: reading the key from {url}: {err}", self.name))?;
         Ok(armor(&select_keys(&self.name, &url, keys, &fingerprints)?))
     }
@@ -435,7 +434,7 @@ fn ppa_uri(owner: &str, archive: &str) -> String {
 fn select_keys(
     name: &str,
     url: &str,
-    keys: Vec<crate::gpg::KeyringKey>,
+    keys: Vec<mise_util::gpg::KeyringKey>,
     fingerprints: &[String],
 ) -> Result<Vec<u8>> {
     let mut out = vec![];
@@ -779,7 +778,7 @@ fn confirm(pending: &[PendingSource<'_>]) -> Result<bool> {
         .map(|p| format!("{} ({})", p.source.name, p.source.describe()))
         .collect::<Vec<_>>()
         .join(", ");
-    Ok(crate::ui::prompt::confirm(format!("apt: add or update sources {list}?"))?.is_yes())
+    Ok(mise_ui::prompt::confirm(format!("apt: add or update sources {list}?"))?.is_yes())
 }
 
 /// The declared sources apt has not fetched lists for. `apt-get indextargets
@@ -900,7 +899,7 @@ mod tests {
 
     #[test]
     fn armor_is_readable_as_a_keyring() {
-        let keys = crate::gpg::parse_keyring(include_bytes!(
+        let keys = mise_util::gpg::parse_keyring(include_bytes!(
             "../../../crates/mise-util/src/assets/gpg/swift.asc"
         ))
         .unwrap();
@@ -908,7 +907,7 @@ mod tests {
             .iter()
             .flat_map(|k| k.bytes.clone())
             .collect::<Vec<_>>();
-        let reparsed = crate::gpg::parse_keyring(armor(&bytes).as_bytes()).unwrap();
+        let reparsed = mise_util::gpg::parse_keyring(armor(&bytes).as_bytes()).unwrap();
         assert_eq!(reparsed.len(), keys.len());
     }
 
@@ -1095,7 +1094,7 @@ mod tests {
 
     #[test]
     fn keyring_must_hold_exactly_the_declared_keys() {
-        let keys = crate::gpg::parse_keyring(include_bytes!(
+        let keys = mise_util::gpg::parse_keyring(include_bytes!(
             "../../../crates/mise-util/src/assets/gpg/swift.asc"
         ))
         .unwrap();

@@ -24,10 +24,10 @@ use std::path::{Component, Path, PathBuf};
 use std::sync::Arc;
 
 use super::{InstallOpts, PackageRequest, PackageState, PackageStatus, SystemPackageManager};
-use crate::config::Settings;
-use crate::result::Result;
-use crate::ui::multi_progress_report::MultiProgressReport;
-use crate::ui::progress_report::{ProgressIcon, SingleReport};
+use eyre::Result;
+use mise_settings::Settings;
+use mise_ui::multi_progress_report::MultiProgressReport;
+use mise_ui::progress_report::{ProgressIcon, SingleReport};
 
 mod api;
 mod cask;
@@ -267,8 +267,10 @@ impl BrewManager {
                 })
             })
             .collect::<Vec<_>>();
-        let mut bottle_jobs =
-            fetch::concurrently(bottle_jobs, crate::jobs::normalize(Settings::get().jobs));
+        let mut bottle_jobs = fetch::concurrently(
+            bottle_jobs,
+            mise_util::jobs::normalize(Settings::get().jobs),
+        );
         let mut prepared = HashMap::new();
         let mut completed = HashSet::new();
         let mut failure = None;
@@ -487,7 +489,7 @@ impl SystemPackageManager for BrewManager {
 }
 
 fn is_tapped_formula(name: &str) -> bool {
-    crate::system::brew_tap_name(name).is_some()
+    crate::system::packages::options::brew_tap_name(name).is_some()
 }
 
 fn tapped_formula_name(name: &str) -> &str {
