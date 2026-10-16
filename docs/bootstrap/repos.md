@@ -69,6 +69,32 @@ Reading a var never prompts; an unanswered one uses its `default`. Run
 The optional `ref` is a branch, a tag, or a full commit SHA. An invalid entry
 is reported with a warning and skipped.
 
+`url` and `ref` can use vars and process environment variables (`env.NAME`) too, so one file can serve several branches. Values from a config's `[env]` table are not available, as in checkout paths:
+
+```toml
+[vars]
+branch = "main"
+
+[bootstrap.repos]
+"~/src/project" = { url = "git@github.com:example/project.git", ref = "{{ vars.branch }}" }
+```
+
+## Clone options
+
+These optional fields shape the first clone of a missing repository. They have
+no effect on an existing checkout, which keeps the shape it was cloned with.
+
+| Field        | Effect                                                                                                                                  |
+| ------------ | --------------------------------------------------------------------------------------------------------------------------------------- |
+| `filter`     | Passes `--filter=<spec>`, for example `"blob:none"` for a blobless clone                                                                |
+| `depth`      | Passes `--depth <n> --no-single-branch` for a shallow clone; cannot be combined with a full commit SHA or a `ref` starting with `refs/` |
+| `submodules` | When `true`, passes `--recurse-submodules` (and `--also-filter-submodules` with `filter`)                                               |
+
+```toml
+[bootstrap.repos]
+"~/src/large" = { url = "git@github.com:example/large.git", filter = "blob:none", depth = 1 }
+```
+
 ## Choose a ref {#choose-apply-or-update}
 
 What `apply` and

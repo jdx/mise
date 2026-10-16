@@ -7602,6 +7602,21 @@
                 "minLength": 1,
                 "pattern": ".*\\S.*",
                 "description": "optional branch, tag, or full commit SHA to check out"
+              },
+              "filter": {
+                "type": "string",
+                "minLength": 1,
+                "pattern": ".*\\S.*",
+                "description": "partial clone filter passed to `git clone --filter`, such as `blob:none`; applies to the first clone only"
+              },
+              "depth": {
+                "type": "integer",
+                "minimum": 1,
+                "description": "shallow clone depth passed to `git clone --depth`; applies to the first clone only"
+              },
+              "submodules": {
+                "type": "boolean",
+                "description": "clone with `--recurse-submodules`; applies to the first clone only"
               }
             },
             "required": ["url"],

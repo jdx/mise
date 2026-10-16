@@ -1547,11 +1547,11 @@ pub fn launchd_from_config(config: &Config) -> Vec<LaunchdRequest> {
     out
 }
 
-/// Render a `[bootstrap.repos]` key as a template, so a checkout path can use
-/// `{{ vars.name }}`, without `exec()` so a preview cannot run commands. Reading
-/// a var never prompts: an unanswered one resolves to
+/// Render a `[bootstrap.repos]` key, `url`, or `ref` as a template, so a
+/// checkout can use `{{ vars.name }}`, without `exec()` so a preview cannot run
+/// commands. Reading a var never prompts: an unanswered one resolves to
 /// its `default`.
-fn render_repo_path(config: &Config, config_path: &Path, path_raw: &str) -> Result<String> {
+fn render_repo_str(config: &Config, config_path: &Path, path_raw: &str) -> Result<String> {
     if !mise_util::tera::contains_template_syntax(path_raw) {
         return Ok(path_raw.to_string());
     }
@@ -1575,8 +1575,28 @@ pub fn repos_from_config(config: &Config) -> Vec<RepoRequest> {
     for cf in config.config_files.values().rev() {
         if let Some(sys) = cf.bootstrap_config() {
             for (path_raw, repo) in sys.repos {
-                let path_raw = match render_repo_path(config, cf.get_path(), &path_raw) {
-                    Ok(path_raw) => path_raw,
+                let rendered = render_repo_str(config, cf.get_path(), &path_raw).and_then(|path| {
+                    let url = repo
+                        .url
+                        .as_deref()
+                        .map(|url| render_repo_str(config, cf.get_path(), url))
+                        .transpose()?;
+                    let git_ref = repo
+                        .git_ref
+                        .as_deref()
+                        .map(|git_ref| render_repo_str(config, cf.get_path(), git_ref))
+                        .transpose()?;
+                    Ok((path, url, git_ref))
+                });
+                let (path_raw, repo) = match rendered {
+                    Ok((path_raw, url, git_ref)) => (
+                        path_raw,
+                        RepoTomlConfig {
+                            url,
+                            git_ref,
+                            ..repo
+                        },
+                    ),
                     Err(err) => {
                         warn!("[bootstrap.repos].\"{path_raw}\": {err}");
                         continue;
@@ -4321,6 +4341,7 @@ mod tests {
             repos::RepoTomlConfig {
                 url: Some("https://github.com/jdx/dotfiles.git".to_string()),
                 git_ref: Some("main".to_string()),
+                ..Default::default()
             },
             None,
         )
@@ -4335,6 +4356,7 @@ mod tests {
                 repos::RepoTomlConfig {
                     url: Some("https://github.com/jdx/dotfiles.git".to_string()),
                     git_ref: None,
+                    ..Default::default()
                 },
                 None,
             )
