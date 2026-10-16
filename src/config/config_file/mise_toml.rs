@@ -1412,12 +1412,17 @@ impl MiseToml {
                         )?;
                     }
                     let mut ba = ba.clone();
+                    // The registry entry this version is routed to supplies the defaults:
+                    // a backend can carry other options for another version range, and a
+                    // version range can select another backend.
+                    let registry_ba = ba.with_registry_version(&version);
+                    let registry_ba = registry_ba.as_ref().unwrap_or(&ba);
                     // Start with cached options but filter out install-time-only options
                     // when config provides its own options. This allows:
                     // - Changing url/asset_pattern/checksum without reinstall issues
                     // - Replacing stale layout options like bin_path with current config values
-                    let mut ba_opts = ba.opts().clone();
-                    let backend_type = ba.backend_type();
+                    let mut ba_opts = registry_ba.opts().clone();
+                    let backend_type = registry_ba.backend_type();
                     ba_opts.opts.retain(|k, _| {
                         !crate::backend::is_install_time_option_key_for_type(&backend_type, k)
                     });
@@ -1426,9 +1431,10 @@ impl MiseToml {
                     // The filtering above strips both stale install-state cache AND registry
                     // defaults. We want to keep registry defaults while discarding stale cache.
                     if let Some(rt) = crate::registry::REGISTRY.get(ba.short.as_str()) {
-                        let full = ba.full();
+                        let full = registry_ba.full();
                         // Get structured options from registry (table-format backends)
-                        let mut registry_opts = rt.backend_options(&full);
+                        let mut registry_opts =
+                            rt.backend_options(&full, registry_ba.registry_version());
                         // Also parse inline options from [key=val,...] in the full string
                         if let Some(start) = full.rfind('[')
                             && full.ends_with(']')
@@ -5457,6 +5463,34 @@ run = "cargo build"
             Some(&vec![]),
             "an empty user-provided expose should clear the registry default"
         );
+    }
+
+    #[tokio::test]
+    async fn test_table_syntax_registry_defaults_follow_the_version_range() {
+        // hk installs from packslip (with a `workflow` option) from 1.58.1 on
+        // and from aqua before that. A table-syntax request must take the
+        // defaults of the entry its version selects, not of the first entry.
+        let _config = Config::get().await.unwrap();
+        let workflow = |version: &str| {
+            let cf = parse(formatdoc! {r#"
+                [tools]
+                hk = {{ version = "{version}" }}
+            "#});
+            let trs = cf.to_tool_request_set().unwrap();
+            let (_, requests) = trs
+                .tools
+                .iter()
+                .find(|(ba, _)| ba.short == "hk")
+                .expect("hk should be in tool request set");
+            requests[0]
+                .options()
+                .opts
+                .get("workflow")
+                .and_then(toml::Value::as_str)
+                .map(str::to_string)
+        };
+        assert_eq!(workflow("1.58.1").as_deref(), Some("release.yml"));
+        assert_eq!(workflow("1.57.0"), None);
     }
 
     #[tokio::test]
