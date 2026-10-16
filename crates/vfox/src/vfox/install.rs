@@ -47,7 +47,15 @@ impl Vfox {
         let mut verified_attestation = None;
         let mut checksum_verified = false;
         if let Some(url) = pre_install.url.as_ref().map(|s| Url::from_str(s)) {
-            let file = self.download(&url?, &sdk, version, download_dir).await?;
+            let file = self
+                .download(
+                    &url?,
+                    &sdk,
+                    version,
+                    download_dir,
+                    pre_install.headers.as_ref(),
+                )
+                .await?;
             verified_attestation = self.verify(&pre_install, &file).await?;
             self.extract(&file, install_dir)?;
             // Note: sha1/md5 are verified in `verify`, but intentionally excluded here.
@@ -147,6 +155,7 @@ impl Vfox {
         sdk: &Plugin,
         version: &str,
         download_dir: &Path,
+        plugin_headers: Option<&HeaderMap>,
     ) -> Result<PathBuf> {
         let path = Self::download_path_for(download_dir, &sdk.name, version, url)?;
         let mut request_url = url.clone();
@@ -154,11 +163,19 @@ impl Vfox {
         self.log_emit(format!("Downloading {request_url}"));
         let url_str = request_url.to_string();
         let bytes = retry_async(&url_str, || async {
-            let mut request = CLIENT.get(request_url.clone());
-            if let Some(resolver) = &self.http_headers_resolver {
-                request = request.headers(resolver(&request_url));
-            }
-            let resp = request.send().await?;
+            let resp = match plugin_headers.filter(|h| !h.is_empty()) {
+                Some(plugin_headers) => {
+                    self.get_following_redirects(&request_url, plugin_headers)
+                        .await?
+                }
+                None => {
+                    let mut request = CLIENT.get(request_url.clone());
+                    if let Some(resolver) = &self.http_headers_resolver {
+                        request = request.headers(resolver(&request_url));
+                    }
+                    request.send().await?
+                }
+            };
             let resp = resp.error_for_status()?;
             resp.bytes().await
         })
@@ -168,6 +185,50 @@ impl Vfox {
         tokio::io::AsyncWriteExt::write_all(&mut file, &bytes).await?;
         file.sync_all().await?;
         Ok(path)
+    }
+
+    /// GET `url` with the plugin's headers, following redirects by hand so the
+    /// headers are only sent to the origin of `url`. A redirect to another
+    /// host, port or scheme (e.g. a signed storage URL) drops them.
+    async fn get_following_redirects(
+        &self,
+        url: &Url,
+        plugin_headers: &HeaderMap,
+    ) -> reqwest::Result<reqwest::Response> {
+        const MAX_REDIRECTS: usize = 10;
+        let mut current = url.clone();
+        for _ in 0..=MAX_REDIRECTS {
+            let mut headers = self
+                .http_headers_resolver
+                .as_ref()
+                .map(|resolver| resolver(&current))
+                .unwrap_or_default();
+            if current.origin() == url.origin() {
+                headers.extend(plugin_headers.clone());
+            }
+            let resp = NO_REDIRECT_CLIENT
+                .get(current.clone())
+                .headers(headers)
+                .send()
+                .await?;
+            if !resp.status().is_redirection() {
+                return Ok(resp);
+            }
+            let Some(next) = resp
+                .headers()
+                .get(reqwest::header::LOCATION)
+                .and_then(|l| l.to_str().ok())
+                .and_then(|l| current.join(l).ok())
+            else {
+                return Ok(resp);
+            };
+            current = next;
+        }
+        NO_REDIRECT_CLIENT
+            .get(current)
+            .send()
+            .await?
+            .error_for_status()
     }
 
     pub(super) fn download_path_for(

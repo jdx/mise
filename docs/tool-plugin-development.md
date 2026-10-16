@@ -250,6 +250,7 @@ Return a table:
 | `sha256` or `sha512` | no       | The file's checksum; return one with every `url`                               |
 | `sha1` or `md5`      | no       | Weaker checksums, also checked                                                 |
 | `attestation`        | no       | A signature or provenance to verify; see [Verify downloads](#verify-downloads) |
+| `headers`            | no       | Request headers for the download, such as a token                              |
 
 mise downloads `url`, checks every checksum and attestation you return, and
 extracts the file into the install directory. It extracts `.tar.gz`, `.tgz`,
@@ -258,6 +259,31 @@ archive holds a single top-level directory, that directory's contents become
 the install directory. Any other file is moved into the install directory and
 marked executable. Without a `url`, mise downloads nothing and `PostInstall`
 does the install, as in a build from source.
+
+### Authenticated downloads
+
+When the artifact needs a token, return a `headers` table next to `url`:
+
+```lua
+function PLUGIN:PreInstall(ctx)
+    return {
+        version = ctx.version,
+        url = "https://api.github.com/repos/acme/dist/releases/assets/12345",
+        sha256 = sha256,
+        headers = {
+            Accept = "application/octet-stream",
+            Authorization = "Bearer " .. token,
+        },
+    }
+end
+```
+
+mise sends the headers only to the origin (scheme, host and port) of `url`. It
+drops them when a redirect leads to another origin, which is what signed
+storage URLs such as GitHub's need. A `headers` `Authorization` wins over
+netrc and the automatic GitHub token. Header values are kept out of debug
+output, and headers are not recorded in `mise.lock`. mise downloads the file
+with these headers, so checksums, retries and `mise lock` keep working.
 
 mise also calls `PreInstall` to record download URLs in `mise.lock` for other
 platforms. `RUNTIME` then describes the target platform, so build the URL from

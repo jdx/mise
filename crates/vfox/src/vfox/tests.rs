@@ -76,6 +76,7 @@ fn pre_install_with(sha1: Option<&str>, md5: Option<&str>) -> PreInstall {
         sha512: None,
         // no attestation, so `verify` returns as soon as the checksums are done
         attestation: None,
+        headers: None,
     }
 }
 
@@ -231,7 +232,7 @@ async fn test_download_resolves_headers_after_url_rewrite() {
 
     let original_url = Url::parse("https://upstream.invalid/tool.tar.gz").unwrap();
     let downloaded = vfox
-        .download(&original_url, &plugin, "1.0.0", temp.path())
+        .download(&original_url, &plugin, "1.0.0", temp.path(), None)
         .await
         .unwrap();
     assert_eq!(std::fs::read(downloaded).unwrap(), b"artifact");
@@ -449,4 +450,53 @@ async fn test_backend_search_tools_is_optional() {
 async fn test_backend_list_tools_is_optional() {
     let vfox = Vfox::test();
     assert_eq!(vfox.backend_list_tools("dummy").await.unwrap(), None);
+}
+
+#[tokio::test]
+async fn test_download_sends_plugin_headers_and_drops_them_cross_origin() {
+    use reqwest::header::HeaderValue;
+    use wiremock::matchers::{header, method, path};
+    use wiremock::{Mock, MockServer, Request, ResponseTemplate};
+
+    let storage = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/signed"))
+        .respond_with(|req: &Request| {
+            assert!(!req.headers.contains_key("authorization"));
+            ResponseTemplate::new(200).set_body_bytes(b"artifact")
+        })
+        .expect(1)
+        .mount(&storage)
+        .await;
+
+    let api = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/asset"))
+        .and(header("Authorization", "Bearer secret"))
+        .and(header("Accept", "application/octet-stream"))
+        .respond_with(
+            ResponseTemplate::new(302)
+                .insert_header("Location", format!("{}/signed", storage.uri()).as_str()),
+        )
+        .expect(1)
+        .mount(&api)
+        .await;
+
+    let temp = TempDir::new().unwrap();
+    let plugin_dir = temp.path().join("dummy");
+    std::fs::create_dir_all(&plugin_dir).unwrap();
+    let plugin = Plugin::from_dir(&plugin_dir).unwrap();
+    let vfox = Vfox::test();
+    let mut headers = HeaderMap::new();
+    headers.insert("authorization", HeaderValue::from_static("Bearer secret"));
+    headers.insert(
+        "accept",
+        HeaderValue::from_static("application/octet-stream"),
+    );
+    let url = Url::parse(&format!("{}/asset", api.uri())).unwrap();
+    let downloaded = vfox
+        .download(&url, &plugin, "1.0.0", temp.path(), Some(&headers))
+        .await
+        .unwrap();
+    assert_eq!(std::fs::read(downloaded).unwrap(), b"artifact");
 }

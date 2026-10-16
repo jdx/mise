@@ -12,6 +12,16 @@ pub(crate) static CLIENT: LazyLock<Client> = LazyLock::new(|| {
         .expect("Failed to create reqwest client")
 });
 
+/// Client that never follows redirects, for requests that carry plugin headers
+/// and have to decide per hop which headers to forward.
+pub(crate) static NO_REDIRECT_CLIENT: LazyLock<Client> = LazyLock::new(|| {
+    ClientBuilder::new()
+        .user_agent(format!("vfox.rs/{}", env!("CARGO_PKG_VERSION")))
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
+        .expect("Failed to create reqwest client")
+});
+
 pub(crate) const URL_REWRITER_REGISTRY_KEY: &str = "url_rewriter_fn";
 pub(crate) const HTTP_HEADERS_RESOLVER_REGISTRY_KEY: &str = "http_headers_resolver_fn";
 pub(crate) type HttpHeadersResolver = Arc<dyn Fn(&Url) -> HeaderMap + Send + Sync>;
