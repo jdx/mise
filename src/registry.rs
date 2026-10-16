@@ -1073,8 +1073,18 @@ pub(crate) fn platforms_disjoint<S: AsRef<str>>(a: &[S], b: &[S]) -> bool {
     };
     let differ =
         |x: &Option<String>, y: &Option<String>| matches!((x, y), (Some(x), Some(y)) if x != y);
+    // Windows on arm64 also matches x64 selectors, as `backend_matches_platform` does.
+    let windows_arm64 = |list: &[S]| {
+        list.iter().any(|s| {
+            matches!(
+                s.as_ref(),
+                "windows" | "arm64" | "windows-arm64" | "x64" | "windows-x64"
+            )
+        })
+    };
     !a.is_empty()
         && !b.is_empty()
+        && !(windows_arm64(a) && windows_arm64(b))
         && a.iter().all(|a| {
             let (a_os, a_arch) = split(a.as_ref());
             b.iter().all(|b| {
@@ -1478,6 +1488,9 @@ backends = [
             (&["linux"], &["x64"], false),
             (&["linux-x64"], &["linux-arm64"], true),
             (&["linux-x64"], &["arm64"], true),
+            (&["windows-x64"], &["windows-arm64"], false),
+            (&["x64"], &["arm64"], false),
+            (&["linux-x64"], &["windows-arm64"], true),
             (&["macos"], &["macos-arm64"], false),
             (&[], &["windows"], false),
         ] {
