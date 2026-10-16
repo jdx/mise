@@ -6737,6 +6737,7 @@ dependencies = [
  "mise-dotenv",
  "mise-interactive-config",
  "mise-settings",
+ "mise-system-config",
  "mise-system-packages",
  "mise-ui",
  "mise-util",
@@ -6941,6 +6942,15 @@ dependencies = [
  "thiserror 2.0.21",
  "tokio",
  "x509-cert 0.3.0",
+]
+
+[[package]]
+name = "mise-system-config"
+version = "0.1.0"
+dependencies = [
+ "indexmap 2.14.2",
+ "serde",
+ "toml 1.1.8+spec-1.1.0",
 ]
 
 [[package]]

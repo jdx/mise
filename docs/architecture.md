@@ -38,6 +38,7 @@ anything else runs.
 | Crate                     | Contents                                                                                  |
 | ------------------------- | ----------------------------------------------------------------------------------------- |
 | `mise-util`               | Environment, directory, file, HTTP, cache, template, and `EnvDiff`/`PathEnv` helpers      |
+| `mise-system-config`      | The `mise.toml` declaration types for `[bootstrap]`, `[dotfiles]`, and `[history]`        |
 | `mise-system-packages`    | System package manager drivers: apt, dnf, brew, brew-cask, and more                       |
 | `mise-ui`                 | Progress reports, prompts, and themes for the terminal                                    |
 | `mise-settings`           | The `Settings` types, generated from `settings.toml`, and the process-wide settings cache |

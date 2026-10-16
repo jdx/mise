@@ -614,10 +614,7 @@ pub struct SystemDnfTomlConfig {
     pub repos: IndexMap<String, toml::Value>,
 }
 
-/// `[dotfiles]` as parsed from a single mise.toml.
-#[derive(Debug, Default, Clone, Deserialize)]
-#[serde(transparent)]
-pub struct DotfilesTomlConfig(pub IndexMap<String, toml::Value>);
+pub use mise_system_config::dotfiles::DotfilesTomlConfig;
 
 /// Packages for one manager, aggregated across the config hierarchy
 #[derive(Clone)]
