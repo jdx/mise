@@ -930,6 +930,27 @@ impl RegistryTool {
         (owners.len() > 1).then_some(owners)
     }
 
+    /// The range owners whose versions `request` can match: those whose range
+    /// it reaches, until they together cover everything it asks for.
+    pub(crate) fn version_range_owners_for(
+        &self,
+        owners: Vec<&'static RegistryBackend>,
+        request: &str,
+    ) -> Vec<&'static RegistryBackend> {
+        let range = request_range(request);
+        let mut kept = vec![];
+        for owner in owners.into_iter().filter(|o| o.supports_version(request)) {
+            kept.push(owner);
+            if range
+                .as_ref()
+                .is_some_and(|(lo, hi)| covers(&kept, Some(lo), Some(hi)))
+            {
+                break;
+            }
+        }
+        kept
+    }
+
     /// The entry that serves the concrete `version`: the first eligible one
     /// whose range contains it.
     pub(crate) fn version_owner(&self, version: &str) -> Option<&'static RegistryBackend> {
@@ -1037,6 +1058,17 @@ impl RegistryTool {
 /// Whether the `[min_version, max_version)` ranges of `entries` leave no
 /// version out.
 fn covers_every_version(entries: &[&RegistryBackend]) -> bool {
+    covers(entries, None, None)
+}
+
+/// Whether the `[min_version, max_version)` ranges of `entries` together
+/// contain every version in `[lo, hi)`, where a missing `lo` is -inf and a
+/// missing `hi` is +inf.
+fn covers(
+    entries: &[&RegistryBackend],
+    lo: Option<&semver::Version>,
+    hi: Option<&semver::Version>,
+) -> bool {
     let parse = |v: &str| semver::Version::parse(v).expect("validated registry version bound");
     let mut ranges = entries
         .iter()
@@ -1049,27 +1081,65 @@ fn covers_every_version(entries: &[&RegistryBackend]) -> bool {
         (Some(_), None) => std::cmp::Ordering::Greater,
         (Some(a), Some(b)) => a.cmp_precedence(b),
     });
-    // How far up from -inf the ranges reach without a gap; `None` is +inf.
-    let mut reach: Option<semver::Version> = match ranges.first() {
-        Some((None, max)) => max.clone(),
-        _ => return false,
+    /// How far up from `lo` the ranges reach without a gap.
+    enum Reach {
+        NegInf,
+        At(semver::Version),
+        PosInf,
+    }
+    let reached = |reach: &Reach| match (reach, hi) {
+        (Reach::PosInf, _) => true,
+        (_, None) | (Reach::NegInf, Some(_)) => false,
+        (Reach::At(reach), Some(hi)) => !reach.cmp_precedence(hi).is_lt(),
     };
-    for (min, max) in &ranges[1..] {
-        let Some(edge) = &reach else {
+    let mut reach = lo.map_or(Reach::NegInf, |lo| Reach::At(lo.clone()));
+    for (min, max) in ranges {
+        if reached(&reach) {
             return true;
+        }
+        let gap = match (&min, &reach) {
+            (None, _) | (Some(_), Reach::PosInf) => false,
+            (Some(_), Reach::NegInf) => true,
+            (Some(min), Reach::At(reach)) => min.cmp_precedence(reach).is_gt(),
         };
-        if min
-            .as_ref()
-            .is_some_and(|min| min.cmp_precedence(edge).is_gt())
-        {
+        if gap {
             return false;
         }
-        reach = match max {
-            Some(max) if max.cmp_precedence(edge).is_le() => reach,
-            _ => max.clone(),
+        reach = match (max, reach) {
+            (None, _) => Reach::PosInf,
+            (Some(max), Reach::At(reach)) if max.cmp_precedence(&reach).is_le() => Reach::At(reach),
+            (Some(_), Reach::PosInf) => Reach::PosInf,
+            (Some(max), _) => Reach::At(max),
         };
     }
-    reach.is_none()
+    reached(&reach)
+}
+
+/// The versions a request covers, as `[lo, hi)`: `2` is `[2.0.0, 3.0.0)`,
+/// `1.58` is `[1.58.0, 1.59.0)` and `1.58.1` is `[1.58.1, 1.58.2)`. `None`
+/// for anything else, such as `latest` or a non-numeric prefix.
+fn request_range(request: &str) -> Option<(semver::Version, semver::Version)> {
+    let request = request.strip_prefix("prefix:").unwrap_or(request);
+    let request = request.trim_start_matches(['v', 'V']);
+    if let Ok(version) = semver::Version::parse(request) {
+        let next = semver::Version::new(version.major, version.minor, version.patch + 1);
+        return Some((version, next));
+    }
+    let parts = request
+        .split('.')
+        .map(|part| part.parse::<u64>().ok())
+        .collect::<Option<Vec<_>>>()?;
+    match parts[..] {
+        [major] => Some((
+            semver::Version::new(major, 0, 0),
+            semver::Version::new(major + 1, 0, 0),
+        )),
+        [major, minor] => Some((
+            semver::Version::new(major, minor, 0),
+            semver::Version::new(major, minor + 1, 0),
+        )),
+        _ => None,
+    }
 }
 
 /// Whether no platform matches both selector lists. An empty list matches
@@ -1584,6 +1654,31 @@ backends = [
         assert_eq!(
             tool.version_owner("2.5.0").map(|rb| rb.full),
             Some("asdf:example/tool")
+        );
+
+        // A request inside one range lists only its owner; one that spans a
+        // boundary lists both sides.
+        let tool =
+            parse(r#"{ full = "github:example/new", min_version = "1.58.1" }, "aqua:example/old""#);
+        let for_request = |request: &str| {
+            fulls(Some(tool.version_range_owners_for(
+                tool.version_range_owners().unwrap(),
+                request,
+            )))
+            .unwrap()
+        };
+        assert_eq!(for_request("2"), ["github:example/new"]);
+        assert_eq!(for_request("1.59"), ["github:example/new"]);
+        assert_eq!(for_request("1.58.1"), ["github:example/new"]);
+        assert_eq!(for_request("1.57"), ["aqua:example/old"]);
+        assert_eq!(
+            for_request("1.58"),
+            ["github:example/new", "aqua:example/old"]
+        );
+        assert_eq!(for_request("1"), ["github:example/new", "aqua:example/old"]);
+        assert_eq!(
+            for_request("nightly"),
+            ["github:example/new", "aqua:example/old"]
         );
 
         // An unbounded first backend serves every version.
