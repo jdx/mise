@@ -732,7 +732,6 @@ pub trait SettingsExt: Sized {
 
     fn erlang_compile(&self, purpose: CompilePurpose) -> Option<bool>;
 
-    #[cfg(not(windows))]
     fn ruby_compile(&self, purpose: CompilePurpose) -> Option<bool>;
 
     /// The log level the parsed CLI flags ask for, without a full settings build.
@@ -934,7 +933,6 @@ impl SettingsExt for Settings {
         self.compile_setting(purpose, "erlang", self.erlang.compile)
     }
 
-    #[cfg(not(windows))]
     fn ruby_compile(&self, purpose: CompilePurpose) -> Option<bool> {
         self.compile_setting(purpose, "ruby", self.ruby.compile)
     }
