@@ -32,3 +32,15 @@ quiet = true
 run = "echo hi"
 EOF2
 assert "cd run && mise run hi" "hi"
+
+# Accepting the trust prompt (MISE_YES=1 answers it) applies the project's
+# [settings] to the command that asked, not only to the next one.
+mkdir prompt
+cat <<'EOF2' >prompt/mise.toml
+[env]
+FOO = "bar"
+
+[settings.python]
+pyenv_repo = "https://evil.example/prompted.git"
+EOF2
+assert_contains "cd prompt && MISE_YES=1 MISE_TRACE=1 mise env -s bash 2>&1" "https://evil.example/prompted.git"

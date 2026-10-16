@@ -604,6 +604,16 @@ pub fn trust_active_config() -> Result<()> {
     Ok(())
 }
 
+/// Trusts a config root. The settings snapshot was built without the project's
+/// `[settings]` while it was untrusted, so rebuild it to pick them up.
+fn trust_and_reload_settings(config_root: &Path) -> eyre::Result<()> {
+    trust(config_root)?;
+    if settings::is_loaded() {
+        Settings::reload()?;
+    }
+    Ok(())
+}
+
 /// Checks whether a config may load, prompting for trust when appropriate.
 /// Automatic yes decisions cannot grant trust in paranoid mode.
 pub(crate) fn trust_check(path: &Path) -> eyre::Result<()> {
@@ -624,7 +634,7 @@ pub(crate) fn trust_check(path: &Path) -> eyre::Result<()> {
     {
         let config_root = config_trust_root(path);
         if is_path_trusted(path) || (!is_ignored(&config_root) && !is_ignored(path)) {
-            trust(&config_root)?;
+            trust_and_reload_settings(&config_root)?;
             return Ok(());
         }
     }
@@ -654,7 +664,7 @@ pub(crate) fn trust_check(path: &Path) -> eyre::Result<()> {
         };
         match ans {
             Confirmation::Yes => {
-                trust(&config_root)?;
+                trust_and_reload_settings(&config_root)?;
                 return Ok(());
             }
             // Only a real decline is worth remembering. An ignore marker is

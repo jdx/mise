@@ -1664,9 +1664,22 @@ fn load() -> Result<Arc<Settings>> {
     // repoint downloads and build commands, so they apply only once that project is trusted,
     // just like its `[tools]` and `[env]`. Deciding trust reads a few settings of its own, so
     // publish the ones no project file can influence first.
+    let previous = mise_settings::is_loaded()
+        .then(mise_settings::last_cached)
+        .flatten();
     let bootstrap = Settings::load_sources_from(None, SettingsLoadPolicy::GLOBAL_HIERARCHY)?;
     mise_settings::store(Arc::new(bootstrap));
-    settings = Settings::load_sources_from(None, SettingsLoadPolicy::TRUSTED_HIERARCHY)?;
+    settings = match Settings::load_sources_from(None, SettingsLoadPolicy::TRUSTED_HIERARCHY) {
+        Ok(settings) => settings,
+        Err(err) => {
+            // A failed reload keeps the settings that were current before it.
+            match previous {
+                Some(previous) => mise_settings::store(previous),
+                None => mise_settings::clear(),
+            }
+            return Err(err);
+        }
+    };
     time!("try_get load2");
     if !settings.legacy_version_file {
         settings.idiomatic_version_file = Some(false);
