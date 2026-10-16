@@ -509,6 +509,15 @@ command = "mbx"
 env = { MBX_CARGO_SHIM_MODE = "1" }
 ```
 
+`command`, `args` and `env` values are [templates](/templates.html), so a wrapper
+can use `vars`, `env` and functions such as `join_path`:
+
+```toml [mise.toml]
+[wrappers.foo]
+command = "foo-real"
+env = { FOO_HOME = "{{ [xdg_data_home, 'foo'] | join_path }}" }
+```
+
 When a wrapper runs its command, mise removes the shim and wrapper directories
 from `PATH`, so `mbx` finds the real Cargo: mise-managed Rust when configured,
 otherwise rustup or the system installation. For mise-managed Rust, the

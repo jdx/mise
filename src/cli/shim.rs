@@ -1,7 +1,9 @@
 //! Running mise as a shim: find which tool the shim stands for and hand off to `mise exec`.
 
 use crate::cli::exec::Exec;
-use crate::config::{CommandWrapper, Config, Settings, load_command_wrappers};
+use crate::config::{
+    CommandWrapper, CommandWrapperOptions, Config, Settings, load_command_wrappers,
+};
 use crate::file::display_path;
 use crate::request_exit;
 use crate::shims::*;
@@ -257,7 +259,41 @@ async fn command_wrapper_for(
     if install_command {
         install_missing_wrapper_command(config, ts, wrapper.command()).await?;
     }
-    Ok(Some(wrapper.clone()))
+    Ok(Some(render_wrapper(config, wrapper)?))
+}
+
+/// Render `command`, `args` and `env` values as templates, so a wrapper can use `vars`, `env`
+/// and the path functions like a task. Values without template syntax are left untouched.
+fn render_wrapper(config: &Config, wrapper: &CommandWrapper) -> Result<CommandWrapper> {
+    let mut tera = crate::tera::get_tera(Some(&env::current_dir()?));
+    let mut render = |input: &str| -> Result<String> {
+        if !crate::tera::contains_template_syntax(input) {
+            return Ok(input.to_string());
+        }
+        Ok(crate::tera::render_str(&mut tera, input, &config.tera_ctx)?)
+    };
+    let command = render(wrapper.command())?;
+    if command.trim().is_empty() {
+        bail!(
+            "command wrapper command rendered blank: {:?}",
+            wrapper.command()
+        );
+    }
+    let args = wrapper
+        .args()
+        .iter()
+        .map(|arg| render(arg))
+        .collect::<Result<Vec<_>>>()?;
+    let env = wrapper
+        .env()
+        .iter()
+        .map(|(key, value)| Ok((key.clone(), render(value)?)))
+        .collect::<Result<_>>()?;
+    Ok(CommandWrapper::Detailed(CommandWrapperOptions {
+        command,
+        args,
+        env,
+    }))
 }
 
 /// Whether two command names find the same shim. Windows file names are case-insensitive, so a
