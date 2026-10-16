@@ -325,6 +325,7 @@ pub static BASE_CONTEXT: Lazy<Context> = Lazy::new(|| {
     context.insert("xdg_config_home", &*env::XDG_CONFIG_HOME);
     context.insert("xdg_data_home", &*env::XDG_DATA_HOME);
     context.insert("xdg_state_home", &*env::XDG_STATE_HOME);
+    context.insert("system_brew_prefix", &env::system_brew_prefix());
     context
 });
 

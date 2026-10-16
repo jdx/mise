@@ -61,6 +61,17 @@ export PATH="/home/linuxbrew/.linuxbrew/bin:$PATH"
 
 :::
 
+Templates can read the prefix as <code v-pre>{{ system_brew_prefix }}</code>, so
+one config works on both platforms:
+
+```toml
+[env]
+PKG_CONFIG_PATH = "{{ system_brew_prefix }}/opt/mysql-client/lib/pkgconfig"
+
+[bootstrap.user]
+login_shell = "{{ system_brew_prefix }}/bin/zsh"
+```
+
 ## Formula names
 
 Use the formula name as Homebrew spells it, such as `brew:jq` or

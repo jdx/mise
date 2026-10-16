@@ -1401,6 +1401,17 @@ pub fn set_mise_env(f: fn() -> &'static [String]) {
     let _ = MISE_ENV.set(f);
 }
 
+/// The prefix mise's built-in Homebrew support installs into: the platform
+/// default, unless the undocumented `MISE_SYSTEM_BREW_PREFIX` override (used
+/// to test the pour pipeline without touching the real prefix) is set.
+pub fn system_brew_prefix() -> PathBuf {
+    match var("MISE_SYSTEM_BREW_PREFIX") {
+        Ok(p) if !p.is_empty() => PathBuf::from(p),
+        _ if cfg!(target_os = "macos") => PathBuf::from("/opt/homebrew"),
+        _ => PathBuf::from("/home/linuxbrew/.linuxbrew"),
+    }
+}
+
 /// The active `MISE_ENV` environments. See [`set_mise_env`].
 pub fn mise_env() -> &'static [String] {
     let f = MISE_ENV
