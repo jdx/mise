@@ -510,7 +510,8 @@ env = { MBX_CARGO_SHIM_MODE = "1" }
 ```
 
 `command`, `args` and `env` values are [templates](/templates.html), so a wrapper
-can use `vars`, `env` and functions such as `join_path`:
+can use `vars`, `env` and functions such as `join_path`. `command` sees only `vars` and
+the process environment, because it may be what installs the project's tools:
 
 ```toml [mise.toml]
 [wrappers.foo]
