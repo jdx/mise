@@ -303,7 +303,15 @@ impl Watch {
         #[cfg(unix)]
         let _signal_restore = _terminal.arm();
 
-        cmd.run()?;
+        let output = cmd.unchecked().run()?;
+        if let Some(code) = interrupted_exit_code(&output.status) {
+            // The user pressed Ctrl+C. Exit with the conventional status
+            // instead of reporting watchexec's SIGINT exit as a failure.
+            return Err(request_exit(code));
+        }
+        if !output.status.success() {
+            bail!("command watchexec exited with {}", output.status);
+        }
         Ok(())
     }
 
@@ -336,6 +344,24 @@ impl Watch {
         );
         args
     }
+}
+
+/// The status mise exits with when watchexec ended because the user interrupted
+/// it: it exited with 130 (128 + SIGINT, which newer watchexec does on a second
+/// Ctrl+C) or was itself killed by SIGINT.
+fn interrupted_exit_code(status: &std::process::ExitStatus) -> Option<i32> {
+    const SIGINT_EXIT: i32 = 130;
+    if status.code() == Some(SIGINT_EXIT) {
+        return Some(SIGINT_EXIT);
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::ExitStatusExt;
+        if status.signal() == Some(nix::sys::signal::SIGINT as i32) {
+            return Some(SIGINT_EXIT);
+        }
+    }
+    None
 }
 
 /// Longest path that is a prefix of every input path. Returns `None` for
@@ -1767,6 +1793,26 @@ mod tests {
     fn resolve_source(s: &str, cwd: &Path, anchor: &Path) -> String {
         let (k, abs) = parse_source(s, cwd);
         relativize_source(k, &abs, anchor)
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn sigint_exits_are_an_interrupt_and_other_failures_are_not() {
+        use super::interrupted_exit_code;
+        use std::os::unix::process::ExitStatusExt;
+        use std::process::ExitStatus;
+
+        // exit code 130, as watchexec 2.8 exits after a second Ctrl+C
+        assert_eq!(
+            interrupted_exit_code(&ExitStatus::from_raw(130 << 8)),
+            Some(130)
+        );
+        // killed by SIGINT
+        assert_eq!(interrupted_exit_code(&ExitStatus::from_raw(2)), Some(130));
+        assert_eq!(interrupted_exit_code(&ExitStatus::from_raw(0)), None);
+        assert_eq!(interrupted_exit_code(&ExitStatus::from_raw(1 << 8)), None);
+        // killed by SIGTERM is not a Ctrl+C
+        assert_eq!(interrupted_exit_code(&ExitStatus::from_raw(15)), None);
     }
 
     #[test]
