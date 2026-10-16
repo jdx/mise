@@ -2607,6 +2607,7 @@ fn is_environment_conf_d_file(path: &Path) -> bool {
 /// the version default is still legacy (so it hasn't changed yet).
 fn warn_on_dotted_conf_d_file(path: &Path) {
     if settings::is_loaded()
+        && !settings::is_bootstrapping()
         && env::env_conf_d_setting().is_none()
         && !env::env_conf_d()
         && is_environment_conf_d_file(path)
