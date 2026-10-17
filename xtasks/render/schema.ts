@@ -255,6 +255,8 @@ function generatedFragments(): Record<string, unknown> {
     [
       "run",
       "--quiet",
+      // Like CI's other cargo commands: the lint runner's rustc can be older than the MSRV.
+      "--ignore-rust-version",
       "--package",
       "mise-config",
       "--example",
