@@ -47,6 +47,14 @@ pub(crate) struct Set {
     #[usage(short, long, verbatim_doc_comment, overrides = &["file", "env"])]
     global: bool,
 
+    /// Set the environment variable in the global override file, `config.override.toml`
+    ///
+    /// The override file outranks all project config. With `--env`, writes
+    /// `config.<ENV>.override.toml` instead. See
+    /// https://mise.jdx.dev/configuration.html#override-file
+    #[usage(long = "override", conflicts = ["global", "file"])]
+    override_file: bool,
+
     /// [experimental] Encrypt the value with age before storing
     #[usage(long, requires = "env_vars")]
     age_encrypt: bool,
@@ -407,6 +415,7 @@ impl Set {
             cwd: None,                // Use current working directory
             prefer_toml: true,        // mise set only works with TOML files
             prevent_home_local: true, // When in HOME, use global config
+            override_file: self.override_file,
             ..Default::default()
         };
         resolve_target_config_path(opts)

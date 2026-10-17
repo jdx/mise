@@ -28,7 +28,6 @@ version = "2026.10.13"
 edition = "2024"
 description = "Dev tools, env vars, and tasks in one CLI"
 authors = ["Jeff Dickey (@jdx)"]
-homepage = "https://mise.jdx.dev"
 documentation = "https://mise.jdx.dev"
 repository = "https://github.com/jdx/mise"
 readme = "README.md"

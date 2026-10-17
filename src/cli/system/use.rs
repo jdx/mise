@@ -128,6 +128,7 @@ impl SystemUse {
             cwd: None,
             prefer_toml: true,        // [bootstrap] only exists in mise.toml
             prevent_home_local: true, // in $HOME, write the global config
+            override_file: false,
             global_write_section: Some(GlobalWriteSection::Packages),
             existing_global_paths,
             has_new_global_entries,
@@ -210,7 +211,10 @@ impl SystemUse {
         let mut paths = IndexSet::new();
         let mut existing = std::collections::BTreeSet::new();
         for (path, cf) in &config.config_files {
-            if !crate::config::is_global_config(path) || crate::config::is_system_config(path) {
+            if !crate::config::is_global_config(path)
+                || crate::config::is_system_config(path)
+                || crate::config::is_override_config(path)
+            {
                 continue;
             }
             if let Some(bootstrap) = cf.bootstrap_config() {

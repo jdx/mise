@@ -1618,7 +1618,17 @@ fn render_config_files(config: &Config) -> String {
         .config_files
         .keys()
         .rev()
-        .map(display_path)
+        .map(|path| {
+            let display = display_path(path);
+            if crate::config::is_override_config(path) {
+                format!(
+                    "{display} {}",
+                    style::ndim("(override: outranks project config)")
+                )
+            } else {
+                display.to_string()
+            }
+        })
         .join("\n")
 }
 

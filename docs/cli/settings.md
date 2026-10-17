@@ -62,11 +62,11 @@ mise settings --local node.mirror_url https://npmmirror.com/mirrors/node/
 
 ## Subcommands
 
-- [`mise settings add [-l --local] <SETTING> [VALUE]`](/cli/settings/add.html)
+- [`mise settings add [-l --local] [--override] <SETTING> [VALUE]`](/cli/settings/add.html)
 - [`mise settings get [-l --local] <SETTING>`](/cli/settings/get.html)
 - [`mise settings ls [FLAGS] [SETTING]`](/cli/settings/ls.html)
-- [`mise settings set [-l --local] <SETTING> [VALUE]`](/cli/settings/set.html)
-- [`mise settings unset [-l --local] <KEY>`](/cli/settings/unset.html)
+- [`mise settings set [-l --local] [--override] <SETTING> [VALUE]`](/cli/settings/set.html)
+- [`mise settings unset [-l --local] [--override] <KEY>`](/cli/settings/unset.html)
 
 <!-- generated reference navigation -->
 

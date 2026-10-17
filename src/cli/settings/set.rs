@@ -38,25 +38,38 @@ pub(super) struct SettingsSet {
     /// nearest directory that has one, or ./mise.toml.
     #[usage(long, short)]
     pub local: bool,
+
+    /// Write to the global override file, `config.override.toml`
+    ///
+    /// The override file outranks all project config, so the setting wins over
+    /// the same setting in a project's `mise.toml`.
+    #[usage(long = "override", conflicts = "local")]
+    pub override_file: bool,
 }
 
 impl SettingsSet {
     pub(super) fn run(self) -> Result<()> {
         match self.value {
-            Some(value) => set(&self.setting, &value, false, self.local),
+            Some(value) => set(&self.setting, &value, false, self.local, self.override_file),
             None => {
                 let (key, value) = self.setting.split_once('=').ok_or_else(|| {
                     eyre!(
                         "Usage: mise settings set <KEY>=<VALUE> or mise settings set <KEY> <VALUE>"
                     )
                 })?;
-                set(key, value, false, self.local)
+                set(key, value, false, self.local, self.override_file)
             }
         }
     }
 }
 
-pub(super) fn set(mut key: &str, value: &str, add: bool, local: bool) -> Result<()> {
+pub(super) fn set(
+    mut key: &str,
+    value: &str,
+    add: bool,
+    local: bool,
+    override_file: bool,
+) -> Result<()> {
     key = super::canonical_setting(key);
     let meta = match SETTINGS_META.get(key) {
         Some(meta) => meta,
@@ -104,7 +117,9 @@ pub(super) fn set(mut key: &str, value: &str, add: bool, local: bool) -> Result<
         SettingsType::BoolOrString => parse_bool(value).unwrap_or_else(|_| value.into()),
     };
 
-    let path = if local {
+    let path = if override_file {
+        config::override_config_path(None)?
+    } else if local {
         config::local_toml_config_path()
     } else if key == "history.sync" && crate::env::MISE_GLOBAL_CONFIG_FILE.is_none() {
         crate::cli::dotfiles::track::declaration_file(true)?

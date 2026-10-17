@@ -1,0 +1,93 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# The override file is never a default write target. Only an explicit --override
+# writes to it, and --override conflicts with --global and --path.
+export MISE_CEILING_PATHS="$HOME"
+
+project="$PWD/project"
+mkdir -p "$project"
+cd "$project"
+
+cat >"$MISE_CONFIG_DIR/config.override.toml" <<TOML
+[env]
+FROM = "override"
+[tools]
+tiny = "1"
+[settings]
+jobs = 9
+TOML
+cp "$MISE_CONFIG_DIR/config.override.toml" "$PWD/override.before"
+cat >mise.toml <<TOML
+[env]
+FROM = "project"
+TOML
+assert_unchanged() {
+  diff -q "$PWD/override.before" "$MISE_CONFIG_DIR/config.override.toml" >/dev/null
+}
+export -f assert_unchanged
+export PWD
+
+# default and --global writes leave the override file alone
+assert_succeed "mise set A=1"
+assert_succeed "mise set --global B=2"
+assert_contains "cat mise.toml" "A"
+assert_succeed "mise unset A"
+assert_succeed "mise config set settings.jobs 4"
+assert_succeed "mise config set --global env.C 3"
+assert_succeed "mise settings set --local experimental=true"
+assert_succeed "mise settings set quiet=true"
+assert_succeed "mise tasks add t -- echo hi"
+assert_contains "cat $MISE_CONFIG_DIR/config.toml" "B"
+assert_succeed "assert_unchanged"
+
+# mise unuse does not pick the override file as the file declaring the tool
+assert_succeed "mise unuse tiny@1 || true"
+assert_succeed "assert_unchanged"
+
+# mise trust / untrust do not select it as the first config
+assert_succeed "mise trust"
+assert_succeed "mise untrust"
+assert_succeed "assert_unchanged"
+
+# --override writes to it
+assert_succeed "mise set --override D=4"
+assert_contains "cat $MISE_CONFIG_DIR/config.override.toml" 'D = "4"'
+assert "mise env --json | jq -r .D" "4"
+assert_succeed "mise unset --override D"
+assert_not_contains "cat $MISE_CONFIG_DIR/config.override.toml" 'D ='
+assert_succeed "mise config set --override env.E 5"
+assert_contains "cat $MISE_CONFIG_DIR/config.override.toml" 'E = "5"'
+assert "mise config get --override env.E" "5"
+assert_succeed "mise settings set --override quiet=true"
+assert_contains "cat $MISE_CONFIG_DIR/config.override.toml" "quiet = true"
+assert_succeed "mise settings unset --override quiet"
+assert_not_contains "cat $MISE_CONFIG_DIR/config.override.toml" "quiet"
+assert_succeed "mise use --override tiny@2"
+assert_contains "cat $MISE_CONFIG_DIR/config.override.toml" 'tiny = "2"'
+assert_fail "test -f $MISE_CONFIG_DIR/config.override.toml.bak"
+assert_succeed "mise unuse --override tiny"
+assert_not_contains "cat $MISE_CONFIG_DIR/config.override.toml" 'tiny ='
+
+# --env picks config.<env>.override.toml
+assert_succeed "mise set --override --env test F=6"
+assert_contains "cat $MISE_CONFIG_DIR/config.test.override.toml" 'F = "6"'
+assert_not_contains "cat $MISE_CONFIG_DIR/config.override.toml" 'F ='
+
+# --override conflicts with --global and --path
+assert_fail "mise set --override --global G=7"
+assert_fail "mise set --override --file x.toml G=7"
+assert_fail "mise use --override --global tiny@2"
+assert_fail "mise use --override --path x.toml tiny@2"
+assert_fail "mise unuse --override --global tiny"
+assert_fail "mise unset --override --global G"
+assert_fail "mise config set --override --global env.G 7"
+assert_fail "mise settings set --override --local quiet=true"
+
+# MISE_GLOBAL_CONFIG_FILE disables the tier, so --override has nowhere to write
+assert_fail_contains "MISE_GLOBAL_CONFIG_FILE=$PWD/g.toml mise set --override H=8 2>&1" "MISE_GLOBAL_CONFIG_FILE"
+
+# --override creates a missing file, for config set too
+rm "$MISE_CONFIG_DIR/config.override.toml" "$MISE_CONFIG_DIR/config.test.override.toml"
+assert_succeed "mise config set --override env.NEW 1"
+assert_contains "cat $MISE_CONFIG_DIR/config.override.toml" 'NEW = "1"'

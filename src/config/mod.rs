@@ -226,6 +226,12 @@ impl Config {
         let Some(path) = source.path() else {
             return true;
         };
+        // A tool the global override file declares is the user's own choice and shadows
+        // whatever the project locked, so invocation-wide locking does not apply to it.
+        // Every other tool is still enforced.
+        if is_override_config(path) {
+            return false;
+        }
         let scope = match provenance::ConfigProvenance::from_path(path).scope() {
             provenance::ConfigFileScope::System => "system",
             provenance::ConfigFileScope::User => "global",
@@ -241,6 +247,9 @@ impl Config {
         let (ToolSource::MiseToml(path) | ToolSource::MiseTomlDaemon(path)) = source else {
             return false;
         };
+        if is_override_config(path) {
+            return false;
+        }
         let Some(root) = self.config_files.get(path).map(|cf| cf.config_root()) else {
             return false;
         };
@@ -273,6 +282,7 @@ impl Config {
             async || {
                 _CONFIG.write().unwrap().take();
                 *GLOBAL_CONFIG_FILES.lock().unwrap() = None;
+                *OVERRIDE_CONFIG_FILES.lock().unwrap() = None;
                 *SYSTEM_CONFIG_FILES.lock().unwrap() = None;
                 // Global-config membership follows symlinks, which may have
                 // been retargeted since the last load.
@@ -1304,13 +1314,16 @@ impl Config {
         let mut local_tasks =
             load_local_tasks_with_context(&config, ctx, &task_definitions).await?;
         let global_tasks = load_global_tasks(&config, &task_definitions).await?;
+        let override_tasks = load_override_tasks(&config, &task_definitions).await?;
         local_tasks.retain(|local| {
             !global_tasks
                 .iter()
                 .any(|global| tasks_have_same_source(local, global))
         });
-        let mut tasks: BTreeMap<String, Task> = local_tasks
+        // Highest precedence first; the reversed collect lets the last insert win.
+        let mut tasks: BTreeMap<String, Task> = override_tasks
             .into_iter()
+            .chain(local_tasks)
             .chain(global_tasks)
             .rev()
             .inspect(|t| {
@@ -2518,9 +2531,12 @@ static TOML_CONFIG_MATCHERS: Lazy<Vec<globset::GlobMatcher>> = Lazy::new(|| {
         })
         .collect()
 });
+/// Every loaded config file except the global override files, which are never a
+/// default target: `mise trust` and `mise untrust` pick `.first()` of this set.
 pub static ALL_CONFIG_FILES: Lazy<IndexSet<PathBuf>> = Lazy::new(|| {
     load_config_paths(&DEFAULT_CONFIG_FILENAMES, false)
         .into_iter()
+        .filter(|p| !is_override_config(p))
         .collect()
 });
 pub static IGNORED_CONFIG_FILES: Lazy<IndexSet<PathBuf>> = Lazy::new(|| {
@@ -2935,6 +2951,7 @@ fn load_config_paths_from_dirs(
         .collect::<Vec<_>>();
 
     // rev: these groups are lowest-first, this list is highest-first
+    config_files.splice(0..0, override_config_files().into_iter().rev());
     config_files.extend(global_config_files().into_iter().rev());
     config_files.extend(system_config_files().into_iter().rev());
 
@@ -3239,6 +3256,7 @@ pub async fn load_config_hierarchy_from_dir(
         .collect::<Vec<_>>();
 
     // rev: these groups are lowest-first, this list is highest-first
+    config_files.splice(0..0, override_config_files().into_iter().rev());
     config_files.extend(global_config_files().into_iter().rev());
     config_files.extend(system_config_files().into_iter().rev());
 
@@ -3252,7 +3270,34 @@ pub async fn load_config_hierarchy_from_dir(
 }
 
 pub fn is_global_config(path: &Path) -> bool {
-    config_set_contains(&global_config_files(), path) || is_system_config(path)
+    config_set_contains(&global_config_files(), path)
+        || is_override_config(path)
+        || is_system_config(path)
+}
+
+/// Whether `path` is one of the global override files, which outrank all project config.
+/// See [`override_config_files`].
+///
+/// Matched by name and directory rather than against the files found on disk, so a
+/// file `--override` has just created is already recognized: its lockfile and trust
+/// must not change once a later load discovers it.
+pub fn is_override_config(path: &Path) -> bool {
+    if env::MISE_GLOBAL_CONFIG_FILE.is_some() {
+        return false;
+    }
+    let is_override_name = path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .and_then(|n| n.strip_prefix("config."))
+        .and_then(|n| n.strip_suffix(".override.toml"))
+        .is_some()
+        || path
+            .file_name()
+            .is_some_and(|n| n == "config.override.toml");
+    is_override_name
+        && path.parent().is_some_and(|dir| {
+            file::desymlink_path_cached(dir) == file::desymlink_path_cached(&dirs::CONFIG)
+        })
 }
 
 /// Whether `path` was loaded from a `[bootstrap].config_roots` root that global
@@ -3387,6 +3432,7 @@ pub(crate) fn config_path_is_ignored(path: &Path, include_ignored: bool) -> bool
 }
 
 static GLOBAL_CONFIG_FILES: Lazy<Mutex<Option<IndexSet<PathBuf>>>> = Lazy::new(Default::default);
+static OVERRIDE_CONFIG_FILES: Lazy<Mutex<Option<IndexSet<PathBuf>>>> = Lazy::new(Default::default);
 static SYSTEM_CONFIG_FILES: Lazy<Mutex<Option<IndexSet<PathBuf>>>> = Lazy::new(Default::default);
 /// Config files loaded from `[bootstrap].config_roots` that global config
 /// declared; rebuilt on every config load. See [`is_global_bootstrap_root_config`].
@@ -3409,6 +3455,33 @@ pub(crate) fn global_config_files() -> IndexSet<PathBuf> {
     };
     *g = Some(config_files.clone());
     config_files
+}
+
+/// The global override files, lowest precedence first: `config.override.toml`, then
+/// `config.{env}.override.toml` for each active `MISE_ENV`, later environments winning.
+///
+/// This tier ranks above every project config file, including `mise.local.toml`, so a user
+/// can force a section of their own config over whatever a project declares. It is not
+/// part of [`global_config_files`]: that set keeps its position below project config and
+/// is where default writes land. `MISE_GLOBAL_CONFIG_FILE` names the only global config,
+/// so it disables this tier.
+pub(crate) fn override_config_files() -> IndexSet<PathBuf> {
+    let mut o = OVERRIDE_CONFIG_FILES.lock().unwrap();
+    if let Some(o) = &*o {
+        return o.clone();
+    }
+    if env::MISE_GLOBAL_CONFIG_FILE.is_some() {
+        return IndexSet::new();
+    }
+    let mut files = vec![dirs::CONFIG.join("config.override.toml")];
+    files.extend(
+        env::MISE_ENV_WITH_AUTO
+            .iter()
+            .map(|environment| dirs::CONFIG.join(format!("config.{environment}.override.toml"))),
+    );
+    let files: IndexSet<PathBuf> = files.into_iter().filter(|p| p.is_file()).collect();
+    *o = Some(files.clone());
+    files
 }
 
 pub(crate) fn system_config_files() -> IndexSet<PathBuf> {
@@ -3627,6 +3700,7 @@ pub fn system_config_path() -> PathBuf {
 pub fn top_toml_config() -> Option<PathBuf> {
     load_config_paths(&TOML_CONFIG_FILENAMES, false)
         .iter()
+        .filter(|p| !is_override_config(p))
         .find(|p| p.to_string_lossy().ends_with(".toml"))
         .map(|p| p.to_path_buf())
 }
@@ -3689,6 +3763,9 @@ pub struct ConfigPathOptions {
     pub cwd: Option<PathBuf>,
     pub prefer_toml: bool,
     pub prevent_home_local: bool,
+    /// Write to the global override file (`--override`). `env` then selects
+    /// `config.{env}.override.toml` instead of the base override file.
+    pub override_file: bool,
     /// The section whose configured global default may be used.
     pub global_write_section: Option<GlobalWriteSection>,
     /// Global config files that already declare the entries being updated.
@@ -3751,6 +3828,10 @@ pub fn resolve_target_config_path(opts: ConfigPathOptions) -> Result<PathBuf> {
         None => env::current_dir()?,
     };
 
+    if opts.override_file {
+        return override_config_path(opts.env.as_deref());
+    }
+
     // If path is provided, handle it (file or directory) - explicit paths take precedence.
     // Absolutized once here so every arm returns an absolute path: a relative one would still
     // resolve correctly against the cwd for reads, but it silently disables the monorepo lockfile
@@ -3802,6 +3883,20 @@ pub fn resolve_target_config_path(opts: ConfigPathOptions) -> Result<PathBuf> {
         // For mise use, use existing config_file_from_dir logic which respects ASDF compat
         Ok(config_file_from_dir(&cwd))
     }
+}
+
+/// The global override file `--override` writes to, or the path where it should be created.
+/// The override tier is never a default write target; only this explicit request selects it.
+pub fn override_config_path(environment: Option<&str>) -> Result<PathBuf> {
+    if env::MISE_GLOBAL_CONFIG_FILE.is_some() {
+        bail!(
+            "--override is unavailable because MISE_GLOBAL_CONFIG_FILE is set, which makes it the only global config and disables config.override.toml"
+        );
+    }
+    Ok(match environment {
+        Some(environment) => dirs::CONFIG.join(format!("config.{environment}.override.toml")),
+        None => dirs::CONFIG.join("config.override.toml"),
+    })
 }
 
 fn resolve_global_write_path(opts: &ConfigPathOptions) -> Result<PathBuf> {
@@ -5640,16 +5735,46 @@ fn discover_monorepo_subdirs(
 }
 
 async fn load_global_tasks(config: &Arc<Config>, templates: &TaskDefinitions) -> Result<Vec<Task>> {
+    load_tasks_from_scopes(
+        config,
+        templates,
+        [
+            (true, global_config_files()),
+            (false, system_config_files()),
+        ],
+        false,
+    )
+    .await
+}
+
+/// Tasks from the global override files. They outrank project tasks of the same name,
+/// so the caller layers them above local tasks instead of with the other global ones.
+async fn load_override_tasks(
+    config: &Arc<Config>,
+    templates: &TaskDefinitions,
+) -> Result<Vec<Task>> {
+    let files = override_config_files();
+    if files.is_empty() {
+        return Ok(vec![]);
+    }
+    load_tasks_from_scopes(config, templates, [(false, files)], true).await
+}
+
+async fn load_tasks_from_scopes(
+    config: &Arc<Config>,
+    templates: &TaskDefinitions,
+    scopes: impl IntoIterator<Item = (bool, IndexSet<PathBuf>)>,
+    // The override tier holds only what its files declare or include. Task folders such
+    // as `~/.config/mise/tasks` belong to the ordinary global scope.
+    no_default_includes: bool,
+) -> Result<Vec<Task>> {
     // Compose user-global and system configs as separate scopes so task_config
     // fields follow the same override semantics as local config files. Load the
     // user scope first so a user task replaces a same-named system task without
     // inheriting metadata from it.
     let mut seen_configs = BTreeSet::new();
     let mut config_groups = vec![];
-    for (user_scope, config_paths) in [
-        (true, global_config_files()),
-        (false, system_config_files()),
-    ] {
+    for (user_scope, config_paths) in scopes {
         let configs = config_paths
             .iter()
             .rev()
@@ -5671,7 +5796,7 @@ async fn load_global_tasks(config: &Arc<Config>, templates: &TaskDefinitions) ->
             let default_includes = user_global_task_includes(!configs.is_empty());
             config_groups.push((configs, Some(default_includes)));
         } else if !configs.is_empty() {
-            config_groups.push((configs, None));
+            config_groups.push((configs, no_default_includes.then(Vec::new)));
         }
     }
 

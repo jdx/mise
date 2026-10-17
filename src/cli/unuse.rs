@@ -47,6 +47,14 @@ pub(crate) struct Unuse {
     #[usage(short, long, visible_alias = "file", overrides = & ["global", "env"], value_hint = usage_rs::ValueHint::FilePath)]
     path: Option<PathBuf>,
 
+    /// Write to the global override file, `config.override.toml`
+    ///
+    /// The override file outranks all project config. With `--env`, writes
+    /// `config.<ENV>.override.toml` instead. See
+    /// https://mise.jdx.dev/configuration.html#override-file
+    #[usage(long = "override", conflicts = ["global", "path"])]
+    override_file: bool,
+
     /// Do not also prune the installed version
     #[usage(long)]
     no_prune: bool,
@@ -176,7 +184,9 @@ impl Unuse {
 
     async fn get_config_file(&self, config: &Config) -> Result<Arc<dyn ConfigFile>> {
         let cwd = env::current_dir()?;
-        let path = if self.global {
+        let path = if self.override_file {
+            config::override_config_path(self.env.as_deref())?
+        } else if self.global {
             config::global_config_path()
         } else if let Some(p) = &self.path {
             let p = p.absolutize()?.to_path_buf();
@@ -195,7 +205,12 @@ impl Unuse {
         } else if env::in_home_dir() {
             config::global_config_path()
         } else {
-            for cf in config.config_files.values() {
+            // The override file is never picked implicitly; `--override` names it.
+            for cf in config
+                .config_files
+                .values()
+                .filter(|cf| !config::is_override_config(cf.get_path()))
+            {
                 if cf
                     .to_tool_request_set()?
                     .tools

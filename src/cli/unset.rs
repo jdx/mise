@@ -41,6 +41,12 @@ pub(crate) struct Unset {
     /// Use the global config file
     #[usage(short, long, overrides = "file")]
     global: bool,
+
+    /// Use the global override file, `config.override.toml`
+    ///
+    /// See https://mise.jdx.dev/configuration.html#override-file
+    #[usage(long = "override", conflicts = ["global", "file"])]
+    override_file: bool,
 }
 
 impl Unset {
@@ -52,6 +58,7 @@ impl Unset {
             cwd: None,
             prefer_toml: true,
             prevent_home_local: true,
+            override_file: self.override_file,
             ..Default::default()
         })?;
 
