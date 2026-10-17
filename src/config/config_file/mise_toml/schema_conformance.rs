@@ -128,8 +128,8 @@ fn schema_matches_parser() {
 
     let mut failures = String::new();
     let mut used = BTreeSet::new();
-    for doc in &corpus {
-        let Some(outcome) = check(&validator, &doc.body) else {
+    for (doc, outcome) in corpus.iter().zip(check_all(&validator, &corpus)) {
+        let Some(outcome) = outcome else {
             if doc.expect != Expect::Agree {
                 writeln!(
                     failures,
@@ -287,6 +287,33 @@ fn path_matches(pattern: &str, location: &str) -> bool {
             .iter()
             .zip(&location)
             .all(|(p, l)| *p == "*" || p == l)
+}
+
+/// [`check`] every document, spread over the available cores: one at a time,
+/// the few thousand configs take about a second in a debug build.
+fn check_all(validator: &jsonschema::Validator, corpus: &[Document]) -> Vec<Option<Outcome>> {
+    let threads = std::thread::available_parallelism().map_or(1, |n| n.get());
+    let chunk = corpus.len().div_ceil(threads).max(1);
+    std::thread::scope(|scope| {
+        let workers: Vec<_> = corpus
+            .chunks(chunk)
+            .map(|docs| {
+                std::thread::Builder::new()
+                    // deserializing a config nests deeply in a debug build
+                    .stack_size(8 << 20)
+                    .spawn_scoped(scope, move || {
+                        docs.iter()
+                            .map(|doc| check(validator, &doc.body))
+                            .collect::<Vec<_>>()
+                    })
+                    .unwrap()
+            })
+            .collect();
+        workers
+            .into_iter()
+            .flat_map(|worker| worker.join().unwrap())
+            .collect()
+    })
 }
 
 /// Parse and validate one document. `None` when it is not TOML at all, which
