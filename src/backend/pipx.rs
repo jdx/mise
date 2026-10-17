@@ -608,7 +608,14 @@ impl Backend for PIPXBackend {
                 }
             }
         }
-        if tv.uv_lock.is_some() && tv.uv_python.is_none() {
+        // A restored identity carries an empty path placeholder; bind the real
+        // interpreter so `uv sync --python` never receives an empty argument.
+        if tv.uv_lock.is_some()
+            && tv
+                .uv_python
+                .as_ref()
+                .is_none_or(|(python, _)| python.as_os_str().is_empty())
+        {
             self.bind_uv_python(ctx, &mut tv).await?;
         }
         reset_selected_python_install_path(&mut tv)?;
