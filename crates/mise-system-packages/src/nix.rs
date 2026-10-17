@@ -125,9 +125,22 @@ struct MatchedEntry {
     paths: Vec<String>,
 }
 
+/// Where the Nix installers put the CLI for every user, whether or not the
+/// installer edited a shell profile (`--no-modify-profile`). A `pre-packages`
+/// hook runs in a child process, so a Nix installed there never reaches mise's
+/// own `PATH`.
+const DEFAULT_PROFILE_NIX: &str = "/nix/var/nix/profiles/default/bin/nix";
+
+fn nix_bin() -> Option<std::path::PathBuf> {
+    mise_util::file::which("nix").or_else(|| {
+        let path = std::path::PathBuf::from(DEFAULT_PROFILE_NIX);
+        (path.is_file() && mise_util::file::is_executable(&path)).then_some(path)
+    })
+}
+
 async fn query(args: &[&str]) -> Result<String> {
     debug!("$ nix {}", shell_words::join(args));
-    let output = tokio::process::Command::new("nix")
+    let output = tokio::process::Command::new(nix_bin().unwrap_or_else(|| "nix".into()))
         .args(args)
         .stdin(Stdio::null())
         .output()
@@ -249,7 +262,7 @@ async fn action(args: Vec<String>, opts: &InstallOpts) -> Result<()> {
         return Ok(());
     }
     debug!("$ nix {}", shell_words::join(&args));
-    let status = tokio::process::Command::new("nix")
+    let status = tokio::process::Command::new(nix_bin().unwrap_or_else(|| "nix".into()))
         .args(&args)
         .stdin(Stdio::null())
         .stdout(Stdio::inherit())
@@ -281,12 +294,12 @@ impl SystemPackageManager for NixManager {
     }
 
     fn is_available(&self) -> bool {
-        cfg!(unix) && mise_util::file::which("nix").is_some()
+        cfg!(unix) && nix_bin().is_some()
     }
 
     fn unavailable_reason(&self) -> String {
         if cfg!(unix) {
-            "nix not found on PATH"
+            "nix not found on PATH or in /nix/var/nix/profiles/default/bin"
         } else {
             "only available on Unix"
         }
