@@ -108,3 +108,11 @@ assert "MISE_PARANOID=env_files mise trust ../config.toml"
 assert_contains "MISE_PARANOID=env_files mise env" "NAMED_TEST=ok"
 assert "MISE_PARANOID=env_files mise untrust ../config.toml"
 assert_fail_contains "MISE_PARANOID=env_files mise env 2>&1" "environment file"
+# Ignoring the file blocks it even after it was approved.
+assert "MISE_PARANOID=env_files mise trust ../config.toml"
+assert_contains "MISE_PARANOID=env_files mise env" "NAMED_TEST=ok"
+assert "MISE_PARANOID=env_files mise trust --ignore ../config.toml"
+assert_fail_contains "MISE_PARANOID=env_files mise env 2>&1" "environment file"
+# A boolean cannot be added to a list of categories.
+assert "mise settings paranoid=env_files"
+assert_fail_contains "mise settings add paranoid true 2>&1" "category"

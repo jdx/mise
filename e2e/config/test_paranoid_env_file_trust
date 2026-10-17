@@ -165,3 +165,39 @@ assert "MISE_PARANOID=1 mise trust"
 assert_contains "MISE_PARANOID=1 mise env" "BARE_SRC_TEST=edited"
 # Outside paranoid mode it behaves as before and does not touch env files.
 assert_not_contains "mise trust 2>&1" "env.sh"
+
+# `mise trust` approves only what the project it trusts reads. An untrusted parent config is
+# neither run nor trusted, and neither are its env files, with or without a global flag.
+mkdir -p ~/strict/proj
+cd ~/strict || exit 1
+cat <<'EOS' >mise.toml
+[env]
+_.file = "parent.env"
+PARENT_EXEC = "{{ exec(command='touch ' ~ config_root ~ '/marker') }}"
+EOS
+echo 'STRICT_PARENT=1' >parent.env
+cd proj || exit 1
+cat <<'EOS' >mise.toml
+[env]
+_.file = ".env"
+EOS
+echo 'STRICT_CHILD=1' >.env
+for trust_cmd in "mise trust" "mise -y trust" "mise --quiet trust"; do
+  rm -f ../marker
+  MISE_PARANOID=1 $trust_cmd >/dev/null 2>&1 || true
+  assert "test ! -e ../marker"
+  assert_contains "MISE_PARANOID=1 mise trust --show" "strict/mise.toml: untrusted"
+  # The parent's env file stays untrusted: trust the parent config alone and it still fails.
+  assert_fail_contains "MISE_PARANOID=1 mise env 2>&1" "not trusted"
+  MISE_PARANOID=1 mise trust --untrust ../mise.toml >/dev/null 2>&1 || true
+  MISE_PARANOID=1 mise trust --untrust mise.toml >/dev/null 2>&1 || true
+  MISE_PARANOID=1 mise trust --untrust .env >/dev/null 2>&1 || true
+done
+# Once both configs are trusted, their env files still need their own trust, and `mise trust`
+# then approves both.
+assert "MISE_PARANOID=1 mise trust ../mise.toml"
+assert "MISE_PARANOID=1 mise trust mise.toml"
+assert_fail_contains "MISE_PARANOID=1 mise env 2>&1" "environment file"
+assert_contains "MISE_PARANOID=1 mise trust 2>&1" "parent.env"
+assert_contains "MISE_PARANOID=1 mise env" "STRICT_PARENT=1"
+assert_contains "MISE_PARANOID=1 mise env" "STRICT_CHILD=1"
