@@ -155,8 +155,11 @@ impl EnvResults {
             _ => xx::file::glob(ctx.normalize_path(pattern)).unwrap_or_default(),
         };
         // A global entry that names its file outright is the operator's own choice. One that
-        // searches upward finds files in repositories, so those need approval like project config.
-        let operator_owned = !find_up && crate::config::is_global_config(ctx.source);
+        // searches upward, or a glob, can find files in repositories, so those need approval like
+        // project config.
+        let operator_owned = !find_up
+            && !crate::config::is_glob_pattern(&s)
+            && crate::config::is_global_config(ctx.source);
         for p in paths {
             if !operator_owned && !crate::config::config_file::env_file_trust_check(&p)? {
                 // Trusting the file later changes nothing the cache key sees.

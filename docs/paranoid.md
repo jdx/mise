@@ -92,9 +92,9 @@ mise trust .env
 
 This applies to every `_.file` format, to `_.source` scripts, and to the files the
 [`env_file`](/configuration/settings.html#env_file) setting finds. It includes a
-file that a global `find_up = true` entry finds in a repository. It does not
-apply to a global `_.file` entry without `find_up`, which names a file you
-chose.
+file that a global `find_up = true` entry or a glob finds in a repository. It
+does not apply to a global `_.file` or `_.source` entry that names one file
+without a glob, which you chose.
 
 To load a file without approving each change, put it under
 [`trusted_config_paths`](/configuration/settings.html#trusted_config_paths).

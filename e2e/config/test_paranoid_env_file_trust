@@ -115,3 +115,21 @@ assert "MISE_PARANOID=1 mise trust env.sh"
 assert_contains "MISE_PARANOID=1 mise env" "SOURCED_TEST=edited"
 # Outside paranoid mode the script loads as before.
 assert_contains "mise env" "SOURCED_TEST=edited"
+
+# A glob in global config can match scripts and files in repositories, so each match needs approval.
+mkdir -p ~/globbed/repos/a ~/globbed/global
+echo 'export GLOB_SRC_TEST=ran' >~/globbed/repos/a/env.sh
+echo 'GLOB_FILE_TEST=yes' >~/globbed/repos/a/.env
+cat >~/globbed/global/config.toml <<EOS
+[env]
+_.source = "$HOME/globbed/repos/*/env.sh"
+_.file = "$HOME/globbed/repos/*/.env"
+EOS
+export MISE_GLOBAL_CONFIG_FILE="$HOME/globbed/global/config.toml"
+cd ~/globbed || exit 1
+assert_fail_contains "MISE_PARANOID=1 mise env 2>&1" "environment file or script"
+assert "MISE_PARANOID=1 mise trust $HOME/globbed/repos/a/env.sh"
+assert_fail_contains "MISE_PARANOID=1 mise env 2>&1" "environment file or script"
+assert "MISE_PARANOID=1 mise trust $HOME/globbed/repos/a/.env"
+assert_contains "MISE_PARANOID=1 mise env" "GLOB_SRC_TEST=ran"
+assert_contains "MISE_PARANOID=1 mise env" "GLOB_FILE_TEST=yes"
