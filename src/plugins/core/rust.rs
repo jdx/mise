@@ -1332,12 +1332,8 @@ const RUSTUP_PROXY_NAMES: &[&str] = &[
 
 /// Symlinks the rustup proxies found in `external` into a dir under `proxies_root`.
 fn link_rustup_proxies(external: &Path, proxies_root: &Path) -> Result<PathBuf> {
-    let key: String = external
-        .to_string_lossy()
-        .chars()
-        .map(|c| if c.is_ascii_alphanumeric() { c } else { '_' })
-        .collect();
-    let dir = proxies_root.join(key);
+    let key = crate::hash::hash_sha256_to_str(&external.to_string_lossy());
+    let dir = proxies_root.join(&key[..16]);
     file::create_dir_all(&dir)?;
     for name in RUSTUP_PROXY_NAMES {
         let name = format!("{name}{}", std::env::consts::EXE_SUFFIX);
@@ -1346,11 +1342,17 @@ fn link_rustup_proxies(external: &Path, proxies_root: &Path) -> Result<PathBuf> 
         if !file::is_executable(&target) {
             continue;
         }
-        if file::resolve_symlink(&link).ok().flatten().as_deref() == Some(target.as_path()) {
+        let up_to_date = if cfg!(windows) {
+            // Windows gets copies, which are current when the sizes match.
+            matches!((link.metadata(), target.metadata()), (Ok(a), Ok(b)) if a.len() == b.len())
+        } else {
+            file::resolve_symlink(&link).ok().flatten().as_deref() == Some(target.as_path())
+        };
+        if up_to_date {
             continue;
         }
         let _ = file::remove_file(&link);
-        file::make_symlink(&target, &link)?;
+        file::make_symlink_or_copy(&target, &link)?;
     }
     Ok(dir)
 }
