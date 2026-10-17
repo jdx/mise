@@ -29,7 +29,7 @@ use windows_sys::Win32::System::Threading::{
     CREATE_SUSPENDED, OpenThread, ResumeThread, THREAD_SUSPEND_RESUME,
 };
 
-pub(crate) struct Job(OwnedHandle);
+pub struct Job(OwnedHandle);
 
 impl Job {
     fn new() -> Result<Self> {
@@ -98,7 +98,7 @@ impl Job {
         bail!("could not find the suspended child's primary thread")
     }
 
-    pub(crate) fn kill(&self) {
+    pub fn kill(&self) {
         // SAFETY: the owned handle always refers to this command's job.
         unsafe { TerminateJobObject(self.0.as_raw_handle(), 1) };
     }
@@ -108,7 +108,7 @@ impl Job {
 /// returned `Job` is dropped. `creation_flags` are the caller's own, which
 /// the suspend flag is added to rather than replacing — `Command`'s setter
 /// overwrites, and a caller that needs `CREATE_NO_WINDOW` needs both.
-pub(crate) fn spawn(command: &mut Command, creation_flags: u32) -> Result<(Child, Job)> {
+pub fn spawn(command: &mut Command, creation_flags: u32) -> Result<(Child, Job)> {
     let job = Job::new()?;
     command.creation_flags(creation_flags | CREATE_SUSPENDED);
     let mut child = command.spawn()?;

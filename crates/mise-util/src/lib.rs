@@ -98,6 +98,8 @@ pub mod wildcard;
 pub mod windows_console;
 pub mod windows_posix;
 #[cfg(windows)]
+pub mod windows_job;
+#[cfg(windows)]
 pub mod windows_process;
 pub mod yaml;
 pub mod yaml_merge;
