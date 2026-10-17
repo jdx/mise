@@ -326,7 +326,16 @@ impl Trust {
         // Each pass can only add files a previous pass revealed, so a small bound is enough and
         // keeps a cycle from looping.
         for _ in 0..5 {
-            let config = config::Config::reset().await?;
+            // The config was just trusted, but it can still fail to load for another reason, such
+            // as a remote include that paranoid mode refuses. That must not fail `mise trust`, and
+            // the load error shows on the next command anyway.
+            let config = match config::Config::reset().await {
+                Ok(config) => config,
+                Err(err) => {
+                    debug!("loading config to find files to trust: {err:#}");
+                    break;
+                }
+            };
             if let Err(err) = config.env_uncached().await {
                 debug!("resolving env to find files to trust: {err:#}");
             }
