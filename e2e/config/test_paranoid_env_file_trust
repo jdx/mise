@@ -64,3 +64,20 @@ assert_contains "MISE_PARANOID=1 MISE_ENV_FILE=.env mise env" "SETTING_TEST=one"
 echo "SETTING_TEST=two" >../.env
 assert_contains "MISE_PARANOID=1 MISE_ENV_FILE=.env mise hook-env -s bash 2>&1" ".env is not trusted"
 assert_not_contains "MISE_PARANOID=1 MISE_ENV_FILE=.env mise hook-env -s bash 2>&1" "SETTING_TEST=two"
+
+# A cache built outside paranoid mode must not hand out an unapproved file's values.
+mkdir -p ~/cached
+cd ~/cached || exit 1
+export MISE_EXPERIMENTAL=1 MISE_ENV_CACHE=1
+export __MISE_ENV_CACHE_KEY="dGVzdGtleXRlc3RrZXl0ZXN0a2V5dGVzdGtleXRlc3Q="
+cat <<'EOS' >mise.toml
+[env]
+_.file = ".env"
+EOS
+echo "CACHED_TEST=secret" >.env
+assert "MISE_PARANOID=1 mise trust mise.toml"
+assert_contains "mise env" "CACHED_TEST=secret"
+assert_contains "mise env" "CACHED_TEST=secret"
+assert_fail_contains "MISE_PARANOID=1 mise env 2>&1" "environment file"
+assert_not_contains "MISE_PARANOID=1 mise hook-env -s bash 2>&1" "CACHED_TEST=secret"
+assert_contains "MISE_PARANOID=1 mise hook-env -s bash 2>&1" ".env is not trusted"
