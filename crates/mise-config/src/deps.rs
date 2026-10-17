@@ -1,5 +1,7 @@
 //! `[deps]`: the providers that bring a project's dependencies up to date.
 
+pub(crate) mod schema;
+
 use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};

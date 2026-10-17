@@ -12,8 +12,8 @@ use serde::{Deserialize, Deserializer};
 use crate::env_value::EnvValue;
 use crate::task::ParsedToolMap;
 
-mod schema;
-pub(crate) use schema::fragments as schema_fragments;
+pub(crate) mod schema;
+pub(crate) use schema::defs as schema_defs;
 
 /// `[tools]` as written: tool key (`node`, `"cargo:ripgrep"`, `"node[os=linux]"`) to its versions.
 pub type ToolsDecl = IndexMap<String, ToolSpecList>;

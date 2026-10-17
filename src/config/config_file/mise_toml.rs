@@ -1973,7 +1973,7 @@ impl ConfigFile for MiseToml {
             .hooks
             .iter()
             .map(|(hook_type, def)| {
-                let mut hooks = def.clone().into_hooks(*hook_type);
+                let mut hooks = crate::hooks::hooks_from_def(def.clone(), *hook_type);
                 for hook in hooks.iter_mut() {
                     hook.render_templates(|s| self.parse_template(s))?;
                 }

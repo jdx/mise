@@ -7,24 +7,24 @@
 
 use schemars::{Schema, json_schema};
 
-/// Each definition, keyed by the JSON pointer it replaces in `schema/mise.json`.
-pub(crate) fn fragments() -> Vec<(&'static str, Schema)> {
+/// Each definition, keyed by its name under `$defs` in `schema/mise.json`.
+pub(crate) fn defs() -> Vec<(&'static str, Schema)> {
     vec![
-        ("/$defs/env", env()),
-        ("/$defs/vars", vars()),
-        ("/$defs/env_directive", env_directive()),
-        ("/$defs/env_value", env_value()),
-        ("/$defs/env_path", env_path()),
-        ("/$defs/env_paths", env_paths()),
-        ("/$defs/env_tools", env_tools()),
-        ("/$defs/env_file_expand", env_file_expand()),
-        ("/$defs/env_file_find_up", env_file_find_up()),
-        ("/$defs/env_redact", env_redact()),
-        ("/$defs/env_required", env_required()),
-        ("/$defs/env_default", env_default()),
-        ("/$defs/env_age", env_age()),
-        ("/$defs/env_age_value", env_age_value()),
-        ("/$defs/env_age_format", env_age_format()),
+        ("env", env()),
+        ("vars", vars()),
+        ("env_directive", env_directive()),
+        ("env_value", env_value()),
+        ("env_path", env_path()),
+        ("env_paths", env_paths()),
+        ("env_tools", env_tools()),
+        ("env_file_expand", env_file_expand()),
+        ("env_file_find_up", env_file_find_up()),
+        ("env_redact", env_redact()),
+        ("env_required", env_required()),
+        ("env_default", env_default()),
+        ("env_age", env_age()),
+        ("env_age_value", env_age_value()),
+        ("env_age_format", env_age_format()),
     ]
 }
 

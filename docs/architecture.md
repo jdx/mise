@@ -213,25 +213,22 @@ remove it.
 Edit the source, then regenerate. Commit the output with the change that
 produced it.
 
-| Output                                                                                 | Source                                                                                                       | Regenerate with                               |
-| -------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ | --------------------------------------------- |
-| `mise.usage.kdl`, `docs/cli/`                                                          | Command definitions in `src/cli/`, `src/assets/mise-extra.usage.kdl`, and `docs/.vitepress/cli-reference.ts` | `mise run render:usage`                       |
-| `tasks.md`                                                                             | The project's tasks in `tasks.toml`, `xtasks/`, and `mise.toml`, through `mise generate task-docs`           | `mise run render:usage`                       |
-| `man/man1/mise.1`                                                                      | `mise.usage.kdl`                                                                                             | `mise run render:mangen`                      |
-| `completions/`                                                                         | The usage spec, through `mise completion <shell>`                                                            | `mise run render:completions`                 |
-| `docs/.vitepress/cli_commands.ts` and the idiomatic version file table                 | `src/cli/` and the `idiomatic_files` keys in `registry/*.toml`                                               | `mise run render:help`                        |
-| The settings part of `schema/mise.json`, `schema/miserc.json`, `schema/mise-task.json` | `settings.toml`; `mise-task.json` also copies the task definitions from `schema/mise.json`                   | `mise run render:schema`                      |
-| The parts of `schema/mise.json` for sections declared in `crates/mise-config`          | The types and doc comments in `crates/mise-config`, through its `render-schema` example                      | `mise run render:schema`                      |
-| `docs/public/llms.txt`                                                                 | Page titles and leads, and `docs/.vitepress/sidebar.ts`                                                      | `mise run render:llms`                        |
-| `Settings` types                                                                       | `settings.toml`                                                                                              | Every build (`crates/mise-settings/build.rs`) |
-| The registry compiled into mise                                                        | `registry/*.toml`                                                                                            | Every build (`build.rs`)                      |
-| The [settings reference](/configuration/settings.html)                                 | `settings.toml`                                                                                              | Every docs build                              |
+| Output                                                                 | Source                                                                                                                                                   | Regenerate with                               |
+| ---------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------- |
+| `mise.usage.kdl`, `docs/cli/`                                          | Command definitions in `src/cli/`, `src/assets/mise-extra.usage.kdl`, and `docs/.vitepress/cli-reference.ts`                                             | `mise run render:usage`                       |
+| `tasks.md`                                                             | The project's tasks in `tasks.toml`, `xtasks/`, and `mise.toml`, through `mise generate task-docs`                                                       | `mise run render:usage`                       |
+| `man/man1/mise.1`                                                      | `mise.usage.kdl`                                                                                                                                         | `mise run render:mangen`                      |
+| `completions/`                                                         | The usage spec, through `mise completion <shell>`                                                                                                        | `mise run render:completions`                 |
+| `docs/.vitepress/cli_commands.ts` and the idiomatic version file table | `src/cli/` and the `idiomatic_files` keys in `registry/*.toml`                                                                                           | `mise run render:help`                        |
+| `schema/mise.json`, `schema/mise-task.json`, `schema/miserc.json`      | The types and doc comments in `crates/mise-config` (`MiseTomlDecl` for the top level) and `settings.toml`, through mise-config's `render-schema` example | `mise run render:schema`                      |
+| `docs/public/llms.txt`                                                 | Page titles and leads, and `docs/.vitepress/sidebar.ts`                                                                                                  | `mise run render:llms`                        |
+| `Settings` types                                                       | `settings.toml`                                                                                                                                          | Every build (`crates/mise-settings/build.rs`) |
+| The registry compiled into mise                                        | `registry/*.toml`                                                                                                                                        | Every build (`build.rs`)                      |
+| The [settings reference](/configuration/settings.html)                 | `settings.toml`                                                                                                                                          | Every docs build                              |
 
-`mise run render` runs every `render:*` task. The rest of `schema/mise.json` is
-written by hand: change it when you change config syntax, then run
-`mise run render:schema`. Sections move to `crates/mise-config` one at a time.
-For those, change the types and doc comments, not the JSON; a `mise-config`
-test fails while the committed file is stale.
+`mise run render` runs every `render:*` task. For the schemas, change the types
+and doc comments in `crates/mise-config`, not the JSON; a `mise-config` test
+fails while the committed files are stale.
 
 ## Tests {#tests}
 

@@ -138,8 +138,7 @@ impl JsonSchema for MinVersionSpec {
     }
 
     fn json_schema(_: &mut SchemaGenerator) -> Schema {
-        json_schema!({
-            "description": "minimum version of mise required to use this config",
+        crate::schema::hand_written(json_schema!({
             "oneOf": [
                 {"pattern": "^\\d+\\.\\d+\\.\\d+$", "type": "string"},
                 {
@@ -159,6 +158,6 @@ impl JsonSchema for MinVersionSpec {
                     }
                 }
             ]
-        })
+        }))
     }
 }

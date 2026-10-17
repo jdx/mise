@@ -19,7 +19,7 @@ pub use confirm::TaskConfirm;
 pub use decl::{TaskDecl, TaskTemplate};
 pub use dep::TaskDep;
 pub use outputs::TaskOutputs;
-pub(crate) use schema::{fragments as schema_fragments, task_template as template_schema};
+pub(crate) use schema::{defs as schema_defs, task_template as template_schema};
 pub use secrets::{G7_TEXT, TaskSecrets};
 
 // A `{ version = "..." }`-style tool table, shared by `[tools]` and a task's `tools`: exactly one

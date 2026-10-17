@@ -15,14 +15,14 @@ use serde_json::{Map, Value};
 
 use super::TaskTemplate;
 
-/// The hand-written definitions, keyed by the JSON pointer each replaces in `schema/mise.json`.
-pub(crate) fn fragments() -> Vec<(&'static str, Schema)> {
+/// The hand-written definitions, keyed by their names under `$defs` in `schema/mise.json`.
+pub(crate) fn defs() -> Vec<(&'static str, Schema)> {
     vec![
-        ("/$defs/task", task()),
-        ("/$defs/task_dependency_item", task_dependency_item()),
-        ("/$defs/task_dependency_table", task_dependency_table()),
-        ("/$defs/task_run_entry", task_run_entry()),
-        ("/$defs/task_watch", task_watch()),
+        ("task", task()),
+        ("task_dependency_item", task_dependency_item()),
+        ("task_dependency_table", task_dependency_table()),
+        ("task_run_entry", task_run_entry()),
+        ("task_watch", task_watch()),
     ]
 }
 
