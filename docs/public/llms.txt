@@ -172,7 +172,7 @@
 ## Security
 
 - [Security overview](https://mise.jdx.dev/security.html): Each mise security control covers one stage, from loading a project's config to running the commands it starts.
-- [Paranoid mode](https://mise.jdx.dev/paranoid.html): Paranoid mode requires your approval before mise loads any project config file, and again whenever that file changes.
+- [Paranoid mode](https://mise.jdx.dev/paranoid.html): Paranoid mode makes mise ask before it trusts things it would normally load on its own. It has four categories, and you can turn on all of them or only the ones you need.
 - [Sandboxing](https://mise.jdx.dev/sandboxing.html): mise exec and mise run can limit what the command they start may read, write, reach on the network and see in its environment. Add a --deny-* or --allow-* flag, or set the matching property on a task.
 
 ## Plugins

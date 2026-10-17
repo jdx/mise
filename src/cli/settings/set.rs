@@ -115,6 +115,7 @@ pub(super) fn set(
         SettingsType::SetString => parse_set_by_comma(value)?,
         SettingsType::IndexMap => parse_indexmap_by_json(value)?,
         SettingsType::BoolOrString => parse_bool(value).unwrap_or_else(|_| value.into()),
+        SettingsType::BoolOrList => parse_bool_or_list(key, value)?,
     };
 
     let path = if override_file {
@@ -164,6 +165,20 @@ pub(super) fn set(
             };
 
         let value = match settings.get(key) {
+            // `true` already selects every category, so adding some must not narrow it.
+            Some(current)
+                if add
+                    && matches!(meta.type_, SettingsType::BoolOrList)
+                    && current.as_bool() == Some(true)
+                    && value.as_array().is_some() =>
+            {
+                current.as_value().cloned().unwrap_or(value)
+            }
+            Some(current) if add && current.as_array().is_some() && value.as_array().is_none() => {
+                bail!(
+                    "{key} is a list of categories here, so `add` needs category names, not {value}"
+                )
+            }
             Some(current) if add && current.as_array().is_some() => {
                 let array = current.as_array().unwrap();
                 let mut new_array = array.clone();
@@ -226,6 +241,22 @@ fn parse_set_by_comma(value: &str) -> Result<toml_edit::Value> {
         .map(String::from)
         .collect();
     Ok(dedup_toml_array(&array).into())
+}
+
+/// A setting that takes `true`/`false` or a comma separated list. `paranoid` checks its
+/// categories here, since loading settings would reject an unknown one in every later command.
+fn parse_bool_or_list(key: &str, value: &str) -> Result<toml_edit::Value> {
+    if key == "paranoid" {
+        value
+            .replace("[]", "")
+            .replace("[]", "")
+            .parse::<mise_settings::Paranoid>()
+            .map_err(|err| eyre!(err))?;
+    }
+    match mise_settings::Paranoid::bool_spelling(value) {
+        Some(value) => Ok(value.into()),
+        None => parse_set_by_comma(value),
+    }
 }
 
 fn parse_bool(value: &str) -> Result<toml_edit::Value> {

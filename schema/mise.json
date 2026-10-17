@@ -1746,8 +1746,20 @@
           }
         },
         "paranoid": {
-          "description": "Require explicit, content-bound trust for project config, and re-verify provenance on every install.",
-          "type": "boolean"
+          "default": false,
+          "description": "Turn on paranoid mode: `true` for every protection, or a list of categories (`config`, `env_files`, `plugins`, `provenance`) for only those.",
+          "oneOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": ["config", "env_files", "plugins", "provenance"]
+              }
+            }
+          ]
         },
         "pin": {
           "description": "Make `mise use` write the resolved version, such as `24.14.0` for `node@24`, instead of the requested one.",

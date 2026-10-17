@@ -198,8 +198,16 @@ pub(super) fn untrust_config_file(config_file: Option<PathBuf>) -> Result<()> {
             }
         },
     };
-    let cfr = config_trust_root(&path);
+    let cfr = config_file::trust_root_for_cli(&path);
     config_file::untrust(&cfr)?;
+    // `mise trust` also approved the file itself when only `env_files` is on.
+    if path.is_file()
+        && path != cfr
+        && Settings::get().paranoid.env_files()
+        && !Settings::get().paranoid.config()
+    {
+        config_file::untrust(&path)?;
+    }
     let cfr = cfr.canonicalize()?;
     info!("untrusted {}", display_path(&cfr));
 
@@ -213,7 +221,7 @@ pub(super) fn untrust_config_file(config_file: Option<PathBuf>) -> Result<()> {
         );
     }
 
-    if !Settings::get().paranoid
+    if !Settings::get().paranoid.config()
         && let Some(main_path) = crate::git::main_checkout_equivalent(&cfr)
         && config_file::is_trusted(&main_path)
     {
@@ -272,8 +280,16 @@ impl Trust {
                 }
             },
         };
-        let cfr = config_trust_root(&path);
+        let cfr = config_file::trust_root_for_cli(&path);
         config_file::add_ignored(cfr.clone())?;
+        // `mise trust` also approved the file itself when only `env_files` is on.
+        if path.is_file()
+            && path != cfr
+            && Settings::get().paranoid.env_files()
+            && !Settings::get().paranoid.config()
+        {
+            config_file::add_ignored(path.clone())?;
+        }
         let cfr = cfr.canonicalize()?;
         info!("ignored {}", display_path(&cfr));
 
@@ -290,7 +306,7 @@ impl Trust {
     }
     fn trust(&self) -> Result<()> {
         let path = match self.config_file()? {
-            Some(filename) => config_trust_root(&filename),
+            Some(filename) => config_file::trust_root_for_cli(&filename),
             None => match self.get_next_untrusted() {
                 Some(path) => path,
                 None => {
@@ -300,6 +316,16 @@ impl Trust {
             },
         };
         config_file::trust(&path)?;
+        // With only `env_files` on, a file named like a config may be an env file. Its content
+        // hash is checked on its own, so approve it as well as its directory.
+        if let Some(file) = self.config_file()?
+            && file.is_file()
+            && file != path
+            && Settings::get().paranoid.env_files()
+            && !Settings::get().paranoid.config()
+        {
+            config_file::trust(&file)?;
+        }
         let cfr = path.canonicalize()?;
         info!("trusted {}", display_path(&cfr));
         Ok(())
@@ -325,7 +351,7 @@ impl Trust {
     /// resolves one project at a time from the current directory, so run `mise trust` in each
     /// one. That child process does not recurse, since it is not `--all`.
     fn trust_descendant_env_files(configs: &[PathBuf]) -> Result<()> {
-        if !Settings::get().paranoid {
+        if !Settings::get().paranoid.env_files() {
             return Ok(());
         }
         let exe = std::env::current_exe()?;
@@ -363,7 +389,7 @@ impl Trust {
     }
 
     async fn trust_env_files() -> Result<usize> {
-        if !Settings::get().paranoid {
+        if !Settings::get().paranoid.env_files() {
             return Ok(0);
         }
         config_file::require_strict_trust();
@@ -393,7 +419,7 @@ impl Trust {
                 .into_iter()
                 .filter(|(path, declared_in)| {
                     path.is_file()
-                        && !config_file::is_path_trusted(path)
+                        && !config_file::is_env_file_trusted(path)
                         && declared_in
                             .as_deref()
                             .is_none_or(config_file::is_path_trusted)

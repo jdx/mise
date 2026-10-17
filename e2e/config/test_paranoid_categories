@@ -1,0 +1,134 @@
+#!/usr/bin/env bash
+
+# `paranoid` takes `true`, `false` or a list of categories. Each category does
+# only its own job, and `true` turns on all of them.
+
+export MISE_TRUSTED_CONFIG_PATHS=""
+
+# A global config whose find_up entry discovers a dotenv file in repositories.
+mkdir -p home-config proj/sub
+cat <<'EOS' >home-config/config.toml
+[env]
+_.file = [{ path = ".env.find", find_up = true }]
+EOS
+export MISE_GLOBAL_CONFIG_FILE="$PWD/home-config/config.toml"
+echo "FIND_UP_TEST=found" >proj/.env.find
+cat <<'EOS' >proj/mise.toml
+[env]
+PROJECT_TEST = "loaded"
+EOS
+cd proj/sub || exit 1
+
+# Parsing: lists, bools, the environment, and unknown names.
+assert "MISE_PARANOID=false mise settings get paranoid" "false"
+assert "MISE_PARANOID=1 mise settings get paranoid" "true"
+assert_contains "MISE_PARANOID=config,env_files mise settings get paranoid" '["config", "env_files"]'
+assert_fail_contains "MISE_PARANOID=nope mise settings get paranoid 2>&1" "config, env_files, plugins, provenance"
+assert_fail_contains "mise settings paranoid=nope 2>&1" "config, env_files, plugins, provenance"
+assert_contains "MISE_PARANOID=env_files mise settings ls --all" "env_files"
+
+# Setting it with the CLI writes a bool or a list, and both keep working.
+assert "mise settings paranoid=env_files,plugins"
+assert_contains "mise settings get paranoid" '["env_files", "plugins"]'
+assert_contains "cat $MISE_GLOBAL_CONFIG_FILE" 'paranoid = ["env_files", "plugins"]'
+assert "mise settings paranoid=true"
+assert_contains "mise settings get paranoid" "true"
+assert "mise settings paranoid=false"
+assert_contains "mise settings get paranoid" "false"
+assert "mise settings unset paranoid"
+cat <<'EOS' >"$MISE_GLOBAL_CONFIG_FILE"
+[env]
+_.file = [{ path = ".env.find", find_up = true }]
+EOS
+
+# env_files alone: the discovered dotenv file needs approval, project config does not.
+assert_fail_contains "MISE_PARANOID=env_files mise env 2>&1" "environment file"
+assert_not_contains "MISE_PARANOID=env_files mise env 2>&1 || true" "found"
+assert "MISE_PARANOID=env_files mise trust ../.env.find"
+assert_contains "MISE_PARANOID=env_files mise env" "FIND_UP_TEST=found"
+# Project config was never asked about: MISE_YES answers its prompt as in normal mode.
+assert_contains "MISE_PARANOID=env_files mise env" "PROJECT_TEST=loaded"
+# Approval is bound to content.
+echo "FIND_UP_TEST=edited" >../.env.find
+assert_fail_contains "MISE_PARANOID=env_files MISE_YES=1 mise env 2>&1" "environment file"
+assert "MISE_PARANOID=env_files mise trust ../.env.find"
+assert_contains "MISE_PARANOID=env_files mise env" "FIND_UP_TEST=edited"
+# Without the category the file loads unasked, even with the approval record in place.
+echo "FIND_UP_TEST=unasked" >../.env.find
+assert_contains "mise env" "FIND_UP_TEST=unasked"
+assert_contains "MISE_PARANOID=plugins,provenance mise env" "FIND_UP_TEST=unasked"
+assert_contains "MISE_PARANOID=false mise env" "FIND_UP_TEST=unasked"
+# `true` selects every category, this one included.
+assert "MISE_PARANOID=1 mise trust ../mise.toml"
+assert_fail_contains "MISE_PARANOID=1 mise env 2>&1" "environment file"
+
+# config alone: project config needs content-bound trust, the dotenv file does not.
+assert "MISE_PARANOID=1 mise untrust ../mise.toml"
+assert_fail_contains "MISE_PARANOID=config MISE_YES=1 mise env 2>&1" "not trusted"
+assert "MISE_PARANOID=config mise trust ../mise.toml"
+assert_contains "MISE_PARANOID=config mise env" "PROJECT_TEST=loaded"
+assert_contains "MISE_PARANOID=config mise env" "FIND_UP_TEST=unasked"
+# Editing the config makes it untrusted again, under `config` only.
+echo "# edit" >>../mise.toml
+assert_fail_contains "MISE_PARANOID=config MISE_YES=1 mise env 2>&1" "not trusted"
+assert_contains "MISE_PARANOID=plugins,provenance MISE_YES=1 mise env" "PROJECT_TEST=loaded"
+assert_fail_contains "MISE_PARANOID=1 MISE_YES=1 mise env 2>&1" "not trusted"
+
+# plugins alone: an unregistered community plugin is refused instead of confirmed.
+mkdir -p ~/plug
+cd ~/plug || exit 1
+cat <<'EOS' >mise.toml
+[tools]
+"vfox:attacker/evil" = "latest"
+EOS
+assert "MISE_PARANOID=plugins mise trust mise.toml"
+assert_fail_contains "MISE_PARANOID=plugins MISE_YES=0 mise install 2>&1" "Paranoid mode is enabled"
+assert_not_contains "MISE_PARANOID=config,env_files,provenance MISE_YES=0 mise install 2>&1 || true" "Paranoid mode is enabled"
+assert_not_contains "MISE_YES=0 mise install 2>&1 || true" "Paranoid mode is enabled"
+assert "MISE_PARANOID=1 mise trust mise.toml"
+assert_fail_contains "MISE_PARANOID=1 MISE_YES=0 mise install 2>&1" "Paranoid mode is enabled"
+
+# Boolean spellings the setting parses are stored as booleans, not categories.
+assert "mise settings paranoid=on"
+assert_contains "mise settings get paranoid" "true"
+assert "mise settings paranoid=OFF"
+assert_contains "mise settings get paranoid" "false"
+
+# An env file named like a config can still be approved on its own.
+mkdir -p ~/named/sub
+cat <<'EOS' >~/named/global.toml
+[env]
+_.file = [{ path = "config.toml", find_up = true }]
+EOS
+export MISE_GLOBAL_CONFIG_FILE=~/named/global.toml
+echo 'NAMED_TEST = "ok"' >~/named/config.toml
+cd ~/named/sub || exit 1
+assert_fail_contains "MISE_PARANOID=env_files mise env 2>&1" "environment file"
+assert "MISE_PARANOID=env_files mise trust ../config.toml"
+assert_contains "MISE_PARANOID=env_files mise env" "NAMED_TEST=ok"
+assert "MISE_PARANOID=env_files mise untrust ../config.toml"
+assert_fail_contains "MISE_PARANOID=env_files mise env 2>&1" "environment file"
+# Ignoring the file blocks it even after it was approved.
+assert "MISE_PARANOID=env_files mise trust ../config.toml"
+assert_contains "MISE_PARANOID=env_files mise env" "NAMED_TEST=ok"
+assert "MISE_PARANOID=env_files mise trust --ignore ../config.toml"
+assert_fail_contains "MISE_PARANOID=env_files mise env 2>&1" "environment file"
+# A boolean cannot be added to a list of categories.
+assert "mise settings paranoid=env_files"
+assert_fail_contains "mise settings add paranoid true 2>&1" "category"
+# `add` keeps `true` meaning every category, and config set rejects unknown names.
+assert "mise settings paranoid=true"
+assert "mise settings add paranoid env_files"
+assert_contains "mise settings get paranoid" "true"
+assert_fail_contains "mise config set --global settings.paranoid config,nope 2>&1" "valid categories"
+assert_contains "mise settings get paranoid" "true"
+# An empty list turns every category off.
+assert "mise config set --global --type set settings.paranoid '[]'"
+assert "mise config set --global settings.paranoid '[]'"
+assert_contains "mise settings get paranoid" "false"
+assert "mise settings paranoid='[]'"
+assert_contains "mise settings get paranoid" "false"
+assert "mise config set --global settings.paranoid config,,env_files,config"
+assert_contains "mise settings get paranoid" '["config", "env_files"]'
+# The extra boolean spellings are for paranoid only.
+assert_fail "mise config set --global settings.quiet on"

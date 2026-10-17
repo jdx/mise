@@ -25,6 +25,9 @@ use std::sync::{Arc, OnceLock, RwLock};
 
 // settings are generated from settings.toml in the project root
 // make sure you run `mise run render` after updating settings.toml
+mod paranoid;
+pub use paranoid::{Paranoid, ParanoidCategory};
+
 include!(concat!(env!("OUT_DIR"), "/settings.rs"));
 
 pub enum SettingsType {
@@ -39,6 +42,7 @@ pub enum SettingsType {
     SetString,
     IndexMap,
     BoolOrString,
+    BoolOrList,
 }
 
 pub struct SettingsMeta {

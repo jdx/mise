@@ -157,8 +157,8 @@ pub struct Settings {"#
                     "ListPath" => "Vec<PathBuf>",
                     "SetString" => "BTreeSet<String>",
                     "IndexMap<String, String>" => "IndexMap<String, String>",
-                    "BoolOrString" => {
-                        panic!(r#"type \"BoolOrString\" requires a `rust_type` to be specified"#)
+                    t @ ("BoolOrString" | "BoolOrList") => {
+                        panic!("type {t:?} requires a `rust_type` to be specified")
                     }
                     t => panic!("Unknown type: {t}"),
                 })
@@ -506,9 +506,9 @@ pub struct MisercSettings {"#
                         "ListPath" => "Vec<PathBuf>",
                         "SetString" => "BTreeSet<String>",
                         "IndexMap<String, String>" => "IndexMap<String, String>",
-                        "BoolOrString" => panic!(
-                            r#"type \"BoolOrString\" requires a `rust_type` to be specified"#
-                        ),
+                        t @ ("BoolOrString" | "BoolOrList") => {
+                            panic!("type {t:?} requires a `rust_type` to be specified")
+                        }
                         t => panic!("Unknown type: {t}"),
                     })
                 });

@@ -453,7 +453,7 @@ async fn mirrored_attestations(repo: &str, digest: &str) -> eyre::Result<Mirrore
     if !crate::versions_host::enabled_for_github_repo(repo) {
         return Ok(None);
     }
-    if mise_settings::Settings::get().paranoid {
+    if mise_settings::Settings::get().paranoid.provenance() {
         return crate::versions_host::github_attestations(repo, digest).await;
     }
     let key = mirrored_attestations_key(repo, digest);
@@ -509,7 +509,7 @@ async fn refreshed_mirrored_attestations(
     digest: &str,
 ) -> eyre::Result<MirroredAttestations> {
     let fresh = crate::versions_host::github_attestations(repo, digest).await?;
-    if keep_mirrored_attestations(&fresh) && !mise_settings::Settings::get().paranoid {
+    if keep_mirrored_attestations(&fresh) && !mise_settings::Settings::get().paranoid.provenance() {
         let key = mirrored_attestations_key(repo, digest);
         if let Err(err) = mirrored_attestations_cache(&key).write(&fresh) {
             debug!("failed to keep refreshed attestations for {repo}: {err:#}");
@@ -860,7 +860,7 @@ fn mirror_failure(full: &str, err: &eyre::Report) -> AttestationError {
 }
 
 fn mirror_may_answer_none() -> bool {
-    !mise_settings::Settings::get().paranoid
+    !mise_settings::Settings::get().paranoid.provenance()
 }
 
 fn use_versions_host_for_attestations(api_url: Option<&str>, use_versions_host: bool) -> bool {

@@ -40,3 +40,34 @@ eval "$(mise hook-env -s bash)"
 sleep 1
 echo three >>watched.txt
 assert_contains "mise hook-env -s bash 2>&1" "GIT_REWRITTEN=[]"
+
+# a HEAD move that stays on the same commit leaves an earlier edit as the user's
+eval "$(mise hook-env -s bash)"
+sleep 1
+echo four >>watched.txt
+sleep 1
+git checkout -q -b another
+assert_contains "mise hook-env -s bash 2>&1" "GIT_REWRITTEN=[]"
+
+eval "$(mise hook-env -s bash)"
+sleep 1
+echo five >>watched.txt
+sleep 1
+git add watched.txt
+git reset -q
+assert_contains "mise hook-env -s bash 2>&1" "GIT_REWRITTEN=[]"
+
+# a checkout followed by a branch on the same commit still reports the checkout
+git checkout -q -- watched.txt
+eval "$(mise hook-env -s bash)"
+sleep 1
+git checkout -q other
+git checkout -q -b feature
+assert_contains "mise hook-env -s bash 2>&1" "GIT_REWRITTEN=[1]"
+
+eval "$(mise hook-env -s bash)"
+sleep 1
+echo six >>watched.txt
+sleep 1
+git branch -m feature feature2
+assert_contains "mise hook-env -s bash 2>&1" "GIT_REWRITTEN=[]"

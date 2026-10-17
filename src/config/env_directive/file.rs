@@ -138,6 +138,9 @@ impl EnvResults {
         for input in &inputs {
             patterns.push(PathBuf::from(ctx.parse_template("_.file", input)?));
         }
+        let has_glob = patterns
+            .iter()
+            .any(|pattern| crate::config::is_glob_pattern(&pattern.to_string_lossy()));
         let expand = expand && crate::config::Settings::get().env_shell_expand;
         // Accumulate loaded vars so opted-in expansion can reference values from
         // an earlier file in the same directive or an earlier env block.
@@ -174,9 +177,7 @@ impl EnvResults {
         // A global entry that names its file outright is the operator's own choice. One that
         // searches upward, or a glob, can find files in repositories, so those need approval like
         // project config.
-        let operator_owned = !find_up
-            && !inputs.iter().any(|p| crate::config::is_glob_pattern(p))
-            && crate::config::is_global_config(ctx.source);
+        let operator_owned = !find_up && !has_glob && crate::config::is_global_config(ctx.source);
         for p in paths {
             if !operator_owned
                 && !crate::config::config_file::env_file_trust_check_from(&p, Some(ctx.source))?
