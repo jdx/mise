@@ -812,7 +812,8 @@ file. For a dotenv file that belongs to one project, use
 [`_.file`](/environments/#env-file) in `mise.toml` instead.
 
 These values are applied after every config file's `[env]`, so they override
-it. An [`_.file`](/environments/#env-file) entry, including one with
+it, except for a file that an `_.file` entry has already loaded, which this
+setting skips. An [`_.file`](/environments/#env-file) entry, including one with
 `find_up = true` in a global config, is an ordinary `[env]` entry that a
 project's own `[env]` values can override.
 """
