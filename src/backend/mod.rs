@@ -920,11 +920,37 @@ pub(crate) fn is_install_time_option_key_for_type(backend_type: &BackendType, ke
 #[derive(Debug, Clone, Copy)]
 pub struct OptionSpec {
     schema_defs: &'static [&'static str],
+    /// The schema definitions for the options a platform override may carry. A backend that
+    /// has none accepts anything it knows at the top level.
+    platform_defs: &'static [&'static str],
 }
 
 impl OptionSpec {
     pub const fn new(schema_defs: &'static [&'static str]) -> Self {
-        Self { schema_defs }
+        Self {
+            schema_defs,
+            platform_defs: &[],
+        }
+    }
+
+    pub const fn with_platforms(
+        schema_defs: &'static [&'static str],
+        platform_defs: &'static [&'static str],
+    ) -> Self {
+        Self {
+            schema_defs,
+            platform_defs,
+        }
+    }
+
+    fn platform_schema_keys(def: &str) -> HashSet<String> {
+        static SCHEMA: LazyLock<serde_json::Value> = LazyLock::new(|| {
+            serde_json::from_str(include_str!("../../schema/mise.json")).unwrap_or_default()
+        });
+        SCHEMA["$defs"][def]["additionalProperties"]["properties"]
+            .as_object()
+            .map(|props| props.keys().cloned().collect())
+            .unwrap_or_default()
     }
 
     fn schema_keys(def: &str) -> HashSet<String> {
@@ -952,20 +978,22 @@ impl OptionSpec {
             .collect()
     }
 
-    /// A key is known when it is, or is the flat per-platform form of
-    /// (`platform_<os>_<arch>_<key>`), an option the backend reads.
     fn is_known(known: &HashSet<String>, key: &str) -> bool {
-        known.contains(key)
-            || key
-                .strip_prefix("platforms_")
-                .or_else(|| key.strip_prefix("platform_"))
-                .is_some_and(|rest| {
-                    known.iter().any(|k| {
-                        rest.strip_suffix(k.as_str())
-                            .and_then(|p| p.strip_suffix('_'))
-                            .is_some_and(|platform| platform.contains(['_', '-']))
-                    })
+        known.contains(key) || Self::is_flat_platform(known, key)
+    }
+
+    /// The flat per-platform form of an option the backend reads in a platform override:
+    /// `platform_<os>_<arch>_<key>`.
+    fn is_flat_platform(platform_known: &HashSet<String>, key: &str) -> bool {
+        key.strip_prefix("platforms_")
+            .or_else(|| key.strip_prefix("platform_"))
+            .is_some_and(|rest| {
+                platform_known.iter().any(|k| {
+                    rest.strip_suffix(k.as_str())
+                        .and_then(|p| p.strip_suffix('_'))
+                        .is_some_and(|platform| platform.contains(['_', '-']))
                 })
+            })
     }
 
     /// Returns the options that are not known, including those inside `platforms`.
@@ -975,17 +1003,25 @@ impl OptionSpec {
         opts: &ToolVersionOptions,
     ) -> Vec<String> {
         let known = self.known_keys(backend_type);
+        let platform_known = if self.platform_defs.is_empty() {
+            known.clone()
+        } else {
+            self.platform_defs
+                .iter()
+                .flat_map(|def| Self::platform_schema_keys(def))
+                .collect()
+        };
         let mut unknown = vec![];
         for (key, value) in &opts.opts {
             if key == "platforms" || key == "platform" {
                 for platform in value.as_table().into_iter().flat_map(|t| t.values()) {
                     for inner in platform.as_table().into_iter().flat_map(|t| t.keys()) {
-                        if !Self::is_known(&known, inner) {
+                        if !Self::is_known(&platform_known, inner) {
                             unknown.push(format!("{key}.{inner}"));
                         }
                     }
                 }
-            } else if !Self::is_known(&known, key) {
+            } else if !known.contains(key) && !Self::is_flat_platform(&platform_known, key) {
                 unknown.push(key.clone());
             }
         }
@@ -4621,7 +4657,11 @@ pub trait Backend: Debug + Send + Sync {
             self.prepare_install_version(&ctx, tv).await?
         };
         if let Some(spec) = self.option_spec() {
-            spec.check(&self.ba().short, &self.get_type(), &tv.request.options())?;
+            spec.check(
+                &crate::install_layout::resolver::redact_credentials(&self.ba().short),
+                &self.get_type(),
+                &tv.request.options(),
+            )?;
         }
         // Toolset installs preflight these options before doing any work, but
         // direct callers such as `install-into` must be protected here too.
@@ -8477,6 +8517,21 @@ mod option_spec_tests {
         assert_eq!(
             spec.unknown_keys(&BackendType::Http, &opts("platform_linux_url=u")),
             vec!["platform_linux_url"]
+        );
+    }
+
+    #[test]
+    fn platform_overrides_are_checked_against_the_platform_options() {
+        let spec = OptionSpec::with_platforms(&["tool_cargo_options"], &["tool_cargo_platforms"]);
+        // `features` is a cargo option, but cargo reads it only at the top level.
+        let mut o = opts("platform_linux_x64_features=x,platform_linux_x64_bin=b");
+        let platform: toml::Table =
+            toml::from_str("[linux-x64]\nfeatures = \"x\"\nbin = \"y\"").unwrap();
+        o.opts
+            .insert("platforms".into(), toml::Value::Table(platform));
+        assert_eq!(
+            spec.unknown_keys(&BackendType::Cargo, &o),
+            vec!["platform_linux_x64_features", "platforms.features"]
         );
     }
 
