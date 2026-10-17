@@ -1018,9 +1018,10 @@ impl SettingsExt for Settings {
         let mut builder = Self::builder().env();
         // Reuse operator-owned authentication settings, including the OAuth
         // client ID needed to locate cached tokens. Never discover project files.
-        let paths = super::global_config_files()
+        let paths = super::override_config_files()
             .into_iter()
             .rev()
+            .chain(super::global_config_files().into_iter().rev())
             .chain(super::system_config_files().into_iter().rev());
         for path in paths {
             if let Ok(settings) = Self::parse_settings_file(&path) {

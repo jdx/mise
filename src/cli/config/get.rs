@@ -26,7 +26,7 @@ pub(super) struct ConfigGet {
     ///
     /// For a directory, mise reads the TOML config file already there, such as
     /// `.mise.toml`, or `mise.toml` when there is none. Defaults to the
-    /// highest-precedence loaded TOML file.
+    /// highest-precedence loaded TOML file other than the global override files.
     #[usage(short, long, visible_alias = "path", value_hint = usage_rs::ValueHint::AnyPath)]
     pub file: Option<PathBuf>,
 
@@ -37,6 +37,10 @@ pub(super) struct ConfigGet {
     /// Read the system config file
     #[usage(long, conflicts = ["file", "global"])]
     pub system: bool,
+
+    /// Read the global override file, `config.override.toml`
+    #[usage(long = "override", conflicts = ["file", "global", "system"])]
+    pub override_file: bool,
 }
 
 fn complete_key(
@@ -48,7 +52,7 @@ fn complete_key(
 
 impl ConfigGet {
     pub(super) fn run(self) -> eyre::Result<()> {
-        let file = super::target_file(self.file, self.global, self.system)?;
+        let file = super::target_file(self.file, self.global, self.system, self.override_file)?;
         if let Some(file) = file {
             if !file.exists() {
                 bail!("config file not found: {}", display_path(&file));

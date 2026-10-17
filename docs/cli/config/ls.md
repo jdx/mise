@@ -12,7 +12,9 @@ description: "List config files currently in use, from lowest to highest precede
 
 List config files currently in use, from lowest to highest precedence
 
-Later files override earlier ones.
+Later files override earlier ones. Global override files
+(`config.override.toml`) rank above all project config and are labeled
+`override`.
 
 ## Flags
 - **`--truncate`** — Truncate long terminal output to fit the available width

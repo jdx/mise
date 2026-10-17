@@ -2260,6 +2260,12 @@ pub fn lockfile_path_for_config(
     config_path: &Path,
     monorepo_root: Option<&Path>,
 ) -> (PathBuf, bool) {
+    // The global override files share the global lockfile. Their tools are resolved
+    // from it, never from a project's mise.lock.
+    if crate::config::is_override_config(config_path) {
+        let dir = config_path.parent().unwrap_or(Path::new("."));
+        return (dir.join("mise.lock"), false);
+    }
     let is_local = is_local_config(config_path);
     let env = extract_env_from_config_path(config_path);
     let lockfile_name = match (&env, is_local) {

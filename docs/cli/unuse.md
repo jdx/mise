@@ -34,6 +34,9 @@ remove an installation without editing config, use `mise uninstall`.
 - **`-p --path <PATH>`** — Edit this config file, or the config file in this directory
 
   **Aliases:** `--file`
+- **`--override`** — Write to the global override file, `config.override.toml`
+
+  The override file outranks all project config. With `--env`, writes `config.<ENV>.override.toml` instead. See <https://mise.jdx.dev/configuration/override.html>
 - **`--no-prune`** — Do not also prune the installed version
 - **`-h --help`** — Print help
 

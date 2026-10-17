@@ -34,10 +34,11 @@ or `false` as text, and `--type integer` for a number.
 ## Flags
 - **`-f --file <FILE>`** — Config file to edit, or a directory whose config file to edit
 
-  For a directory, mise edits the TOML config file already there, such as `.mise.toml`, or `mise.toml` when there is none. Defaults to the highest-precedence loaded TOML file.
+  For a directory, mise edits the TOML config file already there, such as `.mise.toml`, or `mise.toml` when there is none. Defaults to the highest-precedence loaded TOML file other than the global override files.
 
   **Aliases:** `--path`
 - **`-g --global`** — Edit the global config file
+- **`--override`** — Edit the global override file, `config.override.toml`
 - **`--system`** — Edit the system config file
 - **`--append`** — Append the value to a list without duplicating an existing entry
 - **`--remove`** — Remove the value from an existing list

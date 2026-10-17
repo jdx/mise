@@ -171,7 +171,9 @@ pub(super) fn complete(
     system: bool,
 ) -> Vec<Candidate<'static>> {
     let file = file.map(|bytes| PathBuf::from(String::from_utf8_lossy(bytes).into_owned()));
-    let target = super::target_file(file, global, system).ok().flatten();
+    let target = super::target_file(file, global, system, false)
+        .ok()
+        .flatten();
     candidates(ctx.prefix, target.as_deref())
 }
 

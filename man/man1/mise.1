@@ -3510,13 +3510,16 @@ template\-expanded environment; use `mise env` for the resolved environment.
 \fB\-f, \-\-file, \-\-path\fR \fI<FILE>\fR
 Config file to read, or a directory whose config file to read
 
-For a directory, mise reads the TOML config file already there, such as `.mise.toml`, or `mise.toml` when there is none. Defaults to the highest\-precedence loaded TOML file.
+For a directory, mise reads the TOML config file already there, such as `.mise.toml`, or `mise.toml` when there is none. Defaults to the highest\-precedence loaded TOML file other than the global override files.
 .TP
 \fB\-g, \-\-global\fR
 Read the global config file
 .TP
 \fB\-\-system\fR
 Read the system config file
+.TP
+\fB\-\-override\fR
+Read the global override file, `config.override.toml`
 .TP
 \fB\-h, \-\-help\fR
 Print help
@@ -3542,7 +3545,9 @@ mise config get
 .SH "MISE CONFIG LS"
 List config files currently in use, from lowest to highest precedence
 
-Later files override earlier ones.
+Later files override earlier ones. Global override files
+(`config.override.toml`) rank above all project config and are labeled
+`override`.
 .PP
 \fBUsage:\fR mise config ls [OPTIONS]
 .PP
@@ -3606,10 +3611,13 @@ or `false` as text, and `\-\-type integer` for a number.
 \fB\-f, \-\-file, \-\-path\fR \fI<FILE>\fR
 Config file to edit, or a directory whose config file to edit
 
-For a directory, mise edits the TOML config file already there, such as `.mise.toml`, or `mise.toml` when there is none. Defaults to the highest\-precedence loaded TOML file.
+For a directory, mise edits the TOML config file already there, such as `.mise.toml`, or `mise.toml` when there is none. Defaults to the highest\-precedence loaded TOML file other than the global override files.
 .TP
 \fB\-g, \-\-global\fR
 Edit the global config file
+.TP
+\fB\-\-override\fR
+Edit the global override file, `config.override.toml`
 .TP
 \fB\-\-system\fR
 Edit the system config file
@@ -9058,6 +9066,11 @@ Write to mise.<ENV>.toml in the current directory, or to .mise.<ENV>.toml if tha
 \fB\-g, \-\-global\fR
 Set the environment variable in the global config file
 .TP
+\fB\-\-override\fR
+Set the environment variable in the global override file, `config.override.toml`
+
+The override file outranks all project config. With `\-\-env`, writes `config.<ENV>.override.toml` instead. See https://mise.jdx.dev/configuration/override.html
+.TP
 \fB\-\-age\-encrypt\fR
 [experimental] Encrypt the value with age before storing
 .TP
@@ -9238,6 +9251,11 @@ Write to the nearest project config instead of the global config
 
 The nearest project config is the lowest\-precedence TOML file in the nearest directory that has one, or ./mise.toml.
 .TP
+\fB\-\-override\fR
+Write to the global override file, `config.override.toml`
+
+The override file outranks all project config, so the setting wins over the same setting in a project's `mise.toml`.
+.TP
 \fB\-h, \-\-help\fR
 Print help
 \fBArguments:\fR
@@ -9373,6 +9391,11 @@ Write to the nearest project config instead of the global config
 
 The nearest project config is the lowest\-precedence TOML file in the nearest directory that has one, or ./mise.toml.
 .TP
+\fB\-\-override\fR
+Write to the global override file, `config.override.toml`
+
+The override file outranks all project config, so the setting wins over the same setting in a project's `mise.toml`.
+.TP
 \fB\-h, \-\-help\fR
 Print help
 \fBArguments:\fR
@@ -9412,6 +9435,11 @@ another config file.
 Write to the nearest project config instead of the global config
 
 The nearest project config is the lowest\-precedence TOML file in the nearest directory that has one, or ./mise.toml.
+.TP
+\fB\-\-override\fR
+Write to the global override file, `config.override.toml`
+
+The override file outranks all project config, so the setting wins over the same setting in a project's `mise.toml`.
 .TP
 \fB\-h, \-\-help\fR
 Print help
@@ -10841,6 +10869,11 @@ Can be a file or a directory. For a directory, mise uses the config file in it, 
 \fB\-g, \-\-global\fR
 Use the global config file
 .TP
+\fB\-\-override\fR
+Use the global override file, `config.override.toml`
+
+See https://mise.jdx.dev/configuration/override.html
+.TP
 \fB\-h, \-\-help\fR
 Print help
 \fBArguments:\fR
@@ -10916,6 +10949,11 @@ Use the global config file (`~/.config/mise/config.toml`) instead of the local o
 .TP
 \fB\-p, \-\-path, \-\-file\fR \fI<PATH>\fR
 Edit this config file, or the config file in this directory
+.TP
+\fB\-\-override\fR
+Write to the global override file, `config.override.toml`
+
+The override file outranks all project config. With `\-\-env`, writes `config.<ENV>.override.toml` instead. See https://mise.jdx.dev/configuration/override.html
 .TP
 \fB\-\-no\-prune\fR
 Do not also prune the installed version
@@ -11132,6 +11170,11 @@ Show what would change without changing anything
 Write to this config file, or to the config file in this directory
 
 For a directory, mise picks the file by the usual write\-target rules.
+.TP
+\fB\-\-override\fR
+Write to the global override file, `config.override.toml`
+
+The override file outranks all project config. With `\-\-env`, writes `config.<ENV>.override.toml` instead. See https://mise.jdx.dev/configuration/override.html
 .TP
 \fB\-\-dry\-run\-code\fR
 Like \-\-dry\-run, but exit with code 1 if there are changes to make
