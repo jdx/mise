@@ -914,77 +914,77 @@ pub(crate) fn is_install_time_option_key_for_type(backend_type: &BackendType, ke
             .any(|itk| key.starts_with("platforms.") && key.ends_with(&format!(".{itk}")))
 }
 
-/// Schema definitions that document the options each backend reads. The schema is the
-/// source of truth for them: `schema_matches_parser` keeps it in step with the parser.
-fn option_schema_defs(backend_type: &BackendType) -> &'static [&'static str] {
-    match backend_type {
-        BackendType::Cargo => &["tool_cargo_options"],
-        BackendType::Http => &["tool_http_options"],
-        BackendType::S3 => &["tool_s3_options"],
-        BackendType::Github => &["tool_github_options", "tool_forge_options"],
-        BackendType::Gitlab => &["tool_gitlab_options", "tool_forge_options"],
-        BackendType::Forgejo => &["tool_forgejo_options", "tool_forge_options"],
-        BackendType::Go => &["tool_go_options"],
-        BackendType::Npm => &["tool_npm_options"],
-        BackendType::Packslip => &["tool_packslip_options"],
-        BackendType::Pipx => &["tool_pypi_options"],
-        BackendType::Spm => &["tool_spm_options"],
-        _ => &[],
-    }
+/// The options a backend reads, as documented by the named `schema/mise.json` definitions
+/// (`schema_matches_parser` keeps those in step with the parser). Any other option is an
+/// error, so only a backend whose options are a fixed set should declare one.
+#[derive(Debug, Clone, Copy)]
+pub struct OptionSpec {
+    schema_defs: &'static [&'static str],
 }
 
-fn schema_option_keys(def: &str) -> HashSet<String> {
-    static SCHEMA: LazyLock<serde_json::Value> = LazyLock::new(|| {
-        serde_json::from_str(include_str!("../../schema/mise.json")).unwrap_or_default()
-    });
-    SCHEMA["$defs"][def]["properties"]
-        .as_object()
-        .map(|props| props.keys().cloned().collect())
-        .unwrap_or_default()
-}
-
-/// Returns the option keys that another backend documents but this one does not.
-///
-/// Only keys the schema attributes to other backends count, so an option no backend
-/// claims (a typo, or one a plugin reads) is left alone.
-pub(crate) fn foreign_option_keys<'a>(
-    backend_type: &BackendType,
-    keys: impl IntoIterator<Item = &'a String>,
-) -> Vec<String> {
-    let own_defs = option_schema_defs(backend_type);
-    if own_defs.is_empty() {
-        return vec![];
+impl OptionSpec {
+    pub const fn new(schema_defs: &'static [&'static str]) -> Self {
+        Self { schema_defs }
     }
-    let own: HashSet<String> = own_defs
-        .iter()
-        .flat_map(|d| schema_option_keys(d))
-        .collect();
-    let others: HashSet<String> = [
-        BackendType::Cargo,
-        BackendType::Http,
-        BackendType::S3,
-        BackendType::Github,
-        BackendType::Go,
-        BackendType::Npm,
-        BackendType::Packslip,
-        BackendType::Pipx,
-        BackendType::Spm,
-    ]
-    .iter()
-    .flat_map(|t| {
-        option_schema_defs(t)
+
+    fn schema_keys(def: &str) -> HashSet<String> {
+        static SCHEMA: LazyLock<serde_json::Value> = LazyLock::new(|| {
+            serde_json::from_str(include_str!("../../schema/mise.json")).unwrap_or_default()
+        });
+        SCHEMA["$defs"][def]["properties"]
+            .as_object()
+            .map(|props| props.keys().cloned().collect())
+            .unwrap_or_default()
+    }
+
+    fn known_keys(&self, backend_type: &BackendType) -> HashSet<String> {
+        self.schema_defs
             .iter()
-            .flat_map(|d| schema_option_keys(d))
-    })
-    .collect();
-    let mut foreign: Vec<String> = keys
-        .into_iter()
-        .filter(|key| !own.contains(*key) && others.contains(*key))
-        .filter(|key| !is_install_time_option_key_for_type(backend_type, key))
-        .cloned()
-        .collect();
-    foreign.sort();
-    foreign
+            .flat_map(|def| Self::schema_keys(def))
+            .chain(install_time_option_keys_for_type(backend_type))
+            .collect()
+    }
+
+    /// Returns the options that are not known, including those inside `platforms`.
+    pub(crate) fn unknown_keys(
+        &self,
+        backend_type: &BackendType,
+        opts: &ToolVersionOptions,
+    ) -> Vec<String> {
+        let known = self.known_keys(backend_type);
+        let mut unknown = vec![];
+        for (key, value) in &opts.opts {
+            if key == "platforms" || key == "platform" {
+                for platform in value.as_table().into_iter().flat_map(|t| t.values()) {
+                    for inner in platform.as_table().into_iter().flat_map(|t| t.keys()) {
+                        if !known.contains(inner) {
+                            unknown.push(format!("{key}.{inner}"));
+                        }
+                    }
+                }
+            } else if !known.contains(key) {
+                unknown.push(key.clone());
+            }
+        }
+        unknown.sort();
+        unknown.dedup();
+        unknown
+    }
+
+    pub(crate) fn check(
+        &self,
+        tool: &str,
+        backend_type: &BackendType,
+        opts: &ToolVersionOptions,
+    ) -> eyre::Result<()> {
+        if let Some(key) = self.unknown_keys(backend_type, opts).first() {
+            bail!(
+                "{tool}: option `{key}` is not used by the {backend_type} backend\n\
+                hint: Remove it, or check the spelling against the backend's documented options"
+            );
+        }
+        Ok(())
+    }
 }
 
 /// Normalize idiomatic file contents by removing comments and empty lines.
@@ -2855,6 +2855,12 @@ pub trait Backend: Debug + Send + Sync {
         static_helpers::request_identity_options(self, tv)
     }
 
+    /// Declares which tool options this backend reads, so an option it never reads can be
+    /// reported instead of silently ignored. `None` (the default) leaves the options unchecked.
+    fn option_spec(&self) -> Option<OptionSpec> {
+        None
+    }
+
     /// Returns all platform variants that should be locked for a given base platform.
     ///
     /// Some tools have compile-time variants (e.g., bun has baseline/musl variants)
@@ -4591,12 +4597,8 @@ pub trait Backend: Debug + Send + Sync {
         } else {
             self.prepare_install_version(&ctx, tv).await?
         };
-        for key in foreign_option_keys(&self.get_type(), tv.request.options().opts.keys()) {
-            warn_once!(
-                "{}: option `{key}` is not used by the {} backend and is ignored",
-                self.ba().short,
-                self.get_type()
-            );
+        if let Some(spec) = self.option_spec() {
+            spec.check(&self.ba().short, &self.get_type(), &tv.request.options())?;
         }
         // Toolset installs preflight these options before doing any work, but
         // direct callers such as `install-into` must be protected here too.
@@ -8403,52 +8405,90 @@ pub async fn reset() -> Result<()> {
 }
 
 #[cfg(test)]
-mod foreign_option_tests {
+mod option_spec_tests {
     use super::*;
 
-    fn keys(names: &[&str]) -> Vec<String> {
-        names.iter().map(|k| k.to_string()).collect()
+    fn opts(toml: &str) -> ToolVersionOptions {
+        crate::toolset::parse_tool_options(toml)
     }
 
     #[test]
-    fn flags_an_option_that_belongs_to_another_backend() {
-        let opts = keys(&["asset_pattern", "bin", "crate", "platforms"]);
+    fn reports_options_the_backend_does_not_read() {
+        let spec = OptionSpec::new(&["tool_cargo_options"]);
+        let o = opts("bin=x,asset_pattern=y,rename_exe=z");
         assert_eq!(
-            foreign_option_keys(&BackendType::Cargo, &opts),
+            spec.unknown_keys(&BackendType::Cargo, &o),
             vec!["asset_pattern"]
         );
     }
 
     #[test]
-    fn leaves_unclaimed_options_alone() {
-        let opts = keys(&["something_new", "rename_exe"]);
-        assert!(foreign_option_keys(&BackendType::Cargo, &opts).is_empty());
+    fn reports_unknown_options_inside_platforms() {
+        let spec = OptionSpec::new(&["tool_cargo_options"]);
+        let mut o = ToolVersionOptions::default();
+        let platform: toml::Table =
+            toml::from_str("[linux-x64]\nasset_pattern = \"x\"\nbin = \"y\"").unwrap();
+        o.opts
+            .insert("platforms".into(), toml::Value::Table(platform));
+        assert_eq!(
+            spec.unknown_keys(&BackendType::Cargo, &o),
+            vec!["platforms.asset_pattern"]
+        );
     }
 
     #[test]
-    fn schema_documented_options_are_never_flagged() {
-        for backend_type in [
-            BackendType::Cargo,
-            BackendType::Http,
-            BackendType::S3,
-            BackendType::Github,
-            BackendType::Gitlab,
-            BackendType::Forgejo,
-            BackendType::Go,
-            BackendType::Npm,
-            BackendType::Packslip,
-            BackendType::Pipx,
-            BackendType::Spm,
+    fn check_fails_on_an_unknown_option() {
+        let o = opts("nonsense=1");
+        let err = OptionSpec::new(&["tool_cargo_options"])
+            .check("cargo:x", &BackendType::Cargo, &o)
+            .unwrap_err();
+        assert!(err.to_string().contains("option `nonsense` is not used"));
+    }
+
+    #[test]
+    fn every_schema_documented_option_is_accepted() {
+        for (backend_type, defs) in [
+            (BackendType::Cargo, &["tool_cargo_options"][..]),
+            (BackendType::Conda, &["tool_conda_options"]),
+            (BackendType::Gem, &["tool_gem_options"]),
+            (
+                BackendType::Github,
+                &["tool_github_options", "tool_forge_options"],
+            ),
+            (
+                BackendType::Gitlab,
+                &["tool_gitlab_options", "tool_forge_options"],
+            ),
+            (
+                BackendType::Forgejo,
+                &["tool_forgejo_options", "tool_forge_options"],
+            ),
+            (BackendType::Go, &["tool_go_options"]),
+            (BackendType::Http, &["tool_http_options"]),
+            (BackendType::Npm, &["tool_npm_options"]),
+            (BackendType::Packslip, &["tool_packslip_options"]),
+            (BackendType::Pipx, &["tool_pypi_options"]),
+            (BackendType::S3, &["tool_s3_options"]),
+            (BackendType::Spinel, &["tool_spinel_options"]),
+            (BackendType::Spm, &["tool_spm_options"]),
+            (BackendType::Ubi, &["tool_ubi_options"]),
         ] {
-            let opts: Vec<String> = option_schema_defs(&backend_type)
+            let documented: Vec<String> = defs
                 .iter()
-                .flat_map(|d| schema_option_keys(d))
+                .flat_map(|d| OptionSpec::schema_keys(d))
                 .collect();
-            assert!(!opts.is_empty(), "{backend_type:?} has no schema options");
+            assert!(
+                !documented.is_empty(),
+                "{backend_type:?}: no schema options"
+            );
+            let mut o = ToolVersionOptions::default();
+            for key in documented {
+                o.opts.insert(key, toml::Value::Boolean(true));
+            }
             assert_eq!(
-                foreign_option_keys(&backend_type, &opts),
+                OptionSpec::new(defs).unknown_keys(&backend_type, &o),
                 Vec::<String>::new(),
-                "{backend_type:?} documents options that would be reported as ignored"
+                "{backend_type:?}"
             );
         }
     }

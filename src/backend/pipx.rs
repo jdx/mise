@@ -333,6 +333,10 @@ fn reset_selected_python_install_path(tv: &mut ToolVersion) -> Result<()> {
 
 #[async_trait]
 impl Backend for PIPXBackend {
+    fn option_spec(&self) -> Option<crate::backend::OptionSpec> {
+        Some(crate::backend::OptionSpec::new(&["tool_pypi_options"]))
+    }
+
     fn get_type(&self) -> BackendType {
         BackendType::Pipx
     }

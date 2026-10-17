@@ -165,6 +165,10 @@ enum BinstallStatus {
 
 #[async_trait]
 impl Backend for CargoBackend {
+    fn option_spec(&self) -> Option<crate::backend::OptionSpec> {
+        Some(crate::backend::OptionSpec::new(&["tool_cargo_options"]))
+    }
+
     fn get_type(&self) -> BackendType {
         BackendType::Cargo
     }

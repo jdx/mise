@@ -135,6 +135,10 @@ pub(crate) fn ubi_fuzzy_match(
 
 #[async_trait]
 impl Backend for UbiBackend {
+    fn option_spec(&self) -> Option<crate::backend::OptionSpec> {
+        Some(crate::backend::OptionSpec::new(&["tool_ubi_options"]))
+    }
+
     fn get_type(&self) -> BackendType {
         BackendType::Ubi
     }
