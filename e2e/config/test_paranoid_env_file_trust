@@ -94,3 +94,24 @@ assert "MISE_PARANOID=1 mise trust mise.toml"
 assert_not_contains "MISE_PARANOID=1 mise hook-env -s bash 2>&1" "LATE_TEST"
 assert "MISE_PARANOID=1 mise trust late.env"
 assert_contains "MISE_PARANOID=1 mise hook-env -s bash 2>&1" "LATE_TEST=late"
+
+# A sourced script runs code, so it needs its own approval as well.
+unset MISE_ENV_CACHE
+mkdir -p ~/sourced
+cd ~/sourced || exit 1
+cat <<'EOS' >mise.toml
+[env]
+_.source = "env.sh"
+EOS
+echo 'export SOURCED_TEST=ran' >env.sh
+assert "MISE_PARANOID=1 mise trust mise.toml"
+assert_fail_contains "MISE_PARANOID=1 mise env 2>&1" "environment file or script"
+assert_not_contains "MISE_PARANOID=1 mise env 2>&1 || true" "SOURCED_TEST"
+assert "MISE_PARANOID=1 mise trust env.sh"
+assert_contains "MISE_PARANOID=1 mise env" "SOURCED_TEST=ran"
+echo 'export SOURCED_TEST=edited' >env.sh
+assert_fail_contains "MISE_PARANOID=1 mise env 2>&1" "environment file or script"
+assert "MISE_PARANOID=1 mise trust env.sh"
+assert_contains "MISE_PARANOID=1 mise env" "SOURCED_TEST=edited"
+# Outside paranoid mode the script loads as before.
+assert_contains "mise env" "SOURCED_TEST=edited"

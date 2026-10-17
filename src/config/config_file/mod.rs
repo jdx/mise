@@ -1800,3 +1800,63 @@ mod ignore_entry_tests {
         assert_eq!(ignored_entry_path(&store.join("not-there")), None);
     }
 }
+
+#[cfg(test)]
+mod env_file_trust_tests {
+    use super::*;
+
+    fn paranoid_on(_held: &crate::test::SettingsGuard) {
+        use confique::Layer;
+        let mut settings = crate::config::settings::SettingsPartial::empty();
+        settings.paranoid = Some(true);
+        Settings::reset(Some(settings));
+    }
+
+    fn is_untrusted(path: &Path) -> bool {
+        matches!(
+            env_file_trust_check(path)
+                .unwrap_err()
+                .downcast_ref::<crate::errors::Error>(),
+            Some(UntrustedEnvFile(_))
+        )
+    }
+
+    /// The first passing check memoizes the path in `IS_TRUSTED`. A long-lived process that reloads
+    /// after the file was edited must still compare the content hash, not the memo.
+    #[test]
+    fn an_edited_file_needs_new_trust_even_after_a_passing_check() {
+        let held = crate::test::SettingsGuard::lock();
+        paranoid_on(&held);
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join(".env");
+        std::fs::write(&path, "A=1\n").unwrap();
+
+        assert!(is_untrusted(&path));
+        trust(&path).unwrap();
+        assert!(env_file_trust_check(&path).unwrap());
+        assert!(env_file_trust_check(&path).unwrap());
+
+        std::fs::write(&path, "A=2\n").unwrap();
+        assert!(is_untrusted(&path));
+
+        trust(&path).unwrap();
+        assert!(env_file_trust_check(&path).unwrap());
+    }
+
+    #[test]
+    fn a_missing_file_has_nothing_to_approve() {
+        let held = crate::test::SettingsGuard::lock();
+        paranoid_on(&held);
+        let tmp = tempfile::tempdir().unwrap();
+        assert!(env_file_trust_check(&tmp.path().join(".env")).unwrap());
+    }
+
+    #[test]
+    fn outside_paranoid_mode_every_file_loads() {
+        let _held = crate::test::SettingsGuard::lock();
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join(".env");
+        std::fs::write(&path, "A=1\n").unwrap();
+        assert!(env_file_trust_check(&path).unwrap());
+    }
+}

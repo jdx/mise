@@ -79,17 +79,18 @@ include = [
 
 ### Environment files {#environment-files}
 
-A file that [`env._.file`](/environments/#env-file) loads is not covered by the
-trust of the config that names it, because an edit to it changes the environment
-of every command. Each existing file needs its own trust, bound to its content,
-and fails with an error that names the path and prints none of its values until
-you approve it. An edit makes it untrusted again:
+A file that [`env._.file`](/environments/#env-file) loads, or a script that
+[`env._.source`](/environments/#env-source) runs, is not covered by the trust of
+the config that names it, because an edit to it changes the environment of every
+command. Each existing file needs its own trust, bound to its content, and fails
+with an error that names the path and prints none of its values until you
+approve it. An edit makes it untrusted again:
 
 ```sh
 mise trust .env
 ```
 
-This applies to every `_.file` format, and to the files the
+This applies to every `_.file` format, to `_.source` scripts, and to the files the
 [`env_file`](/configuration/settings.html#env_file) setting finds. It includes a
 file that a global `find_up = true` entry finds in a repository. It does not
 apply to a global `_.file` entry without `find_up`, which names a file you

@@ -22,8 +22,16 @@ impl EnvResults {
             .unwrap_or_default();
         let mut env_diff_opts = EnvDiffOptions::default();
         env_diff_opts.ignore_keys.shift_remove(&*env::PATH_KEY); // allow modifying PATH
+        // A script in global config is the operator's own. Elsewhere its contents run on every
+        // load, so paranoid mode needs them approved like config.
+        let operator_owned = crate::config::is_global_config(ctx.source);
         for p in xx::file::glob(ctx.normalize_path(s.into())).unwrap_or_default() {
             if !p.exists() {
+                continue;
+            }
+            if !operator_owned && !crate::config::config_file::env_file_trust_check(&p)? {
+                // Trusting the file later changes nothing the cache key sees.
+                ctx.results.has_uncacheable = true;
                 continue;
             }
             let env = out.entry(p.clone()).or_insert_with(IndexMap::new);
