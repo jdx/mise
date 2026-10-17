@@ -1343,8 +1343,14 @@ fn link_rustup_proxies(external: &Path, proxies_root: &Path) -> Result<PathBuf> 
             continue;
         }
         let up_to_date = if cfg!(windows) {
-            // Windows gets copies, which are current when the sizes match.
-            matches!((link.metadata(), target.metadata()), (Ok(a), Ok(b)) if a.len() == b.len())
+            // Windows gets copies, which are current when the same size and not older than the proxy.
+            match (link.metadata(), target.metadata()) {
+                (Ok(l), Ok(t)) => {
+                    l.len() == t.len()
+                        && matches!((l.modified(), t.modified()), (Ok(lm), Ok(tm)) if lm >= tm)
+                }
+                _ => false,
+            }
         } else {
             file::resolve_symlink(&link).ok().flatten().as_deref() == Some(target.as_path())
         };
