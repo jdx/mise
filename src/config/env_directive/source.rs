@@ -22,9 +22,11 @@ impl EnvResults {
             .unwrap_or_default();
         let mut env_diff_opts = EnvDiffOptions::default();
         env_diff_opts.ignore_keys.shift_remove(&*env::PATH_KEY); // allow modifying PATH
-        // A script in global config is the operator's own. Elsewhere its contents run on every
-        // load, so paranoid mode needs them approved like config.
-        let operator_owned = crate::config::is_global_config(ctx.source);
+        // A script that global config names outright is the operator's own. A glob can match
+        // scripts in repositories, and elsewhere the contents run on every load, so paranoid mode
+        // needs those approved like config.
+        let operator_owned =
+            crate::config::is_global_config(ctx.source) && !crate::config::is_glob_pattern(&s);
         for p in xx::file::glob(ctx.normalize_path(s.into())).unwrap_or_default() {
             if !p.exists() {
                 continue;
