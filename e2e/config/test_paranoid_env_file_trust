@@ -1,0 +1,96 @@
+#!/usr/bin/env bash
+
+export MISE_TRUSTED_CONFIG_PATHS=""
+
+# Paranoid trust is bound to content, so approving mise.toml must not approve the
+# file it loads.
+cat <<'EOS' >mise.toml
+[env]
+_.file = ".env"
+EOS
+echo "PARANOID_FILE_TEST=original" >.env
+
+assert "MISE_PARANOID=1 mise trust mise.toml"
+assert_fail_contains "MISE_PARANOID=1 mise env 2>&1" "environment file"
+# The error names the file but never prints its values.
+assert_not_contains "MISE_PARANOID=1 mise env 2>&1 || true" "original"
+
+assert "MISE_PARANOID=1 mise trust .env"
+assert_contains "MISE_PARANOID=1 mise env" "PARANOID_FILE_TEST=original"
+
+# An edit makes the file untrusted again.
+echo "PARANOID_FILE_TEST=edited" >.env
+assert_fail_contains "MISE_PARANOID=1 mise env 2>&1" "environment file"
+assert_fail_contains "MISE_PARANOID=1 MISE_YES=1 mise env 2>&1" "environment file"
+assert "MISE_PARANOID=1 mise trust .env"
+assert_contains "MISE_PARANOID=1 mise env" "PARANOID_FILE_TEST=edited"
+
+# Without paranoid mode nothing changes.
+echo "PARANOID_FILE_TEST=plain" >.env
+assert_contains "mise env" "PARANOID_FILE_TEST=plain"
+
+# trusted_config_paths is the global-only opt-out and trusts by path.
+echo "PARANOID_FILE_TEST=by-path" >.env
+assert_fail_contains "MISE_PARANOID=1 mise env 2>&1" "environment file"
+assert_contains "MISE_PARANOID=1 MISE_TRUSTED_CONFIG_PATHS=$PWD mise env" "PARANOID_FILE_TEST=by-path"
+
+rm mise.toml .env
+
+# A global find_up entry discovers files in repositories, so each needs approval.
+mkdir -p home-config proj/sub
+cat <<'EOS' >home-config/config.toml
+[env]
+_.file = [{ path = ".env.find", find_up = true }]
+EOS
+echo "FIND_UP_TEST=found" >proj/.env.find
+export MISE_GLOBAL_CONFIG_FILE="$PWD/home-config/config.toml"
+cd proj/sub || exit 1
+assert_fail_contains "MISE_PARANOID=1 mise env 2>&1" "environment file"
+assert "MISE_PARANOID=1 mise trust ../.env.find"
+assert_contains "MISE_PARANOID=1 mise env" "FIND_UP_TEST=found"
+
+# A search that finds nothing, and a file that does not exist, are not errors.
+rm ../.env.find
+assert "MISE_PARANOID=1 mise env"
+
+# The env_file setting finds files in repositories too.
+echo "SETTING_TEST=one" >../.env
+assert_fail_contains "MISE_PARANOID=1 MISE_ENV_FILE=.env mise env 2>&1" "environment file"
+assert "MISE_PARANOID=1 mise trust ../.env"
+assert_contains "MISE_PARANOID=1 MISE_ENV_FILE=.env mise env" "SETTING_TEST=one"
+
+# hook-env runs on entering a directory, so an untrusted file is skipped with a warning
+# instead of failing and blocking everything else.
+echo "SETTING_TEST=two" >../.env
+assert_contains "MISE_PARANOID=1 MISE_ENV_FILE=.env mise hook-env -s bash 2>&1" ".env is not trusted"
+assert_not_contains "MISE_PARANOID=1 MISE_ENV_FILE=.env mise hook-env -s bash 2>&1" "SETTING_TEST=two"
+
+# A cache built outside paranoid mode must not hand out an unapproved file's values.
+mkdir -p ~/cached
+cd ~/cached || exit 1
+# The global find_up config above makes every result uncacheable, so drop it.
+unset MISE_GLOBAL_CONFIG_FILE
+export MISE_EXPERIMENTAL=1 MISE_ENV_CACHE=1
+export __MISE_ENV_CACHE_KEY="dGVzdGtleXRlc3RrZXl0ZXN0a2V5dGVzdGtleXRlc3Q="
+cat <<'EOS' >mise.toml
+[env]
+_.file = ".env"
+EOS
+echo "CACHED_TEST=secret" >.env
+assert "MISE_PARANOID=1 mise trust mise.toml"
+assert_contains "mise env" "CACHED_TEST=secret"
+assert_contains "mise env" "CACHED_TEST=secret"
+assert_fail_contains "MISE_PARANOID=1 mise env 2>&1" "environment file"
+assert_not_contains "MISE_PARANOID=1 mise hook-env -s bash 2>&1" "CACHED_TEST=secret"
+assert_contains "MISE_PARANOID=1 mise hook-env -s bash 2>&1" ".env is not trusted"
+
+# A result that left out an untrusted file is not cached, so trusting it takes effect at once.
+echo "LATE_TEST=late" >late.env
+cat <<'EOS' >mise.toml
+[env]
+_.file = ["late.env"]
+EOS
+assert "MISE_PARANOID=1 mise trust mise.toml"
+assert_not_contains "MISE_PARANOID=1 mise hook-env -s bash 2>&1" "LATE_TEST"
+assert "MISE_PARANOID=1 mise trust late.env"
+assert_contains "MISE_PARANOID=1 mise hook-env -s bash 2>&1" "LATE_TEST=late"
