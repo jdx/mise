@@ -39,7 +39,7 @@ pub enum Error {
     )]
     UntrustedConfig(PathBuf),
     #[error(
-        "The environment file {} is not trusted, and paranoid mode ties trust to a file's contents.\nReview it, then trust it with `mise trust {}`. See https://mise.jdx.dev/paranoid.html#environment-files for more information.",
+        "The environment file or script {} is not trusted, and paranoid mode ties trust to a file's contents.\nReview it, then trust it with `mise trust {}`. See https://mise.jdx.dev/paranoid.html#environment-files for more information.",
         display_path(.0),
         display_path(.0)
     )]
