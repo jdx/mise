@@ -1,16 +1,12 @@
 use super::ports::PortClaim;
 use super::{DaemonSet, DaemonSettings, state_dir};
-use crate::args::ToolArg;
-use crate::cmd::CmdLineRunner;
-use crate::config::Config;
-use crate::env_diff::EnvMap;
-use crate::toolset::{ToolRequest, ToolSource, Toolset, ToolsetBuilder};
 use eyre::{Result, bail};
+use mise_util::cmd::CmdLineRunner;
+use mise_util::env_diff::EnvMap;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 use std::time::Duration;
 use tokio::process::Command;
 
@@ -71,7 +67,7 @@ fn port_origin(claim: &PortClaim) -> &'static str {
 
 /// What a pitchfork's external configuration registration can do.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct ExternalConfig {
+pub struct ExternalConfig {
     /// `pitchfork config add --label` exists, so a registration can say what
     /// hostname label the project is served under.
     pub label: bool,
@@ -197,7 +193,7 @@ pub struct State {
 /// unchanged. Missing one costs a delayed hint rather than a wrong port, and an
 /// explicit start scans regardless.
 fn siblings_fingerprint(mine: &Path) -> String {
-    let entries = std::fs::read_dir(crate::dirs::STATE.join("daemons"));
+    let entries = std::fs::read_dir(mise_util::dirs::STATE.join("daemons"));
     let mut seen: Vec<String> = entries
         .into_iter()
         .flatten()
@@ -216,7 +212,7 @@ fn siblings_fingerprint(mine: &Path) -> String {
         })
         .collect();
     seen.sort();
-    crate::hash::hash_to_str(&seen)
+    mise_util::hash::hash_to_str(&seen)
 }
 
 pub struct Runtime {
@@ -295,7 +291,7 @@ fn ports_being_started(
 }
 
 fn claimed_ports(mine: &Path) -> Vec<(State, String, u16)> {
-    let Ok(entries) = std::fs::read_dir(crate::dirs::STATE.join("daemons")) else {
+    let Ok(entries) = std::fs::read_dir(mise_util::dirs::STATE.join("daemons")) else {
         return Vec::new();
     };
     let mut found = Vec::new();
@@ -321,7 +317,7 @@ fn claimed_ports(mine: &Path) -> Vec<(State, String, u16)> {
     found
 }
 
-pub(crate) fn write_if_changed(path: &Path, content: &[u8]) -> Result<bool> {
+pub fn write_if_changed(path: &Path, content: &[u8]) -> Result<bool> {
     if std::fs::read(path).ok().as_deref() == Some(content) {
         return Ok(false);
     }
@@ -336,154 +332,7 @@ pub(crate) fn write_if_changed(path: &Path, content: &[u8]) -> Result<bool> {
     Ok(true)
 }
 
-pub async fn config_for_root(config: &Arc<Config>, root: &Path) -> Result<Arc<Config>> {
-    let (paths, idiomatic) = crate::config::load_config_hierarchy_from_dir(root).await?;
-    let files = crate::config::load_config_files_from_paths(&paths, &idiomatic).await?;
-    Ok(config.with_config_files(files))
-}
-
-/// Build the daemon toolset without installing anything.
-///
-/// Kept separate from [`toolset`] so callers that must not install can avoid the
-/// install path entirely. That path reaches code which is not `Send`, and a
-/// caller inside a spawned task would not compile if this future contained it.
-pub(crate) async fn toolset_resolved(
-    config: &Arc<Config>,
-    include_pitchfork: bool,
-) -> Result<Toolset> {
-    let pitchfork: ToolArg = "pitchfork".parse()?;
-    let args = if include_pitchfork
-        && !config
-            .get_tool_request_set()
-            .await?
-            .tools
-            .contains_key(&pitchfork.ba)
-    {
-        vec![pitchfork]
-    } else {
-        vec![]
-    };
-    // Resolve from what is on disk. `install_missing_versions` re-resolves the
-    // specific requests it has to fetch, so an already-satisfied project costs
-    // no network round trip -- which matters when this runs on every `mise run`
-    // of a task that requires daemons.
-    ToolsetBuilder::new()
-        .with_args(&args)
-        .with_default_to_latest(true)
-        .with_resolve_options(crate::toolset::ResolveOptions {
-            offline: true,
-            ..Default::default()
-        })
-        .build(config)
-        .await
-}
-
-/// The tools of `ts` that installing for `set` needs: pitchfork, each daemon's
-/// tool, and everything those tools depend on to install.
-///
-/// Dependencies come from the same declarations the installer resolves, so a
-/// runtime configured under its full backend id or named in a tool's `depends`
-/// option is found the way the installer finds it.
-fn install_scope(ts: &Toolset, set: &DaemonSet) -> Vec<Arc<crate::args::BackendArg>> {
-    let mut roots = vec![crate::args::BackendArg::from("pitchfork")];
-    for daemon in set.daemons.values().filter(|d| !d.imported) {
-        if let Some((tool, _)) = &daemon.tool {
-            roots.push(crate::args::BackendArg::from(tool.as_str()));
-        }
-    }
-    let mut scope: Vec<Arc<crate::args::BackendArg>> = ts
-        .versions
-        .keys()
-        .filter(|ba| {
-            roots
-                .iter()
-                .any(|root| crate::install_context::backend_args_match(root, ba))
-        })
-        .cloned()
-        .collect();
-    let mut next = 0;
-    while let Some(ba) = scope.get(next).cloned() {
-        next += 1;
-        let Some(list) = ts.versions.get(&ba) else {
-            continue;
-        };
-        for request in &list.requests {
-            let declarations = crate::install_context::install_dependency_declarations(request);
-            for candidate in ts.versions.keys() {
-                if declarations.matches(candidate)
-                    && !scope.iter().any(|s| Arc::ptr_eq(s, candidate))
-                {
-                    scope.push(candidate.clone());
-                }
-            }
-        }
-    }
-    scope
-}
-
-/// Build the daemon toolset, installing what `install` needs when it is given.
-///
-/// `install` is the set of daemons about to be validated and started. Only
-/// pitchfork and the tools those daemons declare are installed: a preset's tool
-/// comes from its daemon declaration, not the command line, so the default
-/// install would leave it out and validation would report a version mismatch.
-/// A tool that belongs to another daemon, or to no daemon, is left alone, so
-/// one that cannot be installed does not keep an unrelated daemon from starting.
-pub async fn toolset(
-    config: &Arc<Config>,
-    install: Option<&DaemonSet>,
-) -> Result<(Arc<Config>, Toolset)> {
-    let mut config = config.clone();
-    let mut ts = toolset_resolved(&config, install.is_some()).await?;
-    if let Some(set) = install {
-        let wanted = install_scope(&ts, set);
-        let mut skip = crate::config::Settings::get()
-            .auto_install_disable_tools
-            .clone()
-            .unwrap_or_default();
-        skip.extend(
-            ts.versions
-                .keys()
-                .filter(|ba| !wanted.iter().any(|w| Arc::ptr_eq(w, ba)))
-                .map(|ba| ba.short.clone()),
-        );
-        let (_, missing) = ts
-            .install_missing_versions(
-                &mut config,
-                &crate::toolset::InstallOptions {
-                    missing_args_only: false,
-                    auto_install_disable_tools: Some(skip),
-                    ..Default::default()
-                },
-            )
-            .await?;
-        ts.notify_missing_versions(missing);
-    }
-    Ok((config, ts))
-}
-
 impl Runtime {
-    pub async fn from_toolset(
-        config: &Arc<Config>,
-        ts: &Toolset,
-        fallback: Option<&Path>,
-    ) -> Result<Self> {
-        let env = ts.env_with_path(config).await?;
-        let bin = which::which_in(
-            "pitchfork",
-            env.get(&*crate::env::PATH_KEY),
-            crate::dirs::CWD.as_deref().unwrap_or(Path::new(".")),
-        )
-        .ok()
-        .or_else(|| fallback.filter(|p| p.is_file()).map(Path::to_path_buf))
-        .ok_or_else(|| {
-            eyre::eyre!(
-                "daemons require pitchfork; run `mise use pitchfork` or `mise daemons start`"
-            )
-        })?;
-        Ok(Self { bin, env })
-    }
-
     pub(crate) async fn output(&self, root: &Path, args: &[String]) -> Result<String> {
         let output = self.raw_output(root, args).await?;
         if !output.status.success() {
@@ -694,10 +543,10 @@ impl Runtime {
         // asked for it, so that is what the rendered definitions reflect and
         // what has to be recorded. Claiming the profile the root last used would
         // leave the generated file and the state describing different things.
-        let profile = if root.starts_with(crate::dirs::STATE.join("daemon-providers")) {
+        let profile = if root.starts_with(mise_util::dirs::STATE.join("daemon-providers")) {
             vec![]
         } else {
-            crate::env::MISE_ENV.clone()
+            mise_util::env::mise_env().to_vec()
         };
         if !previous.namespace.is_empty()
             && previous.profile != profile
@@ -784,7 +633,8 @@ impl Runtime {
         // The pitchfork is part of it: a different or replaced one, such as one a
         // project was downgraded to, may not read this configuration, so it has to
         // pass the capability checks below again.
-        state.config_hash = crate::hash::hash_to_str(&(&content, pitchfork_identity(&self.bin)));
+        state.config_hash =
+            mise_util::hash::hash_to_str(&(&content, pitchfork_identity(&self.bin)));
         // Before the fast path, because an unchanged configuration is exactly
         // when another project can take this one's port: `auto` lifecycle then
         // hands pitchfork a session command and the daemon fails to bind in the
@@ -915,8 +765,8 @@ impl Runtime {
         }
         runner.with_pass_signals();
         match runner.execute_async().await {
-            Err(err) => match crate::errors::ProcessError::get_exit_status(&err) {
-                Some(code) => Err(crate::request_exit(code)),
+            Err(err) => match mise_util::errors::ProcessError::get_exit_status(&err) {
+                Some(code) => Err(mise_util::exit::request(code)),
                 None => Err(err),
             },
             ok => ok,
@@ -1056,21 +906,25 @@ fn project_label(set: &DaemonSet, root: &Path) -> String {
 /// An explicit `[daemons_settings] namespace` wins so daemons in other projects
 /// can name this one's by qualified ID. Everything else keeps the hashed default,
 /// which cannot collide between unrelated checkouts.
-pub(crate) fn resolve_namespace(root: &Path, settings: Option<&DaemonSettings>) -> Result<String> {
+pub fn resolve_namespace(root: &Path, settings: Option<&DaemonSettings>) -> Result<String> {
     let Some(explicit) = settings.and_then(|s| s.namespace.as_deref()) else {
         return namespace(root);
     };
-    crate::daemons::validate_namespace(explicit)?;
+    crate::validate_namespace(explicit)?;
     // The same check `port = "auto"` uses. A local one accepted any `.git` file
     // whose path contained `worktrees`, so a lookalike could take a per-worktree
     // namespace without the matching port offset.
-    if settings.is_none_or(|s| s.namespace_per_worktree()) && crate::git::in_linked_worktree(root) {
+    if settings.is_none_or(|s| s.namespace_per_worktree())
+        && mise_util::git::in_linked_worktree(root)
+    {
         // Linked worktrees of one repository share the configuration that names
         // the namespace, so an unsuffixed namespace would make two checkouts
         // fight over the same pitchfork daemon IDs and state directory.
         return Ok(format!(
             "{explicit}-{}",
-            crate::hash::hash_to_str(&root.canonicalize().unwrap_or_else(|_| root.to_path_buf()))
+            mise_util::hash::hash_to_str(
+                &root.canonicalize().unwrap_or_else(|_| root.to_path_buf())
+            )
         ));
     }
     Ok(explicit.into())
@@ -1120,10 +974,10 @@ pub fn namespace(root: &Path) -> Result<String> {
         .collect::<Vec<_>>()
         .join("-");
     let base = if base.is_empty() { "mise" } else { &base };
-    Ok(format!("{base}-{}", crate::hash::hash_to_str(&root)))
+    Ok(format!("{base}-{}", mise_util::hash::hash_to_str(&root)))
 }
 
-pub(crate) fn render(set: &DaemonSet, state: &State) -> Result<String> {
+pub fn render(set: &DaemonSet, state: &State) -> Result<String> {
     let mut daemons = toml::Table::new();
     let mut header =
         String::from("# Generated by mise; edit [daemons] in the source configuration.\n");
@@ -1137,7 +991,7 @@ pub(crate) fn render(set: &DaemonSet, state: &State) -> Result<String> {
     if set.daemons.values().any(|d| d.host.is_some()) {
         header.push_str(&format!(
             "# Hostname routing (per-daemon proxy labels) needs pitchfork {}.\n",
-            crate::daemons::urls::REQUIRED_PITCHFORK
+            crate::urls::REQUIRED_PITCHFORK
         ));
     }
     for daemon in set.daemons.values() {
@@ -1213,7 +1067,7 @@ pub(crate) fn render(set: &DaemonSet, state: &State) -> Result<String> {
             "general".into(),
             toml::Value::Table(toml::Table::from_iter([(
                 "mise_bin".into(),
-                toml::Value::String(crate::env::MISE_BIN.to_string_lossy().into_owned()),
+                toml::Value::String(mise_util::env::MISE_BIN.to_string_lossy().into_owned()),
             )])),
         )])),
     );
@@ -1222,53 +1076,6 @@ pub(crate) fn render(set: &DaemonSet, state: &State) -> Result<String> {
         doc.insert("groups".into(), toml::Value::Table(groups));
     }
     Ok(header + &toml::to_string_pretty(&doc)?)
-}
-
-pub async fn validate_tools(set: &DaemonSet, config: &Arc<Config>, ts: &Toolset) -> Result<()> {
-    for daemon in set.daemons.values() {
-        // Imported daemons resolve their tool against the project that declares
-        // them, which happens when that root is prepared.
-        let Some((tool, version)) = daemon.tool.as_ref().filter(|_| !daemon.imported) else {
-            continue;
-        };
-        let ba: crate::args::BackendArg = tool.as_str().into();
-        let Some(versions) = ts.versions.get(&ba) else {
-            bail!("daemon {} requires {tool}@{version}", daemon.name);
-        };
-        let actual = versions
-            .versions
-            .first()
-            .ok_or_else(|| eyre::eyre!("missing {tool}"))?;
-        let compatible = ba
-            .backend()?
-            .list_installed_versions_matching(version)
-            .contains(&actual.version);
-        if compatible {
-            continue;
-        }
-        let requested = ToolRequest::new(
-            ba.into(),
-            version,
-            ToolSource::MiseTomlDaemon(daemon.source.clone()),
-        )?
-        .resolve(
-            config,
-            &crate::toolset::ResolveOptions {
-                offline: true,
-                ..Default::default()
-            },
-        )
-        .await?;
-        if actual.version != requested.version {
-            bail!(
-                "daemon {} requires {tool}@{version} ({}), but [tools] selects {}",
-                daemon.name,
-                requested.version,
-                actual.version
-            );
-        }
-    }
-    Ok(())
 }
 
 /// Which pitchfork executable this is, from its path, size and modification time,
@@ -1368,9 +1175,9 @@ mod tests {
         let exec = |script: &str| runtime.exec(&root, vec!["-c".into(), script.into()]);
         exec("exit 0").await.unwrap();
         let err = exec("exit 3").await.unwrap_err();
-        assert_eq!(crate::exit::requested_exit_code(&err), Some(3));
+        assert_eq!(mise_util::exit::requested_exit_code(&err), Some(3));
         let err = exec("kill -9 $$").await.unwrap_err();
-        assert_eq!(crate::exit::requested_exit_code(&err), None);
+        assert_eq!(mise_util::exit::requested_exit_code(&err), None);
     }
 
     #[cfg(unix)]

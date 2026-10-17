@@ -1,3 +1,4 @@
+use crate::daemons::glue::DaemonSetExt;
 use std::fmt::{Debug, Display};
 use std::{
     collections::{BTreeMap, BTreeSet, HashSet},
@@ -220,7 +221,7 @@ impl ToolRequestSetBuilder {
         if self.config_files.is_none() {
             config.daemons()?.add_tool_requests(&mut trs)?;
         } else {
-            crate::daemons::load(config_files)?.add_tool_requests(&mut trs)?;
+            crate::daemons::glue::load(config_files)?.add_tool_requests(&mut trs)?;
         }
         Ok(trs)
     }

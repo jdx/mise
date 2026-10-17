@@ -35,26 +35,27 @@ The workspace crates under `crates/` cannot depend on the `mise` package.
 as the settings loader and the build identity used in cache keys, before
 anything else runs.
 
-| Crate                     | Contents                                                                                  |
-| ------------------------- | ----------------------------------------------------------------------------------------- |
-| `mise-util`               | Environment, directory, file, HTTP, cache, template, and `EnvDiff`/`PathEnv` helpers      |
-| `mise-oci`                | The OCI registry client, layers, and image layout (the image builder stays in `src/oci/`) |
-| `mise-system`             | The bootstrap, dotfiles, and history modules                                              |
-| `mise-system-config`      | The `mise.toml` declaration types for `[bootstrap]`, `[dotfiles]`, and `[history]`        |
-| `mise-system-packages`    | System package manager drivers: apt, dnf, brew, brew-cask, and more                       |
-| `mise-ui`                 | Progress reports, prompts, and themes for the terminal                                    |
-| `mise-settings`           | The `Settings` types, generated from `settings.toml`, and the process-wide settings cache |
-| `vfox`                    | The embedded Lua runtime and the hook and module interfaces for vfox plugins              |
-| `aqua-registry`           | Parsing, package lookup, and cache formats for aqua registries                            |
-| `mise-bootstrap`          | Bootstrap resource planning and dependency ordering                                       |
-| `mise-cache-core`         | The remote task cache protocol, content-addressed storage, authentication, and transport  |
-| `mise-shim`               | `mise-shim.exe`, the native executable that Windows shims use in the default `exe` mode   |
-| `mise-sigstore`           | Sigstore verification helpers                                                             |
-| `mise-agent-env`          | Detection of AI coding agents from the process environment                                |
-| `mise-interactive-config` | The interactive TOML editor behind `mise edit`                                            |
-| `mise-brew-metadata`      | Homebrew formula metadata models                                                          |
-| `mise-brew-relocation`    | Homebrew bottle placeholder and binary relocation                                         |
-| `mise-dotenv`             | A dotenv parser with explicit control over variable substitution                          |
+| Crate                     | Contents                                                                                                   |
+| ------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| `mise-util`               | Environment, directory, file, HTTP, cache, template, and `EnvDiff`/`PathEnv` helpers                       |
+| `mise-daemons`            | Daemon declarations, ports, presets, and the supervisor runtime (the toolset glue stays in `src/daemons/`) |
+| `mise-oci`                | The OCI registry client, layers, and image layout (the image builder stays in `src/oci/`)                  |
+| `mise-system`             | The bootstrap, dotfiles, and history modules                                                               |
+| `mise-system-config`      | The `mise.toml` declaration types for `[bootstrap]`, `[dotfiles]`, and `[history]`                         |
+| `mise-system-packages`    | System package manager drivers: apt, dnf, brew, brew-cask, and more                                        |
+| `mise-ui`                 | Progress reports, prompts, and themes for the terminal                                                     |
+| `mise-settings`           | The `Settings` types, generated from `settings.toml`, and the process-wide settings cache                  |
+| `vfox`                    | The embedded Lua runtime and the hook and module interfaces for vfox plugins                               |
+| `aqua-registry`           | Parsing, package lookup, and cache formats for aqua registries                                             |
+| `mise-bootstrap`          | Bootstrap resource planning and dependency ordering                                                        |
+| `mise-cache-core`         | The remote task cache protocol, content-addressed storage, authentication, and transport                   |
+| `mise-shim`               | `mise-shim.exe`, the native executable that Windows shims use in the default `exe` mode                    |
+| `mise-sigstore`           | Sigstore verification helpers                                                                              |
+| `mise-agent-env`          | Detection of AI coding agents from the process environment                                                 |
+| `mise-interactive-config` | The interactive TOML editor behind `mise edit`                                                             |
+| `mise-brew-metadata`      | Homebrew formula metadata models                                                                           |
+| `mise-brew-relocation`    | Homebrew bottle placeholder and binary relocation                                                          |
+| `mise-dotenv`             | A dotenv parser with explicit control over variable substitution                                           |
 
 ## Where things live {#where-things-live}
 
@@ -80,7 +81,7 @@ anything else runs.
 | Remote task cache                        | `crates/mise-cache-core`                                                                                           | [Remote task cache](/tasks/remote-cache.html)    |
 | Bootstrap and host packages              | `src/cli/bootstrap.rs`, `crates/mise-system` (packages in `crates/mise-system-packages`), `crates/mise-bootstrap`  | [Bootstrap](/bootstrap.html)                     |
 | Dotfiles                                 | `src/cli/dotfiles/`, `crates/mise-system/src/managed_files.rs`, `crates/mise-system/src/history/`                  | [Dotfiles](/dotfiles.html)                       |
-| Daemons                                  | `src/daemons/`                                                                                                     | [Daemons](/daemons.html)                         |
+| Daemons                                  | `src/daemons/` (toolset glue), `crates/mise-daemons`                                                               | [Daemons](/daemons.html)                         |
 | Project dependencies                     | `src/deps/`                                                                                                        | [Project dependencies](/dev-tools/deps.html)     |
 | Secrets                                  | `src/secrets/`, `src/sops.rs`, `src/agecrypt.rs`                                                                   | [Secrets](/environments/secrets/)                |
 | Caches                                   | `crates/mise-util/src/cache.rs`: `CacheManager<T>`, MessagePack with zlib, written atomically                      | [Caches](/cache-behavior.html)                   |

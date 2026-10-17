@@ -1,4 +1,5 @@
 //! Register changed definitions and emit non-blocking pitchfork session commands.
+use super::glue::DaemonSetExt;
 use super::runtime::{self, Runtime};
 use crate::config::{Config, Settings, SettingsExt};
 use crate::env_diff::EnvMap;
@@ -91,13 +92,13 @@ pub async fn emit(
                 bin,
                 env: env.clone(),
             };
-            runtime::validate_tools(&scoped_set, config, ts).await?;
+            super::glue::validate_tools(&scoped_set, config, ts).await?;
             // Task references belong to the declaring project's task list, the
             // same scope the other two callers validate against. Loading that
             // scope costs a config hierarchy read, so only do it when a daemon
             // actually names a task; this runs on every prompt.
             if scoped_set.daemons.values().any(|d| d.task.is_some()) {
-                let scoped_config = runtime::config_for_root(config, &root).await?;
+                let scoped_config = super::glue::config_for_root(config, &root).await?;
                 scoped_set.validate_tasks(&scoped_config).await?;
             }
             // Pitchfork starts the `auto = ["start"]` daemons as soon as this

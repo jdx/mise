@@ -1,6 +1,5 @@
 use super::ports::PortClaim;
 use super::{Daemon, state_dir};
-use crate::config::SettingsExt;
 use eyre::{Context, Result, bail};
 use indexmap::IndexMap;
 use serde::Deserialize;
@@ -258,7 +257,7 @@ impl OptionDef {
                     // `~/certs/tls.crt` is a path a user reasonably writes, and
                     // joining it to the project root would silently point at a
                     // directory named `~`.
-                    let path = crate::file::replace_path(text);
+                    let path = mise_util::file::replace_path(text);
                     let path = if path.is_absolute() {
                         path
                     } else {
@@ -307,7 +306,7 @@ fn preset(name: &str) -> Result<Preset> {
 /// Fails before anything is installed or started when `label` would run a preset
 /// that refuses root. Otherwise the tool's own refusal surfaces only in the daemon
 /// log, after its tools were installed.
-pub(crate) fn ensure_runnable_as_user(label: &str, preset_name: &str) -> Result<()> {
+pub fn ensure_runnable_as_user(label: &str, preset_name: &str) -> Result<()> {
     #[cfg(unix)]
     let root = nix::unistd::geteuid().is_root();
     // Windows has no root; presets are rejected there before anything starts.
@@ -339,19 +338,19 @@ pub fn ensure_set_runnable_as_user(set: &super::DaemonSet) -> Result<()> {
 
 /// The well-known port a preset binds when nothing overrides it, and the base
 /// that `port = "auto"` offsets per worktree.
-pub(crate) fn default_port(name: &str) -> Result<u16> {
+pub fn default_port(name: &str) -> Result<u16> {
     Ok(preset(name)?.port)
 }
 
-pub(crate) fn quote(value: impl AsRef<str>) -> String {
+pub fn quote(value: impl AsRef<str>) -> String {
     format!("'{}'", value.as_ref().replace('\'', "'\\''"))
 }
 
 /// Quote a value for pitchfork's shell: `sh` on Unix, `cmd.exe` on Windows, where
 /// `'` is not a quote.
-pub(crate) fn shell_quote(value: impl AsRef<str>) -> String {
+pub fn shell_quote(value: impl AsRef<str>) -> String {
     if cfg!(windows) {
-        crate::path::escape_arg_for_cmd_line(value.as_ref())
+        mise_util::path::escape_arg_for_cmd_line(value.as_ref())
     } else {
         quote(value)
     }
@@ -360,7 +359,7 @@ pub(crate) fn shell_quote(value: impl AsRef<str>) -> String {
 /// [`shell_quote`] for the program a command line starts with. cmd.exe finds the
 /// program only between real quotes, where `^` does not escape, so each `%` is
 /// left outside them instead.
-pub(crate) fn shell_program(path: impl AsRef<str>) -> String {
+pub fn shell_program(path: impl AsRef<str>) -> String {
     if cfg!(windows) {
         cmd_program(path.as_ref())
     } else {
@@ -370,7 +369,7 @@ pub(crate) fn shell_program(path: impl AsRef<str>) -> String {
 
 /// The program a cmd.exe command line starts with, between real quotes and with
 /// each `%` left outside them, escaped.
-pub(crate) fn cmd_program(path: &str) -> String {
+pub fn cmd_program(path: &str) -> String {
     format!("\"{}\"", path.replace('%', "\"^%\""))
 }
 
@@ -586,12 +585,12 @@ fn init_values(
 }
 
 fn render_value(
-    renderer: &mut crate::tera::TeraEngine,
+    renderer: &mut mise_util::tera::TeraEngine,
     value: &mut toml::Value,
     ctx: &tera::Context,
 ) -> Result<()> {
     match value {
-        toml::Value::String(text) => *text = crate::tera::render_str(renderer, text, ctx)?,
+        toml::Value::String(text) => *text = mise_util::tera::render_str(renderer, text, ctx)?,
         toml::Value::Array(items) => {
             for item in items.iter_mut() {
                 render_value(renderer, item, ctx)?;
@@ -607,14 +606,14 @@ fn render_value(
 
 /// Wrap a command so it runs inside the project's tool environment. Needed
 /// wherever pitchfork is told not to wrap the daemon itself in `mise x`.
-pub(crate) fn in_tool_env(command: &str) -> String {
-    let mise = shell_program(crate::env::MISE_BIN.to_string_lossy());
+pub fn in_tool_env(command: &str) -> String {
+    let mise = shell_program(mise_util::env::MISE_BIN.to_string_lossy());
     if cfg!(windows) {
         // The whole command runs in a cmd inside `mise x`, as `sh -c` does on Unix,
         // so every part of `a && b` gets the tool environment.
         return format!(
             "{mise} x -- cmd /c {}",
-            crate::path::escape_arg_for_cmd_line(command)
+            mise_util::path::escape_arg_for_cmd_line(command)
         );
     }
     format!("{mise} x -- sh -c {}", quote(command))
@@ -623,7 +622,7 @@ pub(crate) fn in_tool_env(command: &str) -> String {
 /// Probes are separate processes: wrapping the daemon does not give them its
 /// project environment. Preserve structured probe options while wrapping `run`.
 /// An argv probe, which pitchfork starts without a shell, stays an argv.
-pub(crate) fn wrap_probe_commands(table: &mut toml::Table) {
+pub fn wrap_probe_commands(table: &mut toml::Table) {
     for key in ["ready_cmd", "health_cmd"] {
         let command = match table.get_mut(key) {
             Some(toml::Value::Table(fields)) => fields.get_mut("run"),
@@ -632,7 +631,7 @@ pub(crate) fn wrap_probe_commands(table: &mut toml::Table) {
         match command {
             Some(toml::Value::String(command)) => *command = in_tool_env(command),
             Some(toml::Value::Array(argv)) => {
-                let mise = crate::env::MISE_BIN.to_string_lossy().into_owned();
+                let mise = mise_util::env::MISE_BIN.to_string_lossy().into_owned();
                 let wrapper = [mise, "x".into(), "--".into()].map(toml::Value::String);
                 argv.splice(0..0, wrapper);
             }
@@ -645,7 +644,7 @@ pub(crate) fn wrap_probe_commands(table: &mut toml::Table) {
 /// pitchfork's shell-command semantics: every step must succeed before the
 /// process that keeps running is reached. Returns `run` unchanged when there is
 /// nothing to set up.
-pub(crate) fn with_init(steps: &[String], run: &str) -> String {
+pub fn with_init(steps: &[String], run: &str) -> String {
     if steps.is_empty() {
         return run.to_string();
     }
@@ -655,7 +654,7 @@ pub(crate) fn with_init(steps: &[String], run: &str) -> String {
 /// The declaration fields mise interprets itself rather than forwarding to
 /// pitchfork: setup steps to run before the daemon, the port already resolved
 /// for this project root, and the hostname components that root contributes.
-pub(crate) struct Extras<'a> {
+pub struct Extras<'a> {
     pub init: &'a [String],
     pub port: Option<PortClaim>,
     pub labels: &'a super::urls::RootLabels,
@@ -664,7 +663,7 @@ pub(crate) struct Extras<'a> {
     pub imported: bool,
 }
 
-pub(crate) fn expand(
+pub fn expand(
     name: &str,
     preset_name: &str,
     version: &str,
@@ -730,7 +729,7 @@ pub(crate) fn expand(
         Some(path) if path.trim().is_empty() => {
             bail!("[daemons.{name}].data_dir must not be empty")
         }
-        Some(path) => root.join(crate::file::replace_path(path)),
+        Some(path) => root.join(mise_util::file::replace_path(path)),
         None => state_dir(root).join("data").join(name),
     };
     // Resolve the proxy before rendering, so a preset's own default label and a
@@ -761,7 +760,7 @@ pub(crate) fn expand(
         plain_ctx.insert("url", &url);
         plain_ctx.insert("host", host);
     }
-    let mut renderer = crate::tera::get_tera(Some(root));
+    let mut renderer = mise_util::tera::get_tera(Some(root));
 
     for (key, value) in table.iter_mut() {
         let ctx = if SHELL_KEYS.contains(&key.as_str()) {
@@ -778,7 +777,7 @@ pub(crate) fn expand(
     });
     let mut exports = preset.exports;
     for (key, value) in exports.iter_mut() {
-        *value = crate::tera::render_str(&mut renderer, value, &plain_ctx).map_err(|err| {
+        *value = mise_util::tera::render_str(&mut renderer, value, &plain_ctx).map_err(|err| {
             // `url` and `host` are the only context values a declaration can
             // take away, so name that cause rather than reporting a bare
             // template error about an undefined variable.
@@ -808,7 +807,7 @@ pub(crate) fn expand(
     let values = serde_json::to_string(&init_values(port, &ports, &options))?;
     let mut steps = vec![format!(
         "{} daemons __init {} {} --context {}",
-        shell_program(crate::env::MISE_BIN.to_string_lossy()),
+        shell_program(mise_util::env::MISE_BIN.to_string_lossy()),
         shell_quote(preset_name),
         shell_quote(&data),
         shell_quote(values),
@@ -891,7 +890,7 @@ fn named_port_exports(name: &str, ports: &IndexMap<String, u16>) -> Vec<(String,
 
 /// The variables a preset's named ports are exported as for a daemon of this
 /// name, whether or not something claims them first.
-pub(crate) fn named_port_vars(name: &str, preset_name: &str) -> Result<Vec<String>> {
+pub fn named_port_vars(name: &str, preset_name: &str) -> Result<Vec<String>> {
     Ok(named_port_exports(name, &preset(preset_name)?.ports)
         .into_iter()
         .map(|(var, _)| var)
@@ -991,7 +990,7 @@ fn truthy(rendered: &str) -> bool {
 }
 
 fn render_argv(
-    renderer: &mut crate::tera::TeraEngine,
+    renderer: &mut mise_util::tera::TeraEngine,
     argv: &[String],
     ctx: &tera::Context,
 ) -> Result<Vec<String>> {
@@ -1000,7 +999,7 @@ fn render_argv(
     }
     let rendered: Vec<String> = argv
         .iter()
-        .map(|arg| Ok(crate::tera::render_str(renderer, arg, ctx)?))
+        .map(|arg| Ok(mise_util::tera::render_str(renderer, arg, ctx)?))
         .collect::<Result<Vec<_>>>()?;
     // An element that renders to nothing is an unset optional flag, not an empty
     // argument; passing "" would be a different command.
@@ -1047,7 +1046,7 @@ struct ServerGuard {
     /// The server's whole process tree on Windows: a `.cmd` shim, as conda's are,
     /// runs the server as a grandchild that killing `child` alone would leave.
     #[cfg(windows)]
-    job: Option<crate::windows_job::Job>,
+    job: Option<mise_util::windows_job::Job>,
     /// When a polite shutdown gives up and the process is killed. A server that is
     /// being abandoned carries the caller's remaining budget, so its shutdown cannot
     /// extend a wait the caller already bounded.
@@ -1118,7 +1117,7 @@ fn spawn_server(argv: &[String]) -> Result<ServerGuard> {
     command.args(&argv[1..]).stdin(Stdio::null());
     #[cfg(windows)]
     {
-        let (child, job) = crate::windows_job::spawn(
+        let (child, job) = mise_util::windows_job::spawn(
             &mut command,
             windows_sys::Win32::System::Threading::CREATE_NEW_PROCESS_GROUP,
         )
@@ -1201,13 +1200,13 @@ fn run_steps(preset: &Preset, init: &InitContext, data: &Path, only_always: bool
         return Ok(());
     }
     let mut ctx = context(&data.to_string_lossy(), *port, ports, options, false);
-    let mut renderer = crate::tera::get_tera(None);
+    let mut renderer = mise_util::tera::get_tera(None);
     let mut server = None;
     if let Some(spec) = &preset.init.server
         && !only_always
     {
         let wanted = match &spec.when {
-            Some(when) => truthy(&crate::tera::render_str(&mut renderer, when, &ctx)?),
+            Some(when) => truthy(&mise_util::tera::render_str(&mut renderer, when, &ctx)?),
             None => true,
         };
         if wanted {
@@ -1267,7 +1266,7 @@ fn run_steps(preset: &Preset, init: &InitContext, data: &Path, only_always: bool
             }
             // Checked per entry so a step can act on some of a list and not others.
             if let Some(when) = &step.when
-                && !truthy(&crate::tera::render_str(&mut renderer, when, &ctx)?)
+                && !truthy(&mise_util::tera::render_str(&mut renderer, when, &ctx)?)
             {
                 continue;
             }
@@ -1275,7 +1274,7 @@ fn run_steps(preset: &Preset, init: &InitContext, data: &Path, only_always: bool
             let stdin = step
                 .stdin
                 .as_ref()
-                .map(|text| crate::tera::render_str(&mut renderer, text, &ctx))
+                .map(|text| mise_util::tera::render_str(&mut renderer, text, &ctx))
                 .transpose()?;
             let mut command = Command::new(program(&argv[0]));
             command.args(&argv[1..]);
@@ -1327,8 +1326,8 @@ pub fn initialize(
     values: Option<&str>,
     legacy_database: Option<&str>,
 ) -> Result<()> {
-    crate::config::Settings::get().ensure_experimental("daemon presets")?;
-    crate::config::Settings::ensure_not_safe("initializing daemon data")?;
+    mise_settings::Settings::get().ensure_experimental("daemon presets")?;
+    super::host::ensure_not_safe("initializing daemon data")?;
     ensure_runnable_as_user("this daemon", preset_name)?;
     let preset = preset(preset_name)?;
     let owned;
@@ -1343,7 +1342,7 @@ pub fn initialize(
         .parent()
         .ok_or_else(|| eyre::eyre!("daemon data must have a parent directory"))?;
     std::fs::create_dir_all(parent)?;
-    let _lock = crate::lock_file::LockFile::new(data).lock()?;
+    let _lock = mise_util::lock_file::LockFile::new(data).lock()?;
     let output = Command::new(program(&preset.binary))
         .args(&preset.version.args)
         .output()?;
@@ -1519,7 +1518,7 @@ mod tests {
     fn run_and_probes_suit_the_platform_shell() {
         let daemon = render("postgres", toml::Table::new());
         let run = daemon.table["run"].as_str().unwrap();
-        let mise = shell_program(crate::env::MISE_BIN.to_string_lossy());
+        let mise = shell_program(mise_util::env::MISE_BIN.to_string_lossy());
         let init = format!("{mise} daemons __init {} ", shell_quote("postgres"));
         assert!(run.starts_with(&init), "{run}");
         // `-k ""` is an empty argument to both sh and cmd.exe.
@@ -1542,15 +1541,15 @@ mod tests {
 
     #[test]
     fn values_reach_cmd_unchanged() {
-        assert_eq!(crate::path::escape_arg_for_cmd_line("plain"), "plain");
-        assert_eq!(crate::path::escape_arg_for_cmd_line("a b"), r#""a b""#);
+        assert_eq!(mise_util::path::escape_arg_for_cmd_line("plain"), "plain");
+        assert_eq!(mise_util::path::escape_arg_for_cmd_line("a b"), r#""a b""#);
         // A quote inside a value must not end cmd's quoting, and `%VAR%` is not expanded.
         assert_eq!(
-            crate::path::escape_arg_for_cmd_line(r#"a" & echo x & "b"#),
+            mise_util::path::escape_arg_for_cmd_line(r#"a" & echo x & "b"#),
             r#"^"a\^" ^& echo x ^& \^"b^""#
         );
         assert_eq!(
-            crate::path::escape_arg_for_cmd_line("secret%USERNAME%key"),
+            mise_util::path::escape_arg_for_cmd_line("secret%USERNAME%key"),
             "secret^%USERNAME^%key"
         );
         // The program is found only between real quotes, so a `%` goes outside them.
@@ -1571,7 +1570,7 @@ mod tests {
     #[test]
     fn custom_data_directory_expands_home_before_resolving_from_root() {
         let daemon = render("postgres", toml::toml! { data_dir = "~/my postgres" });
-        let expected = crate::env::HOME.join("my postgres");
+        let expected = mise_util::env::HOME.join("my postgres");
         assert_eq!(daemon.data_dir.as_ref(), Some(&expected));
         assert!(
             daemon.table["run"]

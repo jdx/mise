@@ -1,13 +1,11 @@
 //! User-owned servers. A provider is never a member of a consumer's lifecycle.
+use super::host::ConfigMap;
 use super::{Daemon, DaemonSet, ports, presets, runtime};
-use crate::config::config_file::mise_toml::MiseToml;
-use crate::config::{Config, ConfigMap};
-use crate::env_diff::EnvMap;
 use eyre::{Result, bail};
 use indexmap::IndexMap;
+use mise_util::env_diff::EnvMap;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 
 #[derive(Debug, Clone)]
 pub struct Provider {
@@ -16,15 +14,15 @@ pub struct Provider {
     pub declaration: toml::Table,
 }
 
-pub(crate) fn directory(name: &str) -> PathBuf {
-    crate::dirs::STATE.join("daemon-providers").join(name)
+pub fn directory(name: &str) -> PathBuf {
+    mise_util::dirs::STATE.join("daemon-providers").join(name)
 }
 
-pub(crate) fn load(files: &ConfigMap) -> Result<IndexMap<String, Provider>> {
+pub fn load(files: &ConfigMap) -> Result<IndexMap<String, Provider>> {
     load_selected(files, None)
 }
 
-pub(crate) fn load_selected(
+pub fn load_selected(
     files: &ConfigMap,
     names: Option<&std::collections::HashSet<String>>,
 ) -> Result<IndexMap<String, Provider>> {
@@ -38,7 +36,7 @@ pub(crate) fn load_selected(
             if names.is_some_and(|names| !names.contains(&name)) {
                 continue;
             }
-            if !crate::config::is_global_config(cf.get_path()) {
+            if !super::host::is_global_config(cf.get_path()) {
                 bail!(
                     "[daemon_providers] belongs in global mise configuration, not {}",
                     cf.get_path().display()
@@ -64,11 +62,11 @@ pub(crate) fn load_selected(
 }
 
 impl Provider {
-    pub(crate) fn id(&self) -> String {
+    pub fn id(&self) -> String {
         format!("mise-provider-{}/server", self.name)
     }
 
-    pub(crate) fn daemon(&self) -> Result<Daemon> {
+    pub fn daemon(&self) -> Result<Daemon> {
         let mut table = self.declaration.clone();
         let preset = super::take_string(&mut table, "preset")?
             .ok_or_else(|| eyre::eyre!("provider {} requires preset", self.name))?;
@@ -163,56 +161,13 @@ impl Provider {
         )
     }
 
-    async fn tool_config(&self, daemon: &Daemon) -> Result<Arc<Config>> {
-        let (tool, version) = daemon
-            .tool
-            .as_ref()
-            .ok_or_else(|| eyre::eyre!("provider needs a tool"))?;
-        let doc = toml::Table::from_iter([(
-            "tools".into(),
-            toml::Value::Table(toml::Table::from_iter([(
-                tool.clone(),
-                version.clone().into(),
-            )])),
-        )]);
-        let cf = MiseToml::from_str(&toml::to_string(&doc)?, &self.source)?;
-        let mut config = Config::load_from_config_files(
-            IndexMap::from([(
-                self.source.clone(),
-                Arc::new(cf) as Arc<dyn crate::config::config_file::ConfigFile>,
-            )]),
-            true,
-        )
-        .await?;
-        Arc::get_mut(&mut config)
-            .expect("new provider configuration")
-            .project_root = Some(directory(&self.name));
-        Ok(config)
-    }
-
     /// Management follows the user's global configuration, never a consumer's
     /// tools or env. Persist only connection identity, not the user's environment.
-    pub(crate) async fn runtime(&self) -> Result<runtime::Runtime> {
-        let config = Config::get().await?;
-        let files = config
-            .config_files
-            .iter()
-            .filter(|(path, _)| crate::config::is_global_config(path))
-            .map(|(path, cf)| (path.clone(), cf.clone()))
-            .collect();
-        let global = Config::load_from_config_files(files, true).await?;
-        let (_, ts) = runtime::toolset(&global, None).await?;
+    pub async fn runtime(&self) -> Result<runtime::Runtime> {
         let root = directory(&self.name);
         let previous = runtime::read_state(&root)?;
-        let mut rt = if previous.bin.is_file() {
-            runtime::Runtime {
-                bin: previous.bin,
-                env: ts.env_with_path(&global).await?,
-            }
-        } else {
-            runtime::Runtime::from_toolset(&global, &ts, which::which("pitchfork").ok().as_deref())
-                .await?
-        };
+        let mut rt =
+            super::host::global_runtime(previous.bin.is_file().then_some(previous.bin)).await?;
         let path = root.join("supervisor.json");
         if path.is_file() {
             let identity: EnvMap = serde_json::from_slice(&std::fs::read(path)?)?;
@@ -221,7 +176,11 @@ impl Provider {
         Ok(rt)
     }
 
-    pub(crate) fn ensure_runnable_as_user(&self) -> Result<()> {
+    pub async fn install(&self) -> Result<()> {
+        super::host::install_provider_tools(&self.name, &self.source, &self.daemon()?).await
+    }
+
+    pub fn ensure_runnable_as_user(&self) -> Result<()> {
         match self.daemon()?.preset {
             Some(preset) => {
                 presets::ensure_runnable_as_user(&format!("daemon provider {}", self.name), &preset)
@@ -230,43 +189,10 @@ impl Provider {
         }
     }
 
-    pub(crate) async fn install(&self) -> Result<()> {
-        let daemon = self.daemon()?;
-        let mut config = self.tool_config(&daemon).await?;
-        let mut ts = crate::toolset::Toolset::default();
-        for cf in config.config_files.values() {
-            ts.merge(cf.to_toolset()?);
-        }
-        ts.resolve_with_opts(
-            &config,
-            &crate::toolset::ResolveOptions {
-                offline: true,
-                ..Default::default()
-            },
-        )
-        .await?;
-        let (_, missing) = ts
-            .install_missing_versions(
-                &mut config,
-                &crate::toolset::InstallOptions {
-                    missing_args_only: false,
-                    reload_config: false,
-                    ..Default::default()
-                },
-            )
-            .await?;
-        ts.notify_missing_versions(missing);
-        Ok(())
-    }
-
-    pub(crate) async fn prepare(
-        &self,
-        rt: &runtime::Runtime,
-        force_registration: bool,
-    ) -> Result<()> {
+    pub async fn prepare(&self, rt: &runtime::Runtime, force_registration: bool) -> Result<()> {
         let root = directory(&self.name);
         std::fs::create_dir_all(&root)?;
-        let _lock = crate::lock_file::LockFile::at(&root.join("provider.lock")).lock()?;
+        let _lock = mise_util::lock_file::LockFile::at(&root.join("provider.lock")).lock()?;
         let connection = root.join("supervisor.json");
         let owner = Box::pin(self.runtime()).await?;
         let identity = supervisor_identity(&owner.env);
@@ -290,30 +216,8 @@ impl Provider {
             );
         }
         let mut daemon = self.daemon()?;
-        let config = self.tool_config(&daemon).await?;
-        let mut ts = crate::toolset::Toolset::default();
-        for cf in config.config_files.values() {
-            ts.merge(cf.to_toolset()?);
-        }
-        ts.resolve_with_opts(
-            &config,
-            &crate::toolset::ResolveOptions {
-                offline: true,
-                ..Default::default()
-            },
-        )
-        .await?;
-        runtime::validate_tools(
-            &DaemonSet {
-                daemons: IndexMap::from([("server".into(), daemon.clone())]),
-                ..Default::default()
-            },
-            &config,
-            &ts,
-        )
-        .await?;
         let mut env = base_env();
-        let mut paths = ts.list_paths(&config).await;
+        let mut paths = super::host::provider_tool_paths(&self.name, &self.source, &daemon).await?;
         paths.extend([
             PathBuf::from("/usr/bin"),
             PathBuf::from("/bin"),
@@ -355,7 +259,8 @@ impl Provider {
             );
         }
         if execution.preset == "nats" && !rt.active(&root, &runtime::read_state(&root)?).await? {
-            let _resources = crate::lock_file::LockFile::at(&root.join("resources.lock")).lock()?;
+            let _resources =
+                mise_util::lock_file::LockFile::at(&root.join("resources.lock")).lock()?;
             super::providers_nats::prepare(&execution).await?;
         }
         runtime::write_if_changed(&manifest, &bytes)?;
@@ -364,7 +269,7 @@ impl Provider {
                 key.clone(),
                 format!(
                     "{} daemons __provider-exec {} {}",
-                    presets::quote(crate::env::MISE_BIN.to_string_lossy()),
+                    presets::quote(mise_util::env::MISE_BIN.to_string_lossy()),
                     presets::quote(manifest.to_string_lossy()),
                     key
                 )
@@ -386,9 +291,10 @@ fn supervisor_identity(env: &EnvMap) -> EnvMap {
     let value = |key: &str| {
         env.get(key)
             .cloned()
-            .or_else(|| crate::env::PRISTINE_ENV.get(key).cloned())
+            .or_else(|| mise_util::env::PRISTINE_ENV.get(key).cloned())
     };
-    let home = value("HOME").unwrap_or_else(|| crate::dirs::HOME.to_string_lossy().into_owned());
+    let home =
+        value("HOME").unwrap_or_else(|| mise_util::dirs::HOME.to_string_lossy().into_owned());
     let state = value("PITCHFORK_STATE_DIR").unwrap_or_else(|| {
         let base = value("XDG_STATE_HOME").unwrap_or_else(|| format!("{home}/.local/state"));
         format!("{base}/pitchfork")
@@ -406,14 +312,14 @@ fn base_env() -> EnvMap {
     let mut env = EnvMap::new();
     env.insert(
         "HOME".into(),
-        crate::dirs::HOME.to_string_lossy().into_owned(),
+        mise_util::dirs::HOME.to_string_lossy().into_owned(),
     );
     env.insert("LANG".into(), "C.UTF-8".into());
     env.insert("MISE_EXPERIMENTAL".into(), "1".into());
     for (key, value) in [
-        ("MISE_STATE_DIR", &*crate::dirs::STATE),
-        ("MISE_DATA_DIR", &*crate::dirs::DATA),
-        ("MISE_CONFIG_DIR", &*crate::dirs::CONFIG),
+        ("MISE_STATE_DIR", &*mise_util::dirs::STATE),
+        ("MISE_DATA_DIR", &*mise_util::dirs::DATA),
+        ("MISE_CONFIG_DIR", &*mise_util::dirs::CONFIG),
     ] {
         env.insert(key.into(), value.to_string_lossy().into_owned());
     }
@@ -421,189 +327,27 @@ fn base_env() -> EnvMap {
 }
 
 #[derive(Serialize, Deserialize)]
-pub(super) struct Execution {
+pub struct Execution {
     // Older provider manifests still serve process and probe execution.
     #[serde(default)]
-    pub(super) preset: String,
+    pub preset: String,
     #[serde(default)]
-    pub(super) port: u16,
-    pub(super) env: EnvMap,
-    commands: IndexMap<String, String>,
-    pub(super) root: PathBuf,
+    pub port: u16,
+    pub env: EnvMap,
+    pub commands: IndexMap<String, String>,
+    pub root: PathBuf,
     #[serde(default)]
-    pub(super) data_dir: PathBuf,
+    pub data_dir: PathBuf,
     #[serde(default)]
-    pub(super) jetstream: bool,
+    pub jetstream: bool,
 }
 
 impl Execution {
     // Resource metadata may grow across releases without changing the server.
-    fn matches_process(&self, previous: &[u8]) -> bool {
+    pub fn matches_process(&self, previous: &[u8]) -> bool {
         serde_json::from_slice::<Self>(previous).is_ok_and(|old| {
             self.env == old.env && self.commands == old.commands && self.root == old.root
         })
-    }
-}
-
-#[derive(Debug, usage_rs::Args)]
-pub struct Exec {
-    manifest: PathBuf,
-    command: String,
-}
-
-impl Exec {
-    pub fn run(self) -> Result<()> {
-        let manifest: Execution = serde_json::from_slice(&std::fs::read(&self.manifest)?)?;
-        let command = manifest
-            .commands
-            .get(&self.command)
-            .ok_or_else(|| eyre::eyre!("unknown provider command"))?;
-        let mut process = std::process::Command::new("/bin/sh");
-        process
-            .arg("-c")
-            .arg(command)
-            .env_clear()
-            .envs(&manifest.env)
-            .current_dir(&manifest.root);
-        #[cfg(unix)]
-        {
-            use eyre::Context;
-            use std::os::unix::process::CommandExt;
-            Err(process.exec()).wrap_err("executing provider command")
-        }
-        #[cfg(not(unix))]
-        {
-            let _ = process;
-            bail!("providers are not supported on Windows");
-        }
-    }
-}
-
-/// [experimental] Manage shared servers defined in global `[daemon_providers]`
-#[derive(Debug, usage_rs::Args)]
-pub struct Providers {
-    #[usage(subcommand)]
-    command: Option<ProviderCommand>,
-}
-
-#[derive(Debug, usage_rs::Subcommands)]
-enum ProviderCommand {
-    /// [experimental] List shared servers
-    Ls(ProviderList),
-    /// [experimental] Start shared servers
-    Start(Names),
-    /// [experimental] Stop shared servers (data is kept)
-    Stop(Names),
-    /// [experimental] Restart shared servers with their current configuration
-    Restart(Names),
-}
-#[derive(Debug, usage_rs::Args)]
-struct ProviderList {
-    /// Output in JSON format
-    #[usage(long)]
-    json: bool,
-}
-#[derive(Debug, usage_rs::Args)]
-struct Names {
-    names: Vec<String>,
-}
-
-impl Providers {
-    pub async fn run(self) -> Result<()> {
-        let config = Config::get().await?;
-        let mut providers = load(&config.config_files)?;
-        let (action, names, json) = match self.command {
-            Some(ProviderCommand::Start(n)) => ("start", n.names, false),
-            Some(ProviderCommand::Stop(n)) => ("stop", n.names, false),
-            Some(ProviderCommand::Restart(n)) => ("restart", n.names, false),
-            Some(ProviderCommand::Ls(n)) => ("ls", vec![], n.json),
-            None => ("ls", vec![], false),
-        };
-        if matches!(action, "ls" | "stop") {
-            for entry in std::fs::read_dir(crate::dirs::STATE.join("daemon-providers"))
-                .into_iter()
-                .flatten()
-                .flatten()
-            {
-                let name = entry.file_name().to_string_lossy().into_owned();
-                if !name
-                    .chars()
-                    .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
-                    || providers.contains_key(&name)
-                {
-                    continue;
-                }
-                let path = entry.path().join("definition.json");
-                if let Ok(bytes) = std::fs::read(&path) {
-                    let declaration = serde_json::from_slice(&bytes).unwrap_or_else(|_| {
-                        warn!("invalid saved provider definition {}; lifecycle cleanup remains available", path.display());
-                        toml::Table::new()
-                    });
-                    providers.insert(
-                        name.clone(),
-                        Provider {
-                            name,
-                            source: crate::config::global_config_path(),
-                            declaration,
-                        },
-                    );
-                }
-            }
-        }
-        for name in &names {
-            if !providers.contains_key(name) {
-                bail!("unknown daemon provider {name:?}");
-            }
-        }
-        if action != "ls" && names.is_empty() {
-            bail!("name the providers to {action}");
-        }
-        let mut rows = vec![];
-        for provider in providers
-            .values()
-            .filter(|p| names.is_empty() || names.contains(&p.name))
-        {
-            let root = directory(&provider.name);
-            // Ahead of the supervisor lookup: installing Pitchfork would not help.
-            if action != "ls" && action != "stop" {
-                provider.ensure_runnable_as_user()?;
-            }
-            let rt = provider.runtime().await;
-            if action == "ls" {
-                let daemon = provider.daemon().ok();
-                let status = if let Ok(rt) = &rt {
-                    rt.status(&crate::dirs::HOME, &provider.id()).await.ok()
-                } else {
-                    None
-                };
-                rows.push(serde_json::json!({"name": provider.name, "id": provider.id(), "source": provider.source, "preset": daemon.as_ref().and_then(|d| d.preset.as_ref()), "port": daemon.as_ref().and_then(|d| d.port.as_ref()).map(|p| p.port), "data_dir": daemon.as_ref().and_then(|d| d.data_dir.as_ref()), "ownership": "provider", "status": status.and_then(|v| v.get("status").cloned()).unwrap_or("available".into())}));
-                continue;
-            }
-            let rt = rt.as_ref().map_err(|e| eyre::eyre!("{e:#}"))?;
-            if matches!(action, "stop" | "restart") && root.is_dir() {
-                rt.exec(&root, vec!["stop".into(), provider.id()]).await?;
-            }
-            if action != "stop" {
-                provider.install().await?;
-                provider.prepare(rt, true).await?;
-                rt.exec(&root, vec!["start".into(), provider.id()]).await?;
-            }
-        }
-        if action == "ls" {
-            if json {
-                miseprintln!("{}", serde_json::to_string_pretty(&rows)?);
-            } else {
-                for row in rows {
-                    miseprintln!(
-                        "{}\t{}\t{}",
-                        row["name"].as_str().unwrap_or_default(),
-                        row["preset"].as_str().unwrap_or_default(),
-                        row["status"].as_str().unwrap_or_default()
-                    );
-                }
-            }
-        }
-        Ok(())
     }
 }
 
@@ -613,7 +357,7 @@ pub struct Binding {
     pub resource: String,
 }
 
-pub(super) fn validate_resource(resource: &str) -> Result<()> {
+pub fn validate_resource(resource: &str) -> Result<()> {
     if resource.is_empty()
         || resource.len() > 63
         || !resource.starts_with(|c: char| c.is_ascii_lowercase())
@@ -630,10 +374,10 @@ pub(super) fn validate_resource(resource: &str) -> Result<()> {
 
 fn resource_name(root: &Path, name: &str) -> String {
     let root = root.canonicalize().unwrap_or_else(|_| root.to_path_buf());
-    format!("mise_{}", crate::hash::hash_to_str(&(root, name)))
+    format!("mise_{}", mise_util::hash::hash_to_str(&(root, name)))
 }
 
-pub(crate) fn binding(
+pub fn binding(
     providers: &IndexMap<String, Provider>,
     name: &str,
     mut table: toml::Table,
@@ -685,7 +429,7 @@ pub(crate) fn binding(
     }
     let command = format!(
         "{} daemons __resource {} {}",
-        presets::quote(crate::env::MISE_BIN.to_string_lossy()),
+        presets::quote(mise_util::env::MISE_BIN.to_string_lossy()),
         presets::quote(directory(&provider.name).to_string_lossy()),
         presets::quote(&resource)
     );
@@ -716,7 +460,7 @@ pub async fn install_set(set: &DaemonSet) -> Result<()> {
     Ok(())
 }
 
-pub(crate) async fn prepare_set(
+pub async fn prepare_set(
     rt: &runtime::Runtime,
     set: &DaemonSet,
     force_registration: bool,
@@ -731,123 +475,6 @@ pub(crate) async fn prepare_set(
 }
 
 /// A project-owned readiness process: it never starts or stops the server itself.
-#[derive(Debug, usage_rs::Args)]
-pub struct Resource {
-    provider: PathBuf,
-    resource: String,
-}
-
-impl Resource {
-    pub async fn run(self) -> Result<()> {
-        validate_resource(&self.resource)?;
-        let root = self.provider;
-        let execution: Execution =
-            serde_json::from_slice(&std::fs::read(root.join("execution.json"))?)?;
-        if !matches!(
-            execution.preset.as_str(),
-            "postgres" | "cockroachdb" | "nats"
-        ) || execution.port == 0
-            || (execution.preset == "nats" && execution.data_dir.as_os_str().is_empty())
-        {
-            bail!(
-                "provider metadata predates resource support; explicitly restart its provider first"
-            );
-        }
-        {
-            let _lock = crate::lock_file::LockFile::at(&root.join("resources.lock")).lock()?;
-            if execution.preset == "nats" {
-                super::providers_nats::provision(&execution, &self.resource).await?;
-            } else {
-                let port = execution.port;
-                let postgres = execution.preset == "postgres";
-                // Concurrent starts can encounter a provider whose first start is
-                // still in flight. Check SQL readiness before provisioning.
-                let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(60);
-                loop {
-                    match sql(&execution, postgres, port, "SELECT 1").await {
-                        Ok(_) => break,
-                        Err(err) if tokio::time::Instant::now() >= deadline => return Err(err),
-                        Err(_) => tokio::time::sleep(std::time::Duration::from_millis(200)).await,
-                    }
-                }
-
-                let query = format!(
-                    "SELECT 1 FROM pg_database WHERE datname = '{}'",
-                    self.resource
-                );
-                if sql(&execution, postgres, port, &query).await?.trim() != "1" {
-                    sql(
-                        &execution,
-                        postgres,
-                        port,
-                        &format!("CREATE DATABASE \"{}\"", self.resource),
-                    )
-                    .await?;
-                }
-            }
-        }
-        // Readiness is output only after provisioning succeeded. Pitchfork owns
-        // this small process, so stopping a consumer cannot stop the provider.
-        miseprintln!("mise shared resource ready");
-        use std::io::Write;
-        std::io::stdout().flush()?;
-        std::future::pending::<()>().await;
-        Ok(())
-    }
-}
-
-async fn sql(execution: &Execution, postgres: bool, port: u16, query: &str) -> Result<String> {
-    let mut cmd = tokio::process::Command::new(if postgres { "psql" } else { "cockroach" });
-    cmd.env_clear()
-        .envs(&execution.env)
-        .env("PGCONNECT_TIMEOUT", "5")
-        .current_dir(&execution.root)
-        .kill_on_drop(true);
-    if postgres {
-        cmd.env("PGOPTIONS", "-c statement_timeout=30000").args([
-            "-X",
-            "-A",
-            "-t",
-            "-v",
-            "ON_ERROR_STOP=1",
-            "-h",
-            "127.0.0.1",
-            "-p",
-            &port.to_string(),
-            "-U",
-            "postgres",
-            "-d",
-            "postgres",
-            "-c",
-            query,
-        ]);
-    } else {
-        cmd.args([
-            "sql",
-            "--insecure",
-            &format!("--host=127.0.0.1:{port}"),
-            "--database=defaultdb",
-            "--format=tsv",
-            "--execute",
-            query,
-        ]);
-    }
-    let output = tokio::time::timeout(std::time::Duration::from_secs(40), cmd.output()).await??;
-    if !output.status.success() {
-        bail!(
-            "resource provisioning failed: {}",
-            String::from_utf8_lossy(&output.stderr)
-        );
-    }
-    let output = String::from_utf8(output.stdout)?;
-    // Cockroach's TSV includes a column heading, unlike psql's tuples-only mode.
-    Ok(if postgres {
-        output
-    } else {
-        output.lines().skip(1).collect::<Vec<_>>().join("\n")
-    })
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -857,7 +484,7 @@ mod tests {
         declaration.extend(extra);
         Provider {
             name: name.into(),
-            source: crate::config::global_config_path(),
+            source: crate::host::global_config_path(),
             declaration,
         }
     }

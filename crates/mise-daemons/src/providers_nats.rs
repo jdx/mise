@@ -9,7 +9,7 @@ use std::time::Duration;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 
 #[derive(Serialize, Deserialize)]
-pub(super) struct Credentials {
+pub struct Credentials {
     user: String,
     password: String,
 }
@@ -41,7 +41,7 @@ fn write_private(path: &Path, bytes: &[u8]) -> Result<()> {
 fn credentials(root: &Path, resource: &str) -> Result<Credentials> {
     let dir = private_dir(root)?.join("credentials");
     std::fs::create_dir_all(&dir)?;
-    let _lock = crate::lock_file::LockFile::at(&dir.join("credentials.lock")).lock()?;
+    let _lock = mise_util::lock_file::LockFile::at(&dir.join("credentials.lock")).lock()?;
     let path = dir.join(format!("{resource}.json"));
     if path.exists() {
         return Ok(serde_json::from_slice(&std::fs::read(path)?)?);
@@ -54,7 +54,7 @@ fn credentials(root: &Path, resource: &str) -> Result<Credentials> {
     Ok(credentials)
 }
 
-pub(super) fn url(root: &Path, resource: &str, port: u16) -> Result<String> {
+pub fn url(root: &Path, resource: &str, port: u16) -> Result<String> {
     validate_resource(resource)?;
     let credentials = credentials(root, resource)?;
     Ok(format!(
@@ -65,7 +65,7 @@ pub(super) fn url(root: &Path, resource: &str, port: u16) -> Result<String> {
 
 /// User-supplied files and certificate mapping require an explicit integration;
 /// never rewrite those configurations or silently fall back to a shared account.
-pub(super) fn configure(table: &mut toml::Table, root: &Path) -> Result<()> {
+pub fn configure(table: &mut toml::Table, root: &Path) -> Result<()> {
     let options = table
         .entry("options".to_string())
         .or_insert_with(|| toml::Value::Table(toml::Table::new()))
@@ -148,7 +148,7 @@ async fn command(execution: &Execution, args: &[String]) -> Result<()> {
 }
 
 /// Caller holds the resource lock. Validate before replacing a live configuration.
-pub(super) async fn prepare(execution: &Execution) -> Result<()> {
+pub async fn prepare(execution: &Execution) -> Result<()> {
     let content = configuration(execution)?;
     let dir = private_dir(&execution.root)?;
     let path = dir.join("server.json");
@@ -195,7 +195,7 @@ async fn ping(execution: &Execution, credentials: &Credentials) -> Result<()> {
     }).await?
 }
 
-pub(super) async fn provision(execution: &Execution, resource: &str) -> Result<()> {
+pub async fn provision(execution: &Execution, resource: &str) -> Result<()> {
     let credentials = credentials(&execution.root, resource)?;
     if ping(execution, &credentials).await.is_ok() {
         return Ok(());

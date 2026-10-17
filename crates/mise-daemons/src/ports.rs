@@ -13,16 +13,16 @@ use std::path::Path;
 /// Distance between consecutive slots. One port per slot suits every current
 /// preset; a daemon that binds a contiguous range raises it so neighbouring
 /// slots cannot overlap.
-pub(crate) const DEFAULT_STRIDE: u16 = 1;
+pub const DEFAULT_STRIDE: u16 = 1;
 
 /// Slot 0 is the primary checkout, so linked worktrees draw from 1..SLOTS.
 /// The span is kept narrow enough that an allocated port stays recognisably
 /// near its base (Postgres occupies 5432..=5943, Redis 6379..=6890) and the two
 /// preset ranges cannot reach each other.
-pub(crate) const SLOTS: u16 = 512;
+pub const SLOTS: u16 = 512;
 
 #[derive(Debug, Clone, PartialEq)]
-pub(crate) enum PortRequest {
+pub enum PortRequest {
     /// An explicit port, unchanged across checkouts.
     Fixed(u16),
     /// A base port offset by the slot derived from the project root.
@@ -58,7 +58,7 @@ impl PortClaim {
 }
 
 /// Parse the `port` value of a daemon declaration.
-pub(crate) fn parse(name: &str, value: toml::Value) -> Result<PortRequest> {
+pub fn parse(name: &str, value: toml::Value) -> Result<PortRequest> {
     match value {
         toml::Value::Integer(port) => u16::try_from(port)
             .ok()
@@ -112,14 +112,14 @@ fn port_field(name: &str, table: &toml::Table, key: &str) -> Result<Option<u16>>
 /// A project root is the directory holding `mise.toml`, often nested well below
 /// the checkout (`/repo/packages/api`), so the enclosing checkout decides, not
 /// the config directory. That ancestor walk, and the rules that separate a real
-/// worktree from a submodule, live in [`crate::git::in_linked_worktree`].
-pub(crate) fn is_primary(root: &Path) -> bool {
-    !crate::git::in_linked_worktree(root)
+/// worktree from a submodule, live in [`mise_util::git::in_linked_worktree`].
+pub fn is_primary(root: &Path) -> bool {
+    !mise_util::git::in_linked_worktree(root)
 }
 
 /// The slot for a project root: 0 for a primary checkout, otherwise a stable
 /// value in 1..SLOTS derived from the canonical root path.
-pub(crate) fn slot(root: &Path) -> u16 {
+pub fn slot(root: &Path) -> u16 {
     let root = root.canonicalize().unwrap_or_else(|_| root.to_path_buf());
     if is_primary(&root) {
         return 0;
@@ -131,17 +131,17 @@ pub(crate) fn slot(root: &Path) -> u16 {
 /// a bounded number of slots, so two of them can land on the same one; what
 /// this guarantees is that a given root always lands on the same slot and
 /// never on slot 0, which belongs to the primary checkout.
-pub(crate) fn hashed_slot(root: &Path) -> u16 {
+pub fn hashed_slot(root: &Path) -> u16 {
     // hash_to_str renders a u64 siphash as hex; reuse it so the slot and the
     // state directory agree on how a root is identified. The root, not the
     // checkout, is hashed, so sibling projects in one worktree stay distinct.
-    let hash = u64::from_str_radix(&crate::hash::hash_to_str(&root), 16).unwrap_or_default();
+    let hash = u64::from_str_radix(&mise_util::hash::hash_to_str(&root), 16).unwrap_or_default();
     1 + u16::try_from(hash % u64::from(SLOTS - 1)).unwrap_or_default()
 }
 
 /// Resolve an `auto` request for a project root, preferring a previously
 /// persisted allocation for the same base and stride.
-pub(crate) fn resolve(
+pub fn resolve(
     name: &str,
     root: &Path,
     base: Option<u16>,
@@ -152,7 +152,7 @@ pub(crate) fn resolve(
     resolve_slot(name, slot(root), base, stride, preset_default, persisted)
 }
 
-pub(crate) fn resolve_slot(
+pub fn resolve_slot(
     name: &str,
     slot: u16,
     base: Option<u16>,
@@ -210,12 +210,12 @@ mod tests {
     /// calling [`hashed_slot`], so that a changed formula -- a wider modulus, a
     /// dropped `1 +` handing a worktree the primary checkout's port -- fails
     /// instead of moving both sides of the assertion together. The hash itself
-    /// is still read through [`crate::hash::hash_to_str`]: a golden hex digest
+    /// is still read through [`mise_util::hash::hash_to_str`]: a golden hex digest
     /// would pin `Path`'s `Hash` implementation, which std does not promise to
     /// keep stable across releases, and which `PortClaim` persistence is
     /// designed to tolerate changing.
     fn expected_slot_of(canonical: &Path) -> u16 {
-        let hash = u64::from_str_radix(&crate::hash::hash_to_str(&canonical), 16).unwrap();
+        let hash = u64::from_str_radix(&mise_util::hash::hash_to_str(&canonical), 16).unwrap();
         1 + u16::try_from(hash % u64::from(SLOTS - 1)).unwrap()
     }
 
@@ -413,7 +413,7 @@ mod tests {
             // there is no checkout here to give its own port to.
             "/repo/.git/worktrees/pruned",
         ] {
-            let root = tmp.path().join(crate::hash::hash_to_str(&target));
+            let root = tmp.path().join(mise_util::hash::hash_to_str(&target));
             std::fs::create_dir_all(&root).unwrap();
             std::fs::write(root.join(".git"), format!("gitdir: {target}\n")).unwrap();
             assert!(is_primary(&root), "{target} must keep the base port");

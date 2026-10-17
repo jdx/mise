@@ -1,3 +1,4 @@
+use crate::daemons::glue::DaemonSetExt;
 use dashmap::DashMap;
 use eyre::{Context, Result, bail, eyre};
 use indexmap::{IndexMap, IndexSet};
@@ -689,7 +690,7 @@ impl Config {
     }
     pub fn daemons(&self) -> Result<&crate::daemons::DaemonSet> {
         self.daemons
-            .get_or_try_init(|| crate::daemons::load(&self.config_files))
+            .get_or_try_init(|| crate::daemons::glue::load(&self.config_files))
     }
 
     /// Use `set` as this config's daemons instead of loading them from its files.

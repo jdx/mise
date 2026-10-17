@@ -6727,6 +6727,7 @@ dependencies = [
  "miette",
  "minisign-verify",
  "mise-cache-core",
+ "mise-daemons",
  "mise-dotenv",
  "mise-interactive-config",
  "mise-oci",
@@ -6865,6 +6866,37 @@ dependencies = [
  "tokio",
  "tokio-util",
  "url",
+]
+
+[[package]]
+name = "mise-daemons"
+version = "0.1.0"
+dependencies = [
+ "bytesize",
+ "console",
+ "eyre",
+ "fslock",
+ "futures-util",
+ "hex",
+ "indexmap 2.14.2",
+ "log",
+ "mise-settings",
+ "mise-util",
+ "nix 0.31.3",
+ "path-absolutize",
+ "rand 0.10.3",
+ "regex",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tera 2.4.0",
+ "tokio",
+ "toml 1.1.8+spec-1.1.0",
+ "url",
+ "versions",
+ "walkdir",
+ "which",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

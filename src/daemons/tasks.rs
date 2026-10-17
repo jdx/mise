@@ -5,6 +5,7 @@
 //! check, so `pitchfork start` returns only once every requested daemon reports
 //! ready.
 
+use super::glue::DaemonSetExt;
 use super::{DaemonSet, runtime};
 use crate::config::{Config, Settings, SettingsExt};
 use crate::task::Task;
@@ -147,7 +148,7 @@ pub async fn start(
     let mut foreign: IndexSet<PathBuf> = IndexSet::new();
     let mut owned: IndexSet<PathBuf> = IndexSet::new();
     for (project, tasks) in by_project {
-        let scoped = runtime::config_for_root(config, &project).await?;
+        let scoped = super::glue::config_for_root(config, &project).await?;
         let set = scoped.daemons()?;
         let keys = required(&tasks, set)?;
         // Pitchfork starts a daemon's dependencies with it, so this covers what
@@ -174,7 +175,7 @@ pub async fn start(
     foreign.retain(|root| !owned.contains(root));
     if dry_run {
         for (root, names) in &wanted {
-            let scoped = runtime::config_for_root(config, root).await?;
+            let scoped = super::glue::config_for_root(config, root).await?;
             let set = scoped.daemons()?.for_root(root);
             let starting = set.with_dependencies(&names.iter().cloned().collect::<Vec<_>>());
             // Narrowed for another project's root exactly as the real run
@@ -204,7 +205,7 @@ pub async fn start(
     wanted.sort_keys();
     let mut pending = Vec::new();
     for (root, names) in wanted {
-        let scoped = runtime::config_for_root(config, &root).await?;
+        let scoped = super::glue::config_for_root(config, &root).await?;
         // The generated pitchfork configuration describes every daemon in the
         // project, not only the ones this run starts.
         let set = scoped.daemons()?.for_root(&root);
@@ -225,15 +226,15 @@ pub async fn start(
         };
         // The set that is validated below is also the set whose tools are installed.
         let (scoped, ts) = if install_tools {
-            runtime::toolset(&scoped, Some(&starting)).await?
+            super::glue::toolset(&scoped, Some(&starting)).await?
         } else {
             // Keeps the install path out of this future entirely, so callers
             // inside a spawned task can await it.
-            let ts = runtime::toolset_resolved(&scoped, false).await?;
+            let ts = super::glue::toolset_resolved(&scoped, false).await?;
             (scoped, ts)
         };
-        let rt = runtime::Runtime::from_toolset(&scoped, &ts, Some(&previous.bin)).await?;
-        runtime::validate_tools(&starting, &scoped, &ts).await?;
+        let rt = super::glue::runtime_from_toolset(&scoped, &ts, Some(&previous.bin)).await?;
+        super::glue::validate_tools(&starting, &scoped, &ts).await?;
         starting.validate_tasks(&scoped).await?;
         // `will_start` comes from this root's own configuration, which is the
         // only view that knows about imports the referenced project declares.
