@@ -1,50 +1,91 @@
-use serde::Deserialize;
+use schemars::JsonSchema;
+use serde::{Deserialize, Serialize};
 
-/// A `[bootstrap.packages]` value. The string form remains the concise default;
-/// the table form adds platform selection without changing package keys.
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+// The doc comments on these types are their descriptions in schema/mise.json, which editors show
+// to users. Notes for Rust readers go in plain comments.
+
+// A `[bootstrap.packages]` value. The string form remains the concise default; the table form
+// adds platform selection without changing package keys.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, JsonSchema)]
 #[serde(untagged)]
+#[schemars(transform = crate::schema::one_of)]
 pub enum PackageTomlConfig {
+    /// version pin in the manager's native format, or "latest"
     Version(String),
     Options(PackageOptionsTomlConfig),
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
+#[schemars(extend("dependentRequired" = {"url": ["sha256", "artifact", "version"]}))]
 pub struct PackageOptionsTomlConfig {
+    /// version pin in the manager's native format, or "latest"
     #[serde(default = "latest_package_version")]
     pub version: String,
+    /// operating system or OS/architecture selectors
     #[serde(default, deserialize_with = "deserialize_package_os")]
+    #[schemars(schema_with = "package_os")]
     pub os: Vec<String>,
+    /// mise environments in which this package is enabled
     #[serde(default, deserialize_with = "deserialize_package_env")]
+    #[schemars(schema_with = "package_env")]
     pub env: Vec<String>,
-    /// Adopt an identical existing cask artifact instead of replacing it.
+    /// adopt an existing identical app artifact instead of replacing it (brew-cask and macos-app)
     #[serde(default)]
     pub adopt: Option<bool>,
-    /// `brew-cask` only: application directory for this cask and its cask
-    /// dependencies. Takes precedence over MISE_BREW_CASK_OPT_APPDIR.
+    /// brew-cask only: application directory for this cask and its cask dependencies; takes precedence over MISE_BREW_CASK_OPT_APPDIR
     #[serde(default)]
+    #[schemars(length(min = 1))]
     pub appdir: Option<String>,
-    /// `macos-app` only: direct download URL for the app archive.
+    /// macos-app only: download URL for the app archive; {{version}} is replaced with the declared version
     #[serde(default)]
+    #[schemars(length(min = 1), regex(pattern = r".*\S.*"))]
     pub url: Option<String>,
-    /// `macos-app` only: expected sha256 of the download.
+    /// macos-app only: expected sha256 of the download as 64 hex characters; required with url. Homebrew's no_check sentinel is not accepted
     #[serde(default)]
+    #[schemars(regex(pattern = r"^[0-9a-fA-F]{64}$"))]
     pub sha256: Option<String>,
-    /// `macos-app` only: bundle to install out of the archive, e.g. "Nuvio.app".
+    /// macos-app only: app bundle to install from the archive, e.g. Nuvio.app; required with url
     #[serde(default)]
+    #[schemars(length(min = 1), regex(pattern = r".*\S.*"))]
     pub artifact: Option<String>,
-    /// `snap` only: channel to install from and track, e.g. "latest/stable".
+    /// snap only: channel to install from and track, e.g. latest/stable or 22/edge
     #[serde(default)]
+    #[schemars(regex(
+        pattern = r"^[A-Za-z0-9._][A-Za-z0-9._-]*(/[A-Za-z0-9._][A-Za-z0-9._-]*){0,2}$"
+    ))]
     pub channel: Option<String>,
-    /// `snap` only: install with classic confinement.
+    /// snap only: install with classic confinement
     #[serde(default)]
     pub classic: Option<bool>,
+    /// desired package state; pacman, scoop, snap, and zypper support absent
     #[serde(default)]
     pub state: PackageDesiredStateTomlConfig,
 }
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
+fn package_os(_: &mut schemars::SchemaGenerator) -> schemars::Schema {
+    schemars::json_schema!({
+        "oneOf": [
+            {"$ref": "#/$defs/os_filter_item"},
+            {"type": "array", "items": {"$ref": "#/$defs/os_filter_item"}, "minItems": 1}
+        ]
+    })
+}
+
+fn package_env(_: &mut schemars::SchemaGenerator) -> schemars::Schema {
+    schemars::json_schema!({
+        "oneOf": [
+            {"type": "string", "minLength": 1, "pattern": "\\S"},
+            {
+                "type": "array",
+                "items": {"type": "string", "minLength": 1, "pattern": "\\S"},
+                "minItems": 1
+            }
+        ]
+    })
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum PackageDesiredStateTomlConfig {
     #[default]

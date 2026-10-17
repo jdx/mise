@@ -38,6 +38,25 @@ impl<'de, T: DeserializeOwned> Deserialize<'de> for Templated<T> {
     }
 }
 
+// The schema describes the entry as written, which is `T` before its strings are rendered.
+impl<T: schemars::JsonSchema> schemars::JsonSchema for Templated<T> {
+    fn inline_schema() -> bool {
+        T::inline_schema()
+    }
+
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        T::schema_name()
+    }
+
+    fn schema_id() -> std::borrow::Cow<'static, str> {
+        T::schema_id()
+    }
+
+    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        T::json_schema(generator)
+    }
+}
+
 impl<T> Deref for Templated<T> {
     type Target = T;
     fn deref(&self) -> &Self::Target {

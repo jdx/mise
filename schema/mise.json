@@ -5928,28 +5928,28 @@
       "properties": {
         "minute": {
           "type": "integer",
-          "minimum": 0,
-          "maximum": 59
+          "maximum": 59,
+          "minimum": 0
         },
         "hour": {
           "type": "integer",
-          "minimum": 0,
-          "maximum": 23
+          "maximum": 23,
+          "minimum": 0
         },
         "day": {
           "type": "integer",
-          "minimum": 1,
-          "maximum": 31
+          "maximum": 31,
+          "minimum": 1
         },
         "weekday": {
           "type": "integer",
-          "minimum": 0,
-          "maximum": 7
+          "maximum": 7,
+          "minimum": 0
         },
         "month": {
           "type": "integer",
-          "minimum": 1,
-          "maximum": 12
+          "maximum": 12,
+          "minimum": 1
         }
       },
       "minProperties": 1,
@@ -6036,6 +6036,370 @@
           "description": "absolute or ~/-relative remote path to install the provisioned mise to"
         }
       ]
+    },
+    "bootstrap_apt_sources": {
+      "type": "object",
+      "description": "apt repositories added before apt packages are installed, keyed by a name used in the files mise writes",
+      "propertyNames": {
+        "pattern": "^[A-Za-z0-9_-][A-Za-z0-9_.-]*$"
+      },
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "ppa": {
+            "type": "string",
+            "description": "Launchpad PPA as owner/archive, such as git-core/ppa; added on Ubuntu and Ubuntu-based releases only"
+          },
+          "uris": {
+            "type": "string",
+            "description": "repository URL(s), space-separated"
+          },
+          "suites": {
+            "type": "string",
+            "description": "suite(s), space-separated; defaults to the release codename"
+          },
+          "components": {
+            "type": "string",
+            "description": "component(s), space-separated; defaults to main, or none when suites is a path ending in /"
+          },
+          "architectures": {
+            "type": "string",
+            "description": "architecture(s) to fetch, space-separated"
+          },
+          "key": {
+            "type": "string",
+            "description": "http(s) URL of the repository's signing key, armored or binary"
+          },
+          "fingerprint": {
+            "description": "full primary key fingerprint(s) the signing key must have; required with key",
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            ]
+          }
+        },
+        "oneOf": [
+          {
+            "required": ["ppa"],
+            "properties": {
+              "fingerprint": {
+                "type": "string"
+              }
+            },
+            "not": {
+              "anyOf": [
+                {
+                  "required": ["uris"]
+                },
+                {
+                  "required": ["suites"]
+                },
+                {
+                  "required": ["components"]
+                },
+                {
+                  "required": ["architectures"]
+                },
+                {
+                  "required": ["key"]
+                }
+              ]
+            }
+          },
+          {
+            "required": ["uris", "key", "fingerprint"],
+            "not": {
+              "required": ["ppa"]
+            }
+          }
+        ]
+      }
+    },
+    "bootstrap_dnf_repos": {
+      "type": "object",
+      "description": "dnf repositories enabled before dnf packages are installed, keyed by a name for the entry",
+      "propertyNames": {
+        "pattern": "^[A-Za-z0-9_-][A-Za-z0-9_.-]*$"
+      },
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["copr"],
+        "properties": {
+          "copr": {
+            "type": "string",
+            "description": "COPR project as owner/project or @group/project, such as scottames/ghostty; enabled as dnf copr enable would"
+          }
+        }
+      }
+    },
+    "bootstrap_hooks": {
+      "type": "object",
+      "description": "commands to run before and after bootstrap phases",
+      "properties": {
+        "pre-packages": {
+          "$ref": "#/$defs/bootstrap_hook"
+        },
+        "pre_packages": {
+          "$ref": "#/$defs/bootstrap_hook"
+        },
+        "post-packages": {
+          "$ref": "#/$defs/bootstrap_hook"
+        },
+        "post_packages": {
+          "$ref": "#/$defs/bootstrap_hook"
+        },
+        "pre-repos": {
+          "$ref": "#/$defs/bootstrap_hook"
+        },
+        "pre_repos": {
+          "$ref": "#/$defs/bootstrap_hook"
+        },
+        "post-repos": {
+          "$ref": "#/$defs/bootstrap_hook"
+        },
+        "post_repos": {
+          "$ref": "#/$defs/bootstrap_hook"
+        },
+        "pre-dotfiles": {
+          "$ref": "#/$defs/bootstrap_hook"
+        },
+        "pre_dotfiles": {
+          "$ref": "#/$defs/bootstrap_hook"
+        },
+        "post-dotfiles": {
+          "$ref": "#/$defs/bootstrap_hook"
+        },
+        "post_dotfiles": {
+          "$ref": "#/$defs/bootstrap_hook"
+        },
+        "pre-defaults": {
+          "$ref": "#/$defs/bootstrap_hook"
+        },
+        "pre_defaults": {
+          "$ref": "#/$defs/bootstrap_hook"
+        },
+        "post-defaults": {
+          "$ref": "#/$defs/bootstrap_hook"
+        },
+        "post_defaults": {
+          "$ref": "#/$defs/bootstrap_hook"
+        },
+        "pre-user": {
+          "$ref": "#/$defs/bootstrap_hook"
+        },
+        "pre_user": {
+          "$ref": "#/$defs/bootstrap_hook"
+        },
+        "post-user": {
+          "$ref": "#/$defs/bootstrap_hook"
+        },
+        "post_user": {
+          "$ref": "#/$defs/bootstrap_hook"
+        },
+        "pre-tools": {
+          "$ref": "#/$defs/bootstrap_hook"
+        },
+        "pre_tools": {
+          "$ref": "#/$defs/bootstrap_hook"
+        },
+        "post-tools": {
+          "$ref": "#/$defs/bootstrap_hook"
+        },
+        "post_tools": {
+          "$ref": "#/$defs/bootstrap_hook"
+        },
+        "final": {
+          "$ref": "#/$defs/bootstrap_hook"
+        }
+      },
+      "additionalProperties": false
+    },
+    "bootstrap_macos_defaults": {
+      "type": "object",
+      "description": "macOS user defaults to apply with `mise bootstrap macos defaults apply`, keyed by preferences domain (e.g. \"com.apple.dock\", \"NSGlobalDomain\")",
+      "additionalProperties": {
+        "type": "object",
+        "description": "defaults keys and their desired values for this domain",
+        "additionalProperties": {
+          "$ref": "#/$defs/macos_defaults_value",
+          "description": "desired value, written with the matching `defaults write` type; arrays and tables become property list arrays and dictionaries"
+        }
+      }
+    },
+    "bootstrap_macos_dock": {
+      "type": "object",
+      "description": "curated Dock preferences that compile into macOS defaults",
+      "properties": {
+        "apps": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^(?:/|~/(?!/)).+\\.[aA][pP][pP]/*$"
+          },
+          "uniqueItems": true,
+          "description": "Pinned application paths in order; absolute or ~/ paths ending in .app. An empty array removes application tiles."
+        },
+        "autohide_delay": {
+          "type": "number",
+          "description": "delay before showing the Dock"
+        },
+        "autohide_time_modifier": {
+          "type": "number",
+          "description": "Dock autohide animation time modifier"
+        },
+        "autohide": {
+          "type": "boolean",
+          "description": "hide and show the Dock automatically"
+        },
+        "orientation": {
+          "type": "string",
+          "enum": ["bottom", "left", "right"],
+          "description": "Dock screen edge"
+        },
+        "tilesize": {
+          "type": "integer",
+          "description": "Dock icon size"
+        },
+        "magnification": {
+          "type": "boolean",
+          "description": "enable Dock magnification"
+        },
+        "largesize": {
+          "type": "integer",
+          "description": "Dock magnified icon size"
+        },
+        "show_recents": {
+          "type": "boolean",
+          "description": "show recent applications in the Dock"
+        },
+        "mru_spaces": {
+          "type": "boolean",
+          "description": "automatically rearrange Spaces based on most recent use"
+        }
+      },
+      "additionalProperties": false
+    },
+    "bootstrap_macos_finder": {
+      "type": "object",
+      "description": "curated Finder preferences that compile into macOS defaults",
+      "properties": {
+        "sort_folders_first": {
+          "type": "boolean",
+          "description": "keep folders first when sorting by name"
+        },
+        "save_new_documents_to_cloud": {
+          "type": "boolean",
+          "description": "save new documents to iCloud by default (applies globally to application save dialogs)"
+        },
+        "show_all_files": {
+          "type": "boolean",
+          "description": "show hidden files in Finder"
+        },
+        "show_pathbar": {
+          "type": "boolean",
+          "description": "show the Finder path bar"
+        },
+        "show_status_bar": {
+          "type": "boolean",
+          "description": "show the Finder status bar"
+        },
+        "show_extensions_warning": {
+          "type": "boolean",
+          "description": "show the warning when changing file extensions"
+        },
+        "preferred_view_style": {
+          "type": "string",
+          "enum": ["icon", "list", "column", "gallery"],
+          "description": "Finder preferred view style"
+        }
+      },
+      "additionalProperties": false
+    },
+    "bootstrap_macos_keyboard": {
+      "type": "object",
+      "description": "curated keyboard preferences that compile into macOS defaults",
+      "properties": {
+        "automatic_capitalization": {
+          "type": "boolean",
+          "description": "automatically capitalize words"
+        },
+        "automatic_spelling_correction": {
+          "type": "boolean",
+          "description": "automatically correct spelling"
+        },
+        "key_repeat": {
+          "type": "integer",
+          "description": "keyboard repeat interval"
+        },
+        "initial_key_repeat": {
+          "type": "integer",
+          "description": "delay before key repeat starts"
+        },
+        "press_and_hold": {
+          "type": "boolean",
+          "description": "enable press-and-hold accent picker"
+        },
+        "fn_state": {
+          "type": "boolean",
+          "description": "use F1, F2, etc. as standard function keys"
+        }
+      },
+      "additionalProperties": false
+    },
+    "bootstrap_macos_trackpad": {
+      "type": "object",
+      "description": "curated trackpad preferences that compile into macOS defaults",
+      "properties": {
+        "tap_to_click": {
+          "type": "boolean",
+          "description": "enable tap to click for built-in and Bluetooth trackpads"
+        },
+        "three_finger_drag": {
+          "type": "boolean",
+          "description": "enable three finger drag for built-in and Bluetooth trackpads"
+        }
+      },
+      "additionalProperties": false
+    },
+    "bootstrap_mise_shell_activate": {
+      "type": "object",
+      "description": "declarative mise shell activation snippets, applied with `mise bootstrap mise-shell-activate apply`",
+      "properties": {
+        "bash": {
+          "$ref": "#/$defs/bootstrap_shell_activation"
+        },
+        "zsh": {
+          "$ref": "#/$defs/bootstrap_shell_activation"
+        },
+        "fish": {
+          "$ref": "#/$defs/bootstrap_shell_activation"
+        },
+        "bash_profile": {
+          "$ref": "#/$defs/bootstrap_shell_activation"
+        },
+        "bashrc": {
+          "$ref": "#/$defs/bootstrap_shell_activation"
+        },
+        "zshenv": {
+          "$ref": "#/$defs/bootstrap_shell_activation"
+        },
+        "zprofile": {
+          "$ref": "#/$defs/bootstrap_shell_activation"
+        },
+        "zshrc": {
+          "$ref": "#/$defs/bootstrap_shell_activation"
+        }
+      },
+      "additionalProperties": false
     },
     "macos_defaults_value": {
       "description": "a property list value: boolean, integer, real, string, or an array or dictionary of these",
@@ -7060,7 +7424,8 @@
             "type": "object",
             "properties": {
               "phase": {
-                "$ref": "#/$defs/bootstrap_file_phase"
+                "$ref": "#/$defs/bootstrap_file_phase",
+                "default": "post-packages"
               },
               "source": {
                 "type": "string"
@@ -7078,28 +7443,31 @@
                 "type": "string"
               },
               "template": {
-                "type": "boolean"
+                "type": "boolean",
+                "default": false
               },
               "remove_empty": {
                 "type": "boolean",
-                "description": "remove the target when the template renders to empty or whitespace-only content; requires template = true"
+                "description": "remove the target when the template renders to empty or whitespace-only content; requires template = true",
+                "default": false
               },
               "state": {
                 "type": "string",
                 "enum": ["present", "absent"]
               },
               "replace": {
-                "type": "boolean"
-              },
-              "os": {
-                "$ref": "#/$defs/os_filter",
-                "description": "OS or OS/arch selectors; entries on other platforms are skipped"
+                "type": "boolean",
+                "default": false
               },
               "notify": {
                 "type": "array",
                 "items": {
                   "type": "string"
                 }
+              },
+              "os": {
+                "description": "OS or OS/arch selectors; entries on other platforms are skipped",
+                "$ref": "#/$defs/os_filter"
               }
             },
             "allOf": [
@@ -7176,7 +7544,8 @@
             "type": "object",
             "properties": {
               "phase": {
-                "$ref": "#/$defs/bootstrap_file_phase"
+                "$ref": "#/$defs/bootstrap_file_phase",
+                "default": "post-packages"
               },
               "owner": {
                 "type": "string"
@@ -7192,20 +7561,22 @@
                 "enum": ["present", "absent"]
               },
               "recursive": {
-                "type": "boolean"
+                "type": "boolean",
+                "default": false
               },
               "replace": {
-                "type": "boolean"
-              },
-              "os": {
-                "$ref": "#/$defs/os_filter",
-                "description": "OS or OS/arch selectors; entries on other platforms are skipped"
+                "type": "boolean",
+                "default": false
               },
               "notify": {
                 "type": "array",
                 "items": {
                   "type": "string"
                 }
+              },
+              "os": {
+                "description": "OS or OS/arch selectors; entries on other platforms are skipped",
+                "$ref": "#/$defs/os_filter"
               }
             },
             "additionalProperties": false
@@ -7220,12 +7591,12 @@
           }
         },
         "config_roots": {
-          "deprecated": true,
           "type": "array",
           "description": "deprecated and will be removed in mise 2027.3.3; move each selected root into a conf.d folder instead (https://mise.jdx.dev/configuration.html#conf-d-folders)",
           "items": {
             "type": "string"
-          }
+          },
+          "deprecated": true
         },
         "remote": {
           "type": "object",
@@ -7243,8 +7614,8 @@
               }
             },
             "install_mise": {
-              "$ref": "#/$defs/bootstrap_remote_install_mise",
-              "description": "install the provisioned mise on inventory hosts instead of only staging it"
+              "description": "install the provisioned mise on inventory hosts instead of only staging it",
+              "$ref": "#/$defs/bootstrap_remote_install_mise"
             },
             "copy_links": {
               "type": "boolean",
@@ -7269,7 +7640,6 @@
               "description": "remote bootstrap inventory keyed by target name",
               "additionalProperties": {
                 "type": "object",
-                "required": ["host"],
                 "properties": {
                   "host": {
                     "type": "string",
@@ -7281,9 +7651,9 @@
                   },
                   "port": {
                     "type": "integer",
+                    "description": "SSH port",
                     "minimum": 1,
-                    "maximum": 65535,
-                    "description": "SSH port"
+                    "maximum": 65535
                   },
                   "identity_file": {
                     "type": "string",
@@ -7333,8 +7703,8 @@
                     }
                   },
                   "install_mise": {
-                    "$ref": "#/$defs/bootstrap_remote_install_mise",
-                    "description": "install the provisioned mise on this host instead of only staging it"
+                    "description": "install the provisioned mise on this host instead of only staging it",
+                    "$ref": "#/$defs/bootstrap_remote_install_mise"
                   },
                   "mise_bin": {
                     "type": "string",
@@ -7349,6 +7719,7 @@
                     "description": "remote shell command that installs mise"
                   }
                 },
+                "required": ["host"],
                 "additionalProperties": false
               }
             }
@@ -7360,9 +7731,6 @@
           "description": "System services and portable user services managed by mise bootstrap, keyed by service name",
           "additionalProperties": {
             "type": "object",
-            "not": {
-              "required": ["builtin", "command"]
-            },
             "properties": {
               "state": {
                 "type": "string",
@@ -7375,29 +7743,29 @@
               },
               "masked": {
                 "type": "boolean",
-                "default": false,
-                "description": "System scope only"
+                "description": "System scope only",
+                "default": false
               },
               "on_change": {
                 "type": "string",
+                "description": "System scope only",
                 "enum": ["reload", "restart", "reload_or_restart", "none"],
-                "default": "reload_or_restart",
-                "description": "System scope only"
+                "default": "reload_or_restart"
               },
               "scope": {
                 "type": "string",
-                "enum": ["system", "user"],
-                "description": "Defaults to system; builtin implies user"
+                "description": "Defaults to system; builtin implies user",
+                "enum": ["system", "user"]
               },
               "builtin": {
                 "type": "string",
-                "enum": ["history-watch", "tool-update"],
-                "description": "A mise-provided user service"
+                "description": "A mise-provided user service",
+                "enum": ["history-watch", "tool-update"]
               },
               "command": {
                 "type": "string",
-                "minLength": 1,
-                "description": "User service command; mutually exclusive with builtin"
+                "description": "User service command; mutually exclusive with builtin",
+                "minLength": 1
               },
               "description": {
                 "type": "string"
@@ -7421,6 +7789,9 @@
                 "default": false
               }
             },
+            "not": {
+              "required": ["builtin", "command"]
+            },
             "additionalProperties": false
           }
         },
@@ -7432,8 +7803,8 @@
             "properties": {
               "project_dir": {
                 "type": "string",
-                "minLength": 1,
-                "description": "absolute directory containing the Compose project"
+                "description": "absolute directory containing the Compose project",
+                "minLength": 1
               },
               "files": {
                 "type": "array",
@@ -7497,13 +7868,13 @@
               },
               "wait_timeout": {
                 "type": "integer",
-                "minimum": 0,
-                "description": "wait timeout in seconds"
+                "description": "wait timeout in seconds",
+                "minimum": 0
               },
               "timeout": {
                 "type": "integer",
-                "minimum": 0,
-                "description": "Compose shutdown timeout in seconds"
+                "description": "Compose shutdown timeout in seconds",
+                "minimum": 0
               },
               "remove_orphans": {
                 "type": "boolean",
@@ -7562,9 +7933,6 @@
         "packages": {
           "type": "object",
           "description": "system packages to install with `mise bootstrap packages apply`, keyed by \"manager:package\" (e.g. \"apt:libssl-dev\", \"brew:postgresql@17\", \"dnf:openssl-devel\", \"pacman:base-devel\")",
-          "propertyNames": {
-            "pattern": "^[A-Za-z0-9_-]+:.+$"
-          },
           "additionalProperties": {
             "oneOf": [
               {
@@ -7573,11 +7941,12 @@
               },
               {
                 "type": "object",
+                "additionalProperties": false,
                 "properties": {
                   "version": {
                     "type": "string",
-                    "default": "latest",
-                    "description": "version pin in the manager's native format, or \"latest\""
+                    "description": "version pin in the manager's native format, or \"latest\"",
+                    "default": "latest"
                   },
                   "os": {
                     "description": "operating system or OS/architecture selectors",
@@ -7619,30 +7988,30 @@
                   },
                   "appdir": {
                     "type": "string",
-                    "minLength": 1,
-                    "description": "brew-cask only: application directory for this cask and its cask dependencies; takes precedence over MISE_BREW_CASK_OPT_APPDIR"
+                    "description": "brew-cask only: application directory for this cask and its cask dependencies; takes precedence over MISE_BREW_CASK_OPT_APPDIR",
+                    "minLength": 1
                   },
                   "url": {
                     "type": "string",
+                    "description": "macos-app only: download URL for the app archive; {{version}} is replaced with the declared version",
                     "minLength": 1,
-                    "pattern": ".*\\S.*",
-                    "description": "macos-app only: download URL for the app archive; {{version}} is replaced with the declared version"
+                    "pattern": ".*\\S.*"
                   },
                   "sha256": {
                     "type": "string",
-                    "pattern": "^[0-9a-fA-F]{64}$",
-                    "description": "macos-app only: expected sha256 of the download as 64 hex characters; required with url. Homebrew's no_check sentinel is not accepted"
+                    "description": "macos-app only: expected sha256 of the download as 64 hex characters; required with url. Homebrew's no_check sentinel is not accepted",
+                    "pattern": "^[0-9a-fA-F]{64}$"
                   },
                   "artifact": {
                     "type": "string",
+                    "description": "macos-app only: app bundle to install from the archive, e.g. Nuvio.app; required with url",
                     "minLength": 1,
-                    "pattern": ".*\\S.*",
-                    "description": "macos-app only: app bundle to install from the archive, e.g. Nuvio.app; required with url"
+                    "pattern": ".*\\S.*"
                   },
                   "channel": {
                     "type": "string",
-                    "pattern": "^[A-Za-z0-9._][A-Za-z0-9._-]*(/[A-Za-z0-9._][A-Za-z0-9._-]*){0,2}$",
-                    "description": "snap only: channel to install from and track, e.g. latest/stable or 22/edge"
+                    "description": "snap only: channel to install from and track, e.g. latest/stable or 22/edge",
+                    "pattern": "^[A-Za-z0-9._][A-Za-z0-9._-]*(/[A-Za-z0-9._][A-Za-z0-9._-]*){0,2}$"
                   },
                   "classic": {
                     "type": "boolean",
@@ -7657,10 +8026,12 @@
                 },
                 "dependentRequired": {
                   "url": ["sha256", "artifact", "version"]
-                },
-                "additionalProperties": false
+                }
               }
             ]
+          },
+          "propertyNames": {
+            "pattern": "^[A-Za-z0-9_-]+:.+$"
           }
         },
         "repos": {
@@ -7671,26 +8042,26 @@
             "properties": {
               "url": {
                 "type": "string",
+                "description": "git repository URL",
                 "minLength": 1,
-                "pattern": ".*\\S.*",
-                "description": "git repository URL"
+                "pattern": ".*\\S.*"
               },
               "ref": {
                 "type": "string",
+                "description": "optional branch, tag, or full commit SHA to check out",
                 "minLength": 1,
-                "pattern": ".*\\S.*",
-                "description": "optional branch, tag, or full commit SHA to check out"
+                "pattern": ".*\\S.*"
               },
               "filter": {
                 "type": "string",
+                "description": "partial clone filter passed to `git clone --filter`, such as `blob:none`; applies to the first clone only",
                 "minLength": 1,
-                "pattern": ".*\\S.*",
-                "description": "partial clone filter passed to `git clone --filter`, such as `blob:none`; applies to the first clone only"
+                "pattern": ".*\\S.*"
               },
               "depth": {
                 "type": "integer",
-                "minimum": 1,
-                "description": "shallow clone depth passed to `git clone --depth`; applies to the first clone only"
+                "description": "shallow clone depth passed to `git clone --depth`; applies to the first clone only",
+                "minimum": 1
               },
               "submodules": {
                 "type": "boolean",
@@ -7706,159 +8077,25 @@
           "description": "macOS-specific bootstrap config",
           "properties": {
             "dock": {
-              "type": "object",
-              "description": "curated Dock preferences that compile into macOS defaults",
-              "properties": {
-                "apps": {
-                  "type": "array",
-                  "items": {
-                    "type": "string",
-                    "pattern": "^(?:/|~/(?!/)).+\\.[aA][pP][pP]/*$"
-                  },
-                  "uniqueItems": true,
-                  "description": "Pinned application paths in order; absolute or ~/ paths ending in .app. An empty array removes application tiles."
-                },
-                "autohide_delay": {
-                  "type": "number",
-                  "description": "delay before showing the Dock"
-                },
-                "autohide_time_modifier": {
-                  "type": "number",
-                  "description": "Dock autohide animation time modifier"
-                },
-                "autohide": {
-                  "type": "boolean",
-                  "description": "hide and show the Dock automatically"
-                },
-                "orientation": {
-                  "type": "string",
-                  "enum": ["bottom", "left", "right"],
-                  "description": "Dock screen edge"
-                },
-                "tilesize": {
-                  "type": "integer",
-                  "description": "Dock icon size"
-                },
-                "magnification": {
-                  "type": "boolean",
-                  "description": "enable Dock magnification"
-                },
-                "largesize": {
-                  "type": "integer",
-                  "description": "Dock magnified icon size"
-                },
-                "show_recents": {
-                  "type": "boolean",
-                  "description": "show recent applications in the Dock"
-                },
-                "mru_spaces": {
-                  "type": "boolean",
-                  "description": "automatically rearrange Spaces based on most recent use"
-                }
-              },
-              "additionalProperties": false
+              "$ref": "#/$defs/bootstrap_macos_dock"
             },
             "finder": {
-              "type": "object",
-              "description": "curated Finder preferences that compile into macOS defaults",
-              "properties": {
-                "sort_folders_first": {
-                  "type": "boolean",
-                  "description": "keep folders first when sorting by name"
-                },
-                "save_new_documents_to_cloud": {
-                  "type": "boolean",
-                  "description": "save new documents to iCloud by default (applies globally to application save dialogs)"
-                },
-                "show_all_files": {
-                  "type": "boolean",
-                  "description": "show hidden files in Finder"
-                },
-                "show_pathbar": {
-                  "type": "boolean",
-                  "description": "show the Finder path bar"
-                },
-                "show_status_bar": {
-                  "type": "boolean",
-                  "description": "show the Finder status bar"
-                },
-                "show_extensions_warning": {
-                  "type": "boolean",
-                  "description": "show the warning when changing file extensions"
-                },
-                "preferred_view_style": {
-                  "type": "string",
-                  "enum": ["icon", "list", "column", "gallery"],
-                  "description": "Finder preferred view style"
-                }
-              },
-              "additionalProperties": false
+              "$ref": "#/$defs/bootstrap_macos_finder"
             },
             "keyboard": {
-              "type": "object",
-              "description": "curated keyboard preferences that compile into macOS defaults",
-              "properties": {
-                "automatic_capitalization": {
-                  "type": "boolean",
-                  "description": "automatically capitalize words"
-                },
-                "automatic_spelling_correction": {
-                  "type": "boolean",
-                  "description": "automatically correct spelling"
-                },
-                "key_repeat": {
-                  "type": "integer",
-                  "description": "keyboard repeat interval"
-                },
-                "initial_key_repeat": {
-                  "type": "integer",
-                  "description": "delay before key repeat starts"
-                },
-                "press_and_hold": {
-                  "type": "boolean",
-                  "description": "enable press-and-hold accent picker"
-                },
-                "fn_state": {
-                  "type": "boolean",
-                  "description": "use F1, F2, etc. as standard function keys"
-                }
-              },
-              "additionalProperties": false
+              "$ref": "#/$defs/bootstrap_macos_keyboard"
             },
             "trackpad": {
-              "type": "object",
-              "description": "curated trackpad preferences that compile into macOS defaults",
-              "properties": {
-                "tap_to_click": {
-                  "type": "boolean",
-                  "description": "enable tap to click for built-in and Bluetooth trackpads"
-                },
-                "three_finger_drag": {
-                  "type": "boolean",
-                  "description": "enable three finger drag for built-in and Bluetooth trackpads"
-                }
-              },
-              "additionalProperties": false
+              "$ref": "#/$defs/bootstrap_macos_trackpad"
             },
             "defaults": {
-              "type": "object",
-              "description": "macOS user defaults to apply with `mise bootstrap macos defaults apply`, keyed by preferences domain (e.g. \"com.apple.dock\", \"NSGlobalDomain\")",
-              "additionalProperties": {
-                "type": "object",
-                "description": "defaults keys and their desired values for this domain",
-                "additionalProperties": {
-                  "$ref": "#/$defs/macos_defaults_value",
-                  "description": "desired value, written with the matching `defaults write` type; arrays and tables become property list arrays and dictionaries"
-                }
-              }
+              "$ref": "#/$defs/bootstrap_macos_defaults"
             },
             "defaults_entries": {
               "type": "array",
               "description": "Explicit macOS preferences with a selectable host scope",
               "items": {
                 "type": "object",
-                "additionalProperties": false,
-                "required": ["domain", "key", "value"],
                 "properties": {
                   "domain": {
                     "type": "string"
@@ -7866,18 +8103,18 @@
                   "key": {
                     "type": "string"
                   },
-                  "path": {
-                    "type": "array",
-                    "minItems": 1,
-                    "items": {
-                      "type": "string"
-                    },
-                    "description": "Dictionary keys below the preference key; omitted to replace the whole value"
-                  },
                   "host": {
                     "type": "string",
                     "enum": ["any", "current"],
                     "default": "any"
+                  },
+                  "path": {
+                    "type": "array",
+                    "description": "Dictionary keys below the preference key; omitted to replace the whole value",
+                    "items": {
+                      "type": "string"
+                    },
+                    "minItems": 1
                   },
                   "value": {
                     "anyOf": [
@@ -7898,26 +8135,10 @@
                       }
                     ]
                   }
-                }
-              }
-            },
-            "login_items": {
-              "type": "object",
-              "description": "applications to open at login (System Settings > General > Login Items & Extensions)",
-              "properties": {
-                "apps": {
-                  "type": "array",
-                  "description": "application bundles to open at login: absolute or `~/` paths ending in `.app`",
-                  "items": {
-                    "type": "string"
-                  }
                 },
-                "exclusive": {
-                  "type": "boolean",
-                  "description": "also remove login items that are not declared (default: false, so apps that register themselves are left alone)"
-                }
-              },
-              "additionalProperties": false
+                "additionalProperties": false,
+                "required": ["domain", "key", "value"]
+              }
             },
             "launchd": {
               "type": "object",
@@ -7926,17 +8147,14 @@
                 "agents": {
                   "type": "object",
                   "description": "macOS user LaunchAgents to write and load with `mise bootstrap macos launchd-agents apply`",
-                  "propertyNames": {
-                    "pattern": "^[A-Za-z0-9._-]+$"
-                  },
                   "additionalProperties": {
                     "type": "object",
                     "properties": {
                       "program": {
                         "type": "string",
+                        "description": "program path for ProgramArguments[0]",
                         "minLength": 1,
-                        "pattern": ".*\\S.*",
-                        "description": "program path for ProgramArguments[0]"
+                        "pattern": ".*\\S.*"
                       },
                       "args": {
                         "type": "array",
@@ -7947,40 +8165,44 @@
                       },
                       "run_at_load": {
                         "type": "boolean",
-                        "description": "write RunAtLoad"
+                        "description": "write RunAtLoad",
+                        "default": false
                       },
                       "keep_alive": {
                         "type": "boolean",
-                        "description": "write KeepAlive"
+                        "description": "write KeepAlive",
+                        "default": false
+                      },
+                      "keep_alive_on_failure": {
+                        "type": "boolean",
+                        "description": "write KeepAlive = { SuccessfulExit = false }, so launchd relaunches the job only after a failure",
+                        "default": false
                       },
                       "start_interval": {
                         "type": "integer",
-                        "minimum": 0,
-                        "description": "write StartInterval in seconds"
+                        "description": "write StartInterval in seconds",
+                        "minimum": 0
                       },
                       "throttle_interval": {
                         "type": "integer",
-                        "minimum": 0,
-                        "description": "write ThrottleInterval in seconds"
+                        "description": "write ThrottleInterval in seconds",
+                        "minimum": 0
+                      },
+                      "nice": {
+                        "type": "integer",
+                        "description": "write Nice, the niceness of the process",
+                        "minimum": -128,
+                        "maximum": 127
                       },
                       "process_type": {
                         "type": "string",
+                        "description": "write ProcessType, the scheduling band launchd runs the job in",
                         "enum": [
                           "Background",
                           "Standard",
                           "Adaptive",
                           "Interactive"
-                        ],
-                        "description": "write ProcessType, the scheduling band launchd runs the job in"
-                      },
-                      "queue_directories": {
-                        "type": "array",
-                        "description": "write QueueDirectories (absolute paths; `~` and `~/` are expanded)",
-                        "items": {
-                          "type": "string",
-                          "minLength": 1,
-                          "pattern": "^(?:/|~$|~/|\\{[{%])"
-                        }
+                        ]
                       },
                       "start_calendar_interval": {
                         "description": "write one or more StartCalendarInterval schedules",
@@ -7996,6 +8218,15 @@
                             }
                           }
                         ]
+                      },
+                      "queue_directories": {
+                        "type": "array",
+                        "description": "write QueueDirectories (absolute paths; `~` and `~/` are expanded)",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "pattern": "^(?:/|~$|~/|\\{[{%])"
+                        }
                       },
                       "environment": {
                         "type": "object",
@@ -8018,15 +8249,40 @@
                       },
                       "kickstart": {
                         "type": "boolean",
-                        "description": "run `launchctl kickstart -k` after loading the agent"
+                        "description": "run `launchctl kickstart -k` after loading the agent",
+                        "default": false
                       }
                     },
-                    "required": ["program"]
+                    "required": ["program"],
+                    "additionalProperties": false
+                  },
+                  "propertyNames": {
+                    "pattern": "^[A-Za-z0-9._-]+$"
                   }
                 }
-              }
+              },
+              "additionalProperties": false
+            },
+            "login_items": {
+              "type": "object",
+              "description": "applications to open at login (System Settings > General > Login Items & Extensions)",
+              "properties": {
+                "apps": {
+                  "type": "array",
+                  "description": "application bundles to open at login: absolute or `~/` paths ending in `.app`",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "exclusive": {
+                  "type": "boolean",
+                  "description": "also remove login items that are not declared (default: false, so apps that register themselves are left alone)"
+                }
+              },
+              "additionalProperties": false
             }
-          }
+          },
+          "additionalProperties": false
         },
         "linux": {
           "type": "object",
@@ -8035,7 +8291,6 @@
             "firewall": {
               "type": "object",
               "description": "Linux host firewall policy and rules managed with `mise bootstrap firewall`",
-              "additionalProperties": false,
               "properties": {
                 "backend": {
                   "type": "string",
@@ -8076,7 +8331,6 @@
                   "description": "named firewall rules reconciled without deleting undeclared managed rules",
                   "items": {
                     "type": "object",
-                    "additionalProperties": false,
                     "properties": {
                       "name": {
                         "type": "string",
@@ -8105,8 +8359,8 @@
                         "oneOf": [
                           {
                             "type": "integer",
-                            "minimum": 1,
-                            "maximum": 65535
+                            "maximum": 65535,
+                            "minimum": 1
                           },
                           {
                             "type": "string",
@@ -8134,10 +8388,12 @@
                         "pattern": "^[A-Za-z0-9_.:-]+$"
                       }
                     },
-                    "required": ["name"]
+                    "required": ["name"],
+                    "additionalProperties": false
                   }
                 }
-              }
+              },
+              "additionalProperties": false
             },
             "systemd": {
               "type": "object",
@@ -8146,9 +8402,6 @@
                 "units": {
                   "type": "object",
                   "description": "systemd user services and timers to write and start with `mise bootstrap linux systemd-units apply`",
-                  "propertyNames": {
-                    "pattern": "^[A-Za-z0-9._@-]+$"
-                  },
                   "additionalProperties": {
                     "type": "object",
                     "properties": {
@@ -8216,9 +8469,9 @@
                       },
                       "exec_start": {
                         "type": "string",
+                        "description": "write ExecStart in the [Service] section",
                         "minLength": 1,
-                        "pattern": ".*\\S.*",
-                        "description": "write ExecStart in the [Service] section"
+                        "pattern": ".*\\S.*"
                       },
                       "exec_start_post": {
                         "type": "array",
@@ -8231,6 +8484,7 @@
                       },
                       "type": {
                         "type": "string",
+                        "description": "write Type in the [Service] section",
                         "enum": [
                           "simple",
                           "exec",
@@ -8240,8 +8494,7 @@
                           "notify",
                           "notify-reload",
                           "idle"
-                        ],
-                        "description": "write Type in the [Service] section"
+                        ]
                       },
                       "remain_after_exit": {
                         "type": "boolean",
@@ -8292,14 +8545,14 @@
                       },
                       "nice": {
                         "type": "integer",
+                        "description": "write Nice in the [Service] section",
                         "minimum": -20,
-                        "maximum": 19,
-                        "description": "write Nice in the [Service] section"
+                        "maximum": 19
                       },
                       "umask": {
                         "type": "string",
-                        "pattern": "^(?:(?:[0-7]{1,3}|0[0-7]{3})$|\\{[{%])",
-                        "description": "write UMask in the [Service] section"
+                        "description": "write UMask in the [Service] section",
+                        "pattern": "^(?:(?:[0-7]{1,3}|0[0-7]{3})$|\\{[{%])"
                       },
                       "working_directory": {
                         "type": "string",
@@ -8355,7 +8608,8 @@
                       },
                       "start": {
                         "type": "boolean",
-                        "description": "restart the unit after writing it; when false, stop the unit after writing it"
+                        "description": "restart the unit after writing it; when false, stop the unit after writing it",
+                        "default": true
                       },
                       "wanted_by": {
                         "type": "array",
@@ -8366,9 +8620,9 @@
                       },
                       "state": {
                         "type": "string",
+                        "description": "present writes and manages the unit; absent stops, disables, and removes both dev.mise.<name>.service and dev.mise.<name>.timer",
                         "enum": ["present", "absent"],
-                        "default": "present",
-                        "description": "present writes and manages the unit; absent stops, disables, and removes both dev.mise.<name>.service and dev.mise.<name>.timer"
+                        "default": "present"
                       }
                     },
                     "oneOf": [
@@ -8534,12 +8788,18 @@
                           }
                         }
                       }
-                    ]
+                    ],
+                    "additionalProperties": false
+                  },
+                  "propertyNames": {
+                    "pattern": "^[A-Za-z0-9._@-]+$"
                   }
                 }
-              }
+              },
+              "additionalProperties": false
             }
-          }
+          },
+          "additionalProperties": false
         },
         "user": {
           "type": "object",
@@ -8547,126 +8807,31 @@
           "properties": {
             "login_shell": {
               "type": "string",
-              "pattern": "^\\s*(?:/|\\{[{%])",
-              "description": "current user's desired login shell, applied with `chsh -s`; a template that must render to an absolute path"
+              "description": "current user's desired login shell, applied with `chsh -s`; a template that must render to an absolute path",
+              "pattern": "^\\s*(?:/|\\{[{%])"
             }
-          }
+          },
+          "additionalProperties": false
         },
         "apt": {
           "type": "object",
           "description": "apt-specific bootstrap package config",
           "properties": {
             "sources": {
-              "type": "object",
-              "description": "apt repositories added before apt packages are installed, keyed by a name used in the files mise writes",
-              "propertyNames": {
-                "pattern": "^[A-Za-z0-9_-][A-Za-z0-9_.-]*$"
-              },
-              "additionalProperties": {
-                "type": "object",
-                "additionalProperties": false,
-                "properties": {
-                  "ppa": {
-                    "type": "string",
-                    "description": "Launchpad PPA as owner/archive, such as git-core/ppa; added on Ubuntu and Ubuntu-based releases only"
-                  },
-                  "uris": {
-                    "type": "string",
-                    "description": "repository URL(s), space-separated"
-                  },
-                  "suites": {
-                    "type": "string",
-                    "description": "suite(s), space-separated; defaults to the release codename"
-                  },
-                  "components": {
-                    "type": "string",
-                    "description": "component(s), space-separated; defaults to main, or none when suites is a path ending in /"
-                  },
-                  "architectures": {
-                    "type": "string",
-                    "description": "architecture(s) to fetch, space-separated"
-                  },
-                  "key": {
-                    "type": "string",
-                    "description": "http(s) URL of the repository's signing key, armored or binary"
-                  },
-                  "fingerprint": {
-                    "description": "full primary key fingerprint(s) the signing key must have; required with key",
-                    "oneOf": [
-                      {
-                        "type": "string"
-                      },
-                      {
-                        "type": "array",
-                        "items": {
-                          "type": "string"
-                        }
-                      }
-                    ]
-                  }
-                },
-                "oneOf": [
-                  {
-                    "required": ["ppa"],
-                    "properties": {
-                      "fingerprint": {
-                        "type": "string"
-                      }
-                    },
-                    "not": {
-                      "anyOf": [
-                        {
-                          "required": ["uris"]
-                        },
-                        {
-                          "required": ["suites"]
-                        },
-                        {
-                          "required": ["components"]
-                        },
-                        {
-                          "required": ["architectures"]
-                        },
-                        {
-                          "required": ["key"]
-                        }
-                      ]
-                    }
-                  },
-                  {
-                    "required": ["uris", "key", "fingerprint"],
-                    "not": {
-                      "required": ["ppa"]
-                    }
-                  }
-                ]
-              }
+              "$ref": "#/$defs/bootstrap_apt_sources"
             }
-          }
+          },
+          "additionalProperties": false
         },
         "dnf": {
           "type": "object",
           "description": "dnf-specific bootstrap package config",
           "properties": {
             "repos": {
-              "type": "object",
-              "description": "dnf repositories enabled before dnf packages are installed, keyed by a name for the entry",
-              "propertyNames": {
-                "pattern": "^[A-Za-z0-9_-][A-Za-z0-9_.-]*$"
-              },
-              "additionalProperties": {
-                "type": "object",
-                "additionalProperties": false,
-                "required": ["copr"],
-                "properties": {
-                  "copr": {
-                    "type": "string",
-                    "description": "COPR project as owner/project or @group/project, such as scottames/ghostty; enabled as dnf copr enable would"
-                  }
-                }
-              }
+              "$ref": "#/$defs/bootstrap_dnf_repos"
             }
-          }
+          },
+          "additionalProperties": false
         },
         "brew": {
           "type": "object",
@@ -8683,142 +8848,32 @@
                 "type": "string"
               }
             }
-          }
+          },
+          "additionalProperties": false
         },
         "hooks": {
-          "type": "object",
-          "description": "commands to run before and after bootstrap phases",
-          "properties": {
-            "pre-packages": {
-              "$ref": "#/$defs/bootstrap_hook"
-            },
-            "pre_packages": {
-              "$ref": "#/$defs/bootstrap_hook"
-            },
-            "post-packages": {
-              "$ref": "#/$defs/bootstrap_hook"
-            },
-            "post_packages": {
-              "$ref": "#/$defs/bootstrap_hook"
-            },
-            "pre-repos": {
-              "$ref": "#/$defs/bootstrap_hook"
-            },
-            "pre_repos": {
-              "$ref": "#/$defs/bootstrap_hook"
-            },
-            "post-repos": {
-              "$ref": "#/$defs/bootstrap_hook"
-            },
-            "post_repos": {
-              "$ref": "#/$defs/bootstrap_hook"
-            },
-            "pre-dotfiles": {
-              "$ref": "#/$defs/bootstrap_hook"
-            },
-            "pre_dotfiles": {
-              "$ref": "#/$defs/bootstrap_hook"
-            },
-            "post-dotfiles": {
-              "$ref": "#/$defs/bootstrap_hook"
-            },
-            "post_dotfiles": {
-              "$ref": "#/$defs/bootstrap_hook"
-            },
-            "pre-defaults": {
-              "$ref": "#/$defs/bootstrap_hook"
-            },
-            "pre_defaults": {
-              "$ref": "#/$defs/bootstrap_hook"
-            },
-            "post-defaults": {
-              "$ref": "#/$defs/bootstrap_hook"
-            },
-            "post_defaults": {
-              "$ref": "#/$defs/bootstrap_hook"
-            },
-            "pre-user": {
-              "$ref": "#/$defs/bootstrap_hook"
-            },
-            "pre_user": {
-              "$ref": "#/$defs/bootstrap_hook"
-            },
-            "post-user": {
-              "$ref": "#/$defs/bootstrap_hook"
-            },
-            "post_user": {
-              "$ref": "#/$defs/bootstrap_hook"
-            },
-            "pre-tools": {
-              "$ref": "#/$defs/bootstrap_hook"
-            },
-            "pre_tools": {
-              "$ref": "#/$defs/bootstrap_hook"
-            },
-            "post-tools": {
-              "$ref": "#/$defs/bootstrap_hook"
-            },
-            "post_tools": {
-              "$ref": "#/$defs/bootstrap_hook"
-            },
-            "final": {
-              "$ref": "#/$defs/bootstrap_hook"
-            }
-          },
-          "additionalProperties": false
+          "$ref": "#/$defs/bootstrap_hooks"
         },
         "mise_shell_activate": {
-          "type": "object",
-          "description": "declarative mise shell activation snippets, applied with `mise bootstrap mise-shell-activate apply`",
-          "properties": {
-            "bash": {
-              "$ref": "#/$defs/bootstrap_shell_activation"
-            },
-            "zsh": {
-              "$ref": "#/$defs/bootstrap_shell_activation"
-            },
-            "fish": {
-              "$ref": "#/$defs/bootstrap_shell_activation"
-            },
-            "bash_profile": {
-              "$ref": "#/$defs/bootstrap_shell_activation"
-            },
-            "bashrc": {
-              "$ref": "#/$defs/bootstrap_shell_activation"
-            },
-            "zshenv": {
-              "$ref": "#/$defs/bootstrap_shell_activation"
-            },
-            "zprofile": {
-              "$ref": "#/$defs/bootstrap_shell_activation"
-            },
-            "zshrc": {
-              "$ref": "#/$defs/bootstrap_shell_activation"
-            }
-          },
-          "additionalProperties": false
+          "$ref": "#/$defs/bootstrap_mise_shell_activate"
         },
         "secrets": {
           "type": "object",
           "description": "sensitive bootstrap inputs read from environment variables, keyed by secret name",
-          "propertyNames": {
-            "pattern": "^[A-Za-z0-9_.-]+$",
-            "description": "secret name using ASCII letters, digits, '.', '_' or '-'"
-          },
           "additionalProperties": {
             "oneOf": [
               {
                 "type": "string",
-                "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
-                "description": "environment variable that provides this secret's value"
+                "description": "environment variable that provides this secret's value",
+                "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
               },
               {
                 "type": "object",
                 "properties": {
                   "env": {
                     "type": "string",
-                    "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
-                    "description": "environment variable that provides this secret's value"
+                    "description": "environment variable that provides this secret's value",
+                    "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
                   },
                   "description": {
                     "type": "string",
@@ -8826,45 +8881,43 @@
                   },
                   "allow_empty": {
                     "type": "boolean",
-                    "default": false,
-                    "description": "accept an empty value; empty values are rejected by default"
+                    "description": "accept an empty value; empty values are rejected by default",
+                    "default": false
                   }
                 },
                 "required": ["env"],
                 "additionalProperties": false
               }
             ]
+          },
+          "propertyNames": {
+            "description": "secret name using ASCII letters, digits, '.', '_' or '-'",
+            "pattern": "^[A-Za-z0-9_.-]+$"
           }
         },
         "groups": {
           "type": "object",
           "description": "[experimental] Linux groups that bootstrap creates or removes, keyed by group name",
-          "propertyNames": {
-            "pattern": "^[A-Za-z_][A-Za-z0-9_-]*\\$?$",
-            "maxLength": 32,
-            "description": "at most 32 ASCII letters, digits, '_' or '-', starting with a letter or '_', with an optional trailing '$'"
-          },
           "additionalProperties": {
             "type": "object",
             "properties": {
               "state": {
+                "description": "whether the group should exist",
                 "enum": ["present", "absent"],
-                "default": "present",
-                "description": "whether the group should exist"
+                "default": "present"
               },
               "gid": {
                 "type": "integer",
-                "minimum": 0,
+                "description": "numeric group ID",
                 "maximum": 4294967295,
-                "description": "numeric group ID"
+                "minimum": 0
               },
               "system": {
                 "type": "boolean",
-                "default": false,
-                "description": "create a system group"
+                "description": "create a system group",
+                "default": false
               }
             },
-            "additionalProperties": false,
             "if": {
               "required": ["state"],
               "properties": {
@@ -8882,70 +8935,71 @@
                 }
               },
               "additionalProperties": true
-            }
+            },
+            "additionalProperties": false
+          },
+          "propertyNames": {
+            "description": "at most 32 ASCII letters, digits, '_' or '-', starting with a letter or '_', with an optional trailing '$'",
+            "pattern": "^[A-Za-z_][A-Za-z0-9_-]*\\$?$",
+            "maxLength": 32
           }
         },
         "users": {
           "type": "object",
           "description": "[experimental] Linux users that bootstrap creates or removes, keyed by user name",
-          "propertyNames": {
-            "pattern": "^[A-Za-z_][A-Za-z0-9_-]*\\$?$",
-            "maxLength": 32,
-            "description": "at most 32 ASCII letters, digits, '_' or '-', starting with a letter or '_', with an optional trailing '$'"
-          },
           "additionalProperties": {
             "type": "object",
             "properties": {
               "state": {
+                "description": "whether the user should exist",
                 "enum": ["present", "absent"],
-                "default": "present",
-                "description": "whether the user should exist"
+                "default": "present"
               },
               "uid": {
                 "type": "integer",
-                "minimum": 0,
+                "description": "numeric user ID",
                 "maximum": 4294967295,
-                "description": "numeric user ID"
+                "minimum": 0
               },
               "group": {
                 "type": "string",
-                "pattern": "^[A-Za-z_][A-Za-z0-9_-]*\\$?$",
+                "description": "primary group; required for a present user",
                 "maxLength": 32,
-                "description": "primary group; required for a present user"
+                "pattern": "^[A-Za-z_][A-Za-z0-9_-]*\\$?$"
               },
               "groups": {
                 "type": "array",
+                "description": "supplementary groups",
                 "items": {
                   "type": "string",
-                  "pattern": "^[A-Za-z_][A-Za-z0-9_-]*\\$?$",
-                  "maxLength": 32
-                },
-                "description": "supplementary groups"
+                  "maxLength": 32,
+                  "pattern": "^[A-Za-z_][A-Za-z0-9_-]*\\$?$"
+                }
               },
               "exclusive_groups": {
                 "type": "boolean",
-                "default": false,
-                "description": "remove the user from supplementary groups not listed in groups"
+                "description": "remove the user from supplementary groups not listed in groups",
+                "default": false
               },
               "home": {
                 "type": "string",
-                "pattern": "^/[^:\\r\\n]*$",
-                "description": "home directory; an absolute path without ':', CR or LF"
+                "description": "home directory; an absolute path without ':', CR or LF",
+                "pattern": "^/[^:\\r\\n]*$"
               },
               "shell": {
                 "type": "string",
-                "pattern": "^/[^:\\r\\n]*$",
-                "description": "login shell; an absolute path without ':', CR or LF"
+                "description": "login shell; an absolute path without ':', CR or LF",
+                "pattern": "^/[^:\\r\\n]*$"
               },
               "comment": {
                 "type": "string",
-                "pattern": "^[^:\\r\\n]*$",
-                "description": "comment (GECOS) field, without ':', CR or LF"
+                "description": "comment (GECOS) field, without ':', CR or LF",
+                "pattern": "^[^:\\r\\n]*$"
               },
               "system": {
                 "type": "boolean",
-                "default": false,
-                "description": "create a system user"
+                "description": "create a system user",
+                "default": false
               },
               "create_home": {
                 "type": "boolean",
@@ -8953,16 +9007,15 @@
               },
               "move_home": {
                 "type": "boolean",
-                "default": false,
-                "description": "move the existing home directory to home"
+                "description": "move the existing home directory to home",
+                "default": false
               },
               "remove_home": {
                 "type": "boolean",
-                "default": false,
-                "description": "remove the home directory when removing the user"
+                "description": "remove the home directory when removing the user",
+                "default": false
               }
             },
-            "additionalProperties": false,
             "allOf": [
               {
                 "if": {
@@ -9035,10 +9088,17 @@
                   "additionalProperties": true
                 }
               }
-            ]
+            ],
+            "additionalProperties": false
+          },
+          "propertyNames": {
+            "description": "at most 32 ASCII letters, digits, '_' or '-', starting with a letter or '_', with an optional trailing '$'",
+            "pattern": "^[A-Za-z_][A-Za-z0-9_-]*\\$?$",
+            "maxLength": 32
           }
         }
-      }
+      },
+      "additionalProperties": false
     },
     "history": {
       "type": "object",
@@ -9053,8 +9113,7 @@
               "description": "shared age, SSH, or age-plugin public recipients for all encrypted dotfiles",
               "items": {
                 "type": "string"
-              },
-              "default": []
+              }
             }
           }
         },
@@ -9063,8 +9122,7 @@
           "description": "globs never captured by dotfiles history; a `!glob` entry re-includes a path an earlier glob excluded",
           "items": {
             "type": "string"
-          },
-          "default": []
+          }
         },
         "git_email": {
           "type": "string",
@@ -9080,8 +9138,7 @@
           "description": "commands run once after a rollback or undo writes a path matching the glob (trusted global or system config only)",
           "additionalProperties": {
             "type": "string"
-          },
-          "default": {}
+          }
         },
         "origin": {
           "type": "object",
