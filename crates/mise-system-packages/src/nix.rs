@@ -134,7 +134,7 @@ const DEFAULT_PROFILE_NIX: &str = "/nix/var/nix/profiles/default/bin/nix";
 fn nix_bin() -> Option<std::path::PathBuf> {
     mise_util::file::which("nix").or_else(|| {
         let path = std::path::PathBuf::from(DEFAULT_PROFILE_NIX);
-        path.is_file().then_some(path)
+        (path.is_file() && mise_util::file::is_executable(&path)).then_some(path)
     })
 }
 
