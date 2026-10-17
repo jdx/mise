@@ -697,7 +697,13 @@ pub(crate) fn env_file_trust_check(path: &Path) -> eyre::Result<bool> {
         return Ok(true);
     }
     // A file that is not there loads nothing, so there is nothing to approve.
-    if !path.exists() || is_path_trusted(path) {
+    let Ok(canonical) = path.canonicalize() else {
+        return Ok(true);
+    };
+    // `is_trusted` memoizes by path, which would let a long-lived process (a reload after the
+    // file was edited) keep accepting changed contents. Forget the memo so the hash is checked.
+    IS_TRUSTED.lock().unwrap().remove(&canonical);
+    if is_path_trusted(path) {
         return Ok(true);
     }
     if config::skip_untrusted_path(path) {
