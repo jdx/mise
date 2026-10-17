@@ -759,6 +759,11 @@ pub fn is_trusted(path: &Path) -> bool {
     is_trusted_with(path, Settings::get().paranoid.config())
 }
 
+/// Whether an env file has content-bound trust, which a trusted project config does not give.
+pub fn is_env_file_trusted(path: &Path) -> bool {
+    is_trusted_with(path, true)
+}
+
 /// [`is_trusted`] with the trust rules chosen by the caller: `content_bound` ties trust to the
 /// file's hash and turns off the shortcuts that trust by path, namely a monorepo marker, a
 /// sibling git worktree, and CI.

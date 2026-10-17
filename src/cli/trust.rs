@@ -347,7 +347,7 @@ impl Trust {
             }
             let pending = config::skipped_untrusted_configs()
                 .into_iter()
-                .filter(|p| p.is_file() && !config_file::is_path_trusted(p))
+                .filter(|p| p.is_file() && !config_file::is_env_file_trusted(p))
                 .collect::<Vec<_>>();
             if pending.is_empty() {
                 break;
