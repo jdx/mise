@@ -158,8 +158,8 @@ impl EnvResults {
         // searches upward finds files in repositories, so those need approval like project config.
         let operator_owned = !find_up && crate::config::is_global_config(ctx.source);
         for p in paths {
-            if !operator_owned {
-                crate::config::config_file::env_file_trust_check(&p)?;
+            if !operator_owned && !crate::config::config_file::env_file_trust_check(&p)? {
+                continue;
             }
             let config = ctx.config;
             let exec_env = ctx.exec_env;

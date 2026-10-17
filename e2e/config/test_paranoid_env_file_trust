@@ -58,3 +58,9 @@ echo "SETTING_TEST=one" >../.env
 assert_fail_contains "MISE_PARANOID=1 MISE_ENV_FILE=.env mise env 2>&1" "environment file"
 assert "MISE_PARANOID=1 mise trust ../.env"
 assert_contains "MISE_PARANOID=1 MISE_ENV_FILE=.env mise env" "SETTING_TEST=one"
+
+# hook-env runs on entering a directory, so an untrusted file is skipped with a warning
+# instead of failing and blocking everything else.
+echo "SETTING_TEST=two" >../.env
+assert_contains "MISE_PARANOID=1 MISE_ENV_FILE=.env mise hook-env -s bash 2>&1" ".env is not trusted"
+assert_not_contains "MISE_PARANOID=1 MISE_ENV_FILE=.env mise hook-env -s bash 2>&1" "SETTING_TEST=two"
