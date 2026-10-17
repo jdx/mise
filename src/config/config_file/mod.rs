@@ -720,18 +720,20 @@ pub(crate) fn trust_check(path: &Path) -> eyre::Result<()> {
 ///
 /// An untrusted file is an error, except where untrusted config is being skipped (`hook-env`,
 /// run on entering a directory): there it is left out and reported with the skipped configs,
-/// so the trusted ones still apply. `Ok(false)` means "do not load it".
+/// so the trusted ones still apply. `Ok(false)` means "do not load it": the file is untrusted
+/// and skipped, or it is not there.
 pub(crate) fn env_file_trust_check(path: &Path) -> eyre::Result<bool> {
     if Settings::safe_mode()
         || !Settings::try_get().is_ok_and(|settings| settings.paranoid.env_files())
     {
         return Ok(true);
     }
-    // A file that is not there loads nothing, so there is nothing to approve. Any other failure
-    // to resolve it is not proof it is absent, so it must not load unchecked.
+    // A file that is not there is not loaded. Returning false rather than true means one that
+    // appears before the caller reads it is not loaded unchecked either. Any other failure to
+    // resolve it is not proof it is absent, so it must not load unchecked.
     let canonical = match path.canonicalize() {
         Ok(canonical) => canonical,
-        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(true),
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(false),
         Err(err) => {
             return Err(eyre!(
                 "cannot check paranoid-mode trust for {}: {err}",
@@ -1893,11 +1895,11 @@ mod env_file_trust_tests {
     }
 
     #[test]
-    fn a_missing_file_has_nothing_to_approve() {
+    fn a_missing_file_is_not_loaded() {
         let held = crate::test::SettingsGuard::lock();
         paranoid_on(&held);
         let tmp = tempfile::tempdir().unwrap();
-        assert!(env_file_trust_check(&tmp.path().join(".env")).unwrap());
+        assert!(!env_file_trust_check(&tmp.path().join(".env")).unwrap());
     }
 
     /// A path that cannot be resolved for a reason other than being absent is not shown to be

@@ -136,8 +136,12 @@ with an error that names the path and prints none of its values until you
 approve it. An edit makes it untrusted again:
 
 ```sh
-mise trust .env
+mise trust
 ```
+
+`mise trust` with no path trusts the nearest untrusted config and every env file
+and script that config reads, and again after an edit. `mise trust .env` trusts
+only that file.
 
 This applies to every `_.file` format, to `_.source` scripts, and to the files the
 [`env_file`](/configuration/settings.html#env_file) setting finds. It includes a
