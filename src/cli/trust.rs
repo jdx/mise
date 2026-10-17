@@ -8,9 +8,11 @@ use crate::config::{
     is_global_config,
 };
 use crate::file::{display_path, remove_file};
+use crate::toolset::{ResolveOptions, ToolsetBuilder};
 use crate::{config, dirs, env, file};
 use eyre::{Result, bail};
 use itertools::Itertools;
+use std::sync::Arc;
 
 /// Mark a config file as trusted
 ///
@@ -94,11 +96,13 @@ impl Trust {
                 self.config_file = Some(p);
                 self.trust()?;
             }
-            for p in self.get_untrusted_descendants() {
-                self.config_file = Some(p);
+            let descendants = self.get_untrusted_descendants();
+            for p in &descendants {
+                self.config_file = Some(p.clone());
                 self.trust()?;
             }
             Self::trust_env_files().await?;
+            Self::trust_descendant_env_files(&descendants)?;
             Ok(())
         } else if self.config_file.is_some() {
             self.trust()
@@ -316,6 +320,43 @@ impl Trust {
     /// not trusted are skipped, not loaded, so nothing of theirs runs and none of their files is
     /// trusted. A trusted file can name the next one, so this repeats until nothing new turns up.
     /// Returns how many it trusted.
+    /// The env files of the projects `--all` just trusted below this directory. Discovery
+    /// resolves one project at a time from the current directory, so run `mise trust` in each
+    /// one. That child process does not recurse, since it is not `--all`.
+    fn trust_descendant_env_files(configs: &[PathBuf]) -> Result<()> {
+        if !Settings::get().paranoid {
+            return Ok(());
+        }
+        let exe = std::env::current_exe()?;
+        for dir in configs
+            .iter()
+            .map(|p| config_file::config_root::config_root(p))
+            .unique()
+        {
+            debug!("trusting env files in {}", display_path(&dir));
+            let status = std::process::Command::new(&exe)
+                .arg("trust")
+                .current_dir(&dir)
+                .status()?;
+            if !status.success() {
+                warn!("could not trust env files in {}", display_path(&dir));
+            }
+        }
+        Ok(())
+    }
+
+    async fn resolve_tools_env(config: &Arc<config::Config>) -> Result<()> {
+        let ts = ToolsetBuilder::new()
+            .with_resolve_options(ResolveOptions {
+                offline: true,
+                ..Default::default()
+            })
+            .build(config)
+            .await?;
+        ts.final_env(config).await?;
+        Ok(())
+    }
+
     async fn trust_env_files() -> Result<usize> {
         if !Settings::get().paranoid {
             return Ok(0);
@@ -327,17 +368,21 @@ impl Trust {
         // keeps a cycle from looping.
         for _ in 0..5 {
             // The config was just trusted, but it can still fail to load for another reason, such
-            // as a remote include that paranoid mode refuses. That must not fail `mise trust`, and
-            // the load error shows on the next command anyway.
-            let config = match config::Config::reset().await {
-                Ok(config) => config,
-                Err(err) => {
-                    debug!("loading config to find files to trust: {err:#}");
-                    break;
+            // as a remote include that paranoid mode refuses, or a `required` variable that only
+            // a skipped file supplies. That must not fail `mise trust`, and the files skipped
+            // before the failure were still recorded, so keep going and trust those.
+            match config::Config::reset().await {
+                Ok(config) => {
+                    if let Err(err) = config.env_uncached().await {
+                        debug!("resolving env to find files to trust: {err:#}");
+                    }
+                    // Entries marked `tools = true` resolve after the tools do. Use the tools
+                    // that are installed, as `hook-env` does, and never install anything here.
+                    if let Err(err) = Self::resolve_tools_env(&config).await {
+                        debug!("resolving tool env to find files to trust: {err:#}");
+                    }
                 }
-            };
-            if let Err(err) = config.env_uncached().await {
-                debug!("resolving env to find files to trust: {err:#}");
+                Err(err) => debug!("loading config to find files to trust: {err:#}"),
             }
             let pending = config_file::untrusted_env_files()
                 .into_iter()
