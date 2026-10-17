@@ -1337,7 +1337,7 @@ fn link_rustup_proxies(external: &Path, proxies_root: &Path) -> Result<PathBuf> 
     file::create_dir_all(&dir)?;
     for name in RUSTUP_PROXY_NAMES {
         let name = format!("{name}{}", std::env::consts::EXE_SUFFIX);
-        let target = external.join(&name);
+        let target = std::path::absolute(external)?.join(&name);
         let link = dir.join(&name);
         if !file::is_executable(&target) {
             continue;
