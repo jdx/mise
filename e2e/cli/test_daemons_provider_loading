@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 mkdir -p "$MISE_CONFIG_DIR" project
+# schema: invalid
 cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'
 [daemon_providers.broken]
 preset = "not-a-preset"

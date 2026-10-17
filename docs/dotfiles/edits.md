@@ -96,6 +96,8 @@ The source holds the keys you want, in the same format as the target, which
 mise infers from the target's `.json`, `.toml`, `.yaml`, or `.yml` extension.
 With `codex/shared.toml` containing:
 
+<!-- schema: skip -->
+
 ```toml
 model = "gpt-5"
 

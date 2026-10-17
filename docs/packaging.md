@@ -77,10 +77,14 @@ run instead. Install it at any one of:
 mise prints the file's `message`. Without a `message` key, it prints the value
 of the first other key in alphabetical order.
 
+<!-- schema: skip -->
+
 ```toml
 # Debian and Ubuntu (apt)
 message = "To update mise from the APT repository, run:\n\n  sudo apt update && sudo apt install --only-upgrade mise\n"
 ```
+
+<!-- schema: skip -->
 
 ```toml
 # Fedora and CentOS Stream (dnf)

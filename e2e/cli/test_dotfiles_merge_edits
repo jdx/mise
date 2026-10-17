@@ -226,6 +226,7 @@ assert_fail "test -e ~/sibling-exec-ran"
 
 # whole-file keys on a merge entry are refused by name and never make the
 # target a directory
+# schema: invalid
 cat <<'EOF' >mise.toml
 [dotfiles]
 "~/withx.json/shared" = { source = "shared/claude.json", merge = true, exclude = [] }

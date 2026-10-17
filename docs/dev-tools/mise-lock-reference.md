@@ -160,6 +160,8 @@ locked; Swift 5.10 has no arm64 build for `centos7`, for example.
 A platform `url` can pin a build revision of the same version. Precompiled Ruby
 keeps `version = "3.3.11"` and pins revision `3.3.11-1` in the URL:
 
+<!-- schema: skip -->
+
 ```toml
 url = "https://github.com/jdx/ruby/releases/download/3.3.11-1/ruby-3.3.11.x86_64_linux.tar.gz"
 ```
