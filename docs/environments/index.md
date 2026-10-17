@@ -311,8 +311,21 @@ _.file = [
 ]
 ```
 
-Files are loaded from the filesystem root down to the current directory, so a
-variable in a closer file wins. `find_up` has no effect on an absolute path.
+Each entry searches on its own, from the filesystem root down to the current
+directory, so within one entry a variable in a closer file wins. Entries apply
+in the order listed, and a later entry overrides an earlier one wherever its
+files are. With the two entries above, a `.env.local` in a parent directory
+overrides a `.env` in the project:
+
+```text
+workspace/
+├── .env.local       # EXAMPLE=parent
+└── project/
+    └── .env         # EXAMPLE=project
+```
+
+Inside `project`, `EXAMPLE` is `parent`. `find_up` has no effect on an absolute
+path.
 
 The [`env_file`](/configuration/settings.html#env_file) setting
 (`MISE_ENV_FILE=.env`) also discovers a dotenv file in the current directory and
