@@ -1337,6 +1337,10 @@ fn link_rustup_proxies(external: &Path, proxies_root: &Path) -> Result<PathBuf> 
         let target = std::path::absolute(external)?.join(&name);
         let link = dir.join(&name);
         if !file::is_executable(&target) {
+            // Drop a link left over from a proxy the provider no longer ships.
+            if link.symlink_metadata().is_ok() {
+                file::remove_file(&link)?;
+            }
             continue;
         }
         let up_to_date = if cfg!(windows) {
@@ -1354,7 +1358,6 @@ fn link_rustup_proxies(external: &Path, proxies_root: &Path) -> Result<PathBuf> 
         if up_to_date {
             continue;
         }
-        let _ = file::remove_file(&link);
         file::make_symlink_or_copy(&target, &link)?;
     }
     Ok(dir)
