@@ -1,0 +1,2229 @@
+//! Capturing checkpoints: the one entry point every capture goes through.
+//!
+//! Content is deduplicated, records are not: an automatic capture whose
+//! snapshot tree and coverage equal the newest checkpoint's records nothing,
+//! while a draft carrying metadata of its own (a description, a label, an
+//! operation) always writes an ordinary commit, reusing the tracked-file tree.
+
+use std::collections::BTreeMap;
+use std::path::{Path, PathBuf};
+
+use eyre::{Result, WrapErr};
+
+use std::collections::BTreeSet;
+
+/// A subtree promotion: the entry's index and the children that were named.
+type PartialPromotion = (usize, Vec<PathBuf>);
+
+use super::shadow::{self, HistoryRepo, Overlay};
+use super::store::{
+    self, Annotation, Changes, Checkpoint, DescriptionSource, Entry, Index, IndexEntry, Machine,
+    Operation, TreeInfo, Trigger,
+};
+use super::tracked::{TrackedEntry, TrackedSet, tree_path_to_display};
+use mise_util::file::display_path;
+use mise_util::lock_file::LockFile;
+
+mod preimages;
+
+/// The most paths a computed description names before `+N more`.
+const DESCRIPTION_PATHS: usize = 6;
+const DESCRIPTION_MAX: usize = 200;
+/// The most paths a `changes` record lists.
+const CHANGES_MAX: usize = 2000;
+
+/// What a caller wants captured.
+#[derive(Clone, Debug, Default)]
+pub struct Draft {
+    pub trigger: Option<Trigger>,
+    /// A caller-supplied description; the computed one is kept as `summary`.
+    pub description: Option<String>,
+    pub description_source: Option<DescriptionSource>,
+    pub task: Option<String>,
+    pub labels: Vec<String>,
+    /// Live contents captured for a `*-before` checkpoint; never promoted.
+    pub protective: bool,
+    pub operation: Option<Operation>,
+    /// A uuid reserved when the operation began, so the marker and the
+    /// pending record name the outcome before it exists.
+    pub uuid: Option<String>,
+    /// Paths named explicitly: manual-save entries covering them are read
+    /// live and promoted, becoming their new saved version.
+    pub explicit_paths: Vec<PathBuf>,
+    /// Explicit enrollment removals; never remove the corresponding live files.
+    pub untrack: Vec<PathBuf>,
+    /// Paths the watcher is throttling: their files are carried forward
+    /// from the newest checkpoint instead of read live, so a capture for
+    /// another path never defeats their schedule. Ignored by protective
+    /// captures and explicit saves.
+    pub held: Vec<PathBuf>,
+    /// Record nothing when the snapshot equals the newest checkpoint's,
+    /// even though the draft carries metadata: re-tracking a path that is
+    /// already tracked has something to say only if it changed.
+    pub skip_unchanged: bool,
+    /// Re-encrypt to the current recipients every encrypted file the
+    /// checkpoint holds under other recipients, including the saved
+    /// versions it carries forward rather than reads live.
+    pub re_encrypt: bool,
+}
+
+impl Draft {
+    pub fn new(trigger: Trigger) -> Self {
+        Self {
+            trigger: Some(trigger),
+            ..Default::default()
+        }
+    }
+
+    fn trigger(&self) -> Trigger {
+        self.trigger.unwrap_or(Trigger::Edit)
+    }
+
+    /// Whether the draft carries something a deduplicated capture would lose.
+    fn has_metadata(&self) -> bool {
+        !self.trigger().is_automatic()
+            || self.description.is_some()
+            || self.task.is_some()
+            || !self.labels.is_empty()
+            || self.protective
+            || self.operation.is_some()
+    }
+}
+
+#[derive(Debug)]
+pub enum Outcome {
+    Created(Box<Entry>),
+    /// The tracked state equals the newest checkpoint's; nothing recorded.
+    Unchanged,
+    /// No capture could be taken (no usable git); the reason.
+    Unavailable(String),
+}
+
+/// An open history store.
+#[derive(Debug)]
+pub struct Store {
+    state_dir: PathBuf,
+    repo: Option<HistoryRepo>,
+    unavailable: Option<String>,
+    machine: Machine,
+}
+
+impl Store {
+    pub(crate) fn open_in(state_dir: &Path) -> Result<Self> {
+        store::ensure_store_dir_in(state_dir)?;
+        let machine = store::machine();
+        let (repo, unavailable) = match HistoryRepo::open_or_init_in(state_dir) {
+            Ok(Some(repo)) => (Some(repo), None),
+            Ok(None) => (None, Some(shadow::unavailable_reason())),
+            Err(err) => (None, Some(format!("{err:#}"))),
+        };
+        let store = Self {
+            state_dir: state_dir.to_path_buf(),
+            repo,
+            unavailable,
+            machine,
+        };
+        // the index is a cache of the repository: rebuild it when it is
+        // missing but checkpoints exist
+        if !store::index_exists_in(state_dir)
+            && let Some(repo) = &store.repo
+            && repo.ref_oid(HistoryRepo::HISTORY_REF)?.is_some()
+        {
+            info!("history: rebuilding the checkpoint index from the repository");
+            store.rebuild_index()?;
+        }
+        Ok(store)
+    }
+
+    pub fn open() -> Result<Self> {
+        Self::open_in(&super::local::root())
+    }
+
+    pub fn state_dir(&self) -> &Path {
+        &self.state_dir
+    }
+
+    pub fn repo(&self) -> Option<&HistoryRepo> {
+        self.repo.as_ref()
+    }
+
+    pub(crate) fn machine(&self) -> &Machine {
+        &self.machine
+    }
+
+    /// Why no content can be captured, if git is unusable.
+    pub fn unavailable(&self) -> Option<&str> {
+        self.unavailable.as_deref()
+    }
+
+    /// Serializes captures and index writes.
+    pub(crate) fn lock(&self) -> Result<fslock::LockFile> {
+        LockFile::at(&store::store_lock_path_in(&self.state_dir))
+            .with_callback(|path| {
+                debug!("waiting for the history store lock {}", display_path(path));
+            })
+            .lock()
+    }
+
+    pub(crate) fn list(&self) -> Result<Vec<Entry>> {
+        store::list_in(&self.state_dir)
+    }
+
+    /// Reserves the next checkpoint id.
+    pub(crate) fn reserve_id(&self) -> Result<u64> {
+        let mut index = store::load_index_in(&self.state_dir)?;
+        let id = index.next_id.max(1);
+        index.next_id = id + 1;
+        store::write_index_in(&self.state_dir, &index)?;
+        Ok(id)
+    }
+
+    /// Captures the tracked set into a checkpoint. Takes the store lock.
+    pub fn attempt(&self, tracked: &TrackedSet, draft: Draft) -> Result<Outcome> {
+        let _lock = self.lock()?;
+        self.attempt_locked(tracked, draft, None)
+    }
+
+    /// Like [`attempt`], with a reserved id and the lock already held.
+    pub(crate) fn attempt_locked(
+        &self,
+        tracked: &TrackedSet,
+        draft: Draft,
+        reserved_id: Option<u64>,
+    ) -> Result<Outcome> {
+        if self.repo.is_none() {
+            return Ok(Outcome::Unavailable(
+                self.unavailable
+                    .clone()
+                    .unwrap_or_else(shadow::unavailable_reason),
+            ));
+        }
+        let resolved = match &self.repo {
+            Some(repo) => super::enrollment::resolve(
+                &self.state_dir,
+                repo,
+                tracked,
+                if draft.trigger() == Trigger::Baseline {
+                    &draft.explicit_paths
+                } else {
+                    &[]
+                },
+                &draft.untrack,
+            )?,
+            None => tracked.clone(),
+        };
+        let tracked = &resolved;
+        if tracked.entries.is_empty()
+            && !draft.has_metadata()
+            && self
+                .repo
+                .as_ref()
+                .map(|repo| repo.ref_oid(HistoryRepo::HISTORY_REF))
+                .transpose()?
+                .flatten()
+                .is_none()
+        {
+            // A service may watch policy before the first enrollment. Do not
+            // manufacture an unrelated empty root before --adopt adoption.
+            return Ok(Outcome::Unchanged);
+        }
+        let mut index = store::load_index_in(&self.state_dir)?;
+        if let Some(repo) = &self.repo
+            && repo.ref_oid(HistoryRepo::HISTORY_REF)?.as_deref()
+                != index.entries.last().map(|entry| entry.commit.as_str())
+        {
+            index = self.rebuild_index_locked()?;
+        }
+        // Metadata-only records (for example an operation while git was
+        // unavailable) must not hide the last usable content baseline.
+        let previous_tree = index.entries.iter().rev().find_map(|entry| {
+            store::read_meta_cache_in(&self.state_dir, &entry.uuid)
+                .ok()
+                .flatten()
+                .and_then(|checkpoint| {
+                    checkpoint
+                        .tree
+                        .snapshot
+                        .clone()
+                        .map(|tree| (checkpoint, tree))
+                })
+        });
+        let uuid = draft.uuid.clone().unwrap_or_else(store::new_uuid);
+        // **The refusal lives here, where a checkpoint is about to be
+        // written, and nowhere earlier.** An `[history] exclude` rule the
+        // matcher cannot compile must not quietly broaden a stored — and
+        // publishable — snapshot to the paths it was written to leave out.
+        // Walking is not storing: `mise dot paths`, the previews, `mise
+        // dot status` and the watch set all still work and report the
+        // rule, so the command that diagnoses the problem is not the
+        // command it breaks.
+        let (mut walk, walk_error) = match tracked
+            .refuse_unusable_exclusions()
+            .and_then(|()| tracked.walk())
+        {
+            Ok(walk) => (walk, None),
+            Err(err) if draft.operation.is_some() => {
+                // Keep the operation journal even when its outcome cannot be
+                // captured. Never substitute a partial or empty snapshot.
+                warn!("history: snapshot failed: {err:#}");
+                (Default::default(), Some(format!("{err:#}")))
+            }
+            Err(err) => return Err(err),
+        };
+        let scan_notices: Vec<_> = walk
+            .warnings
+            .iter()
+            .map(|warning| format!("history: {warning}"))
+            .collect();
+        self.deliver_capture_notices(&scan_notices, !draft.protective && heard(&draft));
+        report_omissions(&walk, &draft);
+        // manual-save entries: carried forward from their promoted version
+        // unless named explicitly (promoted) or captured protectively
+        let promoted: BTreeSet<String> = previous_tree
+            .as_ref()
+            .map(|(record, _)| {
+                record
+                    .tree
+                    .coverage
+                    .entries
+                    .iter()
+                    .map(|entry| entry.path.clone())
+                    .collect()
+            })
+            .unwrap_or_default();
+        let manual = manual_plan(&walk, &draft, &promoted);
+        // a selected stream whose saved version this machine never held is
+        // carried like a manual one, not captured: see `super::held`
+        let parent_commit = match &self.repo {
+            Some(repo) => repo.ref_oid(HistoryRepo::HISTORY_REF)?,
+            None => None,
+        };
+        let mut held = match &self.repo {
+            Some(repo) => Some(super::held::Held::load(repo)?),
+            None => None,
+        };
+        let streams = match (&self.repo, &held) {
+            (Some(repo), Some(held)) => {
+                super::held::streams(repo, held, parent_commit.as_deref(), &walk)?
+            }
+            _ => super::held::Streams::default(),
+        };
+        // said to a save the user ran; a pull's own protective capture is
+        // about to apply these, and the watcher's would repeat it on every
+        // edit
+        if !streams.carry.is_empty() && !draft.protective && heard(&draft) {
+            let notices: Vec<String> = streams
+                .carry
+                .iter()
+                .map(|index| {
+                    format!(
+                        "history: {} has a version saved by another machine while it was not selected here; `mise dot pull` applies it, and saves resume after that",
+                        walk.entries[*index].display()
+                    )
+                })
+                .collect();
+            self.deliver_capture_notices(&notices, true);
+        }
+        let carried: Vec<usize> = manual.carry.iter().chain(&streams.carry).copied().collect();
+        // a carried entry's live files are neither read nor recorded: its
+        // content and modes come from the parent
+        if !carried.is_empty() {
+            let owners: BTreeSet<usize> = carried.iter().copied().collect();
+            let dropped: BTreeSet<PathBuf> = walk
+                .files
+                .iter()
+                .filter(|(_, (owner, _))| owners.contains(owner))
+                .map(|(path, _)| path.clone())
+                .collect();
+            for path in &dropped {
+                walk.files.remove(path);
+            }
+            for root in &mut walk.roots {
+                root.files
+                    .retain(|rel| !dropped.contains(&root.path.join(rel)));
+            }
+        }
+        // Live modes plus the ordinary parent's modes for carried entries.
+        // Protective commits use the same history, not a separate saved state.
+        let roots = super::sync::layout::Roots::current();
+        let mut modes = file_modes(&walk, &roots);
+        // a directory the live walk observed has its live mode (or the
+        // default), never a saved one carried forward
+        let observed: BTreeSet<String> = walk
+            .files
+            .iter()
+            .flat_map(|(path, (owner, _))| mode_ancestors(path, &walk.entries[*owner].path, &roots))
+            .map(display_path)
+            .collect();
+        if !carried.is_empty() {
+            let carried: Vec<String> = carried
+                .iter()
+                .map(|index| walk.entries[*index].display())
+                .collect();
+            for (path, bits) in self.saved_modes(&index, &carried) {
+                if !observed.contains(&path) {
+                    modes.entry(path).or_insert(bits);
+                }
+            }
+        }
+        // a held path keeps the mode the previous checkpoint recorded (or
+        // none), like its content
+        if !draft.held.is_empty() && !draft.protective && draft.explicit_paths.is_empty() {
+            for held in &draft.held {
+                let display = display_path(held);
+                modes.remove(&display);
+                if let Some((previous_checkpoint, _)) = &previous_tree
+                    && let Some(bits) = previous_checkpoint.tree.modes.get(&display)
+                {
+                    modes.insert(display, *bits);
+                }
+            }
+        }
+        let mut coverage = tracked.coverage(&walk);
+        // a re-encryption records the current recipients even when every
+        // encrypted file is carried forward
+        let recipients =
+            if draft.re_encrypt || walk.files.values().any(|(_, policy)| policy.encrypt) {
+                tracked.manifest.recipients.clone()
+            } else {
+                vec![]
+            };
+        let mut re_encrypted = vec![];
+        // the snapshot before re-encryption: the description names content
+        // changes, and re-encrypting a file changes no contents
+        let mut content_tree = None;
+        let (snapshot, roots, available, reason) = match (&self.repo, walk_error) {
+            (_, Some(reason)) => (None, vec![], false, Some(reason)),
+            (Some(repo), None) => {
+                match repo.capture_tracked(&walk, &recipients, console::user_attended_stderr()) {
+                    Ok(result) => {
+                        coverage.omitted.extend(result.omitted.iter().cloned());
+                        for warning in &result.warnings {
+                            warn!("history: {warning}");
+                        }
+                        let (composed, partial) = self.compose_manual(
+                            repo,
+                            &result.tree,
+                            ManualContext {
+                                entries: &walk.entries,
+                                manual: &manual,
+                                parent_commit: parent_commit.as_deref(),
+                                draft: &draft,
+                            },
+                        )?;
+                        let composed = carry_streams(
+                            repo,
+                            &composed,
+                            parent_commit.as_deref(),
+                            &walk.entries,
+                            &streams.carry,
+                        )?;
+                        // a subtree promotion keeps the saved modes of the
+                        // siblings it did not name, like their content
+                        for (entry_index, children) in &partial {
+                            let entry = walk.entries[*entry_index].display();
+                            let named: Vec<String> =
+                                children.iter().map(mise_util::file::display_path).collect();
+                            let is_named =
+                                |path: &str| named.iter().any(|child| under_entry(path, child));
+                            // an unnamed sibling file keeps its saved mode; a
+                            // directory the walk observed (the entry itself, a
+                            // subdirectory, a parent) has its live mode
+                            modes.retain(|path, _| {
+                                !under_entry(path, &entry)
+                                    || is_named(path)
+                                    || observed.contains(path)
+                            });
+                            for (path, bits) in
+                                self.saved_modes(&index, std::slice::from_ref(&entry))
+                            {
+                                if !is_named(&path) && !observed.contains(&path) {
+                                    modes.entry(path).or_insert(bits);
+                                }
+                            }
+                        }
+                        let composed = self.hold_paths(
+                            repo,
+                            &composed,
+                            &draft,
+                            previous_tree.as_ref().map(|(_, tree)| tree.as_str()),
+                            &walk.entries,
+                        )?;
+                        let omissions: Vec<_> = coverage
+                            .omitted
+                            .iter()
+                            .chain(&coverage.incomplete)
+                            .collect();
+                        let composed = retain_omitted(
+                            repo,
+                            &composed,
+                            previous_tree
+                                .as_ref()
+                                .map(|(record, tree)| (record, tree.as_str())),
+                            tracked,
+                            &omissions,
+                            &mut modes,
+                            &walk,
+                        )?;
+                        let mut manifest = super::manifest::Manifest::read(repo, &composed)?
+                            .ok_or_else(|| {
+                                eyre::eyre!("captured tree is missing enrollment metadata")
+                            })?;
+                        manifest.capture_permissions(&walk.entries, &modes)?;
+                        let mut composed = manifest.write(repo, &composed)?;
+                        if draft.re_encrypt {
+                            content_tree = Some(composed.clone());
+                            (composed, re_encrypted) = super::sync::files::re_encrypt(
+                                repo,
+                                &composed,
+                                previous_tree.as_ref().map(|(_, tree)| tree.as_str()),
+                                console::user_attended_stderr(),
+                            )?;
+                        }
+                        (Some(composed), result.roots, true, None)
+                    }
+                    Err(err) => {
+                        warn!("history: snapshot failed: {err:#}");
+                        (None, vec![], false, Some(format!("{err:#}")))
+                    }
+                }
+            }
+            (None, None) => (None, vec![], false, self.unavailable.clone()),
+        };
+        for (index, entry) in walk.entries.iter().enumerate() {
+            if entry.policy.autosave {
+                continue;
+            }
+            let Some(record) = coverage
+                .entries
+                .iter_mut()
+                .find(|record| record.path == entry.display())
+            else {
+                continue;
+            };
+            if manual.promote.contains(&index) {
+                record.state = "live".into();
+            } else {
+                record.state = "saved".into();
+            }
+        }
+        if (!draft.has_metadata() || draft.skip_unchanged)
+            && let Some((previous_checkpoint, tree)) = &previous_tree
+            && snapshot.as_deref() == Some(tree.as_str())
+            && (!cfg!(unix) || previous_checkpoint.tree.modes == modes)
+        {
+            debug!(
+                "history: nothing changed since checkpoint {}",
+                previous_checkpoint.uuid
+            );
+            if let Some(repo) = &self.repo {
+                super::enrollment::confirm(&self.state_dir, repo, tracked)?;
+            }
+            if let (Some(repo), Some(held)) = (&self.repo, &mut held) {
+                observe_held(repo, held, streams, parent_commit.as_deref())?;
+            }
+            if draft.re_encrypt {
+                info!("history: {}", re_encrypt_report(&re_encrypted));
+            }
+            return Ok(Outcome::Unchanged);
+        }
+        if !draft.has_metadata() && snapshot.is_none() {
+            return Ok(Outcome::Unavailable(
+                reason.unwrap_or_else(shadow::unavailable_reason),
+            ));
+        }
+        // Enrollment is transactional with its initial content baseline. Do
+        // not commit even a labeled Baseline record when capture failed: the
+        // caller will restore the declaration after receiving Unavailable.
+        if draft.trigger() == Trigger::Baseline && snapshot.is_none() {
+            return Ok(Outcome::Unavailable(
+                reason.unwrap_or_else(shadow::unavailable_reason),
+            ));
+        }
+        let mut changes = match (&self.repo, &snapshot) {
+            (Some(repo), Some(tree)) => {
+                let since = previous_tree
+                    .as_ref()
+                    .map(|(checkpoint, _)| checkpoint.uuid.clone());
+                let from = previous_tree.as_ref().map(|(_, tree)| tree.as_str());
+                let to = content_tree.as_deref().unwrap_or(tree);
+                changes_from(repo, from, to, since)?
+            }
+            _ => Changes::default(),
+        };
+        // the same bytes under other permissions is a change the tree diff
+        // does not show: a path-scoped `latest` and `--path` must see it
+        if snapshot.is_some()
+            && let Some((previous_checkpoint, _)) = &previous_tree
+        {
+            let previous_modes = &previous_checkpoint.tree.modes;
+            let mode_only: BTreeSet<&String> = modes
+                .keys()
+                .chain(previous_modes.keys())
+                .filter(|path| modes.get(*path) != previous_modes.get(*path))
+                .filter(|path| !changes.touches(path))
+                .collect();
+            changes.modified.extend(mode_only.into_iter().cloned());
+        }
+        // a manual-save entry carried forward holds its saved version by
+        // definition: a difference against a protective capture of its live
+        // contents is not a change this checkpoint made, and neither is an
+        // unheld stream's
+        if !carried.is_empty() {
+            let under = |path: &str, entry: &str| {
+                path == entry
+                    || path
+                        .strip_prefix(entry)
+                        .is_some_and(|rest| rest.starts_with('/'))
+            };
+            // an entry nested in a carried one and captured itself keeps
+            // its changes (see `carry_streams`)
+            let captured: Vec<String> = walk
+                .entries
+                .iter()
+                .enumerate()
+                .filter(|(index, _)| !carried.contains(index))
+                .map(|(_, entry)| entry.display())
+                .collect();
+            let carried: Vec<String> = carried
+                .iter()
+                .map(|index| walk.entries[*index].display())
+                .collect();
+            let keep = |path: &String| {
+                !carried.iter().any(|entry| under(path, entry))
+                    || captured.iter().any(|nested| {
+                        under(path, nested)
+                            && carried
+                                .iter()
+                                .any(|entry| under(nested, entry) && nested != entry)
+                    })
+            };
+            changes.added.retain(keep);
+            changes.modified.retain(keep);
+            changes.removed.retain(keep);
+        }
+        let total_files: u64 = roots.iter().map(|root| root.files).sum();
+        let mut summary = describe(&draft, &changes, previous_tree.is_some(), total_files);
+        if changes.is_empty() && !re_encrypted.is_empty() && previous_tree.is_some() {
+            summary = re_encrypt_report(&re_encrypted);
+        }
+        let (description, description_source) = match &draft.description {
+            Some(text) => (
+                text.clone(),
+                draft.description_source.unwrap_or(DescriptionSource::User),
+            ),
+            None => (summary.clone(), DescriptionSource::Computed),
+        };
+        let mut operation = draft.operation.clone();
+        if let Some(operation) = &mut operation
+            && matches!(
+                operation.kind,
+                store::OperationKind::Bootstrap | store::OperationKind::Capture
+            )
+        {
+            let mut affected: BTreeSet<String> = changes
+                .added
+                .iter()
+                .chain(&changes.modified)
+                .chain(&changes.removed)
+                .cloned()
+                .collect();
+            // Display summaries are capped; the recovery contract is not.
+            if changes.truncated
+                && let (Some(repo), Some(tree)) = (&self.repo, &snapshot)
+            {
+                affected.extend(
+                    repo.changes(previous_tree.as_ref().map(|(_, tree)| tree.as_str()), tree)?
+                        .into_iter()
+                        .filter(|change| !change.path.starts_with(".mise-history/"))
+                        .map(|change| tree_path_to_display(&change.path)),
+                );
+            }
+            operation.affected.clear();
+            for path in affected {
+                let local = mise_util::file::replace_path(&path);
+                // Enrollment changes are not file deletions. Nor can a newly
+                // enrolled file acquire a fictional, absent before version.
+                let previously_tracked = previous_tree.as_ref().is_some_and(|(record, _)| {
+                    record
+                        .tree
+                        .coverage
+                        .entries
+                        .iter()
+                        .any(|entry| under_entry(&path, &entry.path))
+                });
+                if previously_tracked
+                    && tracked.would_retain(&local)?
+                    && (operation.kind == store::OperationKind::Capture
+                        || draft
+                            .explicit_paths
+                            .iter()
+                            .any(|selected| local.starts_with(selected)))
+                {
+                    operation.affected.push(path);
+                }
+            }
+        }
+        let checkpoint = Checkpoint {
+            schema_version: store::SCHEMA_VERSION,
+            uuid,
+            machine: self.machine.clone(),
+            created_at: store::now_rfc3339(),
+            mise_version: mise_util::deprecation::VERSION_PLAIN.clone(),
+            trigger: draft.trigger(),
+            description,
+            description_source,
+            summary,
+            task: draft.task.clone(),
+            labels: draft.labels.clone(),
+            tree: TreeInfo {
+                snapshot: snapshot.clone(),
+                available,
+                reason,
+                roots,
+                coverage,
+                modes,
+            },
+            changes,
+            operation,
+        };
+        let mut messages: Vec<String> = walk
+            .capture_warnings
+            .iter()
+            .map(|warning| format!("history: {warning}"))
+            .collect();
+        if available
+            && snapshot.is_some()
+            && let Some(repo) = &self.repo
+        {
+            let previous_commit = previous_tree
+                .as_ref()
+                .and_then(|(checkpoint, _)| {
+                    index
+                        .entries
+                        .iter()
+                        .rev()
+                        .find(|entry| entry.uuid == checkpoint.uuid)
+                })
+                .map(|entry| entry.commit.as_str());
+            match narrowed_notices(repo, previous_commit, tracked) {
+                Ok(narrowed) => messages.extend(narrowed),
+                Err(err) => debug!("history: could not compare the previous selection: {err:#}"),
+            }
+        }
+        let entry = self.commit_record_locked(
+            checkpoint,
+            index,
+            reserved_id,
+            &messages,
+            !draft.protective && heard(&draft),
+        )?;
+        if available
+            && snapshot.is_some()
+            && let Some(repo) = &self.repo
+        {
+            super::enrollment::confirm(&self.state_dir, repo, tracked)?;
+            if let Some(held) = &mut held {
+                observe_held(repo, held, streams, parent_commit.as_deref())?;
+            }
+        }
+        if draft.re_encrypt && snapshot.is_some() {
+            info!("history: {}", re_encrypt_report(&re_encrypted));
+        }
+        Ok(Outcome::Created(entry))
+    }
+
+    fn deliver_capture_notices(&self, messages: &[String], speak: bool) {
+        for message in messages {
+            if speak {
+                super::notices::say(message);
+            } else if let Err(err) = super::notices::record_in(&self.state_dir, message) {
+                super::notices::say(message);
+                debug!("history: could not keep the notice: {err}");
+            }
+        }
+        if speak && let Err(err) = super::notices::forget_in(&self.state_dir, messages) {
+            debug!("history: could not take back the said notices: {err}");
+        }
+    }
+
+    /// Append one ordinary record while the store lock is held.
+    fn commit_record_locked(
+        &self,
+        mut checkpoint: Checkpoint,
+        mut index: Index,
+        reserved_id: Option<u64>,
+        messages: &[String],
+        speak: bool,
+    ) -> Result<Box<Entry>> {
+        let id = reserved_id.unwrap_or_else(|| {
+            let id = index.next_id.max(1);
+            index.next_id = id + 1;
+            id
+        });
+        let commit = match &self.repo {
+            Some(repo) => {
+                let parent = repo.ref_oid(HistoryRepo::HISTORY_REF)?;
+                let commit = repo
+                    .write_checkpoint_commit(checkpoint.tree.snapshot.as_deref(), &checkpoint)
+                    .wrap_err("writing the checkpoint")?;
+                let advanced = repo.update_history_head(&commit, parent.as_deref());
+                // Updating the ref makes the snapshot durable. Even a later
+                // symbolic-HEAD, metadata-cache, index, or enrollment failure
+                // must not lose its warnings. A failed snapshot can still
+                // produce a journal record, but did not capture these files.
+                if checkpoint.tree.available
+                    && checkpoint.tree.snapshot.is_some()
+                    && (advanced.is_ok()
+                        || repo
+                            .ref_oid(HistoryRepo::HISTORY_REF)
+                            .ok()
+                            .flatten()
+                            .as_deref()
+                            == Some(commit.as_str()))
+                {
+                    self.deliver_capture_notices(messages, speak);
+                }
+                advanced.wrap_err("advancing the checkpoint")?;
+                commit
+            }
+            None => String::new(),
+        };
+        if let Some(repo) = &self.repo {
+            // The record is read back from Git so every machine reads the
+            // same one. Skipped repositories are the exception: nothing is
+            // written to the tree for them, and the shared commit trailer
+            // is a format older clients parse with `deny_unknown_fields`,
+            // so adding a field for them would stop those clients reading
+            // this history at all. The list stays in this machine's own
+            // record, which is where a rollback here consults it.
+            let nested = std::mem::take(&mut checkpoint.tree.coverage.nested);
+            // derived before the record is replaced, while the coverage
+            // entries that decide a path's stream are still here
+            let skipped = skipped_as_rebuilt(&checkpoint, &nested);
+            checkpoint = repo.read_meta(&commit)?;
+            // The trailer carried each of them as an ordinary omission,
+            // which is how another machine learns about the skip at all.
+            // On this one the better answer has just come back, so the
+            // generic copy goes: one skip, said once, with the reason
+            // that can be acted on.
+            checkpoint
+                .tree
+                .coverage
+                .omitted
+                .retain(|omitted| !skipped.contains(&omitted.path));
+            checkpoint.tree.coverage.nested = nested;
+        }
+        store::write_meta_cache_in(&self.state_dir, &checkpoint)?;
+        index.entries.push(IndexEntry {
+            id,
+            uuid: checkpoint.uuid.clone(),
+            commit: commit.clone(),
+            created_at: checkpoint.created_at.clone(),
+            trigger: checkpoint.trigger,
+        });
+        if index.next_id <= id {
+            index.next_id = id + 1;
+        }
+        store::write_index_in(&self.state_dir, &index)?;
+        debug!(
+            "history: recorded checkpoint {id} ({}): {}",
+            checkpoint.trigger.as_str(),
+            checkpoint.description
+        );
+        Ok(Box::new(Entry {
+            id,
+            commit,
+            checkpoint,
+        }))
+    }
+
+    /// Carries the draft's held paths forward from the previous checkpoint:
+    /// their live content is not what this capture records. Protective
+    /// captures and explicit saves hold nothing.
+    /// Held paths (files whose save is not due yet) take their previous
+    /// version, or previous absence, from the newest checkpoint: a change,
+    /// a creation, and a deletion are all held until the path is due. Held
+    /// paths are files, matched exactly.
+    fn hold_paths(
+        &self,
+        repo: &HistoryRepo,
+        tree: &str,
+        draft: &Draft,
+        previous: Option<&str>,
+        entries: &[TrackedEntry],
+    ) -> Result<String> {
+        if draft.held.is_empty() || draft.protective || !draft.explicit_paths.is_empty() {
+            return Ok(tree.to_string());
+        }
+        let mut overlays = vec![];
+        for held in &draft.held {
+            let Some(entry) = super::tracked::owning_entry(entries, held) else {
+                continue;
+            };
+            let tree_path = entry.tree_path(held)?;
+            overlays.push(Overlay {
+                object: previous
+                    .map(|parent| repo.object_at(parent, &tree_path))
+                    .transpose()?
+                    .flatten(),
+                path: tree_path,
+            });
+        }
+        repo.compose(tree, &overlays)
+    }
+
+    fn compose_manual(
+        &self,
+        repo: &HistoryRepo,
+        live_tree: &str,
+        context: ManualContext<'_>,
+    ) -> Result<(String, Vec<PartialPromotion>)> {
+        let ManualContext {
+            entries,
+            manual,
+            parent_commit,
+            draft,
+        } = context;
+        let mut overlays = vec![];
+        let mut partial_entries = vec![];
+        for index in &manual.carry {
+            let entry = &entries[*index];
+            let path = entry.tree_path(&entry.path)?;
+            let object = parent_commit
+                .map(|head| repo.object_at(head, &path))
+                .transpose()?
+                .flatten();
+            overlays.push(Overlay { path, object });
+        }
+        // A selective save replaces only named children of a manual directory.
+        // Its siblings come from the ordinary parent, not a promotion branch.
+        if let Some(head) = parent_commit {
+            for index in &manual.promote {
+                let entry = &entries[*index];
+                let children: Vec<PathBuf> = draft
+                    .explicit_paths
+                    .iter()
+                    .filter(|path| path.starts_with(&entry.path) && **path != entry.path)
+                    .cloned()
+                    .collect();
+                if children.is_empty()
+                    || draft
+                        .explicit_paths
+                        .iter()
+                        .any(|path| entry.path.starts_with(path))
+                {
+                    continue;
+                }
+                let path = entry.tree_path(&entry.path)?;
+                overlays.push(Overlay {
+                    object: repo.object_at(head, &path)?,
+                    path,
+                });
+                for child in &children {
+                    let path = entry.tree_path(child)?;
+                    overlays.push(Overlay {
+                        object: repo.object_at(live_tree, &path)?,
+                        path,
+                    });
+                }
+                partial_entries.push((*index, children));
+            }
+        }
+        Ok((repo.compose(live_tree, &overlays)?, partial_entries))
+    }
+
+    /// Manual files carry permission metadata from the ordinary parent,
+    /// including the directories that contain them.
+    fn saved_modes(&self, index: &store::Index, entries: &[String]) -> BTreeMap<String, u32> {
+        index
+            .entries
+            .last()
+            .and_then(|entry| {
+                store::read_meta_cache_in(&self.state_dir, &entry.uuid)
+                    .ok()
+                    .flatten()
+            })
+            .map(|record| {
+                record
+                    .tree
+                    .modes
+                    .into_iter()
+                    .filter(|(path, _)| {
+                        entries
+                            .iter()
+                            .any(|entry| under_entry(path, entry) || under_entry(entry, path))
+                    })
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    /// Rebuilds the local index from ordinary commit ancestry.
+    pub(crate) fn rebuild_index(&self) -> Result<Index> {
+        let _lock = self.lock()?;
+        self.rebuild_index_locked()
+    }
+
+    fn rebuild_index_locked(&self) -> Result<Index> {
+        let Some(repo) = &self.repo else {
+            return store::load_index_in(&self.state_dir);
+        };
+        let existing = store::load_index_in(&self.state_dir)?;
+        let mut entries = vec![];
+        let commits: Vec<_> = repo
+            .history_messages()?
+            .into_iter()
+            .rev()
+            .map(|(commit, message)| Ok((commit, HistoryRepo::annotation_from_message(&message)?)))
+            .collect::<Result<_>>()?;
+        let mut annotations: BTreeMap<String, Vec<Annotation>> = BTreeMap::new();
+        for (_, annotation) in &commits {
+            if let Some((target, annotation)) = annotation {
+                annotations
+                    .entry(target.clone())
+                    .or_default()
+                    .push(annotation.clone());
+            }
+        }
+        let gix = repo.gix()?;
+        let mut caches = store::CacheBatch::new(&self.state_dir);
+        for (commit, annotation) in commits {
+            // Annotation commits remain in Git ancestry, but are not new file
+            // checkpoints and must not move `latest` in the history browser.
+            if annotation.is_some() {
+                continue;
+            }
+            let mut checkpoint = match store::read_commit_meta_cache_in(&self.state_dir, &commit)? {
+                Some(checkpoint) => checkpoint,
+                None => {
+                    let checkpoint = HistoryRepo::read_meta_in(&gix, &commit)?;
+                    caches.write_commit_meta(&commit, &checkpoint)?;
+                    checkpoint
+                }
+            };
+            if let Some(annotations) = annotations.get(&commit) {
+                for annotation in annotations {
+                    annotation.apply_to(&mut checkpoint);
+                }
+            }
+            caches.write_meta(&checkpoint)?;
+            let id = existing.by_uuid(&commit).map(|entry| entry.id);
+            entries.push((id, checkpoint, commit));
+        }
+        caches.finish()?;
+        let mut next_id = existing.next_id.max(1);
+        let mut index = Index {
+            next_id,
+            entries: vec![],
+        };
+        for (id, checkpoint, commit) in entries {
+            let id = id.unwrap_or_else(|| {
+                let id = next_id;
+                next_id += 1;
+                id
+            });
+            index.entries.push(IndexEntry {
+                id,
+                uuid: checkpoint.uuid,
+                commit,
+                created_at: checkpoint.created_at,
+                trigger: checkpoint.trigger,
+            });
+        }
+        index.next_id = next_id.max(index.entries.iter().map(|e| e.id + 1).max().unwrap_or(1));
+        store::write_index_in(&self.state_dir, &index)?;
+        Ok(index)
+    }
+}
+
+/// Append annotation metadata to ordinary history and rebuild its derived view.
+pub fn annotate(store: &Store, entry: &Entry, annotation: Annotation) -> Result<()> {
+    let _lock = store.lock()?;
+    if let Some(repo) = store.repo()
+        && !entry.commit.is_empty()
+    {
+        repo.write_annotation(&entry.commit, &annotation)?;
+        store.rebuild_index_locked()?;
+        return Ok(());
+    }
+    let mut checkpoint = entry.checkpoint.clone();
+    annotation.apply_to(&mut checkpoint);
+    store::write_meta_cache_in(store.state_dir(), &checkpoint)
+}
+
+/// Everything composing manual-save entries into a snapshot needs.
+struct ManualContext<'a> {
+    entries: &'a [TrackedEntry],
+    manual: &'a ManualPlan,
+    parent_commit: Option<&'a str>,
+    draft: &'a Draft,
+}
+
+/// Which manual-save entries a capture carries forward and which it
+/// promotes.
+#[derive(Debug, Default)]
+struct ManualPlan {
+    carry: Vec<usize>,
+    promote: Vec<usize>,
+}
+
+/// Tells the user what the walk left out, so a credential store or a
+/// nested repository under a tracked directory never looks saved. A
+/// command the user ran (a save, a baseline, a bootstrap, rollback, or
+/// Each skipped repository as the rebuilt record will spell it.
+///
+/// **One writer, so the comparison can be exact.** The skips reach the
+/// trailer as tree paths, through `Checkpoint::portable_path`, and come
+/// back as display paths through `tree_path_to_display`. The walk's own
+/// display paths are written by `display_path`, which keeps the host's
+/// separator and, off unix, does not shorten `$HOME` to `~` — so on
+/// Windows the same skip is `C:\Users\me\.native\plugin` on one side
+/// and `~/.native/plugin` on the other. Matching those two spellings is
+/// not something a comparison can be taught: folding separators would
+/// still leave the home prefix, and on unix it would call
+/// `~/a/b` and a file genuinely named `a\b` the same path. So both sides
+/// are put through the same pair of conversions and compared with `==`.
+fn skipped_as_rebuilt(
+    checkpoint: &Checkpoint,
+    nested: &[super::store::PathReason],
+) -> BTreeSet<String> {
+    nested
+        .iter()
+        .filter_map(|skip| checkpoint.portable_path(&skip.path))
+        .map(|tree_path| tree_path_to_display(&tree_path))
+        .collect()
+}
+
+/// undo outcome) lists each path; the watcher's captures and the
+/// protective captures before an operation get one summary line, since
+/// they run on every edit or are followed by the outcome's full report. A
+/// baseline reports only the paths it enrolls, not those under entries
+/// tracked earlier.
+fn report_omissions(walk: &super::tracked::Walk, draft: &Draft) {
+    let trigger = draft.trigger();
+    let explicit = trigger != Trigger::Edit && !draft.protective;
+    let roots: Vec<String> = if trigger == Trigger::Baseline {
+        draft.explicit_paths.iter().map(display_path).collect()
+    } else {
+        vec![]
+    };
+    let enrolled = |reported: &&store::PathReason| {
+        roots.is_empty()
+            || roots
+                .iter()
+                .any(|root| super::tracked::display_under(&reported.path, root))
+    };
+    let omitted: Vec<store::PathReason> = walk.omitted.iter().filter(enrolled).cloned().collect();
+    let nested: Vec<store::PathReason> = walk.nested.iter().filter(enrolled).cloned().collect();
+    if omitted.is_empty() && nested.is_empty() {
+        return;
+    }
+    if explicit {
+        for line in super::tracked::omission_report(&omitted, &nested) {
+            warn!("history: {line}");
+        }
+    } else {
+        info!(
+            "history: {}",
+            super::tracked::omission_summary(&omitted, &nested)
+        );
+    }
+}
+
+/// Each carried stream keeps its saved version from the parent.
+fn carry_streams(
+    repo: &HistoryRepo,
+    tree: &str,
+    parent: Option<&str>,
+    entries: &[TrackedEntry],
+    carry: &[usize],
+) -> Result<String> {
+    let mut overlays = vec![];
+    for index in carry {
+        let entry = &entries[*index];
+        let path = entry.tree_path(&entry.path)?;
+        let object = parent
+            .map(|head| repo.object_at(head, &path))
+            .transpose()?
+            .flatten();
+        // an entry nested in the carried one, and captured itself, keeps
+        // what this capture saved for it; overlays apply in order
+        let mut nested = vec![];
+        for (other, child) in entries.iter().enumerate() {
+            let child_path = child.tree_path(&child.path)?;
+            if !carry.contains(&other) && child_path.starts_with(&format!("{path}/")) {
+                nested.push(Overlay {
+                    object: repo.object_at(tree, &child_path)?,
+                    path: child_path,
+                });
+            }
+        }
+        overlays.push(Overlay { path, object });
+        overlays.extend(nested);
+    }
+    repo.compose(tree, &overlays)
+}
+
+fn observe_held(
+    repo: &HistoryRepo,
+    held: &mut super::held::Held,
+    streams: super::held::Streams,
+    parent: Option<&str>,
+) -> Result<()> {
+    held.observe(streams.held, |stream| {
+        Ok(parent
+            .map(|head| repo.object_at(head, stream))
+            .transpose()?
+            .flatten())
+    })?;
+    held.save(repo)
+}
+
+fn manual_plan(
+    walk: &super::tracked::Walk,
+    draft: &Draft,
+    promoted: &std::collections::BTreeSet<String>,
+) -> ManualPlan {
+    let mut plan = ManualPlan::default();
+    for (index, entry) in walk.entries.iter().enumerate() {
+        if entry.policy.autosave {
+            continue;
+        }
+        let named = draft
+            .explicit_paths
+            .iter()
+            .any(|path| path.starts_with(&entry.path) || entry.path.starts_with(path));
+        // an entry that was never promoted has no saved version to carry
+        // forward: its first capture is its baseline
+        let never_promoted = !promoted.contains(&entry.display());
+        if named || never_promoted {
+            plan.promote.push(index);
+        } else {
+            plan.carry.push(index);
+        }
+    }
+    plan
+}
+
+/// What a re-encrypting capture did, for the user and a computed description.
+fn re_encrypt_report(paths: &[String]) -> String {
+    match paths.len() {
+        0 => "every encrypted file already uses the current recipients".into(),
+        1 => "re-encrypted 1 file to the current recipients".into(),
+        n => format!("re-encrypted {n} files to the current recipients"),
+    }
+}
+
+/// Whether `path` is the entry itself or below it.
+fn under_entry(path: &str, entry: &str) -> bool {
+    path == entry
+        || path
+            .strip_prefix(entry)
+            .is_some_and(|rest| rest.starts_with('/'))
+}
+
+/// Explicit capture triggers report inline. Other triggers may run in
+/// the background and queue notices; foreground dotfiles and bootstrap
+/// commands drain that queue on both success and failure.
+fn heard(draft: &Draft) -> bool {
+    matches!(
+        draft.trigger,
+        Some(
+            store::Trigger::Save
+                | store::Trigger::Capture
+                | store::Trigger::Agent
+                | store::Trigger::Update
+                | store::Trigger::Baseline
+                | store::Trigger::BootstrapBefore
+                | store::Trigger::Bootstrap
+        )
+    )
+}
+
+/// Says how much an entry's `include` list now leaves out of what an
+/// earlier checkpoint held.
+///
+/// Narrowing a list drops paths already in history from every checkpoint
+/// after it. That is what the user asked for, but it happens silently —
+/// nothing about the tree changed — so it is said at the point of change.
+///
+/// **There is exactly one opportunity to say it, and it is taken
+/// whatever caused the save.** The checkpoint that applies the narrowing
+/// is the last one whose parent still holds those paths; from the next
+/// one on there is nothing left to compare against and the drop can
+/// never be reported. Which command ran is not something the paths care
+/// about, and the watcher saving first is not a reason for the user to
+/// hear nothing — so a `mise dot save`, a `mise dot track` applying a
+/// hand-edited list, and the watcher's own save all report it. It cannot
+/// repeat: the narrowing changes the tree, so the checkpoint is written,
+/// and the next parent is the narrowed one.
+fn narrowed_notices(
+    repo: &HistoryRepo,
+    parent_commit: Option<&str>,
+    tracked: &TrackedSet,
+) -> Result<Vec<String>> {
+    let Some(parent) = parent_commit else {
+        return Ok(vec![]);
+    };
+    if tracked.entries.iter().all(|entry| entry.include.is_none()) {
+        return Ok(vec![]);
+    }
+    // **Nothing narrowed, nothing to scan.** The lists are recorded with
+    // the checkpoint, so the cheap question — are this save's enrollment
+    // and `include` values the ones the parent already holds? — is
+    // answered from the manifest, and only a difference pays for a walk
+    // of the parent tree. An entry added or removed counts as a
+    // difference, because either can change what an existing entry owns.
+    if let Some(previous) = super::manifest::Manifest::read(repo, parent)? {
+        let selection = |manifest: &super::manifest::Manifest| {
+            manifest
+                .enrollment
+                .iter()
+                .map(|entry| (entry.path.clone(), entry.include.clone()))
+                .collect::<Vec<_>>()
+        };
+        if selection(&previous) == selection(&tracked.manifest) {
+            return Ok(vec![]);
+        }
+    }
+    let roots = super::sync::layout::Roots::current();
+    let mut dropped: BTreeMap<String, u64> = BTreeMap::new();
+    for file in repo.ls_tree(parent)? {
+        let located = roots.locate(&file.path);
+        let Some(path) = located.path() else { continue };
+        let Some(entry) = tracked.entry_for(path) else {
+            continue;
+        };
+        if entry.include.is_none() || entry.is_included(path) {
+            continue;
+        }
+        *dropped.entry(entry.display()).or_default() += 1;
+    }
+    let previous = super::short(parent);
+    Ok(dropped.into_iter().map(|(entry, count)| format!(
+        "history: {entry}: its include list leaves out {count} path(s) held by checkpoint {previous}; they are no longer saved"
+    )).collect())
+}
+
+/// A failed observation is not evidence of deletion. Carry only saved objects
+/// still permitted by explicit enrollment and exclusions; successful reads win.
+fn retain_omitted(
+    repo: &HistoryRepo,
+    tree: &str,
+    previous: Option<(&Checkpoint, &str)>,
+    tracked: &TrackedSet,
+    omissions: &[&store::PathReason],
+    modes: &mut BTreeMap<String, u32>,
+    walk: &super::tracked::Walk,
+) -> Result<String> {
+    let Some((record, parent)) = previous.filter(|_| !omissions.is_empty()) else {
+        return Ok(tree.into());
+    };
+    let roots = super::sync::layout::Roots::current();
+    let omitted: Vec<_> = omissions
+        .iter()
+        .map(|failure| mise_util::file::replace_path(&failure.path))
+        .collect();
+    let mut overlays = vec![];
+    let observed_directories: BTreeSet<_> = walk
+        .files
+        .keys()
+        .flat_map(|path| path.ancestors().skip(1))
+        .collect();
+    for file in repo.ls_tree(parent)? {
+        let located = roots.locate(&file.path);
+        let Some(path) = located.path() else { continue };
+        if !omitted.iter().any(|omitted| path.starts_with(omitted))
+            || !tracked.would_retain(path)?
+            || repo.object_at(tree, &file.path)?.is_some()
+        {
+            continue;
+        }
+        let Some(entry) = tracked.entry_for(path) else {
+            continue;
+        };
+        if entry.tree_path(path)? != file.path {
+            continue;
+        }
+        if entry.policy.encrypt && !repo.blob_starts_with(&file.oid, b"mise-encrypted-file-v1\n")? {
+            eyre::bail!(
+                "cannot retain an unreadable plaintext version of newly encrypted {}",
+                display_path(path)
+            );
+        }
+        let display = display_path(path);
+        modes.remove(&display);
+        if let Some(mode) = record.tree.modes.get(&display) {
+            modes.insert(display, *mode);
+        }
+        for parent in mode_ancestors(path, &entry.path, &roots) {
+            if !observed_directories.contains(parent) {
+                let display = display_path(parent);
+                if let Some(mode) = record.tree.modes.get(&display) {
+                    modes.insert(display, *mode);
+                }
+            }
+        }
+        overlays.push(Overlay {
+            path: file.path,
+            object: Some((file.mode, file.oid)),
+        });
+    }
+    repo.compose(tree, &overlays)
+}
+
+/// The directories whose permissions a captured file carries: every
+/// ancestor strictly below the root it is mapped under (home or the
+/// configuration directory). A parent that holds only one tracked file still
+/// decides who can read it, so a fresh machine must recreate it the same way.
+/// The root itself is never recorded: enrolling a file must not capture
+/// unrelated metadata about home or a custom configuration root. A path
+/// outside every root carries only the explicitly enrolled directory.
+fn mode_ancestors<'a>(
+    path: &'a Path,
+    enrolled: &'a Path,
+    roots: &'a super::sync::layout::Roots,
+) -> impl Iterator<Item = &'a Path> + 'a {
+    let root = roots.root_of(path);
+    path.ancestors()
+        .skip(1)
+        .take_while(move |ancestor| match root {
+            Some(root) => *ancestor != root && ancestor.starts_with(root),
+            None => ancestor.starts_with(enrolled),
+        })
+}
+
+/// The permission bits of captured regular files that git cannot record
+/// (anything but `0644` and `0755`) and of their non-default (not `0755`)
+/// directories, so a restore can put them back.
+#[cfg(unix)]
+fn file_modes(
+    walk: &super::tracked::Walk,
+    roots: &super::sync::layout::Roots,
+) -> BTreeMap<String, u32> {
+    use std::os::unix::fs::PermissionsExt;
+    let mut modes = BTreeMap::new();
+    let mut dirs = BTreeSet::new();
+    for (path, (owner, _)) in &walk.files {
+        let Ok(meta) = std::fs::symlink_metadata(path) else {
+            continue;
+        };
+        if meta.is_file() {
+            let mode = meta.permissions().mode() & 0o777;
+            if mode != 0o644 && mode != 0o755 {
+                modes.insert(display_path(path), mode);
+            }
+        }
+        let enrolled = &walk.entries[*owner].path;
+        for ancestor in mode_ancestors(path, enrolled, roots) {
+            dirs.insert(ancestor.to_path_buf());
+        }
+    }
+    for dir in dirs {
+        let Ok(meta) = std::fs::symlink_metadata(&dir) else {
+            continue;
+        };
+        if meta.is_dir() {
+            let mode = meta.permissions().mode() & 0o777;
+            if mode != 0o755 {
+                modes.insert(display_path(&dir), mode);
+            }
+        }
+    }
+    modes
+}
+
+#[cfg(not(unix))]
+fn file_modes(
+    _walk: &super::tracked::Walk,
+    _roots: &super::sync::layout::Roots,
+) -> BTreeMap<String, u32> {
+    BTreeMap::new()
+}
+
+fn changes_from(
+    repo: &HistoryRepo,
+    from: Option<&str>,
+    to: &str,
+    since: Option<String>,
+) -> Result<Changes> {
+    let mut changes = Changes {
+        since,
+        ..Default::default()
+    };
+    let mut count = 0usize;
+    for change in repo.changes(from, to)? {
+        if change.path.starts_with(".mise-history/") {
+            continue;
+        }
+        count += 1;
+        if count > CHANGES_MAX {
+            changes.truncated = true;
+            break;
+        }
+        let path = tree_path_to_display(&change.path);
+        match change.status {
+            'A' => changes.added.push(path),
+            'D' => changes.removed.push(path),
+            _ => changes.modified.push(path),
+        }
+    }
+    Ok(changes)
+}
+
+/// The computed one-line description of a checkpoint.
+pub(crate) fn describe(
+    draft: &Draft,
+    changes: &Changes,
+    has_previous: bool,
+    total_files: u64,
+) -> String {
+    if let Some(operation) = &draft.operation {
+        let what = match operation.message.as_deref() {
+            Some(message) => format!(": {message}"),
+            None if !changes.is_empty() => format!(": {}", describe_changes(changes)),
+            None => String::new(),
+        };
+        return truncate(format!("{}{what}", operation.kind.as_str()));
+    }
+    if draft.protective {
+        return truncate(format!(
+            "before {}",
+            draft.trigger().as_str().trim_end_matches("-before")
+        ));
+    }
+    if !has_previous {
+        return format!("initial checkpoint ({total_files} files)");
+    }
+    if changes.is_empty() {
+        return "no file changes".to_string();
+    }
+    truncate(describe_changes(changes))
+}
+
+pub(crate) fn describe_changes(changes: &Changes) -> String {
+    let mut budget = DESCRIPTION_PATHS;
+    let mut groups = vec![];
+    let mut more = 0usize;
+    for (verb, paths) in [
+        ("edited", &changes.modified),
+        ("added", &changes.added),
+        ("removed", &changes.removed),
+    ] {
+        if paths.is_empty() {
+            continue;
+        }
+        let mut sorted: Vec<&String> = paths.iter().collect();
+        sorted.sort();
+        let take = budget.min(sorted.len());
+        more += sorted.len() - take;
+        if take == 0 {
+            continue;
+        }
+        budget -= take;
+        let names: Vec<String> = sorted[..take].iter().map(|path| short_path(path)).collect();
+        groups.push(format!("{verb} {}", names.join(", ")));
+    }
+    let mut text = groups.join("; ");
+    if more > 0 {
+        text.push_str(&format!(" +{more} more"));
+    }
+    text
+}
+
+/// `~/.config/hypr/bindings.lua` -> `hypr/bindings.lua`; other paths as is.
+fn short_path(path: &str) -> String {
+    path.strip_prefix("~/.config/")
+        .map(str::to_string)
+        .unwrap_or_else(|| path.to_string())
+}
+
+fn truncate(text: String) -> String {
+    if text.chars().count() <= DESCRIPTION_MAX {
+        return text;
+    }
+    let mut cut: String = text.chars().take(DESCRIPTION_MAX - 1).collect();
+    if let Some(boundary) = cut.rfind(", ") {
+        cut.truncate(boundary);
+    }
+    cut.push('…');
+    cut
+}
+
+/// A minimal record for repository tests.
+#[cfg(test)]
+pub(crate) fn test_checkpoint(uuid: &str, snapshot: Option<&str>) -> Checkpoint {
+    Checkpoint {
+        schema_version: store::SCHEMA_VERSION,
+        uuid: uuid.to_string(),
+        machine: Machine {
+            id: "machine".into(),
+            name: "test".into(),
+        },
+        created_at: store::now_rfc3339(),
+        mise_version: "0".into(),
+        trigger: Trigger::Save,
+        description: "test".into(),
+        description_source: DescriptionSource::Computed,
+        summary: "test".into(),
+        task: None,
+        labels: vec![],
+        tree: TreeInfo {
+            snapshot: snapshot.map(str::to_string),
+            available: snapshot.is_some(),
+            reason: None,
+            roots: vec![],
+            coverage: Default::default(),
+            modes: Default::default(),
+        },
+        changes: Changes::default(),
+        operation: None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn capture_notices_survive_a_metadata_cache_failure() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let store = Store::open_in(temp.path())?;
+        let repo = store.repo().expect("git is required for checkpoint tests");
+        let tree = repo.empty_object("tree")?;
+        let checkpoint = test_checkpoint("cache-failure", Some(&tree));
+        let cache = store::meta_cache_path_in(temp.path(), &checkpoint.uuid);
+        let cache_dir = cache.parent().unwrap();
+        if cache_dir.exists() {
+            std::fs::remove_dir_all(cache_dir)?;
+        }
+        std::fs::write(cache_dir, b"not a directory")?;
+        let notice = "history: synthetic credential saved in plaintext".to_string();
+        assert!(
+            store
+                .commit_record_locked(
+                    checkpoint,
+                    Index::default(),
+                    None,
+                    std::slice::from_ref(&notice),
+                    false
+                )
+                .is_err()
+        );
+        assert!(repo.ref_oid(HistoryRepo::HISTORY_REF)?.is_some());
+        let pending = std::fs::read_to_string(store::store_dir_in(temp.path()).join("notices"))?;
+        assert!(pending.contains(&notice));
+        Ok(())
+    }
+
+    #[test]
+    fn failed_snapshots_and_failed_commits_do_not_report_capture() -> Result<()> {
+        for fail_commit in [false, true] {
+            let temp = tempfile::tempdir()?;
+            let store = Store::open_in(temp.path())?;
+            let repo = store.repo().expect("git is required for checkpoint tests");
+            let tree = repo.empty_object("tree")?;
+            let checkpoint =
+                test_checkpoint("failed-capture", fail_commit.then_some(tree.as_str()));
+            if fail_commit {
+                let lock = HistoryRepo::path_in(temp.path())
+                    .join(format!("{}.lock", HistoryRepo::HISTORY_REF));
+                std::fs::create_dir_all(lock.parent().unwrap())?;
+                std::fs::write(lock, b"locked")?;
+            }
+            let result = store.commit_record_locked(
+                checkpoint,
+                Index::default(),
+                None,
+                &["history: synthetic credential saved in plaintext".into()],
+                false,
+            );
+            assert_eq!(result.is_err(), fail_commit);
+            assert!(!store::store_dir_in(temp.path()).join("notices").exists());
+        }
+        Ok(())
+    }
+
+    /// The key the drop matches on is the string the rebuilt record will
+    /// hold, because both come from the tree path by the same route.
+    ///
+    /// This is the whole of the Windows case, checked from any host: the
+    /// trailer is written with `portable_path`, read back with
+    /// `tree_path_to_display`, and the skip is matched on the result of
+    /// exactly those two — never against `display_path`'s spelling, which
+    /// keeps the host separator and leaves `$HOME` expanded off unix.
+    #[test]
+    fn a_skip_is_matched_on_the_spelling_the_rebuilt_record_holds() {
+        let home = mise_util::dirs::HOME.join(".native");
+        let plugin = home.join("plugin");
+        let mut checkpoint = test_checkpoint("nested", None);
+        // built the way a capture builds it, so a coverage field added
+        // later cannot leave this test describing something else
+        let mut tracked = TrackedSet::default();
+        tracked.push(TrackedEntry::new(
+            home.clone(),
+            "track",
+            crate::files::FilePolicy::for_mode(crate::files::FileMode::Track),
+        ));
+        checkpoint.tree.coverage = tracked.coverage(&crate::history::tracked::Walk {
+            entries: tracked.entries.clone(),
+            ..Default::default()
+        });
+        let skip = store::PathReason {
+            path: mise_util::file::display_path(&plugin),
+            reason: crate::history::tracked::NESTED_REPOSITORY_REASON.into(),
+        };
+        checkpoint.tree.coverage.nested.push(skip.clone());
+
+        // what the trailer carries, and what a reader rebuilds from it
+        let record = checkpoint.for_commit();
+        let rebuilt: Vec<String> = record
+            .omitted
+            .iter()
+            .map(|path| tree_path_to_display(path))
+            .collect();
+        assert_eq!(rebuilt, vec!["~/.native/plugin".to_string()]);
+
+        // the drop matches those exact strings and nothing else, so the
+        // skip is named once wherever the two display spellings differ
+        let skipped = skipped_as_rebuilt(&checkpoint, std::slice::from_ref(&skip));
+        assert_eq!(
+            skipped,
+            rebuilt.iter().cloned().collect::<BTreeSet<String>>(),
+            "the drop is not matching on what the rebuilt record holds"
+        );
+
+        // On Windows this is the whole bug: `display_path` keeps the host
+        // separator and leaves `$HOME` expanded, so the walked spelling is
+        // not the rebuilt one and matching against it left the skip in
+        // both lists. The key is derived from the tree path for that
+        // reason, and this asserts the reason rather than assuming it.
+        #[cfg(windows)]
+        {
+            assert_ne!(
+                skip.path, rebuilt[0],
+                "the two writers agree here, so the derivation is untested"
+            );
+            assert!(!skipped.contains(&skip.path));
+        }
+
+        // and nothing is folded, so a file genuinely named with a
+        // backslash is a different path from the one with a separator
+        let mut omitted = vec![
+            store::PathReason {
+                path: "~/.native/plugin".into(),
+                reason: "not captured in this commit".into(),
+            },
+            store::PathReason {
+                path: r"~/.native\plugin".into(),
+                reason: "not captured in this commit".into(),
+            },
+        ];
+        omitted.retain(|omitted| !skipped.contains(&omitted.path));
+        assert_eq!(
+            omitted.iter().map(|o| o.path.as_str()).collect::<Vec<_>>(),
+            vec![r"~/.native\plugin"],
+            "a name containing a backslash was taken for a separated path"
+        );
+    }
+
+    #[test]
+    fn rebuild_reuses_commit_metadata_without_retaining_removed_annotations() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let store = Store::open_in(temp.path())?;
+        let Some(repo) = store.repo() else {
+            return Ok(());
+        };
+        let tree = repo.empty_object("tree")?;
+        let mut last = String::new();
+        for i in 0..8 {
+            let mut checkpoint = test_checkpoint(&format!("checkpoint-{i}"), Some(&tree));
+            checkpoint.description = format!("checkpoint {i}");
+            checkpoint.summary = checkpoint.description.clone();
+            last = repo.write_checkpoint(Some(&tree), &checkpoint)?;
+        }
+
+        shadow::reset_read_meta_calls();
+        let first = store.rebuild_index()?;
+        assert_eq!(first.entries.len(), 8);
+        assert_eq!(shadow::read_meta_calls(), 8);
+
+        shadow::reset_read_meta_calls();
+        let second = store.rebuild_index()?;
+        assert_eq!(second.entries.len(), 8);
+        assert_eq!(shadow::read_meta_calls(), 0);
+
+        repo.write_annotation(
+            &last,
+            &Annotation {
+                description: Some("renamed checkpoint".into()),
+                description_source: Some(DescriptionSource::User),
+                updated_at: store::now_rfc3339(),
+                ..Default::default()
+            },
+        )?;
+        let annotation = repo.ref_oid(HistoryRepo::HISTORY_REF)?.unwrap();
+        shadow::reset_read_meta_calls();
+        store.rebuild_index()?;
+        assert_eq!(shadow::read_meta_calls(), 0);
+        assert_eq!(
+            store.list()?.last().unwrap().checkpoint.description,
+            "renamed checkpoint"
+        );
+
+        repo.update_history_head(&last, Some(&annotation))?;
+        shadow::reset_read_meta_calls();
+        store.rebuild_index()?;
+        assert_eq!(shadow::read_meta_calls(), 0);
+        assert_eq!(
+            store.list()?.last().unwrap().checkpoint.description,
+            "checkpoint 7"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn automatic_capture_without_enrollment_does_not_create_a_root() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let store = Store::open_in(temp.path())?;
+        assert!(matches!(
+            store.attempt(&TrackedSet::default(), Draft::new(Trigger::Edit))?,
+            Outcome::Unchanged
+        ));
+        assert!(
+            store
+                .repo()
+                .unwrap()
+                .ref_oid(HistoryRepo::HISTORY_REF)?
+                .is_none()
+        );
+        let mut labeled = Draft::new(Trigger::Agent);
+        labeled.description = Some("explicit operation boundary".into());
+        assert!(matches!(
+            store.attempt(&TrackedSet::default(), labeled)?,
+            Outcome::Created(_)
+        ));
+        Ok(())
+    }
+
+    #[test]
+    fn unavailable_git_does_not_create_a_parallel_metadata_history() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let mut store = Store::open_in(temp.path())?;
+        store.repo = None;
+        store.unavailable = Some("Git is unavailable".into());
+        let mut draft = Draft::new(Trigger::Agent);
+        draft.description = Some("labeled operation".into());
+        assert!(matches!(
+            store.attempt(&TrackedSet::default(), draft)?,
+            Outcome::Unavailable(_)
+        ));
+        assert!(store::load_index_in(temp.path())?.entries.is_empty());
+        Ok(())
+    }
+
+    #[test]
+    fn failed_baseline_does_not_commit_metadata() -> Result<()> {
+        let state = tempfile::tempdir()?;
+        let live = tempfile::tempdir_in(*mise_util::dirs::HOME)?;
+        let path = live.path().join("secret");
+        std::fs::write(&path, "private")?;
+        let mut policy = crate::files::FilePolicy::for_mode(crate::files::FileMode::Track);
+        policy.encrypt = true;
+        let mut tracked = TrackedSet::default();
+        tracked.push(TrackedEntry::new(path.clone(), "track", policy));
+        tracked.manifest.recipients = vec!["invalid-recipient".into()];
+        let mut draft = Draft::new(Trigger::Baseline);
+        draft.description = Some("tracked encrypted file".into());
+        draft.explicit_paths = vec![path];
+        let store = Store::open_in(state.path())?;
+
+        assert!(matches!(
+            store.attempt(&tracked, draft)?,
+            Outcome::Unavailable(_)
+        ));
+        assert!(store::load_index_in(state.path())?.entries.is_empty());
+        assert!(
+            store
+                .repo()
+                .unwrap()
+                .ref_oid(HistoryRepo::HISTORY_REF)?
+                .is_none()
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn numeric_commit_prefixes_cannot_silently_select_another_checkpoint() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let store = Store::open_in(temp.path())?;
+        let Outcome::Created(mut first) =
+            store.attempt(&TrackedSet::default(), Draft::new(Trigger::Agent))?
+        else {
+            panic!("expected a checkpoint");
+        };
+        first.id = 42;
+        first.checkpoint.uuid = "123abc".into();
+        let mut second = first.clone();
+        second.id = 123;
+        second.checkpoint.uuid = "abcdef".into();
+        let entries = vec![*first, *second];
+        assert!(store::resolve_ref("12", &entries).is_err());
+        assert_eq!(store::resolve_ref("42", &entries)?, 42);
+        assert_eq!(store::resolve_ref("123", &entries)?, 123);
+        assert_eq!(store::resolve_ref("commit:12", &entries)?, 42);
+        assert_eq!(store::resolve_ref("commit:123", &entries)?, 42);
+        assert!(store::resolve_ref("commit:", &entries).is_err());
+        assert!(store::resolve_ref("", &entries).is_err());
+        assert!(store::resolve_ref("1234567890123456789012345678901234567890", &entries).is_err());
+        assert_eq!(store::resolve_ref("123abc", &entries)?, 42);
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn permission_capture_stops_at_explicit_enrollment() {
+        use super::super::tracked::{TrackedEntry, Walk};
+        use crate::files::{FileMode, FilePolicy};
+        use std::os::unix::fs::PermissionsExt;
+
+        let temp = tempfile::tempdir().unwrap();
+        let parent = temp.path().join("private-parent");
+        let enrolled = parent.join("enrolled");
+        std::fs::create_dir_all(&enrolled).unwrap();
+        let path = enrolled.join("config");
+        std::fs::write(&path, "config").unwrap();
+        for directory in [&parent, &enrolled] {
+            std::fs::set_permissions(directory, std::fs::Permissions::from_mode(0o700)).unwrap();
+        }
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).unwrap();
+        let policy = FilePolicy::for_mode(FileMode::Track);
+        let mut walk = Walk {
+            entries: vec![TrackedEntry::new(enrolled.clone(), "track", policy)],
+            files: BTreeMap::from([(path.clone(), (0, policy))]),
+            ..Default::default()
+        };
+        // outside every root, only the explicitly enrolled directory counts
+        let roots = super::super::sync::layout::Roots {
+            home: temp.path().join("elsewhere"),
+            config_dir: temp.path().join("elsewhere/.config/mise"),
+        };
+        assert_eq!(
+            file_modes(&walk, &roots),
+            BTreeMap::from([
+                (display_path(&enrolled), 0o700),
+                (display_path(&path), 0o600),
+            ])
+        );
+        walk.entries[0].path = path.clone();
+        assert_eq!(
+            file_modes(&walk, &roots),
+            BTreeMap::from([(display_path(&path), 0o600)])
+        );
+    }
+
+    /// A tracked file's parents up to (but excluding) home or the
+    /// configuration root are recorded when their mode is not the default,
+    /// so a fresh machine recreates a private parent private.
+    #[cfg(unix)]
+    #[test]
+    fn permission_capture_includes_parents_below_the_root() {
+        use super::super::sync::layout::Roots;
+        use super::super::tracked::{TrackedEntry, Walk};
+        use crate::files::{FileMode, FilePolicy};
+        use std::os::unix::fs::PermissionsExt;
+
+        let temp = tempfile::tempdir().unwrap();
+        let home = temp.path().join("home");
+        let private = home.join(".claude");
+        let public = private.join("public");
+        std::fs::create_dir_all(&public).unwrap();
+        let settings = private.join("settings.json");
+        let notes = public.join("notes");
+        std::fs::write(&settings, "{}").unwrap();
+        std::fs::write(&notes, "notes").unwrap();
+        for (directory, mode) in [(&home, 0o700), (&private, 0o700), (&public, 0o755)] {
+            std::fs::set_permissions(directory, std::fs::Permissions::from_mode(mode)).unwrap();
+        }
+        let policy = FilePolicy::for_mode(FileMode::Track);
+        let mut walk = Walk {
+            entries: vec![
+                TrackedEntry::new(settings.clone(), "track", policy),
+                TrackedEntry::new(notes.clone(), "track", policy),
+            ],
+            files: BTreeMap::from([
+                (settings.clone(), (0, policy)),
+                (notes.clone(), (1, policy)),
+            ]),
+            ..Default::default()
+        };
+        let roots = Roots {
+            home: home.clone(),
+            config_dir: home.join(".config/mise"),
+        };
+        // the private parent is recorded; a default parent and home itself
+        // (also 0700) are not
+        assert_eq!(
+            file_modes(&walk, &roots),
+            BTreeMap::from([(display_path(&private), 0o700)])
+        );
+        assert_eq!(
+            mode_ancestors(&notes, &notes, &roots).collect::<Vec<_>>(),
+            vec![public.as_path(), private.as_path()]
+        );
+
+        // the configuration root is a boundary of its own: a file directly
+        // under it carries no directory at all
+        let config_dir = home.join(".config/mise");
+        std::fs::create_dir_all(&config_dir).unwrap();
+        let config = config_dir.join("config.toml");
+        std::fs::write(&config, "").unwrap();
+        for directory in [home.join(".config"), config_dir.clone()] {
+            std::fs::set_permissions(directory, std::fs::Permissions::from_mode(0o700)).unwrap();
+        }
+        walk.entries = vec![TrackedEntry::new(config.clone(), "track", policy)];
+        walk.files = BTreeMap::from([(config.clone(), (0, policy))]);
+        assert_eq!(file_modes(&walk, &roots), BTreeMap::new());
+    }
+
+    /// A checkpoint record carries the modes of containing directories, so a
+    /// rollback can recreate them and an unchanged tree is not recorded
+    /// again on every automatic capture.
+    #[cfg(unix)]
+    #[test]
+    fn parent_modes_reach_the_record_and_deduplicate() -> Result<()> {
+        use super::super::manifest::{Enrollment, Manifest};
+        use super::super::sync::layout::Roots;
+        use super::super::tracked::normalize;
+        use crate::files::{FileMode, FilePolicy};
+        use std::os::unix::fs::PermissionsExt;
+
+        let state = tempfile::tempdir()?;
+        let store = Store::open_in(state.path())?;
+        if store.repo().is_none() {
+            return Ok(());
+        }
+        let parent = tempfile::Builder::new()
+            .prefix(".history-record-")
+            .tempdir_in(Roots::current().home)?;
+        let parent_path = normalize(parent.path());
+        let settings = parent_path.join("settings.json");
+        std::fs::write(&settings, "{}")?;
+        std::fs::set_permissions(&parent_path, std::fs::Permissions::from_mode(0o700))?;
+        let entry = TrackedEntry::new(
+            settings.clone(),
+            "track",
+            FilePolicy::for_mode(FileMode::Track),
+        );
+        let tracked = TrackedSet {
+            manifest: Manifest {
+                enrollment: vec![Enrollment {
+                    path: entry.tree_path(&settings)?,
+                    autosave: true,
+                    encrypt: false,
+                    allow_plaintext: None,
+                    variants: vec![],
+                    exclude: None,
+                    include: None,
+                }],
+                ..Default::default()
+            },
+            entries: vec![entry],
+            ..Default::default()
+        };
+        let Outcome::Created(created) = store.attempt(&tracked, Draft::new(Trigger::Edit))? else {
+            panic!("no checkpoint")
+        };
+        assert_eq!(
+            created.checkpoint.tree.modes,
+            BTreeMap::from([(display_path(&parent_path), 0o700)])
+        );
+        assert_eq!(
+            store.list()?.pop().unwrap().checkpoint.tree.modes,
+            created.checkpoint.tree.modes
+        );
+        assert!(matches!(
+            store.attempt(&tracked, Draft::new(Trigger::Edit))?,
+            Outcome::Unchanged
+        ));
+        Ok(())
+    }
+
+    /// A selective save of one child of a manual directory keeps the saved
+    /// modes of its unnamed siblings, but a containing directory the live
+    /// walk observed takes its live mode: a parent back at the default is
+    /// not recorded again at its old private bits.
+    #[cfg(unix)]
+    #[test]
+    fn selective_save_does_not_restore_a_stale_parent_mode() -> Result<()> {
+        use super::super::manifest::{Enrollment, Manifest};
+        use super::super::sync::layout::Roots;
+        use super::super::tracked::normalize;
+        use crate::files::{FileMode, FilePolicy};
+        use std::os::unix::fs::PermissionsExt;
+
+        let state = tempfile::tempdir()?;
+        let store = Store::open_in(state.path())?;
+        let Some(repo) = store.repo() else {
+            return Ok(());
+        };
+        let roots = Roots::current();
+        let parent = tempfile::Builder::new()
+            .prefix(".history-selective-")
+            .tempdir_in(&roots.home)?;
+        let parent_path = normalize(parent.path());
+        let manual = parent_path.join("manual");
+        std::fs::create_dir(&manual)?;
+        let first = manual.join("first");
+        let second = manual.join("second");
+        std::fs::write(&first, "saved")?;
+        std::fs::write(&second, "saved")?;
+        std::fs::set_permissions(&parent_path, std::fs::Permissions::from_mode(0o700))?;
+        std::fs::set_permissions(&manual, std::fs::Permissions::from_mode(0o700))?;
+        let mut policy = FilePolicy::for_mode(FileMode::Track);
+        policy.autosave = false;
+        let entry = TrackedEntry::new(manual.clone(), "track", policy);
+        let tracked = TrackedSet {
+            manifest: Manifest {
+                enrollment: vec![Enrollment {
+                    path: entry.tree_path(&manual)?,
+                    autosave: false,
+                    encrypt: false,
+                    allow_plaintext: None,
+                    variants: vec![],
+                    exclude: None,
+                    include: None,
+                }],
+                ..Default::default()
+            },
+            entries: vec![entry],
+            ..Default::default()
+        };
+        let portable = roots.branch_path(&parent_path, None).unwrap();
+        let own = roots.branch_path(&manual, None).unwrap();
+        let permissions = || -> Result<BTreeMap<String, u32>> {
+            let head = repo.ref_oid(HistoryRepo::HISTORY_REF)?.unwrap();
+            Ok(Manifest::read(repo, &head)?.unwrap().permissions)
+        };
+
+        let mut draft = Draft::new(Trigger::Save);
+        draft.explicit_paths.push(manual.clone());
+        let Outcome::Created(_) = store.attempt(&tracked, draft)? else {
+            panic!("no baseline")
+        };
+        assert_eq!(
+            permissions()?,
+            BTreeMap::from([(portable.clone(), 0o700), (own.clone(), 0o700)])
+        );
+
+        std::fs::set_permissions(&parent_path, std::fs::Permissions::from_mode(0o755))?;
+        std::fs::write(&first, "edited")?;
+        std::fs::write(&second, "edited")?;
+        let mut draft = Draft::new(Trigger::Save);
+        draft.explicit_paths.push(first.clone());
+        let Outcome::Created(_) = store.attempt(&tracked, draft)? else {
+            panic!("no selective save")
+        };
+        // the save was selective: the unnamed sibling keeps its saved version
+        let head = repo.ref_oid(HistoryRepo::HISTORY_REF)?.unwrap();
+        let content = |path: &Path| -> Result<Vec<u8>> {
+            let (_, oid) = repo
+                .object_at(&head, &tracked.entries[0].tree_path(path)?)?
+                .unwrap();
+            repo.cat_object(&oid)
+        };
+        assert_eq!(content(&first)?, b"edited");
+        assert_eq!(content(&second)?, b"saved");
+        // the parent went back to the default and is dropped; the manual
+        // directory's own unchanged mode is kept, not stripped as unnamed
+        assert_eq!(permissions()?, BTreeMap::from([(own.clone(), 0o700)]));
+        let latest = store.list()?.pop().unwrap();
+        assert!(
+            !latest
+                .checkpoint
+                .tree
+                .modes
+                .contains_key(&display_path(&parent_path))
+        );
+        Ok(())
+    }
+
+    fn changes(modified: &[&str], added: &[&str], removed: &[&str]) -> Changes {
+        Changes {
+            since: None,
+            added: added.iter().map(|s| s.to_string()).collect(),
+            modified: modified.iter().map(|s| s.to_string()).collect(),
+            removed: removed.iter().map(|s| s.to_string()).collect(),
+            truncated: false,
+        }
+    }
+
+    #[test]
+    fn descriptions_group_sort_and_cap() {
+        let draft = Draft::new(Trigger::Edit);
+        assert_eq!(
+            describe(&draft, &Changes::default(), false, 12),
+            "initial checkpoint (12 files)"
+        );
+        assert_eq!(
+            describe(&draft, &Changes::default(), true, 12),
+            "no file changes"
+        );
+        let c = changes(
+            &["~/.config/hypr/monitors.lua", "~/.config/hypr/bindings.lua"],
+            &["~/.config/omarchy/hooks/post-theme"],
+            &["~/.XCompose"],
+        );
+        assert_eq!(
+            describe(&draft, &c, true, 0),
+            "edited hypr/bindings.lua, hypr/monitors.lua; added omarchy/hooks/post-theme; removed ~/.XCompose"
+        );
+        let many: Vec<String> = (0..10).map(|i| format!("~/.f{i}")).collect();
+        let refs: Vec<&str> = many.iter().map(String::as_str).collect();
+        let text = describe(&draft, &changes(&refs, &[], &[]), true, 0);
+        assert!(text.ends_with("+4 more"), "{text}");
+        assert!(text.chars().count() <= DESCRIPTION_MAX);
+    }
+
+    #[test]
+    fn operation_descriptions_name_the_kind() {
+        let mut draft = Draft::new(Trigger::Bootstrap);
+        draft.operation = Some(Operation {
+            id: "test-operation".into(),
+            kind: store::OperationKind::Bootstrap,
+            status: store::OperationStatus::Completed,
+            command: "bootstrap".into(),
+            argv: vec![],
+            cwd: PathBuf::new(),
+            user: None,
+            finished_at: None,
+            error: None,
+            before: None,
+            to: None,
+            undoes: None,
+            applied: None,
+            affected: vec![],
+            sources: vec![],
+            directories: vec![],
+            directory_modes: Default::default(),
+            message: None,
+            journal: vec![],
+        });
+        let c = changes(&["~/.zshrc"], &[], &[]);
+        assert_eq!(describe(&draft, &c, true, 0), "bootstrap: edited ~/.zshrc");
+        let mut protective = Draft::new(Trigger::BootstrapBefore);
+        protective.protective = true;
+        assert_eq!(describe(&protective, &c, true, 0), "before bootstrap");
+    }
+
+    #[test]
+    fn metadata_decides_deduplication() {
+        assert!(!Draft::new(Trigger::Edit).has_metadata());
+        assert!(!Draft::new(Trigger::Save).has_metadata());
+        assert!(Draft::new(Trigger::Agent).has_metadata());
+        let mut described = Draft::new(Trigger::Edit);
+        described.description = Some("x".into());
+        assert!(described.has_metadata());
+    }
+}

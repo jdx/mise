@@ -15,7 +15,7 @@ use mise_util::env_diff::EnvMap;
 
 use crate::config::config_file::mise_toml::MiseToml;
 use crate::config::config_file::{self, ConfigFile};
-use crate::config::{self, Config};
+use crate::config::{self, Config, Settings, SettingsExt};
 use crate::system::host::{self, BootstrapConfig, ConfigFileView, Host};
 
 /// A loaded config file, seen through the narrow interface the system modules use.
@@ -127,6 +127,15 @@ pub fn register() {
         global_shared_config_path: config::global_shared_config_path,
         config_files_with_incoming: config::config_files_with_incoming,
         safe_mode_ignores_bootstrap: config::safe_mode_ignores_bootstrap,
+        describe_command_setting: |path| {
+            Ok(<Settings as SettingsExt>::parse_settings_file(path)?
+                .history
+                .describe_command)
+        },
+        mise_env_with_auto: || &crate::env::MISE_ENV_WITH_AUTO,
+        verify_release_signature: |data, signature| {
+            crate::minisign::verify(&crate::minisign::MISE_PUB_KEY, data, signature)
+        },
         parse_config_file: |path| Ok(view(Arc::new(MiseToml::from_file(path)?))),
         parse_config_body: |body, path| {
             Ok(view(Arc::new(MiseToml::for_history_preflight(body, path)?)))

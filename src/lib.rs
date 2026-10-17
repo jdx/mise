@@ -126,7 +126,7 @@ pub mod watch_files;
 pub mod wildcard;
 pub mod windows_console;
 #[cfg(windows)]
-mod windows_job;
+pub use mise_util::windows_job;
 pub mod windows_posix;
 
 pub use crate::exit::request as request_exit;

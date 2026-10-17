@@ -4,5 +4,4 @@
 pub use mise_ui::*;
 
 pub mod info;
-pub mod table;
 pub mod tree;

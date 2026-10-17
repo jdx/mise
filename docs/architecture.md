@@ -38,6 +38,7 @@ anything else runs.
 | Crate                     | Contents                                                                                  |
 | ------------------------- | ----------------------------------------------------------------------------------------- |
 | `mise-util`               | Environment, directory, file, HTTP, cache, template, and `EnvDiff`/`PathEnv` helpers      |
+| `mise-system`             | The bootstrap, dotfiles, and history modules                                              |
 | `mise-system-config`      | The `mise.toml` declaration types for `[bootstrap]`, `[dotfiles]`, and `[history]`        |
 | `mise-system-packages`    | System package manager drivers: apt, dnf, brew, brew-cask, and more                       |
 | `mise-ui`                 | Progress reports, prompts, and themes for the terminal                                    |
@@ -76,8 +77,8 @@ anything else runs.
 | Templates                                | `crates/mise-util/src/tera.rs`, re-exported as `src/tera.rs`                                                       | [Tera templates](/templates.html)                |
 | Tasks                                    | `src/task/`                                                                                                        | [Tasks](/tasks/)                                 |
 | Remote task cache                        | `crates/mise-cache-core`                                                                                           | [Remote task cache](/tasks/remote-cache.html)    |
-| Bootstrap and host packages              | `src/cli/bootstrap.rs`, `src/system/` (packages under `src/system/packages/`), `crates/mise-bootstrap`             | [Bootstrap](/bootstrap.html)                     |
-| Dotfiles                                 | `src/cli/dotfiles/`, `src/system/managed_files.rs`, `src/system/history/`                                          | [Dotfiles](/dotfiles.html)                       |
+| Bootstrap and host packages              | `src/cli/bootstrap.rs`, `crates/mise-system` (packages in `crates/mise-system-packages`), `crates/mise-bootstrap`  | [Bootstrap](/bootstrap.html)                     |
+| Dotfiles                                 | `src/cli/dotfiles/`, `crates/mise-system/src/managed_files.rs`, `crates/mise-system/src/history/`                  | [Dotfiles](/dotfiles.html)                       |
 | Daemons                                  | `src/daemons/`                                                                                                     | [Daemons](/daemons.html)                         |
 | Project dependencies                     | `src/deps/`                                                                                                        | [Project dependencies](/dev-tools/deps.html)     |
 | Secrets                                  | `src/secrets/`, `src/sops.rs`, `src/agecrypt.rs`                                                                   | [Secrets](/environments/secrets/)                |
@@ -174,7 +175,7 @@ the child environment directly and do not need activation.
 ### Bootstrap and host state {#bootstrap-and-host-state}
 
 `src/cli/bootstrap.rs` builds a plan and runs the selected phases. The code in
-`src/system/` manages packages, files, edits, repositories, services, and
+`crates/mise-system` manages packages, files, edits, repositories, services, and
 platform-specific resources, which live outside any tool's install directory.
 Status, preview, apply, and prune are separate operations: a status check reads
 the host and changes nothing. A package batch can be a subset named on the
