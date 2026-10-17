@@ -304,6 +304,7 @@ fn vars() -> Schema {
                     "type": "object",
                     "properties": {
                         "value": {"oneOf": [{"type": "string"}, {"type": "integer"}, {"const": true}]},
+                        "tools": {"$ref": "#/$defs/env_tools"},
                         "redact": {"$ref": "#/$defs/env_redact"}
                     },
                     "required": ["value"],
@@ -317,6 +318,7 @@ fn vars() -> Schema {
                             "description": "question to ask once, on a machine with no saved answer, when a command is run with a prompt flag such as mise bootstrap --prompt-vars",
                             "type": "string"
                         },
+                        "tools": {"$ref": "#/$defs/env_tools"},
                         "redact": {"$ref": "#/$defs/env_redact"}
                     },
                     "required": ["default"],
@@ -329,6 +331,7 @@ fn vars() -> Schema {
                             "description": "question to ask once, on a machine with no saved answer, when a command is run with a prompt flag such as mise bootstrap --prompt-vars",
                             "type": "string"
                         },
+                        "tools": {"$ref": "#/$defs/env_tools"},
                         "redact": {"$ref": "#/$defs/env_redact"},
                         "required": {"oneOf": [{"const": true}, {"type": "string"}]}
                     },
@@ -339,6 +342,7 @@ fn vars() -> Schema {
                     "type": "object",
                     "properties": {
                         "age": {"$ref": "#/$defs/env_age"},
+                        "tools": {"$ref": "#/$defs/env_tools"},
                         "redact": {"$ref": "#/$defs/env_redact"}
                     },
                     "required": ["age"],
@@ -353,6 +357,7 @@ fn vars() -> Schema {
                             "properties": {
                                 "value": {"$ref": "#/$defs/env_age_value"},
                                 "format": {"$ref": "#/$defs/env_age_format"},
+                                "tools": {"$ref": "#/$defs/env_tools"},
                                 "redact": {"$ref": "#/$defs/env_redact"}
                             },
                             "required": ["value"],
