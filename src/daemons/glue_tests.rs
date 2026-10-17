@@ -61,7 +61,7 @@ fn untrusted_project(dir: &Path, body: &str) -> PathBuf {
 fn paranoid_on(_held: &crate::test::SettingsGuard) {
     use confique::Layer;
     let mut settings = crate::config::settings::SettingsPartial::empty();
-    settings.paranoid = Some(true);
+    settings.paranoid = Some(mise_settings::Paranoid::all());
     crate::config::Settings::reset(Some(settings));
 }
 

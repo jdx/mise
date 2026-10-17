@@ -484,7 +484,7 @@ A dotted name, such as `[task.output]`, nests the setting, and the Rust field
 follows it: `Settings::get().task.output`. The keys of an entry:
 
 - `type`: `Bool`, `String`, `Integer`, `Duration`, `Path`, `Url`,
-  `ListString`, `ListPath`, `SetString`, or `BoolOrString`.
+  `ListString`, `ListPath`, `SetString`, `BoolOrString`, or `BoolOrList`.
 - `description`: one plain sentence, shown by
   `mise settings ls --json-extended`, editor completions, and the schema. For a
   boolean, say what `true` does.

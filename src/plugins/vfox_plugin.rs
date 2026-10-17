@@ -349,7 +349,7 @@ impl Plugin for VfoxPlugin {
                         style(&self.name).blue(),
                         style(&url_string.trim_end_matches(".git")).yellow()
                     );
-                    if settings.paranoid {
+                    if settings.paranoid.plugins() {
                         bail!(
                             "Paranoid mode is enabled, refusing to install community-developed plugin"
                         );

@@ -42,6 +42,7 @@ const typeLabels: Record<string, string> = {
   SetString: "string[]",
   "IndexMap<String, String>": "table",
   BoolOrString: "boolean | string",
+  BoolOrList: "boolean | string[]",
 };
 
 const typeHints: Record<string, string> = {

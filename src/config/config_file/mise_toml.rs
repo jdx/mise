@@ -850,7 +850,7 @@ impl MiseToml {
     /// aliases, templates, tool options like `postinstall`/`install_env` —
     /// still requires trust.
     fn is_trust_exempt(body: &str, path: &Path) -> bool {
-        if Settings::try_get().is_ok_and(|settings| settings.paranoid) {
+        if Settings::try_get().is_ok_and(|settings| settings.paranoid.config()) {
             return false;
         }
         // configs the user chose to ignore should stay unloaded rather than

@@ -481,7 +481,7 @@ where
 pub async fn parse(path: &Path) -> Result<Arc<dyn ConfigFile>> {
     let settings = IdiomaticVersionFileSettings::current();
     if let Ok(current_settings) = Settings::try_get()
-        && current_settings.paranoid
+        && current_settings.paranoid.config()
     {
         trust_check(path)?;
     }
@@ -523,7 +523,7 @@ pub(super) fn detection_requires_trust(path: &Path, detection: &ConfigFileDetect
     if Settings::safe_mode() {
         return false;
     }
-    if Settings::try_get().is_ok_and(|settings| settings.paranoid) {
+    if Settings::try_get().is_ok_and(|settings| settings.paranoid.config()) {
         return true;
     }
     match detection {
@@ -540,8 +540,37 @@ pub(super) fn detection_requires_trust(path: &Path, detection: &ConfigFileDetect
     }
 }
 
+/// The trust root `mise trust` and `mise untrust` act on for a path the user named.
+///
+/// With `env_files` on and `config` off, an env file is its own root so that approving it is
+/// bound to its content while config files keep the normal trust root.
+pub fn trust_root_for_cli(path: &Path) -> PathBuf {
+    if settings::is_loaded() {
+        let paranoid = &Settings::get().paranoid;
+        if paranoid.env_files() && !paranoid.config() && !looks_like_config_file(path) {
+            return path.to_path_buf();
+        }
+    }
+    config_trust_root(path)
+}
+
+/// Whether a path the user names is a mise config file, as opposed to an env file or a script.
+fn looks_like_config_file(path: &Path) -> bool {
+    if path.is_dir() || detect_config_file_type_by_filename(path).is_some() {
+        return true;
+    }
+    let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
+        return true;
+    };
+    name.ends_with(".toml") && (name.contains("mise") || name == "config.toml")
+        || name.contains("tool-versions")
+        || config::load_config_paths(&config::DEFAULT_CONFIG_FILENAMES, true)
+            .iter()
+            .any(|config| config == path)
+}
+
 pub fn config_trust_root(path: &Path) -> PathBuf {
-    if settings::is_loaded() && Settings::get().paranoid {
+    if settings::is_loaded() && Settings::get().paranoid.config() {
         path.to_path_buf()
     } else {
         config_root::config_root(path)
@@ -603,7 +632,7 @@ pub fn trust_active_config() -> Result<()> {
     let Ok(settings) = Settings::try_get() else {
         return Ok(());
     };
-    if settings.paranoid || Settings::safe_mode() {
+    if settings.paranoid.config() || Settings::safe_mode() {
         return Ok(());
     }
     let mut newly_trusted = false;
@@ -655,7 +684,7 @@ pub(crate) fn trust_check(path: &Path) -> eyre::Result<()> {
     // persisted by `trust_active_config` after settings initialization.
     if implicitly_trusts_active_config()
         && !ci_info::is_ci()
-        && Settings::try_get().is_ok_and(|settings| !settings.paranoid)
+        && Settings::try_get().is_ok_and(|settings| !settings.paranoid.config())
     {
         let config_root = config_trust_root(path);
         if is_path_trusted(path) || (!is_ignored(&config_root) && !is_ignored(path)) {
@@ -678,7 +707,7 @@ pub(crate) fn trust_check(path: &Path) -> eyre::Result<()> {
     }
     if cmd != "hook-env" && !strict && !is_ignored(&config_root) && !is_ignored(path) {
         let ans = if settings::is_loaded()
-            && Settings::try_get().is_ok_and(|settings| settings.yes && !settings.paranoid)
+            && Settings::try_get().is_ok_and(|settings| settings.yes && !settings.paranoid.config())
         {
             Confirmation::Yes
         } else {
@@ -724,7 +753,9 @@ pub(crate) fn env_file_trust_check_from(
     path: &Path,
     declared_in: Option<&Path>,
 ) -> eyre::Result<bool> {
-    if Settings::safe_mode() || !Settings::try_get().is_ok_and(|settings| settings.paranoid) {
+    if Settings::safe_mode()
+        || !Settings::try_get().is_ok_and(|settings| settings.paranoid.env_files())
+    {
         return Ok(true);
     }
     // A file that is not there is not loaded. Returning false rather than true means one that
@@ -743,7 +774,9 @@ pub(crate) fn env_file_trust_check_from(
     // `is_trusted` memoizes by path, which would let a long-lived process (a reload after the
     // file was edited) keep accepting changed contents. Forget the memo so the hash is checked.
     IS_TRUSTED.lock().unwrap().remove(&canonical);
-    if is_path_trusted(path) {
+    // An env file is its own trust root, and its trust is always bound to its content, even
+    // when the `config` category is off and project config is trusted the normal way.
+    if is_trusted_with(path, true) {
         return Ok(true);
     }
     if config::skip_untrusted_path(path) {
@@ -758,6 +791,18 @@ pub(crate) fn env_file_trust_check_from(
 }
 
 pub fn is_trusted(path: &Path) -> bool {
+    is_trusted_with(path, Settings::get().paranoid.config())
+}
+
+/// Whether an env file has content-bound trust, which a trusted project config does not give.
+pub fn is_env_file_trusted(path: &Path) -> bool {
+    is_trusted_with(path, true)
+}
+
+/// [`is_trusted`] with the trust rules chosen by the caller: `content_bound` ties trust to the
+/// file's hash and turns off the shortcuts that trust by path, namely a monorepo marker, a
+/// sibling git worktree, and CI.
+fn is_trusted_with(path: &Path, content_bound: bool) -> bool {
     let canonicalized_path = match path.canonicalize() {
         Ok(p) => p,
         Err(err) => {
@@ -796,14 +841,11 @@ pub fn is_trusted(path: &Path) -> bool {
         return true;
     }
 
-    let settings = Settings::get();
     // Check if this path is within a trusted monorepo root
     // Monorepo roots are marked with a special marker file when trusted.
     // The marker trusts descendants by path, so paranoid mode, which binds
     // trust to file contents, ignores it and checks each file's hash below.
-    if !settings.paranoid
-        && let Some(parent) = canonicalized_path.parent()
-    {
+    if !content_bound && let Some(parent) = canonicalized_path.parent() {
         let mut current = parent;
         while let Some(dir) = current.parent() {
             let monorepo_marker = with_appended_extension(&trust_path(dir), "monorepo");
@@ -814,7 +856,7 @@ pub fn is_trusted(path: &Path) -> bool {
             current = dir;
         }
     }
-    if settings.paranoid {
+    if content_bound {
         let trusted = trust_file_hash(path).unwrap_or_else(|e| {
             warn!("trust_file_hash: {e}");
             false
@@ -1068,7 +1110,11 @@ pub fn trust(path: &Path) -> Result<()> {
         file::create_dir_all(hashed_path.parent().unwrap())?;
         file::make_symlink_or_file(path.canonicalize()?.as_path(), &hashed_path)?;
     }
-    if Settings::get().paranoid {
+    // The hash is only read for content-bound trust. Record it for an env file too, which is
+    // bound to its content when only the `env_files` category is on. A trust root that is a
+    // directory is a config trusted the normal way and has no content to hash.
+    let paranoid = &Settings::get().paranoid;
+    if paranoid.config() || (paranoid.env_files() && path.is_file()) {
         let trust_hash_path = with_appended_extension(&hashed_path, "hash");
         let hash = hash::file_hash_sha256(path, None)?;
         file::write(trust_hash_path, hash)?;
@@ -1853,7 +1899,7 @@ mod env_file_trust_tests {
     fn paranoid_on(_held: &crate::test::SettingsGuard) {
         use confique::Layer;
         let mut settings = crate::config::settings::SettingsPartial::empty();
-        settings.paranoid = Some(true);
+        settings.paranoid = Some(mise_settings::Paranoid::all());
         Settings::reset(Some(settings));
     }
 
@@ -1907,6 +1953,37 @@ mod env_file_trust_tests {
         let path = Path::new(std::ffi::OsStr::from_bytes(b"/tmp/nul\0byte/.env"));
         let err = env_file_trust_check(path).unwrap_err();
         assert!(err.to_string().contains("cannot check paranoid-mode trust"));
+    }
+
+    /// Only `env_files` makes env file trust matter, and with it on alone the trust is still bound
+    /// to content.
+    #[test]
+    fn only_the_env_files_category_gates_env_files() {
+        use confique::Layer;
+        use mise_settings::{Paranoid, ParanoidCategory};
+        let _held = crate::test::SettingsGuard::lock();
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join(".env");
+        std::fs::write(&path, "A=1\n").unwrap();
+        let select = |paranoid: Paranoid| {
+            let mut settings = crate::config::settings::SettingsPartial::empty();
+            settings.paranoid = Some(paranoid);
+            Settings::reset(Some(settings));
+        };
+        for category in [
+            ParanoidCategory::Config,
+            ParanoidCategory::Plugins,
+            ParanoidCategory::Provenance,
+        ] {
+            select(Paranoid::only([category]));
+            assert!(env_file_trust_check(&path).unwrap(), "{category}");
+        }
+        select(Paranoid::only([ParanoidCategory::EnvFiles]));
+        assert!(is_untrusted(&path));
+        trust(&path).unwrap();
+        assert!(env_file_trust_check(&path).unwrap());
+        std::fs::write(&path, "A=2\n").unwrap();
+        assert!(is_untrusted(&path));
     }
 
     #[test]

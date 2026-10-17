@@ -139,6 +139,7 @@ function buildElement(key: string, props: Props): Element {
     SetString: "string[]",
     "IndexMap<String, String>": "object",
     BoolOrString: "__bool_or_string__",
+    BoolOrList: "__bool_or_list__",
   };
   const type = props.type ? typeMap[props.type] : undefined;
   if (!type) {
@@ -200,6 +201,19 @@ function buildElement(key: string, props: Props): Element {
       { type: "string" },
     ];
     (element as Record<string, unknown>).oneOf = oneOfTypes;
+  }
+
+  // BoolOrList: a boolean, or a list of the strings the setting's enum allows.
+  if (type === "__bool_or_list__") {
+    delete (element as Record<string, unknown>).type;
+    delete element.enum;
+    (element as Record<string, unknown>).oneOf = [
+      { type: "boolean" },
+      {
+        type: "array",
+        items: { type: "string", ...(enumValues ? { enum: enumValues } : {}) },
+      },
+    ];
   }
 
   return element;

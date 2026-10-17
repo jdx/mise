@@ -193,6 +193,10 @@ impl ConfigSet {
             "false" | "no" | "0" => TomlValueTypes::Bool,
             _ => TomlValueTypes::String,
         };
+        let infer_bool_or_list = |value: &str| match mise_settings::Paranoid::bool_spelling(value) {
+            Some(_) => TomlValueTypes::Bool,
+            None => TomlValueTypes::Set,
+        };
         let type_to_use = match self.type_ {
             TomlValueTypes::Infer => {
                 let expected_type = full_key
@@ -202,6 +206,7 @@ impl ConfigSet {
                     Some(meta) => match meta.type_ {
                         SettingsType::Bool => TomlValueTypes::Bool,
                         SettingsType::BoolOrString => infer_bool_or_string(&value),
+                        SettingsType::BoolOrList => infer_bool_or_list(&value),
                         SettingsType::String => TomlValueTypes::String,
                         SettingsType::Integer => TomlValueTypes::Integer,
                         SettingsType::Duration => TomlValueTypes::String,
@@ -218,11 +223,24 @@ impl ConfigSet {
             _ => self.type_,
         };
 
+        // Settings load rejects an unknown category, which would fail every later command.
+        if full_key == "settings.paranoid" {
+            value
+                .replace("[]", "")
+                .parse::<mise_settings::Paranoid>()
+                .map_err(|err| eyre::eyre!(err))?;
+        }
         let value = match type_to_use {
             TomlValueTypes::String => toml_edit::value(value),
             TomlValueTypes::Integer => toml_edit::value(value.parse::<i64>()?),
             TomlValueTypes::Float => toml_edit::value(value.parse::<f64>()?),
-            TomlValueTypes::Bool => toml_edit::value(parse_bool(&value)?),
+            TomlValueTypes::Bool => toml_edit::value(match parse_bool(&value) {
+                Ok(value) => value,
+                Err(err) if full_key == "settings.paranoid" => {
+                    mise_settings::Paranoid::bool_spelling(&value).ok_or(err)?
+                }
+                Err(err) => return Err(err),
+            }),
             TomlValueTypes::List => {
                 let mut list = toml_edit::Array::new();
                 for item in value.split(',').map(|s| s.trim()) {
