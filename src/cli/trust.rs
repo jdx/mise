@@ -180,6 +180,14 @@ pub(super) fn untrust_config_file(config_file: Option<PathBuf>) -> Result<()> {
     };
     let cfr = config_file::trust_root_for_cli(&path);
     config_file::untrust(&cfr)?;
+    // `mise trust` also approved the file itself when only `env_files` is on.
+    if path.is_file()
+        && path != cfr
+        && Settings::get().paranoid.env_files()
+        && !Settings::get().paranoid.config()
+    {
+        config_file::untrust(&path)?;
+    }
     let cfr = cfr.canonicalize()?;
     info!("untrusted {}", display_path(&cfr));
 

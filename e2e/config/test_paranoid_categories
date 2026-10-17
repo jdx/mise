@@ -106,3 +106,5 @@ cd ~/named/sub || exit 1
 assert_fail_contains "MISE_PARANOID=env_files mise env 2>&1" "environment file"
 assert "MISE_PARANOID=env_files mise trust ../config.toml"
 assert_contains "MISE_PARANOID=env_files mise env" "NAMED_TEST=ok"
+assert "MISE_PARANOID=env_files mise untrust ../config.toml"
+assert_fail_contains "MISE_PARANOID=env_files mise env 2>&1" "environment file"
