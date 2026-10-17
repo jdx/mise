@@ -22,8 +22,20 @@ impl EnvResults {
             .unwrap_or_default();
         let mut env_diff_opts = EnvDiffOptions::default();
         env_diff_opts.ignore_keys.shift_remove(&*env::PATH_KEY); // allow modifying PATH
+        // A script that global config names outright is the operator's own. A glob can match
+        // scripts in repositories, and elsewhere the contents run on every load, so paranoid mode
+        // needs those approved like config.
+        let operator_owned =
+            crate::config::is_global_config(ctx.source) && !crate::config::is_glob_pattern(&s);
         for p in xx::file::glob(ctx.normalize_path(s.into())).unwrap_or_default() {
             if !p.exists() {
+                continue;
+            }
+            if !operator_owned
+                && !crate::config::config_file::env_file_trust_check_from(&p, Some(ctx.source))?
+            {
+                // Trusting the file later changes nothing the cache key sees.
+                ctx.results.has_uncacheable = true;
                 continue;
             }
             let env = out.entry(p.clone()).or_insert_with(IndexMap::new);

@@ -17,7 +17,7 @@ use crate::config::provenance::ConfigProvenance;
 use crate::config::settings::IdiomaticVersionFileSettings;
 use crate::config::{AliasMap, CommandWrapper, Settings, SettingsExt, settings};
 use crate::deps::DepsConfig;
-use crate::errors::Error::UntrustedConfig;
+use crate::errors::Error::{UntrustedConfig, UntrustedEnvFile};
 use crate::file::display_path;
 use crate::hash::hash_to_str;
 use crate::hooks::Hook;
@@ -558,6 +558,26 @@ pub fn is_path_trusted(path: &Path) -> bool {
 
 static IMPLICITLY_TRUST_ACTIVE_CONFIG: AtomicBool = AtomicBool::new(false);
 
+/// Set while `mise trust` resolves the env to find files that need trust. `mise trust` normally
+/// loads every config without asking, since trusting is its job, but here that would run an
+/// untrusted config's templates just to look for files. With this set, an untrusted config is
+/// skipped like it is for `hook-env`, and nothing prompts.
+static STRICT_TRUST: AtomicBool = AtomicBool::new(false);
+
+/// Env files and scripts that paranoid mode skipped as untrusted, with the config that named
+/// each. A file the `env_file` setting names has no config.
+static UNTRUSTED_ENV_FILES: Mutex<Vec<(PathBuf, Option<PathBuf>)>> = Mutex::new(Vec::new());
+
+/// Makes untrusted config skip instead of load or prompt, even for `mise trust`.
+pub fn require_strict_trust() {
+    STRICT_TRUST.store(true, Ordering::Relaxed);
+}
+
+/// The env files and scripts skipped as untrusted so far, each with the config that named it.
+pub fn untrusted_env_files() -> Vec<(PathBuf, Option<PathBuf>)> {
+    UNTRUSTED_ENV_FILES.lock().unwrap().clone()
+}
+
 /// Set on a `mise` that acts for someone other than the user who typed it,
 /// such as the children the MCP server starts. Such a process trusts nothing
 /// on its own: not the config its command would implicitly trust, and not on
@@ -649,13 +669,14 @@ pub(crate) fn trust_check(path: &Path) -> eyre::Result<()> {
     let default_cmd = String::new();
     let args = env::ARGS.read().unwrap();
     let cmd = args.get(1).unwrap_or(&default_cmd).as_str();
-    if is_path_trusted(path) || cmd == "trust" || mise_util::testing::in_tests() {
+    let strict = STRICT_TRUST.load(Ordering::Relaxed);
+    if is_path_trusted(path) || (cmd == "trust" && !strict) || mise_util::testing::in_tests() {
         return Ok(());
     }
     if *REQUIRE_EXPLICIT_TRUST {
         Err(UntrustedConfig(path.into()))?
     }
-    if cmd != "hook-env" && !is_ignored(&config_root) && !is_ignored(path) {
+    if cmd != "hook-env" && !strict && !is_ignored(&config_root) && !is_ignored(path) {
         let ans = if settings::is_loaded()
             && Settings::try_get().is_ok_and(|settings| settings.yes && !settings.paranoid)
         {
@@ -680,6 +701,60 @@ pub(crate) fn trust_check(path: &Path) -> eyre::Result<()> {
         }
     }
     Err(UntrustedConfig(path.into()))?
+}
+
+/// Whether paranoid mode lets a file named by `env._.file` load.
+///
+/// Paranoid mode binds trust to content, so approving `mise.toml` must not approve the dotenv,
+/// JSON, YAML or TOML file it points at: an edit to that file changes the environment of every
+/// command. A file under `trusted_config_paths`, which only global config can set, stays trusted
+/// by path.
+///
+/// An untrusted file is an error, except where untrusted config is being skipped (`hook-env`,
+/// run on entering a directory): there it is left out and reported with the skipped configs,
+/// so the trusted ones still apply. `Ok(false)` means "do not load it": the file is untrusted
+/// and skipped, or it is not there.
+pub(crate) fn env_file_trust_check(path: &Path) -> eyre::Result<bool> {
+    env_file_trust_check_from(path, None)
+}
+
+/// [`env_file_trust_check`] for a file that `declared_in` names, so a skipped file is recorded
+/// with the config that asked for it.
+pub(crate) fn env_file_trust_check_from(
+    path: &Path,
+    declared_in: Option<&Path>,
+) -> eyre::Result<bool> {
+    if Settings::safe_mode() || !Settings::try_get().is_ok_and(|settings| settings.paranoid) {
+        return Ok(true);
+    }
+    // A file that is not there is not loaded. Returning false rather than true means one that
+    // appears before the caller reads it is not loaded unchecked either. Any other failure to
+    // resolve it is not proof it is absent, so it must not load unchecked.
+    let canonical = match path.canonicalize() {
+        Ok(canonical) => canonical,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+        Err(err) => {
+            return Err(eyre!(
+                "cannot check paranoid-mode trust for {}: {err}",
+                display_path(path)
+            ));
+        }
+    };
+    // `is_trusted` memoizes by path, which would let a long-lived process (a reload after the
+    // file was edited) keep accepting changed contents. Forget the memo so the hash is checked.
+    IS_TRUSTED.lock().unwrap().remove(&canonical);
+    if is_path_trusted(path) {
+        return Ok(true);
+    }
+    if config::skip_untrusted_path(path) {
+        let mut files = UNTRUSTED_ENV_FILES.lock().unwrap();
+        let entry = (path.to_path_buf(), declared_in.map(Path::to_path_buf));
+        if !files.contains(&entry) {
+            files.push(entry);
+        }
+        return Ok(false);
+    }
+    Err(UntrustedEnvFile(path.into()))?
 }
 
 pub fn is_trusted(path: &Path) -> bool {
@@ -1768,5 +1843,78 @@ mod ignore_entry_tests {
 
         assert_eq!(ignored_entry_path(&stray), None);
         assert_eq!(ignored_entry_path(&store.join("not-there")), None);
+    }
+}
+
+#[cfg(test)]
+mod env_file_trust_tests {
+    use super::*;
+
+    fn paranoid_on(_held: &crate::test::SettingsGuard) {
+        use confique::Layer;
+        let mut settings = crate::config::settings::SettingsPartial::empty();
+        settings.paranoid = Some(true);
+        Settings::reset(Some(settings));
+    }
+
+    fn is_untrusted(path: &Path) -> bool {
+        matches!(
+            env_file_trust_check(path)
+                .unwrap_err()
+                .downcast_ref::<crate::errors::Error>(),
+            Some(UntrustedEnvFile(_))
+        )
+    }
+
+    /// The first passing check memoizes the path in `IS_TRUSTED`. A long-lived process that reloads
+    /// after the file was edited must still compare the content hash, not the memo.
+    #[test]
+    fn an_edited_file_needs_new_trust_even_after_a_passing_check() {
+        let held = crate::test::SettingsGuard::lock();
+        paranoid_on(&held);
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join(".env");
+        std::fs::write(&path, "A=1\n").unwrap();
+
+        assert!(is_untrusted(&path));
+        trust(&path).unwrap();
+        assert!(env_file_trust_check(&path).unwrap());
+        assert!(env_file_trust_check(&path).unwrap());
+
+        std::fs::write(&path, "A=2\n").unwrap();
+        assert!(is_untrusted(&path));
+
+        trust(&path).unwrap();
+        assert!(env_file_trust_check(&path).unwrap());
+    }
+
+    #[test]
+    fn a_missing_file_is_not_loaded() {
+        let held = crate::test::SettingsGuard::lock();
+        paranoid_on(&held);
+        let tmp = tempfile::tempdir().unwrap();
+        assert!(!env_file_trust_check(&tmp.path().join(".env")).unwrap());
+    }
+
+    /// A path that cannot be resolved for a reason other than being absent is not shown to be
+    /// absent, so it fails instead of loading unchecked.
+    #[cfg(unix)]
+    #[test]
+    fn a_path_that_cannot_be_resolved_fails_closed() {
+        use std::os::unix::ffi::OsStrExt;
+        let held = crate::test::SettingsGuard::lock();
+        paranoid_on(&held);
+        let path = Path::new(std::ffi::OsStr::from_bytes(b"/tmp/nul\0byte/.env"));
+        let err = env_file_trust_check(path).unwrap_err();
+        assert!(err.to_string().contains("cannot check paranoid-mode trust"));
+    }
+
+    #[test]
+    fn outside_paranoid_mode_every_file_loads() {
+        let _held = crate::test::SettingsGuard::lock();
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join(".env");
+        std::fs::write(&path, "A=1\n").unwrap();
+        assert!(env_file_trust_check(&path).unwrap());
     }
 }

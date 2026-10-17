@@ -77,6 +77,34 @@ include = [
 ]
 ```
 
+### Environment files {#environment-files}
+
+A file that [`env._.file`](/environments/#env-file) loads, or a script that
+[`env._.source`](/environments/#env-source) runs, is not covered by the trust of
+the config that names it, because an edit to it changes the environment of every
+command. Each existing file needs its own trust, bound to its content, and fails
+with an error that names the path and prints none of its values until you
+approve it. An edit makes it untrusted again:
+
+```sh
+mise trust
+```
+
+`mise trust` with no path trusts the nearest untrusted config and every env file
+and script that config reads, and again after an edit. `mise trust .env` trusts
+only that file.
+
+This applies to every `_.file` format, to `_.source` scripts, and to the files the
+[`env_file`](/configuration/settings.html#env_file) setting finds. It includes a
+file that a global `find_up = true` entry or a glob finds in a repository. It
+does not apply to a global `_.file` or `_.source` entry that names one file
+without a glob, which you chose.
+
+To load a file without approving each change, put it under
+[`trusted_config_paths`](/configuration/settings.html#trusted_config_paths).
+Like the other settings that stay trusted by path, it is global-only, so a
+project cannot opt its own files out.
+
 ## Community plugins
 
 In normal mode, installing a community plugin by short name asks for
