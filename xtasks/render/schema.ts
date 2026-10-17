@@ -18,6 +18,7 @@ type Props = {
   deprecated?: string;
   enum?: EnumItem[];
   rc?: boolean;
+  deserialize_with?: string;
 };
 
 type SettingsNode = Props | { [key: string]: SettingsNode };
@@ -178,6 +179,17 @@ function buildElement(key: string, props: Props): Element {
     element.additionalProperties = {
       type: "string",
     };
+  }
+
+  // A list setting that also takes a single value: use oneOf for AJV strictTypes
+  if (type === "string[]" && props.deserialize_with === "path_or_paths") {
+    const items = element.items;
+    delete (element as Record<string, unknown>).type;
+    delete (element as Record<string, unknown>).items;
+    (element as Record<string, unknown>).oneOf = [
+      { type: "string" },
+      { type: "array", items },
+    ];
   }
 
   // BoolOrString: use oneOf instead of union type array for AJV strictTypes

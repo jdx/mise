@@ -1183,8 +1183,11 @@ impl SettingsExt for Settings {
         if let Some(cwd) = &*dirs::CWD
             && let Some(env_file) = &self.env_file
         {
-            let env_file = env_file.to_string_lossy().to_string();
-            for p in FindUp::new(cwd, &[env_file]) {
+            let names = env_file
+                .iter()
+                .map(|name| name.to_string_lossy().to_string())
+                .collect::<Vec<_>>();
+            for p in FindUp::new(cwd, &names) {
                 files.push(p);
             }
         }
