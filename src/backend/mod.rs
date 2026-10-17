@@ -941,8 +941,30 @@ impl OptionSpec {
         self.schema_defs
             .iter()
             .flat_map(|def| Self::schema_keys(def))
+            .chain(Self::schema_keys("tool_options"))
+            .chain(
+                crate::toolset::EPHEMERAL_OPT_KEYS
+                    .iter()
+                    .chain(&["lazy", "lazy_bins", "os", "depends", "install_env"])
+                    .map(|k| k.to_string()),
+            )
             .chain(install_time_option_keys_for_type(backend_type))
             .collect()
+    }
+
+    /// A key is known when it is, or is the flat per-platform form of
+    /// (`platform_<os>_<arch>_<key>`), an option the backend reads.
+    fn is_known(known: &HashSet<String>, key: &str) -> bool {
+        known.contains(key)
+            || key
+                .strip_prefix("platforms_")
+                .or_else(|| key.strip_prefix("platform_"))
+                .is_some_and(|rest| {
+                    known.iter().any(|k| {
+                        rest.strip_suffix(k.as_str())
+                            .is_some_and(|p| p.ends_with('_'))
+                    })
+                })
     }
 
     /// Returns the options that are not known, including those inside `platforms`.
@@ -957,12 +979,12 @@ impl OptionSpec {
             if key == "platforms" || key == "platform" {
                 for platform in value.as_table().into_iter().flat_map(|t| t.values()) {
                     for inner in platform.as_table().into_iter().flat_map(|t| t.keys()) {
-                        if !known.contains(inner) {
+                        if !Self::is_known(&known, inner) {
                             unknown.push(format!("{key}.{inner}"));
                         }
                     }
                 }
-            } else if !known.contains(key) {
+            } else if !Self::is_known(&known, key) {
                 unknown.push(key.clone());
             }
         }
@@ -8433,6 +8455,22 @@ mod option_spec_tests {
         assert_eq!(
             spec.unknown_keys(&BackendType::Cargo, &o),
             vec!["platforms.asset_pattern"]
+        );
+    }
+
+    #[test]
+    fn accepts_shared_and_flat_platform_options() {
+        let spec = OptionSpec::new(&["tool_http_options"]);
+        let o = opts(
+            "postinstall=x,minimum_release_age=7d,install_before=1d,version_order=semver,prerelease=true,platform_linux_x64_url=u,platforms_macos_arm64_checksum=c",
+        );
+        assert_eq!(
+            spec.unknown_keys(&BackendType::Http, &o),
+            Vec::<String>::new()
+        );
+        assert_eq!(
+            spec.unknown_keys(&BackendType::Http, &opts("platform_linux_x64_nonsense=u")),
+            vec!["platform_linux_x64_nonsense"]
         );
     }
 
