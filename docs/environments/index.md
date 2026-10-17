@@ -298,10 +298,9 @@ mise decrypts SOPS-encrypted JSON, YAML and TOML files as it loads them; see
 [SOPS files](/environments/secrets/sops.html).
 
 `_.file` resolves a relative path against the config's root, normally the
-project directory. To load a file from the current directory and every parent
-directory instead, set
-`find_up = true`. This works from a global config, so one entry covers every
-project:
+project directory. Set `find_up = true` to load it from the current directory
+and every parent directory instead. This works from a global config, so one
+entry covers every project:
 
 ```toml [~/.config/mise/config.toml]
 [env]
@@ -311,47 +310,25 @@ _.file = [
 ]
 ```
 
-Each entry searches on its own, from the filesystem root down to the current
-directory, so within one entry a variable in a closer file wins. Entries apply
-in the order listed, and a later entry overrides an earlier one wherever its
-files are. With the two entries above, a `.env.local` in a parent directory
-overrides a `.env` in the project:
-
-```text
-workspace/
-├── .env.local       # EXAMPLE=parent
-└── project/
-    └── .env         # EXAMPLE=project
-```
-
-Inside `project`, `EXAMPLE` is `parent`.
-
-To search several names together, give one entry a `path` list instead:
+Each entry is searched on its own, and entries apply in the order listed, so a
+later entry wins wherever its files are. Here a `.env.local` in a parent
+directory overrides a `.env` in the project. To search names together, put them
+in one entry's `path` list:
 
 ```toml [~/.config/mise/config.toml]
 [env]
 _.file = { path = [".env", ".env.local"], find_up = true }
 ```
 
-One entry searches directory by directory, so the closest directory wins, and
-within one directory a name later in the list wins. In the layout above,
-`EXAMPLE` is now `project`, and a `.env.local` next to that `.env` would
-override it. Without `find_up`, a `path` list loads its files in the order
-written.
+Now the closest directory wins, and within one directory a later name wins, so
+the project's `.env` overrides the parent's `.env.local`. Only plain relative
+names are searched together. A name with a template, `$VAR` or `~`, or an
+absolute path, is searched on its own in list order.
 
-Only plain relative names are searched together. A name with a template or
-`$VAR`, an absolute path, or a `~` path is searched on its own, in the order
-written, as if it were a separate entry. That lets a template use a value from
-a file listed before it, and it means an absolute file is overridden by names
-listed after it and overrides those before it.
-
-The [`env_file`](/configuration/settings.html#env_file) setting
-(`MISE_ENV_FILE=.env`) also discovers a dotenv file in the current directory and
-its parents, but it is a different feature, not an older spelling of this one.
-`_.file` is an ordinary `[env]` entry, so a project's own `[env]` values can
-override it. `env_file` is applied after every config file's `[env]`, so its
-values win over them, except for a file that an `_.file` entry has already
-loaded. `env_file` skips that file, so the `[env]` precedence applies to it.
+The [`env_file`](/configuration/settings.html#env_file) setting also finds
+dotenv files up the tree, but it is a separate feature. It applies after every
+config file's `[env]` and overrides it, while `_.file` is an ordinary entry that
+a project's own `[env]` can override.
 
 ### `env._.path` {#env-path}
 
