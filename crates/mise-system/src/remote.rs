@@ -14,6 +14,10 @@ pub use mise_system_config::remote::{
 use mise_ui::multi_progress_report::MultiProgressReport;
 use mise_util::http::HTTP;
 
+/// The running mise's version. Not `env!("CARGO_PKG_VERSION")`: that is this crate's version.
+static MISE_VERSION: std::sync::LazyLock<String> =
+    std::sync::LazyLock::new(|| mise_util::deprecation::version().to_string());
+
 const RELEASE_BASE_URL: &str = "https://github.com/jdx/mise/releases/download";
 
 #[derive(Clone, Debug)]
@@ -976,7 +980,7 @@ async fn provision_mise(
                         session.host.name,
                         platform.description(),
                         local_incompatibility.expect("incompatibility was identified"),
-                        env!("CARGO_PKG_VERSION"),
+                        MISE_VERSION.as_str(),
                     )
                 })?
         }
@@ -1367,8 +1371,8 @@ fn select_bootstrapped_mise(
                 .and_then(Option::as_ref)
                 .and_then(|identity| identity.version.split_whitespace().next())
                 .is_some_and(|version| {
-                    version == env!("CARGO_PKG_VERSION")
-                        || version == concat!(env!("CARGO_PKG_VERSION"), "-DEBUG")
+                    version == MISE_VERSION.as_str()
+                        || version == format!("{}-DEBUG", MISE_VERSION.as_str())
                 })
         })
         .collect::<Vec<_>>();
@@ -1500,7 +1504,7 @@ impl RemoteArtifactResolver {
         progress.finish();
         info!(
             "using signed official mise {} artifact {asset}",
-            env!("CARGO_PKG_VERSION")
+            MISE_VERSION.as_str()
         );
         self.artifacts.insert(asset, path.clone());
         Ok(path)
@@ -1529,7 +1533,7 @@ impl RemoteArtifactResolver {
             bail!(
                 "automatic cross-platform provisioning refuses to replace a custom mise build with an official binary because {} does not match the signed mise {} release checksums; set mise_bin, remote_mise, or bootstrap_command",
                 local.display(),
-                env!("CARGO_PKG_VERSION")
+                MISE_VERSION.as_str()
             );
         }
         self.official_local_verified = true;
@@ -1547,7 +1551,7 @@ impl RemoteArtifactResolver {
             .wrap_err_with(|| {
                 format!(
                     "failed to fetch signed mise {} release checksums",
-                    env!("CARGO_PKG_VERSION")
+                    MISE_VERSION.as_str()
                 )
             })?;
             self.manifest = Some(ReleaseManifest::verified(&contents, &signature)?);
@@ -1557,7 +1561,7 @@ impl RemoteArtifactResolver {
 }
 
 fn release_url(filename: &str) -> String {
-    let version = env!("CARGO_PKG_VERSION");
+    let version = MISE_VERSION.as_str();
     format!("{RELEASE_BASE_URL}/v{version}/{filename}")
 }
 
@@ -1569,7 +1573,7 @@ fn release_asset_name(os: &str, arch: &str, libc: Option<LibcFlavor>) -> Result<
         _ => {
             bail!(
                 "mise {} has no official precompiled artifact for {os}/{arch}; set mise_bin, remote_mise, or bootstrap_command",
-                env!("CARGO_PKG_VERSION")
+                MISE_VERSION.as_str()
             )
         }
     };
@@ -1588,11 +1592,11 @@ fn release_asset_name(os: &str, arch: &str, libc: Option<LibcFlavor>) -> Result<
         _ => {
             bail!(
                 "mise {} has no official precompiled artifact for {os}/{arch}; set mise_bin, remote_mise, or bootstrap_command",
-                env!("CARGO_PKG_VERSION")
+                MISE_VERSION.as_str()
             )
         }
     };
-    Ok(format!("mise-v{}-{suffix}", env!("CARGO_PKG_VERSION")))
+    Ok(format!("mise-v{}-{suffix}", MISE_VERSION.as_str()))
 }
 
 fn official_release_assets(os: &str, arch: &str) -> Result<Vec<String>> {
@@ -1609,18 +1613,18 @@ fn official_release_assets(os: &str, arch: &str) -> Result<Vec<String>> {
                 _ => {
                     bail!(
                         "mise {} has no official precompiled artifact for {os}/{arch}; set mise_bin, remote_mise, or bootstrap_command",
-                        env!("CARGO_PKG_VERSION")
+                        MISE_VERSION.as_str()
                     )
                 }
             };
             Ok(vec![format!(
                 "mise-v{}-windows-{release_arch}.exe",
-                env!("CARGO_PKG_VERSION")
+                MISE_VERSION.as_str()
             )])
         }
         _ => bail!(
             "mise {} has no official precompiled artifact for {os}/{arch}; set mise_bin, remote_mise, or bootstrap_command",
-            env!("CARGO_PKG_VERSION")
+            MISE_VERSION.as_str()
         ),
     }
 }
@@ -2689,7 +2693,7 @@ mod tests {
 
     #[test]
     fn maps_every_supported_remote_release_target() {
-        let version = env!("CARGO_PKG_VERSION");
+        let version = MISE_VERSION.as_str();
         assert_eq!(
             release_asset_name("linux", "x86_64", Some(LibcFlavor::Glibc)).unwrap(),
             format!("mise-v{version}-linux-x64")
@@ -2729,7 +2733,7 @@ mod tests {
 
     #[test]
     fn maps_official_local_release_executables_for_provenance() {
-        let version = env!("CARGO_PKG_VERSION");
+        let version = MISE_VERSION.as_str();
         assert_eq!(
             official_release_assets("windows", "x86_64").unwrap(),
             vec![format!("mise-v{version}-windows-x64.exe")]
@@ -2927,10 +2931,7 @@ mod tests {
             (candidates[0].clone(), identity("0.0.1", "100 10")),
             (
                 current.clone(),
-                identity(
-                    &format!("{} linux-x64", env!("CARGO_PKG_VERSION")),
-                    "200 20",
-                ),
+                identity(&format!("{} linux-x64", MISE_VERSION.as_str()), "200 20"),
             ),
         ]);
         assert_eq!(
@@ -2961,7 +2962,7 @@ mod tests {
         assert!(
             select_bootstrapped_mise(&candidates, &identities, &candidates, &identities).is_err()
         );
-        let current_version = format!("{} linux-x64", env!("CARGO_PKG_VERSION"));
+        let current_version = format!("{} linux-x64", MISE_VERSION.as_str());
         let matching_identities = IndexMap::from([
             (
                 candidates[0].clone(),
