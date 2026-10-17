@@ -1882,13 +1882,17 @@ impl Task {
     pub(crate) fn non_late_env_texts(&self) -> Vec<(String, String)> {
         self.render_env_directives()
             .into_iter()
-            .filter_map(|(d, _)| match d {
-                EnvDirective::Val(k, v, _) | EnvDirective::Default(k, v, _) => Some((k, v)),
-                EnvDirective::File(p, _) => Some(("_.file".to_string(), p)),
-                EnvDirective::Path(p, _) => Some(("_.path".to_string(), p)),
-                EnvDirective::Source(p, _) => Some(("_.source".to_string(), p)),
-                EnvDirective::PythonVenv { path, .. } => Some(("_.python.venv".to_string(), path)),
-                _ => None,
+            .flat_map(|(d, _)| match d {
+                EnvDirective::Val(k, v, _) | EnvDirective::Default(k, v, _) => vec![(k, v)],
+                EnvDirective::File(p, _) => vec![("_.file".to_string(), p)],
+                EnvDirective::FileGroup(paths, _) => paths
+                    .into_iter()
+                    .map(|p| ("_.file".to_string(), p))
+                    .collect(),
+                EnvDirective::Path(p, _) => vec![("_.path".to_string(), p)],
+                EnvDirective::Source(p, _) => vec![("_.source".to_string(), p)],
+                EnvDirective::PythonVenv { path, .. } => vec![("_.python.venv".to_string(), path)],
+                _ => vec![],
             })
             .collect()
     }
@@ -3533,6 +3537,7 @@ fn bind_literal_vars_first(
             | EnvDirective::Required(k, _)
             | EnvDirective::Age { key: k, .. } => Some(k),
             EnvDirective::File(..)
+            | EnvDirective::FileGroup(..)
             | EnvDirective::Path(..)
             | EnvDirective::Source(..)
             | EnvDirective::Module(..)

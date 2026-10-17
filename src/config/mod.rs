@@ -4312,6 +4312,7 @@ fn bootstrap_dry_run_vars(
                 }
                 EnvDirective::Required(..)
                 | EnvDirective::File(..)
+                | EnvDirective::FileGroup(..)
                 | EnvDirective::Path(..)
                 | EnvDirective::Source(..)
                 | EnvDirective::PythonVenv { .. }

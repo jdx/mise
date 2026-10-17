@@ -129,30 +129,47 @@ impl<'de> serde::Deserialize<'de> for YamlEnvValue {
 impl EnvResults {
     pub(super) async fn file(
         ctx: &mut EnvDirectiveContext<'_>,
-        input: String,
+        inputs: Vec<String>,
         expand: bool,
         find_up: bool,
     ) -> Result<IndexMap<PathBuf, EnvMap>> {
         let mut out = IndexMap::new();
-        let s = ctx.parse_template("_.file", &input)?;
+        let mut patterns = Vec::with_capacity(inputs.len());
+        for input in &inputs {
+            patterns.push(PathBuf::from(ctx.parse_template("_.file", input)?));
+        }
         let expand = expand && crate::config::Settings::get().env_shell_expand;
         // Accumulate loaded vars so opted-in expansion can reference values from
         // an earlier file in the same directive or an earlier env block.
         let mut acc: TeraEnvMap = ctx.exec_env.clone();
-        let pattern = PathBuf::from(&s);
-        let paths = match &*crate::dirs::CWD {
-            // Farthest directory first, so the file nearest the current directory wins.
-            Some(cwd) if find_up && !file::replace_path(&pattern).is_absolute() => {
+        let paths: Vec<PathBuf> = match &*crate::dirs::CWD {
+            Some(cwd)
+                if find_up
+                    && patterns
+                        .iter()
+                        .all(|pattern| !file::replace_path(pattern).is_absolute()) =>
+            {
                 // The result depends on the current directory, which the env cache key omits.
                 ctx.results.has_uncacheable = true;
-                cwd.ancestors()
-                    .collect::<Vec<_>>()
-                    .into_iter()
-                    .rev()
-                    .flat_map(|dir| xx::file::glob(dir.join(&pattern)).unwrap_or_default())
-                    .collect()
+                // The names in one entry are searched together, directory by directory. Walk the
+                // nearest directory first and the later name first, then reverse, so the loader
+                // sees the farthest directory first, and within one directory the names in the
+                // order written. The file nearest the current directory then wins, and within one
+                // directory a later name wins. A single name is the same walk with one name.
+                let mut nearest_first = Vec::new();
+                for dir in cwd.ancestors() {
+                    for pattern in patterns.iter().rev() {
+                        let mut matches = xx::file::glob(dir.join(pattern)).unwrap_or_default();
+                        matches.reverse();
+                        nearest_first.extend(matches);
+                    }
+                }
+                nearest_first.into_iter().rev().collect()
             }
-            _ => xx::file::glob(ctx.normalize_path(pattern)).unwrap_or_default(),
+            _ => patterns
+                .into_iter()
+                .flat_map(|pattern| xx::file::glob(ctx.normalize_path(pattern)).unwrap_or_default())
+                .collect(),
         };
         for p in paths {
             let config = ctx.config;
@@ -192,6 +209,10 @@ impl EnvResults {
                     acc.insert(k.clone(), v.clone());
                 }
             }
+            // A file named twice, or matched by overlapping globs, loads each time so that a file
+            // between the two can still expand values from it, but it ends up at its last position.
+            // The result is keyed by path, so a plain insert would keep its first place.
+            out.shift_remove(&p);
             out.insert(p, loaded);
         }
         Ok(out)

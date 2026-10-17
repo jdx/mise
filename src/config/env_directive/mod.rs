@@ -141,6 +141,9 @@ pub enum EnvDirective {
     Required(String, EnvDirectiveOptions),
     /// dotenv file
     File(String, EnvDirectiveOptions),
+    /// Several `_.file` names written as one `path` list. With `find_up` they are searched
+    /// together, directory by directory, instead of one full search per name.
+    FileGroup(Vec<String>, EnvDirectiveOptions),
     /// add a path to the PATH
     Path(String, EnvDirectiveOptions),
     /// run a bash script and apply the resulting env diff
@@ -171,6 +174,7 @@ impl EnvDirective {
             | EnvDirective::Rm(_, opts)
             | EnvDirective::Required(_, opts)
             | EnvDirective::File(_, opts)
+            | EnvDirective::FileGroup(_, opts)
             | EnvDirective::Path(_, opts)
             | EnvDirective::Source(_, opts)
             | EnvDirective::Age { options: opts, .. }
@@ -200,6 +204,15 @@ impl Display for EnvDirective {
             EnvDirective::Rm(k, _) => write!(f, "unset {k}"),
             EnvDirective::Required(k, _) => write!(f, "{k} (required)"),
             EnvDirective::File(path, _) => write!(f, "_.file = \"{}\"", display_path(path)),
+            EnvDirective::FileGroup(paths, _) => write!(
+                f,
+                "_.file = [{}]",
+                paths
+                    .iter()
+                    .map(|path| format!("\"{}\"", display_path(path)))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ),
             EnvDirective::Path(path, _) => write!(f, "_.path = \"{}\"", display_path(path)),
             EnvDirective::Source(path, _) => write!(f, "_.source = \"{}\"", display_path(path)),
             EnvDirective::Age { key, format, .. } => {
@@ -765,7 +778,12 @@ impl EnvResults {
                     // Don't modify PATH in env - just add to env_paths
                     // This allows consumers to control PATH ordering
                 }
-                EnvDirective::File(input, opts) => {
+                directive @ (EnvDirective::File(..) | EnvDirective::FileGroup(..)) => {
+                    let (inputs, opts) = match directive {
+                        EnvDirective::File(input, opts) => (vec![input], opts),
+                        EnvDirective::FileGroup(inputs, opts) => (inputs, opts),
+                        _ => unreachable!(),
+                    };
                     let mut directive_ctx = EnvDirectiveContext {
                         config,
                         tera_ctx: &mut ctx,
@@ -778,7 +796,7 @@ impl EnvResults {
                         toolset,
                     };
                     let files =
-                        Self::file(&mut directive_ctx, input, opts.expand, opts.find_up).await?;
+                        Self::file(&mut directive_ctx, inputs, opts.expand, opts.find_up).await?;
                     for (f, new_env) in files {
                         r.env_files.push(f.clone());
                         for (k, v) in new_env {

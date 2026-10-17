@@ -1,0 +1,121 @@
+#!/usr/bin/env bash
+
+# Separate `_.file` find_up entries each search the whole tree, in the order listed, so a parent's
+# later-listed file beats a closer earlier-listed one. One entry with a `path` list searches the
+# names together, directory by directory: the closest directory wins, and within one directory a
+# later name wins.
+mkdir -p workspace/project
+printf 'EXAMPLE=parent-local\nONLY_PARENT_LOCAL=1\n' >workspace/.env.local
+printf 'EXAMPLE=parent\nONLY_PARENT=1\n' >workspace/.env
+printf 'EXAMPLE=project\nONLY_PROJECT=1\n' >workspace/project/.env
+printf 'EXAMPLE=abs\nONLY_ABS=1\n' >workspace/abs.env
+cd workspace/project || exit 1
+
+cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'
+[env]
+_.file = [
+  { path = ".env", find_up = true },
+  { path = ".env.local", find_up = true },
+]
+TOML
+assert_contains "mise env --dotenv" "EXAMPLE=parent-local"
+
+cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'
+[env]
+_.file = { path = [".env", ".env.local"], find_up = true }
+TOML
+assert_contains "mise env --dotenv" "EXAMPLE=project"
+assert_contains "mise env --dotenv" "ONLY_PARENT_LOCAL=1"
+assert_contains "mise env --dotenv" "ONLY_PROJECT=1"
+assert_contains "mise env --dotenv" "ONLY_PARENT=1"
+
+# Within one directory a later name wins.
+printf 'EXAMPLE=project-local\n' >.env.local
+assert_contains "mise env --dotenv" "EXAMPLE=project-local"
+rm .env.local
+
+# The group works as one item of a longer list, and a later entry still overrides it.
+cat >"$MISE_CONFIG_DIR/config.toml" <<TOML
+[env]
+_.file = [
+  { path = [".env", ".env.local"], find_up = true },
+  "$PWD/../abs.env",
+]
+TOML
+assert_contains "mise env --dotenv" "EXAMPLE=abs"
+assert_contains "mise env --dotenv" "ONLY_PROJECT=1"
+
+# An absolute path ends a group: the names before and after it are searched as separate groups,
+# in list order, so a later name beats the absolute file and an earlier one loses to it.
+cat >"$MISE_CONFIG_DIR/config.toml" <<TOML
+[env]
+_.file = { path = ["$PWD/../abs.env", ".env"], find_up = true }
+TOML
+assert_contains "mise env --dotenv" "EXAMPLE=project"
+cat >"$MISE_CONFIG_DIR/config.toml" <<TOML
+[env]
+_.file = { path = [".env", "$PWD/../abs.env"], find_up = true }
+TOML
+assert_contains "mise env --dotenv" "EXAMPLE=abs"
+# ...even when the later name is only found in a parent directory.
+mv .env .env.hidden
+cat >"$MISE_CONFIG_DIR/config.toml" <<TOML
+[env]
+_.file = { path = ["$PWD/../abs.env", ".env"], find_up = true }
+TOML
+assert_contains "mise env --dotenv" "EXAMPLE=parent"
+mv .env.hidden .env
+
+# A name listed twice loads at its last position, so it still wins over names listed between.
+printf 'EXAMPLE=local\n' >.env.local
+cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'
+[env]
+_.file = { path = [".env", ".env.local", ".env"], find_up = true }
+TOML
+assert_contains "mise env --dotenv" "EXAMPLE=project"
+rm .env.local
+
+# Every occurrence still loads in order, so a file between two loads of the same file can expand
+# values from the earlier one.
+mkdir -p repeated
+# shellcheck disable=SC2016
+printf 'BASE=/opt/app\nAFTER=$OUTPUT\n' >repeated/base.env
+# shellcheck disable=SC2016
+printf '{"OUTPUT": "$BASE/out"}\n' >repeated/derived.json
+cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'
+[env]
+_.file = { path = ["base.env", "derived.json", "base.env"], find_up = true, expand = true }
+TOML
+assert_contains "cd repeated && mise env --dotenv" "OUTPUT=/opt/app/out"
+# Only the second load of base.env can see OUTPUT, which derived.json set in between.
+assert_contains "cd repeated && mise env --dotenv" "AFTER=/opt/app/out"
+
+# A templated name resolves after the files listed before it, so it can use their values.
+mkdir -p staged
+printf 'STAGE=dev\n' >staged/.env
+printf 'FROM_DEV=1\n' >staged/dev.env
+cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'
+[env]
+_.file = { path = [".env", "{{ env.STAGE }}.env"], find_up = true }
+TOML
+assert_contains "cd staged && mise env --dotenv" "FROM_DEV=1"
+
+# Without find_up a path list loads its files in the order written, relative to the config.
+cat >mise.toml <<'TOML'
+[env]
+_.file = { path = [".env", "extra.env"] }
+TOML
+printf 'EXAMPLE=extra\n' >extra.env
+rm -f "$MISE_CONFIG_DIR/config.toml"
+assert_contains "mise env --dotenv" "EXAMPLE=extra"
+rm mise.toml
+
+# A find_up group depends on the current directory, so it must not be served from the env cache.
+cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'
+[env]
+_.file = { path = [".env", ".env.local"], find_up = true }
+TOML
+export MISE_ENV_CACHE=1
+export __MISE_ENV_CACHE_KEY="dGVzdGtleXRlc3RrZXl0ZXN0a2V5dGVzdGtleXRlc3Q="
+assert_contains "mise env -s bash" "ONLY_PROJECT=1"
+assert_not_contains "cd .. && mise env -s bash" "ONLY_PROJECT"

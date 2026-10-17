@@ -2688,6 +2688,55 @@ impl<'de> de::Deserialize<'de> for EnvList {
                                 })
                             }
 
+                            /// Splits a `find_up` list in one `path` into entries. A run of plain
+                            /// relative names is one search over all of them, directory by
+                            /// directory. A path that is not plain stands alone, in list order, as it
+                            /// would as a separate entry: a template or `$VAR` can depend on a value
+                            /// an earlier file in the list loaded, so it has to resolve after that
+                            /// file, and an absolute path or `~` has no directory to search.
+                            fn group_find_up_files(
+                                paths: Vec<String>,
+                                options: EnvDirectiveOptions,
+                            ) -> Vec<EnvDirective> {
+                                fn plain_relative(path: &str) -> bool {
+                                    !["{{", "{%", "{#", "$"]
+                                        .iter()
+                                        .any(|marker| path.contains(marker))
+                                        && !crate::file::replace_path(std::path::Path::new(path))
+                                            .is_absolute()
+                                }
+                                fn flush(
+                                    run: &mut Vec<String>,
+                                    options: &EnvDirectiveOptions,
+                                    out: &mut Vec<EnvDirective>,
+                                ) {
+                                    match run.len() {
+                                        0 => {}
+                                        1 => out.push(EnvDirective::File(
+                                            run.remove(0),
+                                            options.clone(),
+                                        )),
+                                        _ => out.push(EnvDirective::FileGroup(
+                                            std::mem::take(run),
+                                            options.clone(),
+                                        )),
+                                    }
+                                    run.clear();
+                                }
+                                let mut out = vec![];
+                                let mut run = vec![];
+                                for path in paths {
+                                    if plain_relative(&path) {
+                                        run.push(path);
+                                    } else {
+                                        flush(&mut run, &options, &mut out);
+                                        out.push(EnvDirective::File(path, options.clone()));
+                                    }
+                                }
+                                flush(&mut run, &options, &mut out);
+                                out
+                            }
+
                             // Parse the `_` table preserving the written order of its
                             // sub-keys (`path`/`file`/`source`/modules) so that a later
                             // directive's template can reference a variable exported by
@@ -2733,10 +2782,29 @@ impl<'de> de::Deserialize<'de> for EnvList {
                                                         ));
                                                     }
                                                     "file" => {
-                                                        directives.extend(flatten_directives(
-                                                            map.next_value::<DirectiveArr>()?.0,
-                                                            EnvDirective::File,
-                                                        ));
+                                                        for d in map.next_value::<DirectiveArr>()?.0
+                                                        {
+                                                            match d.0 {
+                                                                MiseTomlEnvDirectiveValue::Multiple {
+                                                                    path,
+                                                                    options,
+                                                                } if options.find_up => {
+                                                                    directives.extend(
+                                                                        group_find_up_files(
+                                                                            path, options,
+                                                                        ),
+                                                                    );
+                                                                }
+                                                                value => directives.extend(
+                                                                    flatten_directives(
+                                                                        vec![MiseTomlEnvDirective(
+                                                                            value,
+                                                                        )],
+                                                                        EnvDirective::File,
+                                                                    ),
+                                                                ),
+                                                            }
+                                                        }
                                                     }
                                                     "source" => {
                                                         directives.extend(flatten_directives(
@@ -3678,6 +3746,54 @@ mod tests {
             })
             .collect();
         assert_eq!(kinds, ["source", "path", "file"]);
+    }
+
+    /// A `find_up` list in one `path` groups its runs of plain relative names into one search. A
+    /// template, `$VAR`, `~` or absolute path stands alone in list order, and without `find_up` a
+    /// list is the same as separate entries, so it still splits.
+    #[tokio::test]
+    async fn test_env_file_path_list_groups_only_plain_names_with_find_up() {
+        let _config = Config::get().await.unwrap();
+        let p = CWD.as_ref().unwrap().join(".test.file-group.mise.toml");
+        file::write(
+            &p,
+            r#"
+        [env]
+        _.file = [
+          { path = [".env", ".env.local"], find_up = true },
+          { path = ["a.env", "b.env"] },
+          { path = ["only.env"], find_up = true },
+          { path = ["/abs.env", ".one", ".two", "{{ env.X }}.env", ".three"], find_up = true },
+        ]
+        "#,
+        )
+        .unwrap();
+        let cf = MiseToml::from_file(&p).unwrap();
+        let shapes: Vec<String> = cf
+            .env
+            .0
+            .iter()
+            .map(|d| match d {
+                EnvDirective::FileGroup(paths, opts) => {
+                    format!("group {} find_up={}", paths.join(","), opts.find_up)
+                }
+                EnvDirective::File(path, opts) => format!("file {path} find_up={}", opts.find_up),
+                _ => "other".to_string(),
+            })
+            .collect();
+        assert_eq!(
+            shapes,
+            [
+                "group .env,.env.local find_up=true",
+                "file a.env find_up=false",
+                "file b.env find_up=false",
+                "file only.env find_up=true",
+                "file /abs.env find_up=true",
+                "group .one,.two find_up=true",
+                "file {{ env.X }}.env find_up=true",
+                "file .three find_up=true",
+            ]
+        );
     }
 
     #[tokio::test]

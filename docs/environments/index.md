@@ -298,10 +298,9 @@ mise decrypts SOPS-encrypted JSON, YAML and TOML files as it loads them; see
 [SOPS files](/environments/secrets/sops.html).
 
 `_.file` resolves a relative path against the config's root, normally the
-project directory. To load a file from the current directory and every parent
-directory instead, set
-`find_up = true`. This works from a global config, so one entry covers every
-project:
+project directory. Set `find_up = true` to load it from the current directory
+and every parent directory instead. This works from a global config, so one
+entry covers every project:
 
 ```toml [~/.config/mise/config.toml]
 [env]
@@ -311,16 +310,26 @@ _.file = [
 ]
 ```
 
-Files are loaded from the filesystem root down to the current directory, so a
-variable in a closer file wins. `find_up` has no effect on an absolute path.
+Each entry is searched on its own, and entries apply in the order listed, so a
+later entry wins wherever its files are. Here a `.env.local` in a parent
+directory overrides a `.env` in the project. To search names together, put them
+in one entry's `path` list:
 
-The [`env_file`](/configuration/settings.html#env_file) setting
-(`MISE_ENV_FILE=.env`) also discovers a dotenv file in the current directory and
-its parents, but it is a different feature, not an older spelling of this one.
-`_.file` is an ordinary `[env]` entry, so a project's own `[env]` values can
-override it. `env_file` is applied after every config file's `[env]`, so its
-values win over them, except for a file that an `_.file` entry has already
-loaded. `env_file` skips that file, so the `[env]` precedence applies to it.
+```toml [~/.config/mise/config.toml]
+[env]
+_.file = { path = [".env", ".env.local"], find_up = true }
+```
+
+Now the closest directory wins, and within one directory a later name wins, so
+the project's `.env` overrides the parent's `.env.local`. Only plain relative
+names are searched together. A name with a template, `$VAR` or `~`, or an
+absolute path, is searched on its own in list order.
+
+The [`env_file`](/configuration/settings.html#env_file) setting also finds
+dotenv files up the tree, but it is a separate feature. It applies after every
+config file's `[env]` and overrides it, except for files already loaded by
+`_.file`. It skips those files, so the `[env]` precedence applies to them.
+`_.file` is an ordinary entry that a project's own `[env]` can override.
 
 ### `env._.path` {#env-path}
 
