@@ -797,11 +797,8 @@ impl Backend for RustPlugin {
     }
 
     async fn list_bin_paths(&self, config: &Arc<Config>, tv: &ToolVersion) -> Result<Vec<PathBuf>> {
-        Ok(vec![
-            RustRuntime::resolve_recorded_for_tool_version(config, tv)
-                .await?
-                .bin_dir,
-        ])
+        let runtime = RustRuntime::resolve_recorded_for_tool_version(config, tv).await?;
+        Ok(runtime.bin_paths(&env::PATH))
     }
 
     async fn exec_env(
@@ -1298,6 +1295,16 @@ impl RustRuntime {
 
     fn is_external(&self) -> bool {
         self.provider == RustProvider::External
+    }
+
+    /// An external rustup's proxies are already reachable through PATH. Prepending a shared
+    /// directory such as /usr/bin would shadow other tools (e.g. a system node) in front of
+    /// the versions mise manages.
+    fn bin_paths(&self, path: &[PathBuf]) -> Vec<PathBuf> {
+        if self.is_external() && path.contains(&self.bin_dir) {
+            return vec![];
+        }
+        vec![self.bin_dir.clone()]
     }
 }
 
@@ -2123,6 +2130,26 @@ targets = ["wasm32-wasip1", " wasm32-wasip1 "]
 
         assert_eq!(runtime.provider, RustProvider::External);
         assert_eq!(runtime.bin_dir, external);
+    }
+
+    #[test]
+    fn rust_runtime_external_bin_paths_skip_dirs_already_on_path() {
+        let root = tempfile::tempdir().unwrap();
+        let homes = rust_homes_at(root.path(), false);
+        let external = root.path().join("external/bin");
+        create_proxy_dir(&external, &[RUSTUP_BIN, CARGO_BIN, RUSTC_BIN]);
+        let runtime =
+            RustRuntime::from_paths_with(homes.clone(), std::slice::from_ref(&external), |_| true);
+
+        assert!(
+            runtime
+                .bin_paths(std::slice::from_ref(&external))
+                .is_empty()
+        );
+        assert_eq!(runtime.bin_paths(&[]), vec![external]);
+
+        let managed = RustRuntime::from_paths_with(homes.clone(), &[], |_| true);
+        assert_eq!(managed.bin_paths(&[]), vec![homes.cargo_bindir()]);
     }
 
     #[test]
