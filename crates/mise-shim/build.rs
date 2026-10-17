@@ -39,7 +39,11 @@ fn mise_version(manifest: &str) -> Option<String> {
         if in_package && let Some(rest) = line.strip_prefix("version") {
             let rest = rest.trim_start();
             if let Some(rest) = rest.strip_prefix('=') {
-                return Some(rest.trim().trim_matches('"').to_string());
+                // Take what sits between the quotes, so `version = "1.0" # bump` yields `1.0`.
+                let quoted = rest.trim().strip_prefix('"')?;
+                return quoted
+                    .split_once('"')
+                    .map(|(version, _)| version.to_string());
             }
         }
     }
