@@ -81,3 +81,14 @@ assert_contains "mise env" "CACHED_TEST=secret"
 assert_fail_contains "MISE_PARANOID=1 mise env 2>&1" "environment file"
 assert_not_contains "MISE_PARANOID=1 mise hook-env -s bash 2>&1" "CACHED_TEST=secret"
 assert_contains "MISE_PARANOID=1 mise hook-env -s bash 2>&1" ".env is not trusted"
+
+# A result that left out an untrusted file is not cached, so trusting it takes effect at once.
+echo "LATE_TEST=late" >late.env
+cat <<'EOS' >mise.toml
+[env]
+_.file = ["late.env"]
+EOS
+assert "MISE_PARANOID=1 mise trust mise.toml"
+assert_not_contains "MISE_PARANOID=1 mise hook-env -s bash 2>&1" "LATE_TEST"
+assert "MISE_PARANOID=1 mise trust late.env"
+assert_contains "MISE_PARANOID=1 mise hook-env -s bash 2>&1" "LATE_TEST=late"
