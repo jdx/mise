@@ -19,9 +19,9 @@ use eyre::{Context, Result, bail};
 use jdx_tar::{Builder, EntryType, Header};
 use serde::Serialize;
 
-use crate::cmd::{RunningPidGuard, prepare_noninteractive_child};
-use crate::oci::layout::ImageLayout;
-use crate::oci::manifest::{ImageIndex, ImageManifest};
+use crate::layout::ImageLayout;
+use crate::manifest::{ImageIndex, ImageManifest};
+use mise_util::cmd::{RunningPidGuard, prepare_noninteractive_child};
 
 #[derive(Serialize)]
 struct ManifestEntry {
@@ -39,7 +39,7 @@ pub fn load_into_docker(image_dir: &Path, tag: &str) -> Result<()> {
     let layout = ImageLayout {
         root: image_dir.to_path_buf(),
     };
-    let index_bytes = crate::file::read(image_dir.join("index.json"))?;
+    let index_bytes = mise_util::file::read(image_dir.join("index.json"))?;
     let index: ImageIndex = serde_json::from_slice(&index_bytes).wrap_err("parsing index.json")?;
     let manifest_desc = match index.manifests.as_slice() {
         [one] => one,
@@ -58,7 +58,7 @@ pub fn load_into_docker(image_dir: &Path, tag: &str) -> Result<()> {
     // check `read_blob` performs) — a crafted `--image-dir` layout could
     // otherwise escape the blobs directory with `sha256:../…`.
     for layer in &manifest.layers {
-        crate::oci::layout::validate_sha256_digest(&layer.digest)?;
+        crate::layout::validate_sha256_digest(&layer.digest)?;
     }
 
     let mut command = Command::new("docker");
@@ -202,7 +202,7 @@ fn hex_of(digest: &str) -> &str {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::oci::manifest::{Descriptor, MEDIA_TYPE_OCI_CONFIG, MEDIA_TYPE_OCI_MANIFEST};
+    use crate::manifest::{Descriptor, MEDIA_TYPE_OCI_CONFIG, MEDIA_TYPE_OCI_MANIFEST};
     use jdx_tar::Archive;
 
     fn descriptor(media_type: &str, digest: String, size: u64) -> Descriptor {
@@ -240,7 +240,7 @@ mod tests {
             media_type: MEDIA_TYPE_OCI_MANIFEST.to_string(),
             config: descriptor(MEDIA_TYPE_OCI_CONFIG, config_digest.clone(), config_size),
             layers: vec![descriptor(
-                crate::oci::manifest::MEDIA_TYPE_OCI_LAYER_GZIP,
+                crate::manifest::MEDIA_TYPE_OCI_LAYER_GZIP,
                 layer_digest,
                 layer_size,
             )],

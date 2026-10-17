@@ -14,7 +14,7 @@ struct CachedLayer {
     size: u64,
 }
 
-pub(crate) fn build_cached_tool_layer(
+pub fn build_cached_tool_layer(
     src_dir: &Path,
     target_prefix: &str,
     owner: LayerOwner,
@@ -27,7 +27,7 @@ pub(crate) fn build_cached_tool_layer(
     let entries = collect_sorted_entries(src_dir, false, owner, Some(relocation))?;
     let key = fingerprint(&entries, target_prefix, owner, relocation)?;
     let record_path = cache_dir.join(format!("{key}.json"));
-    let _lock = match crate::lock_file::LockFile::new(&record_path).lock() {
+    let _lock = match mise_util::lock_file::LockFile::new(&record_path).lock() {
         Ok(lock) => lock,
         Err(err) => {
             debug!("could not lock OCI tool layer cache: {err:#}");
@@ -120,8 +120,8 @@ fn read_cached_layer(record_path: &Path, cache_dir: &Path) -> Result<Option<Laye
         Err(err) => return Err(err.into()),
     };
     let record: CachedLayer = serde_json::from_slice(&record)?;
-    crate::oci::layout::validate_sha256_digest(&record.digest)?;
-    crate::oci::layout::validate_sha256_digest(&record.diff_id)?;
+    crate::layout::validate_sha256_digest(&record.digest)?;
+    crate::layout::validate_sha256_digest(&record.diff_id)?;
     let bytes = std::fs::read(cache_dir.join(record.digest.trim_start_matches("sha256:")))?;
     eyre::ensure!(
         bytes.len() as u64 == record.size,
@@ -153,12 +153,12 @@ fn read_cached_layer(record_path: &Path, cache_dir: &Path) -> Result<Option<Laye
 }
 
 fn write_cached_layer(record_path: &Path, cache_dir: &Path, blob: &LayerBlob) -> Result<()> {
-    crate::file::create_dir_all(cache_dir)?;
+    mise_util::file::create_dir_all(cache_dir)?;
     let blob_path = cache_dir.join(blob.digest.trim_start_matches("sha256:"));
     // Atomic blob publication followed by atomic metadata publication lets
     // concurrent builds share this cache without sharing an image index.
-    crate::file::write_atomic(blob_path, &blob.bytes)?;
-    crate::file::write_atomic(
+    mise_util::file::write_atomic(blob_path, &blob.bytes)?;
+    mise_util::file::write_atomic(
         record_path,
         serde_json::to_vec(&CachedLayer {
             digest: blob.digest.clone(),

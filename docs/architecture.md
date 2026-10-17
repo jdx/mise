@@ -38,6 +38,7 @@ anything else runs.
 | Crate                     | Contents                                                                                  |
 | ------------------------- | ----------------------------------------------------------------------------------------- |
 | `mise-util`               | Environment, directory, file, HTTP, cache, template, and `EnvDiff`/`PathEnv` helpers      |
+| `mise-oci`                | The OCI registry client, layers, and image layout (the image builder stays in `src/oci/`) |
 | `mise-system`             | The bootstrap, dotfiles, and history modules                                              |
 | `mise-system-config`      | The `mise.toml` declaration types for `[bootstrap]`, `[dotfiles]`, and `[history]`        |
 | `mise-system-packages`    | System package manager drivers: apt, dnf, brew, brew-cask, and more                       |
@@ -84,7 +85,7 @@ anything else runs.
 | Secrets                                  | `src/secrets/`, `src/sops.rs`, `src/agecrypt.rs`                                                                   | [Secrets](/environments/secrets/)                |
 | Caches                                   | `crates/mise-util/src/cache.rs`: `CacheManager<T>`, MessagePack with zlib, written atomically                      | [Caches](/cache-behavior.html)                   |
 | packslip manifests                       | `src/packslip.rs`, `src/backend/packslip.rs`                                                                       | [packslip](/dev-tools/backends/packslip.html)    |
-| OCI images                               | `src/oci/`                                                                                                         | [OCI images](/dev-tools/mise-oci.html)           |
+| OCI images                               | `src/oci/` (builder), `crates/mise-oci`                                                                            | [OCI images](/dev-tools/mise-oci.html)           |
 | OpenTelemetry                            | `src/otel/`                                                                                                        | [OpenTelemetry](/tasks/opentelemetry.html)       |
 | Identity install layout                  | `src/install_layout/`                                                                                              | [Install layout](/dev-tools/install-layout.html) |
 | Sandboxing                               | `src/sandbox.rs`                                                                                                   | [Sandboxing](/sandboxing.html)                   |

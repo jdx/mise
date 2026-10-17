@@ -27,7 +27,7 @@ use sha2::{Digest, Sha256};
 use walkdir::WalkDir;
 
 mod cache;
-pub(crate) use cache::build_cached_tool_layer;
+pub use cache::build_cached_tool_layer;
 
 /// Host-to-image path mappings used while packaging an installed tool.
 ///
@@ -36,27 +36,27 @@ pub(crate) use cache::build_cached_tool_layer;
 /// Keeping the mappings here lets the layer writer fix those references while
 /// retaining the one-layer-per-tool layout.
 #[derive(Debug, Clone, Default)]
-pub(crate) struct ToolRelocation {
+pub struct ToolRelocation {
     paths: Vec<(PathBuf, PathBuf)>,
     pythons: Vec<PythonRelocation>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct PythonRelocation {
+pub struct PythonRelocation {
     pub version: String,
     pub host: PathBuf,
     pub image: PathBuf,
 }
 
 impl ToolRelocation {
-    pub(crate) fn new(paths: Vec<(PathBuf, PathBuf)>) -> Self {
+    pub fn new(paths: Vec<(PathBuf, PathBuf)>) -> Self {
         Self {
             paths,
             pythons: Vec::new(),
         }
     }
 
-    pub(crate) fn with_pythons(mut self, pythons: Vec<PythonRelocation>) -> Self {
+    pub fn with_pythons(mut self, pythons: Vec<PythonRelocation>) -> Self {
         self.pythons = pythons;
         self
     }
@@ -64,7 +64,7 @@ impl ToolRelocation {
 
 /// The result of building a layer blob.
 #[derive(Debug, Clone)]
-pub(crate) struct LayerBlob {
+pub struct LayerBlob {
     /// sha256 digest of the gzipped tar (the "blob digest"; what the manifest
     /// descriptor's `digest` field references).
     pub digest: String,
@@ -85,7 +85,7 @@ pub struct LayerOwner {
 }
 
 impl LayerOwner {
-    pub(crate) const fn new(uid: u32, gid: u32) -> Self {
+    pub const fn new(uid: u32, gid: u32) -> Self {
         Self { uid, gid }
     }
 }
@@ -144,7 +144,7 @@ pub(crate) fn build_layer_from_dir(
 ///
 /// The image only needs the plugin's source to run its hooks; git metadata
 /// would add size and make the layer digest depend on fetch history.
-pub(crate) fn build_plugin_layer_from_dir(
+pub fn build_plugin_layer_from_dir(
     src_dir: &Path,
     target_prefix: &str,
     owner: LayerOwner,
@@ -252,7 +252,7 @@ fn link_stays_inside(link: &Path, raw: &Path, src_dir: &Path, canonical_src: &Pa
 }
 
 /// Build a tool layer while rebasing host paths embedded by its installer.
-pub(crate) fn build_relocated_tool_layer_from_dir(
+pub fn build_relocated_tool_layer_from_dir(
     src_dir: &Path,
     target_prefix: &str,
     owner: LayerOwner,
@@ -269,7 +269,7 @@ pub(crate) fn build_relocated_tool_layer_from_dir(
 /// Build a reproducible layer from one host file, symlink, or directory.
 /// Directory contents are placed under `image_path`; a file or symlink is
 /// placed at `image_path` itself.
-pub(crate) fn build_layer_from_path(
+pub fn build_layer_from_path(
     host_path: &Path,
     image_path: &str,
     owner: LayerOwner,
@@ -349,7 +349,7 @@ pub(crate) fn build_layer_from_dir_preserve_metadata(
 /// Build a layer from an in-memory list of (path_in_tar, content) pairs.
 /// Useful for layers that don't correspond to a real directory (e.g. the
 /// synthesized config layer). `owner` is applied to every emitted tar entry.
-pub(crate) fn build_layer_from_files(
+pub fn build_layer_from_files(
     files: &[(String, Vec<u8>, u32)],
     owner: LayerOwner,
 ) -> Result<LayerBlob> {
@@ -357,7 +357,7 @@ pub(crate) fn build_layer_from_files(
 }
 
 /// Build a layer from in-memory file and directory entries.
-pub(crate) fn build_layer_from_files_and_dirs(
+pub fn build_layer_from_files_and_dirs(
     files: &[(String, Vec<u8>, u32)],
     dirs: &[String],
     owner: LayerOwner,
@@ -1005,7 +1005,7 @@ fn python_major_minor(version: &str) -> Option<(&str, &str)> {
         .then_some((major, minor))
 }
 
-pub(crate) fn hex_encode(bytes: &[u8]) -> String {
+pub fn hex_encode(bytes: &[u8]) -> String {
     let mut s = String::with_capacity(bytes.len() * 2);
     for b in bytes {
         s.push_str(&format!("{b:02x}"));

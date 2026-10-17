@@ -19,12 +19,12 @@ use jdx_tar::{Archive, EntryUnpacker, UnpackOptions};
 use tempfile::TempDir;
 use walkdir::WalkDir;
 
-use crate::file;
-use crate::oci::layer::{self, LayerBlob};
-use crate::oci::layout::ImageLayout;
-use crate::oci::manifest::Descriptor;
-use crate::system::ManagerPackages;
-use crate::system::packages::PackageRequest;
+use crate::layer::{self, LayerBlob};
+use crate::layout::ImageLayout;
+use crate::manifest::Descriptor;
+use mise_system::ManagerPackages;
+use mise_system::packages::PackageRequest;
+use mise_util::file;
 
 #[derive(Debug, Clone)]
 struct FsEntry {
@@ -40,7 +40,7 @@ enum FsEntryKind {
     Other,
 }
 
-pub(crate) struct SystemPackagesLayer {
+pub struct SystemPackagesLayer {
     pub blob: LayerBlob,
     pub manager: &'static str,
 }
@@ -60,7 +60,7 @@ impl OciPackageManager {
     }
 }
 
-pub(crate) fn build_system_packages_layer(
+pub fn build_system_packages_layer(
     layout: &ImageLayout,
     base_layers: &[Descriptor],
     managers: &[ManagerPackages],
@@ -158,7 +158,7 @@ fn validate_host_requirements(manager: OciPackageManager) -> Result<()> {
 /// Package scripts run inside a chroot of the image rootfs, which only root can
 /// enter, and a non-root install would leave the layer owned by the builder.
 fn require_root(manager: OciPackageManager, tool: &str) -> Result<()> {
-    if !crate::system::sudo::is_root() {
+    if !mise_ui::sudo::is_root() {
         bail!(
             "mise oci needs to run as root to install {name} system packages because {tool} \
              executes package scripts in a chroot",
@@ -858,7 +858,7 @@ mod tests {
     use std::sync::Arc;
 
     use super::*;
-    use crate::system::packages::{
+    use mise_system::packages::{
         SystemPackageManager, apk::ApkManager, apt::AptManager, dnf::DnfManager,
     };
 
@@ -867,7 +867,7 @@ mod tests {
             name: name.to_string(),
             version: version.map(str::to_string),
             tap_url: None,
-            desired: crate::system::packages::PackageDesiredState::Present,
+            desired: mise_system::packages::PackageDesiredState::Present,
         }
     }
 
