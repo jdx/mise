@@ -1307,8 +1307,9 @@ impl RustRuntime {
         match link_rustup_proxies(&self.bin_dir, proxies_root) {
             Ok(dir) => vec![dir],
             Err(err) => {
-                debug!("failed to isolate rustup proxies: {err:#}");
-                vec![self.bin_dir.clone()]
+                // Falling back to the shared dir would reintroduce the PATH shadowing.
+                warn!("failed to isolate rustup proxies: {err:#}");
+                vec![]
             }
         }
     }
