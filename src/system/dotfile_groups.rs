@@ -33,19 +33,15 @@ use eyre::{Result, bail};
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 
-use crate::config::ConfigMap;
 use crate::dirs;
 use crate::file;
 use crate::path::PathExt;
 use crate::system::files::{self, FileMode, FileRequest, FileTomlEntry};
 use crate::system::history::journal;
+use crate::system::host::ConfigMap;
 use crate::system::resources::ResourceOrigin;
 
-/// `[dotfile_groups]` as written in one config file: group name -> table.
-/// Values stay TOML until expansion so a malformed group warns and is
-/// skipped instead of failing the whole config file.
-#[derive(Debug, Clone, Default, Deserialize)]
-pub struct DotfileGroupsTomlConfig(pub IndexMap<String, toml::Value>);
+pub use mise_system_config::dotfiles::DotfileGroupsTomlConfig;
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -146,7 +142,7 @@ pub(crate) fn group_requests(config_files: &ConfigMap) -> Vec<FileRequest> {
         let origin = ResourceOrigin {
             config: path.clone(),
             config_root: cf.config_root(),
-            environment: crate::config::environments_for_config_path(path),
+            environment: crate::system::host::environments_for_config_path(path),
             source: None,
         };
         let base = path.parent().unwrap_or(Path::new(".")).to_path_buf();

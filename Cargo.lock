@@ -6733,12 +6733,12 @@ dependencies = [
  "miette",
  "minisign-verify",
  "mise-bootstrap",
- "mise-brew-metadata",
- "mise-brew-relocation",
  "mise-cache-core",
  "mise-dotenv",
  "mise-interactive-config",
  "mise-settings",
+ "mise-system-config",
+ "mise-system-packages",
  "mise-ui",
  "mise-util",
  "mockito",
@@ -6801,8 +6801,6 @@ dependencies = [
  "toml 1.1.8+spec-1.1.0",
  "toml_edit 0.25.17+spec-1.1.0",
  "ubi",
- "unicase",
- "unicode-normalization",
  "url",
  "urlencoding",
  "usage-cli",
@@ -6944,6 +6942,62 @@ dependencies = [
  "thiserror 2.0.21",
  "tokio",
  "x509-cert 0.3.0",
+]
+
+[[package]]
+name = "mise-system-config"
+version = "0.1.0"
+dependencies = [
+ "eyre",
+ "indexmap 2.14.2",
+ "mise-bootstrap",
+ "mise-system-packages",
+ "mise-util",
+ "serde",
+ "serde_ignored",
+ "toml 1.1.8+spec-1.1.0",
+]
+
+[[package]]
+name = "mise-system-packages"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "base64 0.23.1",
+ "calm_io",
+ "chrono",
+ "eyre",
+ "flate2",
+ "fslock",
+ "futures-util",
+ "glob",
+ "hex",
+ "indoc",
+ "jdx-tar",
+ "log",
+ "mise-brew-metadata",
+ "mise-brew-relocation",
+ "mise-settings",
+ "mise-ui",
+ "mise-util",
+ "mockito",
+ "nix 0.31.3",
+ "plist",
+ "regex",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "sha2 0.11.1",
+ "shell-escape",
+ "shell-words",
+ "tempfile",
+ "tokio",
+ "toml 1.1.8+spec-1.1.0",
+ "unicase",
+ "unicode-normalization",
+ "url",
+ "urlencoding",
+ "walkdir",
 ]
 
 [[package]]

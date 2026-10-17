@@ -30,12 +30,13 @@ use itertools::Itertools;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 
-use crate::config::{Config, ConfigMap, Settings};
+use crate::config::Settings;
 use crate::dirs;
 use crate::file;
 use crate::hash::{hash_sha256_to_str, hash_to_str};
 use crate::path::PathExt;
 use crate::system::history::journal::{self, Capture};
+use crate::system::host::{Config, ConfigMap};
 use crate::system::resources::ResourceOrigin;
 use crate::system::secrets::SecretValues;
 use crate::ui::prompt;
@@ -655,15 +656,15 @@ pub fn files_from_config(config: &Config) -> Result<Vec<FileRequest>> {
 pub fn composed_files_from_config(config: &Config) -> Result<Vec<FileRequest>> {
     let mut composed: IndexMap<PathBuf, Vec<FileRequest>> = IndexMap::new();
     let trusted_roots = global_composed_roots(config);
-    let selection = crate::system::dotfile_groups::selection(&config.config_files);
+    let selection = crate::system::dotfile_groups::selection(&config.config_files());
     // a deselected group is kept, disabled, out of the conflict checks: only
     // the groups a machine applies have to agree with each other
     let mut deselected = vec![];
     for config_files in config.bootstrap_config_maps() {
         for mut request in
-            files_from_config_files_with_tracking_roots(config_files, Some(&trusted_roots))
+            files_from_config_files_with_tracking_roots(&config_files, Some(&trusted_roots))
                 .into_iter()
-                .chain(crate::system::dotfile_groups::group_requests(config_files))
+                .chain(crate::system::dotfile_groups::group_requests(&config_files))
         {
             if !crate::system::dotfile_groups::is_selected(&request, selection.as_deref()) {
                 request.enabled = false;
@@ -731,7 +732,7 @@ pub(crate) fn declaration_is_global(config: &Config, req: &FileRequest) -> bool 
 
 /// Invalid project declarations must not block personal history either.
 pub(crate) fn tracking_config_is_global(config: &Config, path: &Path) -> bool {
-    crate::config::is_global_config(path)
+    crate::system::host::is_global_config(path)
         || global_composed_roots(config)
             .iter()
             .any(|root| path.starts_with(root))
@@ -739,7 +740,7 @@ pub(crate) fn tracking_config_is_global(config: &Config, path: &Path) -> bool {
 
 /// Whether a track declaration comes from a layer allowed to enroll files.
 fn track_layer_allowed(origin: &ResourceOrigin, trusted_roots: &[PathBuf]) -> bool {
-    crate::config::is_global_config(&origin.config)
+    crate::system::host::is_global_config(&origin.config)
         || trusted_roots
             .iter()
             .any(|root| origin.config_root == *root || origin.config.starts_with(root))
@@ -751,7 +752,7 @@ fn global_composed_roots(config: &Config) -> Vec<PathBuf> {
     for (root, config_files) in config.selected_bootstrap_config_maps() {
         let declared_globally = config_files
             .keys()
-            .any(|path| crate::config::is_global_config(path) && !path.starts_with(root));
+            .any(|path| crate::system::host::is_global_config(path) && !path.starts_with(&root));
         if declared_globally {
             roots.push(root.to_path_buf());
         }
@@ -1268,7 +1269,7 @@ fn files_from_config_files_with_tracking_roots(
         let origin = ResourceOrigin {
             config: path.clone(),
             config_root: cf.config_root(),
-            environment: crate::config::environments_for_config_path(path),
+            environment: crate::system::host::environments_for_config_path(path),
             source: None,
         };
         if let Some(dotfiles) = cf.dotfiles_config() {
@@ -1301,7 +1302,7 @@ fn files_from_config_files_with_tracking_roots(
         let origin = ResourceOrigin {
             config: path.clone(),
             config_root: cf.config_root(),
-            environment: crate::config::environments_for_config_path(path),
+            environment: crate::system::host::environments_for_config_path(path),
             source: None,
         };
         let Some(dotfiles) = cf.dotfiles_config() else {
@@ -6295,9 +6296,6 @@ mod tests {
 
     #[test]
     fn destination_variants_survive_incoming_config_preflight() -> Result<()> {
-        use crate::config::config_file::mise_toml::MiseToml;
-        use std::sync::Arc;
-
         let path = dirs::HOME.join(".config/mise/config.toml");
         let body = r#"
 [dotfiles."vscode/settings.json"]
@@ -6311,7 +6309,7 @@ variants = [
         let mut configs = ConfigMap::new();
         configs.insert(
             path.clone(),
-            Arc::new(MiseToml::for_history_preflight(body, &path)?),
+            crate::system::host::parse_config_body(body, &path)?,
         );
         validate_incoming_files(&configs)?;
 
@@ -6322,7 +6320,7 @@ variants = [
         );
         configs.insert(
             path.clone(),
-            Arc::new(MiseToml::for_history_preflight(&invalid, &path)?),
+            crate::system::host::parse_config_body(&invalid, &path)?,
         );
         assert!(validate_incoming_files(&configs).is_err());
         Ok(())
@@ -6527,14 +6525,11 @@ variants = [{{ {field} = "linux" }}]"#
     }
 
     fn validate_incoming_body(body: &str) -> Result<()> {
-        use crate::config::config_file::mise_toml::MiseToml;
-        use std::sync::Arc;
-
         let path = dirs::HOME.join(".config/mise/config.toml");
         let mut configs = ConfigMap::new();
         configs.insert(
             path.clone(),
-            Arc::new(MiseToml::for_history_preflight(body, &path)?),
+            crate::system::host::parse_config_body(body, &path)?,
         );
         validate_incoming_files(&configs)
     }
@@ -8113,14 +8108,11 @@ source = "oldrc""#,
     }
 
     fn incoming(body: &str) -> Result<()> {
-        use crate::config::config_file::mise_toml::MiseToml;
-        use std::sync::Arc;
-
         let path = dirs::HOME.join(".config/mise/config.toml");
         let mut configs = ConfigMap::new();
         configs.insert(
             path.clone(),
-            Arc::new(MiseToml::for_history_preflight(body, &path)?),
+            crate::system::host::parse_config_body(body, &path)?,
         );
         validate_incoming_files(&configs)
     }
@@ -8639,16 +8631,13 @@ source = "oldrc""#,
 
     #[test]
     fn relative_is_rejected_outside_symlink_modes() -> Result<()> {
-        use crate::config::config_file::mise_toml::MiseToml;
-        use std::sync::Arc;
-
         let path = dirs::HOME.join(".config/mise/config.toml");
         let validate = |entry: &str| -> Result<()> {
             let body = format!("[dotfiles]\n\"~/.relative-test\" = {entry}\n");
             let mut configs = ConfigMap::new();
             configs.insert(
                 path.clone(),
-                Arc::new(MiseToml::for_history_preflight(&body, &path)?),
+                crate::system::host::parse_config_body(&body, &path)?,
             );
             validate_incoming_files(&configs)
         };
@@ -8672,16 +8661,13 @@ source = "oldrc""#,
 
     #[test]
     fn remove_empty_is_rejected_outside_template_mode() -> Result<()> {
-        use crate::config::config_file::mise_toml::MiseToml;
-        use std::sync::Arc;
-
         let path = dirs::HOME.join(".config/mise/config.toml");
         let validate = |entry: &str| -> Result<()> {
             let body = format!("[dotfiles]\n\"~/.remove-empty-test\" = {entry}\n");
             let mut configs = ConfigMap::new();
             configs.insert(
                 path.clone(),
-                Arc::new(MiseToml::for_history_preflight(&body, &path)?),
+                crate::system::host::parse_config_body(&body, &path)?,
             );
             validate_incoming_files(&configs)
         };
@@ -8729,9 +8715,6 @@ source = "oldrc""#,
 
     #[test]
     fn track_local_is_tracking_kept_on_this_machine() -> Result<()> {
-        use crate::config::config_file::mise_toml::MiseToml;
-        use std::sync::Arc;
-
         let origin = ResourceOrigin {
             config: PathBuf::from("/mise.toml"),
             config_root: PathBuf::from("/"),
@@ -8776,7 +8759,7 @@ source = "oldrc""#,
         let mut configs = ConfigMap::new();
         configs.insert(
             path.clone(),
-            Arc::new(MiseToml::for_history_preflight(body, &path)?),
+            crate::system::host::parse_config_body(body, &path)?,
         );
         validate_incoming_files(&configs)?;
         for extra in [
@@ -8789,7 +8772,7 @@ source = "oldrc""#,
             );
             configs.insert(
                 path.clone(),
-                Arc::new(MiseToml::for_history_preflight(&body, &path)?),
+                crate::system::host::parse_config_body(&body, &path)?,
             );
             assert!(validate_incoming_files(&configs).is_err(), "{extra}");
         }
@@ -8798,16 +8781,13 @@ source = "oldrc""#,
 
     #[test]
     fn dot_prefix_is_rejected_outside_directory_walking_modes() -> Result<()> {
-        use crate::config::config_file::mise_toml::MiseToml;
-        use std::sync::Arc;
-
         let path = dirs::HOME.join(".config/mise/config.toml");
         let validate = |entry: &str| -> Result<()> {
             let body = format!("[dotfiles]\n\"~/.dot-prefix-test\" = {entry}\n");
             let mut configs = ConfigMap::new();
             configs.insert(
                 path.clone(),
-                Arc::new(MiseToml::for_history_preflight(&body, &path)?),
+                crate::system::host::parse_config_body(&body, &path)?,
             );
             validate_incoming_files(&configs)
         };

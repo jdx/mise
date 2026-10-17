@@ -32,11 +32,11 @@ use indexmap::IndexMap;
 use mise_util::structured_merge::{self, Format};
 use serde::Deserialize;
 
-use crate::config::{Config, ConfigMap};
 use crate::file;
 use crate::path::PathExt;
 use crate::system::files::FileState;
 use crate::system::history::journal::{self, Capture};
+use crate::system::host::{Config, ConfigMap};
 use crate::system::resources::ResourceOrigin;
 use crate::ui::prompt;
 
@@ -226,7 +226,7 @@ pub fn matches_target(req: &EditRequest, filters: &[String]) -> bool {
 pub fn edits_from_config(config: &Config) -> Result<Vec<EditRequest>> {
     let mut composed: IndexMap<String, EditRequest> = IndexMap::new();
     for config_files in config.bootstrap_config_maps() {
-        for request in edits_from_config_files(config_files) {
+        for request in edits_from_config_files(&config_files) {
             let key = format!("{}\u{0}{}", request.path.display(), request.id);
             if let Some(existing) = composed.get(&key) {
                 if edit_requests_match(config, existing, &request) {
@@ -423,8 +423,8 @@ fn resolve_entry(
     }
     let mut origin = ResourceOrigin {
         config: config_path.to_path_buf(),
-        config_root: crate::config::config_file::config_root::config_root(config_path),
-        environment: crate::config::environments_for_config_path(config_path),
+        config_root: crate::system::host::config_root(config_path),
+        environment: crate::system::host::environments_for_config_path(config_path),
         source: None,
     };
     let entry = match entry {

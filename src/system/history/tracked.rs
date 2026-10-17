@@ -21,10 +21,10 @@ use walkdir::WalkDir;
 use super::select::{self, Selection};
 use super::shadow::{CaptureRoot, MAX_BYTES, MAX_FILE_BYTES, MAX_FILES};
 use super::store::{Coverage, CoverageEntry, PathReason};
-use crate::config::Config;
 use crate::dirs;
 use crate::file::{self, display_path};
 use crate::system::files::{FileMode, FilePolicy};
+use crate::system::host::Config;
 
 /// Credential names excluded from capture by default.
 const CREDENTIAL_NAMES: &[&str] = &["github_tokens.toml", "hosts.yml", "age.txt"];
@@ -312,7 +312,7 @@ pub struct Walk {
 impl TrackedSet {
     /// The effective tracked set for the loaded configuration.
     pub async fn effective() -> Result<Self> {
-        let config = Config::get().await?;
+        let config = crate::system::host::config().await?;
         let declared = Self::from_config(&config)?;
         let root = super::local::root();
         if !super::shadow::HistoryRepo::path_in(&root).is_dir() {

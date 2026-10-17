@@ -1,105 +1,20 @@
+use crate::system::templating::TemplatedExt;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
 use eyre::{Result, bail, eyre};
 use indexmap::{IndexMap, IndexSet};
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 
-use crate::config::{Config, ConfigMap};
+use crate::system::host::{Config, ConfigMap};
 use crate::system::resources::{ResourceAction, ResourceId, ResourceOrigin, ResourcePlan};
 #[cfg(test)]
 use crate::system::templating::Templated;
-
-#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ComposeState {
-    #[default]
-    Running,
-    Stopped,
-    Absent,
-}
-
-#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ComposePullPolicy {
-    Always,
-    #[default]
-    Missing,
-    Never,
-}
-
-#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ComposeBuildPolicy {
-    #[default]
-    Auto,
-    Always,
-    Never,
-}
-
-#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ComposeRecreatePolicy {
-    #[default]
-    Auto,
-    Always,
-    Never,
-}
-
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ComposeRemoveImages {
-    Local,
-    All,
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
-pub struct ComposeTomlConfig {
-    pub project_dir: PathBuf,
-    #[serde(default)]
-    pub files: Vec<PathBuf>,
-    #[serde(default)]
-    pub env_files: Vec<PathBuf>,
-    #[serde(default)]
-    pub project_name: Option<String>,
-    #[serde(default)]
-    pub profiles: Vec<String>,
-    #[serde(default)]
-    pub services: Vec<String>,
-    #[serde(default)]
-    pub oneshot: Vec<String>,
-    #[serde(default)]
-    pub state: ComposeState,
-    #[serde(default)]
-    pub pull: ComposePullPolicy,
-    #[serde(default)]
-    pub build: ComposeBuildPolicy,
-    #[serde(default)]
-    pub recreate: ComposeRecreatePolicy,
-    #[serde(default = "default_true")]
-    pub wait: bool,
-    #[serde(default)]
-    pub wait_timeout: Option<u64>,
-    #[serde(default)]
-    pub timeout: Option<u64>,
-    #[serde(default = "default_true")]
-    pub remove_orphans: bool,
-    #[serde(default)]
-    pub renew_anonymous_volumes: bool,
-    #[serde(default)]
-    pub down_volumes: bool,
-    #[serde(default)]
-    pub down_images: Option<ComposeRemoveImages>,
-    #[serde(default)]
-    pub sudo: bool,
-    #[serde(default)]
-    pub command: Vec<String>,
-    #[serde(default)]
-    pub engine_command: Vec<String>,
-    #[serde(default)]
-    pub depends_on: Vec<String>,
-}
+pub use mise_system_config::compose::{
+    ComposeBuildPolicy, ComposePullPolicy, ComposeRecreatePolicy, ComposeRemoveImages,
+    ComposeState, ComposeTomlConfig,
+};
 
 #[derive(Clone, Debug)]
 pub struct ComposeRequest {
@@ -160,7 +75,7 @@ struct ComposeContainer {
 pub fn prepare_requests_from_config(config: &Config) -> Result<Vec<ComposeRequest>> {
     let mut composed: IndexMap<String, (ComposeTomlConfig, ResourceOrigin)> = IndexMap::new();
     for config_files in config.bootstrap_config_maps() {
-        for (name, declaration) in compose_from_config_files(config, config_files)? {
+        for (name, declaration) in compose_from_config_files(config, &config_files)? {
             if let Some(existing) = composed.get(&name) {
                 if existing.0 == declaration.0 {
                     continue;
@@ -192,7 +107,7 @@ fn compose_from_config_files(
             let origin = ResourceOrigin {
                 config: path.clone(),
                 config_root: cf.config_root(),
-                environment: crate::config::environments_for_config_path(path),
+                environment: crate::system::host::environments_for_config_path(path),
                 source: None,
             };
             for (name, project) in bootstrap.compose {
@@ -1196,10 +1111,6 @@ fn compose_env() -> Vec<(String, String)> {
         ("COMPOSE_ANSI".to_string(), "never".to_string()),
         ("COMPOSE_PROGRESS".to_string(), "plain".to_string()),
     ]
-}
-
-fn default_true() -> bool {
-    true
 }
 
 fn default_compose_command() -> Vec<String> {

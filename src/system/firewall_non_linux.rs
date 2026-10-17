@@ -1,14 +1,8 @@
 use eyre::{Result, bail};
-use serde::Deserialize;
 
-use crate::config::Config;
+use crate::system::host::Config;
 use crate::system::resources::{ResourceAction, ResourceId, ResourcePlan};
-
-#[derive(Clone, Debug, Default, Deserialize)]
-pub struct FirewallTomlConfig {
-    #[serde(flatten)]
-    values: std::collections::HashMap<String, toml::Value>,
-}
+pub use mise_system_config::firewall::FirewallTomlConfig;
 
 #[derive(Clone, Debug)]
 pub struct FirewallRequest;
@@ -71,7 +65,7 @@ pub fn apply_privileged_plan_from_stdin() -> Result<()> {
 }
 
 fn configured(config: &Config) -> bool {
-    config.config_files.values().any(|cf| {
+    config.config_files().values().any(|cf| {
         cf.bootstrap_config()
             .and_then(|bootstrap| bootstrap.linux.firewall)
             .is_some_and(|firewall| {

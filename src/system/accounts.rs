@@ -7,40 +7,11 @@ use eyre::{Result, WrapErr, bail, eyre};
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 
-use crate::config::Config;
+use crate::system::host::Config;
 use crate::system::resources::{ResourceAction, ResourceId, ResourcePlan};
 
 pub use mise_bootstrap::AccountState;
-
-#[derive(Clone, Debug, Default, Deserialize)]
-pub struct GroupTomlConfig {
-    #[serde(default)]
-    pub state: AccountState,
-    pub gid: Option<u32>,
-    #[serde(default)]
-    pub system: bool,
-}
-
-#[derive(Clone, Debug, Default, Deserialize)]
-pub struct UserTomlConfig {
-    #[serde(default)]
-    pub state: AccountState,
-    pub uid: Option<u32>,
-    pub group: Option<String>,
-    pub groups: Option<Vec<String>>,
-    #[serde(default)]
-    pub exclusive_groups: bool,
-    pub home: Option<PathBuf>,
-    pub shell: Option<PathBuf>,
-    pub comment: Option<String>,
-    #[serde(default)]
-    pub system: bool,
-    pub create_home: Option<bool>,
-    #[serde(default)]
-    pub move_home: bool,
-    #[serde(default)]
-    pub remove_home: bool,
-}
+pub use mise_system_config::accounts::{GroupTomlConfig, UserTomlConfig};
 
 #[derive(Clone, Debug)]
 pub struct GroupRequest {
@@ -157,7 +128,7 @@ struct AccountPlan {
 pub fn requests_from_config(config: &Config) -> Result<AccountRequests> {
     let mut groups = IndexMap::new();
     let mut users = IndexMap::new();
-    for cf in config.config_files.values() {
+    for cf in config.config_files().values() {
         if let Some(bootstrap) = cf.bootstrap_config() {
             for (name, group) in bootstrap.groups {
                 groups.entry(name).or_insert(group);

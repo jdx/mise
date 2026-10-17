@@ -12,7 +12,7 @@ use eyre::{Result, bail};
 use indexmap::IndexMap;
 use serde::Serialize;
 
-use crate::config::Config;
+use crate::system::host::Config;
 use crate::system::launchd::{self, LaunchdRequest, LaunchdState, LaunchdTomlConfig};
 use crate::system::resources::{ResourceAction, ResourceId, ResourceOrigin, ResourcePlan};
 use crate::system::scheduled_tasks::{self, ScheduledTaskRequest, ScheduledTaskState};

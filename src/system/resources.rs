@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use eyre::{Result, bail};
 use indexmap::IndexSet;
 
-use crate::config::Config;
+use crate::system::host::Config;
 use crate::system::packages::{PackageRequest, PackageState};
 
 pub use mise_bootstrap::{

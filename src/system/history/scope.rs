@@ -322,7 +322,7 @@ impl OperationScope {
         if self.shared.is_none() && !self.lazy {
             return;
         }
-        let tracked = match crate::config::Config::reset().await {
+        let tracked = match crate::system::host::reload_config().await {
             Ok(config) => TrackedSet::from_config(&config),
             Err(err) => Err(err),
         };

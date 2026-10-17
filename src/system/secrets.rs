@@ -5,31 +5,17 @@ use std::sync::{Arc, Mutex};
 use demand::Input;
 use eyre::{Result, bail};
 use indexmap::IndexMap;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use serde_json::Value as JsonValue;
 use tera::{Kwargs, State, TeraResult, Value};
 
-use crate::config::{Config, ConfigMap};
 use crate::env_diff::EnvMap;
+use crate::system::host::{Config, ConfigMap};
 use crate::system::resources::ResourceOrigin;
 use crate::tera::{
     BASE_CONTEXT, TeraEngine, get_tera, get_tera_for_oci, get_tera_v2, render_str, render_str_v2,
 };
-
-#[derive(Clone, Debug, Deserialize)]
-#[serde(untagged)]
-pub enum SecretTomlConfig {
-    Env(String),
-    Options(SecretOptionsTomlConfig),
-}
-
-#[derive(Clone, Debug, Deserialize)]
-pub struct SecretOptionsTomlConfig {
-    pub env: String,
-    pub description: Option<String>,
-    #[serde(default)]
-    pub allow_empty: bool,
-}
+pub use mise_system_config::secrets::{SecretOptionsTomlConfig, SecretTomlConfig};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct SecretDeclaration {
@@ -93,7 +79,7 @@ struct SecretUnavailable {
 pub(crate) fn declarations_from_config(config: &Config) -> Result<Vec<SecretDeclaration>> {
     let mut merged: IndexMap<String, (SecretDeclaration, ResourceOrigin)> = IndexMap::new();
     for config_files in config.bootstrap_config_maps() {
-        for (name, declaration) in secrets_from_config_files(config_files)? {
+        for (name, declaration) in secrets_from_config_files(&config_files)? {
             if let Some(existing) = merged.get(&name) {
                 if existing.0 == declaration.0 {
                     continue;
@@ -122,7 +108,7 @@ fn secrets_from_config_files(
             let origin = ResourceOrigin {
                 config: path.clone(),
                 config_root: cf.config_root(),
-                environment: crate::config::environments_for_config_path(path),
+                environment: crate::system::host::environments_for_config_path(path),
                 source: None,
             };
             for (name, declaration) in bootstrap.secrets {
@@ -253,11 +239,9 @@ impl SecretValues {
         // Independently selected bootstrap roots keep their legacy template
         // context until scoped composition and execution semantics are defined.
         if let Some((config, config_path)) = config
-            && !config
-                .selected_bootstrap_config_maps()
-                .any(|(_, files)| files.contains_key(config_path))
+            && !config.is_in_selected_bootstrap_root(config_path)
         {
-            context.insert("vars", &config.vars);
+            context.insert("vars", &config.vars());
         }
         context.insert("config_root", base);
         context.insert("target", target);
@@ -314,7 +298,7 @@ impl SecretValues {
             .map_err(|_| eyre::eyre!("bootstrap secret resolver is unavailable"))?;
         if let Some(config) = config {
             config.add_redactions_excluding(
-                resolution.redaction_env.keys().cloned(),
+                resolution.redaction_env.keys().cloned().collect(),
                 &resolution.redaction_env,
                 &BTreeSet::new(),
             );

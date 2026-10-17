@@ -387,6 +387,8 @@ if [[ $cur_version != "$latest_version" ]]; then
 	MISE_SETTINGS_VERSION=""
 	MISE_UTIL_VERSION=""
 	MISE_UI_VERSION=""
+	MISE_SYSTEM_PACKAGES_VERSION=""
+	MISE_SYSTEM_CONFIG_VERSION=""
 	MISE_BREW_METADATA_VERSION=""
 	MISE_BOOTSTRAP_VERSION=""
 
@@ -401,8 +403,11 @@ if [[ $cur_version != "$latest_version" ]]; then
 	cargo add -p mise-settings "mise-cache-core@$MISE_CACHE_CORE_VERSION" --no-default-features
 	cargo add -p mise-util "mise-cache-core@$MISE_CACHE_CORE_VERSION" --no-default-features
 
+	bump_and_publish_subcrate "mise-system-config" "crates/mise-system-config" "MISE_SYSTEM_CONFIG_VERSION"
+	cargo add -p mise "mise-system-config@$MISE_SYSTEM_CONFIG_VERSION"
+
 	bump_and_publish_subcrate "mise-brew-relocation" "crates/mise-brew-relocation" "MISE_BREW_RELOCATION_VERSION"
-	cargo add -p mise --target 'cfg(unix)' "mise-brew-relocation@$MISE_BREW_RELOCATION_VERSION"
+	cargo add -p mise-system-packages --target 'cfg(unix)' "mise-brew-relocation@$MISE_BREW_RELOCATION_VERSION"
 
 	bump_and_publish_subcrate "mise-dotenv" "crates/mise-dotenv" "MISE_DOTENV_VERSION"
 	cargo add -p mise "mise-dotenv@$MISE_DOTENV_VERSION"
@@ -414,6 +419,7 @@ if [[ $cur_version != "$latest_version" ]]; then
 	cargo add -p mise "mise-settings@$MISE_SETTINGS_VERSION"
 	cargo add -p mise-util "mise-settings@$MISE_SETTINGS_VERSION"
 	cargo add -p mise-ui "mise-settings@$MISE_SETTINGS_VERSION"
+	cargo add -p mise-system-packages "mise-settings@$MISE_SETTINGS_VERSION"
 
 	bump_and_publish_subcrate "mise-sigstore" "crates/mise-sigstore" "MISE_SIGSTORE_VERSION"
 	cargo add -p mise-util "mise-sigstore@$MISE_SIGSTORE_VERSION" --no-default-features
@@ -422,10 +428,14 @@ if [[ $cur_version != "$latest_version" ]]; then
 	bump_and_publish_subcrate "mise-util" "crates/mise-util" "MISE_UTIL_VERSION"
 	cargo add -p mise "mise-util@$MISE_UTIL_VERSION"
 	cargo add -p mise-ui "mise-util@$MISE_UTIL_VERSION"
+	cargo add -p mise-system-packages "mise-util@$MISE_UTIL_VERSION"
 	bump_and_publish_subcrate "mise-ui" "crates/mise-ui" "MISE_UI_VERSION"
 	cargo add -p mise "mise-ui@$MISE_UI_VERSION"
+	cargo add -p mise-system-packages "mise-ui@$MISE_UI_VERSION"
 	bump_and_publish_subcrate "mise-brew-metadata" "crates/mise-brew-metadata" "MISE_BREW_METADATA_VERSION"
-	cargo add -p mise "mise-brew-metadata@$MISE_BREW_METADATA_VERSION"
+	cargo add -p mise-system-packages --target 'cfg(unix)' "mise-brew-metadata@$MISE_BREW_METADATA_VERSION"
+	bump_and_publish_subcrate "mise-system-packages" "crates/mise-system-packages" "MISE_SYSTEM_PACKAGES_VERSION"
+	cargo add -p mise "mise-system-packages@$MISE_SYSTEM_PACKAGES_VERSION"
 	bump_and_publish_subcrate "mise-bootstrap" "crates/mise-bootstrap" "MISE_BOOTSTRAP_VERSION"
 	cargo add -p mise "mise-bootstrap@$MISE_BOOTSTRAP_VERSION"
 

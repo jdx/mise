@@ -12,8 +12,12 @@ use ipnet::IpNet;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
-use crate::config::Config;
+use crate::system::host::Config;
 use crate::system::resources::{ResourceAction, ResourceId, ResourcePlan};
+pub use mise_system_config::firewall::{
+    FirewallAction, FirewallBackend, FirewallDirection, FirewallPolicy, FirewallPortToml,
+    FirewallProtocol, FirewallRuleState, FirewallRuleTomlConfig, FirewallState, FirewallTomlConfig,
+};
 
 const STATE_PATH: &str = "/var/lib/mise/bootstrap/firewall.json";
 const NFT_TABLE: &str = "mise_bootstrap";
@@ -25,165 +29,6 @@ const FIREWALLD_OUTGOING: &str = "mise-bootstrap-out";
 const UFW_TRANSITION_PREFIX: &str = "mise-transition:";
 const UFW_RESET_ARGS: [&str; 2] = ["--force", "reset"];
 const FIREWALLD_POLICY_DIR: &str = "/etc/firewalld/policies";
-
-#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum FirewallBackend {
-    #[default]
-    Auto,
-    Ufw,
-    Firewalld,
-    Nftables,
-}
-
-impl FirewallBackend {
-    fn program(self) -> Option<&'static str> {
-        match self {
-            Self::Auto => None,
-            Self::Ufw => Some("ufw"),
-            Self::Firewalld => Some("firewall-cmd"),
-            Self::Nftables => Some("nft"),
-        }
-    }
-
-    fn label(self) -> &'static str {
-        match self {
-            Self::Auto => "auto",
-            Self::Ufw => "ufw",
-            Self::Firewalld => "firewalld",
-            Self::Nftables => "nftables",
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum FirewallState {
-    #[default]
-    Enabled,
-    Disabled,
-    Absent,
-}
-
-#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum FirewallPolicy {
-    #[default]
-    Allow,
-    Deny,
-    Reject,
-}
-
-impl FirewallPolicy {
-    fn nft(self) -> &'static str {
-        match self {
-            Self::Allow => "accept",
-            Self::Deny | Self::Reject => "drop",
-        }
-    }
-
-    fn firewalld(self) -> &'static str {
-        match self {
-            Self::Allow => "ACCEPT",
-            Self::Deny => "DROP",
-            Self::Reject => "REJECT",
-        }
-    }
-
-    fn ufw(self) -> &'static str {
-        match self {
-            Self::Allow => "allow",
-            Self::Deny => "deny",
-            Self::Reject => "reject",
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum FirewallRuleState {
-    #[default]
-    Present,
-    Absent,
-}
-
-#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum FirewallDirection {
-    #[default]
-    Incoming,
-    Outgoing,
-}
-
-#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum FirewallAction {
-    #[default]
-    Allow,
-    Limit,
-    Deny,
-    Reject,
-}
-
-impl FirewallAction {
-    fn ufw(self) -> &'static str {
-        match self {
-            Self::Allow => "allow",
-            Self::Limit => "limit",
-            Self::Deny => "deny",
-            Self::Reject => "reject",
-        }
-    }
-
-    fn nft(self) -> &'static str {
-        match self {
-            Self::Allow => "accept",
-            Self::Limit => unreachable!("nftables limit rules use a dedicated renderer"),
-            Self::Deny => "drop",
-            Self::Reject => "reject",
-        }
-    }
-
-    fn firewalld(self) -> &'static str {
-        match self {
-            Self::Allow => "accept",
-            Self::Limit => unreachable!("firewalld limit rules are rejected during validation"),
-            Self::Deny => "drop",
-            Self::Reject => "reject",
-        }
-    }
-
-    fn preserves_access(self) -> bool {
-        matches!(self, Self::Allow | Self::Limit)
-    }
-}
-
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "lowercase")]
-pub enum FirewallProtocol {
-    Tcp,
-    Udp,
-    Sctp,
-    Dccp,
-}
-
-impl FirewallProtocol {
-    fn as_str(self) -> &'static str {
-        match self {
-            Self::Tcp => "tcp",
-            Self::Udp => "udp",
-            Self::Sctp => "sctp",
-            Self::Dccp => "dccp",
-        }
-    }
-}
-
-#[derive(Clone, Debug, Deserialize)]
-#[serde(untagged)]
-pub enum FirewallPortToml {
-    Single(u16),
-    Range(String),
-}
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub(crate) struct FirewallPort {
@@ -219,34 +64,6 @@ impl FirewallPort {
             format!("{}{separator}{}", self.start, self.end)
         }
     }
-}
-
-#[derive(Clone, Debug, Deserialize)]
-pub struct FirewallRuleTomlConfig {
-    pub name: String,
-    #[serde(default)]
-    pub state: FirewallRuleState,
-    #[serde(default)]
-    pub direction: FirewallDirection,
-    #[serde(default)]
-    pub action: FirewallAction,
-    pub port: Option<FirewallPortToml>,
-    pub protocol: Option<FirewallProtocol>,
-    pub source: Option<String>,
-    pub destination: Option<String>,
-    pub interface: Option<String>,
-}
-
-#[derive(Clone, Debug, Default, Deserialize)]
-pub struct FirewallTomlConfig {
-    pub backend: Option<FirewallBackend>,
-    pub state: Option<FirewallState>,
-    pub default_incoming: Option<FirewallPolicy>,
-    pub default_outgoing: Option<FirewallPolicy>,
-    pub exclusive: Option<bool>,
-    pub allow_lockout: Option<bool>,
-    #[serde(default)]
-    pub rules: Vec<FirewallRuleTomlConfig>,
 }
 
 fn default_incoming() -> FirewallPolicy {
@@ -314,7 +131,7 @@ pub fn prepare_request_from_config(config: &Config) -> Result<Option<FirewallReq
     let mut merged = None;
     // config_files is ordered local -> global; merge global -> local so a
     // more local scalar or same-named rule overrides its inherited value.
-    for cf in config.config_files.values().rev() {
+    for cf in config.config_files().values().rev() {
         if let Some(bootstrap) = cf.bootstrap_config()
             && let Some(firewall) = bootstrap.linux.firewall
         {

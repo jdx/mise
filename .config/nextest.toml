@@ -50,7 +50,7 @@ slow-timeout = { period = "1s", terminate-after = 5 }
 # hang through. This covers 181 of ~4090 tests; everything else keeps the strict
 # ceiling above.
 [[profile.ci.overrides]]
-filter = 'test(/^(system::history::|system::remote_repository::|git::tests::|system::packages::apt::)/)'
+filter = 'test(/^(system::history::|system::remote_repository::|git::tests::)/) | (package(mise-system-packages) & test(/^apt::/))'
 slow-timeout = { period = "2s", terminate-after = 4 }
 
 # These macOS tests write preferences through cfprefsd and then wait for it to

@@ -5,7 +5,7 @@ use eyre::{Result, bail, eyre};
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 
-use crate::config::Config;
+use crate::system::host::Config;
 use crate::system::resources::{ResourceAction, ResourceId, ResourceOrigin, ResourcePlan};
 
 pub use super::services_common::*;

@@ -1,6 +1,6 @@
 use eyre::{Result, bail};
 
-use crate::config::Config;
+use crate::system::host::Config;
 use crate::system::resources::ResourcePlan;
 
 pub use super::services_common::*;

@@ -1,3 +1,4 @@
+pub use mise_system_config::managed_files::{ManagedDirectoryTomlConfig, ManagedFileTomlConfig};
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -10,50 +11,8 @@ use indexmap::IndexMap;
 use path_absolutize::Absolutize;
 use serde::{Deserialize, Serialize};
 
-use crate::config::{Config, ConfigMap};
+use crate::system::host::{Config, ConfigMap};
 use crate::system::resources::{ResourceAction, ResourceId, ResourceOrigin, ResourcePlan};
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
-pub struct ManagedFileTomlConfig {
-    #[serde(default)]
-    pub phase: ManagedFilePhase,
-    pub source: Option<String>,
-    pub content: Option<String>,
-    pub owner: Option<String>,
-    pub group: Option<String>,
-    pub mode: Option<String>,
-    #[serde(default)]
-    pub template: bool,
-    #[serde(default)]
-    pub remove_empty: bool,
-    #[serde(default)]
-    pub state: ManagedState,
-    #[serde(default)]
-    pub replace: bool,
-    #[serde(default)]
-    pub notify: Vec<String>,
-    #[serde(default, deserialize_with = "crate::system::deserialize_package_os")]
-    pub os: Vec<String>,
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
-pub struct ManagedDirectoryTomlConfig {
-    #[serde(default)]
-    pub phase: ManagedFilePhase,
-    pub owner: Option<String>,
-    pub group: Option<String>,
-    pub mode: Option<String>,
-    #[serde(default)]
-    pub state: ManagedState,
-    #[serde(default)]
-    pub recursive: bool,
-    #[serde(default)]
-    pub replace: bool,
-    #[serde(default)]
-    pub notify: Vec<String>,
-    #[serde(default, deserialize_with = "crate::system::deserialize_package_os")]
-    pub os: Vec<String>,
-}
 
 pub use mise_bootstrap::ManagedFilePhase;
 
@@ -305,7 +264,7 @@ fn ignore_non_linux_account_principals(
 ) {
     let mut users = HashSet::new();
     let mut groups = HashSet::new();
-    for cf in config.config_files.values() {
+    for cf in config.config_files().values() {
         if let Some(bootstrap) = cf.bootstrap_config() {
             users.extend(bootstrap.users.into_keys());
             groups.extend(bootstrap.groups.into_keys());
@@ -384,7 +343,7 @@ fn merged_files_from_config(
     let mut composed: IndexMap<PathBuf, (ManagedFileTomlConfig, PathBuf, ResourceOrigin)> =
         IndexMap::new();
     for config_files in config.bootstrap_config_maps() {
-        for (path, declaration) in merged_files_from_config_files(config_files)? {
+        for (path, declaration) in merged_files_from_config_files(&config_files)? {
             if let Some(existing) = composed.get(&path) {
                 if managed_file_declarations_match(existing, &declaration) {
                     continue;
@@ -431,7 +390,7 @@ fn merged_files_from_config_files(
             let origin = ResourceOrigin {
                 config: cf.get_path().to_path_buf(),
                 config_root: cf.config_root(),
-                environment: crate::config::environments_for_config_path(cf.get_path()),
+                environment: crate::system::host::environments_for_config_path(cf.get_path()),
                 source: None,
             };
             for (path, mut file) in bootstrap.files {
@@ -476,7 +435,7 @@ fn directories_from_config(config: &Config) -> Result<Vec<ManagedDirectoryReques
     let mut composed: IndexMap<PathBuf, (ManagedDirectoryTomlConfig, ResourceOrigin)> =
         IndexMap::new();
     for config_files in config.bootstrap_config_maps() {
-        for (path, declaration) in directories_from_config_files(config_files)? {
+        for (path, declaration) in directories_from_config_files(&config_files)? {
             if let Some(existing) = composed.get(&path) {
                 if existing.0 == declaration.0 {
                     continue;
@@ -507,7 +466,7 @@ fn directories_from_config_files(
             let origin = ResourceOrigin {
                 config: cf.get_path().to_path_buf(),
                 config_root: cf.config_root(),
-                environment: crate::config::environments_for_config_path(cf.get_path()),
+                environment: crate::system::host::environments_for_config_path(cf.get_path()),
                 source: None,
             };
             let mut layer_paths = IndexMap::new();
@@ -4369,7 +4328,7 @@ mod tests {
 
     #[tokio::test]
     async fn remove_empty_turns_a_blank_render_into_a_removal() {
-        let config = Config::get().await.unwrap();
+        let config = crate::system::host::config().await.unwrap();
         for content in ["", " \n\t\n"] {
             let request = remove_empty_request(
                 &format!("template = true\nremove_empty = true\ncontent = {content:?}"),
@@ -4404,7 +4363,7 @@ mod tests {
 
     #[tokio::test]
     async fn remove_empty_requires_a_present_template() {
-        let config = Config::get().await.unwrap();
+        let config = crate::system::host::config().await.unwrap();
         let error = remove_empty_request("remove_empty = true\ncontent = \"\"", &config)
             .unwrap_err()
             .to_string();
