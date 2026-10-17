@@ -38,7 +38,7 @@ slow-timeout = { period = "1s", terminate-after = 4 }
 # but leave a bounded budget for slower macOS runners to drain that deliberate
 # full-size request.
 [[profile.ci.overrides]]
-filter = 'test(oci::registry::tests::large_blob_uses_one_content_range_free_patch)'
+filter = 'package(mise-oci) & test(registry::tests::large_blob_uses_one_content_range_free_patch)'
 slow-timeout = { period = "1s", terminate-after = 5 }
 
 # These tests compose trees, repositories and package state by shelling out,
