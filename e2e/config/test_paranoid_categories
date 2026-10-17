@@ -116,3 +116,9 @@ assert_fail_contains "MISE_PARANOID=env_files mise env 2>&1" "environment file"
 # A boolean cannot be added to a list of categories.
 assert "mise settings paranoid=env_files"
 assert_fail_contains "mise settings add paranoid true 2>&1" "category"
+# `add` keeps `true` meaning every category, and config set rejects unknown names.
+assert "mise settings paranoid=true"
+assert "mise settings add paranoid env_files"
+assert_contains "mise settings get paranoid" "true"
+assert_fail_contains "mise config set --global settings.paranoid config,nope 2>&1" "valid categories"
+assert_contains "mise settings get paranoid" "true"

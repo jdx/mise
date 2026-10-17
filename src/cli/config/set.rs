@@ -214,6 +214,12 @@ impl ConfigSet {
             _ => self.type_,
         };
 
+        // Settings load rejects an unknown category, which would fail every later command.
+        if full_key == "settings.paranoid" {
+            value
+                .parse::<mise_settings::Paranoid>()
+                .map_err(|err| eyre::eyre!(err))?;
+        }
         let value = match type_to_use {
             TomlValueTypes::String => toml_edit::value(value),
             TomlValueTypes::Integer => toml_edit::value(value.parse::<i64>()?),

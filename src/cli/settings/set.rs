@@ -150,6 +150,15 @@ pub(super) fn set(mut key: &str, value: &str, add: bool, local: bool) -> Result<
             };
 
         let value = match settings.get(key) {
+            // `true` already selects every category, so adding some must not narrow it.
+            Some(current)
+                if add
+                    && matches!(meta.type_, SettingsType::BoolOrList)
+                    && current.as_bool() == Some(true)
+                    && value.as_array().is_some() =>
+            {
+                current.as_value().cloned().unwrap_or(value)
+            }
             Some(current) if add && current.as_array().is_some() && value.as_array().is_none() => {
                 bail!(
                     "{key} is a list of categories here, so `add` needs category names, not {value}"
