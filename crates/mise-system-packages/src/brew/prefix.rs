@@ -32,13 +32,7 @@ const SUBDIRS: &[&str] = &[
 ];
 
 pub(super) fn prefix() -> PathBuf {
-    // undocumented override for testing the pour pipeline without touching
-    // the real prefix
-    match mise_util::env::var("MISE_SYSTEM_BREW_PREFIX") {
-        Ok(p) if !p.is_empty() => PathBuf::from(p),
-        _ if cfg!(target_os = "macos") => PathBuf::from("/opt/homebrew"),
-        _ => PathBuf::from("/home/linuxbrew/.linuxbrew"),
-    }
+    mise_util::env::system_brew_prefix()
 }
 
 pub(super) fn cellar() -> PathBuf {

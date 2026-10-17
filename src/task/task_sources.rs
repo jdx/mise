@@ -127,7 +127,7 @@ impl TaskOutputs {
                 .any(|tmpl| contains_template_syntax(tmpl))
             {
                 let mut tera = crate::tera::get_tera(Some(config_root));
-                let mut ctx = tera::Context::new();
+                let mut ctx = crate::tera::BASE_CONTEXT.clone();
                 ctx.insert("env", &env_map);
                 ctx.insert("config_root", &config_root.to_string_lossy().to_string());
                 *files = raw_templates
