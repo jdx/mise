@@ -474,7 +474,6 @@ pub async fn prepare_set(
     Ok(())
 }
 
-/// A project-owned readiness process: it never starts or stops the server itself.
 #[cfg(test)]
 mod tests {
     use super::*;

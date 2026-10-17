@@ -167,6 +167,7 @@ impl Providers {
     }
 }
 
+/// A project-owned readiness process: it never starts or stops the server itself.
 #[derive(Debug, usage_rs::Args)]
 pub struct Resource {
     provider: PathBuf,

@@ -31,7 +31,7 @@ fn init() {
     mise_util::env::set_mise_env(|| &[]);
     mise_util::shells::set_implicit_inline_shell(|| true);
     host::register(Host {
-        is_global_config: |_| false,
+        is_global_config: |path| path == global_config_path(),
         config_dir_is_ignored: |_, _| false,
         config_path_is_ignored: |_, _| false,
         config_paths_in_dir: |dir| {
@@ -80,7 +80,7 @@ pub(crate) fn trust(dir: &Path) {
     TRUSTED
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner())
-        .push(dir.to_path_buf());
+        .push(mise_util::file::desymlink_path(dir));
 }
 
 fn is_path_trusted(path: &Path) -> bool {
@@ -88,7 +88,15 @@ fn is_path_trusted(path: &Path) -> bool {
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner())
         .iter()
-        .any(|trusted| path.starts_with(trusted))
+        .any(|trusted| mise_util::file::desymlink_path(path).starts_with(trusted))
+}
+
+/// The global config file: its root is the home directory, so it has no project.
+fn global_config_path() -> PathBuf {
+    mise_util::dirs::HOME
+        .join(".config")
+        .join("mise")
+        .join("config.toml")
 }
 
 fn config_root(path: &Path) -> PathBuf {
@@ -126,7 +134,7 @@ impl ConfigFileView for DeclaredFile {
         &self.path
     }
     fn project_root(&self) -> Option<PathBuf> {
-        Some(config_root(&self.path))
+        (self.path != global_config_path()).then(|| config_root(&self.path))
     }
     fn config_root(&self) -> PathBuf {
         config_root(&self.path)

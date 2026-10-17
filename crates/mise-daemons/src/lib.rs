@@ -2232,7 +2232,7 @@ mod tests {
         // A global config's root is the home directory, so honouring a namespace
         // there would give every project on the machine the same one.
         let tmp = tempfile::tempdir().unwrap();
-        let global = mise_util::dirs::HOME.join("config").join("config.toml");
+        let global = host::global_config_path();
         let config = files(&[
             (
                 global.to_str().unwrap(),
