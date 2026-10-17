@@ -797,11 +797,8 @@ impl Backend for RustPlugin {
     }
 
     async fn list_bin_paths(&self, config: &Arc<Config>, tv: &ToolVersion) -> Result<Vec<PathBuf>> {
-        Ok(vec![
-            RustRuntime::resolve_recorded_for_tool_version(config, tv)
-                .await?
-                .bin_dir,
-        ])
+        let runtime = RustRuntime::resolve_recorded_for_tool_version(config, tv).await?;
+        runtime.bin_paths(&dirs::DATA.join("rust-proxies"))
     }
 
     async fn exec_env(
@@ -1299,6 +1296,75 @@ impl RustRuntime {
     fn is_external(&self) -> bool {
         self.provider == RustProvider::External
     }
+
+    /// The directories mise puts on PATH for this runtime. An external rustup's proxies often
+    /// share a directory with unrelated tools (pacman's `/usr/bin`), and prepending that would
+    /// shadow the versions mise manages, so expose only the proxies through a mise-owned dir.
+    fn bin_paths(&self, proxies_root: &Path) -> Result<Vec<PathBuf>> {
+        if !self.is_external() {
+            return Ok(vec![self.bin_dir.clone()]);
+        }
+        // Falling back to the shared dir on failure would reintroduce the PATH shadowing.
+        let dir = link_rustup_proxies(&self.bin_dir, proxies_root)
+            .wrap_err("failed to isolate rustup proxies")?;
+        Ok(vec![dir])
+    }
+}
+
+const RUSTUP_PROXY_NAMES: &[&str] = &[
+    "rustup",
+    "cargo",
+    "rustc",
+    "rustdoc",
+    "rustfmt",
+    "cargo-fmt",
+    "cargo-clippy",
+    "clippy-driver",
+    "cargo-miri",
+    "rust-analyzer",
+    "rust-gdb",
+    "rust-gdbgui",
+    "rust-lldb",
+];
+
+/// Symlinks the rustup proxies found in `external` into a dir under `proxies_root`.
+fn link_rustup_proxies(external: &Path, proxies_root: &Path) -> Result<PathBuf> {
+    let key = crate::hash::hash_sha256_to_str(&external.to_string_lossy());
+    let dir = proxies_root.join(&key[..16]);
+    file::create_dir_all(&dir)?;
+    for name in RUSTUP_PROXY_NAMES {
+        let name = format!("{name}{}", std::env::consts::EXE_SUFFIX);
+        let target = std::path::absolute(external)?.join(&name);
+        let link = dir.join(&name);
+        if !file::is_executable(&target) {
+            // Drop a link left over from a proxy the provider no longer ships.
+            match std::fs::remove_file(&link) {
+                Err(err) if err.kind() != std::io::ErrorKind::NotFound => {
+                    return Err(err)
+                        .wrap_err_with(|| format!("failed to remove {}", link.display()));
+                }
+                _ => {}
+            }
+            continue;
+        }
+        let up_to_date = if cfg!(windows) {
+            // Windows gets copies, which are current when the same size and not older than the proxy.
+            match (link.metadata(), target.metadata()) {
+                (Ok(l), Ok(t)) => {
+                    l.len() == t.len()
+                        && matches!((l.modified(), t.modified()), (Ok(lm), Ok(tm)) if lm >= tm)
+                }
+                _ => false,
+            }
+        } else {
+            file::resolve_symlink(&link).ok().flatten().as_deref() == Some(target.as_path())
+        };
+        if up_to_date {
+            continue;
+        }
+        file::make_symlink_or_copy(&target, &link)?;
+    }
+    Ok(dir)
 }
 
 fn recorded_external_rustup_bin_dir(
@@ -2123,6 +2189,32 @@ targets = ["wasm32-wasip1", " wasm32-wasip1 "]
 
         assert_eq!(runtime.provider, RustProvider::External);
         assert_eq!(runtime.bin_dir, external);
+    }
+
+    #[test]
+    fn rust_runtime_external_bin_paths_expose_only_proxies() {
+        let root = tempfile::tempdir().unwrap();
+        let homes = rust_homes_at(root.path(), false);
+        let external = root.path().join("external/bin");
+        create_proxy_dir(&external, &[RUSTUP_BIN, CARGO_BIN, RUSTC_BIN, "node"]);
+        let runtime =
+            RustRuntime::from_paths_with(homes.clone(), std::slice::from_ref(&external), |_| true);
+        let proxies = root.path().join("proxies");
+
+        let paths = runtime.bin_paths(&proxies).unwrap();
+
+        assert_eq!(paths.len(), 1);
+        assert_ne!(paths[0], external);
+        assert!(paths[0].join(CARGO_BIN).exists());
+        assert!(paths[0].join(RUSTC_BIN).exists());
+        assert!(!paths[0].join("node").exists());
+        assert_eq!(runtime.bin_paths(&proxies).unwrap(), paths);
+
+        let managed = RustRuntime::from_paths_with(homes.clone(), &[], |_| true);
+        assert_eq!(
+            managed.bin_paths(&proxies).unwrap(),
+            vec![homes.cargo_bindir()]
+        );
     }
 
     #[test]

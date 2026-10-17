@@ -118,7 +118,7 @@ impl Shell for Fish {
             end
 
             function fish_command_not_found
-                if string match -qrv -- '^(?:mise$|mise-)' $argv[1] &&
+                if string match -qrv -- '^(?:.*/)?(?:mise|mise-[^/]*)$' $argv[1] &&
                     {exe} hook-not-found -s fish -- $argv[1]
                     {exe} hook-env{flags} --shell-pid $fish_pid -s fish | source
                 else if functions -q __mise_fish_command_not_found
