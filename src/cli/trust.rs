@@ -280,6 +280,16 @@ impl Trust {
             },
         };
         config_file::trust(&path)?;
+        // With only `env_files` on, a file named like a config may be an env file. Its content
+        // hash is checked on its own, so approve it as well as its directory.
+        if let Some(file) = self.config_file()?
+            && file.is_file()
+            && file != path
+            && Settings::get().paranoid.env_files()
+            && !Settings::get().paranoid.config()
+        {
+            config_file::trust(&file)?;
+        }
         let cfr = path.canonicalize()?;
         info!("trusted {}", display_path(&cfr));
         Ok(())

@@ -127,6 +127,18 @@ impl Paranoid {
     }
 }
 
+impl Paranoid {
+    /// `Some(true)` or `Some(false)` when `s` is a spelling of a boolean that [`Paranoid::from_str`]
+    /// accepts, `None` when it should be read as a list of categories.
+    pub fn bool_spelling(s: &str) -> Option<bool> {
+        match s.trim().to_ascii_lowercase().as_str() {
+            "true" | "yes" | "y" | "on" | "1" => Some(true),
+            "false" | "no" | "n" | "off" | "0" | "" => Some(false),
+            _ => None,
+        }
+    }
+}
+
 impl From<bool> for Paranoid {
     fn from(value: bool) -> Self {
         if value { Self::all() } else { Self::none() }
@@ -139,18 +151,15 @@ impl FromStr for Paranoid {
     /// Parses `true`, `false` and their usual spellings, or a comma separated list of
     /// category names.
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let s = s.trim();
-        match s.to_ascii_lowercase().as_str() {
-            "true" | "yes" | "y" | "on" | "1" => Ok(Self::all()),
-            "false" | "no" | "n" | "off" | "0" | "" => Ok(Self::none()),
-            _ => s
-                .split(',')
-                .map(str::trim)
-                .filter(|name| !name.is_empty())
-                .map(ParanoidCategory::from_str)
-                .collect::<Result<_, _>>()
-                .map(Self),
+        if let Some(value) = Self::bool_spelling(s) {
+            return Ok(value.into());
         }
+        s.split(',')
+            .map(str::trim)
+            .filter(|name| !name.is_empty())
+            .map(ParanoidCategory::from_str)
+            .collect::<Result<_, _>>()
+            .map(Self)
     }
 }
 
@@ -238,6 +247,18 @@ mod tests {
         for off in ["false", "0", "no", "off", ""] {
             assert_eq!(parse(off).unwrap(), Paranoid::none(), "{off}");
         }
+    }
+
+    #[test]
+    fn bool_spelling_agrees_with_parsing() {
+        for s in ["TRUE", " On ", "y", "off", "No", "", "0"] {
+            assert_eq!(
+                Paranoid::from(Paranoid::bool_spelling(s).unwrap()),
+                parse(s).unwrap(),
+                "{s}"
+            );
+        }
+        assert_eq!(Paranoid::bool_spelling("config"), None);
     }
 
     #[test]

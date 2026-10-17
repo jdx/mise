@@ -222,7 +222,10 @@ fn parse_bool_or_list(key: &str, value: &str) -> Result<toml_edit::Value> {
             .parse::<mise_settings::Paranoid>()
             .map_err(|err| eyre!(err))?;
     }
-    parse_bool(value).or_else(|_| parse_set_by_comma(value))
+    match mise_settings::Paranoid::bool_spelling(value) {
+        Some(value) => Ok(value.into()),
+        None => parse_set_by_comma(value),
+    }
 }
 
 fn parse_bool(value: &str) -> Result<toml_edit::Value> {

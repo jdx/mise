@@ -87,3 +87,22 @@ assert_not_contains "MISE_PARANOID=config,env_files,provenance MISE_YES=0 mise i
 assert_not_contains "MISE_YES=0 mise install 2>&1 || true" "Paranoid mode is enabled"
 assert "MISE_PARANOID=1 mise trust mise.toml"
 assert_fail_contains "MISE_PARANOID=1 MISE_YES=0 mise install 2>&1" "Paranoid mode is enabled"
+
+# Boolean spellings the setting parses are stored as booleans, not categories.
+assert "mise settings paranoid=on"
+assert_contains "mise settings get paranoid" "true"
+assert "mise settings paranoid=OFF"
+assert_contains "mise settings get paranoid" "false"
+
+# An env file named like a config can still be approved on its own.
+mkdir -p ~/named/sub
+cat <<'EOS' >~/named/global.toml
+[env]
+_.file = [{ path = "config.toml", find_up = true }]
+EOS
+export MISE_GLOBAL_CONFIG_FILE=~/named/global.toml
+echo 'NAMED_TEST = "ok"' >~/named/config.toml
+cd ~/named/sub || exit 1
+assert_fail_contains "MISE_PARANOID=env_files mise env 2>&1" "environment file"
+assert "MISE_PARANOID=env_files mise trust ../config.toml"
+assert_contains "MISE_PARANOID=env_files mise env" "NAMED_TEST=ok"
