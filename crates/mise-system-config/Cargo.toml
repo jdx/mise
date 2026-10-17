@@ -1,0 +1,12 @@
+[package]
+name = "mise-system-config"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+description = "The mise.toml declaration types for [bootstrap], [dotfiles], and [history]"
+repository = "https://github.com/jdx/mise"
+
+[dependencies]
+indexmap = { version = "2", features = ["serde"] }
+serde = { version = "1", features = ["derive"] }
+toml = { version = "1", features = ["parse", "preserve_order"] }

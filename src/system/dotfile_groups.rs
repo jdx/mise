@@ -41,11 +41,7 @@ use crate::system::files::{self, FileMode, FileRequest, FileTomlEntry};
 use crate::system::history::journal;
 use crate::system::resources::ResourceOrigin;
 
-/// `[dotfile_groups]` as written in one config file: group name -> table.
-/// Values stay TOML until expansion so a malformed group warns and is
-/// skipped instead of failing the whole config file.
-#[derive(Debug, Clone, Default, Deserialize)]
-pub struct DotfileGroupsTomlConfig(pub IndexMap<String, toml::Value>);
+pub use mise_system_config::dotfiles::DotfileGroupsTomlConfig;
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
