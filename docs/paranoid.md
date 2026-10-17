@@ -9,12 +9,12 @@ Paranoid mode makes mise ask before it trusts things it would normally load on
 its own. It has four categories, and you can turn on all of them or only the ones
 you need:
 
-| Category     | What it requires                                                                                       |
-| ------------ | ------------------------------------------------------------------------------------------------------ |
-| `config`     | Approval of every project config file, bound to its content. No automatic trust, including in CI.      |
-| `env_files`  | Approval of the files that `env._.file`, `env._.source` and the `env_file` setting load.               |
-| `plugins`    | Refuses to install an unregistered community plugin by short name.                                     |
-| `provenance` | Re-verifies provenance on every install and confirms a mise-versions "no attestations" answer.         |
+| Category     | What it requires                                                                                  |
+| ------------ | ------------------------------------------------------------------------------------------------- |
+| `config`     | Approval of every project config file, bound to its content. No automatic trust, including in CI. |
+| `env_files`  | Approval of the files that `env._.file`, `env._.source` and the `env_file` setting load.          |
+| `plugins`    | Refuses to install an unregistered community plugin by short name.                                |
+| `provenance` | Re-verifies provenance on every install and confirms a mise-versions "no attestations" answer.    |
 
 Paranoid mode does not sandbox the commands you approve; see
 [Sandboxing](/sandboxing.html).
