@@ -1712,6 +1712,7 @@ impl Config {
             if env_results.env_files.contains(&env_file) {
                 continue;
             }
+            config_file::env_file_trust_check(&env_file)?;
             debug!("env_file: {}", display_path(&env_file));
             match std::fs::read(&env_file) {
                 Ok(bytes) => {

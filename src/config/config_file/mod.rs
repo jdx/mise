@@ -17,7 +17,7 @@ use crate::config::provenance::ConfigProvenance;
 use crate::config::settings::IdiomaticVersionFileSettings;
 use crate::config::{AliasMap, CommandWrapper, Settings, SettingsExt, settings};
 use crate::deps::DepsConfig;
-use crate::errors::Error::UntrustedConfig;
+use crate::errors::Error::{UntrustedConfig, UntrustedEnvFile};
 use crate::file::display_path;
 use crate::hash::hash_to_str;
 use crate::hooks::Hook;
@@ -680,6 +680,23 @@ pub(crate) fn trust_check(path: &Path) -> eyre::Result<()> {
         }
     }
     Err(UntrustedConfig(path.into()))?
+}
+
+/// Whether paranoid mode lets a file named by `env._.file` load.
+///
+/// Paranoid mode binds trust to content, so approving `mise.toml` must not approve the dotenv,
+/// JSON, YAML or TOML file it points at: an edit to that file changes the environment of every
+/// command. A file under `trusted_config_paths`, which only global config can set, stays trusted
+/// by path.
+pub(crate) fn env_file_trust_check(path: &Path) -> eyre::Result<()> {
+    if Settings::safe_mode() || !Settings::try_get().is_ok_and(|settings| settings.paranoid) {
+        return Ok(());
+    }
+    // A file that is not there loads nothing, so there is nothing to approve.
+    if !path.exists() || is_path_trusted(path) {
+        return Ok(());
+    }
+    Err(UntrustedEnvFile(path.into()))?
 }
 
 pub fn is_trusted(path: &Path) -> bool {
