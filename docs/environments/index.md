@@ -324,8 +324,21 @@ workspace/
     └── .env         # EXAMPLE=project
 ```
 
-Inside `project`, `EXAMPLE` is `parent`. `find_up` has no effect on an absolute
-path.
+Inside `project`, `EXAMPLE` is `parent`.
+
+To search several names together, give one entry a `path` list instead:
+
+```toml [~/.config/mise/config.toml]
+[env]
+_.file = { path = [".env", ".env.local"], find_up = true }
+```
+
+One entry searches directory by directory, so the closest directory wins, and
+within one directory a name later in the list wins. In the layout above,
+`EXAMPLE` is now `project`, and a `.env.local` next to that `.env` would
+override it. Without `find_up`, a `path` list loads its files in the order
+written. `find_up` has no effect on an absolute path, which loads where the list
+puts it.
 
 The [`env_file`](/configuration/settings.html#env_file) setting
 (`MISE_ENV_FILE=.env`) also discovers a dotenv file in the current directory and

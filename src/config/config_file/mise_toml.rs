@@ -2722,10 +2722,34 @@ impl<'de> de::Deserialize<'de> for EnvList {
                                                         ));
                                                     }
                                                     "file" => {
-                                                        directives.extend(flatten_directives(
-                                                            map.next_value::<DirectiveArr>()?.0,
-                                                            EnvDirective::File,
-                                                        ));
+                                                        // A `find_up` list in one `path` is one
+                                                        // search over all its names, so keep it
+                                                        // together instead of one search per name.
+                                                        for d in map.next_value::<DirectiveArr>()?.0
+                                                        {
+                                                            match d.0 {
+                                                                MiseTomlEnvDirectiveValue::Multiple {
+                                                                    path,
+                                                                    options,
+                                                                } if options.find_up
+                                                                    && path.len() > 1 =>
+                                                                {
+                                                                    directives.push(
+                                                                        EnvDirective::FileGroup(
+                                                                            path, options,
+                                                                        ),
+                                                                    );
+                                                                }
+                                                                value => directives.extend(
+                                                                    flatten_directives(
+                                                                        vec![MiseTomlEnvDirective(
+                                                                            value,
+                                                                        )],
+                                                                        EnvDirective::File,
+                                                                    ),
+                                                                ),
+                                                            }
+                                                        }
                                                     }
                                                     "source" => {
                                                         directives.extend(flatten_directives(
@@ -3664,6 +3688,48 @@ mod tests {
             })
             .collect();
         assert_eq!(kinds, ["source", "path", "file"]);
+    }
+
+    /// A `find_up` list in one `path` stays together as one search over all its names. Without
+    /// `find_up`, a list is the same as separate entries, so it still splits.
+    #[tokio::test]
+    async fn test_env_file_path_list_groups_only_with_find_up() {
+        let _config = Config::get().await.unwrap();
+        let p = CWD.as_ref().unwrap().join(".test.file-group.mise.toml");
+        file::write(
+            &p,
+            r#"
+        [env]
+        _.file = [
+          { path = [".env", ".env.local"], find_up = true },
+          { path = ["a.env", "b.env"] },
+          { path = ["only.env"], find_up = true },
+        ]
+        "#,
+        )
+        .unwrap();
+        let cf = MiseToml::from_file(&p).unwrap();
+        let shapes: Vec<String> = cf
+            .env
+            .0
+            .iter()
+            .map(|d| match d {
+                EnvDirective::FileGroup(paths, opts) => {
+                    format!("group {} find_up={}", paths.join(","), opts.find_up)
+                }
+                EnvDirective::File(path, opts) => format!("file {path} find_up={}", opts.find_up),
+                _ => "other".to_string(),
+            })
+            .collect();
+        assert_eq!(
+            shapes,
+            [
+                "group .env,.env.local find_up=true",
+                "file a.env find_up=false",
+                "file b.env find_up=false",
+                "file only.env find_up=true",
+            ]
+        );
     }
 
     #[tokio::test]

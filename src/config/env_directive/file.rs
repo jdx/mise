@@ -9,6 +9,7 @@ use eyre::{WrapErr, bail, eyre};
 use indexmap::IndexMap;
 use rops::file::format::{JsonFileFormat, TomlFileFormat, YamlFileFormat};
 use std::{
+    collections::HashSet,
     fs,
     path::{Path, PathBuf},
     sync::Arc,
@@ -129,30 +130,58 @@ impl<'de> serde::Deserialize<'de> for YamlEnvValue {
 impl EnvResults {
     pub(super) async fn file(
         ctx: &mut EnvDirectiveContext<'_>,
-        input: String,
+        inputs: Vec<String>,
         expand: bool,
         find_up: bool,
     ) -> Result<IndexMap<PathBuf, EnvMap>> {
         let mut out = IndexMap::new();
-        let s = ctx.parse_template("_.file", &input)?;
+        let mut patterns = Vec::with_capacity(inputs.len());
+        for input in &inputs {
+            patterns.push(PathBuf::from(ctx.parse_template("_.file", input)?));
+        }
         let expand = expand && crate::config::Settings::get().env_shell_expand;
         // Accumulate loaded vars so opted-in expansion can reference values from
         // an earlier file in the same directive or an earlier env block.
         let mut acc: TeraEnvMap = ctx.exec_env.clone();
-        let pattern = PathBuf::from(&s);
-        let paths = match &*crate::dirs::CWD {
-            // Farthest directory first, so the file nearest the current directory wins.
-            Some(cwd) if find_up && !file::replace_path(&pattern).is_absolute() => {
+        let paths: Vec<PathBuf> = match &*crate::dirs::CWD {
+            Some(cwd)
+                if find_up
+                    && patterns
+                        .iter()
+                        .any(|pattern| !file::replace_path(pattern).is_absolute()) =>
+            {
                 // The result depends on the current directory, which the env cache key omits.
                 ctx.results.has_uncacheable = true;
-                cwd.ancestors()
-                    .collect::<Vec<_>>()
-                    .into_iter()
-                    .rev()
-                    .flat_map(|dir| xx::file::glob(dir.join(&pattern)).unwrap_or_default())
-                    .collect()
+                // The names in one entry are searched together, directory by directory. Walk the
+                // nearest directory first and the later name first, then reverse, so the loader
+                // sees the farthest directory first, and within one directory the names in the
+                // order written. The file nearest the current directory then wins, and within one
+                // directory a later name wins. An absolute name matches in every directory, so
+                // keep only its first occurrence.
+                let mut seen = HashSet::new();
+                let mut nearest_first = Vec::new();
+                for dir in cwd.ancestors() {
+                    for pattern in patterns.iter().rev() {
+                        let mut matches = if file::replace_path(pattern).is_absolute() {
+                            xx::file::glob(ctx.normalize_path(pattern.clone()))
+                        } else {
+                            xx::file::glob(dir.join(pattern))
+                        }
+                        .unwrap_or_default();
+                        matches.reverse();
+                        for path in matches {
+                            if seen.insert(path.clone()) {
+                                nearest_first.push(path);
+                            }
+                        }
+                    }
+                }
+                nearest_first.into_iter().rev().collect()
             }
-            _ => xx::file::glob(ctx.normalize_path(pattern)).unwrap_or_default(),
+            _ => patterns
+                .into_iter()
+                .flat_map(|pattern| xx::file::glob(ctx.normalize_path(pattern)).unwrap_or_default())
+                .collect(),
         };
         for p in paths {
             let config = ctx.config;
