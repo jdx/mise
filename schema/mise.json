@@ -6759,8 +6759,8 @@
     },
     "oci": {
       "type": "object",
-      "unevaluatedProperties": false,
       "description": "configuration for `mise oci build`",
+      "additionalProperties": false,
       "properties": {
         "from": {
           "type": "string",
@@ -6776,17 +6776,17 @@
         },
         "entrypoint": {
           "type": "array",
+          "description": "Entrypoint baked into the image config",
           "items": {
             "type": "string"
-          },
-          "description": "Entrypoint baked into the image config"
+          }
         },
         "cmd": {
           "type": "array",
+          "description": "Cmd baked into the image config",
           "items": {
             "type": "string"
-          },
-          "description": "Cmd baked into the image config"
+          }
         },
         "user": {
           "type": "string",
@@ -6794,15 +6794,15 @@
         },
         "user_id": {
           "type": "integer",
-          "minimum": 0,
+          "description": "Numeric UID assigned to tar layer entries",
           "maximum": 4294967295,
-          "description": "Numeric UID assigned to tar layer entries"
+          "minimum": 0
         },
         "group_id": {
           "type": "integer",
-          "minimum": 0,
+          "description": "Numeric GID assigned to tar layer entries. Defaults to user_id when unset",
           "maximum": 4294967295,
-          "description": "Numeric GID assigned to tar layer entries. Defaults to user_id when unset"
+          "minimum": 0
         },
         "mount_point": {
           "type": "string",
@@ -6816,35 +6816,35 @@
             "properties": {
               "host": {
                 "type": "string",
-                "minLength": 1,
-                "description": "host path to copy, relative to the config file when not absolute"
+                "description": "host path to copy, relative to the config file when not absolute",
+                "minLength": 1
               },
               "image": {
                 "type": "string",
+                "description": "absolute non-root image path without `.` or `..` components",
                 "pattern": "^/.*[^/]",
                 "not": {
                   "pattern": "(^|/)\\.{1,2}(/|$)"
-                },
-                "description": "absolute non-root image path without `.` or `..` components"
+                }
               }
             },
-            "required": ["host", "image"],
-            "additionalProperties": false
+            "additionalProperties": false,
+            "required": ["host", "image"]
           }
         },
         "env": {
           "type": "object",
+          "description": "Extra env vars baked into the image config",
           "additionalProperties": {
             "type": "string"
-          },
-          "description": "Extra env vars baked into the image config"
+          }
         },
         "labels": {
           "type": "object",
+          "description": "Labels baked into the image config",
           "additionalProperties": {
             "type": "string"
-          },
-          "description": "Labels baked into the image config"
+          }
         }
       }
     },
@@ -9755,8 +9755,9 @@
       }
     },
     "daemons_settings": {
-      "description": "Experimental project-wide daemon options.",
       "type": "object",
+      "description": "Experimental project-wide daemon options.",
+      "additionalProperties": false,
       "properties": {
         "namespace": {
           "type": "string",
@@ -9764,11 +9765,10 @@
         },
         "namespace_per_worktree": {
           "type": "boolean",
-          "default": true,
-          "description": "Append a worktree-specific suffix to an explicit namespace when the project root is a linked git worktree."
+          "description": "Append a worktree-specific suffix to an explicit namespace when the project root is a linked git worktree.",
+          "default": true
         }
-      },
-      "additionalProperties": false
+      }
     },
     "daemon_groups": {
       "description": "Experimental named groups of project daemons. Members are daemon names or other group names declared in the same project.",
@@ -9785,7 +9785,7 @@
           },
           {
             "type": "object",
-            "required": ["daemons"],
+            "additionalProperties": false,
             "properties": {
               "daemons": {
                 "type": "array",
@@ -9796,7 +9796,7 @@
                 "minItems": 1
               }
             },
-            "additionalProperties": false
+            "required": ["daemons"]
           }
         ]
       }

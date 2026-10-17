@@ -15,6 +15,7 @@ futures-util = "0.3"
 hex = "0.4"
 indexmap = { version = "2", features = ["serde"] }
 log = "0.4"
+mise-config = { path = "../mise-config", version = "0.1" }
 mise-settings = { path = "../mise-settings", version = "2026" }
 mise-util = { path = "../mise-util", version = "2026", default-features = false }
 path-absolutize = "4"

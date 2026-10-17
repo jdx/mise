@@ -15,9 +15,11 @@ use schemars::{JsonSchema, Schema, SchemaGenerator};
 use serde_json::Value;
 
 use crate::bootstrap::BootstrapTomlConfig;
+use crate::daemons::{DaemonSettings, GroupDeclaration};
 use crate::doctor::DoctorConfig;
 use crate::history::HistoryTomlConfig;
 use crate::launchd::LaunchdCalendarInterval;
+use crate::oci::OciConfig;
 use crate::remote::InstallMiseTomlConfig;
 use crate::tool_config::ToolConfig;
 use crate::watch_files::WatchFile;
@@ -39,6 +41,15 @@ pub fn fragments() -> Vec<(&'static str, Value)> {
             "/properties/wrappers/additionalProperties",
             fragment::<CommandWrapper>(&mut generator),
         ),
+        (
+            "/properties/daemons_settings",
+            fragment::<DaemonSettings>(&mut generator),
+        ),
+        (
+            "/properties/daemon_groups/additionalProperties",
+            fragment::<GroupDeclaration>(&mut generator),
+        ),
+        ("/properties/oci", fragment::<OciConfig>(&mut generator)),
         ("/$defs/doctor", fragment::<DoctorConfig>(&mut generator)),
         ("/$defs/tool_config", fragment::<ToolConfig>(&mut generator)),
         (
