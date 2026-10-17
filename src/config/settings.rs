@@ -8,6 +8,7 @@ use itertools::Itertools;
 use mise_util::network;
 use path_absolutize::Absolutize;
 use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
 use std::fmt::Debug;
 use std::path::{Path, PathBuf};
 use std::sync::LazyLock as Lazy;
@@ -1018,9 +1019,10 @@ impl SettingsExt for Settings {
         let mut builder = Self::builder().env();
         // Reuse operator-owned authentication settings, including the OAuth
         // client ID needed to locate cached tokens. Never discover project files.
-        let paths = super::global_config_files()
+        let paths = super::override_config_files()
             .into_iter()
             .rev()
+            .chain(super::global_config_files().into_iter().rev())
             .chain(super::system_config_files().into_iter().rev());
         for path in paths {
             if let Ok(settings) = Self::parse_settings_file(&path) {
@@ -1183,9 +1185,18 @@ impl SettingsExt for Settings {
         if let Some(cwd) = &*dirs::CWD
             && let Some(env_file) = &self.env_file
         {
-            let env_file = env_file.to_string_lossy().to_string();
-            for p in FindUp::new(cwd, &[env_file]) {
-                files.push(p);
+            let names = env_file
+                .iter()
+                .map(|name| name.to_string_lossy().to_string())
+                .collect::<Vec<_>>();
+            // An absolute name matches in every directory, so keep only its first (nearest)
+            // occurrence. Reversed below, the loader would otherwise see it at the farthest
+            // directory and let a nearer `.env` override a file the user listed after it.
+            let mut seen = HashSet::new();
+            for p in FindUp::new(cwd, &names) {
+                if seen.insert(p.clone()) {
+                    files.push(p);
+                }
             }
         }
         files.into_iter().rev().collect()

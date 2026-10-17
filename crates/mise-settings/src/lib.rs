@@ -452,6 +452,24 @@ where
     }
 }
 
+/// Deserialize one path or a list of paths, so a setting that took a single path can take several
+/// without breaking the configs that already name one.
+fn path_or_paths<'de, D>(deserializer: D) -> Result<Vec<PathBuf>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum OneOrMany {
+        One(PathBuf),
+        Many(Vec<PathBuf>),
+    }
+    Ok(match OneOrMany::deserialize(deserializer)? {
+        OneOrMany::One(path) => vec![path],
+        OneOrMany::Many(paths) => paths,
+    })
+}
+
 fn set_by_comma<T, C>(input: &str) -> Result<C, <T as FromStr>::Err>
 where
     T: FromStr + Eq + Ord,

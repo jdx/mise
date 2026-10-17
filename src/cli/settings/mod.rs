@@ -143,6 +143,7 @@ impl Settings {
                     setting: self.ls.setting.unwrap(),
                     value: Some(value),
                     local: self.ls.local,
+                    override_file: false,
                 })
             } else if let Some(setting) = self.ls.setting {
                 if let Some((setting, value)) = setting.split_once('=') {
@@ -150,6 +151,7 @@ impl Settings {
                         setting: setting.to_string(),
                         value: Some(value.to_string()),
                         local: self.ls.local,
+                        override_file: false,
                     })
                 } else {
                     Commands::Get(get::SettingsGet {

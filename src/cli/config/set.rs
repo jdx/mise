@@ -63,13 +63,17 @@ pub(super) struct ConfigSet {
     ///
     /// For a directory, mise edits the TOML config file already there, such as
     /// `.mise.toml`, or `mise.toml` when there is none. Defaults to the
-    /// highest-precedence loaded TOML file.
+    /// highest-precedence loaded TOML file other than the global override files.
     #[usage(short, long, visible_alias = "path", value_hint = usage_rs::ValueHint::AnyPath)]
     pub file: Option<PathBuf>,
 
     /// Edit the global config file
     #[usage(long, short = 'g', conflicts = ["file", "system"])]
     pub global: bool,
+
+    /// Edit the global override file, `config.override.toml`
+    #[usage(long = "override", conflicts = ["file", "global", "system"])]
+    pub override_file: bool,
 
     /// Edit the system config file
     #[usage(long, conflicts = ["file", "global"])]
@@ -110,7 +114,13 @@ fn complete_key(
     partial: &<ConfigSet as usage_rs::spec::CommandArgs>::Partial,
     ctx: &usage_rs::complete::CompleteCtx<'_>,
 ) -> Vec<usage_rs::complete::Candidate<'static>> {
-    super::keys::complete(ctx, partial.file.as_deref(), partial.global, partial.system)
+    super::keys::complete(
+        ctx,
+        partial.file.as_deref(),
+        partial.global,
+        partial.system,
+        partial.override_file,
+    )
 }
 
 impl ConfigSet {
@@ -126,7 +136,7 @@ impl ConfigSet {
                 (k.to_string(), v.to_string())
             }
         };
-        let file = super::target_file(self.file, self.global, self.system)?;
+        let file = super::target_file(self.file, self.global, self.system, self.override_file)?;
         let Some(file) = file else {
             bail!("No mise.toml file found");
         };
@@ -136,14 +146,13 @@ impl ConfigSet {
                 display_path(&file)
             );
         }
-        if !file.exists() && !self.global && !self.system {
+        let may_create = self.global || self.system || self.override_file;
+        if !file.exists() && !may_create {
             bail!("config file not found: {}", display_path(&file));
         }
         let raw = match std::fs::read_to_string(&file) {
             Ok(raw) => raw,
-            Err(error)
-                if (self.global || self.system) && error.kind() == std::io::ErrorKind::NotFound =>
-            {
+            Err(error) if may_create && error.kind() == std::io::ErrorKind::NotFound => {
                 String::new()
             }
             Err(error) => return Err(error.into()),

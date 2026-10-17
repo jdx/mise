@@ -1,0 +1,108 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# config.override.toml and config.<env>.override.toml in the global config dir outrank
+# every project config file, including mise.<env>.toml and mise.local.toml, for every
+# section. Within the override tier the env-specific file beats the base file.
+# The ceiling keeps the config dir out of the cwd walk.
+export MISE_CEILING_PATHS="$HOME"
+
+project="$PWD/project"
+mkdir -p "$project"
+cd "$project"
+
+cat >mise.toml <<TOML
+[env]
+FROM = "project"
+ONLY_PROJECT = "project"
+[tools]
+dummy = "1.0.0"
+[settings]
+jobs = 3
+[tasks.hello]
+run = "echo project-hello"
+[tasks.project-only]
+run = "echo project-only"
+TOML
+cat >mise.local.toml <<TOML
+[env]
+FROM = "project-local"
+TOML
+
+# without an override file, local beats global as before
+cat >"$MISE_CONFIG_DIR/config.toml" <<TOML
+[env]
+FROM = "global"
+TOML
+assert "mise env --json | jq -r .FROM" "project-local"
+
+cat >"$MISE_CONFIG_DIR/config.override.toml" <<TOML
+[env]
+FROM = "override"
+[tools]
+dummy = "2.0.0"
+[settings]
+jobs = 9
+[tasks.hello]
+run = "echo override-hello"
+TOML
+
+# env
+assert "mise env --json | jq -r .FROM" "override"
+assert "mise env --json | jq -r .ONLY_PROJECT" "project"
+# tools
+assert "mise ls --json dummy | jq -r '.[0].requested_version'" "2.0.0"
+# settings
+assert "mise settings get jobs" "9"
+# tasks
+assert "mise run hello" "override-hello"
+assert "mise run project-only" "project-only"
+# global task scripts keep their ordinary rank: the override tier does not promote them
+mkdir -p "$MISE_CONFIG_DIR/tasks"
+printf '#!/usr/bin/env bash\necho global-script\n' >"$MISE_CONFIG_DIR/tasks/shared"
+chmod +x "$MISE_CONFIG_DIR/tasks/shared"
+cat >>mise.toml <<TOML
+[tasks.shared]
+run = "echo project-shared"
+TOML
+assert "mise run shared" "project-shared"
+
+# the project's env-specific files lose to the override too
+cat >mise.test.toml <<TOML
+[env]
+FROM = "project-test"
+TOML
+assert "MISE_ENV=test mise env --json | jq -r .FROM" "override"
+
+# MISE_ENV variants: config.<env>.override.toml beats config.override.toml, later
+# environments beat earlier ones, and unrelated environments are not loaded
+cat >"$MISE_CONFIG_DIR/config.test.override.toml" <<TOML
+[env]
+FROM = "override-test"
+[settings]
+jobs = 10
+TOML
+cat >"$MISE_CONFIG_DIR/config.dev.override.toml" <<TOML
+[env]
+FROM = "override-dev"
+TOML
+assert "mise env --json | jq -r .FROM" "override"
+assert "MISE_ENV=test mise env --json | jq -r .FROM" "override-test"
+assert "MISE_ENV=test mise settings get jobs" "10"
+assert "MISE_ENV=test,dev mise env --json | jq -r .FROM" "override-dev"
+assert "MISE_ENV=dev,test mise env --json | jq -r .FROM" "override-test"
+
+# MISE_GLOBAL_CONFIG_FILE names the only global config, so no override files load
+cat >global-only.toml <<TOML
+[env]
+FROM = "global-file"
+TOML
+assert "MISE_GLOBAL_CONFIG_FILE=$PWD/global-only.toml mise env --json | jq -r .FROM" "project-local"
+assert "MISE_GLOBAL_CONFIG_FILE=$PWD/global-only.toml mise settings get jobs" "3"
+assert_not_contains "MISE_GLOBAL_CONFIG_FILE=$PWD/global-only.toml mise config ls" "override"
+
+# config ls labels the override tier
+assert_contains "mise config ls" "config.override.toml"
+assert_contains "mise config ls" "override"
+assert "mise config ls -J | jq -r '.[] | select(.override) | .path | split(\"/\") | last'" "config.override.toml"
+assert_contains "mise doctor 2>&1 || true" "config.override.toml (override"

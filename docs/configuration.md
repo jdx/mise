@@ -48,6 +48,8 @@ mise loads config in this order, and a later file overrides an earlier one:
    directory. The search starts below the nearest
    [`ceiling_paths`](/configuration/settings.html#ceiling_paths) directory when
    one is set; files in the ceiling directory itself are not loaded.
+4. [Global override files](#override-file) (`config.override.toml`), which beat
+   everything above, including `mise.local.toml`.
 
 So a file in a deeper directory overrides one in a parent directory. In each
 directory, mise reads the files in [Config file locations](#mise-toml), and
@@ -64,6 +66,8 @@ override an ordinary file in a child directory.
 │   └── config.<env>.toml
 └── home/user/
     ├── .config/mise/                 # global config
+    │   ├── config.override.toml          # beats all project config
+    │   ├── config.<env>.override.toml
     │   ├── conf.d/*.toml
     │   ├── config.toml
     │   ├── config.<env>.toml
@@ -262,7 +266,8 @@ Global config differs from project config in a few ways:
 - `[secrets.*]` and `[daemons_settings]` are ignored there, and
   `[daemon_providers]` is allowed only there.
 - [`global_config_file`](/configuration/settings.html#global_config_file)
-  (`MISE_GLOBAL_CONFIG_FILE`) replaces all of these files with one file.
+  (`MISE_GLOBAL_CONFIG_FILE`) replaces all of these files with one file. It
+  also turns off the [override files](#override-file).
 
 System config applies to every user on the machine and has the lowest
 precedence. It lives in `/etc/mise`
@@ -270,6 +275,94 @@ precedence. It lives in `/etc/mise`
 same file names as the global directory, such as `/etc/mise/config.toml`.
 [`system_config_file`](/configuration/settings.html#system_config_file)
 (`MISE_SYSTEM_CONFIG_FILE`) replaces them with a single file.
+
+## Global override files {#override-file}
+
+Global config normally loses to project config, so a project's `mise.toml` can
+replace your `node` version or an environment variable you set globally. When
+you want your own value to win in every project, put it in
+`config.override.toml` next to your global `config.toml`:
+
+```toml [~/.config/mise/config.override.toml]
+[env]
+AWS_PROFILE = "personal"
+
+[tools]
+node = "24"
+
+[settings]
+jobs = 8
+
+[tasks.lint]
+run = "my-lint --strict"
+```
+
+With that file, `AWS_PROFILE`, the `node` request, `jobs`, and the `lint` task
+come from it even when a project's `mise.toml` or `mise.local.toml` sets the
+same thing. Values the override file does not mention still come from the
+project and from your other global config.
+
+The override tier works for every section that global config accepts: `[env]`,
+`[vars]`, `[tools]`, `[tasks]`, `[settings]`, hooks, and the rest. Each section
+merges as described in [How each section merges](#merge-behavior-by-section);
+the override files are simply the highest-precedence files in that merge. The
+override file is global config, so it is [trusted](/cli/trust.html) by path and
+is subject to the same restrictions as other global config.
+
+### Which files count
+
+mise reads these files from `~/.config/mise`
+([`MISE_CONFIG_DIR`](/directories.html#config-mise)), lowest precedence first:
+
+| File                         | Loaded                                   |
+| ---------------------------- | ---------------------------------------- |
+| `config.override.toml`       | Always.                                  |
+| `config.<env>.override.toml` | When `<env>` is in `MISE_ENV` (or `-E`). |
+
+The environment-specific file beats the base override file. With several
+environments, such as `MISE_ENV=dev,test`, a later environment beats an earlier
+one, the same as for other [config environments](/configuration/environments.html).
+The whole override tier ranks above all project config, including project
+`mise.<env>.toml` and `mise.local.toml` files.
+
+The name is `config.override.toml`, not `override.toml`. It is unrelated to
+[`MISE_OVERRIDE_CONFIG_FILENAMES`](/configuration/settings.html#override_config_filenames),
+which only renames the files mise looks for in each directory.
+
+[`MISE_GLOBAL_CONFIG_FILE`](/configuration/settings.html#global_config_file)
+means "this is the only global config", so when it is set mise does not load any
+override file.
+
+### Seeing and editing the override tier
+
+[`mise config ls`](/cli/config/ls.html) marks override files with `override` in a
+`Tier` column, and `mise config ls --json` adds `"override": true`, so you can
+see what outranks the project. [`mise doctor`](/cli/doctor.html) labels them in
+its `config_files` list.
+
+The override file is never a default write target. `mise use`, `mise set`,
+`mise settings set`, `mise trust`, and the other commands in
+[Which file mise writes to](#target-file-for-write-operations) keep writing to
+the files they always did. To write to it, pass `--override`, which conflicts
+with `--global` and `--path`:
+
+```sh
+mise set --override AWS_PROFILE=personal   # config.override.toml
+mise use --override node@24
+mise settings set --override jobs 8
+mise set --override --env work TOKEN=x     # config.work.override.toml
+```
+
+`--override` is available on `mise use`, `mise unuse`, `mise set`,
+`mise unset`, `mise settings set|add|unset`, and `mise config get|set`.
+
+### Lockfiles
+
+A tool declared in an override file shadows the same tool in the project, and it
+is resolved on its own: mise does not look it up in the project's `mise.lock`,
+and [`--locked`](/cli/install.html) does not require the project lock to pin it.
+Its lock entries live in the global `mise.lock` next to your global config. Every
+other tool is still checked against its lockfile in locked mode.
 
 ## Which file mise writes to {#target-file-for-write-operations}
 
@@ -298,10 +391,11 @@ Other commands choose differently:
 
 - [`mise config get`](/cli/config/get.html) and
   [`mise config set`](/cli/config/set.html) use the highest-precedence loaded
-  TOML file, which can be `mise.local.toml`. Use `--file` to choose another
+  TOML file, which can be `mise.local.toml`. They skip the
+  [override files](#override-file) unless you pass `--override`. Use `--file` to choose another
   project file.
 - [`mise unuse`](/cli/unuse.html) uses the first loaded config that declares a
-  requested tool. A version-qualified argument matches the configured request
+  requested tool, other than an [override file](#override-file). A version-qualified argument matches the configured request
   literally: `node@20` matches `node = "20"`, not `node = "20.0.0"`. Use
   `--path` to choose the file.
 

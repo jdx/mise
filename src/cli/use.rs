@@ -118,6 +118,14 @@ pub(crate) struct Use {
     #[usage(short, long, overrides = & ["global", "env"], value_hint = usage_rs::ValueHint::FilePath)]
     path: Option<PathBuf>,
 
+    /// Write to the global override file, `config.override.toml`
+    ///
+    /// The override file outranks all project config. With `--env`, writes
+    /// `config.<ENV>.override.toml` instead. See
+    /// https://mise.jdx.dev/configuration.html#override-file
+    #[usage(long = "override", conflicts = ["global", "path"])]
+    override_file: bool,
+
     /// Like --dry-run, but exit with code 1 if there are changes to make
     ///
     /// Use it in scripts that check whether tools need to be added or removed.
@@ -452,6 +460,7 @@ impl Use {
             cwd: Some(cwd),
             prefer_toml: false,
             prevent_home_local: true, // When in HOME, use global config
+            override_file: self.override_file,
             global_write_section: Some(GlobalWriteSection::Tools),
             existing_global_paths,
             has_new_global_entries,
@@ -468,7 +477,11 @@ impl Use {
     }
 
     fn global_write_paths(&self, config: &Config) -> Result<(IndexSet<PathBuf>, bool)> {
-        if !(self.global || env::in_home_dir()) || self.path.is_some() || self.env.is_some() {
+        if !(self.global || env::in_home_dir())
+            || self.path.is_some()
+            || self.env.is_some()
+            || self.override_file
+        {
             return Ok((Default::default(), false));
         }
         let additions = self
@@ -484,7 +497,10 @@ impl Use {
         let mut paths = IndexSet::new();
         let mut existing = IndexSet::new();
         for (path, cf) in &config.config_files {
-            if !config::is_global_config(path) || config::is_system_config(path) {
+            if !config::is_global_config(path)
+                || config::is_system_config(path)
+                || config::is_override_config(path)
+            {
                 continue;
             }
             let tools = cf.to_tool_request_set()?;

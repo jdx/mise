@@ -803,17 +803,34 @@ rc = true
 type = "Bool"
 
 [env_file]
-description = "Dotenv file name to load from the current directory and each parent directory."
+description = "Dotenv file names to load from the current directory and each parent directory."
+deserialize_with = "path_or_paths"
 docs = """
-mise loads every file with this name, such as `.env`, between the filesystem
-root and the current directory. When a variable appears in more than one file,
-the file nearest the current directory wins. An absolute path loads that one
+mise loads every file with one of these names, such as `.env` and `.env.local`,
+between the filesystem root and the current directory. When a variable appears
+in more than one file, the file nearest the current directory wins, and within
+one directory a name later in the list wins. An absolute path loads that one
 file. For a dotenv file that belongs to one project, use
 [`_.file`](/environments/#env-file) in `mise.toml` instead.
+
+```toml [~/.config/mise/config.toml]
+[settings]
+env_file = [".env", ".env.local"]
+```
+
+`MISE_ENV_FILE` takes the names separated by `:` (`;` on Windows).
+
+These values are applied after every config file's `[env]`, so they override
+it, except for a file that an `_.file` entry has already loaded, which this
+setting skips. An [`_.file`](/environments/#env-file) entry, including one with
+`find_up = true` in a global config, is an ordinary `[env]` entry that a
+project's own `[env]` values can override.
 """
 env = "MISE_ENV_FILE"
 optional = true
-type = "Path"
+parse_env = "list_by_os_path_separator"
+rust_type = "Vec<PathBuf>"
+type = "ListPath"
 
 [env_shell_expand]
 default = true

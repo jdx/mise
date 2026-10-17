@@ -2497,7 +2497,7 @@ template-expanded environment; use `mise env` for the resolved environment.
             long_help #"""
 Config file to read, or a directory whose config file to read
 
-For a directory, mise reads the TOML config file already there, such as `.mise.toml`, or `mise.toml` when there is none. Defaults to the highest-precedence loaded TOML file.
+For a directory, mise reads the TOML config file already there, such as `.mise.toml`, or `mise.toml` when there is none. Defaults to the highest-precedence loaded TOML file other than the global override files.
 """#
             arg <FILE>
         }
@@ -2506,6 +2506,9 @@ For a directory, mise reads the TOML config file already there, such as `.mise.t
         }
         flag --system help="Read the system config file" {
             conflicts "--file" "--global"
+        }
+        flag --override help="Read the global override file, `config.override.toml`" {
+            conflicts "--file" "--global" "--system"
         }
         flag "-h --help" help="Print help" action=help builtin=#true
         arg "[KEY]" help="Dotted key path to print, such as `tools.python`; omit to print the whole file" required=#false
@@ -2522,7 +2525,9 @@ mise config get tools.python
         long_help #"""
 List config files currently in use, from lowest to highest precedence
 
-Later files override earlier ones.
+Later files override earlier ones. Global override files
+(`config.override.toml`) rank above all project config and are labeled
+`override`.
 """#
         flag --truncate help="Truncate long terminal output to fit the available width" negate=--no-truncate default="true"
         flag "-J --json" help="Output in JSON format"
@@ -2569,12 +2574,15 @@ or `false` as text, and `--type integer` for a number.
             long_help #"""
 Config file to edit, or a directory whose config file to edit
 
-For a directory, mise edits the TOML config file already there, such as `.mise.toml`, or `mise.toml` when there is none. Defaults to the highest-precedence loaded TOML file.
+For a directory, mise edits the TOML config file already there, such as `.mise.toml`, or `mise.toml` when there is none. Defaults to the highest-precedence loaded TOML file other than the global override files.
 """#
             arg <FILE>
         }
         flag "-g --global" help="Edit the global config file" {
             conflicts "--file" "--system"
+        }
+        flag --override help="Edit the global override file, `config.override.toml`" {
+            conflicts "--file" "--global" "--system"
         }
         flag --system help="Edit the system config file" {
             conflicts "--file" "--global"
@@ -6033,6 +6041,14 @@ See https://mise.jdx.dev/configuration.html#target-file-for-write-operations
     flag "-g --global" help="Set the environment variable in the global config file" {
         overrides "--file" "--env"
     }
+    flag --override help="Set the environment variable in the global override file, `config.override.toml`" {
+        long_help #"""
+Set the environment variable in the global override file, `config.override.toml`
+
+The override file outranks all project config. With `--env`, writes `config.<ENV>.override.toml` instead. See https://mise.jdx.dev/configuration.html#override-file
+"""#
+        conflicts "--global" "--file"
+    }
     flag --age-encrypt help="[experimental] Encrypt the value with age before storing" requires=ENV_VAR
     flag --age-key-file help="[experimental] Age identity file whose public keys to encrypt to" requires=--age-encrypt {
         long_help #"""
@@ -6141,6 +6157,13 @@ Write to the nearest project config instead of the global config
 The nearest project config is the lowest-precedence TOML file in the nearest directory that has one, or ./mise.toml.
 """#
         }
+        flag --override help="Write to the global override file, `config.override.toml`" conflicts=--local {
+            long_help #"""
+Write to the global override file, `config.override.toml`
+
+The override file outranks all project config, so the setting wins over the same setting in a project's `mise.toml`.
+"""#
+        }
         flag "-h --help" help="Print help" action=help builtin=#true
         arg <SETTING> help="The array setting to append to"
         arg "[VALUE]" help="The value to append (or pass SETTING=VALUE)" required=#false
@@ -6212,6 +6235,13 @@ Write to the nearest project config instead of the global config
 The nearest project config is the lowest-precedence TOML file in the nearest directory that has one, or ./mise.toml.
 """#
         }
+        flag --override help="Write to the global override file, `config.override.toml`" conflicts=--local {
+            long_help #"""
+Write to the global override file, `config.override.toml`
+
+The override file outranks all project config, so the setting wins over the same setting in a project's `mise.toml`.
+"""#
+        }
         flag "-h --help" help="Print help" action=help builtin=#true
         arg <SETTING> help="The setting to set"
         arg "[VALUE]" help="The value to set (or pass SETTING=VALUE)" required=#false
@@ -6232,6 +6262,13 @@ another config file.
 Write to the nearest project config instead of the global config
 
 The nearest project config is the lowest-precedence TOML file in the nearest directory that has one, or ./mise.toml.
+"""#
+        }
+        flag --override help="Write to the global override file, `config.override.toml`" conflicts=--local {
+            long_help #"""
+Write to the global override file, `config.override.toml`
+
+The override file outranks all project config, so the setting wins over the same setting in a project's `mise.toml`.
 """#
         }
         flag "-h --help" help="Print help" action=help builtin=#true
@@ -7277,6 +7314,14 @@ Can be a file or a directory. For a directory, mise uses the config file in it, 
         arg <FILE>
     }
     flag "-g --global" help="Use the global config file" overrides=--file
+    flag --override help="Use the global override file, `config.override.toml`" {
+        long_help #"""
+Use the global override file, `config.override.toml`
+
+See https://mise.jdx.dev/configuration.html#override-file
+"""#
+        conflicts "--global" "--file"
+    }
     flag "-h --help" help="Print help" action=help builtin=#true
     arg "[ENV_KEY]…" help="Environment variables to remove, such as NODE_ENV" required=#false var=#true
     example "mise unset NODE_ENV" help="Remove NODE_ENV from the project config"
@@ -7327,6 +7372,14 @@ Not the same as the global -E, which only chooses which config files are loaded.
     flag "-p --path --file" help="Edit this config file, or the config file in this directory" {
         overrides "--global" "--env"
         arg <PATH>
+    }
+    flag --override help="Write to the global override file, `config.override.toml`" {
+        long_help #"""
+Write to the global override file, `config.override.toml`
+
+The override file outranks all project config. With `--env`, writes `config.<ENV>.override.toml` instead. See https://mise.jdx.dev/configuration.html#override-file
+"""#
+        conflicts "--global" "--path"
     }
     flag --no-prune help="Do not also prune the installed version"
     flag "-h --help" help="Print help" action=help builtin=#true
@@ -7497,6 +7550,14 @@ For a directory, mise picks the file by the usual write-target rules.
 """#
         overrides "--global" "--env"
         arg <PATH>
+    }
+    flag --override help="Write to the global override file, `config.override.toml`" {
+        long_help #"""
+Write to the global override file, `config.override.toml`
+
+The override file outranks all project config. With `--env`, writes `config.<ENV>.override.toml` instead. See https://mise.jdx.dev/configuration.html#override-file
+"""#
+        conflicts "--global" "--path"
     }
     flag --dry-run-code help="Like --dry-run, but exit with code 1 if there are changes to make" {
         long_help #"""

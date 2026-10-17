@@ -1720,7 +1720,89 @@ impl HistoryRepo {
 
     /// Builds a tree from `base` with `overlays` applied: each path is
     /// removed from the tree and, when an object is given, replaced by it.
+    ///
+    /// **Applied to a listing in memory, then written in one index update.**
+    /// Asking Git to apply each overlay cost two processes apiece, and a
+    /// snapshot overlays every tracked file, so `mise dot status` on a few
+    /// hundred files spent seconds starting Git. The result is the tree
+    /// [`Self::compose_by_git`] builds, failures included: a path added
+    /// beneath a file is refused, as `update-index` refuses it, while a
+    /// subtree replaces a file in its way, as `read-tree --prefix` does.
     pub(crate) fn compose(&self, base: &str, overlays: &[Overlay]) -> Result<String> {
+        if overlays.is_empty() {
+            return Ok(base.to_string());
+        }
+        let mut entries: BTreeMap<String, (String, String)> = self
+            .ls_tree(base)?
+            .into_iter()
+            .map(|entry| (entry.path, (entry.mode, entry.oid)))
+            .collect();
+        for overlay in overlays {
+            // what `ls-files -- :(literal)<path>` lists: the path and everything under it
+            let dir = format!("{}/", overlay.path);
+            entries.remove(&overlay.path);
+            let under: Vec<String> = entries
+                .range(dir.clone()..)
+                .take_while(|(path, _)| path.starts_with(&dir))
+                .map(|(path, _)| path.clone())
+                .collect();
+            for path in under {
+                entries.remove(&path);
+            }
+            let ancestors: Vec<&str> = overlay
+                .path
+                .match_indices('/')
+                .map(|(at, _)| &overlay.path[..at])
+                .filter(|ancestor| entries.contains_key(*ancestor))
+                .collect();
+            match &overlay.object {
+                None => {}
+                Some((mode, oid)) if mode == "040000" => {
+                    let subtree = self.ls_tree(oid)?;
+                    if !subtree.is_empty() {
+                        for ancestor in &ancestors {
+                            entries.remove(*ancestor);
+                        }
+                    }
+                    for entry in subtree {
+                        entries.insert(format!("{dir}{}", entry.path), (entry.mode, entry.oid));
+                    }
+                }
+                Some((mode, oid)) => {
+                    if let Some(ancestor) = ancestors.first() {
+                        bail!(
+                            "'{}' appears as both a file and as a directory ({ancestor} is a file)",
+                            overlay.path
+                        );
+                    }
+                    entries.insert(overlay.path.clone(), (mode.clone(), oid.clone()));
+                }
+            }
+        }
+        if entries.is_empty() {
+            return self.empty_object("tree");
+        }
+        let mut info: Vec<u8> = vec![];
+        for (path, (mode, oid)) in &entries {
+            info.extend_from_slice(format!("{mode} {oid}\t{path}").as_bytes());
+            info.push(0);
+        }
+        let scratch = ScratchIndex::new(self.dir(), "compose");
+        let index = scratch.path();
+        // index-only operations; git still insists on a work tree
+        self.git.run(
+            PlumbingCall::new(["update-index", "-z", "--index-info"])
+                .work_tree(self.dir())
+                .index_file(index)
+                .stdin(&info),
+        )?;
+        self.output_str(PlumbingCall::new(["write-tree"]).index_file(index))
+    }
+
+    /// [`Self::compose`] as Git applies it, one overlay at a time: the
+    /// reference the in-memory version is held to.
+    #[cfg(test)]
+    pub(crate) fn compose_by_git(&self, base: &str, overlays: &[Overlay]) -> Result<String> {
         if overlays.is_empty() {
             return Ok(base.to_string());
         }
@@ -2414,6 +2496,121 @@ mod tests {
             )])
             .unwrap();
         assert_eq!(again.tree, result.tree);
+    }
+
+    /// Composing in memory builds the tree Git builds one overlay at a time,
+    /// and refuses what Git refuses.
+    #[test]
+    fn compose_matches_git() {
+        if mise_util::git::plumbing_binary().is_none() {
+            return;
+        }
+        let tmp = tempfile::tempdir().unwrap();
+        let repo = repo(tmp.path());
+        let blob = |content: &str| repo.hash_blob(content.as_bytes()).unwrap();
+        let put = |path: &str, mode: &str, oid: &str| Overlay {
+            path: path.into(),
+            object: Some((mode.into(), oid.into())),
+        };
+        let absent = |path: &str| Overlay {
+            path: path.into(),
+            object: None,
+        };
+        let empty = repo.empty_object("tree").unwrap();
+        let gitlink = "1111111111111111111111111111111111111111";
+        let base = repo
+            .compose_by_git(
+                &empty,
+                &[
+                    put("home/a", "100644", &blob("a")),
+                    put("home/dir/x", "100644", &blob("x")),
+                    put("home/dir/y", "100755", &blob("y")),
+                    put("home/dir/sub/z", "100644", &blob("z")),
+                    put("home/dir-b/q", "100644", &blob("q")),
+                    put("home/dir.txt", "100644", &blob("t")),
+                    put("home/dir0", "100644", &blob("0")),
+                    put("home/link", "120000", &blob("a")),
+                    put("home/mod", "160000", gitlink),
+                ],
+            )
+            .unwrap();
+        let subtree = repo
+            .compose_by_git(
+                &empty,
+                &[
+                    put("s1", "100644", &blob("s1")),
+                    put("deep/s2", "100644", &blob("s2")),
+                ],
+            )
+            .unwrap();
+        let cases: Vec<(&str, Vec<Overlay>)> = vec![
+            ("replace a file", vec![put("home/a", "100644", &blob("a2"))]),
+            ("remove a file", vec![absent("home/dir/x")]),
+            ("remove a directory", vec![absent("home/dir")]),
+            (
+                "remove a sibling that sorts beside a directory",
+                vec![absent("home/dir-b")],
+            ),
+            (
+                "file over a directory",
+                vec![put("home/dir", "100644", &blob("d"))],
+            ),
+            (
+                "subtree over a file",
+                vec![put("home/a", "040000", &subtree)],
+            ),
+            (
+                "subtree beneath a file",
+                vec![put("home/a/new", "040000", &subtree)],
+            ),
+            (
+                "empty subtree beneath a file",
+                vec![put("home/a/new", "040000", &empty)],
+            ),
+            (
+                "file beneath a file",
+                vec![put("home/a/new", "100644", &blob("n"))],
+            ),
+            (
+                "a later overlay undoes an earlier one",
+                vec![put("home/new/f", "100644", &blob("f")), absent("home/new")],
+            ),
+            (
+                "the last overlay of a path wins",
+                vec![
+                    put("home/a", "100644", &blob("first")),
+                    put("home/a", "100755", &blob("second")),
+                ],
+            ),
+            (
+                "gitlink over a directory",
+                vec![put("home/dir/sub", "160000", gitlink)],
+            ),
+            (
+                "symlink over a file",
+                vec![put("home/dir0", "120000", &blob("x"))],
+            ),
+            ("remove everything", vec![absent("home")]),
+            (
+                "file beneath a file added earlier",
+                vec![
+                    put("home/fresh", "100644", &blob("f")),
+                    put("home/fresh/inner", "100644", &blob("i")),
+                ],
+            ),
+        ];
+        for (name, overlays) in cases {
+            let memory = repo.compose(&base, &overlays);
+            let git = repo.compose_by_git(&base, &overlays);
+            // only a path added beneath a file is refused; anything else
+            // failing both ways would hide a broken comparison
+            let refused = name.starts_with("file beneath a file");
+            match (&memory, &git) {
+                (Ok(memory), Ok(git)) if !refused => assert_eq!(memory, git, "{name}"),
+                (Err(_), Err(_)) if refused => {}
+                _ => panic!("{name}: in memory {memory:?}, by git {git:?}"),
+            }
+        }
     }
 
     /// The reads gix serves answer exactly as the Git commands they replace.
