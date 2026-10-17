@@ -33,9 +33,10 @@ pub(crate) fn add_modified_file(file: PathBuf) {
 }
 
 /// Whether git rewrote every one of `files`: each was last modified no later
-/// than the most recent write to HEAD's reflog in `root`'s checkout. A checkout,
-/// pull or rebase updates the working tree and then logs the HEAD move, while
-/// an edit made afterwards is newer than the log. False outside a git checkout.
+/// than the most recent write to HEAD's reflog in `root`'s checkout, and that
+/// write moved HEAD to another commit. A checkout, pull or rebase updates the
+/// working tree and then logs the HEAD move, while an edit made afterwards is
+/// newer than the log. False outside a git checkout.
 fn git_rewrote(root: &Path, files: &[&PathBuf]) -> bool {
     let Some(log) = git_dir(root).map(|d| d.join("logs").join("HEAD")) else {
         return false;
@@ -43,7 +44,7 @@ fn git_rewrote(root: &Path, files: &[&PathBuf]) -> bool {
     let Some(logged) = std::fs::metadata(&log)
         .and_then(|m| m.modified())
         .ok()
-        .filter(|_| !last_move_was_commit(&log))
+        .filter(|_| last_move_rewrote_files(&log))
     else {
         return false;
     };
@@ -56,9 +57,9 @@ fn git_rewrote(root: &Path, files: &[&PathBuf]) -> bool {
     !mtimes.is_empty() && mtimes.iter().all(|mtime| *mtime <= logged)
 }
 
-/// Whether the latest HEAD reflog entry is a commit, which moves HEAD without
-/// rewriting the files you edited before committing.
-fn last_move_was_commit(log: &Path) -> bool {
+/// Whether the latest HEAD reflog entry can have rewritten files. See
+/// [`reflog_entry_rewrote_files`].
+fn last_move_rewrote_files(log: &Path) -> bool {
     use std::io::{Read, Seek, SeekFrom};
     let Ok(mut f) = std::fs::File::open(log) else {
         return false;
@@ -73,8 +74,23 @@ fn last_move_was_commit(log: &Path) -> bool {
     String::from_utf8_lossy(&tail)
         .lines()
         .rfind(|l| !l.is_empty())
-        .and_then(|l| l.split_once('\t'))
-        .is_some_and(|(_, msg)| msg.starts_with("commit"))
+        .is_some_and(reflog_entry_rewrote_files)
+}
+
+/// Whether a HEAD reflog entry (`<old> <new> <who> <when>\t<message>`) moved
+/// HEAD from one commit to another without committing. A commit keeps the files
+/// you edited, and `git checkout -b`, `git reset` to HEAD or `git branch -m`
+/// log an entry that leaves HEAD on the same commit (or, for a rename, has no
+/// old commit), so none of them rewrote files.
+fn reflog_entry_rewrote_files(entry: &str) -> bool {
+    let Some((head, msg)) = entry.split_once('\t') else {
+        return false;
+    };
+    let mut ids = head.split(' ');
+    let (Some(old), Some(new)) = (ids.next(), ids.next()) else {
+        return false;
+    };
+    !msg.starts_with("commit") && old != new && old.bytes().any(|b| b != b'0')
 }
 
 /// The git directory of the checkout containing `root`: a `.git` directory, or
@@ -322,4 +338,66 @@ pub(crate) fn glob(root: &Path, patterns: &[String]) -> Result<Vec<PathBuf>> {
         .into_iter()
         .flat_map(|paths| paths.filter_map(|p| p.ok()))
         .collect())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::reflog_entry_rewrote_files;
+
+    const A: &str = "1111111111111111111111111111111111111111";
+    const B: &str = "2222222222222222222222222222222222222222";
+    const ZERO: &str = "0000000000000000000000000000000000000000";
+
+    fn entry(old: &str, new: &str, msg: &str) -> String {
+        format!("{old} {new} t <t@example.com> 1792203762 +0000\t{msg}")
+    }
+
+    #[test]
+    fn a_move_to_another_commit_rewrote_files() {
+        assert!(reflog_entry_rewrote_files(&entry(
+            A,
+            B,
+            "checkout: moving from feat to main"
+        )));
+        assert!(reflog_entry_rewrote_files(&entry(
+            A,
+            B,
+            "pull: Fast-forward"
+        )));
+    }
+
+    #[test]
+    fn a_commit_did_not_rewrite_files() {
+        assert!(!reflog_entry_rewrote_files(&entry(A, B, "commit: two")));
+        assert!(!reflog_entry_rewrote_files(&entry(
+            ZERO,
+            A,
+            "commit (initial): one"
+        )));
+    }
+
+    #[test]
+    fn staying_on_the_same_commit_did_not_rewrite_files() {
+        assert!(!reflog_entry_rewrote_files(&entry(
+            A,
+            A,
+            "checkout: moving from main to feat"
+        )));
+        assert!(!reflog_entry_rewrote_files(&entry(
+            A,
+            A,
+            "reset: moving to HEAD"
+        )));
+        assert!(!reflog_entry_rewrote_files(&entry(
+            ZERO,
+            A,
+            "Branch: renamed refs/heads/feat to refs/heads/feat2"
+        )));
+    }
+
+    #[test]
+    fn a_malformed_entry_did_not_rewrite_files() {
+        assert!(!reflog_entry_rewrote_files(""));
+        assert!(!reflog_entry_rewrote_files("garbage"));
+    }
 }
