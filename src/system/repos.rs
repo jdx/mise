@@ -16,24 +16,10 @@ use std::path::{Component, Path, PathBuf};
 use std::process::Command;
 
 use eyre::{Result, bail, eyre};
-use serde::Deserialize;
 use url::Url;
 
 use crate::file;
-
-#[derive(Debug, Default, Clone, Deserialize)]
-pub struct RepoTomlConfig {
-    #[serde(default)]
-    pub url: Option<String>,
-    #[serde(default, rename = "ref")]
-    pub git_ref: Option<String>,
-    #[serde(default)]
-    pub filter: Option<String>,
-    #[serde(default)]
-    pub depth: Option<u32>,
-    #[serde(default)]
-    pub submodules: Option<bool>,
-}
+pub use mise_system_config::repos::RepoTomlConfig;
 
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct RepoRequest {

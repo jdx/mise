@@ -10,74 +10,31 @@
 //! file content keeps its explicit `template = true` opt-in so literal
 //! `{{ ... }}` payloads stay untouched.
 
-use std::ops::Deref;
 use std::path::Path;
 
 use eyre::{Result, eyre};
-use serde::Deserialize;
 use serde::de::DeserializeOwned;
 use tera::Context;
 
 use crate::config::Config;
 use crate::tera::{TeraEngine, contains_template_syntax, get_tera_without_exec, render_str};
 
-/// A `[bootstrap]` entry that retains its raw TOML so string values can be
-/// rendered as templates before the entry is used.
-///
-/// Derefs to the unrendered parsed value: callers that only inspect the
-/// declaration (tests, counters) need no changes, while callers that build a
-/// request from it call [`Templated::render`] first.
-#[derive(Debug, Clone, PartialEq)]
-pub struct Templated<T> {
-    raw: toml::Value,
-    parsed: T,
-    ignored: Vec<String>,
+pub(crate) use mise_system_config::templating::Templated;
+
+/// Rendering for [`Templated`] values; it needs the config's template context, so it lives in
+/// mise rather than next to the type.
+pub(crate) trait TemplatedExt<T: DeserializeOwned>: Sized {
+    fn render(self, config: &Config, config_path: &Path) -> Result<T>;
+    fn render_with(self, ctx: &Context, config_path: &Path) -> Result<T>;
 }
 
-impl<'de, T: DeserializeOwned> Deserialize<'de> for Templated<T> {
-    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        // Capturing the raw table consumes every key, so the outer
-        // `serde_ignored` pass over the config can no longer see unknown fields
-        // inside this entry. Record them here instead and let the caller report
-        // them with the section and entry name.
-        let raw = toml::Value::deserialize(deserializer)?;
-        let mut ignored = vec![];
-        let parsed = serde_ignored::deserialize(raw.clone(), |path| ignored.push(path.to_string()))
-            .map_err(serde::de::Error::custom)?;
-        Ok(Self {
-            raw,
-            parsed,
-            ignored,
-        })
-    }
-}
-
-impl<T> Deref for Templated<T> {
-    type Target = T;
-    fn deref(&self) -> &Self::Target {
-        &self.parsed
-    }
-}
-
-impl<T> Templated<T> {
-    /// Field paths inside this entry that no field of `T` claimed, relative to
-    /// the entry itself. The caller prefixes them with the section and entry
-    /// name when warning.
-    pub(crate) fn ignored_fields(&self) -> &[String] {
-        &self.ignored
-    }
-}
-
-impl<T: DeserializeOwned> Templated<T> {
+impl<T: DeserializeOwned> TemplatedExt<T> for Templated<T> {
     /// Render every string value against the bootstrap template context of the
     /// config file that declared this entry, then reparse it.
     ///
     /// Entries without template syntax skip the renderer entirely and return
     /// the value parsed at load time.
-    pub(crate) fn render(self, config: &Config, config_path: &Path) -> Result<T> {
+    fn render(self, config: &Config, config_path: &Path) -> Result<T> {
         if !value_contains_template_syntax(&self.raw) {
             return Ok(self.parsed);
         }
@@ -90,7 +47,7 @@ impl<T: DeserializeOwned> Templated<T> {
     }
 
     /// [`Templated::render`] against an explicit context.
-    pub(crate) fn render_with(self, ctx: &Context, config_path: &Path) -> Result<T> {
+    fn render_with(self, ctx: &Context, config_path: &Path) -> Result<T> {
         if !value_contains_template_syntax(&self.raw) {
             return Ok(self.parsed);
         }

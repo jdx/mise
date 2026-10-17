@@ -6,22 +6,13 @@
 //! requested with `mise bootstrap macos defaults apply` or `mise bootstrap`.
 
 use indexmap::IndexMap;
+pub use mise_system_config::defaults::HostScope;
 
 mod dock;
 
 use crate::result::Result;
 
 /// The host scope is part of a preference's identity.
-#[derive(
-    Debug, Default, Clone, Copy, PartialEq, Eq, Hash, serde::Deserialize, serde::Serialize,
-)]
-#[serde(rename_all = "snake_case")]
-pub enum HostScope {
-    #[default]
-    Any,
-    Current,
-}
-
 pub(super) fn canonical_domain(domain: &str) -> &str {
     match domain {
         "-g" | "-globalDomain" => "NSGlobalDomain",

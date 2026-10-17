@@ -5,7 +5,7 @@ use std::sync::{Arc, Mutex};
 use demand::Input;
 use eyre::{Result, bail};
 use indexmap::IndexMap;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use serde_json::Value as JsonValue;
 use tera::{Kwargs, State, TeraResult, Value};
 
@@ -15,21 +15,7 @@ use crate::system::resources::ResourceOrigin;
 use crate::tera::{
     BASE_CONTEXT, TeraEngine, get_tera, get_tera_for_oci, get_tera_v2, render_str, render_str_v2,
 };
-
-#[derive(Clone, Debug, Deserialize)]
-#[serde(untagged)]
-pub enum SecretTomlConfig {
-    Env(String),
-    Options(SecretOptionsTomlConfig),
-}
-
-#[derive(Clone, Debug, Deserialize)]
-pub struct SecretOptionsTomlConfig {
-    pub env: String,
-    pub description: Option<String>,
-    #[serde(default)]
-    pub allow_empty: bool,
-}
+pub use mise_system_config::secrets::{SecretOptionsTomlConfig, SecretTomlConfig};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct SecretDeclaration {
