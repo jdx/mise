@@ -798,6 +798,16 @@ impl SelfUpdate {
             .await?)
     }
 
+    /// An asset URL from the release JSON after `url_replacements`, so a mirror
+    /// that serves GitHub's JSON unchanged can still serve the assets. Build
+    /// headers from the result: a GitHub token is then only sent where it would
+    /// go without the rewrite.
+    fn replaced_url(url: &str) -> Result<String> {
+        let mut url = url::Url::parse(url)?;
+        crate::http::apply_url_replacements(&mut url);
+        Ok(url.into())
+    }
+
     fn request_headers(source: &SelfUpdateSource, url: &str) -> Result<reqwest::header::HeaderMap> {
         let mut headers = crate::github::get_headers(url)?;
         // A configured API may use any HTTPS host/path. Resolve its token
@@ -839,8 +849,9 @@ impl SelfUpdate {
         source: &SelfUpdateSource,
         url: &str,
     ) -> Result<String> {
+        let url = Self::replaced_url(url)?;
         debug!("GET {url}");
-        let mut headers = Self::request_headers(source, url)?;
+        let mut headers = Self::request_headers(source, &url)?;
         headers.insert(reqwest::header::ACCEPT, "application/octet-stream".parse()?);
         let mut response = client
             .get(url)
@@ -880,8 +891,9 @@ impl SelfUpdate {
         path: &Path,
     ) -> Result<()> {
         use tokio::io::AsyncWriteExt;
+        let url = Self::replaced_url(url)?;
         debug!("GET {url}");
-        let mut headers = Self::request_headers(source, url)?;
+        let mut headers = Self::request_headers(source, &url)?;
         headers.insert(reqwest::header::ACCEPT, "application/octet-stream".parse()?);
         let mut response = client
             .get(url)
@@ -956,7 +968,7 @@ impl SelfUpdate {
                 )
             })?;
         // Every redirect is governed by the downgrade-rejecting client below.
-        let url = source.asset_url(asset).to_string();
+        let url = Self::replaced_url(source.asset_url(asset))?;
         debug!("Downloading mise-shim.exe from {url}");
 
         let temp_dir = tempfile::tempdir()?;
