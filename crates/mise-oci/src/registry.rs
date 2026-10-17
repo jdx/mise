@@ -5,11 +5,11 @@
 //!
 //! Push side: used by `mise oci push` to upload an OCI image layout directly
 //! — no skopeo/crane required. Credentials come from the same sources docker
-//! and podman use (see `crate::oci::auth`); anonymous access is used when no
+//! and podman use (see `crate::auth`); anonymous access is used when no
 //! credentials are found (e.g. a local `registry:2`).
 
-use crate::config::SettingsExt;
-use crate::file::ExtractionFormat;
+use mise_util::file::ExtractionFormat;
+use mise_util::network;
 use std::path::{Component, Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -19,14 +19,14 @@ use reqwest::StatusCode;
 use reqwest::header::{HeaderMap, HeaderValue};
 use serde::Deserialize;
 
-use crate::http::{HTTP, HTTP_UPLOAD};
-use crate::oci::auth::Credential;
-use crate::oci::layout::ImageLayout;
-use crate::oci::manifest::{
+use crate::auth::Credential;
+use crate::layout::ImageLayout;
+use crate::manifest::{
     Descriptor, ImageIndex, ImageManifest, MEDIA_TYPE_DOCKER_MANIFEST,
     MEDIA_TYPE_DOCKER_MANIFEST_LIST, MEDIA_TYPE_OCI_INDEX, MEDIA_TYPE_OCI_MANIFEST,
 };
-use crate::ui::progress_report::SingleReport;
+use mise_ui::progress_report::SingleReport;
+use mise_util::http::{HTTP, HTTP_UPLOAD};
 
 /// A parsed registry reference.
 #[derive(Debug, Clone)]
@@ -129,7 +129,7 @@ impl Reference {
 /// contacted over plain HTTP: loopback addresses always, plus anything listed
 /// in the `oci.insecure_registries` setting.
 fn is_insecure_registry(registry: &str) -> bool {
-    let settings = crate::config::Settings::get();
+    let settings = mise_settings::Settings::get();
     let entries = settings.oci.insecure_registries.as_deref().unwrap_or(&[]);
     is_insecure_registry_in(registry, entries)
 }
@@ -287,7 +287,7 @@ impl AuthSession {
     }
 
     async fn with_scopes(reference: Reference, scopes: Vec<String>) -> Result<Self> {
-        let credential = crate::oci::auth::resolve_credential(&reference.registry)?;
+        let credential = crate::auth::resolve_credential(&reference.registry)?;
         let mut session = Self {
             reference,
             credential,
@@ -589,14 +589,15 @@ async fn fetch_manifest_json(
 /// [`AuthSession`]) on every attempt.
 macro_rules! retry_transient {
     ($verb:expr, $url:expr, $op:expr) => {{
-        let mut backoff =
-            crate::http::default_backoff_strategy(crate::config::Settings::get().http_retries());
+        let mut backoff = mise_util::http::default_backoff_strategy(network::http_retries(
+            &mise_settings::Settings::get(),
+        ));
         let mut attempt = 1;
         loop {
             match $op {
                 Ok(v) => break Ok(v),
                 Err(err) => {
-                    if !crate::http::is_transient(&err) {
+                    if !mise_util::http::is_transient(&err) {
                         break Err(err);
                     }
                     let Some(delay) = backoff.next() else {
@@ -668,14 +669,14 @@ async fn download_blob_once(
 
 /// The result of pulling a base image — the config blob and an ordered list
 /// of layer descriptors (referenced in the new image manifest we'll build).
-pub(crate) struct BasePull {
+pub struct BasePull {
     pub layers: Vec<Descriptor>,
-    pub platform: Option<crate::oci::manifest::Platform>,
+    pub platform: Option<crate::manifest::Platform>,
     /// Parsed config (so the builder can inherit env, cmd, etc.).
     pub config_json: serde_json::Value,
 }
 
-pub(crate) async fn pull_base_image(
+pub async fn pull_base_image(
     reference: &str,
     layout: &ImageLayout,
     desired_platform: Option<(&str, &str)>,
@@ -723,9 +724,9 @@ pub(crate) async fn pull_base_image(
     // registry could otherwise return `sha256:../../etc/passwd` and have it
     // slip through the `blob_path().exists()` cache-check below (which
     // bypasses the digest verification inside `write_blob_with_digest`).
-    crate::oci::layout::validate_sha256_digest(&manifest.config.digest)?;
+    crate::layout::validate_sha256_digest(&manifest.config.digest)?;
     for layer in &manifest.layers {
-        crate::oci::layout::validate_sha256_digest(&layer.digest)?;
+        crate::layout::validate_sha256_digest(&layer.digest)?;
     }
 
     // Download config blob and stream layer blobs into the layout.
@@ -737,7 +738,7 @@ pub(crate) async fn pull_base_image(
     // Preserve the byte-level digest by writing under the exact digest name.
     layout.write_blob_with_digest(&manifest.config.digest, &config_bytes)?;
 
-    let mpr = crate::ui::multi_progress_report::MultiProgressReport::get();
+    let mpr = mise_ui::multi_progress_report::MultiProgressReport::get();
     for layer in &manifest.layers {
         let layer_url = format!("{base_url}/v2/{}/blobs/{}", r.repository, layer.digest);
         let blob_path = layout.blob_path(&layer.digest);
@@ -767,7 +768,7 @@ pub(crate) async fn pull_base_image(
         .get("architecture")
         .and_then(|a| a.as_str())
         .zip(config_json.get("os").and_then(|o| o.as_str()))
-        .map(|(arch, os)| crate::oci::manifest::Platform {
+        .map(|(arch, os)| crate::manifest::Platform {
             architecture: arch.to_string(),
             os: os.to_string(),
             os_version: None,
@@ -811,8 +812,8 @@ async fn resolve_manifest(
             .cloned()
             .unwrap_or_default();
         let (arch, os) = desired_platform.unwrap_or((std::env::consts::ARCH, std::env::consts::OS));
-        let arch = crate::oci::normalize_arch(arch);
-        let os = crate::oci::normalize_os(os);
+        let arch = crate::normalize_arch(arch);
+        let os = crate::normalize_os(os);
         let picked = manifests.iter().find(|m| {
             let a = m
                 .get("platform")
@@ -937,7 +938,7 @@ fn reject_artifact_links(root: &Path) -> Result<()> {
         if !file_type.is_file() && !file_type.is_dir() {
             bail!(
                 "artifact contains {}, which is not a regular file or directory",
-                crate::file::display_path(entry.path())
+                mise_util::file::display_path(entry.path())
             );
         }
     }
@@ -977,12 +978,12 @@ fn merge_artifact_tree(from: &Path, to: &Path, whiteouts: bool) -> Result<()> {
         } else if name == ".wh..wh..opq" {
             if parent.is_dir() {
                 for child in std::fs::read_dir(&parent)? {
-                    crate::file::remove_all(child?.path())?;
+                    mise_util::file::remove_all(child?.path())?;
                 }
             }
         } else if let Some(hidden) = name.strip_prefix(".wh.") {
             whiteout_target(name, hidden)?;
-            crate::file::remove_all(parent.join(hidden))?;
+            mise_util::file::remove_all(parent.join(hidden))?;
         } else {
             copies.push((relative, is_dir));
         }
@@ -990,13 +991,13 @@ fn merge_artifact_tree(from: &Path, to: &Path, whiteouts: bool) -> Result<()> {
     for (relative, is_dir) in copies {
         let target = to.join(relative);
         if *is_dir {
-            crate::file::create_dir_all(&target)?;
+            mise_util::file::create_dir_all(&target)?;
         } else {
             if let Some(parent) = target.parent() {
-                crate::file::create_dir_all(parent)?;
+                mise_util::file::create_dir_all(parent)?;
             }
             std::fs::copy(from.join(relative), &target)
-                .wrap_err_with(|| format!("writing {}", crate::file::display_path(&target)))?;
+                .wrap_err_with(|| format!("writing {}", mise_util::file::display_path(&target)))?;
         }
     }
     Ok(())
@@ -1016,7 +1017,7 @@ fn merge_artifact_tree(from: &Path, to: &Path, whiteouts: bool) -> Result<()> {
 ///
 /// Every blob is verified against the digest in the manifest, and the
 /// manifest itself against the reference when it is pinned by digest.
-pub(crate) async fn pull_artifact(reference: &str, dest: &Path) -> Result<()> {
+pub async fn pull_artifact(reference: &str, dest: &Path) -> Result<()> {
     let r = Reference::parse(reference)?;
     let base_url = r.registry_url();
     let manifest_url = format!("{base_url}/v2/{}/manifests/{}", r.repository, r.tag);
@@ -1036,14 +1037,14 @@ pub(crate) async fn pull_artifact(reference: &str, dest: &Path) -> Result<()> {
     // without transferring any blobs.
     let mut layers = Vec::with_capacity(manifest.layers.len());
     for layer in &manifest.layers {
-        crate::oci::layout::validate_sha256_digest(&layer.digest)?;
+        crate::layout::validate_sha256_digest(&layer.digest)?;
         layers.push((layer, classify_artifact_layer(layer)?));
     }
     if layers.is_empty() {
         bail!("{reference} has no layers, so there are no files to pull");
     }
 
-    crate::file::create_dir_all(dest)?;
+    mise_util::file::create_dir_all(dest)?;
     let scratch = tempfile::tempdir()?;
     for (layer, kind) in layers {
         let url = format!("{base_url}/v2/{}/blobs/{}", r.repository, layer.digest);
@@ -1059,22 +1060,22 @@ pub(crate) async fn pull_artifact(reference: &str, dest: &Path) -> Result<()> {
             ArtifactLayerKind::File(path) => {
                 let target = dest.join(path);
                 if let Some(parent) = target.parent() {
-                    crate::file::create_dir_all(parent)?;
+                    mise_util::file::create_dir_all(parent)?;
                 }
-                crate::file::write(&target, &bytes)?;
+                mise_util::file::write(&target, &bytes)?;
             }
             ArtifactLayerKind::Tar(dir, format, whiteouts) => {
                 // Extract away from `dest` and vet the tree first: `dest` must
                 // never hold a link that a later layer's write could follow.
                 let name = layer.digest.replace(':', "-");
                 let archive = scratch.path().join(&name);
-                crate::file::write(&archive, &bytes)?;
+                mise_util::file::write(&archive, &bytes)?;
                 let unpacked = scratch.path().join(format!("{name}-tree"));
-                crate::file::untar(
+                mise_util::file::untar(
                     &archive,
                     &unpacked,
                     format,
-                    &crate::file::ExtractOptions::default(),
+                    &mise_util::file::ExtractOptions::default(),
                 )?;
                 reject_artifact_links(&unpacked)?;
                 merge_artifact_tree(&unpacked, &dest.join(dir), whiteouts)?;
@@ -1176,7 +1177,7 @@ pub async fn fetch_remote_image(reference: &str) -> Result<Option<RemoteImage>> 
         let Some(digest) = digest else {
             return Ok(None); // no entry for this platform — nothing to reuse
         };
-        crate::oci::layout::validate_sha256_digest(&digest)?;
+        crate::layout::validate_sha256_digest(&digest)?;
         let child_url = format!("{base_url}/v2/{}/manifests/{digest}", r.repository);
         let (child, _ct) = fetch_manifest_json(&mut session, &child_url, &manifest_accept).await?;
         body = child;
@@ -1187,9 +1188,9 @@ pub async fn fetch_remote_image(reference: &str) -> Result<Option<RemoteImage>> 
     };
 
     // Same guards as pull_base_image: digests become path/URL components.
-    crate::oci::layout::validate_sha256_digest(&manifest.config.digest)?;
+    crate::layout::validate_sha256_digest(&manifest.config.digest)?;
     for layer in &manifest.layers {
-        crate::oci::layout::validate_sha256_digest(&layer.digest)?;
+        crate::layout::validate_sha256_digest(&layer.digest)?;
     }
 
     let config_url = format!(
@@ -1242,7 +1243,7 @@ const STREAMING_UPLOAD_THRESHOLD: u64 = 64 * 1024 * 1024;
 /// The standard annotation naming the base image a manifest was built from
 /// (written by `mise oci build`). Push uses it to attempt cross-repository
 /// blob mounts when the base lives on the same registry.
-pub(crate) const ANNOTATION_BASE_NAME: &str = "org.opencontainers.image.base.name";
+pub const ANNOTATION_BASE_NAME: &str = "org.opencontainers.image.base.name";
 
 /// Push an OCI image layout directory to a registry reference.
 ///
@@ -1262,7 +1263,7 @@ pub async fn push_image(
     update_index: bool,
 ) -> Result<PushSummary> {
     eyre::ensure!(
-        !crate::config::Settings::get().offline(),
+        !network::offline(&mise_settings::Settings::get()),
         "offline mode is enabled"
     );
     let r = Reference::parse(reference)?;
@@ -1272,7 +1273,7 @@ pub async fn push_image(
 
     // Resolve the layout's single manifest. `mise oci build` always writes
     // exactly one manifest into index.json.
-    let index_bytes = crate::file::read(image_dir.join("index.json"))?;
+    let index_bytes = mise_util::file::read(image_dir.join("index.json"))?;
     let index: ImageIndex = serde_json::from_slice(&index_bytes).wrap_err("parsing index.json")?;
     let manifest_desc = match index.manifests.as_slice() {
         [one] => one,
@@ -1339,12 +1340,12 @@ pub async fn push_image(
         }
     }
 
-    let mpr = crate::ui::multi_progress_report::MultiProgressReport::get();
+    let mpr = mise_ui::multi_progress_report::MultiProgressReport::get();
     let mut uploaded = 0;
     let mut skipped = 0;
     let mut mounted = 0;
     for desc in blobs {
-        crate::oci::layout::validate_sha256_digest(&desc.digest)?;
+        crate::layout::validate_sha256_digest(&desc.digest)?;
         if pusher.blob_exists(&desc.digest).await? {
             debug!("blob {} already present, skipping", desc.digest);
             skipped += 1;
@@ -1457,7 +1458,7 @@ pub async fn push_image(
 fn platform_from_config(
     layout: &ImageLayout,
     config_digest: &str,
-) -> Result<crate::oci::manifest::Platform> {
+) -> Result<crate::manifest::Platform> {
     let config: serde_json::Value = serde_json::from_slice(&layout.read_blob(config_digest)?)?;
     platform_from_config_value(&config)
 }
@@ -1467,18 +1468,15 @@ fn platform_from_config(
 /// and the host-comparison in `fetch_remote_image` agree, and preserving
 /// `os.version` / `os.features` (relevant for Windows images) rather than
 /// dropping them.
-fn platform_from_config_value(
-    config: &serde_json::Value,
-) -> Result<crate::oci::manifest::Platform> {
+fn platform_from_config_value(config: &serde_json::Value) -> Result<crate::manifest::Platform> {
     let get = |k: &str| config.get(k).and_then(|v| v.as_str());
-    let architecture = crate::oci::normalize_arch(
+    let architecture = crate::normalize_arch(
         get("architecture").ok_or_else(|| eyre::eyre!("image config has no architecture"))?,
     )
     .to_string();
-    let os =
-        crate::oci::normalize_os(get("os").ok_or_else(|| eyre::eyre!("image config has no os"))?)
-            .to_string();
-    Ok(crate::oci::manifest::Platform {
+    let os = crate::normalize_os(get("os").ok_or_else(|| eyre::eyre!("image config has no os"))?)
+        .to_string();
+    Ok(crate::manifest::Platform {
         architecture,
         os,
         os_version: get("os.version").map(String::from),
@@ -1524,7 +1522,7 @@ fn upsert_platform_manifest(mut entries: Vec<Descriptor>, entry: Descriptor) -> 
 ///
 /// Returned as `(os, architecture, variant, os_version)` so the derived
 /// ordering groups by OS then arch.
-fn platform_identity(p: &crate::oci::manifest::Platform) -> (String, String, String, String) {
+fn platform_identity(p: &crate::manifest::Platform) -> (String, String, String, String) {
     platform_identity_parts(
         &p.architecture,
         &p.os,
@@ -1539,8 +1537,8 @@ fn platform_identity_parts(
     variant: Option<&str>,
     os_version: Option<&str>,
 ) -> (String, String, String, String) {
-    let arch = crate::oci::normalize_arch(architecture);
-    let os = crate::oci::normalize_os(os);
+    let arch = crate::normalize_arch(architecture);
+    let os = crate::normalize_os(os);
     let variant = match (arch, variant) {
         // arm64's canonical variant is v8; a missing/empty variant means the
         // same platform (containerd's normalization).
@@ -1570,7 +1568,7 @@ fn sha256_digest(bytes: &[u8]) -> String {
     use sha2::{Digest, Sha256};
     let mut h = Sha256::new();
     h.update(bytes);
-    format!("sha256:{}", crate::oci::layer::hex_encode(&h.finalize()))
+    format!("sha256:{}", crate::layer::hex_encode(&h.finalize()))
 }
 
 /// First 12 hex chars of a `sha256:…` digest, for display.
@@ -1709,7 +1707,8 @@ impl Pusher {
             let resp = self
                 .session
                 .send_upload(|auth| {
-                    let watch = UploadWatch::new(crate::config::Settings::get().http_timeout());
+                    let watch =
+                        UploadWatch::new(network::http_timeout(&mise_settings::Settings::get()));
                     err_slot.lock().unwrap().watch = Some(watch.clone());
                     let request = build_upload_request(
                         HTTP_UPLOAD.reqwest()?.patch(location.as_str()),
@@ -1954,7 +1953,7 @@ impl Pusher {
             .and_then(|d| d.as_str())
             .ok_or_else(|| eyre::eyre!("manifest has no config digest"))?
             .to_string();
-        crate::oci::layout::validate_sha256_digest(&config_digest)?;
+        crate::layout::validate_sha256_digest(&config_digest)?;
         let config_url = format!(
             "{}/v2/{}/blobs/{config_digest}",
             self.base_url, self.repository
@@ -2179,7 +2178,7 @@ mod tests {
         .await
         .unwrap_err();
 
-        assert!(crate::http::is_transient(&err));
+        assert!(mise_util::http::is_transient(&err));
         assert!(format!("{err:#}").contains("made no progress"));
         server.abort();
     }
@@ -2216,7 +2215,7 @@ mod tests {
         .await
         .unwrap_err();
 
-        assert!(crate::http::is_transient(&err));
+        assert!(mise_util::http::is_transient(&err));
         assert!(format!("{err:#}").contains("received no response"));
         server.abort();
     }
@@ -2253,7 +2252,6 @@ mod tests {
     async fn base_layers_stay_remote_only_for_pushes_to_the_same_repository() {
         use sha2::{Digest, Sha256};
 
-        let _config = crate::config::Config::get().await.unwrap();
         let mut server = mockito::Server::new_async().await;
         let reference = format!("{}/tools:base", server.host_with_port());
         let destination = format!("{}/tools:dev", server.host_with_port());
@@ -2264,7 +2262,7 @@ mod tests {
         for version in ["first base", "updated base"] {
             let digest = format!(
                 "sha256:{}",
-                crate::oci::layer::hex_encode(&Sha256::digest(version.as_bytes()))
+                crate::layer::hex_encode(&Sha256::digest(version.as_bytes()))
             );
             let config = serde_json::json!({
                 "architecture": "amd64", "os": "linux",
@@ -2273,7 +2271,7 @@ mod tests {
             .to_string();
             let config_digest = format!(
                 "sha256:{}",
-                crate::oci::layer::hex_encode(&Sha256::digest(config.as_bytes()))
+                crate::layer::hex_encode(&Sha256::digest(config.as_bytes()))
             );
             let manifest = server.mock("GET", "/v2/tools/manifests/base")
                 .with_header("content-type", MEDIA_TYPE_OCI_MANIFEST)
@@ -2328,7 +2326,6 @@ mod tests {
 
     #[tokio::test]
     async fn sparse_push_downloads_missing_bytes_when_head_is_unsupported() {
-        let _config = crate::config::Config::get().await.unwrap();
         let mut server = mockito::Server::new_async().await;
         let td = tempfile::tempdir().unwrap();
         let layout = ImageLayout::init(td.path()).unwrap();
@@ -2413,7 +2410,6 @@ mod tests {
     async fn large_blob_uses_one_content_range_free_patch() {
         use sha2::{Digest, Sha256};
 
-        let _config = crate::config::Config::get().await.unwrap();
         let mut server = mockito::Server::new_async().await;
         let td = tempfile::tempdir().unwrap();
         let layout = ImageLayout::init(td.path()).unwrap();
@@ -2432,10 +2428,7 @@ mod tests {
             hasher.update(&zeros[..len]);
             remaining -= len as u64;
         }
-        let layer_digest = format!(
-            "sha256:{}",
-            crate::oci::layer::hex_encode(&hasher.finalize())
-        );
+        let layer_digest = format!("sha256:{}", crate::layer::hex_encode(&hasher.finalize()));
         let layer_path = layout.blob_path(&layer_digest);
         std::fs::File::create(layer_path)
             .unwrap()
@@ -2606,7 +2599,6 @@ mod tests {
 
     #[tokio::test]
     async fn pulls_titled_file_layers_from_an_artifact() {
-        let _config = crate::config::Config::get().await.unwrap();
         let mut server = mockito::Server::new_async().await;
         let script = b"#!/usr/bin/env bash\necho hi\n";
         let toml = b"[hello]\nrun = 'echo hello'\n";
@@ -2677,7 +2669,6 @@ mod tests {
 
     #[tokio::test]
     async fn pull_artifact_rejects_a_blob_that_does_not_match_its_digest() {
-        let _config = crate::config::Config::get().await.unwrap();
         let mut server = mockito::Server::new_async().await;
         let digest = sha256_digest(b"expected");
         let manifest = serde_json::json!({
@@ -2717,7 +2708,6 @@ mod tests {
 
     #[tokio::test]
     async fn pull_artifact_verifies_a_digest_pinned_manifest() {
-        let _config = crate::config::Config::get().await.unwrap();
         let mut server = mockito::Server::new_async().await;
         let pinned = sha256_digest(b"the manifest the pin promises");
         let manifest = serde_json::json!({
@@ -2755,7 +2745,6 @@ mod tests {
     #[cfg(unix)]
     #[tokio::test]
     async fn pull_artifact_never_writes_through_a_symlink_from_an_earlier_layer() {
-        let _config = crate::config::Config::get().await.unwrap();
         let mut server = mockito::Server::new_async().await;
         let outside = tempfile::tempdir().unwrap();
 
@@ -2994,7 +2983,7 @@ mod tests {
             size: 1,
             digest: digest.to_string(),
             annotations: Default::default(),
-            platform: Some(crate::oci::manifest::Platform {
+            platform: Some(crate::manifest::Platform {
                 architecture: arch.to_string(),
                 os: os.to_string(),
                 os_version: None,
@@ -3029,7 +3018,7 @@ mod tests {
             size: 1,
             digest: digest.to_string(),
             annotations: Default::default(),
-            platform: Some(crate::oci::manifest::Platform {
+            platform: Some(crate::manifest::Platform {
                 architecture: "amd64".to_string(),
                 os: "windows".to_string(),
                 os_version: Some(ver.to_string()),
@@ -3053,7 +3042,7 @@ mod tests {
             size: 1,
             digest: "sha256:buildx-arm64v8".to_string(),
             annotations: Default::default(),
-            platform: Some(crate::oci::manifest::Platform {
+            platform: Some(crate::manifest::Platform {
                 architecture: "arm64".to_string(),
                 os: "linux".to_string(),
                 os_version: None,

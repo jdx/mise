@@ -16,17 +16,17 @@ use std::path::{Path, PathBuf};
 use eyre::{Context, Result};
 use sha2::{Digest, Sha256};
 
-use crate::file;
-use crate::oci::manifest::{
+use crate::manifest::{
     Descriptor, ImageIndex, ImageManifest, MEDIA_TYPE_OCI_INDEX, OciLayout, Platform,
 };
+use mise_util::file;
 
-pub(crate) struct ImageLayout {
+pub struct ImageLayout {
     pub root: PathBuf,
 }
 
 impl ImageLayout {
-    pub(crate) fn init(root: &Path) -> Result<Self> {
+    pub fn init(root: &Path) -> Result<Self> {
         file::create_dir_all(root)?;
         file::create_dir_all(root.join("blobs/sha256"))?;
         let layout_path = root.join("oci-layout");
@@ -39,10 +39,10 @@ impl ImageLayout {
 
     /// Write raw bytes as a blob. Returns the blob digest (as `sha256:...`).
     /// Idempotent — if the blob already exists it is left untouched.
-    pub(crate) fn write_blob(&self, bytes: &[u8]) -> Result<(String, u64)> {
+    pub fn write_blob(&self, bytes: &[u8]) -> Result<(String, u64)> {
         let mut h = Sha256::new();
         h.update(bytes);
-        let hex = crate::oci::layer::hex_encode(&h.finalize());
+        let hex = crate::layer::hex_encode(&h.finalize());
         let digest = format!("sha256:{hex}");
         let path = self.blob_path(&digest);
         if !path.exists() {
@@ -62,11 +62,11 @@ impl ImageLayout {
     ///     or tampered content surfaces with a clear "got X, wanted Y"
     ///     message instead of later as a confusing mismatch from skopeo /
     ///     podman.
-    pub(crate) fn write_blob_with_digest(&self, digest: &str, bytes: &[u8]) -> Result<()> {
+    pub fn write_blob_with_digest(&self, digest: &str, bytes: &[u8]) -> Result<()> {
         validate_sha256_digest(digest)?;
         let mut h = Sha256::new();
         h.update(bytes);
-        let actual = format!("sha256:{}", crate::oci::layer::hex_encode(&h.finalize()));
+        let actual = format!("sha256:{}", crate::layer::hex_encode(&h.finalize()));
         if actual != digest {
             eyre::bail!("blob digest mismatch: got {actual}, expected {digest}");
         }
@@ -92,7 +92,7 @@ impl ImageLayout {
     }
 
     /// Write the top-level `index.json` pointing at a single manifest descriptor.
-    pub(crate) fn write_index(
+    pub fn write_index(
         &self,
         manifest_digest: &str,
         manifest_size: u64,
@@ -109,7 +109,7 @@ impl ImageLayout {
             );
         }
         let desc = Descriptor {
-            media_type: crate::oci::manifest::MEDIA_TYPE_OCI_MANIFEST.to_string(),
+            media_type: crate::manifest::MEDIA_TYPE_OCI_MANIFEST.to_string(),
             size: manifest_size,
             digest: manifest_digest.to_string(),
             annotations,
@@ -125,7 +125,7 @@ impl ImageLayout {
         Ok(())
     }
 
-    pub(crate) fn write_manifest(&self, manifest: &ImageManifest) -> Result<(String, u64)> {
+    pub fn write_manifest(&self, manifest: &ImageManifest) -> Result<(String, u64)> {
         let bytes = serde_json::to_vec(manifest)?;
         self.write_blob(&bytes)
     }

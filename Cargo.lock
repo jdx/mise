@@ -6729,6 +6729,7 @@ dependencies = [
  "mise-cache-core",
  "mise-dotenv",
  "mise-interactive-config",
+ "mise-oci",
  "mise-settings",
  "mise-system",
  "mise-system-config",
@@ -6787,7 +6788,6 @@ dependencies = [
  "test-log",
  "thiserror 2.0.21",
  "tokio",
- "tokio-util",
  "toml 1.1.8+spec-1.1.0",
  "toml_edit 0.25.17+spec-1.1.0",
  "ubi",
@@ -6888,6 +6888,35 @@ dependencies = [
  "toml_edit 0.25.17+spec-1.1.0",
  "unicode-width 0.2.2",
  "xx",
+]
+
+[[package]]
+name = "mise-oci"
+version = "0.1.0"
+dependencies = [
+ "base64 0.23.1",
+ "eyre",
+ "filetime",
+ "flate2",
+ "futures-util",
+ "indexmap 2.14.2",
+ "jdx-tar",
+ "log",
+ "mise-settings",
+ "mise-system",
+ "mise-ui",
+ "mise-util",
+ "mockito",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "sha2 0.11.1",
+ "tempfile",
+ "tokio",
+ "tokio-util",
+ "url",
+ "walkdir",
+ "zstd 0.14.3",
 ]
 
 [[package]]

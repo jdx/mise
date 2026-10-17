@@ -390,6 +390,7 @@ if [[ $cur_version != "$latest_version" ]]; then
 	MISE_SYSTEM_PACKAGES_VERSION=""
 	MISE_SYSTEM_CONFIG_VERSION=""
 	MISE_SYSTEM_VERSION=""
+	MISE_OCI_VERSION=""
 	MISE_BREW_METADATA_VERSION=""
 	MISE_BOOTSTRAP_VERSION=""
 
@@ -456,6 +457,14 @@ if [[ $cur_version != "$latest_version" ]]; then
 	cargo add -p mise-system "vfox@$VFOX_VERSION"
 	bump_and_publish_subcrate "mise-system" "crates/mise-system" "MISE_SYSTEM_VERSION"
 	cargo add -p mise "mise-system@$MISE_SYSTEM_VERSION"
+
+	# mise-oci builds on mise-system's package and file types.
+	cargo add -p mise-oci "mise-settings@$MISE_SETTINGS_VERSION"
+	cargo add -p mise-oci "mise-util@$MISE_UTIL_VERSION"
+	cargo add -p mise-oci "mise-ui@$MISE_UI_VERSION"
+	cargo add -p mise-oci "mise-system@$MISE_SYSTEM_VERSION"
+	bump_and_publish_subcrate "mise-oci" "crates/mise-oci" "MISE_OCI_VERSION"
+	cargo add -p mise "mise-oci@$MISE_OCI_VERSION"
 
 	bump_and_publish_subcrate "aqua-registry" "crates/aqua-registry" "AQUA_REGISTRY_VERSION"
 	use_published_aqua_registry "$AQUA_REGISTRY_VERSION"

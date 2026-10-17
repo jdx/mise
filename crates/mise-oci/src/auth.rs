@@ -21,8 +21,8 @@ use base64::prelude::BASE64_STANDARD;
 use eyre::{Context, Result, bail};
 use serde::Deserialize;
 
-use crate::cmd::{RunningPidGuard, prepare_noninteractive_child};
-use crate::env;
+use mise_util::cmd::{RunningPidGuard, prepare_noninteractive_child};
+use mise_util::env;
 
 /// A username/secret pair for registry auth. `username == "<token>"` is the
 /// docker credential-helper convention for an identity token; the OCI token
@@ -75,7 +75,7 @@ pub(crate) fn resolve_credential(registry: &str) -> Result<Option<Credential>> {
         // No single source should hard-fail resolution — a later file (or
         // anonymous access) may still work. Warn and move on for unreadable,
         // malformed, or otherwise erroring files.
-        let raw = match crate::file::read_to_string(&path) {
+        let raw = match mise_util::file::read_to_string(&path) {
             Ok(raw) => raw,
             Err(e) => {
                 warn!("skipping unreadable auth file {}: {e}", path.display());

@@ -9,10 +9,10 @@ use serde::{Deserialize, Serialize};
 
 pub(crate) const OCI_LAYOUT_VERSION: &str = "1.0.0";
 
-pub(crate) const MEDIA_TYPE_OCI_MANIFEST: &str = "application/vnd.oci.image.manifest.v1+json";
-pub(crate) const MEDIA_TYPE_OCI_CONFIG: &str = "application/vnd.oci.image.config.v1+json";
+pub const MEDIA_TYPE_OCI_MANIFEST: &str = "application/vnd.oci.image.manifest.v1+json";
+pub const MEDIA_TYPE_OCI_CONFIG: &str = "application/vnd.oci.image.config.v1+json";
 pub(crate) const MEDIA_TYPE_OCI_INDEX: &str = "application/vnd.oci.image.index.v1+json";
-pub(crate) const MEDIA_TYPE_OCI_LAYER_GZIP: &str = "application/vnd.oci.image.layer.v1.tar+gzip";
+pub const MEDIA_TYPE_OCI_LAYER_GZIP: &str = "application/vnd.oci.image.layer.v1.tar+gzip";
 
 pub(crate) const MEDIA_TYPE_DOCKER_MANIFEST: &str =
     "application/vnd.docker.distribution.manifest.v2+json";
@@ -91,7 +91,7 @@ pub struct ImageManifest {
 
 /// Image config JSON blob (what `docker inspect` surfaces as `.Config`).
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub(crate) struct ImageConfig {
+pub struct ImageConfig {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub created: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -108,7 +108,7 @@ pub(crate) struct ImageConfig {
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub(crate) struct Config {
+pub struct Config {
     #[serde(default, rename = "Env", skip_serializing_if = "Vec::is_empty")]
     pub env: Vec<String>,
     #[serde(default, rename = "Cmd", skip_serializing_if = "Option::is_none")]
@@ -150,7 +150,7 @@ pub(crate) struct Config {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub(crate) struct RootFs {
+pub struct RootFs {
     #[serde(rename = "type")]
     pub type_: String,
     pub diff_ids: Vec<String>,
@@ -166,7 +166,7 @@ impl Default for RootFs {
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub(crate) struct History {
+pub struct History {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub created: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -182,7 +182,7 @@ pub(crate) struct History {
 /// Normalize a Docker media type to the OCI equivalent. We pass base-image
 /// layers through byte-for-byte, so we keep whatever media type they came with
 /// — but when building our own manifest we always emit OCI types.
-pub(crate) fn media_type_to_oci(mt: &str) -> &str {
+pub fn media_type_to_oci(mt: &str) -> &str {
     match mt {
         MEDIA_TYPE_DOCKER_MANIFEST => MEDIA_TYPE_OCI_MANIFEST,
         MEDIA_TYPE_DOCKER_CONFIG => MEDIA_TYPE_OCI_CONFIG,

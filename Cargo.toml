@@ -15,6 +15,7 @@ members = [
   "crates/mise-util",
   "crates/mise-ui",
   "crates/mise-system-packages",
+  "crates/mise-oci",
   "crates/mise-system",
   "crates/mise-system-config",
   "crates/mise-dotenv",
@@ -143,6 +144,7 @@ flate2 = "1"
 futures-util = "0.3"
 mise-cache-core = { path = "crates/mise-cache-core", version = "0.1", default-features = false }
 mise-settings = { path = "crates/mise-settings", version = "2026" }
+mise-oci = { path = "crates/mise-oci", version = "0.1" }
 mise-system = { path = "crates/mise-system", version = "0.1" }
 mise-system-config = { path = "crates/mise-system-config", version = "0.1" }
 mise-ui = { path = "crates/mise-ui", version = "2026" }
@@ -247,7 +249,6 @@ tera = "2"
 tera1 = { package = "tera", version = "1" }
 thiserror = "2"
 tokio = { version = "1", features = ["full"] }
-tokio-util = { version = "0.7", features = ["io", "rt"] }
 toml = { version = "1", features = ["parse", "preserve_order"] }
 toml_edit = { version = "0.25", features = ["parse"] }
 ubi = { version = "0.12", default-features = false }
