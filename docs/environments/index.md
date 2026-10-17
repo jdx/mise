@@ -327,8 +327,9 @@ absolute path, is searched on its own in list order.
 
 The [`env_file`](/configuration/settings.html#env_file) setting also finds
 dotenv files up the tree, but it is a separate feature. It applies after every
-config file's `[env]` and overrides it, while `_.file` is an ordinary entry that
-a project's own `[env]` can override.
+config file's `[env]` and overrides it, except for files already loaded by
+`_.file`. It skips those files, so the `[env]` precedence applies to them.
+`_.file` is an ordinary entry that a project's own `[env]` can override.
 
 ### `env._.path` {#env-path}
 
