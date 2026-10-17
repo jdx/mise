@@ -38,7 +38,6 @@ static CONFIG: Lazy<NpmConfig> = Lazy::new(|| NpmConfig::load(&meta_dir()));
 /// network on a miss. (Offline state is set from the CLI/env at startup, so
 /// resolving it once at client construction is sufficient.)
 static CLIENT: Lazy<std::result::Result<RegistryClient, String>> = Lazy::new(|| {
-    probe_tls_roots()?;
     // Before the first registry request, so the memoized User-Agent is
     // mise's rather than standalone aube's.
     crate::backend::aube_host::init();
@@ -55,18 +54,8 @@ static CLIENT: Lazy<std::result::Result<RegistryClient, String>> = Lazy::new(|| 
     // most once per process) rather than on every async fetch — keeps the
     // blocking mkdir + its sync lock off the Tokio worker in the hot path.
     let _ = crate::file::create_dir_all(meta_dir());
-    Ok(RegistryClient::from_config(config).with_network_mode(mode))
-});
-
-/// `aube-registry` builds its HTTP clients with `.expect(..)`, so a TLS root it
-/// cannot load aborts the process (releases build with `panic = "abort"`, so
-/// the panic cannot be caught). Build an equivalent client first and report
-/// that failure as an error instead.
-fn probe_tls_roots() -> std::result::Result<(), String> {
-    reqwest::Client::builder()
-        .use_rustls_tls()
-        .build()
-        .map(drop)
+    RegistryClient::try_from_config(config)
+        .map(|client| client.with_network_mode(mode))
         .map_err(|err| {
             let mut msg = format!("Could not initialize the npm registry HTTP client: {err}");
             let mut source = std::error::Error::source(&err);
@@ -76,7 +65,7 @@ fn probe_tls_roots() -> std::result::Result<(), String> {
             }
             msg
         })
-}
+});
 
 fn client() -> Result<&'static RegistryClient> {
     CLIENT.as_ref().map_err(|err| eyre::eyre!("{err}"))
