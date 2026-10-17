@@ -11,17 +11,7 @@ use std::sync::Mutex;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use std::{collections::BTreeSet, sync::Arc};
 
-#[derive(
-    Debug, Clone, serde::Serialize, serde::Deserialize, Ord, PartialOrd, Eq, PartialEq, Hash,
-)]
-pub struct WatchFile {
-    pub patterns: Vec<String>,
-    #[serde(default)]
-    pub run: Option<String>,
-    #[serde(default)]
-    pub shell: Option<String>,
-    pub task: Option<String>,
-}
+pub use mise_config::watch_files::WatchFile;
 
 const GIT_REWROTE_VAR: &str = "MISE_WATCH_FILES_GIT_REWRITTEN";
 

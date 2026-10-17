@@ -155,7 +155,10 @@ impl Project {
         // No tool installation, task dependencies, or task hooks are run here.
         // Preserve every declared check even if building the toolset fails.
         let environment = async {
-            if !checks.values().any(|(_, _, check)| check.applies()) {
+            if !checks
+                .values()
+                .any(|(_, _, check)| crate::config::doctor::applies(check))
+            {
                 return Ok(EnvMap::default());
             }
             Settings::ensure_not_safe("Running project diagnostic commands")?;
@@ -182,7 +185,7 @@ impl Project {
                         message: None,
                         hint: check.hint.clone(),
                     };
-                    if !check.applies() {
+                    if !crate::config::doctor::applies(&check) {
                         result.status = Status::Skipped;
                         result.message =
                             Some("Check does not apply to this operating system".into());
