@@ -8536,6 +8536,16 @@ mod option_spec_tests {
     }
 
     #[test]
+    fn http_platform_overrides_accept_headers() {
+        let spec = OptionSpec::with_platforms(&["tool_http_options"], &["tool_http_platforms"]);
+        let o = opts("platform_linux_x64_headers=x,platform_linux_x64_headers_forward=y");
+        assert_eq!(
+            spec.unknown_keys(&BackendType::Http, &o),
+            Vec::<String>::new()
+        );
+    }
+
+    #[test]
     fn check_fails_on_an_unknown_option() {
         let o = opts("nonsense=1");
         let err = OptionSpec::new(&["tool_cargo_options"])
