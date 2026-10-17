@@ -312,9 +312,15 @@ _.file = [
 ```
 
 Files are loaded from the filesystem root down to the current directory, so a
-variable in a closer file wins. `find_up` has no effect on an absolute path. The
-[`env_file`](/configuration/settings.html#env_file) setting
-(`MISE_ENV_FILE=.env`) does the same for a single filename.
+variable in a closer file wins. `find_up` has no effect on an absolute path.
+
+The [`env_file`](/configuration/settings.html#env_file) setting
+(`MISE_ENV_FILE=.env`) also discovers a dotenv file in the current directory and
+its parents, but it is a different feature, not an older spelling of this one.
+`_.file` is an ordinary `[env]` entry, so a project's own `[env]` values can
+override it. `env_file` is applied after every config file's `[env]`, so its
+values win over them, except for a file that an `_.file` entry has already
+loaded. `env_file` skips that file, so the `[env]` precedence applies to it.
 
 ### `env._.path` {#env-path}
 
