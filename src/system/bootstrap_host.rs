@@ -8,9 +8,9 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use eyre::Result;
 use indexmap::IndexSet;
-use mise_system_config::bootstrap::BootstrapTomlConfig;
-use mise_system_config::dotfiles::{DotfileGroupsTomlConfig, DotfilesTomlConfig};
-use mise_system_config::history::HistoryTomlConfig;
+use mise_config::bootstrap::BootstrapTomlConfig;
+use mise_config::dotfiles::{DotfileGroupsTomlConfig, DotfilesTomlConfig};
+use mise_config::history::HistoryTomlConfig;
 use mise_util::env_diff::EnvMap;
 
 use crate::config::config_file::mise_toml::MiseToml;

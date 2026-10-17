@@ -6843,13 +6843,13 @@ dependencies = [
  "miette",
  "minisign-verify",
  "mise-cache-core",
+ "mise-config",
  "mise-daemons",
  "mise-dotenv",
  "mise-interactive-config",
  "mise-oci",
  "mise-settings",
  "mise-system",
- "mise-system-config",
  "mise-ui",
  "mise-util",
  "mockito",
@@ -6982,6 +6982,18 @@ dependencies = [
  "tokio",
  "tokio-util",
  "url",
+]
+
+[[package]]
+name = "mise-config"
+version = "0.1.0"
+dependencies = [
+ "eyre",
+ "indexmap 2.14.2",
+ "mise-bootstrap",
+ "serde",
+ "serde_ignored",
+ "toml 1.1.8+spec-1.1.0",
 ]
 
 [[package]]
@@ -7140,8 +7152,8 @@ dependencies = [
  "log",
  "minisign-verify",
  "mise-bootstrap",
+ "mise-config",
  "mise-settings",
- "mise-system-config",
  "mise-system-packages",
  "mise-ui",
  "mise-util",
@@ -7176,20 +7188,6 @@ dependencies = [
  "walkdir",
  "which",
  "windows-sys 0.61.2",
-]
-
-[[package]]
-name = "mise-system-config"
-version = "0.1.0"
-dependencies = [
- "eyre",
- "indexmap 2.14.2",
- "mise-bootstrap",
- "mise-system-packages",
- "mise-util",
- "serde",
- "serde_ignored",
- "toml 1.1.8+spec-1.1.0",
 ]
 
 [[package]]

@@ -19,7 +19,7 @@ use tera::Context;
 use crate::host::Config;
 use mise_util::tera::{TeraEngine, contains_template_syntax, get_tera_without_exec, render_str};
 
-pub(crate) use mise_system_config::templating::Templated;
+pub(crate) use mise_config::templating::Templated;
 
 /// Rendering for [`Templated`] values; it needs the config's template context, so it lives in
 /// mise rather than next to the type.

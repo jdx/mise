@@ -7,10 +7,8 @@ use eyre::{Context, Result, bail, eyre};
 use indexmap::{IndexMap, IndexSet};
 
 use crate::host::Config;
-pub use mise_system_config::remote::DEFAULT_INSTALL_MISE_PATH;
-pub use mise_system_config::remote::{
-    InstallMiseTomlConfig, RemoteHostTomlConfig, RemoteTomlConfig,
-};
+pub use mise_config::remote::DEFAULT_INSTALL_MISE_PATH;
+pub use mise_config::remote::{InstallMiseTomlConfig, RemoteHostTomlConfig, RemoteTomlConfig};
 use mise_ui::multi_progress_report::MultiProgressReport;
 use mise_util::http::HTTP;
 

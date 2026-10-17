@@ -18,7 +18,7 @@ use std::process::Command;
 use eyre::{Result, bail, eyre};
 use url::Url;
 
-pub use mise_system_config::repos::RepoTomlConfig;
+pub use mise_config::repos::RepoTomlConfig;
 use mise_util::file;
 
 #[derive(Debug, Default, Clone, PartialEq, Eq)]

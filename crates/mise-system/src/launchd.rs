@@ -9,7 +9,7 @@ use std::process::Stdio;
 
 use eyre::{Result, bail};
 use indexmap::IndexMap;
-pub use mise_system_config::launchd::{
+pub use mise_config::launchd::{
     LaunchdCalendarInterval, LaunchdCalendarIntervals, LaunchdTomlConfig,
 };
 use plist::{Dictionary, Value};

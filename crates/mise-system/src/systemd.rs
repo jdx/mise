@@ -9,7 +9,7 @@ use std::time::Duration;
 
 use eyre::{Result, bail, eyre};
 use indexmap::{IndexMap, IndexSet};
-pub use mise_system_config::systemd::{SystemdTomlConfig, SystemdUnitState};
+pub use mise_config::systemd::{SystemdTomlConfig, SystemdUnitState};
 
 const SYSTEMCTL_TIMEOUT: Duration = Duration::from_secs(30);
 

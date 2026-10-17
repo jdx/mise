@@ -18,18 +18,19 @@
 //! These are intentionally not part of `[tools]`: they're unversioned,
 //! machine-global settings and resources, not mise's per-project toolset.
 
-pub use mise_system_config::bootstrap::{
+pub use mise_config::bootstrap::{
     BootstrapLinuxSystemdTomlConfig, BootstrapLinuxTomlConfig, BootstrapMacosDefaultsEntry,
     BootstrapMacosLaunchdTomlConfig, BootstrapMacosTomlConfig, BootstrapTomlConfig,
     BootstrapUserTomlConfig, SystemAptTomlConfig, SystemBrewTomlConfig, SystemDnfTomlConfig,
     hook_commands,
 };
-pub use mise_system_config::packages::{
+pub use mise_config::packages::{
     PackageDesiredStateTomlConfig, PackageOptionsTomlConfig, PackageTomlConfig,
     deserialize_package_os,
 };
 #[macro_use]
 mod macros;
+use package_config::PackageTomlConfigExt;
 #[cfg(test)]
 mod test_host;
 
@@ -81,6 +82,7 @@ pub mod launchd;
 pub mod login_items;
 pub mod login_shell;
 pub mod managed_files;
+mod package_config;
 pub use mise_system_packages as packages;
 #[cfg(unix)]
 pub use packages::options::AppSpec;
@@ -118,7 +120,7 @@ pub fn plugins_from_config(config: &Config) -> IndexMap<String, String> {
     plugins
 }
 
-pub use mise_system_config::dotfiles::DotfilesTomlConfig;
+pub use mise_config::dotfiles::DotfilesTomlConfig;
 
 /// Combining a file's `[bootstrap]` with the one it includes; it applies mise's macOS-defaults
 /// normalization, so it lives here rather than with the type.

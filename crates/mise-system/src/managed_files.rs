@@ -1,4 +1,4 @@
-pub use mise_system_config::managed_files::{ManagedDirectoryTomlConfig, ManagedFileTomlConfig};
+pub use mise_config::managed_files::{ManagedDirectoryTomlConfig, ManagedFileTomlConfig};
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};

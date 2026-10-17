@@ -271,7 +271,7 @@ pub trait ConfigFile: Debug + Send + Sync {
         Default::default()
     }
 
-    fn bootstrap_config(&self) -> Option<mise_system_config::bootstrap::BootstrapTomlConfig> {
+    fn bootstrap_config(&self) -> Option<mise_config::bootstrap::BootstrapTomlConfig> {
         None
     }
 
@@ -279,17 +279,15 @@ pub trait ConfigFile: Debug + Send + Sync {
         None
     }
 
-    fn dotfiles_config(&self) -> Option<mise_system_config::dotfiles::DotfilesTomlConfig> {
+    fn dotfiles_config(&self) -> Option<mise_config::dotfiles::DotfilesTomlConfig> {
         None
     }
 
-    fn dotfile_groups_config(
-        &self,
-    ) -> Option<mise_system_config::dotfiles::DotfileGroupsTomlConfig> {
+    fn dotfile_groups_config(&self) -> Option<mise_config::dotfiles::DotfileGroupsTomlConfig> {
         None
     }
 
-    fn history_config(&self) -> Option<mise_system_config::history::HistoryTomlConfig> {
+    fn history_config(&self) -> Option<mise_config::history::HistoryTomlConfig> {
         None
     }
 }

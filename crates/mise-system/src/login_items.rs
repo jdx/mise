@@ -10,7 +10,7 @@
 use std::path::{Component, Path, PathBuf};
 
 use eyre::Result;
-pub use mise_system_config::login_items::LoginItemsTomlConfig;
+pub use mise_config::login_items::LoginItemsTomlConfig;
 
 /// The merged `[bootstrap.macos.login_items]` declaration.
 #[derive(Debug, Default, Clone, PartialEq)]

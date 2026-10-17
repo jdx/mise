@@ -11,7 +11,7 @@ use crate::host::Config;
 use crate::resources::{ResourceAction, ResourceId, ResourcePlan};
 
 pub use mise_bootstrap::AccountState;
-pub use mise_system_config::accounts::{GroupTomlConfig, UserTomlConfig};
+pub use mise_config::accounts::{GroupTomlConfig, UserTomlConfig};
 
 #[derive(Clone, Debug)]
 pub struct GroupRequest {
