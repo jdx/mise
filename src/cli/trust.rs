@@ -310,14 +310,17 @@ impl Trust {
         Ok(true)
     }
 
-    /// In paranoid mode, trusts the env files and scripts the trusted config reads, which have
+    /// In paranoid mode, trusts the env files and scripts the trusted configs read, which have
     /// trust of their own. Resolves the env the way `hook-env` does, so a file that is not yet
-    /// trusted is recorded instead of failing, then trusts what was recorded. A trusted file can
-    /// name the next one, so this repeats until nothing new turns up. Returns how many it trusted.
+    /// trusted is recorded instead of failing, then trusts what was recorded. Configs that are
+    /// not trusted are skipped, not loaded, so nothing of theirs runs and none of their files is
+    /// trusted. A trusted file can name the next one, so this repeats until nothing new turns up.
+    /// Returns how many it trusted.
     async fn trust_env_files() -> Result<usize> {
         if !Settings::get().paranoid {
             return Ok(0);
         }
+        config_file::require_strict_trust();
         config::skip_untrusted_configs();
         let mut trusted = 0;
         // Each pass can only add files a previous pass revealed, so a small bound is enough and
@@ -327,9 +330,17 @@ impl Trust {
             if let Err(err) = config.env_uncached().await {
                 debug!("resolving env to find files to trust: {err:#}");
             }
-            let pending = config::skipped_untrusted_configs()
+            let pending = config_file::untrusted_env_files()
                 .into_iter()
-                .filter(|p| p.is_file() && !config_file::is_path_trusted(p))
+                .filter(|(path, declared_in)| {
+                    path.is_file()
+                        && !config_file::is_path_trusted(path)
+                        && declared_in
+                            .as_deref()
+                            .is_none_or(config_file::is_path_trusted)
+                })
+                .map(|(path, _)| path)
+                .unique()
                 .collect::<Vec<_>>();
             if pending.is_empty() {
                 break;

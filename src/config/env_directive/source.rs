@@ -31,7 +31,9 @@ impl EnvResults {
             if !p.exists() {
                 continue;
             }
-            if !operator_owned && !crate::config::config_file::env_file_trust_check(&p)? {
+            if !operator_owned
+                && !crate::config::config_file::env_file_trust_check_from(&p, Some(ctx.source))?
+            {
                 // Trusting the file later changes nothing the cache key sees.
                 ctx.results.has_uncacheable = true;
                 continue;

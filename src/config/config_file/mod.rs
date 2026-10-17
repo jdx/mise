@@ -558,6 +558,26 @@ pub fn is_path_trusted(path: &Path) -> bool {
 
 static IMPLICITLY_TRUST_ACTIVE_CONFIG: AtomicBool = AtomicBool::new(false);
 
+/// Set while `mise trust` resolves the env to find files that need trust. `mise trust` normally
+/// loads every config without asking, since trusting is its job, but here that would run an
+/// untrusted config's templates just to look for files. With this set, an untrusted config is
+/// skipped like it is for `hook-env`, and nothing prompts.
+static STRICT_TRUST: AtomicBool = AtomicBool::new(false);
+
+/// Env files and scripts that paranoid mode skipped as untrusted, with the config that named
+/// each. A file the `env_file` setting names has no config.
+static UNTRUSTED_ENV_FILES: Mutex<Vec<(PathBuf, Option<PathBuf>)>> = Mutex::new(Vec::new());
+
+/// Makes untrusted config skip instead of load or prompt, even for `mise trust`.
+pub fn require_strict_trust() {
+    STRICT_TRUST.store(true, Ordering::Relaxed);
+}
+
+/// The env files and scripts skipped as untrusted so far, each with the config that named it.
+pub fn untrusted_env_files() -> Vec<(PathBuf, Option<PathBuf>)> {
+    UNTRUSTED_ENV_FILES.lock().unwrap().clone()
+}
+
 /// Set on a `mise` that acts for someone other than the user who typed it,
 /// such as the children the MCP server starts. Such a process trusts nothing
 /// on its own: not the config its command would implicitly trust, and not on
@@ -649,13 +669,14 @@ pub(crate) fn trust_check(path: &Path) -> eyre::Result<()> {
     let default_cmd = String::new();
     let args = env::ARGS.read().unwrap();
     let cmd = args.get(1).unwrap_or(&default_cmd).as_str();
-    if is_path_trusted(path) || cmd == "trust" || mise_util::testing::in_tests() {
+    let strict = STRICT_TRUST.load(Ordering::Relaxed);
+    if is_path_trusted(path) || (cmd == "trust" && !strict) || mise_util::testing::in_tests() {
         return Ok(());
     }
     if *REQUIRE_EXPLICIT_TRUST {
         Err(UntrustedConfig(path.into()))?
     }
-    if cmd != "hook-env" && !is_ignored(&config_root) && !is_ignored(path) {
+    if cmd != "hook-env" && !strict && !is_ignored(&config_root) && !is_ignored(path) {
         let ans = if settings::is_loaded()
             && Settings::try_get().is_ok_and(|settings| settings.yes && !settings.paranoid)
         {
@@ -694,6 +715,15 @@ pub(crate) fn trust_check(path: &Path) -> eyre::Result<()> {
 /// so the trusted ones still apply. `Ok(false)` means "do not load it": the file is untrusted
 /// and skipped, or it is not there.
 pub(crate) fn env_file_trust_check(path: &Path) -> eyre::Result<bool> {
+    env_file_trust_check_from(path, None)
+}
+
+/// [`env_file_trust_check`] for a file that `declared_in` names, so a skipped file is recorded
+/// with the config that asked for it.
+pub(crate) fn env_file_trust_check_from(
+    path: &Path,
+    declared_in: Option<&Path>,
+) -> eyre::Result<bool> {
     if Settings::safe_mode() || !Settings::try_get().is_ok_and(|settings| settings.paranoid) {
         return Ok(true);
     }
@@ -717,6 +747,11 @@ pub(crate) fn env_file_trust_check(path: &Path) -> eyre::Result<bool> {
         return Ok(true);
     }
     if config::skip_untrusted_path(path) {
+        let mut files = UNTRUSTED_ENV_FILES.lock().unwrap();
+        let entry = (path.to_path_buf(), declared_in.map(Path::to_path_buf));
+        if !files.contains(&entry) {
+            files.push(entry);
+        }
         return Ok(false);
     }
     Err(UntrustedEnvFile(path.into()))?
