@@ -521,7 +521,7 @@ pub(super) async fn cask_ruby_bin() -> Result<PathBuf> {
     {
         return Ok(ruby);
     }
-    crate::system::packages::host::provision_ruby().await
+    crate::host::provision_ruby().await
 }
 
 pub(super) fn ensure_cask_shim(path: &Path) -> Result<()> {

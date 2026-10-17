@@ -104,7 +104,7 @@ pub(super) async fn build(
     check_buildable(formula)?;
 
     pr.set_message("resolve ruby".to_string());
-    let ruby = crate::system::packages::host::provision_ruby().await?;
+    let ruby = crate::host::provision_ruby().await?;
     let formula_rb = fetch_formula_rb(rf, pr).await?;
     let archive = fetch_source(formula, pr).await?;
 

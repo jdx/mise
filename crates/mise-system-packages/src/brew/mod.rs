@@ -40,12 +40,12 @@ mod relocate;
 mod resolve;
 mod source;
 mod tag;
-mod tap;
+pub(crate) mod tap;
 
 #[derive(Default)]
 pub struct BrewManager {}
 pub use api::failed_formula_name;
-pub(crate) use cask::paths::package_app_dir;
+pub use cask::paths::package_app_dir;
 pub use cask::{
     BrewCaskManager, apply_cask_prune_plan, cask_formula_dependencies, cask_prune_plan,
 };
@@ -489,7 +489,7 @@ impl SystemPackageManager for BrewManager {
 }
 
 fn is_tapped_formula(name: &str) -> bool {
-    crate::system::packages::options::brew_tap_name(name).is_some()
+    crate::options::brew_tap_name(name).is_some()
 }
 
 fn tapped_formula_name(name: &str) -> &str {

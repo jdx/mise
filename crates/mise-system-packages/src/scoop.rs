@@ -548,7 +548,7 @@ impl SystemPackageManager for ScoopManager {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::system::packages::{PackageDesiredState, check_name_conflicts};
+    use crate::{PackageDesiredState, check_name_conflicts};
 
     const EXPORT: &str = r#"{
     "buckets":  [

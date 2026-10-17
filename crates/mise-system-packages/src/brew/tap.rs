@@ -198,7 +198,7 @@ async fn usable_system_ruby() -> Option<PathBuf> {
     ruby_is_compatible(&ruby).await.then_some(ruby)
 }
 
-async fn ruby_is_compatible(ruby: &Path) -> bool {
+pub(crate) async fn ruby_is_compatible(ruby: &Path) -> bool {
     tokio::process::Command::new(ruby)
         .args(["-e", "exit RUBY_VERSION.split('.').first.to_i >= 3 ? 0 : 1"])
         .output()
@@ -212,13 +212,13 @@ async fn ruby_for_metadata(name: &str, provision_ruby: bool) -> Result<PathBuf> 
     if let Some(ruby) = usable_system_ruby().await {
         return Ok(ruby);
     }
-    if let Some(ruby) = crate::system::packages::host::installed_ruby().await?
+    if let Some(ruby) = crate::host::installed_ruby().await?
         && ruby_is_compatible(&ruby).await
     {
         return Ok(ruby);
     }
     if provision_ruby {
-        let ruby = crate::system::packages::host::provision_ruby().await?;
+        let ruby = crate::host::provision_ruby().await?;
         if ruby_is_compatible(&ruby).await {
             return Ok(ruby);
         }
@@ -372,7 +372,7 @@ pub(super) async fn test_ruby() -> Result<Option<PathBuf>> {
     if let Some(ruby) = usable_system_ruby().await {
         return Ok(Some(ruby));
     }
-    crate::system::packages::host::installed_ruby().await
+    crate::host::installed_ruby().await
 }
 
 #[cfg(test)]
@@ -409,7 +409,7 @@ mod tests {
         let output = std::process::Command::new(std::env::current_exe()?)
             .args([
                 "--exact",
-                "system::packages::brew::tap::tests::ignores_mise_shim_when_selecting_system_ruby",
+                "brew::tap::tests::ignores_mise_shim_when_selecting_system_ruby",
             ])
             .env(CHILD_ENV, "1")
             .env(EXPECTED_RUBY_ENV, &system_ruby)
@@ -422,6 +422,12 @@ mod tests {
             "child test failed:\nstdout:\n{}\nstderr:\n{}",
             String::from_utf8_lossy(&output.stdout),
             String::from_utf8_lossy(&output.stderr)
+        );
+        // A filter that matches nothing also exits successfully, which would skip the check.
+        assert!(
+            String::from_utf8_lossy(&output.stdout).contains("1 passed"),
+            "child test did not run:\nstdout:\n{}",
+            String::from_utf8_lossy(&output.stdout)
         );
         Ok(())
     }

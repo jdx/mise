@@ -7,7 +7,7 @@ use futures_util::stream::{self, StreamExt};
 
 use super::api::{self, Formula};
 use super::tag;
-use crate::system::packages::PackageRequest;
+use crate::PackageRequest;
 use eyre::Result;
 use mise_settings::Settings;
 

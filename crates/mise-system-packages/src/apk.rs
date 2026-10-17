@@ -8,11 +8,12 @@ use eyre::Result;
 use mise_ui::sudo;
 
 /// Alpine Linux via apk
-pub(crate) struct ApkManager {}
+#[derive(Default)]
+pub struct ApkManager {}
 
 impl ApkManager {
-    pub(crate) fn new() -> Self {
-        Self {}
+    pub fn new() -> Self {
+        Self::default()
     }
 }
 
@@ -135,7 +136,7 @@ mod tests {
             name: name.to_string(),
             version: version.map(str::to_string),
             tap_url: None,
-            desired: crate::system::packages::PackageDesiredState::Present,
+            desired: crate::PackageDesiredState::Present,
         }
     }
 
