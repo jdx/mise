@@ -27,7 +27,7 @@ directory. Use `--global` or `--file` to pick another file.
 - **`-g --global`** — Use the global config file
 - **`--override`** — Use the global override file, `config.override.toml`
 
-  See <https://mise.jdx.dev/configuration/override.html>
+  See <https://mise.jdx.dev/configuration.html#override-file>
 - **`-h --help`** — Print help
 
 ## Examples

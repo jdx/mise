@@ -114,7 +114,13 @@ fn complete_key(
     partial: &<ConfigSet as usage_rs::spec::CommandArgs>::Partial,
     ctx: &usage_rs::complete::CompleteCtx<'_>,
 ) -> Vec<usage_rs::complete::Candidate<'static>> {
-    super::keys::complete(ctx, partial.file.as_deref(), partial.global, partial.system)
+    super::keys::complete(
+        ctx,
+        partial.file.as_deref(),
+        partial.global,
+        partial.system,
+        partial.override_file,
+    )
 }
 
 impl ConfigSet {

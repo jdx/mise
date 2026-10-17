@@ -5742,6 +5742,7 @@ async fn load_global_tasks(config: &Arc<Config>, templates: &TaskDefinitions) ->
             (true, global_config_files()),
             (false, system_config_files()),
         ],
+        false,
     )
     .await
 }
@@ -5756,13 +5757,16 @@ async fn load_override_tasks(
     if files.is_empty() {
         return Ok(vec![]);
     }
-    load_tasks_from_scopes(config, templates, [(false, files)]).await
+    load_tasks_from_scopes(config, templates, [(false, files)], true).await
 }
 
 async fn load_tasks_from_scopes(
     config: &Arc<Config>,
     templates: &TaskDefinitions,
     scopes: impl IntoIterator<Item = (bool, IndexSet<PathBuf>)>,
+    // The override tier holds only what its files declare or include. Task folders such
+    // as `~/.config/mise/tasks` belong to the ordinary global scope.
+    no_default_includes: bool,
 ) -> Result<Vec<Task>> {
     // Compose user-global and system configs as separate scopes so task_config
     // fields follow the same override semantics as local config files. Load the
@@ -5792,7 +5796,7 @@ async fn load_tasks_from_scopes(
             let default_includes = user_global_task_includes(!configs.is_empty());
             config_groups.push((configs, Some(default_includes)));
         } else if !configs.is_empty() {
-            config_groups.push((configs, None));
+            config_groups.push((configs, no_default_includes.then(Vec::new)));
         }
     }
 

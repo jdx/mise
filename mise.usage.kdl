@@ -6045,7 +6045,7 @@ See https://mise.jdx.dev/configuration.html#target-file-for-write-operations
         long_help #"""
 Set the environment variable in the global override file, `config.override.toml`
 
-The override file outranks all project config. With `--env`, writes `config.<ENV>.override.toml` instead. See https://mise.jdx.dev/configuration/override.html
+The override file outranks all project config. With `--env`, writes `config.<ENV>.override.toml` instead. See https://mise.jdx.dev/configuration.html#override-file
 """#
         conflicts "--global" "--file"
     }
@@ -7313,7 +7313,7 @@ Can be a file or a directory. For a directory, mise uses the config file in it, 
         long_help #"""
 Use the global override file, `config.override.toml`
 
-See https://mise.jdx.dev/configuration/override.html
+See https://mise.jdx.dev/configuration.html#override-file
 """#
         conflicts "--global" "--file"
     }
@@ -7372,7 +7372,7 @@ Not the same as the global -E, which only chooses which config files are loaded.
         long_help #"""
 Write to the global override file, `config.override.toml`
 
-The override file outranks all project config. With `--env`, writes `config.<ENV>.override.toml` instead. See https://mise.jdx.dev/configuration/override.html
+The override file outranks all project config. With `--env`, writes `config.<ENV>.override.toml` instead. See https://mise.jdx.dev/configuration.html#override-file
 """#
         conflicts "--global" "--path"
     }
@@ -7550,7 +7550,7 @@ For a directory, mise picks the file by the usual write-target rules.
         long_help #"""
 Write to the global override file, `config.override.toml`
 
-The override file outranks all project config. With `--env`, writes `config.<ENV>.override.toml` instead. See https://mise.jdx.dev/configuration/override.html
+The override file outranks all project config. With `--env`, writes `config.<ENV>.override.toml` instead. See https://mise.jdx.dev/configuration.html#override-file
 """#
         conflicts "--global" "--path"
     }
